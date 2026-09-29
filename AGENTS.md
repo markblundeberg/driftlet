@@ -12,5 +12,9 @@ Guide for coding agents working in this repo.
 - **Commits:** small and logically scoped. End messages with the Co-Authored-By trailer only;
   never a `Claude-Session:` line (a local commit-msg hook strips it as a backstop).
   Commit freely; don't push or publish to npm unless the owner asks.
+  Primary branch is `master`.
 - **Hook setup after a fresh clone** (`.claude/` is gitignored, local infra):
   `git config core.hooksPath .claude/hooks && chmod +x .claude/hooks/commit-msg`
+- **Background:** driftlet spins off the owner's ESBD web book (https://marklundeberg.com/esbd/,
+  "electrochemical species band diagrams"), whose central idea is the species voltage
+  `V_i = μ̄_i / (z_i F)`. Speak that language in the API and docs.

@@ -46,11 +46,15 @@ mobile species such as dissolved gases or water are supported from v0), a diffus
 region), and, per region, a **standard chemical potential** `μ°_i`. The primary variable is the
 **electrochemical potential** `μ̄_i`. Ideal (Boltzmann/dilute) statistics:
 
-- `μ̄_i = μ°_i(region) + z_i F ψ + RT ln(c_i / c_ref,i)`, so
-  `c_i = c_ref,i · exp( (μ̄_i − μ°_i − z_i F ψ) / RT )`.
-- Output conveniences for charged species: the species voltage `V_i = μ̄_i / (z_i F)` and the
-  standard level `V°_i = ψ + μ°_i / (z_i F)`. Users who think in voltages scale by z_iF; the
-  core never needs to.
+- `μ̄_i = μ°_i(region) + z_i F φ + RT ln(c_i / c_ref,i)`, so
+  `c_i = c_ref,i · exp( (μ̄_i − μ°_i − z_i F φ) / RT )`.
+- **Species voltage is the user-facing language.** For charged species, `V_i = μ̄_i / (z_i F)`
+  *is* a voltage (for electrons it's exactly what a voltmeter reads; for ions it's the
+  analogous quantity a reversible electrode reads), with the standard level
+  `V°_i = φ + μ°_i / (z_i F)` playing the part of a band edge. This is the owner's
+  [ESBD](https://marklundeberg.com/esbd/) framing, and the API should speak it: contacts,
+  circuits and outputs are stated in V_i for charged species (μ̄_i only for neutral ones).
+  The core works in `η_i = μ̄_i / RT` (well defined for z = 0) and converts at the edges.
 - Electrons and holes are ordinary species (`z = ∓1`), with `c_ref` = the effective density of
   states and `μ°` = the band edges (as molar energies). Plotted as voltages (V_i upward), the
   conduction band sits below the valence band; that's expected.
@@ -68,17 +72,38 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
 - `D_mix(x)`: an optional **eddy (mixing) diffusivity**, large in a stirred bulk and falling to
   zero at walls. It models stirring locally and produces Nernst diffusion layers naturally. It
   acts identically on every species and has **no associated mobility** (it mixes, it doesn't
-  conduct: in neutral regions its net current vanishes). Default 0 everywhere.
+  conduct: in neutral regions its net current vanishes). Default 0 everywhere. Caveat: it acts
+  on ∇c, not ∇μ̄, so it would drive a spurious flux through an *equilibrium* double layer
+  (flat μ̄, varying c). Profiles must fall to zero before the Debye layers at walls; the
+  grid/region setup should warn when D_mix overlaps a strongly non-neutral zone.
 - Out of scope (non-local): recirculation loops or one well-mixed reservoir feeding several
   faces. A few such couplings could be added later via bordering, like the circuit unknowns.
 
-**Electrostatics.** `−∂/∂x (ε ∂ψ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` and the fixed
+**Electrostatics.** `−∂/∂x (ε ∂φ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` and the fixed
 charge `ρ_fixed` (doping, ionomer charge, …) are set per region.
 
 **Regions.** A device is a sequence of regions, each with its own ε, fixed charge, and
 per-species parameters (D, `μ°_i`, or "absent/blocked"). A step in `μ°_i` between regions is a
 band offset or solvation step. Species that can't enter a region are blocked at its face
 (zero flux).
+
+**Absent species.** Where a species is absent, its η_i is undefined and has no equation. Two
+implementation options: keep a fixed block size with decoupled identity rows, or let the block
+size vary per region (block Thomas copes with non-square off-diagonal blocks). Start with
+whichever is simpler and benchmark the other; the choice must not leak into the API. Outputs
+for an absent species are `NaN` at those nodes, so plots show a gap rather than a fake value.
+
+**Conserved inventories (blocked species).** A species blocked on every side of some connected
+stretch of the device (no contact link, no reaction) is a *conserved spectator*: its amount
+there never changes, and it just drifts and screens. Transients conserve it automatically. A
+steady-state or equilibrium solve cannot determine it (its μ̄ level floats), so each such
+inventory is one extra scalar unknown (its level) with one constraint (`∫c dx` = the given
+amount), handled by bordering like the circuit unknowns. The amount defaults to what the
+initial/warm state holds, or is given explicitly. With bulk reactions, the conserved quantities
+are moieties (left null vectors of the stoichiometry restricted to that stretch) rather than
+species. A device can be *entirely* blocked (a floating island) provided φ is anchored
+electrostatically somewhere (a gate link, below); then the island simply holds a fixed charge.
+With no electrostatic anchor at all, the problem is singular and must be rejected up front.
 
 **Bulk reactions (mass action, thermodynamically consistent).** Each reaction has a
 stoichiometry over mobile species plus optional fixed-activity neutral participants (e.g. H₂O).
@@ -94,18 +119,28 @@ overpotential, `η = affinity / (nF)`:
 with optional concentration dependence of `i0`. The rate enters as a boundary flux for each
 participant.
 
-**Contacts (domain ends).**
-- **reservoir/bath:** every species' μ̄_i and c_i fixed (a well-stirred solution);
-- **ohmic (semiconductor):** local equilibrium + neutrality fix ψ and all μ̄_i, given the applied
-  voltage;
-- **electrode (metal):** the electron μ̄ (i.e. terminal voltage) is set by the circuit; ions are blocked or take
-  part in an interfacial reaction;
-- **blocking:** zero flux for the listed species, with a surface charge or potential condition
-  for ψ.
+**Contacts (domain ends) as links.** Each end couples every species and φ to the outside
+world through a *link*. This is the model from the owner's earlier linear prototype, and it is
+more general than a zoo of contact types:
+- **species links**, one per species: *fixed* (V_i, or μ̄_i if neutral, pinned at the boundary:
+  the normal case), *conductance* G_i to an outside V_i (an ohmic interface resistance),
+  *kinetic* (Butler–Volmer, below, i.e. a nonlinear conductance), or *blocked* (G_i = 0);
+- **electrostatic link**: *neutral* (φ at the boundary node follows from local neutrality,
+  given the fixed V_i: an ohmic contact or well-stirred bath), *gate* (a capacitance per area
+  C_g to a gate at V_g, with a gate offset for its work function: `ε ∂φ/∂n = C_g(φ_g − φ)`;
+  this also models a Stern/Helmholtz layer), *fixed* φ (the C_g → ∞ limit), or *free*
+  (C_g = 0, zero field).
+Familiar contacts are presets: bath = all species fixed + neutral; semiconductor ohmic = e⁻/h⁺
+fixed + neutral; metal electrode = ions blocked or kinetic, gate link through the Stern layer to
+the metal's V_e⁻; ideal insulator = all blocked + gate. Infinite G or C must be imposed exactly
+(eliminate the unknown), not with the large-penalty trick the prototype used.
 
-**Circuit.** Choose one: applied voltage; applied current (galvanostatic); or an external load
-resistor R (V_term = I·R). The latter two add one scalar unknown, handled by bordering the
-block system.
+**Circuit.** The terminals are the V of a named species at each end (default e⁻ at a metal; for
+an ion-only cell, the ion a reversible reference electrode would sense, e.g. Cl⁻ for Ag/AgCl).
+This settles what "terminal voltage" means with no electrons in the device. Choose one:
+applied voltage; applied current (galvanostatic); or an external load resistor R
+(V_term = I·R). The latter two add one scalar unknown, handled by bordering the block system.
+Open circuit (I = 0) is the current mode with I = 0 (liquid junctions, Donnan).
 
 **Temperature:** a single uniform T in v0 (a parameter, default 298.15 K). Non-isothermal
 transport is a possible later extension and does *not* require non-ideal solutions: it needs
@@ -126,27 +161,29 @@ charge flowing toward +x.
   should pick spacing automatically.
 - **Discretization:** a finite-volume (box) method with **Scharfetter–Gummel** fluxes (the same
   exponential fitting as Il'in / Allen–Southwell for convection–diffusion). For species *i* the
-  "drift" across a face combines `z_i F Δψ + Δμ°_i` (over RT) with the advective Péclet number;
+  "drift" across a face combines `z_i F Δφ + Δμ°_i` (over RT) with the advective Péclet number;
   for neutral species with no flow it reduces to plain diffusion. Offset jumps between regions must be handled
   correctly: SG across a face with a step is exact in the exponential-fitting sense. Evaluate the
   Bernoulli function `B(x) = x/(eˣ−1)` stably (series near 0, asymptotics for large |x|).
-- **Unknowns (per node):** the dimensionless potential `ψ̂ = Fψ/RT` and the dimensionless
+- **Unknowns (per node):** the dimensionless potential `φ̂ = Fφ/RT` and the dimensionless
   electrochemical potentials `η_i = μ̄_i / RT`. Concentrations can span 40 orders of magnitude
   (minority carriers), and these log-like variables keep them well conditioned. At equilibrium
   every `μ̄_i` is exactly flat. Scale everything internally (thermal energy, reference
   concentration, Debye length).
 - **Solver:** damped Newton, limiting each update to a few thermal voltages per iteration (or
   Bank–Rose damping). The Jacobian is block-tridiagonal with block size `1 + nSpecies`; solve it
-  with block Thomas (a small dense LU per block). Circuit constraints are extra scalar
-  unknowns, handled by bordering (Schur complement).
-- **Steady-state strategy:** first solve for equilibrium (flat V_i fixed by the contacts, a
-  nonlinear Poisson–Boltzmann problem), then use continuation in bias or current.
+  with block Thomas (a small dense LU per block). Circuit constraints and conserved
+  inventories are extra scalar unknowns, handled by bordering (Schur complement: one extra
+  block-Thomas back-substitution per scalar, reusing the factorisation).
+- **Steady-state strategy:** first solve for equilibrium (flat V_i fixed by the contact links
+  or, for spectators, by their inventories: a nonlinear Poisson–Boltzmann problem), then use
+  continuation in bias or current.
   `solve({ warm: previous })` must reuse the previous solution; that is what makes slider
   interaction fast (typically 2–5 iterations).
 - **Transient:** backward Euler with a BDF2 option, finite-volume mass matrix, and step halving
   when Newton fails. Total charge and mass must be conserved to round-off (test it).
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
-  `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; ψ then
+  `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; φ then
   jumps at interfaces (Donnan, junction potentials), which SG fluxes handle.
 - **Failure behaviour:** never return a silently wrong answer. Report non-convergence with the
   residual history, and expose `converged`, `iterations` and `residual`.
@@ -168,7 +205,13 @@ const dev = new Device({
   ],
   interfaceReactions: [ /* at a region face or contact: stoichiometry, i0, alpha */ ],
   bulkReactions: [ /* stoichiometry, kf, neutral activities */ ],
-  contacts: { left: { type: 'electrode', /* … */ }, right: { type: 'electrode' } },
+  contacts: {                                  // links (§3); presets expand to these
+    left:  { species: { 'Zn2+': { fixed: true }, 'SO4 2-': 'blocked' },
+             phi: { gate: { C: 0.2 } },        // Stern layer to the metal, F/m²
+             terminal: 'Zn2+' },               // terminal = V of this species here
+    right: { species: { 'Zn2+': { fixed: true }, 'SO4 2-': 'blocked' },
+             phi: { gate: { C: 0.2 } }, terminal: 'Zn2+' },
+  },
   circuit: { mode: 'load', R: 50 },            // or { mode: 'voltage', V } / { mode: 'current', I }
   grid: { refineNear: 'interfaces', minSpacing: 1e-9, maxSpacing: 5e-6 },
 });
@@ -178,7 +221,7 @@ dev.set({ circuit: { mode: 'load', R: 20 } });
 sol = dev.solve({ warm: sol });                 // fast re-solve
 
 // Plotting-ready output:
-sol.x; sol.psi;                                  // Float64Arrays
+sol.x; sol.phi;                                  // Float64Arrays
 sol.mu['Zn2+']; sol.c['Zn2+']; sol.N['Zn2+'];     // μ̄ (J/mol), c, particle flux
 sol.V['Zn2+']; sol.Vstd['Zn2+']; sol.J['Zn2+'];    // voltage-scaled views (charged species)
 sol.current; sol.terminalVoltage;
@@ -195,34 +238,41 @@ Everything should be serializable, so a device definition can be posted to a Wor
 
 Each item is an automated test with a stated tolerance. The README carries a table of them.
 
-1. **Equilibrium invariance:** no bias ⇒ every μ̄_i flat to ≤1e-9·RT and all fluxes zero, for
-   every example device.
+1. **Equilibrium invariance:** no bias and no imposed flow ⇒ every μ̄_i flat to ≤1e-9·RT and
+   all fluxes zero, for every example device.
 2. **Nonlinear Poisson–Boltzmann / Gouy–Chapman:** diffuse layer at a charged blocking wall in a
    1:1 electrolyte; the potential profile and differential capacitance match the analytic
    formulas. Its linear limit gives Debye screening.
 3. **Donnan potential** across a fixed-charge membrane between two baths vs the analytic value.
-4. **Planck liquid junction:** steady diffusion junction of a binary salt between two
+4. **Floating island:** every species blocked, φ anchored only by gate links at both ends.
+   Each inventory is conserved to round-off through a gate sweep; Gauss's law holds exactly
+   (island charge = −Σ C_g(φ_g − φ_edge)); in the linear limit the island's response matches
+   the series network C_g + C_diffuse (Debye) at each face. Also the singular case (no
+   electrostatic anchor) is rejected with a clear error.
+5. **Planck liquid junction:** steady diffusion junction of a binary salt between two
    reservoirs. The diffusion potential is `(RT/F)(t₊ − t₋)·ln(c₁/c₂)` for a 1:1 salt.
-5. **Concentration polarization / limiting current:** a symmetric metal | binary salt | metal
+6. **Concentration polarization / limiting current:** a symmetric metal | binary salt | metal
    cell with deposition/dissolution. Match the analytic quasi-neutral profile, the I–V
    relation and the limiting current `i_lim = z F D_salt c₀ · 2 / ((1 − t₊) L)` (derive and
    check the exact form in the test).
-6. **Butler–Volmer interface:** a single electrode facing a reservoir; the current–overpotential
+7. **Butler–Volmer interface:** a single electrode facing a reservoir; the current–overpotential
    curve is exact.
-7. **pn junction:** built-in potential `(kT/q) ln(N_A N_D / n_i²)` exactly; depletion width
+8. **pn junction:** built-in potential `(kT/q) ln(N_A N_D / n_i²)` exactly; depletion width
    within the depletion approximation's accuracy; long-diode Shockley J–V within a few % at low
-   injection.
-8. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
+   injection. The J–V part needs recombination (e⁻ + h⁺ ⇌ ∅, M2). Mass action gives the
+   radiative-like `k(np − n_i²)`, so the minority lifetime is `1/(k·N_A)` at low injection; it is
+   not SRH, and the README should say so.
+9. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
    homogeneous relaxation matches the analytic time constant.
-9. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
+10. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
    axial velocity profile), and a Nernst layer from an eddy-diffusivity profile. The eddy
    diffusivity must add no current in a neutral bulk.
-10. **Transient:** a blocking electrolyte cell charging with the analytic time constant
+11. **Transient:** a blocking electrolyte cell charging with the analytic time constant
    (≈ λ_D·L/D in the small-signal limit), with exact conservation of total charge and mass.
-11. **Grid convergence:** observed order ≈ 2 on smooth problems.
-12. **Cross-check (optional, documented):** reproduce one published example from
+12. **Grid convergence:** observed order ≈ 2 on smooth problems.
+13. **Cross-check (optional, documented):** reproduce one published example from
     ChargeTransport.jl or Driftfusion within stated tolerance.
-13. **Performance benchmark:** time per Newton iteration and per warm re-solve on reference
+14. **Performance benchmark:** time per Newton iteration and per warm re-solve on reference
     devices, tracked across versions.
 
 ## 7. Deliverables and packaging
@@ -240,18 +290,23 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 
 ## 8. Milestones
 
-- **M0: equilibrium.** Grid, regions, nonlinear Poisson–Boltzmann with flat V_i fixed by
-  contacts. Tests 1, 2, 3, 7 (built-in potential).
-- **M1: steady transport.** SG fluxes, Newton on (ψ̂, η_i), contacts, voltage/current/load
-  circuit, warm starts. Tests 4, 5, 7 (J–V), 11.
-- **M2: reactions.** Bulk mass-action and interfacial Butler–Volmer. Tests 6, 8.
-- **M3: transient.** Test 10 and the conservation checks.
+- **M0: equilibrium.** Grid, regions, links, conserved inventories, nonlinear
+  Poisson–Boltzmann with flat V_i fixed by links or inventories. Tests 1, 2, 3, 4, 8 (built-in
+  potential).
+- **M1: steady transport.** SG fluxes, Newton on (φ̂, η_i), voltage/current/load circuit, warm
+  starts. Tests 5, 6, 12.
+- **M2: reactions.** Bulk mass-action and interfacial Butler–Volmer. Tests 7, 8 (J–V), 9.
+- **M3: transient.** Test 11 and the conservation checks.
 - **M4: ship 0.1.0.** Examples, docs, benchmark, npm publish.
 - **Later:** quasi-neutral mode, degenerate statistics, concentration-dependent D, non-ideal
   activities, non-isothermal transport, impedance (small-signal AC) via the same Jacobian.
   (Advection v(x) and eddy mixing D_mix(x) are cheap and could land in M1 or M2.)
 
 ## 9. Questions to settle with the owner early
+
+Settled (2026-09-29): primary branch is `master`; V_i is the API's language (§3); blocked
+species are conserved spectators and all-blocked islands are valid with gate anchoring (§3);
+milestones are a brainstorm, free to reshuffle.
 
 - Repo location and npm ownership (who publishes; the name `driftlet` was free on npm as of
   2026-09-29; the fallback is a scoped name).
