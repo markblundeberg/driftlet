@@ -41,6 +41,23 @@ dropped into a web page.
 
 Document all of this in the README; conventions are where users go wrong.
 
+**Principles: honest thermodynamics.** These are the owner's firm requirements. The rest of
+this section implements them.
+- **Every control and every measurable is an electrochemical potential** (or a difference of
+  them). A bias voltage sets a difference in μ̄_e⁻ between terminals (`V = −Δμ̄_e⁻/F`), and a
+  gate sets its metal's μ̄_e⁻. Nothing a user sets is an electrostatic potential.
+- **φ is bookkeeping.** Any consistent φ gives identical physics (ESBD's "any consistent φ
+  works equally well"). driftlet uses one that is continuous through every face; Galvani
+  steps are not modelled as jumps in φ, and the physics of an interface lives in the standard
+  levels on either side. Outputs and docs label φ as such.
+- **Bulk standard chemical potentials are only meaningful in neutral combinations**
+  (`μ°_e⁻ + μ°_h⁺`, `μ°_Na⁺ + μ°_Cl⁻`, `μ°_Li⁺ + μ°_e⁻`). How charged levels line up across a
+  boundary between different materials is a property of *that interface* and must be given
+  explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level.
+- **A work function is a property of a surface, not a material.** A vacuum level
+  (`φ_vac = V_e⁻ − W/e` just outside) is only reported at a free surface for which the user
+  gave W, and it never feeds back into alignment.
+
 **Species.** Each species *i* has a charge number `z` (any integer, **including 0**: neutral
 mobile species such as dissolved gases or water are supported from v0), a diffusivity `D` (per
 region), and, per region, a **standard chemical potential** `μ°_i`. The primary variable is the
@@ -48,13 +65,11 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
 
 - `μ̄_i = μ°_i(region) + z_i F φ + RT ln(c_i / c_ref,i)`, so
   `c_i = c_ref,i · exp( (μ̄_i − μ°_i − z_i F φ) / RT )`.
-- **Species voltage is the user-facing language.** For charged species, `V_i = μ̄_i / (z_i F)`
-  *is* a voltage (for electrons it's exactly what a voltmeter reads; for ions it's the
-  analogous quantity a reversible electrode reads), with the standard level
-  `V°_i = φ + μ°_i / (z_i F)` playing the part of a band edge. This is the owner's
-  [ESBD](https://marklundeberg.com/esbd/) framing, and the API should speak it: contacts,
-  circuits and outputs are stated in V_i for charged species (μ̄_i only for neutral ones).
-  The core works in `η_i = μ̄_i / RT` (well defined for z = 0) and converts at the edges.
+- The API speaks μ̄_i (J/mol, with eV helpers). The core works in `η_i = μ̄_i / RT`.
+- Output conveniences for charged species: the species voltage `V_i = μ̄_i / (z_i F)` and the
+  standard level `V°_i = φ + μ°_i / (z_i F)` (the band-edge analogue), as in the owner's
+  [ESBD](https://marklundeberg.com/esbd/) diagrams. These are optional views, not the
+  interface.
 - Electrons and holes are ordinary species (`z = ∓1`), with `c_ref` = the effective density of
   states and `μ°` = the band edges (as molar energies). Plotted as voltages (V_i upward), the
   conduction band sits below the valence band; that's expected.
@@ -82,10 +97,25 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
 **Electrostatics.** `−∂/∂x (ε ∂φ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` and the fixed
 charge `ρ_fixed` (doping, ionomer charge, …) are set per region.
 
-**Regions.** A device is a sequence of regions, each with its own ε, fixed charge, and
-per-species parameters (D, `μ°_i`, or "absent/blocked"). A step in `μ°_i` between regions is a
-band offset or solvation step. Species that can't enter a region are blocked at its face
-(zero flux).
+**Materials, regions and interfaces.** A *material* holds bulk properties: ε, and per species
+D, c_ref and μ°_i (or "absent"). Its μ°_i are defined only up to a charge gauge
+`μ°_i → μ°_i + z_i F s`, since only neutral combinations are bulk-measurable, so a material's
+absolute charged levels mean nothing on their own. A *region* is a material plus a length and
+a fixed charge ρ_fixed (doping, ionomer). Every face between regions of *different* materials
+takes exactly one alignment number, which fixes the relative gauge of its neighbours. It is
+one of:
+- the step in the standard level of a charged species present on both sides (e.g. ΔE_c for a
+  heterojunction; ΔE_v then follows from the two bulk gaps);
+- the standard free energy of a charge-transfer reaction across the face (for an electrode,
+  the standard potential E° *is* the alignment);
+- a bookkeeping interface dipole, for users who think that way.
+Faces between regions of the same material need none (a homojunction, e.g. pn). The regions
+form a chain with no loops, so this fixes every relative gauge exactly once; a single global
+offset is left over, fixed by a terminal. A missing or doubled alignment is a construction
+error, never a silent default. Internally the gauge goes into per-region μ°_i with φ
+continuous. Faces may also carry per-species links (as for contacts, below: e.g. thermionic
+emission or an interface resistance instead of local equilibrium) and a fixed sheet charge.
+Species that can't enter a region are blocked at its face (zero flux).
 
 **Absent species.** Where a species is absent, its η_i is undefined and has no equation. Two
 implementation options: keep a fixed block size with decoupled identity rows, or let the block
@@ -102,7 +132,7 @@ amount), handled by bordering like the circuit unknowns. The amount defaults to 
 initial/warm state holds, or is given explicitly. With bulk reactions, the conserved quantities
 are moieties (left null vectors of the stoichiometry restricted to that stretch) rather than
 species. A device can be *entirely* blocked (a floating island) provided φ is anchored
-electrostatically somewhere (a gate link, below); then the island simply holds a fixed charge.
+electrostatically somewhere (a capacitive gate link, below); then the island simply holds a fixed charge.
 With no electrostatic anchor at all, the problem is singular and must be rejected up front.
 
 **Bulk reactions (mass action, thermodynamically consistent).** Each reaction has a
@@ -122,25 +152,29 @@ participant.
 **Contacts (domain ends) as links.** Each end couples every species and φ to the outside
 world through a *link*. This is the model from the owner's earlier linear prototype, and it is
 more general than a zoo of contact types:
-- **species links**, one per species: *fixed* (V_i, or μ̄_i if neutral, pinned at the boundary:
-  the normal case), *conductance* G_i to an outside V_i (an ohmic interface resistance),
-  *kinetic* (Butler–Volmer, below, i.e. a nonlinear conductance), or *blocked* (G_i = 0);
-- **electrostatic link**: *neutral* (φ at the boundary node follows from local neutrality,
-  given the fixed V_i: an ohmic contact or well-stirred bath), *gate* (a capacitance per area
-  C_g to a gate at V_g, with a gate offset for its work function: `ε ∂φ/∂n = C_g(φ_g − φ)`;
-  this also models a Stern/Helmholtz layer), *fixed* φ (the C_g → ∞ limit), or *free*
-  (C_g = 0, zero field).
+- **species links**, one per species: *fixed* (μ̄_i pinned to an outside value: the normal
+  case), *conductance* G_i to an outside μ̄_i (an ohmic interface resistance), *kinetic*
+  (Butler–Volmer or thermionic emission, i.e. a nonlinear conductance), or *blocked* (G_i = 0);
+- **electrostatic link**: *neutral* (the boundary node is locally neutral given its fixed μ̄_i:
+  an ohmic contact or a well-stirred bath, where no alignment is needed because the outside
+  composition is given), *capacitive* (a capacitance per area C to an outside conductor whose
+  μ̄_e⁻ is set, e.g. a gate across an insulator or a metal across its Stern layer), or *free*
+  (zero field). A capacitive link needs its own zero-charge alignment, an interface property:
+  the flat-band voltage for a gate, the potential of zero charge for a metal/electrolyte
+  interface. It is never computed from a work function and an electron affinity. C → ∞ is the
+  ideal limit. The gate "sets" φ only through this alignment; users never set φ directly.
 Familiar contacts are presets: bath = all species fixed + neutral; semiconductor ohmic = e⁻/h⁺
-fixed + neutral; metal electrode = ions blocked or kinetic, gate link through the Stern layer to
-the metal's V_e⁻; ideal insulator = all blocked + gate. Infinite G or C must be imposed exactly
-(eliminate the unknown), not with the large-penalty trick the prototype used.
+fixed + neutral; Schottky = e⁻/h⁺ thermionic with a given barrier height + capacitive; metal
+electrode = e⁻ terminal, ions blocked or reacting (alignment E°), capacitive Stern layer
+(alignment pzc); ideal insulator = all blocked + capacitive gate. Infinite G or C must be
+imposed exactly (eliminate the unknown), not with the large-penalty trick the prototype used.
 
-**Circuit.** The terminals are the V of a named species at each end (default e⁻ at a metal; for
-an ion-only cell, the ion a reversible reference electrode would sense, e.g. Cl⁻ for Ag/AgCl).
-This settles what "terminal voltage" means with no electrons in the device. Choose one:
-applied voltage; applied current (galvanostatic); or an external load resistor R
-(V_term = I·R). The latter two add one scalar unknown, handled by bordering the block system.
-Open circuit (I = 0) is the current mode with I = 0 (liquid junctions, Donnan).
+**Circuit.** A terminal is the μ̄ of a named species at a contact: μ̄_e⁻ of the metal in the
+normal case. For an ion-only cell, an ion (e.g. Cl⁻) stands in for an ideal reversible
+electrode for that ion (Ag/AgCl). Terminal voltage is `−Δμ̄_e⁻/F`, or `Δμ̄_i/(z_i F)` for an ion
+terminal. Choose one: applied voltage; applied current (galvanostatic); or an external load
+resistor R (V_term = I·R). The latter two add one scalar unknown, handled by bordering the block
+system. Open circuit (I = 0) is the current mode with I = 0 (liquid junctions, Donnan).
 
 **Temperature:** a single uniform T in v0 (a parameter, default 298.15 K). Non-isothermal
 transport is a possible later extension and does *not* require non-ideal solutions: it needs
@@ -175,7 +209,7 @@ charge flowing toward +x.
   with block Thomas (a small dense LU per block). Circuit constraints and conserved
   inventories are extra scalar unknowns, handled by bordering (Schur complement: one extra
   block-Thomas back-substitution per scalar, reusing the factorisation).
-- **Steady-state strategy:** first solve for equilibrium (flat V_i fixed by the contact links
+- **Steady-state strategy:** first solve for equilibrium (flat μ̄_i fixed by the contact links
   or, for spectators, by their inventories: a nonlinear Poisson–Boltzmann problem), then use
   continuation in bias or current.
   `solve({ warm: previous })` must reuse the previous solution; that is what makes slider
@@ -199,18 +233,18 @@ const dev = new Device({
     { name: 'Zn2+', z: 2, cRef: 1000 },       // cRef in mol/m³ (1 M)
     { name: 'SO4 2-', z: -2, cRef: 1000 },
   ],
-  regions: [
-    { name: 'electrolyte', length: 1e-3, eps: 78.5 * 8.854e-12, fixedCharge: 0,
+  materials: {
+    water: { eps: 78.5 * 8.854e-12,            // μ°s on the usual SHE-based table convention
       species: { 'Zn2+': { D: 0.70e-9, mu0: -147.1e3 }, 'SO4 2-': { D: 1.07e-9, mu0: -744.5e3 } } },
-  ],
-  interfaceReactions: [ /* at a region face or contact: stoichiometry, i0, alpha */ ],
+  },
+  regions: [ { name: 'electrolyte', material: 'water', length: 1e-3, fixedCharge: 0 } ],
+  interfaces: [ /* per face between different materials: exactly one alignment, optional links */ ],
   bulkReactions: [ /* stoichiometry, kf, neutral activities */ ],
   contacts: {                                  // links (§3); presets expand to these
-    left:  { species: { 'Zn2+': { fixed: true }, 'SO4 2-': 'blocked' },
-             phi: { gate: { C: 0.2 } },        // Stern layer to the metal, F/m²
-             terminal: 'Zn2+' },               // terminal = V of this species here
-    right: { species: { 'Zn2+': { fixed: true }, 'SO4 2-': 'blocked' },
-             phi: { gate: { C: 0.2 } }, terminal: 'Zn2+' },
+    left: { preset: 'metalElectrode', terminal: 'e-',
+            reaction: { eq: 'Zn2+ + 2e- = Zn(s)', E0: -0.762, i0: 10, alpha: 0.5 }, // E0 = alignment
+            stern: { C: 0.2, pzc: -0.63 } },   // F/m²; pzc = zero-charge alignment, V (same convention)
+    right: { /* same */ },
   },
   circuit: { mode: 'load', R: 50 },            // or { mode: 'voltage', V } / { mode: 'current', I }
   grid: { refineNear: 'interfaces', minSpacing: 1e-9, maxSpacing: 5e-6 },
@@ -221,9 +255,11 @@ dev.set({ circuit: { mode: 'load', R: 20 } });
 sol = dev.solve({ warm: sol });                 // fast re-solve
 
 // Plotting-ready output:
-sol.x; sol.phi;                                  // Float64Arrays
+sol.x;                                           // Float64Arrays
 sol.mu['Zn2+']; sol.c['Zn2+']; sol.N['Zn2+'];     // μ̄ (J/mol), c, particle flux
-sol.V['Zn2+']; sol.Vstd['Zn2+']; sol.J['Zn2+'];    // voltage-scaled views (charged species)
+sol.muStd['Zn2+'];                                // standard level μ° + zFφ (band-edge analogue)
+sol.phi;                                          // bookkeeping φ (continuous; see §3)
+sol.V['Zn2+']; sol.Vstd['Zn2+']; sol.J['Zn2+'];    // optional voltage-scaled views
 sol.current; sol.terminalVoltage;
 sol.interfaces;   // per face: steps in each μ̄_i and V_i (overpotentials, junction/Donnan potentials)
 sol.converged; sol.iterations; sol.residual;
@@ -239,14 +275,16 @@ Everything should be serializable, so a device definition can be posted to a Wor
 Each item is an automated test with a stated tolerance. The README carries a table of them.
 
 1. **Equilibrium invariance:** no bias and no imposed flow ⇒ every μ̄_i flat to ≤1e-9·RT and
-   all fluxes zero, for every example device.
+   all fluxes zero, for every example device. **Gauge invariance:** shifting one material's
+   μ°_i by z_i F s (alignments given as relative steps, so unchanged) leaves every μ̄_i, c_i,
+   flux and current identical to round-off; only the bookkeeping φ moves.
 2. **Nonlinear Poisson–Boltzmann / Gouy–Chapman:** diffuse layer at a charged blocking wall in a
    1:1 electrolyte; the potential profile and differential capacitance match the analytic
    formulas. Its linear limit gives Debye screening.
 3. **Donnan potential** across a fixed-charge membrane between two baths vs the analytic value.
-4. **Floating island:** every species blocked, φ anchored only by gate links at both ends.
+4. **Floating island:** every species blocked, φ anchored only by capacitive gate links at both ends.
    Each inventory is conserved to round-off through a gate sweep; Gauss's law holds exactly
-   (island charge = −Σ C_g(φ_g − φ_edge)); in the linear limit the island's response matches
+   (island charge = −(total charge on the gates)); in the linear limit the island's response matches
    the series network C_g + C_diffuse (Debye) at each face. Also the singular case (no
    electrostatic anchor) is rejected with a clear error.
 5. **Planck liquid junction:** steady diffusion junction of a binary salt between two
@@ -262,17 +300,20 @@ Each item is an automated test with a stated tolerance. The README carries a tab
    injection. The J–V part needs recombination (e⁻ + h⁺ ⇌ ∅, M2). Mass action gives the
    radiative-like `k(np − n_i²)`, so the minority lifetime is `1/(k·N_A)` at low injection; it is
    not SRH, and the README should say so.
-9. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
+9. **Heterojunction:** an abrupt pn heterojunction with a user-given ΔE_c. The built-in
+   potential and the split of band bending between the sides match the depletion approximation
+   for *that* ΔE_c, and omitting the alignment is a construction error (no Anderson default).
+10. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
    homogeneous relaxation matches the analytic time constant.
-10. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
+11. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
    axial velocity profile), and a Nernst layer from an eddy-diffusivity profile. The eddy
    diffusivity must add no current in a neutral bulk.
-11. **Transient:** a blocking electrolyte cell charging with the analytic time constant
+12. **Transient:** a blocking electrolyte cell charging with the analytic time constant
    (≈ λ_D·L/D in the small-signal limit), with exact conservation of total charge and mass.
-12. **Grid convergence:** observed order ≈ 2 on smooth problems.
-13. **Cross-check (optional, documented):** reproduce one published example from
+13. **Grid convergence:** observed order ≈ 2 on smooth problems.
+14. **Cross-check (optional, documented):** reproduce one published example from
     ChargeTransport.jl or Driftfusion within stated tolerance.
-14. **Performance benchmark:** time per Newton iteration and per warm re-solve on reference
+15. **Performance benchmark:** time per Newton iteration and per warm re-solve on reference
     devices, tracked across versions.
 
 ## 7. Deliverables and packaging
@@ -291,12 +332,12 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 ## 8. Milestones
 
 - **M0: equilibrium.** Grid, regions, links, conserved inventories, nonlinear
-  Poisson–Boltzmann with flat V_i fixed by links or inventories. Tests 1, 2, 3, 4, 8 (built-in
-  potential).
+  Poisson–Boltzmann with flat μ̄_i fixed by links or inventories; materials and interface
+  alignment. Tests 1, 2, 3, 4, 8 (built-in potential), 9.
 - **M1: steady transport.** SG fluxes, Newton on (φ̂, η_i), voltage/current/load circuit, warm
-  starts. Tests 5, 6, 12.
-- **M2: reactions.** Bulk mass-action and interfacial Butler–Volmer. Tests 7, 8 (J–V), 9.
-- **M3: transient.** Test 11 and the conservation checks.
+  starts. Tests 5, 6, 13.
+- **M2: reactions.** Bulk mass-action and interfacial Butler–Volmer. Tests 7, 8 (J–V), 10.
+- **M3: transient.** Test 12 and the conservation checks.
 - **M4: ship 0.1.0.** Examples, docs, benchmark, npm publish.
 - **Later:** quasi-neutral mode, degenerate statistics, concentration-dependent D, non-ideal
   activities, non-isothermal transport, impedance (small-signal AC) via the same Jacobian.
@@ -304,7 +345,8 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 
 ## 9. Questions to settle with the owner early
 
-Settled (2026-09-29): primary branch is `master`; V_i is the API's language (§3); blocked
+Settled (2026-09-29): primary branch is `master`; honest-thermodynamics principles, with the
+API in μ̄ and V_i as optional views (§3); blocked
 species are conserved spectators and all-blocked islands are valid with gate anchoring (§3);
 milestones are a brainstorm, free to reshuffle.
 

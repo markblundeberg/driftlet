@@ -17,4 +17,6 @@ Guide for coding agents working in this repo.
   `git config core.hooksPath .claude/hooks && chmod +x .claude/hooks/commit-msg`
 - **Background:** driftlet spins off the owner's ESBD web book (https://marklundeberg.com/esbd/,
   "electrochemical species band diagrams"), whose central idea is the species voltage
-  `V_i = μ̄_i / (z_i F)`. Speak that language in the API and docs.
+  `V_i = μ̄_i / (z_i F)`. driftlet does not require V_i, but it does insist on honest
+  thermodynamics (SPEC §3 principles): controls are μ̄ differences, φ is bookkeeping, band
+  alignment is per interface.
