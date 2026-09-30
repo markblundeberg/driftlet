@@ -28,9 +28,12 @@ dropped into a web page.
 - **Pure JavaScript, ES module, zero runtime dependencies.** It must load from a CDN
   (`https://cdn.jsdelivr.net/npm/driftlet@x.y.z/+esm`) inside sandboxed pages that allow scripts
   only from a few CDNs and block `fetch`. So no WASM side files and no runtime fetches.
-- **1D only.** The Jacobian must stay **block-tridiagonal** (plus at most a few bordering scalar
-  unknowns for circuit constraints). That is what keeps it fast and simple. Features that would
-  break this structure are out of scope.
+- **1D only, local physics only.** The Jacobian must stay **block-tridiagonal**. That is what
+  keeps it fast and simple, and it's the whole point of an interactive toy. Every physics model
+  must be local (a node couples only to its neighbours). The only exceptions are a few bordered
+  scalar unknowns that belong to the problem statement itself: the circuit constraint and
+  conserved inventories. These are never a way to add non-local physics. Features that would
+  break this structure are out of scope, not deferred.
 - **Speed:** with ~300 nodes and up to 6 species, one Newton iteration should take well under
   1 ms in V8, and a warm-started re-solve after a small parameter change should take under
   ~5 ms. Inner loops should be allocation-free (`Float64Array`, reused buffers).
@@ -114,8 +117,9 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
   Discretely, use the logarithmic mean of c at faces. Then `c_face Δln c = Δc` exactly, and
   equilibrium is preserved exactly for any face values. It couples species within a face
   (dense within-block entries), which the block structure already allows. Default 0.
-- Out of scope (non-local): recirculation loops or one well-mixed reservoir feeding several
-  faces. A few such couplings could be added later via bordering, like the circuit unknowns.
+- Out of scope, permanently (non-local): recirculation loops, or one well-mixed reservoir
+  feeding several faces. The local stand-in for a well-mixed volume is a region with large
+  D_mix.
 
 **Electrostatics.** `−∂/∂x (ε ∂φ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` and the fixed
 charge `ρ_fixed` (doping, ionomer charge, …) are set per region.
