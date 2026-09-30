@@ -141,6 +141,12 @@ export function normalizeDevice(def) {
     interfaces.push(normalizeInterface(idefs[f], f, regions, materials, species, speciesIndex));
   }
 
+  // --- bulk reactions
+  need(def.bulkReactions === undefined || Array.isArray(def.bulkReactions), 'bulkReactions must be an array');
+  const reactions = (def.bulkReactions ?? []).map((rdef, k) =>
+    normalizeReaction(rdef, `bulkReactions[${k}]`, species, speciesIndex, materials, materialIndex, regions, RT),
+  );
+
   // --- contacts
   const cdefs = def.contacts ?? {};
   need(isObject(cdefs), 'contacts must be an object with optional left and right');
@@ -172,7 +178,60 @@ export function normalizeDevice(def) {
     throw new DeviceError(`grid: ${err.message}`);
   }
 
-  return { T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, contacts, circuit, grid };
+  return {
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid,
+  };
+}
+
+// Bulk reaction  Σ ν_R R ⇌ Σ ν_P P  with mass-action rate r = k_f Π c_R^ν (1 − e^{−A/RT}), where
+// the affinity A = Σ_R ν μ̄ − Σ_P ν μ̄ includes any fixed-activity neutral participants (e.g.
+// H₂O, given by its μ). This equals k_f Π c_R − k_b Π c_P with k_b fixed by the standard
+// potentials, so equilibrium is exactly A = 0. kf maps material names to rate constants (the
+// reaction runs only in those materials).
+function normalizeReaction(rdef, path, species, speciesIndex, materials, materialIndex, regions, RT) {
+  need(isObject(rdef), `${path} must be an object`);
+  const fixed = rdef.fixed ?? {};
+  need(isObject(fixed), `${path}.fixed must map fixed-activity participants to their μ (J/mol)`);
+  const side = (key) => {
+    const m = rdef[key] ?? {};
+    need(isObject(m), `${path}.${key} must map participant names to stoichiometric coefficients`);
+    const mobile = [];
+    let fixedMu = 0, charge = 0;
+    for (const [name, nu] of Object.entries(m)) {
+      need(Number.isInteger(nu) && nu > 0, `${path}.${key}.${name} must be a positive integer, got ${JSON.stringify(nu)}`);
+      if (speciesIndex.has(name)) {
+        const i = speciesIndex.get(name);
+        mobile.push({ i, nu });
+        charge += nu * species[i].z;
+      } else {
+        need(fixed[name] !== undefined, `${path}.${key}.${name}: not a species, so give its μ in ${path}.fixed (fixed-activity participants are neutral)`);
+        fixedMu += nu * finite(fixed[name], `${path}.fixed.${name}`);
+      }
+    }
+    return { mobile, fixedMu, charge };
+  };
+  const R = side('reactants'), P = side('products');
+  need(R.mobile.length + P.mobile.length > 0, `${path}: no mobile participants`);
+  need(R.charge === P.charge, `${path}: charge is not balanced (${R.charge} → ${P.charge})`);
+  for (const a of R.mobile) {
+    need(!P.mobile.some((b) => b.i === a.i), `${path}: '${species[a.i].name}' appears on both sides`);
+  }
+  need(isObject(rdef.kf), `${path}.kf must map material names to forward rate constants`);
+  const kf = new Float64Array(materials.length);
+  for (const [mname, v] of Object.entries(rdef.kf)) {
+    need(materialIndex.has(mname), `${path}.kf.${mname}: unknown material`);
+    const m = materialIndex.get(mname);
+    kf[m] = nonNegative(v, `${path}.kf.${mname}`);
+    for (const { i } of [...R.mobile, ...P.mobile]) {
+      need(materials[m].present[i], `${path}.kf.${mname}: '${species[i].name}' is absent from material '${mname}'`);
+    }
+  }
+  return {
+    reactants: R.mobile,
+    products: P.mobile,
+    fixedA: (R.fixedMu - P.fixedMu) / RT, // fixed participants' share of A/RT
+    kf,
+  };
 }
 
 // Circuit modes. 'voltage' (default): each contact sits at its own V. 'current': a fixed current

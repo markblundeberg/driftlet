@@ -59,11 +59,13 @@ export class Solver {
     this.cRef = new Float64Array(nNodes * n);
     this.mu0hat = new Float64Array(nNodes * n); // μ°/RT
     this.rhoFixed = new Float64Array(nNodes);
+    this.nodeMaterial = new Int32Array(nNodes);
     this.z = Int32Array.from(species, (s) => s.z);
     for (let g = 0; g < nNodes; g++) {
       const reg = regions[grid.nodeRegion[g]];
       const mat = materials[reg.material];
       this.rhoFixed[g] = reg.fixedCharge;
+      this.nodeMaterial[g] = reg.material;
       for (let i = 0; i < n; i++) {
         this.present[g * n + i] = mat.present[i];
         this.cRef[g * n + i] = mat.cRef[i];
@@ -117,12 +119,23 @@ export class Solver {
         while (r + 1 <= last && materials[regions[r + 1].material].present[i]) r++;
         const leftOpen = r0 === 0 && contacts.left.species[i].type !== 'blocked';
         const rightOpen = r === last && contacts.right.species[i].type !== 'blocked';
-        for (let q = r0; q <= r; q++) this.stretchOf[q * n + i] = this.stretches.length;
+        let reactive = false;
+        for (let q = r0; q <= r; q++) {
+          this.stretchOf[q * n + i] = this.stretches.length;
+          const m = regions[q].material;
+          for (const rx of model.reactions) {
+            if (rx.kf[m] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
+          }
+        }
+        const connected = leftOpen || rightOpen;
         this.stretches.push({
           species: i,
           regions: [r0, r],
           nodes: [grid.regionStart[r0], grid.regionEnd[r]],
-          spectator: !(leftOpen || rightOpen),
+          connected,
+          reactive,
+          // Conserved on its own: not fed by a contact, not made or consumed by a reaction.
+          spectator: !connected && !reactive,
         });
         r++;
       }
@@ -166,9 +179,11 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (!mat.present[i]) continue;
         const st = this.stretches[this.stretchOf[r * n + i]];
-        if (st.spectator) {
+        if (!st.connected) {
           if (!(reg.c0[i] > 0)) {
-            throw new SolverError(`regions[${r}].c0.${species[i].name}: a conserved species needs its initial concentration`);
+            throw new SolverError(
+              `regions[${r}].c0.${species[i].name}: a species not connected to a contact needs its initial concentration`,
+            );
           }
           mode[i] = 2;
           cFix[i] = reg.c0[i];
@@ -263,6 +278,40 @@ export class Solver {
       }
       res[b * M] -= v * q;
       this._j(b, 0, b, 0, v * dq);
+
+      // Bulk reactions: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the (compensated) η.
+      const m = this.nodeMaterial[g];
+      for (const rx of model.reactions) {
+        const kf = rx.kf[m];
+        if (!(kf > 0)) continue;
+        let P = kf, zsum = 0, aHi = rx.fixedA, aLo = 0;
+        for (const { i, nu } of rx.reactants) {
+          P *= c[g * n + i] ** nu;
+          zsum += nu * z[i];
+          aHi += nu * u[b * M + 1 + i];
+          aLo += nu * uLo[b * M + 1 + i];
+        }
+        for (const { i, nu } of rx.products) {
+          aHi -= nu * u[b * M + 1 + i];
+          aLo -= nu * uLo[b * M + 1 + i];
+        }
+        const a = aHi + aLo;
+        const f = -Math.expm1(-a); // 1 − e^{−a}
+        const rate = P * f;
+        const dfda = 1 - f; // e^{−a}
+        // Row contributions: reactants consumed (+v·ν·r in their balance), products made (−).
+        const add = (list, sign) => {
+          for (const { i, nu } of list) {
+            const row = 1 + i;
+            res[b * M + row] += sign * v * nu * rate;
+            this._j(b, row, b, 0, sign * v * nu * (-zsum * rate));
+            for (const { i: j, nu: nj } of rx.reactants) this._j(b, row, b, 1 + j, sign * v * nu * nj * (rate + P * dfda));
+            for (const { i: j, nu: nj } of rx.products) this._j(b, row, b, 1 + j, sign * v * nu * (-nj * P * dfda));
+          }
+        };
+        add(rx.reactants, 1);
+        add(rx.products, -1);
+      }
     }
 
     // Ordinary segments: displacement and Scharfetter–Gummel fluxes.
