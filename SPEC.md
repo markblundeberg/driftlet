@@ -86,20 +86,34 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
   approximation).
 
 **Transport.** Particle flux per species:
-`N_i = −(D_i c_i / RT) ∇μ̄_i + c_i v(x) − D_mix(x) ∇c_i`, with continuity
+`N_i = −(D_i c_i / RT) ∇μ̄_i + c_i v(x) + N_i^mix`, with continuity
 `∂c_i/∂t + ∂N_i/∂x = R_i`.
 - The first term is drift + diffusion in one (Einstein relation automatic). For charged species
   the charge current is `J_i = z_i F N_i = −σ_i ∇V_i`, with `σ_i = z_i² F² D_i c_i / RT`.
 - `v(x)`: an optional **imposed advection velocity** (e.g. the axial flow at a rotating disk
   electrode, or flow through a porous layer). It's local, so it keeps the Jacobian
   block-tridiagonal, and SG handles drift + advection as one effective velocity.
-- `D_mix(x)`: an optional **eddy (mixing) diffusivity**, large in a stirred bulk and falling to
-  zero at walls. It models stirring locally and produces Nernst diffusion layers naturally. It
-  acts identically on every species and has **no associated mobility** (it mixes, it doesn't
-  conduct: in neutral regions its net current vanishes). Default 0 everywhere. Caveat: it acts
-  on ∇c, not ∇μ̄, so it would drive a spurious flux through an *equilibrium* double layer
-  (flat μ̄, varying c). Profiles must fall to zero before the Debye layers at walls; the
-  grid/region setup should warn when D_mix overlaps a strongly non-neutral zone.
+- `N_i^mix`: optional **eddy mixing** with diffusivity `D_mix(x)`, large in a stirred bulk and
+  falling to zero at walls. It models stirring locally and produces Nernst diffusion layers
+  naturally. Stirring moves composition without conducting, so it must not be done by raising
+  the D_i (that would also raise σ). It is a current-free Onsager term:
+  `N_i^mix = −(D_mix/RT) Σ_j P_ij ∇μ̄_j`, with `P = C − C z zᵀ C / (zᵀ C z)` and `C = diag(c)`.
+  - `P z = 0`, so it carries **no current, anywhere**, and ∇φ drops out (no migration).
+  - It is driven by ∇μ̄, so it vanishes **exactly at equilibrium**, even inside double layers.
+    The naive `−D_mix ∇c_i` breaks equilibrium there, and it also carries a spurious current
+    wherever `Σ z_i c_i` varies (e.g. graded fixed charge).
+  - P is symmetric positive semidefinite, so entropy production is ≥ 0.
+  - In a neutral region with uniform fixed charge it reduces to `−D_mix ∇c_i` for every
+    species: species-blind, like real advection. An inhomogeneous blob homogenises all
+    species at the same rate, and mixing generates no diffusion potential of its own
+    (molecular diffusion still does).
+  - The zero-current projection isn't unique. The c-weighting is the species-blind
+    (advective) choice; a D·c weighting would instead reproduce ambipolar molecular
+    diffusion, which is wrong for stirring.
+  - Neutral species are simply mixed: `−D_mix ∇c` within a region.
+  Discretely, use the logarithmic mean of c at faces. Then `c_face Δln c = Δc` exactly, and
+  equilibrium is preserved exactly for any face values. It couples species within a face
+  (dense within-block entries), which the block structure already allows. Default 0.
 - Out of scope (non-local): recirculation loops or one well-mixed reservoir feeding several
   faces. A few such couplings could be added later via bordering, like the circuit unknowns.
 
@@ -316,7 +330,7 @@ Everything should be serializable, so a device definition can be posted to a Wor
 
 Each item is an automated test with a stated tolerance. The README carries a table of them.
 
-1. **Equilibrium invariance:** no bias and no imposed flow ⇒ every μ̄_i flat to ≤1e-9·RT and
+1. **Equilibrium invariance:** no bias and no imposed advection v ⇒ every μ̄_i flat to ≤1e-9·RT and
    all fluxes zero, for every example device. **Gauge invariance:** shifting one material's
    μ°_i by z_i F s (alignments given as relative steps, so unchanged) leaves every μ̄_i, c_i,
    flux and current identical to round-off; only the bookkeeping φ moves.
@@ -351,8 +365,11 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 10. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
    homogeneous relaxation matches the analytic time constant.
 11. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
-   axial velocity profile), and a Nernst layer from an eddy-diffusivity profile. The eddy
-   diffusivity must add no current in a neutral bulk.
+   axial velocity profile), and a Nernst layer from an eddy-diffusivity profile. Mixing carries
+   zero current to round-off everywhere (including with graded fixed charge), leaves bulk
+   conductivity unchanged (the same IR drop with and without mixing at uniform composition),
+   and leaves equilibrium double layers untouched (D_mix nonzero right up to a charged wall,
+   test 1 still passes). A non-uniform neutral blob homogenises at rate D_mix for all species.
 12. **Transient:** a blocking electrolyte cell charging with the analytic time constant
    (≈ λ_D·L/D in the small-signal limit), with exact conservation of total charge and mass.
 13. **Grid convergence:** observed order ≈ 2 on smooth problems.
