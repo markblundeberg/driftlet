@@ -103,11 +103,10 @@ export function makeSolution(solver, result = {}) {
 
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
   // gate contacts), check the local Debye length against the adjacent cell.
-  sol.warnings = [];
+  sol.warnings = [...(model.warnings ?? [])];
   const debye = (g) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
-    let s2 = 0;
-    for (let i = 0; i < n; i++) s2 += species[i].z * species[i].z * c[g * n + i];
+    const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics
     return mat.epsr > 0 && s2 > 0 ? Math.sqrt((mat.epsr * EPS0 * RT) / (F * F * s2)) : NaN;
   };
   const check = (g, h, where) => {

@@ -16,9 +16,25 @@
  */
 
 /**
+ * Statistics model: how the listed species' concentrations follow from their reduced
+ * potentials ζ = (μ̄ − zFφ − μ°)/RT. Species not in any model are ideal, c = c_ref e^ζ.
+ * @typedef {(
+ *   { type: 'fermi-dirac', species: string[], order?: 0.5 | 0 } |
+ *   { type: 'lattice', species: string[], cMax: number } |
+ *   { type: 'redlich-kister', species: [string], cMax: number, A?: number[] } |
+ *   { type: 'debye-huckel', species: string[], epsr?: number, a?: number } |
+ *   { type: 'insertion', species: [string, string], cMax: number, A?: number[],
+ *     ocv?: { x: number[], E: number[], muRef: number } } |
+ *   { type: 'custom', species: string[],
+ *     evaluate: (zeta: number[]) => { c: number[], dcdzeta: number[][] } }
+ * )} StatisticsDef
+ */
+
+/**
  * @typedef {object} MaterialDef
  * @property {number} epsr relative permittivity; 0 makes the material strictly neutral
  * @property {Record<string, MaterialSpeciesDef>} species species present in this material
+ * @property {StatisticsDef[]} [statistics] non-ideal statistics (default: all ideal)
  */
 
 /**

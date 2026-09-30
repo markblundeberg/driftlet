@@ -8,6 +8,7 @@
 
 import { buildGrid } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
+import { normalizeStatistics } from './statistics.js';
 
 export class DeviceError extends Error {
   constructor(message) {
@@ -71,6 +72,7 @@ export function normalizeDevice(def) {
   const nSpecies = species.length;
 
   // --- materials
+  const warnings = [];
   need(isObject(def.materials) && Object.keys(def.materials).length > 0, 'materials must be a non-empty object');
   const materials = [];
   const materialIndex = new Map();
@@ -96,8 +98,15 @@ export function normalizeDevice(def) {
       need(c !== undefined, `${spath}.cRef: no reference concentration (give it here or on the species)`);
       cRef[i] = positive(c, `${spath}.cRef`);
     }
+    const m = { name: mname, epsr, present, D, mu0, cRef };
+    const st = normalizeStatistics({ ...m, statistics: mat.statistics }, path, species, speciesIndex, RT, { need, finite, positive });
+    m.models = st.models;
+    m.modelOf = st.modelOf;
+    m.ideal = st.models.length === 0;
+    m.phiFree = st.phiFree; // every charged species is in a neutral combination: φ is undefined
+    warnings.push(...st.warnings);
     materialIndex.set(mname, materials.length);
-    materials.push({ name: mname, epsr, present, D, mu0, cRef });
+    materials.push(m);
   }
   species.forEach((sp, i) => {
     need(materials.some((m) => m.present[i]), `species '${sp.name}' is not present in any material`);
@@ -119,6 +128,16 @@ export function normalizeDevice(def) {
         `${path}: material '${mat.name}' has ε = 0 (strictly neutral) but no mobile charged species to neutralise the fixed charge`,
       );
     }
+    // An insertion host's fixed charge is balanced by its own background carriers.
+    const host = mat.models.find((md) => md.type === 'insertion');
+    const background = host ? -fixedCharge / (species[host.carrier].z * FARADAY) : 0;
+    if (host) {
+      need(
+        background >= 0,
+        `${path}.fixedCharge: in an insertion host the fixed charge is balanced by background ${species[host.carrier].name}, ` +
+          'so it must have the opposite sign to that carrier',
+      );
+    }
     // Initial composition: the starting state, and the conserved amount of any spectator.
     const c0 = new Float64Array(nSpecies).fill(NaN);
     if (reg.c0 !== undefined) {
@@ -136,6 +155,7 @@ export function normalizeDevice(def) {
       length,
       fixedCharge,
       c0,
+      background,
       grid: reg.grid,
     };
   });
@@ -184,7 +204,7 @@ export function normalizeDevice(def) {
   }
 
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid, warnings,
   };
 }
 
@@ -316,7 +336,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // resolves the double layers). 'neutral': no charge at the face (D = 0) and a free jump, the
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
-  const bothNeutral = matL.epsr === 0 && matR.epsr === 0;
+  const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
   const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'dipole');
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
   need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
@@ -334,8 +354,8 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     );
     for (const [mat, reg] of [[matL, left], [matR, right]]) {
       need(
-        mat.epsr > 0 || species.some((sp, i) => mat.present[i] && sp.z !== 0),
-        `${where}: ${reg.name} has ε = 0 and no charged species, so its φ is undefined; use phi: 'neutral'`,
+        (mat.epsr > 0 || species.some((sp, i) => mat.present[i] && sp.z !== 0)) && !mat.phiFree,
+        `${where}: ${reg.name} has ε = 0 and nothing there responds to φ, so its φ is undefined; use phi: 'neutral'`,
       );
     }
   }
@@ -457,6 +477,23 @@ function normalizeElectrodeReaction(rdef, path, mat, species, speciesIndex, RT) 
   };
 }
 
+// Reduced potentials ζ of a bath composition in the end material, through its statistics.
+function bathZeta(mat, cb, background) {
+  const zeta = cb.map((c, i) => (c > 0 ? Math.log(c / mat.cRef[i]) : -800));
+  for (const md of mat.models) {
+    const z = Float64Array.from(md.idx, (i) => zeta[i]);
+    const fixed = md.idx.map((i) => cb[i] > 0);
+    const target = Float64Array.from(md.idx, (i) => cb[i]);
+    try {
+      md.invert(z, fixed, target, background);
+    } catch (err) {
+      throw new DeviceError(`bath: ${err.message}`);
+    }
+    md.idx.forEach((i, a) => (zeta[i] = z[a]));
+  }
+  return zeta;
+}
+
 // A contact has a terminal voltage V (set by the circuit; 0 by default) and a link for every
 // species and for φ. A fixed charged species sits at V_i = V + offset_i, i.e.
 // μ̄_i = z_i F (V + offset_i). The offset belongs to the outside phase: 0 for the terminal
@@ -539,7 +576,8 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     }
     need(Math.abs(charge) <= 1e-9 * scale, `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge)`);
     // The reference species pins the bath's φ; every other species follows from composition.
-    const level = (i) => mat.mu0[i] + RT * Math.log(cb[i] / mat.cRef[i]); // μ̄ − zFφ_bath
+    const zb = bathZeta(mat, cb, region.background);
+    const level = (i) => mat.mu0[i] + RT * zb[i]; // μ̄ − zFφ_bath
     const refOffset = bath.offset === undefined ? 0 : finite(bath.offset, `${path}.bath.offset`);
     const beta = refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
     for (let i = 0; i < species.length; i++) {
@@ -557,6 +595,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(isObject(raw), `${path}.phi must be a link type string or an object with a type`);
     need(PHI_LINK_TYPES.has(raw.type), `${path}.phi.type must be one of ${[...PHI_LINK_TYPES].join(', ')}`);
     if (raw.type === 'capacitive' || raw.type === 'dipole') {
+      need(!mat.phiFree, `${path}.phi: φ is undefined in '${mat.name}' (only neutral combinations are charged there), so use 'bulk' or 'neutral'`);
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
       finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);

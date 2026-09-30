@@ -18,6 +18,9 @@ function bvFactor(a, alpha) {
 //   i:   v·(c_i − c_i,old)/dt + N_out − N_in = 0
 // Fluxes along segments are Scharfetter–Gummel. Each flux is computed once per segment and
 // added with opposite signs to both neighbours, so sums over boxes telescope exactly.
+//
+// Concentrations come from each material's statistics, c(ζ) with ζ_i = η_i − μ°_i/RT − z_i φ̂,
+// and K = ∂c/∂ζ. Nodes of ideal materials (c = c_ref e^ζ) take a fast path throughout.
 
 import { BlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, bernoulliDerivative } from './bernoulli.js';
@@ -81,6 +84,10 @@ export class Solver {
     this.phiUndefined = new Uint8Array(nNodes);
     regions.forEach((reg, r) => {
       const mat = materials[reg.material];
+      if (mat.phiFree) {
+        for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) this.phiUndefined[g] = 1;
+        return;
+      }
       if (species.some((sp, i) => mat.present[i] && sp.z !== 0)) return;
       const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'dipole';
       const leftOpen = r === 0 ? pins(contacts.left) : model.interfaces[r - 1].phi.type !== 'neutral';
@@ -104,6 +111,24 @@ export class Solver {
     this.uPrevLo = new Float64Array(nB * M);
     this.c = new Float64Array(nNodes * n);
     this.cOld = new Float64Array(nNodes * n);
+    // Non-ideal statistics: per node, K = ∂c/∂ζ (n×n) and the excess ζ − ln(c/c_ref), which
+    // enters the fluxes as an extra potential. Ideal nodes skip both.
+    this.nodeIdeal = new Uint8Array(nNodes);
+    this.background = new Float64Array(nNodes);
+    for (let g = 0; g < nNodes; g++) {
+      const reg = regions[grid.nodeRegion[g]];
+      this.nodeIdeal[g] = materials[reg.material].ideal ? 1 : 0;
+      this.background[g] = reg.background;
+    }
+    this.anyNonIdeal = !this.nodeIdeal.every((v) => v === 1);
+    this.K = this.anyNonIdeal ? new Float64Array(nNodes * n * n) : null;
+    this.ex = new Float64Array(nNodes * n);
+    this.zeta = new Float64Array(n);
+    this.scratch = new Map(); // per statistics model: ζ, c, K work arrays
+    this.dA = new Float64Array(M); // derivative work vectors over one block's slots
+    this.dB = new Float64Array(M);
+    this.jL = new Float64Array(M);
+    this.jR = new Float64Array(M);
     this.time = 0;
     this.lastDt = Infinity;
     // Contact bookkeeping, filled by assemble(): particle flux toward +x through each contact,
@@ -218,7 +243,14 @@ export class Solver {
         }
       }
       // Net charge (mol/m³) at trial φ̂; decreasing in φ̂ wherever a level-fixed ion responds.
+      const zeta = new Float64Array(n), cc = new Float64Array(n);
       const charge = (ph) => {
+        if (!mat.ideal) {
+          this._materialAt(mat, reg.background, eta, mode, cFix, ph, zeta, cc);
+          let q = reg.fixedCharge / FARADAY;
+          for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * cc[i];
+          return q;
+        }
         let q = reg.fixedCharge / FARADAY;
         for (let i = 0; i < n; i++) {
           if (mode[i] === 2) q += z[i] * cFix[i];
@@ -229,7 +261,7 @@ export class Solver {
         }
         return q;
       };
-      if (mode.some((m, i) => m === 1 && z[i] !== 0)) {
+      if (!mat.phiFree && mode.some((m, i) => m === 1 && z[i] !== 0)) {
         let lo = phiHat - 1, hi = phiHat + 1;
         while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
         while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
@@ -240,12 +272,16 @@ export class Solver {
         }
         phiHat = 0.5 * (lo + hi);
       }
+      if (!mat.ideal) this._materialAt(mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
         const b = this.blockOfNode[g];
         u[b * M] = phiHat;
         for (let i = 0; i < n; i++) {
           if (mode[i] === 1) u[b * M + 1 + i] = eta[i];
-          else if (mode[i] === 2) u[b * M + 1 + i] = Math.log(cFix[i] / mat.cRef[i]) + mat.mu0[i] / model.RT + z[i] * phiHat;
+          else if (mode[i] === 2) {
+            const zt = mat.ideal ? Math.log(cFix[i] / mat.cRef[i]) : zeta[i];
+            u[b * M + 1 + i] = zt + mat.mu0[i] / model.RT + z[i] * phiHat;
+          }
         }
       }
     }
@@ -253,16 +289,120 @@ export class Solver {
     this.computeConcentrations();
   }
 
+  // A non-ideal material's composition at φ̂ = ph: level-fixed species (mode 1) at their η,
+  // amount-fixed ones (mode 2) at cFix. Fills ζ and c for every present species.
+  _materialAt(mat, background, eta, mode, cFix, ph, zeta, cc) {
+    const { n, z } = this;
+    const RT = this.model.RT;
+    for (let i = 0; i < n; i++) {
+      if (!mat.present[i]) continue;
+      zeta[i] = mode[i] === 2 ? Math.log(cFix[i] / mat.cRef[i]) : eta[i] - mat.mu0[i] / RT - z[i] * ph;
+      if (mat.modelOf[i] < 0) cc[i] = mode[i] === 2 ? cFix[i] : mat.cRef[i] * Math.exp(Math.min(700, zeta[i]));
+    }
+    for (const md of mat.models) {
+      const w = this._work(md), idx = md.idx, k = idx.length;
+      for (let a = 0; a < k; a++) {
+        w.z[a] = zeta[idx[a]];
+        w.fixed[a] = mode[idx[a]] === 2 ? 1 : 0;
+        w.t[a] = cFix[idx[a]];
+      }
+      md.invert(w.z, w.fixed, w.t, background);
+      md.evaluate(w.z, w.c, w.K, background);
+      for (let a = 0; a < k; a++) {
+        zeta[idx[a]] = w.z[a];
+        cc[idx[a]] = w.c[a];
+      }
+    }
+  }
+
   computeConcentrations() {
     const { n, M, u, uLo, c, z } = this;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
       const phiHat = u[b * M];
+      if (!this.nodeIdeal[g]) {
+        this._nodeStatistics(g, b, phiHat);
+        continue;
+      }
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         c[k] = this.present[k] ? this.cRef[k] * Math.exp(u[b * M + 1 + i] + uLo[b * M + 1 + i] - this.mu0hat[k] - z[i] * phiHat) : 0;
       }
     }
+  }
+
+  _work(md) {
+    let w = this.scratch.get(md);
+    if (!w) {
+      const k = md.idx.length;
+      w = { z: new Float64Array(k), c: new Float64Array(k), K: new Float64Array(k * k), fixed: new Uint8Array(k), t: new Float64Array(k) };
+      this.scratch.set(md, w);
+    }
+    return w;
+  }
+
+  // c, K and the excess at a node of a non-ideal material.
+  _nodeStatistics(g, b, phiHat) {
+    const { n, M, u, uLo, c, z, K, ex, zeta } = this;
+    const mat = this.model.materials[this.nodeMaterial[g]];
+    const Kg = g * n * n;
+    K.fill(0, Kg, Kg + n * n);
+    for (let i = 0; i < n; i++) {
+      const k = g * n + i;
+      ex[k] = 0;
+      if (!this.present[k]) {
+        c[k] = 0;
+        continue;
+      }
+      zeta[i] = u[b * M + 1 + i] + uLo[b * M + 1 + i] - this.mu0hat[k] - z[i] * phiHat;
+      if (mat.modelOf[i] < 0) {
+        c[k] = this.cRef[k] * Math.exp(zeta[i]);
+        K[Kg + i * n + i] = c[k];
+      }
+    }
+    for (const md of mat.models) {
+      const w = this._work(md), idx = md.idx, k = idx.length;
+      for (let a = 0; a < k; a++) w.z[a] = zeta[idx[a]];
+      md.evaluate(w.z, w.c, w.K, this.background[g]);
+      for (let a = 0; a < k; a++) {
+        const i = idx[a], ci = w.c[a];
+        c[g * n + i] = ci;
+        ex[g * n + i] = ci > 0 ? zeta[i] - Math.log(ci / this.cRef[g * n + i]) : 0;
+        for (let q = 0; q < k; q++) K[Kg + i * n + idx[q]] = w.K[a * k + q];
+      }
+    }
+  }
+
+  // Σ_j K_ij z_j at node g (= z_i c_i for ideal statistics).
+  _Kz(g, i) {
+    const { n, z } = this;
+    if (this.nodeIdeal[g]) return z[i] * this.c[g * n + i];
+    let s = 0;
+    const o = g * n * n + i * n;
+    for (let j = 0; j < n; j++) s += this.K[o + j] * z[j];
+    return s;
+  }
+
+  /** zᵀKz at node g (per RT): the charge response that sets the screening length. */
+  screening(g) {
+    let s = 0;
+    for (let i = 0; i < this.n; i++) s += this.z[i] * this._Kz(g, i);
+    return s;
+  }
+
+  // Add w·∂(ln c_i)/∂(slot) at node g into d (slot 0 = φ̂, 1 + j = η_j).
+  _dlnc(g, i, w, d) {
+    const { n, z } = this;
+    if (this.nodeIdeal[g]) {
+      d[1 + i] += w;
+      d[0] -= w * z[i];
+      return;
+    }
+    const ci = this.c[g * n + i];
+    if (!(ci > 0)) return;
+    const o = g * n * n + i * n, f = w / ci;
+    for (let j = 0; j < n; j++) d[1 + j] += f * this.K[o + j];
+    d[0] -= f * this._Kz(g, i);
   }
 
   // Add ∂(row rb, slot rs)/∂(block cb, slot cs) to the Jacobian.
@@ -287,19 +427,41 @@ export class Solver {
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g], v = grid.vol[g];
       let q = this.rhoFixed[g], dq = 0;
-      for (let i = 0; i < n; i++) {
-        const k = g * n + i, r = 1 + i;
-        if (!this.present[k]) {
-          this._j(b, r, b, r, 1);
-          continue;
+      if (this.nodeIdeal[g]) {
+        for (let i = 0; i < n; i++) {
+          const k = g * n + i, r = 1 + i;
+          if (!this.present[k]) {
+            this._j(b, r, b, r, 1);
+            continue;
+          }
+          const ck = c[k];
+          res[b * M + r] += (v * (ck - cOld[k])) / dt;
+          this._j(b, r, b, r, (v * ck) / dt);
+          this._j(b, r, b, 0, (-v * z[i] * ck) / dt);
+          q += F * z[i] * ck;
+          dq += F * z[i] * z[i] * ck;
+          if (z[i] !== 0) this._j(b, 0, b, r, -v * F * z[i] * ck);
         }
-        const ck = c[k];
-        res[b * M + r] += (v * (ck - cOld[k])) / dt;
-        this._j(b, r, b, r, (v * ck) / dt);
-        this._j(b, r, b, 0, (-v * z[i] * ck) / dt);
-        q += F * z[i] * ck;
-        dq += F * z[i] * z[i] * ck;
-        if (z[i] !== 0) this._j(b, 0, b, r, -v * F * z[i] * ck);
+      } else {
+        // ∂c_i/∂η_j = K_ij and ∂c_i/∂φ̂ = −(Kz)_i.
+        const Kg = g * n * n;
+        for (let i = 0; i < n; i++) {
+          const k = g * n + i, r = 1 + i;
+          if (!this.present[k]) {
+            this._j(b, r, b, r, 1);
+            continue;
+          }
+          res[b * M + r] += (v * (c[k] - cOld[k])) / dt;
+          for (let j = 0; j < n; j++) {
+            const Kij = this.K[Kg + i * n + j];
+            if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
+          }
+          const Kz = this._Kz(g, i);
+          this._j(b, r, b, 0, (-v * Kz) / dt);
+          q += F * z[i] * c[k];
+          dq += F * z[i] * Kz;
+          if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
+        }
       }
       if (this.phiUndefined[g]) {
         this._j(b, 0, b, 0, 1); // no charge responds and no field reaches: φ is not defined here
@@ -310,13 +472,15 @@ export class Solver {
 
       // Bulk reactions: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the (compensated) η.
       const m = this.nodeMaterial[g];
+      const dr = this.dA;
       for (const rx of model.reactions) {
         const kf = rx.kf[m];
         if (!(kf > 0)) continue;
-        let P = kf, zsum = 0, aHi = rx.fixedA, aLo = 0;
+        let P = kf, aHi = rx.fixedA, aLo = 0;
+        dr.fill(0); // ∂ ln P / ∂slot
         for (const { i, nu } of rx.reactants) {
           P *= c[g * n + i] ** nu;
-          zsum += nu * z[i];
+          this._dlnc(g, i, nu, dr);
           aHi += nu * u[b * M + 1 + i];
           aLo += nu * uLo[b * M + 1 + i];
         }
@@ -327,15 +491,17 @@ export class Solver {
         const a = aHi + aLo;
         const f = -Math.expm1(-a); // 1 − e^{−a}
         const rate = P * f;
-        const dfda = 1 - f; // e^{−a}
+        const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
+        // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
+        for (let k = 0; k < M; k++) dr[k] *= rate;
+        for (const { i, nu } of rx.reactants) dr[1 + i] += Pd * nu;
+        for (const { i, nu } of rx.products) dr[1 + i] -= Pd * nu;
         // Row contributions: reactants consumed (+v·ν·r in their balance), products made (−).
         const add = (list, sign) => {
           for (const { i, nu } of list) {
-            const row = 1 + i;
-            res[b * M + row] += sign * v * nu * rate;
-            this._j(b, row, b, 0, sign * v * nu * (-zsum * rate));
-            for (const { i: j, nu: nj } of rx.reactants) this._j(b, row, b, 1 + j, sign * v * nu * nj * (rate + P * dfda));
-            for (const { i: j, nu: nj } of rx.products) this._j(b, row, b, 1 + j, sign * v * nu * (-nj * P * dfda));
+            const row = 1 + i, w = sign * v * nu;
+            res[b * M + row] += w * rate;
+            for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
           }
         };
         add(rx.reactants, 1);
@@ -372,6 +538,10 @@ export class Solver {
       this._j(bR, 0, bL, 0, -k);
       this._j(bR, 0, bR, 0, k);
 
+      if (!this.nodeIdeal[s]) {
+        this._segmentNonIdeal(s, bL, bR, mat, h, lastSeg);
+        continue;
+      }
       for (let i = 0; i < n; i++) {
         if (!mat.present[i] || mat.D[i] === 0) continue;
         const r = 1 + i, zi = z[i];
@@ -496,32 +666,97 @@ export class Solver {
     }
   }
 
+  // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
+  // extra potential, linear along the segment like φ, so Δ = zΔφ̂ + Δex and
+  //   N = −(D/h)·B(Δ)·c_L·expm1(η_R − η_L),
+  // still exactly zero at equilibrium. c_L and ex depend on every ζ at their node through K.
+  _segmentNonIdeal(s, bL, bR, mat, h, lastSeg) {
+    const { n, M, u, uLo, res, c, z, K, ex, jL, jR } = this;
+    const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n;
+    for (let i = 0; i < n; i++) {
+      if (!mat.present[i] || mat.D[i] === 0) continue;
+      const r = 1 + i, zi = z[i];
+      const cL = c[gL * n + i], cR = c[gR * n + i];
+      const g = mat.D[i] / h;
+      const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i];
+      const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
+      const E = Math.expm1(deta);
+      const B = bernoulli(d), Bp = bernoulliDerivative(d);
+      const gBc = g * B * cL;
+      const N = -gBc * E;
+      const dNdd = -g * Bp * cL * E;
+      // Left node: ∂N/∂ζ_Lj = −gE(B + B′)K_L,ij − dNdd·δ_ij, plus the direct η_L,i term.
+      const fL = -g * E * (B + Bp);
+      jL[0] = -fL * this._Kz(gL, i);
+      for (let j = 0; j < n; j++) jL[1 + j] = fL * K[KL + i * n + j];
+      jL[r] += -dNdd + gBc * (E + 1);
+      // Right node: ∂N/∂ζ_Rj = dNdd·(δ_ij − K_R,ij/c_R), plus the direct η_R,i term.
+      jR.fill(0);
+      if (cR > 0) {
+        const fR = -dNdd / cR;
+        jR[0] = -fR * this._Kz(gR, i);
+        for (let j = 0; j < n; j++) jR[1 + j] = fR * K[KR + i * n + j];
+      } else {
+        jR[0] = dNdd * zi; // K/c → δ as c → 0
+        jR[r] -= dNdd;
+      }
+      jR[r] += dNdd - gBc * (E + 1);
+      res[bL * M + r] += N;
+      res[bR * M + r] -= N;
+      for (let k = 0; k < M; k++) {
+        if (jL[k] !== 0) {
+          this._j(bL, r, bL, k, jL[k]);
+          this._j(bR, r, bL, k, -jL[k]);
+        }
+        if (jR[k] !== 0) {
+          this._j(bL, r, bR, k, jR[k]);
+          this._j(bR, r, bR, k, -jR[k]);
+        }
+      }
+      if (lastSeg) {
+        const q = FARADAY * zi;
+        this.segI += q * N;
+        for (let k = 0; k < M; k++) {
+          this.segIJac[k] += q * jL[k];
+          this.segIJac[M + k] += q * jR[k];
+        }
+      }
+    }
+  }
+
   // Kinetic transfer across interface f (Butler–Volmer form, forward = left to right):
   //   r = k0 Π [(c_L/c_ref,L)^{ν(1−α)} (c_R/c_ref,R)^{να}] (e^{αa} − e^{−(1−α)a}),
   //   a = Σ ν (η_L − η_R).  Each species' flux-node row gets −ν·r.
   _transfer(tr, f, bf, bL, bR) {
-    const { n, M, u, uLo, c, z, res } = this;
+    const { n, M, u, uLo, c, res } = this;
     const gL = this.model.grid.regionEnd[f], gR = this.model.grid.regionStart[f + 1];
     const al = tr.alpha;
-    let pref = tr.k0, aHi = 0, aLo = 0, zL = 0, zR = 0;
+    const dL = this.dA.fill(0), dR = this.dB.fill(0); // ∂ ln(prefactor) per slot, each side
+    let pref = tr.k0, aHi = 0, aLo = 0;
     for (const { i, nu } of tr.species) {
       pref *= (c[gL * n + i] / this.cRef[gL * n + i]) ** (nu * (1 - al)) * (c[gR * n + i] / this.cRef[gR * n + i]) ** (nu * al);
+      this._dlnc(gL, i, nu * (1 - al), dL);
+      this._dlnc(gR, i, nu * al, dR);
       aHi += nu * (u[bL * M + 1 + i] - u[bR * M + 1 + i]);
       aLo += nu * (uLo[bL * M + 1 + i] - uLo[bR * M + 1 + i]);
-      zL += nu * (1 - al) * z[i];
-      zR += nu * al * z[i];
     }
     const { g, gp } = bvFactor(aHi + aLo, al);
     const rate = pref * g;
+    for (let k = 0; k < M; k++) {
+      dL[k] *= rate;
+      dR[k] *= rate;
+    }
+    for (const { i, nu } of tr.species) {
+      dL[1 + i] += pref * gp * nu;
+      dR[1 + i] -= pref * gp * nu;
+    }
     for (const { i, nu } of tr.species) {
       const row = 1 + i;
       res[bf * M + row] -= nu * rate;
-      for (const { i: j, nu: nj } of tr.species) {
-        this._j(bf, row, bL, 1 + j, -nu * (nj * (1 - al) * rate + pref * gp * nj));
-        this._j(bf, row, bR, 1 + j, -nu * (nj * al * rate - pref * gp * nj));
+      for (let k = 0; k < M; k++) {
+        if (dL[k] !== 0) this._j(bf, row, bL, k, -nu * dL[k]);
+        if (dR[k] !== 0) this._j(bf, row, bR, k, -nu * dR[k]);
       }
-      this._j(bf, row, bL, 0, -nu * (-zL * rate));
-      this._j(bf, row, bR, 0, -nu * (-zR * rate));
     }
   }
 
@@ -561,43 +796,42 @@ export class Solver {
     for (let i = 0; i < n; i++) flux[i] = sgn * res[b * M + 1 + i];
 
     // Electrode reactions: Σ ν_R R + n e⁻(metal, μ̄ = −F V_t) ⇌ Σ ν_P P.
+    const dr = this.dA;
     for (const rx of ct.reactions) {
       const al = rx.alpha;
-      let pref = rx.k0, zs = 0, aHi = rx.fixedA - (rx.electrons * Vt) / VT, aLo = 0;
+      let pref = rx.k0, aHi = rx.fixedA - (rx.electrons * Vt) / VT, aLo = 0;
+      dr.fill(0);
       for (const { i, nu } of rx.reactants) {
         pref *= (c[g * n + i] / this.cRef[g * n + i]) ** (nu * (1 - al));
-        zs += nu * (1 - al) * z[i];
+        this._dlnc(g, i, nu * (1 - al), dr);
         aHi += nu * u[b * M + 1 + i];
         aLo += nu * uLo[b * M + 1 + i];
       }
       for (const { i, nu } of rx.products) {
         pref *= (c[g * n + i] / this.cRef[g * n + i]) ** (nu * al);
-        zs += nu * al * z[i];
+        this._dlnc(g, i, nu * al, dr);
         aHi -= nu * u[b * M + 1 + i];
         aLo -= nu * uLo[b * M + 1 + i];
       }
       const { g: gf, gp } = bvFactor(aHi + aLo, al);
       const rate = pref * gf;
       const dVt = (pref * gp * -rx.electrons) / VT;
-      // ∂rate/∂η_j for participant j: prefactor exponent·rate ± pref·g′·ν
-      const dEta = (j, e, sign, nu) => e * rate + sign * pref * gp * nu;
-      const terms = [
-        ...rx.reactants.map(({ i, nu }) => ({ i, nu, row: 1, d: dEta(i, nu * (1 - al), 1, nu) })),
-        ...rx.products.map(({ i, nu }) => ({ i, nu, row: -1, d: dEta(i, nu * al, -1, nu) })),
-      ];
-      for (const tA of terms) {
-        const rs = 1 + tA.i, w = tA.row * tA.nu; // consumed (+) or produced (−) at this node
+      // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a
+      for (let k = 0; k < M; k++) dr[k] *= rate;
+      for (const { i, nu } of rx.reactants) dr[1 + i] += pref * gp * nu;
+      for (const { i, nu } of rx.products) dr[1 + i] -= pref * gp * nu;
+      const rows = [...rx.reactants.map(({ i, nu }) => [i, nu]), ...rx.products.map(({ i, nu }) => [i, -nu])];
+      for (const [i, w] of rows) {
+        const rs = 1 + i; // consumed (w > 0) or produced (w < 0) at this node
         res[b * M + rs] += w * rate;
-        for (const tB of terms) this._j(b, rs, b, 1 + tB.i, w * tB.d);
-        this._j(b, rs, b, 0, w * -zs * rate);
+        for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, rs, b, k, w * dr[k]);
         addVt(rs, w * dVt);
       }
       if (toTerminal) {
         // Electrons taken from the metal at the right: current toward +x of n F r.
         const q = rx.electrons * F;
         this._termI += q * rate;
-        for (const tB of terms) termJ[1 + tB.i] += q * tB.d;
-        termJ[0] += q * -zs * rate;
+        for (let k = 0; k < M; k++) termJ[k] += q * dr[k];
         termJ[M] += q * dVt;
       }
     }
@@ -647,9 +881,11 @@ export class Solver {
       }
     }
 
-    // φ link.
+    // φ link (none where φ is undefined: nothing at the end node responds to it).
     const link = ct.phi;
-    if (link.type === 'capacitive') {
+    if (this.phiUndefined[g]) {
+      this.contactD[side] = 0;
+    } else if (link.type === 'capacitive') {
       // Gate, or metal across a Stern layer, at φ_g = V_t − zeroCharge. D toward +x.
       const phiG = Vt - link.zeroCharge;
       const D = link.C * (phiG - VT * u[b * M]) * sgn;
@@ -676,10 +912,11 @@ export class Solver {
       let dq = 0;
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
-        if (!this.present[k] || z[i] === 0) continue;
+        if (!this.present[k]) continue;
+        const Kz = this._Kz(g, i);
         q += F * z[i] * c[k];
-        dq -= F * z[i] * z[i] * c[k];
-        this._j(b, 0, b, 1 + i, F * z[i] * c[k]);
+        dq -= F * z[i] * Kz;
+        if (Kz !== 0) this._j(b, 0, b, 1 + i, F * Kz);
       }
       this._j(b, 0, b, 0, dq);
       res[b * M] = q;
@@ -753,7 +990,13 @@ export class Solver {
     const { u, delta, res } = this;
     const history = [];
     for (let it = 1; it <= maxIter; it++) {
-      this.assemble(dt);
+      try {
+        this.assemble(dt);
+      } catch (err) {
+        // A statistics model can fail far from the solution (e.g. Debye–Hückel beyond its range).
+        if (!(err instanceof SolverError)) throw err;
+        return { converged: false, iterations: it, history, error: err.message };
+      }
       this._equilibrate();
       let rmax = 0;
       for (let k = 0; k < res.length; k++) rmax = Math.max(rmax, Math.abs(res[k]));
@@ -934,18 +1177,33 @@ export class Solver {
   }
 
   // Huge steps pin each conserved amount only through a tiny storage term, so round-off can let
-  // it creep. Shift each spectator's level uniformly to restore its amount exactly (exact for
-  // ideal statistics, where c ∝ e^η).
+  // it creep. Shift each spectator's level uniformly to restore its amount exactly (in one step
+  // for ideal statistics, where c ∝ e^η; by Newton on the shift otherwise).
   _renormalizeSpectators() {
     const { n, M, u } = this;
     let changed = false;
     this.stretches.forEach((st, k) => {
       if (!st.spectator) return;
-      const now = this.amount(st), want = this.referenceAmounts[k];
-      if (!(now > 0) || now === want) return;
-      const shift = Math.log(want / now);
-      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) u[this.blockOfNode[g] * M + 1 + st.species] += shift;
-      changed = true;
+      const want = this.referenceAmounts[k];
+      const ideal = this.nodeIdeal.subarray(st.nodes[0], st.nodes[1] + 1).every((v) => v === 1);
+      for (let it = 0; it < (ideal ? 1 : 30); it++) {
+        const now = this.amount(st);
+        if (!(now > 0) || now === want) return;
+        let shift;
+        if (ideal) shift = Math.log(want / now);
+        else {
+          let dA = 0;
+          for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+            const dc = this.nodeIdeal[g] ? this.c[g * n + st.species] : this.K[g * n * n + st.species * (n + 1)];
+            dA += this.model.grid.vol[g] * dc;
+          }
+          shift = (want - now) / dA;
+          if (!(Math.abs(shift) > 1e-16)) return;
+        }
+        for (let g = st.nodes[0]; g <= st.nodes[1]; g++) u[this.blockOfNode[g] * M + 1 + st.species] += shift;
+        changed = true;
+        if (!ideal) this.computeConcentrations();
+      }
     });
     if (changed) this.computeConcentrations();
   }
