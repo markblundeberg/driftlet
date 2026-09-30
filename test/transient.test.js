@@ -100,14 +100,88 @@ test('open system: amounts track the time-integrated contact fluxes after a bias
     grid: { hmin: 0.5e-9, hmax: 20e-9, ratio: 1.1 },
   });
   dev.solve();
-  dev.set({ contacts: { right: { V: 0.4 } } });
-  let dt = 1e-13;
-  for (let n = 0; n < 40; n++, dt *= 1.5) {
-    const sol = dev.step(dt);
-    assert.ok(sol.converged, `step ${n}`);
-    for (const st of sol.conservation) {
-      assert.ok(st.connected);
-      assert.ok(Math.abs(st.drift) < 1e-11, `step ${n} ${st.species}: drift ${st.drift}`);
+  const start = dev.def;
+  for (const method of ['be', 'bdf2']) {
+    dev.set(start);
+    dev.solve();
+    dev.set({ contacts: { right: { V: 0.4 } } });
+    let dt = 1e-13;
+    for (let n = 0; n < 40; n++, dt *= 1.5) {
+      const sol = dev.step(dt, { method });
+      assert.ok(sol.converged, `step ${n}`);
+      for (const st of sol.conservation) {
+        assert.ok(st.connected);
+        assert.ok(Math.abs(st.drift) < 1e-11, `${method} step ${n} ${st.species}: drift ${st.drift}`);
+      }
     }
   }
+});
+
+// A gated island charging after a small gate step (as above, smaller for speed).
+function chargingIsland() {
+  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } });
+  const dev = new Device({
+    species: [
+      { name: 'Na+', z: 1, cRef: 1000 },
+      { name: 'Cl-', z: -1, cRef: 1000 },
+    ],
+    materials: { water: { epsr: 78.5, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } } } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 10, 'Cl-': 10 } }],
+    contacts: { left: gate(0), right: gate(0) },
+    grid: { hmin: 0.1e-9, hmax: 20e-9, ratio: 1.15 },
+  });
+  dev.solve();
+  dev.set({ contacts: { left: { V: 0.02 } } });
+  return dev;
+}
+const T = 1e-6; // a few RC times
+let reference; // gate charge at T from fine BDF2 steps
+const referenceCharge = () => {
+  if (reference === undefined) {
+    const dev = chargingIsland();
+    let sol;
+    for (let k = 0; k < 800; k++) sol = dev.step(T / 800, { method: 'bdf2' });
+    reference = sol.gates.left.charge;
+  }
+  return reference;
+};
+
+test('BDF2 is second order in time, backward Euler first order', () => {
+  const run = (n, method) => {
+    const dev = chargingIsland();
+    let sol;
+    for (let k = 0; k < n; k++) sol = dev.step(T / n, { method });
+    for (const st of sol.conservation) assert.ok(Math.abs(st.drift) < 1e-12, `${method}: ${st.species} drift ${st.drift}`);
+    return sol.gates.left.charge;
+  };
+  const ref = referenceCharge();
+  const err = (n, method) => Math.abs(run(n, method) / ref - 1);
+  const be = err(20, 'be') / err(40, 'be'), bdf2 = err(20, 'bdf2') / err(40, 'bdf2');
+  assert.ok(be > 1.8 && be < 2.2, `BE ratio ${be}`);
+  assert.ok(bdf2 > 3.5 && bdf2 < 4.5, `BDF2 ratio ${bdf2}`);
+});
+
+test('adaptive advance: error control, exact landing, traces, and frame budgets', () => {
+  const ref = referenceCharge();
+  const errs = [1e-3, 1e-5].map((tol) => {
+    const sol = chargingIsland().advance(T, { tol });
+    assert.ok(sol.converged && sol.done && sol.time === T);
+    assert.ok(sol.trace.t.every((t, k) => k === 0 || t > sol.trace.t[k - 1]) && sol.trace.t.at(-1) === T);
+    assert.ok(Math.abs(sol.trace.current.at(-1) - sol.current) < 1e-12 * Math.abs(sol.current));
+    for (const st of sol.conservation) assert.ok(Math.abs(st.drift) < 1e-12);
+    return Math.abs(sol.gates.left.charge / ref - 1);
+  });
+  assert.ok(errs[0] < 2e-2 && errs[1] < 1e-3 && errs[1] < errs[0] / 5, `errors ${errs}`);
+
+  // A frame budget stops early; later calls pick up where it left off.
+  const dev = chargingIsland();
+  let sol = dev.advance(T, { budgetMs: 0 });
+  assert.ok(!sol.done && sol.time < T);
+  let frames = 1;
+  while (!sol.done && frames < 1000) {
+    sol = dev.advance(T, { budgetMs: 1 });
+    frames++;
+  }
+  assert.ok(sol.done && sol.time === T && frames > 1);
+  assert.ok(Math.abs(sol.gates.left.charge / ref - 1) < 2e-2);
 });

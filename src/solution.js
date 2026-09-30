@@ -31,6 +31,11 @@ export function makeSolution(solver, result = {}) {
     substeps: result.substeps,
     history: result.history,
   };
+  if (result.done !== undefined) {
+    sol.done = result.done;
+    sol.rejected = result.rejected;
+    sol.trace = result.trace;
+  }
 
   for (let i = 0; i < n; i++) {
     const { name, z } = species[i];

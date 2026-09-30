@@ -79,11 +79,25 @@ export class Device {
   /**
    * Advance the transient by dt (s) with backward Euler. If Newton fails, the interval is
    * split into smaller steps automatically; `substeps` in the result says how many.
+   * With `{ method: 'bdf2' }`, steps after the first use second-order BDF2.
    * @param {number} dt s
+   * @param {{ method?: 'be' | 'bdf2' }} [opts]
    * @returns {Solution}
    */
   step(dt, opts) {
     return makeSolution(this.solver, this.solver.advance(dt, opts));
+  }
+
+  /**
+   * Adaptive transient to time tEnd (s): variable-step BDF2 with local error control. With
+   * `budgetMs`, it returns after that much wall time even if tEnd isn't reached (`done` says
+   * which), so an animation can call it once per frame; the step size carries over.
+   * @param {number} tEnd s
+   * @param {{ tol?: number, dt0?: number, dtMax?: number, budgetMs?: number, maxSteps?: number, method?: 'bdf2' | 'be' }} [opts]
+   * @returns {Solution}
+   */
+  advance(tEnd, opts) {
+    return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
   }
 
   /**

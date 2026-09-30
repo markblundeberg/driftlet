@@ -143,6 +143,10 @@ export class Solver {
     this._termI = 0;
     this._termIJac = new Float64Array(M + 1);
     this.contactDStart = { left: 0, right: 0 };
+    // Accepted steps, most recent first: start time, size, start state (for BDF2 and the
+    // error estimate of adaptive stepping).
+    this.history = [];
+    this.dtNext = undefined;
 
     this._findStretches();
     this.initFromComposition();
@@ -1057,27 +1061,53 @@ export class Solver {
     }
   }
 
-  /** One backward-Euler step. On failure the state is restored. */
-  step(dt, opts) {
+  /**
+   * One time step of size dt. Backward Euler by default; with `method: 'bdf2'`, variable-step
+   * BDF2 once a previous step exists (and the step ratio is at most 2, for stability). On
+   * failure the state is restored.
+   *
+   * BDF2's storage term (a0 c − (1+ω) c_n + ω²/(1+ω) c_{n−1})/dt is written in backward-Euler
+   * form (c − c*)/(dt/a0), so assembly is shared: c* and the displacement histories replace
+   * the start-of-step values, and dt/a0 replaces dt.
+   */
+  step(dt, opts = {}) {
+    const prev = this.history[0];
+    const w = prev ? dt / prev.dt : 0;
+    const bdf = opts.method === 'bdf2' && prev !== undefined && w <= 2;
     this.uPrev.set(this.u);
     this.uPrevLo.set(this.uLo);
     this.computeConcentrations();
-    this.cOld.set(this.c);
-    this.segDOld = this._lastSegmentD();
+    const cN = Float64Array.from(this.c);
+    const segDN = this._lastSegmentD();
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd) {
       this.assemble(dt);
       this.contactDEnd = { ...this.contactD };
     }
-    const DOld = { ...this.contactDEnd };
-    this.contactDStart = DOld;
-    const result = this.newton(dt, opts);
+    const DN = { ...this.contactDEnd };
+    let dtEff = dt;
+    if (bdf) {
+      const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
+      const { cOld } = this;
+      for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
+      this.segDOld = b1 * segDN - b2 * prev.segD;
+      this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
+      dtEff = dt / a0;
+    } else {
+      this.cOld.set(cN);
+      this.segDOld = segDN;
+      this.contactDStart = DN;
+    }
+    const result = this.newton(dtEff, opts);
+    result.bdf = bdf;
     if (result.converged) {
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, segD: segDN, D: DN });
+      if (this.history.length > 3) this.history.length = 3;
       this.time += dt;
-      this.lastDt = dt;
-      this.contactDOld = DOld;
-      this._accumulateBoundaryIntake(dt);
+      this.lastDt = dtEff;
+      this.contactDOld = this.contactDStart;
+      this._accumulateBoundaryIntake(dtEff, cN);
     } else {
       this.u.set(this.uPrev);
       this.uLo.set(this.uPrevLo);
@@ -1086,18 +1116,179 @@ export class Solver {
     return result;
   }
 
+  /**
+   * Adaptive time stepping to tEnd: variable-step BDF2 (or backward Euler), with the local error
+   * estimated against an explicit predictor through the previous states, and controlled to
+   * `tol` thermal units per step in every potential (φ̂, each η, a floating terminal). The first
+   * step is checked by step doubling. Stops early when `budgetMs` of wall time is used, so an
+   * animation can call it once per frame; the step size carries over between calls.
+   */
+  integrate(tEnd, opts = {}) {
+    const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
+    const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
+    const start = clock();
+    const trace = { t: [], current: [], voltage: [] };
+    let steps = 0, rejected = 0, iterations = 0, failed = false;
+    let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
+    const pred = new Float64Array(this.u.length);
+    const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
+    while (this.time < tEnd) {
+      if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
+      const remaining = tEnd - this.time;
+      let h = Math.min(dt, dtMax);
+      const clamped = h >= remaining * (1 - 1e-9);
+      if (clamped) h = remaining;
+      const snap = this._snapshot();
+      let err, p;
+      if (this.history.length === 0) {
+        // First step: backward Euler, checked against two half steps (whose result is kept).
+        const full = this.step(h);
+        iterations += full.iterations;
+        if (full.converged) {
+          const uFull = Float64Array.from(this.u);
+          this._restore(snap);
+          const a = this.step(h / 2), b = a.converged ? this.step(h / 2) : a;
+          iterations += a.iterations + (b === a ? 0 : b.iterations);
+          if (b.converged) {
+            err = this._errorNorm(uFull);
+            p = 1;
+          }
+        }
+        if (err === undefined) {
+          this._restore(snap);
+          rejected++;
+          dt = h / 4;
+          if (dt < 1e-14 * Math.max(tEnd, 1e-300)) { failed = true; break; }
+          continue;
+        }
+      } else {
+        const r = this.step(h, { method });
+        iterations += r.iterations;
+        if (!r.converged) {
+          rejected++;
+          dt = h / 4;
+          if (dt < 1e-14 * Math.max(tEnd, 1e-300)) { failed = true; break; }
+          continue;
+        }
+        p = this._predict(pred, r.bdf);
+        err = this._errorNorm(pred) * p.scale;
+        p = p.order;
+      }
+      if (err > tol) {
+        this._restore(snap);
+        rejected++;
+        dt = h * factor(err, p);
+        continue;
+      }
+      steps++;
+      dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
+      trace.t.push(this.time);
+      trace.current.push(this._terminalCurrent());
+      trace.voltage.push(this.model.circuit.mode !== 'voltage' ? this.terminalV - this.model.contacts.left.V : this.model.contacts.right.V - this.model.contacts.left.V);
+    }
+    this.dtNext = dt;
+    return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace };
+  }
+
+  // Explicit predictor at the new time through the previous states (quadratic after BDF2,
+  // linear after backward Euler), and the factor turning |u − pred| into the local error.
+  _predict(pred, bdf) {
+    const [e0, e1, e2] = this.history;
+    const t = this.time, h = e0.dt;
+    if (!e1) {
+      pred.set(e0.u);
+      return { scale: 1, order: 1 };
+    }
+    const hp = e1.dt;
+    if (bdf && e2) {
+      const hpp = e2.dt;
+      // Lagrange through (t0, u0), (t1, u1), (t2, u2) at t.
+      const t0 = e0.t, t1 = e1.t, t2 = e2.t;
+      const l0 = ((t - t1) * (t - t2)) / ((t0 - t1) * (t0 - t2));
+      const l1 = ((t - t0) * (t - t2)) / ((t1 - t0) * (t1 - t2));
+      const l2 = ((t - t0) * (t - t1)) / ((t2 - t0) * (t2 - t1));
+      for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
+      const w = h / hp;
+      const Cc = (h ** 3 * (1 + w) ** 2) / (w * (1 + 2 * w));
+      const Cp = h * (h + hp) * (h + hp + hpp);
+      return { scale: Cc / (Cc + Cp), order: 2 };
+    }
+    const l0 = (t - e1.t) / (e0.t - e1.t), l1 = 1 - l0;
+    for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
+    // Backward Euler's error against a linear predictor; after a BDF2 step without enough
+    // history this overestimates, which is safe.
+    return { scale: bdf ? 1 : h / (2 * h + hp), order: 1 };
+  }
+
+  // Largest difference from ref among the potentials that carry state, in thermal units.
+  _errorNorm(ref) {
+    const { n, M, u } = this;
+    let mx = this.terminalBlock >= 0 ? Math.abs(u[this.terminalBlock * M] - ref[this.terminalBlock * M]) : 0;
+    for (let g = 0; g < this.nNodes; g++) {
+      const b = this.blockOfNode[g];
+      if (!this.phiUndefined[g]) mx = Math.max(mx, Math.abs(u[b * M] - ref[b * M]));
+      for (let i = 0; i < n; i++) {
+        if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(u[b * M + 1 + i] - ref[b * M + 1 + i]));
+      }
+    }
+    return mx;
+  }
+
+  _snapshot() {
+    return {
+      u: Float64Array.from(this.u),
+      uLo: Float64Array.from(this.uLo),
+      cOld: Float64Array.from(this.cOld),
+      time: this.time,
+      lastDt: this.lastDt,
+      segDOld: this.segDOld,
+      contactDStart: this.contactDStart,
+      contactDOld: this.contactDOld,
+      contactDEnd: this.contactDEnd,
+      boundaryIntake: Float64Array.from(this.boundaryIntake),
+      history: this.history.slice(),
+    };
+  }
+
+  _restore(s) {
+    this.u.set(s.u);
+    this.uLo.set(s.uLo);
+    this.cOld.set(s.cOld);
+    this.time = s.time;
+    this.lastDt = s.lastDt;
+    this.segDOld = s.segDOld;
+    this.contactDStart = s.contactDStart;
+    this.contactDOld = s.contactDOld;
+    this.contactDEnd = s.contactDEnd;
+    this.boundaryIntake.set(s.boundaryIntake);
+    this.history = s.history.slice();
+    this.computeConcentrations();
+  }
+
+  // Terminal current toward +x at the right contact, from the last assembly at this state.
+  _terminalCurrent() {
+    let I = 0;
+    for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * this.contactFlux.right[i];
+    const dt = this.lastDt;
+    return I + (Number.isFinite(dt) ? (this.contactD.right - this.contactDOld.right) / dt : 0);
+  }
+
   // Add this step's contact fluxes (at the converged state) to each stretch's intake.
-  _accumulateBoundaryIntake(dt) {
+  // (A BDF2 step also moves each amount by Σ v (c* − c_n), its history term.)
+  _accumulateBoundaryIntake(dt, cN) {
     this.assemble(dt);
     this.contactDEnd = { ...this.contactD };
     if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;
+    const { n, cOld } = this, vol = this.model.grid.vol;
     this.stretches.forEach((st, k) => {
       if (!st.connected) return;
       let q = 0;
       if (st.regions[0] === 0) q += this.contactFlux.left[st.species];
       if (st.regions[1] === last) q -= this.contactFlux.right[st.species];
-      this.boundaryIntake[k] += q * dt;
+      let hist = 0;
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) hist += vol[g] * (cOld[g * n + st.species] - cN[g * n + st.species]);
+      this.boundaryIntake[k] += q * dt + hist;
     });
   }
 
@@ -1166,6 +1357,8 @@ export class Solver {
       }
     }
     this.time = time;
+    this.history = []; // a steady solve isn't a trajectory: transients restart from here
+    this.dtNext = undefined;
     if (converged) {
       this.stretches.forEach((st, k) => {
         if (!st.connected) return;
