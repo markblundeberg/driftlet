@@ -21,8 +21,11 @@ function merge(base, patch) {
   return out;
 }
 
+/** @typedef {import('./types.js').DeviceDefinition} DeviceDefinition */
+/** @typedef {import('./types.js').Solution} Solution */
+
 export class Device {
-  /** @param {object} def plain, serialisable device definition */
+  /** @param {DeviceDefinition} def plain, serialisable device definition (see docs/device.md) */
   constructor(def) {
     this.def = def;
     this.model = normalizeDevice(def);
@@ -65,7 +68,10 @@ export class Device {
     return this;
   }
 
-  /** Steady state (or equilibrium), warm-started from the current state. */
+  /**
+   * Steady state (or equilibrium), warm-started from the current state. Doesn't advance time.
+   * @returns {Solution}
+   */
   solve(opts) {
     return makeSolution(this.solver, this.solver.solveSteady(opts));
   }
@@ -73,12 +79,17 @@ export class Device {
   /**
    * Advance the transient by dt (s) with backward Euler. If Newton fails, the interval is
    * split into smaller steps automatically; `substeps` in the result says how many.
+   * @param {number} dt s
+   * @returns {Solution}
    */
   step(dt, opts) {
     return makeSolution(this.solver, this.solver.advance(dt, opts));
   }
 
-  /** Snapshot of the current state. */
+  /**
+   * Snapshot of the current state.
+   * @returns {Solution}
+   */
   solution() {
     return makeSolution(this.solver);
   }
