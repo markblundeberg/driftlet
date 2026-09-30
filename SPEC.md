@@ -336,6 +336,15 @@ charge flowing toward +x.
   Bank–Rose damping). The Jacobian is block-tridiagonal with block size `1 + nSpecies`; solve it
   with block Thomas (a small dense LU per block). Nothing is bordered (§2): circuits are
   boundary rows and inventories ride on the storage term, so the solver is plain block Thomas.
+- **Steady state, as implemented (supersedes the next bullet where they differ).** If every
+  species stretch is fed by a contact, nothing is conserved on its own, and `solve()` solves
+  the true steady equations directly (dt = ∞, no storage term). This matters: slow physics such
+  as exponentially scarce minority carriers filling an inversion layer can take seconds, far
+  beyond any L²/D estimate, and waiting it out with giant steps stalls. With conserved
+  inventories, giant steps pin the amounts. Then dt keeps growing ×10 (capped) while the state
+  moves, each spectator's level is renormalised exactly before each huge step, and the solve
+  finishes with one step at the base giant dt, where pinning is tight. Newton failures fall
+  back to a dt ramp, ending in the direct solve where applicable.
 - **Transient first; steady state is a giant time step.** This is the owner's linear
   prototype's trick, generalised. A backward-Euler step with dt far beyond the slowest time
   constant *is* the steady-state problem, except that the storage term `(c − c_old)·vol/dt`
@@ -397,6 +406,29 @@ charge flowing toward +x.
   After every solve, check resolution against the local Debye length (and diffusion-layer
   width). If a parameter change has left a layer under-resolved, say so in the solution's
   diagnostics rather than returning a quietly wrong profile.
+- **Strictly neutral materials (ε = 0), as implemented.** A material may have ε = 0: its
+  Poisson rows become local neutrality, its segments carry no displacement, and φ there is a
+  bookkeeping multiplier (NaN if no charged species is present and nothing couples it). The
+  bulk ε → 0 limit is smooth, as in the owner's linear prototype (checked: same Newton count
+  from ε_r = 78.5 down to 1e-6). A metal is an ε = 0 region with e⁻ on a fixed background: φ is
+  slaved to μ̄_e, effectively a scalar node. This subsumes most of the separate quasi-neutral
+  mode below. Neutral-combination statistics (OCV-type) will build on it.
+- **Interface φ laws, per face:** `dipole` (pinned jump by the alignment; the default, exact
+  when the grid resolves the double layers), `neutral` (D = 0, free jump; the macroscopic
+  limit, where the alignment drops out and must not be given; the default between two ε = 0
+  materials), `capacitive` (Helmholtz layer, D = C(Δφ − dipole)). Found by testing ε → 0: a
+  pinned dipole with unresolved double layers stuffs a mesh-dependent charge sheet into the
+  two half-boxes. The bulk stays right, but interface compositions and D are wrong. An
+  ε = 0 | ε > 0 face keeps the pinned jump: the neutral side's half-box holds the electrode's
+  surface charge, and the dipole plays the pzc/work-function role.
+- **Anchoring per cluster:** regions coupled by non-neutral faces or by charged species
+  crossing form clusters, and each cluster needs an anchor (gate, reaction, connected ion),
+  else it is rejected as electrostatically floating.
+- **Warnings instead of automatic refinement:** the grid is exactly what the user asked for
+  (no performance surprises). Solutions carry `warnings` when a double layer the model
+  resolves (dipole or capacitive faces, gate contacts) is coarser than the local Debye length.
+  Roadmap: a sub-grid Gouy–Chapman interface law, i.e. analytic diffuse layers when λ_D ≪ h,
+  tending smoothly to `neutral` as ε → 0.
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
   `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; φ then
   jumps at interfaces (Donnan, junction potentials): at doubled nodes the two φ copies are
@@ -576,7 +608,18 @@ Each milestone ends green: its tests pass, and the benchmark has no regressions.
   impedance, advection and current-free mixing, grid-resolution diagnostics. Tests 11, 17.
 - **M5: ship 0.1.0.** README, ROADMAP, alignment guide, JSDoc/.d.ts, CI, whatever examples
   exist by then, npm publish.
-- **Later (ROADMAP):** quasi-neutral mode, degenerate band statistics, interface states
+- **Statistics (decided 2026-09-30):** one general per-material interface, c(ζ) with its
+  Jacobian (the chemical capacitance matrix; it must be the Hessian of a convex potential, so
+  symmetric and PSD, checked at construction). Built-ins: ideal, lattice gas (site groups),
+  Fermi–Dirac, regular solution / Redlich–Kister, extended Debye–Hückel, tabulated monotone
+  c(ζ) (e.g. measured OCV curves). Escape hatch: user JS functions, making the device
+  non-serialisable, so it must be built inside the Worker. The flux uses excess-chemical-potential
+  SG. Then neutral-combination (OCV) statistics on ε = 0 regions.
+- **Later (ROADMAP):** cross-species transport coefficients *together with* cross chemical
+  capacitances (the owner's pairing: two halves of one Onsager / Jamnik–Maier network);
+  Cahn–Hilliard phase separation (c as an extra unknown plus gradient energy, still
+  block-tridiagonal; LFP); graded materials (μ°(x), c_ref(x), ε(x), D(x) within a region); a
+  sub-grid Gouy–Chapman interface law; quasi-neutral mode, degenerate band statistics, interface states
   (charge that depends on μ̄_e⁻, i.e. Fermi-level pinning), concentration-dependent D,
   non-isothermal transport, optional cross-check (14).
 

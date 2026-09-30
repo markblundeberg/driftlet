@@ -76,7 +76,8 @@ export function normalizeDevice(def) {
   for (const [mname, mat] of Object.entries(def.materials)) {
     const path = `materials.${mname}`;
     need(isObject(mat), `${path} must be an object`);
-    const epsr = positive(mat.epsr, `${path}.epsr`);
+    // ε = 0 makes the material strictly neutral: Poisson becomes local neutrality there.
+    const epsr = nonNegative(mat.epsr, `${path}.epsr`);
     need(isObject(mat.species), `${path}.species must be an object mapping species names to parameters`);
     const present = new Uint8Array(nSpecies);
     const D = new Float64Array(nSpecies);
@@ -111,6 +112,12 @@ export function normalizeDevice(def) {
     const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
     if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
     const mat = materials[materialIndex.get(reg.material)];
+    if (mat.epsr === 0) {
+      need(
+        species.some((sp, i) => mat.present[i] && sp.z !== 0) || fixedCharge === 0,
+        `${path}: material '${mat.name}' has ε = 0 (strictly neutral) but no mobile charged species to neutralise the fixed charge`,
+      );
+    }
     // Initial composition: the starting state, and the conserved amount of any spectator.
     const c0 = new Float64Array(nSpecies).fill(NaN);
     if (reg.c0 !== undefined) {
@@ -157,18 +164,11 @@ export function normalizeDevice(def) {
     right: normalizeContact(cdefs.right, 'right', regions[regions.length - 1], materials, species, speciesIndex, RT),
   };
 
-  // An electrostatic anchor is needed, or φ (and every level with it) floats.
-  const anchored = ['left', 'right'].some(
-    (side) =>
-      contacts[side].phi.type === 'capacitive' ||
-      contacts[side].reactions.length > 0 ||
-      contacts[side].species.some((l) => l.type !== 'blocked'),
-  );
-  need(
-    anchored,
-    'device has no electrostatic anchor: every species is blocked at both ends and no contact has a ' +
-      'capacitive (gate) link, so the potential is undetermined. Add a gate or connect a species.',
-  );
+  // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
+  // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.
+  // Regions are coupled across a face by a non-neutral φ law or by any charged species that
+  // crosses; a contact anchors its cluster through a gate, a reaction, or a connected ion.
+  checkAnchors(regions, materials, interfaces, contacts, species);
 
   // --- circuit (acts at the right terminal; the left terminal is the reference)
   const circuit = normalizeCircuit(def.circuit, contacts.right, species);
@@ -271,28 +271,71 @@ function normalizeCircuit(cdef, right, species) {
   };
 }
 
+function checkAnchors(regions, materials, interfaces, contacts, species) {
+  const nR = regions.length;
+  const parent = Array.from({ length: nR }, (_, r) => r);
+  const find = (r) => (parent[r] === r ? r : (parent[r] = find(parent[r])));
+  interfaces.forEach((itf, f) => {
+    const coupled = itf.phi.type !== 'neutral' || itf.links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+    if (coupled) parent[find(f)] = find(f + 1);
+  });
+  const anchors = (ct) =>
+    ct.phi.type === 'capacitive' ||
+    ct.reactions.length > 0 ||
+    ct.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+  const anchored = new Set();
+  if (anchors(contacts.left)) anchored.add(find(0));
+  if (anchors(contacts.right)) anchored.add(find(nR - 1));
+  for (let r = 0; r < nR; r++) {
+    const mat = materials[regions[r].material];
+    const charged = species.some((sp, i) => mat.present[i] && sp.z !== 0);
+    if (!charged) continue; // nothing responds to φ there; it is simply not reported
+    need(
+      anchored.has(find(r)),
+      nR === 1 || anchored.size === 0
+        ? 'device has no electrostatic anchor: every species is blocked at both ends and no contact has a ' +
+            'capacitive (gate) link, so the potential is undetermined. Add a gate or connect a species.'
+        : `regions[${r}] (${regions[r].name}) is electrostatically floating: it is cut off by neutral interfaces ` +
+            'with no charged species crossing, and nothing anchors its potential.',
+    );
+  }
+}
+
 function normalizeInterface(idef, f, regions, materials, species, speciesIndex, RT) {
   const left = regions[f], right = regions[f + 1];
   const matL = materials[left.material], matR = materials[right.material];
   const where = `interfaces[${f}] (between ${left.name} [${matL.name}] and ${right.name} [${matR.name}])`;
   const same = left.material === right.material;
-
-  if (idef === undefined || idef === null) {
-    need(
-      same,
-      `${where}: an interface between different materials needs an alignment ` +
-        `({ dipole } or { step: { species, value } }). There is no default (no Anderson or Schottky–Mott rule).`,
-    );
-    return { dipole: 0, sheetCharge: 0, links: defaultInterfaceLinks(matL, matR, species), transfers: [] };
-  }
+  if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
+
+  // Electrostatic law across the face. 'dipole': φ jumps by the alignment (exact when the grid
+  // resolves the double layers). 'neutral': no charge at the face (D = 0) and a free jump, the
+  // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
+  // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
+  const bothNeutral = matL.epsr === 0 && matR.epsr === 0;
+  const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'dipole');
+  const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
+  need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
+  if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
   const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
-  need(
-    given.length === 1 || same,
-    `${where}: an interface between different materials needs an alignment ` +
-      `({ dipole } or { step: { species, value } }). There is no default (no Anderson or Schottky–Mott rule).`,
-  );
+  if (phi.type === 'neutral') {
+    need(given.length === 0, `${where}: a neutral interface has a free φ jump, so an alignment (${given[0]}) would have no effect`);
+  } else {
+    need(
+      given.length === 1 || same,
+      `${where}: an interface between different materials needs an alignment ` +
+        `({ dipole } or { step: { species, value } }), or phi: 'neutral' for a macroscopic model. ` +
+        'There is no default (no Anderson or Schottky–Mott rule).',
+    );
+    for (const [mat, reg] of [[matL, left], [matR, right]]) {
+      need(
+        mat.epsr > 0 || species.some((sp, i) => mat.present[i] && sp.z !== 0),
+        `${where}: ${reg.name} has ε = 0 and no charged species, so its φ is undefined; use phi: 'neutral'`,
+      );
+    }
+  }
 
   let dipole = 0;
   if (idef.dipole !== undefined) {
@@ -353,7 +396,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     need(list.length > 0, `${rpath}.transfer: no species`);
     return { species: list, k0: positive(rdef.k0, `${rpath}.k0`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
   });
-  return { dipole, sheetCharge, links, transfers };
+  return { phi, dipole, sheetCharge, links, transfers };
 }
 
 function defaultInterfaceLinks(matL, matR, species) {

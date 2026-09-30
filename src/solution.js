@@ -4,7 +4,7 @@
 // steps plot as vertical lines. Quantities of a species are NaN where it is absent, and
 // the voltage views are NaN for neutral species.
 
-import { FARADAY } from './constants.js';
+import { EPS0, FARADAY } from './constants.js';
 
 export function makeSolution(solver, result = {}) {
   const { model, n, M, u, c, VT } = solver;
@@ -13,7 +13,7 @@ export function makeSolution(solver, result = {}) {
   const RT = model.RT, F = FARADAY;
 
   const phi = new Float64Array(nNodes);
-  for (let g = 0; g < nNodes; g++) phi[g] = VT * u[solver.blockOfNode[g] * M];
+  for (let g = 0; g < nNodes; g++) phi[g] = solver.phiUndefined[g] ? NaN : VT * u[solver.blockOfNode[g] * M];
 
   const sol = {
     x: Float64Array.from(grid.x),
@@ -100,6 +100,33 @@ export function makeSolution(solver, result = {}) {
   }
   for (const itf of interfaces) q += itf.sheetCharge;
   sol.charge = q;
+
+  // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
+  // gate contacts), check the local Debye length against the adjacent cell.
+  sol.warnings = [];
+  const debye = (g) => {
+    const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
+    let s2 = 0;
+    for (let i = 0; i < n; i++) s2 += species[i].z * species[i].z * c[g * n + i];
+    return mat.epsr > 0 && s2 > 0 ? Math.sqrt((mat.epsr * EPS0 * RT) / (F * F * s2)) : NaN;
+  };
+  const check = (g, h, where) => {
+    const lam = debye(g);
+    if (lam < h) {
+      sol.warnings.push(
+        `${where}: double layer unresolved (cell ${h.toExponential(2)} m vs Debye length ${lam.toExponential(2)} m); ` +
+          "its charge will depend on the mesh. Refine the grid there, or use phi: 'neutral' for a macroscopic model.",
+      );
+    }
+  };
+  interfaces.forEach((itf, f) => {
+    if (itf.phi.type === 'neutral') return;
+    const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
+    check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
+    check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
+  });
+  if (contacts.left.phi.type === 'capacitive') check(0, grid.segLength[0], 'contacts.left');
+  if (contacts.right.phi.type === 'capacitive') check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
 
   // Conservation bookkeeping for each species stretch.
   // Amount now vs the reference amount plus what came in through the contacts. The drift is

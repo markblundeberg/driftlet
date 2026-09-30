@@ -76,6 +76,20 @@ export class Solver {
       }
     }
 
+    // Regions where φ is undefined: no charged species, and either ε = 0 or nothing couples the
+    // region electrostatically (neutral faces, no gate). φ there gets an identity row.
+    this.phiUndefined = new Uint8Array(nNodes);
+    regions.forEach((reg, r) => {
+      const mat = materials[reg.material];
+      if (species.some((sp, i) => mat.present[i] && sp.z !== 0)) return;
+      const leftOpen = r === 0 ? contacts.left.phi.type === 'capacitive' : model.interfaces[r - 1].phi.type !== 'neutral';
+      const rightOpen =
+        r === regions.length - 1 ? contacts.right.phi.type === 'capacitive' : model.interfaces[r].phi.type !== 'neutral';
+      if (mat.epsr === 0 || !(leftOpen || rightOpen)) {
+        for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) this.phiUndefined[g] = 1;
+      }
+    });
+
     this.sys = new BlockTridiagonal(nB, M);
     // Unknowns as compensated double-doubles, u + uLo. Only differences of η need the extra
     // precision: a majority carrier carrying a small current has a quasi-Fermi step between
@@ -286,8 +300,12 @@ export class Solver {
         dq += F * z[i] * z[i] * ck;
         if (z[i] !== 0) this._j(b, 0, b, r, -v * F * z[i] * ck);
       }
-      res[b * M] -= v * q;
-      this._j(b, 0, b, 0, v * dq);
+      if (this.phiUndefined[g]) {
+        this._j(b, 0, b, 0, 1); // no charge responds and no field reaches: φ is not defined here
+      } else {
+        res[b * M] -= v * q;
+        this._j(b, 0, b, 0, v * dq);
+      }
 
       // Bulk reactions: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the (compensated) η.
       const m = this.nodeMaterial[g];
@@ -333,7 +351,7 @@ export class Solver {
       const bL = this.blockOfNode[s], bR = bL + 1;
       const phiL = u[bL * M], phiR = u[bR * M];
 
-      const k = (mat.epsr * EPS0 * VT) / h;
+      const k = this.phiUndefined[s] ? 0 : (mat.epsr * EPS0 * VT) / h; // ε = 0: no displacement
       const D = -k * (phiR - phiL);
       const lastSeg = s === this.nNodes - 2;
       if (lastSeg) {
@@ -397,10 +415,26 @@ export class Solver {
     for (let f = 0; f < this.nFaces; f++) {
       const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
       const itf = interfaces[f];
-      // φ: fixed offset (the dipole); displacement passes through.
-      res[bf * M] = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
-      this._j(bf, 0, bR, 0, 1);
-      this._j(bf, 0, bL, 0, -1);
+      // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
+      const law = itf.phi.type;
+      if (law === 'neutral') {
+        res[bf * M] = u[bf * M]; // D = 0; the jump is whatever each side's neutrality needs
+        this._j(bf, 0, bf, 0, 1);
+      } else {
+        const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
+        if (law === 'dipole') {
+          res[bf * M] = jump;
+          this._j(bf, 0, bR, 0, 1);
+          this._j(bf, 0, bL, 0, -1);
+        } else {
+          // D = −C (φ_R − φ_L − dipole): displacement toward +x drops across the layer.
+          const kC = itf.phi.C * VT;
+          res[bf * M] = u[bf * M] + kC * jump;
+          this._j(bf, 0, bf, 0, 1);
+          this._j(bf, 0, bR, 0, kC);
+          this._j(bf, 0, bL, 0, -kC);
+        }
+      }
       res[bL * M] += u[bf * M];
       this._j(bL, 0, bf, 0, 1);
       res[bR * M] -= u[bf * M] + itf.sheetCharge;
@@ -805,6 +839,7 @@ export class Solver {
   _accumulateBoundaryIntake(dt) {
     this.assemble(dt);
     this.contactDEnd = { ...this.contactD };
+    if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;
     this.stretches.forEach((st, k) => {
       if (!st.connected) return;
@@ -827,32 +862,84 @@ export class Solver {
   }
 
   /**
-   * Steady state by backward-Euler steps at a dt far beyond the slowest time constant.
-   * The storage term keeps spectator amounts exactly conserved. If Newton fails at the
-   * giant dt, ramp dt up from a small value instead (pseudo-transient continuation).
+   * Steady state.
+   * - If every species stretch is fed by a contact, nothing is conserved on its own, so the
+   *   true steady equations (dt = ∞, no storage term) are solved directly: no slow modes to
+   *   wait out, however slow the physics (e.g. exponentially scarce minority carriers).
+   * - Otherwise backward-Euler steps at a huge dt, whose storage term pins each conserved
+   *   amount exactly; dt keeps growing ×10 while the state still moves.
+   * If Newton fails, dt ramps up from a small value (pseudo-transient continuation) instead.
+   * The clock is not advanced, and open-system conservation bookkeeping restarts here.
    */
-  solveSteady({ maxSteps = 60, tol = 1e-13 } = {}) {
+  solveSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
+    const time = this.time;
     const tau = this.slowestTime();
-    const giant = 1e6 * tau;
+    const direct = this.stretches.every((st) => st.connected);
+    const giant = direct ? Infinity : 1e6 * tau;
     let dt = giant;
-    let totalIter = 0, steps = 0;
+    let totalIter = 0, steps = 0, converged = false;
     const history = [];
     while (steps < maxSteps) {
       steps++;
+      // Restore conserved amounts exactly before each huge step; the step then re-solves, so
+      // the final state satisfies every equation.
+      if (!direct && dt >= giant) this._renormalizeSpectators();
       const r = this.step(dt);
       totalIter += r.iterations;
       history.push({ dt, converged: r.converged, iterations: r.iterations });
       if (!r.converged) {
-        dt = dt === giant ? tau * 1e-6 : dt / 4;
+        dt = dt >= giant ? tau * 1e-6 : dt / 4;
         if (dt < tau * 1e-15) break;
         continue;
       }
-      if (dt >= giant && this._maxPotentialStep(this._diff()) < tol) {
-        return { converged: true, steps, iterations: totalIter, history };
+      if (dt === Infinity) {
+        converged = true; // the steady equations themselves were solved
+        break;
       }
-      dt = Math.min(dt * 10, giant);
+      if (dt >= giant && this._maxPotentialStep(this._diff()) < tol) {
+        converged = true;
+        if (dt > giant) {
+          // Finish at the base giant step, where the storage term pins amounts tightly.
+          this._renormalizeSpectators();
+          const f = this.step(giant);
+          totalIter += f.iterations;
+          converged = f.converged;
+        }
+        break;
+      }
+      if (dt < giant) {
+        dt *= 10; // ramping up after a failure
+        if (dt > 1e6 * tau) dt = giant; // then the direct steady solve (or the giant step)
+      } else if (dt < 1e6 * giant) {
+        dt *= 10; // conserved amounts present and still moving: let dt keep growing (capped)
+      }
     }
-    return { converged: false, steps, iterations: totalIter, history };
+    this.time = time;
+    if (converged) {
+      this.stretches.forEach((st, k) => {
+        if (!st.connected) return;
+        this.referenceAmounts[k] = this.amount(st);
+        this.boundaryIntake[k] = 0;
+      });
+    }
+    return { converged, steps, iterations: totalIter, history };
+  }
+
+  // Huge steps pin each conserved amount only through a tiny storage term, so round-off can let
+  // it creep. Shift each spectator's level uniformly to restore its amount exactly (exact for
+  // ideal statistics, where c ∝ e^η).
+  _renormalizeSpectators() {
+    const { n, M, u } = this;
+    let changed = false;
+    this.stretches.forEach((st, k) => {
+      if (!st.spectator) return;
+      const now = this.amount(st), want = this.referenceAmounts[k];
+      if (!(now > 0) || now === want) return;
+      const shift = Math.log(want / now);
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) u[this.blockOfNode[g] * M + 1 + st.species] += shift;
+      changed = true;
+    });
+    if (changed) this.computeConcentrations();
   }
 
   _diff() {
