@@ -162,7 +162,8 @@ more general than a zoo of contact types:
   (zero field). A capacitive link needs its own zero-charge alignment, an interface property:
   the flat-band voltage for a gate, the potential of zero charge for a metal/electrolyte
   interface. It is never computed from a work function and an electron affinity. C → ∞ is the
-  ideal limit. The gate "sets" φ only through this alignment; users never set φ directly.
+  ideal limit: a fixed μ̄_e⁻ plus the alignment, which is all a "fixed φ" boundary ever
+  honestly meant. The gate "sets" φ only through this alignment; users never set φ directly.
 Familiar contacts are presets: bath = all species fixed + neutral; semiconductor ohmic = e⁻/h⁺
 fixed + neutral; Schottky = e⁻/h⁺ thermionic with a given barrier height + capacitive; metal
 electrode = e⁻ terminal, ions blocked or reacting (alignment E°), capacitive Stern layer
@@ -189,16 +190,35 @@ charge flowing toward +x.
 
 ## 4. Numerics
 
-- **Grid:** 1D non-uniform node grid; region boundaries fall on cell faces. Include a grid
+- **Grid:** 1D non-uniform node grid. Every material interface is a *doubled node* (below), so
+  each grid segment lies inside one material. Include a grid
   builder with geometric/tanh grading toward interfaces and contacts, since Debye lengths
   (nm) are much smaller than devices (µm–mm). Given a target resolution near interfaces, it
   should pick spacing automatically.
 - **Discretization:** a finite-volume (box) method with **Scharfetter–Gummel** fluxes (the same
   exponential fitting as Il'in / Allen–Southwell for convection–diffusion). For species *i* the
   "drift" across a face combines `z_i F Δφ + Δμ°_i` (over RT) with the advective Péclet number;
-  for neutral species with no flow it reduces to plain diffusion. Offset jumps between regions must be handled
-  correctly: SG across a face with a step is exact in the exponential-fitting sense. Evaluate the
+  for neutral species with no flow it reduces to plain diffusion. Because segments never
+  straddle an interface, D, ε and μ° are constant along every SG segment; steps only happen at
+  doubled nodes. Evaluate the
   Bernoulli function `B(x) = x/(eˣ−1)` stably (series near 0, asymptotics for large |x|).
+- **Sharp interfaces are doubled nodes:** two nodes at the same x, one per side, joined by a
+  zero-width face. The zero-width face's flux law is the interface link, not SG. For each
+  variable (each η_i, and φ) the pair is one of:
+  - *linked*: both copies are unknowns and the face flux is a function of them: a kinetic or
+    conductance link for species (Butler–Volmer, thermionic emission, interface resistance), or
+    an interface capacitance for φ (displacement = C·Δφ). Blocked means zero flux.
+  - *continuous* (the default: local equilibrium for species, the continuous internal φ): the
+    right copy's slot holds the **interface flux** (for φ, the displacement) as its unknown
+    instead of a duplicate value. The left row is left-box balance minus that flux; the right
+    row is that flux minus right-box balance, reading the shared value from the left node.
+    This couples only neighbours, so it stays block-tridiagonal with a fixed block size and
+    no penalty terms. Summing the two rows gives exactly the classic shared-node box method,
+    each half-box using its own material's μ°, ε and D.
+  The interface fluxes then come out as unknowns, which is exactly what `sol.interfaces`
+  (and electrode currents) need. Fixed sheet charge and, later, interface states enter the
+  φ balance at the pair. Where a species is present on one side only, its copy on the other
+  side is an absent-species row. Cost is one extra node per interface.
 - **Unknowns (per node):** the dimensionless potential `φ̂ = Fφ/RT` and the dimensionless
   electrochemical potentials `η_i = μ̄_i / RT`. Concentrations can span 40 orders of magnitude
   (minority carriers), and these log-like variables keep them well conditioned. At equilibrium
@@ -218,7 +238,17 @@ charge flowing toward +x.
   when Newton fails. Total charge and mass must be conserved to round-off (test it).
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
   `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; φ then
-  jumps at interfaces (Donnan, junction potentials), which SG fluxes handle.
+  jumps at interfaces (Donnan, junction potentials): at doubled nodes the two φ copies are
+  simply independent, each fixed by neutrality on its own side.
+- **Interface alignment and unresolved double layers:** when the Debye length is far below the
+  grid spacing (metals, concentrated electrolytes), the double layer collapses into the
+  doubled-node pair. The alignment then only sets that sub-grid charge, and it drops out of
+  the μ̄ profiles automatically, as it should. Check this in tests (metal | metal, and a
+  quasi-neutral limit).
+- **Gauge in outputs:** internally φ is continuous. Outputs report φ in the *user's* per-material
+  gauge (internal φ minus that region's gauge shift), so φ steps at interfaces by whatever
+  dipole the user's μ° choices imply. That's subjective, and correctly so. Output arrays list
+  each doubled node twice (x repeated), so c, μ° and the user's φ plot as true vertical steps.
 - **Failure behaviour:** never return a silently wrong answer. Report non-convergence with the
   residual history, and expose `converged`, `iterations` and `residual`.
 
