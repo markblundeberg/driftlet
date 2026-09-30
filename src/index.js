@@ -106,6 +106,7 @@ export class Device {
    * Z = −δV/δI, the impedance seen at the terminals (Ω·m²).
    * @param {ArrayLike<number>} frequencies Hz
    * @param {{ profiles?: boolean }} [opts] also return complex profiles per frequency
+   * @returns {import('./types.js').ImpedanceResult}
    */
   impedance(frequencies, opts) {
     const steady = this.solver.solveSteady();

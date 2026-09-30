@@ -238,16 +238,62 @@ const dev = new Device(def);
 const sol = dev.solve();                      // steady state (or equilibrium)
 dev.set({ contacts: { right: { V: 0.3 } } }); // deep-merged change; the state is kept as a warm start
 const sol2 = dev.solve();
-const tr = dev.step(1e-6);                    // backward-Euler transient step (auto-subdivided if needed)
+const tr = dev.step(1e-6);                    // one backward-Euler step (auto-subdivided if needed)
+const tr2 = dev.step(1e-6, { method: 'bdf2' }); // second-order BDF2 once a previous step exists
+const run = dev.advance(1e-3, { tol: 1e-3 });  // adaptive steps to t = 1 ms
+const frame = dev.advance(t1, { budgetMs: 8 }); // …or as far as 8 ms of compute allows
+const Z = dev.impedance([1, 10, 100, 1e3]);    // small-signal impedance about the steady state
 const now = dev.solution();                   // snapshot of the current state
 ```
 
 - `solve()` finds the steady state from the current state without advancing time. If every
   species is fed by a contact, it solves the steady equations directly. Otherwise conserved
-  amounts (blocked species, reactive moieties) are kept exactly.
-- `step(dt)` advances the transient by dt seconds, halving internally where Newton needs it.
+  amounts (blocked species, reactive moieties) are kept exactly. If a direct solve fails at a
+  bias (a cold start far from equilibrium), it solves with both terminals level and ramps the
+  right terminal's voltage to its target.
+- `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
+  needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
+- `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
+  the local error per step to `tol` (default 1e-3) in thermal units of every potential (φ and
+  each μ̄/RT): roughly 0.1% in concentrations. It lands exactly on `tEnd`. Options: `tol`,
+  `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
+  `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
+  animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
+  `rejected`, and a `trace` of terminal current and voltage after every accepted step.
+- `impedance(frequencies, { profiles })` solves the steady state, then linearises about it:
+  Z(f) = −δV/δI in Ω·m², the impedance seen at the terminals. In voltage mode the right
+  terminal's voltage is perturbed; in current mode, the circuit current. With
+  `profiles: true`, each frequency also returns complex profiles of δφ, δμ̄ and δc per unit
+  excitation. Load mode isn't supported: a load resistor is part of the external circuit.
 - `set(patch)` merges plain objects deeply (arrays are replaced). The current state carries
   over while the grid and species are unchanged; otherwise it restarts from the regions' `c0`.
+  Time-stepping history doesn't carry over, so the next step starts with backward Euler.
+
+For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
+current transient after a voltage step.
+
+```js
+import { Device } from 'driftlet';
+
+const electrode = (V) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+const dev = new Device({
+  species: [
+    { name: 'Ag+', z: 1, cRef: 1000 },
+    { name: 'NO3-', z: -1, cRef: 1000 },
+  ],
+  materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+  regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
+  contacts: { left: electrode(0), right: electrode(0) },
+  grid: { minCells: 100 },
+});
+
+const { f, Z } = dev.impedance([0.01, 1, 100, 1e4]);
+f.forEach((fk, k) => console.log(`${fk} Hz: Z = ${Z.re[k].toExponential(3)} ${Z.im[k].toExponential(3)}i Ω·m²`));
+
+dev.set({ contacts: { right: { V: 0.05 } } });
+const run = dev.advance(1, { tol: 1e-3 }); // one second, adaptively
+console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.findIndex((t) => t >= 0.01)].toFixed(1)} A/m², I(1 s) = ${run.current.toFixed(2)} A/m²`);
+```
 
 ## Solutions
 
@@ -265,6 +311,7 @@ const now = dev.solution();                   // snapshot of the current state
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |
+| `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |
 
 A stretch is a run of regions in which a species is present and connected. Its `drift`
 compares its amount with the reference amount plus everything that came in through the

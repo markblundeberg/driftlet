@@ -175,6 +175,20 @@
  * @property {boolean} converged
  * @property {number} iterations
  * @property {number} time s
+ * @property {boolean} [done] advance(): whether tEnd was reached (false if the frame budget ran out)
+ * @property {number} [rejected] advance(): steps rejected by error control or Newton failure
+ * @property {{ t: number[], current: number[], voltage: number[] }} [trace] advance(): terminal
+ *   current (A/m², toward +x) and voltage after each accepted step
  */
+
+/**
+ * @typedef {object} ImpedanceResult
+ * @property {Float64Array} f frequencies, Hz
+ * @property {{ re: Float64Array, im: Float64Array }} Z impedance −δV/δI, Ω·m²
+ * @property {{ phi: ComplexProfile, mu: Record<string, ComplexProfile>, c: Record<string, ComplexProfile> }[]} [profiles]
+ *   per frequency, per unit excitation (volt, or A/m² in current mode)
+ */
+
+/** @typedef {{ re: Float64Array, im: Float64Array }} ComplexProfile */
 
 export {};

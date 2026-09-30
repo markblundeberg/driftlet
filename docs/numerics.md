@@ -246,11 +246,57 @@ nothing. For 300 nodes × 7 unknowns, one factor and solve takes ~0.4 ms in Node
 
 ## Time stepping
 
-Backward Euler. `step(dt)` recursively halves the interval wherever Newton fails, always
-landing exactly on t + dt. Minority carriers that must rise by many orders of magnitude after
-a bias step are the typical cause. Contact displacement at the start of a step is carried over
-from the end of the previous one, including across `set()`, so a step change in a gate voltage
-shows up as displacement current.
+- **Backward Euler** is the default for `step(dt)`. It recursively halves the interval wherever
+  Newton fails, always landing exactly on t + dt. Minority carriers that must rise by many
+  orders of magnitude after a bias step are the typical cause.
+- **Contact displacement** at the start of a step is carried over from the end of the previous
+  one, including across `set()`, so a step change in a gate voltage shows up as displacement
+  current.
+- **BDF2** (`method: 'bdf2'`) is the variable-step second-order backward difference formula.
+  With ω = dt/dt_prev, its storage term is
+  `[a₀ c − (1+ω) c_n + ω²/(1+ω) c_{n−1}]/dt`, where `a₀ = (1+2ω)/(1+ω)`.
+  - It's written in backward-Euler form, `(c − c*)/(dt/a₀)` with the history reference
+    `c* = [(1+ω) c_n − ω²/(1+ω) c_{n−1}]/a₀`. So assembly is shared, and the displacement
+    histories (for terminal currents) take the same combination.
+  - Conservation still telescopes. Closed amounts stay exact, since c* has the same amount
+    as c_n when c_n and c_{n−1} did. Open stretches add the history term Σ v (c* − c_n) to
+    their intake.
+  - A step ratio above 2 falls back to backward Euler for that step, to stay safely within
+    variable-step BDF2's zero-stability limit (1 + √2).
+- **Adaptive stepping** (`advance`):
+  - The local error of each step is estimated against an explicit predictor through the
+    previous states: quadratic after a BDF2 step, scaled by C_c/(C_c + C_p), with
+    `C_c = h³(1+ω)²/(ω(1+2ω))` and `C_p = h(h+h₁)(h+h₁+h₂)`; linear after backward Euler,
+    scaled by h/(2h + h₁). The first step, with no history, is checked by step doubling.
+  - The error is measured in thermal units over every state potential (φ̂ where defined,
+    each present η, a floating terminal voltage).
+  - A step is rejected above `tol`. The next step size is h·min(2, max(0.2,
+    0.9 (tol/err)^{1/(p+1)})).
+  - Newton failure quarters the step.
+  - The wall-clock budget is checked between steps.
+
+## Small-signal impedance
+
+About a steady state x₀, a small sinusoidal source δs·e^{iωt} gives, to first order,
+
+```
+(J + iωM) δx = −b δs
+```
+
+- **J** is the steady Jacobian.
+- **M** is the Jacobian of the time-derivative terms: storage v·K, displacement in the
+  circuit rows. It's read off two assemblies, J(dt) = J + M/dt, with a tiny dt so that the
+  subtraction loses nothing.
+- **b = ∂(residual)/∂s** comes from central differences in the source: the right terminal's
+  voltage in voltage mode, the circuit current in current mode. It's exact wherever the
+  residual is linear in the source.
+
+The system keeps the block-tridiagonal structure, so each frequency costs one complex block-Thomas
+factorisation (rows scaled by their largest entry). The terminal current comes from the last
+grid segment, conduction plus iω times its displacement, by the same identity as the floating
+terminal. In current mode, the voltage response is read from the terminal unknown instead.
+Conserved (blocked) species make J singular, but J + iωM isn't for ω > 0: at low frequency a
+blocking device looks like a capacitor, as it should.
 
 ## Steady state
 
@@ -267,8 +313,12 @@ shows up as displacement current.
   shift otherwise). It guards
   against round-off creeping through the vanishing storage term. The solve finishes with one
   step at the base giant dt, where pinning is tight.
-- **If Newton fails,** dt ramps up from a small value (pseudo-transient continuation), ending
-  in the direct solve where applicable.
+- **If a direct solve fails at a bias** (typically a cold start far from equilibrium), the
+  solve is repeated with both terminals level, where the cold start is consistent, and the
+  right terminal's voltage is then ramped to its target (source continuation). The step starts
+  at 1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
+- **If Newton still fails,** dt ramps up from a small value (pseudo-transient continuation),
+  ending in the direct solve where applicable.
 
 `solve()` does not advance the clock.
 

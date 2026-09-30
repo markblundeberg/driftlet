@@ -102,7 +102,9 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
 - voltage, galvanostatic (including open circuit) and load-resistor circuits;
-- steady states and backward-Euler transients, with exact conservation bookkeeping.
+- steady states; transients by backward Euler, BDF2, or adaptive BDF2 with error control and
+  frame budgets for animation; exact conservation bookkeeping;
+- small-signal impedance spectra Z(f), with complex profiles.
 
 How it works numerically is in [numerics](docs/numerics.md).
 
@@ -127,6 +129,8 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
 | Mass action | c(H⁺)c(OH⁻) = K_w from standard potentials; moiety conservation | 1e-9 |
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
+| Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
+| Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
 | Fermi–Dirac statistics | 𝓕_{±1/2} vs quadrature; degenerate bulk; accumulation charge via 𝓕_{3/2} | 1e-13; 1e-12; 1e-3 |
