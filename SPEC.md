@@ -32,8 +32,8 @@ dropped into a web page.
   keeps it fast and simple, and it's the whole point of an interactive toy. Every physics model
   must be local (a node couples only to its neighbours), and so is everything else: circuits
   are boundary conditions at one end, and conserved inventories come from the storage term
-  (or, as a fallback, a running-integral unknown). There is no bordering and no dense row. Features that would break this structure
-  are out of scope, not deferred.
+  (or, as a fallback, a running-integral unknown). There is no bordering and no dense row.
+  Features that would break this structure are out of scope, not deferred.
 - **Speed:** with ~300 nodes and up to 6 species, one Newton iteration should take well under
   1 ms in V8, and a warm-started re-solve after a small parameter change should take under
   ~5 ms. Inner loops should be allocation-free (`Float64Array`, reused buffers).
@@ -58,10 +58,9 @@ this section implements them.
   (`μ°_e⁻ + μ°_h⁺`, `μ°_Na⁺ + μ°_Cl⁻`, `μ°_Li⁺ + μ°_e⁻`). How charged levels line up across a
   boundary between different materials is a property of *that interface* and must be given
   explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level in the
-  API. (The docs give those rules as explicit recipes users may apply by hand, with warnings; see
-  §7.) Those
-  rules imply that alignments add up transitively (so methanol | water | methanol would have
-  cancelling dipoles). driftlet assumes no such thing: each interface's alignment is
+  API. (The docs give those rules as explicit recipes users may apply by hand, with warnings;
+  see §7.) Those rules imply that alignments add up transitively (so methanol | water |
+  methanol would have cancelling dipoles). driftlet assumes no such thing: each interface's alignment is
   independent, even when the same pair of materials meets twice, since for example different
   adsorbates can sit on each interface. (A uniform alignment across each interface is an
   assumption only because the model is 1D; patch potentials and Schottky-barrier
@@ -71,11 +70,11 @@ this section implements them.
   gave W, and it never feeds back into alignment.
 
 **Species.** Each species *i* has a charge number `z` (any integer, **including 0**: neutral
-mobile species such as dissolved gases or water are supported from v0), a diffusivity `D` (per
-region), and, per region, a **standard chemical potential** `μ°_i`. The primary variable is the
-**electrochemical potential** `μ̄_i`. Ideal (Boltzmann/dilute) statistics:
+mobile species such as dissolved gases or water are supported from v0), and, per material, a
+diffusivity `D` and a **standard chemical potential** `μ°_i`. The primary variable is the
+**electrochemical potential** `μ̄_i`. Ideal (Boltzmann/dilute) statistics by default:
 
-- `μ̄_i = μ°_i(region) + z_i F φ + RT ln(c_i / c_ref,i)`, so
+- `μ̄_i = μ°_i(material) + z_i F φ + RT ln(c_i / c_ref,i)`, so
   `c_i = c_ref,i · exp( (μ̄_i − μ°_i − z_i F φ) / RT )`.
 - The API speaks μ̄_i (J/mol, with eV helpers). The core works in `η_i = μ̄_i / RT`.
 - Output conveniences for charged species: the species voltage `V_i = μ̄_i / (z_i F)` and the
@@ -85,8 +84,20 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
 - Electrons and holes are ordinary species (`z = ∓1`), with `c_ref` = the effective density of
   states and `μ°` = the band edges (as molar energies). Plotted as voltages (V_i upward), the
   conduction band sits below the valence band; that's expected.
-- Degenerate (Fermi–Dirac) statistics are a later, optional add-on (e.g. the Blakemore
-  approximation).
+- **Lattice saturation (early optional add-on, per material).** Species sharing a site
+  lattice of density c_max:
+  `μ̄_i = μ°_i + z_i F φ + RT ln(c_i / (c_max − Σ_{j∈lattice} c_j))`. It inverts in closed form
+  (`c_i = c_max·a_i / (1 + Σ_j a_j)`, with `a_i = exp((μ̄_i − μ°_i − z_i F φ)/RT)`), so it stays
+  local and cheap in η. It matters wherever Boltzmann gives absurd numbers: double layers
+  beyond a few RT/F (Bikerman-type crowding, instead of unbounded counter-ion pile-up) and
+  intercalation hosts (Li in graphite or LFP, where site filling sets the OCV curve). A single
+  species on its own lattice is Fermi–Dirac for one level.
+  - Transport keeps the mobility form `N = −(D c/RT)∇μ̄`. Document that D is then a mobility
+    coefficient, not the Fickian D, and offer the `(1 − θ)` hopping factor as an option.
+  - Plain SG assumes Boltzmann. Use the excess-chemical-potential generalisation of SG (as in
+    ChargeTransport.jl / VoronoiFVM), which still preserves equilibrium exactly.
+- Degenerate band statistics (Fermi–Dirac integrals, e.g. Blakemore or Joyce–Dixon) for
+  electrons and holes are a later add-on; they use the same generalised-SG machinery.
 
 **Transport.** Particle flux per species:
 `N_i = −(D_i c_i / RT) ∇μ̄_i + c_i v(x) + N_i^mix`, with continuity
@@ -121,8 +132,8 @@ region), and, per region, a **standard chemical potential** `μ°_i`. The primar
   feeding several faces. The local stand-in for a well-mixed volume is a region with large
   D_mix.
 
-**Electrostatics.** `−∂/∂x (ε ∂φ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` and the fixed
-charge `ρ_fixed` (doping, ionomer charge, …) are set per region.
+**Electrostatics.** `−∂/∂x (ε ∂φ/∂x) = F Σ z_i c_i + ρ_fixed(x)`, where `ε` belongs to the
+material and the fixed charge `ρ_fixed` (doping, ionomer charge, …) to the region.
 
 **Materials, regions and interfaces.** A *material* holds bulk properties: ε, and per species
 D, c_ref and μ°_i (or "absent"). Its μ°_i are defined only up to a charge gauge
@@ -300,8 +311,15 @@ charge flowing toward +x.
     τ_slow/τ_fast ~ 1e12). Pick dt relative to τ_slowest, not arbitrarily huge. Check the
     floating-island inventory after a giant step. If it drifts, use the running-integral
     fallback (§3).
-- **Transient:** backward Euler with a BDF2 option, finite-volume mass matrix, and step halving
-  when Newton fails.
+- **Transient and time-step control.** Backward Euler with a BDF2 option, finite-volume mass
+  matrix, and step halving when Newton fails. Real devices span nanoseconds (dielectric
+  relaxation) to kiloseconds (diffusion across a millimetre), so dt must adapt:
+  - estimate local error from the BE–BDF2 difference (or step doubling) and grow or shrink dt
+    to hit a tolerance;
+  - log-spaced output times for "watch it relax" views;
+  - an animation-friendly call, `advance(tEnd, { budgetMs })`, that does as many internal
+    steps as fit in the budget and returns the state reached, so a UI can call it once per
+    frame and stay responsive.
 - **Conservation: exact equations, iterate only as good as Newton.**
   - *Discretely exact.* Summed over boxes, each face flux cancels exactly in floating point,
     provided it is **computed once per face and added with ± to both neighbours**, never
@@ -324,6 +342,16 @@ charge flowing toward +x.
   - *Diagnostics:* every solution reports conservation bookkeeping: per species (or moiety),
     the mismatch between the change in inventory and the time-integrated boundary flux, and
     likewise for charge. "Never silently wrong" applies to conservation too.
+- **Small-signal impedance.** Linearise about a steady state and solve
+  `(J + iωM)·δx = b` at each frequency: the same block-tridiagonal Jacobian J and mass matrix
+  M, in complex arithmetic (or real blocks of doubled size). It's local, so plain block Thomas
+  applies; one factorisation per frequency. The output is the terminal impedance Z(ω) plus
+  the complex profiles δμ̄_i(x), δφ(x), for Warburg, double-layer and Maxwell–Wagner demos.
+- **Grid under parameter changes.** Warm starts need the same grid, so the grid stays fixed
+  across `set()` unless the geometry changes (then regrid and interpolate the warm state).
+  After every solve, check resolution against the local Debye length (and diffusion-layer
+  width). If a parameter change has left a layer under-resolved, say so in the solution's
+  diagnostics rather than returning a quietly wrong profile.
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
   `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; φ then
   jumps at interfaces (Donnan, junction potentials): at doubled nodes the two φ copies are
@@ -384,7 +412,9 @@ sol.interfaces;   // per face: steps in each μ̄_i and V_i (overpotentials, jun
 sol.converged; sol.iterations; sol.residual;
 sol.conservation;  // per species/moiety and charge: Δinventory vs ∫boundary flux dt
 
-dev.step(dt, { from: sol });                     // transient
+dev.step(dt, { from: sol });                     // one transient step
+dev.advance(tEnd, { from: sol, budgetMs: 8 });   // adaptive steps within a frame budget
+dev.impedance(freqs, { about: sol });            // small-signal Z(ω) and profiles
 ```
 
 Design goals for the API: plain objects in, typed arrays out, no classes users must subclass.
@@ -443,15 +473,24 @@ Each item is an automated test with a stated tolerance. The README carries a tab
     ChargeTransport.jl or Driftfusion within stated tolerance.
 15. **Performance benchmark:** time per Newton iteration and per warm re-solve on reference
     devices, tracked across versions.
+16. **Lattice saturation:** a single-species lattice gas reproduces the Fermi-function
+    filling curve exactly. A Bikerman-type double layer matches the analytic
+    Kilic–Bazant–Ajdari profile and capacitance (camel shape, then saturation at large drop).
+    Equilibrium invariance (test 1) still holds with generalised SG.
+17. **Impedance:** a blocking electrolyte cell matches its analytic R–C response. A reversible
+    electrode with finite-length diffusion matches the finite Warburg element, including the
+    45° region and both low-frequency limits. The ω → 0 impedance matches the slope of the
+    steady I–V curve.
 
 ## 7. Deliverables and packaging
 
 - **Repo layout:** `src/` (core: grid, SG fluxes, assembly, block-tridiagonal solver, Newton,
   transient); `test/` (node's built-in test runner, no deps); `bench/`; `examples/` (standalone
-  HTML demos importing from jsdelivr: pn junction with a bias slider; electrolyte cell with a
-  load slider; double layer at a blocking electrode).
+  HTML demos importing from jsdelivr, built as they become relevant; no fixed list).
 - **Docs:** README (what it is and isn't, conventions, API, validation table, pointers to
-  heavier tools) and JSDoc types (optionally a `.d.ts`).
+  heavier tools), a ROADMAP, and JSDoc types (optionally a `.d.ts`). This design brief is
+  temporary: it dissolves into README, ROADMAP, docs and code. Code, tests and docs never
+  cite it.
 - **Alignment guide (docs page):** explains per-interface alignment and bookkeeping φ, then
   gives precise, worked recipes for turning vacuum- or reference-based data into driftlet
   alignments, for users who have nothing better (it's a legitimate best guess) and as a
@@ -470,26 +509,39 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 
 ## 8. Milestones
 
-- **M0: equilibrium.** Grid, regions, links, conserved inventories, nonlinear
-  Poisson–Boltzmann with flat μ̄_i fixed by links or inventories; materials and interface
-  alignment. Tests 1, 2, 3, 4, 8 (built-in potential), 9.
-- **M1: steady transport.** SG fluxes, Newton on (φ̂, η_i), voltage/current/load circuit, warm
-  starts. Tests 5, 6, 13.
-- **M2: reactions.** Bulk mass-action and interfacial Butler–Volmer. Tests 7, 8 (J–V), 10.
-- **M3: transient.** Test 12 and the conservation checks.
-- **M4: ship 0.1.0.** Examples, docs, benchmark, npm publish.
-- **Later:** quasi-neutral mode, degenerate statistics, concentration-dependent D, non-ideal
-  activities, non-isothermal transport, impedance (small-signal AC) via the same Jacobian.
-  (Advection v(x) and eddy mixing D_mix(x) are cheap and could land in M1 or M2.)
+Each milestone ends green: its tests pass, and the benchmark has no regressions.
+
+- **M0: skeleton and solver core.** package.json (ESM, exports map), `node --test` setup,
+  stable Bernoulli function, block Thomas (tested against a dense solve, including
+  near-singular blocks), grid builder with grading and doubled interface nodes, and device
+  construction with validation (missing or doubled alignment, no electrostatic anchor,
+  unknown species: all clear errors). No physics yet; everything unit-tested.
+- **M1: equilibrium through the time-step machinery.** Assembly (Poisson, SG fluxes, storage;
+  each face flux computed once), end links (fixed, blocked, neutral, capacitive, free),
+  doubled-node fixed-offset interfaces, backward Euler + damped Newton, giant-step `solve()`
+  with Ψtc fallback, warm starts, conservation diagnostics, and the inventory round-off check.
+  Tests 1, 2, 3, 4, 8 (built-in potential), 9.
+- **M2: transport, circuits, first transients.** Bias, galvanostatic, load-resistor and
+  open-circuit boundary conditions; conductance links; steady transport; plain fixed-dt
+  transients. Tests 5, 6, 12, 13, and a first benchmark baseline (15), so performance is
+  tracked from here on.
+- **M3: reactions and statistics.** Bulk mass action (moiety-exact sources), Butler–Volmer and
+  thermionic links, lattice saturation with generalised SG. Tests 7, 8 (J–V), 10, 16.
+- **M4: time and frequency.** Adaptive dt, BDF2, `advance()` with a frame budget, small-signal
+  impedance, advection and current-free mixing, grid-resolution diagnostics. Tests 11, 17.
+- **M5: ship 0.1.0.** README, ROADMAP, alignment guide, JSDoc/.d.ts, CI, whatever examples
+  exist by then, npm publish.
+- **Later (ROADMAP):** quasi-neutral mode, degenerate band statistics, interface states
+  (charge that depends on μ̄_e⁻, i.e. Fermi-level pinning), concentration-dependent D,
+  non-isothermal transport, optional cross-check (14).
 
 ## 9. Questions to settle with the owner early
 
 Settled (2026-09-29): primary branch is `master`; honest-thermodynamics principles, with the
-API in μ̄ and V_i as optional views (§3); blocked
-species are conserved spectators and all-blocked islands are valid with gate anchoring (§3);
-milestones are a brainstorm, free to reshuffle.
+API in μ̄ and V_i as optional views (§3); blocked species are conserved spectators and
+all-blocked islands are valid with gate anchoring (§3); local physics only (§2); demos are
+built as they become relevant.
 
-- Repo location and npm ownership (who publishes; the name `driftlet` was free on npm as of
-  2026-09-29; the fallback is a scoped name).
-- Which example devices matter most for the first demos (this sets which of advection/mixing,
-  reactions, transients get polished first).
+- npm: which account owns the package (personal, or an npm org for co-maintainers), whether
+  to reserve the name `driftlet` now (free as of 2026-09-29) with a placeholder publish, and
+  whether releases are published by hand or from CI with a token.
