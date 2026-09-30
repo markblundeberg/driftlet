@@ -164,7 +164,9 @@ statistics can't be, and must be built inside the worker.)
 No dependencies. Tests use node's built-in runner (Node ≥ 20):
 
 ```sh
-npm test
+npm test         # the validation suite
+npm run bench    # timings of typical workloads
+npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),

@@ -45,6 +45,8 @@ export class Device {
   /**
    * Change part of the definition (deep-merged). The current state is kept as the warm start
    * when the grid and species are unchanged; otherwise it restarts from the regions' c0.
+   * @param {object} patch a partial device definition, merged into the current one
+   * @returns {this}
    */
   set(patch) {
     const def = merge(this.def, patch);
@@ -71,6 +73,7 @@ export class Device {
 
   /**
    * Steady state (or equilibrium), warm-started from the current state. Doesn't advance time.
+   * @param {{ maxSteps?: number, tol?: number, continuation?: boolean }} [opts]
    * @returns {Solution}
    */
   solve(opts) {

@@ -4,3 +4,4 @@ coverage/
 .DS_Store
 # local agent infra (hooks etc.)
 .claude/
+types/

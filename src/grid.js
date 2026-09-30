@@ -12,6 +12,8 @@ const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
 
 /**
  * Cell widths for one region: fine at both ends, growing toward the middle.
+ * @param {number} length m
+ * @param {import('./types.js').GridOptions} [opts]
  * @returns {number[]} widths summing to `length`
  */
 export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCells = DEFAULTS.minCells, hLeft, hRight } = {}) {
