@@ -145,10 +145,14 @@ The end node's balance rows are complete except for the flux through the outer f
 displacement). Contact fluxes and terminal currents are recovered exactly this way, with no
 extra unknowns. Then:
 
-- **Fixed species:** the balance row becomes the Dirichlet row `η = target`.
-- **Neutral φ:** the Poisson row becomes local neutrality (total charge, mobile plus fixed, is
-  zero). The recorded residual is the metal's surface charge.
-- **Capacitive φ:** a term `C·((V − zeroCharge) − φ_edge)` joins the Poisson row.
+- **Species in equilibrium with the outside phase:** the balance row becomes the Dirichlet row
+  `η = target` (the known outside level).
+- **φ `bulk`:** the Poisson row becomes local neutrality (total charge, mobile plus fixed, is
+  zero). The recorded residual is the outside's surface charge.
+- **φ `dipole`:** the Poisson row becomes the Dirichlet row φ_edge = V − zeroCharge, again with
+  the residual recorded as the outside's charge.
+- **φ `capacitive`:** a term `C·((V − zeroCharge) − φ_edge)` joins the Poisson row.
+- **φ `neutral`:** nothing is added (D = 0 at the face).
 - **Conductance links and electrode reactions** add their fluxes to the balance rows.
   Reactions use the node's concentrations (behind any Stern layer, hence Frumkin effects)
   and the metal's electrons at −F·V.
@@ -160,7 +164,7 @@ contact fluxes are read from residuals instead.
 
 In galvanostatic and load modes the right terminal's voltage V_t is unknown.
 
-- **If a fixed charged terminal species exists there,** V_t is read off that species' own η at
+- **If a charged terminal species is in equilibrium there,** V_t is read off that species' own η at
   the contact node. Its row becomes the circuit law `I_segment − I_circuit(V_t) = 0`.
   I_segment is the total current (conduction plus displacement) through the last grid segment,
   which equals the terminal current exactly. The last box's species balance plus its Poisson

@@ -65,10 +65,15 @@ density is then N_c·e^{−φ_B/kT}, whatever the bias. Measured barriers on Si 
 largely insensitive to W_m (strong pinning), so a measured φ_B is far preferable. It goes in the
 same `step`.
 
-To model the metal as a contact instead of a region, fix `'e-'` at the contact (offset 0) and
-use a stiff capacitive φ link, whose `zeroCharge` pins the band at the surface:
-`zeroCharge = φ_B/e − μ°_e/F` (the second term is the semiconductor's own electron μ°, J/mol,
-divided by F), with C large.
+To model the metal as a contact instead of a region, put `'e-'` in equilibrium at the contact
+(offset 0) and pin φ with a `dipole` law:
+
+```js nocheck
+contacts: { left: { terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'dipole', zeroCharge: phiB - mu0e / FARADAY } } }
+```
+
+Here `mu0e` is the semiconductor's own electron standard potential (J/mol). With `mu0e = 0`,
+`zeroCharge` is simply the barrier. A capacitive law with finite C adds an interfacial layer.
 
 ## Gates: flat-band voltage
 

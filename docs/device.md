@@ -138,45 +138,60 @@ those materials.
 
 ## Contacts
 
+A contact is an interface whose far side is an **outside phase with known levels**: think of
+it as one more region whose node is fully known. The outside phase's levels form a rigid
+ladder, `V_i = V + offset_i` for charged species (μ̄ given directly for neutral ones). The
+offsets are the outside phase's own chemistry, and the circuit slides the whole ladder by the
+terminal voltage V. The laws joining it to the device are the same as at internal interfaces.
+
 ```js nocheck
 contacts: {
   left: {
     V: 0, // terminal voltage, V
     terminal: 'e-', // the species whose voltage V is
-    species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 }, 'Cl-': 'blocked' },
-    phi: 'neutral', // 'neutral' | 'free' | { type: 'capacitive', C, zeroCharge }
+    species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'blocked' },
+    phi: 'bulk', // 'bulk' | 'neutral' | { type: 'capacitive', C, zeroCharge } | { type: 'dipole', zeroCharge }
     reactions: [ /* electrode reactions, below */ ],
   },
   right: { bath: { c: { 'Na+': 10, 'Cl-': 10 }, reference: 'Cl-' } },
 }
 ```
 
-**Species links** (default `'blocked'`):
-- `'fixed'`: the species is held at `V_i = V + offset` (charged) or `μ̄ = mu` (neutral, J/mol).
-  The offset defaults to 0 only for the terminal species. Any other fixed species needs one,
-  because it's a property of the outside phase. For an ion at a reversible electrode,
-  Mⁿ⁺ + n e⁻ ⇌ M(s) gives `offset = μ_M/(nF)`, the metal's own chemical potential per charge,
-  which is 0 on the usual table convention. (E° isn't the offset: it's already carried by the
-  ion's μ° in the solution.) At a metal, holes and electrons share the metal's voltage:
-  `offset: 0`.
-- `{ type: 'conductance', G, offset }`: ohmic exchange with an outside level at
-  `V + offset`, J = G·(V_out − V_i).
+**Species laws** (default `'blocked'`):
+- `'equilibrium'`: the species is in equilibrium with the outside phase, so it's held at
+  `V_i = V + offset` (charged) or `μ̄ = mu` (neutral, J/mol).
+  - The offset defaults to 0 only for the terminal species. Any other species needs one,
+    because it's a property of the outside phase: the chemical potential, per charge, of the
+    neutral combination the species forms with the terminal species there.
+  - For an ion at a reversible electrode, Mⁿ⁺ + n e⁻ ⇌ M(s) gives `offset = μ_M/(nF)`, the
+    metal's own chemical potential per charge, which is 0 on the usual table convention. (E°
+    isn't the offset: it's already carried by the ion's μ° in the solution.)
+  - At a metal, holes and electrons share the metal's voltage: `offset: 0`.
+- `{ type: 'conductance', G, offset }`: ohmic exchange with the outside level at `V + offset`,
+  J = G·(V_out − V_i).
 - `'blocked'`: no flux.
 
-**`bath`** (instead of `species` and `phi`): a neutral composition `c` and a charged
-`reference` species (as for a reversible reference electrode, e.g. Cl⁻ for Ag/AgCl), which is
-the terminal. Every bath species is fixed at the level its composition implies, and φ is
-neutral. An optional `offset` places the reference species relative to V.
+**`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
+held in place by a charged `reference` species (as for a reversible reference electrode, e.g.
+Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
+composition implies, and the φ law is `'bulk'`. An optional `offset` places the reference
+species relative to V.
 
-**`phi`**, required whenever any species or reaction connects at the contact:
-- `'neutral'`: the contact node is locally neutral (ohmic contacts, baths). The metal takes
-  whatever surface charge that needs.
+**`phi`**, required whenever any species or reaction connects at the contact (default
+`'neutral'`):
+- `'bulk'`: the end node is plain bulk, locally neutral, with no double layer at the contact
+  (ohmic contacts, baths). The outside takes whatever surface charge that needs.
+- `'neutral'`: no charge at the face (D = 0), as for an internal `'neutral'` face.
 - `{ type: 'capacitive', C, zeroCharge }`: a gate or Stern layer to a conductor at the
   terminal voltage V. The displacement into the device is `C·((V − zeroCharge) − φ_edge)`, so
   `zeroCharge` is the value of V − φ_edge at which the interface carries no charge: the
-  flat-band voltage of a gate, or the potential of zero charge (pzc) of an electrode. It's an
-  interface property, never computed from work functions.
-- `'free'`: zero field.
+  flat-band voltage of a gate, or the potential of zero charge (pzc) of an electrode.
+- `{ type: 'dipole', zeroCharge }`: the pinned limit (C → ∞), φ_edge = V − zeroCharge. This is
+  what a "fixed φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type
+  material with μ°_e = 0 is `zeroCharge: φ_B`.
+
+Like every alignment, `zeroCharge` is a property of that interface, never computed from work
+functions (see the [alignment guide](alignment.md) for vacuum-level estimates).
 
 **Electrode `reactions`**, written as reduction when `electrons > 0`:
 `Σν_R R + n e⁻(metal) ⇌ Σν_P P`. The metal's electrons sit at μ̄_e = −F·V, and
@@ -195,9 +210,9 @@ circuit: { mode: 'load', R: 1e-3, V: 0.1 } // I = (V_right − V_left − V)/R, 
 ```
 
 The left terminal is the reference. In current and load modes the right terminal's voltage is
-solved for, which needs a current path there: a fixed charged terminal species, an electrode
-reaction or a conductance link. A floating kinetic electrode also needs a capacitive or free φ
-link.
+solved for, which needs a current path there: a charged terminal species in equilibrium, an
+electrode reaction or a conductance link. A floating kinetic electrode also needs a capacitive
+or neutral φ law.
 
 ## Grid
 

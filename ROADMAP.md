@@ -65,6 +65,10 @@ for live demos.
 - **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where λ_D ≪ h,
   for macroscopic devices with real double-layer charge on any grid. It tends to `neutral` as
   ε → 0.
+- **Internal ports.** An outside phase attached at an interior node, exchanging species through
+  the same laws as a contact (e.g. injecting salt mid-solution). It's local, because it only
+  adds terms to that node's balance. Start with reservoir exchange; extra circuit terminals
+  would come later.
 - **Interface states** (charge that depends on the local μ̄_e, i.e. Fermi-level pinning) and
   thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.

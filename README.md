@@ -91,8 +91,9 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
   species absent from some materials;
 - Poisson electrostatics, or strictly neutral (ε = 0) materials such as metals and macroscopic
   electrolytes;
-- contacts that fix species levels (ohmic contacts, reversible electrodes, baths), conductance
-  links, Butler–Volmer electrode reactions, gates and Stern layers;
+- contacts as outside phases with known levels, joined by the same laws as internal faces:
+  ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links,
+  Butler–Volmer electrode reactions, gates and Stern layers;
 - interfaces with explicit alignment, blocking, interface resistance, or Butler–Volmer
   ion/electron transfer, and a choice of electrostatic law (pinned dipole, neutral, Helmholtz);
 - bulk reactions with thermodynamically consistent mass action (recombination, water

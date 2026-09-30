@@ -79,26 +79,32 @@ alignment plays the role of a potential of zero charge or work function.
 
 ## Contacts and terminals
 
-A contact has a **terminal voltage** V, the μ̄ of a named terminal species, and a link for every
-species plus one for φ.
+A contact is an interface with an **outside phase** whose levels are known, like one more region
+with a fully known node. The outside phase's charged levels form a rigid ladder,
+`V_i = V + offset_i`, which the circuit slides by the **terminal voltage** V (the voltage of a
+named terminal species). The laws joining it to the device (equilibrium, blocked, conductance,
+reactions; and for φ, bulk, neutral, capacitive, dipole) are the same as at internal faces.
 
-- **Fixed species** sit at `V_i = V + offset_i`. The offset belongs to the outside phase: it's
+- **Species in equilibrium** with the outside phase sit at `V_i = V + offset_i`. The offset belongs to the outside phase: it's
   the chemical potential, per charge, of whatever neutral combination the species forms with
   the terminal species there. It's 0 for the terminal species itself. For an ion at a
   reversible electrode, Mⁿ⁺ + n e⁻ ⇌ M(s) gives `μ_M/(nF)`, which is 0 on the usual table
   convention: E° is carried by the ion's μ° in the solution, not by the offset. It's never
   defaulted for any other species. Neutral species are fixed by an absolute μ̄.
-- **Ohmic contacts** to a semiconductor are just fixed V_e⁻ and/or fixed V_h⁺:
-  - both fixed at the same metal gives V_h⁺ = V_e⁻, an infinite-recombination contact
+- **Ohmic contacts** to a semiconductor are just V_e⁻ and/or V_h⁺ in equilibrium with the metal:
+  - both, at the same metal, gives V_h⁺ = V_e⁻, an infinite-recombination contact
     (n·p = n_i² there);
   - one alone gives a selective contact.
 - **Baths** are a shorthand. From a neutral composition and a reference species (the ion a
   reversible reference electrode would sense, e.g. Cl⁻ for Ag/AgCl), driftlet works out every
-  species' fixed level.
-- **Gates and Stern layers** are capacitive φ links to a conductor at the terminal voltage.
+  species' equilibrium level.
+- **Gates and Stern layers** are capacitive φ laws to a conductor at the terminal voltage.
   Their `zeroCharge` is the value of V − φ_edge at which the interface is uncharged: the
   flat-band voltage, or the potential of zero charge. Like every alignment, it's a property
-  of that interface.
+  of that interface. The pinned `dipole` law is the C → ∞ limit (e.g. a Schottky barrier),
+  which is what a "fixed φ" boundary honestly means.
+- **`bulk`** says the end node is plain bulk (locally neutral, no double layer), while
+  **`neutral`** says no charge sits at the face (D = 0), as for internal faces.
 - **Electrode reactions** take their electrons from the metal at μ̄_e = −F·V.
 
 With ion μ° from the usual SHE-based tables, the solution's bookkeeping φ is on the SHE scale:
