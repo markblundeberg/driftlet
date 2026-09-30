@@ -154,8 +154,11 @@ contacts: {
 **Species links** (default `'blocked'`):
 - `'fixed'`: the species is held at `V_i = V + offset` (charged) or `μ̄ = mu` (neutral, J/mol).
   The offset defaults to 0 only for the terminal species. Any other fixed species needs one,
-  because it's an interface property (e.g. E° for an ion at a reversible electrode). At a metal,
-  holes and electrons share the metal's voltage: `offset: 0`.
+  because it's a property of the outside phase. For an ion at a reversible electrode,
+  Mⁿ⁺ + n e⁻ ⇌ M(s) gives `offset = μ_M/(nF)`, the metal's own chemical potential per charge,
+  which is 0 on the usual table convention. (E° isn't the offset: it's already carried by the
+  ion's μ° in the solution.) At a metal, holes and electrons share the metal's voltage:
+  `offset: 0`.
 - `{ type: 'conductance', G, offset }`: ohmic exchange with an outside level at
   `V + offset`, J = G·(V_out − V_i).
 - `'blocked'`: no flux.

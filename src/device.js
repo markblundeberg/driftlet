@@ -456,9 +456,9 @@ function normalizeElectrodeReaction(rdef, path, mat, species, speciesIndex, RT) 
 
 // A contact has a terminal voltage V (set by the circuit; 0 by default) and a link for every
 // species and for φ. A fixed charged species sits at V_i = V + offset_i, i.e.
-// μ̄_i = z_i F (V + offset_i); the offset is an interface property (0 for the terminal species,
-// e.g. e⁻ at a metal; E° for an ion at a reversible electrode) and is never defaulted for
-// the others. A fixed neutral species takes an absolute μ̄. A bath computes the offsets from
+// μ̄_i = z_i F (V + offset_i). The offset belongs to the outside phase: 0 for the terminal
+// species (e.g. e⁻ at a metal); μ_M/(nF) for Mⁿ⁺ at a reversible M electrode (0 on table
+// conventions, E° being carried by the ion's μ°). It is never defaulted for the others. A fixed neutral species takes an absolute μ̄. A bath computes the offsets from
 // a composition, anchored through its reference species.
 function normalizeContact(cdef, side, region, materials, species, speciesIndex, RT) {
   const path = `contacts.${side}`;

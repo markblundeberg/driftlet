@@ -128,7 +128,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 
 ## Performance
 
-On a laptop in Node 22, one linear solve for 300 nodes × 7 unknowns takes about 0.4 ms, and a
+On a desktop Ryzen 7600X in Node 22, one linear solve for 300 nodes × 7 unknowns takes about 0.4 ms, and a
 warm-started steady re-solve after a bias step takes a few milliseconds. The library has no
 dependencies and does no DOM access, so it runs in a Web Worker. (A device definition is plain
 data and can be posted to a worker. Devices using the future custom-function statistics can't

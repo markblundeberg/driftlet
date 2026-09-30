@@ -82,9 +82,12 @@ alignment plays the role of a potential of zero charge or work function.
 A contact has a **terminal voltage** V, the μ̄ of a named terminal species, and a link for every
 species plus one for φ.
 
-- **Fixed species** sit at `V_i = V + offset_i`. The offset is an interface property: 0 for the
-  terminal species itself, E° for an ion at a reversible electrode. It's never defaulted for
-  any other species. Neutral species are fixed by an absolute μ̄.
+- **Fixed species** sit at `V_i = V + offset_i`. The offset belongs to the outside phase: it's
+  the chemical potential, per charge, of whatever neutral combination the species forms with
+  the terminal species there. It's 0 for the terminal species itself. For an ion at a
+  reversible electrode, Mⁿ⁺ + n e⁻ ⇌ M(s) gives `μ_M/(nF)`, which is 0 on the usual table
+  convention: E° is carried by the ion's μ° in the solution, not by the offset. It's never
+  defaulted for any other species. Neutral species are fixed by an absolute μ̄.
 - **Ohmic contacts** to a semiconductor are just fixed V_e⁻ and/or fixed V_h⁺:
   - both fixed at the same metal gives V_h⁺ = V_e⁻, an infinite-recombination contact
     (n·p = n_i² there);
