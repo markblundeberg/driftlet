@@ -1,7 +1,9 @@
 # driftlet: design spec
 
-*A starting point for the agent building this library. Treat it as a strong draft: where it's
-wrong or awkward, improve it and write down why.*
+*The original design brief, now being dissolved into the real documentation: the
+[README](README.md), [docs/](docs/) (conventions, device reference, numerics, alignment) and the
+[ROADMAP](ROADMAP.md). Where they disagree, the docs and the code win. This file is kept for
+its design history and will be retired.*
 
 ## 1. What it is
 

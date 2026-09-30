@@ -2,9 +2,11 @@
 
 Guide for coding agents working in this repo.
 
-- **Start with [SPEC.md](SPEC.md).** It's the design brief: scope, physics conventions, numerics,
-  API sketch, validation suite and milestones (M0 → M4). Improve it when it's wrong, and note
-  why in the commit.
+- **Start with the docs:** [README](README.md), [docs/conventions.md](docs/conventions.md),
+  [docs/device.md](docs/device.md), [docs/numerics.md](docs/numerics.md) and
+  [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference.
+  SPEC.md is the original design brief, being retired: consult it for history, but don't cite
+  it from code, tests or docs.
 - **Constraints that don't bend:** pure-JS ES module, zero runtime dependencies, 1D,
   block-tridiagonal Jacobian, runs in a Web Worker, loadable from jsdelivr.
 - **Tests are the deliverable.** Every physics feature lands with an analytic validation test
