@@ -288,7 +288,29 @@ charge flowing toward +x.
     floating-island inventory after a giant step. If it drifts, use the running-integral
     fallback (§3).
 - **Transient:** backward Euler with a BDF2 option, finite-volume mass matrix, and step halving
-  when Newton fails. Total charge and mass must be conserved to round-off (test it).
+  when Newton fails.
+- **Conservation: exact equations, iterate only as good as Newton.**
+  - *Discretely exact.* Summed over boxes, each face flux cancels exactly in floating point,
+    provided it is **computed once per face and added with ± to both neighbours**, never
+    recomputed per node. The same goes for the interface flux unknowns at doubled nodes.
+    Reaction sources are written as `ν_i · r` with one r per reaction per node, so every
+    moiety (mᵀν = 0) cancels exactly too. BE and BDF2 are both conservative multistep forms.
+    So the *converged* discrete solution conserves every inventory, and total charge, to
+    round-off.
+  - *The iterate conserves only to the Newton residual.* With c = exp(η…) nonlinear, a Newton
+    update conserves the linearised inventory exactly, but the true one only to second order
+    in the update. Per step, the drift equals the summed residual of that species' rows
+    (times dt). This is the one real difference from the linear prototype. It's harmless if
+    the stopping test is stated in conservation units: stop when the summed per-species
+    residual implies an inventory drift below ~1e-13 of that inventory per step, not just a
+    generic norm. Quadratic convergence makes this cost about one extra iteration.
+  - *Optional exact fix for spectators:* after each accepted step, shift a spectator's η level
+    uniformly by `ln(amount_target / amount_now)` (a ~1e-13 nudge), which makes its inventory
+    exact to round-off whatever Newton did. Measure first; add it only if drift shows up in
+    long runs.
+  - *Diagnostics:* every solution reports conservation bookkeeping: per species (or moiety),
+    the mismatch between the change in inventory and the time-integrated boundary flux, and
+    likewise for charge. "Never silently wrong" applies to conservation too.
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
   `F Σ z_i c_i + ρ_fixed = 0` at each node. This is much cheaper and has no Debye layers; φ then
   jumps at interfaces (Donnan, junction potentials): at doubled nodes the two φ copies are
@@ -347,6 +369,7 @@ sol.V['Zn2+']; sol.Vstd['Zn2+']; sol.J['Zn2+'];    // optional voltage-scaled vi
 sol.current; sol.terminalVoltage;
 sol.interfaces;   // per face: steps in each μ̄_i and V_i (overpotentials, junction/Donnan potentials)
 sol.converged; sol.iterations; sol.residual;
+sol.conservation;  // per species/moiety and charge: Δinventory vs ∫boundary flux dt
 
 dev.step(dt, { from: sol });                     // transient
 ```
@@ -399,7 +422,9 @@ Each item is an automated test with a stated tolerance. The README carries a tab
    and leaves equilibrium double layers untouched (D_mix nonzero right up to a charged wall,
    test 1 still passes). A non-uniform neutral blob homogenises at rate D_mix for all species.
 12. **Transient:** a blocking electrolyte cell charging with the analytic time constant
-   (≈ λ_D·L/D in the small-signal limit), with exact conservation of total charge and mass.
+   (≈ λ_D·L/D in the small-signal limit). Conservation: per-step drift ≤ 1e-13 relative, and
+   ≤ 1e-9 relative accumulated over a 1e4-step run, for every inventory and for total charge;
+   the reported diagnostics agree with an independent recount.
 13. **Grid convergence:** observed order ≈ 2 on smooth problems.
 14. **Cross-check (optional, documented):** reproduce one published example from
     ChargeTransport.jl or Driftfusion within stated tolerance.
