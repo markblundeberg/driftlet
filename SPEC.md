@@ -54,7 +54,9 @@ this section implements them.
 - **Bulk standard chemical potentials are only meaningful in neutral combinations**
   (`μ°_e⁻ + μ°_h⁺`, `μ°_Na⁺ + μ°_Cl⁻`, `μ°_Li⁺ + μ°_e⁻`). How charged levels line up across a
   boundary between different materials is a property of *that interface* and must be given
-  explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level. Those
+  explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level in the
+  API. (The docs give those rules as explicit recipes users may apply by hand, with warnings; see
+  §7.) Those
   rules imply that alignments add up transitively (so methanol | water | methanol would have
   cancelling dipoles). driftlet assumes no such thing: each interface's alignment is
   independent, even when the same pair of materials meets twice, since for example different
@@ -367,6 +369,17 @@ Each item is an automated test with a stated tolerance. The README carries a tab
   load slider; double layer at a blocking electrode).
 - **Docs:** README (what it is and isn't, conventions, API, validation table, pointers to
   heavier tools) and JSDoc types (optionally a `.d.ts`).
+- **Alignment guide (docs page):** explains per-interface alignment and bookkeeping φ, then
+  gives precise, worked recipes for turning vacuum- or reference-based data into driftlet
+  alignments, for users who have nothing better (it's a legitimate best guess) and as a
+  reference example. Recipes: Anderson (ΔE_c from electron affinities); Schottky–Mott
+  (barrier height from W_metal − χ); a gate's flat-band voltage from W_gate − W_semiconductor;
+  pzc via the "absolute" SHE (4.44 V) and a metal's work function; single-ion transfer
+  energies between solvents via an extrathermodynamic assumption (e.g. TATB). Each recipe
+  states its hidden assumptions (vacuum levels line up, alignments add up transitively and are
+  laterally uniform) and cites where it is known to fail (covalent semiconductors, Fermi-level
+  pinning). These stay **recipes in the docs, never API**: no helper computes an alignment from
+  vacuum quantities.
 - **npm:** ESM with an `exports` map, `sideEffects: false`, semver starting at 0.1.0, and a
   CHANGELOG.
 - **CI:** GitHub Actions running tests and the benchmark on push.
