@@ -57,7 +57,9 @@ export class Device {
         solver.uLo.set(old.uLo);
         solver.computeConcentrations();
         solver.time = old.time;
+        solver.contactDEnd = old.contactDEnd;
         solver.referenceAmounts = old.referenceAmounts.slice();
+        if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
       }
     }
     return this;
@@ -68,9 +70,12 @@ export class Device {
     return makeSolution(this.solver, this.solver.solveSteady(opts));
   }
 
-  /** One backward-Euler step of size dt (s). */
+  /**
+   * Advance the transient by dt (s) with backward Euler. If Newton fails, the interval is
+   * split into smaller steps automatically; `substeps` in the result says how many.
+   */
   step(dt, opts) {
-    return makeSolution(this.solver, this.solver.step(dt, opts));
+    return makeSolution(this.solver, this.solver.advance(dt, opts));
   }
 
   /** Snapshot of the current state. */

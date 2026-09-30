@@ -101,6 +101,8 @@ export class Solver {
     this._findStretches();
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
+    // ∫ (flux in − flux out) dt through the contacts, per stretch, since the reference.
+    this.boundaryIntake = new Float64Array(this.stretches.length);
   }
 
   // Connected stretches of regions where a species is present. A stretch not connected to
@@ -565,6 +567,11 @@ export class Solver {
       const step = this._maxPotentialStep(delta);
       history.push(step);
       if (!Number.isFinite(step)) return { converged: false, iterations: it, history, error: 'non-finite update' };
+      // Give up early on clear divergence; the caller will take a smaller step instead.
+      if (step > 1e4 || (it > 6 && step > 10 * history[0])) {
+        this.computeConcentrations();
+        return { converged: false, iterations: it, history, error: 'diverging' };
+      }
       const alpha = step > maxStep ? maxStep / step : 1;
       this._addToState(delta, -alpha);
       if (alpha === 1 && step < tol) {
@@ -574,6 +581,24 @@ export class Solver {
     }
     this.computeConcentrations();
     return { converged: false, iterations: maxIter, history };
+  }
+
+  /**
+   * Advance by dt, splitting the interval into halves (recursively) wherever Newton fails.
+   * The end time is always t + dt; the result reports the substeps taken.
+   */
+  advance(dt, opts, depth = 0) {
+    const r = this.step(dt, opts);
+    if (r.converged || depth >= 30) return { ...r, substeps: 1 };
+    const a = this.advance(dt / 2, opts, depth + 1);
+    if (!a.converged) return a;
+    const b = this.advance(dt / 2, opts, depth + 1);
+    return {
+      converged: b.converged,
+      iterations: r.iterations + a.iterations + b.iterations,
+      history: b.history,
+      substeps: a.substeps + b.substeps,
+    };
   }
 
   // u += scale·d in compensated arithmetic (Knuth two-sum, then renormalise hi/lo).
@@ -597,19 +622,39 @@ export class Solver {
     this.computeConcentrations();
     this.cOld.set(this.c);
     this.segDOld = this._lastSegmentD();
-    this.assemble(dt); // records the contact displacement at the start of the step
-    const DOld = { ...this.contactD };
+    // Contact displacement before the step: as it was at the end of the previous step (under
+    // the parameters then), so a gate-voltage change shows up as displacement current.
+    if (!this.contactDEnd) {
+      this.assemble(dt);
+      this.contactDEnd = { ...this.contactD };
+    }
+    const DOld = { ...this.contactDEnd };
     const result = this.newton(dt, opts);
     if (result.converged) {
       this.time += dt;
       this.lastDt = dt;
       this.contactDOld = DOld;
+      this._accumulateBoundaryIntake(dt);
     } else {
       this.u.set(this.uPrev);
       this.uLo.set(this.uPrevLo);
       this.computeConcentrations();
     }
     return result;
+  }
+
+  // Add this step's contact fluxes (at the converged state) to each stretch's intake.
+  _accumulateBoundaryIntake(dt) {
+    this.assemble(dt);
+    this.contactDEnd = { ...this.contactD };
+    const last = this.model.regions.length - 1;
+    this.stretches.forEach((st, k) => {
+      if (!st.connected) return;
+      let q = 0;
+      if (st.regions[0] === 0) q += this.contactFlux.left[st.species];
+      if (st.regions[1] === last) q -= this.contactFlux.right[st.species];
+      this.boundaryIntake[k] += q * dt;
+    });
   }
 
   // Slowest diffusion time across the device, used to size "giant" steps.

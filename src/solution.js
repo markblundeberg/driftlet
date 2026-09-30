@@ -28,6 +28,7 @@ export function makeSolution(solver, result = {}) {
     converged: result.converged ?? true,
     iterations: result.iterations ?? 0,
     steps: result.steps,
+    substeps: result.substeps,
     history: result.history,
   };
 
@@ -101,16 +102,24 @@ export function makeSolution(solver, result = {}) {
   sol.charge = q;
 
   // Conservation bookkeeping for each species stretch.
+  // Amount now vs the reference amount plus what came in through the contacts. The drift is
+  // relative to the larger of the two; NaN where a reaction also makes or consumes it.
   sol.conservation = solver.stretches.map((st, k) => {
     const amount = solver.amount(st);
     const reference = solver.referenceAmounts[k];
+    const intake = solver.boundaryIntake[k];
+    const expected = reference + intake;
+    const scale = Math.max(Math.abs(expected), Math.abs(amount), Math.abs(intake), 1e-300);
     return {
       species: species[st.species].name,
       regions: st.regions.slice(),
       spectator: st.spectator,
+      connected: st.connected,
+      reactive: st.reactive,
       amount,
       reference,
-      drift: st.spectator ? (amount - reference) / reference : NaN,
+      intake,
+      drift: st.reactive ? NaN : (amount - expected) / scale,
     };
   });
 
