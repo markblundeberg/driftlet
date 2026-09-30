@@ -251,24 +251,25 @@ charge flowing toward +x.
   straddle an interface, D, ε and μ° are constant along every SG segment; steps only happen at
   doubled nodes. Evaluate the
   Bernoulli function `B(x) = x/(eˣ−1)` stably (series near 0, asymptotics for large |x|).
-- **Sharp interfaces are doubled nodes:** two nodes at the same x, one per side, joined by a
-  zero-width face. The zero-width face's flux law is the interface link, not SG. For each
-  variable (each η_i, and φ) the pair is one of:
-  - *linked*: both copies are unknowns and the face flux is a function of them: a kinetic or
-    conductance link for species (Butler–Volmer, thermionic emission, interface resistance), or
-    an interface capacitance for φ (displacement = C·Δφ). Blocked means zero flux.
+- **Sharp interfaces: doubled nodes plus a flux node.** In the grid, each interface is two
+  nodes at the same x, one per side. In the linear system, a zero-volume *flux node* sits
+  between them. Its unknowns are the interface fluxes (one per species, plus the displacement
+  for φ), and its rows are the interface laws. For each variable:
   - *fixed offset* (the default: local equilibrium for species, i.e. offset 0; for φ, the
-    interface dipole): the right copy's slot holds the **interface flux** (for φ, the
-    displacement) as its unknown instead of a duplicate value. The left row is left-box balance
-    minus that flux. The right row is that flux minus right-box balance, reading its own value
-    as the left node's value plus the fixed offset.
-    This couples only neighbours, so it stays block-tridiagonal with a fixed block size and
-    no penalty terms. Summing the two rows gives exactly the classic shared-node box method,
-    each half-box using its own material's μ°, ε and D.
-  The interface fluxes then come out as unknowns, which is exactly what `sol.interfaces`
-  (and electrode currents) need. Fixed sheet charge and, later, interface states enter the
-  φ balance at the pair. Where a species is present on one side only, its copy on the other
-  side is an absent-species row. Cost is one extra node per interface.
+    interface dipole): the row is `u_R − u_L = offset`;
+  - *linked*: the row is `flux − f(u_L, u_R) = 0` (Butler–Volmer, thermionic emission,
+    interface resistance; for φ, an interface capacitance `D − C·Δφ`);
+  - *blocked* or absent on one side: `flux = 0`.
+  The left node's balance row subtracts the interface flux and the right node's adds it. Each
+  row then couples only neighbours, with a fixed block size and no penalty terms.
+  (Correction to an earlier draft, which put the flux in the right copy's slot and read its
+  value from the left node. That makes the right node's other segment reach two nodes back,
+  which breaks the tridiagonal structure.) A continuity row has a zero diagonal block, but
+  block Thomas still sees a non-singular Schur complement there, since within-block pivoting
+  and the preceding elimination supply it. Cost: two extra solver nodes per interface. The
+  interface fluxes come out as unknowns, which is exactly what `sol.interfaces` and electrode
+  currents need. Fixed sheet charge and, later, interface states enter the adjacent balance
+  rows.
 - **Unknowns (per node):** the dimensionless potential `φ̂ = Fφ/RT` and the dimensionless
   electrochemical potentials `η_i = μ̄_i / RT`. Scale everything internally (thermal energy,
   reference concentration, Debye length). This is a trade-off, not a free win:
