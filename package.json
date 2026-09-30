@@ -1,0 +1,29 @@
+{
+  "name": "driftlet",
+  "version": "0.0.0",
+  "description": "Small, dependency-free 1D drift–diffusion–reaction (Poisson–Nernst–Planck) solver for interactive web demos",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "drift-diffusion",
+    "poisson-nernst-planck",
+    "electrochemistry",
+    "semiconductor",
+    "simulation"
+  ],
+  "author": "Mark Lundeberg",
+  "license": "0BSD"
+}
