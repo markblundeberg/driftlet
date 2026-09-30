@@ -212,19 +212,28 @@ electrode = e⁻ terminal, ions blocked or reacting (alignment E°), capacitive 
 (alignment pzc); ideal insulator = all blocked + capacitive gate. Infinite G or C must be
 imposed exactly (eliminate the unknown), not with the large-penalty trick the prototype used.
 
-**Circuit.** A terminal is the μ̄ of a named species at a contact: μ̄_e⁻ of the metal in the
-normal case. For an ion-only cell, an ion (e.g. Cl⁻) stands in for an ideal reversible
-electrode for that ion (Ag/AgCl). Terminal voltage is `−Δμ̄_e⁻/F`, or `Δμ̄_i/(z_i F)` for an ion
-terminal. The left terminal is ground (fixed μ̄), and the circuit is a boundary condition on the
-rightmost node, so it stays local:
-- applied voltage: Dirichlet (fixed μ̄);
-- applied current (galvanostatic): a Neumann flux;
-- a load resistor R: a Robin condition relating the terminal μ̄ to the terminal current.
-Open circuit is the current mode with I = 0 (liquid junctions, Donnan). This is exact in
-transients too, because in 1D the total current (conduction plus displacement) is uniform in
-x: what leaves one terminal enters the other. When several species share a terminal (e⁻ and h⁺
-at an ohmic contact), the terminal node's rows use their summed current. Their μ̄ are tied
-together, so only one terminal level is unknown.
+**Contact values and the circuit (as implemented).** Each contact has a terminal voltage V
+(default 0). A fixed charged species there sits at `V_i = V + offset_i`, i.e.
+`μ̄_i = z_i F (V + offset_i)`. The offset is an interface property: 0 for the contact's named
+terminal species (e⁻ at a metal; h⁺ at the same metal is also 0, since V_h = V_e when
+e⁻ + h⁺ ⇌ ∅ is in equilibrium there), E° for an ion at a reversible electrode. It is required
+for every fixed species except the terminal one. A fixed neutral species takes an absolute μ̄.
+Ohmic contacts are simply fixed V_e⁻ and/or V_h⁺: both gives an infinite-recombination contact
+(np = n_i² there), one alone a selective contact. A **bath** is a helper, not a link type: from
+a neutral composition and a charged reference species (Cl⁻ for Ag/AgCl) it computes every
+species' offset (neutral species: μ̄), with a neutral φ link. It passes current through its
+fixed species; open-circuit use needs the current-mode circuit.
+- Numerically, a fixed link replaces the boundary node's balance row with a Dirichlet row, and a
+  neutral φ link replaces its Poisson row with local neutrality (total charge, mobile plus
+  fixed, zero). Before replacement, each row's residual *is* the flux (or displacement)
+  through the contact, so contact fluxes and terminal currents are recovered exactly, with no
+  extra unknowns. (A left-end "contact flux node" would have a singular first block for block
+  Thomas, so that route was rejected.)
+- A contact with any connected species must state its φ condition (neutral, capacitive,
+  free). A capacitive link's gate voltage is the contact's V.
+- Circuit modes beyond fixed voltages (galvanostatic, load, open circuit) are still to come.
+  They make the right terminal's V an unknown, carried in an extra block after the last node,
+  where preceding elimination keeps it non-singular.
 
 **Temperature:** a single uniform T in v0 (a parameter, default 298.15 K). Non-isothermal
 transport is a possible later extension and does *not* require non-ideal solutions: it needs
@@ -270,6 +279,18 @@ charge flowing toward +x.
   interface fluxes come out as unknowns, which is exactly what `sol.interfaces` and electrode
   currents need. Fixed sheet charge and, later, interface states enter the adjacent balance
   rows.
+- **Precision of small currents (found in the pn junction).** A majority carrier carrying a
+  small current has a quasi-Fermi step between nodes far below the ulp of η (≈3e-19 against
+  3.5e-15), and in the concentration form the same current is a cancellation of two huge
+  terms. Two fixes, both in place:
+  - SG is evaluated as `N = −(D/h)·B(Δ)·c_L·expm1(η_R − η_L)`, algebraically identical but
+    precise relative to Δη, and exactly zero at equilibrium;
+  - η (with φ̂) is stored as a compensated double-double (hi + lo). Only differences use the
+    lo part, updates use an error-free two-sum, and the Jacobian and linear solve stay in
+    plain doubles.
+  Result: left and right contact currents agree to ~1e-10 relative down to µA/m² leakage,
+  where they previously disagreed by 3%. This is the same problem commercial TCAD tools
+  address with extended precision.
 - **Unknowns (per node):** the dimensionless potential `φ̂ = Fφ/RT` and the dimensionless
   electrochemical potentials `η_i = μ̄_i / RT`. Scale everything internally (thermal energy,
   reference concentration, Debye length). This is a trade-off, not a free win:
