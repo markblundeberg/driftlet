@@ -160,6 +160,9 @@ export function normalizeDevice(def) {
       'capacitive (gate) link, so the potential is undetermined. Add a gate or connect a species.',
   );
 
+  // --- circuit (acts at the right terminal; the left terminal is the reference)
+  const circuit = normalizeCircuit(def.circuit, contacts.right, species);
+
   // --- grid
   if (def.grid !== undefined) need(isObject(def.grid), 'grid must be an object');
   let grid;
@@ -169,7 +172,29 @@ export function normalizeDevice(def) {
     throw new DeviceError(`grid: ${err.message}`);
   }
 
-  return { T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, contacts, grid };
+  return { T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, contacts, circuit, grid };
+}
+
+// Circuit modes. 'voltage' (default): each contact sits at its own V. 'current': a fixed current
+// I (A/m², toward +x) leaves through the right terminal, whose voltage floats; I = 0 is open
+// circuit. 'load': the right terminal returns to the left one through a resistor R (Ω·m²) in
+// series with a source V: I = (V_right − V_left − V) / R.
+function normalizeCircuit(cdef, right, species) {
+  if (cdef === undefined) return { mode: 'voltage' };
+  need(isObject(cdef), 'circuit must be an object with a mode');
+  const modes = ['voltage', 'current', 'load'];
+  need(modes.includes(cdef.mode), `circuit.mode must be one of ${modes.join(', ')}`);
+  if (cdef.mode === 'voltage') return { mode: 'voltage' };
+  need(
+    right.terminal !== null && right.species[right.terminal].type === 'fixed' && species[right.terminal].z !== 0,
+    `circuit.mode '${cdef.mode}' needs a charged terminal species with a fixed link at the right contact`,
+  );
+  if (cdef.mode === 'current') return { mode: 'current', I: finite(cdef.I, 'circuit.I') };
+  return {
+    mode: 'load',
+    R: positive(cdef.R, 'circuit.R'),
+    V: cdef.V === undefined ? 0 : finite(cdef.V, 'circuit.V'),
+  };
 }
 
 function normalizeInterface(idef, f, regions, materials, species, speciesIndex) {

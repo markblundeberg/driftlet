@@ -91,6 +91,10 @@ export class Solver {
     this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
     this.contactD = { left: 0, right: 0 };
     this.contactDOld = { left: 0, right: 0 };
+    // Total current through the last segment and its derivatives (for current/load circuits).
+    this.segI = 0;
+    this.segIJac = new Float64Array(2 * M); // [∂/∂(block last−1 slots), ∂/∂(block last slots)]
+    this.segDOld = 0;
 
     this._findStretches();
     this.initFromComposition();
@@ -272,6 +276,17 @@ export class Solver {
 
       const k = (mat.epsr * EPS0 * VT) / h;
       const D = -k * (phiR - phiL);
+      const lastSeg = s === this.nNodes - 2;
+      if (lastSeg) {
+        // Displacement current through this segment; conduction is added per species below.
+        this.segD = D;
+        this.segI = Number.isFinite(dt) ? (D - this.segDOld) / dt : 0;
+        this.segIJac.fill(0);
+        if (Number.isFinite(dt)) {
+          this.segIJac[0] = k / dt;
+          this.segIJac[M] = -k / dt;
+        }
+      }
       res[bL * M] += D;
       res[bR * M] -= D;
       this._j(bL, 0, bL, 0, k);
@@ -300,6 +315,14 @@ export class Solver {
         const dNdPhiR = zi * dNdd;
         res[bL * M + r] += N;
         res[bR * M + r] -= N;
+        if (lastSeg) {
+          const q = F * zi;
+          this.segI += q * N;
+          this.segIJac[r] += q * dNdEtaL;
+          this.segIJac[M + r] += q * dNdEtaR;
+          this.segIJac[0] += q * dNdPhiL;
+          this.segIJac[M] += q * dNdPhiR;
+        }
         this._j(bL, r, bL, r, dNdEtaL);
         this._j(bL, r, bR, r, dNdEtaR);
         this._j(bL, r, bL, 0, dNdPhiL);
@@ -345,18 +368,46 @@ export class Solver {
     // Contacts. The boundary node's balance rows are complete except for the flux through the
     // contact, so before a row is replaced by a contact condition its residual *is* that flux:
     // entering at the left (+res), leaving at the right (−res), both counted toward +x.
+    const circuit = model.circuit;
     for (const side of ['left', 'right']) {
       const ct = contacts[side];
       const g = side === 'left' ? 0 : this.nNodes - 1;
       const b = this.blockOfNode[g];
       const sgn = side === 'left' ? 1 : -1;
       const flux = this.contactFlux[side];
+      // In current/load mode the right terminal floats: its voltage is read off the terminal
+      // species' own level at the contact node, and its row becomes the circuit law instead.
+      const floating = side === 'right' && circuit.mode !== 'voltage';
+      const t = ct.terminal;
+      let Vt = ct.V;
+      if (floating) {
+        const ot = b * M + 1 + t;
+        Vt = (VT * (u[ot] + uLo[ot])) / z[t] - ct.species[t].offset;
+        this.terminalV = Vt;
+      }
       for (let i = 0; i < n; i++) {
         flux[i] = sgn * res[b * M + 1 + i];
-        if (ct.species[i].type === 'fixed') {
-          this._replaceRow(b, 1 + i);
+        if (ct.species[i].type !== 'fixed') continue;
+        const o = b * M + 1 + i;
+        this._replaceRow(b, 1 + i);
+        if (floating && i === t) {
+          // I_segment − I_circuit(V_t) = 0. The last segment's total current equals the
+          // terminal current exactly (box balance plus Poisson, differenced in time).
+          const I = circuit.mode === 'current' ? circuit.I : (Vt - contacts.left.V - circuit.V) / circuit.R;
+          res[o] = this.segI - I;
+          for (let r = 0; r < M; r++) {
+            this._j(b, 1 + i, b - 1, r, this.segIJac[r]);
+            this._j(b, 1 + i, b, r, this.segIJac[M + r]);
+          }
+          if (circuit.mode === 'load') this._j(b, 1 + i, b, 1 + t, -VT / (z[t] * circuit.R));
+        } else if (floating && ct.species[i].mu === undefined) {
+          // Charged species tied to the floating terminal: η_i = z_i (V_t + offset_i)/V_T.
+          res[o] = u[o] + uLo[o] - (z[i] * (Vt + ct.species[i].offset)) / VT;
           this._j(b, 1 + i, b, 1 + i, 1);
-          res[b * M + 1 + i] = u[b * M + 1 + i] - this.contactEta(side, i) + uLo[b * M + 1 + i];
+          this._j(b, 1 + i, b, 1 + t, -z[i] / z[t]);
+        } else {
+          this._j(b, 1 + i, b, 1 + i, 1);
+          res[o] = u[o] - this.contactEta(side, i) + uLo[o];
         }
       }
       const link = ct.phi;
@@ -385,6 +436,15 @@ export class Solver {
         this.contactD[side] = 0;
       }
     }
+  }
+
+  // Displacement toward +x through the last segment, from the current state.
+  _lastSegmentD() {
+    const { model, M, u, VT } = this;
+    const grid = model.grid, s = this.nNodes - 2;
+    const mat = model.materials[model.regions[grid.segRegion[s]].material];
+    const b = this.blockOfNode[s];
+    return (-(mat.epsr * EPS0 * VT) / grid.segLength[s]) * (u[(b + 1) * M] - u[b * M]);
   }
 
   // Zero one row of the Jacobian (all three blocks), ready to be replaced.
@@ -487,6 +547,7 @@ export class Solver {
     this.uPrevLo.set(this.uLo);
     this.computeConcentrations();
     this.cOld.set(this.c);
+    this.segDOld = this._lastSegmentD();
     this.assemble(dt); // records the contact displacement at the start of the step
     const DOld = { ...this.contactD };
     const result = this.newton(dt, opts);

@@ -231,9 +231,14 @@ fixed species; open-circuit use needs the current-mode circuit.
   Thomas, so that route was rejected.)
 - A contact with any connected species must state its φ condition (neutral, capacitive,
   free). A capacitive link's gate voltage is the contact's V.
-- Circuit modes beyond fixed voltages (galvanostatic, load, open circuit) are still to come.
-  They make the right terminal's V an unknown, carried in an extra block after the last node,
-  where preceding elimination keeps it non-singular.
+- Circuit modes (implemented): `voltage` (each contact at its V), `current` (fixed I through
+  the right terminal; I = 0 is open circuit), `load` (I = (V_right − V_left − V_src)/R). In
+  the floating modes, the right terminal voltage is read off the terminal species' own η at
+  the contact node. Its row becomes `I_segment − I_circuit(V_t) = 0`, where I_segment is the
+  total current (conduction plus displacement) through the last grid segment. That equals
+  the terminal current exactly, since the box balance plus Poisson, differenced in time,
+  telescope. Other fixed species there follow V_t. No extra unknowns are needed; this is
+  the owner's "Robin condition at the rightmost node".
 
 **Temperature:** a single uniform T in v0 (a parameter, default 298.15 K). Non-isothermal
 transport is a possible later extension and does *not* require non-ideal solutions: it needs

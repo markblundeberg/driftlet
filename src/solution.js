@@ -59,6 +59,7 @@ export function makeSolution(solver, result = {}) {
   solver.assemble(solver.lastDt);
   sol.contacts = {};
   sol.gates = {};
+  const floating = model.circuit.mode !== 'voltage';
   for (const side of ['left', 'right']) {
     const ct = contacts[side];
     const flux = {};
@@ -71,14 +72,15 @@ export function makeSolution(solver, result = {}) {
     const dt = solver.lastDt;
     const displacement = Number.isFinite(dt) ? (D - solver.contactDOld[side]) / dt : 0;
     // Current toward +x through this contact; in steady state both contacts agree.
-    sol.contacts[side] = { V: ct.V, flux, D, current: conduction + displacement };
+    const V = floating && side === 'right' ? solver.terminalV : ct.V;
+    sol.contacts[side] = { V, flux, D, current: conduction + displacement };
     if (ct.phi.type === 'capacitive') {
       // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
       sol.gates[side] = { V: ct.V, D, charge: side === 'left' ? D : -D };
     }
   }
   sol.current = sol.contacts.right.current;
-  sol.terminalVoltage = contacts.right.V - contacts.left.V;
+  sol.terminalVoltage = sol.contacts.right.V - sol.contacts.left.V;
 
   // Interfaces: dipole and the fluxes carried by each flux node.
   sol.interfaces = interfaces.map((itf, f) => {
