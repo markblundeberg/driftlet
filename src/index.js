@@ -1,7 +1,7 @@
 // driftlet: 1D drift–diffusion–reaction solver.
 
 import { normalizeDevice } from './device.js';
-import { Solver } from './solver.js';
+import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 
 export { DeviceError, normalizeDevice } from './device.js';
@@ -98,6 +98,19 @@ export class Device {
    */
   advance(tEnd, opts) {
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
+  }
+
+  /**
+   * Small-signal impedance Z(f) about the steady state (solved first). In voltage mode the
+   * right terminal's voltage is perturbed; in current mode, the circuit current.
+   * Z = −δV/δI, the impedance seen at the terminals (Ω·m²).
+   * @param {ArrayLike<number>} frequencies Hz
+   * @param {{ profiles?: boolean }} [opts] also return complex profiles per frequency
+   */
+  impedance(frequencies, opts) {
+    const steady = this.solver.solveSteady();
+    if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
+    return this.solver.impedance(frequencies, opts);
   }
 
   /**

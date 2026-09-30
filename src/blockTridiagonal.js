@@ -210,3 +210,180 @@ function luSolveAt(a, o, piv, p, m, vec, s) {
     vec[s + r] = v / a[o + r * m + r];
   }
 }
+
+/**
+ * Complex block-tridiagonal solver, for small-signal (frequency-domain) problems. Same layout
+ * and algorithm as BlockTridiagonal, with real and imaginary parts in separate arrays
+ * (Ar/Ai, Br/Bi, Cr/Ci; right-hand sides and solutions as re/im pairs).
+ */
+export class ComplexBlockTridiagonal {
+  constructor(n, m) {
+    this.n = n;
+    this.m = m;
+    const N = n * m * m;
+    for (const k of ['Ar', 'Ai', 'Br', 'Bi', 'Cr', 'Ci', '_lr', '_li', '_cr', '_ci']) this[k] = new Float64Array(N);
+    this._piv = new Int32Array(n * m);
+    this._yr = new Float64Array(n * m);
+    this._yi = new Float64Array(n * m);
+    this._tr = new Float64Array(m);
+    this._ti = new Float64Array(m);
+  }
+
+  clear() {
+    for (const k of ['Ar', 'Ai', 'Br', 'Bi', 'Cr', 'Ci']) this[k].fill(0);
+  }
+
+  factor() {
+    const { n, m, Ar, Ai, Br, Bi, Cr, Ci, _lr: lr, _li: li, _cr: cr, _ci: ci, _piv: piv, _tr: tr, _ti: ti } = this;
+    const mm = m * m;
+    for (let i = 0; i < n; i++) {
+      const o = i * mm;
+      for (let r = 0; r < m; r++) {
+        for (let c = 0; c < m; c++) {
+          let sr = Br[o + r * m + c], si = Bi[o + r * m + c];
+          if (i > 0) {
+            for (let k = 0; k < m; k++) {
+              const ar = Ar[o + r * m + k], ai = Ai[o + r * m + k];
+              const pr = cr[o - mm + k * m + c], pi = ci[o - mm + k * m + c];
+              sr -= ar * pr - ai * pi;
+              si -= ar * pi + ai * pr;
+            }
+          }
+          lr[o + r * m + c] = sr;
+          li[o + r * m + c] = si;
+        }
+      }
+      if (!cluFactor(lr, li, o, piv, i * m, m)) throw new Error(`ComplexBlockTridiagonal: diagonal block ${i} is singular`);
+      if (i < n - 1) {
+        for (let c = 0; c < m; c++) {
+          for (let r = 0; r < m; r++) {
+            tr[r] = Cr[o + r * m + c];
+            ti[r] = Ci[o + r * m + c];
+          }
+          cluSolve(lr, li, o, piv, i * m, m, tr, ti, 0);
+          for (let r = 0; r < m; r++) {
+            cr[o + r * m + c] = tr[r];
+            ci[o + r * m + c] = ti[r];
+          }
+        }
+      }
+    }
+  }
+
+  /** Solve for (re, im) right-hand sides; results written to outRe/outIm. */
+  solve(bRe, bIm, outRe, outIm) {
+    const { n, m, Ar, Ai, _lr: lr, _li: li, _cr: cr, _ci: ci, _piv: piv, _yr: yr, _yi: yi } = this;
+    const mm = m * m;
+    for (let i = 0; i < n; i++) {
+      const o = i * mm, v = i * m;
+      for (let r = 0; r < m; r++) {
+        let sr = bRe[v + r], si = bIm[v + r];
+        if (i > 0) {
+          for (let k = 0; k < m; k++) {
+            const ar = Ar[o + r * m + k], ai = Ai[o + r * m + k];
+            sr -= ar * yr[v - m + k] - ai * yi[v - m + k];
+            si -= ar * yi[v - m + k] + ai * yr[v - m + k];
+          }
+        }
+        yr[v + r] = sr;
+        yi[v + r] = si;
+      }
+      cluSolve(lr, li, o, piv, v, m, yr, yi, v);
+    }
+    const last = (n - 1) * m;
+    for (let r = 0; r < m; r++) {
+      outRe[last + r] = yr[last + r];
+      outIm[last + r] = yi[last + r];
+    }
+    for (let i = n - 2; i >= 0; i--) {
+      const o = i * mm, v = i * m;
+      for (let r = 0; r < m; r++) {
+        let sr = yr[v + r], si = yi[v + r];
+        for (let k = 0; k < m; k++) {
+          const pr = cr[o + r * m + k], pi = ci[o + r * m + k];
+          const xr = outRe[v + m + k], xi = outIm[v + m + k];
+          sr -= pr * xr - pi * xi;
+          si -= pr * xi + pi * xr;
+        }
+        outRe[v + r] = sr;
+        outIm[v + r] = si;
+      }
+    }
+  }
+}
+
+// Complex LU with partial pivoting (by modulus) of the block at o; false if singular.
+function cluFactor(ar, ai, o, piv, p, m) {
+  for (let k = 0; k < m; k++) {
+    let best = k, bestVal = Math.hypot(ar[o + k * m + k], ai[o + k * m + k]);
+    for (let r = k + 1; r < m; r++) {
+      const v = Math.hypot(ar[o + r * m + k], ai[o + r * m + k]);
+      if (v > bestVal) {
+        best = r;
+        bestVal = v;
+      }
+    }
+    piv[p + k] = best;
+    if (bestVal === 0) return false;
+    if (best !== k) {
+      for (let c = 0; c < m; c++) {
+        let t = ar[o + k * m + c];
+        ar[o + k * m + c] = ar[o + best * m + c];
+        ar[o + best * m + c] = t;
+        t = ai[o + k * m + c];
+        ai[o + k * m + c] = ai[o + best * m + c];
+        ai[o + best * m + c] = t;
+      }
+    }
+    const dr = ar[o + k * m + k], di = ai[o + k * m + k], d2 = dr * dr + di * di;
+    const invr = dr / d2, invi = -di / d2;
+    for (let r = k + 1; r < m; r++) {
+      const xr = ar[o + r * m + k], xi = ai[o + r * m + k];
+      const fr = xr * invr - xi * invi, fi = xr * invi + xi * invr;
+      ar[o + r * m + k] = fr;
+      ai[o + r * m + k] = fi;
+      if (fr === 0 && fi === 0) continue;
+      for (let c = k + 1; c < m; c++) {
+        const ur = ar[o + k * m + c], ui = ai[o + k * m + c];
+        ar[o + r * m + c] -= fr * ur - fi * ui;
+        ai[o + r * m + c] -= fr * ui + fi * ur;
+      }
+    }
+  }
+  return true;
+}
+
+function cluSolve(ar, ai, o, piv, p, m, vr, vi, s) {
+  for (let k = 0; k < m; k++) {
+    const j = piv[p + k];
+    if (j !== k) {
+      let t = vr[s + k];
+      vr[s + k] = vr[s + j];
+      vr[s + j] = t;
+      t = vi[s + k];
+      vi[s + k] = vi[s + j];
+      vi[s + j] = t;
+    }
+  }
+  for (let r = 1; r < m; r++) {
+    let xr = vr[s + r], xi = vi[s + r];
+    for (let c = 0; c < r; c++) {
+      const lr = ar[o + r * m + c], li = ai[o + r * m + c];
+      xr -= lr * vr[s + c] - li * vi[s + c];
+      xi -= lr * vi[s + c] + li * vr[s + c];
+    }
+    vr[s + r] = xr;
+    vi[s + r] = xi;
+  }
+  for (let r = m - 1; r >= 0; r--) {
+    let xr = vr[s + r], xi = vi[s + r];
+    for (let c = r + 1; c < m; c++) {
+      const ur = ar[o + r * m + c], ui = ai[o + r * m + c];
+      xr -= ur * vr[s + c] - ui * vi[s + c];
+      xi -= ur * vi[s + c] + ui * vr[s + c];
+    }
+    const dr = ar[o + r * m + r], di = ai[o + r * m + r], d2 = dr * dr + di * di;
+    vr[s + r] = (xr * dr + xi * di) / d2;
+    vi[s + r] = (xi * dr - xr * di) / d2;
+  }
+}

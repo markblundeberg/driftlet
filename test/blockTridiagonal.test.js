@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BlockTridiagonal } from '../src/blockTridiagonal.js';
+import { BlockTridiagonal, ComplexBlockTridiagonal } from '../src/blockTridiagonal.js';
 
 // Small seeded PRNG (mulberry32) so failures are reproducible.
 function rng(seed) {
@@ -151,4 +151,45 @@ test('tracks the smallest pivot ratio as a conditioning hint', () => {
 test('rejects bad sizes', () => {
   assert.throws(() => new BlockTridiagonal(0, 2), RangeError);
   assert.throws(() => new BlockTridiagonal(3, 1.5), RangeError);
+});
+
+test('complex solver: residual of random systems, including zero diagonal entries', () => {
+  const rand = rng(7);
+  for (const [n, m] of [[1, 1], [5, 3], [40, 7]]) {
+    const sys = new ComplexBlockTridiagonal(n, m);
+    const mm = m * m;
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < mm; k++) {
+        for (const X of ['A', 'B', 'C']) {
+          if ((X === 'A' && i === 0) || (X === 'C' && i === n - 1)) continue;
+          sys[X + 'r'][i * mm + k] = rand();
+          sys[X + 'i'][i * mm + k] = rand();
+        }
+      }
+      for (let r = 0; r < m; r++) {
+        sys.Br[i * mm + r * m + r] += 2 * m + 1;
+        if (m > 1 && r === 0) sys.Br[i * mm] = sys.Bi[i * mm] = 0; // needs pivoting
+      }
+    }
+    const br = Float64Array.from({ length: n * m }, rand), bi = Float64Array.from({ length: n * m }, rand);
+    const xr = new Float64Array(n * m), xi = new Float64Array(n * m);
+    sys.factor();
+    sys.solve(br, bi, xr, xi);
+    let worst = 0;
+    for (let i = 0; i < n; i++) {
+      for (let r = 0; r < m; r++) {
+        let sr = 0, si = 0;
+        for (const [X, j] of [['A', i - 1], ['B', i], ['C', i + 1]]) {
+          if (j < 0 || j >= n) continue;
+          for (let c = 0; c < m; c++) {
+            const ar = sys[X + 'r'][i * mm + r * m + c], ai = sys[X + 'i'][i * mm + r * m + c];
+            sr += ar * xr[j * m + c] - ai * xi[j * m + c];
+            si += ar * xi[j * m + c] + ai * xr[j * m + c];
+          }
+        }
+        worst = Math.max(worst, Math.abs(sr - br[i * m + r]), Math.abs(si - bi[i * m + r]));
+      }
+    }
+    assert.ok(worst < 1e-12, `n=${n} m=${m}: residual ${worst}`);
+  }
 });

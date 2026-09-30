@@ -22,7 +22,7 @@ function bvFactor(a, alpha) {
 // Concentrations come from each material's statistics, c(ζ) with ζ_i = η_i − μ°_i/RT − z_i φ̂,
 // and K = ∂c/∂ζ. Nodes of ideal materials (c = c_ref e^ζ) take a fast path throughout.
 
-import { BlockTridiagonal } from './blockTridiagonal.js';
+import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, bernoulliDerivative } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 
@@ -1273,6 +1273,144 @@ export class Solver {
     return I + (Number.isFinite(dt) ? (this.contactD.right - this.contactDOld.right) / dt : 0);
   }
 
+  /**
+   * Small-signal impedance about the current (steady) state. Linearising the balance equations
+   * gives (J + iωM)·δx = −b·δs, with J the steady Jacobian, M the storage Jacobian (from
+   * J(dt) = J + M/dt) and b the residual's derivative in the source δs: the right terminal's
+   * voltage (voltage mode) or the circuit current (current mode). The terminal current response
+   * is read from the last segment, conduction plus iω times its displacement.
+   * Z = −δV/δI: the impedance seen at the terminals (positive real part for a passive device,
+   * since current toward +x leaves through the right terminal).
+   * @param {ArrayLike<number>} frequencies Hz
+   */
+  impedance(frequencies, { profiles = false } = {}) {
+    const { M, nB, sys, model, n, VT } = this;
+    const circuit = model.circuit;
+    if (circuit.mode === 'load') {
+      throw new SolverError("impedance: use circuit mode 'voltage' or 'current' (a load resistor belongs to the external circuit)");
+    }
+    const N = nB * M, mm = M * M;
+    this.computeConcentrations();
+    this.cOld.set(this.c);
+    this.segDOld = this._lastSegmentD();
+    this.assemble(Infinity);
+    this.contactDStart = { ...this.contactD };
+    this.assemble(Infinity);
+    const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
+    const segJ = Float64Array.from(this.segIJac);
+    const dts = 1e-30;
+    this.assemble(dts);
+    const S = {};
+    for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
+    // Source derivative by central differences (exact where the residual is linear in it).
+    const ct = model.contacts.right;
+    const src = circuit.mode === 'voltage' ? { obj: ct, key: 'V', d: 1e-6 } : { obj: circuit, key: 'I', d: 1 };
+    const s0 = src.obj[src.key], res = [];
+    for (const sign of [1, -1]) {
+      src.obj[src.key] = s0 + sign * src.d;
+      this.assemble(Infinity);
+      res.push(Float64Array.from(this.res));
+    }
+    src.obj[src.key] = s0;
+    this.assemble(Infinity);
+    const b = res[0].map((v, k) => (v - res[1][k]) / (2 * src.d));
+
+    const csys = new ComplexBlockTridiagonal(nB, M);
+    const rr = new Float64Array(N), ri = new Float64Array(N), xr = new Float64Array(N), xi = new Float64Array(N);
+    const gL = this.nNodes - 2, bL = this.blockOfNode[gL], bR = bL + 1;
+    const mat = model.materials[model.regions[model.grid.segRegion[gL]].material];
+    const kSeg = this.phiUndefined[gL] ? 0 : (mat.epsr * EPS0 * VT) / model.grid.segLength[gL];
+    const out = { f: Float64Array.from(frequencies), Z: { re: new Float64Array(frequencies.length), im: new Float64Array(frequencies.length) } };
+    if (profiles) out.profiles = [];
+    Array.from(frequencies).forEach((f, q) => {
+      const w = 2 * Math.PI * f;
+      if (!(w > 0)) throw new SolverError('impedance: frequencies must be positive');
+      // Rows scaled by their largest entry.
+      for (let blk = 0; blk < nB; blk++) {
+        for (let r = 0; r < M; r++) {
+          const o = blk * mm + r * M;
+          let mx = 0;
+          for (const X of ['A', 'B', 'C']) for (let c = 0; c < M; c++) mx = Math.max(mx, Math.abs(J[X][o + c]), w * Math.abs(S[X][o + c]));
+          const sc = mx > 0 ? 1 / mx : 1;
+          for (const X of ['A', 'B', 'C']) {
+            for (let c = 0; c < M; c++) {
+              csys[X + 'r'][o + c] = J[X][o + c] * sc;
+              csys[X + 'i'][o + c] = w * S[X][o + c] * sc;
+            }
+          }
+          rr[blk * M + r] = -b[blk * M + r] * sc;
+          ri[blk * M + r] = 0;
+        }
+      }
+      csys.factor();
+      csys.solve(rr, ri, xr, xi);
+      let Zr, Zi;
+      if (circuit.mode === 'voltage') {
+        // δI = (∂I_cond/∂x)·δx + iω δD_segment, per volt
+        let Ir = 0, Ii = 0;
+        for (let r = 0; r < M; r++) {
+          Ir += segJ[r] * xr[bL * M + r] + segJ[M + r] * xr[bR * M + r];
+          Ii += segJ[r] * xi[bL * M + r] + segJ[M + r] * xi[bR * M + r];
+        }
+        const dDr = -kSeg * (xr[bR * M] - xr[bL * M]), dDi = -kSeg * (xi[bR * M] - xi[bL * M]);
+        Ir -= w * dDi;
+        Ii += w * dDr;
+        const d2 = Ir * Ir + Ii * Ii; // Z = −1/δI
+        Zr = -Ir / d2;
+        Zi = Ii / d2;
+      } else {
+        // δV per unit current
+        const tb = this.terminalBlock;
+        const t = model.contacts.right.terminal;
+        const [vr, vi] = tb >= 0 ? [VT * xr[tb * M], VT * xi[tb * M]] : [(VT * xr[bR * M + 1 + t]) / this.z[t], (VT * xi[bR * M + 1 + t]) / this.z[t]];
+        Zr = -vr;
+        Zi = -vi;
+      }
+      out.Z.re[q] = Zr;
+      out.Z.im[q] = Zi;
+      if (profiles) out.profiles.push(this._smallSignalProfiles(xr, xi));
+    });
+    return out;
+  }
+
+  // Complex profiles of δφ (V), δμ̄ (J/mol) and δc (mol/m³) from a small-signal solution.
+  _smallSignalProfiles(xr, xi) {
+    const { n, M, z, VT, model } = this;
+    const nN = this.nNodes, RT = model.RT;
+    const pair = () => ({ re: new Float64Array(nN), im: new Float64Array(nN) });
+    const phi = pair(), mu = {}, c = {};
+    for (const sp of model.species) {
+      mu[sp.name] = pair();
+      c[sp.name] = pair();
+    }
+    for (let g = 0; g < nN; g++) {
+      const b = this.blockOfNode[g];
+      const undef = this.phiUndefined[g];
+      phi.re[g] = undef ? NaN : VT * xr[b * M];
+      phi.im[g] = undef ? NaN : VT * xi[b * M];
+      for (let i = 0; i < n; i++) {
+        const name = model.species[i].name;
+        if (!this.present[g * n + i]) {
+          mu[name].re[g] = mu[name].im[g] = c[name].re[g] = c[name].im[g] = NaN;
+          continue;
+        }
+        mu[name].re[g] = RT * xr[b * M + 1 + i];
+        mu[name].im[g] = RT * xi[b * M + 1 + i];
+        // δc_i = Σ_j K_ij (δη_j − z_j δφ̂)
+        let sr = 0, si = 0;
+        for (let j = 0; j < n; j++) {
+          const Kij = this.nodeIdeal[g] ? (i === j ? this.c[g * n + i] : 0) : this.K[g * n * n + i * n + j];
+          if (Kij === 0) continue;
+          sr += Kij * (xr[b * M + 1 + j] - z[j] * xr[b * M]);
+          si += Kij * (xi[b * M + 1 + j] - z[j] * xi[b * M]);
+        }
+        c[name].re[g] = sr;
+        c[name].im[g] = si;
+      }
+    }
+    return { phi, mu, c };
+  }
+
   // Add this step's contact fluxes (at the converged state) to each stretch's intake.
   // (A BDF2 step also moves each amount by Σ v (c* − c_n), its history term.)
   _accumulateBoundaryIntake(dt, cN) {
@@ -1313,7 +1451,66 @@ export class Solver {
    * If Newton fails, dt ramps up from a small value (pseudo-transient continuation) instead.
    * The clock is not advanced, and open-system conservation bookkeeping restarts here.
    */
-  solveSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
+  solveSteady(opts = {}) {
+    const ct = this.model.contacts.right, target = ct.V, level = this.model.contacts.left.V;
+    const canContinue = opts.continuation !== false && this.model.circuit.mode === 'voltage' && target !== level;
+    const direct = this.stretches.every((st) => st.connected);
+    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo);
+    // Where a direct solve applies and continuation is possible, don't spend long on the
+    // pseudo-transient ramp: one direct attempt first.
+    let r = this._solveSteady(canContinue && direct ? { ...opts, maxSteps: 1 } : opts);
+    if (r.converged || !canContinue) return r;
+    // Source continuation: solve with both terminals level (consistent with a cold start), then
+    // ramp the right terminal's voltage to its target in adaptive steps.
+    const restart = () => {
+      this.u.set(u0);
+      this.uLo.set(u0Lo);
+      this.computeConcentrations();
+    };
+    restart();
+    const c = this._continuation(opts, ct, level, target, r);
+    if (c.converged) return c;
+    restart();
+    r = this._solveSteady(opts); // the full pseudo-transient ramp
+    return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
+  }
+
+  _continuation(opts, ct, level, target, r) {
+    const sub = this.stretches.every((st) => st.connected) ? { ...opts, maxSteps: 1 } : opts;
+    let V = level, dV = (target - level) / 8, steps = r.steps, iterations = r.iterations;
+    const history = r.history.slice();
+    try {
+      ct.V = V;
+      let q = this._solveSteady(opts);
+      steps += q.steps;
+      iterations += q.iterations;
+      if (!q.converged) return { ...r, steps, iterations };
+      while (V !== target) {
+        const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
+        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo);
+        ct.V = next;
+        q = this._solveSteady(sub);
+        steps += q.steps;
+        iterations += q.iterations;
+        history.push({ continuation: next, converged: q.converged });
+        if (q.converged) {
+          V = next;
+          dV *= 1.5;
+        } else {
+          this.u.set(u1);
+          this.uLo.set(u1Lo);
+          this.computeConcentrations();
+          dV /= 4;
+          if (Math.abs(dV) < 1e-6 * Math.abs(target - level)) return { converged: false, steps, iterations, history };
+        }
+      }
+      return { converged: true, steps, iterations, history };
+    } finally {
+      ct.V = target;
+    }
+  }
+
+  _solveSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
     const time = this.time;
     const tau = this.slowestTime();
     const direct = this.stretches.every((st) => st.connected);
