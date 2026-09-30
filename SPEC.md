@@ -184,7 +184,25 @@ chemical potentials, so that equilibrium is *exactly* the point where the affini
 `A = −Σ ν_i μ̄_i` (over all participants, charged or neutral) vanishes. Canonical cases to support in v0: e⁻ + h⁺ ⇌ ∅
 (generation/recombination) and H⁺ + OH⁻ ⇌ H₂O.
 
-**Interfacial reactions (electrode kinetics).** A reaction located at a region boundary, e.g.
+**Kinetics as implemented.**
+- *Electrode reactions* at a contact, `Σν_R R + n e⁻(metal) ⇌ Σν_P P`, where the metal's
+  electrons sit at μ̄_e = −F·V_terminal and other non-species participants are fixed-activity
+  (given μ). Standard-rate-constant form:
+  `r = k0 Π_R (c/c_ref)^{ν(1−α)} Π_P (c/c_ref)^{να} (e^{αa} − e^{−(1−α)a})`, a = A/RT. This is
+  mass action with potential-dependent rate constants: exact at A = 0, reducing to textbook
+  BV with i0 ∝ c_O^{1−α} c_R^α, and evaluated as `e^{−(1−α)a}·expm1(a)`.
+- *Conductance links* (ohmic interface resistance), `J = G·ΔV_i`, at contacts (to an outside
+  reservoir at V + offset) and at interfaces.
+- *Interface transfer* (ion or electron crossing a heterointerface) in the same BV form, as
+  the flux node's row for that species. Because the φ jump is pinned at the dipole, a transfer
+  overpotential is carried by thin space-charge layers either side, which changes c at the
+  interface. That is physically right, and the BV prefactor sees it.
+- A floating terminal with no fixed species (galvanostatic kinetic electrode) gets its
+  voltage as an unknown in an extra block after the last node. Its row (reaction current plus
+  Stern displacement current) couples only to the last node, and it needs a capacitive or
+  free φ link.
+
+**Interfacial reactions (electrode kinetics), original sketch.** A reaction located at a region boundary, e.g.
 Mⁿ⁺(electrolyte) + n e⁻(metal) ⇌ M(s). Use Butler–Volmer written in the reaction's
 overpotential, `η = affinity / (nF)`:
 `i = i0 · [ exp(α n F η/RT) − exp(−(1−α) n F η/RT) ]`,

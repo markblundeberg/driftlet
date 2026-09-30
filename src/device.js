@@ -16,7 +16,8 @@ export class DeviceError extends Error {
   }
 }
 
-const SPECIES_LINK_TYPES = new Set(['blocked', 'fixed', 'conductance', 'kinetic']);
+const SPECIES_LINK_TYPES = new Set(['blocked', 'fixed', 'conductance']);
+const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance']);
 const PHI_LINK_TYPES = new Set(['free', 'neutral', 'capacitive']);
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -138,7 +139,7 @@ export function normalizeDevice(def) {
   need(idefs.length <= nFaces, `interfaces has ${idefs.length} entries but there are only ${nFaces} faces between regions`);
   const interfaces = [];
   for (let f = 0; f < nFaces; f++) {
-    interfaces.push(normalizeInterface(idefs[f], f, regions, materials, species, speciesIndex));
+    interfaces.push(normalizeInterface(idefs[f], f, regions, materials, species, speciesIndex, RT));
   }
 
   // --- bulk reactions
@@ -158,7 +159,10 @@ export function normalizeDevice(def) {
 
   // An electrostatic anchor is needed, or φ (and every level with it) floats.
   const anchored = ['left', 'right'].some(
-    (side) => contacts[side].phi.type === 'capacitive' || contacts[side].species.some((l) => l.type !== 'blocked'),
+    (side) =>
+      contacts[side].phi.type === 'capacitive' ||
+      contacts[side].reactions.length > 0 ||
+      contacts[side].species.some((l) => l.type !== 'blocked'),
   );
   need(
     anchored,
@@ -244,19 +248,30 @@ function normalizeCircuit(cdef, right, species) {
   const modes = ['voltage', 'current', 'load'];
   need(modes.includes(cdef.mode), `circuit.mode must be one of ${modes.join(', ')}`);
   if (cdef.mode === 'voltage') return { mode: 'voltage' };
+  // The floating terminal voltage is read off a fixed charged terminal species if there is one;
+  // otherwise (kinetic or conductance electrode) it becomes an unknown of its own.
+  const readout = right.terminal !== null && right.species[right.terminal].type === 'fixed' && species[right.terminal].z !== 0;
+  const exchanges = right.reactions.length > 0 || right.species.some((l) => l.type === 'conductance');
   need(
-    right.terminal !== null && right.species[right.terminal].type === 'fixed' && species[right.terminal].z !== 0,
-    `circuit.mode '${cdef.mode}' needs a charged terminal species with a fixed link at the right contact`,
+    readout || exchanges,
+    `circuit.mode '${cdef.mode}' needs the right contact to pass current: a fixed charged terminal species, ` +
+      'an electrode reaction or a conductance link',
   );
-  if (cdef.mode === 'current') return { mode: 'current', I: finite(cdef.I, 'circuit.I') };
+  need(
+    readout || right.phi.type !== 'neutral',
+    `circuit.mode '${cdef.mode}': a floating kinetic electrode needs a capacitive (Stern) or free φ link, not neutral`,
+  );
+  const base = { terminalUnknown: !readout };
+  if (cdef.mode === 'current') return { ...base, mode: 'current', I: finite(cdef.I, 'circuit.I') };
   return {
+    ...base,
     mode: 'load',
     R: positive(cdef.R, 'circuit.R'),
     V: cdef.V === undefined ? 0 : finite(cdef.V, 'circuit.V'),
   };
 }
 
-function normalizeInterface(idef, f, regions, materials, species, speciesIndex) {
+function normalizeInterface(idef, f, regions, materials, species, speciesIndex, RT) {
   const left = regions[f], right = regions[f + 1];
   const matL = materials[left.material], matR = materials[right.material];
   const where = `interfaces[${f}] (between ${left.name} [${matL.name}] and ${right.name} [${matR.name}])`;
@@ -268,7 +283,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex) 
       `${where}: an interface between different materials needs an alignment ` +
         `({ dipole } or { step: { species, value } }). There is no default (no Anderson or Schottky–Mott rule).`,
     );
-    return { dipole: 0, sheetCharge: 0 };
+    return { dipole: 0, sheetCharge: 0, links: defaultInterfaceLinks(matL, matR, species), transfers: [] };
   }
   need(isObject(idef), `${where} must be an object`);
   const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
@@ -297,7 +312,103 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex) 
     throw new DeviceError(`${where}.reaction: reaction-based alignment is not supported yet`);
   }
   const sheetCharge = idef.sheetCharge === undefined ? 0 : finite(idef.sheetCharge, `${where}.sheetCharge`);
-  return { dipole, sheetCharge };
+
+  // Per-species laws across the face: local equilibrium (default where present on both sides),
+  // blocked, or an ohmic interface conductance G (S/m²).
+  const links = defaultInterfaceLinks(matL, matR, species);
+  if (idef.species !== undefined) {
+    need(isObject(idef.species), `${where}.species must map species names to interface links`);
+    for (const [sname, raw] of Object.entries(idef.species)) {
+      const lpath = `${where}.species.${sname}`;
+      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+      const i = speciesIndex.get(sname);
+      const link = typeof raw === 'string' ? { type: raw } : raw;
+      need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
+      if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
+      if (link.type === 'conductance') {
+        need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
+        positive(link.G, `${lpath}.G`);
+      }
+      links[i] = { ...link };
+    }
+  }
+
+  // Kinetic transfer across the face (Butler–Volmer form), e.g. ion transfer between two
+  // solvents or electron transfer at a heterojunction. Each listed species crosses from the
+  // left side to the right side (forward direction) with its coefficient.
+  need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
+  const transfers = (idef.reactions ?? []).map((rdef, k) => {
+    const rpath = `${where}.reactions[${k}]`;
+    need(isObject(rdef) && isObject(rdef.transfer), `${rpath} must be { transfer: { species: ν }, k0, alpha }`);
+    const list = [];
+    for (const [sname, nu] of Object.entries(rdef.transfer)) {
+      need(speciesIndex.has(sname), `${rpath}.transfer.${sname}: unknown species`);
+      need(Number.isInteger(nu) && nu > 0, `${rpath}.transfer.${sname} must be a positive integer`);
+      const i = speciesIndex.get(sname);
+      need(matL.present[i] && matR.present[i], `${rpath}.transfer.${sname}: '${sname}' must be present on both sides`);
+      need(idef.species?.[sname] === undefined, `${rpath}.transfer.${sname}: '${sname}' also has an interface link`);
+      links[i] = { type: 'kinetic' };
+      list.push({ i, nu });
+    }
+    need(list.length > 0, `${rpath}.transfer: no species`);
+    return { species: list, k0: positive(rdef.k0, `${rpath}.k0`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
+  });
+  return { dipole, sheetCharge, links, transfers };
+}
+
+function defaultInterfaceLinks(matL, matR, species) {
+  return species.map((_, i) => ({ type: matL.present[i] && matR.present[i] ? 'equilibrium' : 'blocked' }));
+}
+
+function transferCoefficient(v, path) {
+  if (v === undefined) return 0.5;
+  need(isFiniteNumber(v) && v > 0 && v < 1, `${path} must be between 0 and 1, got ${JSON.stringify(v)}`);
+  return v;
+}
+
+// Electrode reaction at a contact, written as reduction when electrons > 0:
+//   Σ ν_R R + n e⁻(metal) ⇌ Σ ν_P P
+// Species participants live at the contact node; the metal's electrons sit at μ̄_e = −F·V
+// (V the contact's terminal voltage); anything else is a fixed-activity participant given by
+// its μ. Rate per area, with a = A/RT and standard rate constant k0 (mol/m²/s):
+//   r = k0 · Π_R (c/c_ref)^{ν(1−α)} · Π_P (c/c_ref)^{να} · (e^{αa} − e^{−(1−α)a})
+// which is mass action with potential-dependent rate constants: exact at A = 0.
+function normalizeElectrodeReaction(rdef, path, mat, species, speciesIndex, RT) {
+  need(isObject(rdef), `${path} must be an object`);
+  const fixed = rdef.fixed ?? {};
+  need(isObject(fixed), `${path}.fixed must map fixed-activity participants to their μ (J/mol)`);
+  const n = rdef.electrons ?? 0;
+  need(Number.isInteger(n), `${path}.electrons must be an integer (electrons taken from the metal)`);
+  const side = (key) => {
+    const m = rdef[key] ?? {};
+    need(isObject(m), `${path}.${key} must map participant names to stoichiometric coefficients`);
+    const list = [];
+    let fixedMu = 0, charge = 0;
+    for (const [name, nu] of Object.entries(m)) {
+      need(Number.isInteger(nu) && nu > 0, `${path}.${key}.${name} must be a positive integer`);
+      if (speciesIndex.has(name)) {
+        const i = speciesIndex.get(name);
+        need(mat.present[i], `${path}.${key}.${name}: '${name}' is absent from the end material '${mat.name}'`);
+        list.push({ i, nu });
+        charge += nu * species[i].z;
+      } else {
+        need(fixed[name] !== undefined, `${path}.${key}.${name}: not a species, so give its μ in ${path}.fixed`);
+        fixedMu += nu * finite(fixed[name], `${path}.fixed.${name}`);
+      }
+    }
+    return { list, fixedMu, charge };
+  };
+  const R = side('reactants'), P = side('products');
+  need(R.charge - n === P.charge, `${path}: charge is not balanced (${R.charge} − ${n} e⁻ → ${P.charge})`);
+  need(R.list.length + P.list.length > 0, `${path}: no species participate`);
+  return {
+    reactants: R.list,
+    products: P.list,
+    electrons: n,
+    fixedA: (R.fixedMu - P.fixedMu) / RT,
+    k0: positive(rdef.k0, `${path}.k0`),
+    alpha: transferCoefficient(rdef.alpha, `${path}.alpha`),
+  };
 }
 
 // A contact has a terminal voltage V (set by the circuit; 0 by default) and a link for every
@@ -312,7 +423,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   const links = species.map(() => ({ type: 'blocked' }));
   let phi = { type: 'free' };
   let terminal = null;
-  if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal };
+  if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal, reactions: [] };
   need(isObject(cdef), `${path} must be an object`);
   const V = cdef.V === undefined ? 0 : finite(cdef.V, `${path}.V`);
 
@@ -333,7 +444,14 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       if (link.type !== 'blocked') {
         need(mat.present[i], `${lpath}: '${sname}' is absent from the end material '${mat.name}', so it can only be blocked`);
       }
-      if (link.type === 'conductance') positive(link.G, `${lpath}.G`);
+      if (link.type === 'conductance') {
+        // Ohmic exchange with an outside reservoir at V_i = V + offset: J = G·(V_out − V_i).
+        need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
+        const offset = link.offset ?? (terminal === i ? 0 : undefined);
+        need(offset !== undefined, `${lpath}.offset: give V_i − V_terminal (V) of the outside reservoir`);
+        links[i] = { type: 'conductance', G: positive(link.G, `${lpath}.G`), offset: finite(offset, `${lpath}.offset`) };
+        continue;
+      }
       if (link.type === 'fixed') {
         if (species[i].z === 0) {
           links[i] = { type: 'fixed', mu: finite(link.mu, `${lpath}.mu (a neutral species is fixed by its μ̄, J/mol)`) };
@@ -397,14 +515,19 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
     }
     phi = { ...raw };
-  } else if (cdef.bath === undefined && links.some((l) => l.type !== 'blocked')) {
+  } else if (cdef.bath === undefined && (links.some((l) => l.type !== 'blocked') || cdef.reactions?.length)) {
     throw new DeviceError(
       `${path}.phi: a contact with connected species needs an explicit φ condition ('neutral', 'free', or capacitive)`,
     );
   }
+  need(cdef.reactions === undefined || Array.isArray(cdef.reactions), `${path}.reactions must be an array`);
+  const reactions = (cdef.reactions ?? []).map((r, k) =>
+    normalizeElectrodeReaction(r, `${path}.reactions[${k}]`, mat, species, speciesIndex, RT),
+  );
   if (phi.type === 'neutral') {
+    const reacting = (i) => reactions.some((rx) => [...rx.reactants, ...rx.products].some((p) => p.i === i));
     need(
-      links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0),
+      links.some((l, i) => (l.type !== 'blocked' || reacting(i)) && species[i].z !== 0),
       `${path}.phi: a neutral link needs at least one connected charged species at this contact`,
     );
   }
@@ -412,5 +535,5 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (terminal !== null) {
     need(links[terminal].type !== 'blocked', `${path}.terminal: '${species[terminal].name}' is blocked at this contact`);
   }
-  return { V, species: links, phi, terminal };
+  return { V, species: links, phi, terminal, reactions };
 }

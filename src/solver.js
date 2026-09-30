@@ -1,3 +1,10 @@
+// Butler–Volmer factor g(a) = e^{αa} − e^{−(1−α)a} = e^{−(1−α)a}·expm1(a) (precise near a = 0),
+// and its derivative g′(a) = α e^{αa} + (1−α) e^{−(1−α)a}.
+function bvFactor(a, alpha) {
+  const e = Math.exp(-(1 - alpha) * a);
+  return { g: e * Math.expm1(a), gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
+}
+
 // Discretisation and nonlinear solver.
 //
 // Unknowns, per solver block (block size M = 1 + nSpecies):
@@ -32,7 +39,10 @@ export class Solver {
     const M = n + 1;
     const nNodes = grid.nNodes;
     const nFaces = regions.length - 1;
-    const nB = nNodes + nFaces;
+    // A floating terminal with no fixed species to read its voltage from gets its own block.
+    const terminalUnknown = model.circuit.mode !== 'voltage' && model.circuit.terminalUnknown;
+    const nB = nNodes + nFaces + (terminalUnknown ? 1 : 0);
+    this.terminalBlock = terminalUnknown ? nB - 1 : -1;
     this.n = n;
     this.M = M;
     this.nNodes = nNodes;
@@ -40,13 +50,6 @@ export class Solver {
     this.nB = nB;
     this.VT = model.RT / FARADAY; // thermal voltage, V
 
-    for (const side of ['left', 'right']) {
-      contacts[side].species.forEach((link, i) => {
-        if (link.type !== 'blocked' && link.type !== 'fixed') {
-          throw new SolverError(`contacts.${side}.species.${species[i].name}: '${link.type}' links are not implemented yet`);
-        }
-      });
-    }
 
     // Solver block of each grid node and of each interface flux node.
     this.blockOfNode = new Int32Array(nNodes);
@@ -97,6 +100,9 @@ export class Solver {
     this.segI = 0;
     this.segIJac = new Float64Array(2 * M); // [∂/∂(block last−1 slots), ∂/∂(block last slots)]
     this.segDOld = 0;
+    this._termI = 0;
+    this._termIJac = new Float64Array(M + 1);
+    this.contactDStart = { left: 0, right: 0 };
 
     this._findStretches();
     this.initFromComposition();
@@ -118,9 +124,10 @@ export class Solver {
       while (r <= last) {
         if (!materials[regions[r].material].present[i]) { r++; continue; }
         const r0 = r;
-        while (r + 1 <= last && materials[regions[r + 1].material].present[i]) r++;
-        const leftOpen = r0 === 0 && contacts.left.species[i].type !== 'blocked';
-        const rightOpen = r === last && contacts.right.species[i].type !== 'blocked';
+        while (r + 1 <= last && materials[regions[r + 1].material].present[i] && model.interfaces[r].links[i].type !== 'blocked') r++;
+        const touches = (ct) => ct.species[i].type !== 'blocked' || ct.reactions.some((rx) => [...rx.reactants, ...rx.products].some((p) => p.i === i));
+        const leftOpen = r0 === 0 && touches(contacts.left);
+        const rightOpen = r === last && touches(contacts.right);
         let reactive = false;
         for (let q = r0; q <= r; q++) {
           this.stretchOf[q * n + i] = this.stretches.length;
@@ -227,6 +234,7 @@ export class Solver {
         }
       }
     }
+    if (this.terminalBlock >= 0) u[this.terminalBlock * M] = model.contacts.right.V / this.VT;
     this.computeConcentrations();
   }
 
@@ -388,104 +396,253 @@ export class Solver {
     // Interfaces: the flux node carries D and N_i; its rows are the interface laws.
     for (let f = 0; f < this.nFaces; f++) {
       const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
-      const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
+      const itf = interfaces[f];
       // φ: fixed offset (the dipole); displacement passes through.
-      res[bf * M] = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - interfaces[f].dipole / VT;
+      res[bf * M] = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
       this._j(bf, 0, bR, 0, 1);
       this._j(bf, 0, bL, 0, -1);
       res[bL * M] += u[bf * M];
       this._j(bL, 0, bf, 0, 1);
-      res[bR * M] -= u[bf * M] + interfaces[f].sheetCharge;
+      res[bR * M] -= u[bf * M] + itf.sheetCharge;
       this._j(bR, 0, bf, 0, -1);
       for (let i = 0; i < n; i++) {
-        const r = 1 + i;
-        const pL = this.present[gL * n + i], pR = this.present[gR * n + i];
-        if (pL && pR) {
-          // Local equilibrium: μ̄ continuous.
-          res[bf * M + r] = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
+        const r = 1 + i, o = bf * M + r;
+        const type = itf.links[i].type;
+        const deta = u[bL * M + r] - u[bR * M + r] + (uLo[bL * M + r] - uLo[bR * M + r]); // η_L − η_R
+        if (type === 'blocked') {
+          res[o] = u[o];
+          this._j(bf, r, bf, r, 1);
+          continue;
+        }
+        if (type === 'equilibrium') {
+          res[o] = -deta; // μ̄ continuous
           this._j(bf, r, bR, r, 1);
           this._j(bf, r, bL, r, -1);
-          res[bL * M + r] += u[bf * M + r];
-          this._j(bL, r, bf, r, 1);
-          res[bR * M + r] -= u[bf * M + r];
-          this._j(bR, r, bf, r, -1);
+        } else if (type === 'conductance') {
+          // J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F)
+          const gG = (itf.links[i].G * VT) / (z[i] * z[i] * F);
+          res[o] = u[o] - gG * deta;
+          this._j(bf, r, bf, r, 1);
+          this._j(bf, r, bL, r, -gG);
+          this._j(bf, r, bR, r, gG);
         } else {
-          res[bf * M + r] = u[bf * M + r];
+          res[o] = u[o]; // kinetic: N − Σ ν r, the rates are subtracted below
           this._j(bf, r, bf, r, 1);
         }
+        res[bL * M + r] += u[o];
+        this._j(bL, r, bf, r, 1);
+        res[bR * M + r] -= u[o];
+        this._j(bR, r, bf, r, -1);
+      }
+      for (const tr of itf.transfers) this._transfer(tr, f, bf, bL, bR);
+    }
+
+    // Contacts.
+    const circuit = model.circuit;
+    const tb = this.terminalBlock; // extra block carrying a floating terminal voltage, or −1
+    this._termI = 0;
+    this._termIJac.fill(0); // [∂/∂(last node slots), ∂/∂V_t]
+    for (const side of ['left', 'right']) this._contact(side, dt);
+    if (tb >= 0) {
+      // Circuit law for the floating terminal: I_contact(V_t, last node) − I_circuit(V_t) = 0.
+      const Vt = this.terminalV;
+      let I = circuit.I, dIdV = 0;
+      if (circuit.mode === 'load') {
+        I = (Vt - contacts.left.V - circuit.V) / circuit.R;
+        dIdV = 1 / circuit.R;
+      }
+      res[tb * M] = this._termI - I;
+      for (let r = 0; r < M; r++) this._j(tb, 0, tb - 1, r, this._termIJac[r]);
+      this._j(tb, 0, tb, 0, (this._termIJac[M] - dIdV) * VT);
+      for (let r = 1; r < M; r++) {
+        res[tb * M + r] = u[tb * M + r];
+        this._j(tb, r, tb, r, 1);
+      }
+    }
+  }
+
+  // Kinetic transfer across interface f (Butler–Volmer form, forward = left to right):
+  //   r = k0 Π [(c_L/c_ref,L)^{ν(1−α)} (c_R/c_ref,R)^{να}] (e^{αa} − e^{−(1−α)a}),
+  //   a = Σ ν (η_L − η_R).  Each species' flux-node row gets −ν·r.
+  _transfer(tr, f, bf, bL, bR) {
+    const { n, M, u, uLo, c, z, res } = this;
+    const gL = this.model.grid.regionEnd[f], gR = this.model.grid.regionStart[f + 1];
+    const al = tr.alpha;
+    let pref = tr.k0, aHi = 0, aLo = 0, zL = 0, zR = 0;
+    for (const { i, nu } of tr.species) {
+      pref *= (c[gL * n + i] / this.cRef[gL * n + i]) ** (nu * (1 - al)) * (c[gR * n + i] / this.cRef[gR * n + i]) ** (nu * al);
+      aHi += nu * (u[bL * M + 1 + i] - u[bR * M + 1 + i]);
+      aLo += nu * (uLo[bL * M + 1 + i] - uLo[bR * M + 1 + i]);
+      zL += nu * (1 - al) * z[i];
+      zR += nu * al * z[i];
+    }
+    const { g, gp } = bvFactor(aHi + aLo, al);
+    const rate = pref * g;
+    for (const { i, nu } of tr.species) {
+      const row = 1 + i;
+      res[bf * M + row] -= nu * rate;
+      for (const { i: j, nu: nj } of tr.species) {
+        this._j(bf, row, bL, 1 + j, -nu * (nj * (1 - al) * rate + pref * gp * nj));
+        this._j(bf, row, bR, 1 + j, -nu * (nj * al * rate - pref * gp * nj));
+      }
+      this._j(bf, row, bL, 0, -nu * (-zL * rate));
+      this._j(bf, row, bR, 0, -nu * (-zR * rate));
+    }
+  }
+
+  // One contact: record the flux through its outer face, then add its exchange terms (electrode
+  // reactions, conductance links), then apply fixed links and the φ link.
+  _contact(side, dt) {
+    const { model, n, M, u, uLo, res, c, z, VT } = this;
+    const F = FARADAY;
+    const contacts = model.contacts, circuit = model.circuit;
+    const ct = contacts[side];
+    const g = side === 'left' ? 0 : this.nNodes - 1;
+    const b = this.blockOfNode[g];
+    const sgn = side === 'left' ? 1 : -1;
+    const flux = this.contactFlux[side];
+    const floating = side === 'right' && circuit.mode !== 'voltage';
+    const readout = floating && !circuit.terminalUnknown;
+    const tb = this.terminalBlock;
+    const t = ct.terminal;
+
+    // Terminal voltage, and how it depends on the unknowns.
+    let Vt = ct.V;
+    if (readout) {
+      const ot = b * M + 1 + t;
+      Vt = (VT * (u[ot] + uLo[ot])) / z[t] - ct.species[t].offset;
+    } else if (floating) {
+      Vt = VT * u[tb * M];
+    }
+    if (floating) this.terminalV = Vt;
+    const addVt = (rs, val) => {
+      if (readout) this._j(b, rs, b, 1 + t, (val * VT) / z[t]);
+      else if (floating) this._j(b, rs, tb, 0, val * VT);
+    };
+    const toTerminal = floating && !readout; // accumulate the terminal-current row
+    const termJ = this._termIJac;
+
+    // Before anything is added, each balance residual is the flux through this face.
+    for (let i = 0; i < n; i++) flux[i] = sgn * res[b * M + 1 + i];
+
+    // Electrode reactions: Σ ν_R R + n e⁻(metal, μ̄ = −F V_t) ⇌ Σ ν_P P.
+    for (const rx of ct.reactions) {
+      const al = rx.alpha;
+      let pref = rx.k0, zs = 0, aHi = rx.fixedA - (rx.electrons * Vt) / VT, aLo = 0;
+      for (const { i, nu } of rx.reactants) {
+        pref *= (c[g * n + i] / this.cRef[g * n + i]) ** (nu * (1 - al));
+        zs += nu * (1 - al) * z[i];
+        aHi += nu * u[b * M + 1 + i];
+        aLo += nu * uLo[b * M + 1 + i];
+      }
+      for (const { i, nu } of rx.products) {
+        pref *= (c[g * n + i] / this.cRef[g * n + i]) ** (nu * al);
+        zs += nu * al * z[i];
+        aHi -= nu * u[b * M + 1 + i];
+        aLo -= nu * uLo[b * M + 1 + i];
+      }
+      const { g: gf, gp } = bvFactor(aHi + aLo, al);
+      const rate = pref * gf;
+      const dVt = (pref * gp * -rx.electrons) / VT;
+      // ∂rate/∂η_j for participant j: prefactor exponent·rate ± pref·g′·ν
+      const dEta = (j, e, sign, nu) => e * rate + sign * pref * gp * nu;
+      const terms = [
+        ...rx.reactants.map(({ i, nu }) => ({ i, nu, row: 1, d: dEta(i, nu * (1 - al), 1, nu) })),
+        ...rx.products.map(({ i, nu }) => ({ i, nu, row: -1, d: dEta(i, nu * al, -1, nu) })),
+      ];
+      for (const tA of terms) {
+        const rs = 1 + tA.i, w = tA.row * tA.nu; // consumed (+) or produced (−) at this node
+        res[b * M + rs] += w * rate;
+        for (const tB of terms) this._j(b, rs, b, 1 + tB.i, w * tB.d);
+        this._j(b, rs, b, 0, w * -zs * rate);
+        addVt(rs, w * dVt);
+      }
+      if (toTerminal) {
+        // Electrons taken from the metal at the right: current toward +x of n F r.
+        const q = rx.electrons * F;
+        this._termI += q * rate;
+        for (const tB of terms) termJ[1 + tB.i] += q * tB.d;
+        termJ[0] += q * -zs * rate;
+        termJ[M] += q * dVt;
       }
     }
 
-    // Contacts. The boundary node's balance rows are complete except for the flux through the
-    // contact, so before a row is replaced by a contact condition its residual *is* that flux:
-    // entering at the left (+res), leaving at the right (−res), both counted toward +x.
-    const circuit = model.circuit;
-    for (const side of ['left', 'right']) {
-      const ct = contacts[side];
-      const g = side === 'left' ? 0 : this.nNodes - 1;
-      const b = this.blockOfNode[g];
-      const sgn = side === 'left' ? 1 : -1;
-      const flux = this.contactFlux[side];
-      // In current/load mode the right terminal floats: its voltage is read off the terminal
-      // species' own level at the contact node, and its row becomes the circuit law instead.
-      const floating = side === 'right' && circuit.mode !== 'voltage';
-      const t = ct.terminal;
-      let Vt = ct.V;
-      if (floating) {
-        const ot = b * M + 1 + t;
-        Vt = (VT * (u[ot] + uLo[ot])) / z[t] - ct.species[t].offset;
-        this.terminalV = Vt;
+    // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset.
+    for (let i = 0; i < n; i++) {
+      const link = ct.species[i];
+      if (link.type !== 'conductance') continue;
+      const o = b * M + 1 + i;
+      const Vi = (VT * (u[o] + uLo[o])) / z[i];
+      const Nin = (link.G * (Vt + link.offset - Vi)) / (z[i] * F); // particles entering
+      const k = (link.G * VT) / (z[i] * z[i] * F);
+      res[o] -= Nin;
+      this._j(b, 1 + i, b, 1 + i, k);
+      addVt(1 + i, -link.G / (z[i] * F));
+      if (toTerminal) {
+        // Current toward +x leaving through the right face: −z F N_in.
+        this._termI += -z[i] * F * Nin;
+        termJ[1 + i] += link.G * VT / z[i];
+        termJ[M] += -link.G;
       }
-      for (let i = 0; i < n; i++) {
-        flux[i] = sgn * res[b * M + 1 + i];
-        if (ct.species[i].type !== 'fixed') continue;
-        const o = b * M + 1 + i;
-        this._replaceRow(b, 1 + i);
-        if (floating && i === t) {
-          // I_segment − I_circuit(V_t) = 0. The last segment's total current equals the
-          // terminal current exactly (box balance plus Poisson, differenced in time).
-          const I = circuit.mode === 'current' ? circuit.I : (Vt - contacts.left.V - circuit.V) / circuit.R;
-          res[o] = this.segI - I;
-          for (let r = 0; r < M; r++) {
-            this._j(b, 1 + i, b - 1, r, this.segIJac[r]);
-            this._j(b, 1 + i, b, r, this.segIJac[M + r]);
-          }
-          if (circuit.mode === 'load') this._j(b, 1 + i, b, 1 + t, -VT / (z[t] * circuit.R));
-        } else if (floating && ct.species[i].mu === undefined) {
-          // Charged species tied to the floating terminal: η_i = z_i (V_t + offset_i)/V_T.
-          res[o] = u[o] + uLo[o] - (z[i] * (Vt + ct.species[i].offset)) / VT;
-          this._j(b, 1 + i, b, 1 + i, 1);
-          this._j(b, 1 + i, b, 1 + t, -z[i] / z[t]);
-        } else {
-          this._j(b, 1 + i, b, 1 + i, 1);
-          res[o] = u[o] - this.contactEta(side, i) + uLo[o];
+    }
+
+    // Fixed links.
+    for (let i = 0; i < n; i++) {
+      if (ct.species[i].type !== 'fixed') continue;
+      const o = b * M + 1 + i;
+      this._replaceRow(b, 1 + i);
+      if (readout && i === t) {
+        // I_segment − I_circuit(V_t) = 0. The last segment's total current equals the
+        // terminal current exactly (box balance plus Poisson, differenced in time).
+        const I = circuit.mode === 'current' ? circuit.I : (Vt - contacts.left.V - circuit.V) / circuit.R;
+        res[o] = this.segI - I;
+        for (let r = 0; r < M; r++) {
+          this._j(b, 1 + i, b - 1, r, this.segIJac[r]);
+          this._j(b, 1 + i, b, r, this.segIJac[M + r]);
         }
-      }
-      const link = ct.phi;
-      if (link.type === 'capacitive') {
-        // Gate (or metal across a Stern layer) at φ_g = V − zeroCharge; D = C·(φ_g − φ) inward.
-        const phiG = ct.V - link.zeroCharge;
-        const D = link.C * (phiG - VT * u[b * M]) * sgn;
-        res[b * M] -= sgn * D;
-        this._j(b, 0, b, 0, link.C * VT);
-        this.contactD[side] = D;
-      } else if (link.type === 'neutral') {
-        this.contactD[side] = sgn * res[b * M];
-        this._replaceRow(b, 0);
-        let q = this.rhoFixed[g];
-        let dq = 0;
-        for (let i = 0; i < n; i++) {
-          const k = g * n + i;
-          if (!this.present[k] || z[i] === 0) continue;
-          q += F * z[i] * c[k];
-          dq -= F * z[i] * z[i] * c[k];
-          this._j(b, 0, b, 1 + i, F * z[i] * c[k]);
-        }
-        this._j(b, 0, b, 0, dq);
-        res[b * M] = q;
+        if (circuit.mode === 'load') this._j(b, 1 + i, b, 1 + t, -VT / (z[t] * circuit.R));
+      } else if (floating && ct.species[i].mu === undefined) {
+        // Charged species tied to the floating terminal: η_i = z_i (V_t + offset_i)/V_T.
+        res[o] = u[o] + uLo[o] - (z[i] * (Vt + ct.species[i].offset)) / VT;
+        this._j(b, 1 + i, b, 1 + i, 1);
+        addVt(1 + i, -z[i] / VT);
       } else {
-        this.contactD[side] = 0;
+        this._j(b, 1 + i, b, 1 + i, 1);
+        res[o] = u[o] - this.contactEta(side, i) + uLo[o];
       }
+    }
+
+    // φ link.
+    const link = ct.phi;
+    if (link.type === 'capacitive') {
+      // Gate, or metal across a Stern layer, at φ_g = V_t − zeroCharge. D toward +x.
+      const phiG = Vt - link.zeroCharge;
+      const D = link.C * (phiG - VT * u[b * M]) * sgn;
+      res[b * M] -= sgn * D;
+      this._j(b, 0, b, 0, link.C * VT);
+      addVt(0, -sgn * sgn * link.C); // ∂(−sgn·D)/∂V_t = −C
+      this.contactD[side] = D;
+      if (toTerminal && Number.isFinite(dt)) {
+        this._termI += (D - this.contactDStart.right) / dt;
+        termJ[0] += (link.C * VT) / dt;
+        termJ[M] += -link.C / dt;
+      }
+    } else if (link.type === 'neutral') {
+      this.contactD[side] = sgn * res[b * M];
+      this._replaceRow(b, 0);
+      let q = this.rhoFixed[g];
+      let dq = 0;
+      for (let i = 0; i < n; i++) {
+        const k = g * n + i;
+        if (!this.present[k] || z[i] === 0) continue;
+        q += F * z[i] * c[k];
+        dq -= F * z[i] * z[i] * c[k];
+        this._j(b, 0, b, 1 + i, F * z[i] * c[k]);
+      }
+      this._j(b, 0, b, 0, dq);
+      res[b * M] = q;
+    } else {
+      this.contactD[side] = 0;
     }
   }
 
@@ -535,7 +692,7 @@ export class Solver {
   // Largest update among the potential-like unknowns (φ̂ and η at grid nodes).
   _maxPotentialStep(delta) {
     const { n, M } = this;
-    let mx = 0;
+    let mx = this.terminalBlock >= 0 ? Math.abs(delta[this.terminalBlock * M]) : 0;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
       mx = Math.max(mx, Math.abs(delta[b * M]));
@@ -629,6 +786,7 @@ export class Solver {
       this.contactDEnd = { ...this.contactD };
     }
     const DOld = { ...this.contactDEnd };
+    this.contactDStart = DOld;
     const result = this.newton(dt, opts);
     if (result.converged) {
       this.time += dt;
