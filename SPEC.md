@@ -46,14 +46,21 @@ this section implements them.
 - **Every control and every measurable is an electrochemical potential** (or a difference of
   them). A bias voltage sets a difference in μ̄_e⁻ between terminals (`V = −Δμ̄_e⁻/F`), and a
   gate sets its metal's μ̄_e⁻. Nothing a user sets is an electrostatic potential.
-- **φ is bookkeeping.** Any consistent φ gives identical physics (ESBD's "any consistent φ
-  works equally well"). driftlet uses one that is continuous through every face; Galvani
-  steps are not modelled as jumps in φ, and the physics of an interface lives in the standard
-  levels on either side. Outputs and docs label φ as such.
+- **φ is bookkeeping: an arbitrarily anchored point on each material's standard-level ladder.**
+  Any consistent φ gives identical physics (ESBD's "any consistent φ works equally well"). Each
+  material's μ° values fix where its φ sits relative to its own V°_i ladder, so φ **jumps at
+  every interface between distinct materials**, by that interface's dipole. Outputs and docs
+  label φ as such.
 - **Bulk standard chemical potentials are only meaningful in neutral combinations**
   (`μ°_e⁻ + μ°_h⁺`, `μ°_Na⁺ + μ°_Cl⁻`, `μ°_Li⁺ + μ°_e⁻`). How charged levels line up across a
   boundary between different materials is a property of *that interface* and must be given
-  explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level.
+  explicitly. No Anderson rule, no Schottky–Mott rule, no implied common vacuum level. Those
+  rules imply that alignments add up transitively (so methanol | water | methanol would have
+  cancelling dipoles). driftlet assumes no such thing: each interface's alignment is
+  independent, even when the same pair of materials meets twice, since for example different
+  adsorbates can sit on each interface. (A uniform alignment across each interface is an
+  assumption only because the model is 1D; patch potentials and Schottky-barrier
+  inhomogeneity are out of scope.)
 - **A work function is a property of a surface, not a material.** A vacuum level
   (`φ_vac = V_e⁻ − W/e` just outside) is only reported at a free surface for which the user
   gave W, and it never feeds back into alignment.
@@ -102,18 +109,19 @@ D, c_ref and μ°_i (or "absent"). Its μ°_i are defined only up to a charge ga
 `μ°_i → μ°_i + z_i F s`, since only neutral combinations are bulk-measurable, so a material's
 absolute charged levels mean nothing on their own. A *region* is a material plus a length and
 a fixed charge ρ_fixed (doping, ionomer). Every face between regions of *different* materials
-takes exactly one alignment number, which fixes the relative gauge of its neighbours. It is
-one of:
+takes exactly one alignment number of its own. Given both materials' μ° values, this is
+equivalent to the φ jump (dipole) at that face. It is one of:
 - the step in the standard level of a charged species present on both sides (e.g. ΔE_c for a
   heterojunction; ΔE_v then follows from the two bulk gaps);
 - the standard free energy of a charge-transfer reaction across the face (for an electrode,
   the standard potential E° *is* the alignment);
-- a bookkeeping interface dipole, for users who think that way.
-Faces between regions of the same material need none (a homojunction, e.g. pn). The regions
-form a chain with no loops, so this fixes every relative gauge exactly once; a single global
-offset is left over, fixed by a terminal. A missing or doubled alignment is a construction
-error, never a silent default. Internally the gauge goes into per-region μ°_i with φ
-continuous. Faces may also carry per-species links (as for contacts, below: e.g. thermionic
+- the dipole (φ jump) itself, in the materials' own φ anchoring.
+Faces between regions of the same material default to no dipole (a homojunction, e.g. pn),
+and can take one if wanted (e.g. a grain boundary). Alignments are per face and independent:
+nothing requires them to be consistent around the device, and the same material pair can
+meet twice with different alignments. The overall offset of all μ̄ is left free and fixed by
+a terminal. A missing or doubled alignment at a heterointerface is a construction error, never
+a silent default. Faces may also carry per-species links (as for contacts, below: e.g. thermionic
 emission or an interface resistance instead of local equilibrium) and a fixed sheet charge.
 Species that can't enter a region are blocked at its face (zero flux).
 
@@ -208,10 +216,11 @@ charge flowing toward +x.
   - *linked*: both copies are unknowns and the face flux is a function of them: a kinetic or
     conductance link for species (Butler–Volmer, thermionic emission, interface resistance), or
     an interface capacitance for φ (displacement = C·Δφ). Blocked means zero flux.
-  - *continuous* (the default: local equilibrium for species, the continuous internal φ): the
-    right copy's slot holds the **interface flux** (for φ, the displacement) as its unknown
-    instead of a duplicate value. The left row is left-box balance minus that flux; the right
-    row is that flux minus right-box balance, reading the shared value from the left node.
+  - *fixed offset* (the default: local equilibrium for species, i.e. offset 0; for φ, the
+    interface dipole): the right copy's slot holds the **interface flux** (for φ, the
+    displacement) as its unknown instead of a duplicate value. The left row is left-box balance
+    minus that flux. The right row is that flux minus right-box balance, reading its own value
+    as the left node's value plus the fixed offset.
     This couples only neighbours, so it stays block-tridiagonal with a fixed block size and
     no penalty terms. Summing the two rows gives exactly the classic shared-node box method,
     each half-box using its own material's μ°, ε and D.
@@ -245,10 +254,11 @@ charge flowing toward +x.
   doubled-node pair. The alignment then only sets that sub-grid charge, and it drops out of
   the μ̄ profiles automatically, as it should. Check this in tests (metal | metal, and a
   quasi-neutral limit).
-- **Gauge in outputs:** internally φ is continuous. Outputs report φ in the *user's* per-material
-  gauge (internal φ minus that region's gauge shift), so φ steps at interfaces by whatever
-  dipole the user's μ° choices imply. That's subjective, and correctly so. Output arrays list
-  each doubled node twice (x repeated), so c, μ° and the user's φ plot as true vertical steps.
+- **φ in outputs** is exactly the φ solved for: anchored per material by the user's μ° values,
+  with a jump at each doubled node given by its alignment (plus any interface-capacitance
+  charging). The size of a dipole is as subjective as the anchoring, correctly so; a user who
+  has data for true mean inner potentials can anchor to those. Output arrays list each doubled
+  node twice (x repeated), so c, μ° and φ plot as true vertical steps.
 - **Failure behaviour:** never return a silently wrong answer. Report non-convergence with the
   residual history, and expose `converged`, `iterations` and `residual`.
 
@@ -288,7 +298,7 @@ sol = dev.solve({ warm: sol });                 // fast re-solve
 sol.x;                                           // Float64Arrays
 sol.mu['Zn2+']; sol.c['Zn2+']; sol.N['Zn2+'];     // μ̄ (J/mol), c, particle flux
 sol.muStd['Zn2+'];                                // standard level μ° + zFφ (band-edge analogue)
-sol.phi;                                          // bookkeeping φ (continuous; see §3)
+sol.phi;                                          // bookkeeping φ (per-material anchor; jumps at interfaces)
 sol.V['Zn2+']; sol.Vstd['Zn2+']; sol.J['Zn2+'];    // optional voltage-scaled views
 sol.current; sol.terminalVoltage;
 sol.interfaces;   // per face: steps in each μ̄_i and V_i (overpotentials, junction/Donnan potentials)
@@ -333,6 +343,9 @@ Each item is an automated test with a stated tolerance. The README carries a tab
 9. **Heterojunction:** an abrupt pn heterojunction with a user-given ΔE_c. The built-in
    potential and the split of band bending between the sides match the depletion approximation
    for *that* ΔE_c, and omitting the alignment is a construction error (no Anderson default).
+   Also an A | B | A stack (methanol | water | methanol, say) with *unequal* alignments at its
+   two faces: equilibrium holds, and each face's double-layer charge and potential split match
+   its own analytic value.
 10. **Bulk reaction:** the mass-action law holds at equilibrium (e.g. `c_H+ c_OH− = K_w`), and
    homogeneous relaxation matches the analytic time constant.
 11. **Advection–diffusion:** Levich limiting current at a rotating disk electrode (imposed
