@@ -30,10 +30,10 @@ dropped into a web page.
   only from a few CDNs and block `fetch`. So no WASM side files and no runtime fetches.
 - **1D only, local physics only.** The Jacobian must stay **block-tridiagonal**. That is what
   keeps it fast and simple, and it's the whole point of an interactive toy. Every physics model
-  must be local (a node couples only to its neighbours). The only exceptions are a few bordered
-  scalar unknowns that belong to the problem statement itself: the circuit constraint and
-  conserved inventories. These are never a way to add non-local physics. Features that would
-  break this structure are out of scope, not deferred.
+  must be local (a node couples only to its neighbours), and so is everything else: circuits
+  are boundary conditions at one end, and inventory constraints use a running-integral
+  unknown. There is no bordering and no dense row. Features that would break this structure
+  are out of scope, not deferred.
 - **Speed:** with ~300 nodes and up to 6 species, one Newton iteration should take well under
   1 ms in V8, and a warm-started re-solve after a small parameter change should take under
   ~5 ms. Inner loops should be allocation-free (`Float64Array`, reused buffers).
@@ -154,9 +154,13 @@ for an absent species are `NaN` at those nodes, so plots show a gap rather than 
 **Conserved inventories (blocked species).** A species blocked on every side of some connected
 stretch of the device (no contact link, no reaction) is a *conserved spectator*: its amount
 there never changes, and it just drifts and screens. Transients conserve it automatically. A
-steady-state or equilibrium solve cannot determine it (its μ̄ level floats), so each such
-inventory is one extra scalar unknown (its level) with one constraint (`∫c dx` = the given
-amount), handled by bordering like the circuit unknowns. The amount defaults to what the
+steady-state or equilibrium solve cannot determine it: its μ̄ level floats, and the balance
+equations are rank-deficient by one. The constraint `∫c dx = amount` is made local with a
+running integral. Over that stretch the species gets a second per-node unknown
+`Q_k = Σ_{j≤k} c_j·vol_j`, with rows `Q_k − Q_{k−1} − c_k·vol_k = 0` (starting from zero). At
+the stretch's last node, the redundant balance row is replaced by `Q = amount`, a condition
+at the far end. That is one extra unknown per node per spectator species, in steady-state
+solves only (transients conserve automatically and don't need Q). The amount defaults to what the
 initial/warm state holds, or is given explicitly. With bulk reactions, the conserved quantities
 are moieties (left null vectors of the stoichiometry restricted to that stretch) rather than
 species. A device can be *entirely* blocked (a floating island) provided φ is anchored
@@ -201,9 +205,16 @@ imposed exactly (eliminate the unknown), not with the large-penalty trick the pr
 **Circuit.** A terminal is the μ̄ of a named species at a contact: μ̄_e⁻ of the metal in the
 normal case. For an ion-only cell, an ion (e.g. Cl⁻) stands in for an ideal reversible
 electrode for that ion (Ag/AgCl). Terminal voltage is `−Δμ̄_e⁻/F`, or `Δμ̄_i/(z_i F)` for an ion
-terminal. Choose one: applied voltage; applied current (galvanostatic); or an external load
-resistor R (V_term = I·R). The latter two add one scalar unknown, handled by bordering the block
-system. Open circuit (I = 0) is the current mode with I = 0 (liquid junctions, Donnan).
+terminal. The left terminal is ground (fixed μ̄), and the circuit is a boundary condition on the
+rightmost node, so it stays local:
+- applied voltage: Dirichlet (fixed μ̄);
+- applied current (galvanostatic): a Neumann flux;
+- a load resistor R: a Robin condition relating the terminal μ̄ to the terminal current.
+Open circuit is the current mode with I = 0 (liquid junctions, Donnan). This is exact in
+transients too, because in 1D the total current (conduction plus displacement) is uniform in
+x: what leaves one terminal enters the other. When several species share a terminal (e⁻ and h⁺
+at an ohmic contact), the terminal node's rows use their summed current. Their μ̄ are tied
+together, so only one terminal level is unknown.
 
 **Temperature:** a single uniform T in v0 (a parameter, default 298.15 K). Non-isothermal
 transport is a possible later extension and does *not* require non-ideal solutions: it needs
@@ -255,9 +266,8 @@ charge flowing toward +x.
   concentration, Debye length).
 - **Solver:** damped Newton, limiting each update to a few thermal voltages per iteration (or
   Bank–Rose damping). The Jacobian is block-tridiagonal with block size `1 + nSpecies`; solve it
-  with block Thomas (a small dense LU per block). Circuit constraints and conserved
-  inventories are extra scalar unknowns, handled by bordering (Schur complement: one extra
-  block-Thomas back-substitution per scalar, reusing the factorisation).
+  with block Thomas (a small dense LU per block). Nothing is bordered (§2): circuits are
+  boundary rows and inventories are running integrals, so the solver is plain block Thomas.
 - **Steady-state strategy:** first solve for equilibrium (flat μ̄_i fixed by the contact links
   or, for spectators, by their inventories: a nonlinear Poisson–Boltzmann problem), then use
   continuation in bias or current.
