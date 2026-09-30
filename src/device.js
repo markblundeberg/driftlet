@@ -109,11 +109,24 @@ export function normalizeDevice(def) {
     const length = positive(reg.length, `${path}.length`);
     const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
     if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
+    const mat = materials[materialIndex.get(reg.material)];
+    // Initial composition: the starting state, and the conserved amount of any spectator.
+    const c0 = new Float64Array(nSpecies).fill(NaN);
+    if (reg.c0 !== undefined) {
+      need(isObject(reg.c0), `${path}.c0 must be an object mapping species names to concentrations`);
+      for (const [sname, v] of Object.entries(reg.c0)) {
+        need(speciesIndex.has(sname), `${path}.c0.${sname}: unknown species '${sname}'`);
+        const i = speciesIndex.get(sname);
+        need(mat.present[i], `${path}.c0.${sname}: '${sname}' is absent from material '${mat.name}'`);
+        c0[i] = positive(v, `${path}.c0.${sname}`);
+      }
+    }
     return {
       name: reg.name ?? `region ${r}`,
       material: materialIndex.get(reg.material),
       length,
       fixedCharge,
+      c0,
       grid: reg.grid,
     };
   });
@@ -235,8 +248,9 @@ function normalizeContact(cdef, side, mat, species, speciesIndex) {
     if (raw.type === 'capacitive') {
       positive(raw.C, `${path}.phi.C`);
       finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage or pzc)`);
+      if (raw.V !== undefined) finite(raw.V, `${path}.phi.V`);
     }
-    phi = { ...raw };
+    phi = raw.type === 'capacitive' ? { V: 0, ...raw } : { ...raw };
   }
   if (phi.type === 'neutral') {
     need(
