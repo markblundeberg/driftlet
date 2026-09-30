@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intercalation host</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Lithiating an intercalation host at constant current</h1>
+  <p>A 2 µm host layer (strictly neutral, with Li⁺ + e⁻ as one neutral combination) takes Li⁺ from
+    the electrolyte on the left and electrons from a current collector on the right. Its OCV is a
+    regular solution with interaction Ω. The collector's voltage against Li is solved for as the
+    current is held fixed. At high rates, lithium piles up at the surface and the voltage drops early.</p>
+  <div class="controls">
+    <label>C-rate <input id="rate" type="range" min="0.2" max="10" step="0.1" value="2"><output id="rateOut"></output></label>
+    <label>Ω/RT <input id="omega" type="range" min="0" max="1.9" step="0.1" value="1.2"><output id="omegaOut"></output></label>
+    <button id="run">restart</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas id="profile"></canvas>
+    <canvas id="voltage"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { chart, colors, fromQuery } from './plot.js';
+
+const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
+const Q = FARADAY * cMax * L; // capacity, C/m²
+const rate = document.getElementById('rate'), omega = document.getElementById('omega');
+fromQuery(rate);
+fromQuery(omega);
+const labels = () => {
+  document.getElementById('rateOut').textContent = `${(+rate.value).toFixed(1)} C`;
+  document.getElementById('omegaOut').textContent = (+omega.value).toFixed(1);
+};
+rate.addEventListener('input', labels);
+omega.addEventListener('input', labels);
+labels();
+
+// OCV against Li metal (μ_Li = 0), dilute-referenced regular solution: see docs/statistics.md.
+const E = (x, Om) => -(mu0 + RT * Math.log(x / (1 - x)) - 2 * Om * x) / FARADAY;
+
+let dev, profiles, curve, running = false, I;
+function start() {
+  const Om = +omega.value * RT;
+  I = (+rate.value * Q) / 3600;
+  dev = new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: {
+      host: {
+        epsr: 0,
+        species: { 'Li+': { D: 1e-15, mu0, cRef: cMax }, 'e-': { D: 1e-6, mu0: 0, cRef: cMax } },
+        statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, A: [Om] }],
+      },
+    },
+    regions: [{ material: 'host', length: L }],
+    contacts: {
+      left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' },
+      right: { V: E(x0, Om), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+    },
+    grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
+  });
+  dev.solve();
+  dev.set({ circuit: { mode: 'current', I } }); // electrons in from the right, Li⁺ from the left
+  profiles = [];
+  last = undefined;
+  curve = { x: [], V: [], ocv: [] };
+  for (let k = 1; k < 100; k++) {
+    curve.ocv.push([k / 100, E(k / 100, Om)]);
+  }
+  nextProfile = 0;
+  // ?x=0.6 runs ahead to that state of charge first (for sharing a state, or a screenshot).
+  const ahead = +new URLSearchParams(location.search).get('x');
+  while (ahead > 0 && !(last?.done) && (last?.soc ?? 0) < ahead) slice(Infinity);
+  if (!running) requestAnimationFrame(frame);
+  running = true;
+}
+let nextProfile = 0, last;
+// Advance by one slice of the run (at most budgetMs of compute), recording the curve and profiles.
+function slice(budgetMs) {
+  const tEnd = ((0.97 - x0) * Q) / I;
+  const s = dev.advance(Math.min(tEnd, dev.solver.time + tEnd / 60), { budgetMs });
+  s.trace.t.forEach((t, k) => {
+    curve.x.push(x0 + (I * t) / Q);
+    curve.V.push(s.trace.voltage[k]);
+  });
+  const soc = x0 + (I * s.time) / Q;
+  if (soc >= nextProfile) {
+    profiles.push({ x: s.x, y: Array.from(s.c['Li+'], (c) => c / cMax) });
+    nextProfile += 0.15;
+  }
+  last = { s, soc, done: s.time >= tEnd };
+  return last;
+}
+function draw() {
+  const { s, soc } = last;
+  chart(document.getElementById('profile'), {
+    xscale: 1e6, xlabel: 'depth into the host (µm)', ylabel: 'site fraction x', ylim: [0, 1],
+    series: [
+      ...profiles.map((p) => ({ ...p, color: colors[0], width: 1.2 })),
+      { x: s.x, y: Array.from(s.c['Li+'], (c) => c / cMax), color: colors[1], label: 'now' },
+      { x: [], y: [], color: colors[0], label: 'every 0.15 in x̄' },
+    ],
+  });
+  chart(document.getElementById('voltage'), {
+    xlabel: 'state of charge (mean x)', ylabel: 'E vs Li (V)', xlim: [0, 1],
+    series: [
+      { x: curve.ocv.map((p) => p[0]), y: curve.ocv.map((p) => p[1]), color: colors[2], dash: [5, 4], label: 'OCV' },
+      { x: curve.x, y: curve.V, color: colors[1], label: `${(+rate.value).toFixed(1)} C` },
+    ],
+  });
+  document.getElementById('status').textContent = `x̄ = ${soc.toFixed(3)} · E = ${s.terminalVoltage.toFixed(3)} V`;
+}
+function frame() {
+  const { done } = slice(12);
+  draw();
+  if (!done) requestAnimationFrame(frame);
+  else running = false;
+}
+document.getElementById('run').addEventListener('click', start);
+start();
+</script>
+</body>
+</html>

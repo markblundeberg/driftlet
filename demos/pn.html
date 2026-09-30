@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pn junction</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Silicon pn junction</h1>
+  <p>Species voltages V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F) (quasi-Fermi levels, solid) and standard levels
+    V°<sub>i</sub> (band edges, dashed), with a bias on the p side. In voltage units the conduction band sits
+    below the valence band. With recombination.</p>
+  <div class="controls">
+    <label>Bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0"><output id="Vout"></output></label>
+    <span class="readout" id="I"></span>
+  </div>
+  <div class="grid">
+    <canvas id="levels"></canvas>
+    <canvas id="conc"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, FARADAY, units } from '../src/index.js';
+import { chart, colors, fromQuery } from './plot.js';
+
+const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19);
+const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });
+const dev = new Device({
+  species: [{ name: 'e-', z: -1 }, { name: 'h+', z: 1 }],
+  materials: { Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: Nc }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: Nv } } } },
+  regions: [
+    { name: 'n', material: 'Si', length: 1.5e-6, fixedCharge: units.perCm3(1e17) * FARADAY },
+    { name: 'p', material: 'Si', length: 1.5e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
+  ],
+  contacts: { left: ohmic(0), right: ohmic(0) },
+  bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 1e-6 } }],
+  grid: { hmin: 0.5e-9, hmax: 15e-9 },
+});
+
+const slider = document.getElementById('V');
+fromQuery(slider);
+function update() {
+  const V = +slider.value;
+  document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
+  dev.set({ contacts: { right: { V } } });
+  const t0 = performance.now();
+  const s = dev.solve();
+  const ms = performance.now() - t0;
+  document.getElementById('I').textContent = `I = ${s.current.toExponential(2)} A/m² (toward +x) · solved in ${ms.toFixed(1)} ms, ${s.iterations} Newton iterations`;
+  chart(document.getElementById('levels'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'voltage (V)',
+    series: [
+      { x: s.x, y: s.Vstd['h+'], color: colors[1], dash: [6, 4], label: 'V° h⁺' },
+      { x: s.x, y: s.V['h+'], color: colors[1], label: 'V h⁺' },
+      { x: s.x, y: s.V['e-'], color: colors[0], label: 'V e⁻' },
+      { x: s.x, y: s.Vstd['e-'], color: colors[0], dash: [6, 4], label: 'V° e⁻' },
+    ],
+  });
+  chart(document.getElementById('conc'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
+    series: [
+      { x: s.x, y: s.c['e-'], color: colors[0], label: 'e⁻' },
+      { x: s.x, y: s.c['h+'], color: colors[1], label: 'h⁺' },
+    ],
+  });
+}
+let pending = false;
+slider.addEventListener('input', () => {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; update(); });
+});
+addEventListener('resize', update);
+update();
+</script>
+</body>
+</html>

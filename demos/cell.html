@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Electrochemical cell</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Ag | AgNO₃ | Ag: concentration polarization, live</h1>
+  <p>10 mM silver nitrate between two silver electrodes, 20 µm apart. Ag⁺ is plated and stripped at
+    the electrodes; NO₃⁻ is blocked. Step the cell voltage and watch the salt profile and current
+    relax (adaptive BDF2, a fixed compute budget per animation frame). The impedance spectrum is the
+    bulk resistance plus a finite-length Warburg arc from salt diffusion.</p>
+  <div class="controls">
+    <label>cell voltage <input id="V" type="range" min="-0.2" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
+    <button id="step">apply step</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas id="profile"></canvas>
+    <canvas id="current"></canvas>
+    <canvas id="nyquist"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device } from '../src/index.js';
+import { chart, colors, fromQuery } from './plot.js';
+
+const electrode = (V) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+const def = {
+  species: [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }],
+  materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+  regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
+  contacts: { left: electrode(0), right: electrode(0) },
+  grid: { minCells: 100 },
+};
+const slider = document.getElementById('V');
+fromQuery(slider);
+const show = () => (document.getElementById('Vout').textContent = `${(+slider.value).toFixed(2)} V`);
+slider.addEventListener('input', show);
+show();
+
+// Impedance at rest.
+const rest = new Device(def);
+const freqs = Array.from({ length: 41 }, (_, k) => 10 ** (-2 + k * 0.15));
+const Z = rest.impedance(freqs).Z;
+const mOhm = (a) => Array.from(a, (v) => v * 1e4); // Ω·cm²
+chart(document.getElementById('nyquist'), {
+  xlabel: "Z′ (Ω·cm²)", ylabel: "−Z″ (Ω·cm²)", xlim: [0, 3.6], ylim: [0, 1.2],
+  series: [{ x: mOhm(Z.re), y: mOhm(Z.im).map((v) => -v), color: colors[3], marker: true, label: 'impedance, 10 mHz – 10 kHz' }],
+});
+
+let dev, trace, running = false, frameTimes = [];
+function start() {
+  dev = new Device(def);
+  dev.solve();
+  dev.set({ contacts: { right: { V: +slider.value } } });
+  trace = { t: [], I: [] };
+  frameTimes = [];
+  // ?t=0.05 runs ahead to that time first (for sharing a state, or a screenshot).
+  const ahead = +new URLSearchParams(location.search).get('t');
+  if (ahead > 0 && trace.t.length === 0) {
+    const s = dev.advance(ahead);
+    s.trace.t.forEach((t, k) => { trace.t.push(t); trace.I.push(s.trace.current[k]); });
+  }
+  if (!running) requestAnimationFrame(frame);
+  running = true;
+}
+function frame() {
+  const tEnd = 0.5;
+  const t0 = performance.now();
+  // Aim for a smooth, roughly logarithmic sweep of time: each frame targets a little further.
+  const target = Math.min(tEnd, Math.max(1e-6, dev.solver.time * 1.15));
+  const s = dev.advance(target, { budgetMs: 10 });
+  frameTimes.push(performance.now() - t0);
+  s.trace.t.forEach((t, k) => { trace.t.push(t); trace.I.push(s.trace.current[k]); });
+  const cb = 10;
+  chart(document.getElementById('profile'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', ylim: [0, 2 * cb],
+    series: [{ x: s.x, y: s.c['Ag+'], color: colors[0], label: 'Ag⁺ = NO₃⁻ (neutral)' }],
+  });
+  chart(document.getElementById('current'), {
+    xlabel: 'log₁₀ t (s)', ylabel: 'current (A/m²)',
+    series: [{ x: trace.t.map(Math.log10), y: trace.I, color: colors[1], label: 'terminal current' }],
+  });
+  const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+  document.getElementById('status').textContent = `t = ${s.time.toExponential(2)} s · ${trace.t.length} steps · ${avg.toFixed(1)} ms per frame`;
+  if (s.time < tEnd) requestAnimationFrame(frame);
+  else running = false;
+}
+document.getElementById('step').addEventListener('click', start);
+start();
+</script>
+</body>
+</html>

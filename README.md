@@ -68,6 +68,18 @@ Solutions are plain objects of `Float64Array`s, ready to plot: `x`, `phi`, and p
 `Vstd`. They also carry currents, contact fluxes, conservation bookkeeping and warnings; see
 [the device reference](docs/device.md).
 
+## Demos
+
+Live pages in [`demos/`](demos/), each solving its device in the browser as you move a slider.
+Serve the repository root (e.g. `python3 -m http.server`) and open `/demos/`.
+
+| | |
+|---|---|
+| [![pn junction](demos/screenshots/pn.png)](demos/pn.html) | [![double layer](demos/screenshots/double-layer.png)](demos/double-layer.html) |
+| **pn junction**: species voltages and band edges under bias | **Double layer**: dilute vs crowded (lattice-gas) ions |
+| [![cell](demos/screenshots/cell.png)](demos/cell.html) | [![insertion](demos/screenshots/insertion.png)](demos/insertion.html) |
+| **Ag \| AgNO₃ \| Ag**: polarization transient and impedance | **Intercalation host**: constant-current lithiation vs the OCV |
+
 ## How to think about it
 
 driftlet insists on thermodynamically honest concepts ([conventions](docs/conventions.md)):

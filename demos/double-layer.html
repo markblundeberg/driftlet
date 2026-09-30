@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crowded double layer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Double layer at a blocking electrode: dilute vs crowded ions</h1>
+  <p>0.1 M salt against an electrode held ψ above the bulk. Ideal (Poisson–Boltzmann) ions pile up
+    without limit; on a lattice of finite size (Bikerman / Kilic–Bazant–Ajdari statistics) the
+    counter-ions saturate and the layer thickens instead, so the charge grows as √ψ rather than
+    exponentially.</p>
+  <div class="controls">
+    <label>ψ <input id="psi" type="range" min="-0.5" max="0.5" step="0.01" value="0.3"><output id="psiOut"></output></label>
+    <label>ion size a <input id="a" type="range" min="0.2" max="1.2" step="0.05" value="0.7"><output id="aOut"></output></label>
+  </div>
+  <div class="grid">
+    <canvas id="profile"></canvas>
+    <canvas id="charge"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
+import { chart, colors, fromQuery } from './plot.js';
+
+const RT = GAS_CONSTANT * 298.15, c0 = 100, epsr = 78.5;
+const lam = Math.sqrt((epsr * EPS0 * RT) / (2 * FARADAY * FARADAY * c0));
+const def = (statistics) => ({
+  species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+  materials: { water: { epsr, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } }, statistics } },
+  regions: [{ material: 'water', length: 30 * lam }],
+  contacts: { left: { V: 0, phi: { type: 'dipole', zeroCharge: 0 } }, right: { V: 0, bath: { c: { 'Na+': c0, 'Cl-': c0 }, reference: 'Cl-' } } },
+  grid: { hmin: lam / 200, hmax: lam / 3, ratio: 1.08 },
+});
+const cMax = (a) => 1 / (a ** 3 * AVOGADRO); // one ion per a³
+const ideal = new Device(def([]));
+let crowded;
+const phiBulk = ideal.solve().phi.at(-1);
+const psi = document.getElementById('psi'), size = document.getElementById('a');
+fromQuery(psi);
+fromQuery(size);
+
+const charge = (sol) => {
+  let q = 0;
+  const x = sol.x;
+  for (let k = 0; k + 1 < x.length; k++) {
+    const h = x[k + 1] - x[k];
+    q += 0.5 * h * FARADAY * (sol.c['Na+'][k] - sol.c['Cl-'][k] + sol.c['Na+'][k + 1] - sol.c['Cl-'][k + 1]);
+  }
+  return -q; // on the electrode
+};
+function sweep(dev) {
+  const xs = [], ys = [];
+  for (let v = -0.5; v <= 0.5001; v += 0.025) {
+    dev.set({ contacts: { left: { V: phiBulk + v } } });
+    xs.push(v);
+    ys.push(charge(dev.solve()));
+  }
+  return { x: xs, y: ys };
+}
+let curves;
+function rebuild() {
+  const a = +size.value * 1e-9;
+  document.getElementById('aOut').textContent = `${size.value} nm`;
+  crowded = new Device(def([{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: cMax(a) }]));
+  crowded.solve();
+  curves = { ideal: curves?.ideal ?? sweep(ideal), crowded: sweep(crowded) };
+  update();
+}
+function update() {
+  const v = +psi.value;
+  document.getElementById('psiOut').textContent = `${v.toFixed(2)} V`;
+  const s = [ideal, crowded].map((d) => (d.set({ contacts: { left: { V: phiBulk + v } } }), d.solve()));
+  const nm = 1e9, lim = [0, 6 * lam * nm];
+  chart(document.getElementById('profile'), {
+    xscale: nm, xlim: lim, xlabel: 'distance from electrode (nm)', ylabel: 'concentration (mol/m³)', logy: true,
+    series: [
+      { x: s[0].x, y: s[0].c['Na+'], color: colors[0], dash: [5, 4], label: 'Na⁺ ideal' },
+      { x: s[0].x, y: s[0].c['Cl-'], color: colors[1], dash: [5, 4], label: 'Cl⁻ ideal' },
+      { x: s[1].x, y: s[1].c['Na+'], color: colors[0], label: 'Na⁺ crowded' },
+      { x: s[1].x, y: s[1].c['Cl-'], color: colors[1], label: 'Cl⁻ crowded' },
+    ],
+  });
+  const qmax = 1.5 * Math.max(...curves.crowded.y.map(Math.abs));
+  chart(document.getElementById('charge'), {
+    xlabel: 'ψ (V)', ylabel: 'electrode charge (C/m²)', ylim: [-qmax, qmax],
+    series: [
+      { ...curves.ideal, color: colors[2], dash: [5, 4], label: 'ideal (Gouy–Chapman)' },
+      { ...curves.crowded, color: colors[3], label: 'crowded' },
+      { x: [v, v], y: [charge(s[0]), charge(s[1])], color: colors[4], width: 0, marker: true },
+    ],
+  });
+}
+let pending = false;
+const later = (fn) => () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; fn(); }); };
+psi.addEventListener('input', later(update));
+size.addEventListener('change', rebuild);
+size.addEventListener('input', () => (document.getElementById('aOut').textContent = `${size.value} nm`));
+addEventListener('resize', update);
+rebuild();
+</script>
+</body>
+</html>
