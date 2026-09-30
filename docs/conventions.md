@@ -73,6 +73,18 @@ statistics. For ideal statistics it's the ordinary diffusivity. With non-ideal s
 measured chemical diffusivity is D times the thermodynamic factor, ∂ln a/∂ln c: the
 generalised Einstein relation, as for degenerate electrons.
 
+Two optional transport terms describe a moving fluid:
+
+- **Advection** by an imposed velocity v adds v·c_i to every mobile species' flux.
+- **Eddy mixing** adds `−(D_mix/RT) P ∇μ̄`, with `P = C − C z zᵀ C / (zᵀ C z)` and
+  C = diag(c).
+  - It's an Onsager term: symmetric, positive semi-definite, and zero at equilibrium (flat
+    μ̄), so double layers at rest are untouched.
+  - The projection removes any current (zᵀP = 0). Eddies move neutral fluid, so they mix salt
+    and stir concentration gradients but conduct nothing.
+  - For a neutral dilute species it's exactly −D_mix ∇c. For a binary salt it adds D_mix to
+    the salt's ambipolar diffusivity and leaves diffusion potentials unchanged.
+
 ## Materials, regions, interfaces
 
 A **material** holds bulk properties (ε, and D, μ°, c_ref per species). A **region** is a

@@ -26,17 +26,16 @@ for live demos.
 - Time and frequency: variable-step BDF2; adaptive `advance(tEnd, { tol, budgetMs })` for
   animation; small-signal impedance with complex block Thomas and complex profiles.
 - Source continuation for cold starts at bias.
+- Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
+  (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
 
 ## Next
 
-1. **Transport extras.** Imposed advection v(x), and current-free eddy mixing: an Onsager
-   term −(D_mix/RT) P ∇μ̄, with P = C − C z zᵀ C/(zᵀ C z), that mixes composition without
-   conducting and vanishes exactly at equilibrium.
-2. **Performance pass.** Benchmarks tracked across versions. Cheaper warm re-solves (2–5
+1. **Performance pass.** Benchmarks tracked across versions. Cheaper warm re-solves (2–5
    Newton iterations for small parameter changes), allocation-free assembly, and a variable
    block size for absent species.
-3. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
+2. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI.
 
 ## Later

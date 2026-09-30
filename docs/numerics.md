@@ -104,6 +104,18 @@ This is exactly zero at equilibrium (flat μ̄), and it's precise relative to th
 difference instead of being a cancellation of two large terms. B and B′ are evaluated from a
 Taylor series near 0 and with `expm1` elsewhere, finite for all arguments.
 
+**Advection** at velocity v adds to the drift: in the segment's Scharfetter–Gummel flux, the
+potential and the quasi-Fermi difference are both shifted by the cell Péclet number
+Pe = v h/D, `Δ → Δ − Pe`, `Δη → Δη − Pe`. That's the exact constant-flux solution of
+N = v c − D(c′ + c ψ′) across the cell, so pure convection–diffusion is exact on any grid,
+upwinding itself automatically at large Pe.
+
+**Eddy mixing** is discretised on each segment as `N_i = −(D_mix/h) Σ_j P̄_ij Δη_j`, where P̄
+is built from the logarithmic mean of each concentration across the segment. The logarithmic
+mean makes a neutral species' mixing flux exactly −D_mix Δc/h. The flux is exactly zero at
+equilibrium, and exactly current-free (zᵀP̄ = 0 for any P̄ built this way). Its full Jacobian,
+including the dependence of P̄ on both ends, keeps Newton quadratic.
+
 With non-ideal statistics, ln c = ζ − ex, where the excess `ex = ζ − ln(c/c_ref)` is zero for
 ideal statistics. The excess enters exactly like an extra potential, taken linear along the
 segment as φ is, so the same formula holds with `Δ = z(φ̂_R − φ̂_L) + ex_R − ex_L`. That's the

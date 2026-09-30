@@ -55,6 +55,8 @@
  * @property {number} [fixedCharge] immobile charge density, C/m³
  * @property {Record<string, number>} [c0] initial concentrations, mol/m³ (required for species
  *   not connected to a contact: it fixes the amount they conserve)
+ * @property {number} [velocity] imposed flow toward +x, m/s, carrying every mobile species
+ * @property {number} [mixing] eddy (turbulent) mixing diffusivity, m²/s; current-free
  * @property {GridOptions} [grid]
  */
 

@@ -542,8 +542,10 @@ export class Solver {
       this._j(bR, 0, bL, 0, -k);
       this._j(bR, 0, bR, 0, k);
 
+      const vel = regions[reg].velocity;
+      if (regions[reg].mixing > 0) this._segmentMixing(s, bL, bR, regions[reg].mixing, h, mat, lastSeg);
       if (!this.nodeIdeal[s]) {
-        this._segmentNonIdeal(s, bL, bR, mat, h, lastSeg);
+        this._segmentNonIdeal(s, bL, bR, mat, h, lastSeg, vel);
         continue;
       }
       for (let i = 0; i < n; i++) {
@@ -555,8 +557,9 @@ export class Solver {
         // current) don't vanish in the cancellation of two huge drift and diffusion terms.
         const cL = c[s * n + i];
         const g = mat.D[i] / h;
-        const d = zi * (phiR - phiL);
-        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
+        const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
+        const d = zi * (phiR - phiL) - pe;
+        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
         const E = Math.expm1(deta);
         const gBc = g * bernoulli(d) * cL;
         const N = -gBc * E;
@@ -674,7 +677,7 @@ export class Solver {
   // extra potential, linear along the segment like φ, so Δ = zΔφ̂ + Δex and
   //   N = −(D/h)·B(Δ)·c_L·expm1(η_R − η_L),
   // still exactly zero at equilibrium. c_L and ex depend on every ζ at their node through K.
-  _segmentNonIdeal(s, bL, bR, mat, h, lastSeg) {
+  _segmentNonIdeal(s, bL, bR, mat, h, lastSeg, vel) {
     const { n, M, u, uLo, res, c, z, K, ex, jL, jR } = this;
     const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n;
     for (let i = 0; i < n; i++) {
@@ -682,8 +685,9 @@ export class Solver {
       const r = 1 + i, zi = z[i];
       const cL = c[gL * n + i], cR = c[gR * n + i];
       const g = mat.D[i] / h;
-      const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i];
-      const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
+      const pe = (vel * h) / mat.D[i];
+      const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i] - pe;
+      const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
       const E = Math.expm1(deta);
       const B = bernoulli(d), Bp = bernoulliDerivative(d);
       const gBc = g * B * cL;
@@ -726,6 +730,105 @@ export class Solver {
         }
       }
     }
+  }
+
+  // Eddy mixing: N = −(D_mix/RT) P ∇μ̄ with P = C − (Cz)(Cz)ᵀ/(zᵀCz), C = diag(c). It mixes
+  // composition without carrying current (zᵀP = 0) and vanishes exactly at equilibrium. On a
+  // segment, N_i = −(D_mix/h) Σ_j P̄_ij Δη_j, with P̄ from the logarithmic mean of each c, so a
+  // neutral species gets exactly −D_mix Δc/h. Only mobile species (D > 0) take part.
+  _segmentMixing(s, bL, bR, Dm, h, mat, lastSeg) {
+    const { n, M, u, uLo, res, c, z } = this;
+    const gL = s, gR = s + 1, k0 = Dm / h;
+    const on = [];
+    for (let i = 0; i < n; i++) if (mat.present[i] && mat.D[i] > 0) on.push(i);
+    if (on.length === 0) return;
+    const cb = new Float64Array(n), dLa = new Float64Array(n), dLb = new Float64Array(n), de = new Float64Array(n);
+    let S = 0, Q = 0;
+    for (const k of on) {
+      const a = c[gL * n + k], b = c[gR * n + k];
+      // l = ln(c_R/c_L), from the compensated potentials where statistics are ideal
+      const l = this.nodeIdeal[gL]
+        ? u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]) - z[k] * (u[bR * M] - u[bL * M])
+        : Math.log(b / a);
+      // L = a·f(l), f = expm1(l)/l; ∂L/∂a = f − f′, ∂L/∂b = a f′/b
+      let f, fp;
+      if (Math.abs(l) < 1e-3) {
+        f = 1 + l / 2 + (l * l) / 6 + (l * l * l) / 24;
+        fp = 0.5 + l / 3 + (l * l) / 8 + (l * l * l) / 30;
+      } else {
+        const em = Math.expm1(l);
+        f = em / l;
+        fp = (l * (em + 1) - em) / (l * l);
+      }
+      cb[k] = a * f;
+      dLa[k] = f - fp;
+      dLb[k] = b > 0 ? (a * fp) / b : 0.5;
+      de[k] = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]);
+      S += z[k] * z[k] * cb[k];
+      Q += z[k] * cb[k] * de[k];
+    }
+    const q = S > 0 ? Q / S : 0;
+    const { jL, jR } = this;
+    const dcL = this.dA, dcR = this.dB; // ∂c_k/∂slot at each end
+    for (const i of on) {
+      const r = 1 + i;
+      const N = -k0 * cb[i] * (de[i] - z[i] * q);
+      jL.fill(0);
+      jR.fill(0);
+      for (const j of on) {
+        // direct dependence on Δη_j
+        const P = cb[i] * ((i === j ? 1 : 0) - (S > 0 ? (z[i] * z[j] * cb[j]) / S : 0));
+        jL[1 + j] += k0 * P;
+        jR[1 + j] -= k0 * P;
+      }
+      // through c̄_k: ∂a_i/∂c̄_k = δ_ik (Δη_i − z_i q) − c̄_i z_i (z_k Δη_k − q z_k²)/S
+      for (const k of on) {
+        let da = (i === k ? de[i] - z[i] * q : 0) - (S > 0 ? (cb[i] * z[i] * (z[k] * de[k] - q * z[k] * z[k])) / S : 0);
+        if (da === 0) continue;
+        da *= -k0;
+        this._dc(gL, k, dcL);
+        this._dc(gR, k, dcR);
+        for (let t = 0; t < M; t++) {
+          jL[t] += da * dLa[k] * dcL[t];
+          jR[t] += da * dLb[k] * dcR[t];
+        }
+      }
+      res[bL * M + r] += N;
+      res[bR * M + r] -= N;
+      for (let t = 0; t < M; t++) {
+        if (jL[t] !== 0) {
+          this._j(bL, r, bL, t, jL[t]);
+          this._j(bR, r, bL, t, -jL[t]);
+        }
+        if (jR[t] !== 0) {
+          this._j(bL, r, bR, t, jR[t]);
+          this._j(bR, r, bR, t, -jR[t]);
+        }
+      }
+      if (lastSeg) {
+        const qz = FARADAY * z[i];
+        this.segI += qz * N;
+        for (let t = 0; t < M; t++) {
+          this.segIJac[t] += qz * jL[t];
+          this.segIJac[M + t] += qz * jR[t];
+        }
+      }
+    }
+  }
+
+  // ∂c_k/∂slot at node g into d (slot 0 = φ̂, 1 + j = η_j).
+  _dc(g, k, d) {
+    const { n } = this;
+    d.fill(0);
+    if (this.nodeIdeal[g]) {
+      const ck = this.c[g * n + k];
+      d[1 + k] = ck;
+      d[0] = -this.z[k] * ck;
+      return;
+    }
+    const o = g * n * n + k * n;
+    for (let j = 0; j < n; j++) d[1 + j] = this.K[o + j];
+    d[0] = -this._Kz(g, k);
   }
 
   // Kinetic transfer across interface f (Butler–Volmer form, forward = left to right):

@@ -101,6 +101,7 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
   ion/electron transfer, and a choice of electrostatic law (pinned dipole, neutral, Helmholtz);
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
+- imposed flow (advection) and current-free eddy mixing;
 - voltage, galvanostatic (including open circuit) and load-resistor circuits;
 - steady states; transients by backward Euler, BDF2, or adaptive BDF2 with error control and
   frame budgets for animation; exact conservation bookkeeping;
@@ -130,6 +131,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Mass action | c(H⁺)c(OH⁻) = K_w from standard potentials; moiety conservation | 1e-9 |
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
+| Advection and eddy mixing | exact convection–diffusion profile; D + D_mix; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
 | Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |

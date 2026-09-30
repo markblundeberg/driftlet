@@ -120,6 +120,9 @@ export function normalizeDevice(def) {
     need(materialIndex.has(reg.material), `${path}.material: unknown material ${JSON.stringify(reg.material)}`);
     const length = positive(reg.length, `${path}.length`);
     const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
+    // Imposed flow (m/s, toward +x) carrying every mobile species, and eddy mixing (m²/s).
+    const velocity = reg.velocity === undefined ? 0 : finite(reg.velocity, `${path}.velocity`);
+    const mixing = reg.mixing === undefined ? 0 : nonNegative(reg.mixing, `${path}.mixing`);
     if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
     const mat = materials[materialIndex.get(reg.material)];
     if (mat.epsr === 0) {
@@ -156,6 +159,8 @@ export function normalizeDevice(def) {
       fixedCharge,
       c0,
       background,
+      velocity,
+      mixing,
       grid: reg.grid,
     };
   });
