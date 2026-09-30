@@ -285,6 +285,8 @@ nothing. For 300 nodes × 7 unknowns, one factor and solve takes ~0.4 ms in Node
   - A step is rejected above `tol`. The next step size is h·min(2, max(0.2,
     0.9 (tol/err)^{1/(p+1)})).
   - Newton failure quarters the step.
+  - Newton starts each step from the state extrapolated through the last three, which saves
+    about a third of the iterations.
   - The wall-clock budget is checked between steps.
 
 ## Small-signal impedance
@@ -325,10 +327,12 @@ blocking device looks like a capacitor, as it should.
   shift otherwise). It guards
   against round-off creeping through the vanishing storage term. The solve finishes with one
   step at the base giant dt, where pinning is tight.
-- **If a direct solve fails at a bias** (typically a cold start far from equilibrium), the
-  solve is repeated with both terminals level, where the cold start is consistent, and the
-  right terminal's voltage is then ramped to its target (source continuation). The step starts
-  at 1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
+- **If a direct solve diverges,** it's retried once with tighter damping (3 thermal units per
+  iteration). That's enough for most large jumps, such as a cold start at forward bias.
+- **If that fails too,** source continuation ramps the right terminal's voltage to its target.
+  It ramps from the voltage of the last converged solve when the state is that solution, and
+  otherwise from level terminals, where a cold start is consistent. The ramp step starts at
+  1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
 - **If Newton still fails,** dt ramps up from a small value (pseudo-transient continuation),
   ending in the direct solve where applicable.
 
