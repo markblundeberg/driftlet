@@ -26,22 +26,24 @@ for live demos.
 - Time and frequency: variable-step BDF2; adaptive `advance(tEnd, { tol, budgetMs })` for
   animation; small-signal impedance with complex block Thomas and complex profiles.
 - Source continuation for cold starts at bias.
+- A first performance pass: a benchmark script (`npm run bench`), assembly without per-node
+  allocation (about 2× faster), Newton started from the extrapolated state in adaptive
+  transients (a third fewer iterations), and a tighter-damping retry for large jumps.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
 
 ## Next
 
-1. **Performance pass.** Benchmarks tracked across versions. Cheaper warm re-solves (2–5
-   Newton iterations for small parameter changes), allocation-free assembly, and a variable
-   block size for absent species.
-2. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
+1. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI.
 
 ## Later
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
+- **More performance.** A variable block size where species are absent (identity rows cost a
+  full block today), and benchmarks tracked across versions in CI.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.

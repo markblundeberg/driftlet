@@ -12,7 +12,8 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "bench": "node bench/bench.js"
   },
   "engines": {
     "node": ">=20"

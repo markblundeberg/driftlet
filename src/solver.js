@@ -148,6 +148,14 @@ export class Solver {
     this.history = [];
     this.dtNext = undefined;
 
+    // Bulk reactions as flat participant lists: reactants with +ν, products with −ν.
+    this.rxs = model.reactions.map((rx) => ({
+      kf: rx.kf,
+      fixedA: rx.fixedA,
+      sp: Int32Array.from([...rx.reactants, ...rx.products], (p) => p.i),
+      nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
+    }));
+
     this._findStretches();
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
@@ -476,21 +484,22 @@ export class Solver {
 
       // Bulk reactions: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the (compensated) η.
       const m = this.nodeMaterial[g];
-      const dr = this.dA;
-      for (const rx of model.reactions) {
+      const dr = this.dA, Bm = sys.B, bo = b * M * M;
+      for (const rx of this.rxs) {
         const kf = rx.kf[m];
         if (!(kf > 0)) continue;
         let P = kf, aHi = rx.fixedA, aLo = 0;
         dr.fill(0); // ∂ ln P / ∂slot
-        for (const { i, nu } of rx.reactants) {
-          P *= c[g * n + i] ** nu;
-          this._dlnc(g, i, nu, dr);
+        // Participants: reactants with ν > 0, then products with ν < 0.
+        for (let p = 0; p < rx.sp.length; p++) {
+          const i = rx.sp[p], nu = rx.nu[p];
+          if (nu > 0) {
+            const ci = c[g * n + i];
+            P *= nu === 1 ? ci : ci ** nu;
+            this._dlnc(g, i, nu, dr);
+          }
           aHi += nu * u[b * M + 1 + i];
           aLo += nu * uLo[b * M + 1 + i];
-        }
-        for (const { i, nu } of rx.products) {
-          aHi -= nu * u[b * M + 1 + i];
-          aLo -= nu * uLo[b * M + 1 + i];
         }
         const a = aHi + aLo;
         const f = -Math.expm1(-a); // 1 − e^{−a}
@@ -498,18 +507,13 @@ export class Solver {
         const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
         // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
         for (let k = 0; k < M; k++) dr[k] *= rate;
-        for (const { i, nu } of rx.reactants) dr[1 + i] += Pd * nu;
-        for (const { i, nu } of rx.products) dr[1 + i] -= Pd * nu;
-        // Row contributions: reactants consumed (+v·ν·r in their balance), products made (−).
-        const add = (list, sign) => {
-          for (const { i, nu } of list) {
-            const row = 1 + i, w = sign * v * nu;
-            res[b * M + row] += w * rate;
-            for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
-          }
-        };
-        add(rx.reactants, 1);
-        add(rx.products, -1);
+        for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Pd * rx.nu[p];
+        // Reactants are consumed (+v·ν·r in their balance), products made (−v·ν·r).
+        for (let p = 0; p < rx.sp.length; p++) {
+          const row = 1 + rx.sp[p], w = v * rx.nu[p], o = bo + row * M;
+          res[b * M + row] += w * rate;
+          for (let k = 0; k < M; k++) if (dr[k] !== 0) Bm[o + k] += w * dr[k];
+        }
       }
     }
 
@@ -578,14 +582,16 @@ export class Solver {
           this.segIJac[0] += q * dNdPhiL;
           this.segIJac[M] += q * dNdPhiR;
         }
-        this._j(bL, r, bL, r, dNdEtaL);
-        this._j(bL, r, bR, r, dNdEtaR);
-        this._j(bL, r, bL, 0, dNdPhiL);
-        this._j(bL, r, bR, 0, dNdPhiR);
-        this._j(bR, r, bL, r, -dNdEtaL);
-        this._j(bR, r, bR, r, -dNdEtaR);
-        this._j(bR, r, bL, 0, -dNdPhiL);
-        this._j(bR, r, bR, 0, -dNdPhiR);
+        // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
+        const oL = bL * M * M + r * M, oR = bR * M * M + r * M;
+        sys.B[oL + r] += dNdEtaL;
+        sys.C[oL + r] += dNdEtaR;
+        sys.B[oL] += dNdPhiL;
+        sys.C[oL] += dNdPhiR;
+        sys.A[oR + r] -= dNdEtaL;
+        sys.B[oR + r] -= dNdEtaR;
+        sys.A[oR] -= dNdPhiL;
+        sys.B[oR] -= dNdPhiR;
       }
     }
 
@@ -739,10 +745,10 @@ export class Solver {
   _segmentMixing(s, bL, bR, Dm, h, mat, lastSeg) {
     const { n, M, u, uLo, res, c, z } = this;
     const gL = s, gR = s + 1, k0 = Dm / h;
-    const on = [];
-    for (let i = 0; i < n; i++) if (mat.present[i] && mat.D[i] > 0) on.push(i);
+    const on = mat.mobile ?? (mat.mobile = [...Array(n).keys()].filter((i) => mat.present[i] && mat.D[i] > 0));
     if (on.length === 0) return;
-    const cb = new Float64Array(n), dLa = new Float64Array(n), dLb = new Float64Array(n), de = new Float64Array(n);
+    const w = this.mixWork ?? (this.mixWork = [0, 1, 2, 3].map(() => new Float64Array(n)));
+    const [cb, dLa, dLb, de] = w;
     let S = 0, Q = 0;
     for (const k of on) {
       const a = c[gL * n + k], b = c[gR * n + k];
@@ -1189,6 +1195,11 @@ export class Solver {
       this.contactDEnd = { ...this.contactD };
     }
     const DN = { ...this.contactDEnd };
+    if (opts.guess) {
+      // Start Newton from a predicted state (e.g. extrapolated from the history).
+      this.u.set(opts.guess);
+      this.uLo.fill(0);
+    }
     let dtEff = dt;
     if (bdf) {
       const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
@@ -1233,7 +1244,7 @@ export class Solver {
     const trace = { t: [], current: [], voltage: [] };
     let steps = 0, rejected = 0, iterations = 0, failed = false;
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
-    const pred = new Float64Array(this.u.length);
+    const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
     while (this.time < tEnd) {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
@@ -1265,7 +1276,7 @@ export class Solver {
           continue;
         }
       } else {
-        const r = this.step(h, { method });
+        const r = this.step(h, { method, guess: this._extrapolate(guess, this.time + h) });
         iterations += r.iterations;
         if (!r.converged) {
           rejected++;
@@ -1291,6 +1302,25 @@ export class Solver {
     }
     this.dtNext = dt;
     return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace };
+  }
+
+  // Quadratic (or linear) extrapolation of the state to time t, from the current state and the
+  // two most recent history entries: a starting guess for Newton.
+  _extrapolate(out, t) {
+    const [e0, e1] = this.history;
+    const t0 = this.time, u = this.u;
+    if (!e0) return undefined;
+    if (!e1) {
+      const l = (t - t0) / (t0 - e0.t);
+      for (let k = 0; k < out.length; k++) out[k] = u[k] + l * (u[k] - e0.u[k]);
+      return out;
+    }
+    const t1 = e0.t, t2 = e1.t;
+    const l0 = ((t - t1) * (t - t2)) / ((t0 - t1) * (t0 - t2));
+    const l1 = ((t - t0) * (t - t2)) / ((t1 - t0) * (t1 - t2));
+    const l2 = ((t - t0) * (t - t1)) / ((t2 - t0) * (t2 - t1));
+    for (let k = 0; k < out.length; k++) out[k] = l0 * u[k] + l1 * e0.u[k] + l2 * e1.u[k];
+    return out;
   }
 
   // Explicit predictor at the new time through the previous states (quadratic after BDF2,
@@ -1562,6 +1592,7 @@ export class Solver {
     // Where a direct solve applies and continuation is possible, don't spend long on the
     // pseudo-transient ramp: one direct attempt first.
     let r = this._solveSteady(canContinue && direct ? { ...opts, maxSteps: 1 } : opts);
+    if (r.converged) this.solvedV = target;
     if (r.converged || !canContinue) return r;
     // Source continuation: solve with both terminals level (consistent with a cold start), then
     // ramp the right terminal's voltage to its target in adaptive steps.
@@ -1571,23 +1602,33 @@ export class Solver {
       this.computeConcentrations();
     };
     restart();
-    const c = this._continuation(opts, ct, level, target, r);
-    if (c.converged) return c;
+    // Ramp from the last converged voltage when the state is that solution (a warm start),
+    // otherwise from level terminals.
+    const from = this.solvedV !== undefined ? this.solvedV : level;
+    const c = this._continuation(opts, ct, from, target, r, from !== level);
+    if (c.converged) {
+      this.solvedV = target;
+      return c;
+    }
     restart();
     r = this._solveSteady(opts); // the full pseudo-transient ramp
+    if (r.converged) this.solvedV = target;
     return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
   }
 
-  _continuation(opts, ct, level, target, r) {
+  _continuation(opts, ct, level, target, r, warm) {
     const sub = this.stretches.every((st) => st.connected) ? { ...opts, maxSteps: 1 } : opts;
     let V = level, dV = (target - level) / 8, steps = r.steps, iterations = r.iterations;
     const history = r.history.slice();
     try {
       ct.V = V;
-      let q = this._solveSteady(opts);
-      steps += q.steps;
-      iterations += q.iterations;
-      if (!q.converged) return { ...r, steps, iterations };
+      let q;
+      if (!warm) {
+        q = this._solveSteady(opts);
+        steps += q.steps;
+        iterations += q.iterations;
+        if (!q.converged) return { ...r, steps, iterations };
+      }
       while (V !== target) {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
         const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo);
@@ -1626,9 +1667,15 @@ export class Solver {
       // Restore conserved amounts exactly before each huge step; the step then re-solves, so
       // the final state satisfies every equation.
       if (!direct && dt >= giant) this._renormalizeSpectators();
-      const r = this.step(dt);
+      let r = this.step(dt);
       totalIter += r.iterations;
       history.push({ dt, converged: r.converged, iterations: r.iterations });
+      if (!r.converged && dt === Infinity && steps === 1) {
+        // A large change can overshoot Newton's usual damping: retry with a tighter limit.
+        r = this.step(dt, { maxStep: 3, maxIter: 80 });
+        totalIter += r.iterations;
+        history.push({ dt, converged: r.converged, iterations: r.iterations, maxStep: 3 });
+      }
       if (!r.converged) {
         dt = dt >= giant ? tau * 1e-6 : dt / 4;
         if (dt < tau * 1e-15) break;

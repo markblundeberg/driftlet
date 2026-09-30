@@ -61,6 +61,7 @@ export class Device {
         solver.computeConcentrations();
         solver.time = old.time;
         solver.contactDEnd = old.contactDEnd;
+        solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
         solver.referenceAmounts = old.referenceAmounts.slice();
         if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
       }

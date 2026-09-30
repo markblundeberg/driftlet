@@ -143,11 +143,21 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 
 ## Performance
 
-On a desktop Ryzen 7600X in Node 22, one linear solve for 300 nodes × 7 unknowns takes about 0.4 ms, and a
-warm-started steady re-solve after a bias step takes a few milliseconds. The library has no
-dependencies and does no DOM access, so it runs in a Web Worker. (A device definition is plain
-data and can be posted to a worker. Devices using custom-function statistics can't be, and
-must be built inside the worker.)
+`npm run bench` times typical interactive workloads. On a desktop Ryzen 7600X in Node 22:
+
+| Task | Time | Newton iterations |
+|---|---|---|
+| Linear solve, 300 nodes × 7 unknowns (factor + solve) | 0.4 ms | |
+| pn diode (264 nodes): warm re-solve after a 10 mV step | 1.7 ms | 5 |
+| pn diode: warm re-solve from +0.4 V to −1 V | 15 ms | 34 |
+| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 200 ms | 1025 |
+| pn diode: impedance at 20 frequencies | 13 ms | |
+| Ag \| AgNO₃ \| Ag with double layers: warm re-solve after 5 mV | 1.4 ms | 8 |
+| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 36 ms | 286 |
+
+The library has no dependencies and does no DOM access, so it runs in a Web Worker. (A device
+definition is plain data and can be posted to a worker. Devices using custom-function
+statistics can't be, and must be built inside the worker.)
 
 ## Development
 
