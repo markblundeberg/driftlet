@@ -1,27 +1,37 @@
 :root {
-  --bg: #ffffff;
-  --panel: #f8fafc;
-  --ink: #1f2937;
-  --muted: #6b7280;
-  --grid: #e5e7eb;
-  --accent: #2563eb;
+  --bg: #fbfcfe;
+  --panel: #f1f4f9;
+  --ink: #1b2433;
+  --muted: #5d6878;
+  --grid: #dde3ec;
+  --accent: #2459d6;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a;
-    --panel: #111c33;
-    --ink: #e5e7eb;
-    --muted: #94a3b8;
-    --grid: #1e293b;
-    --accent: #60a5fa;
+  :root:not([data-theme="light"]) {
+    --bg: #0e1522;
+    --panel: #151f31;
+    --ink: #e3e8f0;
+    --muted: #97a3b6;
+    --grid: #243149;
+    --accent: #7aa7ff;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1522;
+  --panel: #151f31;
+  --ink: #e3e8f0;
+  --muted: #97a3b6;
+  --grid: #243149;
+  --accent: #7aa7ff;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  padding: 16px;
+  padding-block: 16px;
+  padding-inline: 16px;
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.5 system-ui, sans-serif;
