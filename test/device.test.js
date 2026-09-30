@@ -31,8 +31,8 @@ function hetero() {
     ],
     interfaces: [{ step: { species: 'e-', value: units.eV(0.25) } }],
     contacts: {
-      left: { species: { 'e-': 'fixed', 'h+': 'fixed' }, phi: 'neutral', terminal: 'e-' },
-      right: { species: { 'e-': 'fixed', 'h+': 'fixed' }, phi: 'neutral', terminal: 'e-' },
+      left: { species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral', terminal: 'e-' },
+      right: { species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral', terminal: 'e-' },
     },
     grid: { hmin: 1e-10, hmax: 2e-8 },
   };

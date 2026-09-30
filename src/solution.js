@@ -42,7 +42,8 @@ export function makeSolution(solver, result = {}) {
         continue;
       }
       cc[g] = c[k];
-      mu[g] = RT * u[solver.blockOfNode[g] * M + 1 + i];
+      const o = solver.blockOfNode[g] * M + 1 + i;
+      mu[g] = RT * (u[o] + solver.uLo[o]);
       mus[g] = RT * solver.mu0hat[k] + z * F * phi[g];
       V[g] = z === 0 ? NaN : mu[g] / (z * F);
       Vs[g] = z === 0 ? NaN : mus[g] / (z * F);
@@ -54,18 +55,30 @@ export function makeSolution(solver, result = {}) {
     sol.Vstd[name] = Vs;
   }
 
-  // Gates: charge per area on each gate plate.
+  // Contacts: fluxes and displacement at the final state (re-evaluated from the balance rows).
+  solver.assemble(solver.lastDt);
+  sol.contacts = {};
   sol.gates = {};
-  const ends = { left: 0, right: nNodes - 1 };
   for (const side of ['left', 'right']) {
-    const link = contacts[side].phi;
-    if (link.type !== 'capacitive') continue;
-    const phiG = link.V - link.zeroCharge;
-    const phiE = phi[ends[side]];
-    // Displacement toward +x at the device edge; the plate's charge is +D (left), −D (right).
-    const D = side === 'left' ? link.C * (phiG - phiE) : link.C * (phiE - phiG);
-    sol.gates[side] = { V: link.V, D, charge: side === 'left' ? D : -D };
+    const ct = contacts[side];
+    const flux = {};
+    let conduction = 0;
+    for (let i = 0; i < n; i++) {
+      flux[species[i].name] = solver.contactFlux[side][i];
+      conduction += F * species[i].z * solver.contactFlux[side][i];
+    }
+    const D = solver.contactD[side];
+    const dt = solver.lastDt;
+    const displacement = Number.isFinite(dt) ? (D - solver.contactDOld[side]) / dt : 0;
+    // Current toward +x through this contact; in steady state both contacts agree.
+    sol.contacts[side] = { V: ct.V, flux, D, current: conduction + displacement };
+    if (ct.phi.type === 'capacitive') {
+      // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
+      sol.gates[side] = { V: ct.V, D, charge: side === 'left' ? D : -D };
+    }
   }
+  sol.current = sol.contacts.right.current;
+  sol.terminalVoltage = contacts.right.V - contacts.left.V;
 
   // Interfaces: dipole and the fluxes carried by each flux node.
   sol.interfaces = interfaces.map((itf, f) => {

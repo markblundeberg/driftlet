@@ -146,8 +146,8 @@ export function normalizeDevice(def) {
   need(isObject(cdefs), 'contacts must be an object with optional left and right');
   for (const k of Object.keys(cdefs)) need(k === 'left' || k === 'right', `contacts.${k}: expected only 'left' and 'right'`);
   const contacts = {
-    left: normalizeContact(cdefs.left, 'left', materials[regions[0].material], species, speciesIndex),
-    right: normalizeContact(cdefs.right, 'right', materials[regions[regions.length - 1].material], species, speciesIndex),
+    left: normalizeContact(cdefs.left, 'left', regions[0], materials, species, speciesIndex, RT),
+    right: normalizeContact(cdefs.right, 'right', regions[regions.length - 1], materials, species, speciesIndex, RT),
   };
 
   // An electrostatic anchor is needed, or φ (and every level with it) floats.
@@ -216,13 +216,26 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex) 
   return { dipole, sheetCharge };
 }
 
-function normalizeContact(cdef, side, mat, species, speciesIndex) {
+// A contact has a terminal voltage V (set by the circuit; 0 by default) and a link for every
+// species and for φ. A fixed charged species sits at V_i = V + offset_i, i.e.
+// μ̄_i = z_i F (V + offset_i); the offset is an interface property (0 for the terminal species,
+// e.g. e⁻ at a metal; E° for an ion at a reversible electrode) and is never defaulted for
+// the others. A fixed neutral species takes an absolute μ̄. A bath computes the offsets from
+// a composition, anchored through its reference species.
+function normalizeContact(cdef, side, region, materials, species, speciesIndex, RT) {
   const path = `contacts.${side}`;
+  const mat = materials[region.material];
   const links = species.map(() => ({ type: 'blocked' }));
   let phi = { type: 'free' };
   let terminal = null;
-  if (cdef === undefined || cdef === null) return { species: links, phi, terminal };
+  if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal };
   need(isObject(cdef), `${path} must be an object`);
+  const V = cdef.V === undefined ? 0 : finite(cdef.V, `${path}.V`);
+
+  if (cdef.terminal !== undefined) {
+    need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}`);
+    terminal = speciesIndex.get(cdef.terminal);
+  }
 
   if (cdef.species !== undefined) {
     need(isObject(cdef.species), `${path}.species must be an object mapping species names to links`);
@@ -237,8 +250,57 @@ function normalizeContact(cdef, side, mat, species, speciesIndex) {
         need(mat.present[i], `${lpath}: '${sname}' is absent from the end material '${mat.name}', so it can only be blocked`);
       }
       if (link.type === 'conductance') positive(link.G, `${lpath}.G`);
+      if (link.type === 'fixed') {
+        if (species[i].z === 0) {
+          links[i] = { type: 'fixed', mu: finite(link.mu, `${lpath}.mu (a neutral species is fixed by its μ̄, J/mol)`) };
+          continue;
+        }
+        need(link.mu === undefined, `${lpath}: a charged species is fixed by an offset from the terminal voltage, not by mu`);
+        const offset = link.offset ?? (terminal === i ? 0 : undefined);
+        need(
+          offset !== undefined,
+          `${lpath}.offset: give V_i − V_terminal (V) for this species; only the terminal species defaults to 0`,
+        );
+        links[i] = { type: 'fixed', offset: finite(offset, `${lpath}.offset`) };
+        continue;
+      }
       links[i] = { ...link };
     }
+  }
+
+  if (cdef.bath !== undefined) {
+    need(cdef.species === undefined, `${path}: give either bath or species links, not both`);
+    const bath = cdef.bath;
+    need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
+    need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}`);
+    const r = speciesIndex.get(bath.reference);
+    need(species[r].z !== 0, `${path}.bath.reference: the reference species must be charged`);
+    need(bath.c[bath.reference] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
+    need(cdef.terminal === undefined || terminal === r, `${path}.terminal must be the bath's reference species`);
+    terminal = r;
+    let charge = region.fixedCharge / FARADAY, scale = Math.abs(charge);
+    const cb = new Float64Array(species.length);
+    for (const [sname, v] of Object.entries(bath.c)) {
+      need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'`);
+      const i = speciesIndex.get(sname);
+      need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from the end material '${mat.name}'`);
+      cb[i] = positive(v, `${path}.bath.c.${sname}`);
+      charge += species[i].z * cb[i];
+      scale += Math.abs(species[i].z) * cb[i];
+    }
+    need(Math.abs(charge) <= 1e-9 * scale, `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge)`);
+    // The reference species pins the bath's φ; every other species follows from composition.
+    const level = (i) => mat.mu0[i] + RT * Math.log(cb[i] / mat.cRef[i]); // μ̄ − zFφ_bath
+    const refOffset = bath.offset === undefined ? 0 : finite(bath.offset, `${path}.bath.offset`);
+    const beta = refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
+    for (let i = 0; i < species.length; i++) {
+      if (!(cb[i] > 0)) continue;
+      links[i] =
+        species[i].z === 0
+          ? { type: 'fixed', mu: level(i) }
+          : { type: 'fixed', offset: beta + level(i) / (species[i].z * FARADAY) };
+    }
+    phi = { type: 'neutral' };
   }
 
   if (cdef.phi !== undefined) {
@@ -248,9 +310,13 @@ function normalizeContact(cdef, side, mat, species, speciesIndex) {
     if (raw.type === 'capacitive') {
       positive(raw.C, `${path}.phi.C`);
       finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage or pzc)`);
-      if (raw.V !== undefined) finite(raw.V, `${path}.phi.V`);
+      need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
     }
-    phi = raw.type === 'capacitive' ? { V: 0, ...raw } : { ...raw };
+    phi = { ...raw };
+  } else if (cdef.bath === undefined && links.some((l) => l.type !== 'blocked')) {
+    throw new DeviceError(
+      `${path}.phi: a contact with connected species needs an explicit φ condition ('neutral', 'free', or capacitive)`,
+    );
   }
   if (phi.type === 'neutral') {
     need(
@@ -259,11 +325,8 @@ function normalizeContact(cdef, side, mat, species, speciesIndex) {
     );
   }
 
-  if (cdef.terminal !== undefined) {
-    need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}`);
-    const i = speciesIndex.get(cdef.terminal);
-    need(links[i].type !== 'blocked', `${path}.terminal: '${cdef.terminal}' is blocked at this contact`);
-    terminal = i;
+  if (terminal !== null) {
+    need(links[terminal].type !== 'blocked', `${path}.terminal: '${species[terminal].name}' is blocked at this contact`);
   }
-  return { species: links, phi, terminal };
+  return { V, species: links, phi, terminal };
 }

@@ -54,6 +54,7 @@ export class Device {
       const solver = this.solver;
       if (old.u.length === solver.u.length && old.n === solver.n) {
         solver.u.set(old.u);
+        solver.uLo.set(old.uLo);
         solver.computeConcentrations();
         solver.time = old.time;
         solver.referenceAmounts = old.referenceAmounts.slice();

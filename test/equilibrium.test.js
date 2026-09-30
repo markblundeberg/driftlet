@@ -11,7 +11,7 @@ const salt = () => [
   { name: 'Cl-', z: -1, cRef: 1000 },
 ];
 const water = { epsr: 78.5, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } } };
-const gate = (V, C = 0.2) => ({ phi: { type: 'capacitive', C, zeroCharge: 0, V } });
+const gate = (V, C = 0.2) => ({ V, phi: { type: 'capacitive', C, zeroCharge: 0 } });
 
 // A floating island of 1:1 salt between two gates. Every species is a conserved spectator.
 function island({ c = 10, L = 300e-9, VL = 0, VR = 0, C = 0.2, hmin = 0.02e-9 } = {}) {
@@ -58,7 +58,7 @@ test('floating island: amounts stay conserved through a warm-started gate sweep'
   dev.solve();
   for (let k = 0; k <= 20; k++) {
     const V = -0.5 + k * 0.05;
-    dev.set({ contacts: { left: { phi: { V } }, right: { phi: { V: -V } } } });
+    dev.set({ contacts: { left: { V }, right: { V: -V } } });
     const sol = dev.solve();
     assertEquilibrium(sol);
     assertGauss(sol);
@@ -224,7 +224,7 @@ test('equilibrium is reached from a far-off start and is independent of the path
   const a = new Device(island({ VL: 0.3, VR: -0.1 })).solve();
   const dev = new Device(island({ VL: -0.4, VR: 0.4 }));
   dev.solve();
-  dev.set({ contacts: { left: { phi: { V: 0.3 } }, right: { phi: { V: -0.1 } } } });
+  dev.set({ contacts: { left: { V: 0.3 }, right: { V: -0.1 } } });
   const b = dev.solve();
   for (let g = 0; g < a.phi.length; g++) assert.ok(Math.abs(a.phi[g] - b.phi[g]) < 1e-10);
 });

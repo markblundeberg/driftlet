@@ -42,13 +42,10 @@ export class Solver {
 
     for (const side of ['left', 'right']) {
       contacts[side].species.forEach((link, i) => {
-        if (link.type !== 'blocked') {
+        if (link.type !== 'blocked' && link.type !== 'fixed') {
           throw new SolverError(`contacts.${side}.species.${species[i].name}: '${link.type}' links are not implemented yet`);
         }
       });
-      if (contacts[side].phi.type === 'neutral') {
-        throw new SolverError(`contacts.${side}.phi: 'neutral' links are not implemented yet`);
-      }
     }
 
     // Solver block of each grid node and of each interface flux node.
@@ -75,13 +72,25 @@ export class Solver {
     }
 
     this.sys = new BlockTridiagonal(nB, M);
+    // Unknowns as compensated double-doubles, u + uLo. Only differences of η need the extra
+    // precision: a majority carrier carrying a small current has a quasi-Fermi step between
+    // nodes far below the ulp of η itself (e.g. 1e-19 vs 3.5e-15), and would otherwise carry
+    // exactly zero current there. The Jacobian and linear solve stay in plain doubles.
     this.u = new Float64Array(nB * M);
+    this.uLo = new Float64Array(nB * M);
     this.res = new Float64Array(nB * M);
     this.delta = new Float64Array(nB * M);
     this.uPrev = new Float64Array(nB * M);
+    this.uPrevLo = new Float64Array(nB * M);
     this.c = new Float64Array(nNodes * n);
     this.cOld = new Float64Array(nNodes * n);
     this.time = 0;
+    this.lastDt = Infinity;
+    // Contact bookkeeping, filled by assemble(): particle flux toward +x through each contact,
+    // and the displacement there (the metal's surface charge for a neutral link).
+    this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
+    this.contactD = { left: 0, right: 0 };
+    this.contactDOld = { left: 0, right: 0 };
 
     this._findStretches();
     this.initFromComposition();
@@ -95,6 +104,7 @@ export class Solver {
     const { regions, materials, contacts, grid } = model;
     const last = regions.length - 1;
     this.stretches = [];
+    this.stretchOf = new Int32Array(regions.length * n).fill(-1);
     for (let i = 0; i < n; i++) {
       let r = 0;
       while (r <= last) {
@@ -103,6 +113,7 @@ export class Solver {
         while (r + 1 <= last && materials[regions[r + 1].material].present[i]) r++;
         const leftOpen = r0 === 0 && contacts.left.species[i].type !== 'blocked';
         const rightOpen = r === last && contacts.right.species[i].type !== 'blocked';
+        for (let q = r0; q <= r; q++) this.stretchOf[q * n + i] = this.stretches.length;
         this.stretches.push({
           species: i,
           regions: [r0, r],
@@ -123,26 +134,75 @@ export class Solver {
     return s;
   }
 
-  /** Set the state from each region's c0, with φ stepping by the interface dipoles. */
+  /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
+  contactEta(side, i) {
+    const ct = this.model.contacts[side], link = ct.species[i];
+    if (link.type !== 'fixed') return NaN;
+    const z = this.z[i];
+    return z === 0 ? link.mu / this.model.RT : (z * (ct.V + link.offset)) / this.VT;
+  }
+
+  /**
+   * Cold start. Species connected to a contact take that contact's level; spectators take
+   * their region's c0 (which fixes their conserved amount). φ in each region is then chosen
+   * for local neutrality, or continued across the interface dipole if nothing there responds.
+   */
   initFromComposition() {
-    const { model, n, M, u } = this;
+    const { model, n, M, u, z } = this;
+    const { regions, species, interfaces, materials } = model;
     const grid = model.grid;
-    const { regions, species, interfaces } = model;
     u.fill(0);
+    this.uLo.fill(0);
+    const eta = new Float64Array(n), cFix = new Float64Array(n), mode = new Int8Array(n); // 1 level, 2 amount
     let phiHat = 0;
     for (let r = 0; r < regions.length; r++) {
       if (r > 0) phiHat += interfaces[r - 1].dipole / this.VT;
-      const reg = regions[r];
+      const reg = regions[r], mat = materials[reg.material];
+      mode.fill(0);
+      for (let i = 0; i < n; i++) {
+        if (!mat.present[i]) continue;
+        const st = this.stretches[this.stretchOf[r * n + i]];
+        if (st.spectator) {
+          if (!(reg.c0[i] > 0)) {
+            throw new SolverError(`regions[${r}].c0.${species[i].name}: a conserved species needs its initial concentration`);
+          }
+          mode[i] = 2;
+          cFix[i] = reg.c0[i];
+        } else {
+          const left = st.regions[0] === 0 ? this.contactEta('left', i) : NaN;
+          eta[i] = Number.isFinite(left) ? left : this.contactEta('right', i);
+          mode[i] = 1;
+        }
+      }
+      // Net charge (mol/m³) at trial φ̂; decreasing in φ̂ wherever a level-fixed ion responds.
+      const charge = (ph) => {
+        let q = reg.fixedCharge / FARADAY;
+        for (let i = 0; i < n; i++) {
+          if (mode[i] === 2) q += z[i] * cFix[i];
+          else if (mode[i] === 1 && z[i] !== 0) {
+            const ex = Math.min(700, Math.max(-700, eta[i] - mat.mu0[i] / model.RT - z[i] * ph));
+            q += z[i] * mat.cRef[i] * Math.exp(ex);
+          }
+        }
+        return q;
+      };
+      if (mode.some((m, i) => m === 1 && z[i] !== 0)) {
+        let lo = phiHat - 1, hi = phiHat + 1;
+        while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
+        while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
+        for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
+          const m = 0.5 * (lo + hi);
+          if (charge(m) > 0) lo = m;
+          else hi = m;
+        }
+        phiHat = 0.5 * (lo + hi);
+      }
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
         const b = this.blockOfNode[g];
         u[b * M] = phiHat;
         for (let i = 0; i < n; i++) {
-          if (!this.present[g * n + i]) continue;
-          const c0 = reg.c0[i];
-          if (!(c0 > 0)) {
-            throw new SolverError(`regions[${r}].c0.${species[i].name}: an initial concentration is needed`);
-          }
-          u[b * M + 1 + i] = Math.log(c0 / this.cRef[g * n + i]) + this.mu0hat[g * n + i] + species[i].z * phiHat;
+          if (mode[i] === 1) u[b * M + 1 + i] = eta[i];
+          else if (mode[i] === 2) u[b * M + 1 + i] = Math.log(cFix[i] / mat.cRef[i]) + mat.mu0[i] / model.RT + z[i] * phiHat;
         }
       }
     }
@@ -150,13 +210,13 @@ export class Solver {
   }
 
   computeConcentrations() {
-    const { n, M, u, c, z } = this;
+    const { n, M, u, uLo, c, z } = this;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
       const phiHat = u[b * M];
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
-        c[k] = this.present[k] ? this.cRef[k] * Math.exp(u[b * M + 1 + i] - this.mu0hat[k] - z[i] * phiHat) : 0;
+        c[k] = this.present[k] ? this.cRef[k] * Math.exp(u[b * M + 1 + i] + uLo[b * M + 1 + i] - this.mu0hat[k] - z[i] * phiHat) : 0;
       }
     }
   }
@@ -172,7 +232,7 @@ export class Solver {
 
   /** Assemble residual and Jacobian for a backward-Euler step of size dt. */
   assemble(dt) {
-    const { model, n, M, u, res, c, cOld, z, VT, sys } = this;
+    const { model, n, M, u, uLo, res, c, cOld, z, VT, sys } = this;
     const { grid, materials, regions, interfaces, contacts } = model;
     const F = FARADAY;
     sys.clear();
@@ -222,16 +282,22 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (!mat.present[i] || mat.D[i] === 0) continue;
         const r = 1 + i, zi = z[i];
-        const cL = c[s * n + i], cR = c[(s + 1) * n + i];
+        // SG flux N = g[B(Δ)c_L − B(−Δ)c_R], rewritten with B(−Δ) = B(Δ)e^Δ and
+        // c_R e^Δ = c_L e^{Δη} as N = −g·B(Δ)·c_L·expm1(Δη). This is precise relative to the
+        // quasi-Fermi difference Δη, so tiny fluxes (e.g. majority carriers carrying a small
+        // current) don't vanish in the cancellation of two huge drift and diffusion terms.
+        const cL = c[s * n + i];
         const g = mat.D[i] / h;
         const d = zi * (phiR - phiL);
-        const Bp = bernoulli(d), Bm = bernoulli(-d);
-        const N = g * (Bp * cL - Bm * cR);
-        const dNdd = g * (bernoulliDerivative(d) * cL + bernoulliDerivative(-d) * cR);
-        const dNdEtaL = g * Bp * cL;
-        const dNdEtaR = -g * Bm * cR;
-        const dNdPhiL = -zi * dNdEtaL - zi * dNdd;
-        const dNdPhiR = -zi * dNdEtaR + zi * dNdd;
+        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
+        const E = Math.expm1(deta);
+        const gBc = g * bernoulli(d) * cL;
+        const N = -gBc * E;
+        const dNdd = -g * bernoulliDerivative(d) * cL * E;
+        const dNdEtaL = gBc;
+        const dNdEtaR = -gBc * (E + 1);
+        const dNdPhiL = -zi * dNdd + zi * gBc * E; // via Δ, and via c_L ∝ e^{−zφ̂_L}
+        const dNdPhiR = zi * dNdd;
         res[bL * M + r] += N;
         res[bR * M + r] -= N;
         this._j(bL, r, bL, r, dNdEtaL);
@@ -250,7 +316,7 @@ export class Solver {
       const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
       const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
       // φ: fixed offset (the dipole); displacement passes through.
-      res[bf * M] = u[bR * M] - u[bL * M] - interfaces[f].dipole / VT;
+      res[bf * M] = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - interfaces[f].dipole / VT;
       this._j(bf, 0, bR, 0, 1);
       this._j(bf, 0, bL, 0, -1);
       res[bL * M] += u[bf * M];
@@ -262,7 +328,7 @@ export class Solver {
         const pL = this.present[gL * n + i], pR = this.present[gR * n + i];
         if (pL && pR) {
           // Local equilibrium: μ̄ continuous.
-          res[bf * M + r] = u[bR * M + r] - u[bL * M + r];
+          res[bf * M + r] = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]);
           this._j(bf, r, bR, r, 1);
           this._j(bf, r, bL, r, -1);
           res[bL * M + r] += u[bf * M + r];
@@ -276,18 +342,58 @@ export class Solver {
       }
     }
 
-    // Contacts: electrostatic links (species links are all blocked for now).
-    const first = 0, last = this.nB - 1;
-    const pl = contacts.left.phi, pr = contacts.right.phi;
-    if (pl.type === 'capacitive') {
-      const phiG = pl.V - pl.zeroCharge;
-      res[first * M] -= pl.C * (phiG - VT * u[first * M]); // −D_in
-      this._j(first, 0, first, 0, pl.C * VT);
+    // Contacts. The boundary node's balance rows are complete except for the flux through the
+    // contact, so before a row is replaced by a contact condition its residual *is* that flux:
+    // entering at the left (+res), leaving at the right (−res), both counted toward +x.
+    for (const side of ['left', 'right']) {
+      const ct = contacts[side];
+      const g = side === 'left' ? 0 : this.nNodes - 1;
+      const b = this.blockOfNode[g];
+      const sgn = side === 'left' ? 1 : -1;
+      const flux = this.contactFlux[side];
+      for (let i = 0; i < n; i++) {
+        flux[i] = sgn * res[b * M + 1 + i];
+        if (ct.species[i].type === 'fixed') {
+          this._replaceRow(b, 1 + i);
+          this._j(b, 1 + i, b, 1 + i, 1);
+          res[b * M + 1 + i] = u[b * M + 1 + i] - this.contactEta(side, i) + uLo[b * M + 1 + i];
+        }
+      }
+      const link = ct.phi;
+      if (link.type === 'capacitive') {
+        // Gate (or metal across a Stern layer) at φ_g = V − zeroCharge; D = C·(φ_g − φ) inward.
+        const phiG = ct.V - link.zeroCharge;
+        const D = link.C * (phiG - VT * u[b * M]) * sgn;
+        res[b * M] -= sgn * D;
+        this._j(b, 0, b, 0, link.C * VT);
+        this.contactD[side] = D;
+      } else if (link.type === 'neutral') {
+        this.contactD[side] = sgn * res[b * M];
+        this._replaceRow(b, 0);
+        let q = this.rhoFixed[g];
+        let dq = 0;
+        for (let i = 0; i < n; i++) {
+          const k = g * n + i;
+          if (!this.present[k] || z[i] === 0) continue;
+          q += F * z[i] * c[k];
+          dq -= F * z[i] * z[i] * c[k];
+          this._j(b, 0, b, 1 + i, F * z[i] * c[k]);
+        }
+        this._j(b, 0, b, 0, dq);
+        res[b * M] = q;
+      } else {
+        this.contactD[side] = 0;
+      }
     }
-    if (pr.type === 'capacitive') {
-      const phiG = pr.V - pr.zeroCharge;
-      res[last * M] += pr.C * (VT * u[last * M] - phiG); // +D_out
-      this._j(last, 0, last, 0, pr.C * VT);
+  }
+
+  // Zero one row of the Jacobian (all three blocks), ready to be replaced.
+  _replaceRow(b, r) {
+    const M = this.M, o = b * M * M + r * M;
+    for (let k = 0; k < M; k++) {
+      this.sys.A[o + k] = 0;
+      this.sys.B[o + k] = 0;
+      this.sys.C[o + k] = 0;
     }
   }
 
@@ -351,7 +457,7 @@ export class Solver {
       history.push(step);
       if (!Number.isFinite(step)) return { converged: false, iterations: it, history, error: 'non-finite update' };
       const alpha = step > maxStep ? maxStep / step : 1;
-      for (let k = 0; k < u.length; k++) u[k] -= alpha * delta[k];
+      this._addToState(delta, -alpha);
       if (alpha === 1 && step < tol) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax };
@@ -361,16 +467,36 @@ export class Solver {
     return { converged: false, iterations: maxIter, history };
   }
 
+  // u += scale·d in compensated arithmetic (Knuth two-sum, then renormalise hi/lo).
+  _addToState(d, scale) {
+    const { u, uLo } = this;
+    for (let k = 0; k < u.length; k++) {
+      const a = u[k], b = scale * d[k];
+      const s = a + b, bb = s - a;
+      const err = a - (s - bb) + (b - bb);
+      const lo = uLo[k] + err;
+      const hi = s + lo;
+      u[k] = hi;
+      uLo[k] = lo - (hi - s);
+    }
+  }
+
   /** One backward-Euler step. On failure the state is restored. */
   step(dt, opts) {
     this.uPrev.set(this.u);
+    this.uPrevLo.set(this.uLo);
     this.computeConcentrations();
     this.cOld.set(this.c);
+    this.assemble(dt); // records the contact displacement at the start of the step
+    const DOld = { ...this.contactD };
     const result = this.newton(dt, opts);
     if (result.converged) {
       this.time += dt;
+      this.lastDt = dt;
+      this.contactDOld = DOld;
     } else {
       this.u.set(this.uPrev);
+      this.uLo.set(this.uPrevLo);
       this.computeConcentrations();
     }
     return result;
@@ -392,7 +518,7 @@ export class Solver {
    * The storage term keeps spectator amounts exactly conserved. If Newton fails at the
    * giant dt, ramp dt up from a small value instead (pseudo-transient continuation).
    */
-  solveSteady({ maxSteps = 60, tol = 1e-10 } = {}) {
+  solveSteady({ maxSteps = 60, tol = 1e-13 } = {}) {
     const tau = this.slowestTime();
     const giant = 1e6 * tau;
     let dt = giant;
