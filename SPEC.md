@@ -259,10 +259,23 @@ charge flowing toward +x.
   φ balance at the pair. Where a species is present on one side only, its copy on the other
   side is an absent-species row. Cost is one extra node per interface.
 - **Unknowns (per node):** the dimensionless potential `φ̂ = Fφ/RT` and the dimensionless
-  electrochemical potentials `η_i = μ̄_i / RT`. Concentrations can span 40 orders of magnitude
-  (minority carriers), and these log-like variables keep them well conditioned. At equilibrium
-  every `μ̄_i` is exactly flat. Scale everything internally (thermal energy, reference
-  concentration, Debye length).
+  electrochemical potentials `η_i = μ̄_i / RT`. Scale everything internally (thermal energy,
+  reference concentration, Debye length). This is a trade-off, not a free win:
+  - *For η:* positivity of c is automatic, so there's no clamping, which would itself break
+    conservation. Flat-μ̄ equilibrium is exact and trivial. The physics is posed in μ̄ anyway:
+    fixed-μ̄ links, interface offsets, affinities and Butler–Volmer are all linear or natural in
+    η.
+  - *Against η:* the storage term is nonlinear, so conservation holds only to the Newton
+    residual (see Conservation). A species' rows scale with its c, so where it is scarce
+    (minority carriers deep in a depletion zone) its η is weakly determined and Newton can
+    swing it wildly. That is harmless physically but can stall damping. So the damping limit
+    must not be dominated by δη at nodes where that species is negligible: limit δφ̂ strictly,
+    and weight δη limits by relevance. Also row-scale the Jacobian.
+  - *(φ, c) variables,* the TCAD default, give linear storage (exact conservation every
+    iteration) and polynomial reactions. But Newton overshoots to negative c, and the fixes
+    (damping, clamping) are fiddly or non-conservative. Slotboom variables `u = exp(η)`
+    linearise SG but overflow a double at modest voltages. Stay with η unless benchmarks say
+    otherwise.
 - **Solver:** damped Newton, limiting each update to a few thermal voltages per iteration (or
   Bank–Rose damping). The Jacobian is block-tridiagonal with block size `1 + nSpecies`; solve it
   with block Thomas (a small dense LU per block). Nothing is bordered (§2): circuits are
