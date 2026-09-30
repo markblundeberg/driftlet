@@ -99,69 +99,70 @@ function redlichKisterOccupancy(A, cMax, cRef, RT, fail) {
   };
 }
 
-// Monotone (Fritsch–Butland) cubic through tabulated ζ(x), with logit-shaped tails matching
-// the end slopes, so that x stays in (0, 1) for any ζ.
-function tableOccupancy(xs, zs) {
+// Tabulated ζ(x), as ζ = ln(x/(1−x)) + r(x): the residual r (the non-ideality) is a
+// shape-preserving cubic (PCHIP) through the data, continued linearly beyond the ends. Ideal
+// and regular-solution tables are reproduced exactly, and x stays within (0, 1) for any ζ.
+function tableOccupancy(xs, zs, fail) {
   const N = xs.length;
+  const logit = (x) => Math.log(x / (1 - x));
+  const rs = xs.map((x, k) => zs[k] - logit(x));
   const h = [], del = [];
   for (let k = 0; k < N - 1; k++) {
     h.push(xs[k + 1] - xs[k]);
-    del.push((zs[k + 1] - zs[k]) / h[k]);
+    del.push((rs[k + 1] - rs[k]) / h[k]);
   }
   const d = new Float64Array(N);
   for (let k = 1; k < N - 1; k++) {
+    if (del[k - 1] * del[k] <= 0) continue; // local extremum: flat
     const w1 = 2 * h[k] + h[k - 1], w2 = h[k] + 2 * h[k - 1];
     d[k] = (w1 + w2) / (w1 / del[k - 1] + w2 / del[k]);
   }
   const end = (dl, dn, hl, hn) => {
-    // three-point end slope, kept within the monotone range
-    const s = N > 2 ? ((2 * hl + hn) * dl - hl * dn) / (hl + hn) : dl;
-    return Math.min(3 * dl, Math.max(0.5 * dl, s));
+    if (N === 2) return dl;
+    const s = ((2 * hl + hn) * dl - hl * dn) / (hl + hn);
+    if (s * dl <= 0) return 0;
+    if (dl * dn <= 0 && Math.abs(s) > 3 * Math.abs(dl)) return 3 * dl;
+    return s;
   };
   d[0] = end(del[0], del[1], h[0], h[1]);
   d[N - 1] = end(del[N - 2], del[N - 3], h[N - 2], h[N - 3]);
-  const logit = (x) => Math.log(x / (1 - x));
-  const k0 = d[0] * xs[0] * (1 - xs[0]), kN = d[N - 1] * xs[N - 1] * (1 - xs[N - 1]);
-  const L0 = logit(xs[0]), LN = logit(xs[N - 1]);
-  const segment = (k, x) => {
-    const t = (x - xs[k]) / h[k];
-    const t2 = t * t, t3 = t2 * t;
-    const v = (2 * t3 - 3 * t2 + 1) * zs[k] + (t3 - 2 * t2 + t) * h[k] * d[k] + (-2 * t3 + 3 * t2) * zs[k + 1] + (t3 - t2) * h[k] * d[k + 1];
-    const dv =
-      ((6 * t2 - 6 * t) * zs[k] + (3 * t2 - 4 * t + 1) * h[k] * d[k] + (-6 * t2 + 6 * t) * zs[k + 1] + (3 * t2 - 2 * t) * h[k] * d[k + 1]) / h[k];
-    return { v, d: dv };
-  };
-  const find = (x) => {
+  // r(x) and r′(x)
+  const r = (x) => {
+    if (x <= xs[0]) return { v: rs[0] + d[0] * (x - xs[0]), d: d[0] };
+    if (x >= xs[N - 1]) return { v: rs[N - 1] + d[N - 1] * (x - xs[N - 1]), d: d[N - 1] };
     let lo = 0, hi = N - 2;
     while (lo < hi) {
       const m = (lo + hi + 1) >> 1;
       if (xs[m] <= x) lo = m;
       else hi = m - 1;
     }
-    return lo;
+    const k = lo, t = (x - xs[k]) / h[k], t2 = t * t, t3 = t2 * t;
+    return {
+      v: (2 * t3 - 3 * t2 + 1) * rs[k] + (t3 - 2 * t2 + t) * h[k] * d[k] + (-2 * t3 + 3 * t2) * rs[k + 1] + (t3 - t2) * h[k] * d[k + 1],
+      d: ((6 * t2 - 6 * t) * rs[k] + (3 * t2 - 4 * t + 1) * h[k] * d[k] + (-6 * t2 + 6 * t) * rs[k + 1] + (3 * t2 - 2 * t) * h[k] * d[k + 1]) / h[k],
+    };
   };
+  // In y = ln(x/(1−x)): ζ = y + r(x), dζ/dy = 1 + x(1−x) r′(x), which must stay positive.
+  const f = (y) => {
+    const x = logistic(y), q = r(x);
+    return { v: y + q.v, d: 1 + x * logistic(-y) * q.d };
+  };
+  let rmin = Infinity, rmax = -Infinity;
+  for (let k = 0; k <= 4000; k++) {
+    const x = k / 4000;
+    const q = r(x);
+    if (x > 0 && x < 1 && !(1 + x * (1 - x) * q.d > 1e-9)) {
+      fail(`ocv: the interpolated curve isn't monotone near x = ${x.toFixed(3)} (E must fall steadily with x; add points or smooth the data)`);
+    }
+    rmin = Math.min(rmin, q.v);
+    rmax = Math.max(rmax, q.v);
+  }
   return {
-    zeta(x) {
-      if (x < xs[0]) return zs[0] + k0 * (logit(x) - L0);
-      if (x > xs[N - 1]) return zs[N - 1] + kN * (logit(x) - LN);
-      return segment(find(x), x).v;
-    },
+    zeta: (x) => logit(x) + r(x).v,
     x(zeta) {
-      const tail = (L, k) => {
-        const x = logistic(L), omx = logistic(-L);
-        return { x, omx, dxdz: (x * omx) / k };
-      };
-      if (zeta <= zs[0]) return tail(L0 + (zeta - zs[0]) / k0, k0);
-      if (zeta >= zs[N - 1]) return tail(LN + (zeta - zs[N - 1]) / kN, kN);
-      let lo = 0, hi = N - 2;
-      while (lo < hi) {
-        const m = (lo + hi + 1) >> 1;
-        if (zs[m] <= zeta) lo = m;
-        else hi = m - 1;
-      }
-      const k = lo;
-      const x = solveIncreasing((y) => segment(k, y), zeta, xs[k], xs[k + 1], xs[k] + (h[k] * (zeta - zs[k])) / (zs[k + 1] - zs[k]));
-      return { x, omx: 1 - x, dxdz: 1 / segment(k, x).d };
+      const y = solveIncreasing(f, zeta, zeta - rmax - 1, zeta - rmin + 1, zeta - r(0.5).v);
+      const x = logistic(y), omx = logistic(-y);
+      return { x, omx, dxdz: (x * omx) / f(y).d };
     },
   };
 }
@@ -555,7 +556,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
           const muRef = finite(t.muRef, `${sp}.ocv.muRef (the combination's chemical potential in the reference electrode, J/mol)`);
           // μ_ion + ν μ_carrier = muRef − z_ion F E, and ζ_comb = that minus the standard potentials.
           const mu0 = mat.mu0[ion] + nu * mat.mu0[car];
-          occ = tableOccupancy(t.x, t.E.map((E) => (muRef - zi * FARADAY * E - mu0) / RT));
+          occ = tableOccupancy(t.x, t.E.map((E) => (muRef - zi * FARADAY * E - mu0) / RT), fail);
         } else {
           const A = sdef.A ?? [];
           need(Array.isArray(A), `${sp}.A must be an array of Redlich–Kister coefficients (J/mol)`);

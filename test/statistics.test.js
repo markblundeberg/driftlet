@@ -278,18 +278,19 @@ const regular = { type: 'insertion', species: ['Li+', 'e-'], cMax: cHost, A: [Om
 test('insertion host: composition follows the OCV of the neutral combination (table round trip)', () => {
   // Li⁺ from a Li reference on the left, e⁻ from a current collector at V on the right. At
   // equilibrium μ_Li = μ̄_Li⁺ + μ̄_e⁻ = −F V, so the host sits at the x where E(x) = V.
-  const xs = Array.from({ length: 39 }, (_, k) => (k + 1) / 40);
+  const xs = [0.05, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9];
   const table = { type: 'insertion', species: ['Li+', 'e-'], cMax: cHost, ocv: { x: xs, E: xs.map(E), muRef: 0 } };
   const tab = new Device(host(table, liIon(0), collector(E(0.5))));
   const rk = new Device(host(regular, liIon(0), collector(E(0.5))));
-  for (const x of [0.1, 0.325, 0.5, 0.9, 0.99]) {
+  for (const x of [0.01, 0.1, 0.3, 0.52, 0.9, 0.99]) {
     tab.set({ contacts: { right: { V: E(x) } } });
     rk.set({ contacts: { right: { V: E(x) } } });
     const st = tab.solve(), sr = rk.solve();
     assert.ok(st.converged && sr.converged);
     assert.ok(Math.abs(sr.c['Li+'][10] / cHost - x) < 1e-12, `analytic isotherm at x=${x}`);
-    const onTable = xs.some((v) => Math.abs(v - x) < 1e-12);
-    assert.ok(Math.abs(st.c['Li+'][10] / cHost - x) < (onTable ? 1e-12 : 3e-3), `table at x=${x}: ${st.c['Li+'][10] / cHost}`);
+    // The table's non-ideal residual is interpolated, so a regular-solution table is exact
+    // between its points and beyond its ends.
+    assert.ok(Math.abs(st.c['Li+'][10] / cHost - x) < 1e-12, `table at x=${x}: ${st.c['Li+'][10] / cHost}`);
     assert.ok(Number.isNaN(st.phi[10]), 'φ is undefined inside the host');
     assert.ok(Math.abs(st.c['e-'][10] / st.c['Li+'][10] - 1) < 1e-14, 'neutral');
   }

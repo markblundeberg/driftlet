@@ -89,6 +89,9 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
 
 - any mix of charged and neutral species; per-material diffusivities and standard potentials;
   species absent from some materials;
+- ideal statistics by default, or per material: Fermi–Dirac (degenerate carriers), lattice
+  gas (crowding, site filling), Redlich–Kister, Debye–Hückel, intercalation hosts described by
+  their OCV curve, or your own function ([statistics](docs/statistics.md));
 - Poisson electrostatics, or strictly neutral (ε = 0) materials such as metals and macroscopic
   electrolytes;
 - contacts as outside phases with known levels, joined by the same laws as internal faces:
@@ -126,14 +129,19 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
+| Fermi–Dirac statistics | 𝓕_{±1/2} vs quadrature; degenerate bulk; accumulation charge via 𝓕_{3/2} | 1e-13; 1e-12; 1e-3 |
+| Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to ψ = 40 V_T; custom function reproduces it | 5e-4; 1e-10 |
+| Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |
+| Debye–Hückel | junction EMF 2t₊(RT/F) ln(a₁/a₂) with activities | 1e-6 |
+| Intercalation host (OCV) | composition vs table and isotherm; chemical diffusion flux and relaxation rate | 1e-12; 1e-5; 1e-4 |
 
 ## Performance
 
 On a desktop Ryzen 7600X in Node 22, one linear solve for 300 nodes × 7 unknowns takes about 0.4 ms, and a
 warm-started steady re-solve after a bias step takes a few milliseconds. The library has no
 dependencies and does no DOM access, so it runs in a Web Worker. (A device definition is plain
-data and can be posted to a worker. Devices using the future custom-function statistics can't
-be, and must be built inside the worker.)
+data and can be posted to a worker. Devices using custom-function statistics can't be, and
+must be built inside the worker.)
 
 ## Development
 
@@ -144,7 +152,7 @@ npm test
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),
-[roadmap](ROADMAP.md).
+[statistics](docs/statistics.md), [roadmap](ROADMAP.md).
 
 ## Licence
 

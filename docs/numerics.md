@@ -12,8 +12,9 @@ At every grid node, with block size M = 1 + (number of species):
 - `φ̂ = Fφ/RT`, the dimensionless (bookkeeping) electrostatic potential;
 - `η_i = μ̄_i/RT`, the dimensionless electrochemical potential of each species.
 
-Concentrations follow from these: `c_i = c_ref,i · exp(η_i − μ°_i/RT − z_i φ̂)`. Working in μ̄
-rather than c is a deliberate trade-off:
+Concentrations follow from these through each material's statistics, `c = c(ζ)` with
+`ζ_i = η_i − μ°_i/RT − z_i φ̂` (ideal: `c_i = c_ref,i · e^{ζ_i}`; see
+[Statistics](#statistics) below). Working in μ̄ rather than c is a deliberate trade-off:
 
 - **For μ̄:** concentrations are positive automatically, with no clamping (which would itself
   break conservation). Equilibrium is exactly flat μ̄. Contacts, alignments, affinities and
@@ -103,6 +104,15 @@ This is exactly zero at equilibrium (flat μ̄), and it's precise relative to th
 difference instead of being a cancellation of two large terms. B and B′ are evaluated from a
 Taylor series near 0 and with `expm1` elsewhere, finite for all arguments.
 
+With non-ideal statistics, ln c = ζ − ex, where the excess `ex = ζ − ln(c/c_ref)` is zero for
+ideal statistics. The excess enters exactly like an extra potential, taken linear along the
+segment as φ is, so the same formula holds with `Δ = z(φ̂_R − φ̂_L) + ex_R − ex_L`. That's the
+excess-chemical-potential generalisation of Scharfetter–Gummel: still exactly zero at
+equilibrium, since the expm1 factor is untouched. It's exact for a single diffusing species on
+a lattice (whose excess is proportional to its grand potential, linear in x at steady state)
+and second order otherwise. Its Jacobian couples each flux to every species at both nodes through
+K, which fills the blocks but keeps them tridiagonal.
+
 ## Interfaces: doubled nodes plus a flux node
 
 In the linear system, a zero-volume flux node sits between the two sides' nodes:
@@ -175,6 +185,42 @@ In galvanostatic and load modes the right terminal's voltage V_t is unknown.
   electrons, conductance currents, and the Stern displacement current. All of those depend
   only on V_t and the last node, so the structure stays tridiagonal.
 
+## Statistics
+
+Each node evaluates its material's statistics once per Newton iteration: c(ζ), the Jacobian
+K = ∂c/∂ζ (n × n, symmetric positive definite), and the excess. Every c-dependent term then
+differentiates through K:
+
+- storage and space charge: `∂c_i/∂η_j = K_ij`, `∂c_i/∂φ̂ = −(Kz)_i`;
+- reaction prefactors: `∂ln c_i/∂η_j = K_ij/c_i`;
+- the φ row's response, and the Debye length in resolution warnings, use zᵀKz, the charge
+  capacitance, in place of Σz²c.
+
+Nodes of ideal materials keep a separate fast path with K = diag(c) implied.
+
+Model evaluation:
+
+- **Explicit models** (Fermi–Dirac, lattice gas, insertion) evaluate c(ζ) in closed form.
+- **Implicit models** solve a small problem per node: Redlich–Kister and tabulated OCVs by
+  safeguarded Newton in logit(x); Debye–Hückel by Newton in ln c, whose excess Hessian is rank
+  one, so each step is a Sherman–Morrison update.
+- **Fermi–Dirac integrals** 𝓕_{1/2} and 𝓕_{−1/2} use:
+  - an alternating series below x = −2;
+  - Sommerfeld's expansion above 50;
+  - piecewise Chebyshev fits (degree 23, five intervals) in between, built on first use
+    (~4 ms) from a trapezoid quadrature in u = √t.
+
+  Relative error is ~6e-15.
+
+Where a *concentration* is prescribed rather than a potential (bath compositions, spectators'
+initial amounts), each model inverts itself for the ζ of those species, holding the others.
+The lattice gas does this in closed form, and the others with the same scalar or small Newton
+iterations.
+
+An insertion host's species depend on φ only through their neutral combination, where it
+cancels, so its φ rows are identity rows (φ undefined, like a region with no charged species).
+The current-continuity constraint between ion and carrier comes from their balance rows.
+
 ## Bulk reactions
 
 `r = k_f Π c_R^ν · (−expm1(−a))`, with `a = A/RT` computed from the compensated η. That's mass
@@ -217,7 +263,8 @@ shows up as displacement current.
   a huge dt (10⁶ × the slowest diffusion time) keep the storage term, which pins each
   conserved amount exactly: sum a species' rows and the fluxes cancel. dt grows ×10 (capped)
   while the state still moves. Before each huge step, each spectator's level is shifted
-  uniformly to restore its amount exactly. That's exact for ideal statistics, and it guards
+  uniformly to restore its amount exactly (in one step for ideal statistics, by Newton on the
+  shift otherwise). It guards
   against round-off creeping through the vanishing storage term. The solve finishes with one
   step at the base giant dt, where pinning is tight.
 - **If Newton fails,** dt ramps up from a small value (pseudo-transient continuation), ending

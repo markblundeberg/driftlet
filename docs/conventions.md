@@ -25,12 +25,24 @@ stricter than you may be used to.
 
 ## Electrochemical potential and its views
 
-For species *i* with charge number z_i, in a material with standard potential μ°_i and
-reference concentration c_ref,i, with ideal (dilute) statistics:
+For species *i* with charge number z_i, in a material where its standard chemical potential
+is μ°_i, the electrochemical potential splits as
 
 ```
-μ̄_i = μ°_i + z_i F φ + RT ln(c_i / c_ref,i)
+μ̄_i = μ°_i + z_i F φ + RT ζ_i
 ```
+
+The reduced chemical potential ζ_i is what a material's **statistics** turn into a
+concentration, c_i = c_i(ζ). The default is ideal (dilute) statistics,
+
+```
+c_i = c_ref,i · e^{ζ_i},   i.e.   μ̄_i = μ°_i + z_i F φ + RT ln(c_i / c_ref,i)
+```
+
+with c_ref,i the reference concentration that μ°_i refers to. Non-ideal statistics
+(degenerate carriers, crowding, intercalation hosts, activity coefficients) are chosen per
+material; see [statistics](statistics.md). They all reduce to the ideal form in the dilute
+limit, so μ° and c_ref mean the same thing in every model: the dilute (Henry's-law) reference.
 
 The API speaks μ̄ in J/mol (`units.eV` converts per-particle energies). Two voltage views are
 provided for charged species, as in [ESBD](https://marklundeberg.com/esbd/) diagrams:
@@ -44,6 +56,7 @@ valence-band level V°_h⁺. That's expected, since V = −E/e for electrons.
 
 Electrons and holes are ordinary species: z = ∓1, c_ref = effective density of states, and
 μ° = the band edges as molar energies (conduction band for e⁻, minus the valence band for h⁺).
+With Fermi–Dirac statistics the same parameters give c = N_c 𝓕_{1/2}(ζ).
 
 ## Transport
 
@@ -54,10 +67,11 @@ N_i = −(D_i c_i / RT) ∇μ̄_i        (particle flux, mol/(m²·s))
 J_i = z_i F N_i = −σ_i ∇V_i,       σ_i = z_i² F² D_i c_i / RT
 ```
 
-Drift and diffusion are one law, and the Einstein relation is automatic. D here multiplies
-c∇μ̄/RT. For ideal statistics it's the ordinary diffusivity. With non-ideal statistics
-(coming), it becomes a mobility coefficient, and the measured chemical diffusivity is D times
-the thermodynamic factor.
+Drift and diffusion are one law, and the Einstein relation is automatic. D is the coefficient
+of c∇μ̄/RT, i.e. RT times the mobility per mole, and it's the same parameter whatever the
+statistics. For ideal statistics it's the ordinary diffusivity. With non-ideal statistics the
+measured chemical diffusivity is D times the thermodynamic factor, ∂ln a/∂ln c: the
+generalised Einstein relation, as for degenerate electrons.
 
 ## Materials, regions, interfaces
 

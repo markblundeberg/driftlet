@@ -61,6 +61,14 @@ Shifting every `mu0` by `z_i F s` just moves the material's φ, its bookkeeping 
 there is only a bookkeeping multiplier. Use it for metals and for macroscopic systems whose
 double layers you don't want to resolve.
 
+`statistics` (optional) lists non-ideal statistics models, each covering named species:
+Fermi–Dirac, lattice gas (crowding), Redlich–Kister, Debye–Hückel, insertion hosts (OCV
+curves) and custom functions. Species not listed are ideal. See [statistics](statistics.md).
+
+```js nocheck
+statistics: [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: 5000 }]
+```
+
 ## Regions
 
 ```js nocheck
@@ -70,7 +78,8 @@ regions: [
 ]
 ```
 
-- `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0.
+- `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. In an insertion
+  host it's balanced by background electronic carriers.
 - `c0`: initial concentrations, mol/m³. Species connected to a contact start from that
   contact's level and don't need it. Any other species (blocked everywhere, or only made and
   consumed by reactions) does: its `c0` fixes the amount it conserves.
@@ -108,7 +117,7 @@ defaults to no dipole.
   double layers on both sides.
 - `'neutral'`: no charge at the face and a free jump, set by neutrality on each side (Donnan).
   The alignment drops out and must not be given. This is the default between two ε = 0
-  materials.
+  materials, and next to an insertion host (where φ is undefined).
 - `{ type: 'capacitive', C }`: a Helmholtz layer, D = −C·(Δφ − dipole), C in F/m².
 
 **Species laws** `species` (default: local equilibrium, μ̄ continuous, where the species is
@@ -254,7 +263,7 @@ const now = dev.solution();                   // snapshot of the current state
 | `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name} }`: what crosses each face |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
-| `warnings` | e.g. unresolved double layers |
+| `warnings` | e.g. unresolved double layers, conventions a statistics model relies on |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |
 
 A stretch is a run of regions in which a species is present and connected. Its `drift`
