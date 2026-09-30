@@ -31,7 +31,7 @@ test('ε = 0: a liquid junction is exactly quasi-neutral (Planck EMF)', () => {
 
 test('ε = 0: concentration polarization follows tanh(V/4V_T) with no overlimiting', () => {
   const Dp = 1.65e-9, c0 = 10, L = 20e-6;
-  const el = (V = 0) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'fixed', 'NO3-': 'blocked' }, phi: 'neutral' });
+  const el = (V = 0) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
   const dev = new Device({
     species: [
       { name: 'Ag+', z: 1, cRef: 1000 },
@@ -132,8 +132,8 @@ test('ε = 0 metal region | n-Si: the pinned dipole is the Schottky barrier alig
     ],
     interfaces: [{ dipole: -phiB }],
     contacts: {
-      left: { V: 0, terminal: 'e-', species: { 'e-': 'fixed' }, phi: 'neutral' },
-      right: { V: 0, terminal: 'e-', species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral' },
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+      right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' },
     },
     grid: { hmin: 0.2e-9, hmax: 20e-9, ratio: 1.1 },
   });

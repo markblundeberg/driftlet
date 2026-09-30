@@ -16,9 +16,10 @@ export class DeviceError extends Error {
   }
 }
 
-const SPECIES_LINK_TYPES = new Set(['blocked', 'fixed', 'conductance']);
+// Contacts use the same laws as internal faces: the outside is a phase with known levels.
+const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance']);
 const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance']);
-const PHI_LINK_TYPES = new Set(['free', 'neutral', 'capacitive']);
+const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'dipole']);
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -250,16 +251,17 @@ function normalizeCircuit(cdef, right, species) {
   if (cdef.mode === 'voltage') return { mode: 'voltage' };
   // The floating terminal voltage is read off a fixed charged terminal species if there is one;
   // otherwise (kinetic or conductance electrode) it becomes an unknown of its own.
-  const readout = right.terminal !== null && right.species[right.terminal].type === 'fixed' && species[right.terminal].z !== 0;
+  const readout =
+    right.terminal !== null && right.species[right.terminal].type === 'equilibrium' && species[right.terminal].z !== 0;
   const exchanges = right.reactions.length > 0 || right.species.some((l) => l.type === 'conductance');
   need(
     readout || exchanges,
-    `circuit.mode '${cdef.mode}' needs the right contact to pass current: a fixed charged terminal species, ` +
+    `circuit.mode '${cdef.mode}' needs the right contact to pass current: a charged terminal species in equilibrium, ` +
       'an electrode reaction or a conductance link',
   );
   need(
-    readout || right.phi.type !== 'neutral',
-    `circuit.mode '${cdef.mode}': a floating kinetic electrode needs a capacitive (Stern) or free φ link, not neutral`,
+    readout || right.phi.type === 'capacitive' || right.phi.type === 'neutral',
+    `circuit.mode '${cdef.mode}': a floating kinetic electrode needs a capacitive (Stern) or neutral φ law`,
   );
   const base = { terminalUnknown: !readout };
   if (cdef.mode === 'current') return { ...base, mode: 'current', I: finite(cdef.I, 'circuit.I') };
@@ -281,6 +283,7 @@ function checkAnchors(regions, materials, interfaces, contacts, species) {
   });
   const anchors = (ct) =>
     ct.phi.type === 'capacitive' ||
+    ct.phi.type === 'dipole' ||
     ct.reactions.length > 0 ||
     ct.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
   const anchored = new Set();
@@ -464,7 +467,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   const path = `contacts.${side}`;
   const mat = materials[region.material];
   const links = species.map(() => ({ type: 'blocked' }));
-  let phi = { type: 'free' };
+  let phi = { type: 'neutral' };
   let terminal = null;
   if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal, reactions: [] };
   need(isObject(cdef), `${path} must be an object`);
@@ -495,18 +498,19 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
         links[i] = { type: 'conductance', G: positive(link.G, `${lpath}.G`), offset: finite(offset, `${lpath}.offset`) };
         continue;
       }
-      if (link.type === 'fixed') {
+      if (link.type === 'equilibrium') {
+        // In equilibrium with the outside phase, whose levels are known: a Dirichlet condition.
         if (species[i].z === 0) {
-          links[i] = { type: 'fixed', mu: finite(link.mu, `${lpath}.mu (a neutral species is fixed by its μ̄, J/mol)`) };
+          links[i] = { type: 'equilibrium', mu: finite(link.mu, `${lpath}.mu (a neutral species is held at its μ̄, J/mol)`) };
           continue;
         }
-        need(link.mu === undefined, `${lpath}: a charged species is fixed by an offset from the terminal voltage, not by mu`);
+        need(link.mu === undefined, `${lpath}: a charged species is held by an offset from the terminal voltage, not by mu`);
         const offset = link.offset ?? (terminal === i ? 0 : undefined);
         need(
           offset !== undefined,
           `${lpath}.offset: give V_i − V_terminal (V) for this species; only the terminal species defaults to 0`,
         );
-        links[i] = { type: 'fixed', offset: finite(offset, `${lpath}.offset`) };
+        links[i] = { type: 'equilibrium', offset: finite(offset, `${lpath}.offset`) };
         continue;
       }
       links[i] = { ...link };
@@ -542,36 +546,36 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       if (!(cb[i] > 0)) continue;
       links[i] =
         species[i].z === 0
-          ? { type: 'fixed', mu: level(i) }
-          : { type: 'fixed', offset: beta + level(i) / (species[i].z * FARADAY) };
+          ? { type: 'equilibrium', mu: level(i) }
+          : { type: 'equilibrium', offset: beta + level(i) / (species[i].z * FARADAY) };
     }
-    phi = { type: 'neutral' };
+    phi = { type: 'bulk' };
   }
 
   if (cdef.phi !== undefined) {
     const raw = typeof cdef.phi === 'string' ? { type: cdef.phi } : cdef.phi;
     need(isObject(raw), `${path}.phi must be a link type string or an object with a type`);
     need(PHI_LINK_TYPES.has(raw.type), `${path}.phi.type must be one of ${[...PHI_LINK_TYPES].join(', ')}`);
-    if (raw.type === 'capacitive') {
-      positive(raw.C, `${path}.phi.C`);
-      finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage or pzc)`);
+    if (raw.type === 'capacitive' || raw.type === 'dipole') {
+      if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
+      finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
     }
     phi = { ...raw };
   } else if (cdef.bath === undefined && (links.some((l) => l.type !== 'blocked') || cdef.reactions?.length)) {
     throw new DeviceError(
-      `${path}.phi: a contact with connected species needs an explicit φ condition ('neutral', 'free', or capacitive)`,
+      `${path}.phi: a contact with connected species needs an explicit φ law ('bulk', 'neutral', capacitive or dipole)`,
     );
   }
   need(cdef.reactions === undefined || Array.isArray(cdef.reactions), `${path}.reactions must be an array`);
   const reactions = (cdef.reactions ?? []).map((r, k) =>
     normalizeElectrodeReaction(r, `${path}.reactions[${k}]`, mat, species, speciesIndex, RT),
   );
-  if (phi.type === 'neutral') {
+  if (phi.type === 'bulk') {
     const reacting = (i) => reactions.some((rx) => [...rx.reactants, ...rx.products].some((p) => p.i === i));
     need(
       links.some((l, i) => (l.type !== 'blocked' || reacting(i)) && species[i].z !== 0),
-      `${path}.phi: a neutral link needs at least one connected charged species at this contact`,
+      `${path}.phi: 'bulk' needs at least one connected charged species at this contact`,
     );
   }
 

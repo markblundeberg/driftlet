@@ -73,11 +73,19 @@
  */
 
 /**
- * @typedef {'blocked' | 'fixed'
- *   | { type: 'fixed', offset?: number, mu?: number }
+ * Contacts use the same laws as internal faces; the outside is a phase with known levels
+ * V_i = V + offset_i (a rigid ladder that the circuit slides by V).
+ * @typedef {'blocked' | 'equilibrium'
+ *   | { type: 'equilibrium', offset?: number, mu?: number }
  *   | { type: 'conductance', G: number, offset?: number }} ContactSpeciesLink
  */
-/** @typedef {'free' | 'neutral' | { type: 'capacitive', C: number, zeroCharge: number }} ContactPhiLink */
+/**
+ * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at
+ * the face (D = 0); capacitive: Stern layer or gate; dipole: pinned φ_edge = V − zeroCharge.
+ * @typedef {'bulk' | 'neutral'
+ *   | { type: 'capacitive', C: number, zeroCharge: number }
+ *   | { type: 'dipole', zeroCharge: number }} ContactPhiLink
+ */
 
 /**
  * Electrode reaction, written as reduction when electrons > 0: Σν_R R + n e⁻(metal) ⇌ Σν_P P.
@@ -97,7 +105,7 @@
  * @property {Record<string, ContactSpeciesLink>} [species] per-species links (default blocked)
  * @property {{ c: Record<string, number>, reference: string, offset?: number }} [bath] a neutral
  *   composition held at the contact, anchored through a charged reference species
- * @property {ContactPhiLink} [phi] required when any species or reaction connects
+ * @property {ContactPhiLink} [phi] required when any species or reaction connects (default 'neutral')
  * @property {ElectrodeReactionDef[]} [reactions]
  */
 

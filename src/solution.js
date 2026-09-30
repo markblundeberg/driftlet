@@ -75,7 +75,7 @@ export function makeSolution(solver, result = {}) {
     // Current toward +x through this contact; in steady state both contacts agree.
     const V = floating && side === 'right' ? solver.terminalV : ct.V;
     sol.contacts[side] = { V, flux, D, current: conduction + displacement };
-    if (ct.phi.type === 'capacitive') {
+    if (ct.phi.type === 'capacitive' || ct.phi.type === 'dipole') {
       // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
       sol.gates[side] = { V: ct.V, D, charge: side === 'left' ? D : -D };
     }
@@ -125,8 +125,9 @@ export function makeSolution(solver, result = {}) {
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
   });
-  if (contacts.left.phi.type === 'capacitive') check(0, grid.segLength[0], 'contacts.left');
-  if (contacts.right.phi.type === 'capacitive') check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
+  const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'dipole';
+  if (resolves(contacts.left)) check(0, grid.segLength[0], 'contacts.left');
+  if (resolves(contacts.right)) check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
 
   // Conservation bookkeeping for each species stretch.
   // Amount now vs the reference amount plus what came in through the contacts. The drift is

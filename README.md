@@ -29,8 +29,8 @@ const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19); // effective densit
 const ohmic = (V) => ({
   V, // terminal voltage
   terminal: 'e-',
-  species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, // V_h+ = V_e- at a metal
-  phi: 'neutral',
+  species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, // V_h+ = V_e- at a metal
+  phi: 'bulk',
 });
 
 const dev = new Device({

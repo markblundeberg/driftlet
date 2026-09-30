@@ -11,7 +11,7 @@ const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19), Eg = 1.12;
 const ND = units.perCm3(1e17), NA = units.perCm3(1e16);
 const Dn = 36e-4, Dp = 12e-4, L = 2e-6;
 const ni2 = Nc * Nv * Math.exp(-Eg / VT);
-const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral' });
+const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });
 const pn = () => ({
   species: [
     { name: 'e-', z: -1 },
@@ -143,12 +143,12 @@ test('contact definitions: offsets and φ conditions are never silently defaulte
     assert.throws(() => new Device(def), (err) => err instanceof DeviceError && pattern.test(err.message));
 
   let def = base();
-  def.contacts.left = { terminal: 'Cl-', species: { 'Cl-': 'fixed', 'Na+': 'fixed' }, phi: 'neutral' };
+  def.contacts.left = { terminal: 'Cl-', species: { 'Cl-': 'equilibrium', 'Na+': 'equilibrium' }, phi: 'bulk' };
   throwsDevice(def, /contacts\.left\.species\.Na\+\.offset: give V_i − V_terminal/);
 
   def = base();
-  def.contacts.left = { terminal: 'Cl-', species: { 'Cl-': 'fixed' } };
-  throwsDevice(def, /contacts\.left\.phi: a contact with connected species needs an explicit φ condition/);
+  def.contacts.left = { terminal: 'Cl-', species: { 'Cl-': 'equilibrium' } };
+  throwsDevice(def, /contacts\.left\.phi: a contact with connected species needs an explicit φ law/);
 
   def = base();
   def.contacts.left = { bath: { c: { 'Na+': 10, 'Cl-': 9 }, reference: 'Cl-' } };
@@ -163,6 +163,32 @@ test('contact definitions: offsets and φ conditions are never silently defaulte
   throwsDevice(def, /gate voltage is the contact's terminal voltage/);
 
   def = base();
-  def.contacts.left = { species: { 'Na+': { type: 'fixed', mu: 0 } }, terminal: 'Na+', phi: 'neutral' };
-  throwsDevice(def, /charged species is fixed by an offset/);
+  def.contacts.left = { species: { 'Na+': { type: 'equilibrium', mu: 0 } }, terminal: 'Na+', phi: 'bulk' };
+  throwsDevice(def, /charged species is held by an offset/);
+});
+
+test('pinned (dipole) contact: a Schottky barrier directly on n-Si', () => {
+  // Electrons in equilibrium with the metal (V_e = V) and φ pinned at φ_edge = V − zeroCharge.
+  // With μ°_e = 0, the surface density is N_c e^{−zeroCharge/V_T}: zeroCharge is the barrier.
+  const phiB = 0.7, NDs = units.perCm3(1e16);
+  const def = pn();
+  def.regions = [{ name: 'n', material: 'Si', length: 2e-6, fixedCharge: NDs * FARADAY }];
+  def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'dipole', zeroCharge: phiB } };
+  const dev = new Device(def);
+  const eps = 11.7 * EPS0;
+  const Vbi = phiB - VT * Math.log(Nc / NDs);
+  for (const V of [0, 0.1, -0.2]) {
+    dev.set({ contacts: { right: { V } } });
+    const sol = dev.solve();
+    assert.ok(sol.converged, `V=${V}`);
+    assert.ok(Math.abs(sol.c['e-'][0] / (Nc * Math.exp(-phiB / VT)) - 1) < 1e-12, `V=${V}: surface density`);
+    let Q = 0;
+    for (let k = 0; k < sol.x.length; k++) Q += dev.grid.vol[k] * FARADAY * (NDs - sol.c['e-'][k] + sol.c['h+'][k]);
+    const Qd = Math.sqrt(2 * FARADAY * eps * NDs * (Vbi + V - VT)); // right contact at V: reverse for V > 0
+    assert.ok(Math.abs(Q / Qd - 1) < 0.02, `V=${V}: depletion charge ${Q} vs ${Qd}`);
+    // Gauss: device charge = D_right − D_left. The metal plate holds −D_left; under bias, the ohmic
+    // field at the far (bulk) contact holds the rest.
+    assert.ok(Math.abs(Q - (sol.contacts.right.D - sol.contacts.left.D)) < 1e-9 * Q, 'Gauss');
+    assert.ok(Math.abs(sol.gates.left.charge - sol.contacts.left.D) < 1e-15, 'plate charge is the contact displacement');
+  }
 });

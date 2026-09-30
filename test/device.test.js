@@ -31,8 +31,8 @@ function hetero() {
     ],
     interfaces: [{ step: { species: 'e-', value: units.eV(0.25) } }],
     contacts: {
-      left: { species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral', terminal: 'e-' },
-      right: { species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral', terminal: 'e-' },
+      left: { species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk', terminal: 'e-' },
+      right: { species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk', terminal: 'e-' },
     },
     grid: { hmin: 1e-10, hmax: 2e-8 },
   };
@@ -102,7 +102,7 @@ test('step alignment needs a charged species present on both sides', () => {
 
   const def2 = hetero();
   delete def2.materials.B.species['h+'];
-  def2.contacts.right.species = { 'e-': 'fixed' };
+  def2.contacts.right.species = { 'e-': 'equilibrium' };
   def2.interfaces = [{ step: { species: 'h+', value: 0 } }];
   throwsDevice(def2, /must be present on both sides/);
 });
@@ -164,7 +164,7 @@ test('a floating island with no gate has no electrostatic anchor', () => {
   // A gate at either end anchors it.
   def.contacts = { right: { phi: { type: 'capacitive', C: 1e-3, zeroCharge: 0 } } };
   const m = new Device(def).model;
-  assert.equal(m.contacts.left.phi.type, 'free');
+  assert.equal(m.contacts.left.phi.type, 'neutral');
   assert.ok(m.contacts.left.species.every((l) => l.type === 'blocked'));
 });
 
@@ -176,11 +176,11 @@ test('capacitive links need a capacitance and a zero-charge alignment', () => {
   throwsDevice(def, /contacts\.left\.phi\.C must be a positive number/);
 });
 
-test('a neutral link needs a connected charged species', () => {
+test("a 'bulk' contact needs a connected charged species", () => {
   const def = hetero();
   def.contacts.left.species = {};
   delete def.contacts.left.terminal;
-  throwsDevice(def, /neutral link needs at least one connected charged species/);
+  throwsDevice(def, /'bulk' needs at least one connected charged species/);
 });
 
 test('only blocking is allowed for a species absent from the end material', () => {

@@ -14,7 +14,7 @@ const Dn = 36e-4, Dp = 12e-4, Ln = 5e-6;
 const kf = Dn / (Ln * Ln * NA);
 const Lp = Math.sqrt(Dp / (kf * ND));
 const ni2 = Nc * Nv * Math.exp(-Eg / VT);
-const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral' });
+const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });
 const diode = () => ({
   species: [
     { name: 'e-', z: -1 },

@@ -85,7 +85,7 @@ test('water: homogeneous relaxation of excess H⁺/OH⁻ at rate k (c_H + c_OH)'
 
 test('open system: amounts track the time-integrated contact fluxes after a bias step', () => {
   const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19);
-  const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'fixed', 'h+': { type: 'fixed', offset: 0 } }, phi: 'neutral' });
+  const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });
   const dev = new Device({
     species: [
       { name: 'e-', z: -1 },

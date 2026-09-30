@@ -82,9 +82,10 @@ export class Solver {
     regions.forEach((reg, r) => {
       const mat = materials[reg.material];
       if (species.some((sp, i) => mat.present[i] && sp.z !== 0)) return;
-      const leftOpen = r === 0 ? contacts.left.phi.type === 'capacitive' : model.interfaces[r - 1].phi.type !== 'neutral';
+      const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'dipole';
+      const leftOpen = r === 0 ? pins(contacts.left) : model.interfaces[r - 1].phi.type !== 'neutral';
       const rightOpen =
-        r === regions.length - 1 ? contacts.right.phi.type === 'capacitive' : model.interfaces[r].phi.type !== 'neutral';
+        r === regions.length - 1 ? pins(contacts.right) : model.interfaces[r].phi.type !== 'neutral';
       if (mat.epsr === 0 || !(leftOpen || rightOpen)) {
         for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) this.phiUndefined[g] = 1;
       }
@@ -177,7 +178,7 @@ export class Solver {
   /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
   contactEta(side, i) {
     const ct = this.model.contacts[side], link = ct.species[i];
-    if (link.type !== 'fixed') return NaN;
+    if (link.type !== 'equilibrium') return NaN;
     const z = this.z[i];
     return z === 0 ? link.mu / this.model.RT : (z * (ct.V + link.offset)) / this.VT;
   }
@@ -525,7 +526,7 @@ export class Solver {
   }
 
   // One contact: record the flux through its outer face, then add its exchange terms (electrode
-  // reactions, conductance links), then apply fixed links and the φ link.
+  // reactions, conductance links), then apply equilibrium links and the φ law.
   _contact(side, dt) {
     const { model, n, M, u, uLo, res, c, z, VT } = this;
     const F = FARADAY;
@@ -620,9 +621,9 @@ export class Solver {
       }
     }
 
-    // Fixed links.
+    // Equilibrium links: Dirichlet on the known outside level.
     for (let i = 0; i < n; i++) {
-      if (ct.species[i].type !== 'fixed') continue;
+      if (ct.species[i].type !== 'equilibrium') continue;
       const o = b * M + 1 + i;
       this._replaceRow(b, 1 + i);
       if (readout && i === t) {
@@ -661,7 +662,14 @@ export class Solver {
         termJ[0] += (link.C * VT) / dt;
         termJ[M] += -link.C / dt;
       }
-    } else if (link.type === 'neutral') {
+    } else if (link.type === 'dipole') {
+      // Pinned: φ_edge = V_t − zeroCharge (the C → ∞ limit). The residual is the metal's charge.
+      this.contactD[side] = sgn * res[b * M];
+      this._replaceRow(b, 0);
+      this._j(b, 0, b, 0, 1);
+      res[b * M] = u[b * M] + uLo[b * M] - (Vt - link.zeroCharge) / VT;
+      addVt(0, -1 / VT);
+    } else if (link.type === 'bulk') {
       this.contactD[side] = sgn * res[b * M];
       this._replaceRow(b, 0);
       let q = this.rhoFixed[g];

@@ -11,7 +11,7 @@ const L = 20e-6, cO = 1, cR = 1, kp = 1e-5, DO = 1e-9, DR = 0.8e-9, alpha = 0.4;
 const mu0 = { 'O+': 10e3, R: -86.485e3, 'K+': -283.3e3, 'Cl-': -131.2e3 };
 const electrode = (V) => ({
   V,
-  phi: 'free', // no double layer, to compare with the textbook result
+  phi: 'neutral', // no double layer, to compare with the textbook result
   reactions: [{ reactants: { 'O+': 1 }, electrons: 1, products: { R: 1 }, k0: kp * 1000, alpha }],
 });
 const bath = { bath: { c: { 'O+': cO, R: cR, 'K+': 1000, 'Cl-': 1001 }, reference: 'Cl-' } };
@@ -93,8 +93,8 @@ const ionic = (itf) => ({
   ],
   interfaces: [{ dipole: -2 * VT, ...itf }],
   contacts: {
-    left: { V: 0, terminal: 'Li+', species: { 'Li+': 'fixed' }, phi: 'neutral' },
-    right: { V: 0, terminal: 'Li+', species: { 'Li+': 'fixed' }, phi: 'neutral' },
+    left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' },
+    right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' },
   },
   grid: { hmin: 0.1e-9, hmax: 20e-9, ratio: 1.15 },
 });
@@ -143,8 +143,8 @@ test('kinetic definitions are checked', () => {
   def = redox({ left: electrode(0), right: bath });
   def.contacts.left.reactions[0].alpha = 1.2;
   throwsDevice(def, /alpha must be between 0 and 1/);
-  def = redox({ left: bath, right: { ...electrode(0), phi: 'neutral' } }, { mode: 'current', I: 1 });
-  throwsDevice(def, /floating kinetic electrode needs a capacitive \(Stern\) or free φ link/);
+  def = redox({ left: bath, right: { ...electrode(0), phi: 'bulk' } }, { mode: 'current', I: 1 });
+  throwsDevice(def, /floating kinetic electrode needs a capacitive \(Stern\) or neutral φ law/);
   def = ionic({ species: { 'Li+': { type: 'conductance' } } });
   throwsDevice(def, /\.G must be a positive number/);
 });

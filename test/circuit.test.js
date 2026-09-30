@@ -36,7 +36,7 @@ test('liquid junction at open circuit: cell EMF and Planck diffusion potential',
 
 // Ag | AgNO₃ | Ag: Ag⁺ reversible at both electrodes, NO₃⁻ blocked (a conserved spectator).
 const Dp = 1.65e-9, Dm = 1.9e-9, c0 = 10, L = 20e-6;
-const electrode = (V = 0) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'fixed', 'NO3-': 'blocked' }, phi: 'neutral' });
+const electrode = (V = 0) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
 const cell = (circuit) => ({
   species: [
     { name: 'Ag+', z: 1, cRef: 1000 },
