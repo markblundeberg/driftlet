@@ -31,8 +31,8 @@ dropped into a web page.
 - **1D only, local physics only.** The Jacobian must stay **block-tridiagonal**. That is what
   keeps it fast and simple, and it's the whole point of an interactive toy. Every physics model
   must be local (a node couples only to its neighbours), and so is everything else: circuits
-  are boundary conditions at one end, and inventory constraints use a running-integral
-  unknown. There is no bordering and no dense row. Features that would break this structure
+  are boundary conditions at one end, and conserved inventories come from the storage term
+  (or, as a fallback, a running-integral unknown). There is no bordering and no dense row. Features that would break this structure
   are out of scope, not deferred.
 - **Speed:** with ~300 nodes and up to 6 species, one Newton iteration should take well under
   1 ms in V8, and a warm-started re-solve after a small parameter change should take under
@@ -153,15 +153,14 @@ for an absent species are `NaN` at those nodes, so plots show a gap rather than 
 
 **Conserved inventories (blocked species).** A species blocked on every side of some connected
 stretch of the device (no contact link, no reaction) is a *conserved spectator*: its amount
-there never changes, and it just drifts and screens. Transients conserve it automatically. A
-steady-state or equilibrium solve cannot determine it: its μ̄ level floats, and the balance
-equations are rank-deficient by one. The constraint `∫c dx = amount` is made local with a
-running integral. Over that stretch the species gets a second per-node unknown
-`Q_k = Σ_{j≤k} c_j·vol_j`, with rows `Q_k − Q_{k−1} − c_k·vol_k = 0` (starting from zero). At
-the stretch's last node, the redundant balance row is replaced by `Q = amount`, a condition
-at the far end. That is one extra unknown per node per spectator species, in steady-state
-solves only (transients conserve automatically and don't need Q). The amount defaults to what the
-initial/warm state holds, or is given explicitly. With bulk reactions, the conserved quantities
+there never changes, and it just drifts and screens. Transients conserve it automatically, and
+so does the giant-time-step steady solve (§4). The pure dt = ∞ steady equations can't determine
+it: its μ̄ level floats, and the balance equations are rank-deficient by one. Fallback, if the
+giant step proves numerically fragile: make `∫c dx = amount` local with a running integral.
+Over that stretch the species gets a second per-node unknown `Q_k = Σ_{j≤k} c_j·vol_j`, with
+rows `Q_k − Q_{k−1} − c_k·vol_k = 0` (starting from zero). At the stretch's last node, the
+redundant balance row is replaced by `Q = amount`, a condition at the far end. The amount is
+whatever the current state holds, or is given explicitly. With bulk reactions, the conserved quantities
 are moieties (left null vectors of the stoichiometry restricted to that stretch) rather than
 species. A device can be *entirely* blocked (a floating island) provided φ is anchored
 electrostatically somewhere (a capacitive gate link, below); then the island simply holds a fixed charge.
@@ -267,12 +266,27 @@ charge flowing toward +x.
 - **Solver:** damped Newton, limiting each update to a few thermal voltages per iteration (or
   Bank–Rose damping). The Jacobian is block-tridiagonal with block size `1 + nSpecies`; solve it
   with block Thomas (a small dense LU per block). Nothing is bordered (§2): circuits are
-  boundary rows and inventories are running integrals, so the solver is plain block Thomas.
-- **Steady-state strategy:** first solve for equilibrium (flat μ̄_i fixed by the contact links
-  or, for spectators, by their inventories: a nonlinear Poisson–Boltzmann problem), then use
-  continuation in bias or current.
-  `solve({ warm: previous })` must reuse the previous solution; that is what makes slider
-  interaction fast (typically 2–5 iterations).
+  boundary rows and inventories ride on the storage term, so the solver is plain block Thomas.
+- **Transient first; steady state is a giant time step.** This is the owner's linear
+  prototype's trick, generalised. A backward-Euler step with dt far beyond the slowest time
+  constant *is* the steady-state problem, except that the storage term `(c − c_old)·vol/dt`
+  stays in. That keeps the Jacobian nonsingular, and it conserves every spectator inventory
+  exactly: summing a spectator's rows telescopes the fluxes away and leaves
+  `Σ (c − c_old)·vol = 0` for any dt. `solve()` is therefore one or two backward-Euler steps at
+  a huge dt (repeat until nothing changes; at that fixed point the steady equations hold
+  exactly). Nonlinearity is handled by Newton on each step. When Newton struggles (first
+  solves, big jumps), fall back to pseudo-transient continuation: start at a modest dt and
+  grow it as the residual falls (switched evolution relaxation, Kelley–Keyes Ψtc). That
+  follows a physical path, so it's robust, and it becomes plain Newton as dt → ∞.
+  - Initial guess for a cold start: local neutrality region by region. The equilibrium problem
+    (flat μ̄, nonlinear Poisson–Boltzmann) is convex and converges reliably with step limiting.
+  - `solve({ warm: previous })` reuses the previous solution; that is what makes slider
+    interaction fast (typically 2–5 Newton iterations in all).
+  - Risk to test early: the spectator level is pinned only by the tiny storage term, so with
+    dt/τ_fastest ≳ 1/ε_machine, round-off could let the inventory drift (stiff devices have
+    τ_slow/τ_fast ~ 1e12). Pick dt relative to τ_slowest, not arbitrarily huge. Check the
+    floating-island inventory after a giant step. If it drifts, use the running-integral
+    fallback (§3).
 - **Transient:** backward Euler with a BDF2 option, finite-volume mass matrix, and step halving
   when Newton fails. Total charge and mass must be conserved to round-off (test it).
 - **Quasi-neutral mode (after v0):** replace Poisson by local neutrality
