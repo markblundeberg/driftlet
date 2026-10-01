@@ -299,20 +299,21 @@ fine) but not *between* blocks. Rows are equilibrated (each divided by its large
 entry) before factorisation. Storage is flat `Float64Array`s, and factor and solve allocate
 nothing. For 300 nodes × 7 unknowns, one factor and solve takes ~0.4 ms in Node 22.
 
-Block sizes may differ from node to node. Assembly always fills full M×M blocks, with identity
-rows (and zero residuals) for slots that aren't unknowns at a node:
+Block sizes differ from node to node: each block holds only the unknowns that exist there. A
+node has M = 1 + n slots (φ̂ and each species' η), but these aren't unknowns:
 - a species absent from its material;
 - φ where it's undefined;
-- a metal node's other species, and the flux slot of its last node;
+- a conductor node's other species, and the flux slot of its last node;
 - a blocked interface flux, or the displacement of a `'neutral'` face;
 - a floating terminal's spare slots.
 
-Those slots never change, so the linear system can leave them out, keeping only the active
-rows and columns, with blocks of m_b × m_b, m_b × m_{b−1} and m_b × m_{b+1}. Elimination costs
-Σ m_b³ instead of n·M³, which pays wherever many species are confined to some regions: for
-n-Si against KCl, three unknowns of five at every node, it's a fifth of the work. The copy costs
-a pass over the reduced blocks per iteration, so the solver reduces only when that saves at
-least a quarter of the work.
+The state vector keeps every slot (one that isn't an unknown keeps its value), while the
+residual, the update and the Jacobian are compact: assembly writes each entry straight into
+blocks of m_b × m_b, m_b × m_{b−1} and m_b × m_{b+1}, through each slot's row within its block,
+and drops terms in slots that aren't unknowns. Elimination costs Σ m_b³ instead of n·M³, which
+pays wherever species are confined to some regions: for n-Si against KCl, three unknowns of five
+at every node, it's a fifth of the work. A finite-difference test checks the compact Jacobian
+column by column on devices that cover every assembly path.
 
 ## Newton
 
