@@ -702,9 +702,8 @@ export class Solver {
   /** Assemble residual and Jacobian for a backward-Euler step of size dt. */
   assemble(dt) {
     const R = this.rix;
-    const { model, n, M, u, uLo, res, c, cOld, z, VT, sys } = this;
-    const { grid, materials, regions, interfaces, contacts } = model;
-    const F = FARADAY;
+    const { model, M, res, VT, sys } = this;
+    const { grid, materials, regions, contacts } = model;
     sys.clear();
     res.fill(0);
     this.computeConcentrations();
@@ -759,10 +758,6 @@ export class Solver {
       res[R[tb * M]] = this._termI - I;
       for (let r = 0; r < M; r++) this._j(tb, 0, tb - 1, r, this._termIJac[r]);
       this._j(tb, 0, tb, 0, (this._termIJac[M] - dIdV) * VT);
-      for (let r = 1; r < M; r++) {
-        res[R[tb * M + r]] = u[tb * M + r];
-        this._j(tb, r, tb, r, 1);
-      }
     }
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
   }
@@ -979,8 +974,7 @@ export class Solver {
         this._j(bf, 0, bo, 0, sg * kC);
       }
     } else if (law === 'neutral') {
-      res[R[bf * M]] = u[bf * M]; // D = 0; the jump is whatever each side's neutrality needs
-      this._j(bf, 0, bf, 0, 1);
+      // D = 0 (not an unknown); the jump is whatever each side's neutrality needs
     } else {
       const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
       if (law === 'dipole') {
