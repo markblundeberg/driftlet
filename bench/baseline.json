@@ -1,0 +1,71 @@
+{
+  "node": "22.14.0",
+  "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
+  "results": {
+    "linear solve 300 × 7 (factor + solve)": {
+      "ms": 0.358,
+      "factorizations": 1,
+      "work": 102900
+    },
+    "pn diode: cold equilibrium": {
+      "ms": 6.797,
+      "factorizations": 9,
+      "work": 64395
+    },
+    "pn diode: I–V sweep 0 → 0.6 V, 31 points": {
+      "ms": 34.512,
+      "factorizations": 137,
+      "work": 980235
+    },
+    "pn diode: warm jump 0.4 V → −1 V": {
+      "ms": 8.664,
+      "factorizations": 51,
+      "work": 364905
+    },
+    "pn diode: advance 0 → 0.5 V, 100 ns": {
+      "ms": 212.975,
+      "factorizations": 1026,
+      "work": 7341030
+    },
+    "pn diode: impedance, 20 frequencies": {
+      "ms": 13.55,
+      "factorizations": 21,
+      "work": 150255
+    },
+    "MOS (Au gate): C–V sweep −1 → 1.5 V, 26 points": {
+      "ms": 14.077,
+      "factorizations": 126,
+      "work": 411642
+    },
+    "Ag|AgNO₃|Ag (ε > 0): cold steady": {
+      "ms": 1.43,
+      "factorizations": 1,
+      "work": 5319
+    },
+    "Ag|AgNO₃|Ag (ε > 0): sweep 0 → 0.1 V, 21 points": {
+      "ms": 27.338,
+      "factorizations": 170,
+      "work": 904230
+    },
+    "Ag|AgNO₃|Ag (ε > 0): impedance, 20 frequencies": {
+      "ms": 9.916,
+      "factorizations": 21,
+      "work": 111699
+    },
+    "Ag|AgNO₃|Ag (ε = 0): advance 1 s after 50 mV": {
+      "ms": 35.79,
+      "factorizations": 287,
+      "work": 1526553
+    },
+    "bipolar Ag electrode: sweep 0 → 1 V, 11 points": {
+      "ms": 297.112,
+      "factorizations": 555,
+      "work": 22910400
+    },
+    "insertion host: OCV sweep 0.55 → 0.25 V, 31 points": {
+      "ms": 9.555,
+      "factorizations": 62,
+      "work": 15066
+    }
+  }
+}

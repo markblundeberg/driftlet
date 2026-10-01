@@ -162,17 +162,22 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 
 ## Performance
 
-`npm run bench` times typical interactive workloads. On a desktop Ryzen 7600X in Node 22:
+`npm run bench` runs typical interactive workloads and compares them with a committed
+baseline. Matrix factorisations (≈ Newton iterations) and block work are deterministic and
+checked in CI; times are from a desktop Ryzen 7600X in Node 22:
 
-| Task | Time | Newton iterations |
+| Task | Time | Factorisations |
 |---|---|---|
-| Linear solve, 300 nodes × 7 unknowns (factor + solve) | 0.4 ms | |
-| pn diode (264 nodes): warm re-solve after a 10 mV step | 1.7 ms | 5 |
-| pn diode: warm re-solve from +0.4 V to −1 V | 15 ms | 34 |
-| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 200 ms | 1025 |
-| pn diode: impedance at 20 frequencies | 13 ms | |
-| Ag \| AgNO₃ \| Ag with double layers: warm re-solve after 5 mV | 1.4 ms | 8 |
-| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 36 ms | 286 |
+| Linear solve, 300 nodes × 7 unknowns (factor + solve) | 0.4 ms | 1 |
+| pn diode (264 nodes): cold equilibrium | 5 ms | 9 |
+| pn diode: I–V sweep 0 → 0.6 V, 31 points | 34 ms | 137 |
+| pn diode: warm jump from +0.4 V to −1 V | 9 ms | 51 |
+| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 200 ms | 1026 |
+| pn diode: impedance at 20 frequencies | 13 ms | 21 |
+| MOS with a metal gate: C–V sweep, 26 points | 11 ms | 126 |
+| Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 27 ms | 170 |
+| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 36 ms | 287 |
+| Bipolar Ag electrode: sweep 0 → 1 V, 11 points | 300 ms | 555 |
 
 The library has no dependencies and does no DOM access, so it runs in a Web Worker. (A device
 definition is plain data and can be posted to a worker. Devices using custom-function
@@ -184,7 +189,7 @@ No dependencies. Tests use node's built-in runner (Node ≥ 20):
 
 ```sh
 npm test         # the validation suite
-npm run bench    # timings of typical workloads
+npm run bench    # typical workloads against bench/baseline.json (--save to update it)
 npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
 ```
 

@@ -26,7 +26,8 @@ for live demos.
 - Time and frequency: variable-step BDF2; adaptive `advance(tEnd, { tol, budgetMs })` for
   animation; small-signal impedance with complex block Thomas and complex profiles.
 - Source continuation for cold starts at bias.
-- A first performance pass: a benchmark script (`npm run bench`), assembly without per-node
+- A first performance pass: a benchmark suite (`npm run bench`, with deterministic counters checked
+  against a committed baseline in CI), assembly without per-node
   allocation (about 2× faster), Newton started from the extrapolated state in adaptive
   transients (a third fewer iterations), and a tighter-damping retry for large jumps.
 - Metal regions: a Fermi level and a conductivity only (mixed-form Ohm's law, surface charge as
@@ -79,8 +80,8 @@ for live demos.
   This is also the general mixed conductor with n > 2 mobile species, beyond the metal (n = 1)
   and insertion-host (n = 2) cases.
 - **More performance.** A variable block size where species are absent (identity rows cost a
-  full block today; a metal node needs only its Fermi level and current), and benchmarks
-  tracked across versions in CI.
+  full block today; a metal node needs only its Fermi level and current), measured against
+  the committed benchmark baseline.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
