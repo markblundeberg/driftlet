@@ -191,6 +191,9 @@ export class Solver {
       nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
     }));
 
+    // The bulk reactions running in each material.
+    this.rxsIn = materials.map((_, m) => this.rxs.filter((rx) => rx.kf[m] > 0));
+
     this._findStretches();
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
@@ -689,183 +692,33 @@ export class Solver {
     const F = FARADAY;
     sys.clear();
     res.fill(0);
-    const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys, loc = this.loc;
     this.computeConcentrations();
+    // Current through the last segment (for the circuit): displacement, then conduction.
+    this.segI = 0;
+    this.segD = 0;
+    this.segIJac.fill(0);
 
-    // Node terms: storage, space charge, identity rows for absent species.
-    for (let g = 0; g < this.nNodes; g++) {
-      const b = this.blockOfNode[g], v = grid.vol[g];
-      let q = this.rhoFixed[g], dq = 0;
-      const im = this.nodeConductor[g];
-      if (im >= 0) {
-        // Only the carrier (and, but at the last node, the segment flux J) are unknowns here.
-        const r = 1 + im, k = g * n + im;
-        res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
-        const f = this.sheetFace[g];
-        if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, this.sheetSign[g] / (z[im] * F * dt));
+    // Regions, each assembled by the kernel for its kind: a conductor (its carrier only), a
+    // dilute region (ideal statistics, the fast path) or a concentrated one (any statistics).
+    for (let r = 0; r < regions.length; r++) {
+      const reg = regions[r], mat = materials[reg.material];
+      const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
+      if (mat.conductor) {
+        for (let g = g0; g <= g1; g++) this._nodeConductor(g, dt);
+        for (let s = g0; s < g1; s++) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s], s === this.nNodes - 2);
         continue;
       }
-      if (this.nodeIdeal[g]) {
-        // Written straight into the diagonal block (rows and columns by local index).
-        const m = sizes[b], oB = offB[b], lb = b * M, p = loc[lb]; // p: φ's row, −1 where undefined
-        for (let i = 0; i < n; i++) {
-          const k = g * n + i;
-          if (!this.present[k]) continue;
-          const ck = c[k], l = loc[lb + 1 + i];
-          res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
-          JB[oB + l * m + l] += (v * ck) / dt;
-          q += F * z[i] * ck;
-          dq += F * z[i] * z[i] * ck;
-          if (p >= 0 && z[i] !== 0) {
-            JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
-            JB[oB + p * m + l] += -v * F * z[i] * ck;
-          }
-        }
-      } else {
-        // ∂c_i/∂η_j = K_ij and ∂c_i/∂φ̂ = −(Kz)_i.
-        const Kg = g * n * n;
-        for (let i = 0; i < n; i++) {
-          const k = g * n + i, r = 1 + i;
-          if (!this.present[k]) continue;
-          res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
-          for (let j = 0; j < n; j++) {
-            const Kij = this.K[Kg + i * n + j];
-            if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
-          }
-          const Kz = this._Kz(g, i);
-          this._j(b, r, b, 0, (-v * Kz) / dt);
-          q += F * z[i] * c[k];
-          dq += F * z[i] * Kz;
-          if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
-        }
+      if (mat.ideal) this._nodesDilute(g0, g1, dt);
+      else for (let g = g0; g <= g1; g++) this._nodeConcentrated(g, dt);
+      const rxs = this.rxsIn[reg.material];
+      if (rxs.length > 0) for (let g = g0; g <= g1; g++) this._bulkReactions(g, rxs);
+      for (let s = g0; s < g1; s++) {
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s], lastSeg = s === this.nNodes - 2;
+        this._segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt);
+        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat, lastSeg);
+        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, lastSeg, reg.velocity);
       }
-      if (!this.phiUndefined[g]) {
-        // (where no charge responds and no field reaches, φ isn't defined, nor an unknown)
-        res[R[b * M]] -= v * q;
-        this._j(b, 0, b, 0, v * dq);
-      }
-
-      // Bulk reactions: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the (compensated) η.
-      const m = this.nodeMaterial[g];
-      const dr = this.dA;
-      for (const rx of this.rxs) {
-        const kf = rx.kf[m];
-        if (!(kf > 0)) continue;
-        let P = kf, aHi = rx.fixedA, aLo = 0;
-        dr.fill(0); // ∂ ln P / ∂slot
-        // Participants: reactants with ν > 0, then products with ν < 0.
-        for (let p = 0; p < rx.sp.length; p++) {
-          const i = rx.sp[p], nu = rx.nu[p];
-          if (nu > 0) {
-            const ci = c[g * n + i];
-            P *= nu === 1 ? ci : ci ** nu;
-            this._dlnc(g, i, nu, dr);
-          }
-          aHi += nu * u[b * M + 1 + i];
-          aLo += nu * uLo[b * M + 1 + i];
-        }
-        const a = aHi + aLo;
-        const f = -Math.expm1(-a); // 1 − e^{−a}
-        const rate = P * f;
-        const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
-        // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
-        for (let k = 0; k < M; k++) dr[k] *= rate;
-        for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Pd * rx.nu[p];
-        // Reactants are consumed (+v·ν·r in their balance), products made (−v·ν·r).
-        for (let p = 0; p < rx.sp.length; p++) {
-          const row = 1 + rx.sp[p], w = v * rx.nu[p];
-          res[R[b * M + row]] += w * rate;
-          for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
-        }
-      }
-    }
-
-    // Ordinary segments: displacement and Scharfetter–Gummel fluxes.
-    for (let s = 0; s < this.nNodes - 1; s++) {
-      const reg = grid.segRegion[s];
-      if (reg < 0) continue;
-      const mat = materials[regions[reg].material];
-      const h = grid.segLength[s];
-      const bL = this.blockOfNode[s], bR = bL + 1;
-      const phiL = u[bL * M], phiR = u[bR * M];
-
-      const k = this.phiUndefined[s] ? 0 : (mat.epsr * EPS0 * VT) / h; // ε = 0: no displacement
-      const D = -k * (phiR - phiL);
-      const lastSeg = s === this.nNodes - 2;
-      if (lastSeg) {
-        // Displacement current through this segment; conduction is added per species below.
-        this.segD = D;
-        this.segI = Number.isFinite(dt) ? (D - this.segDOld) / dt : 0;
-        this.segIJac.fill(0);
-        if (Number.isFinite(dt)) {
-          this.segIJac[0] = k / dt;
-          this.segIJac[M] = -k / dt;
-        }
-      }
-      const mL = sizes[bL], mR = sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
-      if (k !== 0) {
-        res[R[bL * M]] += D;
-        res[R[bR * M]] -= D;
-        JB[offB[bL] + pL * mL + pL] += k;
-        JC[offC[bL] + pL * mR + pR] -= k;
-        JA[offA[bR] + pR * mL + pL] -= k;
-        JB[offB[bR] + pR * mR + pR] += k;
-      }
-
-      if (this.nodeConductor[s] >= 0) {
-        this._segmentConductor(s, bL, bR, mat, h, lastSeg);
-        continue;
-      }
-      const vel = regions[reg].velocity;
-      if (regions[reg].mixing > 0) this._segmentMixing(s, bL, bR, regions[reg].mixing, h, mat, lastSeg);
-      if (!this.nodeIdeal[s]) {
-        this._segmentNonIdeal(s, bL, bR, mat, h, lastSeg, vel);
-        continue;
-      }
-      for (let i = 0; i < n; i++) {
-        if (!mat.present[i] || mat.D[i] === 0) continue;
-        const r = 1 + i, zi = z[i];
-        // SG flux N = g[B(Δ)c_L − B(−Δ)c_R], rewritten with B(−Δ) = B(Δ)e^Δ and
-        // c_R e^Δ = c_L e^{Δη} as N = −g·B(Δ)·c_L·expm1(Δη). This is precise relative to the
-        // quasi-Fermi difference Δη, so tiny fluxes (e.g. majority carriers carrying a small
-        // current) don't vanish in the cancellation of two huge drift and diffusion terms.
-        const cL = c[s * n + i];
-        const g = mat.D[i] / h;
-        const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
-        const d = zi * (phiR - phiL) - pe;
-        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-        const E = Math.expm1(deta);
-        const gBc = g * bernoulli(d) * cL;
-        const N = -gBc * E;
-        const dNdd = -g * bernoulliDerivative(d) * cL * E;
-        const dNdEtaL = gBc;
-        const dNdEtaR = -gBc * (E + 1);
-        const dNdPhiL = -zi * dNdd + zi * gBc * E; // via Δ, and via c_L ∝ e^{−zφ̂_L}
-        const dNdPhiR = zi * dNdd;
-        res[R[bL * M + r]] += N;
-        res[R[bR * M + r]] -= N;
-        if (lastSeg) {
-          const q = F * zi;
-          this.segI += q * N;
-          this.segIJac[r] += q * dNdEtaL;
-          this.segIJac[M + r] += q * dNdEtaR;
-          this.segIJac[0] += q * dNdPhiL;
-          this.segIJac[M] += q * dNdPhiR;
-        }
-        // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
-        const lL = loc[bL * M + r], lR = loc[bR * M + r];
-        const oBL = offB[bL] + lL * mL, oCL = offC[bL] + lL * mR, oAR = offA[bR] + lR * mL, oBR = offB[bR] + lR * mR;
-        JB[oBL + lL] += dNdEtaL;
-        JC[oCL + lR] += dNdEtaR;
-        JA[oAR + lL] -= dNdEtaL;
-        JB[oBR + lR] -= dNdEtaR;
-        if (zi !== 0 && pL >= 0) {
-          JB[oBL + pL] += dNdPhiL;
-          JC[oCL + pR] += dNdPhiR;
-          JA[oAR + pL] -= dNdPhiL;
-          JB[oBR + pR] -= dNdPhiR;
-        }
-      }
+      if (mat.ideal) this._segmentsDilute(g0, g1, r, mat, reg.velocity);
     }
 
     // Interfaces: the flux node carries D and N_i; its rows are the interface laws.
@@ -974,11 +827,194 @@ export class Solver {
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
   }
 
+  // A conductor node: only its carrier's balance (the segment flux J has its own row, in
+  // _segmentConductor). Its bulk stores nothing; a charged face's sheet sits in the edge node.
+  _nodeConductor(g, dt) {
+    const { n, M, res, c, cOld, z } = this, R = this.rix;
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g], im = this.nodeConductor[g];
+    const r = 1 + im, k = g * n + im;
+    res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
+    const f = this.sheetFace[g];
+    if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, this.sheetSign[g] / (z[im] * FARADAY * dt));
+  }
+
+  // Dilute nodes g0…g1 (ideal statistics, c = c_ref e^ζ): storage of each species and the space
+  // charge in the Gauss row, written straight into the diagonal blocks by local index. A
+  // dielectric is the case with no species.
+  _nodesDilute(g0, g1, dt) {
+    const { n, M, res, c, cOld, z, sys, loc, present, rhoFixed, blockOfNode } = this, R = this.rix, F = FARADAY;
+    const JB = sys.B, sizes = sys.sizes, offB = sys.offB, vol = this.model.grid.vol;
+    for (let g = g0; g <= g1; g++) {
+      const b = blockOfNode[g], v = vol[g];
+      const m = sizes[b], oB = offB[b], lb = b * M, p = loc[lb]; // p: φ's row, −1 where undefined
+      let q = rhoFixed[g], dq = 0;
+      for (let i = 0; i < n; i++) {
+        const k = g * n + i;
+        if (!present[k]) continue;
+        const ck = c[k], l = loc[lb + 1 + i];
+        res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+        JB[oB + l * m + l] += (v * ck) / dt;
+        q += F * z[i] * ck;
+        dq += F * z[i] * z[i] * ck;
+        if (p >= 0 && z[i] !== 0) {
+          JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+          JB[oB + p * m + l] += -v * F * z[i] * ck;
+        }
+      }
+      if (p >= 0) {
+        res[R[lb]] -= v * q;
+        JB[oB + p * m + p] += v * dq;
+      }
+    }
+  }
+
+  // A concentrated node (any statistics): ∂c_i/∂η_j = K_ij and ∂c_i/∂φ̂ = −(Kz)_i.
+  _nodeConcentrated(g, dt) {
+    const { n, M, res, c, cOld, z } = this, R = this.rix, F = FARADAY;
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g], Kg = g * n * n;
+    let q = this.rhoFixed[g], dq = 0;
+    for (let i = 0; i < n; i++) {
+      const k = g * n + i, r = 1 + i;
+      if (!this.present[k]) continue;
+      res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
+      for (let j = 0; j < n; j++) {
+        const Kij = this.K[Kg + i * n + j];
+        if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
+      }
+      const Kz = this._Kz(g, i);
+      this._j(b, r, b, 0, (-v * Kz) / dt);
+      q += F * z[i] * c[k];
+      dq += F * z[i] * Kz;
+      if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
+    }
+    // (where no charge responds and no field reaches, φ isn't defined, nor an unknown)
+    if (!this.phiUndefined[g]) {
+      res[R[b * M]] -= v * q;
+      this._j(b, 0, b, 0, v * dq);
+    }
+  }
+
+  // Bulk reactions at node g: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the
+  // (compensated) η. Reactants are consumed (+v·ν·r in their balance), products made (−v·ν·r).
+  _bulkReactions(g, rxs) {
+    const { n, M, u, uLo, res, c } = this, R = this.rix;
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g], m = this.nodeMaterial[g];
+    const dr = this.dA;
+    for (let x = 0; x < rxs.length; x++) {
+      const rx = rxs[x];
+      let P = rx.kf[m], aHi = rx.fixedA, aLo = 0;
+      dr.fill(0); // ∂ ln P / ∂slot
+      // Participants: reactants with ν > 0, then products with ν < 0.
+      for (let p = 0; p < rx.sp.length; p++) {
+        const i = rx.sp[p], nu = rx.nu[p];
+        if (nu > 0) {
+          const ci = c[g * n + i];
+          P *= nu === 1 ? ci : ci ** nu;
+          this._dlnc(g, i, nu, dr);
+        }
+        aHi += nu * u[b * M + 1 + i];
+        aLo += nu * uLo[b * M + 1 + i];
+      }
+      const a = aHi + aLo;
+      const f = -Math.expm1(-a); // 1 − e^{−a}
+      const rate = P * f;
+      const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
+      // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
+      for (let k = 0; k < M; k++) dr[k] *= rate;
+      for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Pd * rx.nu[p];
+      for (let p = 0; p < rx.sp.length; p++) {
+        const row = 1 + rx.sp[p], w = v * rx.nu[p];
+        res[R[b * M + row]] += w * rate;
+        for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
+      }
+    }
+  }
+
+  // Displacement along a segment where φ is defined: D = −ε(φ_R − φ_L)/h into the two Gauss rows.
+  _segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt) {
+    const { M, u, res, sys, loc } = this, R = this.rix;
+    const k = this.phiUndefined[s] ? 0 : (mat.epsr * EPS0 * this.VT) / h; // ε = 0: no displacement
+    const D = -k * (u[bR * M] - u[bL * M]);
+    if (lastSeg) {
+      this.segD = D;
+      if (Number.isFinite(dt)) {
+        this.segI += (D - this.segDOld) / dt;
+        this.segIJac[0] = k / dt;
+        this.segIJac[M] = -k / dt;
+      }
+    }
+    if (k === 0) return;
+    const mL = sys.sizes[bL], mR = sys.sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
+    res[R[bL * M]] += D;
+    res[R[bR * M]] -= D;
+    sys.B[sys.offB[bL] + pL * mL + pL] += k;
+    sys.C[sys.offC[bL] + pL * mR + pR] -= k;
+    sys.A[sys.offA[bR] + pR * mL + pL] -= k;
+    sys.B[sys.offB[bR] + pR * mR + pR] += k;
+  }
+
+  // Scharfetter–Gummel fluxes along a dilute region's segments (nodes g0…g1), written
+  // by local index. The flux
+  // N = g[B(Δ)c_L − B(−Δ)c_R] is rewritten with B(−Δ) = B(Δ)e^Δ and c_R e^Δ = c_L e^{Δη} as
+  // N = −g·B(Δ)·c_L·expm1(Δη). This is precise relative to the quasi-Fermi difference Δη, so tiny
+  // fluxes (e.g. majority carriers carrying a small current) don't vanish in the cancellation of
+  // two huge drift and diffusion terms.
+  _segmentsDilute(g0, g1, region, mat, vel) {
+    const { n, M, u, uLo, res, c, z, sys, loc } = this, R = this.rix, F = FARADAY;
+    const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys;
+    const segLength = this.model.grid.segLength, last = this.nNodes - 2;
+    for (let s = g0; s < g1; s++) {
+      const bL = s + region, bR = bL + 1, h = segLength[s], lastSeg = s === last;
+      const mL = sizes[bL], mR = sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
+      const phiL = u[bL * M], phiR = u[bR * M];
+      for (let i = 0; i < n; i++) {
+        if (!mat.present[i] || mat.D[i] === 0) continue;
+        const r = 1 + i, zi = z[i];
+        const cL = c[s * n + i];
+        const g = mat.D[i] / h;
+        const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
+        const d = zi * (phiR - phiL) - pe;
+        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
+        const E = Math.expm1(deta);
+        const gBc = g * bernoulli(d) * cL;
+        const N = -gBc * E;
+        const dNdd = -g * bernoulliDerivative(d) * cL * E;
+        const dNdEtaL = gBc;
+        const dNdEtaR = -gBc * (E + 1);
+        const dNdPhiL = -zi * dNdd + zi * gBc * E; // via Δ, and via c_L ∝ e^{−zφ̂_L}
+        const dNdPhiR = zi * dNdd;
+        res[R[bL * M + r]] += N;
+        res[R[bR * M + r]] -= N;
+        if (lastSeg) {
+          const q = F * zi;
+          this.segI += q * N;
+          this.segIJac[r] += q * dNdEtaL;
+          this.segIJac[M + r] += q * dNdEtaR;
+          this.segIJac[0] += q * dNdPhiL;
+          this.segIJac[M] += q * dNdPhiR;
+        }
+        // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
+        const lL = loc[bL * M + r], lR = loc[bR * M + r];
+        const oBL = offB[bL] + lL * mL, oCL = offC[bL] + lL * mR, oAR = offA[bR] + lR * mL, oBR = offB[bR] + lR * mR;
+        JB[oBL + lL] += dNdEtaL;
+        JC[oCL + lR] += dNdEtaR;
+        JA[oAR + lL] -= dNdEtaL;
+        JB[oBR + lR] -= dNdEtaR;
+        if (zi !== 0 && pL >= 0) {
+          JB[oBL + pL] += dNdPhiL;
+          JC[oCL + pR] += dNdPhiR;
+          JA[oAR + pL] -= dNdPhiL;
+          JB[oBR + pR] -= dNdPhiR;
+        }
+      }
+    }
+  }
+
   // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
   // extra potential, linear along the segment like φ, so Δ = zΔφ̂ + Δex and
   //   N = −(D/h)·B(Δ)·c_L·expm1(η_R − η_L),
   // still exactly zero at equilibrium. c_L and ex depend on every ζ at their node through K.
-  _segmentNonIdeal(s, bL, bR, mat, h, lastSeg, vel) {
+  _segmentConcentrated(s, bL, bR, mat, h, lastSeg, vel) {
     const R = this.rix;
     const { n, M, u, uLo, res, c, z, K, ex, jL, jR } = this;
     const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n;

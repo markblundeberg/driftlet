@@ -293,6 +293,17 @@ action with the reverse rate implied by the standard potentials: exactly zero at
 free of cancellation near equilibrium. Sources enter each balance as `ν·r`, with one r per
 reaction per node, so every moiety (a combination that no reaction changes) telescopes exactly.
 
+## Assembly
+
+Each region is assembled by the kernel for its kind, over all its nodes and segments at once:
+- **conductor:** its carrier's balance, and Ohm's law in mixed form (below);
+- **dilute** (ideal statistics, the fast path): storage, space charge and Scharfetter–Gummel
+  fluxes, written straight into the blocks by local index; a dielectric is the case with no
+  species;
+- **concentrated** (any statistics): the same through K = ∂c/∂ζ and the excess potential.
+
+Faces, ports and contacts follow. Every kernel writes only the unknowns its region has.
+
 ## Linear algebra
 
 Block Thomas with partial pivoting *within* each diagonal block (zero diagonal entries are
