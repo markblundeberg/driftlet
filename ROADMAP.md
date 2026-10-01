@@ -40,7 +40,8 @@ for live demos.
 
 ## Next
 
-1. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
+1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
+2. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
    still dependency-free) that writes plain specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable
    spec data.
@@ -55,9 +56,10 @@ for live demos.
      explicitly). They build electrode reactions, serve as vacuum-alignment anchors, and give
      the spatial profile of their implied electronic level (`sol.level(halfReaction)`), with SHE
      as one instance: the ESBD redox-level view in one line.
-   - A voltage ledger: the terminal voltage as named contributions that sum exactly. The honest
-     form sums species-voltage steps along the current path, region by region and face by face;
-     φ-based textbook terms (ohmic drop vs junction potential) are flagged as conventional.
+   - Voltage ledgers, written per family of devices (there's no general one): the terminal
+     voltage as named contributions that sum exactly, for that family's usual simplifications.
+     They annotate the spatial diagram, which stays the primary picture and keeps telling the
+     story where a ledger's division breaks down.
    - Plot-ready traces: segments broken where a species is absent, region bands, label-ready
      interface steps, suggested ranges.
    - A small data library with a source on every entry (aqueous ions: z, D, μ° at 25 °C on
@@ -67,7 +69,7 @@ for live demos.
    - An agent guide (`AGENT_GUIDE.md` or `llms.txt`): conventions, a pinned CDN import,
      copy-paste demo templates, common mistakes. Its code blocks run in the docs test, and error
      messages say how to fix the problem.
-2. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
+3. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI.
 
 ## Later
