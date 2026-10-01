@@ -149,8 +149,8 @@ flux node's own rows are the interface laws:
 
 Every row couples only neighbours, with no penalty terms. A face reaction's rate is an unknown
 of the face block, so the two edge nodes it couples meet only through the block between them.
-A species taking part in a reaction at a face crosses it only through its reactions, unless
-it's given a link there too, so it can react on one side and cross at the same time. A continuity
+A species can take part in a reaction at a face and also cross it by a link (its flux slot)
+at the same time; where it exists on both sides, that link must be given explicitly. A continuity
 row has a zero diagonal block, but block Thomas still sees a non-singular block there once the
 preceding elimination has run. Interface fluxes come out as unknowns, which is what the
 solution reports per interface.

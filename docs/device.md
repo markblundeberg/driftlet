@@ -120,8 +120,8 @@ interfaces: [
     step: { species: 'e-', value: units.eV(0.25) }, // alignment: or { dipole: volts }
     phi: 'dipole', // 'dipole' | 'neutral' | { type: 'capacitive', C }
     sheetCharge: 0, // C/m²
-    species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 } },
-    reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ transfer
+    species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 }, 'Na+': 'blocked' },
+    reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ crosses only by this
   },
 ]
 ```
@@ -146,18 +146,24 @@ defaults to no dipole.
 - `{ type: 'capacitive', C }`: a Helmholtz layer, D = −C·(Δφ − dipole), C in F/m².
 
 **Species laws** `species` (default: local equilibrium, μ̄ continuous, where the species is
-present on both sides and takes no part in a reaction at the face; blocked otherwise):
-`'equilibrium'`, `'blocked'`, or `{ type: 'conductance', G }` (J = G·(V_L − V_R), G in S/m²,
-charged species).
+present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
+`{ type: 'conductance', G }` (J = G·(V_L − V_R), G in S/m², charged species). A species that
+takes part in a reaction at the face and exists on both sides has no default: give its link
+(`'blocked'` if it crosses only through the reaction), since free crossing alongside would
+short-circuit the kinetics.
 
 **Reactions** `reactions` at the face: each is a list of participants on each side, with signed
 stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward reaction):
 
 ```js nocheck
 { left: { 'e-': -1 }, right: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-4, alpha: 0.5 } // a metal on the left
-{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3 }                         // ion transfer
+{ left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0: 1e-3 }                         // Li⁺ transfer
 { left: { 'e-': -1, Ag: 1 }, right: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3 }  // Ag⁺ + e⁻ ⇌ Ag(s)
 ```
+
+For example, an intercalation electrode taking Li⁺ from the electrolyte through a
+desolvation (or SEI) step has Li⁺ on both sides, with `species: { 'Li+': 'blocked' }` and the
+transfer reaction above.
 
 A participant is a species present on its side (on a conductor's side, only its carrier) or a
 fixed-activity neutral, given by its μ in `fixed` (J/mol; the side doesn't matter). Charge must

@@ -125,7 +125,10 @@ test('interface conductance adds a series resistance 1/G', () => {
 
 test('interface ion transfer (Butler–Volmer): equilibrium, and the rate law at the interface state', () => {
   const k0 = 1e-3, a = 0.3;
-  const dev = new Device(ionic({ reactions: [{ left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0, alpha: a }] }));
+  const transfer = { left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0, alpha: a };
+  // Li⁺ exists on both sides, so its link must be given: here it crosses only by the reaction.
+  assert.throws(() => new Device(ionic({ reactions: [transfer] })), (e) => e instanceof DeviceError && /give its link explicitly/.test(e.message));
+  const dev = new Device(ionic({ species: { 'Li+': 'blocked' }, reactions: [transfer] }));
   const eq = dev.solve();
   assert.ok(Math.abs(eq.current) < 1e-15);
   const mu = eq.mu['Li+'];

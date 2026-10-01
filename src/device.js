@@ -324,11 +324,19 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
   });
 }
 
-// A species that takes part in a reaction at a face crosses it only through its reactions,
-// unless it's given a link there explicitly.
-function reactingDefaultsBlocked(links, reactions, idef, species) {
+// A species that takes part in a reaction at a face and exists on both sides needs its link
+// there given explicitly: the default ('equilibrium') would cross it freely alongside the
+// reaction and short-circuit the kinetics. ('blocked' if it crosses only through the reaction.)
+function checkReactingLinks(reactions, idef, where, matL, matR, species) {
   for (const rx of reactions) {
-    for (const { i } of rx.part) if (idef.species?.[species[i].name] === undefined) links[i] = { type: 'blocked' };
+    for (const { i } of rx.part) {
+      const name = species[i].name;
+      need(
+        idef.species?.[name] !== undefined || !(matL.present[i] && matR.present[i]),
+        `${where}.species.${name}: '${name}' takes part in a reaction here and exists on both sides, so give its link ` +
+          "explicitly ('blocked' if it crosses only through the reaction)",
+      );
+    }
   }
 }
 
@@ -532,7 +540,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   }
 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
-  reactingDefaultsBlocked(links, reactions, idef, species);
+  checkReactingLinks(reactions, idef, where, matL, matR, species);
   return { phi, dipole, sheetCharge, links, reactions, conductor: null };
 }
 
@@ -623,7 +631,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
     }
   }
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
-  reactingDefaultsBlocked(links, reactions, idef, species);
+  checkReactingLinks(reactions, idef, where, matL, matR, species);
   return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, conductor: { side, i: metal.i } };
 }
 
