@@ -49,7 +49,6 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
-   - Contacts and ports with the same outside-phase vocabulary of links.
    - Sources apart from structure: a fast path to change contact and port voltages and the
      circuit without re-normalising the spec, and solutions computed lazily, for live demos.
    - Warn when a factorisation loses most of its digits (a pivot many orders below its
@@ -108,10 +107,8 @@ for live demos.
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
   This is also the general mixed conductor with n > 2 mobile species, beyond the metal (n = 1)
   and insertion-host (n = 2) cases.
-- **More performance**, measured against the committed benchmark baseline. With variable
-  block sizes in the linear solve, assembly is now the larger cost at small M: assembling
-  straight into the reduced blocks (instead of full M×M blocks and a copy), and
-  Newton-iteration counts (above).
+- **More performance**, measured against the committed benchmark baseline: Newton-iteration
+  counts (above), and specialised small-block elimination.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
