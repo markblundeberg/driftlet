@@ -8,6 +8,7 @@ import { FARADAY } from './constants.js';
 export { build, combine, layer, ohmic, bath } from './stack.js';
 export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
 export { traces } from './traces.js';
+export { live } from './live.js';
 
 const fail = (message) => {
   throw new DeviceError(message);

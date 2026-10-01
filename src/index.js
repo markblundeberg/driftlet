@@ -3,6 +3,7 @@
 import { normalizeDevice } from './device.js';
 import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
+import { merge } from './merge.js';
 
 export { DeviceError, normalizeDevice } from './device.js';
 import { normalizeDrives } from './device.js';
@@ -38,16 +39,6 @@ function sameExceptDrives(a, b) {
     } else if (!eq(a[k], b[k], false)) return false;
   }
   return true;
-}
-
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
-
-// Deep-merge plain objects; arrays and other values are replaced wholesale.
-function merge(base, patch) {
-  if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
-  const out = { ...base };
-  for (const [k, v] of Object.entries(patch)) out[k] = isPlainObject(v) && isPlainObject(base[k]) ? merge(base[k], v) : v;
-  return out;
 }
 
 /** @typedef {import('./types.js').DeviceDefinition} DeviceDefinition */
@@ -163,6 +154,33 @@ export class Device {
     const steady = this.solver.solveSteady();
     if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
     return this.solver.impedance(frequencies, opts);
+  }
+
+  /**
+   * A checkpoint of the definition and solver state, for `_rollback()` (the live wrapper keeps
+   * its last good state this way).
+   * @internal
+   */
+  _checkpoint() {
+    const solver = this.solver;
+    return { def: this.def, model: this.model, solver, snap: solver._snapshot(), solvedV: solver.solvedV, referenceAmounts: solver.referenceAmounts.slice() };
+  }
+
+  /**
+   * Back to a checkpoint taken on this device.
+   * @param {ReturnType<Device['_checkpoint']>} cp
+   * @internal
+   */
+  _rollback(cp) {
+    if (this._solver === cp.solver) this.set(cp.def); // only drives changed since: restore them in place
+    else {
+      this.def = cp.def;
+      this.model = cp.model;
+      this._solver = cp.solver;
+    }
+    cp.solver._restore(cp.snap);
+    cp.solver.solvedV = cp.solvedV;
+    cp.solver.referenceAmounts = cp.referenceAmounts.slice();
   }
 
   /**

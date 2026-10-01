@@ -75,11 +75,11 @@ for live demos.
      acceptors; reactions written as equations (`'Ag+ + e- = Ag(s)'`), with a label for a species
      on both sides of a face; half-reactions as plain data, and `level(sol, half)`, the redox
      level they imply (with `SHE`); `traces(sol)`, the level diagram as plot-ready data, and
-     `driftlet/plot`'s `bandDiagram(sol)`, an SVG string. See [the kit](docs/kit.md).
+     `driftlet/plot`'s `bandDiagram(sol)`, an SVG string; `live(def)` for sliders (merging
+     changes made during a solve, warm starts, ramps from the last good state, Worker-backed).
+     See [the kit](docs/kit.md).
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
-   - A live wrapper for sliders: frame throttling, warm starts, dropping stale requests,
-     ramping across big jumps, keeping the last good solution; optionally Worker-backed.
    - `describe()` and unit-slip warnings: Debye lengths against the grid, time constants,
      conductivities, built-in or open-circuit potentials, "this D looks like cm²/s".
    - Half-reactions as vacuum-alignment anchors.

@@ -152,6 +152,52 @@ const svg = bandDiagram(new Device(def).solve(), { title: 'liquid junction', phi
 console.log(svg.length); // in a page: element.innerHTML = svg
 ```
 
+## Live demos
+
+`live(def, opts)` wraps a device for sliders. Call `set(patch)` as often as a control moves
+(the patch merges into the definition, as `Device.set()` does), and draw what comes back:
+
+```js nocheck
+const dev = live(def, { worker: true, onsolution: (sol, info) => (figure.innerHTML = bandDiagram(sol)) });
+slider.oninput = () => dev.set({ contacts: { right: { V: +slider.value } } });
+```
+
+- Solves run one at a time, each warm-started from the last. Changes made while one runs are
+  merged and solved together, so a fast slider never queues up stale work. On the page's own
+  thread, each solve is its own task, so the page paints and takes input in between.
+- A change that fails from the warm start is ramped to from the last good state, in more and
+  more steps (every number that differs is interpolated), then tried from scratch. If all of
+  that fails, the last good solution stays, with `info.failed` and the solver's `warnings`.
+  An invalid change does the same, with `info.error`. `info.ramp` says how many ramp steps were
+  needed, `info.ms` how long it took.
+- `set()` returns a promise of `{ solution, info }`, and `ready` is the first solve's.
+  `solution` is always the last good one.
+- `worker: true` solves in a Web Worker (a module worker), keeping the page responsive however
+  long a solve takes. It works with the library loaded from a CDN too.
+
+```js
+import { units } from 'driftlet';
+import { build, layer, ohmic, live } from 'driftlet/kit';
+
+const dev = live(
+  build({
+    species: [
+      { name: 'e-', z: -1 },
+      { name: 'h+', z: 1 },
+    ],
+    materials: {
+      Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: units.perCm3(2.8e19) }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: units.perCm3(1.04e19) } } },
+    },
+    stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  }),
+);
+for (const V of [0.1, 0.2, 0.3, 0.4]) dev.set({ contacts: { right: { V } } }); // as a slider would
+const { solution, info } = await dev.set({ contacts: { right: { V: 0.5 } } });
+console.log(`I(0.5 V) = ${solution.current.toFixed(1)} A/m², in ${info.ms.toFixed(1)} ms`);
+```
+
 ## Alignment from vacuum levels
 
 `vacuumLevel`, `vacuumDipole` and `vacuumZeroCharge` turn vacuum-level estimates (electron
