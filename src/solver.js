@@ -345,7 +345,113 @@ export class Solver {
         }
       });
     }
-    for (const st of this.stretches) st.spectator = !st.connected && !st.reactive;
+    for (const st of this.stretches) {
+      st.spectator = !st.connected && !st.reactive;
+      // Mobile throughout: its steady state is then a single level fixed by its amount.
+      st.mobile = true;
+      for (let q = st.regions[0]; q <= st.regions[1]; q++) if (!(materials[regions[q].material].D[st.species] > 0)) st.mobile = false;
+    }
+    // Spectators whose steady state is solved directly, with the conservation of their amount
+    // in place of one (redundant) balance row. Immobile ones conserve node by node instead, and
+    // are left to giant time steps.
+    this.constraints = [];
+    this.stretches.forEach((st, k) => {
+      if (!st.spectator || !st.mobile) return;
+      const nNodes = st.nodes[1] - st.nodes[0] + 1;
+      this.constraints.push({
+        stretch: k,
+        row: this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
+        idx: new Int32Array(nNodes * this.M),
+        w: new Float64Array(nNodes * this.M),
+        len: 0,
+        res: 0,
+        q: new Float64Array(this.nB * this.M),
+      });
+    });
+    this.constrained = false;
+  }
+
+  // Every stretch either reaches a contact or is a mobile spectator: the steady equations can
+  // be solved directly (dt = ∞), with the spectators' amounts as constraints.
+  _directSteady() {
+    return this.stretches.every((st) => st.connected || (st.spectator && st.mobile));
+  }
+
+  // Conservation rows for the spectators (steady solves only): Σ v c_i = amount over the
+  // stretch replaces the balance row of its first node, which in steady state is the negative
+  // sum of the others. That row is dense, so it's kept aside: the factorised matrix gets a pin
+  // (identity row) there instead, and _solveConstrained restores the constraint.
+  _applyConstraints() {
+    const { n, M, res, c, dA: d } = this;
+    const vol = this.model.grid.vol;
+    for (const cs of this.constraints) {
+      const st = this.stretches[cs.stretch], i = st.species;
+      let amount = 0, len = 0;
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+        amount += vol[g] * c[g * n + i];
+        this._dc(g, i, d);
+        const b = this.blockOfNode[g];
+        for (let r = 0; r < M; r++) {
+          if (d[r] === 0) continue;
+          cs.idx[len] = b * M + r;
+          cs.w[len++] = vol[g] * d[r];
+        }
+      }
+      cs.len = len;
+      cs.res = amount - this.referenceAmounts[cs.stretch];
+      const b0 = Math.floor(cs.row / M), r0 = cs.row % M;
+      this._replaceRow(b0, r0);
+      this._j(b0, r0, b0, r0, 1);
+      res[cs.row] = 0;
+    }
+  }
+
+  // Solve J δ = rhs where J has the constraint rows (bordered system): δ = p + Σ_k q_k s_k, with
+  // p and q_k from the pinned matrix (q_k the response to a unit pin at row k, the stretch's
+  // free level) and s from the k×k system W·δ = residuals.
+  _solveConstrained(rhs, delta) {
+    const cons = this.constraints, K = cons.length;
+    this._solveLinear(rhs, delta);
+    const e = this.dWork ?? (this.dWork = new Float64Array(this.nB * this.M));
+    for (const cs of cons) {
+      e[cs.row] = 1;
+      this._solveLinear(e, cs.q);
+      e[cs.row] = 0;
+    }
+    const S = Array.from({ length: K }, () => new Float64Array(K + 1));
+    cons.forEach((cj, j) => {
+      let wp = 0, mx = 0;
+      for (let a = 0; a < cj.len; a++) wp += cj.w[a] * delta[cj.idx[a]];
+      for (let k = 0; k < K; k++) {
+        let s = 0;
+        for (let a = 0; a < cj.len; a++) s += cj.w[a] * cons[k].q[cj.idx[a]];
+        S[j][k] = s;
+        mx = Math.max(mx, Math.abs(s));
+      }
+      S[j][K] = cj.res - wp;
+      if (mx > 0) for (let k = 0; k <= K; k++) S[j][k] /= mx;
+    });
+    // Small dense solve with partial pivoting.
+    for (let col = 0; col < K; col++) {
+      let p = col;
+      for (let r = col + 1; r < K; r++) if (Math.abs(S[r][col]) > Math.abs(S[p][col])) p = r;
+      [S[col], S[p]] = [S[p], S[col]];
+      if (S[col][col] === 0) throw new SolverError('steady state: a conserved amount is not determined by its level');
+      for (let r = col + 1; r < K; r++) {
+        const f = S[r][col] / S[col][col];
+        for (let k = col; k <= K; k++) S[r][k] -= f * S[col][k];
+      }
+    }
+    const sol = new Float64Array(K);
+    for (let r = K - 1; r >= 0; r--) {
+      let v = S[r][K];
+      for (let k = r + 1; k < K; k++) v -= S[r][k] * sol[k];
+      sol[r] = v / S[r][r];
+    }
+    for (let k = 0; k < K; k++) {
+      const q = cons[k].q, sk = sol[k];
+      for (let a = 0; a < delta.length; a++) delta[a] += sk * q[a];
+    }
   }
 
   /** Total amount (mol per unit area) of a stretch's species in the current state. */
@@ -914,6 +1020,7 @@ export class Solver {
         this._j(tb, r, tb, r, 1);
       }
     }
+    if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
   }
 
   // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
@@ -1451,7 +1558,13 @@ export class Solver {
       } catch (err) {
         return { converged: false, iterations: it, history, error: err.message };
       }
-      this._solveLinear(res, delta);
+      try {
+        if (this.constrained && dt === Infinity && this.constraints.length > 0) this._solveConstrained(res, delta);
+        else this._solveLinear(res, delta);
+      } catch (err) {
+        if (!(err instanceof SolverError)) throw err;
+        return { converged: false, iterations: it, history, error: err.message };
+      }
       const step = this._maxPotentialStep(delta);
       history.push(step);
       if (!Number.isFinite(step)) return { converged: false, iterations: it, history, error: 'non-finite update' };
@@ -1936,7 +2049,7 @@ export class Solver {
   solveSteady(opts = {}) {
     const ct = this.model.contacts.right, target = ct.V, level = this.model.contacts.left.V;
     const canContinue = opts.continuation !== false && this.model.circuit.mode === 'voltage' && target !== level;
-    const direct = this.stretches.every((st) => st.connected);
+    const direct = this._directSteady();
     const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo);
     // Where a direct solve applies and continuation is possible, don't spend long on the
     // pseudo-transient ramp: one direct attempt first.
@@ -1966,7 +2079,7 @@ export class Solver {
   }
 
   _continuation(opts, ct, level, target, r, warm) {
-    const sub = this.stretches.every((st) => st.connected) ? { ...opts, maxSteps: 1 } : opts;
+    const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
     let V = level, dV = (target - level) / 8, steps = r.steps, iterations = r.iterations;
     const history = r.history.slice();
     try {
@@ -2003,11 +2116,21 @@ export class Solver {
     }
   }
 
-  _solveSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
+  _solveSteady(opts = {}) {
+    this.constrained = true; // spectators' amounts as constraints in the dt = ∞ solves
+    try {
+      return this._steadySteps(opts);
+    } finally {
+      this.constrained = false;
+    }
+  }
+
+  _steadySteps({ maxSteps = 80, tol = 1e-11 } = {}) {
     const time = this.time;
     const tau = this.slowestTime();
-    const direct = this.stretches.every((st) => st.connected);
+    const direct = this._directSteady();
     const giant = direct ? Infinity : 1e6 * tau;
+    if (direct) this._renormalizeSpectators(); // a starting point with the right amounts
     let dt = giant;
     let totalIter = 0, steps = 0, converged = false;
     const history = [];

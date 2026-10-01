@@ -37,6 +37,8 @@ for live demos.
   conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
 - Variable block sizes in the linear solve: only the unknowns that exist at each node are
   eliminated (impedance included). Metal regions are a single cell.
+- Spectators solved directly in steady state, with their amounts as constraints (a bordered
+  solve) instead of giant time steps: 5–8× fewer iterations where they occur.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
@@ -52,8 +54,8 @@ for live demos.
      species across many segments, with a mode only weakly held from outside. Candidates are
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
      form for the fast species only.
-   - Fewer Newton iterations where the benchmarks show many, e.g. the bipolar electrode (about
-     50 per bias point) and large warm jumps.
+   - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
+     factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
    still dependency-free) that writes plain specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable

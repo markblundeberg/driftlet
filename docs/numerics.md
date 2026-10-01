@@ -386,14 +386,27 @@ blocking device looks like a capacitor, as it should.
   slow physics can take seconds, far beyond any L²/D estimate, and stepping would never
   finish. An example is exponentially scarce minority carriers slowly filling an inversion
   layer behind a Schottky contact.
-- **Otherwise** (blocked species, or moieties conserved by reactions), backward-Euler steps at
-  a huge dt (10⁶ × the slowest diffusion time) keep the storage term, which pins each
-  conserved amount exactly: sum a species' rows and the fluxes cancel. dt grows ×10 (capped)
-  while the state still moves. Before each huge step, each spectator's level is shifted
-  uniformly to restore its amount exactly (in one step for ideal statistics, by Newton on the
-  shift otherwise). It guards
-  against round-off creeping through the vanishing storage term. The solve finishes with one
-  step at the base giant dt, where pinning is tight.
+- **Spectators** (a species blocked all round, mobile throughout its stretch) are solved
+  directly too. In steady state the sum of a spectator's balance rows over its stretch is zero
+  identically, so one of them (the first node's) is redundant, and it's replaced by the
+  conservation of the amount, Σ v c = amount. That row is dense, so the solve is bordered:
+  the matrix is factorised with a pin (an identity row) in its place, which makes the stretch's
+  level a well-conditioned unknown, and the response to a unit pin (one extra
+  back-substitution per spectator) is added in the amount that satisfies the constraint, from
+  a k×k system for k spectators.
+
+  Holding the amount through a storage term at huge dt instead is badly conditioned: the
+  stretch's level is then held only by v·c/dt, against internal conductances D·c/h larger by
+  D·dt/(hL), around 1e12 for a micron-scale cell (see [metal regions](#metal-regions) for the
+  same cancellation). Newton then needs dozens of iterations, or fails.
+- **Otherwise** (moieties conserved by reactions, or immobile spectators, which conserve node by
+  node), backward-Euler steps at a huge dt (10⁶ × the slowest diffusion time) keep the storage
+  term, which pins each conserved amount exactly: sum a species' rows and the fluxes cancel. dt
+  grows ×10 (capped) while the state still moves. Before each huge step, each spectator's level
+  is shifted uniformly to restore its amount exactly (in one step for ideal statistics, by
+  Newton on the shift otherwise). It guards against round-off creeping through the vanishing
+  storage term. The solve finishes with one step at the base giant dt, where pinning is
+  tight.
 - **If a direct solve diverges,** it's retried once with tighter damping (3 thermal units per
   iteration). That's enough for most large jumps, such as a cold start at forward bias.
 - **If that fails too,** source continuation ramps the right terminal's voltage to its target.
