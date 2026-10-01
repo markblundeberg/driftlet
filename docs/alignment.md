@@ -56,11 +56,10 @@ An anchor has to be a level that driftlet knows in terms of a material's φ:
   needs H⁺ among the species. Other half-reactions could be used as anchors in principle, but
   each brings its own conventions (the neutral element's μ, E°(SHE) = 0), so they're not
   offered as shortcuts here.
-- **The Fermi level** of a metal (`'fermi'`), the proper reference for a work function. It's
-  available only on the side of a metal region, whose single unknown is its Fermi level, and
-  for the conductor at a contact (whose `outside` offset is already Fermi-referenced). A
-  semiconductor's Fermi level moves with doping and bias, so its work function isn't a
-  material constant: use its electron affinity instead.
+- **The Fermi level** of a metal, the proper reference for a work function. It's taken by
+  `vacuumZeroCharge`, for a conductor region's face or a contact (below). A semiconductor's Fermi
+  level moves with doping and bias, so its work function isn't a material constant: use its
+  electron affinity instead.
 - **φ itself** (`'phi'`), with a surface potential as the offset. That's discouraged, since φ
   is bookkeeping: its value inside a material depends on how that material's μ° were
   anchored, and surface potentials are not measurable on their own. If you have settled that
@@ -68,50 +67,46 @@ An anchor has to be a level that driftlet knows in terms of a material's φ:
 
 ## In the API
 
-An interface takes the recipe directly, as an alternative to `dipole` or `step`:
+The recipe lives in `driftlet/kit`, as helpers that read a device definition and return the
+spec value to put in it. The spec itself only takes the result (a `dipole` or a `zeroCharge`),
+so what a device assumes stays visible in its definition.
 
 ```js nocheck
-interfaces: [{
-  vacuum: {
-    left: { anchor: 'e-', offset: 4.07 },  // GaAs: electron affinity
-    right: { anchor: 'e-', offset: 3.8 },  // its partner
-  },
-}]
+import { vacuumDipole, vacuumZeroCharge } from 'driftlet/kit';
+
+// GaAs | AlGaAs: electron affinities on the e⁻ standard level (the conduction band)
+def.interfaces = [{
+  dipole: vacuumDipole(def, { material: 'GaAs', anchor: 'e-', offset: 4.07 }, { material: 'AlGaAs', anchor: 'e-', offset: 3.8 }),
+}];
 ```
 
-driftlet turns it into the face's dipole: φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R.
+`vacuumDipole` gives φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R, each side's V_vac − φ coming
+from its anchor and offset (`vacuumLevel` gives one side's).
 
-At a face beside a metal region, the metal's side is `{ anchor: 'fermi', offset: W }`, and the
-recipe gives the face's `zeroCharge` (V_F − φ_edge at zero charge) instead of a dipole:
-
-```js nocheck
-interfaces: [{
-  phi: { type: 'capacitive', C: 10 },
-  vacuum: { left: { anchor: 'fermi', offset: 4.75 }, right: { anchor: 'e-', offset: 4.05 } }, // Au | n-Si
-}]
-```
-
-A contact's capacitive or dipole φ law takes it in place of `zeroCharge`. The outside phase's
-anchor is the terminal level, so only its offset is needed (the work function of the
-conductor whose voltage V is):
+Where a conductor meets a material, at a conductor region's face or at a contact's capacitive
+or dipole law, the conductor's side is its work function W from its Fermi level, and the
+helper gives `zeroCharge` (V_F − φ_edge at zero charge):
 
 ```js nocheck
-phi: { type: 'capacitive', C, vacuum: { outside: 4.5, inside: { anchor: 'e-', offset: 4.05 } } }
-// zeroCharge = outside + (V_vac − φ)_inside = W − χ − μ°_e/F
+const zc = vacuumZeroCharge(def, 4.75, { material: 'Si', anchor: 'e-', offset: 4.05 }); // Au | n-Si
+def.interfaces = [{ phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }];        // Au as a region
+def.contacts.left.phi = { type: 'capacitive', C: 10, zeroCharge: zc };            // or as a contact
+// zeroCharge = W + (V_vac − φ)_inside = W − χ − μ°_e/F
 ```
 
 ## Pairwise examples
 
 **Semiconductor heterojunction (Anderson's rule).** Electron affinities on both sides,
-`{ anchor: 'e-', offset: χ }`, give ΔE_c = χ_L − χ_R. The valence-band offset then follows from
-the two gaps, already in your holes' μ°. Ionisation energies on `'h+'` give the same thing from
+`{ material, anchor: 'e-', offset: χ }`, give ΔE_c = χ_L − χ_R. The valence-band offset then
+follows from the two gaps, already in your holes' μ°. Ionisation energies on `'h+'` give the same thing from
 the other band.
 
 **Metal | semiconductor (Schottky–Mott).** Work function against electron affinity gives the
 n-type barrier φ_B = W − χ. With the metal as a contact, a pinned law
-`{ type: 'dipole', vacuum: { outside: W, inside: { anchor: 'e-', offset: χ } } }` puts the
-semiconductor's surface electron density at N_c e^{−φ_B/kT}. With the metal as a region, the
-face is capacitive, with `'fermi'` on the metal side; a large C approaches the pinned barrier.
+`{ type: 'dipole', zeroCharge: vacuumZeroCharge(def, W, { material, anchor: 'e-', offset: χ }) }`
+puts the semiconductor's surface electron density at N_c e^{−φ_B/kT}. With the metal as a
+region, the face is capacitive with the same `zeroCharge`; a large C approaches the pinned
+barrier.
 
 **Gate | semiconductor (flat band).** The same with a capacitive law. Its `zeroCharge` is the
 anchor-level form of the textbook V_FB = (W_g − W_s)/e, which refers to the semiconductor's
@@ -119,11 +114,11 @@ bulk Fermi level instead. Fixed charge in a real insulator shifts flat band furt
 
 **Metal | electrolyte (potential of zero charge).** Work function against the absolute SHE
 gives pzc ≈ W/e − 4.44 V on the SHE scale (on the usual conventions above):
-`{ type: 'capacitive', C, vacuum: { outside: W, inside: { anchor: 'H+', offset: 4.44 } } }`.
+`zeroCharge: vacuumZeroCharge(def, W, { material, anchor: 'H+', offset: 4.44 })`.
 
 **Semiconductor | electrolyte.** Electron affinity against the absolute SHE places the band
 edges on the SHE scale, E_c ≈ −(χ − 4.44) eV relative to SHE: the usual photoelectrochemistry
-estimate. For example, `{ left: { anchor: 'e-', offset: χ }, right: { anchor: 'H+', offset: 4.44 } }`.
+estimate: `vacuumDipole(def, { material: 'TiO2', anchor: 'e-', offset: χ }, { material: 'water', anchor: 'H+', offset: 4.44 })`.
 
 **Solvent | solvent.** Each solvent's own absolute-SHE-type value (its Trasatti-type offset)
 aligns them, exactly as Anderson's rule aligns two semiconductors.

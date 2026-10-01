@@ -18,4 +18,4 @@ jobs:
       - run: npm test
       - run: npm run bench -- --check
       - run: npm run types
-      - run: npx -y -p typescript@5 tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext types/index.d.ts
+      - run: npx -y -p typescript@5 tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext types/index.d.ts types/kit.d.ts

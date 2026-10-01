@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, units } from '../src/index.js';
+import { vacuumZeroCharge } from '../src/kit.js';
 
 const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
 const throwsDevice = (def, pattern) =>
@@ -10,7 +11,7 @@ test('metal region: ohmic, with a Fermi level and no φ or concentration, on one
   const sigma = 1e6, L = 1e-6, V = 1e-3;
   const dev = new Device({
     species: [{ name: 'e-', z: -1 }],
-    materials: { Cu: { metal: { species: 'e-', conductivity: sigma } } },
+    materials: { Cu: { conductor: { species: 'e-', conductivity: sigma } } },
     regions: [{ material: 'Cu', length: L }],
     contacts: { left: collector(0), right: collector(V) },
     grid: { hmin: 1e-10 },
@@ -35,7 +36,7 @@ const silicon = () => ({
   ],
   materials: {
     Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: Nc }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: Nv } } },
-    Au: { metal: { species: 'e-', conductivity: 4e7 } },
+    Au: { conductor: { species: 'e-', conductivity: 4e7 } },
   },
   contacts: { right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' } },
   grid: { hmin: 0.5e-9, hmax: 20e-9, ratio: 1.1 },
@@ -44,10 +45,11 @@ const silicon = () => ({
 test('metal | semiconductor face: a Schottky barrier from work function and electron affinity, as at a contact', () => {
   const asContact = silicon();
   asContact.regions = [{ material: 'Si', length: 2e-6, fixedCharge: ND * FARADAY }];
-  asContact.contacts.left = { ...collector(0), phi: { type: 'capacitive', C: 10, vacuum: { outside: W, inside: { anchor: 'e-', offset: chi } } } };
+  const zc = vacuumZeroCharge(asContact, W, { material: 'Si', anchor: 'e-', offset: chi }); // Schottky–Mott
+  asContact.contacts.left = { ...collector(0), phi: { type: 'capacitive', C: 10, zeroCharge: zc } };
   const asRegion = silicon();
   asRegion.regions = [{ material: 'Au', length: 50e-9 }, { material: 'Si', length: 2e-6, fixedCharge: ND * FARADAY }];
-  asRegion.interfaces = [{ phi: { type: 'capacitive', C: 10 }, vacuum: { left: { anchor: 'fermi', offset: W }, right: { anchor: 'e-', offset: chi } } }];
+  asRegion.interfaces = [{ phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }];
   asRegion.contacts.left = collector(0);
   const a = new Device(asContact), b = new Device(asRegion);
   const g = b.grid.regionStart[1];
@@ -100,7 +102,7 @@ const ions = [
   { name: 'NO3-', z: -1, cRef: 1000 },
 ];
 const water = (epsr) => ({ epsr, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } });
-const Ag = { metal: { species: 'e-', conductivity: 6e7 } };
+const Ag = { conductor: { species: 'e-', conductivity: 6e7 } };
 const plating = { reactants: { 'Ag+': 1 }, electrons: 1, products: { Ag: 1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 };
 const salt = { 'NO3-': 10, 'Ag+': 10 };
 
@@ -172,17 +174,20 @@ test('metal definitions are checked', () => {
   def.interfaces = [{ phi: 'dipole', zeroCharge: 0.5 }];
   throwsDevice(def, /finite capacitance/);
   def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, dipole: 0.1 }];
-  throwsDevice(def, /a metal has no φ of its own/);
-  def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, vacuum: { left: { anchor: 'e-', offset: W }, right: { anchor: 'e-', offset: chi } } }];
-  throwsDevice(def, /anchored to its Fermi level/);
-  def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, vacuum: { left: { anchor: 'fermi', offset: W }, right: { anchor: 'fermi', offset: chi } } }];
-  throwsDevice(def, /only a metal has a Fermi-level anchor/);
+  throwsDevice(def, /a conductor has no φ of its own/);
+  def.interfaces = [{ phi: { type: 'capacitive', C: 1 } }];
+  throwsDevice(def, /zeroCharge/);
+  def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, vacuum: {} }];
+  throwsDevice(def, /vacuumZeroCharge from 'driftlet\/kit'/);
+  def = base();
+  def.materials.Au = { metal: def.materials.Au.conductor };
+  throwsDevice(def, /conductor: \{ species, conductivity \}/);
   def = base();
   def.regions[0].c0 = { 'e-': 1 };
   throwsDevice(def, /no composition to give/);
   def = base();
   def.materials.Au.epsr = 1;
-  throwsDevice(def, /a metal takes only/);
+  throwsDevice(def, /a conductor takes only/);
   def = base();
   def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, zeroCharge: 0.5 }];
   new Device(def);
@@ -206,7 +211,7 @@ test('a port on a metal: a wire to the whole metal, with its conductance per are
   for (const G of [1e10, 1e13]) {
     const sol = new Device({
       species: [{ name: 'e-', z: -1 }],
-      materials: { Cu: { metal: { species: 'e-', conductivity: sigma } } },
+      materials: { Cu: { conductor: { species: 'e-', conductivity: sigma } } },
       regions: [{ material: 'Cu', length: L }],
       contacts: { left: collector(0), right: { phi: 'neutral' } },
       ports: [{ region: 0, V: Vp, terminal: 'e-', species: { 'e-': { type: 'conductance', G } } }],

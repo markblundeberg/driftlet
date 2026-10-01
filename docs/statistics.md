@@ -139,7 +139,7 @@ fixed charge, the carriers are only those that came in with the ions. The carrie
 plays no part (only the combination's μ° and the ion's `cRef` enter), but it must still be
 given.
 
-An insertion host belongs with [metal regions](device.md#materials) more than with the other
+An insertion host belongs with [conductor regions](device.md#materials) more than with the other
 statistics here. Both are conductors with no φ of their own:
 - **A metal** is the one-carrier case: its Fermi level is its only unknown.
 - **An insertion host** is the two-carrier case: only the neutral combination's potential sets

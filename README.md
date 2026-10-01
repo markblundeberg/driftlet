@@ -90,10 +90,10 @@ driftlet insists on thermodynamically honest concepts ([conventions](docs/conven
 - **φ is bookkeeping.** Each material's standard chemical potentials anchor its own φ, and φ
   jumps at every interface between different materials.
 - **Band alignment is a property of each interface** and must be given explicitly: nothing is
-  assumed by default. If vacuum-level estimates are all you have, give each side an anchor and
-  an offset (electron affinity, work function, absolute SHE potential, …) and driftlet lines
-  up the vacuum levels. The [alignment guide](docs/alignment.md) covers the recipe and its
-  caveats.
+  assumed by default. If vacuum-level estimates are all you have, helpers in `driftlet/kit`
+  take an anchor and an offset per side (electron affinity, work function, absolute SHE
+  potential, …) and return the alignment that lines up the vacuum levels. The
+  [alignment guide](docs/alignment.md) covers the recipe and its caveats.
 - The species voltage `V_i = μ̄_i / (z_i F)` and standard level `V°_i` are available as views,
   as in [ESBD](https://marklundeberg.com/esbd/) diagrams.
 
@@ -108,8 +108,9 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
   their OCV curve, or your own function ([statistics](docs/statistics.md));
 - Poisson electrostatics, or strictly neutral (ε = 0) materials such as macroscopic
   electrolytes;
-- metal regions with only a Fermi level and a conductivity: Schottky and MOS gates as regions,
-  electrode reactions at internal metal faces, bipolar electrodes;
+- conductor regions (metals, fast ion conductors) with only their carrier's level and a
+  conductivity: Schottky and MOS gates as regions, electrode reactions at internal metal faces,
+  bipolar electrodes;
 - contacts as outside phases with known levels, joined by the same laws as internal faces:
   ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links,
   Butler–Volmer electrode reactions, gates and Stern layers;

@@ -24,8 +24,9 @@ stricter than you may be used to.
    boundary between different materials is a property of that interface, and you must give it.
    There's no Anderson rule, no Schottky–Mott rule, and no implied common vacuum level. Each
    interface's alignment is independent, even when the same pair of materials meets twice
-   (e.g. with different adsorbates). When vacuum-level estimates are all you have, the
-   [alignment guide](alignment.md) shows how to state them as anchors and offsets.
+   (e.g. with different adsorbates). When vacuum-level estimates are all you have, helpers in
+   `driftlet/kit` turn anchors and offsets into an alignment (see the
+   [alignment guide](alignment.md)).
 4. **A work function belongs to a surface, not a material.**
 
 ## Electrochemical potential and its views
@@ -104,9 +105,10 @@ is `neutral`, in which case the alignment has no effect and is not allowed. The 
 - `capacitive`: a Helmholtz layer of capacitance C, charged by any departure of the jump
   from the alignment.
 
-A **metal** is a material of its own kind: its one level is the Fermi level, it has no φ,
-and a face beside it ties the other side's φ to that Fermi level through a capacitance (see the
-[device reference](device.md#faces-next-to-a-metal)).
+A **conductor** (a metal, or a fast ion conductor) is a material of its own kind: its one level
+is its carrier's (a metal's Fermi level), it has no φ, and a face beside it ties the other side's
+φ to that level through a capacitance (see the
+[device reference](device.md#faces-next-to-a-conductor)).
 
 A face between a strictly neutral (ε = 0) material and one with ε > 0, such as an electrode and
 an electrolyte, is naturally `dipole`. The neutral side holds the surface charge, and the

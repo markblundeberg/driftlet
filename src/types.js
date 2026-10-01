@@ -31,13 +31,14 @@
  */
 
 /**
- * A material: either ordinary (epsr, species, optional statistics) or a metal.
+ * A material: either ordinary (epsr, species, optional statistics) or a conductor.
  * @typedef {object} MaterialDef
  * @property {number} [epsr] relative permittivity; 0 makes the material strictly neutral
  * @property {Record<string, MaterialSpeciesDef>} [species] species present in this material
  * @property {StatisticsDef[]} [statistics] non-ideal statistics (default: all ideal)
- * @property {{ species: string, conductivity: number }} [metal] a metal: its carrier and
- *   conductivity (S/m); its only level is the Fermi level, and φ is undefined inside
+ * @property {{ species: string, conductivity: number }} [conductor] a metal or fast ion
+ *   conductor: its one carrier and conductivity (S/m); its only level is the carrier's (a metal's
+ *   Fermi level), and φ is undefined inside
  */
 
 /**
@@ -63,13 +64,6 @@
  * @property {GridOptions} [grid]
  */
 
-/**
- * One side of a vacuum-level alignment: V_vac = V_anchor − offset.
- * @typedef {{ anchor: string, offset: number }} VacuumSide anchor: a charged species (its
- *   standard level) or 'phi'; offset: electron affinity, ionisation energy, work function,
- *   absolute SHE potential, …, in V
- */
-
 /** @typedef {'dipole' | 'neutral' | { type: 'capacitive', C: number }} InterfacePhiLaw */
 /** @typedef {'equilibrium' | 'blocked' | { type: 'conductance', G: number }} InterfaceSpeciesLink */
 
@@ -86,14 +80,12 @@
  * @typedef {object} InterfaceDef
  * @property {{ species: string, value: number }} [step] standard-level step right − left, J/mol
  * @property {number} [dipole] φ jump right − left, V
- * @property {{ left: VacuumSide, right: VacuumSide }} [vacuum] vacuum-level heuristic: equal vacuum levels
- *   (beside a metal region, the metal's side is { anchor: 'fermi', offset: W })
- * @property {number} [zeroCharge] beside a metal region: V_F − φ_edge at zero charge, V
+ * @property {number} [zeroCharge] beside a conductor region: V_F − φ_edge at zero charge, V
  * @property {InterfacePhiLaw} [phi] electrostatic law (default 'dipole'; 'neutral' between ε = 0 materials)
  * @property {number} [sheetCharge] C/m²
  * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium)
  * @property {(TransferReactionDef | ElectrodeReactionDef)[]} [reactions] Butler–Volmer transfer across the
- *   face, or electrode reactions at a face beside a metal region
+ *   face, or electrode reactions at a face beside a conductor region
  */
 
 /**
@@ -115,8 +107,8 @@
  * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at
  * the face (D = 0); capacitive: Stern layer or gate; dipole: pinned φ_edge = V − zeroCharge.
  * @typedef {'bulk' | 'neutral'
- *   | { type: 'capacitive', C: number, zeroCharge?: number, vacuum?: { outside: number, inside: VacuumSide } }
- *   | { type: 'dipole', zeroCharge?: number, vacuum?: { outside: number, inside: VacuumSide } }} ContactPhiLink
+ *   | { type: 'capacitive', C: number, zeroCharge: number }
+ *   | { type: 'dipole', zeroCharge: number }} ContactPhiLink
  */
 
 /**
@@ -149,7 +141,7 @@
 
 /**
  * An internal port: an outside phase exchanging with a window of one region's nodes. On a
- * metal region it attaches to the whole metal (no window), and a conductance G is per area
+ * conductor region it attaches to the whole conductor (no window), and a conductance G is per area
  * (S/m²) instead of per volume (S/m³).
  * @typedef {object} PortDef
  * @property {string} [name]

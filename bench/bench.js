@@ -57,7 +57,7 @@ const diode = () =>
 const mos = () =>
   new Device({
     species: carriers,
-    materials: { Si: silicon, SiO2: { epsr: 3.9, species: {} }, Au: { metal: { species: 'e-', conductivity: 4e7 } } },
+    materials: { Si: silicon, SiO2: { epsr: 3.9, species: {} }, Au: { conductor: { species: 'e-', conductivity: 4e7 } } },
     regions: [
       { material: 'Au', length: 20e-9 },
       { material: 'SiO2', length: 5e-9, grid: { minCells: 4 } },
@@ -91,7 +91,7 @@ const bipolar = () => {
   const end = { V: 0, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
   return new Device({
     species: [...ions, { name: 'e-', z: -1 }],
-    materials: { water: water(78.5), Ag: { metal: { species: 'e-', conductivity: 6e7 } } },
+    materials: { water: water(78.5), Ag: { conductor: { species: 'e-', conductivity: 6e7 } } },
     regions: [
       { material: 'water', length: 10e-6, c0: salt },
       { material: 'Ag', length: 2e-6 },

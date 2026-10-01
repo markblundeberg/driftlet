@@ -79,9 +79,10 @@ export function normalizeDevice(def) {
   for (const [mname, mat] of Object.entries(def.materials)) {
     const path = `materials.${mname}`;
     need(isObject(mat), `${path} must be an object`);
-    if (mat.metal !== undefined) {
+    need(mat.metal === undefined, `${path}.metal: write { conductor: { species, conductivity } } (a metal, or a fast ion conductor)`);
+    if (mat.conductor !== undefined) {
       materialIndex.set(mname, materials.length);
-      materials.push(normalizeMetal(mat, mname, path, species, speciesIndex));
+      materials.push(normalizeConductor(mat, mname, path, species, speciesIndex));
       continue;
     }
     // ε = 0 makes the material strictly neutral: Poisson becomes local neutrality there.
@@ -131,12 +132,12 @@ export function normalizeDevice(def) {
     if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
     const mat = materials[materialIndex.get(reg.material)];
     if (mat.metal) {
-      need(fixedCharge === 0, `${path}.fixedCharge: a metal region is neutral in bulk (its carriers are the conduction electrons)`);
-      need(reg.c0 === undefined, `${path}.c0: a metal region has no composition to give, only its Fermi level`);
-      need(velocity === 0 && mixing === 0, `${path}: a metal region has no flow or mixing, only conduction`);
+      need(fixedCharge === 0, `${path}.fixedCharge: a conductor region is neutral in bulk`);
+      need(reg.c0 === undefined, `${path}.c0: a conductor region has no composition to give, only its carrier's level`);
+      need(velocity === 0 && mixing === 0, `${path}: a conductor region has no flow or mixing, only conduction`);
       // Nothing is stored inside a metal (its charge is on its faces), so its Fermi level is
       // exactly linear across it, and one cell is exact.
-      need(reg.grid === undefined, `${path}.grid: a metal region is a single cell (exact for Ohm's law), so it takes no grid options`);
+      need(reg.grid === undefined, `${path}.grid: a conductor region is a single cell (exact for Ohm's law), so it takes no grid options`);
     }
     if (mat.epsr === 0) {
       need(
@@ -342,7 +343,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
   const reg = regions[r], mat = materials[reg.material];
   // A metal is one cell with no interior, so a port attaches to the whole of it, as a wire would.
-  if (mat.metal) need(pdef.from === undefined && pdef.to === undefined, `${path}: a port on a metal attaches to all of it, so give no window`);
+  if (mat.metal) need(pdef.from === undefined && pdef.to === undefined, `${path}: a port on a conductor attaches to all of it, so give no window`);
   const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
   const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
   need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);
@@ -362,7 +363,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
     if (link.type === 'blocked') continue;
     need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
-    if (mat.metal) need(i === mat.metal.i, `${lpath}: a metal exchanges only its carrier, ${species[mat.metal.i].name}`);
+    if (mat.metal) need(i === mat.metal.i, `${lpath}: a conductor exchanges only its carrier, ${species[mat.metal.i].name}`);
     const z = species[i].z;
     // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
     let level;
@@ -377,7 +378,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
       level = { offset: finite(offset, `${lpath}.offset`) };
     }
     // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
-    if (link.type === 'conductance') level.G = mat.metal ? positive(link.G, `${lpath}.G (S/m², for a metal)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
+    if (link.type === 'conductance') level.G = mat.metal ? positive(link.G, `${lpath}.G (S/m², for a conductor)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
     links[i] = { type: link.type, ...level };
   }
@@ -435,7 +436,8 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
   need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
-  const given = ['dipole', 'step', 'vacuum', 'reaction'].filter((k) => idef[k] !== undefined);
+  need(idef.vacuum === undefined, `${where}.vacuum: not a spec field; estimate the dipole with vacuumDipole from 'driftlet/kit'`);
+  const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
   if (phi.type === 'neutral') {
     need(given.length === 0, `${where}: a neutral interface has a free φ jump, so an alignment (${given[0]}) would have no effect`);
@@ -443,7 +445,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     need(
       given.length === 1 || same,
       `${where}: an interface between different materials needs an alignment ` +
-        `({ dipole }, { step: { species, value } } or { vacuum: { left, right } }), or phi: 'neutral' for a macroscopic model. ` +
+        "({ dipole } or { step: { species, value } }; driftlet/kit's vacuumDipole estimates one), or phi: 'neutral' for a macroscopic model. " +
         'There is no default (no Anderson or Schottky–Mott rule).',
     );
     for (const [mat, reg] of [[matL, left], [matR, right]]) {
@@ -468,14 +470,6 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     const value = finite(st.value, `${where}.step.value`);
     // value = (μ°_R + zFφ_R) − (μ°_L + zFφ_L), so φ_R − φ_L = (value − Δμ°) / (zF)
     dipole = (value - (matR.mu0[i] - matL.mu0[i])) / (z * FARADAY);
-  } else if (idef.vacuum !== undefined) {
-    // Vacuum-level heuristic: each side's vacuum level sits `offset` volts beyond its anchor
-    // (V_vac = V_anchor − offset), and the two vacuum levels are taken to coincide.
-    const vac = idef.vacuum;
-    need(isObject(vac) && isObject(vac.left) && isObject(vac.right), `${where}.vacuum must be { left: { anchor, offset }, right: { anchor, offset } }`);
-    const L = vacuumLevel(vac.left, `${where}.vacuum.left`, matL, species, speciesIndex);
-    const R = vacuumLevel(vac.right, `${where}.vacuum.right`, matR, species, speciesIndex);
-    dipole = L - R; // V_vac − φ on each side: φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R
   } else if (idef.reaction !== undefined) {
     throw new DeviceError(`${where}.reaction: reaction-based alignment is not supported yet`);
   }
@@ -524,18 +518,19 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   return { phi, dipole, sheetCharge, links, transfers, electrode: [], metal: null };
 }
 
-// A metal: only its conduction carrier, whose single unknown is the Fermi level (μ̄). Its bulk is
-// neutral and incompressible, so φ is undefined inside, and transport is ohmic, J = −σ∇V. Any
-// charge it holds sits at its surfaces, as a sheet facing a charged interface.
-function normalizeMetal(mat, mname, path, species, speciesIndex) {
-  const mdef = mat.metal;
-  need(isObject(mdef), `${path}.metal must be { species, conductivity }`);
+// A conductor (a metal, or a fast ion conductor): only its one mobile carrier, whose single
+// unknown is its μ̄ (for a metal, the Fermi level). Its bulk is neutral and incompressible, so φ
+// is undefined inside, and transport is ohmic, J = −σ∇V. Any charge it holds sits at its
+// surfaces, as a sheet facing a charged interface. (Internally it's still called a metal.)
+function normalizeConductor(mat, mname, path, species, speciesIndex) {
+  const mdef = mat.conductor;
+  need(isObject(mdef), `${path}.conductor must be { species, conductivity }`);
   for (const k of ['epsr', 'species', 'statistics']) {
-    need(mat[k] === undefined, `${path}.${k}: a metal takes only { metal: { species, conductivity } }`);
+    need(mat[k] === undefined, `${path}.${k}: a conductor takes only { conductor: { species, conductivity } }`);
   }
-  need(speciesIndex.has(mdef.species), `${path}.metal.species: unknown species ${JSON.stringify(mdef.species)}`);
+  need(speciesIndex.has(mdef.species), `${path}.conductor.species: unknown species ${JSON.stringify(mdef.species)}`);
   const i = speciesIndex.get(mdef.species);
-  need(species[i].z !== 0, `${path}.metal.species: the metal's carrier must be charged`);
+  need(species[i].z !== 0, `${path}.conductor.species: the conductor's carrier must be charged`);
   const n = species.length;
   const present = new Uint8Array(n);
   present[i] = 1;
@@ -550,7 +545,7 @@ function normalizeMetal(mat, mname, path, species, speciesIndex) {
     modelOf: new Int32Array(n).fill(-1),
     ideal: true,
     phiFree: true,
-    metal: { i, sigma: positive(mdef.conductivity, `${path}.metal.conductivity (S/m)`) },
+    metal: { i, sigma: positive(mdef.conductivity, `${path}.conductor.conductivity (S/m)`) },
   };
 }
 
@@ -566,41 +561,31 @@ function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex,
   const other = side === 'left' ? matR : matL;
   const metal = side === 'right' ? matR.metal : matL.metal;
   for (const k of ['dipole', 'step', 'sheetCharge']) {
-    need(idef[k] === undefined, `${where}.${k}: a metal has no φ of its own; align with zeroCharge or vacuum (with a 'fermi' anchor on the metal side)`);
+    need(idef[k] === undefined, `${where}.${k}: a conductor has no φ of its own; align with zeroCharge`);
   }
   const fieldOutside = side !== 'both' && !other.phiFree && other.epsr > 0;
   const rawPhi = idef.phi ?? (fieldOutside ? undefined : 'neutral');
   need(
     rawPhi !== undefined,
-    `${where}.phi: a face between a metal and a material with ε > 0 needs an explicit φ law ` +
-      "('neutral', or { type: 'capacitive', C } with zeroCharge or vacuum)",
+    `${where}.phi: a face between a conductor and a material with ε > 0 needs an explicit φ law ` +
+      "('neutral', or { type: 'capacitive', C } with zeroCharge)",
   );
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
   need(
     phi.type !== 'dipole',
-    `${where}.phi: a metal region holds its surface charge in a finite capacitance, so use { type: 'capacitive', C } ` +
-      '(a large C approaches a pinned barrier), or model the metal as a contact with a dipole law',
+    `${where}.phi: a conductor region holds its surface charge in a finite capacitance, so use { type: 'capacitive', C } ` +
+      '(a large C approaches a pinned barrier), or model it as a contact with a dipole law',
   );
   need(['neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
   let zeroCharge = 0;
   if (phi.type === 'neutral') {
-    need(idef.zeroCharge === undefined && idef.vacuum === undefined, `${where}: a neutral face has no charge, so an alignment would have no effect`);
+    need(idef.zeroCharge === undefined, `${where}: a neutral face has no charge, so an alignment would have no effect`);
   } else {
-    need(side !== 'both', `${where}.phi: between two metals only 'neutral' applies (neither has a φ)`);
-    need(!other.phiFree && (other.epsr > 0 || species.some((sp, i) => other.present[i] && sp.z !== 0)), `${where}.phi: φ is undefined on the non-metal side; use 'neutral'`);
-    need((idef.zeroCharge === undefined) !== (idef.vacuum === undefined), `${where}: give exactly one of zeroCharge or vacuum for a ${phi.type} face at a metal`);
-    if (idef.zeroCharge !== undefined) zeroCharge = finite(idef.zeroCharge, `${where}.zeroCharge`);
-    else {
-      const vac = idef.vacuum;
-      need(isObject(vac) && isObject(vac.left) && isObject(vac.right), `${where}.vacuum must be { left: { anchor, offset }, right: { anchor, offset } }`);
-      const ms = side === 'left' ? vac.left : vac.right, os = side === 'left' ? vac.right : vac.left;
-      const mpath = `${where}.vacuum.${side}`, opath = `${where}.vacuum.${side === 'left' ? 'right' : 'left'}`;
-      need(ms.anchor === 'fermi', `${mpath}.anchor: a metal's vacuum level is anchored to its Fermi level ('fermi')`);
-      const W = finite(ms.offset, `${mpath}.offset (the work function, V)`);
-      need(os.anchor !== 'fermi', `${opath}.anchor: only a metal has a Fermi-level anchor`);
-      zeroCharge = W + vacuumLevel(os, opath, other, species, speciesIndex); // V_F − φ = W + (V_vac − φ)_other
-    }
+    need(side !== 'both', `${where}.phi: between two conductors only 'neutral' applies (neither has a φ)`);
+    need(!other.phiFree && (other.epsr > 0 || species.some((sp, i) => other.present[i] && sp.z !== 0)), `${where}.phi: φ is undefined on the other side; use 'neutral'`);
+    need(idef.vacuum === undefined, `${where}.vacuum: not a spec field; estimate zeroCharge with vacuumZeroCharge from 'driftlet/kit'`);
+    zeroCharge = finite(idef.zeroCharge, `${where}.zeroCharge (V_F − φ_edge at zero charge, V)`);
   }
   // Species laws: the metal's carrier may continue across (e.g. into a semiconductor).
   const links = defaultInterfaceLinks(matL, matR, species);
@@ -623,9 +608,9 @@ function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex,
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
   const electrode = (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
-    need(side !== 'both', `${rpath}: electrode reactions need a metal on one side only`);
-    need(isObject(rdef) && rdef.transfer === undefined, `${rpath}: at a metal face, write an electrode reaction (reactants, electrons, products)`);
-    need(species[metal.i].z === -1, `${rpath}: electrode reactions take electrons, so the metal's carrier must have z = −1`);
+    need(side !== 'both', `${rpath}: electrode reactions need a conductor on one side only`);
+    need(isObject(rdef) && rdef.transfer === undefined, `${rpath}: at a conductor face, write an electrode reaction (reactants, electrons, products)`);
+    need(species[metal.i].z === -1, `${rpath}: electrode reactions take electrons, so the conductor's carrier must be electrons (z = −1)`);
     const rx = normalizeElectrodeReaction(rdef, rpath, other, species, speciesIndex, RT);
     for (const { i } of [...rx.reactants, ...rx.products]) {
       need(idef.species?.[species[i].name] === undefined, `${rpath}: '${species[i].name}' also has an interface link`);
@@ -635,22 +620,6 @@ function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex,
     return rx;
   });
   return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, transfers: [], electrode, metal: { side, i: metal.i } };
-}
-
-// A material's vacuum level relative to its own φ, V_vac − φ, from an anchor and an offset:
-//   anchor = a charged species: its standard level V°_i = φ + μ°_i/(z_i F) (the conduction band
-//            for e⁻, the valence band for h⁺, a reversible electrode's level for an ion);
-//   anchor = 'phi': the inner potential itself (the offset is then a surface potential).
-// offset (V) is the vacuum level's height above the anchor in electron energy, e.g. an electron
-// affinity, a work function, an ionisation energy or Trasatti's 4.44 V, so V_vac = V_anchor − offset.
-function vacuumLevel(side, path, mat, species, speciesIndex) {
-  const offset = finite(side.offset, `${path}.offset (V)`);
-  if (side.anchor === 'phi') return -offset;
-  need(speciesIndex.has(side.anchor), `${path}.anchor must be 'phi' or a charged species, got ${JSON.stringify(side.anchor)}`);
-  const i = speciesIndex.get(side.anchor);
-  need(species[i].z !== 0, `${path}.anchor: '${side.anchor}' is neutral, so it has no level in volts`);
-  need(mat.present[i], `${path}.anchor: '${side.anchor}' is absent from '${mat.name}'`);
-  return mat.mu0[i] / (species[i].z * FARADAY) - offset;
 }
 
 function defaultInterfaceLinks(matL, matR, species) {
@@ -830,15 +799,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
       phi = { ...raw };
-      if (raw.vacuum !== undefined) {
-        // Vacuum-level heuristic: the outside conductor's vacuum level is `outside` volts beyond
-        // its terminal level (a work function), so V − W = V_vac = φ_edge + (V_vac − φ)_inside.
-        need(raw.zeroCharge === undefined, `${path}.phi: give either zeroCharge or vacuum, not both`);
-        const vac = raw.vacuum;
-        need(isObject(vac) && isObject(vac.inside), `${path}.phi.vacuum must be { outside, inside: { anchor, offset } }`);
-        const W = finite(vac.outside, `${path}.phi.vacuum.outside (the terminal conductor's work function, V)`);
-        phi.zeroCharge = W + vacuumLevel(vac.inside, `${path}.phi.vacuum.inside`, mat, species, speciesIndex);
-      }
+      need(raw.vacuum === undefined, `${path}.phi.vacuum: not a spec field; estimate zeroCharge with vacuumZeroCharge from 'driftlet/kit'`);
       finite(phi.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
     } else {
       phi = { ...raw };

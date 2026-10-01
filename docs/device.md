@@ -63,19 +63,19 @@ there is only a bookkeeping multiplier. Use it for macroscopic systems whose dou
 don't want to resolve, such as electrolytes and mixed conductors. (Metals have their own kind of
 material, below.)
 
-**Metals** are their own kind of material:
+**Conductors** (metals, and fast ion conductors) are their own kind of material:
 
 ```js nocheck
-materials: { Au: { metal: { species: 'e-', conductivity: 4.1e7 } } } // S/m
+materials: { Au: { conductor: { species: 'e-', conductivity: 4.1e7 } } } // S/m
 ```
 
-A metal has one unknown, the Fermi level (the carrier's μ̄), and nothing else: no ε, no `mu0`
-or `cRef`, and φ is undefined inside. Its bulk is neutral and incompressible, conduction is
-ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a charged face. Since nothing is
-stored inside, the Fermi level is exactly linear across a metal region, so the region is a
-single grid cell, whatever its length. Metal regions take no `fixedCharge`, `c0`, `grid`,
-`velocity` or `mixing`. A port on a metal attaches to all of it (see [ports](#internal-ports)). See
-[Faces next to a metal](#faces-next-to-a-metal).
+A conductor has one mobile carrier, and its only unknown is that carrier's μ̄: for a metal, the
+Fermi level. There's no ε, no `mu0` or `cRef`, and φ is undefined inside. Its bulk is neutral
+and incompressible, conduction is ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a
+charged face. Since nothing is stored inside, the carrier's level is exactly linear across a
+conductor region, so the region is a single grid cell, whatever its length. Conductor regions
+take no `fixedCharge`, `c0`, `grid`, `velocity` or `mixing`. A port on a conductor attaches to
+all of it (see [ports](#internal-ports)). See [Faces next to a conductor](#faces-next-to-a-conductor).
 
 `statistics` (optional) lists non-ideal statistics models, each covering named species:
 Fermi–Dirac, lattice gas (crowding), Redlich–Kister, Debye–Hückel, insertion hosts (OCV
@@ -132,12 +132,9 @@ interfaces: [
   face, right minus left, `(μ°_R + zFφ_R) − (μ°_L + zFφ_L)`, in J/mol. For electrons that's
   the conduction-band offset.
 - `dipole`: the φ jump, right minus left, in each material's own anchoring, in volts.
-- `vacuum: { left: { anchor, offset }, right: { anchor, offset } }`: the vacuum-level
-  heuristic. Each side's vacuum level sits `offset` volts beyond its `anchor` (a charged
-  species' standard level, or `'phi'`), and the two are taken to coincide. See the
-  [alignment guide](alignment.md).
-
-There is no default: omitting it is an error. A face between regions of the same material
+There is no default: omitting it is an error. When vacuum-level estimates are all you have,
+`vacuumDipole` from `driftlet/kit` turns them into a `dipole` (see the
+[alignment guide](alignment.md)). A face between regions of the same material
 defaults to no dipole.
 
 **Electrostatic law** `phi`:
@@ -157,23 +154,24 @@ Butler–Volmer rate per area,
 `r = k0 Π[(c_L/c_ref,L)^{ν(1−α)} (c_R/c_ref,R)^{να}] (e^{αa} − e^{−(1−α)a})`,
 with a = Σν(μ̄_L − μ̄_R)/RT, k0 in mol/(m²·s), and α (default 0.5) between 0 and 1.
 
-### Faces next to a metal
+### Faces next to a conductor
 
-A metal has no φ, so a face beside it can't take a `dipole` or `step` alignment. Its φ law is:
+A conductor has no φ, so a face beside it can't take a `dipole` or `step` alignment. Its φ law is:
 
 - `'neutral'` (no charge at the face): the default next to an ε = 0 material, and the only
-  choice between two metals; or
-- `{ type: 'capacitive', C }`: the other side's φ is tied to the metal's Fermi level V_F,
-  with displacement C·(V_F − zeroCharge − φ_edge) toward the other side, which is the metal's
-  surface charge. Give `zeroCharge` (V_F − φ_edge at zero charge) or `vacuum`, with
-  `{ anchor: 'fermi', offset: W }` on the metal's side.
+  choice between two conductors; or
+- `{ type: 'capacitive', C }` with `zeroCharge`: the other side's φ is tied to the conductor's
+  level V_F (the carrier's μ̄ as a voltage), with displacement C·(V_F − zeroCharge − φ_edge)
+  toward the other side, which is the conductor's surface charge. `zeroCharge` is V_F − φ_edge
+  at zero charge (`vacuumZeroCharge` in `driftlet/kit` estimates it from a work function).
 
-A pinned (`dipole`) law isn't offered here: an internal metal holds its surface charge in a
+A pinned (`dipole`) law isn't offered here: an internal conductor holds its surface charge in a
 finite capacitance (a large C approaches the pinned limit). A pinned barrier is still available
 with the metal as a contact.
 
-The metal's carrier can continue across as a species (e⁻ into a semiconductor, `'equilibrium'`
-by default). Electrode `reactions` at a metal face take the metal's electrons at its Fermi level,
+The conductor's carrier can continue across as a species (e⁻ into a semiconductor,
+`'equilibrium'` by default). Electrode `reactions` at a metal's face take its electrons at its
+Fermi level,
 in the same form as at contacts (`reactants`, `electrons`, `products`, `fixed`, `k0`, `alpha`),
 with the other participants at the other side's edge node. A floating metal region with
 reactions on both faces is a bipolar electrode.
@@ -249,9 +247,9 @@ species relative to V.
   material with μ°_e = 0 is `zeroCharge: φ_B`.
 
 Like every alignment, `zeroCharge` is a property of that interface. To estimate it from vacuum
-levels, give `vacuum: { outside, inside: { anchor, offset } }` instead: `outside` is the work
-function of the conductor at the terminal voltage, and the inside's vacuum level comes from an
-anchor and offset as at an interface (see the [alignment guide](alignment.md)).
+levels, `vacuumZeroCharge(def, W, inside)` from `driftlet/kit` takes the work function W of the
+conductor at the terminal voltage and the inside material's anchor and offset (see the
+[alignment guide](alignment.md)).
 
 **Electrode `reactions`**, written as reduction when `electrons > 0`:
 `Σν_R R + n e⁻(metal) ⇌ Σν_P P`. The metal's electrons sit at μ̄_e = −F·V, and
@@ -291,8 +289,8 @@ port's.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
 
-On a [metal region](#materials), a port is a wire to the whole metal: it takes no window, only
-the metal's carrier, and a conductance link's `G` is per area (S/m², a resistance R·A to the
+On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no
+window, only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance R·A to the
 port's voltage as G = 1/(R·A)). That's how a floating electrode is tied to ground through a
 resistor.
 

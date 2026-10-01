@@ -30,7 +30,7 @@ for live demos.
   against a committed baseline in CI), assembly without per-node
   allocation (about 2× faster), Newton started from the extrapolated state in adaptive
   transients (a third fewer iterations), and a tighter-damping retry for large jumps.
-- Metal regions: a Fermi level and a conductivity only (mixed-form Ohm's law, surface charge as
+- Conductor regions (metals, fast ion conductors): the carrier's level and a conductivity only (mixed-form Ohm's law, surface charge as
   sheets), capacitive faces aligned by work function, electrode reactions at internal faces,
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
@@ -46,6 +46,19 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
+   - Region kernels that own their unknowns: a conductor has its carrier's level (and segment
+     current), a dielectric only φ, a dilute or concentrated region φ and its own species, an
+     MIEC host its carriers. Assembly goes straight into variable-size blocks, so identity rows,
+     the active-slot mask and the gather disappear; a face's flux block holds only what crosses
+     it. In stages: a layout object (compact state vectors), then the kernels, then bookkeeping
+     read locally from the end boxes (instead of a full re-assembly after every step).
+   - One form for face reactions: participants on either side of a face (a conductor's carrier
+     among them, an outside phase's at its levels), fixed-activity neutrals, and a rate law that
+     always has the form r_f·(1 − e^{−A/RT}) (Butler–Volmer by default). Transfer and electrode
+     reactions become porcelain shorthands.
+   - Contacts and ports with the same outside-phase vocabulary of links.
+   - Sources apart from structure: a fast path to change contact and port voltages and the
+     circuit without re-normalising the spec, and solutions computed lazily, for live demos.
    - Warn when a factorisation loses most of its digits (a pivot many orders below its
      block), instead of losing them silently.
    - Floating conductors in η form. A floating metal is fixed by the mixed form, but the same
@@ -56,8 +69,9 @@ for live demos.
      form for the fast species only.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
-2. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
-   still dependency-free) that writes plain specs, so users and LLM agents start from something
+2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
+   (started, with the vacuum-level alignment helpers), still dependency-free, that writes plain
+   specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable
    spec data.
    - Contact and charge shorthands: `ohmic(V)`, `bath(…)`, `electrode(reaction, …)`; region
@@ -88,6 +102,10 @@ for live demos.
    README), JSDoc types and a `.d.ts`, CI.
 
 ## Later
+
+- **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
+  overpotential), and surface species (adsorbed intermediates with a coverage), so multi-step
+  mechanisms such as hydrogen evolution emerge from elementary steps.
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.

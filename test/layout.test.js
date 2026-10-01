@@ -41,7 +41,7 @@ const bipolar = () => {
   const salt = { 'NO3-': 10, 'Ag+': 10 };
   return new Device({
     species: [...ions, { name: 'e-', z: -1 }],
-    materials: { water, Ag: { metal: { species: 'e-', conductivity: 6e7 } } },
+    materials: { water, Ag: { conductor: { species: 'e-', conductivity: 6e7 } } },
     regions: [
       { material: 'water', length: 5e-6, c0: salt },
       { material: 'Ag', length: 1e-6 },
