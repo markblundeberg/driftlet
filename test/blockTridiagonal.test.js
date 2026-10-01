@@ -193,3 +193,57 @@ test('complex solver: residual of random systems, including zero diagonal entrie
     assert.ok(worst < 1e-12, `n=${n} m=${m}: residual ${worst}`);
   }
 });
+
+// Dense expansion of a system with per-node block sizes.
+function dense(sys) {
+  const { n, sizes, offA, offB, offC, offX, size } = sys;
+  const D = Array.from({ length: size }, () => new Float64Array(size));
+  for (let i = 0; i < n; i++) {
+    const m = sizes[i];
+    for (let r = 0; r < m; r++) {
+      const row = D[offX[i] + r];
+      for (let c = 0; c < m; c++) row[offX[i] + c] = sys.B[offB[i] + r * m + c];
+      if (i > 0) for (let c = 0; c < sizes[i - 1]; c++) row[offX[i - 1] + c] = sys.A[offA[i] + r * sizes[i - 1] + c];
+      if (i < n - 1) for (let c = 0; c < sizes[i + 1]; c++) row[offX[i + 1] + c] = sys.C[offC[i] + r * sizes[i + 1] + c];
+    }
+  }
+  return D;
+}
+
+test('per-node block sizes (including empty blocks) match a dense solve', () => {
+  const rand = rng(11);
+  for (const sizes of [[3, 1, 2, 4, 1], [2, 0, 3, 3, 0, 1], [1], [0, 2], [5, 5, 5], Array.from({ length: 30 }, (_, k) => 1 + ((k * 7) % 4))]) {
+    const sys = new BlockTridiagonal(sizes.length, sizes);
+    for (const X of ['A', 'B', 'C']) for (let k = 0; k < sys[X].length; k++) sys[X][k] = rand();
+    for (let i = 0; i < sizes.length; i++) for (let r = 0; r < sizes[i]; r++) sys.B[sys.offB[i] + r * sizes[i] + r] += 2 * Math.max(...sizes) + 3;
+    const d = Float64Array.from({ length: sys.size }, rand);
+    const D = dense(sys);
+    sys.factor();
+    const x = sys.solve(d);
+    const Dx = D.map((row) => row.reduce((s, v, c) => s + v * x[c], 0));
+    assert.ok(maxAbsDiff(Dx, d) < 1e-12, `${sizes}: residual ${maxAbsDiff(Dx, d)}`);
+    assert.ok(maxAbsDiff(sys.multiply(x), d) < 1e-12);
+  }
+  // A uniform size keeps the uniform layout.
+  const u = new BlockTridiagonal(4, 3), v = new BlockTridiagonal(4, [3, 3, 3, 3]);
+  assert.deepEqual([u.m, v.m, u.A.length, v.A.length, u.offB[2], v.offC[3]], [3, null, 36, 36, 18, 27]);
+  assert.throws(() => new BlockTridiagonal(2, [1]), RangeError);
+});
+
+test('complex solver with per-node block sizes', () => {
+  const rand = rng(12);
+  const sizes = [2, 0, 3, 1, 4, 2];
+  const sys = new ComplexBlockTridiagonal(sizes.length, sizes);
+  for (const X of ['Ar', 'Ai', 'Br', 'Bi', 'Cr', 'Ci']) for (let k = 0; k < sys[X].length; k++) sys[X][k] = rand();
+  for (let i = 0; i < sizes.length; i++) for (let r = 0; r < sizes[i]; r++) sys.Br[sys.offB[i] + r * sizes[i] + r] += 10;
+  const br = Float64Array.from({ length: sys.size }, rand), bi = Float64Array.from({ length: sys.size }, rand);
+  const xr = new Float64Array(sys.size), xi = new Float64Array(sys.size);
+  sys.factor();
+  sys.solve(br, bi, xr, xi);
+  // Re and Im parts of (A x) through the real dense expansions of each part.
+  const part = (key) => dense({ ...sys, A: sys['A' + key], B: sys['B' + key], C: sys['C' + key] });
+  const R = part('r'), I = part('i');
+  const mul = (D, x) => D.map((row) => row.reduce((s, v, c) => s + v * x[c], 0));
+  const re = mul(R, xr).map((v, k) => v - mul(I, xi)[k]), im = mul(R, xi).map((v, k) => v + mul(I, xr)[k]);
+  assert.ok(maxAbsDiff(re, br) < 1e-12 && maxAbsDiff(im, bi) < 1e-12);
+});
