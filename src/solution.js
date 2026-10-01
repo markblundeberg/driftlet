@@ -49,7 +49,7 @@ export function makeSolution(solver, result = {}) {
       }
       const o = solver.blockOfNode[g] * M + 1 + i;
       mu[g] = RT * (u[o] + solver.uLo[o]);
-      if (solver.nodeMetal[g] >= 0) {
+      if (solver.nodeConductor[g] >= 0) {
         // A metal has a Fermi level but no concentration or standard level of its own.
         cc[g] = mus[g] = Vs[g] = NaN;
         V[g] = mu[g] / (z * F);

@@ -130,7 +130,7 @@ export function normalizeDevice(def) {
     const mixing = reg.mixing === undefined ? 0 : nonNegative(reg.mixing, `${path}.mixing`);
     if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
     const mat = materials[materialIndex.get(reg.material)];
-    if (mat.metal) {
+    if (mat.conductor) {
       need(fixedCharge === 0, `${path}.fixedCharge: a conductor region is neutral in bulk`);
       need(reg.c0 === undefined, `${path}.c0: a conductor region has no composition to give, only its carrier's level`);
       need(velocity === 0 && mixing === 0, `${path}: a conductor region has no flow or mixing, only conduction`);
@@ -175,7 +175,7 @@ export function normalizeDevice(def) {
       velocity,
       mixing,
       grid: reg.grid,
-      cells: mat.metal ? [length] : undefined,
+      cells: mat.conductor ? [length] : undefined,
     };
   });
 
@@ -376,7 +376,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
   const reg = regions[r], mat = materials[reg.material];
   // A metal is one cell with no interior, so a port attaches to the whole of it, as a wire would.
-  if (mat.metal) need(pdef.from === undefined && pdef.to === undefined, `${path}: a port on a conductor attaches to all of it, so give no window`);
+  if (mat.conductor) need(pdef.from === undefined && pdef.to === undefined, `${path}: a port on a conductor attaches to all of it, so give no window`);
   const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
   const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
   need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);
@@ -396,7 +396,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
     if (link.type === 'blocked') continue;
     need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
-    if (mat.metal) need(i === mat.metal.i, `${lpath}: a conductor exchanges only its carrier, ${species[mat.metal.i].name}`);
+    if (mat.conductor) need(i === mat.conductor.i, `${lpath}: a conductor exchanges only its carrier, ${species[mat.conductor.i].name}`);
     const z = species[i].z;
     // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
     let level;
@@ -411,7 +411,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
       level = { offset: finite(offset, `${lpath}.offset`) };
     }
     // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
-    if (link.type === 'conductance') level.G = mat.metal ? positive(link.G, `${lpath}.G (S/m², for a conductor)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
+    if (link.type === 'conductance') level.G = mat.conductor ? positive(link.G, `${lpath}.G (S/m², for a conductor)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
     links[i] = { type: link.type, ...level };
   }
@@ -467,7 +467,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // resolves the double layers). 'neutral': no charge at the face (D = 0) and a free jump, the
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
-  if (matL.metal || matR.metal) return normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex, RT);
+  if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
   const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
   const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'dipole');
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
@@ -533,7 +533,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   reactingDefaultsBlocked(links, reactions, idef, species);
-  return { phi, dipole, sheetCharge, links, reactions, metal: null };
+  return { phi, dipole, sheetCharge, links, reactions, conductor: null };
 }
 
 // A conductor (a metal, or a fast ion conductor): only its one mobile carrier, whose single
@@ -563,7 +563,7 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
     modelOf: new Int32Array(n).fill(-1),
     ideal: true,
     phiFree: true,
-    metal: { i, sigma: positive(mdef.conductivity, `${path}.conductor.conductivity (S/m)`) },
+    conductor: { i, sigma: positive(mdef.conductivity, `${path}.conductor.conductivity (S/m)`) },
   };
 }
 
@@ -572,12 +572,12 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
 // charge: D toward the other side = C (V_F − zeroCharge − φ_edge), the metal's surface charge. (No
 // pinned 'dipole' law here: an internal metal must hold that charge in a finite capacitance.)
 // Electrode reactions take the metal's carriers at its Fermi level.
-function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex, RT) {
+function normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT) {
   if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
-  const side = matL.metal ? (matR.metal ? 'both' : 'left') : 'right';
+  const side = matL.conductor ? (matR.conductor ? 'both' : 'left') : 'right';
   const other = side === 'left' ? matR : matL;
-  const metal = side === 'right' ? matR.metal : matL.metal;
+  const metal = side === 'right' ? matR.conductor : matL.conductor;
   for (const k of ['dipole', 'step', 'sheetCharge']) {
     need(idef[k] === undefined, `${where}.${k}: a conductor has no φ of its own; align with zeroCharge`);
   }
@@ -624,7 +624,7 @@ function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex,
   }
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   reactingDefaultsBlocked(links, reactions, idef, species);
-  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, metal: { side, i: metal.i } };
+  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, conductor: { side, i: metal.i } };
 }
 
 function defaultInterfaceLinks(matL, matR, species) {

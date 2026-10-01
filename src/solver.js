@@ -133,26 +133,26 @@ export class Solver {
     // Metal nodes: the carrier's index, and for a node at a charged face of its metal, the face
     // whose displacement is the metal's surface charge (σ = ±D_f), held as a sheet of excess
     // carriers in that node's half-box.
-    this.nodeMetal = new Int32Array(nNodes).fill(-1);
+    this.nodeConductor = new Int32Array(nNodes).fill(-1);
     this.sheetFace = new Int32Array(nNodes).fill(-1);
     this.sheetSign = new Int8Array(nNodes);
     // A metal node's φ slot (φ is undefined there) carries instead the carrier flux J through the
     // segment to its right: Ohm's law and continuity in mixed form stay well conditioned however
     // large σ is (eliminating a stiff ohmic chain directly would cancel catastrophically).
-    this.metalLast = new Uint8Array(nNodes);
+    this.conductorLast = new Uint8Array(nNodes);
     for (let g = 0; g < nNodes; g++) {
       const mat = materials[regions[grid.nodeRegion[g]].material];
-      if (mat.metal) {
-        this.nodeMetal[g] = mat.metal.i;
+      if (mat.conductor) {
+        this.nodeConductor[g] = mat.conductor.i;
         this.nodeIdeal[g] = 1;
-        this.metalLast[g] = g === grid.regionEnd[grid.nodeRegion[g]] ? 1 : 0;
+        this.conductorLast[g] = g === grid.regionEnd[grid.nodeRegion[g]] ? 1 : 0;
       }
     }
     model.interfaces.forEach((itf, f) => {
-      if (!itf.metal || itf.metal.side === 'both' || itf.phi.type === 'neutral') return;
-      const g = itf.metal.side === 'left' ? grid.regionEnd[f] : grid.regionStart[f + 1];
+      if (!itf.conductor || itf.conductor.side === 'both' || itf.phi.type === 'neutral') return;
+      const g = itf.conductor.side === 'left' ? grid.regionEnd[f] : grid.regionStart[f + 1];
       this.sheetFace[g] = f;
-      this.sheetSign[g] = itf.metal.side === 'left' ? 1 : -1; // σ_metal = D_f on the left, −D_f on the right
+      this.sheetSign[g] = itf.conductor.side === 'left' ? 1 : -1; // σ_metal = D_f on the left, −D_f on the right
     });
     this._activeSlots();
     this.K = this.anyNonIdeal ? new Float64Array(nNodes * n * n) : null;
@@ -204,9 +204,9 @@ export class Solver {
     const { n, M, nB, model } = this;
     const active = (this.active = new Uint8Array(nB * M));
     for (let g = 0; g < this.nNodes; g++) {
-      const b = this.blockOfNode[g], im = this.nodeMetal[g];
+      const b = this.blockOfNode[g], im = this.nodeConductor[g];
       if (im >= 0) {
-        active[b * M] = this.metalLast[g] ? 0 : 1; // the segment flux J
+        active[b * M] = this.conductorLast[g] ? 0 : 1; // the segment flux J
         active[b * M + 1 + im] = 1;
         continue;
       }
@@ -457,7 +457,7 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (!mat.present[i]) continue;
         const st = this.stretches[this.stretchOf[r * n + i]];
-        if (!st.contactFed && mat.metal) {
+        if (!st.contactFed && mat.conductor) {
           // A conductor away from the contacts: start uncharged, with its carrier's level in
           // equilibrium with the first reaction on its left face that takes it, else at the
           // running φ.
@@ -531,7 +531,7 @@ export class Solver {
       if (!mat.ideal) this._materialAt(mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
         const b = this.blockOfNode[g];
-        u[b * M] = mat.metal ? 0 : phiHat; // a metal's slot 0 is its segment flux
+        u[b * M] = mat.conductor ? 0 : phiHat; // a metal's slot 0 is its segment flux
         for (let i = 0; i < n; i++) {
           if (mode[i] === 1) u[b * M + 1 + i] = eta[i];
           else if (mode[i] === 2) {
@@ -580,7 +580,7 @@ export class Solver {
         this._nodeStatistics(g, b, phiHat);
         continue;
       }
-      const im = this.nodeMetal[g];
+      const im = this.nodeConductor[g];
       if (im >= 0) {
         // Excess carriers: zero in the bulk, the surface sheet at a charged face.
         for (let i = 0; i < n; i++) c[g * n + i] = 0;
@@ -696,7 +696,7 @@ export class Solver {
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g], v = grid.vol[g];
       let q = this.rhoFixed[g], dq = 0;
-      const im = this.nodeMetal[g];
+      const im = this.nodeConductor[g];
       if (im >= 0) {
         // Only the carrier (and, but at the last node, the segment flux J) are unknowns here.
         const r = 1 + im, k = g * n + im;
@@ -812,8 +812,8 @@ export class Solver {
         JB[offB[bR] + pR * mR + pR] += k;
       }
 
-      if (this.nodeMetal[s] >= 0) {
-        this._segmentMetal(s, bL, bR, mat, h, lastSeg);
+      if (this.nodeConductor[s] >= 0) {
+        this._segmentConductor(s, bL, bR, mat, h, lastSeg);
         continue;
       }
       const vel = regions[reg].velocity;
@@ -874,11 +874,11 @@ export class Solver {
       const itf = interfaces[f];
       // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
       const law = itf.phi.type;
-      const metalSide = itf.metal && law !== 'neutral' ? itf.metal.side : null;
-      if (metalSide) {
+      const condSide = itf.conductor && law !== 'neutral' ? itf.conductor.side : null;
+      if (condSide) {
         // Against a metal: the other side's φ is tied to the metal's Fermi level V_F = V_T η/z.
-        const im = itf.metal.i, bm = metalSide === 'left' ? bL : bR, bo = metalSide === 'left' ? bR : bL;
-        const sg = metalSide === 'left' ? 1 : -1;
+        const im = itf.conductor.i, bm = condSide === 'left' ? bL : bR, bo = condSide === 'left' ? bR : bL;
+        const sg = condSide === 'left' ? 1 : -1;
         const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
         const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
         if (law === 'dipole') {
@@ -913,11 +913,11 @@ export class Solver {
       }
       // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead.
       const gL = grid.regionEnd[f], gR = gL + 1;
-      if (this.nodeMetal[gL] < 0) {
+      if (this.nodeConductor[gL] < 0) {
         res[R[bL * M]] += u[bf * M];
         this._j(bL, 0, bf, 0, 1);
       }
-      if (this.nodeMetal[gR] < 0) {
+      if (this.nodeConductor[gR] < 0) {
         res[R[bR * M]] -= u[bf * M] + itf.sheetCharge;
         this._j(bR, 0, bf, 0, -1);
       }
@@ -1037,11 +1037,11 @@ export class Solver {
   // Ohmic conduction in a metal, in mixed form. The flux J (slot 0 of the left node) obeys
   //   η_R − η_L + J/g = 0,  g = σ RT/(z²F² h)   (Ohm's law, J = −g Δη),
   // and enters the two nodes' carrier balances as outflow and inflow.
-  _segmentMetal(s, bL, bR, mat, h, lastSeg) {
+  _segmentConductor(s, bL, bR, mat, h, lastSeg) {
     const R = this.rix;
     const { M, u, uLo, res, z } = this;
-    const i = mat.metal.i, r = 1 + i;
-    const g = (mat.metal.sigma * this.model.RT) / (z[i] * z[i] * FARADAY * FARADAY * h);
+    const i = mat.conductor.i, r = 1 + i;
+    const g = (mat.conductor.sigma * this.model.RT) / (z[i] * z[i] * FARADAY * FARADAY * h);
     const J = u[bL * M];
     res[R[bL * M]] = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) + J / g;
     this._j(bL, 0, bR, r, 1);
@@ -1174,7 +1174,7 @@ export class Solver {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
       aHi -= p.nu * u[o];
       aLo -= p.nu * uLo[o];
-      if (this.nodeMetal[g] === p.i) continue; // a conductor's carrier has activity 1
+      if (this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= (c[g * n + p.i] / this.cRef[g * n + p.i]) ** e;
       this._dlnc(g, p.i, e, p.side ? dR : dL);
@@ -1413,7 +1413,7 @@ export class Solver {
     let mx = this.terminalBlock >= 0 ? Math.abs(delta[R[this.terminalBlock * M]]) : 0;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
-      if (this.nodeMetal[g] < 0) mx = Math.max(mx, Math.abs(delta[R[b * M]])); // (a metal's slot 0 is a flux)
+      if (this.nodeConductor[g] < 0) mx = Math.max(mx, Math.abs(delta[R[b * M]])); // (a metal's slot 0 is a flux)
       for (let i = 0; i < n; i++) {
         if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + i]]));
       }
