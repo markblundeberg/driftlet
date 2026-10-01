@@ -18,7 +18,7 @@ export class DeviceError extends Error {
 }
 
 // Contacts use the same laws as internal faces: the outside is a phase with known levels.
-const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance']);
+const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange']);
 const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance']);
 const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'dipole']);
 
@@ -695,6 +695,13 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
         links[i] = { type: 'conductance', G: positive(link.G, `${lpath}.G`), offset: finite(offset, `${lpath}.offset`) };
         continue;
       }
+      if (link.type === 'exchange') {
+        // A neutral species exchanging with the outside at its μ: N_in = k (μ_out − μ)/RT.
+        need(species[i].z === 0, `${lpath}: a charged species exchanges by { type: 'conductance', G }`);
+        links[i] = { type: 'exchange', k: positive(link.k, `${lpath}.k (mol/(m²·s))`), mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
+        continue;
+      }
+      if (link.type === 'conductance') need(species[i].z !== 0, `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
       if (link.type === 'equilibrium') {
         // In equilibrium with the outside phase, whose levels are known: a Dirichlet condition.
         if (species[i].z === 0) {

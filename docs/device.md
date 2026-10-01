@@ -243,8 +243,9 @@ contacts: {
     metal's own chemical potential per charge, which is 0 on the usual table convention. (E°
     isn't the offset: it's already carried by the ion's μ° in the solution.)
   - At a metal, holes and electrons share the metal's voltage: `offset: 0`.
-- `{ type: 'conductance', G, offset }`: ohmic exchange with the outside level at `V + offset`,
-  J = G·(V_out − V_i).
+- `{ type: 'conductance', G, offset }` (charged species): ohmic exchange with the outside level
+  at `V + offset`, J = G·(V_out − V_i), G in S/m².
+- `{ type: 'exchange', k, mu }` (neutral species): N_in = k·(μ_out − μ)/RT, k in mol/(m²·s).
 - `'blocked'`: no flux.
 
 **`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
@@ -297,8 +298,8 @@ ports: [{
 }]
 ```
 
-Offsets follow the contact rules: 0 by default only for the terminal species, and an absolute
-`mu` for neutral species. A port's voltage is fixed; ports aren't yet terminals of the circuit.
+Links and offsets are those of contacts, per volume instead of per area: 0 by default only for
+the terminal species, and an absolute `mu` for neutral species. A port's voltage is fixed; ports aren't yet terminals of the circuit.
 Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what the port brings into
 the device. In steady state the right contact's current is the left contact's plus every
 port's.

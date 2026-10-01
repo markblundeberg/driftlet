@@ -68,12 +68,15 @@
 /** @typedef {'equilibrium' | 'blocked' | { type: 'conductance', G: number }} InterfaceSpeciesLink */
 
 /**
- * @typedef {object} TransferReactionDef
- * @property {Record<string, number>} transfer species crossing left → right (forward), with coefficients
+ * A reaction at a face: participants on each side with signed stoichiometric coefficients
+ * (ν < 0 consumed by the forward reaction), Butler–Volmer kinetics.
+ * @typedef {object} FaceReactionDef
+ * @property {Record<string, number>} [left] participants on the left side (species present there, or fixed neutrals)
+ * @property {Record<string, number>} [right] participants on the right side
+ * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {number} k0 standard rate constant, mol/(m²·s)
  * @property {number} [alpha] transfer coefficient, 0…1 (default 0.5)
  */
-
 /**
  * One face between consecutive regions. For different materials under a 'dipole' or
  * 'capacitive' law, exactly one alignment (step or dipole) is required.
@@ -83,15 +86,14 @@
  * @property {number} [zeroCharge] beside a conductor region: V_F − φ_edge at zero charge, V
  * @property {InterfacePhiLaw} [phi] electrostatic law (default 'dipole'; 'neutral' between ε = 0 materials)
  * @property {number} [sheetCharge] C/m²
- * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium)
- * @property {(TransferReactionDef | ElectrodeReactionDef)[]} [reactions] Butler–Volmer transfer across the
- *   face, or electrode reactions at a face beside a conductor region
+ * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium
+ *   where present on both sides and not reacting at the face)
+ * @property {FaceReactionDef[]} [reactions] reactions at the face
  */
 
 /**
  * @typedef {object} BulkReactionDef
- * @property {Record<string, number>} [reactants] participants and stoichiometric coefficients
- * @property {Record<string, number>} [products]
+ * @property {Record<string, number>} nu signed stoichiometric coefficients (ν < 0 consumed)
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {Record<string, number>} kf forward rate constant per material name
  */
@@ -101,7 +103,8 @@
  * V_i = V + offset_i (a rigid ladder that the circuit slides by V).
  * @typedef {'blocked' | 'equilibrium'
  *   | { type: 'equilibrium', offset?: number, mu?: number }
- *   | { type: 'conductance', G: number, offset?: number }} ContactSpeciesLink
+ *   | { type: 'conductance', G: number, offset?: number }
+ *   | { type: 'exchange', k: number, mu: number }} ContactSpeciesLink
  */
 /**
  * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at
@@ -112,25 +115,13 @@
  */
 
 /**
- * Electrode reaction, written as reduction when electrons > 0: Σν_R R + n e⁻(metal) ⇌ Σν_P P.
- * @typedef {object} ElectrodeReactionDef
- * @property {Record<string, number>} [reactants]
- * @property {Record<string, number>} [products]
- * @property {number} [electrons] electrons taken from the metal (integer)
- * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants
- * @property {number} k0 standard rate constant, mol/(m²·s)
- * @property {number} [alpha] transfer coefficient, 0…1 (default 0.5)
- */
-
-/**
  * @typedef {object} ContactDef
  * @property {number} [V] terminal voltage, V (default 0)
  * @property {string} [terminal] species whose voltage V is
  * @property {Record<string, ContactSpeciesLink>} [species] per-species links (default blocked)
  * @property {{ c: Record<string, number>, reference: string, offset?: number }} [bath] a neutral
  *   composition held at the contact, anchored through a charged reference species
- * @property {ContactPhiLink} [phi] required when any species or reaction connects (default 'neutral')
- * @property {ElectrodeReactionDef[]} [reactions]
+ * @property {ContactPhiLink} [phi] required when any species connects (default 'neutral')
  */
 
 /**

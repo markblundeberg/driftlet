@@ -96,3 +96,22 @@ test('flow and mixing are checked', () => {
   def.regions[0].velocity = 'fast';
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /velocity must be a finite number/.test(e.message));
 });
+
+test('exchange link at a contact: N = k (μ_out − μ)/RT in series with diffusion', () => {
+  // The bar's left end exchanges X with an outside phase at c_out through a rate constant k; the
+  // right end holds c_R. Steady: N = D (c_0 − c_R)/L = k ln(c_out/c_0), solved for c_0.
+  const k = 1e-4, cOut = 2;
+  const dev = bar();
+  dev.set({ contacts: { left: { species: { X: { type: 'exchange', k, mu: RT * Math.log(cOut / 1000) } } } } });
+  const sol = dev.solve();
+  assert.ok(sol.converged);
+  let lo = cR, hi = cOut;
+  for (let it = 0; it < 200; it++) {
+    const c0 = 0.5 * (lo + hi);
+    if ((D * (c0 - cR)) / L > k * Math.log(cOut / c0)) hi = c0;
+    else lo = c0;
+  }
+  const want = (D * (lo - cR)) / L;
+  assert.ok(Math.abs(sol.contacts.left.flux.X / want - 1) < 1e-10, `${sol.contacts.left.flux.X} vs ${want}`);
+  assert.ok(Math.abs(sol.c.X[0] / lo - 1) < 1e-10);
+});

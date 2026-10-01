@@ -1269,9 +1269,16 @@ export class Solver {
     // Before anything is added, each balance residual is the flux through this face.
     for (let i = 0; i < n; i++) flux[i] = this.loc[b * M + 1 + i] < 0 ? 0 : sgn * res[R[b * M + 1 + i]];
 
-    // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset.
+    // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset; exchange
+    // links (neutral species): N_in = k (μ_out − μ)/RT.
     for (let i = 0; i < n; i++) {
       const link = ct.species[i];
+      if (link.type === 'exchange') {
+        const o = b * M + 1 + i;
+        res[R[o]] -= link.k * (link.mu / this.model.RT - (u[o] + uLo[o]));
+        this._j(b, 1 + i, b, 1 + i, link.k);
+        continue;
+      }
       if (link.type !== 'conductance') continue;
       const o = b * M + 1 + i;
       const Vi = (VT * (u[o] + uLo[o])) / z[i];
