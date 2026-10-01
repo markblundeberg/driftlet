@@ -40,20 +40,30 @@ aqueous electrolyte (absolute SHE).
 An anchor has to be a level that driftlet knows in terms of a material's φ:
 
 - **A charged species' standard level**, `V°_i = φ + μ°_i/(z_i F)`. For e⁻ and h⁺ these are
-  the band edges. For an ion, V°_i is the level of electrons in equilibrium with the ion's
-  standard redox couple, with the element in its standard state (M⁺ + e⁻ ⇌ M, or
-  ½X₂ + e⁻ ⇌ X⁻), on whatever scale the μ° values come from.
-- **The SHE level.** With ion μ° from the usual SHE-based tables (μ°_H⁺ = 0, μ°_H₂ = 0), the
-  H⁺ standard level *is* the SHE level. So Trasatti's value is anchor `'H+'` with offset 4.44 V.
-  The SHE level also equals V°_i − E°_i for any other table ion, so without H⁺ in the model
-  the anchor can be that ion with offset 4.44 V + E°_i (e.g. Cl⁻: 4.44 + 1.36 = 5.80 V).
-  Trasatti's 4.44 V works exactly like a semiconductor's electron affinity, with the SHE level
-  in place of the conduction band.
-- **The Fermi level** of a metal. A metal modelled as a strictly neutral region (`epsr: 0`)
-  whose electron `cRef` equals its electron density has c = c_ref everywhere, so its Fermi
-  level coincides with its e⁻ standard level: use anchor `'e-'` with offset W. A
-  semiconductor's Fermi level moves with doping and bias, so its work function isn't a
-  material constant: use its electron affinity instead.
+  the band edges, which are electronic levels. For an ion, V°_i is simply that ion's
+  standard level: a fixed offset from φ, not by itself the level of any electrons.
+- **The SHE level**, the electronic level of the standard hydrogen electrode in a solution:
+
+  ```
+  V°_e⁻(SHE) = φ + (μ°_H⁺ − ½ μ°_H₂) / F
+  ```
+
+  As an anchor this is `'H+'` (its standard level φ + μ°_H⁺/F), with the H₂ term folded into
+  the offset: Trasatti's value becomes `{ anchor: 'H+', offset: 4.44 + μ°_H₂/(2F) }`. On the
+  usual conventions (μ°_H₂ = 0 for the element in its standard state, and μ°_H⁺ = 0 so that
+  E°(SHE) = 0), that's just offset 4.44 V. Trasatti's 4.44 V then works exactly like a
+  semiconductor's electron affinity, with the SHE level in place of the conduction band. It
+  needs H⁺ among the species. Other half-reactions could be used as anchors in principle, but
+  each brings its own conventions (the neutral element's μ, E°(SHE) = 0), so they're not
+  offered as shortcuts here.
+- **The Fermi level** of a metal. Properly, a work function is referenced to the Fermi level
+  itself, not to an electrostatic level. Today a metal is modelled as a strictly neutral
+  region (`epsr: 0`) whose electron `cRef` equals its electron density. Neutrality then
+  holds c = c_ref everywhere, so the Fermi level coincides exactly with the e⁻ standard
+  level: use anchor `'e-'` with offset W. (A metal region with ε > 0 would band-bend slightly,
+  and this equivalence would hold only approximately.) A semiconductor's Fermi level moves
+  with doping and bias, so its work function isn't a material constant: use its electron
+  affinity instead.
 - **φ itself** (`'phi'`), with a surface potential as the offset. That's discouraged, since φ
   is bookkeeping: its value inside a material depends on how that material's μ° were
   anchored, and surface potentials are not measurable on their own. If you have settled that
@@ -100,7 +110,7 @@ anchor-level form of the textbook V_FB = (W_g − W_s)/e, which refers to the se
 bulk Fermi level instead. Fixed charge in a real insulator shifts flat band further.
 
 **Metal | electrolyte (potential of zero charge).** Work function against the absolute SHE
-gives pzc ≈ W/e − 4.44 V on the SHE scale:
+gives pzc ≈ W/e − 4.44 V on the SHE scale (on the usual conventions above):
 `{ type: 'capacitive', C, vacuum: { outside: W, inside: { anchor: 'H+', offset: 4.44 } } }`.
 
 **Semiconductor | electrolyte.** Electron affinity against the absolute SHE places the band
