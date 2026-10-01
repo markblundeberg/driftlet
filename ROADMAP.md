@@ -36,8 +36,10 @@ for live demos.
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
   conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
-- Variable block sizes in the linear solve: only the unknowns that exist at each node are
-  eliminated (impedance included). Metal regions are a single cell.
+- Variable block sizes: each block holds only the unknowns that exist at its node, assembled
+  straight into compact blocks by region kernels (conductor, dilute, concentrated); a face's
+  block holds its displacement, its linked fluxes and its reaction rates. Bookkeeping after each
+  step is read from the end boxes and port windows alone. Conductor regions are a single cell.
 - Spectators solved directly in steady state, with their amounts as constraints (a bordered
   solve) instead of giant time steps: 5–8× fewer iterations where they occur.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
@@ -47,12 +49,6 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
-   - Region kernels that own their unknowns: a conductor has its carrier's level (and segment
-     current), a dielectric only φ, a dilute or concentrated region φ and its own species, an
-     MIEC host its carriers. Assembly goes straight into variable-size blocks, so identity rows,
-     the active-slot mask and the gather disappear; a face's flux block holds only what crosses
-     it. In stages: a layout object (compact state vectors), then the kernels, then bookkeeping
-     read locally from the end boxes (instead of a full re-assembly after every step).
    - Contacts and ports with the same outside-phase vocabulary of links.
    - Sources apart from structure: a fast path to change contact and port voltages and the
      circuit without re-normalising the spec, and solutions computed lazily, for live demos.

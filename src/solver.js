@@ -194,6 +194,21 @@ export class Solver {
     // The bulk reactions running in each material.
     this.rxsIn = materials.map((_, m) => this.rxs.filter((rx) => rx.kf[m] > 0));
 
+    // The boxes whose residuals the bookkeeping reads (contact and port fluxes: the end nodes and
+    // every port's window), with the segments and faces that touch them, per region. After each
+    // step only these are evaluated (_assembleBookkeeping), not the whole device.
+    const need = new Uint8Array(nNodes);
+    need[0] = need[nNodes - 1] = 1;
+    for (const port of model.ports) for (const g of port.nodes) need[g] = 1;
+    this.bookkeeping = regions.map((_, r) => {
+      const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], nodes = [], segs = [];
+      for (let g = g0; g <= g1; g++) if (need[g]) nodes.push(g);
+      for (let q = g0; q < g1; q++) if (need[q] || need[q + 1]) segs.push(q);
+      return { nodes, segs };
+    });
+    this.bookkeepingFaces = [];
+    for (let f = 0; f < nFaces; f++) if (need[grid.regionEnd[f]] || need[grid.regionStart[f + 1]]) this.bookkeepingFaces.push(f);
+
     this._findStretches();
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
@@ -721,83 +736,8 @@ export class Solver {
       if (mat.ideal) this._segmentsDilute(g0, g1, r, mat, reg.velocity);
     }
 
-    // Interfaces: the flux node carries D and N_i; its rows are the interface laws.
-    for (let f = 0; f < this.nFaces; f++) {
-      const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
-      const itf = interfaces[f];
-      // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
-      const law = itf.phi.type;
-      const condSide = itf.conductor && law !== 'neutral' ? itf.conductor.side : null;
-      if (condSide) {
-        // Against a metal: the other side's φ is tied to the metal's Fermi level V_F = V_T η/z.
-        const im = itf.conductor.i, bm = condSide === 'left' ? bL : bR, bo = condSide === 'left' ? bR : bL;
-        const sg = condSide === 'left' ? 1 : -1;
-        const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
-        const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
-        if (law === 'dipole') {
-          res[R[bf * M]] = gap;
-          this._j(bf, 0, bm, 1 + im, 1 / z[im]);
-          this._j(bf, 0, bo, 0, -1);
-        } else {
-          // D toward the other side = C (V_F − zeroCharge − φ_edge); toward +x that's sg times it.
-          const kC = itf.phi.C * VT;
-          res[R[bf * M]] = u[bf * M] - sg * kC * gap;
-          this._j(bf, 0, bf, 0, 1);
-          this._j(bf, 0, bm, 1 + im, (-sg * kC) / z[im]);
-          this._j(bf, 0, bo, 0, sg * kC);
-        }
-      } else if (law === 'neutral') {
-        res[R[bf * M]] = u[bf * M]; // D = 0; the jump is whatever each side's neutrality needs
-        this._j(bf, 0, bf, 0, 1);
-      } else {
-        const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
-        if (law === 'dipole') {
-          res[R[bf * M]] = jump;
-          this._j(bf, 0, bR, 0, 1);
-          this._j(bf, 0, bL, 0, -1);
-        } else {
-          // D = −C (φ_R − φ_L − dipole): displacement toward +x drops across the layer.
-          const kC = itf.phi.C * VT;
-          res[R[bf * M]] = u[bf * M] + kC * jump;
-          this._j(bf, 0, bf, 0, 1);
-          this._j(bf, 0, bR, 0, kC);
-          this._j(bf, 0, bL, 0, -kC);
-        }
-      }
-      // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead.
-      const gL = grid.regionEnd[f], gR = gL + 1;
-      if (this.nodeConductor[gL] < 0) {
-        res[R[bL * M]] += u[bf * M];
-        this._j(bL, 0, bf, 0, 1);
-      }
-      if (this.nodeConductor[gR] < 0) {
-        res[R[bR * M]] -= u[bf * M] + itf.sheetCharge;
-        this._j(bR, 0, bf, 0, -1);
-      }
-      for (let i = 0; i < n; i++) {
-        const r = 1 + i, o = bf * M + r;
-        const type = itf.links[i].type;
-        const deta = u[bL * M + r] - u[bR * M + r] + (uLo[bL * M + r] - uLo[bR * M + r]); // η_L − η_R
-        if (type === 'blocked') continue;
-        if (type === 'equilibrium') {
-          res[R[o]] = -deta; // μ̄ continuous
-          this._j(bf, r, bR, r, 1);
-          this._j(bf, r, bL, r, -1);
-        } else {
-          // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F)
-          const gG = (itf.links[i].G * VT) / (z[i] * z[i] * F);
-          res[R[o]] = u[o] - gG * deta;
-          this._j(bf, r, bf, r, 1);
-          this._j(bf, r, bL, r, -gG);
-          this._j(bf, r, bR, r, gG);
-        }
-        res[R[bL * M + r]] += u[o];
-        this._j(bL, r, bf, r, 1);
-        res[R[bR * M + r]] -= u[o];
-        this._j(bR, r, bf, r, -1);
-      }
-      itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR));
-    }
+    // Faces: the flux node carries D, the linked species' fluxes and the reaction rates.
+    for (let f = 0; f < this.nFaces; f++) this._face(f);
 
     // Internal ports (after every other term at their nodes, so a held level can read its flux).
     model.ports.forEach((port, k) => this._port(port, this.portFlux[k]));
@@ -1008,6 +948,87 @@ export class Solver {
         }
       }
     }
+  }
+
+  // A face: its flux node's rows are the interface laws (φ law, species links, reactions), and
+  // its fluxes enter the two edge nodes' balances.
+  _face(f) {
+    const { model, n, M, u, uLo, res, z, VT } = this, R = this.rix, F = FARADAY;
+    const grid = model.grid, interfaces = model.interfaces;
+    const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
+    const itf = interfaces[f];
+    // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
+    const law = itf.phi.type;
+    const condSide = itf.conductor && law !== 'neutral' ? itf.conductor.side : null;
+    if (condSide) {
+      // Against a metal: the other side's φ is tied to the metal's Fermi level V_F = V_T η/z.
+      const im = itf.conductor.i, bm = condSide === 'left' ? bL : bR, bo = condSide === 'left' ? bR : bL;
+      const sg = condSide === 'left' ? 1 : -1;
+      const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
+      const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
+      if (law === 'dipole') {
+        res[R[bf * M]] = gap;
+        this._j(bf, 0, bm, 1 + im, 1 / z[im]);
+        this._j(bf, 0, bo, 0, -1);
+      } else {
+        // D toward the other side = C (V_F − zeroCharge − φ_edge); toward +x that's sg times it.
+        const kC = itf.phi.C * VT;
+        res[R[bf * M]] = u[bf * M] - sg * kC * gap;
+        this._j(bf, 0, bf, 0, 1);
+        this._j(bf, 0, bm, 1 + im, (-sg * kC) / z[im]);
+        this._j(bf, 0, bo, 0, sg * kC);
+      }
+    } else if (law === 'neutral') {
+      res[R[bf * M]] = u[bf * M]; // D = 0; the jump is whatever each side's neutrality needs
+      this._j(bf, 0, bf, 0, 1);
+    } else {
+      const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
+      if (law === 'dipole') {
+        res[R[bf * M]] = jump;
+        this._j(bf, 0, bR, 0, 1);
+        this._j(bf, 0, bL, 0, -1);
+      } else {
+        // D = −C (φ_R − φ_L − dipole): displacement toward +x drops across the layer.
+        const kC = itf.phi.C * VT;
+        res[R[bf * M]] = u[bf * M] + kC * jump;
+        this._j(bf, 0, bf, 0, 1);
+        this._j(bf, 0, bR, 0, kC);
+        this._j(bf, 0, bL, 0, -kC);
+      }
+    }
+    // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead.
+    const gL = grid.regionEnd[f], gR = gL + 1;
+    if (this.nodeConductor[gL] < 0) {
+      res[R[bL * M]] += u[bf * M];
+      this._j(bL, 0, bf, 0, 1);
+    }
+    if (this.nodeConductor[gR] < 0) {
+      res[R[bR * M]] -= u[bf * M] + itf.sheetCharge;
+      this._j(bR, 0, bf, 0, -1);
+    }
+    for (let i = 0; i < n; i++) {
+      const r = 1 + i, o = bf * M + r;
+      const type = itf.links[i].type;
+      const deta = u[bL * M + r] - u[bR * M + r] + (uLo[bL * M + r] - uLo[bR * M + r]); // η_L − η_R
+      if (type === 'blocked') continue;
+      if (type === 'equilibrium') {
+        res[R[o]] = -deta; // μ̄ continuous
+        this._j(bf, r, bR, r, 1);
+        this._j(bf, r, bL, r, -1);
+      } else {
+        // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F)
+        const gG = (itf.links[i].G * VT) / (z[i] * z[i] * F);
+        res[R[o]] = u[o] - gG * deta;
+        this._j(bf, r, bf, r, 1);
+        this._j(bf, r, bL, r, -gG);
+        this._j(bf, r, bR, r, gG);
+      }
+      res[R[bL * M + r]] += u[o];
+      this._j(bL, r, bf, r, 1);
+      res[R[bR * M + r]] -= u[o];
+      this._j(bR, r, bf, r, -1);
+    }
+    itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR));
   }
 
   // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
@@ -1559,7 +1580,7 @@ export class Solver {
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd) {
-      this.assemble(dt);
+      this._assembleBookkeeping(dt);
       this.contactDEnd = { ...this.contactD };
     }
     const DN = { ...this.contactDEnd };
@@ -1923,10 +1944,51 @@ export class Solver {
     return { phi, mu, c };
   }
 
+  // The contact and port readouts (fluxes, displacements, the last segment's current) at the
+  // current state, from only the boxes they're read from. Each of those boxes gets the same terms
+  // in the same order as in assemble(), so the readouts are identical; other residuals and the
+  // Jacobian are left partial (the next assemble() starts afresh). Concentrations must be current.
+  _assembleBookkeeping(dt) {
+    const { model } = this;
+    const { grid, materials, regions } = model;
+    this.res.fill(0);
+    this.segI = 0;
+    this.segD = 0;
+    this.segIJac.fill(0);
+    for (let r = 0; r < regions.length; r++) {
+      const { nodes, segs } = this.bookkeeping[r];
+      if (nodes.length === 0 && segs.length === 0) continue;
+      const reg = regions[r], mat = materials[reg.material];
+      if (mat.conductor) {
+        for (const g of nodes) this._nodeConductor(g, dt);
+        for (const s of segs) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s], s === this.nNodes - 2);
+        continue;
+      }
+      for (const g of nodes) {
+        if (mat.ideal) this._nodesDilute(g, g, dt);
+        else this._nodeConcentrated(g, dt);
+      }
+      const rxs = this.rxsIn[reg.material];
+      if (rxs.length > 0) for (const g of nodes) this._bulkReactions(g, rxs);
+      for (const s of segs) {
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s], lastSeg = s === this.nNodes - 2;
+        this._segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt);
+        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat, lastSeg);
+        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, lastSeg, reg.velocity);
+      }
+      if (mat.ideal) for (const s of segs) this._segmentsDilute(s, s + 1, r, mat, reg.velocity);
+    }
+    for (const f of this.bookkeepingFaces) this._face(f);
+    model.ports.forEach((port, k) => this._port(port, this.portFlux[k]));
+    this._termI = 0;
+    this._termIJac.fill(0);
+    for (const side of ['left', 'right']) this._contact(side, dt);
+  }
+
   // Add this step's contact fluxes (at the converged state) to each stretch's intake.
   // (A BDF2 step also moves each amount by Σ v (c* − c_n), its history term.)
   _accumulateBoundaryIntake(dt, cN) {
-    this.assemble(dt);
+    this._assembleBookkeeping(dt);
     this.contactDEnd = { ...this.contactD };
     if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;

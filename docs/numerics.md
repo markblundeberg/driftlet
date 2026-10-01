@@ -182,7 +182,10 @@ extra unknowns. Then:
   an electrode is a conductor region with reactions at its face.)
 
 A left-end "contact flux node" would have a singular first block for block Thomas, which is why
-contact fluxes are read from residuals instead.
+contact fluxes are read from residuals instead. After each step these readouts (contact and port
+fluxes, contact displacements, the last segment's current) are evaluated at the converged state
+from only the boxes they come from, the two end nodes and the port windows with the segments and
+faces that touch them, in the same order as a full assembly, so they're identical to one.
 
 ### Floating terminals
 

@@ -28,13 +28,14 @@ const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' },
 const salt = { 'NO3-': 10, 'Ag+': 10 };
 
 const devices = {
-  'pn diode with recombination': () => ({
+  'pn diode with recombination, and a held port': () => ({
     species: carriers,
     materials: { Si: silicon },
     regions: [
       { material: 'Si', length: 0.5e-6, fixedCharge: units.perCm3(1e17) * FARADAY },
-      { material: 'Si', length: 0.5e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
+      { name: 'p', material: 'Si', length: 0.5e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
     ],
+    ports: [{ region: 'p', from: 0.2e-6, to: 0.3e-6, V: 0.2, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
     contacts: { left: ohmic(0), right: ohmic(0.3) },
     bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e-6 } }],
     grid: coarse,
@@ -159,3 +160,27 @@ for (const [name, make] of Object.entries(devices)) {
     }
   });
 }
+
+// After each step, the contact and port readouts come from only the boxes they're read from.
+// They must equal a full assembly's exactly.
+test('bookkeeping readouts from the end boxes and port windows equal a full assembly, bit for bit', () => {
+  for (const [name, make] of Object.entries(devices)) {
+    const dev = new Device(make());
+    assert.ok(dev.solve().converged);
+    const s = dev.solver;
+    for (let k = 0; k < s.sys.size; k++) s.u[s.fullOf[k]] += 0.02 * Math.sin(2 + 5 * k);
+    for (const dt of [Infinity, 1e-6]) {
+      s.computeConcentrations();
+      const read = () => ({
+        flux: [...s.contactFlux.left, ...s.contactFlux.right],
+        D: [s.contactD.left, s.contactD.right],
+        ports: s.portFlux.flatMap((p) => [...p]),
+        seg: [s.segI, s.segD],
+      });
+      s.assemble(dt);
+      const full = read();
+      s._assembleBookkeeping(dt);
+      assert.deepEqual(read(), full, `${name}, dt=${dt}`);
+    }
+  }
+});
