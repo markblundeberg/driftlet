@@ -79,7 +79,6 @@ export function normalizeDevice(def) {
   for (const [mname, mat] of Object.entries(def.materials)) {
     const path = `materials.${mname}`;
     need(isObject(mat), `${path} must be an object`);
-    need(mat.metal === undefined, `${path}.metal: write { conductor: { species, conductivity } } (a metal, or a fast ion conductor)`);
     if (mat.conductor !== undefined) {
       materialIndex.set(mname, materials.length);
       materials.push(normalizeConductor(mat, mname, path, species, speciesIndex));
@@ -436,7 +435,6 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
   need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
-  need(idef.vacuum === undefined, `${where}.vacuum: not a spec field; estimate the dipole with vacuumDipole from 'driftlet/kit'`);
   const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
   if (phi.type === 'neutral') {
@@ -521,7 +519,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 // A conductor (a metal, or a fast ion conductor): only its one mobile carrier, whose single
 // unknown is its μ̄ (for a metal, the Fermi level). Its bulk is neutral and incompressible, so φ
 // is undefined inside, and transport is ohmic, J = −σ∇V. Any charge it holds sits at its
-// surfaces, as a sheet facing a charged interface. (Internally it's still called a metal.)
+// surfaces, as a sheet facing a charged interface. (The solver still calls it a metal.)
 function normalizeConductor(mat, mname, path, species, speciesIndex) {
   const mdef = mat.conductor;
   need(isObject(mdef), `${path}.conductor must be { species, conductivity }`);
@@ -584,7 +582,6 @@ function normalizeMetalInterface(idef, where, matL, matR, species, speciesIndex,
   } else {
     need(side !== 'both', `${where}.phi: between two conductors only 'neutral' applies (neither has a φ)`);
     need(!other.phiFree && (other.epsr > 0 || species.some((sp, i) => other.present[i] && sp.z !== 0)), `${where}.phi: φ is undefined on the other side; use 'neutral'`);
-    need(idef.vacuum === undefined, `${where}.vacuum: not a spec field; estimate zeroCharge with vacuumZeroCharge from 'driftlet/kit'`);
     zeroCharge = finite(idef.zeroCharge, `${where}.zeroCharge (V_F − φ_edge at zero charge, V)`);
   }
   // Species laws: the metal's carrier may continue across (e.g. into a semiconductor).
@@ -799,7 +796,6 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
       phi = { ...raw };
-      need(raw.vacuum === undefined, `${path}.phi.vacuum: not a spec field; estimate zeroCharge with vacuumZeroCharge from 'driftlet/kit'`);
       finite(phi.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
     } else {
       phi = { ...raw };

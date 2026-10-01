@@ -62,12 +62,11 @@ test('vacuum-level alignment: anchors and offsets reproduce Anderson, ionisation
   assert.equal(vacuumLevel(def, { material: 'A', anchor: 'phi', offset: 4 }), -4);
 });
 
-test('vacuum helpers check their inputs, and the spec itself takes only the result', () => {
+test('vacuum helpers check their inputs', () => {
   const def = hetero();
   throwsDevice(() => vacuumDipole(def, { material: 'A', anchor: 'X', offset: 1 }, { material: 'B', anchor: 'e-', offset: 1 }), /anchor must be 'phi' or a charged species/);
   throwsDevice(() => vacuumDipole(def, { material: 'C', anchor: 'e-', offset: 1 }, { material: 'B', anchor: 'e-', offset: 1 }), /unknown material/);
   throwsDevice(() => vacuumZeroCharge(def, NaN, { material: 'A', anchor: 'e-', offset: 1 }), /workFunction/);
   def.materials.Au = { conductor: { species: 'e-', conductivity: 4e7 } };
   throwsDevice(() => vacuumLevel(def, { material: 'Au', anchor: 'e-', offset: 5 }), /conductor, with no φ/);
-  throwsDevice(() => new Device({ ...hetero(), interfaces: [{ vacuum: { left: {}, right: {} } }] }), /vacuumDipole from 'driftlet\/kit'/);
 });

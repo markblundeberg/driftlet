@@ -177,11 +177,6 @@ test('metal definitions are checked', () => {
   throwsDevice(def, /a conductor has no φ of its own/);
   def.interfaces = [{ phi: { type: 'capacitive', C: 1 } }];
   throwsDevice(def, /zeroCharge/);
-  def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, vacuum: {} }];
-  throwsDevice(def, /vacuumZeroCharge from 'driftlet\/kit'/);
-  def = base();
-  def.materials.Au = { metal: def.materials.Au.conductor };
-  throwsDevice(def, /conductor: \{ species, conductivity \}/);
   def = base();
   def.regions[0].c0 = { 'e-': 1 };
   throwsDevice(def, /no composition to give/);

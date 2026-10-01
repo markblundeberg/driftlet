@@ -104,8 +104,11 @@ for live demos.
 ## Later
 
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
-  overpotential), and surface species (adsorbed intermediates with a coverage), so multi-step
-  mechanisms such as hydrogen evolution emerge from elementary steps.
+  overpotential); surface species (adsorbed intermediates with a coverage), so multi-step
+  mechanisms such as hydrogen evolution emerge from elementary steps; and a custom forward rate
+  r_f(state) as an escape hatch, which the solver multiplies by (1 − e^{−A/RT}) so equilibrium
+  stays exact. Not a bare current–overpotential curve, which loses the concentration dependence
+  and can break detailed balance.
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
