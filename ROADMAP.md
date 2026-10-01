@@ -36,6 +36,10 @@ for live demos.
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
   conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
+- A second-law validation: in steady state the free energy brought in through every terminal,
+  Σ N μ̄ over every species, equals the dissipation inside (fluxes down their own μ̄ drops,
+  reactions by their affinities, interface and conductor resistance), each term ≥ 0, exactly
+  for the discrete equations.
 - Terminals: the contacts and every port, each held at a voltage, behind a resistance or driven
   by a current (reference electrodes, three-electrode cells, grounded floating electrodes), with
   piecewise-linear waveforms (cyclic voltammetry), impedance at any terminal, and a fast `set()`
@@ -129,9 +133,6 @@ for live demos.
 - **Driven species fluxes.** A terminal driving one species' molar flux instead of the charge
   current (a gas feed at a fixed rate, a neutral species injected), the flux-side twin of a held
   μ for neutral species.
-- **A second-law check.** In steady state the free energy brought in through the terminals,
-  Σ N_i μ̄_i over every species at every terminal, equals the total dissipation (transport,
-  reactions) and is non-negative: a validation of the honest thermodynamics end to end.
 - **Interface states** (charge that depends on the local μ̄_e, i.e. Fermi-level pinning) and
   thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.

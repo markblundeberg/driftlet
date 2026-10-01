@@ -151,6 +151,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
 | Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
 | Mass action | c(H⁺)c(OH⁻) = K_w from standard potentials; moiety conservation | 1e-9 |
+| Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate | 1e-10 |
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
 | Advection and eddy mixing | exact convection–diffusion profile; D + D_mix; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
