@@ -72,6 +72,8 @@ export class BlockTridiagonal {
     this.factored = false;
     /** Smallest |pivot| / (largest |entry| of its block) seen in the last factor(). */
     this.minPivotRatio = Infinity;
+    /** The block found exactly singular by the last factor(), or −1. */
+    this.singularBlock = -1;
   }
 
   /** Zero all of A, B, C (ready for fresh assembly). */
@@ -90,6 +92,7 @@ export class BlockTridiagonal {
     const { n, A, B, C, sizes, offA, offB, offC, offX } = this;
     const lu = this._lu, piv = this._piv, cp = this._cp, tmp = this._tmp;
     let minRatio = Infinity;
+    this.singularBlock = -1;
 
     for (let i = 0; i < n; i++) {
       const m = sizes[i], o = offB[i];
@@ -110,6 +113,7 @@ export class BlockTridiagonal {
       const ratio = luFactor(lu, o, piv, offX[i], m);
       if (!(ratio > 0)) {
         this.factored = false;
+        this.singularBlock = i;
         throw new Error(`BlockTridiagonal: diagonal block ${i} is singular`);
       }
       if (ratio < minRatio) minRatio = ratio;
@@ -159,6 +163,65 @@ export class BlockTridiagonal {
       }
     }
     return out;
+  }
+
+  /**
+   * After factor(): the digits lost to cancellation in the factorisation, at worst, and the block
+   * where that happens. A running error bound: alongside each entry of W_i = B_i − A_i C′_{i−1}
+   * and of its LU (with the same partial pivoting), the sum of the magnitudes it was formed from
+   * is carried, and each pivot is compared with its sum: log₁₀(Σ|terms| / |pivot|). Many digits
+   * lost means a nearly singular system, such as a stiff chain held only weakly at its ends,
+   * whose level then rests on the lost digits. Costs about as much as a factorisation. After a
+   * factorisation that failed on a singular block, it covers the blocks up to that one.
+   * @returns {{ digits: number, block: number }}
+   */
+  cancellation() {
+    if (!this.factored && !(this.singularBlock >= 0)) throw new Error('BlockTridiagonal: call factor() before cancellation()');
+    const { A, B, sizes, offA, offB, offC } = this, cp = this._cp;
+    const n = this.factored ? this.n : this.singularBlock + 1;
+    const mx = sizes.reduce((a, v) => Math.max(a, v), 0);
+    const w = new Float64Array(mx * mx), S = new Float64Array(mx * mx);
+    let worst = 1, block = -1;
+    for (let i = 0; i < n; i++) {
+      const m = sizes[i], mp = i > 0 ? sizes[i - 1] : 0, oa = offA[i], ob = offB[i], oc = i > 0 ? offC[i - 1] : 0;
+      for (let r = 0; r < m; r++) {
+        for (let c = 0; c < m; c++) {
+          let v = B[ob + r * m + c], sum = Math.abs(v);
+          for (let k = 0; k < mp; k++) {
+            const t = A[oa + r * mp + k] * cp[oc + k * m + c];
+            v -= t;
+            sum += Math.abs(t);
+          }
+          w[r * m + c] = v;
+          S[r * m + c] = sum;
+        }
+      }
+      for (let k = 0; k < m; k++) {
+        let p = k;
+        for (let r = k + 1; r < m; r++) if (Math.abs(w[r * m + k]) > Math.abs(w[p * m + k])) p = r;
+        if (p !== k) {
+          for (let c = 0; c < m; c++) {
+            [w[k * m + c], w[p * m + c]] = [w[p * m + c], w[k * m + c]];
+            [S[k * m + c], S[p * m + c]] = [S[p * m + c], S[k * m + c]];
+          }
+        }
+        const piv = Math.abs(w[k * m + k]), sum = S[k * m + k];
+        if (sum > worst * piv) {
+          worst = piv === 0 ? Infinity : sum / piv;
+          block = i;
+        }
+        if (piv === 0) continue;
+        for (let r = k + 1; r < m; r++) {
+          const f = w[r * m + k] / w[k * m + k];
+          if (f === 0) continue;
+          for (let c = k + 1; c < m; c++) {
+            w[r * m + c] -= f * w[k * m + c];
+            S[r * m + c] += Math.abs(f) * S[k * m + c];
+          }
+        }
+      }
+    }
+    return { digits: Math.log10(worst), block };
   }
 
   /** out = M·x using the stored (unfactored) blocks. For residual checks and tests. */

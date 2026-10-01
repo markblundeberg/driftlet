@@ -423,7 +423,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name}, rates }`: what crosses each face by its links, and each face reaction's rate (mol/(m²·s)) |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
-| `warnings` | e.g. unresolved double layers, conventions a statistics model relies on |
+| `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |
 

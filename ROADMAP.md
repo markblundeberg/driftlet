@@ -51,14 +51,12 @@ for live demos.
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
    - Sources apart from structure: a fast path to change contact and port voltages and the
      circuit without re-normalising the spec, and solutions computed lazily, for live demos.
-   - Warn when a factorisation loses most of its digits (a pivot many orders below its
-     block), instead of losing them silently.
    - Floating conductors in η form. A floating metal is fixed by the mixed form, but the same
      cancellation awaits a floating mixed conductor or semiconductor region held only by face
      reactions or recombination, in steady state (in transients, storage anchors it): a fast
      species across many segments, with a mode only weakly held from outside. Candidates are
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
-     form for the fast species only.
+     form for the fast species only. (A failed steady solve already says where it lost its digits.)
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export

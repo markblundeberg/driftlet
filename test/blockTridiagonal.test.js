@@ -247,3 +247,20 @@ test('complex solver with per-node block sizes', () => {
   const re = mul(R, xr).map((v, k) => v - mul(I, xi)[k]), im = mul(R, xi).map((v, k) => v + mul(I, xr)[k]);
   assert.ok(maxAbsDiff(re, br) < 1e-12 && maxAbsDiff(im, bi) < 1e-12);
 });
+
+test('cancellation: digits lost forming the pivots, through a weakly held stiff chain', () => {
+  // A chain of conductances g held at its ends by G: the last pivot is g − g²/(g + G) ≈ G,
+  // formed from terms of order g, so about log₁₀(g/G) digits are lost.
+  for (const [g, G] of [[1, 1], [1e8, 1], [1e12, 1]]) {
+    const n = 20, sys = new BlockTridiagonal(n, 1);
+    for (let i = 0; i < n; i++) {
+      sys.B[i] = (i > 0 ? g : 0) + (i < n - 1 ? g : 0) + (i === 0 || i === n - 1 ? G : 0);
+      if (i > 0) sys.A[i] = -g;
+      if (i < n - 1) sys.C[i] = -g;
+    }
+    sys.factor();
+    const { digits, block } = sys.cancellation();
+    assert.ok(Math.abs(digits - Math.log10((2 * g) / G)) < 0.5 || g === G, `g/G = ${g / G}: ${digits}`);
+    if (g > G) assert.equal(block, n - 1);
+  }
+});

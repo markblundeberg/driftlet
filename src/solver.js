@@ -1479,13 +1479,18 @@ export class Solver {
   newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10 } = {}) {
     const { u, delta, res } = this;
     const history = [];
+    // A steady solve that fails: record how nearly singular the system was, and where.
+    const fail = (r) => {
+      if (dt === Infinity) this._noteConditioning();
+      return r;
+    };
     for (let it = 1; it <= maxIter; it++) {
       try {
         this.assemble(dt);
       } catch (err) {
         // A statistics model can fail far from the solution (e.g. Debye–Hückel beyond its range).
         if (!(err instanceof SolverError)) throw err;
-        return { converged: false, iterations: it, history, error: err.message };
+        return fail({ converged: false, iterations: it, history, error: err.message });
       }
       this._equilibrate();
       let rmax = 0;
@@ -1493,22 +1498,22 @@ export class Solver {
       try {
         this._factor();
       } catch (err) {
-        return { converged: false, iterations: it, history, error: err.message };
+        return fail({ converged: false, iterations: it, history, error: err.message });
       }
       try {
         if (this.constrained && dt === Infinity && this.constraints.length > 0) this._solveConstrained(res, delta);
         else this._solveLinear(res, delta);
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
-        return { converged: false, iterations: it, history, error: err.message };
+        return fail({ converged: false, iterations: it, history, error: err.message });
       }
       const step = this._maxPotentialStep(delta);
       history.push(step);
-      if (!Number.isFinite(step)) return { converged: false, iterations: it, history, error: 'non-finite update' };
+      if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
       // Give up early on clear divergence; the caller will take a smaller step instead.
       if (step > 1e4 || (it > 6 && step > 10 * history[0])) {
         this.computeConcentrations();
-        return { converged: false, iterations: it, history, error: 'diverging' };
+        return fail({ converged: false, iterations: it, history, error: 'diverging' });
       }
       const alpha = step > maxStep ? maxStep / step : 1;
       this._addToState(delta, -alpha);
@@ -1518,7 +1523,34 @@ export class Solver {
       }
     }
     this.computeConcentrations();
-    return { converged: false, iterations: maxIter, history };
+    return fail({ converged: false, iterations: maxIter, history });
+  }
+
+  // How many digits the last factorisation lost to cancellation, and where (the worst seen since
+  // the steady solve began). Only for diagnosing failures: a saturated species, for instance,
+  // can lose digits harmlessly.
+  _noteConditioning() {
+    let c;
+    try {
+      c = this.sys.cancellation();
+    } catch {
+      return;
+    }
+    if (!(c.digits > (this.conditioning?.digits ?? -1))) return;
+    const { grid } = this.model;
+    let x = NaN, where = '';
+    for (let g = 0; g < this.nNodes; g++) {
+      if (this.blockOfNode[g] !== c.block) continue;
+      x = grid.x[g];
+      where = this.model.regions[grid.nodeRegion[g]].name;
+    }
+    for (let f = 0; f < this.nFaces; f++) {
+      if (this.blockOfFace[f] !== c.block) continue;
+      x = grid.x[grid.regionEnd[f]];
+      where = `interfaces[${f}]`;
+    }
+    if (c.block === this.terminalBlock) where = 'the floating terminal';
+    this.conditioning = { digits: c.digits, x, where };
   }
 
   /**
@@ -2021,6 +2053,7 @@ export class Solver {
    * The clock is not advanced, and open-system conservation bookkeeping restarts here.
    */
   solveSteady(opts = {}) {
+    this.conditioning = null;
     const ct = this.model.contacts.right, target = ct.V, level = this.model.contacts.left.V;
     const canContinue = opts.continuation !== false && this.model.circuit.mode === 'voltage' && target !== level;
     const direct = this._directSteady();

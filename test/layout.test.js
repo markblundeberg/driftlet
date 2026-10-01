@@ -184,3 +184,25 @@ test('bookkeeping readouts from the end boxes and port windows equal a full asse
     }
   }
 });
+
+test('a failed steady solve says where the system is nearly singular', () => {
+  // A strictly neutral region whose one fast carrier is held only by tiny conductances at its
+  // faces: in η form its level is held by G against internal conductances ~1e17 times larger,
+  // past what doubles can resolve. (A conductor region uses a mixed form that avoids this.)
+  const ohm = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
+  const mat = (D) => ({ epsr: 0, species: { 'e-': { D, mu0: 0, cRef: 1e5 } } });
+  const weak = { phi: 'neutral', species: { 'e-': { type: 'conductance', G: 1e-6 } } };
+  const sol = new Device({
+    species: [{ name: 'e-', z: -1 }],
+    materials: { out: mat(1e-4), fast: mat(1e-8) },
+    regions: [
+      { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
+      { name: 'fast', material: 'fast', length: 1e-6, fixedCharge: 1e4 * FARADAY, grid: { minCells: 200 } },
+      { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
+    ],
+    interfaces: [weak, weak],
+    contacts: { left: ohm(0), right: ohm(0.01) },
+  }).solve();
+  assert.equal(sol.converged, false);
+  assert.ok(sol.warnings.some((w) => /\(fast\): part of the device is held only weakly/.test(w)), sol.warnings.join('\n'));
+});

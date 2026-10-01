@@ -127,6 +127,15 @@ export function makeSolution(solver, result = {}) {
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
   // gate contacts), check the local Debye length against the adjacent cell.
   sol.warnings = [...(model.warnings ?? [])];
+  const cond = solver.conditioning;
+  if (result.converged === false && cond && cond.digits > 12) {
+    const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';
+    sol.warnings.push(
+      `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): part of the device is held ` +
+        'only weakly, e.g. a floating region coupled to the rest through tiny conductances or rates, or a stiff ' +
+        'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).',
+    );
+  }
   const debye = (g) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics

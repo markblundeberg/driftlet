@@ -338,6 +338,12 @@ column by column on devices that cover every assembly path.
   convergence makes the remaining residual negligible.
 - Clear divergence (updates beyond 1e4, or ten times the first update after six iterations)
   bails out early, so the caller can take a smaller step.
+- When a steady solve fails, the solution's warnings say how nearly singular the system was,
+  and where. A running error bound through the factorisation compares each pivot with the
+  magnitudes it was formed from, log₁₀(Σ|terms| / |pivot|): the digits lost. A part of the
+  device held only weakly, such as a floating region coupled through tiny conductances, loses
+  about log₁₀(g/G) and fails near 15. It's not reported for solves that converge, since digits
+  can be lost harmlessly too (a saturated species whose η nothing depends on).
 - The last iteration usually only confirms convergence (updates go like 4e-3, 7e-6, 3e-11).
   Stopping one iteration early on a convergence-rate estimate would save a third of the work,
   but leave ~1e-11 in η per step, which shows up as conservation drift, so it isn't done.
