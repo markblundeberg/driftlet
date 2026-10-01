@@ -322,6 +322,13 @@ least a quarter of the work.
   convergence makes the remaining residual negligible.
 - Clear divergence (updates beyond 1e4, or ten times the first update after six iterations)
   bails out early, so the caller can take a smaller step.
+- The last iteration usually only confirms convergence (updates go like 4e-3, 7e-6, 3e-11).
+  Stopping one iteration early on a convergence-rate estimate would save a third of the work,
+  but leave ~1e-11 in η per step, which shows up as conservation drift, so it isn't done.
+- Tried and rejected for large jumps (the retry at 3 thermal units per iteration takes 30–50
+  iterations for a 1.4 V jump on a pn diode): per-component logarithmic damping, as in
+  SPICE junction limiting, and an adaptive limit that grows while updates shrink. Both
+  diverged more often and cost more overall.
 
 ## Time stepping
 
@@ -348,7 +355,11 @@ least a quarter of the work.
     `C_c = h³(1+ω)²/(ω(1+2ω))` and `C_p = h(h+h₁)(h+h₁+h₂)`; linear after backward Euler,
     scaled by h/(2h + h₁). The first step, with no history, is checked by step doubling.
   - The error is measured in thermal units over every state potential (φ̂ where defined,
-    each present η, a floating terminal voltage).
+    each present η, a floating terminal voltage). That includes species far below their
+    largest concentration, such as minority carriers ahead of a diffusion front. Weighting
+    them down (a mixed relative/absolute tolerance, δη·c/(c + 1e-10 c_max)) took a third fewer
+    steps on a pn turn-on, but the tail's errors are swept into the front, and at matched
+    accuracy of the terminal current it cost 50% more.
   - A step is rejected above `tol`. The next step size is h·min(2, max(0.2,
     0.9 (tol/err)^{1/(p+1)})).
   - Newton failure quarters the step.
