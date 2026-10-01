@@ -77,8 +77,9 @@ for live demos.
      level they imply (with `SHE`); `traces(sol)`, the level diagram as plot-ready data, and
      `driftlet/plot`'s `bandDiagram(sol)`, an SVG string; `live(def)` for sliders (merging
      changes made during a solve, warm starts, ramps from the last good state, Worker-backed);
-     `describe(def)`, a readable summary with unit-slip and resolution warnings. See
-     [the kit](docs/kit.md).
+     `describe(def)`, a readable summary with unit-slip and resolution warnings; a small data
+     library with a source on every entry, checked against independent tables (13 aqueous
+     ions, Si, Ge and GaAs, seven metals). See [the kit](docs/kit.md) and [data](docs/data.md).
    - Built-in and open-circuit potentials in `describe()` (they need a solve).
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
@@ -87,10 +88,8 @@ for live demos.
      voltage as named contributions that sum exactly, for that family's usual simplifications.
      They annotate the spatial diagram, which stays the primary picture and keeps telling the
      story where a ledger's division breaks down.
-   - A small data library with a source on every entry (aqueous ions: z, D, μ° at 25 °C on
-     table conventions; common semiconductors; metals), kept small and vetted, since a wrong
-     library number is worse than a wrong demo number. Then recipes built from it (pn junction,
-     galvanic and concentration cells, double layer, membrane), returning editable specs.
+   - Recipes built from the library (pn junction, galvanic and concentration cells, double layer,
+     membrane), returning editable definitions.
    - An agent guide (`AGENT_GUIDE.md` or `llms.txt`): conventions, a pinned CDN import,
      copy-paste demo templates, common mistakes. Its code blocks run in the docs test, and error
      messages say how to fix the problem.

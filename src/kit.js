@@ -10,6 +10,7 @@ export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
 export { traces } from './traces.js';
 export { live } from './live.js';
 export { describe, unitWarnings } from './describe.js';
+export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal } from './data.js';
 
 const fail = (message) => {
   throw new DeviceError(message);

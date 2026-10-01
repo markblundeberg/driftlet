@@ -70,8 +70,9 @@ Solutions are plain objects of `Float64Array`s, ready to plot: `x`, `phi`, and p
 
 The definition is plain data, so anything can write it. The optional `driftlet/kit` writes it
 from the device as it's drawn, a stack of contacts, layers and faces, with reactions as
-equations (`'Ag+ + e- = Ag(s)'`) and doping as donors and acceptors. It never makes a physical
-choice for you; see [the kit](docs/kit.md).
+equations (`'Ag+ + e- = Ag(s)'`) and doping as donors and acceptors, draws level diagrams,
+runs slider demos, and has a small sourced [data library](docs/data.md). It never makes a
+physical choice for you; see [the kit](docs/kit.md).
 
 ## Demos
 
@@ -154,6 +155,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
 | Concentration polarization | i = i_lim tanh(V/4V_T), incl. galvanostatic and load modes | 2e-4 |
 | Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
+| Redox couple between inert electrodes | Nernst level of Fe³⁺/Fe²⁺; the couple's total conserved at equilibrium and under current | 1e-9; 1e-10 |
 | Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
 | Mass action | c(H⁺)c(OH⁻) = K_w from standard potentials; moiety conservation | 1e-9 |
 | Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate | 1e-10 |
@@ -169,6 +171,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to ψ = 40 V_T; custom function reproduces it | 5e-4; 1e-10 |
 | Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |
 | Debye–Hückel | junction EMF 2t₊(RT/F) ln(a₁/a₂) with activities | 1e-6 |
+| Data library | ion μ° against the electrochemical series and K_w; D against limiting conductivities; band data against n_i | 10 mV; 0.5%; 15% |
 | Intercalation host (OCV) | composition vs table and isotherm; chemical diffusion flux and relaxation rate | 1e-12; 1e-5; 1e-4 |
 
 ## Performance
@@ -207,7 +210,7 @@ npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches 
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),
-[statistics](docs/statistics.md), [the kit](docs/kit.md), [roadmap](ROADMAP.md).
+[statistics](docs/statistics.md), [the kit](docs/kit.md), [data](docs/data.md), [roadmap](ROADMAP.md).
 
 ## Licence
 

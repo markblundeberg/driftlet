@@ -6,6 +6,8 @@ choice. Alignments, offsets, rate constants and every other physical input stay 
 and what the kit produces is an ordinary definition you can print, edit and pass to
 `new Device` (see the [device reference](device.md)).
 
+Its data library, with sources, is described in [data](data.md).
+
 ## A device as a stack
 
 `build()` takes the device left to right: a contact, then layers and the faces between them,
