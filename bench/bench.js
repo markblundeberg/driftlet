@@ -127,6 +127,23 @@ const insertion = () => {
   });
 };
 
+// n-Si against KCl across a Helmholtz layer: a Mott–Schottky junction, four species
+const msj = () =>
+  new Device({
+    species: [...carriers, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: {
+      Si: silicon,
+      water: { epsr: 78.5, species: { 'K+': { D: 1.96e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } },
+    },
+    regions: [
+      { material: 'Si', length: 1e-6, fixedCharge: units.perCm3(1e17) * FARADAY },
+      { material: 'water', length: 1e-6, c0: { 'K+': 100, 'Cl-': 100 } },
+    ],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, dipole: 0 }],
+    contacts: { left: ohmic(0), right: { bath: { c: { 'K+': 100, 'Cl-': 100 }, reference: 'Cl-' } } },
+    grid: { hmin: 0.05e-9, hmax: 20e-9, ratio: 1.1 },
+  });
+
 const sweep = (dev, side, Vs) => {
   for (const V of Vs) {
     dev.set({ contacts: { [side]: { V } } });
@@ -183,6 +200,16 @@ const cases = [
     name: 'MOS (Au gate): C–V sweep −1 → 1.5 V, 26 points',
     setup: () => (d => (d.solve(), d))(mos()),
     run: (d) => sweep(d, 'left', range(-1, 1.5, 26)),
+  },
+  {
+    name: 'n-Si | KCl: Mott–Schottky sweep −0.5 → 1 V, 31 points',
+    setup: () => (d => (d.solve(), d))(msj()),
+    run: (d) => sweep(d, 'right', range(-0.5, 1, 31)),
+  },
+  {
+    name: 'n-Si | KCl: impedance, 20 frequencies',
+    setup: () => (d => (d.set({ contacts: { right: { V: 0.5 } } }), d.solve(), d))(msj()),
+    run: (d) => d.impedance(decades(20)),
   },
   { name: 'Ag|AgNO₃|Ag (ε > 0): cold steady', run: () => cell(78.5).solve() },
   {

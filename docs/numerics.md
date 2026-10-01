@@ -281,7 +281,9 @@ balance row with a Dirichlet row. The port's flux is then that row's residual, r
 before replacement, exactly as at a contact. Conductance and exchange links are linear in
 (μ̄_out − μ̄). Everything stays on the node's own block. A contact's flux readout at an end node
 already includes any port source there, so contact and port fluxes always balance. A stretch
-reached by a port counts as fed, and its conservation intake includes the port's flux.
+reached by a port counts as fed, and its conservation intake includes the port's flux. On a
+metal, a port spans both nodes of its single cell, with G per area spread as G/L per volume, so
+each node gets half.
 
 ## Bulk reactions
 
@@ -296,6 +298,21 @@ Block Thomas with partial pivoting *within* each diagonal block (zero diagonal e
 fine) but not *between* blocks. Rows are equilibrated (each divided by its largest Jacobian
 entry) before factorisation. Storage is flat `Float64Array`s, and factor and solve allocate
 nothing. For 300 nodes × 7 unknowns, one factor and solve takes ~0.4 ms in Node 22.
+
+Block sizes may differ from node to node. Assembly always fills full M×M blocks, with identity
+rows (and zero residuals) for slots that aren't unknowns at a node:
+- a species absent from its material;
+- φ where it's undefined;
+- a metal node's other species, and the flux slot of its last node;
+- a blocked interface flux, or the displacement of a `'neutral'` face;
+- a floating terminal's spare slots.
+
+Those slots never change, so the linear system can leave them out, keeping only the active
+rows and columns, with blocks of m_b × m_b, m_b × m_{b−1} and m_b × m_{b+1}. Elimination costs
+Σ m_b³ instead of n·M³, which pays wherever many species are confined to some regions: for
+n-Si against KCl, three unknowns of five at every node, it's a fifth of the work. The copy costs
+a pass over the reduced blocks per iteration, so the solver reduces only when that saves at
+least a quarter of the work.
 
 ## Newton
 

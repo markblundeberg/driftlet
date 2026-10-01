@@ -34,7 +34,9 @@ for live demos.
   sheets), capacitive faces aligned by work function, electrode reactions at internal faces,
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
-  conductance or exchange), e.g. grounding a 1D MOS channel.
+  conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
+- Variable block sizes in the linear solve: only the unknowns that exist at each node are
+  eliminated (impedance included). Metal regions are a single cell.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
@@ -89,9 +91,10 @@ for live demos.
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
   This is also the general mixed conductor with n > 2 mobile species, beyond the metal (n = 1)
   and insertion-host (n = 2) cases.
-- **More performance.** A variable block size where species are absent (identity rows cost a
-  full block today; a metal node needs only its Fermi level and current), measured against
-  the committed benchmark baseline.
+- **More performance**, measured against the committed benchmark baseline. With variable
+  block sizes in the linear solve, assembly is now the larger cost at small M: assembling
+  straight into the reduced blocks (instead of full M×M blocks and a copy), and
+  Newton-iteration counts (above).
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.

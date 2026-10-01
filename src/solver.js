@@ -7,11 +7,15 @@ function bvFactor(a, alpha) {
 
 // Discretisation and nonlinear solver.
 //
-// Unknowns, per solver block (block size M = 1 + nSpecies):
+// Unknowns, per solver block (M = 1 + nSpecies slots):
 //   grid node: [φ̂, η_1 … η_n], with φ̂ = Fφ/RT and η_i = μ̄_i/RT
 //   flux node: [D, N_1 … N_n], the displacement and particle fluxes through an interface
 // Every region boundary is a doubled grid node (one per side) with a zero-volume flux node
 // between them in the linear system, so the Jacobian stays block-tridiagonal.
+//
+// Not every slot is an unknown everywhere: an absent species, φ where it's undefined, a blocked
+// interface flux. Assembly fills full M×M blocks (such slots get identity rows), and only the
+// active slots are gathered into the linear system, whose block sizes vary from node to node.
 //
 // Balance rows (node g, box volume v per unit area):
 //   φ:   D_out − D_in − v·(F Σ z_i c_i + ρ_fixed) = 0
@@ -98,6 +102,7 @@ export class Solver {
       }
     });
 
+    // The Jacobian as assembled, in full M×M blocks.
     this.sys = new BlockTridiagonal(nB, M);
     // Unknowns as compensated double-doubles, u + uLo. Only differences of η need the extra
     // precision: a majority carrier carrying a small current has a quasi-Fermi step between
@@ -145,6 +150,7 @@ export class Solver {
       this.sheetFace[g] = f;
       this.sheetSign[g] = itf.metal.side === 'left' ? 1 : -1; // σ_metal = D_f on the left, −D_f on the right
     });
+    this._activeSlots();
     this.K = this.anyNonIdeal ? new Float64Array(nNodes * n * n) : null;
     this.ex = new Float64Array(nNodes * n);
     this.zeta = new Float64Array(n);
@@ -186,6 +192,96 @@ export class Solver {
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
     // ∫ (flux in − flux out) dt through the contacts, per stretch, since the reference.
     this.boundaryIntake = new Float64Array(this.stretches.length);
+  }
+
+  // The slots that are unknowns, block by block; the rest only ever have identity rows and a
+  // zero residual, so they're left out of the linear system (and never change).
+  _activeSlots() {
+    const { n, M, nB, model } = this;
+    const active = (this.active = new Uint8Array(nB * M));
+    for (let g = 0; g < this.nNodes; g++) {
+      const b = this.blockOfNode[g], im = this.nodeMetal[g];
+      if (im >= 0) {
+        active[b * M] = this.metalLast[g] ? 0 : 1; // the segment flux J
+        active[b * M + 1 + im] = 1;
+        continue;
+      }
+      active[b * M] = this.phiUndefined[g] ? 0 : 1;
+      for (let i = 0; i < n; i++) active[b * M + 1 + i] = this.present[g * n + i];
+    }
+    model.interfaces.forEach((itf, f) => {
+      const bf = this.blockOfFace[f];
+      active[bf * M] = itf.phi.type === 'neutral' ? 0 : 1;
+      for (let i = 0; i < n; i++) active[bf * M + 1 + i] = itf.links[i].type === 'blocked' ? 0 : 1;
+    });
+    if (this.terminalBlock >= 0) active[this.terminalBlock * M] = 1;
+    const sizes = new Int32Array(nB), slots = [];
+    for (let b = 0; b < nB; b++) {
+      for (let r = 0; r < M; r++) {
+        if (active[b * M + r]) {
+          sizes[b]++;
+          slots.push(r);
+        }
+      }
+    }
+    // Gathering costs a copy per iteration, so it's only worth it when it saves a good part of
+    // the elimination work (Σ m³), e.g. not for a few oxide nodes in a semiconductor device.
+    const work = sizes.reduce((a, m) => a + m * m * m, 0);
+    this.compact = work < 0.75 * nB * M * M * M;
+    if (!this.compact) {
+      this.lin = this.sys;
+      return;
+    }
+    const lin = (this.lin = new BlockTridiagonal(nB, sizes));
+    this.slots = Int32Array.from(slots); // active slots of block b at lin.offX[b] …
+    this.linRhs = new Float64Array(slots.length);
+    this.linX = new Float64Array(slots.length);
+    // For each entry of the linear system, where it sits in the assembled blocks.
+    const MM = M * M, { offX } = lin;
+    this.gatherFrom = {};
+    for (const [X, d] of [['A', -1], ['B', 0], ['C', 1]]) {
+      const from = (this.gatherFrom[X] = new Int32Array(lin[X].length).fill(-1));
+      for (let b = 0; b < nB; b++) {
+        const nb = b + d;
+        if (nb < 0 || nb >= nB) continue;
+        const m = sizes[b], mc = sizes[nb], o = lin['off' + X][b];
+        for (let r = 0; r < m; r++) {
+          for (let c = 0; c < mc; c++) from[o + r * mc + c] = b * MM + this.slots[offX[b] + r] * M + this.slots[offX[nb] + c];
+        }
+      }
+    }
+  }
+
+  // Copy the active rows and columns of the assembled Jacobian into the linear system.
+  _gather() {
+    const { sys, lin, gatherFrom } = this;
+    for (const X of ['A', 'B', 'C']) {
+      const dst = lin[X], src = sys[X], from = gatherFrom[X];
+      for (let k = 0; k < dst.length; k++) {
+        const f = from[k];
+        dst[k] = f >= 0 ? src[f] : 0;
+      }
+    }
+  }
+
+  // Factorise the assembled Jacobian (its active part).
+  _factor() {
+    if (this.compact) this._gather();
+    this.lin.factor();
+  }
+
+  // delta = J⁻¹ rhs over the active slots; the others get 0.
+  _solveLinear(rhs, delta) {
+    if (!this.compact) {
+      this.lin.solve(rhs, delta);
+      return;
+    }
+    const { M, nB, slots, linRhs, linX } = this;
+    const { sizes, offX } = this.lin;
+    for (let b = 0; b < nB; b++) for (let r = 0; r < sizes[b]; r++) linRhs[offX[b] + r] = rhs[b * M + slots[offX[b] + r]];
+    this.lin.solve(linRhs, linX);
+    delta.fill(0);
+    for (let b = 0; b < nB; b++) for (let r = 0; r < sizes[b]; r++) delta[b * M + slots[offX[b] + r]] = linX[offX[b] + r];
   }
 
   // Connected stretches of regions where a species is present. A stretch not connected to
@@ -1351,11 +1447,11 @@ export class Solver {
       let rmax = 0;
       for (let k = 0; k < res.length; k++) rmax = Math.max(rmax, Math.abs(res[k]));
       try {
-        this.sys.factor();
+        this._factor();
       } catch (err) {
         return { converged: false, iterations: it, history, error: err.message };
       }
-      this.sys.solve(res, delta);
+      this._solveLinear(res, delta);
       const step = this._maxPotentialStep(delta);
       history.push(step);
       if (!Number.isFinite(step)) return { converged: false, iterations: it, history, error: 'non-finite update' };
@@ -1685,8 +1781,14 @@ export class Solver {
     this.assemble(Infinity);
     const b = res[0].map((v, k) => (v - res[1][k]) / (2 * src.d));
 
-    const csys = new ComplexBlockTridiagonal(nB, M);
-    const rr = new Float64Array(N), ri = new Float64Array(N), xr = new Float64Array(N), xi = new Float64Array(N);
+    // Only the active slots are unknowns (see _activeSlots); the others stay at δx = 0.
+    const { sizes, offX } = this.lin;
+    const slots = this.slots ?? Int32Array.from({ length: N }, (_, k) => k % M);
+    const from = this.gatherFrom ?? { A: null, B: null, C: null }; // null: the identity
+    const csys = new ComplexBlockTridiagonal(nB, sizes);
+    const Nc = csys.size;
+    const rr = new Float64Array(Nc), ri = new Float64Array(Nc), cr = new Float64Array(Nc), ci = new Float64Array(Nc);
+    const xr = new Float64Array(N), xi = new Float64Array(N);
     const gL = this.nNodes - 2, bL = this.blockOfNode[gL], bR = bL + 1;
     const mat = model.materials[model.regions[model.grid.segRegion[gL]].material];
     const kSeg = this.phiUndefined[gL] ? 0 : (mat.epsr * EPS0 * VT) / model.grid.segLength[gL];
@@ -1697,23 +1799,32 @@ export class Solver {
       if (!(w > 0)) throw new SolverError('impedance: frequencies must be positive');
       // Rows scaled by their largest entry.
       for (let blk = 0; blk < nB; blk++) {
-        for (let r = 0; r < M; r++) {
-          const o = blk * mm + r * M;
+        const nA = blk > 0 ? sizes[blk - 1] : 0, nC = blk < nB - 1 ? sizes[blk + 1] : 0, mB = sizes[blk];
+        for (let r = 0; r < mB; r++) {
+          const o = blk * mm + slots[offX[blk] + r] * M;
           let mx = 0;
           for (const X of ['A', 'B', 'C']) for (let c = 0; c < M; c++) mx = Math.max(mx, Math.abs(J[X][o + c]), w * Math.abs(S[X][o + c]));
           const sc = mx > 0 ? 1 / mx : 1;
-          for (const X of ['A', 'B', 'C']) {
-            for (let c = 0; c < M; c++) {
-              csys[X + 'r'][o + c] = J[X][o + c] * sc;
-              csys[X + 'i'][o + c] = w * S[X][o + c] * sc;
+          for (const [X, mc] of [['A', nA], ['B', mB], ['C', nC]]) {
+            const oc = csys['off' + X][blk] + r * mc, f = from[X], JX = J[X], SX = S[X], Xr = csys[X + 'r'], Xi = csys[X + 'i'];
+            for (let c = 0; c < mc; c++) {
+              const k = f ? f[oc + c] : oc + c;
+              Xr[oc + c] = JX[k] * sc;
+              Xi[oc + c] = w * SX[k] * sc;
             }
           }
-          rr[blk * M + r] = -b[blk * M + r] * sc;
-          ri[blk * M + r] = 0;
+          rr[offX[blk] + r] = -b[o / M] * sc;
+          ri[offX[blk] + r] = 0;
         }
       }
       csys.factor();
-      csys.solve(rr, ri, xr, xi);
+      csys.solve(rr, ri, cr, ci);
+      for (let blk = 0; blk < nB; blk++) {
+        for (let k = offX[blk]; k < offX[blk + 1]; k++) {
+          xr[blk * M + slots[k]] = cr[k];
+          xi[blk * M + slots[k]] = ci[k];
+        }
+      }
       let Zr, Zi;
       if (circuit.mode === 'voltage') {
         // δI = (∂I_cond/∂x)·δx + iω δD_segment, per volt
