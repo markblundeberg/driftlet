@@ -192,6 +192,57 @@ test('metal definitions are checked', () => {
   def.regions[0].velocity = 1e-3;
   throwsDevice(def, /no flow or mixing/);
   delete def.regions[0].velocity;
-  def.ports = [{ region: 0, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
-  throwsDevice(def, /single cell with no interior/);
+  def.ports = [{ region: 0, from: 0, to: 1e-9, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
+  throwsDevice(def, /attaches to all of it/);
+  def.ports = [{ region: 0, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'conductance', G: 1, offset: 0 } } }];
+  throwsDevice(def, /absent|only its carrier/);
+});
+
+test('a port on a metal: a wire to the whole metal, with its conductance per area', () => {
+  // Copper from a grounded contact, tied to a port at V_p through G per area; the far end is
+  // closed. The port's conductance is spread over the metal (half at each node of its one cell),
+  // so the far half is reached through the metal's resistance L/σ: G_eff = G/2 + 1/(2/G + L/σ).
+  const sigma = 1e6, L = 1e-6, Vp = 1e-3;
+  for (const G of [1e10, 1e13]) {
+    const sol = new Device({
+      species: [{ name: 'e-', z: -1 }],
+      materials: { Cu: { metal: { species: 'e-', conductivity: sigma } } },
+      regions: [{ material: 'Cu', length: L }],
+      contacts: { left: collector(0), right: { phi: 'neutral' } },
+      ports: [{ region: 0, V: Vp, terminal: 'e-', species: { 'e-': { type: 'conductance', G } } }],
+    }).solve();
+    assert.ok(sol.converged);
+    const Geff = G / 2 + 1 / (2 / G + L / sigma);
+    assert.ok(Math.abs(sol.ports[0].current / (Geff * Vp) - 1) < 1e-12, `G=${G}: ${sol.ports[0].current} vs ${Geff * Vp}`);
+    assert.ok(Math.abs(sol.contacts.left.current + sol.ports[0].current) < 1e-12 * Math.abs(sol.ports[0].current));
+  }
+});
+
+test('a port grounds a floating metal: a bipolar plate tied to the middle voltage carries no wire current', () => {
+  // The symmetric bipolar cell of the test above, with the plate wired to V/2 (where it floats
+  // anyway): nothing flows in the wire. Wired to 0 instead, the wire takes the left cell's current.
+  const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating] };
+  const end = { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
+  const cell = (Vwire, V) =>
+    new Device({
+      species: [...ions, { name: 'e-', z: -1 }],
+      materials: { water: water(78.5), Ag },
+      regions: [
+        { material: 'water', length: 10e-6, c0: salt },
+        { name: 'plate', material: 'Ag', length: 2e-6 },
+        { material: 'water', length: 10e-6, c0: salt },
+      ],
+      interfaces: [stern, stern],
+      contacts: { left: { V: 0, ...end }, right: { V, ...end } },
+      ports: [{ region: 'plate', V: Vwire, terminal: 'e-', species: { 'e-': { type: 'conductance', G: 1e6 } } }],
+      grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
+    }).solve();
+  const mid = cell(0.1, 0.2);
+  assert.ok(mid.converged);
+  assert.ok(Math.abs(mid.ports[0].current) < 1e-9 * Math.abs(mid.current), `${mid.ports[0].current} vs ${mid.current}`);
+  const grounded = cell(0, 0.2);
+  assert.ok(grounded.converged);
+  // The wire takes the difference between the two cells' currents, and the plate sits near 0.
+  assert.ok(Math.abs(grounded.contacts.left.current + grounded.ports[0].current - grounded.contacts.right.current) < 1e-9 * Math.abs(grounded.current));
+  assert.ok(Math.abs(grounded.ports[0].current) > 0.1 * Math.abs(grounded.current));
 });

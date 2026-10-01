@@ -341,7 +341,8 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   else r = regions.findIndex((reg) => reg.name === pdef.region);
   need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
   const reg = regions[r], mat = materials[reg.material];
-  need(!mat.metal, `${path}.region: a metal region is a single cell with no interior; reach it through a contact or a face reaction`);
+  // A metal is one cell with no interior, so a port attaches to the whole of it, as a wire would.
+  if (mat.metal) need(pdef.from === undefined && pdef.to === undefined, `${path}: a port on a metal attaches to all of it, so give no window`);
   const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
   const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
   need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);
@@ -361,6 +362,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
     if (link.type === 'blocked') continue;
     need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
+    if (mat.metal) need(i === mat.metal.i, `${lpath}: a metal exchanges only its carrier, ${species[mat.metal.i].name}`);
     const z = species[i].z;
     // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
     let level;
@@ -374,7 +376,8 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
       need(offset !== undefined, `${lpath}.offset: give V_i − V_port (V); only the terminal species defaults to 0`);
       level = { offset: finite(offset, `${lpath}.offset`) };
     }
-    if (link.type === 'conductance') level.G = positive(link.G, `${lpath}.G (S/m³)`);
+    // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
+    if (link.type === 'conductance') level.G = mat.metal ? positive(link.G, `${lpath}.G (S/m², for a metal)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
     links[i] = { type: link.type, ...level };
   }

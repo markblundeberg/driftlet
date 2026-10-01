@@ -148,7 +148,9 @@
  */
 
 /**
- * An internal port: an outside phase exchanging with a window of one region's nodes.
+ * An internal port: an outside phase exchanging with a window of one region's nodes. On a
+ * metal region it attaches to the whole metal (no window), and a conductance G is per area
+ * (S/m²) instead of per volume (S/m³).
  * @typedef {object} PortDef
  * @property {string} [name]
  * @property {string | number} region region name or index

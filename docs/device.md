@@ -74,7 +74,7 @@ or `cRef`, and φ is undefined inside. Its bulk is neutral and incompressible, c
 ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a charged face. Since nothing is
 stored inside, the Fermi level is exactly linear across a metal region, so the region is a
 single grid cell, whatever its length. Metal regions take no `fixedCharge`, `c0`, `grid`,
-`velocity` or `mixing`, and no ports (reach a metal through a contact or a face reaction). See
+`velocity` or `mixing`. A port on a metal attaches to all of it (see [ports](#internal-ports)). See
 [Faces next to a metal](#faces-next-to-a-metal).
 
 `statistics` (optional) lists non-ideal statistics models, each covering named species:
@@ -290,6 +290,11 @@ the device. In steady state the right contact's current is the left contact's pl
 port's.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
+
+On a [metal region](#materials), a port is a wire to the whole metal: it takes no window, only
+the metal's carrier, and a conductance link's `G` is per area (S/m², a resistance R·A to the
+port's voltage as G = 1/(R·A)). That's how a floating electrode is tied to ground through a
+resistor.
 
 For example, in a 1D MOS capacitor without generation, inversion electrons can only arrive by
 minority-carrier diffusion from the back contact, which can take weeks. The inversion layer is
