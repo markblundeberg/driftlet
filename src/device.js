@@ -33,6 +33,9 @@ const LINK_FIELDS = {
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
+// For an unknown-name error: the names there are.
+const known = (index) => ` (the species are ${[...index.keys()].map((k) => `'${k}'`).join(', ')})`;
+
 function need(cond, message) {
   if (!cond) throw new DeviceError(message);
 }
@@ -112,7 +115,7 @@ export function normalizeDevice(def) {
     const cRef = new Float64Array(nSpecies);
     for (const [sname, p] of Object.entries(mat.species)) {
       const spath = `${path}.species.${sname}`;
-      need(speciesIndex.has(sname), `${spath}: unknown species '${sname}'`);
+      need(speciesIndex.has(sname), `${spath}: unknown species '${sname}'${known(speciesIndex)}`);
       need(isObject(p), `${spath} must be an object`);
       fields(p, spath, ['D', 'mu0', 'cRef']);
       const i = speciesIndex.get(sname);
@@ -183,7 +186,7 @@ export function normalizeDevice(def) {
     if (reg.c0 !== undefined) {
       need(isObject(reg.c0), `${path}.c0 must be an object mapping species names to concentrations`);
       for (const [sname, v] of Object.entries(reg.c0)) {
-        need(speciesIndex.has(sname), `${path}.c0.${sname}: unknown species '${sname}'`);
+        need(speciesIndex.has(sname), `${path}.c0.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
         const i = speciesIndex.get(sname);
         need(mat.present[i], `${path}.c0.${sname}: '${sname}' is absent from material '${mat.name}'`);
         c0[i] = positive(v, `${path}.c0.${sname}`);
@@ -495,14 +498,14 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   const drive = normalizeDrive(pdef, path);
   let terminal = null;
   if (pdef.terminal !== undefined) {
-    need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}`);
+    need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(pdef.terminal);
   }
   need(isObject(pdef.species), `${path}.species must map species names to port links`);
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species)) {
     const lpath = `${path}.species.${sname}`;
-    need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+    need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'${known(speciesIndex)}`);
     const i = speciesIndex.get(sname);
     const link = typeof raw === 'string' ? { type: raw } : raw;
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
@@ -615,7 +618,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     const st = idef.step;
     need(isObject(st), `${where}.step must be { species, value }`);
     fields(st, `${where}.step`, ['species', 'value']);
-    need(speciesIndex.has(st.species), `${where}.step.species: unknown species ${JSON.stringify(st.species)}`);
+    need(speciesIndex.has(st.species), `${where}.step.species: unknown species ${JSON.stringify(st.species)}${known(speciesIndex)}`);
     const i = speciesIndex.get(st.species);
     const z = species[i].z;
     need(z !== 0, `${where}.step.species: '${st.species}' is neutral; alignment needs a charged species`);
@@ -633,7 +636,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     need(isObject(idef.species), `${where}.species must map species names to interface links`);
     for (const [sname, raw] of Object.entries(idef.species)) {
       const lpath = `${where}.species.${sname}`;
-      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
@@ -662,7 +665,7 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
   for (const k of ['epsr', 'species', 'statistics']) {
     need(mat[k] === undefined, `${path}.${k}: a conductor takes only { conductor: { species, conductivity } }`);
   }
-  need(speciesIndex.has(mdef.species), `${path}.conductor.species: unknown species ${JSON.stringify(mdef.species)}`);
+  need(speciesIndex.has(mdef.species), `${path}.conductor.species: unknown species ${JSON.stringify(mdef.species)}${known(speciesIndex)}`);
   const i = speciesIndex.get(mdef.species);
   need(species[i].z !== 0, `${path}.conductor.species: the conductor's carrier must be charged`);
   const n = species.length;
@@ -729,7 +732,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
     need(isObject(idef.species), `${where}.species must map species names to interface links`);
     for (const [sname, raw] of Object.entries(idef.species)) {
       const lpath = `${where}.species.${sname}`;
-      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
@@ -792,7 +795,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   const drive = normalizeDrive(cdef, path);
 
   if (cdef.terminal !== undefined) {
-    need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}`);
+    need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(cdef.terminal);
   }
 
@@ -800,7 +803,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(isObject(cdef.species), `${path}.species must be an object mapping species names to links`);
     for (const [sname, raw] of Object.entries(cdef.species)) {
       const lpath = `${path}.species.${sname}`;
-      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+      need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link), `${lpath} must be a link type string or an object with a type`);
@@ -848,7 +851,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
     fields(bath, `${path}.bath`, ['c', 'reference', 'offset']);
-    need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}`);
+    need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}${known(speciesIndex)}`);
     const r = speciesIndex.get(bath.reference);
     need(species[r].z !== 0, `${path}.bath.reference: the reference species must be charged`);
     need(bath.c[bath.reference] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
@@ -857,7 +860,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     let charge = region.fixedCharge / FARADAY, scale = Math.abs(charge);
     const cb = new Float64Array(species.length);
     for (const [sname, v] of Object.entries(bath.c)) {
-      need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'`);
+      need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from the end material '${mat.name}'`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
