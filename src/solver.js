@@ -121,6 +121,30 @@ export class Solver {
       this.background[g] = reg.background;
     }
     this.anyNonIdeal = !this.nodeIdeal.every((v) => v === 1);
+    // Metal nodes: the carrier's index, and for a node at a charged face of its metal, the face
+    // whose displacement is the metal's surface charge (σ = ±D_f), held as a sheet of excess
+    // carriers in that node's half-box.
+    this.nodeMetal = new Int32Array(nNodes).fill(-1);
+    this.sheetFace = new Int32Array(nNodes).fill(-1);
+    this.sheetSign = new Int8Array(nNodes);
+    // A metal node's φ slot (φ is undefined there) carries instead the carrier flux J through the
+    // segment to its right: Ohm's law and continuity in mixed form stay well conditioned however
+    // large σ is (eliminating a stiff ohmic chain directly would cancel catastrophically).
+    this.metalLast = new Uint8Array(nNodes);
+    for (let g = 0; g < nNodes; g++) {
+      const mat = materials[regions[grid.nodeRegion[g]].material];
+      if (mat.metal) {
+        this.nodeMetal[g] = mat.metal.i;
+        this.nodeIdeal[g] = 1;
+        this.metalLast[g] = g === grid.regionEnd[grid.nodeRegion[g]] ? 1 : 0;
+      }
+    }
+    model.interfaces.forEach((itf, f) => {
+      if (!itf.metal || itf.metal.side === 'both' || itf.phi.type === 'neutral') return;
+      const g = itf.metal.side === 'left' ? grid.regionEnd[f] : grid.regionStart[f + 1];
+      this.sheetFace[g] = f;
+      this.sheetSign[g] = itf.metal.side === 'left' ? 1 : -1; // σ_metal = D_f on the left, −D_f on the right
+    });
     this.K = this.anyNonIdeal ? new Float64Array(nNodes * n * n) : null;
     this.ex = new Float64Array(nNodes * n);
     this.zeta = new Float64Array(n);
@@ -181,6 +205,11 @@ export class Solver {
         const leftOpen = r0 === 0 && touches(contacts.left);
         const rightOpen = r === last && touches(contacts.right);
         let reactive = false;
+        for (const f of [r0 - 1, r]) {
+          const itf = model.interfaces[f];
+          if (!itf || itf.electrode.length === 0) continue;
+          if (itf.metal.i === i || itf.electrode.some((rx) => [...rx.reactants, ...rx.products].some((p) => p.i === i))) reactive = true;
+        }
         for (let q = r0; q <= r; q++) {
           this.stretchOf[q * n + i] = this.stretches.length;
           const m = regions[q].material;
@@ -197,10 +226,27 @@ export class Solver {
           reactive,
           // Conserved on its own: not fed by a contact, not made or consumed by a reaction.
           spectator: !connected && !reactive,
+          contactFed: connected, // reached directly by a contact
         });
         r++;
       }
     }
+    // A stretch exchanging with a fed stretch through an electrode reaction at a metal face is
+    // fed too (e.g. ions between two metals that each reach a contact): nothing is conserved there.
+    for (let changed = true; changed; ) {
+      changed = false;
+      model.interfaces.forEach((itf, f) => {
+        if (itf.electrode.length === 0) return;
+        const involved = new Set([itf.metal.i]);
+        for (const rx of itf.electrode) for (const p of [...rx.reactants, ...rx.products]) involved.add(p.i);
+        const touching = this.stretches.filter((st) => involved.has(st.species) && (st.regions[1] === f || st.regions[0] === f + 1));
+        if (touching.some((st) => st.connected) && touching.some((st) => !st.connected)) {
+          for (const st of touching) st.connected = true;
+          changed = true;
+        }
+      });
+    }
+    for (const st of this.stretches) st.spectator = !st.connected && !st.reactive;
   }
 
   /** Total amount (mol per unit area) of a stretch's species in the current state. */
@@ -240,10 +286,23 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (!mat.present[i]) continue;
         const st = this.stretches[this.stretchOf[r * n + i]];
-        if (!st.connected) {
+        if (!st.contactFed && mat.metal) {
+          // A metal away from the contacts: start uncharged, with its Fermi level in equilibrium
+          // with the electrode reaction on its left face if it has one, else at the running φ.
+          eta[i] = z[i] * phiHat;
+          const rx = r > 0 ? interfaces[r - 1].electrode[0] : undefined;
+          if (rx) {
+            const bn = this.blockOfNode[grid.regionEnd[r - 1]];
+            let a = rx.fixedA;
+            for (const p of rx.reactants) a += p.nu * u[bn * M + 1 + p.i];
+            for (const p of rx.products) a -= p.nu * u[bn * M + 1 + p.i];
+            eta[i] = -a / rx.electrons; // A = 0
+          }
+          mode[i] = 1;
+        } else if (!st.contactFed) {
           if (!(reg.c0[i] > 0)) {
             throw new SolverError(
-              `regions[${r}].c0.${species[i].name}: a species not connected to a contact needs its initial concentration`,
+              `regions[${r}].c0.${species[i].name}: a species that doesn't reach a contact needs its initial concentration`,
             );
           }
           mode[i] = 2;
@@ -252,6 +311,16 @@ export class Solver {
           const left = st.regions[0] === 0 ? this.contactEta('left', i) : NaN;
           eta[i] = Number.isFinite(left) ? left : this.contactEta('right', i);
           mode[i] = 1;
+          if (!Number.isFinite(eta[i])) {
+            // Fed only through reactions (no level held at a contact): start from c0.
+            if (!(reg.c0[i] > 0)) {
+              throw new SolverError(
+                `regions[${r}].c0.${species[i].name}: a species fed only through reactions needs its initial concentration`,
+              );
+            }
+            mode[i] = 2;
+            cFix[i] = reg.c0[i];
+          }
         }
       }
       // Net charge (mol/m³) at trial φ̂; decreasing in φ̂ wherever a level-fixed ion responds.
@@ -287,7 +356,7 @@ export class Solver {
       if (!mat.ideal) this._materialAt(mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
         const b = this.blockOfNode[g];
-        u[b * M] = phiHat;
+        u[b * M] = mat.metal ? 0 : phiHat; // a metal's slot 0 is its segment flux
         for (let i = 0; i < n; i++) {
           if (mode[i] === 1) u[b * M + 1 + i] = eta[i];
           else if (mode[i] === 2) {
@@ -334,6 +403,14 @@ export class Solver {
       const phiHat = u[b * M];
       if (!this.nodeIdeal[g]) {
         this._nodeStatistics(g, b, phiHat);
+        continue;
+      }
+      const im = this.nodeMetal[g];
+      if (im >= 0) {
+        // Excess carriers: zero in the bulk, the surface sheet at a charged face.
+        for (let i = 0; i < n; i++) c[g * n + i] = 0;
+        const f = this.sheetFace[g];
+        if (f >= 0) c[g * n + im] = (this.sheetSign[g] * u[this.blockOfFace[f] * M]) / (z[im] * FARADAY * this.model.grid.vol[g]);
         continue;
       }
       for (let i = 0; i < n; i++) {
@@ -439,6 +516,22 @@ export class Solver {
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g], v = grid.vol[g];
       let q = this.rhoFixed[g], dq = 0;
+      const im = this.nodeMetal[g];
+      if (im >= 0) {
+        for (let i = 0; i < n; i++) {
+          const r = 1 + i;
+          if (i !== im) {
+            this._j(b, r, b, r, 1);
+            continue;
+          }
+          const k = g * n + i;
+          res[b * M + r] += (v * (c[k] - cOld[k])) / dt;
+          const f = this.sheetFace[g];
+          if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, this.sheetSign[g] / (z[im] * F * dt));
+        }
+        if (this.metalLast[g]) this._j(b, 0, b, 0, 1); // no segment to its right: the J slot is idle
+        continue;
+      }
       if (this.nodeIdeal[g]) {
         for (let i = 0; i < n; i++) {
           const k = g * n + i, r = 1 + i;
@@ -546,6 +639,10 @@ export class Solver {
       this._j(bR, 0, bL, 0, -k);
       this._j(bR, 0, bR, 0, k);
 
+      if (this.nodeMetal[s] >= 0) {
+        this._segmentMetal(s, bL, bR, mat, h, lastSeg);
+        continue;
+      }
       const vel = regions[reg].velocity;
       if (regions[reg].mixing > 0) this._segmentMixing(s, bL, bR, regions[reg].mixing, h, mat, lastSeg);
       if (!this.nodeIdeal[s]) {
@@ -601,7 +698,26 @@ export class Solver {
       const itf = interfaces[f];
       // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
       const law = itf.phi.type;
-      if (law === 'neutral') {
+      const metalSide = itf.metal && law !== 'neutral' ? itf.metal.side : null;
+      if (metalSide) {
+        // Against a metal: the other side's φ is tied to the metal's Fermi level V_F = V_T η/z.
+        const im = itf.metal.i, bm = metalSide === 'left' ? bL : bR, bo = metalSide === 'left' ? bR : bL;
+        const sg = metalSide === 'left' ? 1 : -1;
+        const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
+        const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
+        if (law === 'dipole') {
+          res[bf * M] = gap;
+          this._j(bf, 0, bm, 1 + im, 1 / z[im]);
+          this._j(bf, 0, bo, 0, -1);
+        } else {
+          // D toward the other side = C (V_F − zeroCharge − φ_edge); toward +x that's sg times it.
+          const kC = itf.phi.C * VT;
+          res[bf * M] = u[bf * M] - sg * kC * gap;
+          this._j(bf, 0, bf, 0, 1);
+          this._j(bf, 0, bm, 1 + im, (-sg * kC) / z[im]);
+          this._j(bf, 0, bo, 0, sg * kC);
+        }
+      } else if (law === 'neutral') {
         res[bf * M] = u[bf * M]; // D = 0; the jump is whatever each side's neutrality needs
         this._j(bf, 0, bf, 0, 1);
       } else {
@@ -619,10 +735,16 @@ export class Solver {
           this._j(bf, 0, bL, 0, -kC);
         }
       }
-      res[bL * M] += u[bf * M];
-      this._j(bL, 0, bf, 0, 1);
-      res[bR * M] -= u[bf * M] + itf.sheetCharge;
-      this._j(bR, 0, bf, 0, -1);
+      // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead.
+      const gL = grid.regionEnd[f], gR = gL + 1;
+      if (this.nodeMetal[gL] < 0) {
+        res[bL * M] += u[bf * M];
+        this._j(bL, 0, bf, 0, 1);
+      }
+      if (this.nodeMetal[gR] < 0) {
+        res[bR * M] -= u[bf * M] + itf.sheetCharge;
+        this._j(bR, 0, bf, 0, -1);
+      }
       for (let i = 0; i < n; i++) {
         const r = 1 + i, o = bf * M + r;
         const type = itf.links[i].type;
@@ -647,12 +769,18 @@ export class Solver {
           res[o] = u[o]; // kinetic: N − Σ ν r, the rates are subtracted below
           this._j(bf, r, bf, r, 1);
         }
-        res[bL * M + r] += u[o];
-        this._j(bL, r, bf, r, 1);
-        res[bR * M + r] -= u[o];
-        this._j(bR, r, bf, r, -1);
+        // (a species on one side only, e.g. at an electrode reaction, flows on that side only)
+        if (this.present[gL * n + i]) {
+          res[bL * M + r] += u[o];
+          this._j(bL, r, bf, r, 1);
+        }
+        if (this.present[gR * n + i]) {
+          res[bR * M + r] -= u[o];
+          this._j(bR, r, bf, r, -1);
+        }
       }
       for (const tr of itf.transfers) this._transfer(tr, f, bf, bL, bR);
+      for (const rx of itf.electrode) this._electrodeAtFace(rx, itf.metal, f, bf, bL, bR);
     }
 
     // Contacts.
@@ -735,6 +863,29 @@ export class Solver {
           this.segIJac[M + k] += q * jR[k];
         }
       }
+    }
+  }
+
+  // Ohmic conduction in a metal, in mixed form. The flux J (slot 0 of the left node) obeys
+  //   η_R − η_L + J/g = 0,  g = σ RT/(z²F² h)   (Ohm's law, J = −g Δη),
+  // and enters the two nodes' carrier balances as outflow and inflow.
+  _segmentMetal(s, bL, bR, mat, h, lastSeg) {
+    const { M, u, uLo, res, z } = this;
+    const i = mat.metal.i, r = 1 + i;
+    const g = (mat.metal.sigma * this.model.RT) / (z[i] * z[i] * FARADAY * FARADAY * h);
+    const J = u[bL * M];
+    res[bL * M] = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) + J / g;
+    this._j(bL, 0, bR, r, 1);
+    this._j(bL, 0, bL, r, -1);
+    this._j(bL, 0, bL, 0, 1 / g);
+    res[bL * M + r] += J;
+    res[bR * M + r] -= J;
+    this._j(bL, r, bL, 0, 1);
+    this._j(bR, r, bL, 0, -1);
+    if (lastSeg) {
+      const q = FARADAY * z[i];
+      this.segI += q * J;
+      this.segIJac[0] += q;
     }
   }
 
@@ -835,6 +986,48 @@ export class Solver {
     const o = g * n * n + k * n;
     for (let j = 0; j < n; j++) d[1 + j] = this.K[o + j];
     d[0] = -this._Kz(g, k);
+  }
+
+  // Electrode reaction at a face between a metal and another material, written as reduction:
+  //   Σ ν_R R + n e⁻(metal, at its Fermi level) ⇌ Σ ν_P P,
+  // with the same standard-rate-constant form as at contacts, participants at the other side's
+  // edge node (behind any double layer, so Frumkin effects arise). Each species flows to or from
+  // the face on its own side: with s = +1 for a metal on the left, the face fluxes toward +x are
+  // −sνr (reactants), +sνr (products) and +s·n·r (the metal's electrons).
+  _electrodeAtFace(rx, metal, f, bf, bL, bR) {
+    const { n, M, u, uLo, c, res } = this;
+    const grid = this.model.grid;
+    const sg = metal.side === 'left' ? 1 : -1;
+    const bm = sg > 0 ? bL : bR, bo = sg > 0 ? bR : bL;
+    const go = sg > 0 ? grid.regionStart[f + 1] : grid.regionEnd[f];
+    const al = rx.alpha, ie = metal.i;
+    const dr = this.dA.fill(0);
+    let pref = rx.k0, aHi = rx.fixedA + rx.electrons * u[bm * M + 1 + ie], aLo = rx.electrons * uLo[bm * M + 1 + ie];
+    for (const { i, nu } of rx.reactants) {
+      pref *= (c[go * n + i] / this.cRef[go * n + i]) ** (nu * (1 - al));
+      this._dlnc(go, i, nu * (1 - al), dr);
+      aHi += nu * u[bo * M + 1 + i];
+      aLo += nu * uLo[bo * M + 1 + i];
+    }
+    for (const { i, nu } of rx.products) {
+      pref *= (c[go * n + i] / this.cRef[go * n + i]) ** (nu * al);
+      this._dlnc(go, i, nu * al, dr);
+      aHi -= nu * u[bo * M + 1 + i];
+      aLo -= nu * uLo[bo * M + 1 + i];
+    }
+    const { g, gp } = bvFactor(aHi + aLo, al);
+    const rate = pref * g;
+    for (let k = 0; k < M; k++) dr[k] *= rate;
+    for (const { i, nu } of rx.reactants) dr[1 + i] += pref * gp * nu;
+    for (const { i, nu } of rx.products) dr[1 + i] -= pref * gp * nu;
+    const dE = pref * gp * rx.electrons; // ∂rate/∂η_e(metal)
+    const rows = [...rx.reactants.map(({ i, nu }) => [i, -sg * nu]), ...rx.products.map(({ i, nu }) => [i, sg * nu]), [ie, sg * rx.electrons]];
+    for (const [i, w] of rows) {
+      const row = 1 + i;
+      res[bf * M + row] -= w * rate;
+      for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(bf, row, bo, k, -w * dr[k]);
+      this._j(bf, row, bm, 1 + ie, -w * dE);
+    }
   }
 
   // Kinetic transfer across interface f (Butler–Volmer form, forward = left to right):
@@ -1087,7 +1280,7 @@ export class Solver {
     let mx = this.terminalBlock >= 0 ? Math.abs(delta[this.terminalBlock * M]) : 0;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
-      mx = Math.max(mx, Math.abs(delta[b * M]));
+      if (this.nodeMetal[g] < 0) mx = Math.max(mx, Math.abs(delta[b * M])); // (a metal's slot 0 is a flux)
       for (let i = 0; i < n; i++) {
         if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(delta[b * M + 1 + i]));
       }

@@ -56,14 +56,11 @@ An anchor has to be a level that driftlet knows in terms of a material's φ:
   needs H⁺ among the species. Other half-reactions could be used as anchors in principle, but
   each brings its own conventions (the neutral element's μ, E°(SHE) = 0), so they're not
   offered as shortcuts here.
-- **The Fermi level** of a metal. Properly, a work function is referenced to the Fermi level
-  itself, not to an electrostatic level. Today a metal is modelled as a strictly neutral
-  region (`epsr: 0`) whose electron `cRef` equals its electron density. Neutrality then
-  holds c = c_ref everywhere, so the Fermi level coincides exactly with the e⁻ standard
-  level: use anchor `'e-'` with offset W. (A metal region with ε > 0 would band-bend slightly,
-  and this equivalence would hold only approximately.) A semiconductor's Fermi level moves
-  with doping and bias, so its work function isn't a material constant: use its electron
-  affinity instead.
+- **The Fermi level** of a metal (`'fermi'`), the proper reference for a work function. It's
+  available only on the side of a metal region, whose single unknown is its Fermi level, and
+  for the conductor at a contact (whose `outside` offset is already Fermi-referenced). A
+  semiconductor's Fermi level moves with doping and bias, so its work function isn't a
+  material constant: use its electron affinity instead.
 - **φ itself** (`'phi'`), with a surface potential as the offset. That's discouraged, since φ
   is bookkeeping: its value inside a material depends on how that material's μ° were
   anchored, and surface potentials are not measurable on their own. If you have settled that
@@ -84,6 +81,16 @@ interfaces: [{
 
 driftlet turns it into the face's dipole: φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R.
 
+At a face beside a metal region, the metal's side is `{ anchor: 'fermi', offset: W }`, and the
+recipe gives the face's `zeroCharge` (V_F − φ_edge at zero charge) instead of a dipole:
+
+```js nocheck
+interfaces: [{
+  phi: { type: 'capacitive', C: 10 },
+  vacuum: { left: { anchor: 'fermi', offset: 4.75 }, right: { anchor: 'e-', offset: 4.05 } }, // Au | n-Si
+}]
+```
+
 A contact's capacitive or dipole φ law takes it in place of `zeroCharge`. The outside phase's
 anchor is the terminal level, so only its offset is needed (the work function of the
 conductor whose voltage V is):
@@ -103,7 +110,8 @@ the other band.
 **Metal | semiconductor (Schottky–Mott).** Work function against electron affinity gives the
 n-type barrier φ_B = W − χ. With the metal as a contact, a pinned law
 `{ type: 'dipole', vacuum: { outside: W, inside: { anchor: 'e-', offset: χ } } }` puts the
-semiconductor's surface electron density at N_c e^{−φ_B/kT}.
+semiconductor's surface electron density at N_c e^{−φ_B/kT}. With the metal as a region, the
+face is capacitive, with `'fermi'` on the metal side; a large C approaches the pinned barrier.
 
 **Gate | semiconductor (flat band).** The same with a capacitive law. Its `zeroCharge` is the
 anchor-level form of the textbook V_FB = (W_g − W_s)/e, which refers to the semiconductor's

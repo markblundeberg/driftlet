@@ -104,6 +104,10 @@ is `neutral`, in which case the alignment has no effect and is not allowed. The 
 - `capacitive`: a Helmholtz layer of capacitance C, charged by any departure of the jump
   from the alignment.
 
+A **metal** is a material of its own kind: its one level is the Fermi level, it has no φ,
+and a face beside it ties the other side's φ to that Fermi level through a capacitance (see the
+[device reference](device.md#faces-next-to-a-metal)).
+
 A face between a strictly neutral (ε = 0) material and one with ε > 0, such as an electrode and
 an electrolyte, is naturally `dipole`. The neutral side holds the surface charge, and the
 alignment plays the role of a potential of zero charge or work function.

@@ -58,8 +58,20 @@ Shifting every `mu0` by `z_i F s` just moves the material's φ, its bookkeeping 
 [conventions](conventions.md).
 
 `epsr: 0` makes a material **strictly neutral**: Poisson is replaced by local neutrality, and φ
-there is only a bookkeeping multiplier. Use it for metals and for macroscopic systems whose
-double layers you don't want to resolve.
+there is only a bookkeeping multiplier. Use it for macroscopic systems whose double layers you
+don't want to resolve, such as electrolytes and mixed conductors. (Metals have their own kind of
+material, below.)
+
+**Metals** are their own kind of material:
+
+```js nocheck
+materials: { Au: { metal: { species: 'e-', conductivity: 4.1e7 } } } // S/m
+```
+
+A metal has one unknown, the Fermi level (the carrier's μ̄), and nothing else: no ε, no `mu0`
+or `cRef`, and φ is undefined inside. Its bulk is neutral and incompressible, conduction is
+ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a charged face. Metal regions take
+no `fixedCharge` or `c0`. See [Faces next to a metal](#faces-next-to-a-metal).
 
 `statistics` (optional) lists non-ideal statistics models, each covering named species:
 Fermi–Dirac, lattice gas (crowding), Redlich–Kister, Debye–Hückel, insertion hosts (OCV
@@ -140,6 +152,27 @@ present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
 Butler–Volmer rate per area,
 `r = k0 Π[(c_L/c_ref,L)^{ν(1−α)} (c_R/c_ref,R)^{να}] (e^{αa} − e^{−(1−α)a})`,
 with a = Σν(μ̄_L − μ̄_R)/RT, k0 in mol/(m²·s), and α (default 0.5) between 0 and 1.
+
+### Faces next to a metal
+
+A metal has no φ, so a face beside it can't take a `dipole` or `step` alignment. Its φ law is:
+
+- `'neutral'` (no charge at the face): the default next to an ε = 0 material, and the only
+  choice between two metals; or
+- `{ type: 'capacitive', C }`: the other side's φ is tied to the metal's Fermi level V_F,
+  with displacement C·(V_F − zeroCharge − φ_edge) toward the other side, which is the metal's
+  surface charge. Give `zeroCharge` (V_F − φ_edge at zero charge) or `vacuum`, with
+  `{ anchor: 'fermi', offset: W }` on the metal's side.
+
+A pinned (`dipole`) law isn't offered here: an internal metal holds its surface charge in a
+finite capacitance (a large C approaches the pinned limit). A pinned barrier is still available
+with the metal as a contact.
+
+The metal's carrier can continue across as a species (e⁻ into a semiconductor, `'equilibrium'`
+by default). Electrode `reactions` at a metal face take the metal's electrons at its Fermi level,
+in the same form as at contacts (`reactants`, `electrons`, `products`, `fixed`, `k0`, `alpha`),
+with the other participants at the other side's edge node. A floating metal region with
+reactions on both faces is a bipolar electrode.
 
 ## Bulk reactions
 

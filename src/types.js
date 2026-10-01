@@ -31,10 +31,13 @@
  */
 
 /**
+ * A material: either ordinary (epsr, species, optional statistics) or a metal.
  * @typedef {object} MaterialDef
- * @property {number} epsr relative permittivity; 0 makes the material strictly neutral
- * @property {Record<string, MaterialSpeciesDef>} species species present in this material
+ * @property {number} [epsr] relative permittivity; 0 makes the material strictly neutral
+ * @property {Record<string, MaterialSpeciesDef>} [species] species present in this material
  * @property {StatisticsDef[]} [statistics] non-ideal statistics (default: all ideal)
+ * @property {{ species: string, conductivity: number }} [metal] a metal: its carrier and
+ *   conductivity (S/m); its only level is the Fermi level, and φ is undefined inside
  */
 
 /**
@@ -84,10 +87,13 @@
  * @property {{ species: string, value: number }} [step] standard-level step right − left, J/mol
  * @property {number} [dipole] φ jump right − left, V
  * @property {{ left: VacuumSide, right: VacuumSide }} [vacuum] vacuum-level heuristic: equal vacuum levels
+ *   (beside a metal region, the metal's side is { anchor: 'fermi', offset: W })
+ * @property {number} [zeroCharge] beside a metal region: V_F − φ_edge at zero charge, V
  * @property {InterfacePhiLaw} [phi] electrostatic law (default 'dipole'; 'neutral' between ε = 0 materials)
  * @property {number} [sheetCharge] C/m²
  * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium)
- * @property {TransferReactionDef[]} [reactions] Butler–Volmer transfer across the face
+ * @property {(TransferReactionDef | ElectrodeReactionDef)[]} [reactions] Butler–Volmer transfer across the
+ *   face, or electrode reactions at a face beside a metal region
  */
 
 /**

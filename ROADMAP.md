@@ -29,6 +29,9 @@ for live demos.
 - A first performance pass: a benchmark script (`npm run bench`), assembly without per-node
   allocation (about 2× faster), Newton started from the extrapolated state in adaptive
   transients (a third fewer iterations), and a tighter-damping retry for large jumps.
+- Metal regions: a Fermi level and a conductivity only (mixed-form Ohm's law, surface charge as
+  sheets), capacitive faces aligned by work function, electrode reactions at internal faces,
+  bipolar electrodes.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
@@ -43,7 +46,11 @@ for live demos.
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
 - **More performance.** A variable block size where species are absent (identity rows cost a
-  full block today), and benchmarks tracked across versions in CI.
+  full block today; a metal node needs only its Fermi level and current), and benchmarks
+  tracked across versions in CI.
+- **Half-reaction anchors** for vacuum alignment (an electronic level defined by a standard
+  half-reaction, with its participants' μ given explicitly). Undecided whether it's worth the
+  apparatus.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.

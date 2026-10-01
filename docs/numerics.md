@@ -233,6 +233,37 @@ An insertion host's species depend on φ only through their neutral combination,
 cancels, so its φ rows are identity rows (φ undefined, like a region with no charged species).
 The current-continuity constraint between ion and carrier comes from their balance rows.
 
+## Metal regions
+
+A metal node's only unknown is the carrier's η, its Fermi level. Its φ slot is free, and it
+carries the carrier flux J through the segment to the node's right instead. Each metal segment
+then has two rows:
+
+```
+η_R − η_L + J/g = 0        (Ohm's law, g = σRT/(z²F²h))
+… + J (out of L), − J (into R) in the carrier balances
+```
+
+This mixed form matters. Eliminating a stiff ohmic chain in η alone computes
+g − g²/(g + G) wherever the chain hangs on a weak conductance G, such as a floating metal held
+only by its electrode reactions. For a real metal that cancels catastrophically, with pivots
+near 1e-15. In mixed form every coefficient is O(1), whatever σ.
+
+A metal's bulk holds no charge. Its surface charge at a capacitive face is the face's
+displacement, booked as a sheet of excess carriers in the edge node's half-box. That gives the
+edge node a storage term in D_f (the neighbouring block), so transients, conservation and
+impedance all see the charging current. A pinned (`dipole`) law isn't offered at a metal face.
+With nothing on the metal side depending on D_f, the steady system's flux block would be
+singular to left-to-right elimination, and the charging current would need the charge read two
+blocks away.
+
+Electrode reactions at a metal face put each participant's flux on its own side of the face.
+The face's flux node carries one flux per species, and a species present on one side only flows
+on that side only. A stretch exchanging through such a reaction with one that reaches a contact
+counts as fed, so nothing is conserved there and the steady equations are solved directly. A
+floating metal starts uncharged, with its Fermi level in equilibrium with the reaction on its
+left face.
+
 ## Bulk reactions
 
 `r = k_f Π c_R^ν · (−expm1(−a))`, with `a = A/RT` computed from the compensated η. That's mass
@@ -369,6 +400,7 @@ A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when λ_
 [roadmap](../ROADMAP.md). It would handle macroscopic devices with real double-layer charge at
 any grid, and tends to `neutral` as ε → 0.
 
-At an ε = 0 | ε > 0 face (an electrode), the neutral side's boundary half-box holds the
-electrode's surface charge. That slightly perturbs the carrier density there: a finite-volume
-stand-in for the metal's quantum capacitance, mesh-dependent in size (0.3% on the Schottky test).
+At an ε = 0 | ε > 0 face, the neutral side's boundary half-box holds the face's charge. That
+slightly perturbs the carrier density there, by an amount that depends on the mesh (0.3% on a
+Schottky test with the metal as an ε = 0 region). For a metal, a metal region avoids this: its
+surface charge is a sheet that leaves its Fermi level untouched.
