@@ -5,6 +5,37 @@ function bvFactor(a, alpha) {
   return { g: e * Math.expm1(a), gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
 }
 
+// Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
+function complexSolve(Ar, Ai, K) {
+  for (let col = 0; col < K; col++) {
+    let p = col;
+    for (let r = col + 1; r < K; r++) if (Math.hypot(Ar[r][col], Ai[r][col]) > Math.hypot(Ar[p][col], Ai[p][col])) p = r;
+    [Ar[col], Ar[p]] = [Ar[p], Ar[col]];
+    [Ai[col], Ai[p]] = [Ai[p], Ai[col]];
+    const dr = Ar[col][col], di = Ai[col][col], d2 = dr * dr + di * di;
+    for (let r = col + 1; r < K; r++) {
+      const fr = (Ar[r][col] * dr + Ai[r][col] * di) / d2, fi = (Ai[r][col] * dr - Ar[r][col] * di) / d2;
+      for (let k = col; k <= K; k++) {
+        const ur = Ar[col][k], ui = Ai[col][k];
+        Ar[r][k] -= fr * ur - fi * ui;
+        Ai[r][k] -= fr * ui + fi * ur;
+      }
+    }
+  }
+  const re = new Float64Array(K), im = new Float64Array(K);
+  for (let r = K - 1; r >= 0; r--) {
+    let vr = Ar[r][K], vi = Ai[r][K];
+    for (let k = r + 1; k < K; k++) {
+      vr -= Ar[r][k] * re[k] - Ai[r][k] * im[k];
+      vi -= Ar[r][k] * im[k] + Ai[r][k] * re[k];
+    }
+    const dr = Ar[r][r], di = Ai[r][r], d2 = dr * dr + di * di;
+    re[r] = (vr * dr + vi * di) / d2;
+    im[r] = (vi * dr - vr * di) / d2;
+  }
+  return { re, im };
+}
+
 // Discretisation and nonlinear solver.
 //
 // Unknowns, per solver block (M = 1 + nSpecies slots):
@@ -33,6 +64,7 @@ function bvFactor(a, alpha) {
 import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, bernoulliDerivative } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
+import { nextBreakpoint, sourceAt } from './device.js';
 
 export class SolverError extends Error {
   constructor(message, details) {
@@ -53,10 +85,7 @@ export class Solver {
     const M = n + 1 + nRx;
     const nNodes = grid.nNodes;
     const nFaces = regions.length - 1;
-    // A floating terminal with no fixed species to read its voltage from gets its own block.
-    const terminalUnknown = model.circuit.mode !== 'voltage' && model.circuit.terminalUnknown;
-    const nB = nNodes + nFaces + (terminalUnknown ? 1 : 0);
-    this.terminalBlock = terminalUnknown ? nB - 1 : -1;
+    const nB = nNodes + nFaces;
     this.n = n;
     this.M = M;
     this.nRx = nRx;
@@ -171,13 +200,29 @@ export class Solver {
     this.portFlux = model.ports.map(() => new Float64Array(n)); // into the device, mol/(m²·s)
     this.contactD = { left: 0, right: 0 };
     this.contactDOld = { left: 0, right: 0 };
-    // Total current through the last segment and its derivatives (for current/load circuits).
-    this.segI = 0;
-    this.segIJac = new Float64Array(2 * M); // [∂/∂(block last−1 slots), ∂/∂(block last slots)]
-    this.segDOld = 0;
-    this._termI = 0;
-    this._termIJac = new Float64Array(M + 1);
     this.contactDStart = { left: 0, right: 0 };
+    // Terminals (the two contacts, then the ports): each one's voltage (V), held by its source or
+    // floating (driven by a current, or behind a resistance), and its current into the device.
+    // Sources are read at sourceTime: a step's end, or now for a steady solve.
+    this.terms = model.terminals;
+    this.termV = new Float64Array(this.terms.length);
+    this.termVPrev = new Float64Array(this.terms.length);
+    this.termI = new Float64Array(this.terms.length);
+    this.sourceTime = 0;
+    this.sourceOverride = new Map(); // terminal → voltage, while a steady solve ramps it
+    this.steady = false; // inside a steady solve: sources at the present time, not a step's end
+    // The floating ones are extra unknowns, solved with the grid's by bordering (_solveBordered).
+    this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
+    // Per terminal: B = ∂res/∂V (compact column), C = ∂I/∂x (compact row), ∂I/∂V, and for a
+    // floating one its circuit residual (I − I_set, or I − (V_src − V)/R).
+    this.termB = this.terms.map(() => new Float64Array(this.sys.size + 1));
+    this.termC = this.terms.map(() => new Float64Array(this.sys.size + 1));
+    this.termDI = new Float64Array(this.terms.length);
+    this.termRes = new Float64Array(this.terms.length);
+    this._refreshSources();
+    // A floating terminal starts level with the first held one (no current).
+    const level = this.termV[this.terms.findIndex((_, k) => !this.floating.includes(k))];
+    for (const k of this.floating) this.termV[k] = this.terms[k].drive.kind === 'V' ? this.termV[k] : level;
     // Accepted steps, most recent first: start time, size, start state (for BDF2 and the
     // error estimate of adaptive stepping).
     this.history = [];
@@ -237,7 +282,6 @@ export class Solver {
       for (let i = 0; i < n; i++) active[bf * M + 1 + i] = itf.links[i].type === 'blocked' ? 0 : 1;
       for (let k = 0; k < itf.reactions.length; k++) active[bf * M + 1 + n + k] = 1;
     });
-    if (this.terminalBlock >= 0) active[this.terminalBlock * M] = 1;
     const sizes = new Int32Array(nB), loc = (this.loc = new Int32Array(nB * M).fill(-1));
     for (let b = 0; b < nB; b++) for (let r = 0; r < M; r++) if (active[b * M + r]) loc[b * M + r] = sizes[b]++;
     const sys = (this.sys = new BlockTridiagonal(nB, sizes));
@@ -358,7 +402,7 @@ export class Solver {
   // Conservation rows for the spectators (steady solves only): Σ v c_i = amount over the
   // stretch replaces the balance row of its first node, which in steady state is the negative
   // sum of the others. That row is dense, so it's kept aside: the factorised matrix gets a pin
-  // (identity row) there instead, and _solveConstrained restores the constraint.
+  // (identity row) there instead, and _solveBordered restores the constraint.
   _applyConstraints() {
     const { n, M, res, c, dA: d } = this;
     const vol = this.model.grid.vol;
@@ -384,53 +428,74 @@ export class Solver {
     }
   }
 
-  // Solve J δ = rhs where J has the constraint rows (bordered system): δ = p + Σ_k q_k s_k, with
-  // p and q_k from the pinned matrix (q_k the response to a unit pin at row k, the stretch's
-  // free level) and s from the k×k system W·δ = residuals.
-  _solveConstrained(rhs, delta) {
-    const cons = this.constraints, K = cons.length;
+  // Solve the full Newton system, J δ = rhs, with the extra unknowns and rows that don't fit the
+  // block-tridiagonal matrix T: the floating terminals' voltages (with their circuit rows), and
+  // the spectators' conservation rows (pinned in T, see _applyConstraints). By low-rank
+  // updates of T (Woodbury): δ = y + Σ_q Q_q μ_q − Σ_k X_k δV_k with y = T⁻¹ rhs, Q_q = T⁻¹ e_q
+  // (the response to a unit pin) and X_k = T⁻¹ B_k (to a unit change of V_k), then a small dense
+  // system for the μ (pins) and δV (terminals):
+  //   pin q:      Σ (W_q·Q_q′) μ_q′ − Σ (W_q·X_k) δV_k = res_q − W_q·y
+  //   terminal k: Σ (C_k·Q_q) μ_q + Σ (δ_kk′ ∂I_k/∂V_k − C_k·X_k′) δV_k′ = res_k − C_k·y
+  _solveBordered(rhs, delta, deltaV, pins) {
+    const N = this.sys.size, fl = this.floating, P = pins.length, K = fl.length, S = P + K;
     this._solveLinear(rhs, delta);
-    const e = this.dWork ?? (this.dWork = new Float64Array(this.sys.size + 1));
-    for (const cs of cons) {
-      e[this.rix[cs.row]] = 1;
-      this._solveLinear(e, cs.q);
-      e[this.rix[cs.row]] = 0;
+    if (S === 0) return;
+    const e = this.dWork ?? (this.dWork = new Float64Array(N + 1));
+    const cols = this.borderCols ?? (this.borderCols = []);
+    for (let a = 0; a < S; a++) {
+      if (!cols[a]) cols[a] = new Float64Array(N + 1);
+      if (a < P) {
+        const row = this.rix[pins[a].row];
+        e[row] = 1;
+        this._solveLinear(e, cols[a]);
+        e[row] = 0;
+      } else this._solveLinear(this.termB[fl[a - P]], cols[a]);
     }
-    const S = Array.from({ length: K }, () => new Float64Array(K + 1));
-    cons.forEach((cj, j) => {
-      let wp = 0, mx = 0;
-      for (let a = 0; a < cj.len; a++) wp += cj.w[a] * delta[cj.idx[a]];
-      for (let k = 0; k < K; k++) {
-        let s = 0;
-        for (let a = 0; a < cj.len; a++) s += cj.w[a] * cons[k].q[cj.idx[a]];
-        S[j][k] = s;
-        mx = Math.max(mx, Math.abs(s));
+    // Row a of the small system, as a dot product with a compact vector (sparse for pins).
+    const dot = (a, v) => {
+      let t = 0;
+      if (a < P) {
+        const p = pins[a];
+        for (let j = 0; j < p.len; j++) t += p.w[j] * v[p.idx[j]];
+      } else {
+        const C = this.termC[fl[a - P]];
+        for (let j = 0; j < N; j++) t += C[j] * v[j];
       }
-      S[j][K] = cj.res - wp;
-      if (mx > 0) for (let k = 0; k <= K; k++) S[j][k] /= mx;
-    });
+      return t;
+    };
+    const A = Array.from({ length: S }, () => new Float64Array(S + 1));
+    for (let a = 0; a < S; a++) {
+      for (let b = 0; b < S; b++) A[a][b] = (b < P ? 1 : -1) * dot(a, cols[b]);
+      if (a >= P) A[a][a] += this.termDI[fl[a - P]];
+      A[a][S] = (a < P ? pins[a].res : this.termRes[fl[a - P]]) - dot(a, delta);
+      let mx = 0;
+      for (let b = 0; b < S; b++) mx = Math.max(mx, Math.abs(A[a][b]));
+      if (mx > 0) for (let b = 0; b <= S; b++) A[a][b] /= mx;
+    }
     // Small dense solve with partial pivoting.
-    for (let col = 0; col < K; col++) {
+    for (let col = 0; col < S; col++) {
       let p = col;
-      for (let r = col + 1; r < K; r++) if (Math.abs(S[r][col]) > Math.abs(S[p][col])) p = r;
-      [S[col], S[p]] = [S[p], S[col]];
-      if (S[col][col] === 0) throw new SolverError('steady state: a conserved amount is not determined by its level');
-      for (let r = col + 1; r < K; r++) {
-        const f = S[r][col] / S[col][col];
-        for (let k = col; k <= K; k++) S[r][k] -= f * S[col][k];
+      for (let r = col + 1; r < S; r++) if (Math.abs(A[r][col]) > Math.abs(A[p][col])) p = r;
+      [A[col], A[p]] = [A[p], A[col]];
+      if (A[col][col] === 0) throw new SolverError('the bordered system is singular: a conserved amount or a floating terminal is not determined');
+      for (let r = col + 1; r < S; r++) {
+        const f = A[r][col] / A[col][col];
+        for (let k = col; k <= S; k++) A[r][k] -= f * A[col][k];
       }
     }
-    const sol = new Float64Array(K);
-    for (let r = K - 1; r >= 0; r--) {
-      let v = S[r][K];
-      for (let k = r + 1; k < K; k++) v -= S[r][k] * sol[k];
-      sol[r] = v / S[r][r];
+    const x = new Float64Array(S);
+    for (let r = S - 1; r >= 0; r--) {
+      let v = A[r][S];
+      for (let k = r + 1; k < S; k++) v -= A[r][k] * x[k];
+      x[r] = v / A[r][r];
     }
-    for (let k = 0; k < K; k++) {
-      const q = cons[k].q, sk = sol[k];
-      for (let a = 0; a < delta.length; a++) delta[a] += sk * q[a];
+    for (let a = 0; a < S; a++) {
+      const sa = a < P ? x[a] : -x[a], col = cols[a];
+      for (let j = 0; j < N; j++) delta[j] += sa * col[j];
+      if (a >= P) deltaV[a - P] = x[a];
     }
   }
+
 
   /** Total amount (mol per unit area) of a stretch's species in the current state. */
   amount(stretch) {
@@ -441,18 +506,38 @@ export class Solver {
     return s;
   }
 
+  // After the terminals' drives change (Device.set): which are floating, and the held values. A
+  // change of source is a discontinuity, so time stepping restarts its order.
+  redrive() {
+    const before = this.floating;
+    this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
+    if (this.floating.length !== before.length) this.deltaV = null;
+    this._refreshSources();
+    this.history = [];
+  }
+
+  // Held terminals take their sources' values at sourceTime (a floating one keeps its voltage,
+  // an unknown; one behind a resistance reads its source voltage in _circuit).
+  _refreshSources() {
+    this.terms.forEach((t, k) => {
+      if (t.drive.kind !== 'V' || t.drive.R > 0) return;
+      this.termV[k] = this.sourceOverride.has(k) ? this.sourceOverride.get(k) : sourceAt(t.drive.src, this.sourceTime);
+    });
+  }
+
   /** η_i (μ̄/RT) of a port's outside level for species i. */
   portEta(port, i) {
     const link = port.species[i];
-    return this.z[i] === 0 ? link.mu / this.model.RT : (this.z[i] * (port.V + link.offset)) / this.VT;
+    const V = this.termV[2 + this.model.ports.indexOf(port)];
+    return this.z[i] === 0 ? link.mu / this.model.RT : (this.z[i] * (V + link.offset)) / this.VT;
   }
 
   /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
   contactEta(side, i) {
-    const ct = this.model.contacts[side], link = ct.species[i];
+    const link = this.model.contacts[side].species[i];
     if (link.type !== 'equilibrium') return NaN;
     const z = this.z[i];
-    return z === 0 ? link.mu / this.model.RT : (z * (ct.V + link.offset)) / this.VT;
+    return z === 0 ? link.mu / this.model.RT : (z * (this.termV[side === 'left' ? 0 : 1] + link.offset)) / this.VT;
   }
 
   /**
@@ -559,7 +644,6 @@ export class Solver {
         }
       }
     }
-    if (this.terminalBlock >= 0) u[this.terminalBlock * M] = model.contacts.right.V / this.VT;
     this.computeConcentrations();
   }
 
@@ -701,16 +785,11 @@ export class Solver {
 
   /** Assemble residual and Jacobian for a backward-Euler step of size dt. */
   assemble(dt) {
-    const R = this.rix;
-    const { model, M, res, VT, sys } = this;
-    const { grid, materials, regions, contacts } = model;
+    const { model, res, sys } = this;
+    const { grid, materials, regions } = model;
     sys.clear();
     res.fill(0);
     this.computeConcentrations();
-    // Current through the last segment (for the circuit): displacement, then conduction.
-    this.segI = 0;
-    this.segD = 0;
-    this.segIJac.fill(0);
 
     // Regions, each assembled by the kernel for its kind: a conductor (its carrier only), a
     // dilute region (ideal statistics, the fast path) or a concentrated one (any statistics).
@@ -719,7 +798,7 @@ export class Solver {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
       if (mat.conductor) {
         for (let g = g0; g <= g1; g++) this._nodeConductor(g, dt);
-        for (let s = g0; s < g1; s++) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s], s === this.nNodes - 2);
+        for (let s = g0; s < g1; s++) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s]);
         continue;
       }
       if (mat.ideal) this._nodesDilute(g0, g1, dt);
@@ -727,10 +806,10 @@ export class Solver {
       const rxs = this.rxsIn[reg.material];
       if (rxs.length > 0) for (let g = g0; g <= g1; g++) this._bulkReactions(g, rxs);
       for (let s = g0; s < g1; s++) {
-        const bL = s + r, bR = bL + 1, h = grid.segLength[s], lastSeg = s === this.nNodes - 2;
-        this._segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt);
-        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat, lastSeg);
-        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, lastSeg, reg.velocity);
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s];
+        this._segmentDisplacement(s, bL, bR, mat, h);
+        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat);
+        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, reg.velocity);
       }
       if (mat.ideal) this._segmentsDilute(g0, g1, r, mat, reg.velocity);
     }
@@ -738,27 +817,9 @@ export class Solver {
     // Faces: the flux node carries D, the linked species' fluxes and the reaction rates.
     for (let f = 0; f < this.nFaces; f++) this._face(f);
 
-    // Internal ports (after every other term at their nodes, so a held level can read its flux).
-    model.ports.forEach((port, k) => this._port(port, this.portFlux[k]));
-
-    // Contacts.
-    const circuit = model.circuit;
-    const tb = this.terminalBlock; // extra block carrying a floating terminal voltage, or −1
-    this._termI = 0;
-    this._termIJac.fill(0); // [∂/∂(last node slots), ∂/∂V_t]
-    for (const side of ['left', 'right']) this._contact(side, dt);
-    if (tb >= 0) {
-      // Circuit law for the floating terminal: I_contact(V_t, last node) − I_circuit(V_t) = 0.
-      const Vt = this.terminalV;
-      let I = circuit.I, dIdV = 0;
-      if (circuit.mode === 'load') {
-        I = (Vt - contacts.left.V - circuit.V) / circuit.R;
-        dIdV = 1 / circuit.R;
-      }
-      res[R[tb * M]] = this._termI - I;
-      for (let r = 0; r < M; r++) this._j(tb, 0, tb - 1, r, this._termIJac[r]);
-      this._j(tb, 0, tb, 0, (this._termIJac[M] - dIdV) * VT);
-    }
+    // Terminals: ports (after every other term at their nodes, so a held level can read its
+    // flux), then contacts, then the circuit rows of the floating ones.
+    this._terminals(dt);
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
   }
 
@@ -866,19 +927,11 @@ export class Solver {
   }
 
   // Displacement along a segment where φ is defined: D = −ε(φ_R − φ_L)/h into the two Gauss rows.
-  _segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt) {
+  _segmentDisplacement(s, bL, bR, mat, h) {
     const { M, u, res, sys, loc } = this, R = this.rix;
     const k = this.phiUndefined[s] ? 0 : (mat.epsr * EPS0 * this.VT) / h; // ε = 0: no displacement
-    const D = -k * (u[bR * M] - u[bL * M]);
-    if (lastSeg) {
-      this.segD = D;
-      if (Number.isFinite(dt)) {
-        this.segI += (D - this.segDOld) / dt;
-        this.segIJac[0] = k / dt;
-        this.segIJac[M] = -k / dt;
-      }
-    }
     if (k === 0) return;
+    const D = -k * (u[bR * M] - u[bL * M]);
     const mL = sys.sizes[bL], mR = sys.sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
     res[R[bL * M]] += D;
     res[R[bR * M]] -= D;
@@ -897,9 +950,9 @@ export class Solver {
   _segmentsDilute(g0, g1, region, mat, vel) {
     const { n, M, u, uLo, res, c, z, sys, loc } = this, R = this.rix, F = FARADAY;
     const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys;
-    const segLength = this.model.grid.segLength, last = this.nNodes - 2;
+    const segLength = this.model.grid.segLength;
     for (let s = g0; s < g1; s++) {
-      const bL = s + region, bR = bL + 1, h = segLength[s], lastSeg = s === last;
+      const bL = s + region, bR = bL + 1, h = segLength[s];
       const mL = sizes[bL], mR = sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
       const phiL = u[bL * M], phiR = u[bR * M];
       for (let i = 0; i < n; i++) {
@@ -920,14 +973,6 @@ export class Solver {
         const dNdPhiR = zi * dNdd;
         res[R[bL * M + r]] += N;
         res[R[bR * M + r]] -= N;
-        if (lastSeg) {
-          const q = F * zi;
-          this.segI += q * N;
-          this.segIJac[r] += q * dNdEtaL;
-          this.segIJac[M + r] += q * dNdEtaR;
-          this.segIJac[0] += q * dNdPhiL;
-          this.segIJac[M] += q * dNdPhiR;
-        }
         // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
         const lL = loc[bL * M + r], lR = loc[bR * M + r];
         const oBL = offB[bL] + lL * mL, oCL = offC[bL] + lL * mR, oAR = offA[bR] + lR * mL, oBR = offB[bR] + lR * mR;
@@ -1029,7 +1074,7 @@ export class Solver {
   // extra potential, linear along the segment like φ, so Δ = zΔφ̂ + Δex and
   //   N = −(D/h)·B(Δ)·c_L·expm1(η_R − η_L),
   // still exactly zero at equilibrium. c_L and ex depend on every ζ at their node through K.
-  _segmentConcentrated(s, bL, bR, mat, h, lastSeg, vel) {
+  _segmentConcentrated(s, bL, bR, mat, h, vel) {
     const R = this.rix;
     const { n, M, u, uLo, res, c, z, K, ex, jL, jR } = this;
     const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n;
@@ -1074,21 +1119,13 @@ export class Solver {
           this._j(bR, r, bR, k, -jR[k]);
         }
       }
-      if (lastSeg) {
-        const q = FARADAY * zi;
-        this.segI += q * N;
-        for (let k = 0; k < M; k++) {
-          this.segIJac[k] += q * jL[k];
-          this.segIJac[M + k] += q * jR[k];
-        }
-      }
     }
   }
 
   // Ohmic conduction in a metal, in mixed form. The flux J (slot 0 of the left node) obeys
   //   η_R − η_L + J/g = 0,  g = σ RT/(z²F² h)   (Ohm's law, J = −g Δη),
   // and enters the two nodes' carrier balances as outflow and inflow.
-  _segmentConductor(s, bL, bR, mat, h, lastSeg) {
+  _segmentConductor(s, bL, bR, mat, h) {
     const R = this.rix;
     const { M, u, uLo, res, z } = this;
     const i = mat.conductor.i, r = 1 + i;
@@ -1102,18 +1139,13 @@ export class Solver {
     res[R[bR * M + r]] -= J;
     this._j(bL, r, bL, 0, 1);
     this._j(bR, r, bL, 0, -1);
-    if (lastSeg) {
-      const q = FARADAY * z[i];
-      this.segI += q * J;
-      this.segIJac[0] += q;
-    }
   }
 
   // Eddy mixing: N = −(D_mix/RT) P ∇μ̄ with P = C − (Cz)(Cz)ᵀ/(zᵀCz), C = diag(c). It mixes
   // composition without carrying current (zᵀP = 0) and vanishes exactly at equilibrium. On a
   // segment, N_i = −(D_mix/h) Σ_j P̄_ij Δη_j, with P̄ from the logarithmic mean of each c, so a
   // neutral species gets exactly −D_mix Δc/h. Only mobile species (D > 0) take part.
-  _segmentMixing(s, bL, bR, Dm, h, mat, lastSeg) {
+  _segmentMixing(s, bL, bR, Dm, h, mat) {
     const R = this.rix;
     const { n, M, u, uLo, res, c, z } = this;
     const gL = s, gR = s + 1, k0 = Dm / h;
@@ -1183,14 +1215,6 @@ export class Solver {
           this._j(bR, r, bR, t, -jR[t]);
         }
       }
-      if (lastSeg) {
-        const qz = FARADAY * z[i];
-        this.segI += qz * N;
-        for (let t = 0; t < M; t++) {
-          this.segIJac[t] += qz * jL[t];
-          this.segIJac[M + t] += qz * jR[t];
-        }
-      }
     }
   }
 
@@ -1252,27 +1276,70 @@ export class Solver {
     }
   }
 
-  // An internal port's exchange with each node of its window, as a source per volume. A held
-  // ('equilibrium') level replaces the node's balance row; the source is then that row's residual.
-  // Ports come before the contacts, so a contact's flux readout includes a port's source there.
-  _port(port, flux) {
+  // Every terminal's terms: its voltage held or floating, how the residual depends on it
+  // (termB), its current into the device (termI) and how that depends on the state (termC).
+  _terminals(dt) {
+    this._refreshSources();
+    for (let k = 0; k < this.terms.length; k++) {
+      this.termB[k].fill(0);
+      this.termC[k].fill(0);
+      this.termDI[k] = 0;
+      this.termI[k] = 0;
+    }
+    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k));
+    this._contact('left', dt);
+    this._contact('right', dt);
+    for (const k of this.floating) this._circuit(k);
+  }
+
+  // A floating terminal's circuit law: I − I_set = 0 (driven by a current), or I − (V_src − V)/R = 0
+  // (a source behind a resistance).
+  _circuit(k) {
+    const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime);
+    if (d.kind === 'I') this.termRes[k] = this.termI[k] - src;
+    else {
+      this.termRes[k] = this.termI[k] - (src - this.termV[k]) / d.R;
+      this.termDI[k] += 1 / d.R;
+    }
+  }
+
+  // into += w × (the Jacobian row of block b, slot s), over compact columns.
+  _captureRow(b, s, w, into) {
+    const l = this.loc[b * this.M + s];
+    if (l < 0 || w === 0) return;
+    const { sys, nB } = this, { sizes, offA, offB, offC, offX } = sys, m = sizes[b];
+    for (const [X, nb, off] of [['A', b - 1, offA], ['B', b, offB], ['C', b + 1, offC]]) {
+      if (nb < 0 || nb >= nB) continue;
+      const mc = sizes[nb], o = off[b] + l * mc, arr = sys[X], c0 = offX[nb];
+      for (let c = 0; c < mc; c++) if (arr[o + c] !== 0) into[c0 + c] += w * arr[o + c];
+    }
+    return m;
+  }
+
+  // An internal port (terminal k): its exchange with each node of its window, as a source per
+  // volume. A held ('equilibrium') level replaces the node's balance row; the source is then that
+  // row's residual, read just before. Its current into the device is Σ z F × the sources.
+  _port(port, flux, k) {
     const R = this.rix;
     const { n, M, u, uLo, res, z, VT } = this;
     const F = FARADAY, vol = this.model.grid.vol;
+    const B = this.termB[k], C = this.termC[k];
     flux.fill(0);
     for (let i = 0; i < n; i++) {
       const link = port.species[i];
       if (link.type === 'blocked') continue;
-      const r = 1 + i, target = this.portEta(port, i);
+      const r = 1 + i, target = this.portEta(port, i), zF = z[i] * F;
       for (const g of port.nodes) {
         const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
         const deta = target - (u[o] + uLo[o]); // (μ̄_out − μ̄)/RT
         if (link.type === 'equilibrium') {
           if (g === 0 || g === this.nNodes - 1) continue; // a device end node's level is its contact's business
           flux[i] += res[R[o]];
+          this._captureRow(b, r, zF, C);
           this._replaceRow(b, r);
           this._j(b, r, b, r, 1);
           res[R[o]] = -deta;
+          B[R[o]] += -z[i] / VT;
           continue;
         }
         // conductance: s = G V_T (η_out − η)/(z² F); exchange: s = k (η_out − η)
@@ -1280,150 +1347,125 @@ export class Solver {
         res[R[o]] -= v * kk * deta;
         this._j(b, r, b, r, v * kk);
         flux[i] += v * kk * deta;
+        if (z[i] !== 0) {
+          B[R[o]] += (-v * kk * z[i]) / VT;
+          C[R[o]] += -zF * v * kk;
+          this.termDI[k] += (zF * v * kk * z[i]) / VT;
+        }
       }
     }
+    for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
   }
 
-  // One contact: record the flux through its outer face, then add its exchange terms
-  // (conductance links), then apply equilibrium links and the φ law.
+
+  // One contact (terminal 0 or 1): record the flux through its outer face and the current into
+  // the device (read from the end box before anything here is added: whatever the box needs
+  // comes through the contact), then add its exchange terms, its equilibrium links and its φ law.
   _contact(side, dt) {
     const R = this.rix;
     const { model, n, M, u, uLo, res, c, z, VT } = this;
     const F = FARADAY;
-    const contacts = model.contacts, circuit = model.circuit;
-    const ct = contacts[side];
+    const ct = model.contacts[side];
+    const k = side === 'left' ? 0 : 1, Vt = this.termV[k];
+    const B = this.termB[k], C = this.termC[k];
     const g = side === 'left' ? 0 : this.nNodes - 1;
     const b = this.blockOfNode[g];
     const sgn = side === 'left' ? 1 : -1;
     const flux = this.contactFlux[side];
-    const floating = side === 'right' && circuit.mode !== 'voltage';
-    const readout = floating && !circuit.terminalUnknown;
-    const tb = this.terminalBlock;
-    const t = ct.terminal;
+    const dyn = Number.isFinite(dt);
 
-    // Terminal voltage, and how it depends on the unknowns.
-    let Vt = ct.V;
-    if (readout) {
-      const ot = b * M + 1 + t;
-      Vt = (VT * (u[ot] + uLo[ot])) / z[t] - ct.species[t].offset;
-    } else if (floating) {
-      Vt = VT * u[tb * M];
+    // Before anything is added, each balance residual is the flux into the device here.
+    let I = 0;
+    for (let i = 0; i < n; i++) {
+      const active = this.loc[b * M + 1 + i] >= 0;
+      const nIn = active ? res[R[b * M + 1 + i]] : 0;
+      flux[i] = sgn * nIn; // (toward +x)
+      if (active && z[i] !== 0) {
+        I += z[i] * F * nIn;
+        this._captureRow(b, 1 + i, z[i] * F, C);
+      }
     }
-    if (floating) this.terminalV = Vt;
-    const addVt = (rs, val) => {
-      if (readout) this._j(b, rs, b, 1 + t, (val * VT) / z[t]);
-      else if (floating) this._j(b, rs, tb, 0, val * VT);
-    };
-    const toTerminal = floating && !readout; // accumulate the terminal-current row
-    const termJ = this._termIJac;
-
-    // Before anything is added, each balance residual is the flux through this face.
-    for (let i = 0; i < n; i++) flux[i] = this.loc[b * M + 1 + i] < 0 ? 0 : sgn * res[R[b * M + 1 + i]];
 
     // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset; exchange
     // links (neutral species): N_in = k (μ_out − μ)/RT.
     for (let i = 0; i < n; i++) {
       const link = ct.species[i];
-      if (link.type === 'exchange') {
-        const o = b * M + 1 + i;
-        res[R[o]] -= link.k * (link.mu / this.model.RT - (u[o] + uLo[o]));
-        this._j(b, 1 + i, b, 1 + i, link.k);
-        continue;
-      }
-      if (link.type !== 'conductance') continue;
       const o = b * M + 1 + i;
-      const Vi = (VT * (u[o] + uLo[o])) / z[i];
-      const Nin = (link.G * (Vt + link.offset - Vi)) / (z[i] * F); // particles entering
-      const k = (link.G * VT) / (z[i] * z[i] * F);
-      res[R[o]] -= Nin;
-      this._j(b, 1 + i, b, 1 + i, k);
-      addVt(1 + i, -link.G / (z[i] * F));
-      if (toTerminal) {
-        // Current toward +x leaving through the right face: −z F N_in.
-        this._termI += -z[i] * F * Nin;
-        termJ[1 + i] += link.G * VT / z[i];
-        termJ[M] += -link.G;
+      if (link.type === 'exchange') {
+        res[R[o]] -= link.k * (link.mu / model.RT - (u[o] + uLo[o]));
+        this._j(b, 1 + i, b, 1 + i, link.k);
+      } else if (link.type === 'conductance') {
+        const Vi = (VT * (u[o] + uLo[o])) / z[i];
+        res[R[o]] -= (link.G * (Vt + link.offset - Vi)) / (z[i] * F);
+        this._j(b, 1 + i, b, 1 + i, (link.G * VT) / (z[i] * z[i] * F));
+        B[R[o]] += -link.G / (z[i] * F);
       }
     }
 
     // Equilibrium links: Dirichlet on the known outside level.
     for (let i = 0; i < n; i++) {
-      if (ct.species[i].type !== 'equilibrium') continue;
+      const link = ct.species[i];
+      if (link.type !== 'equilibrium') continue;
       const o = b * M + 1 + i;
       this._replaceRow(b, 1 + i);
-      if (readout && i === t) {
-        // I_segment − I_circuit(V_t) = 0. The last segment's total current equals the
-        // terminal current exactly (box balance plus Poisson, differenced in time).
-        const I = circuit.mode === 'current' ? circuit.I : (Vt - contacts.left.V - circuit.V) / circuit.R;
-        res[R[o]] = this.segI - I;
-        for (let r = 0; r < M; r++) {
-          this._j(b, 1 + i, b - 1, r, this.segIJac[r]);
-          this._j(b, 1 + i, b, r, this.segIJac[M + r]);
-        }
-        if (circuit.mode === 'load') this._j(b, 1 + i, b, 1 + t, -VT / (z[t] * circuit.R));
-      } else if (floating && ct.species[i].mu === undefined) {
-        // Charged species tied to the floating terminal: η_i = z_i (V_t + offset_i)/V_T.
-        res[R[o]] = u[o] + uLo[o] - (z[i] * (Vt + ct.species[i].offset)) / VT;
-        this._j(b, 1 + i, b, 1 + i, 1);
-        addVt(1 + i, -z[i] / VT);
-      } else {
-        this._j(b, 1 + i, b, 1 + i, 1);
-        res[R[o]] = u[o] - this.contactEta(side, i) + uLo[o];
-      }
+      this._j(b, 1 + i, b, 1 + i, 1);
+      res[R[o]] = u[o] + uLo[o] - this.contactEta(side, i);
+      if (z[i] !== 0) B[R[o]] += -z[i] / VT;
     }
 
-    // φ link (none where φ is undefined: nothing at the end node responds to it).
-    const link = ct.phi;
+    // φ law (none where φ is undefined: nothing at the end node responds to it). The displacement
+    // into the device, D_in = sgn·D, adds (D_in − D_in at the step's start)/dt to the current.
+    const link = ct.phi, Dstart = sgn * this.contactDStart[side];
     if (this.phiUndefined[g]) {
       this.contactD[side] = 0;
     } else if (link.type === 'capacitive') {
       // Gate, or metal across a Stern layer, at φ_g = V_t − zeroCharge. D toward +x.
-      const phiG = Vt - link.zeroCharge;
-      const D = link.C * (phiG - VT * u[b * M]) * sgn;
-      res[R[b * M]] -= sgn * D;
+      const Din = link.C * (Vt - link.zeroCharge - VT * u[b * M]);
+      res[R[b * M]] -= Din;
       this._j(b, 0, b, 0, link.C * VT);
-      addVt(0, -sgn * sgn * link.C); // ∂(−sgn·D)/∂V_t = −C
-      this.contactD[side] = D;
-      if (toTerminal && Number.isFinite(dt)) {
-        this._termI += (D - this.contactDStart.right) / dt;
-        termJ[0] += (link.C * VT) / dt;
-        termJ[M] += -link.C / dt;
+      B[R[b * M]] += -link.C;
+      this.contactD[side] = sgn * Din;
+      if (dyn) {
+        I += (Din - Dstart) / dt;
+        C[R[b * M]] += (-link.C * VT) / dt;
+        this.termDI[k] += link.C / dt;
       }
-    } else if (link.type === 'pinned') {
-      // Pinned: φ_edge = V_t − zeroCharge (the C → ∞ limit). The residual is the metal's charge.
-      this.contactD[side] = sgn * res[R[b * M]];
-      this._replaceRow(b, 0);
-      this._j(b, 0, b, 0, 1);
-      res[R[b * M]] = u[b * M] + uLo[b * M] - (Vt - link.zeroCharge) / VT;
-      addVt(0, -1 / VT);
-    } else if (link.type === 'bulk') {
-      this.contactD[side] = sgn * res[R[b * M]];
-      this._replaceRow(b, 0);
-      let q = this.rhoFixed[g];
-      let dq = 0;
-      for (let i = 0; i < n; i++) {
-        const k = g * n + i;
-        if (!this.present[k]) continue;
-        const Kz = this._Kz(g, i);
-        q += F * z[i] * c[k];
-        dq -= F * z[i] * Kz;
-        if (Kz !== 0) this._j(b, 0, b, 1 + i, F * Kz);
+    } else if (link.type === 'pinned' || link.type === 'bulk') {
+      // The Poisson residual is the outside's charge, D_in.
+      const Din = res[R[b * M]];
+      this.contactD[side] = sgn * Din;
+      if (dyn) {
+        I += (Din - Dstart) / dt;
+        this._captureRow(b, 0, 1 / dt, C);
       }
-      this._j(b, 0, b, 0, dq);
-      res[R[b * M]] = q;
+      this._replaceRow(b, 0);
+      if (link.type === 'pinned') {
+        // φ_edge = V_t − zeroCharge (the C → ∞ limit).
+        this._j(b, 0, b, 0, 1);
+        res[R[b * M]] = u[b * M] + uLo[b * M] - (Vt - link.zeroCharge) / VT;
+        B[R[b * M]] += -1 / VT;
+      } else {
+        // Plain bulk: local neutrality.
+        let q = this.rhoFixed[g], dq = 0;
+        for (let i = 0; i < n; i++) {
+          const kk = g * n + i;
+          if (!this.present[kk]) continue;
+          const Kz = this._Kz(g, i);
+          q += F * z[i] * c[kk];
+          dq -= F * z[i] * Kz;
+          if (Kz !== 0) this._j(b, 0, b, 1 + i, F * Kz);
+        }
+        this._j(b, 0, b, 0, dq);
+        res[R[b * M]] = q;
+      }
     } else {
       this.contactD[side] = 0;
     }
+    this.termI[k] = I;
   }
 
-  // Displacement toward +x through the last segment, from the current state.
-  _lastSegmentD() {
-    const { model, M, u, VT } = this;
-    const grid = model.grid, s = this.nNodes - 2;
-    const mat = model.materials[model.regions[grid.segRegion[s]].material];
-    const b = this.blockOfNode[s];
-    return (-(mat.epsr * EPS0 * VT) / grid.segLength[s]) * (u[(b + 1) * M] - u[b * M]);
-  }
+
+
 
   // Zero one row of the Jacobian (all three blocks), ready to be replaced.
   _replaceRow(b, rs) {
@@ -1437,7 +1479,7 @@ export class Solver {
 
   // Scale every row by its largest Jacobian entry (in place, residual too).
   _equilibrate() {
-    const { nB, sys, res } = this;
+    const { nB, sys, res, termB } = this;
     const { A, B, C, sizes, offA, offB, offC, offX } = sys;
     for (let b = 0; b < nB; b++) {
       const m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < nB - 1 ? sizes[b + 1] : 0;
@@ -1453,15 +1495,17 @@ export class Solver {
         for (let k = 0; k < m; k++) B[ob + k] *= s;
         for (let k = 0; k < mn; k++) C[oc + k] *= s;
         res[offX[b] + r] *= s;
+        for (let k = 0; k < termB.length; k++) termB[k][offX[b] + r] *= s; // (each terminal's ∂/∂V)
       }
     }
   }
 
   // Largest update among the potential-like unknowns (φ̂ and η at grid nodes).
-  _maxPotentialStep(delta) {
+  _maxPotentialStep(delta, deltaV = this.deltaV) {
     const { n, M } = this;
     const R = this.rix; // (the sink entry of delta is 0)
-    let mx = this.terminalBlock >= 0 ? Math.abs(delta[R[this.terminalBlock * M]]) : 0;
+    let mx = 0;
+    if (deltaV) for (let a = 0; a < this.floating.length; a++) mx = Math.max(mx, Math.abs(deltaV[a]) / this.VT);
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
       if (this.nodeConductor[g] < 0) mx = Math.max(mx, Math.abs(delta[R[b * M]])); // (a metal's slot 0 is a flux)
@@ -1477,7 +1521,8 @@ export class Solver {
    * @returns {{converged: boolean, iterations: number, history: number[]}}
    */
   newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10 } = {}) {
-    const { u, delta, res } = this;
+    const { delta, res } = this;
+    const deltaV = this.deltaV ?? (this.deltaV = new Float64Array(this.floating.length));
     const history = [];
     // A steady solve that fails: record how nearly singular the system was, and where.
     const fail = (r) => {
@@ -1501,13 +1546,14 @@ export class Solver {
         return fail({ converged: false, iterations: it, history, error: err.message });
       }
       try {
-        if (this.constrained && dt === Infinity && this.constraints.length > 0) this._solveConstrained(res, delta);
-        else this._solveLinear(res, delta);
+        const pins = this.constrained && dt === Infinity ? this.constraints : [];
+        deltaV.fill(0);
+        this._solveBordered(res, delta, deltaV, pins);
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
         return fail({ converged: false, iterations: it, history, error: err.message });
       }
-      const step = this._maxPotentialStep(delta);
+      const step = this._maxPotentialStep(delta, deltaV);
       history.push(step);
       if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
       // Give up early on clear divergence; the caller will take a smaller step instead.
@@ -1517,6 +1563,7 @@ export class Solver {
       }
       const alpha = step > maxStep ? maxStep / step : 1;
       this._addToState(delta, -alpha);
+      this.floating.forEach((k, a) => (this.termV[k] -= alpha * deltaV[a]));
       if (alpha === 1 && step < tol) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax };
@@ -1549,7 +1596,6 @@ export class Solver {
       x = grid.x[grid.regionEnd[f]];
       where = `interfaces[${f}]`;
     }
-    if (c.block === this.terminalBlock) where = 'the floating terminal';
     this.conditioning = { digits: c.digits, x, where };
   }
 
@@ -1600,9 +1646,9 @@ export class Solver {
     const bdf = opts.method === 'bdf2' && prev !== undefined && w <= 2;
     this.uPrev.set(this.u);
     this.uPrevLo.set(this.uLo);
+    this.termVPrev.set(this.termV);
     this.computeConcentrations();
     const cN = Float64Array.from(this.c);
-    const segDN = this._lastSegmentD();
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd) {
@@ -1620,18 +1666,17 @@ export class Solver {
       const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
       const { cOld } = this;
       for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
-      this.segDOld = b1 * segDN - b2 * prev.segD;
       this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
       dtEff = dt / a0;
     } else {
       this.cOld.set(cN);
-      this.segDOld = segDN;
       this.contactDStart = DN;
     }
+    this.sourceTime = this.steady ? this.time : this.time + dt; // implicit: sources at the step's end
     const result = this.newton(dtEff, opts);
     result.bdf = bdf;
     if (result.converged) {
-      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, segD: segDN, D: DN });
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, D: DN });
       if (this.history.length > 3) this.history.length = 3;
       this.time += dt;
       this.lastDt = dtEff;
@@ -1640,6 +1685,8 @@ export class Solver {
     } else {
       this.u.set(this.uPrev);
       this.uLo.set(this.uPrevLo);
+      this.termV.set(this.termVPrev);
+      this.sourceTime = this.time;
       this.computeConcentrations();
     }
     return result;
@@ -1665,8 +1712,15 @@ export class Solver {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
       const remaining = tEnd - this.time;
       let h = Math.min(dt, dtMax);
-      const clamped = h >= remaining * (1 - 1e-9);
+      let clamped = h >= remaining * (1 - 1e-9);
       if (clamped) h = remaining;
+      // Land on the waveforms' breakpoints, where a source's slope jumps.
+      const tb = this.terms.reduce((m, t) => Math.min(m, nextBreakpoint(t.drive.src, this.time)), Infinity);
+      const atBreak = tb - this.time <= h * (1 + 1e-9);
+      if (atBreak) {
+        h = tb - this.time;
+        clamped = true;
+      }
       const snap = this._snapshot();
       let err, p;
       if (this.history.length === 0) {
@@ -1711,9 +1765,10 @@ export class Solver {
       }
       steps++;
       dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
+      if (atBreak) this.history = []; // the solution's slope jumps here: restart the order
       trace.t.push(this.time);
       trace.current.push(this._terminalCurrent());
-      trace.voltage.push(this.model.circuit.mode !== 'voltage' ? this.terminalV - this.model.contacts.left.V : this.model.contacts.right.V - this.model.contacts.left.V);
+      trace.voltage.push(this.termV[1] - this.termV[0]);
     }
     this.dtNext = dt;
     return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace };
@@ -1771,7 +1826,7 @@ export class Solver {
   // Largest difference from ref among the potentials that carry state, in thermal units.
   _errorNorm(ref) {
     const { n, M, u } = this;
-    let mx = this.terminalBlock >= 0 ? Math.abs(u[this.terminalBlock * M] - ref[this.terminalBlock * M]) : 0;
+    let mx = 0;
     for (let g = 0; g < this.nNodes; g++) {
       const b = this.blockOfNode[g];
       if (!this.phiUndefined[g]) mx = Math.max(mx, Math.abs(u[b * M] - ref[b * M]));
@@ -1789,12 +1844,13 @@ export class Solver {
       cOld: Float64Array.from(this.cOld),
       time: this.time,
       lastDt: this.lastDt,
-      segDOld: this.segDOld,
       contactDStart: this.contactDStart,
       contactDOld: this.contactDOld,
       contactDEnd: this.contactDEnd,
       boundaryIntake: Float64Array.from(this.boundaryIntake),
       history: this.history.slice(),
+      termV: Float64Array.from(this.termV),
+      sourceTime: this.sourceTime,
     };
   }
 
@@ -1804,12 +1860,13 @@ export class Solver {
     this.cOld.set(s.cOld);
     this.time = s.time;
     this.lastDt = s.lastDt;
-    this.segDOld = s.segDOld;
     this.contactDStart = s.contactDStart;
     this.contactDOld = s.contactDOld;
     this.contactDEnd = s.contactDEnd;
     this.boundaryIntake.set(s.boundaryIntake);
     this.history = s.history.slice();
+    this.termV.set(s.termV);
+    this.sourceTime = s.sourceTime;
     this.computeConcentrations();
   }
 
@@ -1822,63 +1879,63 @@ export class Solver {
   }
 
   /**
-   * Small-signal impedance about the current (steady) state. Linearising the balance equations
-   * gives (J + iωM)·δx = −b·δs, with J the steady Jacobian, M the storage Jacobian (from
-   * J(dt) = J + M/dt) and b the residual's derivative in the source δs: the right terminal's
-   * voltage (voltage mode) or the circuit current (current mode). The terminal current response
-   * is read from the last segment, conduction plus iω times its displacement.
-   * Z = −δV/δI: the impedance seen at the terminals (positive real part for a passive device,
-   * since current toward +x leaves through the right terminal).
+   * Small-signal impedance about the current (steady) state, seen at one terminal. Linearising
+   * gives (J + iωM)·δx + Σ B_k δV_k = rhs for the grid's rows, and (C_k + iωC′_k)·δx +
+   * (∂I_k/∂V_k)·δV_k = δI_set,k for each floating terminal's circuit row, with J the steady
+   * Jacobian and M the storage part (from J(dt) = J + M/dt), B_k = ∂res/∂V_k and C_k = ∂I_k/∂x.
+   * At the measured terminal, a held voltage is perturbed (rhs = −B δV) and its current read
+   * from C, or a driven current is perturbed and its voltage solved for. The other terminals
+   * keep their drives: held ones at AC ground, driven ones at AC open circuit.
+   * Z = δV/δI with I into the device (positive real part for a passive device).
    * @param {ArrayLike<number>} frequencies Hz
    */
-  impedance(frequencies, { profiles = false } = {}) {
-    const { M, nB, sys, model, n, VT } = this;
-    const circuit = model.circuit;
-    if (circuit.mode === 'load') {
-      throw new SolverError("impedance: use circuit mode 'voltage' or 'current' (a load resistor belongs to the external circuit)");
-    }
-    const N = nB * M;
+  impedance(frequencies, { profiles = false, terminal = 'right' } = {}) {
+    const { M, nB, sys, VT } = this;
+    const kT = this.terms.findIndex((t) => t.name === terminal);
+    if (kT < 0) throw new SolverError(`impedance: no terminal named '${terminal}' (${this.terms.map((t) => t.name).join(', ')})`);
+    const dT = this.terms[kT].drive;
+    if (dT.R > 0) throw new SolverError(`impedance: terminal '${terminal}' has a series resistance; that belongs to the external circuit`);
+    const N = nB * M, fl = this.floating, K = fl.length;
+    this.sourceTime = this.time;
     this.computeConcentrations();
     this.cOld.set(this.c);
-    this.segDOld = this._lastSegmentD();
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
     this.assemble(Infinity);
+    // The steady parts, then the storage parts from an assembly at a tiny dt.
     const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
-    const segJ = Float64Array.from(this.segIJac);
+    const Bt = this.termB.map((v) => v.slice()), Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI);
     const dts = 1e-30;
     this.assemble(dts);
     const S = {};
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
-    // Source derivative by central differences (exact where the residual is linear in it).
-    const ct = model.contacts.right;
-    const src = circuit.mode === 'voltage' ? { obj: ct, key: 'V', d: 1e-6 } : { obj: circuit, key: 'I', d: 1 };
-    const s0 = src.obj[src.key], res = [];
-    for (const sign of [1, -1]) {
-      src.obj[src.key] = s0 + sign * src.d;
-      this.assemble(Infinity);
-      res.push(Float64Array.from(this.res));
-    }
-    src.obj[src.key] = s0;
-    this.assemble(Infinity);
-    const b = res[0].map((v, k) => (v - res[1][k]) / (2 * src.d));
+    const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
+    const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
 
-    // The complex system has the Jacobian's layout (only the unknowns); slots that aren't
-    // unknowns stay at δx = 0 in the full-width profiles.
     const { sizes, offA, offB, offC, offX } = sys;
     const csys = new ComplexBlockTridiagonal(nB, sizes);
     const Nc = csys.size;
-    const rr = new Float64Array(Nc), ri = new Float64Array(Nc), cr = new Float64Array(Nc), ci = new Float64Array(Nc);
+    const rr = new Float64Array(Nc), ri = new Float64Array(Nc);
+    const yr = new Float64Array(Nc), yi = new Float64Array(Nc);
+    const Xr = fl.map(() => new Float64Array(Nc)), Xi = fl.map(() => new Float64Array(Nc));
     const xr = new Float64Array(N), xi = new Float64Array(N);
-    const gL = this.nNodes - 2, bL = this.blockOfNode[gL], bR = bL + 1;
-    const mat = model.materials[model.regions[model.grid.segRegion[gL]].material];
-    const kSeg = this.phiUndefined[gL] ? 0 : (mat.epsr * EPS0 * VT) / model.grid.segLength[gL];
     const out = { f: Float64Array.from(frequencies), Z: { re: new Float64Array(frequencies.length), im: new Float64Array(frequencies.length) } };
     if (profiles) out.profiles = [];
+    // (C + iωC′)·(ar + i ai) for terminal k
+    const dot = (k, w, ar, ai) => {
+      let re = 0, im = 0;
+      const c = Ct[k], cs = Cs[k];
+      for (let j = 0; j < Nc; j++) {
+        re += c[j] * ar[j] - w * cs[j] * ai[j];
+        im += c[j] * ai[j] + w * cs[j] * ar[j];
+      }
+      return [re, im];
+    };
     Array.from(frequencies).forEach((f, q) => {
       const w = 2 * Math.PI * f;
       if (!(w > 0)) throw new SolverError('impedance: frequencies must be positive');
-      // Rows scaled by their largest entry.
+      // Rows scaled by their largest entry (and the terminal columns with them).
+      const scale = new Float64Array(Nc);
       for (let blk = 0; blk < nB; blk++) {
         const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
         for (let r = 0; r < m; r++) {
@@ -1886,44 +1943,70 @@ export class Solver {
           let mx = 0;
           for (const [X, o, len] of rows) for (let c = 0; c < len; c++) mx = Math.max(mx, Math.abs(J[X][o + c]), w * Math.abs(S[X][o + c]));
           const sc = mx > 0 ? 1 / mx : 1;
+          scale[offX[blk] + r] = sc;
           for (const [X, o, len] of rows) {
-            const JX = J[X], SX = S[X], Xr = csys[X + 'r'], Xi = csys[X + 'i'];
+            const JX = J[X], SX = S[X], Xre = csys[X + 'r'], Xim = csys[X + 'i'];
             for (let c = 0; c < len; c++) {
-              Xr[o + c] = JX[o + c] * sc;
-              Xi[o + c] = w * SX[o + c] * sc;
+              Xre[o + c] = JX[o + c] * sc;
+              Xim[o + c] = w * SX[o + c] * sc;
             }
           }
-          rr[offX[blk] + r] = -b[offX[blk] + r] * sc;
-          ri[offX[blk] + r] = 0;
         }
       }
       csys.factor();
-      csys.solve(rr, ri, cr, ci);
-      for (let k = 0; k < Nc; k++) {
-        xr[this.fullOf[k]] = cr[k];
-        xi[this.fullOf[k]] = ci[k];
+      // y: the response with the floating terminals held; X_k: to a unit δV_k.
+      const heldT = dT.kind === 'V';
+      for (let j = 0; j < Nc; j++) {
+        rr[j] = heldT ? -Bt[kT][j] * scale[j] : 0;
+        ri[j] = 0;
+      }
+      csys.solve(rr, ri, yr, yi);
+      fl.forEach((k, a) => {
+        for (let j = 0; j < Nc; j++) rr[j] = Bt[k][j] * scale[j];
+        ri.fill(0);
+        csys.solve(rr, ri, Xr[a], Xi[a]);
+      });
+      // The floating terminals' circuit rows, a small complex system for their δV.
+      const Ar = Array.from({ length: K }, () => new Float64Array(K + 1)), Ai = Array.from({ length: K }, () => new Float64Array(K + 1));
+      fl.forEach((k, a) => {
+        for (let b = 0; b < K; b++) {
+          const [re, im] = dot(k, w, Xr[b], Xi[b]);
+          Ar[a][b] = -re;
+          Ai[a][b] = -im;
+        }
+        Ar[a][a] += DI[k];
+        Ai[a][a] += w * DIs[k];
+        const [yre, yim] = dot(k, w, yr, yi);
+        Ar[a][K] = (k === kT ? 1 : 0) - yre;
+        Ai[a][K] = -yim;
+      });
+      const dV = complexSolve(Ar, Ai, K);
+      // δx = y − Σ X_k δV_k
+      for (let j = 0; j < Nc; j++) {
+        let re = yr[j], im = yi[j];
+        for (let a = 0; a < K; a++) {
+          re -= Xr[a][j] * dV.re[a] - Xi[a][j] * dV.im[a];
+          im -= Xr[a][j] * dV.im[a] + Xi[a][j] * dV.re[a];
+        }
+        yr[j] = re;
+        yi[j] = im;
+        xr[this.fullOf[j]] = re;
+        xi[this.fullOf[j]] = im;
       }
       let Zr, Zi;
-      if (circuit.mode === 'voltage') {
-        // δI = (∂I_cond/∂x)·δx + iω δD_segment, per volt
-        let Ir = 0, Ii = 0;
-        for (let r = 0; r < M; r++) {
-          Ir += segJ[r] * xr[bL * M + r] + segJ[M + r] * xr[bR * M + r];
-          Ii += segJ[r] * xi[bL * M + r] + segJ[M + r] * xi[bR * M + r];
-        }
-        const dDr = -kSeg * (xr[bR * M] - xr[bL * M]), dDi = -kSeg * (xi[bR * M] - xi[bL * M]);
-        Ir -= w * dDi;
-        Ii += w * dDr;
-        const d2 = Ir * Ir + Ii * Ii; // Z = −1/δI
-        Zr = -Ir / d2;
-        Zi = Ii / d2;
+      if (heldT) {
+        // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal
+        let [Ir, Ii] = dot(kT, w, yr, yi);
+        Ir += DI[kT];
+        Ii += w * DIs[kT];
+        const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
+        Zr = Ir / d2;
+        Zi = -Ii / d2;
       } else {
         // δV per unit current
-        const tb = this.terminalBlock;
-        const t = model.contacts.right.terminal;
-        const [vr, vi] = tb >= 0 ? [VT * xr[tb * M], VT * xi[tb * M]] : [(VT * xr[bR * M + 1 + t]) / this.z[t], (VT * xi[bR * M + 1 + t]) / this.z[t]];
-        Zr = -vr;
-        Zi = -vi;
+        const a = fl.indexOf(kT);
+        Zr = dV.re[a];
+        Zi = dV.im[a];
       }
       out.Z.re[q] = Zr;
       out.Z.im[q] = Zi;
@@ -1978,16 +2061,13 @@ export class Solver {
     const { model } = this;
     const { grid, materials, regions } = model;
     this.res.fill(0);
-    this.segI = 0;
-    this.segD = 0;
-    this.segIJac.fill(0);
     for (let r = 0; r < regions.length; r++) {
       const { nodes, segs } = this.bookkeeping[r];
       if (nodes.length === 0 && segs.length === 0) continue;
       const reg = regions[r], mat = materials[reg.material];
       if (mat.conductor) {
         for (const g of nodes) this._nodeConductor(g, dt);
-        for (const s of segs) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s], s === this.nNodes - 2);
+        for (const s of segs) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s]);
         continue;
       }
       for (const g of nodes) {
@@ -1997,18 +2077,15 @@ export class Solver {
       const rxs = this.rxsIn[reg.material];
       if (rxs.length > 0) for (const g of nodes) this._bulkReactions(g, rxs);
       for (const s of segs) {
-        const bL = s + r, bR = bL + 1, h = grid.segLength[s], lastSeg = s === this.nNodes - 2;
-        this._segmentDisplacement(s, bL, bR, mat, h, lastSeg, dt);
-        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat, lastSeg);
-        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, lastSeg, reg.velocity);
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s];
+        this._segmentDisplacement(s, bL, bR, mat, h);
+        if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat);
+        if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, reg.velocity);
       }
       if (mat.ideal) for (const s of segs) this._segmentsDilute(s, s + 1, r, mat, reg.velocity);
     }
     for (const f of this.bookkeepingFaces) this._face(f);
-    model.ports.forEach((port, k) => this._port(port, this.portFlux[k]));
-    this._termI = 0;
-    this._termIJac.fill(0);
-    for (const side of ['left', 'right']) this._contact(side, dt);
+    this._terminals(dt);
   }
 
   // Add this step's contact fluxes (at the converged state) to each stretch's intake.
@@ -2054,10 +2131,14 @@ export class Solver {
    */
   solveSteady(opts = {}) {
     this.conditioning = null;
-    const ct = this.model.contacts.right, target = ct.V, level = this.model.contacts.left.V;
-    const canContinue = opts.continuation !== false && this.model.circuit.mode === 'voltage' && target !== level;
+    this.sourceTime = this.time;
+    // Continuation applies where the right terminal is held at a voltage, against a held left one.
+    const [dl, dr] = [this.terms[0].drive, this.terms[1].drive];
+    const held = (d) => d.kind === 'V' && !(d.R > 0);
+    const target = sourceAt(dr.src, this.time), level = sourceAt(dl.src, this.time);
+    const canContinue = opts.continuation !== false && held(dl) && held(dr) && target !== level;
     const direct = this._directSteady();
-    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo);
+    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), v0 = Float64Array.from(this.termV);
     // Where a direct solve applies and continuation is possible, don't spend long on the
     // pseudo-transient ramp: one direct attempt first.
     let r = this._solveSteady(canContinue && direct ? { ...opts, maxSteps: 1 } : opts);
@@ -2068,13 +2149,14 @@ export class Solver {
     const restart = () => {
       this.u.set(u0);
       this.uLo.set(u0Lo);
+      this.termV.set(v0);
       this.computeConcentrations();
     };
     restart();
     // Ramp from the last converged voltage when the state is that solution (a warm start),
     // otherwise from level terminals.
     const from = this.solvedV !== undefined ? this.solvedV : level;
-    const c = this._continuation(opts, ct, from, target, r, from !== level);
+    const c = this._continuation(opts, from, target, r, from !== level);
     if (c.converged) {
       this.solvedV = target;
       return c;
@@ -2085,12 +2167,12 @@ export class Solver {
     return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
   }
 
-  _continuation(opts, ct, level, target, r, warm) {
+  _continuation(opts, level, target, r, warm) {
     const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
     let V = level, dV = (target - level) / 8, steps = r.steps, iterations = r.iterations;
     const history = r.history.slice();
     try {
-      ct.V = V;
+      this.sourceOverride.set(1, V);
       let q;
       if (!warm) {
         q = this._solveSteady(opts);
@@ -2100,8 +2182,8 @@ export class Solver {
       }
       while (V !== target) {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
-        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo);
-        ct.V = next;
+        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
+        this.sourceOverride.set(1, next);
         q = this._solveSteady(sub);
         steps += q.steps;
         iterations += q.iterations;
@@ -2112,6 +2194,7 @@ export class Solver {
         } else {
           this.u.set(u1);
           this.uLo.set(u1Lo);
+          this.termV.set(v1);
           this.computeConcentrations();
           dV /= 4;
           if (Math.abs(dV) < 1e-6 * Math.abs(target - level)) return { converged: false, steps, iterations, history };
@@ -2119,16 +2202,19 @@ export class Solver {
       }
       return { converged: true, steps, iterations, history };
     } finally {
-      ct.V = target;
+      this.sourceOverride.delete(1);
+      this._refreshSources();
     }
   }
 
   _solveSteady(opts = {}) {
     this.constrained = true; // spectators' amounts as constraints in the dt = ∞ solves
+    this.steady = true;
     try {
       return this._steadySteps(opts);
     } finally {
       this.constrained = false;
+      this.steady = false;
     }
   }
 

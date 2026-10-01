@@ -56,8 +56,8 @@ test('reversible electrodes: finite-length Warburg of Ag | AgNO₃ | Ag, in volt
   //   Z = (RT/F²c)[L/(D₊+D₋) + 2D₋/(D₊(D₊+D₋)) · tanh(qL/2)/q],  q = √(iω/D_s),
   // with D_s = 2D₊D₋/(D₊+D₋): the bulk resistance plus a salt-diffusion Warburg element.
   const Dp = 1.65e-9, Dm = 1.9e-9, c0 = 10, L = 20e-6;
-  const el = { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' };
-  const cell = (circuit) =>
+  const el = { terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' };
+  const cell = (right) =>
     new Device({
       species: [
         { name: 'Ag+', z: 1, cRef: 1000 },
@@ -65,8 +65,7 @@ test('reversible electrodes: finite-length Warburg of Ag | AgNO₃ | Ag, in volt
       ],
       materials: { water: { epsr: 0, species: { 'Ag+': { D: Dp, mu0: 77.1e3 }, 'NO3-': { D: Dm, mu0: -111.3e3 } } } },
       regions: [{ material: 'water', length: L, c0: { 'NO3-': c0 } }],
-      contacts: { left: el, right: el },
-      circuit,
+      contacts: { left: { ...el, V: 0 }, right },
       grid: { minCells: 400 },
     });
   const Ds = (2 * Dp * Dm) / (Dp + Dm);
@@ -77,16 +76,16 @@ test('reversible electrodes: finite-length Warburg of Ag | AgNO₃ | Ag, in volt
     return [pre * (L / (Dp + Dm) + RD * tq[0]), pre * RD * tq[1]];
   };
   const fs = [1e-3, 0.1, 1, 10, 100];
-  for (const circuit of [undefined, { mode: 'current', I: 0 }]) {
-    const Z = cell(circuit).impedance(fs, { profiles: true });
-    fs.forEach((f, q) => assert.ok(relErr(Z, q, exact(f)) < 3e-5, `${circuit?.mode ?? 'voltage'}, f = ${f}: ${relErr(Z, q, exact(f))}`));
+  for (const right of [{ ...el, V: 0 }, { ...el, I: 0 }]) {
+    const Z = cell(right).impedance(fs, { profiles: true });
+    fs.forEach((f, q) => assert.ok(relErr(Z, q, exact(f)) < 3e-5, `${right.I === undefined ? 'held' : 'driven'}, f = ${f}: ${relErr(Z, q, exact(f))}`));
     // Profiles: the electrolyte stays neutral, and at low frequency the salt profile is linear.
     const p = Z.profiles[0];
     for (let g = 0; g < p.c['Ag+'].re.length; g++) assert.ok(Math.abs(p.c['Ag+'].re[g] - p.c['NO3-'].re[g]) < 1e-9 * Math.abs(p.c['Ag+'].re[0]));
     const mid = p.c['Ag+'].re.length >> 1;
     assert.ok(Math.abs(p.c['Ag+'].re[mid]) < 1e-6 * Math.abs(p.c['Ag+'].re[0]));
   }
-  assert.throws(() => cell({ mode: 'load', R: 1 }).impedance([1]), SolverError);
+  assert.throws(() => cell({ ...el, V: 0, R: 1 }).impedance([1]), (e) => e instanceof SolverError && /series resistance/.test(e.message));
 });
 
 test('low-frequency limit equals the steady differential resistance (Fermi–Dirac pn diode with recombination)', () => {

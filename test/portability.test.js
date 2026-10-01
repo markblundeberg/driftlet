@@ -31,7 +31,7 @@ test('no Node or DOM globals in the library', () => {
   for (const f of sources) {
     const c = code(f);
     for (const name of ['process', 'require', 'Buffer', '__dirname', 'window', 'document', 'self']) {
-      assert.doesNotMatch(c, new RegExp(`\\b${name}\\s*[.(\\[]`), `${f} uses ${name}`);
+      assert.doesNotMatch(c, new RegExp(`\\b${name}(\\s*[.(]|\\[)`), `${f} uses ${name}`);
     }
   }
 });

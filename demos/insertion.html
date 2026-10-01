@@ -65,7 +65,7 @@ function start() {
     grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
   });
   dev.solve();
-  dev.set({ circuit: { mode: 'current', I } }); // electrons in from the right, Li⁺ from the left
+  dev.set({ contacts: { right: { V: undefined, I: -I } } }); // electrons in from the right, Li⁺ from the left
   profiles = [];
   last = undefined;
   curve = { x: [], V: [], ocv: [] };

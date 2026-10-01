@@ -67,11 +67,12 @@ export function makeSolution(solver, result = {}) {
     sol.Vstd[name] = Vs;
   }
 
-  // Contacts: fluxes and displacement at the final state (re-evaluated from the balance rows).
-  solver.assemble(solver.lastDt);
+  // Contacts: fluxes and displacement at the final state (re-evaluated from the balance rows of
+  // the boxes they're read from).
+  solver.computeConcentrations();
+  solver._assembleBookkeeping(solver.lastDt);
   sol.contacts = {};
   sol.gates = {};
-  const floating = model.circuit.mode !== 'voltage';
   for (const side of ['left', 'right']) {
     const ct = contacts[side];
     const flux = {};
@@ -84,11 +85,11 @@ export function makeSolution(solver, result = {}) {
     const dt = solver.lastDt;
     const displacement = Number.isFinite(dt) ? (D - solver.contactDOld[side]) / dt : 0;
     // Current toward +x through this contact; in steady state both contacts agree.
-    const V = floating && side === 'right' ? solver.terminalV : ct.V;
+    const V = solver.termV[side === 'left' ? 0 : 1];
     sol.contacts[side] = { V, flux, D, current: conduction + displacement };
     if (ct.phi.type === 'capacitive' || ct.phi.type === 'pinned') {
       // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
-      sol.gates[side] = { V: ct.V, D, charge: side === 'left' ? D : -D };
+      sol.gates[side] = { V, D, charge: side === 'left' ? D : -D };
     }
   }
   sol.current = sol.contacts.right.current;
@@ -101,9 +102,16 @@ export function makeSolution(solver, result = {}) {
       flux[species[i].name] = solver.portFlux[k][i];
       current += F * species[i].z * solver.portFlux[k][i];
     }
-    return { name: port.name, V: port.V, flux, current };
+    return { name: port.name, V: solver.termV[2 + k], flux, current };
   });
   sol.terminalVoltage = sol.contacts.right.V - sol.contacts.left.V;
+  // Every terminal (the contacts, then the ports by name): its voltage and its current into the
+  // device, conduction plus displacement. They sum to zero in steady state.
+  sol.terminals = {};
+  model.terminals.forEach((t, k) => {
+    const current = t.kind === 'port' ? sol.ports[t.index].current : t.side === 'left' ? sol.contacts.left.current : -sol.contacts.right.current;
+    sol.terminals[t.name] = { V: solver.termV[k], current };
+  });
 
   // Interfaces: dipole and the fluxes carried by each flux node.
   sol.interfaces = interfaces.map((itf, f) => {

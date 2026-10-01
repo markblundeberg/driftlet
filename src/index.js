@@ -5,11 +5,40 @@ import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 
 export { DeviceError, normalizeDevice } from './device.js';
+import { normalizeDrives } from './device.js';
 export { SolverError } from './solver.js';
 export { buildGrid, gradedCells } from './grid.js';
 export { BlockTridiagonal } from './blockTridiagonal.js';
 export { bernoulli, bernoulliDerivative } from './bernoulli.js';
 export * from './constants.js';
+
+// Whether two definitions differ only in their terminals' drives (V, I, R on the contacts and
+// ports). Functions (custom statistics) compare by identity.
+function sameExceptDrives(a, b) {
+  const drive = new Set(['V', 'I', 'R']);
+  const eq = (x, y, terminal) => {
+    if (x === y) return true;
+    if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
+    if (Array.isArray(x) !== Array.isArray(y)) return false;
+    const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+    for (const k of keys) {
+      if (terminal && drive.has(k)) continue;
+      if (!eq(x[k], y[k], false)) return false;
+    }
+    return true;
+  };
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (k === 'contacts') {
+      const ca = a.contacts ?? {}, cb = b.contacts ?? {};
+      for (const side of new Set([...Object.keys(ca), ...Object.keys(cb)])) if (!eq(ca[side] ?? {}, cb[side] ?? {}, true)) return false;
+    } else if (k === 'ports') {
+      const pa = a.ports ?? [], pb = b.ports ?? [];
+      if (pa.length !== pb.length || pa.some((p, i) => !eq(p, pb[i], true))) return false;
+    } else if (!eq(a[k], b[k], false)) return false;
+  }
+  return true;
+}
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
 
@@ -43,13 +72,26 @@ export class Device {
   }
 
   /**
-   * Change part of the definition (deep-merged). The current state is kept as the warm start
-   * when the grid and species are unchanged; otherwise it restarts from the regions' c0.
+   * Change part of the definition (deep-merged). A change to the terminals' drives alone (V, I,
+   * R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
+   * the warm start when the grid and species are unchanged (else restarting from the regions' c0).
    * @param {object} patch a partial device definition, merged into the current one
    * @returns {this}
    */
   set(patch) {
     const def = merge(this.def, patch);
+    // Only the terminals' drives changed: update them in place, keeping the solver and its state
+    // (a step in a source restarts the time stepping's order, as at any discontinuity).
+    if (this._solver && sameExceptDrives(this.def, def)) {
+      const drives = normalizeDrives(def, this.model);
+      this.model.terminals.forEach((t, k) => (t.drive = drives[k]));
+      this.model.contacts.left.drive = drives[0];
+      this.model.contacts.right.drive = drives[1];
+      this.model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
+      this.def = def;
+      this._solver.redrive();
+      return this;
+    }
     const model = normalizeDevice(def);
     const old = this._solver;
     this.def = def;
@@ -64,6 +106,10 @@ export class Device {
         solver.time = old.time;
         solver.contactDEnd = old.contactDEnd;
         solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
+        // Floating terminals keep their voltages (a good start), where the terminals match.
+        if (old.terms.length === solver.terms.length) {
+          for (const k of solver.floating) if (old.terms[k].name === solver.terms[k].name) solver.termV[k] = old.termV[k];
+        }
         solver.referenceAmounts = old.referenceAmounts.slice();
         if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
       }
@@ -105,11 +151,12 @@ export class Device {
   }
 
   /**
-   * Small-signal impedance Z(f) about the steady state (solved first). In voltage mode the
-   * right terminal's voltage is perturbed; in current mode, the circuit current.
-   * Z = −δV/δI, the impedance seen at the terminals (Ω·m²).
+   * Small-signal impedance Z(f) about the steady state (solved first), at one terminal: its
+   * held voltage is perturbed (or its driven current), the others keep their drives.
+   * Z = δV/δI with I into the device (Ω·m²).
    * @param {ArrayLike<number>} frequencies Hz
-   * @param {{ profiles?: boolean }} [opts] also return complex profiles per frequency
+   * @param {{ terminal?: string, profiles?: boolean }} [opts] the terminal (default 'right'), and
+   *   whether to return complex profiles per frequency
    * @returns {import('./types.js').ImpedanceResult}
    */
   impedance(frequencies, opts) {

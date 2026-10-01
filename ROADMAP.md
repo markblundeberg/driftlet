@@ -36,6 +36,10 @@ for live demos.
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
   conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
+- Terminals: the contacts and every port, each held at a voltage, behind a resistance or driven
+  by a current (reference electrodes, three-electrode cells, grounded floating electrodes), with
+  piecewise-linear waveforms (cyclic voltammetry), impedance at any terminal, and a fast `set()`
+  for sources alone. Floating terminal voltages are bordered unknowns.
 - Variable block sizes: each block holds only the unknowns that exist at its node, assembled
   straight into compact blocks by region kernels (conductor, dilute, concentrated); a face's
   block holds its displacement, its linked fluxes and its reaction rates. Bookkeeping after each
@@ -49,8 +53,6 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
-   - Sources apart from structure: a fast path to change contact and port voltages and the
-     circuit without re-normalising the spec, and solutions computed lazily, for live demos.
    - Floating conductors in η form. A floating metal is fixed by the mixed form, but the same
      cancellation awaits a floating mixed conductor or semiconductor region held only by face
      reactions or recombination, in steady state (in transients, storage anchors it): a fast
@@ -124,8 +126,12 @@ for live demos.
 - **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where λ_D ≪ h,
   for macroscopic devices with real double-layer charge on any grid. It tends to `neutral` as
   ε → 0.
-- **Ports as circuit terminals.** Internal ports exist (fixed-voltage reservoirs); letting a
-  port's voltage follow a terminal, or float in the circuit, would come next.
+- **Driven species fluxes.** A terminal driving one species' molar flux instead of the charge
+  current (a gas feed at a fixed rate, a neutral species injected), the flux-side twin of a held
+  μ for neutral species.
+- **A second-law check.** In steady state the free energy brought in through the terminals,
+  Σ N_i μ̄_i over every species at every terminal, equals the total dissipation (transport,
+  reactions) and is non-negative: a validation of the honest thermodynamics end to end.
 - **Interface states** (charge that depends on the local μ̄_e, i.e. Fermi-level pinning) and
   thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.

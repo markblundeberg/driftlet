@@ -240,8 +240,7 @@ test('Debye–Hückel: liquid-junction EMF 2t₊(RT/F) ln(a₁/a₂) with activi
     species: salt,
     materials: { water: brine([{ type: 'debye-huckel', species: ['Na+', 'Cl-'], epsr: 78.5, a }], epsr) },
     regions: [{ material: 'water', length: 10e-6 }],
-    contacts: { left: bath(c1), right: bath(c2) },
-    circuit: { mode: 'current', I: 0 },
+    contacts: { left: bath(c1), right: { ...bath(c2), I: 0 } },
     grid: { minCells: 1600 },
   });
   const sol = new Device(def(0)).solve();

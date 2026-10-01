@@ -98,8 +98,9 @@ driftlet insists on thermodynamically honest concepts ([conventions](docs/conven
   as in [ESBD](https://marklundeberg.com/esbd/) diagrams.
 
 A device is a line of **regions** (each a **material** plus a length, fixed charge and
-initial composition), joined at **interfaces**, with a **contact** at each end and a
-**circuit** across them. Supported physics:
+initial composition), joined at **interfaces**, with a **contact** at each end. The contacts
+and any internal **ports** are its **terminals**, each held at a voltage or driven by a
+current. Supported physics:
 
 - any mix of charged and neutral species; per-material diffusivities and standard potentials;
   species absent from some materials;
@@ -121,7 +122,9 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
   autoionisation, …);
 - imposed flow (advection) and current-free eddy mixing;
 - internal ports: reservoirs feeding a window of nodes, e.g. grounding a MOS channel;
-- voltage, galvanostatic (including open circuit) and load-resistor circuits;
+- terminals held at a voltage, driven by a current (including open circuit) or behind a
+  resistance, with piecewise-linear waveforms (cyclic voltammetry); reference electrodes and
+  other internal terminals as ports; impedance at any terminal;
 - steady states; transients by backward Euler, BDF2, or adaptive BDF2 with error control and
   frame budgets for animation; exact conservation bookkeeping;
 - small-signal impedance spectra Z(f), with complex profiles.

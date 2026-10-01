@@ -23,7 +23,6 @@ too (`FARADAY`, `GAS_CONSTANT`, `EPS0`, …).
 | `bulkReactions` | homogeneous reactions |
 | `contacts` | `{ left, right }` |
 | `ports` | internal ports: outside phases exchanging with a window of nodes |
-| `circuit` | how the terminals are driven (default: each contact at its own voltage) |
 | `grid` | default spacing for every region |
 
 ## Species
@@ -225,8 +224,9 @@ those materials.
 A contact is an interface whose far side is an **outside phase with known levels**: think of
 it as one more region whose node is fully known. The outside phase's levels form a rigid
 ladder, `V_i = V + offset_i` for charged species (μ̄ given directly for neutral ones). The
-offsets are the outside phase's own chemistry, and the circuit slides the whole ladder by the
-terminal voltage V. The laws joining it to the device are the same as at internal interfaces.
+offsets are the outside phase's own chemistry, and the external circuit slides the whole ladder
+by the terminal voltage V: held, or floating under a current (see [terminals](#terminals)). The
+laws joining it to the device are the same as at internal interfaces.
 
 ```js nocheck
 contacts: {
@@ -296,7 +296,7 @@ ports: [{
   name: 'channel',
   region: 'Si',              // name or index
   from: 495e-9, to: 500e-9,  // window, m from the region's left end (default: the whole region)
-  V: 0,                      // the port's terminal voltage
+  V: 0,                      // the port's terminal voltage (or I, or V and R: see terminals)
   terminal: 'e-',
   species: {
     'e-': 'equilibrium',                         // μ̄ held at V_i = V + offset throughout the window
@@ -307,10 +307,10 @@ ports: [{
 ```
 
 Links and offsets are those of contacts, per volume instead of per area: 0 by default only for
-the terminal species, and an absolute `mu` for neutral species. A port's voltage is fixed; ports aren't yet terminals of the circuit.
-Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what the port brings into
-the device. In steady state the right contact's current is the left contact's plus every
-port's.
+the terminal species, and an absolute `mu` for neutral species. A port is a terminal like a
+contact: held at a voltage, behind a resistance, or driven by a current (a reference electrode
+is a port at `I: 0`). Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what
+the port brings into the device.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
 
@@ -326,17 +326,37 @@ steady state can be computed there. A port holding the electrons beside the oxid
 channel's potential anchors it, as source and drain would, and the device then shows the
 low-frequency C–V.
 
-## Circuit
+## Terminals
+
+The two contacts and every port are the device's terminals, named `left`, `right` and by each
+port's `name`. Each is driven on its own:
 
 ```js nocheck
-circuit: { mode: 'voltage' }        // default: each contact at its own V
-circuit: { mode: 'current', I: 2 }   // A/m² toward +x through the right terminal; I = 0 is open circuit
-circuit: { mode: 'load', R: 1e-3, V: 0.1 } // I = (V_right − V_left − V)/R, R in Ω·m²
+contacts: {
+  left: { V: 0, ... },               // held at a voltage
+  right: { I: -2, ... },             // driven by a current into the device, A/m² (I: 0 is open circuit)
+},
+ports: [{ name: 'ref', I: 0, ... },  // a reference electrode: no current, its voltage read off
+        { name: 'wire', V: 0, R: 1e-3, ... }], // a source V behind a series resistance R (Ω·m²)
 ```
 
-The left terminal is the reference. In current and load modes the right terminal's voltage is
-solved for, which needs a current path there: a charged terminal species in equilibrium (such
-as the electrons behind an electrode), or a conductance link.
+- **`V`**: the terminal's voltage, the shift of its outside phase's ladder, as the voltage of
+  its `terminal` species (a gate's is its own metal's electrons). Neither `V` nor `I` given
+  means `V: 0`.
+- **`I`**: the current into the device through this terminal (conduction plus displacement);
+  the voltage floats and is solved for.
+- **`V` and `R`**: a source behind a resistance, I = (V − V_terminal)/R.
+
+At least one terminal must be held at a voltage, or the device's overall level floats. In
+steady state the terminal currents sum to zero. A contact can be driven by a current only if
+something passes it (a linked species, or a gate's displacement).
+
+**Waveforms.** `V` and `I` can be piecewise linear in time:
+`{ t: [0, 1, 2], values: [0, 0.5, 0], repeat: true }` (s and V, or s and A/m²), constant beyond
+the points, or periodic with period t_last − t_0 when `repeat` is set: a triangle wave is a cyclic
+voltammogram. Steps take the sources at their end time; `advance()` lands on every breakpoint
+and restarts its time stepping there, where the slope jumps. `solve()` and `impedance()` use the
+values at the present time.
 
 ## Grid
 
@@ -375,14 +395,18 @@ const now = dev.solution();                   // snapshot of the current state
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
   `rejected`, and a `trace` of terminal current and voltage after every accepted step.
-- `impedance(frequencies, { profiles })` solves the steady state, then linearises about it:
-  Z(f) = −δV/δI in Ω·m², the impedance seen at the terminals. In voltage mode the right
-  terminal's voltage is perturbed; in current mode, the circuit current. With
+- `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises
+  about it: Z(f) = δV/δI in Ω·m² at one terminal (`'right'` by default), with I into the
+  device. A held terminal's voltage is perturbed, or a driven one's current; the other terminals
+  keep their drives (held ones at AC ground, driven ones open). A terminal behind a resistance
+  can't be the one measured: the resistance belongs to the external circuit. With
   `profiles: true`, each frequency also returns complex profiles of δφ, δμ̄ and δc per unit
-  excitation. Load mode isn't supported: a load resistor is part of the external circuit.
-- `set(patch)` merges plain objects deeply (arrays are replaced). The current state carries
-  over while the grid and species are unchanged; otherwise it restarts from the regions' `c0`.
-  Time-stepping history doesn't carry over, so the next step starts with backward Euler.
+  excitation.
+- `set(patch)` merges plain objects deeply (arrays are replaced). A patch that changes only the
+  terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
+  Otherwise the device is rebuilt: the current state carries over while the grid and species
+  are unchanged, or restarts from the regions' `c0`. Either way the time stepping restarts its
+  order, as after any discontinuity.
 
 For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
 current transient after a voltage step.
@@ -418,7 +442,8 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `phi` | bookkeeping φ, V (`NaN` where undefined) |
 | `c[name]`, `mu[name]`, `muStd[name]` | concentration, μ̄, standard level μ° + zFφ (`NaN` where absent) |
 | `V[name]`, `Vstd[name]` | species voltage μ̄/(zF) and standard level as a voltage (charged species) |
-| `current`, `terminalVoltage` | terminal current toward +x (A/m²) and V_right − V_left |
+| `current`, `terminalVoltage` | current toward +x through the device (A/m²) and V_right − V_left |
+| `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |

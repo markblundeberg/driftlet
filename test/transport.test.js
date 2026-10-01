@@ -54,8 +54,7 @@ test('eddy mixing carries no current: junction EMF unchanged, salt flux raised b
       ],
       materials: { water: { epsr: 0, species: { 'Na+': { D: Dp, mu0: -261.9e3 }, 'Cl-': { D: Dm, mu0: -131.2e3 } } } },
       regions: [{ material: 'water', length: Lj, mixing }],
-      contacts: { left: bath(c1), right: bath(c2) },
-      circuit: { mode: 'current', I: 0 },
+      contacts: { left: bath(c1), right: { ...bath(c2), I: 0 } },
       grid: { minCells: 400 },
     }).solve();
   const Ds = (2 * Dp * Dm) / (Dp + Dm), emf = 2 * tp * VT * Math.log(c1 / c2);

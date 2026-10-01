@@ -102,9 +102,8 @@ const devices = {
     regions: [{ material: 'water', length: 1e-6, c0: salt }],
     contacts: {
       left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' },
-      right: { terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 },
+      right: { I: -5, terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 },
     },
-    circuit: { mode: 'current', I: 5 },
     grid: coarse,
   }),
 };
@@ -119,7 +118,7 @@ function entry(sys, blockOf, i, k) {
 }
 
 for (const [name, make] of Object.entries(devices)) {
-  test(`Jacobian equals central differences of the residual: ${name}`, () => {
+  test(`Jacobian (and each terminal's B, C and ∂I/∂V) equals central differences: ${name}`, () => {
     const dev = new Device(make());
     assert.ok(dev.solve().converged);
     const s = dev.solver, N = s.sys.size;
@@ -135,26 +134,54 @@ for (const [name, make] of Object.entries(devices)) {
       const J = { A: s.sys.A.slice(), B: s.sys.B.slice(), C: s.sys.C.slice(), offA: s.sys.offA, offB: s.sys.offB, offC: s.sys.offC, offX: s.sys.offX, sizes: s.sys.sizes };
       const rowMax = new Float64Array(N);
       for (let i = 0; i < N; i++) for (let k = Math.max(0, i - 3 * s.M); k < Math.min(N, i + 3 * s.M); k++) rowMax[i] = Math.max(rowMax[i], Math.abs(entry(J, blockOf, i, k)));
+      // Each terminal: ∂res/∂V (B), ∂I/∂x (C) and ∂I/∂V.
+      const T = s.terms.length, Bt = s.termB.map((v) => v.slice(0, N)), Ct = s.termC.map((v) => v.slice(0, N)), DI = Float64Array.from(s.termDI);
+      const cMax = Ct.map((row) => row.reduce((m, v) => Math.max(m, Math.abs(v)), 0));
       let worst = 0, at = ''; // |FD − J| / (1e-5 |J| + 1e-8 × the row's largest entry)
+      const note = (err, where) => {
+        if (err > worst) {
+          worst = err;
+          at = where;
+        }
+      };
       for (let k = 0; k < N; k++) {
         const f = s.fullOf[k], u0 = s.u[f], h = 1e-6 * Math.max(1, Math.abs(u0));
         s.u[f] = u0 + h;
         s.assemble(dt);
-        const rp = s.res.slice(0, N);
+        const rp = s.res.slice(0, N), Ip = Float64Array.from(s.termI);
         s.u[f] = u0 - h;
         s.assemble(dt);
-        const rm = s.res.slice(0, N);
+        const rm = s.res.slice(0, N), Im = Float64Array.from(s.termI);
         s.u[f] = u0;
+        for (let t = 0; t < T; t++) {
+          const fd = (Ip[t] - Im[t]) / (2 * h), an = Ct[t][k];
+          note(Math.abs(fd - an) / (1e-5 * Math.abs(an) + 1e-8 * cMax[t] + 1e-300), `terminal ${s.terms[t].name} current, column ${k}: ${an} vs ${fd}`);
+        }
         for (let i = 0; i < N; i++) {
           if (Math.abs(blockOf[i] - blockOf[k]) > 1) continue;
           // Relative to the entry, with a floor at the row's scale (finite-difference noise).
           const fd = (rp[i] - rm[i]) / (2 * h), an = entry(J, blockOf, i, k);
           const err = Math.abs(fd - an) / (1e-5 * Math.abs(an) + 1e-8 * rowMax[i] + 1e-300);
-          if (err > worst) {
-            worst = err;
-            at = `row ${i} (block ${blockOf[i]}), column ${k} (block ${blockOf[k]}, slot ${f % s.M}): ${an} vs ${fd}`;
-          }
+          note(err, `row ${i} (block ${blockOf[i]}), column ${k} (block ${blockOf[k]}, slot ${f % s.M}): ${an} vs ${fd}`);
         }
+      }
+      for (let t = 0; t < T; t++) {
+        const fl = s.floating.includes(t), V0 = s.termV[t], h = 1e-6;
+        const setV = (V) => (fl ? (s.termV[t] = V) : s.sourceOverride.set(t, V));
+        setV(V0 + h);
+        s.assemble(dt);
+        const rp = s.res.slice(0, N), Ip = s.termI[t];
+        setV(V0 - h);
+        s.assemble(dt);
+        const rm = s.res.slice(0, N), Im = s.termI[t];
+        if (fl) s.termV[t] = V0;
+        else s.sourceOverride.delete(t);
+        for (let i = 0; i < N; i++) {
+          const fd = (rp[i] - rm[i]) / (2 * h), an = Bt[t][i];
+          note(Math.abs(fd - an) / (1e-5 * Math.abs(an) + 1e-8 * Math.max(rowMax[i], Math.abs(an)) + 1e-300), `terminal ${s.terms[t].name}: ∂res/∂V, row ${i}: ${an} vs ${fd}`);
+        }
+        const fd = (Ip - Im) / (2 * h), an = DI[t] - (s.terms[t].drive.R > 0 ? 1 / s.terms[t].drive.R : 0);
+        note(Math.abs(fd - an) / (1e-5 * Math.abs(an) + 1e-8 * (cMax[t] / s.VT + Math.abs(an)) + 1e-300), `terminal ${s.terms[t].name}: ∂I/∂V: ${an} vs ${fd}`);
       }
       assert.ok(worst < 1, `dt=${dt}: ${worst.toExponential(1)} at ${at}`);
     }

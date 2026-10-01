@@ -12,9 +12,10 @@ const mu0 = { 'O+': 10e3, R: -86.485e3, 'K+': -283.3e3, 'Cl-': -131.2e3 };
 // The electrode: a platinum region (a conductor for e⁻) behind the reaction face, read through
 // a collector contact. O⁺ + e⁻ ⇌ R, with the metal on the given side.
 const redoxRx = (metal) => ({ [metal]: { 'e-': -1 }, [metal === 'left' ? 'right' : 'left']: { 'O+': -1, R: 1 }, k0: kp * 1000, alpha });
-const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
+// The collector holds the platinum's electrons at V, or drives a current I into the device.
+const collector = (V, I) => ({ ...(I === undefined ? { V } : { I }), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
 const bath = { bath: { c: { 'O+': cO, R: cR, 'K+': 1000, 'Cl-': 1001 }, reference: 'Cl-' } };
-const redox = (side, V, circuit) => ({
+const redox = (side, V, I) => ({
   species: [
     { name: 'O+', z: 1, cRef: 1000 },
     { name: 'R', z: 0, cRef: 1000 },
@@ -44,9 +45,8 @@ const redox = (side, V, circuit) => ({
     : {
         regions: [{ material: 'water', length: L }, { material: 'Pt', length: 1e-6 }],
         interfaces: [{ phi: 'neutral', reactions: [redoxRx('right')] }],
-        contacts: { left: bath, right: collector(V) },
+        contacts: { left: bath, right: collector(V, I) },
       }),
-  circuit,
   grid: { hmin: 0.05e-9, hmax: 200e-9, ratio: 1.15 },
 });
 // Bath φ from its Cl⁻ reference at 0 V, hence the equilibrium electrode voltage and E°′.
@@ -80,12 +80,12 @@ test('Butler–Volmer electrode: zero current at the Nernst potential, mixed-con
 });
 
 test('galvanostatic kinetic electrode', () => {
-  const dev = new Device(redox('right', Veq, { mode: 'current', I: 2 }));
+  const dev = new Device(redox('right', Veq, -2)); // 2 A/m² toward +x, out at the right
   const sol = dev.solve();
   assert.ok(sol.converged);
   assert.ok(Math.abs(sol.current / 2 - 1) < 1e-9);
   const V = sol.contacts.right.V;
-  dev.set({ circuit: { mode: 'voltage', I: undefined }, contacts: { right: { V } } });
+  dev.set({ contacts: { right: { V, I: undefined } } });
   assert.ok(Math.abs(dev.solve().current / 2 - 1) < 1e-8, 'voltage mode at that V returns the same current');
 });
 

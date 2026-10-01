@@ -115,7 +115,9 @@
 
 /**
  * @typedef {object} ContactDef
- * @property {number} [V] terminal voltage, V (default 0)
+ * @property {Source} [V] held terminal voltage, V (default 0, if no I)
+ * @property {Source} [I] or: the current driven into the device, A/m² (the voltage floats)
+ * @property {number} [R] with V: a series resistance, Ω·m² (a source behind a resistor)
  * @property {string} [terminal] species whose voltage V is
  * @property {Record<string, ContactSpeciesLink>} [species] per-species links (default blocked)
  * @property {{ c: Record<string, number>, reference: string, offset?: number }} [bath] a neutral
@@ -125,9 +127,9 @@
  */
 
 /**
- * @typedef {{ mode: 'voltage' }
- *   | { mode: 'current', I: number }
- *   | { mode: 'load', R: number, V?: number }} CircuitDef
+ * A terminal's source: a constant, or a piecewise-linear waveform through (t, value), constant
+ * beyond the points, or periodic with period t_last − t_0 if repeat is true.
+ * @typedef {number | { t: number[], values: number[], repeat?: boolean }} Source
  */
 
 /**
@@ -139,7 +141,9 @@
  * @property {string | number} region region name or index
  * @property {number} [from] window start, m from the region's left end (default 0)
  * @property {number} [to] window end, m (default: the region's length)
- * @property {number} [V] port terminal voltage, V
+ * @property {Source} [V] held terminal voltage, V (default 0, if no I)
+ * @property {Source} [I] or: the current driven into the device, A/m² (e.g. 0 for a reference electrode)
+ * @property {number} [R] with V: a series resistance, Ω·m²
  * @property {string} [terminal] species whose offset defaults to 0
  * @property {Record<string, 'blocked' | 'equilibrium' | { type: 'equilibrium', offset?: number, mu?: number }
  *   | { type: 'conductance', G: number, offset?: number } | { type: 'exchange', k: number, mu: number }>} species
@@ -156,7 +160,6 @@
  * @property {BulkReactionDef[]} [bulkReactions]
  * @property {{ left?: ContactDef, right?: ContactDef }} [contacts]
  * @property {PortDef[]} [ports] internal ports
- * @property {CircuitDef} [circuit] default: each contact at its own V
  * @property {GridOptions} [grid]
  */
 
@@ -178,13 +181,15 @@
  * @property {Record<string, Float64Array>} muStd standard levels μ° + zFφ, J/mol
  * @property {Record<string, Float64Array>} V species voltages μ̄/(zF), V (charged species)
  * @property {Record<string, Float64Array>} Vstd standard levels as voltages, V
- * @property {number} current terminal current toward +x, A/m²
+ * @property {number} current current toward +x through the device, A/m²
  * @property {number} terminalVoltage V_right − V_left, V
+ * @property {Record<string, { V: number, current: number }>} terminals each terminal (left, right,
+ *   then the ports by name): its voltage, and its current into the device (A/m²)
  * @property {{ left: ContactResult, right: ContactResult }} contacts
  * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
  * @property {{ name: string, V: number, flux: Record<string, number>, current: number }[]} ports what each
  *   internal port brings into the device
- * @property {{ dipole: number, sheetCharge: number, D: number, N: Record<string, number> }[]} interfaces
+ * @property {{ dipole: number, sheetCharge: number, D: number, N: Record<string, number>, rates: number[] }[]} interfaces
  * @property {number} charge total charge in the device, C/m²
  * @property {{ species: string, regions: number[], spectator: boolean, connected: boolean, reactive: boolean,
  *   amount: number, reference: number, intake: number, drift: number }[]} conservation

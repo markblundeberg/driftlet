@@ -3,77 +3,77 @@
   "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
   "results": {
     "linear solve 300 × 7 (factor + solve)": {
-      "ms": 0.419,
+      "ms": 0.414,
       "factorizations": 1,
       "work": 102900
     },
     "pn diode: cold equilibrium": {
-      "ms": 2.157,
+      "ms": 2.929,
       "factorizations": 9,
       "work": 64395
     },
     "pn diode: I–V sweep 0 → 0.6 V, 31 points": {
-      "ms": 30.726,
+      "ms": 22.029,
       "factorizations": 137,
       "work": 980235
     },
     "pn diode: warm jump 0.4 V → −1 V": {
-      "ms": 7.241,
+      "ms": 6.835,
       "factorizations": 51,
       "work": 364905
     },
     "pn diode: advance 0 → 0.5 V, 100 ns": {
-      "ms": 147.631,
+      "ms": 143.216,
       "factorizations": 1026,
       "work": 7341030
     },
     "pn diode: impedance, 20 frequencies": {
-      "ms": 8.342,
+      "ms": 8.761,
       "factorizations": 21,
       "work": 150255
     },
     "MOS (Au gate): C–V sweep −1 → 1.5 V, 26 points": {
-      "ms": 10.634,
+      "ms": 5.718,
       "factorizations": 126,
       "work": 288414
     },
     "n-Si | KCl: Mott–Schottky sweep −0.5 → 1 V, 31 points": {
-      "ms": 28.644,
+      "ms": 22.788,
       "factorizations": 156,
       "work": 1322724
     },
     "n-Si | KCl: impedance, 20 frequencies": {
-      "ms": 9.804,
+      "ms": 9.947,
       "factorizations": 21,
       "work": 178059
     },
     "Ag|AgNO₃|Ag (ε > 0): cold steady": {
-      "ms": 0.901,
+      "ms": 0.771,
       "factorizations": 1,
       "work": 5319
     },
     "Ag|AgNO₃|Ag (ε > 0): sweep 0 → 0.1 V, 21 points": {
-      "ms": 12.225,
+      "ms": 9.668,
       "factorizations": 81,
       "work": 430839
     },
     "Ag|AgNO₃|Ag (ε > 0): impedance, 20 frequencies": {
-      "ms": 7.063,
+      "ms": 6.41,
       "factorizations": 21,
       "work": 111699
     },
     "Ag|AgNO₃|Ag (ε = 0): advance 1 s after 50 mV": {
-      "ms": 29.201,
+      "ms": 28.132,
       "factorizations": 287,
       "work": 1526553
     },
     "bipolar Ag electrode: sweep 0 → 1 V, 11 points": {
-      "ms": 27.021,
+      "ms": 20.809,
       "factorizations": 63,
       "work": 823599
     },
     "insertion host: OCV sweep 0.55 → 0.25 V, 31 points": {
-      "ms": 7.973,
+      "ms": 3.122,
       "factorizations": 62,
       "work": 4464
     }

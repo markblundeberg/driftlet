@@ -67,7 +67,7 @@ function nonNegative(v, path) {
  */
 export function normalizeDevice(def) {
   need(isObject(def), 'device definition must be an object');
-  fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'circuit', 'grid']);
+  fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'grid']);
 
   const T = def.T === undefined ? 298.15 : positive(def.T, 'T');
   const RT = GAS_CONSTANT * T;
@@ -238,8 +238,28 @@ export function normalizeDevice(def) {
   // crosses; a contact anchors its cluster through a gate, a reaction, or a connected ion.
   checkAnchors(regions, materials, interfaces, contacts, species, ports);
 
-  // --- circuit (acts at the right terminal; the left terminal is the reference)
-  const circuit = normalizeCircuit(def.circuit, contacts.right, species);
+  // --- terminals: the two contacts and every port, each held at a voltage or driven by a current
+  const terminals = [
+    { name: 'left', kind: 'contact', side: 'left', drive: contacts.left.drive },
+    { name: 'right', kind: 'contact', side: 'right', drive: contacts.right.drive },
+    ...ports.map((port, k) => ({ name: port.name, kind: 'port', index: k, drive: port.drive })),
+  ];
+  const names = new Set();
+  for (const t of terminals) {
+    need(!names.has(t.name), `ports: the name '${t.name}' is taken (by a contact or another port)`);
+    names.add(t.name);
+  }
+  // A contact that passes nothing can't be driven by a current.
+  for (const side of ['left', 'right']) {
+    const ct = contacts[side];
+    const passes = ct.species.some((l) => l.type !== 'blocked') || ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
+    need(passes || ct.drive.kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
+    ct.passes = passes;
+  }
+  need(
+    terminals.some((t) => t.drive.kind === 'V'),
+    'every terminal is driven by a current, so the device\'s overall level floats: hold at least one at a voltage V',
+  );
 
   // --- grid
   if (def.grid !== undefined) {
@@ -266,7 +286,7 @@ export function normalizeDevice(def) {
   });
 
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid, warnings, ports,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports,
   };
 }
 
@@ -369,35 +389,88 @@ function checkReactingLinks(reactions, idef, where, matL, matR, species) {
   }
 }
 
-// Circuit modes. 'voltage' (default): each contact sits at its own V. 'current': a fixed current
-// I (A/m², toward +x) leaves through the right terminal, whose voltage floats; I = 0 is open
-// circuit. 'load': the right terminal returns to the left one through a resistor R (Ω·m²) in
-// series with a source V: I = (V_right − V_left − V) / R.
-function normalizeCircuit(cdef, right, species) {
-  if (cdef === undefined) return { mode: 'voltage' };
-  need(isObject(cdef), 'circuit must be an object with a mode');
-  const modes = ['voltage', 'current', 'load'];
-  need(modes.includes(cdef.mode), `circuit.mode must be one of ${modes.join(', ')}`);
-  fields(cdef, 'circuit', { voltage: ['mode'], current: ['mode', 'I'], load: ['mode', 'R', 'V'] }[cdef.mode]);
-  if (cdef.mode === 'voltage') return { mode: 'voltage' };
-  // The floating terminal voltage is read off a fixed charged terminal species if there is one;
-  // otherwise (conductance links only) it becomes an unknown of its own.
-  const readout =
-    right.terminal !== null && right.species[right.terminal].type === 'equilibrium' && species[right.terminal].z !== 0;
-  const exchanges = right.species.some((l) => l.type === 'conductance');
-  need(
-    readout || exchanges,
-    `circuit.mode '${cdef.mode}' needs the right contact to pass current: a charged terminal species in equilibrium ` +
-      'or a conductance link',
-  );
-  const base = { terminalUnknown: !readout };
-  if (cdef.mode === 'current') return { ...base, mode: 'current', I: finite(cdef.I, 'circuit.I') };
+// A terminal's drive: held at a voltage V (behind a series resistance R, Ω·m², if given), or
+// driven by a current I (A/m², into the device). V and I are numbers or piecewise-linear
+// waveforms { t: [...], values: [...], repeat }. Neither given: held at V = 0.
+function normalizeDrive(d, path) {
+  need(d.V === undefined || d.I === undefined, `${path}: give V or I, not both`);
+  if (d.I !== undefined) {
+    need(d.R === undefined, `${path}.R: a series resistance goes with a voltage source V`);
+    return { kind: 'I', src: normalizeSource(d.I, `${path}.I`), R: 0 };
+  }
   return {
-    ...base,
-    mode: 'load',
-    R: positive(cdef.R, 'circuit.R'),
-    V: cdef.V === undefined ? 0 : finite(cdef.V, 'circuit.V'),
+    kind: 'V',
+    src: normalizeSource(d.V ?? 0, `${path}.V`),
+    R: d.R === undefined ? 0 : positive(d.R, `${path}.R (Ω·m²)`),
   };
+}
+
+// A source value: a constant, or a piecewise-linear waveform through the points (t, value),
+// constant beyond them, or periodic with period t_last − t_0 when repeat is true.
+function normalizeSource(v, path) {
+  if (typeof v === 'number') return { value: finite(v, path) };
+  need(isObject(v), `${path} must be a number or a waveform { t: [...], values: [...], repeat }`);
+  fields(v, path, ['t', 'values', 'repeat']);
+  need(Array.isArray(v.t) && Array.isArray(v.values) && v.t.length >= 1 && v.t.length === v.values.length, `${path}: t and values need the same length, at least 1`);
+  v.t.forEach((t, k) => {
+    finite(t, `${path}.t[${k}]`);
+    need(k === 0 || t > v.t[k - 1], `${path}.t must increase strictly`);
+  });
+  v.values.forEach((x, k) => finite(x, `${path}.values[${k}]`));
+  need(v.repeat === undefined || typeof v.repeat === 'boolean', `${path}.repeat must be true or false`);
+  need(!v.repeat || v.t.length >= 2, `${path}: a repeating waveform needs at least two points`);
+  return { t: Float64Array.from(v.t), values: Float64Array.from(v.values), repeat: v.repeat === true };
+}
+
+/**
+ * The terminals' drives alone (in terminal order: left, right, then the ports), from a definition
+ * whose structure is unchanged: for a fast update of sources.
+ */
+export function normalizeDrives(def, model) {
+  const drives = [
+    normalizeDrive(def.contacts?.left ?? {}, 'contacts.left'),
+    normalizeDrive(def.contacts?.right ?? {}, 'contacts.right'),
+    ...(def.ports ?? []).map((p, k) => normalizeDrive(p, `ports[${k}]`)),
+  ];
+  for (const [k, side] of [[0, 'left'], [1, 'right']]) {
+    need(model.contacts[side].passes || drives[k].kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
+  }
+  need(drives.some((d) => d.kind === 'V'), "every terminal is driven by a current, so the device's overall level floats: hold at least one at a voltage V");
+  return drives;
+}
+
+/** A source's value at time t (s). */
+export function sourceAt(src, t) {
+  if (src.value !== undefined) return src.value;
+  const { t: ts, values: vs, repeat } = src, n = ts.length;
+  if (repeat) {
+    const T = ts[n - 1] - ts[0];
+    t = ts[0] + ((((t - ts[0]) % T) + T) % T);
+  }
+  if (t <= ts[0]) return vs[0];
+  if (t >= ts[n - 1]) return vs[n - 1];
+  let k = 1;
+  while (ts[k] < t) k++;
+  const w = (t - ts[k - 1]) / (ts[k] - ts[k - 1]);
+  return vs[k - 1] + w * (vs[k] - vs[k - 1]);
+}
+
+/** The first breakpoint of a source strictly after time t (Infinity if none). */
+export function nextBreakpoint(src, t) {
+  if (src.value !== undefined) return Infinity;
+  const { t: ts, repeat } = src, n = ts.length;
+  if (!repeat) {
+    for (let k = 0; k < n; k++) if (ts[k] > t * (1 + 1e-12) + 1e-300) return ts[k];
+    return Infinity;
+  }
+  const T = ts[n - 1] - ts[0], cycle = Math.floor((t - ts[0]) / T);
+  for (let c = cycle; c <= cycle + 1; c++) {
+    for (let k = 0; k < n; k++) {
+      const tb = ts[k] + c * T;
+      if (tb > t + 1e-12 * Math.max(Math.abs(t), T)) return tb;
+    }
+  }
+  return Infinity;
 }
 
 // An internal port: an outside phase with known levels (V_i = V + offset_i, or μ for neutral
@@ -408,7 +481,7 @@ function normalizeCircuit(cdef, right, species) {
 // k (μ_out − μ)/RT per volume), or 'blocked' (the default).
 function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'terminal', 'species']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -419,7 +492,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
   const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
   need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);
-  const V = pdef.V === undefined ? 0 : finite(pdef.V, `${path}.V`);
+  const drive = normalizeDrive(pdef, path);
   let terminal = null;
   if (pdef.terminal !== undefined) {
     need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}`);
@@ -447,7 +520,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
       need(link.type !== 'exchange', `${lpath}: a charged species exchanges by { type: 'conductance', G }`);
       need(link.mu === undefined, `${lpath}: a charged species is held by an offset from the port voltage, not by mu`);
       const offset = link.offset ?? (terminal === i ? 0 : undefined);
-      need(offset !== undefined, `${lpath}.offset: give V_i − V_port (V); only the terminal species defaults to 0`);
+      need(offset !== undefined, `${lpath}.offset: give V_i − V (V); only the terminal species defaults to 0`);
       level = { offset: finite(offset, `${lpath}.offset`) };
     }
     // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
@@ -456,7 +529,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     links[i] = { type: link.type, ...level };
   }
   need(links.some((l) => l.type !== 'blocked'), `${path}.species: the port exchanges no species`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, V, terminal, species: links };
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links };
 }
 
 function checkAnchors(regions, materials, interfaces, contacts, species, ports = []) {
@@ -701,7 +774,7 @@ function bathZeta(mat, cb, background) {
   return zeta;
 }
 
-// A contact has a terminal voltage V (set by the circuit; 0 by default) and a link for every
+// A contact has a terminal voltage V (held, or floating under a current drive) and a link for every
 // species and for φ. A fixed charged species sits at V_i = V + offset_i, i.e.
 // μ̄_i = z_i F (V + offset_i). The offset belongs to the outside phase: 0 for the terminal
 // species (e.g. e⁻ at a metal); μ_M/(nF) for Mⁿ⁺ at a reversible M electrode (0 on table
@@ -713,10 +786,10 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   const links = species.map(() => ({ type: 'blocked' }));
   let phi = { type: 'neutral' };
   let terminal = null;
-  if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal };
+  if (cdef === undefined || cdef === null) return { drive: normalizeDrive({}, path), species: links, phi, terminal };
   need(isObject(cdef), `${path} must be an object`);
-  const V = cdef.V === undefined ? 0 : finite(cdef.V, `${path}.V`);
-  fields(cdef, path, ['V', 'terminal', 'species', 'bath', 'phi', 'zeroCharge']);
+  fields(cdef, path, ['V', 'I', 'R', 'terminal', 'species', 'bath', 'phi', 'zeroCharge']);
+  const drive = normalizeDrive(cdef, path);
 
   if (cdef.terminal !== undefined) {
     need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}`);
@@ -836,5 +909,5 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (terminal !== null) {
     need(links[terminal].type !== 'blocked', `${path}.terminal: '${species[terminal].name}' is blocked at this contact`);
   }
-  return { V, species: links, phi, terminal };
+  return { drive, species: links, phi, terminal };
 }

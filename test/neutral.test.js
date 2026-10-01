@@ -18,8 +18,7 @@ test('ε = 0: a liquid junction is exactly quasi-neutral (Planck EMF)', () => {
     species: salt,
     materials: { water: water(0) },
     regions: [{ material: 'water', length: 10e-6 }],
-    contacts: { left: bath(100), right: bath(10) },
-    circuit: { mode: 'current', I: 0 },
+    contacts: { left: bath(100), right: { ...bath(10), I: 0 } },
     grid: { minCells: 400 },
   }).solve();
   assert.ok(sol.converged);

@@ -187,20 +187,27 @@ fluxes, contact displacements, the last segment's current) are evaluated at the 
 from only the boxes they come from, the two end nodes and the port windows with the segments and
 faces that touch them, in the same order as a full assembly, so they're identical to one.
 
-### Floating terminals
+### Terminals
 
-In galvanostatic and load modes the right terminal's voltage V_t is unknown.
+Every terminal (a contact, or a port) has a voltage V, held by its source or floating, and a
+current into the device, I. Assembly records, for each:
+- **B = ∂res/∂V**, a column: where its outside levels enter (Dirichlet rows, conductance links,
+  a gate's or pinned φ law);
+- **I and C = ∂I/∂x**, a row. A contact's current is read from its end box before the contact's
+  own terms go in: the box's balance residuals are what must come through the contact (as for
+  the flux readouts), plus the displacement through its φ law, (D_in − D_in,0)/dt. A port's is
+  its sources over its window, with a held level's read from the row it replaces.
 
-- **If a charged terminal species is in equilibrium there,** V_t is read off that species' own η at
-  the contact node. Its row becomes the circuit law `I_segment − I_circuit(V_t) = 0`.
-  I_segment is the total current (conduction plus displacement) through the last grid segment,
-  which equals the terminal current exactly. The last box's species balance plus its Poisson
-  row, differenced in time, telescope to that identity. So the circuit is a local condition at
-  the rightmost node.
-- **Otherwise** (conductance links only), V_t becomes the unknown of one extra block after the
-  last node. Its row is the circuit law with the contact current: conductance currents and
-  the Stern displacement current. Both depend only on V_t and the last node, so the structure
-  stays tridiagonal.
+A floating terminal's voltage is an extra unknown, with its circuit law as an extra row:
+I − I_set = 0 (driven by a current) or I − (V_src − V)/R = 0 (behind a resistance). These don't
+fit the block-tridiagonal matrix T (a port couples to its whole window), so they're solved by
+bordering, together with the spectators' conservation rows (see [steady state](#steady-state)):
+with y = T⁻¹ rhs, X_k = T⁻¹ B_k and Q_q = T⁻¹ e_q (the response to a unit pin), the update is
+δ = y + Σ Q_q μ_q − Σ X_k δV_k, and the μ (pins) and δV (terminals) come from a small dense
+system of the extra rows. Each costs one more back-substitution per Newton iteration.
+
+Sources are read at the end of a step (implicit), or at the present time in a steady solve.
+`advance()` lands on every waveform breakpoint and restarts its order there.
 
 ## Statistics
 
@@ -391,26 +398,25 @@ column by column on devices that cover every assembly path.
 
 ## Small-signal impedance
 
-About a steady state x₀, a small sinusoidal source δs·e^{iωt} gives, to first order,
+About a steady state, a small sinusoidal excitation at one terminal gives, to first order,
 
 ```
-(J + iωM) δx = −b δs
+(J + iωM) δx + Σ_k B_k δV_k = −B_T δV_T                 (the grid's rows)
+(C_k + iωC′_k) δx + (∂I_k/∂V_k + iω…) δV_k = δI_T δ_kT  (each floating terminal's circuit row)
 ```
 
-- **J** is the steady Jacobian.
-- **M** is the Jacobian of the time-derivative terms: storage v·K, displacement in the
-  circuit rows. It's read off two assemblies, J(dt) = J + M/dt, with a tiny dt so that the
-  subtraction loses nothing.
-- **b = ∂(residual)/∂s** comes from central differences in the source: the right terminal's
-  voltage in voltage mode, the circuit current in current mode. It's exact wherever the
-  residual is linear in the source.
+- **J** is the steady Jacobian, **M** the Jacobian of the time-derivative terms (storage v·K,
+  displacement), and likewise C and C′ for the terminal currents. The time-derivative parts are
+  read off two assemblies, J(dt) = J + M/dt, with a tiny dt so that the subtraction loses
+  nothing.
+- **At the measured terminal T,** a held voltage is perturbed (δV_T = 1, and δI_T read from its
+  C row), or a driven current (δI_T = 1, and δV_T solved for). Z = δV_T/δI_T, with I into the
+  device. The other terminals keep their drives: held ones at AC ground, driven ones open.
 
-The system keeps the block-tridiagonal structure, so each frequency costs one complex block-Thomas
-factorisation (rows scaled by their largest entry). The terminal current comes from the last
-grid segment, conduction plus iω times its displacement, by the same identity as the floating
-terminal. In current mode, the voltage response is read from the terminal unknown instead.
-Conserved (blocked) species make J singular, but J + iωM isn't for ω > 0: at low frequency a
-blocking device looks like a capacitor, as it should.
+Each frequency costs one complex block-Thomas factorisation (rows scaled by their largest
+entry), plus one back-substitution per floating terminal for the bordering. Conserved (blocked)
+species make J singular, but J + iωM isn't for ω > 0: at low frequency a blocking device looks
+like a capacitor, as it should.
 
 ## Steady state
 

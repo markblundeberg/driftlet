@@ -118,7 +118,7 @@ alignment plays the role of a potential of zero charge or work function.
 
 A contact is an interface with an **outside phase** whose levels are known, like one more region
 with a fully known node. The outside phase's charged levels form a rigid ladder,
-`V_i = V + offset_i`, which the circuit slides by the **terminal voltage** V (the voltage of a
+`V_i = V + offset_i`, which the external circuit slides by the **terminal voltage** V (the voltage of a
 named terminal species). The laws joining it to the device (equilibrium, blocked, conductance;
 and for φ, bulk, neutral, capacitive, dipole) are the same as at internal faces. Reactions sit
 at faces between regions: an electrode is a conductor region with reactions at its face.
@@ -152,13 +152,17 @@ V°_e⁻(SHE) = φ + (μ°_H⁺ − ½μ°_H₂)/F. The usual tables set μ°_H�
 such tables, V − φ in a solution is a potential against SHE. A metal's V − φ_edge at zero
 charge (a `zeroCharge`, i.e. a pzc) reads directly on the SHE scale.
 
-## Circuits and signs
+## Terminals and signs
 
-- The left terminal is the reference.
-- **Current is positive toward +x.** A forward-biased pn junction with its p side on the right
-  carries negative current.
-- The terminal voltage is `V_right − V_left`.
-- Galvanostatic and load modes float the right terminal.
+- A terminal's voltage V is the shift of its outside phase's ladder, measured as the voltage of
+  its terminal species. Every voltage is absolute (no terminal is special), and at least one
+  terminal must be held at one.
+- **A terminal's current is into the device** (conduction plus displacement), so in steady
+  state they sum to zero. V·I is the electrical work done through it; an outside phase that
+  exchanges several species also trades chemical free energy through its offsets.
+- **`current` is positive toward +x** through the device (into it at the left, out at the
+  right). A forward-biased pn junction with its p side on the right carries negative current.
+- `terminalVoltage` is `V_right − V_left`.
 
 ## Units
 
