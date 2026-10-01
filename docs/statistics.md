@@ -135,7 +135,18 @@ and is reported as `NaN`. Its faces must be `neutral` (the default next to such 
 its contacts `bulk` or `neutral`. The host's `fixedCharge` is balanced by background carriers,
 `background = −fixedCharge/(z_carrier F)`, which must be non-negative. This is a jellium
 description of the host's own electrons, which keep it conducting when it's empty. With no
-fixed charge, the carriers are only those that came in with the ions.
+fixed charge, the carriers are only those that came in with the ions. The carrier's `cRef`
+plays no part (only the combination's μ° and the ion's `cRef` enter), but it must still be
+given.
+
+An insertion host belongs with [metal regions](device.md#materials) more than with the other
+statistics here. Both are conductors with no φ of their own:
+- **A metal** is the one-carrier case: its Fermi level is its only unknown.
+- **An insertion host** is the two-carrier case: only the neutral combination's potential sets
+  the composition, and the split between ion and carrier is free.
+
+A general mixed conductor with more mobile species needs fully populated mutual capacitance and
+conductance matrices, a different model again (see the [roadmap](../ROADMAP.md)).
 
 ### Custom
 
@@ -159,6 +170,11 @@ ex = ζ − ln(c/c_ref) (zero for ideal statistics), the excess acts like an ext
 Scharfetter–Gummel flux keeps its form with Δ = zΔφ̂ + Δex (see [numerics](numerics.md#fluxes)),
 so it's still exactly zero at equilibrium. It's second-order accurate in the cell size (and
 exact for a single diffusing species on a lattice).
+
+Reaction rates keep their concentration-based prefactors (mass action in c, and c/c_ref in the
+Butler–Volmer forms), while the driving force is always the affinity from μ̄. So equilibrium
+is exact for any statistics, and only the kinetics away from it depend on that choice of
+prefactor.
 
 Cross-species transport coefficients (an Onsager matrix) aren't included: each species moves
 down its own μ̄. They should arrive together with cross chemical capacitances, as two halves of

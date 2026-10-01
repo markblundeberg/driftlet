@@ -45,6 +45,8 @@ for live demos.
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
+  This is also the general mixed conductor with n > 2 mobile species, beyond the metal (n = 1)
+  and insertion-host (n = 2) cases.
 - **More performance.** A variable block size where species are absent (identity rows cost a
   full block today; a metal node needs only its Fermi level and current), and benchmarks
   tracked across versions in CI.

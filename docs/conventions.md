@@ -142,9 +142,11 @@ reactions; and for φ, bulk, neutral, capacitive, dipole) are the same as at int
   **`neutral`** says no charge sits at the face (D = 0), as for internal faces.
 - **Electrode reactions** take their electrons from the metal at μ̄_e = −F·V.
 
-With ion μ° from the usual SHE-based tables, the solution's bookkeeping φ is on the SHE scale:
-a standard hydrogen electrode in that solution would sit at V = φ. So electrode voltages and
-`zeroCharge` values can be quoted against SHE directly.
+The electronic level of a standard hydrogen electrode in a solution is
+V°_e⁻(SHE) = φ + (μ°_H⁺ − ½μ°_H₂)/F. The usual tables set μ°_H⁺ = 0 (so that E°(SHE) = 0) and
+μ°_H₂ = 0 for the element in its standard state, and then V°_e⁻(SHE) = φ. So with ion μ° from
+such tables, V − φ in a solution is a potential against SHE. A metal's V − φ_edge at zero
+charge (a `zeroCharge`, i.e. a pzc) reads directly on the SHE scale.
 
 ## Circuits and signs
 
