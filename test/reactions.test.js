@@ -75,8 +75,8 @@ const waterBox = (c0) => ({
   regions: [{ material: 'water', length: 100e-9, c0 }],
   bulkReactions: [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: 1.4e8 } }],
   contacts: {
-    left: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
-    right: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
+    left: { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
+    right: { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
   },
   grid: { hmin: 0.05e-9, hmax: 5e-9, ratio: 1.1 },
 });

@@ -85,7 +85,7 @@ test('galvanostatic kinetic electrode', () => {
   assert.ok(sol.converged);
   assert.ok(Math.abs(sol.current / 2 - 1) < 1e-9);
   const V = sol.contacts.right.V;
-  dev.set({ circuit: { mode: 'voltage' }, contacts: { right: { V } } });
+  dev.set({ circuit: { mode: 'voltage', I: undefined }, contacts: { right: { V } } });
   assert.ok(Math.abs(dev.solve().current / 2 - 1) < 1e-8, 'voltage mode at that V returns the same current');
 });
 

@@ -86,7 +86,7 @@ export function makeSolution(solver, result = {}) {
     // Current toward +x through this contact; in steady state both contacts agree.
     const V = floating && side === 'right' ? solver.terminalV : ct.V;
     sol.contacts[side] = { V, flux, D, current: conduction + displacement };
-    if (ct.phi.type === 'capacitive' || ct.phi.type === 'dipole') {
+    if (ct.phi.type === 'capacitive' || ct.phi.type === 'pinned') {
       // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
       sol.gates[side] = { V: ct.V, D, charge: side === 'left' ? D : -D };
     }
@@ -156,7 +156,7 @@ export function makeSolution(solver, result = {}) {
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
   });
-  const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'dipole';
+  const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
   if (resolves(contacts.left)) check(0, grid.segLength[0], 'contacts.left');
   if (resolves(contacts.right)) check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
 

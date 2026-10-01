@@ -162,7 +162,7 @@ test('a floating island with no gate has no electrostatic anchor', () => {
   def.contacts = {};
   throwsDevice(def, /no electrostatic anchor/);
   // A gate at either end anchors it.
-  def.contacts = { right: { phi: { type: 'capacitive', C: 1e-3, zeroCharge: 0 } } };
+  def.contacts = { right: { phi: { type: 'capacitive', C: 1e-3 }, zeroCharge: 0 } };
   const m = new Device(def).model;
   assert.equal(m.contacts.left.phi.type, 'neutral');
   assert.ok(m.contacts.left.species.every((l) => l.type === 'blocked'));
@@ -171,8 +171,9 @@ test('a floating island with no gate has no electrostatic anchor', () => {
 test('capacitive links need a capacitance and a zero-charge alignment', () => {
   const def = hetero();
   def.contacts.left.phi = { type: 'capacitive', C: 1e-3 };
-  throwsDevice(def, /contacts\.left\.phi\.zeroCharge .* zero-charge alignment/);
-  def.contacts.left.phi = { type: 'capacitive', zeroCharge: 0 };
+  throwsDevice(def, /contacts\.left\.zeroCharge .* at zero charge/);
+  def.contacts.left.phi = { type: 'capacitive' };
+  def.contacts.left.zeroCharge = 0;
   throwsDevice(def, /contacts\.left\.phi\.C must be a positive number/);
 });
 
@@ -202,3 +203,21 @@ test('definitions are plain data and survive structured cloning', () => {
   assert.doesNotThrow(() => new Device(def));
 });
 
+
+test('a misspelt or misplaced field is an error, never ignored', () => {
+  const cases = [
+    [(d) => (d.regions[0].fixedcharge = 1), /regions\[0\]\.fixedcharge: not a field here/],
+    [(d) => (d.materials.A.species['e-'].Mu0 = 0), /materials\.A\.species\.e-\.Mu0: not a field here/],
+    [(d) => (d.contact = {}), /device\.contact: not a field here/],
+    [(d) => (d.contacts.left.phi = { type: 'capacitive', C: 1, zeroCharge: 0 }), /contacts\.left\.phi\.zeroCharge: not a field here/],
+    [(d) => (d.interfaces[0].zeroCharge = 0.1), /interfaces\[0\] .*\.zeroCharge: not a field here/],
+    [(d) => (d.grid.hMin = 1e-9), /grid\.hMin: not a field here/],
+    [(d) => (d.materials.A.statistics = [{ type: 'lattice', species: ['e-'], cMax: 1, cmax: 2 }]), /statistics\[0\]\.cmax: not a field of a lattice model/],
+    [(d) => (d.contacts.left.species['e-'] = { type: 'equilibrium', ofset: 0 }), /species\.e-\.ofset: not a field here/],
+  ];
+  for (const [edit, pattern] of cases) {
+    const def = hetero();
+    edit(def);
+    throwsDevice(def, pattern);
+  }
+});

@@ -78,7 +78,7 @@ test('MOS: a port grounding the channel gives the low-frequency C–V, inversion
       regions: [{ name: 'Si', material: 'Si', length: Lsi, fixedCharge: -NA * FARADAY }],
       contacts: {
         left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' },
-        right: { V: -3, phi: { type: 'capacitive', C: Cg, zeroCharge: -0.9 } },
+        right: { V: -3, phi: { type: 'capacitive', C: Cg }, zeroCharge: -0.9 },
       },
       ports: port ? [{ region: 'Si', from: Lsi - 5e-9, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }] : undefined,
       grid: { hmin: 0.1e-9, hmax: 10e-9, ratio: 1.1 },
@@ -107,8 +107,10 @@ test('MOS: a port grounding the channel gives the low-frequency C–V, inversion
 
 test('ports are checked', () => {
   const def = line(1e6, 10).def;
-  def.ports[0].species['Li+'] = { type: 'conductance', G: 1, offset: 0, mu: 0 };
+  def.ports[0].species['Li+'] = { type: 'equilibrium', mu: 0 };
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /not by mu/.test(e.message));
+  def.ports[0].species['Li+'] = { type: 'conductance', G: 1, offset: 0, mu: 0 };
+  assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /Li\+\.mu: not a field here/.test(e.message));
   def.ports[0].species['Li+'] = { type: 'exchange', k: 1 };
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /conductance/.test(e.message));
   def.ports[0].species['Li+'] = { type: 'conductance', G: 1 };

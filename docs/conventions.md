@@ -98,7 +98,7 @@ material plus a length, fixed charge and initial composition. Every **interface*
 different materials takes exactly one alignment (see principle 3), unless its electrostatic law
 is `neutral`, in which case the alignment has no effect and is not allowed. The three laws:
 
-- `dipole`: φ jumps by exactly the alignment, and the double layers on either side are
+- `pinned`: φ jumps by exactly the alignment, and the double layers on either side are
   resolved by the grid.
 - `neutral`: the macroscopic idealisation. No charge sits at the face, and φ jumps by whatever
   local neutrality on each side requires (a Donnan or Galvani step).
@@ -111,7 +111,7 @@ is its carrier's (a metal's Fermi level), it has no φ, and a face beside it tie
 [device reference](device.md#faces-next-to-a-conductor)).
 
 A face between a strictly neutral (ε = 0) material and one with ε > 0, such as an electrode and
-an electrolyte, is naturally `dipole`. The neutral side holds the surface charge, and the
+an electrolyte, is naturally `pinned`. The neutral side holds the surface charge, and the
 alignment plays the role of a potential of zero charge or work function.
 
 ## Contacts and terminals
@@ -139,7 +139,7 @@ at faces between regions: an electrode is a conductor region with reactions at i
 - **Gates and Stern layers** are capacitive φ laws to a conductor at the terminal voltage.
   Their `zeroCharge` is the value of V − φ_edge at which the interface is uncharged: the
   flat-band voltage, or the potential of zero charge. Like every alignment, it's a property
-  of that interface. The pinned `dipole` law is the C → ∞ limit (e.g. a Schottky barrier),
+  of that interface. The `pinned` law is the C → ∞ limit (e.g. a Schottky barrier),
   which is what a "fixed φ" boundary honestly means.
 - **`bulk`** says the end node is plain bulk (locally neutral, no double layer), while
   **`neutral`** says no charge sits at the face (D = 0), as for internal faces.

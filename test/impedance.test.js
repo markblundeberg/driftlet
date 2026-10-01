@@ -29,7 +29,7 @@ test('blocking electrodes: the Macdonald impedance of a symmetric electrolyte, 1
   // bulk resistance in series with the diffuse layers, turning into the geometric capacitance.
   const D = 1.5e-9, c0 = 1, eps = 78.5 * EPS0, L = 1e-6, d = L / 2;
   const lam = Math.sqrt((eps * RT) / (2 * FARADAY ** 2 * c0));
-  const wall = { V: 0, phi: { type: 'dipole', zeroCharge: 0 } };
+  const wall = { V: 0, phi: 'pinned', zeroCharge: 0 };
   const dev = new Device({
     species: [
       { name: 'Na+', z: 1, cRef: 1000 },

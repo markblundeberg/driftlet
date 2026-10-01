@@ -46,7 +46,7 @@ test('metal | semiconductor face: a Schottky barrier from work function and elec
   const asContact = silicon();
   asContact.regions = [{ material: 'Si', length: 2e-6, fixedCharge: ND * FARADAY }];
   const zc = vacuumZeroCharge(asContact, W, { material: 'Si', anchor: 'e-', offset: chi }); // Schottky–Mott
-  asContact.contacts.left = { ...collector(0), phi: { type: 'capacitive', C: 10, zeroCharge: zc } };
+  asContact.contacts.left = { ...collector(0), phi: { type: 'capacitive', C: 10 }, zeroCharge: zc };
   const asRegion = silicon();
   asRegion.regions = [{ material: 'Au', length: 50e-9 }, { material: 'Si', length: 2e-6, fixedCharge: ND * FARADAY }];
   asRegion.interfaces = [{ phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }];
@@ -73,7 +73,7 @@ test('metal gate over an oxide region matches a capacitive gate contact (MOS)', 
   const NA = units.perCm3(1e17);
   const asContact = silicon();
   asContact.regions = [{ material: 'Si', length: 0.5e-6, fixedCharge: -NA * FARADAY }];
-  asContact.contacts.left = { V: 0, phi: { type: 'capacitive', C: 1 / (1 / Cox + 1 / Cface), zeroCharge: zc } };
+  asContact.contacts.left = { V: 0, phi: { type: 'capacitive', C: 1 / (1 / Cox + 1 / Cface) }, zeroCharge: zc };
   const asRegion = silicon();
   asRegion.materials.SiO2 = { epsr: 3.9, species: {} };
   asRegion.regions = [
@@ -179,7 +179,7 @@ test('metal definitions are checked', () => {
   };
   let def = base();
   throwsDevice(def, /needs an explicit φ law/);
-  def.interfaces = [{ phi: 'dipole', zeroCharge: 0.5 }];
+  def.interfaces = [{ phi: 'pinned', zeroCharge: 0.5 }];
   throwsDevice(def, /finite capacitance/);
   def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, dipole: 0.1 }];
   throwsDevice(def, /a conductor has no φ of its own/);

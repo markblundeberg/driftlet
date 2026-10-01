@@ -102,7 +102,7 @@ const devices = {
     regions: [{ material: 'water', length: 1e-6, c0: salt }],
     contacts: {
       left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' },
-      right: { terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 } },
+      right: { terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 },
     },
     circuit: { mode: 'current', I: 5 },
     grid: coarse,

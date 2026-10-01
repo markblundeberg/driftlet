@@ -93,7 +93,7 @@ test('load mode: terminal current and voltage satisfy I = (V − V_source)/R', (
 
 test('current and load modes need a current path at the right contact', () => {
   const def = cell({ mode: 'current', I: 1 });
-  def.contacts.right = { V: 0, phi: { type: 'capacitive', C: 0.1, zeroCharge: 0 } };
+  def.contacts.right = { V: 0, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 };
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /needs the right contact to pass current/.test(e.message));
   assert.throws(() => new Device(cell({ mode: 'load' })), (e) => e instanceof DeviceError && /circuit\.R/.test(e.message));
 });

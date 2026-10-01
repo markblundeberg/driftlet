@@ -10,7 +10,7 @@ const beStep = (n, dt, tau) => 1 - (1 + dt / tau) ** -n;
 
 test('floating island charging after a gate step: RC time constant, Gauss, conservation', () => {
   const Dp = 1.33e-9, Dm = 2.03e-9, c = 10, L = 3e-6, Cg = 0.2, epsr = 78.5;
-  const gate = (V) => ({ V, phi: { type: 'capacitive', C: Cg, zeroCharge: 0 } });
+  const gate = (V) => ({ V, phi: { type: 'capacitive', C: Cg }, zeroCharge: 0 });
   const def = {
     species: [
       { name: 'Na+', z: 1, cRef: 1000 },
@@ -65,8 +65,8 @@ test('water: homogeneous relaxation of excess H⁺/OH⁻ at rate k (c_H + c_OH)'
     regions: [{ material: 'water', length: 50e-9, c0: { 'H+': ceq + excess, 'OH-': ceq + excess } }],
     bulkReactions: [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: kf } }],
     contacts: {
-      left: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
-      right: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
+      left: { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
+      right: { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
     },
     grid: { minCells: 10 },
   };
@@ -119,7 +119,7 @@ test('open system: amounts track the time-integrated contact fluxes after a bias
 
 // A gated island charging after a small gate step (as above, smaller for speed).
 function chargingIsland() {
-  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } });
+  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 });
   const dev = new Device({
     species: [
       { name: 'Na+', z: 1, cRef: 1000 },

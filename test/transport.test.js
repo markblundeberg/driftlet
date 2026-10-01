@@ -70,7 +70,7 @@ test('eddy mixing carries no current: junction EMF unchanged, salt flux raised b
 
 test('eddy mixing leaves equilibrium double layers alone', () => {
   // A gated island with strong mixing: still flat μ̄ and the same gate charge as without it.
-  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } });
+  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 });
   const island = (mixing) =>
     new Device({
       species: [

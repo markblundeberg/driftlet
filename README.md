@@ -116,7 +116,7 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
   Stern layers;
 - interfaces with explicit alignment, blocking, interface resistance, and Butler–Volmer
   reactions with participants on either side (electrode reactions, ion and electron transfer,
-  mixed potentials), and a choice of electrostatic law (pinned dipole, neutral, Helmholtz);
+  mixed potentials), and a choice of electrostatic law (pinned, neutral, Helmholtz);
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
 - imposed flow (advection) and current-free eddy mixing;

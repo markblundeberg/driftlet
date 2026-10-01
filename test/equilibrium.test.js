@@ -11,7 +11,7 @@ const salt = () => [
   { name: 'Cl-', z: -1, cRef: 1000 },
 ];
 const water = { epsr: 78.5, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } } };
-const gate = (V, C = 0.2) => ({ V, phi: { type: 'capacitive', C, zeroCharge: 0 } });
+const gate = (V, C = 0.2) => ({ V, phi: { type: 'capacitive', C }, zeroCharge: 0 });
 
 // A floating island of 1:1 salt between two gates. Every species is a conserved spectator.
 function island({ c = 10, L = 300e-9, VL = 0, VR = 0, C = 0.2, hmin = 0.02e-9 } = {}) {

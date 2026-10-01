@@ -159,8 +159,8 @@ test('contact definitions: offsets and φ conditions are never silently defaulte
   throwsDevice(def, /either bath or species links, not both/);
 
   def = base();
-  def.contacts.left = { phi: { type: 'capacitive', C: 0.1, zeroCharge: 0, V: 1 } };
-  throwsDevice(def, /gate voltage is the contact's terminal voltage/);
+  def.contacts.left = { phi: { type: 'capacitive', C: 0.1, V: 1 }, zeroCharge: 0 };
+  throwsDevice(def, /contacts\.left\.phi\.V: not a field here/);
 
   def = base();
   def.contacts.left = { species: { 'Na+': { type: 'equilibrium', mu: 0 } }, terminal: 'Na+', phi: 'bulk' };
@@ -173,7 +173,7 @@ test('pinned (dipole) contact: a Schottky barrier directly on n-Si', () => {
   const phiB = 0.7, NDs = units.perCm3(1e16);
   const def = pn();
   def.regions = [{ name: 'n', material: 'Si', length: 2e-6, fixedCharge: NDs * FARADAY }];
-  def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'dipole', zeroCharge: phiB } };
+  def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'pinned', zeroCharge: phiB };
   const dev = new Device(def);
   const eps = 11.7 * EPS0;
   const Vbi = phiB - VT * Math.log(Nc / NDs);

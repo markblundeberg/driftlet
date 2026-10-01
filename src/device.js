@@ -20,13 +20,29 @@ export class DeviceError extends Error {
 // Contacts use the same laws as internal faces: the outside is a phase with known levels.
 const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange']);
 const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance']);
-const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'dipole']);
+const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'pinned']);
+const GRID_FIELDS = ['hmin', 'hmax', 'ratio', 'minCells'];
+// The fields of each kind of species link (to an outside phase, or across a face).
+const LINK_FIELDS = {
+  blocked: ['type'],
+  equilibrium: ['type', 'offset', 'mu'],
+  conductance: ['type', 'G', 'offset'],
+  exchange: ['type', 'k', 'mu'],
+};
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 function need(cond, message) {
   if (!cond) throw new DeviceError(message);
+}
+
+// Every key of a spec object must be one it takes: a misspelt or misplaced field would otherwise
+// be ignored silently.
+function fields(obj, path, allowed) {
+  for (const [k, v] of Object.entries(obj)) {
+    need(v === undefined || allowed.includes(k), `${path}.${k}: not a field here (${allowed.join(', ')})`);
+  }
 }
 
 function finite(v, path) {
@@ -51,6 +67,7 @@ function nonNegative(v, path) {
  */
 export function normalizeDevice(def) {
   need(isObject(def), 'device definition must be an object');
+  fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'circuit', 'grid']);
 
   const T = def.T === undefined ? 298.15 : positive(def.T, 'T');
   const RT = GAS_CONSTANT * T;
@@ -62,6 +79,7 @@ export function normalizeDevice(def) {
   def.species.forEach((sp, i) => {
     const path = `species[${i}]`;
     need(isObject(sp), `${path} must be an object`);
+    fields(sp, path, ['name', 'z', 'cRef']);
     need(typeof sp.name === 'string' && sp.name.length > 0, `${path}.name must be a non-empty string`);
     need(!speciesIndex.has(sp.name), `${path}.name: duplicate species '${sp.name}'`);
     need(Number.isInteger(sp.z), `${path}.z (charge number) must be an integer, got ${JSON.stringify(sp.z)}`);
@@ -85,6 +103,7 @@ export function normalizeDevice(def) {
       continue;
     }
     // ε = 0 makes the material strictly neutral: Poisson becomes local neutrality there.
+    fields(mat, path, ['epsr', 'species', 'statistics']);
     const epsr = nonNegative(mat.epsr, `${path}.epsr`);
     need(isObject(mat.species), `${path}.species must be an object mapping species names to parameters`);
     const present = new Uint8Array(nSpecies);
@@ -95,6 +114,7 @@ export function normalizeDevice(def) {
       const spath = `${path}.species.${sname}`;
       need(speciesIndex.has(sname), `${spath}: unknown species '${sname}'`);
       need(isObject(p), `${spath} must be an object`);
+      fields(p, spath, ['D', 'mu0', 'cRef']);
       const i = speciesIndex.get(sname);
       present[i] = 1;
       D[i] = nonNegative(p.D, `${spath}.D`);
@@ -122,13 +142,17 @@ export function normalizeDevice(def) {
   const regions = def.regions.map((reg, r) => {
     const path = `regions[${r}]`;
     need(isObject(reg), `${path} must be an object`);
+    fields(reg, path, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid']);
     need(materialIndex.has(reg.material), `${path}.material: unknown material ${JSON.stringify(reg.material)}`);
     const length = positive(reg.length, `${path}.length`);
     const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
     // Imposed flow (m/s, toward +x) carrying every mobile species, and eddy mixing (m²/s).
     const velocity = reg.velocity === undefined ? 0 : finite(reg.velocity, `${path}.velocity`);
     const mixing = reg.mixing === undefined ? 0 : nonNegative(reg.mixing, `${path}.mixing`);
-    if (reg.grid !== undefined) need(isObject(reg.grid), `${path}.grid must be an object`);
+    if (reg.grid !== undefined) {
+      need(isObject(reg.grid), `${path}.grid must be an object`);
+      fields(reg.grid, `${path}.grid`, GRID_FIELDS);
+    }
     const mat = materials[materialIndex.get(reg.material)];
     if (mat.conductor) {
       need(fixedCharge === 0, `${path}.fixedCharge: a conductor region is neutral in bulk`);
@@ -218,7 +242,10 @@ export function normalizeDevice(def) {
   const circuit = normalizeCircuit(def.circuit, contacts.right, species);
 
   // --- grid
-  if (def.grid !== undefined) need(isObject(def.grid), 'grid must be an object');
+  if (def.grid !== undefined) {
+    need(isObject(def.grid), 'grid must be an object');
+    fields(def.grid, 'grid', GRID_FIELDS);
+  }
   let grid;
   try {
     grid = buildGrid(regions, def.grid ?? {});
@@ -250,6 +277,7 @@ export function normalizeDevice(def) {
 // reaction runs only in those materials).
 function normalizeReaction(rdef, path, species, speciesIndex, materials, materialIndex, regions, RT) {
   need(isObject(rdef), `${path} must be an object`);
+  fields(rdef, path, ['nu', 'fixed', 'kf']);
   const st = stoichiometry(rdef.nu, `${path}.nu`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
   need(st.list.length > 0, `${path}: no mobile participants`);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
@@ -307,6 +335,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
     need(isObject(rdef), `${rpath} must be { left, right, fixed, k0, alpha }`);
+    fields(rdef, rpath, ['left', 'right', 'fixed', 'k0', 'alpha']);
     const part = [];
     let fixedA = 0, charge = 0;
     for (const [key, mat] of [['left', matL], ['right', matR]]) {
@@ -349,6 +378,7 @@ function normalizeCircuit(cdef, right, species) {
   need(isObject(cdef), 'circuit must be an object with a mode');
   const modes = ['voltage', 'current', 'load'];
   need(modes.includes(cdef.mode), `circuit.mode must be one of ${modes.join(', ')}`);
+  fields(cdef, 'circuit', { voltage: ['mode'], current: ['mode', 'I'], load: ['mode', 'R', 'V'] }[cdef.mode]);
   if (cdef.mode === 'voltage') return { mode: 'voltage' };
   // The floating terminal voltage is read off a fixed charged terminal species if there is one;
   // otherwise (conductance links only) it becomes an unknown of its own.
@@ -378,6 +408,7 @@ function normalizeCircuit(cdef, right, species) {
 // k (μ_out − μ)/RT per volume), or 'blocked' (the default).
 function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   need(isObject(pdef), `${path} must be an object`);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'terminal', 'species']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -402,6 +433,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     const i = speciesIndex.get(sname);
     const link = typeof raw === 'string' ? { type: raw } : raw;
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
+    fields(link, lpath, LINK_FIELDS[link.type]);
     if (link.type === 'blocked') continue;
     need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
     if (mat.conductor) need(i === mat.conductor.i, `${lpath}: a conductor exchanges only its carrier, ${species[mat.conductor.i].name}`);
@@ -442,7 +474,7 @@ function checkAnchors(regions, materials, interfaces, contacts, species, ports =
   });
   const anchors = (ct) =>
     ct.phi.type === 'capacitive' ||
-    ct.phi.type === 'dipole' ||
+    ct.phi.type === 'pinned' ||
     ct.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
   const anchored = new Set();
   if (anchors(contacts.left)) anchored.add(find(0));
@@ -471,17 +503,20 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
 
-  // Electrostatic law across the face. 'dipole': φ jumps by the alignment (exact when the grid
+  // Electrostatic law across the face. 'pinned': φ jumps by the alignment (exact when the grid
   // resolves the double layers). 'neutral': no charge at the face (D = 0) and a free jump, the
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
   if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
+  fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions']);
   const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
-  const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'dipole');
+  const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'pinned');
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
-  need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
+  need(isObject(phi), `${where}.phi must be a law name or { type, C }`);
+  fields(phi, `${where}.phi`, phi.type === 'capacitive' ? ['type', 'C'] : ['type']);
+  need(['pinned', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'pinned', 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
-  const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
+  const given = ['dipole', 'step'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
   if (phi.type === 'neutral') {
     need(given.length === 0, `${where}: a neutral interface has a free φ jump, so an alignment (${given[0]}) would have no effect`);
@@ -506,6 +541,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   } else if (idef.step !== undefined) {
     const st = idef.step;
     need(isObject(st), `${where}.step must be { species, value }`);
+    fields(st, `${where}.step`, ['species', 'value']);
     need(speciesIndex.has(st.species), `${where}.step.species: unknown species ${JSON.stringify(st.species)}`);
     const i = speciesIndex.get(st.species);
     const z = species[i].z;
@@ -514,8 +550,6 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     const value = finite(st.value, `${where}.step.value`);
     // value = (μ°_R + zFφ_R) − (μ°_L + zFφ_L), so φ_R − φ_L = (value − Δμ°) / (zF)
     dipole = (value - (matR.mu0[i] - matL.mu0[i])) / (z * FARADAY);
-  } else if (idef.reaction !== undefined) {
-    throw new DeviceError(`${where}.reaction: reaction-based alignment is not supported yet`);
   }
   const sheetCharge = idef.sheetCharge === undefined ? 0 : finite(idef.sheetCharge, `${where}.sheetCharge`);
 
@@ -530,6 +564,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
+      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
         need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
@@ -578,11 +613,12 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
 // A face with a metal on one or both sides. The metal has no φ: a capacitive law ties the other
 // side's φ to the metal's Fermi level V_F, as at a contact, with zeroCharge = V_F − φ_edge at zero
 // charge: D toward the other side = C (V_F − zeroCharge − φ_edge), the metal's surface charge. (No
-// pinned 'dipole' law here: an internal metal must hold that charge in a finite capacitance.)
+// 'pinned' law here: an internal conductor must hold that charge in a finite capacitance.)
 // Electrode reactions take the metal's carriers at its Fermi level.
 function normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT) {
   if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
+  fields(idef, where, ['phi', 'zeroCharge', 'dipole', 'step', 'sheetCharge', 'species', 'reactions']); // (the alignment fields only to say why not)
   const side = matL.conductor ? (matR.conductor ? 'both' : 'left') : 'right';
   const other = side === 'left' ? matR : matL;
   const metal = side === 'right' ? matR.conductor : matL.conductor;
@@ -597,10 +633,12 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
       "('neutral', or { type: 'capacitive', C } with zeroCharge)",
   );
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
+  need(isObject(phi), `${where}.phi must be a law name or { type, C }`);
+  fields(phi, `${where}.phi`, phi.type === 'capacitive' ? ['type', 'C'] : ['type']);
   need(
-    phi.type !== 'dipole',
+    phi.type !== 'pinned',
     `${where}.phi: a conductor region holds its surface charge in a finite capacitance, so use { type: 'capacitive', C } ` +
-      '(a large C approaches a pinned barrier), or model it as a contact with a dipole law',
+      '(a large C approaches a pinned barrier), or model it as a contact with a pinned law',
   );
   need(['neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
@@ -622,6 +660,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
+      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
         need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
@@ -677,6 +716,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (cdef === undefined || cdef === null) return { V: 0, species: links, phi, terminal };
   need(isObject(cdef), `${path} must be an object`);
   const V = cdef.V === undefined ? 0 : finite(cdef.V, `${path}.V`);
+  fields(cdef, path, ['V', 'terminal', 'species', 'bath', 'phi', 'zeroCharge']);
 
   if (cdef.terminal !== undefined) {
     need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}`);
@@ -692,6 +732,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link), `${lpath} must be a link type string or an object with a type`);
       need(SPECIES_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...SPECIES_LINK_TYPES].join(', ')}`);
+      fields(link, lpath, LINK_FIELDS[link.type]);
       if (link.type !== 'blocked') {
         need(mat.present[i], `${lpath}: '${sname}' is absent from the end material '${mat.name}', so it can only be blocked`);
       }
@@ -733,6 +774,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(cdef.species === undefined, `${path}: give either bath or species links, not both`);
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
+    fields(bath, `${path}.bath`, ['c', 'reference', 'offset']);
     need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}`);
     const r = speciesIndex.get(bath.reference);
     need(species[r].z !== 0, `${path}.bath.reference: the reference species must be charged`);
@@ -769,18 +811,19 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const raw = typeof cdef.phi === 'string' ? { type: cdef.phi } : cdef.phi;
     need(isObject(raw), `${path}.phi must be a link type string or an object with a type`);
     need(PHI_LINK_TYPES.has(raw.type), `${path}.phi.type must be one of ${[...PHI_LINK_TYPES].join(', ')}`);
-    if (raw.type === 'capacitive' || raw.type === 'dipole') {
+    fields(raw, `${path}.phi`, raw.type === 'capacitive' ? ['type', 'C'] : ['type']);
+    if (raw.type === 'capacitive' || raw.type === 'pinned') {
       need(!mat.phiFree, `${path}.phi: φ is undefined in '${mat.name}' (only neutral combinations are charged there), so use 'bulk' or 'neutral'`);
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
-      need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
-      phi = { ...raw };
-      finite(phi.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
+      // The alignment sits beside the law, as at a conductor's face: V − φ_edge at zero charge.
+      phi = { ...raw, zeroCharge: finite(cdef.zeroCharge, `${path}.zeroCharge (V − φ_edge at zero charge: flat-band voltage, pzc or barrier)`) };
     } else {
+      need(cdef.zeroCharge === undefined, `${path}.zeroCharge: only a capacitive or pinned φ law takes an alignment`);
       phi = { ...raw };
     }
   } else if (cdef.bath === undefined && links.some((l) => l.type !== 'blocked')) {
     throw new DeviceError(
-      `${path}.phi: a contact with connected species needs an explicit φ law ('bulk', 'neutral', capacitive or dipole)`,
+      `${path}.phi: a contact with connected species needs an explicit φ law ('bulk', 'neutral', capacitive or pinned)`,
     );
   }
   if (phi.type === 'bulk') {

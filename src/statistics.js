@@ -478,6 +478,15 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
     const fail = (msg) => need(false, `${sp}: ${msg}`);
     need(sdef !== null && typeof sdef === 'object' && !Array.isArray(sdef), `${sp} must be an object`);
     need(MODEL_TYPES.includes(sdef.type), `${sp}.type must be one of ${MODEL_TYPES.join(', ')}`);
+    const allowed = {
+      'fermi-dirac': ['order'],
+      lattice: ['cMax'],
+      'redlich-kister': ['cMax', 'A'],
+      'debye-huckel': ['epsr', 'a'],
+      insertion: ['cMax', 'A', 'ocv'],
+      custom: ['evaluate'],
+    }[sdef.type];
+    for (const k of Object.keys(sdef)) need(k === 'type' || k === 'species' || allowed.includes(k), `${sp}.${k}: not a field of a ${sdef.type} model (type, species, ${allowed.join(', ')})`);
     need(Array.isArray(sdef.species) && sdef.species.length > 0, `${sp}.species must be a non-empty array of species names`);
     const idx = sdef.species.map((name, a) => {
       need(speciesIndex.has(name), `${sp}.species[${a}]: unknown species ${JSON.stringify(name)}`);
@@ -543,6 +552,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
           need(sdef.A === undefined, `${sp}: give either A (Redlich–Kister) or ocv (a table), not both`);
           const t = sdef.ocv;
           need(t !== null && typeof t === 'object' && Array.isArray(t.x) && Array.isArray(t.E), `${sp}.ocv must be { x: [...], E: [...], muRef }`);
+          for (const k of Object.keys(t)) need(['x', 'E', 'muRef'].includes(k), `${sp}.ocv.${k}: not a field (x, E, muRef)`);
           need(t.x.length >= 2 && t.x.length === t.E.length, `${sp}.ocv: x and E need the same length, at least 2`);
           t.x.forEach((v, q) => {
             finite(v, `${sp}.ocv.x[${q}]`);

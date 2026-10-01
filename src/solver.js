@@ -101,7 +101,7 @@ export class Solver {
         return;
       }
       if (species.some((sp, i) => mat.present[i] && sp.z !== 0)) return;
-      const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'dipole';
+      const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
       const leftOpen = r === 0 ? pins(contacts.left) : model.interfaces[r - 1].phi.type !== 'neutral';
       const rightOpen =
         r === regions.length - 1 ? pins(contacts.right) : model.interfaces[r].phi.type !== 'neutral';
@@ -961,7 +961,7 @@ export class Solver {
       const sg = condSide === 'left' ? 1 : -1;
       const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
       const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
-      if (law === 'dipole') {
+      if (law === 'pinned') {
         res[R[bf * M]] = gap;
         this._j(bf, 0, bm, 1 + im, 1 / z[im]);
         this._j(bf, 0, bo, 0, -1);
@@ -977,7 +977,7 @@ export class Solver {
       // D = 0 (not an unknown); the jump is whatever each side's neutrality needs
     } else {
       const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
-      if (law === 'dipole') {
+      if (law === 'pinned') {
         res[R[bf * M]] = jump;
         this._j(bf, 0, bR, 0, 1);
         this._j(bf, 0, bL, 0, -1);
@@ -1389,7 +1389,7 @@ export class Solver {
         termJ[0] += (link.C * VT) / dt;
         termJ[M] += -link.C / dt;
       }
-    } else if (link.type === 'dipole') {
+    } else if (link.type === 'pinned') {
       // Pinned: φ_edge = V_t − zeroCharge (the C → ∞ limit). The residual is the metal's charge.
       this.contactD[side] = sgn * res[R[b * M]];
       this._replaceRow(b, 0);

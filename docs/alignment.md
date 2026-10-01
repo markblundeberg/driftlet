@@ -84,13 +84,13 @@ def.interfaces = [{
 from its anchor and offset (`vacuumLevel` gives one side's).
 
 Where a conductor meets a material, at a conductor region's face or at a contact's capacitive
-or dipole law, the conductor's side is its work function W from its Fermi level, and the
+or pinned law, the conductor's side is its work function W from its Fermi level, and the
 helper gives `zeroCharge` (V_F − φ_edge at zero charge):
 
 ```js nocheck
 const zc = vacuumZeroCharge(def, 4.75, { material: 'Si', anchor: 'e-', offset: 4.05 }); // Au | n-Si
 def.interfaces = [{ phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }];        // Au as a region
-def.contacts.left.phi = { type: 'capacitive', C: 10, zeroCharge: zc };            // or as a contact
+Object.assign(def.contacts.left, { phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }); // or as a contact
 // zeroCharge = W + (V_vac − φ)_inside = W − χ − μ°_e/F
 ```
 
@@ -103,7 +103,7 @@ the other band.
 
 **Metal | semiconductor (Schottky–Mott).** Work function against electron affinity gives the
 n-type barrier φ_B = W − χ. With the metal as a contact, a pinned law
-`{ type: 'dipole', zeroCharge: vacuumZeroCharge(def, W, { material, anchor: 'e-', offset: χ }) }`
+`phi: 'pinned', zeroCharge: vacuumZeroCharge(def, W, { material, anchor: 'e-', offset: χ })`
 puts the semiconductor's surface electron density at N_c e^{−φ_B/kT}. With the metal as a
 region, the face is capacitive with the same `zeroCharge`; a large C approaches the pinned
 barrier.

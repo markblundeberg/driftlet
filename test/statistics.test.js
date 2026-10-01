@@ -71,7 +71,7 @@ test('Fermi–Dirac: accumulation-layer charge from Gauss with 𝓕_{3/2} (degen
   // Electrons in equilibrium with a metal whose pinned φ sets the surface ζ_s = −zeroCharge/V_T.
   const ND = units.perCm3(1e18);
   for (const zeroCharge of [-0.1, -0.25]) {
-    const left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'dipole', zeroCharge } };
+    const left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'pinned', zeroCharge };
     const dev = new Device(silicon(ND, left));
     const sol = dev.solve();
     assert.ok(sol.converged);
@@ -107,7 +107,7 @@ function crowdedDef(statistics, c0, lam) {
     species: salt,
     materials: { water: brine(statistics) },
     regions: [{ material: 'water', length: 40 * lam }],
-    contacts: { left: { V: 0, phi: { type: 'dipole', zeroCharge: 0 } }, right: { V: 0, ...bath(c0) } },
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0 }, right: { V: 0, ...bath(c0) } },
     grid: { hmin: lam / 400, hmax: lam / 4, ratio: 1.05 },
   };
 }
@@ -158,7 +158,7 @@ test('custom statistics: a user function reproduces the built-in lattice gas', (
 });
 
 test('lattice gas: a floating island conserves its amounts exactly through a gate sweep', () => {
-  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.3, zeroCharge: 0 } });
+  const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.3 }, zeroCharge: 0 });
   const dev = new Device({
     species: salt,
     materials: { water: brine([{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: 400 }]) },
@@ -338,7 +338,7 @@ test('insertion statistics are checked', () => {
   let def = host(regular, liIon(0), collector(0));
   def.materials.host.epsr = 5;
   throwsDevice(def, /needs epsr: 0/);
-  def = host(regular, liIon(0), { ...collector(0), phi: { type: 'dipole', zeroCharge: 0 } });
+  def = host(regular, liIon(0), { ...collector(0), phi: 'pinned', zeroCharge: 0 });
   throwsDevice(def, /φ is undefined/);
   def = host({ ...regular, A: undefined, ocv: { x: [0.2, 0.5, 0.8], E: [3.5, 3.6, 3.4], muRef: 0 } }, liIon(0), collector(0));
   throwsDevice(def, /strictly decreasing/);

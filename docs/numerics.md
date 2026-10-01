@@ -139,7 +139,7 @@ flux node's own rows are the interface laws:
 
 | Law | Row |
 |---|---|
-| φ, `dipole` | `φ̂_R − φ̂_L = dipole/V_T` |
+| φ, `pinned` | `φ̂_R − φ̂_L = dipole/V_T` |
 | φ, `neutral` | `D_f = 0` |
 | φ, `capacitive` | `D_f + C·V_T·(φ̂_R − φ̂_L − dipole/V_T) = 0` |
 | species, equilibrium | `η_R − η_L = 0` |
@@ -159,7 +159,7 @@ solution reports per interface.
 the value read from the left node. That breaks tridiagonality, because the right node's other
 segment then reaches two nodes back.)
 
-A **sheet charge** at a face is booked in node R's Poisson row. With a pinned dipole that's
+A **sheet charge** at a face is booked in node R's Poisson row. With a `pinned` law that's
 immaterial: the jump is fixed either way, and only the reported D_f shifts by σ. With a
 capacitive law it would matter, since the charge then sits on one plate or the other.
 
@@ -174,7 +174,7 @@ extra unknowns. Then:
   `η = target` (the known outside level).
 - **φ `bulk`:** the Poisson row becomes local neutrality (total charge, mobile plus fixed, is
   zero). The recorded residual is the outside's surface charge.
-- **φ `dipole`:** the Poisson row becomes the Dirichlet row φ_edge = V − zeroCharge, again with
+- **φ `pinned`:** the Poisson row becomes the Dirichlet row φ_edge = V − zeroCharge, again with
   the residual recorded as the outside's charge.
 - **φ `capacitive`:** a term `C·((V − zeroCharge) − φ_edge)` joins the Poisson row.
 - **φ `neutral`:** nothing is added (D = 0 at the face).
@@ -266,7 +266,7 @@ region allows.
 A metal's bulk holds no charge. Its surface charge at a capacitive face is the face's
 displacement, booked as a sheet of excess carriers in the edge node's half-box. That gives the
 edge node a storage term in D_f (the neighbouring block), so transients, conservation and
-impedance all see the charging current. A pinned (`dipole`) law isn't offered at a metal face.
+impedance all see the charging current. A `pinned` law isn't offered at a metal face.
 With nothing on the metal side depending on D_f, the steady system's flux block would be
 singular to left-to-right elimination, and the charging current would need the charge read two
 blocks away.
@@ -471,12 +471,12 @@ as NaN if no charged species is present and nothing couples the region electrost
 bulk ε → 0 limit is smooth: the Poisson row simply degenerates into neutrality. The same Newton
 count holds from ε_r = 78.5 down to 1e-6, as in a linear prototype that motivated the design.
 
-Interfaces are where it gets subtle. With a pinned dipole and double layers the grid can't
+Interfaces are where it gets subtle. With a `pinned` law and double layers the grid can't
 resolve (because ε is tiny, or the cells are coarse), the charge the interface needs is crammed
 into the two half-boxes beside it. The bulk stays right, but the interface compositions and D_f
 become mesh-dependent. The true ε → 0 limit has no interface charge and a free Donnan-type jump,
 which is the `neutral` law. The defaults follow from this: `neutral` between two ε = 0
-materials, `dipole` otherwise. Solutions warn when a resolved-model double layer is under-resolved.
+materials, `pinned` otherwise. Solutions warn when a resolved-model double layer is under-resolved.
 
 A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when λ_D ≪ h, is on the
 [roadmap](../ROADMAP.md). It would handle macroscopic devices with real double-layer charge at

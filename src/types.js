@@ -64,7 +64,7 @@
  * @property {GridOptions} [grid]
  */
 
-/** @typedef {'dipole' | 'neutral' | { type: 'capacitive', C: number }} InterfacePhiLaw */
+/** @typedef {'pinned' | 'neutral' | { type: 'capacitive', C: number }} InterfacePhiLaw */
 /** @typedef {'equilibrium' | 'blocked' | { type: 'conductance', G: number }} InterfaceSpeciesLink */
 
 /**
@@ -78,13 +78,13 @@
  * @property {number} [alpha] transfer coefficient, 0…1 (default 0.5)
  */
 /**
- * One face between consecutive regions. For different materials under a 'dipole' or
+ * One face between consecutive regions. For different materials under a 'pinned' or
  * 'capacitive' law, exactly one alignment (step or dipole) is required.
  * @typedef {object} InterfaceDef
  * @property {{ species: string, value: number }} [step] standard-level step right − left, J/mol
  * @property {number} [dipole] φ jump right − left, V
  * @property {number} [zeroCharge] beside a conductor region: V_F − φ_edge at zero charge, V
- * @property {InterfacePhiLaw} [phi] electrostatic law (default 'dipole'; 'neutral' between ε = 0 materials)
+ * @property {InterfacePhiLaw} [phi] electrostatic law (default 'pinned'; 'neutral' between ε = 0 materials)
  * @property {number} [sheetCharge] C/m²
  * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium
  *   where present on both sides and not reacting at the face)
@@ -108,10 +108,9 @@
  */
 /**
  * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at
- * the face (D = 0); capacitive: Stern layer or gate; dipole: pinned φ_edge = V − zeroCharge.
- * @typedef {'bulk' | 'neutral'
- *   | { type: 'capacitive', C: number, zeroCharge: number }
- *   | { type: 'dipole', zeroCharge: number }} ContactPhiLink
+ * the face (D = 0); capacitive: Stern layer or gate; 'pinned': φ_edge = V − zeroCharge. The last
+ * two take the contact's zeroCharge.
+ * @typedef {'bulk' | 'neutral' | 'pinned' | { type: 'capacitive', C: number }} ContactPhiLink
  */
 
 /**
@@ -122,6 +121,7 @@
  * @property {{ c: Record<string, number>, reference: string, offset?: number }} [bath] a neutral
  *   composition held at the contact, anchored through a charged reference species
  * @property {ContactPhiLink} [phi] required when any species connects (default 'neutral')
+ * @property {number} [zeroCharge] for a capacitive or pinned law: V − φ_edge at zero charge, V
  */
 
 /**

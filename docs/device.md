@@ -2,7 +2,8 @@
 
 A device is defined by one plain object (serialisable, so it can be posted to a Web Worker),
 passed to `new Device(def)`. Construction validates everything and throws a `DeviceError`
-naming the offending path (`contacts.left.species.Na+.offset: …`). Physically meaningful
+naming the offending path (`contacts.left.species.Na+.offset: …`). A field that doesn't belong
+where it's written (a typo, or a value in the wrong object) is an error too, never ignored. Physically meaningful
 choices are never defaulted silently: reference concentrations, standard potentials and
 interface alignments must all be given.
 
@@ -118,7 +119,7 @@ fields are optional where the defaults apply.
 interfaces: [
   {
     step: { species: 'e-', value: units.eV(0.25) }, // alignment: or { dipole: volts }
-    phi: 'dipole', // 'dipole' | 'neutral' | { type: 'capacitive', C }
+    phi: 'pinned', // 'pinned' | 'neutral' | { type: 'capacitive', C }
     sheetCharge: 0, // C/m²
     species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 }, 'Na+': 'blocked' },
     reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ crosses only by this
@@ -126,7 +127,7 @@ interfaces: [
 ]
 ```
 
-**Alignment** (exactly one, for a face between *different* materials under a `dipole` or
+**Alignment** (exactly one, for a face between *different* materials under a `pinned` or
 `capacitive` law):
 - `step: { species, value }`: the step in that charged species' standard level across the
   face, right minus left, `(μ°_R + zFφ_R) − (μ°_L + zFφ_L)`, in J/mol. For electrons that's
@@ -138,7 +139,7 @@ There is no default: omitting it is an error. When vacuum-level estimates are al
 defaults to no dipole.
 
 **Electrostatic law** `phi`:
-- `'dipole'`: φ jumps by the alignment. The default, and exact when the grid resolves the
+- `'pinned'`: φ jumps by the alignment. The default, and exact when the grid resolves the
   double layers on both sides.
 - `'neutral'`: no charge at the face and a free jump, set by neutrality on each side (Donnan).
   The alignment drops out and must not be given. This is the default between two ε = 0
@@ -191,7 +192,7 @@ A conductor has no φ, so a face beside it can't take a `dipole` or `step` align
   toward the other side, which is the conductor's surface charge. `zeroCharge` is V_F − φ_edge
   at zero charge (`vacuumZeroCharge` in `driftlet/kit` estimates it from a work function).
 
-A pinned (`dipole`) law isn't offered here: an internal conductor holds its surface charge in a
+A `pinned` law isn't offered here: an internal conductor holds its surface charge in a
 finite capacitance (a large C approaches the pinned limit). A pinned barrier is still available
 with the metal as a contact.
 
@@ -233,7 +234,7 @@ contacts: {
     V: 0, // terminal voltage, V
     terminal: 'e-', // the species whose voltage V is
     species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'blocked' },
-    phi: 'bulk', // 'bulk' | 'neutral' | { type: 'capacitive', C, zeroCharge } | { type: 'dipole', zeroCharge }
+    phi: 'bulk', // 'bulk' | 'neutral' | 'pinned' | { type: 'capacitive', C }, with zeroCharge beside the last two
   },
   right: { bath: { c: { 'Na+': 10, 'Cl-': 10 }, reference: 'Cl-' } },
 }
@@ -265,13 +266,14 @@ species relative to V.
 - `'bulk'`: the end node is plain bulk, locally neutral, with no double layer at the contact
   (ohmic contacts, baths). The outside takes whatever surface charge that needs.
 - `'neutral'`: no charge at the face (D = 0), as for an internal `'neutral'` face.
-- `{ type: 'capacitive', C, zeroCharge }`: a gate or Stern layer to a conductor at the
-  terminal voltage V. The displacement into the device is `C·((V − zeroCharge) − φ_edge)`, so
-  `zeroCharge` is the value of V − φ_edge at which the interface carries no charge: the
-  flat-band voltage of a gate, or the potential of zero charge (pzc) of an electrode.
-- `{ type: 'dipole', zeroCharge }`: the pinned limit (C → ∞), φ_edge = V − zeroCharge. This is
-  what a "fixed φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type
-  material with μ°_e = 0 is `zeroCharge: φ_B`.
+- `{ type: 'capacitive', C }` with the contact's `zeroCharge`: a gate or Stern layer to a
+  conductor at the terminal voltage V. The displacement into the device is
+  `C·((V − zeroCharge) − φ_edge)`, so `zeroCharge` is the value of V − φ_edge at which the
+  interface carries no charge: the flat-band voltage of a gate, or the potential of zero charge
+  (pzc) of an electrode.
+- `'pinned'` with `zeroCharge`: the C → ∞ limit, φ_edge = V − zeroCharge. This is what a "fixed
+  φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type material with
+  μ°_e = 0 is `zeroCharge: φ_B`.
 
 Like every alignment, `zeroCharge` is a property of that interface. To estimate it from vacuum
 levels, `vacuumZeroCharge(def, W, inside)` from `driftlet/kit` takes the work function W of the
