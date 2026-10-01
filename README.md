@@ -171,17 +171,17 @@ checked in CI; times are from a desktop Ryzen 7600X in Node 22:
 | Task | Time | Factorisations |
 |---|---|---|
 | Linear solve, 300 nodes × 7 unknowns (factor + solve) | 0.4 ms | 1 |
-| pn diode (264 nodes): cold equilibrium | 5 ms | 9 |
-| pn diode: I–V sweep 0 → 0.6 V, 31 points | 34 ms | 137 |
-| pn diode: warm jump from +0.4 V to −1 V | 9 ms | 51 |
-| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 200 ms | 1026 |
-| pn diode: impedance at 20 frequencies | 11 ms | 21 |
-| MOS with a metal gate: C–V sweep, 26 points | 13 ms | 126 |
-| n-Si \| KCl (4 species, 3 unknowns per node): Mott–Schottky sweep, 31 points | 49 ms | 156 |
-| n-Si \| KCl: impedance at 20 frequencies | 14 ms | 21 |
-| Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 17 ms | 81 |
-| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 36 ms | 287 |
-| Bipolar Ag electrode: sweep 0 → 1 V, 11 points | 43 ms | 83 |
+| pn diode (264 nodes): cold equilibrium | 2 ms | 9 |
+| pn diode: I–V sweep 0 → 0.6 V, 31 points | 31 ms | 137 |
+| pn diode: warm jump from +0.4 V to −1 V | 7 ms | 51 |
+| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 150 ms | 1026 |
+| pn diode: impedance at 20 frequencies | 8 ms | 21 |
+| MOS with a metal gate: C–V sweep, 26 points | 11 ms | 126 |
+| n-Si \| KCl (4 species, 3 unknowns per node): Mott–Schottky sweep, 31 points | 29 ms | 156 |
+| n-Si \| KCl: impedance at 20 frequencies | 10 ms | 21 |
+| Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 12 ms | 81 |
+| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 29 ms | 287 |
+| Silver electrodes with a bipolar plate: sweep 0 → 1 V, 11 points | 27 ms | 63 |
 
 The library has no dependencies and does no DOM access, so it runs in a Web Worker. (A device
 definition is plain data and can be posted to a worker. Devices using custom-function
