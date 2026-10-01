@@ -5,6 +5,9 @@
 import { DeviceError } from './device.js';
 import { FARADAY } from './constants.js';
 
+export { build, combine, layer, ohmic, bath } from './stack.js';
+export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
+
 const fail = (message) => {
   throw new DeviceError(message);
 };

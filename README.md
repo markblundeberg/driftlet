@@ -68,6 +68,11 @@ Solutions are plain objects of `Float64Array`s, ready to plot: `x`, `phi`, and p
 `Vstd`. They also carry currents, contact fluxes, conservation bookkeeping and warnings; see
 [the device reference](docs/device.md).
 
+The definition is plain data, so anything can write it. The optional `driftlet/kit` writes it
+from the device as it's drawn, a stack of contacts, layers and faces, with reactions as
+equations (`'Ag+ + e- = Ag(s)'`) and doping as donors and acceptors. It never makes a physical
+choice for you; see [the kit](docs/kit.md).
+
 ## Demos
 
 Live pages in [`demos/`](demos/), each solving its device in the browser as you move a slider.
@@ -202,7 +207,7 @@ npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches 
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),
-[statistics](docs/statistics.md), [roadmap](ROADMAP.md).
+[statistics](docs/statistics.md), [the kit](docs/kit.md), [roadmap](ROADMAP.md).
 
 ## Licence
 

@@ -70,18 +70,18 @@ for live demos.
    specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable
    spec data.
-   - Contact, reaction and charge shorthands: `ohmic(V)`, `bath(…)`; `electrode(…)` (a conductor
-     region, the reaction at its face and the contact holding its electrons), `transfer(…)`;
-     region charge as `{ donors }`, `{ acceptors }`, `{ fixed: { c, z } }` instead of
-     `… * FARADAY` with a sign to remember.
+   - Done: `build({ library, stack })`, the device as drawn (contact, layers and faces, contact)
+     into the plain definition; `ohmic()`, `bath()`, `layer()` with doping as donors and
+     acceptors; reactions written as equations (`'Ag+ + e- = Ag(s)'`), with a label for a species
+     on both sides of a face; half-reactions as plain data, and `level(sol, half)`, the redox
+     level they imply (with `SHE`). See [the kit](docs/kit.md).
+   - Whether the stack form should replace `regions` and `interfaces` in the plain definition
+     itself, once it has been used for a while.
    - A live wrapper for sliders: frame throttling, warm starts, dropping stale requests,
      ramping across big jumps, keeping the last good solution; optionally Worker-backed.
    - `describe()` and unit-slip warnings: Debye lengths against the grid, time constants,
      conductivities, built-in or open-circuit potentials, "this D looks like cm²/s".
-   - Half-reactions as objects (participants, electrons, fixed participants' μ given
-     explicitly). They build electrode reactions, serve as vacuum-alignment anchors, and give
-     the spatial profile of their implied electronic level (`sol.level(halfReaction)`), with SHE
-     as one instance: the ESBD redox-level view in one line.
+   - Half-reactions as vacuum-alignment anchors.
    - Voltage ledgers, written per family of devices (there's no general one): the terminal
      voltage as named contributions that sum exactly, for that family's usual simplifications.
      They annotate the spatial diagram, which stays the primary picture and keeps telling the
