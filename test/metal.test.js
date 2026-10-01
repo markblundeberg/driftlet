@@ -95,61 +95,69 @@ test('metal gate over an oxide region matches a capacitive gate contact (MOS)', 
   }
 });
 
-// Silver nitrate between silver: electrodes as metal regions with reactions at their faces,
-// against the same cell with the reactions at contacts.
+// Silver nitrate between silver electrodes, as conductor regions with reactions at their faces.
 const ions = [
   { name: 'Ag+', z: 1, cRef: 1000 },
   { name: 'NO3-', z: -1, cRef: 1000 },
 ];
 const water = (epsr) => ({ epsr, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } });
 const Ag = { conductor: { species: 'e-', conductivity: 6e7 } };
-const plating = { reactants: { 'Ag+': 1 }, electrons: 1, products: { Ag: 1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 };
+const k0 = 1e-3, alpha = 0.5;
+// Ag⁺ + e⁻ ⇌ Ag at a silver face, with the metal on the given side.
+const plating = (metal) => ({ [metal]: { 'e-': -1, Ag: 1 }, [metal === 'left' ? 'right' : 'left']: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0, alpha });
 const salt = { 'NO3-': 10, 'Ag+': 10 };
+const silver = { material: 'Ag', length: 1e-6 };
+const RT = 8.314462618 * 298.15;
 
-test('electrode reactions at metal faces: an Ag | AgNO₃ | Ag cell, as with contact electrodes', () => {
-  for (const [epsr, face] of [
+test('electrode reactions at conductor faces: the rate law at the face state, and one current throughout', () => {
+  for (const [epsr, phi] of [
     [0, { phi: 'neutral' }],
     [78.5, { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 }],
   ]) {
-    const contactPhi = face.phi === 'neutral' ? 'neutral' : { ...face.phi, zeroCharge: face.zeroCharge };
+    const dev = new Device({
+      species: [...ions, { name: 'e-', z: -1 }],
+      materials: { water: water(epsr), Ag },
+      regions: [silver, { material: 'water', length: 20e-6, c0: salt }, silver],
+      interfaces: [{ ...phi, reactions: [plating('left')] }, { ...phi, reactions: [plating('right')] }],
+      contacts: { left: collector(0), right: collector(0) },
+      grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
+    });
+    const eq = dev.solve();
+    assert.ok(eq.converged && Math.abs(eq.current) < 1e-12, `ε=${epsr}: zero current at equilibrium`);
+    const gM = dev.grid.regionEnd[0], gW = dev.grid.regionStart[1];
     for (const V of [0.05, -0.1]) {
-      const reference = new Device({
-        species: ions,
-        materials: { water: water(epsr) },
-        regions: [{ material: 'water', length: 20e-6, c0: salt }],
-        contacts: { left: { V: 0, phi: contactPhi, reactions: [plating] }, right: { V, phi: contactPhi, reactions: [plating] } },
-        grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
-      }).solve();
-      const metal = new Device({
-        species: [...ions, { name: 'e-', z: -1 }],
-        materials: { water: water(epsr), Ag },
-        regions: [{ material: 'Ag', length: 1e-6 }, { material: 'water', length: 20e-6, c0: salt }, { material: 'Ag', length: 1e-6 }],
-        interfaces: [{ ...face, reactions: [plating] }, { ...face, reactions: [plating] }],
-        contacts: { left: collector(0), right: collector(V) },
-        grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
-      }).solve();
-      assert.ok(reference.converged && metal.converged);
-      assert.ok(Math.abs(metal.current / reference.current - 1) < 1e-9, `ε=${epsr}, V=${V}: ${metal.current} vs ${reference.current}`);
+      dev.set({ contacts: { right: { V } } });
+      const sol = dev.solve();
+      assert.ok(sol.converged);
+      // Reduction at the left face (forward) is current toward −x.
+      const r = sol.interfaces[0].rates[0];
+      assert.ok(Math.abs(-FARADAY * r / sol.current - 1) < 1e-9, `ε=${epsr}, V=${V}: F r = ${-FARADAY * r} vs ${sol.current}`);
+      assert.ok(Math.abs(FARADAY * sol.interfaces[1].rates[0] / sol.current - 1) < 1e-9);
+      // r = k0 (c/c_ref)^{1−α} (e^{αa} − e^{−(1−α)a}), a = (μ̄_Ag⁺ + μ̄_e⁻ − μ_Ag)/RT
+      const a = (sol.mu['Ag+'][gW] + sol.mu['e-'][gM]) / RT;
+      const want = k0 * (sol.c['Ag+'][gW] / 1000) ** (1 - alpha) * (Math.exp(alpha * a) - Math.exp(-(1 - alpha) * a));
+      assert.ok(Math.abs(r / want - 1) < 1e-9, `rate law: ${r} vs ${want}`);
     }
   }
 });
 
 test('bipolar electrode: a floating metal passes current by reactions on both faces', () => {
-  const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 };
-  const end = { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
+  const face = (metal) => ({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating(metal)] });
   const dev = new Device({
     species: [...ions, { name: 'e-', z: -1 }],
     materials: { water: water(78.5), Ag },
     regions: [
+      silver,
       { material: 'water', length: 10e-6, c0: salt },
       { material: 'Ag', length: 2e-6 },
       { material: 'water', length: 10e-6, c0: salt },
+      silver,
     ],
-    interfaces: [{ ...stern, reactions: [plating] }, { ...stern, reactions: [plating] }],
-    contacts: { left: { V: 0, ...end }, right: { V: 0, ...end } },
+    interfaces: [face('left'), face('right'), face('left'), face('right')],
+    contacts: { left: collector(0), right: collector(0) },
     grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
   });
-  const mid = (dev.grid.regionStart[1] + dev.grid.regionEnd[1]) >> 1;
+  const mid = dev.grid.regionStart[2];
   for (const V of [0, 0.2, 1]) {
     dev.set({ contacts: { right: { V } } });
     const sol = dev.solve();
@@ -221,19 +229,20 @@ test('a port on a metal: a wire to the whole metal, with its conductance per are
 test('a port grounds a floating metal: a bipolar plate tied to the middle voltage carries no wire current', () => {
   // The symmetric bipolar cell of the test above, with the plate wired to V/2 (where it floats
   // anyway): nothing flows in the wire. Wired to 0 instead, the wire takes the left cell's current.
-  const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating] };
-  const end = { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
+  const face = (metal) => ({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating(metal)] });
   const cell = (Vwire, V) =>
     new Device({
       species: [...ions, { name: 'e-', z: -1 }],
       materials: { water: water(78.5), Ag },
       regions: [
+        silver,
         { material: 'water', length: 10e-6, c0: salt },
         { name: 'plate', material: 'Ag', length: 2e-6 },
         { material: 'water', length: 10e-6, c0: salt },
+        silver,
       ],
-      interfaces: [stern, stern],
-      contacts: { left: { V: 0, ...end }, right: { V, ...end } },
+      interfaces: [face('left'), face('right'), face('left'), face('right')],
+      contacts: { left: collector(0), right: collector(V) },
       ports: [{ region: 'plate', V: Vwire, terminal: 'e-', species: { 'e-': { type: 'conductance', G: 1e6 } } }],
       grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
     }).solve();

@@ -63,7 +63,7 @@ test('water: homogeneous relaxation of excess H⁺/OH⁻ at rate k (c_H + c_OH)'
     ],
     materials: { water: { epsr: 78.5, species: { 'H+': { D: 9.31e-9, mu0: 0 }, 'OH-': { D: 5.27e-9, mu0: mu0OH } } } },
     regions: [{ material: 'water', length: 50e-9, c0: { 'H+': ceq + excess, 'OH-': ceq + excess } }],
-    bulkReactions: [{ reactants: { 'H+': 1, 'OH-': 1 }, products: { H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: kf } }],
+    bulkReactions: [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: kf } }],
     contacts: {
       left: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
       right: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },

@@ -49,7 +49,7 @@ const diode = () =>
       { material: 'Si', length: 2e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
     ],
     contacts: { left: ohmic(0), right: ohmic(0) },
-    bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 1e-6 } }],
+    bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e-6 } }],
     grid: { hmin: 0.5e-9, hmax: 20e-9 },
   });
 
@@ -83,22 +83,18 @@ const cell = (epsr) =>
     grid: { hmin: 0.1e-9, hmax: 200e-9, ratio: 1.15 },
   });
 
-// A floating silver plate between two plating electrodes in AgNO₃
-const plating = { reactants: { 'Ag+': 1 }, electrons: 1, products: { Ag: 1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 };
+// A floating silver plate between two silver electrodes in AgNO₃, plating at every face
+const plating = (metal) => ({ [metal]: { 'e-': -1, Ag: 1 }, [metal === 'left' ? 'right' : 'left']: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 });
 const salt = { 'NO3-': 10, 'Ag+': 10 };
 const bipolar = () => {
-  const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 };
-  const end = { V: 0, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
+  const face = (metal) => ({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating(metal)] });
+  const Ag = { material: 'Ag', length: 1e-6 };
   return new Device({
     species: [...ions, { name: 'e-', z: -1 }],
     materials: { water: water(78.5), Ag: { conductor: { species: 'e-', conductivity: 6e7 } } },
-    regions: [
-      { material: 'water', length: 10e-6, c0: salt },
-      { material: 'Ag', length: 2e-6 },
-      { material: 'water', length: 10e-6, c0: salt },
-    ],
-    interfaces: [{ ...stern, reactions: [plating] }, { ...stern, reactions: [plating] }],
-    contacts: { left: end, right: end },
+    regions: [Ag, { material: 'water', length: 10e-6, c0: salt }, { material: 'Ag', length: 2e-6 }, { material: 'water', length: 10e-6, c0: salt }, Ag],
+    interfaces: [face('left'), face('right'), face('left'), face('right')],
+    contacts: { left: collector(0), right: collector(0) },
     grid: { hmin: 0.05e-9, hmax: 100e-9, ratio: 1.1 },
   });
 };

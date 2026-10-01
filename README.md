@@ -109,13 +109,14 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
 - Poisson electrostatics, or strictly neutral (ε = 0) materials such as macroscopic
   electrolytes;
 - conductor regions (metals, fast ion conductors) with only their carrier's level and a
-  conductivity: Schottky and MOS gates as regions, electrode reactions at internal metal faces,
+  conductivity: Schottky and MOS gates as regions, electrodes with reactions at their faces,
   bipolar electrodes;
 - contacts as outside phases with known levels, joined by the same laws as internal faces:
-  ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links,
-  Butler–Volmer electrode reactions, gates and Stern layers;
-- interfaces with explicit alignment, blocking, interface resistance, or Butler–Volmer
-  ion/electron transfer, and a choice of electrostatic law (pinned dipole, neutral, Helmholtz);
+  ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links, gates and
+  Stern layers;
+- interfaces with explicit alignment, blocking, interface resistance, and Butler–Volmer
+  reactions with participants on either side (electrode reactions, ion and electron transfer,
+  mixed potentials), and a choice of electrostatic law (pinned dipole, neutral, Helmholtz);
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
 - imposed flow (advection) and current-free eddy mixing;

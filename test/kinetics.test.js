@@ -9,18 +9,18 @@ const VT = RT / FARADAY;
 // excess of supporting electrolyte (K⁺Cl⁻), so transport of O⁺ and R is diffusion only.
 const L = 20e-6, cO = 1, cR = 1, kp = 1e-5, DO = 1e-9, DR = 0.8e-9, alpha = 0.4;
 const mu0 = { 'O+': 10e3, R: -86.485e3, 'K+': -283.3e3, 'Cl-': -131.2e3 };
-const electrode = (V) => ({
-  V,
-  phi: 'neutral', // no double layer, to compare with the textbook result
-  reactions: [{ reactants: { 'O+': 1 }, electrons: 1, products: { R: 1 }, k0: kp * 1000, alpha }],
-});
+// The electrode: a platinum region (a conductor for e⁻) behind the reaction face, read through
+// a collector contact. O⁺ + e⁻ ⇌ R, with the metal on the given side.
+const redoxRx = (metal) => ({ [metal]: { 'e-': -1 }, [metal === 'left' ? 'right' : 'left']: { 'O+': -1, R: 1 }, k0: kp * 1000, alpha });
+const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
 const bath = { bath: { c: { 'O+': cO, R: cR, 'K+': 1000, 'Cl-': 1001 }, reference: 'Cl-' } };
-const redox = (contacts, circuit) => ({
+const redox = (side, V, circuit) => ({
   species: [
     { name: 'O+', z: 1, cRef: 1000 },
     { name: 'R', z: 0, cRef: 1000 },
     { name: 'K+', z: 1, cRef: 1000 },
     { name: 'Cl-', z: -1, cRef: 1000 },
+    { name: 'e-', z: -1 },
   ],
   materials: {
     water: {
@@ -32,9 +32,20 @@ const redox = (contacts, circuit) => ({
         'Cl-': { D: 2.03e-9, mu0: mu0['Cl-'] },
       },
     },
+    Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } },
   },
-  regions: [{ material: 'water', length: L }],
-  contacts,
+  // phi 'neutral': no double layer at the electrode, to compare with the textbook result
+  ...(side === 'left'
+    ? {
+        regions: [{ material: 'Pt', length: 1e-6 }, { material: 'water', length: L }],
+        interfaces: [{ phi: 'neutral', reactions: [redoxRx('left')] }],
+        contacts: { left: collector(V), right: bath },
+      }
+    : {
+        regions: [{ material: 'water', length: L }, { material: 'Pt', length: 1e-6 }],
+        interfaces: [{ phi: 'neutral', reactions: [redoxRx('right')] }],
+        contacts: { left: bath, right: collector(V) },
+      }),
   circuit,
   grid: { hmin: 0.05e-9, hmax: 200e-9, ratio: 1.15 },
 });
@@ -44,12 +55,12 @@ const E0p = (mu0['O+'] - mu0.R) / FARADAY + phiB;
 const Veq = E0p + VT * Math.log(cO / cR);
 
 test('Butler–Volmer electrode: zero current at the Nernst potential, mixed-control I–V', () => {
-  const dev = new Device(redox({ left: electrode(Veq), right: bath }));
+  const dev = new Device(redox('left', Veq));
   const eq = dev.solve();
   assert.ok(eq.converged);
   assert.ok(Math.abs(eq.current) < 1e-12);
   for (const name of ['O+', 'R']) {
-    const mu = eq.mu[name];
+    const mu = eq.mu[name].filter(Number.isFinite); // (absent from the platinum)
     assert.ok((Math.max(...mu) - Math.min(...mu)) / RT < 1e-12, `${name} flat at equilibrium`);
   }
   // Textbook: r = k′(c_O,s e^{αx} − c_R,s e^{−(1−α)x}) with linear diffusion to the bath,
@@ -68,8 +79,8 @@ test('Butler–Volmer electrode: zero current at the Nernst potential, mixed-con
   }
 });
 
-test('galvanostatic kinetic electrode (floating terminal voltage as its own unknown)', () => {
-  const dev = new Device(redox({ left: bath, right: electrode(Veq) }, { mode: 'current', I: 2 }));
+test('galvanostatic kinetic electrode', () => {
+  const dev = new Device(redox('right', Veq, { mode: 'current', I: 2 }));
   const sol = dev.solve();
   assert.ok(sol.converged);
   assert.ok(Math.abs(sol.current / 2 - 1) < 1e-9);
@@ -114,7 +125,7 @@ test('interface conductance adds a series resistance 1/G', () => {
 
 test('interface ion transfer (Butler–Volmer): equilibrium, and the rate law at the interface state', () => {
   const k0 = 1e-3, a = 0.3;
-  const dev = new Device(ionic({ reactions: [{ transfer: { 'Li+': 1 }, k0, alpha: a }] }));
+  const dev = new Device(ionic({ reactions: [{ left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0, alpha: a }] }));
   const eq = dev.solve();
   assert.ok(Math.abs(eq.current) < 1e-15);
   const mu = eq.mu['Li+'];
@@ -130,21 +141,25 @@ test('interface ion transfer (Butler–Volmer): equilibrium, and the rate law at
     const r =
       k0 * (sol.c['Li+'][gL] / 1000) ** (1 - a) * (sol.c['Li+'][gR] / 1000) ** a * (Math.exp(a * af) - Math.exp(-(1 - a) * af));
     assert.ok(Math.abs((FARADAY * r) / sol.current - 1) < 1e-8, `V=${V}`);
-    assert.ok(Math.abs((FARADAY * sol.interfaces[0].N['Li+']) / sol.current - 1) < 1e-8);
+    assert.ok(Math.abs((FARADAY * sol.interfaces[0].rates[0]) / sol.current - 1) < 1e-8);
   }
 });
 
 test('kinetic definitions are checked', () => {
   const throwsDevice = (def, pattern) =>
     assert.throws(() => new Device(def), (e) => e instanceof DeviceError && pattern.test(e.message));
-  let def = redox({ left: electrode(0), right: bath });
-  def.contacts.left.reactions[0].electrons = 2;
+  let def = redox('left', 0);
+  def.interfaces[0].reactions[0].left['e-'] = -2;
   throwsDevice(def, /charge is not balanced/);
-  def = redox({ left: electrode(0), right: bath });
-  def.contacts.left.reactions[0].alpha = 1.2;
+  def = redox('left', 0);
+  def.interfaces[0].reactions[0].alpha = 1.2;
   throwsDevice(def, /alpha must be between 0 and 1/);
-  def = redox({ left: bath, right: { ...electrode(0), phi: 'bulk' } }, { mode: 'current', I: 1 });
-  throwsDevice(def, /floating kinetic electrode needs a capacitive \(Stern\) or neutral φ law/);
+  def = redox('left', 0);
+  def.interfaces[0].reactions[0].left['O+'] = -1;
+  throwsDevice(def, /left\.O\+: absent from 'Pt'/);
+  def = redox('left', 0);
+  def.interfaces[0].reactions[0].right.Pt = 1;
+  throwsDevice(def, /not a species, so give its μ/);
   def = ionic({ species: { 'Li+': { type: 'conductance' } } });
   throwsDevice(def, /\.G must be a positive number/);
 });

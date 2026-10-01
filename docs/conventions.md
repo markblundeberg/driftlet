@@ -119,8 +119,9 @@ alignment plays the role of a potential of zero charge or work function.
 A contact is an interface with an **outside phase** whose levels are known, like one more region
 with a fully known node. The outside phase's charged levels form a rigid ladder,
 `V_i = V + offset_i`, which the circuit slides by the **terminal voltage** V (the voltage of a
-named terminal species). The laws joining it to the device (equilibrium, blocked, conductance,
-reactions; and for φ, bulk, neutral, capacitive, dipole) are the same as at internal faces.
+named terminal species). The laws joining it to the device (equilibrium, blocked, conductance;
+and for φ, bulk, neutral, capacitive, dipole) are the same as at internal faces. Reactions sit
+at faces between regions: an electrode is a conductor region with reactions at its face.
 
 - **Species in equilibrium** with the outside phase sit at `V_i = V + offset_i`. The offset belongs to the outside phase: it's
   the chemical potential, per charge, of whatever neutral combination the species forms with
@@ -142,7 +143,8 @@ reactions; and for φ, bulk, neutral, capacitive, dipole) are the same as at int
   which is what a "fixed φ" boundary honestly means.
 - **`bulk`** says the end node is plain bulk (locally neutral, no double layer), while
   **`neutral`** says no charge sits at the face (D = 0), as for internal faces.
-- **Electrode reactions** take their electrons from the metal at μ̄_e = −F·V.
+- **Electrode reactions** take their electrons from the conductor region at its Fermi level,
+  which the contact behind it holds at μ̄_e = −F·V.
 
 The electronic level of a standard hydrogen electrode in a solution is
 V°_e⁻(SHE) = φ + (μ°_H⁺ − ½μ°_H₂)/F. The usual tables set μ°_H⁺ = 0 (so that E°(SHE) = 0) and

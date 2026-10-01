@@ -13,8 +13,9 @@ for live demos.
 - Materials, regions and explicit per-interface alignment; interface φ laws (dipole, neutral,
   Helmholtz); strictly neutral (ε = 0) materials.
 - Contacts: fixed levels with offsets, ohmic contacts, baths, gates and Stern layers,
-  conductance links, Butler–Volmer electrode reactions.
-- Interfaces: blocking, conductance, Butler–Volmer ion/electron transfer.
+  conductance links.
+- Interfaces: blocking, conductance, and Butler–Volmer reactions with signed participants on
+  either side (each rate an unknown of the face block); electrodes as conductor regions.
 - Circuits: voltage, galvanostatic (incl. open circuit), load resistor.
 - Bulk mass-action reactions.
 - Backward-Euler transients with step halving, and conservation bookkeeping.
@@ -52,10 +53,6 @@ for live demos.
      the active-slot mask and the gather disappear; a face's flux block holds only what crosses
      it. In stages: a layout object (compact state vectors), then the kernels, then bookkeeping
      read locally from the end boxes (instead of a full re-assembly after every step).
-   - One form for face reactions: participants on either side of a face (a conductor's carrier
-     among them, an outside phase's at its levels), fixed-activity neutrals, and a rate law that
-     always has the form r_f·(1 − e^{−A/RT}) (Butler–Volmer by default). Transfer and electrode
-     reactions become porcelain shorthands.
    - Contacts and ports with the same outside-phase vocabulary of links.
    - Sources apart from structure: a fast path to change contact and port voltages and the
      circuit without re-normalising the spec, and solutions computed lazily, for live demos.
@@ -74,9 +71,10 @@ for live demos.
    specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable
    spec data.
-   - Contact and charge shorthands: `ohmic(V)`, `bath(…)`, `electrode(reaction, …)`; region
-     charge as `{ donors }`, `{ acceptors }`, `{ fixed: { c, z } }` instead of `… * FARADAY`
-     with a sign to remember.
+   - Contact, reaction and charge shorthands: `ohmic(V)`, `bath(…)`; `electrode(…)` (a conductor
+     region, the reaction at its face and the contact holding its electrons), `transfer(…)`;
+     region charge as `{ donors }`, `{ acceptors }`, `{ fixed: { c, z } }` instead of
+     `… * FARADAY` with a sign to remember.
    - A live wrapper for sliders: frame throttling, warm starts, dropping stale requests,
      ramping across big jumps, keeping the last good solution; optionally Worker-backed.
    - `describe()` and unit-slip warnings: Debye lengths against the grid, time constants,

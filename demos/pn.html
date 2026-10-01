@@ -35,7 +35,7 @@ const dev = new Device({
     { name: 'p', material: 'Si', length: 1.5e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
   ],
   contacts: { left: ohmic(0), right: ohmic(0) },
-  bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 1e-6 } }],
+  bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e-6 } }],
   grid: { hmin: 0.5e-9, hmax: 15e-9 },
 });
 

@@ -27,7 +27,7 @@ const diode = () => ({
     { material: 'Si', length: 40e-6, fixedCharge: ND * FARADAY },
     { material: 'Si', length: 40e-6, fixedCharge: -NA * FARADAY },
   ],
-  bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: kf } }],
+  bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: kf } }],
   contacts: { left: ohmic(0), right: ohmic(0) },
   grid: { hmin: 0.5e-9, hmax: 100e-9, ratio: 1.1 },
 });
@@ -73,7 +73,7 @@ const waterBox = (c0) => ({
     },
   },
   regions: [{ material: 'water', length: 100e-9, c0 }],
-  bulkReactions: [{ reactants: { 'H+': 1, 'OH-': 1 }, products: { H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: 1.4e8 } }],
+  bulkReactions: [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: 1.4e8 } }],
   contacts: {
     left: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
     right: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0 } },
@@ -104,13 +104,13 @@ test('bulk reaction definitions are checked', () => {
   const throwsDevice = (def, pattern) =>
     assert.throws(() => new Device(def), (e) => e instanceof DeviceError && pattern.test(e.message));
   let def = waterBox({ 'H+': 1, 'OH-': 1, 'Na+': 1, 'Cl-': 1 });
-  def.bulkReactions = [{ reactants: { 'H+': 1 }, products: { H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: 1 } }];
+  def.bulkReactions = [{ nu: { 'H+': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { water: 1 } }];
   throwsDevice(def, /charge is not balanced/);
-  def.bulkReactions = [{ reactants: { 'H+': 1, 'OH-': 1 }, products: { H2O: 1 }, kf: { water: 1 } }];
+  def.bulkReactions = [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, kf: { water: 1 } }];
   throwsDevice(def, /H2O: not a species, so give its μ/);
-  def.bulkReactions = [{ reactants: { 'H+': 1, 'OH-': 1 }, products: { H2O: 1 }, fixed: { H2O: muH2O }, kf: { ice: 1 } }];
+  def.bulkReactions = [{ nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: muH2O }, kf: { ice: 1 } }];
   throwsDevice(def, /kf\.ice: unknown material/);
   def = diode();
-  def.bulkReactions = [{ reactants: { 'e-': 1.5, 'h+': 1 }, kf: { Si: 1 } }];
-  throwsDevice(def, /must be a positive integer/);
+  def.bulkReactions = [{ nu: { 'e-': -1.5, 'h+': -1 }, kf: { Si: 1 } }];
+  throwsDevice(def, /must be a non-zero integer/);
 });

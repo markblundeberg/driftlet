@@ -145,9 +145,12 @@ flux node's own rows are the interface laws:
 | species, equilibrium | `η_R − η_L = 0` |
 | species, blocked or absent on one side | `N_f = 0` |
 | species, conductance | `N_f − G V_T (η_L − η_R)/(z² F) = 0` |
-| species, transfer kinetics | `N_f − Σ ν r(state_L, state_R) = 0` |
+| face reaction k | `r_k − rate_k(state_L, state_R) = 0`, and each participant's edge node takes `ν·r_k` |
 
-Every row couples only neighbours, with a fixed block size and no penalty terms. A continuity
+Every row couples only neighbours, with no penalty terms. A face reaction's rate is an unknown
+of the face block, so the two edge nodes it couples meet only through the block between them.
+A species taking part in a reaction at a face crosses it only through its reactions, unless
+it's given a link there too, so it can react on one side and cross at the same time. A continuity
 row has a zero diagonal block, but block Thomas still sees a non-singular block there once the
 preceding elimination has run. Interface fluxes come out as unknowns, which is what the
 solution reports per interface.
@@ -175,9 +178,8 @@ extra unknowns. Then:
   the residual recorded as the outside's charge.
 - **φ `capacitive`:** a term `C·((V − zeroCharge) − φ_edge)` joins the Poisson row.
 - **φ `neutral`:** nothing is added (D = 0 at the face).
-- **Conductance links and electrode reactions** add their fluxes to the balance rows.
-  Reactions use the node's concentrations (behind any Stern layer, hence Frumkin effects)
-  and the metal's electrons at −F·V.
+- **Conductance links** add their fluxes to the balance rows. (Contacts carry no reactions:
+  an electrode is a conductor region with reactions at its face.)
 
 A left-end "contact flux node" would have a singular first block for block Thomas, which is why
 contact fluxes are read from residuals instead.
@@ -192,10 +194,10 @@ In galvanostatic and load modes the right terminal's voltage V_t is unknown.
   which equals the terminal current exactly. The last box's species balance plus its Poisson
   row, differenced in time, telescope to that identity. So the circuit is a local condition at
   the rightmost node.
-- **Otherwise** (a kinetic or conductance electrode), V_t becomes the unknown of one extra
-  block after the last node. Its row is the circuit law with the contact current: reaction
-  electrons, conductance currents, and the Stern displacement current. All of those depend
-  only on V_t and the last node, so the structure stays tridiagonal.
+- **Otherwise** (conductance links only), V_t becomes the unknown of one extra block after the
+  last node. Its row is the circuit law with the contact current: conductance currents and
+  the Stern displacement current. Both depend only on V_t and the last node, so the structure
+  stays tridiagonal.
 
 ## Statistics
 
@@ -266,12 +268,11 @@ With nothing on the metal side depending on D_f, the steady system's flux block 
 singular to left-to-right elimination, and the charging current would need the charge read two
 blocks away.
 
-Electrode reactions at a metal face put each participant's flux on its own side of the face.
-The face's flux node carries one flux per species, and a species present on one side only flows
-on that side only. A stretch exchanging through such a reaction with one that reaches a contact
-counts as fed, so nothing is conserved there and the steady equations are solved directly. A
-floating metal starts uncharged, with its Fermi level in equilibrium with the reaction on its
-left face.
+Electrode reactions at a conductor's face take its carrier at its edge node, like any face
+reaction. A stretch exchanging through a face reaction with one that reaches a contact counts as
+fed, so nothing is conserved there and the steady equations are solved directly. A floating
+conductor starts uncharged, with its carrier's level in equilibrium with the first reaction on its
+left face that takes it.
 
 ## Internal ports
 

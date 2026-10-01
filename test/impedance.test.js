@@ -109,7 +109,7 @@ test('low-frequency limit equals the steady differential resistance (Fermi–Dir
       { material: 'Si', length: 2e-6, fixedCharge: -1e22 / 6.02214076e23 * FARADAY },
     ],
     contacts: { left: ohmic(0), right: ohmic(0.45) },
-    bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 1e-6 } }],
+    bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e-6 } }],
     grid: { hmin: 0.5e-9, hmax: 20e-9 },
   });
   const Z = dev.impedance([1e-3, 1e6]);

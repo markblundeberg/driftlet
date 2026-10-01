@@ -110,7 +110,8 @@ export function makeSolution(solver, result = {}) {
     const b = solver.blockOfFace[f];
     const N = {};
     for (let i = 0; i < n; i++) N[species[i].name] = u[b * M + 1 + i];
-    return { dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N };
+    const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), forward
+    return { dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
   });
 
   // Total charge per area in the device (space charge plus sheet charges).

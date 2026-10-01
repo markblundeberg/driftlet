@@ -5,8 +5,8 @@ import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 // The Jacobian, assembled straight into blocks that hold only each node's unknowns, against
 // central differences of the residual, column by column. Devices are chosen to cover every
 // assembly path: semiconductor carriers with recombination, electrolytes with species confined
-// to some regions, conductor regions with electrode reactions at their faces and at contacts,
-// non-ideal statistics, advection and mixing, ports, and a floating terminal.
+// to some regions, conductor regions with electrode reactions at their faces, non-ideal
+// statistics, advection and mixing, ports, and a floating terminal.
 
 const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19);
 const silicon = { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: Nc }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: Nv } } };
@@ -22,7 +22,9 @@ const ions = [
   { name: 'NO3-', z: -1, cRef: 1000 },
 ];
 const water = (epsr) => ({ epsr, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } });
-const plating = { reactants: { 'Ag+': 1 }, electrons: 1, products: { Ag: 1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.4 };
+// Ag⁺ + e⁻ ⇌ Ag at a silver face, with the metal on the given side.
+const plating = (metal) => ({ [metal]: { 'e-': -1, Ag: 1 }, [metal === 'left' ? 'right' : 'left']: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.4 });
+const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
 const salt = { 'NO3-': 10, 'Ag+': 10 };
 
 const devices = {
@@ -34,7 +36,7 @@ const devices = {
       { material: 'Si', length: 0.5e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
     ],
     contacts: { left: ohmic(0), right: ohmic(0.3) },
-    bulkReactions: [{ reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 1e-6 } }],
+    bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e-6 } }],
     grid: coarse,
   }),
   'n-Si | KCl, species confined to their regions': () => ({
@@ -48,19 +50,15 @@ const devices = {
     contacts: { left: ohmic(0), right: { V: 0.3, bath: { c: { 'K+': 100, 'Cl-': 100 }, reference: 'Cl-' } } },
     grid: coarse,
   }),
-  'bipolar conductor with electrode reactions at faces and contacts': () => {
-    const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating] };
-    const end = { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] };
+  'silver electrodes and a bipolar plate, with reactions at every face': () => {
+    const face = (metal) => ({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating(metal)] });
+    const Ag = { material: 'Ag', length: 0.5e-6 };
     return {
       species: [...ions, { name: 'e-', z: -1 }],
       materials: { water: water(78.5), Ag: { conductor: { species: 'e-', conductivity: 6e7 } } },
-      regions: [
-        { material: 'water', length: 1e-6, c0: salt },
-        { material: 'Ag', length: 0.5e-6 },
-        { material: 'water', length: 1e-6, c0: salt },
-      ],
-      interfaces: [stern, stern],
-      contacts: { left: { V: 0, ...end }, right: { V: 0.3, ...end } },
+      regions: [Ag, { material: 'water', length: 1e-6, c0: salt }, Ag, { material: 'water', length: 1e-6, c0: salt }, Ag],
+      interfaces: [face('left'), face('right'), face('left'), face('right')],
+      contacts: { left: collector(0), right: collector(0.3) },
       grid: coarse,
     };
   },
@@ -97,13 +95,13 @@ const devices = {
       grid: coarse,
     };
   },
-  'floating kinetic electrode in current mode': () => ({
+  'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },
     regions: [{ material: 'water', length: 1e-6, c0: salt }],
     contacts: {
       left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' },
-      right: { phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 }, reactions: [plating] },
+      right: { terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2, zeroCharge: 0.1 } },
     },
     circuit: { mode: 'current', I: 5 },
     grid: coarse,

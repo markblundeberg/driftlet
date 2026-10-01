@@ -121,7 +121,7 @@ interfaces: [
     phi: 'dipole', // 'dipole' | 'neutral' | { type: 'capacitive', C }
     sheetCharge: 0, // C/m²
     species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 } },
-    reactions: [{ transfer: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }],
+    reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ transfer
   },
 ]
 ```
@@ -146,13 +146,33 @@ defaults to no dipole.
 - `{ type: 'capacitive', C }`: a Helmholtz layer, D = −C·(Δφ − dipole), C in F/m².
 
 **Species laws** `species` (default: local equilibrium, μ̄ continuous, where the species is
-present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
-`{ type: 'conductance', G }` (J = G·(V_L − V_R), G in S/m², charged species).
+present on both sides and takes no part in a reaction at the face; blocked otherwise):
+`'equilibrium'`, `'blocked'`, or `{ type: 'conductance', G }` (J = G·(V_L − V_R), G in S/m²,
+charged species).
 
-**Transfer kinetics** `reactions`: listed species cross left to right (forward) with a
-Butler–Volmer rate per area,
-`r = k0 Π[(c_L/c_ref,L)^{ν(1−α)} (c_R/c_ref,R)^{να}] (e^{αa} − e^{−(1−α)a})`,
-with a = Σν(μ̄_L − μ̄_R)/RT, k0 in mol/(m²·s), and α (default 0.5) between 0 and 1.
+**Reactions** `reactions` at the face: each is a list of participants on each side, with signed
+stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward reaction):
+
+```js nocheck
+{ left: { 'e-': -1 }, right: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-4, alpha: 0.5 } // a metal on the left
+{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3 }                         // ion transfer
+{ left: { 'e-': -1, Ag: 1 }, right: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3 }  // Ag⁺ + e⁻ ⇌ Ag(s)
+```
+
+A participant is a species present on its side (on a conductor's side, only its carrier) or a
+fixed-activity neutral, given by its μ in `fixed` (J/mol; the side doesn't matter). Charge must
+balance. The rate per area, with a = A/RT = −Σ ν μ̄/RT over all participants, is Butler–Volmer,
+
+```
+r = k0 Π_{ν<0} (c/c_ref)^{|ν|(1−α)} Π_{ν>0} (c/c_ref)^{να} (e^{αa} − e^{−(1−α)a})
+```
+
+with k0 in mol/(m²·s) and α (default 0.5) between 0 and 1. A conductor's carrier has activity 1
+and no factor. That's mass action with rate constants that depend on the electrical part of the
+affinity: exactly zero at A = 0, whatever k0 and α. Each participant is made or consumed at its
+side's edge node, just behind any Stern layer, so Frumkin effects arise by themselves. A face
+can carry several reactions; a conductor coupled to two couples settles at their mixed potential.
+Each solution reports the rates as `interfaces[f].rates`.
 
 ### Faces next to a conductor
 
@@ -170,25 +190,26 @@ finite capacitance (a large C approaches the pinned limit). A pinned barrier is 
 with the metal as a contact.
 
 The conductor's carrier can continue across as a species (e⁻ into a semiconductor,
-`'equilibrium'` by default). Electrode `reactions` at a metal's face take its electrons at its
-Fermi level,
-in the same form as at contacts (`reactants`, `electrons`, `products`, `fixed`, `k0`, `alpha`),
-with the other participants at the other side's edge node. A floating metal region with
-reactions on both faces is a bipolar electrode.
+`'equilibrium'` by default). An electrode is a conductor region with `reactions` at its face,
+the metal's electrons taking part on its side at its Fermi level, behind a contact that holds
+the electrons (`{ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }`). A
+floating conductor region with reactions on both faces is a bipolar electrode.
 
 ## Bulk reactions
 
 ```js nocheck
 bulkReactions: [
-  { reactants: { 'e-': 1, 'h+': 1 }, kf: { Si: 2e8 } }, // e⁻ + h⁺ ⇌ ∅
-  { reactants: { 'H+': 1, 'OH-': 1 }, products: { H2O: 1 }, fixed: { H2O: -237.13e3 }, kf: { water: 1.4e8 } },
+  { nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 2e8 } }, // e⁻ + h⁺ ⇌ ∅
+  { nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: -237.13e3 }, kf: { water: 1.4e8 } },
 ]
 ```
 
-Participants that aren't species are fixed-activity neutrals, given by their μ in `fixed`
-(J/mol). Charge must balance. The rate is mass action,
-`r = k_f Π c_R^ν (1 − e^{−A/RT})` with A the affinity. That's `k_f Π c_R − k_b Π c_P`, with
-`k_b` fixed by the standard potentials, so equilibrium is exactly A = 0. `kf` maps material
+`nu` gives signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward
+reaction). Participants that aren't species are fixed-activity neutrals, given by their μ in
+`fixed` (J/mol). Charge must balance. The rate is mass action,
+`r = k_f Π_{ν<0} c^{|ν|} (1 − e^{−A/RT})` with A = −Σ ν μ̄ the affinity. That's
+`k_f Π c_R − k_b Π c_P`, with `k_b` fixed by the standard potentials, so equilibrium is exactly
+A = 0. `kf` maps material
 names to forward rate constants (units making r mol/(m³·s)), and the reaction runs only in
 those materials.
 
@@ -207,7 +228,6 @@ contacts: {
     terminal: 'e-', // the species whose voltage V is
     species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'blocked' },
     phi: 'bulk', // 'bulk' | 'neutral' | { type: 'capacitive', C, zeroCharge } | { type: 'dipole', zeroCharge }
-    reactions: [ /* electrode reactions, below */ ],
   },
   right: { bath: { c: { 'Na+': 10, 'Cl-': 10 }, reference: 'Cl-' } },
 }
@@ -251,13 +271,9 @@ levels, `vacuumZeroCharge(def, W, inside)` from `driftlet/kit` takes the work fu
 conductor at the terminal voltage and the inside material's anchor and offset (see the
 [alignment guide](alignment.md)).
 
-**Electrode `reactions`**, written as reduction when `electrons > 0`:
-`Σν_R R + n e⁻(metal) ⇌ Σν_P P`. The metal's electrons sit at μ̄_e = −F·V, and
-non-species participants are fixed-activity (`fixed`, μ in J/mol). The rate is the
-standard-rate-constant form
-`r = k0 Π_R (c/c_ref)^{ν(1−α)} Π_P (c/c_ref)^{να} (e^{αa} − e^{−(1−α)a})`,
-k0 in mol/(m²·s). The reaction sits at the contact node, just behind any Stern layer, so
-Frumkin effects arise by themselves.
+Contacts carry no reactions. An electrode reaction belongs at the face of a conductor region,
+with the contact behind it holding the conductor's electrons (see
+[faces next to a conductor](#faces-next-to-a-conductor)).
 
 ## Internal ports
 
@@ -310,9 +326,8 @@ circuit: { mode: 'load', R: 1e-3, V: 0.1 } // I = (V_right − V_left − V)/R, 
 ```
 
 The left terminal is the reference. In current and load modes the right terminal's voltage is
-solved for, which needs a current path there: a charged terminal species in equilibrium, an
-electrode reaction or a conductance link. A floating kinetic electrode also needs a capacitive
-or neutral φ law.
+solved for, which needs a current path there: a charged terminal species in equilibrium (such
+as the electrons behind an electrode), or a conductance link.
 
 ## Grid
 
@@ -398,7 +413,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
-| `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name} }`: what crosses each face |
+| `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name}, rates }`: what crosses each face by its links, and each face reaction's rate (mol/(m²·s)) |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on |
