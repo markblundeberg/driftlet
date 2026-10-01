@@ -40,7 +40,34 @@ for live demos.
 
 ## Next
 
-1. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
+1. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
+   still dependency-free) that writes plain specs, so users and LLM agents start from something
+   correct. It never hides a physical choice: everything it produces is ordinary, inspectable
+   spec data.
+   - Contact and charge shorthands: `ohmic(V)`, `bath(…)`, `electrode(reaction, …)`; region
+     charge as `{ donors }`, `{ acceptors }`, `{ fixed: { c, z } }` instead of `… * FARADAY`
+     with a sign to remember.
+   - A live wrapper for sliders: frame throttling, warm starts, dropping stale requests,
+     ramping across big jumps, keeping the last good solution; optionally Worker-backed.
+   - `describe()` and unit-slip warnings: Debye lengths against the grid, time constants,
+     conductivities, built-in or open-circuit potentials, "this D looks like cm²/s".
+   - Half-reactions as objects (participants, electrons, fixed participants' μ given
+     explicitly). They build electrode reactions, serve as vacuum-alignment anchors, and give
+     the spatial profile of their implied electronic level (`sol.level(halfReaction)`), with SHE
+     as one instance: the ESBD redox-level view in one line.
+   - A voltage ledger: the terminal voltage as named contributions that sum exactly. The honest
+     form sums species-voltage steps along the current path, region by region and face by face;
+     φ-based textbook terms (ohmic drop vs junction potential) are flagged as conventional.
+   - Plot-ready traces: segments broken where a species is absent, region bands, label-ready
+     interface steps, suggested ranges.
+   - A small data library with a source on every entry (aqueous ions: z, D, μ° at 25 °C on
+     table conventions; common semiconductors; metals), kept small and vetted, since a wrong
+     library number is worse than a wrong demo number. Then recipes built from it (pn junction,
+     galvanic and concentration cells, double layer, membrane), returning editable specs.
+   - An agent guide (`AGENT_GUIDE.md` or `llms.txt`): conventions, a pinned CDN import,
+     copy-paste demo templates, common mistakes. Its code blocks run in the docs test, and error
+     messages say how to fix the problem.
+2. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI.
 
 ## Later
@@ -52,12 +79,12 @@ for live demos.
 - **More performance.** A variable block size where species are absent (identity rows cost a
   full block today; a metal node needs only its Fermi level and current), and benchmarks
   tracked across versions in CI.
-- **Half-reaction anchors** for vacuum alignment (an electronic level defined by a standard
-  half-reaction, with its participants' μ given explicitly). Undecided whether it's worth the
-  apparatus.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
+- **Demo extras.** A tiny optional plotting entry point (`driftlet/plot`), a deterministic mode
+  for screenshots, and concentration/flux sampling to drive particle animations consistently
+  with the model.
 - **Phase separation (Cahn–Hilliard).** A non-convex free energy (e.g. LFP's miscibility gap)
   makes c(ζ) multivalued. It needs c as an extra unknown plus a gradient-energy term, which is
   still local and block-tridiagonal.
