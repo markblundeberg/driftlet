@@ -90,7 +90,9 @@ for live demos.
      copy-paste demo templates, common mistakes. Its code blocks run in the docs test, and error
      messages say how to fix the problem.
 3. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
-   README), JSDoc types and a `.d.ts`, CI.
+   README), JSDoc types and a `.d.ts`, CI. (Tests already check what browsers and CDNs need:
+   relative `.js` imports only, no Node or DOM globals, and a definition solving identically on
+   a worker thread. A real-browser smoke test remains.)
 
 ## Later
 
