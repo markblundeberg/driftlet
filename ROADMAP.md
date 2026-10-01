@@ -76,12 +76,12 @@ for live demos.
      on both sides of a face; half-reactions as plain data, and `level(sol, half)`, the redox
      level they imply (with `SHE`); `traces(sol)`, the level diagram as plot-ready data, and
      `driftlet/plot`'s `bandDiagram(sol)`, an SVG string; `live(def)` for sliders (merging
-     changes made during a solve, warm starts, ramps from the last good state, Worker-backed).
-     See [the kit](docs/kit.md).
+     changes made during a solve, warm starts, ramps from the last good state, Worker-backed);
+     `describe(def)`, a readable summary with unit-slip and resolution warnings. See
+     [the kit](docs/kit.md).
+   - Built-in and open-circuit potentials in `describe()` (they need a solve).
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
-   - `describe()` and unit-slip warnings: Debye lengths against the grid, time constants,
-     conductivities, built-in or open-circuit potentials, "this D looks like cm²/s".
    - Half-reactions as vacuum-alignment anchors.
    - Voltage ledgers, written per family of devices (there's no general one): the terminal
      voltage as named contributions that sum exactly, for that family's usual simplifications.

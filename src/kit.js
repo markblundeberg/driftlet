@@ -9,6 +9,7 @@ export { build, combine, layer, ohmic, bath } from './stack.js';
 export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
 export { traces } from './traces.js';
 export { live } from './live.js';
+export { describe, unitWarnings } from './describe.js';
 
 const fail = (message) => {
   throw new DeviceError(message);

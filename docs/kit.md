@@ -152,6 +152,40 @@ const svg = bandDiagram(new Device(def).solve(), { title: 'liquid junction', phi
 console.log(svg.length); // in a page: element.innerHTML = svg
 ```
 
+## Checking a definition
+
+`describe(def)` validates a definition and returns a readable summary: each region with its
+doping, Debye length and the grid at its ends, each face's law, alignment, blocked species and
+reactions, the contacts, bulk reactions, and characteristic times (dielectric relaxation,
+diffusion across each region). It ends with warnings:
+
+- numbers that look like unit slips (`unitWarnings(def)` gives these alone): a D beyond 1 m²/s
+  (cm²/s?), a nonzero μ° under 100 J/mol (eV or volts?), a capacitance over 10 F/m²
+  (µF/cm²?), a concentration over 1000 M, lengths over a metre or under an atom, a T under
+  200 K (°C?), and so on;
+- double layers the grid won't resolve: end cells coarser than the Debye length (the solution's
+  `warnings` check this again against the solved concentrations).
+
+They're heuristics, prompts to check, never errors.
+
+```js
+import { units } from 'driftlet';
+import { build, layer, ohmic, describe } from 'driftlet/kit';
+
+const def = build({
+  species: [
+    { name: 'e-', z: -1 },
+    { name: 'h+', z: 1 },
+  ],
+  materials: {
+    Si: { epsr: 11.7, species: { 'e-': { D: 36, mu0: 0, cRef: units.perCm3(2.8e19) }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: units.perCm3(1.04e19) } } },
+  },
+  stack: [ohmic(0), layer('Si', 1e-6, { name: 'n', donors: units.perCm3(1e17) }), layer('Si', 1e-6, { name: 'p', acceptors: units.perCm3(1e16) }), ohmic(0)],
+  grid: { hmin: 1e-9, hmax: 20e-9 },
+});
+console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s is beyond any real diffusivity …
+```
+
 ## Live demos
 
 `live(def, opts)` wraps a device for sliders. Call `set(patch)` as often as a control moves
