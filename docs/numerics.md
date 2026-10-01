@@ -264,6 +264,16 @@ counts as fed, so nothing is conserved there and the steady equations are solved
 floating metal starts uncharged, with its Fermi level in equilibrium with the reaction on its
 left face.
 
+## Internal ports
+
+A port adds a source per volume to the balance rows of the nodes in its window, after every
+other term at those nodes and before the contacts. A held (`'equilibrium'`) level replaces the
+balance row with a Dirichlet row. The port's flux is then that row's residual, read just
+before replacement, exactly as at a contact. Conductance and exchange links are linear in
+(μ̄_out − μ̄). Everything stays on the node's own block. A contact's flux readout at an end node
+already includes any port source there, so contact and port fluxes always balance. A stretch
+reached by a port counts as fed, and its conservation intake includes the port's flux.
+
 ## Bulk reactions
 
 `r = k_f Π c_R^ν · (−expm1(−a))`, with `a = A/RT` computed from the compensated η. That's mass

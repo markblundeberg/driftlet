@@ -21,6 +21,7 @@ too (`FARADAY`, `GAS_CONSTANT`, `EPS0`, …).
 | `interfaces` | one entry per face between consecutive regions (optional where defaults apply) |
 | `bulkReactions` | homogeneous reactions |
 | `contacts` | `{ left, right }` |
+| `ports` | internal ports: outside phases exchanging with a window of nodes |
 | `circuit` | how the terminals are driven (default: each contact at its own voltage) |
 | `grid` | default spacing for every region |
 
@@ -257,6 +258,43 @@ standard-rate-constant form
 k0 in mol/(m²·s). The reaction sits at the contact node, just behind any Stern layer, so
 Frumkin effects arise by themselves.
 
+## Internal ports
+
+A port is an outside phase with known levels, like a contact's, attached to a window of nodes
+inside one region instead of at an end. It's the 1D stand-in for whatever feeds or drains a
+species sideways: source and drain grounding a MOS channel, salt injected mid-solution, a
+reference electrode's reservoir.
+
+```js nocheck
+ports: [{
+  name: 'channel',
+  region: 'Si',              // name or index
+  from: 495e-9, to: 500e-9,  // window, m from the region's left end (default: the whole region)
+  V: 0,                      // the port's terminal voltage
+  terminal: 'e-',
+  species: {
+    'e-': 'equilibrium',                         // μ̄ held at V_i = V + offset throughout the window
+    'Na+': { type: 'conductance', G: 1e9, offset: 0.2 }, // source G (V_out − V_i)/(zF) per volume, G in S/m³
+    O2: { type: 'exchange', k: 1e-3, mu: -2e3 },  // neutral: source k (μ_out − μ)/RT per volume, k in mol/(m³·s)
+  },
+}]
+```
+
+Offsets follow the contact rules: 0 by default only for the terminal species, and an absolute
+`mu` for neutral species. A port's voltage is fixed; ports aren't yet terminals of the circuit.
+Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what the port brings into
+the device. In steady state the right contact's current is the left contact's plus every
+port's.
+
+A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
+
+For example, in a 1D MOS capacitor without generation, inversion electrons can only arrive by
+minority-carrier diffusion from the back contact, which can take weeks. The inversion layer is
+then effectively floating, and its Fermi level is undetermined to within round-off, so no
+steady state can be computed there. A port holding the electrons beside the oxide at the
+channel's potential anchors it, as source and drain would, and the device then shows the
+low-frequency C–V.
+
 ## Circuit
 
 ```js nocheck
@@ -353,6 +391,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `current`, `terminalVoltage` | terminal current toward +x (A/m²) and V_right − V_left |
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
+| `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
 | `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name} }`: what crosses each face |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |

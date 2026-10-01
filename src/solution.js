@@ -92,6 +92,17 @@ export function makeSolution(solver, result = {}) {
     }
   }
   sol.current = sol.contacts.right.current;
+  // Internal ports: what each brings into the device (in steady state, the contact currents
+  // differ by the ports' total).
+  sol.ports = model.ports.map((port, k) => {
+    const flux = {};
+    let current = 0;
+    for (let i = 0; i < n; i++) {
+      flux[species[i].name] = solver.portFlux[k][i];
+      current += F * species[i].z * solver.portFlux[k][i];
+    }
+    return { name: port.name, V: port.V, flux, current };
+  });
   sol.terminalVoltage = sol.contacts.right.V - sol.contacts.left.V;
 
   // Interfaces: dipole and the fluxes carried by each flux node.

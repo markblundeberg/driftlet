@@ -148,6 +148,19 @@
  */
 
 /**
+ * An internal port: an outside phase exchanging with a window of one region's nodes.
+ * @typedef {object} PortDef
+ * @property {string} [name]
+ * @property {string | number} region region name or index
+ * @property {number} [from] window start, m from the region's left end (default 0)
+ * @property {number} [to] window end, m (default: the region's length)
+ * @property {number} [V] port terminal voltage, V
+ * @property {string} [terminal] species whose offset defaults to 0
+ * @property {Record<string, 'blocked' | 'equilibrium' | { type: 'equilibrium', offset?: number, mu?: number }
+ *   | { type: 'conductance', G: number, offset?: number } | { type: 'exchange', k: number, mu: number }>} species
+ */
+
+/**
  * A device definition: plain, serialisable data.
  * @typedef {object} DeviceDefinition
  * @property {number} [T] temperature, K (default 298.15)
@@ -157,6 +170,7 @@
  * @property {(InterfaceDef | null | undefined)[]} [interfaces] one per face, interfaces[f] between regions f and f+1
  * @property {BulkReactionDef[]} [bulkReactions]
  * @property {{ left?: ContactDef, right?: ContactDef }} [contacts]
+ * @property {PortDef[]} [ports] internal ports
  * @property {CircuitDef} [circuit] default: each contact at its own V
  * @property {GridOptions} [grid]
  */
@@ -183,6 +197,8 @@
  * @property {number} terminalVoltage V_right − V_left, V
  * @property {{ left: ContactResult, right: ContactResult }} contacts
  * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
+ * @property {{ name: string, V: number, flux: Record<string, number>, current: number }[]} ports what each
+ *   internal port brings into the device
  * @property {{ dipole: number, sheetCharge: number, D: number, N: Record<string, number> }[]} interfaces
  * @property {number} charge total charge in the device, C/m²
  * @property {{ species: string, regions: number[], spectator: boolean, connected: boolean, reactive: boolean,

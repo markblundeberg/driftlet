@@ -32,6 +32,8 @@ for live demos.
 - Metal regions: a Fermi level and a conductivity only (mixed-form Ohm's law, surface charge as
   sheets), capacitive faces aligned by work function, electrode reactions at internal faces,
   bipolar electrodes.
+- Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
+  conductance or exchange), e.g. grounding a 1D MOS channel.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
@@ -65,10 +67,8 @@ for live demos.
 - **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where λ_D ≪ h,
   for macroscopic devices with real double-layer charge on any grid. It tends to `neutral` as
   ε → 0.
-- **Internal ports.** An outside phase attached at an interior node, exchanging species through
-  the same laws as a contact (e.g. injecting salt mid-solution). It's local, because it only
-  adds terms to that node's balance. Start with reservoir exchange; extra circuit terminals
-  would come later.
+- **Ports as circuit terminals.** Internal ports exist (fixed-voltage reservoirs); letting a
+  port's voltage follow a terminal, or float in the circuit, would come next.
 - **Interface states** (charge that depends on the local μ̄_e, i.e. Fermi-level pinning) and
   thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.

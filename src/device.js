@@ -199,11 +199,15 @@ export function normalizeDevice(def) {
     right: normalizeContact(cdefs.right, 'right', regions[regions.length - 1], materials, species, speciesIndex, RT),
   };
 
+  // --- internal ports (outside phases attached over windows of interior nodes)
+  need(def.ports === undefined || Array.isArray(def.ports), 'ports must be an array');
+  const ports = (def.ports ?? []).map((pdef, k) => normalizePort(pdef, `ports[${k}]`, regions, materials, species, speciesIndex));
+
   // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
   // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.
   // Regions are coupled across a face by a non-neutral φ law or by any charged species that
   // crosses; a contact anchors its cluster through a gate, a reaction, or a connected ion.
-  checkAnchors(regions, materials, interfaces, contacts, species);
+  checkAnchors(regions, materials, interfaces, contacts, species, ports);
 
   // --- circuit (acts at the right terminal; the left terminal is the reference)
   const circuit = normalizeCircuit(def.circuit, contacts.right, species);
@@ -217,8 +221,20 @@ export function normalizeDevice(def) {
     throw new DeviceError(`grid: ${err.message}`);
   }
 
+  // Port windows: the nodes of the port's region within [from, to] of its left end.
+  ports.forEach((port, k) => {
+    const nodes = [];
+    const x0 = grid.x[grid.regionStart[port.region]];
+    for (let g = grid.regionStart[port.region]; g <= grid.regionEnd[port.region]; g++) {
+      const d = grid.x[g] - x0;
+      if (d >= port.from - 1e-15 * port.span && d <= port.to + 1e-15 * port.span) nodes.push(g);
+    }
+    need(nodes.length > 0, `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node; widen it or refine the grid`);
+    port.nodes = Int32Array.from(nodes);
+  });
+
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid, warnings,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, circuit, grid, warnings, ports,
   };
 }
 
@@ -307,7 +323,60 @@ function normalizeCircuit(cdef, right, species) {
   };
 }
 
-function checkAnchors(regions, materials, interfaces, contacts, species) {
+// An internal port: an outside phase with known levels (V_i = V + offset_i, or μ for neutral
+// species, as at a contact), exchanging with every node in a window of one region.
+// Links per species: 'equilibrium' (μ̄ held at the outside level throughout the window),
+// { type: 'conductance', G } for charged species (G in S/m³: a source G (V_out − V_i)/(zF) per
+// volume), { type: 'exchange', k, mu } for neutral ones (k in mol/(m³·s): a source
+// k (μ_out − μ)/RT per volume), or 'blocked' (the default).
+function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
+  need(isObject(pdef), `${path} must be an object`);
+  let r;
+  if (Number.isInteger(pdef.region)) r = pdef.region;
+  else r = regions.findIndex((reg) => reg.name === pdef.region);
+  need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
+  const reg = regions[r], mat = materials[reg.material];
+  const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
+  const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
+  need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);
+  const V = pdef.V === undefined ? 0 : finite(pdef.V, `${path}.V`);
+  let terminal = null;
+  if (pdef.terminal !== undefined) {
+    need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}`);
+    terminal = speciesIndex.get(pdef.terminal);
+  }
+  need(isObject(pdef.species), `${path}.species must map species names to port links`);
+  const links = species.map(() => ({ type: 'blocked' }));
+  for (const [sname, raw] of Object.entries(pdef.species)) {
+    const lpath = `${path}.species.${sname}`;
+    need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'`);
+    const i = speciesIndex.get(sname);
+    const link = typeof raw === 'string' ? { type: raw } : raw;
+    need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
+    if (link.type === 'blocked') continue;
+    need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
+    const z = species[i].z;
+    // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
+    let level;
+    if (z === 0) {
+      need(link.type !== 'conductance', `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
+      level = { mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
+    } else {
+      need(link.type !== 'exchange', `${lpath}: a charged species exchanges by { type: 'conductance', G }`);
+      need(link.mu === undefined, `${lpath}: a charged species is held by an offset from the port voltage, not by mu`);
+      const offset = link.offset ?? (terminal === i ? 0 : undefined);
+      need(offset !== undefined, `${lpath}.offset: give V_i − V_port (V); only the terminal species defaults to 0`);
+      level = { offset: finite(offset, `${lpath}.offset`) };
+    }
+    if (link.type === 'conductance') level.G = positive(link.G, `${lpath}.G (S/m³)`);
+    if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
+    links[i] = { type: link.type, ...level };
+  }
+  need(links.some((l) => l.type !== 'blocked'), `${path}.species: the port exchanges no species`);
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, V, terminal, species: links };
+}
+
+function checkAnchors(regions, materials, interfaces, contacts, species, ports = []) {
   const nR = regions.length;
   const parent = Array.from({ length: nR }, (_, r) => r);
   const find = (r) => (parent[r] === r ? r : (parent[r] = find(parent[r])));
@@ -323,6 +392,7 @@ function checkAnchors(regions, materials, interfaces, contacts, species) {
   const anchored = new Set();
   if (anchors(contacts.left)) anchored.add(find(0));
   if (anchors(contacts.right)) anchored.add(find(nR - 1));
+  for (const port of ports) if (port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
   for (let r = 0; r < nR; r++) {
     const mat = materials[regions[r].material];
     const charged = species.some((sp, i) => mat.present[i] && sp.z !== 0);

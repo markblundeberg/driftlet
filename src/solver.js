@@ -158,6 +158,7 @@ export class Solver {
     // Contact bookkeeping, filled by assemble(): particle flux toward +x through each contact,
     // and the displacement there (the metal's surface charge for a neutral link).
     this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
+    this.portFlux = model.ports.map(() => new Float64Array(n)); // into the device, mol/(m²·s)
     this.contactD = { left: 0, right: 0 };
     this.contactDOld = { left: 0, right: 0 };
     // Total current through the last segment and its derivatives (for current/load circuits).
@@ -217,8 +218,10 @@ export class Solver {
             if (rx.kf[m] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
           }
         }
-        const connected = leftOpen || rightOpen;
+        const ports = model.ports.flatMap((port, k) => (port.region >= r0 && port.region <= r && port.species[i].type !== 'blocked' ? [k] : []));
+        const connected = leftOpen || rightOpen || ports.length > 0;
         this.stretches.push({
+          ports,
           species: i,
           regions: [r0, r],
           nodes: [grid.regionStart[r0], grid.regionEnd[r]],
@@ -256,6 +259,12 @@ export class Solver {
     let s = 0;
     for (let g = stretch.nodes[0]; g <= stretch.nodes[1]; g++) s += vol[g] * c[g * n + stretch.species];
     return s;
+  }
+
+  /** η_i (μ̄/RT) of a port's outside level for species i. */
+  portEta(port, i) {
+    const link = port.species[i];
+    return this.z[i] === 0 ? link.mu / this.model.RT : (this.z[i] * (port.V + link.offset)) / this.VT;
   }
 
   /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
@@ -310,6 +319,7 @@ export class Solver {
         } else {
           const left = st.regions[0] === 0 ? this.contactEta('left', i) : NaN;
           eta[i] = Number.isFinite(left) ? left : this.contactEta('right', i);
+          if (!Number.isFinite(eta[i]) && st.ports.length > 0) eta[i] = this.portEta(model.ports[st.ports[0]], i);
           mode[i] = 1;
           if (!Number.isFinite(eta[i])) {
             // Fed only through reactions (no level held at a contact): start from c0.
@@ -783,6 +793,9 @@ export class Solver {
       for (const rx of itf.electrode) this._electrodeAtFace(rx, itf.metal, f, bf, bL, bR);
     }
 
+    // Internal ports (after every other term at their nodes, so a held level can read its flux).
+    model.ports.forEach((port, k) => this._port(port, this.portFlux[k]));
+
     // Contacts.
     const circuit = model.circuit;
     const tb = this.terminalBlock; // extra block carrying a floating terminal voltage, or −1
@@ -1062,6 +1075,37 @@ export class Solver {
       for (let k = 0; k < M; k++) {
         if (dL[k] !== 0) this._j(bf, row, bL, k, -nu * dL[k]);
         if (dR[k] !== 0) this._j(bf, row, bR, k, -nu * dR[k]);
+      }
+    }
+  }
+
+  // An internal port's exchange with each node of its window, as a source per volume. A held
+  // ('equilibrium') level replaces the node's balance row; the source is then that row's residual.
+  // Ports come before the contacts, so a contact's flux readout includes a port's source there.
+  _port(port, flux) {
+    const { n, M, u, uLo, res, z, VT } = this;
+    const F = FARADAY, vol = this.model.grid.vol;
+    flux.fill(0);
+    for (let i = 0; i < n; i++) {
+      const link = port.species[i];
+      if (link.type === 'blocked') continue;
+      const r = 1 + i, target = this.portEta(port, i);
+      for (const g of port.nodes) {
+        const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
+        const deta = target - (u[o] + uLo[o]); // (μ̄_out − μ̄)/RT
+        if (link.type === 'equilibrium') {
+          if (g === 0 || g === this.nNodes - 1) continue; // a device end node's level is its contact's business
+          flux[i] += res[o];
+          this._replaceRow(b, r);
+          this._j(b, r, b, r, 1);
+          res[o] = -deta;
+          continue;
+        }
+        // conductance: s = G V_T (η_out − η)/(z² F); exchange: s = k (η_out − η)
+        const kk = link.type === 'conductance' ? (link.G * VT) / (z[i] * z[i] * F) : link.k;
+        res[o] -= v * kk * deta;
+        this._j(b, r, b, r, v * kk);
+        flux[i] += v * kk * deta;
       }
     }
   }
@@ -1750,6 +1794,7 @@ export class Solver {
       let q = 0;
       if (st.regions[0] === 0) q += this.contactFlux.left[st.species];
       if (st.regions[1] === last) q -= this.contactFlux.right[st.species];
+      for (const p of st.ports) q += this.portFlux[p][st.species];
       let hist = 0;
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) hist += vol[g] * (cOld[g * n + st.species] - cN[g * n + st.species]);
       this.boundaryIntake[k] += q * dt + hist;

@@ -118,6 +118,7 @@ initial composition), joined at **interfaces**, with a **contact** at each end a
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
 - imposed flow (advection) and current-free eddy mixing;
+- internal ports: reservoirs feeding a window of nodes, e.g. grounding a MOS channel;
 - voltage, galvanostatic (including open circuit) and load-resistor circuits;
 - steady states; transients by backward Euler, BDF2, or adaptive BDF2 with error control and
   frame budgets for animation; exact conservation bookkeeping;
@@ -149,6 +150,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
 | Advection and eddy mixing | exact convection–diffusion profile; D + D_mix; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
 | Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
+| Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel | 1e-4; 1e-9; 2e-3 |
 | Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
