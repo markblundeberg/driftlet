@@ -166,3 +166,44 @@ test('kinetic definitions are checked', () => {
   def = ionic({ species: { 'Li+': { type: 'conductance' } } });
   throwsDevice(def, /\.G must be a positive number/);
 });
+
+test('a redox couple between inert electrodes conserves its total: equilibrium at its Nernst level, and steady current', () => {
+  // Pt | Fe³⁺, Fe²⁺, H⁺, Cl⁻ | Pt, a closed cell. Fe³⁺ + e⁻ ⇌ Fe²⁺ exchanges electrons with
+  // the metals but conserves the iron, so its amount stays as given, whatever the electrodes do.
+  const c3 = 5, c2 = 20;
+  const water = { 'H+': { D: 9.3e-9, mu0: 0 }, 'Fe3+': { D: 0.6e-9, mu0: -4.7e3 }, 'Fe2+': { D: 0.72e-9, mu0: -78.9e3 }, 'Cl-': { D: 2.0e-9, mu0: -131.2e3 } };
+  const redoxFace = (metal) => ({ reactions: [{ [metal]: { 'e-': -1 }, [metal === 'left' ? 'right' : 'left']: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-3 }] });
+  const cell = (V) =>
+    new Device({
+      species: [
+        { name: 'H+', z: 1, cRef: 1000 },
+        { name: 'Fe3+', z: 3, cRef: 1000 },
+        { name: 'Fe2+', z: 2, cRef: 1000 },
+        { name: 'Cl-', z: -1, cRef: 1000 },
+        { name: 'e-', z: -1 },
+      ],
+      materials: { water: { epsr: 0, species: water }, Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } } },
+      regions: [
+        { material: 'Pt', length: 1e-6 },
+        { material: 'water', length: 20e-6, c0: { 'H+': 100, 'Fe3+': c3, 'Fe2+': c2, 'Cl-': 100 + 3 * c3 + 2 * c2 } },
+        { material: 'Pt', length: 1e-6 },
+      ],
+      interfaces: [redoxFace('left'), redoxFace('right')],
+      contacts: { left: collector(0), right: collector(V) },
+      grid: { minCells: 100 },
+    });
+  const iron = (sol) => sol.conservation.filter((st) => st.species === 'Fe3+' || st.species === 'Fe2+').reduce((a, st) => a + st.amount, 0);
+  const total = (c3 + c2) * 20e-6;
+
+  const eq = cell(0).solve();
+  assert.ok(eq.converged);
+  assert.ok(Math.abs(iron(eq) / total - 1) < 1e-10, `iron ${iron(eq)} vs ${total}`);
+  const g = eq.x.length >> 1;
+  // The electrode sits at the couple's level: E° + (RT/F) ln(c₃/c₂) above V°(SHE) = φ.
+  const E0 = (-4.7e3 + 78.9e3) / FARADAY;
+  assert.ok(Math.abs(eq.V['e-'][0] - eq.phi[g] - (E0 + VT * Math.log(c3 / c2))) < 1e-9);
+
+  const run = cell(0.1).solve();
+  assert.ok(run.converged && Math.abs(run.current) > 0);
+  assert.ok(Math.abs(iron(run) / total - 1) < 1e-10, `iron ${iron(run)} vs ${total}`);
+});

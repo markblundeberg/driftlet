@@ -353,20 +353,16 @@ export class Solver {
         r++;
       }
     }
-    // A stretch exchanging with a fed stretch through a face reaction is fed too (e.g. ions
-    // between two electrodes that each reach a contact): nothing is conserved there.
-    for (let changed = true; changed; ) {
-      changed = false;
-      model.interfaces.forEach((itf, f) => {
-        for (const rx of itf.reactions) {
-          const touching = rx.part.map((p) => this.stretches[this.stretchOf[(f + p.side) * n + p.i]]);
-          if (touching.some((st) => st.connected) && touching.some((st) => !st.connected)) {
-            for (const st of touching) st.connected = true;
-            changed = true;
-          }
-        }
-      });
-    }
+    // Which stretches are fed: those in no conserved combination. A conserved combination is a
+    // weighting w of the stretches' amounts that no reaction changes (w·ν = 0 for every face and
+    // bulk reaction) and that nothing outside feeds (w = 0 on stretches reached by a contact or
+    // a port). So Ag⁺ between silver electrodes is fed (Ag⁺ + e⁻ ⇌ Ag(s), the electrons fed by the
+    // contacts), while Fe³⁺ and Fe²⁺ between platinum electrodes aren't (Fe³⁺ + e⁻ ⇌ Fe²⁺
+    // conserves the iron, whatever the electrons do).
+    this.moieties = this._conservedMoieties();
+    this.stretches.forEach((st, k) => {
+      st.connected = st.contactFed || this.moieties.every((w) => w[k] === 0);
+    });
     for (const st of this.stretches) {
       st.spectator = !st.connected && !st.reactive;
       // Mobile throughout: its steady state is then a single level fixed by its amount.
@@ -391,6 +387,68 @@ export class Solver {
       });
     });
     this.constrained = false;
+  }
+
+  // A basis of the conserved combinations of stretch amounts: the null space of the
+  // stoichiometry (a row per reaction, over the stretches it touches) together with a unit row
+  // for each stretch fed from outside. Exact integer data, so plain elimination will do.
+  _conservedMoieties() {
+    const { model, n } = this, S = this.stretches.length;
+    const rows = [];
+    model.interfaces.forEach((itf, f) => {
+      for (const rx of itf.reactions) {
+        const row = new Float64Array(S);
+        for (const p of rx.part) row[this.stretchOf[(f + p.side) * n + p.i]] += p.nu;
+        rows.push(row);
+      }
+    });
+    model.regions.forEach((reg, q) => {
+      for (const rx of model.reactions) {
+        if (!(rx.kf[reg.material] > 0)) continue;
+        const row = new Float64Array(S);
+        for (const p of rx.reactants) row[this.stretchOf[q * n + p.i]] -= p.nu;
+        for (const p of rx.products) row[this.stretchOf[q * n + p.i]] += p.nu;
+        rows.push(row);
+      }
+    });
+    this.stretches.forEach((st, k) => {
+      if (!st.contactFed) return;
+      const row = new Float64Array(S);
+      row[k] = 1;
+      rows.push(row);
+    });
+    // Reduced row echelon form; the free columns give the null space.
+    const pivots = [];
+    let r = 0;
+    for (let col = 0; col < S && r < rows.length; col++) {
+      let best = r;
+      for (let i = r + 1; i < rows.length; i++) if (Math.abs(rows[i][col]) > Math.abs(rows[best][col])) best = i;
+      if (Math.abs(rows[best][col]) < 1e-9) continue;
+      [rows[r], rows[best]] = [rows[best], rows[r]];
+      const pr = rows[r], pv = pr[col];
+      for (let j = 0; j < S; j++) pr[j] /= pv;
+      for (let i = 0; i < rows.length; i++) {
+        if (i === r || rows[i][col] === 0) continue;
+        const fct = rows[i][col];
+        for (let j = 0; j < S; j++) rows[i][j] -= fct * pr[j];
+      }
+      pivots.push(col);
+      r++;
+    }
+    const isPivot = new Uint8Array(S);
+    for (const col of pivots) isPivot[col] = 1;
+    const basis = [];
+    for (let free = 0; free < S; free++) {
+      if (isPivot[free]) continue;
+      const w = new Float64Array(S);
+      w[free] = 1;
+      pivots.forEach((col, i) => {
+        const v = -rows[i][free];
+        w[col] = Math.abs(v) < 1e-9 ? 0 : v;
+      });
+      basis.push(w);
+    }
+    return basis;
   }
 
   // Every stretch either reaches a contact or is a mobile spectator: the steady equations can

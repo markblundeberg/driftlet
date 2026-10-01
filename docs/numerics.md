@@ -279,8 +279,13 @@ singular to left-to-right elimination, and the charging current would need the c
 blocks away.
 
 Electrode reactions at a conductor's face take its carrier at its edge node, like any face
-reaction. A stretch exchanging through a face reaction with one that reaches a contact counts as
-fed, so nothing is conserved there and the steady equations are solved directly. A floating
+reaction. Whether a stretch is fed is decided by its conserved combinations: weightings w of the
+stretches' amounts that no reaction changes (w·ν = 0 for every face and bulk reaction) and that
+nothing outside feeds (w = 0 on stretches reached by a contact or a port), the null space of that
+stoichiometry. A stretch in none of them is fed. So Ag⁺ between silver electrodes is fed (Ag⁺ + e⁻
+⇌ Ag(s), the electrons fed by the contacts), and the steady equations are solved directly; Fe³⁺
+and Fe²⁺ between platinum electrodes aren't, since Fe³⁺ + e⁻ ⇌ Fe²⁺ conserves the iron whatever
+the electrons do, so their total is kept by huge steps (below). A floating
 conductor starts uncharged, with its carrier's level in equilibrium with the first reaction on its
 left face that takes it.
 
