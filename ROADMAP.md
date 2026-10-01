@@ -42,6 +42,16 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
+   - Warn when a factorisation loses most of its digits (a pivot many orders below its
+     block), instead of losing them silently.
+   - Floating conductors in η form. A floating metal is fixed by the mixed form, but the same
+     cancellation awaits a floating mixed conductor or semiconductor region held only by face
+     reactions or recombination, in steady state (in transients, storage anchors it): a fast
+     species across many segments, with a mode only weakly held from outside. Candidates are
+     a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
+     form for the fast species only.
+   - Fewer Newton iterations where the benchmarks show many, e.g. the bipolar electrode (about
+     50 per bias point) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer (e.g. a `driftlet/kit` subpath export,
    still dependency-free) that writes plain specs, so users and LLM agents start from something
    correct. It never hides a physical choice: everything it produces is ordinary, inspectable

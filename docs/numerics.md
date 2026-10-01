@@ -244,10 +244,19 @@ then has two rows:
 … + J (out of L), − J (into R) in the carrier balances
 ```
 
-This mixed form matters. Eliminating a stiff ohmic chain in η alone computes
-g − g²/(g + G) wherever the chain hangs on a weak conductance G, such as a floating metal held
-only by its electrode reactions. For a real metal that cancels catastrophically, with pivots
-near 1e-15. In mixed form every coefficient is O(1), whatever σ.
+This mixed form matters. A floating metal, held only by weak conductances G such as its
+electrode reactions, has its overall level set by G alone, while every entry of an η-only
+Jacobian is of order g. Eliminating it then computes the last pivot as g − g²/(g + G) ≈ G with
+an absolute error of order ε·g: digits are lost in proportion to g/G, and beyond g/G ≈ 1e15 the
+pivot is noise or zero. (G is already lost when the diagonal g + G is stored.) In mixed form
+the matrix holds 1/g instead, every coefficient is O(1), and the limit σ → ∞ is simply the
+constraint η_R = η_L. A Grassmann–Taksar–Heyman-style elimination, which carries each row's
+leakage separately so that pivots are built as sums, would also keep η alone exact, but it needs
+to know which rows form a conductance network.
+
+A metal region is a single cell. Nothing is stored in its bulk, so η is linear across it in
+transients too, and one segment is exact. That also keeps g = σRT/(z²F²L) as small as the
+region allows.
 
 A metal's bulk holds no charge. Its surface charge at a capacitive face is the face's
 displacement, booked as a sheet of excess carriers in the edge node's half-box. That gives the

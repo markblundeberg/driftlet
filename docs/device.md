@@ -71,8 +71,11 @@ materials: { Au: { metal: { species: 'e-', conductivity: 4.1e7 } } } // S/m
 
 A metal has one unknown, the Fermi level (the carrier's μ̄), and nothing else: no ε, no `mu0`
 or `cRef`, and φ is undefined inside. Its bulk is neutral and incompressible, conduction is
-ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a charged face. Metal regions take
-no `fixedCharge` or `c0`. See [Faces next to a metal](#faces-next-to-a-metal).
+ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a charged face. Since nothing is
+stored inside, the Fermi level is exactly linear across a metal region, so the region is a
+single grid cell, whatever its length. Metal regions take no `fixedCharge`, `c0`, `grid`,
+`velocity` or `mixing`, and no ports (reach a metal through a contact or a face reaction). See
+[Faces next to a metal](#faces-next-to-a-metal).
 
 `statistics` (optional) lists non-ideal statistics models, each covering named species:
 Fermi–Dirac, lattice gas (crowding), Redlich–Kister, Debye–Hückel, insertion hosts (OCV

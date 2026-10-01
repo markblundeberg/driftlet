@@ -6,7 +6,8 @@
 // inside a single region, and all material steps happen across links.
 //
 // Spacing grows geometrically (ratio `ratio`) from `hmin` at each region end, capped at
-// `hmax`, then is scaled so the cells fill the region exactly.
+// `hmax`, then is scaled so the cells fill the region exactly. A region may instead give its
+// cell widths outright (`cells`), as a metal region does: one cell, exact for Ohm's law.
 
 const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
 
@@ -46,13 +47,13 @@ export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCel
 
 /**
  * Build the device grid.
- * @param {{length: number, grid?: object}[]} regions in order, left to right
+ * @param {{length: number, grid?: object, cells?: number[]}[]} regions in order, left to right
  * @param {object} [opts] defaults for every region: { hmin, hmax, ratio, minCells }
  */
 export function buildGrid(regions, opts = {}) {
   if (!Array.isArray(regions) || regions.length === 0) throw new Error('grid needs at least one region');
 
-  const perRegion = regions.map((reg) => gradedCells(reg.length, { ...opts, ...(reg.grid ?? {}) }));
+  const perRegion = regions.map((reg) => reg.cells ?? gradedCells(reg.length, { ...opts, ...(reg.grid ?? {}) }));
   const nNodes = perRegion.reduce((s, cells) => s + cells.length + 1, 0);
   const nSeg = nNodes - 1;
 

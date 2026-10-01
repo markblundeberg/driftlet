@@ -133,6 +133,10 @@ export function normalizeDevice(def) {
     if (mat.metal) {
       need(fixedCharge === 0, `${path}.fixedCharge: a metal region is neutral in bulk (its carriers are the conduction electrons)`);
       need(reg.c0 === undefined, `${path}.c0: a metal region has no composition to give, only its Fermi level`);
+      need(velocity === 0 && mixing === 0, `${path}: a metal region has no flow or mixing, only conduction`);
+      // Nothing is stored inside a metal (its charge is on its faces), so its Fermi level is
+      // exactly linear across it, and one cell is exact.
+      need(reg.grid === undefined, `${path}.grid: a metal region is a single cell (exact for Ohm's law), so it takes no grid options`);
     }
     if (mat.epsr === 0) {
       need(
@@ -171,6 +175,7 @@ export function normalizeDevice(def) {
       velocity,
       mixing,
       grid: reg.grid,
+      cells: mat.metal ? [length] : undefined,
     };
   });
 
@@ -336,6 +341,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
   else r = regions.findIndex((reg) => reg.name === pdef.region);
   need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
   const reg = regions[r], mat = materials[reg.material];
+  need(!mat.metal, `${path}.region: a metal region is a single cell with no interior; reach it through a contact or a face reaction`);
   const from = pdef.from === undefined ? 0 : nonNegative(pdef.from, `${path}.from`);
   const to = pdef.to === undefined ? reg.length : finite(pdef.to, `${path}.to`);
   need(to >= from && to <= reg.length * (1 + 1e-12), `${path}: the window [from, to] must lie within the region (0 to ${reg.length} m)`);

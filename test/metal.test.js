@@ -6,14 +6,18 @@ const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' },
 const throwsDevice = (def, pattern) =>
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && pattern.test(e.message), String(pattern));
 
-test('metal region: ohmic, with a Fermi level and no φ or concentration', () => {
+test('metal region: ohmic, with a Fermi level and no φ or concentration, on one cell', () => {
   const sigma = 1e6, L = 1e-6, V = 1e-3;
-  const sol = new Device({
+  const dev = new Device({
     species: [{ name: 'e-', z: -1 }],
     materials: { Cu: { metal: { species: 'e-', conductivity: sigma } } },
     regions: [{ material: 'Cu', length: L }],
     contacts: { left: collector(0), right: collector(V) },
-  }).solve();
+    grid: { hmin: 1e-10 },
+  });
+  // Nothing is stored inside a metal, so its Fermi level is linear and one cell is exact.
+  assert.equal(dev.grid.nNodes, 2);
+  const sol = dev.solve();
   assert.ok(sol.converged);
   assert.ok(Math.abs(sol.current / ((-sigma * V) / L) - 1) < 1e-12);
   const mid = sol.x.length >> 1;
@@ -179,4 +183,15 @@ test('metal definitions are checked', () => {
   def = base();
   def.materials.Au.epsr = 1;
   throwsDevice(def, /a metal takes only/);
+  def = base();
+  def.interfaces = [{ phi: { type: 'capacitive', C: 1 }, zeroCharge: 0.5 }];
+  new Device(def);
+  def.regions[0].grid = { minCells: 10 };
+  throwsDevice(def, /single cell/);
+  delete def.regions[0].grid;
+  def.regions[0].velocity = 1e-3;
+  throwsDevice(def, /no flow or mixing/);
+  delete def.regions[0].velocity;
+  def.ports = [{ region: 0, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
+  throwsDevice(def, /single cell with no interior/);
 });

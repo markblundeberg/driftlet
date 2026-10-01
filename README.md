@@ -177,7 +177,7 @@ checked in CI; times are from a desktop Ryzen 7600X in Node 22:
 | MOS with a metal gate: C–V sweep, 26 points | 11 ms | 126 |
 | Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 27 ms | 170 |
 | Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 36 ms | 287 |
-| Bipolar Ag electrode: sweep 0 → 1 V, 11 points | 300 ms | 555 |
+| Bipolar Ag electrode: sweep 0 → 1 V, 11 points | 225 ms | 535 |
 
 The library has no dependencies and does no DOM access, so it runs in a Web Worker. (A device
 definition is plain data and can be posted to a worker. Devices using custom-function
