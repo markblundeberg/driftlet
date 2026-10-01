@@ -60,6 +60,13 @@
  * @property {GridOptions} [grid]
  */
 
+/**
+ * One side of a vacuum-level alignment: V_vac = V_anchor − offset.
+ * @typedef {{ anchor: string, offset: number }} VacuumSide anchor: a charged species (its
+ *   standard level) or 'phi'; offset: electron affinity, ionisation energy, work function,
+ *   absolute SHE potential, …, in V
+ */
+
 /** @typedef {'dipole' | 'neutral' | { type: 'capacitive', C: number }} InterfacePhiLaw */
 /** @typedef {'equilibrium' | 'blocked' | { type: 'conductance', G: number }} InterfaceSpeciesLink */
 
@@ -76,6 +83,7 @@
  * @typedef {object} InterfaceDef
  * @property {{ species: string, value: number }} [step] standard-level step right − left, J/mol
  * @property {number} [dipole] φ jump right − left, V
+ * @property {{ left: VacuumSide, right: VacuumSide }} [vacuum] vacuum-level heuristic: equal vacuum levels
  * @property {InterfacePhiLaw} [phi] electrostatic law (default 'dipole'; 'neutral' between ε = 0 materials)
  * @property {number} [sheetCharge] C/m²
  * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium)
@@ -101,8 +109,8 @@
  * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at
  * the face (D = 0); capacitive: Stern layer or gate; dipole: pinned φ_edge = V − zeroCharge.
  * @typedef {'bulk' | 'neutral'
- *   | { type: 'capacitive', C: number, zeroCharge: number }
- *   | { type: 'dipole', zeroCharge: number }} ContactPhiLink
+ *   | { type: 'capacitive', C: number, zeroCharge?: number, vacuum?: { outside: number, inside: VacuumSide } }
+ *   | { type: 'dipole', zeroCharge?: number, vacuum?: { outside: number, inside: VacuumSide } }} ContactPhiLink
  */
 
 /**

@@ -89,9 +89,11 @@ driftlet insists on thermodynamically honest concepts ([conventions](docs/conven
   you set is an electrostatic potential.
 - **φ is bookkeeping.** Each material's standard chemical potentials anchor its own φ, and φ
   jumps at every interface between different materials.
-- **Band alignment is a property of each interface** and must be given explicitly: there is no
-  Anderson or Schottky–Mott rule built in. If vacuum-level reasoning is all you have, the
-  [alignment guide](docs/alignment.md) gives the recipes, and their caveats.
+- **Band alignment is a property of each interface** and must be given explicitly: nothing is
+  assumed by default. If vacuum-level estimates are all you have, give each side an anchor and
+  an offset (electron affinity, work function, absolute SHE potential, …) and driftlet lines
+  up the vacuum levels. The [alignment guide](docs/alignment.md) covers the recipe and its
+  caveats.
 - The species voltage `V_i = μ̄_i / (z_i F)` and standard level `V°_i` are available as views,
   as in [ESBD](https://marklundeberg.com/esbd/) diagrams.
 

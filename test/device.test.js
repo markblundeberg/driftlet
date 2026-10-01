@@ -201,3 +201,35 @@ test('definitions are plain data and survive structured cloning', () => {
   const def = structuredClone(hetero());
   assert.doesNotThrow(() => new Device(def));
 });
+
+test('vacuum-level alignment: anchors and offsets reproduce Anderson, ionisation energies and gates', () => {
+  // Anderson: electron affinities on the e⁻ standard level (the conduction band) give
+  // ΔE_c = χ_A − χ_B, the same dipole as the equivalent step.
+  const chiA = 4.07, chiB = 3.8;
+  const vac = hetero();
+  vac.interfaces = [{ vacuum: { left: { anchor: 'e-', offset: chiA }, right: { anchor: 'e-', offset: chiB } } }];
+  const step = hetero();
+  step.interfaces = [{ step: { species: 'e-', value: units.eV(chiA - chiB) } }];
+  const dv = new Device(vac).model.interfaces[0].dipole, ds = new Device(step).model.interfaces[0].dipole;
+  assert.ok(Math.abs(dv - ds) < 1e-12, `${dv} vs ${ds}`);
+  // The same alignment through ionisation energies on the valence band (h⁺ standard level).
+  const egA = 1.42, egB = 1.8;
+  const ion = hetero();
+  ion.interfaces = [{ vacuum: { left: { anchor: 'h+', offset: chiA + egA }, right: { anchor: 'h+', offset: chiB + egB } } }];
+  assert.ok(Math.abs(new Device(ion).model.interfaces[0].dipole - ds) < 1e-12);
+  // φ as the anchor: the offsets are surface potentials χ (V_vac = φ − χ), so φ_R − φ_L = χ_R − χ_L.
+  const phi = hetero();
+  phi.interfaces = [{ vacuum: { left: { anchor: 'phi', offset: 0.3 }, right: { anchor: 'phi', offset: 0.1 } } }];
+  assert.ok(Math.abs(new Device(phi).model.interfaces[0].dipole + 0.2) < 1e-12);
+
+  // A gate (work function W) on material A: zeroCharge = W − χ − μ°_e/F, the flat-band form.
+  const gate = hetero();
+  gate.contacts.left = { V: 0, phi: { type: 'capacitive', C: 0.01, vacuum: { outside: 4.5, inside: { anchor: 'e-', offset: chiA } } } };
+  const zc = new Device(gate).model.contacts.left.phi.zeroCharge;
+  assert.ok(Math.abs(zc - (4.5 - chiA - gate.materials.A.species['e-'].mu0 / FARADAY)) < 1e-12);
+
+  throwsDevice({ ...hetero(), interfaces: [{ vacuum: { left: { anchor: 'X', offset: 1 }, right: { anchor: 'e-', offset: 1 } } }] }, /anchor must be 'phi' or a charged species/);
+  throwsDevice({ ...hetero(), interfaces: [{ dipole: 0, vacuum: { left: { anchor: 'phi', offset: 0 }, right: { anchor: 'phi', offset: 0 } } }] }, /exactly one alignment/);
+  gate.contacts.left.phi.zeroCharge = 0;
+  throwsDevice(gate, /either zeroCharge or vacuum/);
+});

@@ -116,6 +116,10 @@ interfaces: [
   face, right minus left, `(μ°_R + zFφ_R) − (μ°_L + zFφ_L)`, in J/mol. For electrons that's
   the conduction-band offset.
 - `dipole`: the φ jump, right minus left, in each material's own anchoring, in volts.
+- `vacuum: { left: { anchor, offset }, right: { anchor, offset } }`: the vacuum-level
+  heuristic. Each side's vacuum level sits `offset` volts beyond its `anchor` (a charged
+  species' standard level, or `'phi'`), and the two are taken to coincide. See the
+  [alignment guide](alignment.md).
 
 There is no default: omitting it is an error. A face between regions of the same material
 defaults to no dipole.
@@ -207,8 +211,10 @@ species relative to V.
   what a "fixed φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type
   material with μ°_e = 0 is `zeroCharge: φ_B`.
 
-Like every alignment, `zeroCharge` is a property of that interface, never computed from work
-functions (see the [alignment guide](alignment.md) for vacuum-level estimates).
+Like every alignment, `zeroCharge` is a property of that interface. To estimate it from vacuum
+levels, give `vacuum: { outside, inside: { anchor, offset } }` instead: `outside` is the work
+function of the conductor at the terminal voltage, and the inside's vacuum level comes from an
+anchor and offset as at an interface (see the [alignment guide](alignment.md)).
 
 **Electrode `reactions`**, written as reduction when `electrons > 0`:
 `Σν_R R + n e⁻(metal) ⇌ Σν_P P`. The metal's electrons sit at μ̄_e = −F·V, and

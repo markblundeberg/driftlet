@@ -1,120 +1,131 @@
-# Band alignment: recipes from vacuum levels, and their caveats
+# Band alignment from vacuum levels
 
-driftlet never computes how levels line up across an interface. Each interface's alignment is
+driftlet never decides how levels line up across an interface. Each interface's alignment is
 its own physical property, and you give it explicitly (see [conventions](conventions.md)). But
-sometimes vacuum-level reasoning is the only estimate available. It's also a useful worked
-reference. This page gives the standard recipes, translated into driftlet's inputs, each with
-its hidden assumptions and known failures. Use them knowingly.
+sometimes vacuum-level reasoning is the only estimate available, and it's a useful worked
+reference. This page sets it out as one recipe with two ingredients, and lists what it
+assumes.
 
-**What every vacuum-level rule assumes:**
-1. Each material's levels can be referred to a vacuum level that runs continuously through the
-   interface. There's no interface dipole beyond what the materials' separate surfaces imply.
-2. Surface quantities (work function W, electron affinity χ) are bulk properties. They aren't:
-   they're barrier heights of particular surfaces, and change with termination, adsorbates and
-   preparation.
-3. As a consequence, alignments add up transitively around any set of materials, and are
-   uniform along each interface.
+**Before reaching for it,** ask whether you need an alignment at all. If only macroscopic,
+bulk-neutral behaviour matters, a `phi: 'neutral'` interface makes the alignment drop out, and
+none is needed.
+
+## The recipe: an anchor and an offset per material
+
+Every vacuum-level number in the literature describes **one material against vacuum**. It
+picks a level inside the material (the **anchor**) and says how far above that level, in
+electron energy, the vacuum level just outside the surface lies (the **offset**). In
+driftlet's voltage units (V = −E/e for electrons):
+
+```
+V_vac = V_anchor − offset
+```
+
+| Quantity | Anchor | Offset |
+|---|---|---|
+| electron affinity χ | conduction band = the e⁻ standard level | χ |
+| ionisation energy | valence band = the h⁺ standard level | χ + E_g |
+| work function W | Fermi level | W |
+| Trasatti's absolute SHE, ≈ 4.44 V | the SHE level of a solution | 4.44 V |
+| surface potential χ_s | the inner potential φ | χ_s |
+
+Two materials are then aligned by **assuming their vacuum levels coincide** across the
+interface. That assumption is the whole heuristic: Anderson's rule, the Schottky–Mott rule, a
+gate's flat-band voltage and the pzc estimate are all this one recipe applied to different
+pairs. It can combine any pair, for example a semiconductor (electron affinity) against an
+aqueous electrolyte (absolute SHE).
+
+### The anchors in driftlet
+
+An anchor has to be a level that driftlet knows in terms of a material's φ:
+
+- **A charged species' standard level**, `V°_i = φ + μ°_i/(z_i F)`. For e⁻ and h⁺ these are
+  the band edges. For an ion, V°_i is the level of electrons in equilibrium with the ion's
+  standard redox couple, with the element in its standard state (M⁺ + e⁻ ⇌ M, or
+  ½X₂ + e⁻ ⇌ X⁻), on whatever scale the μ° values come from.
+- **The SHE level.** With ion μ° from the usual SHE-based tables (μ°_H⁺ = 0, μ°_H₂ = 0), the
+  H⁺ standard level *is* the SHE level. So Trasatti's value is anchor `'H+'` with offset 4.44 V.
+  The SHE level also equals V°_i − E°_i for any other table ion, so without H⁺ in the model
+  the anchor can be that ion with offset 4.44 V + E°_i (e.g. Cl⁻: 4.44 + 1.36 = 5.80 V).
+  Trasatti's 4.44 V works exactly like a semiconductor's electron affinity, with the SHE level
+  in place of the conduction band.
+- **The Fermi level** of a metal. A metal modelled as a strictly neutral region (`epsr: 0`)
+  whose electron `cRef` equals its electron density has c = c_ref everywhere, so its Fermi
+  level coincides with its e⁻ standard level: use anchor `'e-'` with offset W. A
+  semiconductor's Fermi level moves with doping and bias, so its work function isn't a
+  material constant: use its electron affinity instead.
+- **φ itself** (`'phi'`), with a surface potential as the offset. That's discouraged, since φ
+  is bookkeeping: its value inside a material depends on how that material's μ° were
+  anchored, and surface potentials are not measurable on their own. If you have settled that
+  bookkeeping to your own satisfaction, it's available.
+
+## In the API
+
+An interface takes the recipe directly, as an alternative to `dipole` or `step`:
+
+```js nocheck
+interfaces: [{
+  vacuum: {
+    left: { anchor: 'e-', offset: 4.07 },  // GaAs: electron affinity
+    right: { anchor: 'e-', offset: 3.8 },  // its partner
+  },
+}]
+```
+
+driftlet turns it into the face's dipole: φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R.
+
+A contact's capacitive or dipole φ law takes it in place of `zeroCharge`. The outside phase's
+anchor is the terminal level, so only its offset is needed (the work function of the
+conductor whose voltage V is):
+
+```js nocheck
+phi: { type: 'capacitive', C, vacuum: { outside: 4.5, inside: { anchor: 'e-', offset: 4.05 } } }
+// zeroCharge = outside + (V_vac − φ)_inside = W − χ − μ°_e/F
+```
+
+## Pairwise examples
+
+**Semiconductor heterojunction (Anderson's rule).** Electron affinities on both sides,
+`{ anchor: 'e-', offset: χ }`, give ΔE_c = χ_L − χ_R. The valence-band offset then follows from
+the two gaps, already in your holes' μ°. Ionisation energies on `'h+'` give the same thing from
+the other band.
+
+**Metal | semiconductor (Schottky–Mott).** Work function against electron affinity gives the
+n-type barrier φ_B = W − χ. With the metal as a contact, a pinned law
+`{ type: 'dipole', vacuum: { outside: W, inside: { anchor: 'e-', offset: χ } } }` puts the
+semiconductor's surface electron density at N_c e^{−φ_B/kT}.
+
+**Gate | semiconductor (flat band).** The same with a capacitive law. Its `zeroCharge` is the
+anchor-level form of the textbook V_FB = (W_g − W_s)/e, which refers to the semiconductor's
+bulk Fermi level instead. Fixed charge in a real insulator shifts flat band further.
+
+**Metal | electrolyte (potential of zero charge).** Work function against the absolute SHE
+gives pzc ≈ W/e − 4.44 V on the SHE scale:
+`{ type: 'capacitive', C, vacuum: { outside: W, inside: { anchor: 'H+', offset: 4.44 } } }`.
+
+**Semiconductor | electrolyte.** Electron affinity against the absolute SHE places the band
+edges on the SHE scale, E_c ≈ −(χ − 4.44) eV relative to SHE: the usual photoelectrochemistry
+estimate. For example, `{ left: { anchor: 'e-', offset: χ }, right: { anchor: 'H+', offset: 4.44 } }`.
+
+**Solvent | solvent.** Each solvent's own absolute-SHE-type value (its Trasatti-type offset)
+aligns them, exactly as Anderson's rule aligns two semiconductors.
+
+## What the heuristic assumes, and where it fails
+
+1. **The vacuum level runs continuously through the interface.** In reality, the interface
+   forms its own dipole (charge transfer, bonding, solvent orientation, adsorbates) beyond
+   what the two free surfaces imply.
+2. **Surface quantities are properties of the material.** They aren't: W, χ and 4.44 V are
+   barrier heights of particular surfaces, and change with termination, adsorbates and
+   preparation. The 4.44 V is itself the work function of a hydrogen electrode, not a
+   universal zero.
+3. **Alignments add up transitively** around any set of materials, and are uniform along each
+   interface.
 
 At covalent interfaces (common semiconductors, most metal–semiconductor contacts), measured
 alignments often depart substantially from these rules, and Fermi-level pinning is common.
-Ionic materials tend to follow them better. See the
+Ionic materials tend to follow them better. At metal–solution interfaces, the neglected
+metal–solvent terms (orientation, chemisorption) are often a few tenths of a volt. See the
 [ESBD vacuum-level discussion](https://marklundeberg.com/esbd/vacuum/) for the reasoning.
-
-**Before reaching for a rule,** ask whether you need the alignment at all. If only macroscopic,
-bulk-neutral behaviour matters, a `phi: 'neutral'` interface makes the alignment irrelevant:
-it drops out, and none is needed.
-
-## Translating energies into driftlet
-
-For electrons (z = −1), the standard level in J/mol, `μ°_e + z F φ = μ°_e − F φ`, *is* the
-conduction-band energy (per mole). So a face's `step` alignment for `'e-'` is the
-conduction-band offset, right minus left. In eV per particle, use `units.eV(ΔE_c)`.
-
-A metal modelled as a strictly neutral region (`epsr: 0`), whose electron `cRef` equals its
-fixed-background electron density, has c = c_ref everywhere. Its electron standard level then
-coincides with its Fermi level.
-
-## Semiconductor heterojunctions: Anderson's rule
-
-With electron affinities χ_L, χ_R, the rule puts each conduction band at −χ below a common
-vacuum level:
-
-```
-ΔE_c = E_c,R − E_c,L = χ_L − χ_R
-```
-
-```js nocheck
-interfaces: [{ step: { species: 'e-', value: units.eV(chiL - chiR) } }]
-```
-
-The valence-band offset then follows from the two bulk gaps, already present in your holes'
-μ°. Measured offsets frequently differ from this by tenths of an eV. When data exist (e.g.
-photoemission offsets for your pair), use them instead: `step` takes the measured ΔE_c directly.
-
-## Metal–semiconductor barriers: the Schottky–Mott rule
-
-The rule gives the n-type barrier as φ_B,n = W_m − χ_s. With the metal as a neutral region as
-above (metal on the left):
-
-```js nocheck
-interfaces: [{ step: { species: 'e-', value: units.eV(Wm - chiS) } }] // = the barrier φ_B,n
-```
-
-With μ̄_e continuous across the face (the default), the semiconductor's surface electron
-density is then N_c·e^{−φ_B/kT}, whatever the bias. Measured barriers on Si and GaAs are
-largely insensitive to W_m (strong pinning), so a measured φ_B is far preferable. It goes in the
-same `step`.
-
-To model the metal as a contact instead of a region, put `'e-'` in equilibrium at the contact
-(offset 0) and pin φ with a `dipole` law:
-
-```js nocheck
-contacts: { left: { terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'dipole', zeroCharge: phiB - mu0e / FARADAY } } }
-```
-
-Here `mu0e` is the semiconductor's own electron standard potential (J/mol). With `mu0e = 0`,
-`zeroCharge` is simply the barrier. A capacitive law with finite C adds an interfacial layer.
-
-## Gates: flat-band voltage
-
-A gate at terminal voltage V couples through a capacitive link, with no charge when
-`V − φ_edge = zeroCharge`. Vacuum alignment puts the semiconductor's conduction band at the
-surface W_g − χ above the gate's Fermi level at flat band, which gives
-
-```
-zeroCharge = (W_g − χ)/e − μ°_e/F
-```
-
-(μ°_e is the semiconductor's electron standard potential, J/mol). This is the anchor-level form
-of the textbook V_FB = (W_g − W_s)/e, which refers to the semiconductor's bulk Fermi level
-instead. The same caveats apply, plus any fixed charge in a real insulator, which shifts flat
-band further.
-
-## Electrodes: potential of zero charge from the work function
-
-With ion μ° taken from the usual SHE-based tables, the solution's bookkeeping φ is on the SHE
-scale (see [conventions](conventions.md)). So a Stern link's `zeroCharge` is simply the
-potential of zero charge against SHE. Trasatti's reading of the "absolute" SHE (≈4.44 V) gives
-the estimate
-
-```
-zeroCharge ≈ W_m/e − 4.44 V
-```
-
-This neglects the metal–solvent interaction terms (solvent orientation and chemisorption at the
-metal surface), which are often a few tenths of a volt. The 4.44 V is itself a surface
-property, the work function of a hydrogen electrode, not a universal zero. Measured pzc values
-are preferable.
-
-## Ions between solvents: extrathermodynamic assumptions
-
-Transfer energies of whole salts between solvents are measurable. Single-ion values are not, and
-need an extrathermodynamic assumption. The TATB assumption, for example, takes
-ΔG_tr(Ph₄As⁺) = ΔG_tr(Ph₄B⁻). To use such values, give each ion in solvent B the standard
-potential `μ°_B = μ°_A + ΔG_tr(A→B)` and pin the face with `dipole: 0`. That combination *is*
-the assumption: it states that the bookkeeping φ is continuous when single-ion energies are
-split that way.
-
-Different assumptions disagree by amounts that can matter at the interface. For bulk
-partitioning of salts, a `neutral` face needs no single-ion values at all, since only the
-measurable salt combinations enter.
+Whenever a measured offset, barrier, flat-band voltage or pzc exists, use it instead:
+`step`, `dipole` and `zeroCharge` take measured values directly.

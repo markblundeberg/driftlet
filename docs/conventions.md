@@ -14,13 +14,18 @@ stricter than you may be used to.
    interface between different materials, by that interface's dipole. How big a dipole is
    depends on how each material was anchored, which is why it's arbitrary, correctly so. If you
    do have true mean inner potentials, you may anchor to them, but nothing requires it.
+   Extrathermodynamic conventions are one way people settle a "real" φ per material. TATB, for
+   instance, fixes single-ion transfer energies between solvents by assuming
+   ΔG_tr(Ph₄As⁺) = ΔG_tr(Ph₄B⁻). That's a statement about bulk single-ion energies, i.e. about
+   how each solvent's μ° are anchored. It says nothing about the dipole at an actual interface,
+   which stays a separate input.
 3. **Bulk standard potentials only mean something in neutral combinations**
    (μ°_e⁻ + μ°_h⁺, μ°_Na⁺ + μ°_Cl⁻, μ°_Li⁺ + μ°_e⁻). How charged levels line up across a
    boundary between different materials is a property of that interface, and you must give it.
    There's no Anderson rule, no Schottky–Mott rule, and no implied common vacuum level. Each
    interface's alignment is independent, even when the same pair of materials meets twice
-   (e.g. with different adsorbates). The [alignment guide](alignment.md) gives vacuum-level
-   recipes for when that's all you have.
+   (e.g. with different adsorbates). When vacuum-level estimates are all you have, the
+   [alignment guide](alignment.md) shows how to state them as anchors and offsets.
 4. **A work function belongs to a surface, not a material.**
 
 ## Electrochemical potential and its views

@@ -346,7 +346,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
   need(['dipole', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'dipole', 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
-  const given = ['dipole', 'step', 'reaction'].filter((k) => idef[k] !== undefined);
+  const given = ['dipole', 'step', 'vacuum', 'reaction'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
   if (phi.type === 'neutral') {
     need(given.length === 0, `${where}: a neutral interface has a free φ jump, so an alignment (${given[0]}) would have no effect`);
@@ -354,7 +354,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     need(
       given.length === 1 || same,
       `${where}: an interface between different materials needs an alignment ` +
-        `({ dipole } or { step: { species, value } }), or phi: 'neutral' for a macroscopic model. ` +
+        `({ dipole }, { step: { species, value } } or { vacuum: { left, right } }), or phi: 'neutral' for a macroscopic model. ` +
         'There is no default (no Anderson or Schottky–Mott rule).',
     );
     for (const [mat, reg] of [[matL, left], [matR, right]]) {
@@ -379,6 +379,14 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     const value = finite(st.value, `${where}.step.value`);
     // value = (μ°_R + zFφ_R) − (μ°_L + zFφ_L), so φ_R − φ_L = (value − Δμ°) / (zF)
     dipole = (value - (matR.mu0[i] - matL.mu0[i])) / (z * FARADAY);
+  } else if (idef.vacuum !== undefined) {
+    // Vacuum-level heuristic: each side's vacuum level sits `offset` volts beyond its anchor
+    // (V_vac = V_anchor − offset), and the two vacuum levels are taken to coincide.
+    const vac = idef.vacuum;
+    need(isObject(vac) && isObject(vac.left) && isObject(vac.right), `${where}.vacuum must be { left: { anchor, offset }, right: { anchor, offset } }`);
+    const L = vacuumLevel(vac.left, `${where}.vacuum.left`, matL, species, speciesIndex);
+    const R = vacuumLevel(vac.right, `${where}.vacuum.right`, matR, species, speciesIndex);
+    dipole = L - R; // V_vac − φ on each side: φ_R − φ_L = (V_vac − φ)_L − (V_vac − φ)_R
   } else if (idef.reaction !== undefined) {
     throw new DeviceError(`${where}.reaction: reaction-based alignment is not supported yet`);
   }
@@ -425,6 +433,22 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     return { species: list, k0: positive(rdef.k0, `${rpath}.k0`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
   });
   return { phi, dipole, sheetCharge, links, transfers };
+}
+
+// A material's vacuum level relative to its own φ, V_vac − φ, from an anchor and an offset:
+//   anchor = a charged species: its standard level V°_i = φ + μ°_i/(z_i F) (the conduction band
+//            for e⁻, the valence band for h⁺, a reversible electrode's level for an ion);
+//   anchor = 'phi': the inner potential itself (the offset is then a surface potential).
+// offset (V) is the vacuum level's height above the anchor in electron energy, e.g. an electron
+// affinity, a work function, an ionisation energy or Trasatti's 4.44 V, so V_vac = V_anchor − offset.
+function vacuumLevel(side, path, mat, species, speciesIndex) {
+  const offset = finite(side.offset, `${path}.offset (V)`);
+  if (side.anchor === 'phi') return -offset;
+  need(speciesIndex.has(side.anchor), `${path}.anchor must be 'phi' or a charged species, got ${JSON.stringify(side.anchor)}`);
+  const i = speciesIndex.get(side.anchor);
+  need(species[i].z !== 0, `${path}.anchor: '${side.anchor}' is neutral, so it has no level in volts`);
+  need(mat.present[i], `${path}.anchor: '${side.anchor}' is absent from '${mat.name}'`);
+  return mat.mu0[i] / (species[i].z * FARADAY) - offset;
 }
 
 function defaultInterfaceLinks(matL, matR, species) {
@@ -602,10 +626,21 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     if (raw.type === 'capacitive' || raw.type === 'dipole') {
       need(!mat.phiFree, `${path}.phi: φ is undefined in '${mat.name}' (only neutral combinations are charged there), so use 'bulk' or 'neutral'`);
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
-      finite(raw.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
       need(raw.V === undefined, `${path}.phi.V: the gate voltage is the contact's terminal voltage, ${path}.V`);
+      phi = { ...raw };
+      if (raw.vacuum !== undefined) {
+        // Vacuum-level heuristic: the outside conductor's vacuum level is `outside` volts beyond
+        // its terminal level (a work function), so V − W = V_vac = φ_edge + (V_vac − φ)_inside.
+        need(raw.zeroCharge === undefined, `${path}.phi: give either zeroCharge or vacuum, not both`);
+        const vac = raw.vacuum;
+        need(isObject(vac) && isObject(vac.inside), `${path}.phi.vacuum must be { outside, inside: { anchor, offset } }`);
+        const W = finite(vac.outside, `${path}.phi.vacuum.outside (the terminal conductor's work function, V)`);
+        phi.zeroCharge = W + vacuumLevel(vac.inside, `${path}.phi.vacuum.inside`, mat, species, speciesIndex);
+      }
+      finite(phi.zeroCharge, `${path}.phi.zeroCharge (the zero-charge alignment: flat-band voltage, pzc or barrier)`);
+    } else {
+      phi = { ...raw };
     }
-    phi = { ...raw };
   } else if (cdef.bath === undefined && (links.some((l) => l.type !== 'blocked') || cdef.reactions?.length)) {
     throw new DeviceError(
       `${path}.phi: a contact with connected species needs an explicit φ law ('bulk', 'neutral', capacitive or dipole)`,
