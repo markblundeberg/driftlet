@@ -11,6 +11,10 @@
     "./kit": {
       "types": "./types/kit.d.ts",
       "default": "./src/kit.js"
+    },
+    "./plot": {
+      "types": "./types/plot.d.ts",
+      "default": "./src/plot.js"
     }
   },
   "main": "./src/index.js",
@@ -24,7 +28,7 @@
     "test": "node --test",
     "bench": "node bench/bench.js",
     "prepublishOnly": "npm test && npm run types",
-    "types": "rm -rf types && npx -y -p typescript@5 tsc --allowJs --declaration --emitDeclarationOnly --target es2022 --module nodenext --moduleResolution nodenext --outDir types src/index.js src/kit.js"
+    "types": "rm -rf types && npx -y -p typescript@5 tsc --allowJs --declaration --emitDeclarationOnly --target es2022 --module nodenext --moduleResolution nodenext --outDir types src/index.js src/kit.js src/plot.js"
   },
   "engines": {
     "node": ">=20"

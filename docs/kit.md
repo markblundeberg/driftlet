@@ -116,6 +116,42 @@ const redox = level(sol, silver); // V_Ag⁺(x) in the solution
 console.log(`redox level at mid-cell: ${redox[sol.x.length >> 1].toFixed(4)} V`);
 ```
 
+## Plotting
+
+Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the bookkeeping of
+a level diagram:
+
+- `traces(sol, { species, standard, phi, levels })` (in `driftlet/kit`) returns its lines as
+  data: per charged species its voltage V_i (`kind: 'level'`) and standard level V°_i
+  (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
+  (`levels: [{ half, label, standard }]`). Each line has a label and a colour `slot`, its
+  species' index, so a colour follows its species whichever lines are shown. Undefined values are
+  `NaN` (break the line there), and doubled interface nodes share an x, so steps draw as
+  vertical lines. It also gives the regions (`{ name, material, x0, x1 }`), the faces' positions
+  and a suggested range.
+- `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed:
+  solid lines for species voltages, dashed for standard levels, regions as labelled bands. Its
+  colours are CSS custom properties (`--driftlet-1` … `--driftlet-8`, `--driftlet-ink`, …) with
+  light and dark defaults. `levelChart(traces, opts)` draws traces you've edited.
+
+```js
+import { Device } from 'driftlet';
+import { build, layer, bath } from 'driftlet/kit';
+import { bandDiagram } from 'driftlet/plot';
+
+const def = build({
+  species: [
+    { name: 'Na+', z: 1, cRef: 1000 },
+    { name: 'Cl-', z: -1, cRef: 1000 },
+  ],
+  materials: { water: { epsr: 78.5, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } } } },
+  stack: [bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-'), layer('water', 10e-6), bath({ 'Na+': 10, 'Cl-': 10 }, 'Cl-', { I: 0 })],
+  grid: { hmin: 0.2e-9, hmax: 50e-9, ratio: 1.15 },
+});
+const svg = bandDiagram(new Device(def).solve(), { title: 'liquid junction', phi: true });
+console.log(svg.length); // in a page: element.innerHTML = svg
+```
+
 ## Alignment from vacuum levels
 
 `vacuumLevel`, `vacuumDipole` and `vacuumZeroCharge` turn vacuum-level estimates (electron

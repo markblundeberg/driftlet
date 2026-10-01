@@ -74,7 +74,8 @@ for live demos.
      into the plain definition; `ohmic()`, `bath()`, `layer()` with doping as donors and
      acceptors; reactions written as equations (`'Ag+ + e- = Ag(s)'`), with a label for a species
      on both sides of a face; half-reactions as plain data, and `level(sol, half)`, the redox
-     level they imply (with `SHE`). See [the kit](docs/kit.md).
+     level they imply (with `SHE`); `traces(sol)`, the level diagram as plot-ready data, and
+     `driftlet/plot`'s `bandDiagram(sol)`, an SVG string. See [the kit](docs/kit.md).
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - A live wrapper for sliders: frame throttling, warm starts, dropping stale requests,
@@ -86,8 +87,6 @@ for live demos.
      voltage as named contributions that sum exactly, for that family's usual simplifications.
      They annotate the spatial diagram, which stays the primary picture and keeps telling the
      story where a ledger's division breaks down.
-   - Plot-ready traces: segments broken where a species is absent, region bands, label-ready
-     interface steps, suggested ranges.
    - A small data library with a source on every entry (aqueous ions: z, D, μ° at 25 °C on
      table conventions; common semiconductors; metals), kept small and vetted, since a wrong
      library number is worse than a wrong demo number. Then recipes built from it (pn junction,
