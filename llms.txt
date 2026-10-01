@@ -1,0 +1,167 @@
+# driftlet: a guide for agents
+
+driftlet is a dependency-free JavaScript library that solves 1D drift–diffusion–reaction
+(Poisson–Nernst–Planck) problems fast enough for live web demos: semiconductor junctions,
+electrochemical cells, double layers, membranes, mixed conductors. It runs in a browser, a Web
+Worker or Node, from npm or a CDN.
+
+This guide is for writing a demo or calculation with it. Every code block below runs in the
+test suite. The full references are docs/device.md (the definition), docs/kit.md (the helpers),
+docs/conventions.md (signs and levels) and docs/data.md (the data library).
+
+## Imports
+
+From a CDN, pin the version:
+
+```js nocheck
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/plot.js';
+```
+
+From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
+
+## What to know first
+
+- **Units are SI**: m, mol/m³ (1 M = 1000 mol/m³), J/mol, m²/s, V, A/m², F/m², C/m³. Use
+  `units` to convert: `units.um(1)`, `units.perCm3(1e17)` (carriers per cm³ to mol/m³),
+  `units.eV(1.12)` (to J/mol), `units.cm2PerS(36)`, `units.molar(0.1)`.
+- **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one).
+  A terminal's `V` is the voltage of its terminal species: for an electron contact,
+  V = −μ̄_e/F, what a voltmeter reads. φ is bookkeeping and never a control.
+- **Solutions** give, per species, `c` (concentration), `mu` (μ̄), `V` (the species voltage
+  μ̄/(zF), a quasi-Fermi level for e⁻ and h⁺) and `Vstd` (the standard level, a band edge for e⁻
+  and h⁺). In voltage units the conduction band sits below the valence band. `NaN` marks where a
+  species is absent.
+- **Current**: `sol.current` is positive toward +x through the device. `sol.terminals[name]` gives
+  each terminal's `{ V, current }`, current into the device.
+- **Nothing physical is defaulted.** Every interface between different materials needs an
+  alignment (`dipole` or `step`), or `phi: 'neutral'` for a macroscopic model. Every metal face
+  next to a dielectric needs its φ law. Every species that doesn't reach a contact needs its
+  initial amount (`c0`). An error names the path and says what to give.
+- **Check before trusting.** `sol.converged` must be true, and read `sol.warnings`.
+  `describe(def)` (kit) summarises a definition and flags likely unit slips.
+
+## Template: a semiconductor junction
+
+```js
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor, describe } from 'driftlet/kit';
+
+const def = build({
+  T: 300, // the library's semiconductor data are for 300 K
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0), // e⁻ and h⁺ in equilibrium with a metal at 0 V
+    layer('Si', units.um(1), { name: 'n', donors: units.perCm3(1e17) }),
+    layer('Si', units.um(1), { name: 'p', acceptors: units.perCm3(1e16) }),
+    ohmic(0.5), // the p side at +0.5 V: forward bias
+  ],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }], // recombination
+  grid: { hmin: units.nm(1), hmax: units.nm(20) },
+});
+console.log(describe(def));
+const dev = new Device(def);
+const sol = dev.solve();
+console.log(sol.converged, `I = ${sol.current.toFixed(1)} A/m²`); // negative: toward −x, p to n
+// An I–V sweep: change the drive, solve again (warm-started).
+for (const V of [0, 0.2, 0.4, 0.6]) {
+  dev.set({ contacts: { right: { V } } });
+  console.log(V, dev.solve().current);
+}
+```
+
+## Template: an electrochemical cell
+
+An electrode is a metal layer with the reaction at its face, behind a contact holding the
+metal's electrons (`ohmic(V, ['e-'])`). Reactions are written as equations. A participant that
+isn't a species (solid silver) is fixed by its μ.
+
+```js
+import { Device } from 'driftlet';
+import { build, layer, ohmic, half, level, SHE, aqueous, metal } from 'driftlet/kit';
+
+const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }); // μ of the element: 0 on table conventions
+// A Stern layer at each metal face: its capacitance and the potential of zero charge are
+// properties of that interface, so they're yours to choose.
+const face = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [{ ...silver, k0: 1e-3, alpha: 0.5 }] };
+const def = build({
+  library: [aqueous(['H+', 'Ag+', 'NO3-']), metal('Ag')],
+  stack: [
+    ohmic(0, ['e-']),
+    layer('Ag', 1e-6),
+    face,
+    layer('water', 20e-6, { c0: { 'H+': 1, 'Ag+': 10, 'NO3-': 11 } }),
+    face,
+    layer('Ag', 1e-6),
+    ohmic(0.05, ['e-']),
+  ],
+  grid: { hmin: 0.1e-9, hmax: 200e-9, ratio: 1.15 },
+});
+const sol = new Device(def).solve();
+const mid = sol.x.length >> 1;
+console.log(`I = ${sol.current.toFixed(2)} A/m²`);
+// The silver couple's redox level, and the SHE level, mid-cell (electron voltages).
+console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]); // ≈ 0.80 + (RT/F) ln(c/1 M)
+```
+
+## Template: a live page with a slider
+
+`live()` merges slider moves made during a solve, warm-starts each solve and keeps the last
+good solution. `bandDiagram()` returns an SVG string. Pass `worker: true` to `live()` to solve in
+a Web Worker.
+
+```html
+<!doctype html>
+<meta charset="utf-8">
+<title>pn junction</title>
+<label>bias <input id="V" type="range" min="-0.5" max="0.7" step="0.01" value="0"></label>
+<span id="readout"></span>
+<div id="figure"></div>
+<script type="module">
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/plot.js';
+
+const def = build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
+  grid: { hmin: 1e-9, hmax: 20e-9 },
+});
+const slider = document.getElementById('V');
+const dev = live(def, {
+  onsolution(sol, info) {
+    document.getElementById('figure').innerHTML = bandDiagram(sol, { title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
+    document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${sol.current.toExponential(2)} A/m²`;
+  },
+});
+slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
+</script>
+```
+
+## Common mistakes
+
+- **No alignment at a heterointerface.** `interfaces[0] (between … [Si] and … [GaAs]): an
+  interface between different materials needs an alignment`. Give the face `{ dipole }` or
+  `{ step: { species: 'e-', value } }` (the conduction-band offset, J/mol), or estimate one from
+  electron affinities with `vacuumDipole` (docs/alignment.md). `interfaces[f]` is the f-th face
+  of the stack, counting from the left.
+- **A metal face with no φ law.** `… .phi: a face between a conductor and a material with
+  ε > 0 needs an explicit φ law`. Give `{ phi: { type: 'capacitive', C }, zeroCharge }`, or
+  `phi: 'neutral'`, or make the electrolyte strictly neutral (`aqueous(names, { epsr: 0 })`)
+  when double layers don't matter.
+- **`ohmic()` on a metal.** Its default holds both e⁻ and h⁺, for semiconductors. On a metal
+  layer, write `ohmic(V, ['e-'])`.
+- **Ions on both sides of a reacting face.** Label them: `'Li+(left) = Li+(right)'`, and give
+  their link (`species: { 'Li+': 'blocked' }` if they cross only by the reaction).
+- **Unit slips.** D in cm²/s, μ° in eV, capacitance in µF/cm², T in °C. `describe(def)` flags
+  numbers that look like these.
+- **A closed system with no amount.** A species that doesn't reach a contact needs `c0`.
+- **Everything floating.** At least one terminal must be held at a voltage `V`.
+- **The library's semiconductors are at 300 K.** Give `T: 300`.
+- **Sign of the current.** Positive toward +x. A forward-biased diode with its p side on the
+  right carries negative current.
+- **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
+  Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).

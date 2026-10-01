@@ -72,7 +72,8 @@ The definition is plain data, so anything can write it. The optional `driftlet/k
 from the device as it's drawn, a stack of contacts, layers and faces, with reactions as
 equations (`'Ag+ + e- = Ag(s)'`) and doping as donors and acceptors, draws level diagrams,
 runs slider demos, and has a small sourced [data library](docs/data.md). It never makes a
-physical choice for you; see [the kit](docs/kit.md).
+physical choice for you; see [the kit](docs/kit.md). Writing a demo with an LLM agent? Point
+it at [`llms.txt`](llms.txt).
 
 ## Demos
 

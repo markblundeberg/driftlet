@@ -79,7 +79,9 @@ for live demos.
      changes made during a solve, warm starts, ramps from the last good state, Worker-backed);
      `describe(def)`, a readable summary with unit-slip and resolution warnings; a small data
      library with a source on every entry, checked against independent tables (13 aqueous
-     ions, Si, Ge and GaAs, seven metals). See [the kit](docs/kit.md) and [data](docs/data.md).
+     ions, Si, Ge and GaAs, seven metals); an agent guide, [`llms.txt`](llms.txt), with templates
+     and common mistakes, whose code (and a slider page, against a stub document) runs in the
+     docs test. See [the kit](docs/kit.md) and [data](docs/data.md).
    - Built-in and open-circuit potentials in `describe()` (they need a solve).
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
@@ -90,10 +92,8 @@ for live demos.
      story where a ledger's division breaks down.
    - Recipes built from the library (pn junction, galvanic and concentration cells, double layer,
      membrane), returning editable definitions.
-   - An agent guide (`AGENT_GUIDE.md` or `llms.txt`): conventions, a pinned CDN import,
-     copy-paste demo templates, common mistakes. Its code blocks run in the docs test, and error
-     messages say how to fix the problem.
-3. **Ship 0.1.0.** npm package and jsdelivr, live demos (code sandboxes, screenshots in the
+3. **Ship 0.1.0.** npm package and jsdelivr (the agent guide's pinned CDN version is checked
+   against `package.json` once it's set), live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI. (Tests already check what browsers and CDNs need:
    relative `.js` imports only, no Node or DOM globals, and a definition solving identically on
    a worker thread. A real-browser smoke test remains.)

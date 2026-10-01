@@ -21,7 +21,8 @@
   "types": "./types/index.d.ts",
   "files": [
     "src",
-    "types"
+    "types",
+    "llms.txt"
   ],
   "sideEffects": false,
   "scripts": {
