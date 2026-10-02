@@ -63,6 +63,14 @@ for live demos.
      species across many segments, with a mode only weakly held from outside. Candidates are
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
      form for the fast species only. (A failed steady solve already says where it lost its digits.)
+   - A minority population held only weakly: the MOS capacitor without its channel port, whose
+     inversion electrons reach the back contact only through a p-type bulk of ~10³ cm⁻³ (hours
+     to fill, so a high-frequency C–V at 1 kHz). Stepping the gate up warm from depletion
+     fails at the onset of inversion ("exactly singular"); cold starts converge at some gate
+     voltages, not others, and one at 0.6 V returns a deep-depletion state (C/C_ox 0.12 at
+     10⁻¹² Hz) as converged, so the convergence test can't see an imbalance carried by so tiny
+     a conductance. Once robust, the MOS demo can get a frequency control sweeping from the
+     low-frequency C–V to the high-frequency one.
    - Conserved combinations (moieties) as constraint rows in the direct steady solve, as
      spectators already are, instead of huge time steps. A closed Pt | Fe³⁺, Fe²⁺, FeCl²⁺ | Pt
      cell with a complexation reaction reports `converged: false` at its true steady state
