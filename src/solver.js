@@ -251,6 +251,12 @@ export class Solver {
       nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
     }));
 
+    // Whether any region is strictly neutral (ε = 0, not a conductor): see integrate().
+    this.strictlyNeutral = model.regions.some((reg) => {
+      const mat = materials[reg.material];
+      return !mat.conductor && mat.epsr === 0;
+    });
+
     // Scales the generation reactions' rates during a steady solve's continuation (else 1).
     this.generationScale = 1;
     this.hasGeneration = this.rxs.some((rx) => rx.generation);
@@ -1788,6 +1794,7 @@ export class Solver {
     const trace = { t: [], current: [], voltage: [] };
     let steps = 0, rejected = 0, iterations = 0, failed = false;
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
+    let grow = 0; // longer first steps tried after a Newton failure (see below)
     const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
     while (this.time < tEnd) {
@@ -1826,7 +1833,17 @@ export class Solver {
         if (err === undefined) {
           this._restore(snap);
           rejected++;
-          dt = h / 4;
+          // Newton failed on the first step after a start or a jump. Usually a shorter step
+          // helps; but right after a jump in a strictly neutral (ε = 0) material, the shorter the
+          // step the worse conditioned it is (the field is fixed only through fluxes, which the
+          // storage term dwarfs), so try longer ones first.
+          if (this.strictlyNeutral && grow < 3 && h * 16 < tEnd - this.time) {
+            grow++;
+            dt = h * 16;
+          } else {
+            grow = 3;
+            dt = h / 4;
+          }
           if (dt < 1e-14 * Math.max(tEnd, 1e-300)) { failed = true; break; }
           continue;
         }
@@ -1850,6 +1867,7 @@ export class Solver {
         continue;
       }
       steps++;
+      grow = 0;
       dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
       if (atBreak) this.history = []; // the solution's slope jumps here: restart the order
       if (half) {

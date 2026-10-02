@@ -185,3 +185,22 @@ test('adaptive advance: error control, exact landing, traces, and frame budgets'
   assert.ok(sol.done && sol.time === T && frames > 1);
   assert.ok(Math.abs(sol.gates.left.charge / ref - 1) < 2e-2);
 });
+
+test('a jump in a strictly neutral cell: advance() finds its first step (longer, not shorter, steps help there)', async () => {
+  // Zn | ZnSO₄ (ε = 0) | Zn, stepped by 0.1 V. Right after a jump, a strictly neutral material's
+  // field is fixed only through fluxes, which a short step's storage term dwarfs.
+  const { build, layer, ohmic, half, aqueous, metal } = await import('../src/kit.js');
+  const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
+  const face = { reactions: [{ ...zinc, k0: 1e-3 }] };
+  const dev = new Device(
+    build({
+      library: [aqueous(['Zn2+', 'SO42-'], { epsr: 0 }), metal('Zn')],
+      stack: [ohmic(0, ['e-']), layer('Zn', 1e-6), face, layer('water', 100e-6, { c0: { 'Zn2+': 100, 'SO42-': 100 } }), face, layer('Zn', 1e-6), ohmic(0, ['e-'])],
+      grid: { hmin: 10e-9, hmax: 2e-6 },
+    }),
+  );
+  dev.solve();
+  dev.set({ contacts: { right: { V: 0.1 } } });
+  const run = dev.advance(1e-3);
+  assert.ok(run.converged && run.done, JSON.stringify({ steps: run.steps, rejected: run.rejected }));
+});
