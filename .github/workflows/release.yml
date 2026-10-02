@@ -1,0 +1,28 @@
+name: release
+
+# A pushed tag vX.Y.Z stages that version on npm through trusted publishing (OIDC: no stored
+# token, provenance attached). It goes public only when a maintainer approves it with 2FA, on
+# npmjs.com (the package's Staged Packages tab) or with `npm stage approve <stage-id>`.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # for OIDC
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install -g npm@11 # staged publishing needs npm 11.15 or later
+      - name: The tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm stage publish # prepublishOnly runs the tests and builds the types first
