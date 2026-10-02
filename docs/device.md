@@ -143,7 +143,8 @@ defaults to no dipole.
 
 **Electrostatic law** `phi`:
 - `'pinned'`: φ jumps by the alignment. The default, and exact when the grid resolves the
-  double layers on both sides.
+  double layers on both sides. Not between two ε = 0 materials: with no field on either side,
+  nothing would determine the face's charge.
 - `'neutral'`: no charge at the face and a free jump, set by neutrality on each side (Donnan).
   The alignment drops out and must not be given. This is the default between two ε = 0
   materials, and next to an insertion host (where φ is undefined).

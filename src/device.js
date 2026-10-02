@@ -623,6 +623,13 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   fields(phi, `${where}.phi`, phi.type === 'capacitive' ? ['type', 'C'] : ['type']);
   need(['pinned', 'neutral', 'capacitive'].includes(phi.type), `${where}.phi must be 'pinned', 'neutral' or { type: 'capacitive', C }`);
   if (phi.type === 'capacitive') positive(phi.C, `${where}.phi.C`);
+  // A pinned face is a capacitor of infinite C. With no field on either side (ε = 0), its
+  // charge would sit as free excess ions in the edge cells at no cost, so nothing determines it.
+  need(
+    !(phi.type === 'pinned' && matL.epsr === 0 && matR.epsr === 0),
+    `${where}.phi: 'pinned' between two ε = 0 materials leaves the face's charge undetermined (no field on either side to hold it); ` +
+      "use 'neutral' (the default: a free Donnan jump), or { type: 'capacitive', C } for a charged layer such as a lipid bilayer",
+  );
   const given = ['dipole', 'step'].filter((k) => idef[k] !== undefined);
   need(given.length <= 1, `${where}: give exactly one alignment, got ${given.join(' and ')}`);
   if (phi.type === 'neutral') {

@@ -86,6 +86,18 @@ test('a same-material face needs no alignment but may take one', () => {
   assert.equal(new Device(def).model.interfaces[0].dipole, -0.05);
 });
 
+test('a pinned face between two strictly neutral (ε = 0) materials is an error', () => {
+  const def = hetero();
+  for (const m of Object.values(def.materials)) m.epsr = 0;
+  def.interfaces = [{ phi: 'pinned', dipole: 0 }];
+  throwsDevice(def, /'pinned' between two ε = 0 materials leaves the face's charge undetermined/);
+  // Neutral (the default) and capacitive faces are well posed there.
+  def.interfaces = [{}];
+  assert.equal(new Device(def).model.interfaces[0].phi.type, 'neutral');
+  def.interfaces = [{ phi: { type: 'capacitive', C: 0.01 }, dipole: 0 }];
+  assert.equal(new Device(def).model.interfaces[0].phi.type, 'capacitive');
+});
+
 test('two alignments on one face is an error', () => {
   const def = hetero();
   def.interfaces = [{ dipole: 0.1, step: { species: 'e-', value: 0 } }];
