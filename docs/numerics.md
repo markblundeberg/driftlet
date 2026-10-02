@@ -349,12 +349,13 @@ column by column on devices that cover every assembly path.
 - Converged when a full, undamped update is below 1e-10 (thermal units). Quadratic
   convergence makes the remaining residual negligible.
 - Or converged as far as round-off allows: updates already below 1e-6 thermal units (~26 nV)
-  that have stopped shrinking for two iterations. A badly conditioned system's round-off floor
-  can sit above 1e-10: a strictly neutral material on a short step, where φ is fixed only
-  through fluxes that the storage term dwarfs (a condition number of about h²/(D·dt)), converges
-  quadratically to ~1e-9 and then rattles there. Short steps come right after every waveform
-  breakpoint, so without this a cyclic voltammogram in a neutral electrolyte stalled at its
-  turns.
+  in a steady solve, or 1e-5 on a time step (whose error control works at ~1e-3), that have
+  stopped shrinking for two iterations. A badly conditioned system's round-off floor can sit
+  above 1e-10: a strictly neutral material on a short step, where φ is fixed only through
+  fluxes that the storage term dwarfs (a condition number of about h²/(D·dt), much reduced by
+  the change of variables below), converges quadratically to ~1e-9 and then rattles there.
+  Short steps come right after every waveform breakpoint, so without this a cyclic voltammogram
+  in a neutral electrolyte stalled at its turns.
 - Clear divergence (updates beyond 1e4, or ten times the first update after six iterations)
   bails out early, so the caller can take a smaller step.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
@@ -510,18 +511,23 @@ materials, `pinned` otherwise (and `pinned` between two ε = 0 materials is an e
 on either side, nothing would determine its charge). Solutions warn when a resolved-model double
 layer is under-resolved.
 
-On a transient step, a strictly neutral node's balances weighted by z_i sum to (v/dt) times the
-change in its net charge plus the current's divergence, while its neutrality row is v times the
-net charge itself. On a short step the two are nearly the same row, and elimination loses digits
-in proportion to storage/flux, h²/(D·dt), times the range of concentrations: a trace ion beside
-3 M KCl lost about ten, enough to stall Newton. So at each node that stays neutral (interior
-nodes, and edges at `neutral` faces; not an electrode face's edge, which holds its double layer's
-charge), the balance of the most abundant charged species (by z²c) is replaced by
-Σ (z_i/z_k)·balance_i assembled without storage: current continuity, with the storage terms
-cancelling against neutrality exactly. The new state is held neutral by the neutrality row; a
-start-of-step charge (round-off, in a solved state) isn't carried over. Steady solves and the
-impedance keep the plain rows (there's no storage at dt = ∞, and the impedance reads the storage
-matrix from them).
+On a transient step, strictly neutral nodes are solved in better-conditioned terms. There, a
+change of φ̂ with every η_i shifted by z_i times it leaves every concentration as it was, so
+storage and neutrality don't see it. Only the fluxes do. But in (φ̂, η) storage and neutrality
+see it as pairs of huge entries that cancel, and round-off in that cancellation, of order
+storage/flux ~ h²/(D·dt) times the range of concentrations, swamps the fluxes that fix it: a
+trace ion beside 3 M KCl lost about ten digits, and Newton stalled. So at each node that stays
+neutral (interior nodes, and edges at `neutral` faces; not the edge of a capacitive or pinned
+face, which holds the face's charge), assembled without storage and neutrality:
+- rows: the balance of the most abundant charged species (by z²c) becomes Σ (z_i/z_k) × each
+  balance, which without storage is current continuity;
+- columns: the unknowns become φ̂' and η'_i = η_i − z_i φ̂ (the update is mapped back), in which
+  storage and neutrality have no φ̂' term at all;
+- then storage (on the other balances) and neutrality go in, exactly, in those terms.
+
+A start-of-step net charge (round-off in a solved state) isn't carried over: the neutrality row
+holds the new state neutral. Steady solves and the impedance keep the plain rows (there's no
+storage at dt = ∞, and the impedance reads the storage matrix from them).
 
 A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when λ_D ≪ h, is on the
 [roadmap](../ROADMAP.md). It would handle macroscopic devices with real double-layer charge at

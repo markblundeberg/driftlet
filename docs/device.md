@@ -100,7 +100,9 @@ regions: [
   contact's level and don't need it. Any other species (blocked everywhere, or only made and
   consumed by reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive (μ̄
   is logarithmic in them); to have none of a species in a region, leave it out of that region's
-  material.
+  material. In a strictly neutral region, Σ z·c0 must be zero. Where nothing else sets φ at the
+  start, a region beside an electrode starts with the electrode's first reaction at equilibrium
+  (the electrode at its open-circuit level); otherwise φ carries over from the left.
 - `velocity`: imposed flow toward +x, m/s (default 0). It carries every mobile species
   (D > 0) along with the fluid. It's uniform within the region: in strict 1D, incompressible
   flow is the same everywhere. A step in velocity at a face means solvent enters or leaves

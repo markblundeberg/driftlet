@@ -271,11 +271,11 @@ export class Solver {
     need[0] = need[nNodes - 1] = 1;
     for (const port of model.ports) for (const g of port.nodes) need[g] = 1;
     // Nodes of strictly neutral (ε = 0) regions that stay neutral, where φ is defined: interior
-    // ones, and edges at neutral faces (an electrode face's edge node holds its double layer's
-    // charge), away from contacts and ports. On a transient step one charged species' balance
-    // there becomes charge conservation (see _chargeRows).
+    // ones, and edges at neutral faces (a capacitive or pinned face's edge node holds the face's
+    // charge), away from contacts and ports. On a transient step these are solved in better-
+    // conditioned terms (see _chargeRows).
     this.chargeNode = new Uint8Array(nNodes);
-    const neutralFace = (f) => f >= 0 && f < model.interfaces.length && !model.interfaces[f].conductor && model.interfaces[f].phi.type === 'neutral';
+    const neutralFace = (f) => f >= 0 && f < model.interfaces.length && model.interfaces[f].phi.type === 'neutral';
     regions.forEach((reg, r) => {
       const mat = materials[reg.material];
       if (mat.conductor || mat.epsr !== 0) return;
@@ -285,6 +285,7 @@ export class Solver {
         if (edgeOk && !need[g] && !this.phiUndefined[g]) this.chargeNode[g] = 1;
       }
     });
+    this.chargeNodes = Int32Array.from([...this.chargeNode.keys()].filter((g) => this.chargeNode[g]));
     this.combining = false;
     this.bookkeeping = regions.map((_, r) => {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], nodes = [], segs = [];
@@ -719,7 +720,28 @@ export class Solver {
         }
         return q;
       };
-      if (!mat.phiFree && mode.some((m, i) => m === 1 && z[i] !== 0)) {
+      const responds = mode.some((m, i) => m === 1 && z[i] !== 0);
+      if (!mat.phiFree && !responds && mat.ideal && r > 0 && materials[regions[r - 1].material].conductor) {
+        // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
+        // that takes a species from this side at equilibrium (the electrode at its open-circuit
+        // level), rather than φ carried over from the metal, which can be volts away.
+        const bn = this.blockOfNode[grid.regionEnd[r - 1]];
+        for (const rx of interfaces[r - 1].reactions) {
+          let a = rx.fixedA, s = 0;
+          for (const p of rx.part) {
+            if (p.side === 0) a -= p.nu * u[bn * M + 1 + p.i];
+            else if (mode[p.i] === 2) {
+              a -= p.nu * (Math.log(cFix[p.i] / mat.cRef[p.i]) + mat.mu0[p.i] / model.RT);
+              s += p.nu * z[p.i];
+            } else s = NaN;
+          }
+          if (s !== 0 && Number.isFinite(s)) {
+            phiHat = a / s; // a − s·φ̂ = 0
+            break;
+          }
+        }
+      }
+      if (!mat.phiFree && responds) {
         let lo = phiHat - 1, hi = phiHat + 1;
         while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
         while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
@@ -915,12 +937,13 @@ export class Solver {
 
     // Faces: the flux node carries D, the linked species' fluxes and the reaction rates.
     for (let f = 0; f < this.nFaces; f++) this._face(f);
-    if (this.combining && dt !== Infinity) this._chargeRows(dt);
 
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
+    this.transformed = this.combining && dt !== Infinity;
+    if (this.transformed) this._chargeRows(dt);
   }
 
   // A conductor node: only its carrier's balance (the segment flux J has its own row, in
@@ -943,20 +966,24 @@ export class Solver {
     for (let g = g0; g <= g1; g++) {
       const b = blockOfNode[g], v = vol[g];
       const m = sizes[b], oB = offB[b], lb = b * M, p = loc[lb]; // p: φ's row, −1 where undefined
-      const combined = this.combining && this.chargeNode[g] === 1 && dt !== Infinity; // (storage added in _chargeRows)
+      if (this.combining && this.chargeNode[g] === 1 && dt !== Infinity) {
+        // Storage and neutrality go in later, in _chargeRows; a neutral species' storage here.
+        for (let i = 0; i < n; i++) if (present[g * n + i] && z[i] === 0) this._storage(g, i, dt);
+        continue;
+      }
       let q = rhoFixed[g], dq = 0;
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
         const ck = c[k], l = loc[lb + 1 + i];
-        if (!(combined && z[i] !== 0)) {
-          res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
-          JB[oB + l * m + l] += (v * ck) / dt;
-          if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
-        }
+        res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+        JB[oB + l * m + l] += (v * ck) / dt;
         q += F * z[i] * ck;
         dq += F * z[i] * z[i] * ck;
-        if (p >= 0 && z[i] !== 0) JB[oB + p * m + l] += -v * F * z[i] * ck;
+        if (p >= 0 && z[i] !== 0) {
+          JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+          JB[oB + p * m + l] += -v * F * z[i] * ck;
+        }
       }
       if (p >= 0) {
         res[R[lb]] -= v * q;
@@ -969,13 +996,17 @@ export class Solver {
   _nodeConcentrated(g, dt) {
     const { n, M, res, c, z } = this, R = this.rix, F = FARADAY;
     const b = this.blockOfNode[g], v = this.model.grid.vol[g];
-    const combined = this.combining && this.chargeNode[g] === 1 && dt !== Infinity; // (storage added in _chargeRows)
+    if (this.combining && this.chargeNode[g] === 1 && dt !== Infinity) {
+      // Storage and neutrality go in later, in _chargeRows; a neutral species' storage here.
+      for (let i = 0; i < n; i++) if (this.present[g * n + i] && z[i] === 0) this._storage(g, i, dt);
+      return;
+    }
     let q = this.rhoFixed[g], dq = 0;
     for (let i = 0; i < n; i++) {
       const k = g * n + i, r = 1 + i;
       if (!this.present[k]) continue;
       const Kz = this._Kz(g, i);
-      if (!(combined && z[i] !== 0)) this._storage(g, i, dt, Kz);
+      this._storage(g, i, dt, Kz);
       q += F * z[i] * c[k];
       dq += F * z[i] * Kz;
       if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
@@ -1004,38 +1035,91 @@ export class Solver {
     if (Kz !== 0 && !this.phiUndefined[g]) this._j(b, r, b, 0, (-v * Kz) / dt);
   }
 
-  // Charge conservation in a strictly neutral region on a transient step. There, the balances
-  // weighted by z_i sum to (v/dt)·(change in net charge) plus the current's divergence, while the
-  // neutrality row is v times the net charge itself: on a short step the two rows are nearly
-  // dependent, and elimination loses digits in proportion to storage/flux times the range of
-  // concentrations (a trace ion beside 3 M KCl lost ten). So at such nodes the balance of the
-  // most abundant charged species (by z²c) is replaced by Σ (z_i/z_k)·balance_i assembled without
-  // storage: current continuity, with the storage terms cancelling against neutrality exactly.
-  // The other species get their storage back. (A start-of-step charge, round-off in a solved
-  // state, is not carried over; the neutrality row holds the new state neutral.)
+  // Strictly neutral nodes on a transient step, solved in better-conditioned terms. There, a
+  // change of φ̂ with every η_i shifted by z_i times it leaves every concentration as it was, so
+  // storage and neutrality don't see it; but in (φ̂, η) they see it as pairs of huge entries that
+  // cancel, and round-off in that cancellation (storage/flux ~ h²/(D·dt), times the range of
+  // concentrations: a trace ion beside 3 M KCl) swamps the fluxes that do fix it. So, at each node
+  // that stays neutral (see chargeNode), with storage and neutrality left out of assembly:
+  // - rows: the balance of the most abundant charged species (by z²c) becomes Σ (z_i/z_k) × each
+  //   balance, which without storage is current continuity;
+  // - columns: the unknowns become φ̂' and η'_i = η_i − z_i φ̂ (newton() maps the update back),
+  //   in which storage and neutrality have no φ̂' term at all;
+  // - then storage (on the other balances) and neutrality go in, exactly, in those terms.
+  // A start-of-step net charge (round-off in a solved state) isn't carried over: the neutrality
+  // row holds the new state neutral.
   _chargeRows(dt) {
-    const { n, M, res, c, z, sys, loc, present } = this, R = this.rix;
-    const { A, B, C, sizes, offA, offB, offC } = sys;
-    for (let g = 0; g < this.nNodes; g++) {
-      if (this.chargeNode[g] !== 1) continue;
-      const b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < this.nB - 1 ? sizes[b + 1] : 0;
+    const { n, M, res, c, cOld, z, sys, loc, present, termB, termC } = this, R = this.rix, F = FARADAY;
+    const { A, B, C, sizes, offA, offB, offC } = sys, vol = this.model.grid.vol, last = this.nB - 1;
+    for (const g of this.chargeNodes) {
+      const b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < last ? sizes[b + 1] : 0;
+      const p = loc[lb], gn = g * n;
       let k = -1, best = -1;
       for (let i = 0; i < n; i++) {
-        const w = present[g * n + i] && z[i] !== 0 ? z[i] * z[i] * c[g * n + i] : -1;
-        if (w > best) [k, best] = [i, w];
+        if (!present[gn + i] || z[i] === 0) continue;
+        const w = z[i] * z[i] * c[gn + i];
+        if (w > best) {
+          k = i;
+          best = w;
+        }
       }
-      if (k < 0) continue;
-      const lk = loc[lb + 1 + k];
+      if (k < 0 || p < 0) continue;
+      // Rows: the pivot's balance becomes the z-weighted sum (all still without storage).
+      const lk = loc[lb + 1 + k], rk = R[lb + 1 + k];
       for (let i = 0; i < n; i++) {
-        if (i === k || !present[g * n + i] || z[i] === 0) continue;
-        const li = loc[lb + 1 + i], w = z[i] / z[k];
-        for (let q = 0; q < mp; q++) A[offA[b] + lk * mp + q] += w * A[offA[b] + li * mp + q];
-        for (let q = 0; q < m; q++) B[offB[b] + lk * m + q] += w * B[offB[b] + li * m + q];
-        for (let q = 0; q < mn; q++) C[offC[b] + lk * mn + q] += w * C[offC[b] + li * mn + q];
-        res[R[lb + 1 + k]] += w * res[R[lb + 1 + i]];
-        for (const t of this.termB) t[R[lb + 1 + k]] += w * t[R[lb + 1 + i]];
+        if (i === k || !present[gn + i] || z[i] === 0) continue;
+        const li = loc[lb + 1 + i], w = z[i] / z[k], ri = R[lb + 1 + i];
+        for (let q = 0, o = offA[b] + lk * mp, s = offA[b] + li * mp; q < mp; q++) A[o + q] += w * A[s + q];
+        for (let q = 0, o = offB[b] + lk * m, s = offB[b] + li * m; q < m; q++) B[o + q] += w * B[s + q];
+        for (let q = 0, o = offC[b] + lk * mn, s = offC[b] + li * mn; q < mn; q++) C[o + q] += w * C[s + q];
+        res[rk] += w * res[ri];
+        for (let t = 0; t < termB.length; t++) termB[t][rk] += w * termB[t][ri];
       }
-      for (let i = 0; i < n; i++) if (i !== k && present[g * n + i] && z[i] !== 0) this._storage(g, i, dt);
+      // Columns: φ̂' = φ̂ with η fixed becomes φ̂ with η_i shifted by z_i, wherever node g's
+      // unknowns appear (its own rows, its neighbours', a terminal's current).
+      for (let i = 0; i < n; i++) {
+        if (!present[gn + i] || z[i] === 0) continue;
+        const li = loc[lb + 1 + i], zi = z[i];
+        for (let r = 0, o = offB[b]; r < m; r++) B[o + r * m + p] += zi * B[o + r * m + li];
+        if (b > 0) for (let r = 0, mr = mp, o = offC[b - 1]; r < mr; r++) C[o + r * m + p] += zi * C[o + r * m + li];
+        if (b < last) for (let r = 0, mr = mn, o = offA[b + 1]; r < mr; r++) A[o + r * m + p] += zi * A[o + r * m + li];
+        for (let t = 0; t < termC.length; t++) termC[t][R[lb]] += zi * termC[t][R[lb + 1 + i]];
+      }
+      // Storage on the other charged balances, and neutrality: no φ̂' terms, exactly.
+      const v = vol[g], oB = offB[b];
+      let q = this.rhoFixed[g];
+      if (this.nodeIdeal[g]) {
+        for (let i = 0; i < n; i++) {
+          if (!present[gn + i] || z[i] === 0) continue;
+          const ci = c[gn + i], li = loc[lb + 1 + i];
+          if (i !== k) {
+            res[R[lb + 1 + i]] += (v * (ci - cOld[gn + i])) / dt;
+            B[oB + li * m + li] += (v * ci) / dt;
+          }
+          q += F * z[i] * ci;
+          B[oB + p * m + li] += -v * F * z[i] * ci;
+        }
+      } else {
+        for (let i = 0; i < n; i++) {
+          if (!present[gn + i]) continue;
+          if (i !== k && z[i] !== 0) this._storage(g, i, dt, 0);
+          q += F * z[i] * c[gn + i];
+          const Kz = this._Kz(g, i); // (nonzero for a neutral species only on a shared lattice)
+          if (Kz !== 0) this._j(b, 0, b, 1 + i, -v * F * Kz);
+        }
+      }
+      res[R[lb]] -= v * q;
+    }
+  }
+
+  // Newton's update in the transformed unknowns (see _chargeRows) back in η: η_i = η'_i + z_i φ̂'.
+  _untransform(delta) {
+    const { n, M, z, loc, present } = this, R = this.rix;
+    for (const g of this.chargeNodes) {
+      const lb = this.blockOfNode[g] * M;
+      if (loc[lb] < 0) continue;
+      const dphi = delta[R[lb]];
+      for (let i = 0; i < n; i++) if (present[g * n + i] && z[i] !== 0) delta[R[lb + 1 + i]] += z[i] * dphi;
     }
   }
 
@@ -1698,6 +1782,7 @@ export class Solver {
         const pins = this.constrained && dt === Infinity ? this.constraints : [];
         deltaV.fill(0);
         this._solveBordered(res, delta, deltaV, pins);
+        if (this.transformed) this._untransform(delta);
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
         return fail({ converged: false, iterations: it, history, error: err.message });
@@ -1721,8 +1806,9 @@ export class Solver {
       // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
       // above tol: a strictly neutral material on a short step, where φ is fixed only through
       // fluxes that the storage term dwarfs, rattles at ~1e-9 after converging quadratically.
-      const [p1, p2] = [history[history.length - 2], history[history.length - 3]];
-      if (alpha === 1 && it >= 4 && step < 1e-6 && p1 < 1e-6 && step > 0.25 * p1 && p1 > 0.25 * p2) {
+      // On a time step, whose error control works at ~1e-3, the floor may sit up to 1e-5.
+      const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = dt === Infinity ? 1e-6 : 1e-5;
+      if (alpha === 1 && it >= 4 && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax, roundoff: true };
       }
