@@ -5,12 +5,56 @@ equation couples a node only to its neighbours, so the Jacobian is **block-tridi
 each Newton iteration is a single block-Thomas sweep. That constraint is what makes
 interactive speeds possible, so non-local physics is out of scope.
 
+## The equations
+
+In one dimension, inside each region, every species $i$ present there obeys a balance, a flux
+law and its material's statistics, and the electrostatic potential obeys Poisson's equation:
+
+```math
+\begin{aligned}
+&\frac{\partial c_i}{\partial t} + \frac{\partial N_i}{\partial x} = \sum_r \nu_{ir}\, r_r
+  && \quad\text{(conservation, with bulk reactions } r\text{)} \\
+&N_i = -\frac{D_i c_i}{RT}\frac{\partial\bar\mu_i}{\partial x} + v\, c_i
+  - \frac{D_{\mathrm{mix}}}{RT}\Big(P\,\frac{\partial\bar\mu}{\partial x}\Big)_i
+  && \quad\text{(drift and diffusion, advection, eddy mixing)} \\
+&\bar\mu_i = \mu^\circ_i + z_i F\phi + RT\zeta_i, \qquad c_i = c_i(\zeta)
+  && \quad\text{(the material's statistics)} \\
+&-\frac{\partial}{\partial x}\Big(\varepsilon\frac{\partial\phi}{\partial x}\Big) = F\sum_i z_i c_i + \rho_{\mathrm{fixed}}
+  && \quad\text{(Poisson)}
+\end{aligned}
+```
+
+Each reaction runs at $r = k_f \prod c^\nu\,(1 - e^{-A/RT})$, its affinity $A$ from the reactants'
+and products' $\bar\mu$. In a strictly neutral material ($\varepsilon = 0$) Poisson's equation becomes
+the constraint $F\sum_i z_i c_i + \rho_{\mathrm{fixed}} = 0$. Some materials need less:
+
+- A **conductor region** (a metal, a fast ion conductor) has only its carrier, with no storage in
+  its bulk: $\partial J/\partial x = 0$ with Ohm's law $J = -\sigma\,\partial V/\partial x$, and no $\phi$.
+- An **insertion host** holds its ion and carrier as one neutral combination, so $\phi$ cancels
+  from everything there and is left undefined.
+- A species absent from a material has no equations in it.
+
+At each interface the laws are local to the face: per species, continuity of $\bar\mu$, a
+conductance, a blocked face, or face reactions with their own rates; for $\phi$, an alignment
+(dipole), neutrality or a Helmholtz capacitance, with the displacement continuous apart from any
+sheet charge. Contacts and ports join the device to outside phases with known levels, and the
+terminals to their circuits ([the device reference](device.md) has every option). The rest of
+this page is how these become a block-tridiagonal Newton system.
+
 ## Unknowns
 
-At every grid node, with block size $M = 1 + (\text{number of species})$:
+At a node of an ordinary region (a dielectric, a semiconductor, a resolved electrolyte), the
+unknowns are:
 
 - $\hat\phi = F\phi/RT$, the dimensionless (bookkeeping) electrostatic potential;
-- $\eta_i = \bar\mu_i/RT$, the dimensionless electrochemical potential of each species.
+- $\eta_i = \bar\mu_i/RT$, the dimensionless electrochemical potential of each species present.
+
+Each block holds only the unknowns that exist at its node, up to $1 + (\text{number of species})$.
+A conductor region's nodes hold its carrier's $\eta$ and the flux through its single segment
+([metal regions](#metal-regions)); an insertion host has no $\phi$ ([statistics](#statistics)), nor
+does a charge-free region that nothing fixes it in (an oxide between silicon and a gate keeps its
+$\phi$); a species absent from a material has no $\eta$ there; and each
+interface adds a block of its own, for what crosses it ([interfaces](#interfaces-doubled-nodes-plus-a-flux-node)).
 
 Concentrations follow from these through each material's statistics, $c = c(\zeta)$ with
 $\zeta_i = \eta_i - \mu^\circ_i/RT - z_i \hat\phi$ (ideal: $c_i = c_{\mathrm{ref},i} \cdot e^{\zeta_i}$;
@@ -99,7 +143,7 @@ It's evaluated in an algebraically identical, better-conditioned form. Using
 $B(-\Delta) = B(\Delta)e^\Delta$ and $c_R e^\Delta = c_L e^{\Delta\eta}$:
 
 ```math
-N = -\frac{D}{h} \cdot B(\Delta) \cdot c_L \cdot \operatorname{expm1}(\eta_R - \eta_L)
+N = -\frac{D}{h} \cdot B(\Delta) \cdot c_L \cdot \mathrm{expm1}(\eta_R - \eta_L)
 ```
 
 This is exactly zero at equilibrium (flat $\bar\mu$), and it's precise relative to the quasi-Fermi
@@ -316,7 +360,7 @@ $G/L$ per volume, so each node gets half.
 
 ## Bulk reactions
 
-$r = k_f \prod c_R^\nu \cdot (-\operatorname{expm1}(-a))$, with $a = A/RT$ computed from the
+$r = k_f \prod c_R^\nu \cdot (-\mathrm{expm1}(-a))$, with $a = A/RT$ computed from the
 compensated $\eta$. That's mass action with the reverse rate implied by the standard potentials:
 exactly zero at $A = 0$, and free of cancellation near equilibrium. Sources enter each balance as
 $\nu \cdot r$, with one $r$ per reaction per node, so every moiety (a combination that no reaction
