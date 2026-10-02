@@ -42,11 +42,13 @@
     voltage can draw Ag⁺ to it any faster than it diffuses there. The extra voltage goes into the burst at
     each reversal instead, which only the solution's resistance limits, because the salt hasn't had time to
     move.</p>
-  <p>The level diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. Each ion drifts and diffuses down slopes in its own V<sub>i</sub> (thick);
-    the thin line under it, the standard level V°<sub>i</sub>, is where V<sub>i</sub> would sit at the
-    reference concentration. Ag⁺'s voltage slopes from one electrode's to the other's, driving the current.
-    NO₃⁻'s is level once it settles, since nitrate carries no current; meanwhile its standard level is sloped,
-    and that slope is the salt's concentration gradient.</p>
+  <p>The level diagram uses the <a href="../docs/visualization.md">species voltage</a> V<sub>i</sub> =
+    μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so
+    electrons and ions share one axis. Each ion drifts and diffuses down slopes in its own V<sub>i</sub>
+    (thick); the thin line under it, the standard level V°<sub>i</sub>, is where V<sub>i</sub> would sit at
+    the reference concentration. Ag⁺'s voltage slopes from one electrode's to the other's, driving the
+    current. NO₃⁻'s is level once it settles, since nitrate carries no current; meanwhile its standard level
+    is sloped, and that slope is the salt's concentration gradient.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -124,7 +126,7 @@ function frame(now = performance.now()) {
   });
   document.getElementById('status').textContent =
     `cycle ${Math.floor(s.time / period) + 1} · V = ${s.terminals.right.V >= 0 ? '+' : '−'}${Math.abs(s.terminals.right.V).toFixed(2)} V · I = ${(trace.I.at(-1) ?? 0).toFixed(1)} mA/cm²`;
-  // The ionic view (ESBD). NO₃⁻ is drawn shifted (⌇) to sit just above Ag⁺, and the y range grows
+  // The ionic view. NO₃⁻ is drawn shifted (⌇) to sit just above Ag⁺, and the y range grows
   // to hold what the run has shown, so it settles rather than jumping each frame.
   const tr = traces(s, { shifts: { 'NO3-': trace.shift } });
   for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) trace.range = [Math.min(trace.range[0], y), Math.max(trace.range[1], y)];

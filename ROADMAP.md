@@ -164,7 +164,7 @@ for live demos.
   still local and block-tridiagonal.
 - **Graded materials.** μ°(x), c_ref(x), ε(x), D(x) varying within a region, with the full
   `zφ̂ + μ°/RT − ln c_ref` change across each segment. φ's gauge freedom then becomes a
-  continuous function, as in ESBD's inhomogeneities topic.
+  continuous function.
 - **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where λ_D ≪ h,
   for macroscopic devices with real double-layer charge on any grid. It tends to `neutral` as
   ε → 0.

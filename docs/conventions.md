@@ -51,7 +51,8 @@ material; see [statistics](statistics.md). They all reduce to the ideal form in 
 limit, so μ° and c_ref mean the same thing in every model: the dilute (Henry's-law) reference.
 
 The API speaks μ̄ in J/mol (`units.eV` converts per-particle energies). Two voltage views are
-provided for charged species, as in [ESBD](https://marklundeberg.com/esbd/) diagrams:
+provided for charged species (what they show, and why they're drawn, is in
+[reading level diagrams](visualization.md)):
 
 - the **species voltage** `V_i = μ̄_i / (z_i F)`, which is what a voltmeter reads for
   electrons, and the analogous quantity a reversible electrode reads for an ion;

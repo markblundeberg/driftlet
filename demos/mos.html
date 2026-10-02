@@ -25,12 +25,14 @@
   <h2>About this simulation</h2>
   <p>The gate voltage sets the gate metal's Fermi level; the silicon's bands bend at the surface to meet it,
     and φ (dotted) drops straight across the oxide, its slope the oxide field. (In the silicon φ runs along
-    the conduction band edge, where the library's data anchor it.) The band diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis: for electrons
-    and holes, their quasi-Fermi levels (thick), drawn with their standard levels V°<sub>i</sub>, the band edges
-    (thin). Negative bias pulls holes to the surface (accumulation), moderate positive bias pushes them away
-    (depletion), and beyond threshold electrons gather in a thin inversion layer. Those electrons come from a
-    port holding them at ground beside the oxide, the 1D stand-in for a transistor's source and drain;
-    without it, they'd have to diffuse in from the back contact, which takes minutes.</p>
+    the conduction band edge, where the library's data anchor it.) The band diagram uses the <a
+    href="../docs/visualization.md">species voltage</a> V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a
+    species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis: for
+    electrons and holes, their quasi-Fermi levels (thick), drawn with their standard levels V°<sub>i</sub>,
+    the band edges (thin). Negative bias pulls holes to the surface (accumulation), moderate positive bias
+    pushes them away (depletion), and beyond threshold electrons gather in a thin inversion layer. Those
+    electrons come from a port holding them at ground beside the oxide, the 1D stand-in for a transistor's
+    source and drain; without it, they'd have to diffuse in from the back contact, which takes minutes.</p>
   <p>The capacitance at 1 kHz follows the ideal low-frequency C–V curve (dashed: the oxide in series with the
     silicon's dQ/dψ, from the closed-form surface charge), to four digits. Flat band is at
     V<sub>FB</sub> = zeroCharge + φ<sub>bulk</sub>, set by the gate interface's work-function difference;

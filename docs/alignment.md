@@ -138,7 +138,6 @@ aligns them, exactly as Anderson's rule aligns two semiconductors.
 At covalent interfaces (common semiconductors, most metal–semiconductor contacts), measured
 alignments often depart substantially from these rules, and Fermi-level pinning is common.
 Ionic materials tend to follow them better. At metal–solution interfaces, the neglected
-metal–solvent terms (orientation, chemisorption) are often a few tenths of a volt. See the
-[ESBD vacuum-level discussion](https://marklundeberg.com/esbd/vacuum/) for the reasoning.
+metal–solvent terms (orientation, chemisorption) are often a few tenths of a volt.
 Whenever a measured offset, barrier, flat-band voltage or pzc exists, use it instead:
 `step`, `dipole` and `zeroCharge` take measured values directly.

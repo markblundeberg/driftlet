@@ -75,8 +75,8 @@ A coefficient is an integer and a space (`2 e-`); names may start with digits (`
 `half(equation, fixed)` writes a half-reaction, with electrons `e-` on one side, as plain
 `{ equation, fixed }`: spread it into a face reaction with its kinetics. `level(sol, half)` is the
 electronic level it implies at each node, as an electron voltage: where an electrode exchanging
-electrons by that couple would sit in equilibrium with the local composition, the redox level
-of ESBD diagrams (`NaN` where a participant is absent). With `{ standard: true }` every species
+electrons by that couple would sit in equilibrium with the local composition: the couple's redox
+level (`NaN` where a participant is absent; see [reading level diagrams](visualization.md)). With `{ standard: true }` every species
 is at its reference concentration instead. `SHE` is 2 H⁺ + 2 e⁻ ⇌ H₂ with μ(H₂) = 0, so its
 standard level is φ + μ°_H⁺/F.
 
@@ -125,14 +125,14 @@ a level diagram:
   typeset the species as a subscript (`V_{SO₄²⁻}`, the species as `typeset(name, z)` writes
   it); `labels` renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
   volts (`{ 'K+': 3.5 }`), moving all of a species' lines together so that widely separated
-  species share one readable plot, as the ESBD book does; the label says so (⌇). Each line has a
+  species share one readable plot; the label says so (⌇). Each line has a
   colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`, `'redox'`, `'phi'`) and a
   `slot` within it, so a colour follows its species whichever lines are shown
   (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
   there), and doubled interface nodes share an x, so steps draw as vertical lines. It also gives
   the regions (`{ name, material, x0, x1 }`), the faces' positions and a suggested range.
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed, in
-  the ESBD book's style: species voltages thick and solid, standard levels thin and solid, redox
+  the style [reading level diagrams](visualization.md) explains: species voltages thick and solid, standard levels thin and solid, redox
   levels thick and dashed, standard redox levels thin and dashed, φ thin, dotted and grey;
   electrons steel blue, cations warm colours, anions cool ones, redox levels blue-violets (a
   palette checked for colour-vision deficiency, light and dark); a ⌇ across a shifted species,

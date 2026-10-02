@@ -4,7 +4,7 @@ Guide for coding agents working in this repo.
 
 - **Start with the docs:** [README](README.md), [docs/conventions.md](docs/conventions.md),
   [docs/device.md](docs/device.md), [docs/statistics.md](docs/statistics.md),
-  [docs/numerics.md](docs/numerics.md), [docs/kit.md](docs/kit.md), [docs/data.md](docs/data.md) and
+  [docs/numerics.md](docs/numerics.md), [docs/kit.md](docs/kit.md), [docs/visualization.md](docs/visualization.md), [docs/data.md](docs/data.md) and
   [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference.
   SPEC.md is the original design brief, being retired: consult it for history, but don't cite
   it from code, tests or docs.

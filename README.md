@@ -148,7 +148,7 @@ driftlet insists on thermodynamically honest concepts ([conventions](docs/conven
   potential, …) and return the alignment that lines up the vacuum levels. The
   [alignment guide](docs/alignment.md) covers the recipe and its caveats.
 - The species voltage `V_i = μ̄_i / (z_i F)` and standard level `V°_i` are available as views,
-  as in [ESBD](https://marklundeberg.com/esbd/) diagrams.
+  alongside redox levels: [reading level diagrams](docs/visualization.md) explains them.
 
 A device is a line of **regions** (each a **material** plus a length, fixed charge and
 initial composition), joined at **interfaces**, with a **contact** at each end. The contacts
@@ -274,7 +274,8 @@ npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches 
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),
-[statistics](docs/statistics.md), [the kit](docs/kit.md), [data](docs/data.md), [roadmap](ROADMAP.md).
+[statistics](docs/statistics.md), [the kit](docs/kit.md), [reading level diagrams](docs/visualization.md),
+[data](docs/data.md), [roadmap](ROADMAP.md).
 
 ## Licence
 

@@ -3,7 +3,7 @@
 // `element.innerHTML = bandDiagram(sol)`. For your own plotting, `traces()` in driftlet/kit gives
 // the same lines as data.
 //
-// The theme follows the ESBD book's: species voltages V_i are thick solid lines and standard levels
+// The theme (explained in docs/visualization.md): species voltages V_i are thick solid lines and standard levels
 // V°_i thin solid ones, in the species' colour; redox levels are thick dashed lines and their
 // standard levels thin dashed ones; φ is thin, dotted and grey. Electrons are steel blue, cations
 // (holes too) warm colours, anions cool ones, redox levels blue-violets; each colour follows its

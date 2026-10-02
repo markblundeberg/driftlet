@@ -154,7 +154,7 @@ export const SHE = Object.freeze(half('2 H+ + 2 e- = H2', { H2: 0 }));
 /**
  * The electronic level a half-reaction implies at each node, as an electron voltage
  * V = −μ̄_e/F: where an electrode exchanging electrons by that reaction would sit in equilibrium
- * with the local composition (the redox level of ESBD diagrams). With `standard: true`, every
+ * with the local composition (the couple's redox level). With `standard: true`, every
  * species is taken at its reference concentration (its standard level μ° + zFφ), so it's the
  * standard level: for `SHE`, V°_e⁻(SHE) = φ + μ°_H⁺/F. `NaN` where a participant is absent.
  * @param {{ mu: Record<string, ArrayLike<number>>, muStd: Record<string, ArrayLike<number>> }} sol a solution
