@@ -105,3 +105,11 @@ test('zooming with xlim: only the regions in view, ticks over the window, the ra
   const ticks = [...zoom.matchAll(/text-anchor="end"[^>]*>([-\d.e]+)</g)].map((m) => +m[1]);
   assert.ok(Math.min(...ticks) >= Math.min(...visible) - 0.2 && Math.max(...ticks) <= Math.max(...visible) + 0.2);
 });
+
+test('ytick writes the y axis labels, escaped: say powers of ten for log profiles', () => {
+  const sol = cell();
+  const tr = { x: sol.x, regions: sol.regions, faces: [], series: [{ id: 'c', label: 'c', kind: 'level', role: 'cation', slot: 0, y: Array.from(sol.c['Ag+'], (c) => Math.log10(c)) }] };
+  const svg = levelChart(tr, { range: [-3, 2], ytick: (v) => `<10^${v}>` });
+  const labels = [...svg.matchAll(/text-anchor="end"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.ok(labels.includes('&lt;10^-2&gt;') && labels.includes('&lt;10^1&gt;'), labels.join(' '));
+});

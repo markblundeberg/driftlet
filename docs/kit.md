@@ -139,8 +139,9 @@ a level diagram:
   `--driftlet-cation-1` …, `--driftlet-anion-1` …, `--driftlet-redox-1` …, `--driftlet-ink`, …)
   with defaults of no specificity, so a rule such as `.figure svg { --driftlet-electron: … }`
   restyles them; `THEME` and `themeColor(role, slot, { dark })` give them to other charts.
-  `xlim` (m) zooms into a window, with ticks and range fitted to it. `levelChart(traces, opts)`
-  draws traces you've edited.
+  `xlim` (m) zooms into a window, with ticks and range fitted to it; `ytick(v)` writes the y
+  axis's tick labels. `levelChart(traces, opts)` draws traces you've edited, or any profiles
+  against x (log₁₀ concentrations, say, with `ytick` writing powers of ten).
 
 ```js
 import { Device } from 'driftlet';

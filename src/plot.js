@@ -97,11 +97,12 @@ const instance = Math.random().toString(36).slice(2, 8);
 /**
  * Line chart of level-diagram traces as an SVG string.
  * @param {ReturnType<typeof traces>} tr from `traces()`
- * @param {{ width?: number, height?: number, ylabel?: string, range?: [number, number], xlim?: [number, number], title?: string }} [opts]
- *   `xlim` (m) zooms into part of the device; the range then fits what's shown
+ * @param {{ width?: number, height?: number, ylabel?: string, range?: [number, number], xlim?: [number, number], title?: string, ytick?: (v: number) => string }} [opts]
+ *   `xlim` (m) zooms into part of the device; the range then fits what's shown. `ytick` writes
+ *   the y axis's tick labels, say as powers of ten for lines that are log₁₀ of something
  * @returns {string}
  */
-export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title } = {}) {
+export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title, ytick = fmt } = {}) {
   const id = `driftlet-plot-${instance}-${++counter}`;
   const { x, series, regions } = tr;
   const xs = xlim ? xlim[0] : x[0], xe = xlim ? xlim[1] : x[x.length - 1];
@@ -150,7 +151,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   // Grid and axes.
   for (const t of ticks(y0, y1, 5)) {
     out.push(`<line x1="${pad.l}" x2="${pad.l + pw}" y1="${r2(py(t))}" y2="${r2(py(t))}" stroke="var(--driftlet-grid)"/>`);
-    out.push(`<text x="${pad.l - 6}" y="${r2(py(t) + 4)}" text-anchor="end" fill="var(--driftlet-muted)">${fmt(t)}</text>`);
+    out.push(`<text x="${pad.l - 6}" y="${r2(py(t) + 4)}" text-anchor="end" fill="var(--driftlet-muted)">${esc(ytick(t))}</text>`);
   }
   for (const t of ticks(xs * unit.scale, xe * unit.scale, 6)) {
     out.push(`<text x="${r2(px(t / unit.scale))}" y="${pad.t + ph + 16}" text-anchor="middle" fill="var(--driftlet-muted)">${fmt(t)}</text>`);
@@ -224,6 +225,6 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
  * @returns {string}
  */
 export function bandDiagram(sol, opts = {}) {
-  const { width, height, ylabel, range, xlim, title, ...pick } = opts;
-  return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title });
+  const { width, height, ylabel, range, xlim, title, ytick, ...pick } = opts;
+  return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title, ytick });
 }
