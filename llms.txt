@@ -306,6 +306,21 @@ has the long form):
   Maier (Phys. Chem. Chem. Phys. 3, 1668 (2001)) where V_i rails explain impedance or linear
   response.
 
+## Good habits
+
+- **Draw the closed-form answer alongside the simulation**, wherever a textbook limit exists
+  (Shockley's law, a Nernst potential, a Gaussian pulse, a Warburg arc), as the demos and tests
+  do. It checks the setup: a solver's output looks authoritative even when an input is wrong, and
+  a mismatch is the cheapest way to catch it. Where the two should differ (high injection, a
+  finite pulse), say why.
+- **Stay honestly inside 1D.** driftlet models planar devices. Where the real device isn't one,
+  say so and pick the slice that still tells the true story: a MOSFET's gate stack, read as the
+  MOS capacitor its channel sits on (pinch-off along the channel is 2D); a BJT along its
+  emitter–base–collector axis; one particle of a porous battery electrode, or a thin dense film,
+  rather than the whole porous electrode (that's a P2D model).
+- **Check `sol.converged` and `sol.warnings`** on every solve, and pin the CDN version you
+  tested against.
+
 ## Common mistakes
 
 - **No alignment at a heterointerface.** `interfaces[0] (between … [Si] and … [GaAs]): an
