@@ -101,7 +101,7 @@ update();
 function draw(sol, info) {
   const V = sol.terminals.right.V, tau = 1 / (kf() * NA), Ln = Math.sqrt(el.D * tau);
   document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
-  document.getElementById('kfOut').textContent = `τₙ ${tau < 1e-6 ? `${(tau * 1e9).toPrecision(2)} ns` : `${(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${(Ln * 1e6).toPrecision(2)} µm`;
+  document.getElementById('kfOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
   document.getElementById('I').textContent =
     `|J| = ${(Math.abs(sol.current) / 1e4).toExponential(2)} A/cm² · Shockley ${(Math.abs(shockley(V, kf())) / 1e4).toExponential(2)} · ${info.ms.toFixed(1)} ms` + (info.failed ? ' · (no solution here)' : '');
   chart(document.getElementById('iv'), {

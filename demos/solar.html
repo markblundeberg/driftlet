@@ -9,102 +9,115 @@
 <body>
 <main>
   <h1>Silicon solar cell under light</h1>
-  <p>A thin n⁺ emitter on a thick p base. Light is a reservoir: the reaction photon → e⁻ + h⁺, with the
-    photons' μ far above the gap, generates pairs uniformly. Carriers made within a diffusion length of the
-    junction are collected, so the short-circuit current is about qG(L<sub>n</sub> + L<sub>p</sub> + W). Under
-    light the quasi-Fermi levels split even at zero bias; at open circuit they split by qV<sub>oc</sub> and
-    no current flows.</p>
+  <p>A thin n⁺ emitter on a 60 µm p base, with metal contacts front and back. Light is a reservoir: the reaction
+    photon → e⁻ + h⁺, with the photons' μ far above the gap, generates pairs uniformly. Under light the
+    quasi-Fermi levels split even at zero bias; at open circuit they split by qV<sub>oc</sub> and no current
+    flows. A pair made in the base is collected if its electron reaches the junction before it recombines or
+    reaches the back contact, which is a sink here (there's no back-surface field). Integrating that chance
+    over the base gives L<sub>n</sub> tanh(W<sub>b</sub>/2L<sub>n</sub>) of collecting width: about L<sub>n</sub>
+    for a short diffusion length, but never more than half the base however long it is. The readout checks
+    J<sub>sc</sub> = qG(that + the depletion layer + the emitter's share) and
+    V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from the dark curve. The dashed curve is
+    the dark curve shifted by J<sub>sc</sub>, the superposition principle.</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="0" max="0.65" step="0.005" value="0.5"><output id="Vout"></output></label>
     <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
+    <label>base lifetime <input id="kf" type="range" min="6" max="10" step="0.5" value="8"><output id="kfOut"></output></label>
     <span class="readout" id="stats"></span>
   </div>
   <div class="grid">
+    <canvas class="wide" id="jv"></canvas>
     <div class="levels wide" id="levels"></div>
-    <canvas id="jv"></canvas>
-    <canvas id="conc"></canvas>
+    <div class="levels wide" id="conc"></div>
   </div>
 </main>
 <script type="module">
-import { Device, units } from '../src/index.js';
+import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery, speciesColor } from './common.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
 
+const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), ND = units.perCm3(1e19), NA = units.perCm3(1e16);
 const G1 = 50; // generation at "1×" light, mol/(m³·s): 3e19 pairs per cm³ per second
-const cell = (V, light) =>
+const reactions = (light, kf) => [
+  // Band-to-band recombination: τ = 1/(kf·N), so L_n = √(D τ) ≈ 48 µm in the base at kf = 1e8.
+  { equation: 'e- + h+ = 0', kf: { Si: kf } },
+  // Photogeneration from a photon reservoir, at the rate kf (mol/(m³·s)).
+  { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G1 * light } },
+];
+const cell = (V, light, kf) =>
   build({
     T: 300,
-    library: [semiconductor('Si')],
-    stack: [
-      ohmic(0),
-      layer('Si', units.um(0.5), { name: 'n⁺', donors: units.perCm3(1e19) }),
-      layer('Si', units.um(60), { name: 'p', acceptors: units.perCm3(1e16) }),
-      ohmic(V),
-    ],
-    bulkReactions: [
-      // Recombination: τ = 1/(kf·N) ≈ 0.6 µs in the base, so L_n = √(D τ) ≈ 48 µm.
-      { equation: 'e- + h+ = 0', kf: { Si: 1e8 } },
-      // Photogeneration from a photon reservoir, at the rate kf (mol/(m³·s)).
-      { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G1 * light } },
-    ],
+    library: [Si],
+    stack: [ohmic(0), layer('Si', We, { name: 'n⁺', donors: ND }), layer('Si', Wb, { name: 'p', acceptors: NA }), ohmic(V)],
+    bulkReactions: reactions(light, kf),
     grid: { hmin: units.nm(1), hmax: units.um(1) },
   });
 
-const V = document.getElementById('V'), light = document.getElementById('G');
-fromQuery(V);
-fromQuery(light);
+const V = document.getElementById('V'), light = document.getElementById('G'), life = document.getElementById('kf');
+for (const el of [V, light, life]) fromQuery(el);
+const kf = () => 10 ** +life.value;
 
-// The J–V curve for the present light: a plain Device swept in bias, warm from point to point.
-// Power out is −V·J here, since the photocurrent flows toward +x (holes to the p side).
+// The collecting width: the depletion layer, plus L tanh(W/2L) on each side (a sink at each contact).
+const { 'e-': el, 'h+': ho } = Si.materials.Si.species, VT = (GAS_CONSTANT * 300) / FARADAY;
+const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 - el.mu0) / (GAS_CONSTANT * 300));
+function collecting(k) {
+  const Vbi = VT * Math.log((ND * NA) / ni2), Wd = Math.sqrt(((2 * Si.materials.Si.epsr * EPS0 * Vbi) / FARADAY) * (1 / NA + 1 / ND));
+  const xp = (Wd * ND) / (NA + ND), Ln = Math.sqrt(el.D / (k * NA)), Lp = Math.sqrt(ho.D / (k * ND));
+  return { width: Wd + Ln * Math.tanh((Wb - xp) / (2 * Ln)) + Lp * Math.tanh((We - (Wd - xp)) / (2 * Lp)), Ln };
+}
+
+// The J–V curves for the present light and lifetime, dark and lit: plain Devices swept in bias,
+// warm from point to point. The photocurrent flows toward +x (holes to the p side), so power out is V·J.
 const curve = (G) => {
-  const dev = new Device(cell(0, G)), J = [];
+  const dev = new Device(cell(0, G, kf())), J = [];
   for (let v = 0; v <= 0.651; v += 0.01) {
     dev.set({ contacts: { right: { V: v } } });
-    J.push(dev.solve().current);
+    J.push(dev.solve().current / 10); // mA/cm²
   }
   return J;
 };
-const dark = curve(0); // in the dark: the diode alone (superposition: the light shifts it by J_sc)
 let jv;
 function sweep() {
-  jv = { V: dark.map((_, k) => k * 0.01), J: curve(+light.value) };
-  const oc = new Device(cell({ I: 0 }, +light.value)).solve(); // open circuit: the terminal floats
-  const Jsc = jv.J[0], Voc = oc.terminals.right.V;
-  const Pmax = Math.max(...jv.V.map((v, k) => v * jv.J[k]));
-  jv.stats = `J_sc = ${(Jsc / 10).toFixed(1)} mA/cm² · V_oc = ${Voc.toFixed(3)} V · FF = ${(Pmax / (Jsc * Voc)).toFixed(3)} · P_max = ${(Pmax / 10).toFixed(1)} mW/cm²`;
+  const dark = curve(0), lit = curve(+light.value);
+  const oc = new Device(cell({ I: 0 }, +light.value, kf())).solve(); // open circuit: the terminal floats
+  const Jsc = lit[0], Voc = oc.terminals.right.V, vs = dark.map((_, k) => k * 0.01);
+  const Pmax = Math.max(...vs.map((v, k) => v * lit[k]));
+  const J0 = -dark[30] / (Math.exp(0.3 / VT) - 1); // from the dark curve at 0.3 V
+  const theory = (FARADAY * G1 * +light.value * collecting(kf()).width) / 10;
+  jv = {
+    V: vs, dark, lit, Jsc,
+    stats: `J_sc = ${Jsc.toFixed(2)} mA/cm² (collection theory ${theory.toFixed(2)}) · V_oc = ${Voc.toFixed(3)} V (V_T ln(J_sc/J₀ + 1) = ${(VT * Math.log(Jsc / J0 + 1)).toFixed(3)}) · FF = ${(Pmax / (Jsc * Voc)).toFixed(3)} · P_max = ${Pmax.toFixed(2)} mW/cm²`,
+  };
 }
 
-const dev = live(cell(+V.value, +light.value), { onsolution: draw });
-const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: cell(0, +light.value).bulkReactions });
+const dev = live(cell(+V.value, +light.value, kf()), { onsolution: draw });
+const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: reactions(+light.value, kf()) });
 V.addEventListener('input', update);
-light.addEventListener('change', () => {
-  sweep();
-  update();
-});
+for (const el of [light, life])
+  el.addEventListener('change', () => {
+    sweep();
+    update();
+  });
 sweep();
 
 function draw(sol) {
-  const v = sol.terminals.right.V;
+  const v = sol.terminals.right.V, tau = 1 / (kf() * NA);
   document.getElementById('Vout').textContent = `${v.toFixed(3)} V`;
   document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  document.getElementById('kfOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(collecting(kf()).Ln * 1e6).toPrecision(2)} µm`;
   document.getElementById('stats').textContent = jv.stats;
-  levels(document.getElementById('levels'), sol, { title: `bands and quasi-Fermi levels at V = ${v.toFixed(3)} V`, xlim: [0, 20e-6] });
   chart(document.getElementById('jv'), {
-    xlabel: 'V (V)', ylabel: 'J (mA/cm²)', ylim: [-0.3 * jv.J[0] / 10, 1.15 * jv.J[0] / 10],
+    xlabel: 'V (V)', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.3 * jv.Jsc, 1.15 * jv.Jsc],
     series: [
-      { x: jv.V, y: dark.map((j) => j / 10), color: colors[6], dash: [6, 4], label: 'dark' },
-      { x: jv.V, y: jv.J.map((j) => j / 10), color: colors[2], label: 'under light' },
+      { x: jv.V, y: jv.lit, color: colors[2], label: 'under light' },
+      { x: jv.V, y: jv.dark.map((j) => j + jv.Jsc), color: colors[0], dash: [6, 4], width: 1.5, label: 'dark + J_sc (superposition)' },
+      { x: jv.V, y: jv.dark, color: colors[6], width: 1.2, label: 'dark' },
       { x: [v], y: [sol.current / 10], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
-  chart(document.getElementById('conc'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
-    series: [
-      { x: sol.x, y: sol.c['e-'], color: speciesColor(sol, 'e-'), label: 'e⁻' },
-      { x: sol.x, y: sol.c['h+'], color: speciesColor(sol, 'h+'), label: 'h⁺' },
-    ],
-  });
+  levels(document.getElementById('levels'), sol, { title: `bands and quasi-Fermi levels at V = ${v.toFixed(3)} V` });
+  profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true });
 }
 showCode();
 </script>
