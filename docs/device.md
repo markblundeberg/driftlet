@@ -50,15 +50,15 @@ materials: {
 }
 ```
 
-Per species present: `D` (m²/s, the coefficient in the flux N = −(D c/RT)∇μ̄), `mu0` (standard
-chemical potential, J/mol) and `cRef` (the concentration that `mu0` refers to; falls back to
-the species' `cRef`, and must exist one way or the other). Species not listed are absent.
+Per species present: `D` (m²/s, the coefficient in the flux $N = -(D c/RT)\nabla\bar\mu$), `mu0`
+(standard chemical potential, J/mol) and `cRef` (the concentration that `mu0` refers to; falls back
+to the species' `cRef`, and must exist one way or the other). Species not listed are absent.
 
 In a material, only *neutral combinations* of standard potentials mean anything physically.
-Shifting every `mu0` by `z_i F s` just moves the material's φ, its bookkeeping anchor. See
+Shifting every `mu0` by $z_i F s$ just moves the material's $\phi$, its bookkeeping anchor. See
 [conventions](conventions.md).
 
-`epsr: 0` makes a material **strictly neutral**: Poisson is replaced by local neutrality, and φ
+`epsr: 0` makes a material **strictly neutral**: Poisson is replaced by local neutrality, and $\phi$
 there is only a bookkeeping multiplier. Use it for macroscopic systems whose double layers you
 don't want to resolve, such as electrolytes and mixed conductors. (Metals have their own kind of
 material, below.)
@@ -69,13 +69,14 @@ material, below.)
 materials: { Au: { conductor: { species: 'e-', conductivity: 4.1e7 } } } // S/m
 ```
 
-A conductor has one mobile carrier, and its only unknown is that carrier's μ̄: for a metal, the
-Fermi level. There's no ε, no `mu0` or `cRef`, and φ is undefined inside. Its bulk is neutral
-and incompressible, conduction is ohmic (J = −σ∇V), and any charge it holds sits as a sheet at a
-charged face. Since nothing is stored inside, the carrier's level is exactly linear across a
-conductor region, so the region is a single grid cell, whatever its length. Conductor regions
-take no `fixedCharge`, `c0`, `grid`, `velocity` or `mixing`. A port on a conductor attaches to
-all of it (see [ports](#internal-ports)). See [Faces next to a conductor](#faces-next-to-a-conductor).
+A conductor has one mobile carrier, and its only unknown is that carrier's $\bar\mu$: for a metal,
+the Fermi level. There's no $\varepsilon$, no `mu0` or `cRef`, and $\phi$ is undefined inside. Its
+bulk is neutral and incompressible, conduction is ohmic ($J = -\sigma\nabla V$), and any charge it
+holds sits as a sheet at a charged face. Since nothing is stored inside, the carrier's level is
+exactly linear across a conductor region, so the region is a single grid cell, whatever its length.
+Conductor regions take no `fixedCharge`, `c0`, `grid`, `velocity` or `mixing`. A port on a conductor
+attaches to all of it (see [ports](#internal-ports)). See
+[Faces next to a conductor](#faces-next-to-a-conductor).
 
 `statistics` (optional) lists non-ideal statistics models, each covering named species:
 Fermi–Dirac, lattice gas (crowding), Redlich–Kister, Debye–Hückel, insertion hosts (OCV
@@ -96,21 +97,22 @@ regions: [
 
 - `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. In an insertion
   host it's balanced by background electronic carriers.
-- `c0`: initial concentrations, mol/m³. Species connected to a contact start from that
-  contact's level and don't need it. Any other species (blocked everywhere, or only made and
-  consumed by reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive (μ̄
-  is logarithmic in them); to have none of a species in a region, leave it out of that region's
-  material. In a strictly neutral region, Σ z·c0 must be zero. Where nothing else sets φ at the
-  start, a region beside an electrode starts with the electrode's first reaction at equilibrium
-  (the electrode at its open-circuit level); otherwise φ carries over from the left.
+- `c0`: initial concentrations, mol/m³. Species connected to a contact start from that contact's
+  level and don't need it. Any other species (blocked everywhere, or only made and consumed by
+  reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($\bar\mu$ is
+  logarithmic in them); to have none of a species in a region, leave it out of that region's
+  material. In a strictly neutral region, $\sum z \cdot c_0$ must be zero. Where nothing else sets
+  $\phi$ at the start, a region beside an electrode starts with the electrode's first reaction at
+  equilibrium (the electrode at its open-circuit level); otherwise $\phi$ carries over from the
+  left.
 - `velocity`: imposed flow toward +x, m/s (default 0). It carries every mobile species
-  (D > 0) along with the fluid. It's uniform within the region: in strict 1D, incompressible
+  ($D > 0$) along with the fluid. It's uniform within the region: in strict 1D, incompressible
   flow is the same everywhere. A step in velocity at a face means solvent enters or leaves
   there sideways *without* its solutes, which still cross the face by flux continuity: an ideal
   ultrafiltration membrane, where solutes pile up (concentration polarisation). It isn't a
   sideways inflow or outflow of solution.
-- `mixing`: eddy (turbulent) mixing diffusivity D_mix, m²/s (default 0). It mixes composition
-  without carrying current, and does nothing at equilibrium (see
+- `mixing`: eddy (turbulent) mixing diffusivity $D_{\mathrm{mix}}$, m²/s (default 0). It mixes
+  composition without carrying current, and does nothing at equilibrium (see
   [conventions](conventions.md#transport)). A strongly mixed region is the local stand-in for a
   well-stirred bath.
 - `grid`: per-region override of the grid options (below).
@@ -134,33 +136,34 @@ interfaces: [
 
 **Alignment** (exactly one, for a face between *different* materials under a `pinned` or
 `capacitive` law):
-- `step: { species, value }`: the step in that charged species' standard level across the
-  face, right minus left, `(μ°_R + zFφ_R) − (μ°_L + zFφ_L)`, in J/mol. For electrons that's
-  the conduction-band offset.
-- `dipole`: the φ jump, right minus left, in each material's own anchoring, in volts.
+- `step: { species, value }`: the step in that charged species' standard level across the face,
+  right minus left, $(\mu^\circ_R + zF\phi_R) - (\mu^\circ_L + zF\phi_L)$, in J/mol. For electrons
+  that's the conduction-band offset.
+- `dipole`: the $\phi$ jump, right minus left, in each material's own anchoring, in volts.
 There is no default: omitting it is an error. When vacuum-level estimates are all you have,
 `vacuumDipole` from `driftlet/kit` turns them into a `dipole` (see the
 [alignment guide](alignment.md)). A face between regions of the same material
 defaults to no dipole.
 
 **Electrostatic law** `phi`:
-- `'pinned'`: φ jumps by the alignment. The default, and exact when the grid resolves the
-  double layers on both sides. Not between two ε = 0 materials: with no field on either side,
+- `'pinned'`: $\phi$ jumps by the alignment. The default, and exact when the grid resolves the
+  double layers on both sides. Not between two $\varepsilon = 0$ materials: with no field on either side,
   nothing would determine the face's charge.
 - `'neutral'`: no charge at the face and a free jump, set by neutrality on each side (Donnan).
-  The alignment drops out and must not be given. This is the default between two ε = 0
-  materials, and next to an insertion host (where φ is undefined).
-- `{ type: 'capacitive', C }`: a Helmholtz layer, D = −C·(Δφ − dipole), C in F/m².
+  The alignment drops out and must not be given. This is the default between two $\varepsilon = 0$
+  materials, and next to an insertion host (where $\phi$ is undefined).
+- `{ type: 'capacitive', C }`: a Helmholtz layer, $D = -C \cdot (\Delta\phi - \mathtt{dipole})$, C
+  in F/m².
 
-**Species laws** `species` (default: local equilibrium, μ̄ continuous, where the species is
+**Species laws** `species` (default: local equilibrium, $\bar\mu$ continuous, where the species is
 present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
-`{ type: 'conductance', G }` (J = G·(V_L − V_R), G in S/m², charged species). A species that
+`{ type: 'conductance', G }` ($J = G \cdot (V_L - V_R)$, G in S/m², charged species). A species that
 takes part in a reaction at the face and exists on both sides has no default: give its link
 (`'blocked'` if it crosses only through the reaction), since free crossing alongside would
 short-circuit the kinetics.
 
 **Reactions** `reactions` at the face, each written as an equation or as its participants on
-each side, with signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward
+each side, with signed stoichiometric coefficients ($\nu < 0$ consumed, $\nu > 0$ produced by the forward
 reaction):
 
 ```js nocheck
@@ -180,30 +183,33 @@ desolvation (or SEI) step has Li⁺ on both sides, with `species: { 'Li+': 'bloc
 transfer reaction above.
 
 A participant is a species present on its side (on a conductor's side, only its carrier) or a
-fixed-activity neutral, given by its μ in `fixed` (J/mol; the side doesn't matter). Charge must
-balance. The rate per area, with a = A/RT = −Σ ν μ̄/RT over all participants, is Butler–Volmer,
+fixed-activity neutral, given by its $\mu$ in `fixed` (J/mol; the side doesn't matter). Charge must
+balance. The rate per area, with $a = A/RT = -\sum \nu\bar\mu/RT$ over all participants, is
+Butler–Volmer,
 
-```
-r = k0 Π_{ν<0} (c/c_ref)^{|ν|(1−α)} Π_{ν>0} (c/c_ref)^{να} (e^{αa} − e^{−(1−α)a})
+```math
+r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|(1-\alpha)} \prod_{\nu>0} (c/c_{\mathrm{ref}})^{\nu\alpha} \left(e^{\alpha a} - e^{-(1-\alpha)a}\right)
 ```
 
-with k0 in mol/(m²·s) and α (default 0.5) between 0 and 1. A conductor's carrier has activity 1
-and no factor. That's mass action with rate constants that depend on the electrical part of the
-affinity: exactly zero at A = 0, whatever k0 and α. Each participant is made or consumed at its
-side's edge node, just behind any Stern layer, so Frumkin effects arise by themselves. A face
-can carry several reactions; a conductor coupled to two couples settles at their mixed potential.
-Each solution reports the rates as `interfaces[f].rates`.
+with $k_0$ in mol/(m²·s) and $\alpha$ (default 0.5) between 0 and 1. A conductor's carrier has
+activity 1 and no factor. That's mass action with rate constants that depend on the electrical part
+of the affinity: exactly zero at $A = 0$, whatever $k_0$ and $\alpha$. Each participant is made or
+consumed at its side's edge node, just behind any Stern layer, so Frumkin effects arise by
+themselves. A face can carry several reactions; a conductor coupled to two couples settles at their
+mixed potential. Each solution reports the rates as `interfaces[f].rates`.
 
 ### Faces next to a conductor
 
-A conductor has no φ, so a face beside it can't take a `dipole` or `step` alignment. Its φ law is:
+A conductor has no $\phi$, so a face beside it can't take a `dipole` or `step` alignment. Its $\phi$
+law is:
 
-- `'neutral'` (no charge at the face): the default next to an ε = 0 material, and the only
+- `'neutral'` (no charge at the face): the default next to an $\varepsilon = 0$ material, and the only
   choice between two conductors; or
-- `{ type: 'capacitive', C }` with `zeroCharge`: the other side's φ is tied to the conductor's
-  level V_F (the carrier's μ̄ as a voltage), with displacement C·(V_F − zeroCharge − φ_edge)
-  toward the other side, which is the conductor's surface charge. `zeroCharge` is V_F − φ_edge
-  at zero charge (`vacuumZeroCharge` in `driftlet/kit` estimates it from a work function).
+- `{ type: 'capacitive', C }` with `zeroCharge`: the other side's $\phi$ is tied to the conductor's
+  level $V_F$ (the carrier's $\bar\mu$ as a voltage), with displacement
+  $C \cdot (V_F - \mathtt{zeroCharge} - \phi_{\mathrm{edge}})$ toward the other side, which is the
+  conductor's surface charge. `zeroCharge` is $V_F - \phi_{\mathrm{edge}}$ at zero charge
+  (`vacuumZeroCharge` in `driftlet/kit` estimates it from a work function).
 
 A `pinned` law isn't offered here: an internal conductor holds its surface charge in a
 finite capacitance (a large C approaches the pinned limit). A pinned barrier is still available
@@ -225,21 +231,22 @@ bulkReactions: [
 ]
 ```
 
-`equation`, or `nu` with signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by
+`equation`, or `nu` with signed stoichiometric coefficients ($\nu < 0$ consumed, $\nu > 0$ produced by
 the forward reaction); a participant on both sides of an equation is an error (give the net
-reaction). Participants that aren't species are fixed-activity neutrals, given by their μ in
+reaction). Participants that aren't species are fixed-activity neutrals, given by their $\mu$ in
 `fixed` (J/mol). Charge must balance. The rate is mass action,
-`r = k_f Π_{ν<0} c^{|ν|} (1 − e^{−A/RT})` with A = −Σ ν μ̄ the affinity. That's
-`k_f Π c_R − k_b Π c_P`, with `k_b` fixed by the standard potentials, so equilibrium is exactly
-A = 0. `kf` maps material
+$r = k_f \prod_{\nu<0} c^{|\nu|} (1 - e^{-A/RT})$ with $A = -\sum \nu\bar\mu$ the affinity. That's
+$k_f \prod c_R - k_b \prod c_P$, with $k_b$ fixed by the standard potentials, so equilibrium is exactly
+$A = 0$. `kf` maps material
 names to forward rate constants (units making r mol/(m³·s)), and the reaction runs only in
 those materials.
 
-**Generation** is a reaction from a reservoir: photogeneration is `photon → e⁻ + h⁺`, with the
-photons a fixed participant whose μ sits well above the gap, so that e^{−A/RT} is negligible and
-the rate is `kf` itself, the generation rate (mol/(m³·s)). It's uniform within each material
-listed in `kf` (there's no optical absorption profile). The photons' μ is the honest part: light
-is a reservoir far from the device's temperature, and the rate still vanishes at A = 0.
+**Generation** is a reaction from a reservoir: photogeneration is
+$\text{photon} \to \mathrm{e}^- + \mathrm{h}^+$, with the photons a fixed participant whose $\mu$
+sits well above the gap, so that $e^{-A/RT}$ is negligible and the rate is `kf` itself, the
+generation rate (mol/(m³·s)). It's uniform within each material listed in `kf` (there's no optical
+absorption profile). The photons' $\mu$ is the honest part: light is a reservoir far from the
+device's temperature, and the rate still vanishes at $A = 0$.
 
 ```js nocheck
 bulkReactions: [{ equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 0.1 } }]
@@ -247,12 +254,12 @@ bulkReactions: [{ equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, 
 
 ## Contacts
 
-A contact is an interface whose far side is an **outside phase with known levels**: think of
-it as one more region whose node is fully known. The outside phase's levels form a rigid
-ladder, `V_i = V + offset_i` for charged species (μ̄ given directly for neutral ones). The
-offsets are the outside phase's own chemistry, and the external circuit slides the whole ladder
-by the terminal voltage V: held, or floating under a current (see [terminals](#terminals)). The
-laws joining it to the device are the same as at internal interfaces.
+A contact is an interface whose far side is an **outside phase with known levels**: think of it as
+one more region whose node is fully known. The outside phase's levels form a rigid ladder,
+$V_i = V + \mathtt{offset}_i$ for charged species ($\bar\mu$ given directly for neutral ones). The
+offsets are the outside phase's own chemistry, and the external circuit slides the whole ladder by
+the terminal voltage V: held, or floating under a current (see [terminals](#terminals)). The laws
+joining it to the device are the same as at internal interfaces.
 
 ```js nocheck
 contacts: {
@@ -268,38 +275,43 @@ contacts: {
 
 **Species laws** (default `'blocked'`):
 - `'equilibrium'`: the species is in equilibrium with the outside phase, so it's held at
-  `V_i = V + offset` (charged) or `μ̄ = mu` (neutral, J/mol).
+  $V_i = V + \mathtt{offset}$ (charged) or $\bar\mu = \mathtt{mu}$ (neutral, J/mol).
   - The offset defaults to 0 only for the terminal species. Any other species needs one,
     because it's a property of the outside phase: the chemical potential, per charge, of the
     neutral combination the species forms with the terminal species there.
-  - For an ion at a reversible electrode, Mⁿ⁺ + n e⁻ ⇌ M(s) gives `offset = μ_M/(nF)`, the
-    metal's own chemical potential per charge, which is 0 on the usual table convention. (E°
-    isn't the offset: it's already carried by the ion's μ° in the solution.)
+  - For an ion at a reversible electrode,
+    $\mathrm{M}^{n+} + n\,\mathrm{e}^- \rightleftharpoons \mathrm{M(s)}$ gives
+    $\mathtt{offset} = \mu_{\mathrm{M}}/(nF)$, the metal's own chemical potential per charge, which
+    is 0 on the usual table convention. ($E^\circ$ isn't the offset: it's already carried by the
+    ion's $\mu^\circ$ in the solution.)
   - At a metal, holes and electrons share the metal's voltage: `offset: 0`.
 - `{ type: 'conductance', G, offset }` (charged species): ohmic exchange with the outside level
-  at `V + offset`, J = G·(V_out − V_i), G in S/m².
-- `{ type: 'exchange', k, mu }` (neutral species): N_in = k·(μ_out − μ)/RT, k in mol/(m²·s).
+  at $V + \mathtt{offset}$, $J = G \cdot (V_{\mathrm{out}} - V_i)$, G in S/m².
+- `{ type: 'exchange', k, mu }` (neutral species):
+  $N_{\mathrm{in}} = k \cdot (\mu_{\mathrm{out}} - \mu)/RT$, k in mol/(m²·s).
 - `'blocked'`: no flux.
 
 **`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
 held in place by a charged `reference` species (as for a reversible reference electrode, e.g.
 Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
-composition implies, and the φ law is `'bulk'`. An optional `offset` places the reference
+composition implies, and the $\phi$ law is `'bulk'`. An optional `offset` places the reference
 species relative to V.
 
 **`phi`**, required whenever any species or reaction connects at the contact (default
 `'neutral'`):
 - `'bulk'`: the end node is plain bulk, locally neutral, with no double layer at the contact
   (ohmic contacts, baths). The outside takes whatever surface charge that needs.
-- `'neutral'`: no charge at the face (D = 0), as for an internal `'neutral'` face.
-- `{ type: 'capacitive', C }` with the contact's `zeroCharge`: a gate or Stern layer to a
-  conductor at the terminal voltage V. The displacement into the device is
-  `C·((V − zeroCharge) − φ_edge)`, so `zeroCharge` is the value of V − φ_edge at which the
-  interface carries no charge: the potential of zero charge (pzc) of an electrode, or for a gate
-  the flat-band voltage less the semiconductor's bulk φ (V_FB = zeroCharge + φ_bulk).
-- `'pinned'` with `zeroCharge`: the C → ∞ limit, φ_edge = V − zeroCharge. This is what a "fixed
-  φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type material with
-  μ°_e = 0 is `zeroCharge: φ_B`.
+- `'neutral'`: no charge at the face ($D = 0$), as for an internal `'neutral'` face.
+- `{ type: 'capacitive', C }` with the contact's `zeroCharge`: a gate or Stern layer to a conductor
+  at the terminal voltage V. The displacement into the device is
+  $C \cdot ((V - \mathtt{zeroCharge}) - \phi_{\mathrm{edge}})$, so `zeroCharge` is the value of
+  $V - \phi_{\mathrm{edge}}$ at which the interface carries no charge: the potential of zero charge
+  (pzc) of an electrode, or for a gate the flat-band voltage less the semiconductor's bulk $\phi$
+  ($V_{\mathrm{FB}} = \mathtt{zeroCharge} + \phi_{\mathrm{bulk}}$).
+- `'pinned'` with `zeroCharge`: the $C \to \infty$ limit,
+  $\phi_{\mathrm{edge}} = V - \mathtt{zeroCharge}$. This is what a "fixed $\phi$" boundary honestly
+  means. For example, a Schottky barrier $\phi_B$ on n-type material with
+  $\mu^\circ_{\mathrm{e}^-} = 0$ is `zeroCharge: φ_B`.
 
 Like every alignment, `zeroCharge` is a property of that interface. To estimate it from vacuum
 levels, `vacuumZeroCharge(def, W, inside)` from `driftlet/kit` takes the work function W of the
@@ -340,10 +352,10 @@ the port brings into the device.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
 
-On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no
-window, only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance R·A to the
-port's voltage as G = 1/(R·A)). That's how a floating electrode is tied to ground through a
-resistor.
+On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
+only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance
+$R \cdot A$ to the port's voltage as $G = 1/(R \cdot A)$). That's how a floating electrode is tied
+to ground through a resistor.
 
 For example, in a 1D MOS capacitor without generation, inversion electrons can only arrive by
 minority-carrier diffusion from the back contact, which can take weeks. The inversion layer is
@@ -371,22 +383,22 @@ ports: [{ name: 'ref', I: 0, ... },  // a reference electrode: no current, its v
   means `V: 0`.
 - **`I`**: the current into the device through this terminal (conduction plus displacement);
   the voltage floats and is solved for.
-- **`V` and `R`**: a source behind a resistance, I = (V − V_terminal)/R.
+- **`V` and `R`**: a source behind a resistance, $I = (V - V_{\mathrm{terminal}})/R$.
 
 At least one terminal must be held at a voltage, or the device's overall level floats. In
 steady state the terminal currents sum to zero. A contact can be driven by a current only if
 something passes it (a linked species, or a gate's displacement).
 
 **Waveforms.** `V` and `I` can be piecewise linear in time:
-`{ t: [0, 1, 2], values: [0, 0.5, 0], repeat: true }` (s and V, or s and A/m²), constant beyond
-the points, or periodic with period t_last − t_0 when `repeat` is set: a triangle wave is a cyclic
-voltammogram. A **step** is two points at one time, `{ t: [0, 1e-3, 1e-3], values: [0, 0, 0.5] }`,
-and a repeating waveform whose last value differs from its first jumps back each period (a
-sawtooth); a square wave is steps both ways. Write a jump as a step rather than as a very fast
-ramp, which the time-step control has to resolve. A time step ending at t sees the sources as
-they are just before t (so it ends on a jump's near side, and the next step carries the jump);
-`solve()` and `impedance()` use the values at the present time, after any jump there.
-`advance()` lands on every breakpoint and restarts its time stepping there.
+`{ t: [0, 1, 2], values: [0, 0.5, 0], repeat: true }` (s and V, or s and A/m²), constant beyond the
+points, or periodic with period $t_{\mathrm{last}} - t_0$ when `repeat` is set: a triangle wave is a
+cyclic voltammogram. A **step** is two points at one time,
+`{ t: [0, 1e-3, 1e-3], values: [0, 0, 0.5] }`, and a repeating waveform whose last value differs
+from its first jumps back each period (a sawtooth); a square wave is steps both ways. Write a jump
+as a step rather than as a very fast ramp, which the time-step control has to resolve. A time step
+ending at t sees the sources as they are just before t (so it ends on a jump's near side, and the
+next step carries the jump); `solve()` and `impedance()` use the values at the present time, after
+any jump there. `advance()` lands on every breakpoint and restarts its time stepping there.
 
 ## Grid
 
@@ -428,18 +440,18 @@ const now = dev.solution();                   // snapshot of the current state
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
-  the local error per step to `tol` (default 1e-3) in thermal units of every potential (φ and
-  each μ̄/RT): roughly 0.1% in concentrations. It lands exactly on `tEnd`. Options: `tol`,
+  the local error per step to `tol` (default 1e-3) in thermal units of every potential ($\phi$ and
+  each $\bar\mu/RT$): roughly 0.1% in concentrations. It lands exactly on `tEnd`. Options: `tol`,
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
   `rejected`, and a `trace` of terminal current and voltage after every accepted step.
-- `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises
-  about it: Z(f) = δV/δI in Ω·m² at one terminal (`'right'` by default), with I into the
+- `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
+  it: $Z(f) = \delta V/\delta I$ in Ω·m² at one terminal (`'right'` by default), with I into the
   device. A held terminal's voltage is perturbed, or a driven one's current; the other terminals
-  keep their drives (held ones at AC ground, driven ones open). A terminal behind a resistance
-  can't be the one measured: the resistance belongs to the external circuit. With
-  `profiles: true`, each frequency also returns complex profiles of δφ, δμ̄ and δc per unit
+  keep their drives (held ones at AC ground, driven ones open). A terminal behind a resistance can't
+  be the one measured: the resistance belongs to the external circuit. With `profiles: true`, each
+  frequency also returns complex profiles of $\delta\phi$, $\delta\bar\mu$ and $\delta c$ per unit
   excitation.
 - `set(patch)` merges plain objects deeply (arrays are replaced). A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
@@ -482,10 +494,10 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 |---|---|
 | `x`, `region` | node positions and region index; each interface position appears twice (one node per side) |
 | `species`, `regions` | `{ name, z }` for each species; `{ name, material, x0, x1 }` for each region |
-| `phi` | bookkeeping φ, V (`NaN` where undefined) |
-| `c[name]`, `mu[name]`, `muStd[name]` | concentration, μ̄, standard level μ° + zFφ (`NaN` where absent) |
-| `V[name]`, `Vstd[name]` | species voltage μ̄/(zF) and standard level as a voltage (charged species) |
-| `current`, `terminalVoltage` | current toward +x through the device (A/m²) and V_right − V_left |
+| `phi` | bookkeeping $\phi$, V (`NaN` where undefined) |
+| `c[name]`, `mu[name]`, `muStd[name]` | concentration, $\bar\mu$, standard level $\mu^\circ + zF\phi$ (`NaN` where absent) |
+| `V[name]`, `Vstd[name]` | species voltage $\bar\mu/(zF)$ and standard level as a voltage (charged species) |
+| `current`, `terminalVoltage` | current toward +x through the device (A/m²) and $V_{\mathrm{right}} - V_{\mathrm{left}}$ |
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |

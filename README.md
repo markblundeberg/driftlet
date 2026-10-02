@@ -16,8 +16,8 @@ The same equations go by different names in different fields. If your problem is
 | If you work on | you may call it | start from | checked against |
 |---|---|---|---|
 | Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions | [first example](#a-semiconductor-junction), [pn demo](demos/pn.html), [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
-| Solar cells | photogeneration, radiative and SRH recombination | [`reactions`](test/reactions.test.js) test: generation is a reaction from a photon reservoir (uniform per material), SRH runs through explicit trap species | J_sc = qG(L_n + L_p + W); Shockley J–V in the dark |
-| Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry | [second example](#an-electrochemical-cell), [saturation](demos/saturation.html) and [impedance](demos/impedance.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | i_lim·tanh(V/4V_T), Butler–Volmer closed form, finite-length Warburg |
+| Solar cells | photogeneration, radiative and SRH recombination | [`reactions`](test/reactions.test.js) test: generation is a reaction from a photon reservoir (uniform per material), SRH runs through explicit trap species | `J_sc = qG(L_n + L_p + W)`; Shockley J–V in the dark |
+| Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry | [second example](#an-electrochemical-cell), [saturation](demos/saturation.html) and [impedance](demos/impedance.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg |
 | Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
 | Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
 | Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
@@ -81,7 +81,7 @@ console.log('current (A/m²):', on.current); // negative: it flows toward −x, 
 Silver nitrate between two silver electrodes, as a macroscopic (strictly neutral) electrolyte.
 A reversible electrode is a contact whose terminal species is the ion it exchanges: Ag⁺ in
 equilibrium with the metal, NO₃⁻ blocked. Polarized, the cell's current saturates at the
-limiting current, i_lim = 4FD₊c₀/L for this binary salt:
+limiting current, `i_lim = 4FD₊c₀/L` for this binary salt:
 
 ```js
 import { Device, FARADAY } from 'driftlet';
@@ -138,7 +138,7 @@ and open `/demos/`.
 driftlet insists on thermodynamically honest concepts ([conventions](docs/conventions.md)):
 
 - **Everything you set or measure is an electrochemical potential μ̄** (or a difference of
-  them). A bias sets Δμ̄ of electrons between terminals; a gate sets its metal's μ̄_e⁻. Nothing
+  them). A bias sets Δμ̄ of electrons between terminals; a gate sets its metal's `μ̄_e⁻`. Nothing
   you set is an electrostatic potential.
 - **φ is bookkeeping.** Each material's standard chemical potentials anchor its own φ, and φ
   jumps at every interface between different materials.
@@ -208,34 +208,34 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 |---|---|---|
 | Equilibrium of any device | μ̄ of every species flat; zero current | 1e-9 RT or better |
 | Gouy–Chapman double layer | analytic charge and full nonlinear profile | 2e-3 |
-| Debye screening (linear limit) | gate in series with ε/λ_D | 1e-3 |
+| Debye screening (linear limit) | gate in series with `ε/λ_D` | 1e-3 |
 | Donnan potential | analytic partition, between floating layers and real baths | 1e-8 |
 | Heterointerfaces with unequal dipoles (A \| B \| A) | per-face analytic double-layer split | 3e-3 |
 | Floating island | Gauss's law; conserved amounts through gate sweeps | 1e-12 |
 | pn junction | exact built-in potential; depletion charge; short-diode J–V | 1e-12; 1%; 2e-3 |
 | Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
-| Illuminated long pn diode | J_sc = qG(L_n + L_p + W) from a cold start; superposition at low injection | 5e-3; 1e-2 |
+| Illuminated long pn diode | `J_sc = qG(L_n + L_p + W)` from a cold start; superposition at low injection | 5e-3; 1e-2 |
 | Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
-| Concentration polarization | i = i_lim tanh(V/4V_T), incl. galvanostatic and load modes | 2e-4 |
+| Concentration polarization | `i = i_lim tanh(V/4V_T)`, incl. galvanostatic and load modes | 2e-4 |
 | Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
 | Redox couple between inert electrodes | Nernst level of Fe³⁺/Fe²⁺; the couple's total conserved at equilibrium and under current | 1e-9; 1e-10 |
 | Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
-| Mass action | c(H⁺)c(OH⁻) = K_w from standard potentials; moiety conservation | 1e-9 |
+| Mass action | `c(H⁺)c(OH⁻) = K_w` from standard potentials; moiety conservation | 1e-9 |
 | Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate, a port and a contact behind conductances | 1e-10 |
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
-| Advection and eddy mixing | exact convection–diffusion profile; D + D_mix; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
+| Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
 | Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
 | Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel | 1e-4; 1e-9; 2e-3 |
 | Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
-| Fermi–Dirac statistics | 𝓕_{±1/2} vs quadrature; degenerate bulk; accumulation charge via 𝓕_{3/2} | 1e-13; 1e-12; 1e-3 |
-| Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to ψ = 40 V_T; custom function reproduces it | 5e-4; 1e-10 |
+| Fermi–Dirac statistics | `𝓕_{±1/2}` vs quadrature; degenerate bulk; accumulation charge via `𝓕_{3/2}` | 1e-13; 1e-12; 1e-3 |
+| Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to `ψ = 40 V_T`; custom function reproduces it | 5e-4; 1e-10 |
 | Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |
 | Debye–Hückel | junction EMF 2t₊(RT/F) ln(a₁/a₂) with activities | 1e-6 |
-| Data library | ion μ° against the electrochemical series and K_w; D against limiting conductivities; band data against n_i | 10 mV; 0.5%; 15% |
+| Data library | ion μ° against the electrochemical series and `K_w`; D against limiting conductivities; band data against `n_i` | 10 mV; 0.5%; 15% |
 | Intercalation host (OCV) | composition vs table and isotherm; chemical diffusion flux and relaxation rate | 1e-12; 1e-5; 1e-4 |
 
 ## Performance

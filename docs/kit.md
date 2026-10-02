@@ -77,8 +77,8 @@ A coefficient is an integer and a space (`2 e-`); names may start with digits (`
 electronic level it implies at each node, as an electron voltage: where an electrode exchanging
 electrons by that couple would sit in equilibrium with the local composition: the couple's redox
 level (`NaN` where a participant is absent; see [reading level diagrams](visualization.md)). With `{ standard: true }` every species
-is at its reference concentration instead. `SHE` is 2 H⁺ + 2 e⁻ ⇌ H₂ with μ(H₂) = 0, so its
-standard level is φ + μ°_H⁺/F.
+is at its reference concentration instead. `SHE` is 2 H⁺ + 2 e⁻ ⇌ H₂ with
+$\mu_{\mathrm{H_2}} = 0$, so its standard level is $\phi + \mu^\circ_{\mathrm{H}^+}/F$.
 
 ```js
 import { Device } from 'driftlet';
@@ -119,23 +119,23 @@ Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the
 a level diagram:
 
 - `traces(sol, { species, standard, phi, levels, labels, shifts })` (in `driftlet/kit`) returns
-  its lines as data: per charged species its voltage V_i (`kind: 'level'`) and standard level
-  V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ (`phi: true`, or a list of
-  regions to draw it in only, by name or material, such as an insulator's: `phi: ['SiO2']`;
-  see [what's left out](visualization.md#whats-left-out-and-why)) and half-reaction levels
-  (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). Labels
-  typeset the species as a subscript (`V_{SO₄²⁻}`, the species as `typeset(name, z)` writes
-  it); `labels` renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
-  volts (`{ 'K+': 3.5 }`), moving all of a species' lines together so that widely separated
-  species share one readable plot; the label says so (⌇). Each line has a
-  colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`, `'redox'`, `'phi'`) and a
-  `slot` within it, so a colour follows its species whichever lines are shown
-  (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
+  its lines as data: per charged species its voltage $V_i$ (`kind: 'level'`) and standard level
+  $V^\circ_i$ (`'standard'`, the band edges for e⁻ and h⁺), optionally $\phi$ (`phi: true`, or a
+  list of regions to draw it in only, by name or material, such as an insulator's:
+  `phi: ['SiO2']`; see [what's left out](visualization.md#whats-left-out-and-why)) and
+  half-reaction levels (`levels: [{ half, label, standard }]`, kinds `'redox'` and
+  `'redox-standard'`). Labels typeset the species as a subscript (`V_{SO₄²⁻}`, the species as
+  `typeset(name, z)` writes it); `labels` renames lines by id (`{ 'V:e-': 'Fermi level' }`).
+  `shifts` gives species display offsets in volts (`{ 'K+': 3.5 }`), moving all of a species'
+  lines together so that widely separated species share one readable plot; the label says so
+  (⌇). Each line has a colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`,
+  `'redox'`, `'phi'`) and a `slot` within it, so a colour follows its species whichever lines are
+  shown (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
   there), and doubled interface nodes share an x, so steps draw as vertical lines. It also gives
   the regions (`{ name, material, x0, x1 }`), the faces' positions and a suggested range.
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed, in
   the style [reading level diagrams](visualization.md) explains: species voltages thick and solid, standard levels thin and solid, redox
-  levels thick and dashed, standard redox levels thin and dashed, φ thin, dotted and grey;
+  levels thick and dashed, standard redox levels thin and dashed, $\phi$ thin, dotted and grey;
   electrons steel blue, cations warm colours, anions cool ones, redox levels blue-violets (a
   palette checked for colour-vision deficiency, light and dark); a ⌇ across a shifted species,
   with a note. The colours are CSS custom properties (`--driftlet-electron`,
@@ -144,7 +144,7 @@ a level diagram:
   restyles them; `THEME` and `themeColor(role, slot, { dark })` give them to other charts.
   `xlim` (m) zooms into a window, with ticks and range fitted to it; `ytick(v)` writes the y
   axis's tick labels. `levelChart(traces, opts)` draws traces you've edited, or any profiles
-  against x (log₁₀ concentrations, say, with `ytick` writing powers of ten). Labels, titles and
+  against x ($\log_{10}$ concentrations, say, with `ytick` writing powers of ten). Labels, titles and
   the y label mark subscripts TeX-style, `V_{e⁻}` or `C_ox` (a run of letters, digits and
   charge signs), drawn lowered and smaller; tooltips and the accessible name read `V_e⁻`.
   `labelParts(label)` splits a label into its plain and subscript runs, for other renderers.
@@ -175,7 +175,7 @@ reactions, the contacts, bulk reactions, and characteristic times (dielectric re
 diffusion across each region). It ends with warnings:
 
 - numbers that look like unit slips (`unitWarnings(def)` gives these alone): a D beyond 1 m²/s
-  (cm²/s?), a nonzero μ° under 100 J/mol (eV or volts?), a capacitance over 10 F/m²
+  (cm²/s?), a nonzero $\mu^\circ$ under 100 J/mol (eV or volts?), a capacitance over 10 F/m²
   (µF/cm²?), a concentration over 1000 M, lengths over a metre or under an atom, a T under
   200 K (°C?), and so on;
 - double layers the grid won't resolve: end cells coarser than the Debye length (the solution's
