@@ -79,3 +79,15 @@ test('the SVG level diagram: one path per line, broken where a level is undefine
   // Two diagrams in one page don't share ids.
   assert.notEqual(svg.match(/id="([^"]+)"/)[1], one.match(/id="([^"]+)"/)[1]);
 });
+
+test('zooming with xlim: only the regions in view, ticks over the window, the range fitted to it', () => {
+  const sol = cell();
+  const full = bandDiagram(sol), zoom = bandDiagram(sol, { xlim: [0.9e-6, 1.1e-6] });
+  assert.match(full, />water<\/text>/);
+  // The window covers the first face: metal and solution, and ticks in nm.
+  assert.match(zoom, /x \(nm\)/);
+  assert.equal((zoom.match(/stroke-dasharray="2 3"/g) ?? []).length, 1, 'one face in view');
+  const visible = traces(sol).series.flatMap((s) => [...s.y].filter((v, g) => Number.isFinite(v) && sol.x[g] >= 0.9e-6 && sol.x[g] <= 1.1e-6));
+  const ticks = [...zoom.matchAll(/text-anchor="end"[^>]*>([-\d.e]+)</g)].map((m) => +m[1]);
+  assert.ok(Math.min(...ticks) >= Math.min(...visible) - 0.2 && Math.max(...ticks) <= Math.max(...visible) + 0.2);
+});

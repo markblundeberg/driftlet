@@ -26,6 +26,21 @@ function ticks(a, b, n) {
 }
 const fmt = (v) => String(+v.toPrecision(4));
 
+// The range of the lines within [xs, xe], padded.
+function fit(tr, xs, xe) {
+  let lo = Infinity, hi = -Infinity;
+  for (const s of tr.series) {
+    for (let g = 0; g < tr.x.length; g++) {
+      if (tr.x[g] < xs || tr.x[g] > xe || !Number.isFinite(s.y[g])) continue;
+      lo = Math.min(lo, s.y[g]);
+      hi = Math.max(hi, s.y[g]);
+    }
+  }
+  if (!(hi > lo)) return tr.range;
+  const pad = 0.06 * (hi - lo);
+  return [lo - pad, hi + pad];
+}
+
 // Length unit for the x axis, from the device's extent.
 function lengthUnit(L) {
   if (L >= 1e-3) return { scale: 1e3, name: 'mm' };
@@ -45,18 +60,21 @@ const style = (id) => {
 };
 
 let counter = 0;
+// Ids unique on a page, even with two copies of this module loaded (a CDN one and a local one).
+const instance = Math.random().toString(36).slice(2, 8);
 
 /**
  * Line chart of level-diagram traces as an SVG string.
  * @param {ReturnType<typeof traces>} tr from `traces()`
- * @param {{ width?: number, height?: number, ylabel?: string, range?: [number, number], title?: string }} [opts]
+ * @param {{ width?: number, height?: number, ylabel?: string, range?: [number, number], xlim?: [number, number], title?: string }} [opts]
+ *   `xlim` (m) zooms into part of the device; the range then fits what's shown
  * @returns {string}
  */
-export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, title } = {}) {
-  const id = `driftlet-plot-${++counter}`;
+export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title } = {}) {
+  const id = `driftlet-plot-${instance}-${++counter}`;
   const { x, series, regions } = tr;
-  const [y0, y1] = range ?? tr.range;
-  const xs = x[0], xe = x[x.length - 1];
+  const xs = xlim ? xlim[0] : x[0], xe = xlim ? xlim[1] : x[x.length - 1];
+  const [y0, y1] = range ?? (xlim ? fit(tr, xs, xe) : tr.range);
   const unit = lengthUnit(xe - xs);
 
   // Legend entries, flowed into rows above the plot.
@@ -90,7 +108,8 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
 
   // Region bands (every other one shaded) with their materials, and the faces between them.
   regions.forEach((r, k) => {
-    const a = px(r.x0), b = px(r.x1);
+    if (r.x1 <= xs || r.x0 >= xe) return;
+    const a = px(Math.max(r.x0, xs)), b = px(Math.min(r.x1, xe));
     if (k % 2 === 1) out.push(`<rect x="${r2(a)}" y="${pad.t}" width="${r2(b - a)}" height="${ph}" fill="var(--driftlet-band)"/>`);
     if (b - a > r.material.length * charW + 4) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(r.material)}</text>`);
   });
@@ -102,7 +121,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   for (const t of ticks(xs * unit.scale, xe * unit.scale, 6)) {
     out.push(`<text x="${r2(px(t / unit.scale))}" y="${pad.t + ph + 16}" text-anchor="middle" fill="var(--driftlet-muted)">${fmt(t)}</text>`);
   }
-  for (const f of tr.faces) out.push(`<line x1="${r2(px(f))}" x2="${r2(px(f))}" y1="${pad.t}" y2="${pad.t + ph}" stroke="var(--driftlet-face)" stroke-dasharray="2 3"/>`);
+  for (const f of tr.faces.filter((f) => f > xs && f < xe)) out.push(`<line x1="${r2(px(f))}" x2="${r2(px(f))}" y1="${pad.t}" y2="${pad.t + ph}" stroke="var(--driftlet-face)" stroke-dasharray="2 3"/>`);
   out.push(`<text x="${r2(pad.l + pw / 2)}" y="${height - 8}" text-anchor="middle" fill="var(--driftlet-ink)">x (${unit.name})</text>`);
   out.push(`<text transform="translate(14 ${r2(pad.t + ph / 2)}) rotate(-90)" text-anchor="middle" fill="var(--driftlet-ink)">${esc(ylabel)}</text>`);
 
@@ -149,6 +168,6 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
  * @returns {string}
  */
 export function bandDiagram(sol, opts = {}) {
-  const { width, height, ylabel, range, title, ...pick } = opts;
-  return levelChart(traces(sol, pick), { width, height, ylabel, range, title });
+  const { width, height, ylabel, range, xlim, title, ...pick } = opts;
+  return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title });
 }

@@ -18,7 +18,7 @@ const finite = (a) => {
  *   level (dashed), φ, or a half-reaction's level
  * @property {string} [species]
  * @property {number} slot colour slot: the species' index in the solution, so a colour follows
- *   its species whichever lines are shown; φ and redox levels come after the species
+ *   its species whichever lines are shown; then φ, then the half-reaction levels in order
  * @property {Float64Array} y V, NaN where undefined (a break in the line)
  */
 
@@ -44,11 +44,11 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
     if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V ${name}`, kind: 'level', species: name, slot, y: sol.V[name] });
     if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V° ${name}`, kind: 'standard', species: name, slot, y: sol.Vstd[name] });
   }
-  let next = names.length;
-  if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', slot: next++, y: sol.phi });
+  // φ and the half-reaction levels have slots after the species, the same whether φ is shown.
+  if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', slot: names.length, y: sol.phi });
   levels.forEach((lv, k) => {
     const y = level(sol, lv.half, { standard: lv.standard });
-    series.push({ id: `level:${k}`, label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation}`, kind: 'redox', slot: next++, y });
+    series.push({ id: `level:${k}`, label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation}`, kind: 'redox', slot: names.length + 1 + k, y });
   });
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
