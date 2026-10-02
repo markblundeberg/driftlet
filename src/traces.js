@@ -28,13 +28,14 @@ const finite = (a) => {
  * half-reactions' levels. Doubled interface nodes share an x, so steps draw as vertical lines.
  * @param {import('./types.js').Solution} sol
  * @param {{ species?: string[], standard?: boolean, phi?: boolean,
- *   levels?: { half: { equation: string, fixed?: Record<string, number> }, label?: string, standard?: boolean }[] }} [opts]
+ *   levels?: { half: { equation: string, fixed?: Record<string, number> }, label?: string, standard?: boolean }[],
+ *   labels?: Record<string, string> }} [opts]
  *   species to show (default: every charged one), whether to show standard levels (default true)
- *   and φ (default false), and half-reaction levels
+ *   and φ (default false), half-reaction levels, and labels to use by trace id ({ 'V:e-': 'Fermi level' })
  * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number }[],
  *   faces: number[], range: [number, number] }}
  */
-export function traces(sol, { species, standard = true, phi = false, levels = [] } = {}) {
+export function traces(sol, { species, standard = true, phi = false, levels = [], labels = {} } = {}) {
   const names = Object.keys(sol.V);
   const shown = species ?? names.filter((name) => finite(sol.V[name]));
   const series = [];
@@ -50,6 +51,7 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
     const y = level(sol, lv.half, { standard: lv.standard });
     series.push({ id: `level:${k}`, label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation}`, kind: 'redox', slot: names.length + 1 + k, y });
   });
+  for (const s of series) if (labels[s.id] !== undefined) s.label = labels[s.id];
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
     for (const v of s.y) {

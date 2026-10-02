@@ -6,7 +6,7 @@
 // Colour follows the species (its slot), solid lines are species voltages V_i, dashed ones
 // standard levels V°_i, and regions are shaded bands labelled with their material. The colours
 // are CSS custom properties (--driftlet-1 … --driftlet-8, --driftlet-ink, …) with light and dark
-// defaults, so a page can restyle them.
+// defaults of no specificity, so any rule on the page restyles them.
 
 import { traces } from './traces.js';
 
@@ -52,9 +52,9 @@ const style = (id) => {
   const vars = (cols) => cols.map((c, k) => `--driftlet-${k + 1}:${c};`).join('');
   return (
     `<style>` +
-    `#${id}{${vars(LIGHT)}--driftlet-ink:#0b0b0b;--driftlet-muted:#52514e;--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1}` +
-    `@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) #${id}{${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}}` +
-    `:root[data-theme="dark"] #${id}{${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}` +
+    `:where(#${id}){${vars(LIGHT)}--driftlet-ink:#0b0b0b;--driftlet-muted:#52514e;--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1}` +
+    `@media (prefers-color-scheme: dark){:where(:root:not([data-theme="light"]) #${id}){${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}}` +
+    `:where(:root[data-theme="dark"] #${id}){${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}` +
     `</style>`
   );
 };
@@ -99,7 +99,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
 
   const out = [];
   out.push(
-    `<svg id="${id}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" ` +
+    `<svg id="${id}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="max-width:100%;height:auto" role="img" ` +
       `aria-label="${esc(`${title ? `${title}: ` : ''}${series.map((s) => s.label).join(', ')} against x`)}" ` +
       `font-family="system-ui, sans-serif" font-size="${font}">`,
   );
@@ -111,7 +111,10 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     if (r.x1 <= xs || r.x0 >= xe) return;
     const a = px(Math.max(r.x0, xs)), b = px(Math.min(r.x1, xe));
     if (k % 2 === 1) out.push(`<rect x="${r2(a)}" y="${pad.t}" width="${r2(b - a)}" height="${ph}" fill="var(--driftlet-band)"/>`);
-    if (b - a > r.material.length * charW + 4) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(r.material)}</text>`);
+    // A region's own name where it was given one (not the default 'region k'), with its material.
+    const label = r.name && !/^region \d+$/.test(r.name) && r.name !== r.material ? `${r.name} (${r.material})` : r.material;
+    const shown = b - a > label.length * charW + 4 ? label : b - a > r.material.length * charW + 4 ? r.material : null;
+    if (shown) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(shown)}</text>`);
   });
   // Grid and axes.
   for (const t of ticks(y0, y1, 5)) {

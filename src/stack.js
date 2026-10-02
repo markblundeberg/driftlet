@@ -93,9 +93,11 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
  * @param {Record<string, number>} c
  * @param {string} reference
  * @param {number | object} [drive]
+ * @param {{ offset?: number }} [opts] where the reference species sits relative to the terminal
+ *   voltage, V_ref = V + offset (V)
  */
-export function bath(c, reference, d = 0) {
-  return { ...drive(d, 'bath'), bath: { c: { ...c }, reference } };
+export function bath(c, reference, d = 0, { offset } = {}) {
+  return { ...drive(d, 'bath'), bath: { c: { ...c }, reference, ...(offset === undefined ? {} : { offset }) } };
 }
 
 const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid'];

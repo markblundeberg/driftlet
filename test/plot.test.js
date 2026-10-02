@@ -72,7 +72,7 @@ test('the SVG level diagram: one path per line, broken where a level is undefine
   const moves = (p) => p.d.match(/M/g).length;
   assert.equal(moves(paths[0]), 1);
   assert.equal(moves(paths[4]), 2);
-  assert.match(svg, />water<\/text>/);
+  assert.match(svg, />electrolyte \(water\)<\/text>/);
   // A single line needs no legend.
   const one = levelChart(traces(sol, { species: ['e-'] }));
   assert.equal((one.match(/<line [^>]*stroke-width="2"/g) ?? []).length, 0);
@@ -83,7 +83,7 @@ test('the SVG level diagram: one path per line, broken where a level is undefine
 test('zooming with xlim: only the regions in view, ticks over the window, the range fitted to it', () => {
   const sol = cell();
   const full = bandDiagram(sol), zoom = bandDiagram(sol, { xlim: [0.9e-6, 1.1e-6] });
-  assert.match(full, />water<\/text>/);
+  assert.match(full, />electrolyte \(water\)<\/text>/);
   // The window covers the first face: metal and solution, and ticks in nm.
   assert.match(zoom, /x \(nm\)/);
   assert.equal((zoom.match(/stroke-dasharray="2 3"/g) ?? []).length, 1, 'one face in view');

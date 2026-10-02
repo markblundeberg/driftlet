@@ -57,7 +57,8 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 - **Contacts** are the first and last items. `ohmic(drive, carriers)` holds each carrier in
   equilibrium with a metal at the terminal voltage (default `['e-', 'h+']`, an
   infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
-  a metal region). `bath(c, reference, drive)` is a bath. A drive is a voltage, a waveform, or
+  a metal region). `bath(c, reference, drive, { offset })` is a bath (`offset` places the reference species
+  relative to the terminal voltage, e.g. to read a solution's potentials against SHE). A drive is a voltage, a waveform, or
   `{ V }`, `{ I }`, `{ V, R }`.
 - **`library`** takes pieces with `species` and `materials`, merged with any given directly
   (`combine()` does the merging on its own). A species or material given twice must be given
@@ -120,7 +121,8 @@ a level diagram:
 - `traces(sol, { species, standard, phi, levels })` (in `driftlet/kit`) returns its lines as
   data: per charged species its voltage V_i (`kind: 'level'`) and standard level V°_i
   (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
-  (`levels: [{ half, label, standard }]`). Each line has a label and a colour `slot`, its
+  (`levels: [{ half, label, standard }]`), and `labels` by trace id to rename lines
+  (`{ 'V:e-': 'Fermi level' }`). Each line has a label and a colour `slot`, its
   species' index, so a colour follows its species whichever lines are shown. Undefined values are
   `NaN` (break the line there), and doubled interface nodes share an x, so steps draw as
   vertical lines. It also gives the regions (`{ name, material, x0, x1 }`), the faces' positions
@@ -128,7 +130,8 @@ a level diagram:
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed:
   solid lines for species voltages, dashed for standard levels, regions as labelled bands. Its
   colours are CSS custom properties (`--driftlet-1` … `--driftlet-8`, `--driftlet-ink`, …) with
-  light and dark defaults. `xlim` (m) zooms into a window, with ticks and range fitted to it.
+  light and dark defaults of no specificity, so a rule such as `.figure svg { --driftlet-1: … }`
+  restyles them. `xlim` (m) zooms into a window, with ticks and range fitted to it.
   `levelChart(traces, opts)` draws traces you've edited.
 
 ```js
