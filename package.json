@@ -1,6 +1,6 @@
 {
   "name": "driftlet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Small, dependency-free 1D drift–diffusion–reaction (Poisson–Nernst–Planck) solver for interactive web demos",
   "type": "module",
   "exports": {

@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.1.2 (2026-10-02)
 
 - The npm package ships `docs/`, so the guide's references to them work from the tarball.
 - `llms.txt`: a transient template (a pulse injected through a current-driven port, sampled
