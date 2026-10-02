@@ -71,6 +71,8 @@
  * A reaction at a face: participants on each side with signed stoichiometric coefficients
  * (ν < 0 consumed by the forward reaction), Butler–Volmer kinetics.
  * @typedef {object} FaceReactionDef
+ * @property {string} [equation] the reaction as an equation, e.g. 'Ag+ + e- = Ag(s)', each
+ *   participant on the side that holds it ('Li+(left)' where both do); or give left and right
  * @property {Record<string, number>} [left] participants on the left side (species present there, or fixed neutrals)
  * @property {Record<string, number>} [right] participants on the right side
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
@@ -93,7 +95,8 @@
 
 /**
  * @typedef {object} BulkReactionDef
- * @property {Record<string, number>} nu signed stoichiometric coefficients (ν < 0 consumed)
+ * @property {Record<string, number>} [nu] signed stoichiometric coefficients (ν < 0 consumed)
+ * @property {string} [equation] the reaction as an equation, e.g. 'e- + h+ = 0' (instead of nu)
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {Record<string, number>} kf forward rate constant per material name
  */

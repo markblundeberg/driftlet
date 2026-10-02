@@ -1,8 +1,8 @@
-// Reaction equations as text, for driftlet/kit: 'Ag+ + e- = Ag(s)', '2 H+ + 2 e- = H2',
-// 'e- + h+ = 0'. They compile to the signed stoichiometry of the plain spec (ν < 0 consumed by
-// the forward reaction, left to right as written).
+// Reaction equations as text: 'Ag+ + e- = Ag(s)', '2 H+ + 2 e- = H2', 'e- + h+ = 0'. A
+// definition's reactions can be written this way; they compile to signed stoichiometry (ν < 0
+// consumed by the forward reaction, left to right as written).
 
-import { DeviceError } from './device.js';
+import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
 
 const fail = (message) => {
@@ -20,7 +20,8 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 /**
  * Parse an equation into its terms, in order. The two sides are separated by `=` (or `⇌`, `<=>`,
  * `->`, `→`), terms by ` + ` (spaces around the plus, which keeps it apart from charges), and a
- * side with nothing on it is `0` or `∅`. A leading integer is a coefficient (`2 e-` or `2e-`).
+ * side with nothing on it is `0` or `∅`. A coefficient is an integer followed by a space
+ * (`2 e-`), so names may start with digits (`3He`).
  * @param {string} text
  * @param {string} [path] for error messages
  * @returns {Term[]}
@@ -33,7 +34,7 @@ export function parseEquation(text, path = 'equation') {
   sides.forEach((side, s) => {
     if (side === '0' || side === '∅') return;
     for (const raw of side.split(/\s+\+\s+/)) {
-      const m = /^(?:(\d+)\s*)?(\S+)$/.exec(raw.trim());
+      const m = /^(?:(\d+)\s+)?(\S+)$/.exec(raw.trim());
       if (!m) fail(`${path}: can't read ${JSON.stringify(raw.trim())} in ${JSON.stringify(text)} (terms are separated by ' + ', with spaces)`);
       const nu = m[1] === undefined ? 1 : Number(m[1]);
       if (nu === 0) fail(`${path}: a zero coefficient in ${JSON.stringify(text)}`);
@@ -62,6 +63,65 @@ export function stoichiometry(text, path = 'equation') {
     nu[t.name] = (nu[t.name] ?? 0) + t.nu;
   }
   return nu;
+}
+
+/**
+ * Which side of a face each participant of an equation is on: the side whose material holds it
+ * (on a conductor's side, only its carrier). A species held on both sides is labelled with its
+ * side, 'Li+(left)', or its material, 'Li+(graphite)'. Participants in `fixed` (fixed-activity
+ * neutrals) go beside a conductor if there is one, else on the left (their side doesn't matter).
+ * @param {Term[]} terms
+ * @param {{ name: string, holds: (species: string) => boolean, conductor?: boolean }} left
+ * @param {{ name: string, holds: (species: string) => boolean, conductor?: boolean }} right
+ * @param {Record<string, number> | undefined} fixed
+ * @param {string} path
+ * @returns {{ left: Record<string, number>, right: Record<string, number> }}
+ */
+export function faceSides(terms, left, right, fixed, path) {
+  const sides = { left: {}, right: {} };
+  const put = (side, name, nu) => (sides[side][name] = (sides[side][name] ?? 0) + nu);
+  const fixedSide = right.conductor && !left.conductor ? 'right' : 'left';
+  for (const t of terms) {
+    if (fixed?.[t.name] !== undefined) {
+      put(fixedSide, t.name, t.nu);
+      continue;
+    }
+    const inL = left.holds(t.name), inR = right.holds(t.name);
+    if (inL && inR) {
+      fail(
+        `${path}: '${t.name}' is in both '${left.name}' and '${right.name}', so say which side: ` +
+          `'${t.name}(left)' or '${t.name}(right)'` + (left.name !== right.name ? `, or '${t.name}(${left.name})', '${t.name}(${right.name})'` : ''),
+      );
+    }
+    if (inL || inR) {
+      put(inL ? 'left' : 'right', t.name, t.nu);
+      continue;
+    }
+    const m = /^(.+)\(([^()]+)\)$/.exec(t.name);
+    if (m) {
+      const [, base, label] = m;
+      // The words left and right first; then a material's name, if it names one side only.
+      const side =
+        label === 'left' || label === 'right'
+          ? label
+          : label === left.name && label !== right.name
+            ? 'left'
+            : label === right.name && label !== left.name
+              ? 'right'
+              : null;
+      if (side) {
+        const at = side === 'left' ? left : right;
+        if (!at.holds(base)) fail(`${path}: '${base}' is absent from '${at.name}' (${side} of the face)`);
+        put(side, base, t.nu);
+        continue;
+      }
+    }
+    fail(
+      `${path}: '${t.name}' is in neither '${left.name}' nor '${right.name}'; if it's a fixed-activity neutral, give its μ in fixed` +
+        (/^\d+\D/.test(t.name) ? `; if ${t.name.match(/^\d+/)[0]} is a coefficient, put a space after it` : ''),
+    );
+  }
+  return sides;
 }
 
 /**

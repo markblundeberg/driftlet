@@ -9,13 +9,10 @@
 import { buildGrid } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
+import { DeviceError } from './errors.js';
+import { stoichiometry as equationStoichiometry, faceSides, parseEquation } from './equation.js';
 
-export class DeviceError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'DeviceError';
-  }
-}
+export { DeviceError };
 
 // Contacts use the same laws as internal faces: the outside is a phase with known levels.
 const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange']);
@@ -305,8 +302,10 @@ export function normalizeDevice(def) {
 // reaction runs only in those materials).
 function normalizeReaction(rdef, path, species, speciesIndex, materials, materialIndex, regions, RT) {
   need(isObject(rdef), `${path} must be an object`);
-  fields(rdef, path, ['nu', 'fixed', 'kf']);
-  const st = stoichiometry(rdef.nu, `${path}.nu`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
+  fields(rdef, path, ['nu', 'equation', 'fixed', 'kf']);
+  need((rdef.nu === undefined) !== (rdef.equation === undefined), `${path}: give the reaction as nu or as an equation, one of them`);
+  const nu = rdef.nu ?? equationStoichiometry(rdef.equation, `${path}.equation`);
+  const st = stoichiometry(nu, rdef.equation === undefined ? `${path}.nu` : `${path}.equation`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
   need(st.list.length > 0, `${path}: no mobile participants`);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
   need(isObject(rdef.kf), `${path}.kf must map material names to forward rate constants`);
@@ -349,7 +348,11 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
       list.push({ i, nu });
       charge += nu * species[i].z;
     } else {
-      need(fixed[name] !== undefined, `${path}.${name}: not a species, so give its μ in ${fixedPath} (fixed-activity participants are neutral)`);
+      need(
+        fixed[name] !== undefined,
+        `${path}.${name}: not a species, so give its μ in ${fixedPath} (fixed-activity participants are neutral)` +
+          (/^\d+\D/.test(name) ? `; if ${name.match(/^\d+/)[0]} is a coefficient, put a space after it` : ''),
+      );
       fixedA -= (nu * finite(fixed[name], `${fixedPath}.${name}`)) / RT;
       nFixed++;
     }
@@ -368,12 +371,18 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
-    need(isObject(rdef), `${rpath} must be { left, right, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['left', 'right', 'fixed', 'k0', 'alpha']);
+    need(isObject(rdef), `${rpath} must be { equation, fixed, k0, alpha } or { left, right, fixed, k0, alpha }`);
+    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha']);
+    let sides = rdef;
+    if (rdef.equation !== undefined) {
+      need(rdef.left === undefined && rdef.right === undefined, `${rpath}: give the reaction as an equation or as left and right, not both`);
+      const holds = (mat) => (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
+      sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: matL.name, holds: holds(matL), conductor: !!matL.conductor }, { name: matR.name, holds: holds(matR), conductor: !!matR.conductor }, rdef.fixed, `${rpath}.equation`);
+    }
     const part = [];
     let fixedA = 0, charge = 0;
     for (const [key, mat] of [['left', matL], ['right', matR]]) {
-      const st = stoichiometry(rdef[key], `${rpath}.${key}`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
+      const st = stoichiometry(sides[key], rdef.equation === undefined ? `${rpath}.${key}` : `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
       for (const { i, nu } of st.list) {
         need(mat.present[i], `${rpath}.${key}.${species[i].name}: absent from '${mat.name}'`);
         part.push({ i, nu, side: key === 'left' ? 0 : 1 });

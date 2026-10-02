@@ -2,11 +2,10 @@
 // and a contact at each end, as a device is drawn. `build()` turns it into the plain definition
 // (species, materials, regions, interfaces, contacts) that `new Device` takes. Nothing is added
 // that you didn't write: it only moves things to where the definition keeps them, and converts
-// the kit's shorthands (doping as donors and acceptors, reactions as equations).
+// the kit's doping shorthand (donors and acceptors).
 
-import { DeviceError } from './device.js';
+import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
-import { parseEquation, stoichiometry } from './equation.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -99,60 +98,6 @@ export function bath(c, reference, d = 0) {
   return { ...drive(d, 'bath'), bath: { c: { ...c }, reference } };
 }
 
-// Which species a material holds: its listed species, or a conductor's carrier.
-function holds(mat, name) {
-  if (!isObject(mat)) return false;
-  if (mat.conductor) return mat.conductor.species === name;
-  return isObject(mat.species) && mat.species[name] !== undefined;
-}
-
-// A face reaction written as an equation: each participant goes to the side that holds it. A
-// species held on both sides is labelled with its side, 'Li+(left)', or its material's name,
-// 'Li+(graphite)'; any other participant must be in `fixed`.
-function faceReaction(rx, path, left, right) {
-  const { equation, fixed, ...rest } = rx;
-  const terms = parseEquation(equation, `${path}.equation`);
-  const sides = { left: {}, right: {} };
-  const put = (side, name, nu) => (sides[side][name] = (sides[side][name] ?? 0) + nu);
-  // A fixed participant's side doesn't matter to the rate; it's written beside a conductor (the
-  // solid metal of a plating reaction), else on the left.
-  const fixedSide = right.mat?.conductor && !left.mat?.conductor ? 'right' : 'left';
-  for (const t of terms) {
-    if (fixed?.[t.name] !== undefined) {
-      put(fixedSide, t.name, t.nu);
-      continue;
-    }
-    const inL = holds(left.mat, t.name), inR = holds(right.mat, t.name);
-    if (inL && inR) {
-      fail(
-        `${path}.equation: '${t.name}' is in both '${left.name}' and '${right.name}', so say which side: ` +
-          `'${t.name}(left)' or '${t.name}(right)'` + (left.name !== right.name ? `, or '${t.name}(${left.name})', '${t.name}(${right.name})'` : ''),
-      );
-    }
-    if (inL || inR) {
-      put(inL ? 'left' : 'right', t.name, t.nu);
-      continue;
-    }
-    const m = /^(.+)\(([^()]+)\)$/.exec(t.name);
-    if (m) {
-      const [, base, label] = m;
-      const side = label === 'left' || (label === left.name && label !== right.name) ? 'left' : label === 'right' || (label === right.name && label !== left.name) ? 'right' : null;
-      if (side) {
-        const at = side === 'left' ? left : right;
-        if (!holds(at.mat, base)) fail(`${path}.equation: '${base}' is absent from '${at.name}' (${side} of the face)`);
-        put(side, base, t.nu);
-        continue;
-      }
-    }
-    fail(`${path}.equation: '${t.name}' is in neither '${left.name}' nor '${right.name}'; if it's a fixed-activity neutral, give its μ in fixed`);
-  }
-  const out = { ...rest };
-  if (Object.keys(sides.left).length) out.left = sides.left;
-  if (Object.keys(sides.right).length) out.right = sides.right;
-  if (fixed !== undefined) out.fixed = fixed;
-  return out;
-}
-
 const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid'];
 
 /**
@@ -164,8 +109,6 @@ const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReac
  *   else: an interface's fields) left to right, then a contact. Two adjacent layers with no face
  *   between them get the default face. Nested lists are flattened.
  * - Layers may give doping as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`.
- * - Reactions, in faces and in `bulkReactions`, may be written as an `equation` in place of
- *   their stoichiometry (see `parseEquation`).
  * - `library`: pieces with species and materials, merged with `species` and `materials`.
  * - `T`, `grid`, `ports` pass through.
  * @param {object} def
@@ -195,7 +138,7 @@ export function build(def) {
       pendingFace = { item, k };
       continue;
     }
-    if (regions.length > 0) interfaces.push(pendingFace ? face(pendingFace.item, at(pendingFace.k), regions[regions.length - 1], item) : {});
+    if (regions.length > 0) interfaces.push(pendingFace ? pendingFace.item : {});
     pendingFace = null;
     regions.push(region(item, at(k)));
   }
@@ -213,17 +156,6 @@ export function build(def) {
     }
     return r;
   }
-  function face(item, path, l, r) {
-    if (item.reactions === undefined) return item;
-    if (!Array.isArray(item.reactions)) fail(`${path}.reactions must be a list`);
-    const left = { name: l.material, mat: materials[l.material] };
-    const right = { name: r.material, mat: materials[r.material] };
-    return {
-      ...item,
-      reactions: item.reactions.map((rx, j) => (isObject(rx) && rx.equation !== undefined ? faceReaction(rx, `${path}.reactions[${j}]`, left, right) : rx)),
-    };
-  }
-
   const out = {};
   if (def.T !== undefined) out.T = def.T;
   out.species = species;
@@ -231,14 +163,7 @@ export function build(def) {
   out.regions = regions;
   if (interfaces.some((f) => Object.keys(f).length > 0)) out.interfaces = interfaces;
   out.contacts = { left: stack[0], right: stack[stack.length - 1] };
-  if (def.bulkReactions !== undefined) {
-    if (!Array.isArray(def.bulkReactions)) fail('build.bulkReactions must be a list');
-    out.bulkReactions = def.bulkReactions.map((rx, j) => {
-      if (!isObject(rx) || rx.equation === undefined) return rx;
-      const { equation, ...rest } = rx;
-      return { nu: stoichiometry(equation, `bulkReactions[${j}].equation`), ...rest };
-    });
-  }
+  if (def.bulkReactions !== undefined) out.bulkReactions = def.bulkReactions;
   if (def.ports !== undefined) out.ports = def.ports;
   if (def.grid !== undefined) out.grid = def.grid;
   return out;

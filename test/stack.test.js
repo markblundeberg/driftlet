@@ -36,10 +36,13 @@ test('a pn diode from a stack is the definition written by hand', () => {
       { material: 'Si', length: 1e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
     ],
     contacts: { left: contact(0), right: contact(0.5) },
-    bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e13 } }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
     grid: { hmin: 1e-9, hmax: 20e-9 },
   };
   assert.deepEqual(built, byHand);
+  // The equation is the stoichiometry written out.
+  const nu = { ...byHand, bulkReactions: [{ nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 1e13 } }] };
+  assert.deepEqual(new Device(built).model.reactions, new Device(nu).model.reactions);
   assert.ok(new Device(built).solve().converged);
 });
 
@@ -72,13 +75,24 @@ const silverCell = (V) =>
     grid: { hmin: 0.1e-9, hmax: 100e-9, ratio: 1.15 },
   });
 
+// A face reaction's participants by name and side, from the device model.
+const parts = (dev, f, k = 0) =>
+  Object.fromEntries(dev.model.interfaces[f].reactions[k].part.map((p) => [`${dev.model.species[p.i].name}@${p.side ? 'right' : 'left'}`, p.nu]));
+
 test('a face reaction written as an equation: each participant goes to the side that holds it', () => {
   const def = silverCell(0.05);
-  assert.deepEqual(def.interfaces[0].reactions[0], { left: { 'e-': -1, 'Ag(s)': 1 }, right: { 'Ag+': -1 }, fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.3 });
-  assert.deepEqual(def.interfaces[1].reactions[0], { left: { 'Ag+': -1 }, right: { 'e-': -1, 'Ag(s)': 1 }, fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.3 });
+  assert.deepEqual(def.interfaces[0].reactions[0], { equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.3 });
   assert.deepEqual(def.contacts.left, { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
-  const sol = new Device(def).solve();
-  assert.ok(sol.converged && sol.current < 0, "silver dissolves at the right electrode (the higher electron voltage) and plates at the left");
+  const dev = new Device(def);
+  assert.deepEqual(parts(dev, 0), { 'Ag+@right': -1, 'e-@left': -1 });
+  assert.deepEqual(parts(dev, 1), { 'Ag+@left': -1, 'e-@right': -1 });
+  // The same as the reaction written out by sides.
+  const bySides = { ...def, interfaces: [{ ...stern, reactions: [{ left: { 'e-': -1, 'Ag(s)': 1 }, right: { 'Ag+': -1 }, fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.3 }] }, def.interfaces[1]] };
+  assert.deepEqual(new Device(bySides).model.interfaces[0].reactions, dev.model.interfaces[0].reactions);
+  const sol = dev.solve();
+  assert.ok(sol.converged && sol.current < 0, 'silver dissolves at the right electrode (the higher electron voltage) and plates at the left');
+  // Both forms at once is an error, not a choice.
+  assert.throws(() => new Device({ ...def, interfaces: [{ ...stern, reactions: [{ equation: 'Ag+ + e- = Ag(s)', left: { 'e-': -1 }, fixed: { 'Ag(s)': 0 }, k0: 1 }] }, def.interfaces[1]] }), /not both/);
 });
 
 test("at equilibrium, each electrode's Fermi level sits at the silver couple's redox level", () => {
@@ -127,26 +141,38 @@ test('a species on both sides of a face is labelled with its side or its materia
       library: [lib],
       stack: [{ V: 0, ...end }, layer('electrolyte', 1e-6, { c0: { 'PF6-': 1000 } }), { species: { 'Li+': 'blocked' }, reactions: [{ equation, k0: 1e-3 }] }, layer('gel', 1e-6, { c0: { 'PF6-': 1000 } }), { V: 0.01, ...end }],
     });
-  const want = { left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0: 1e-3 };
-  assert.deepEqual(def('Li+(left) = Li+(right)').interfaces[0].reactions[0], want);
-  assert.deepEqual(def('Li+(electrolyte) = Li+(gel)').interfaces[0].reactions[0], want);
-  assert.throws(() => def('Li+ = Li+'), (e) => e instanceof DeviceError && /Li\+\(left\)/.test(e.message));
-  assert.throws(() => def('Li+(electrolyte) = Li+(water)'), (e) => e instanceof DeviceError && /neither/.test(e.message));
+  const want = { 'Li+@left': -1, 'Li+@right': 1 };
+  assert.deepEqual(parts(new Device(def('Li+(left) = Li+(right)')), 0), want);
+  assert.deepEqual(parts(new Device(def('Li+(electrolyte) = Li+(gel)')), 0), want);
+  assert.throws(() => new Device(def('Li+ = Li+')), (e) => e instanceof DeviceError && /Li\+\(left\)/.test(e.message));
+  assert.throws(() => new Device(def('Li+(electrolyte) = Li+(water)')), (e) => e instanceof DeviceError && /neither/.test(e.message));
   assert.ok(new Device(def('Li+(left) = Li+(right)')).solve().converged);
 });
 
 test('equations: coefficients, empty sides, and what they refuse', () => {
-  assert.deepEqual(parseEquation('2 H+ + 2e- = H2'), [
+  assert.deepEqual(parseEquation('2 H+ + 2 e- = H2'), [
     { name: 'H+', nu: -2 },
     { name: 'e-', nu: -2 },
     { name: 'H2', nu: 1 },
   ]);
   assert.deepEqual(stoichiometry('H2O ⇌ H+ + OH-'), { H2O: -1, 'H+': 1, 'OH-': 1 });
   assert.deepEqual(stoichiometry('∅ = e- + h+'), { 'e-': 1, 'h+': 1 });
+  // A coefficient needs its space: names may start with digits.
+  assert.deepEqual(parseEquation('3He+ + e- = 3He'), [
+    { name: '3He+', nu: -1 },
+    { name: 'e-', nu: -1 },
+    { name: '3He', nu: 1 },
+  ]);
   for (const bad of ['Ag+ + e-=Ag', 'Ag+ + e- = Ag = X', 'Ag+ +e- = Ag', '0 = 0', '0 Ag = Ag+']) {
     assert.throws(() => parseEquation(bad), DeviceError, bad);
   }
   assert.throws(() => stoichiometry('A + B = A + C'), /both sides/);
+  // Equations are part of the definition itself, so set() takes them too; a forgotten space
+  // after a coefficient is pointed out.
+  const dev = new Device(build({ library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { donors: 1 }), ohmic(0)] }));
+  dev.set({ bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e5 } }] });
+  assert.ok(dev.solve().converged);
+  assert.throws(() => dev.set({ bulkReactions: [{ equation: '2e- + 2 h+ = 0', kf: { Si: 1 } }] }), /if 2 is a coefficient, put a space after it/);
   assert.throws(() => half('Fe3+ = Fe2+'), /electrons/);
   assert.throws(() => half('Ag+ + e- = Ag', { Au: 0 }), /isn't in/);
 });

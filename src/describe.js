@@ -154,7 +154,7 @@ export function describe(def) {
       const law = itf.phi.type === 'capacitive' ? `capacitive, C = ${num(itf.phi.C)} F/m²` : itf.phi.type;
       const align = itf.conductor ? (itf.phi.type === 'capacitive' ? `, zeroCharge ${num(itf.zeroCharge)} V` : '') : itf.phi.type === 'neutral' ? '' : `, dipole ${num(itf.dipole)} V`;
       const blocked = species.filter((sp, i) => itf.links[i].type === 'blocked' && materials[L.material].present[i] && materials[R.material].present[i]).map((sp) => sp.name);
-      const rx = (idef.reactions ?? []).map((r) => equation(r.left, r.right));
+      const rx = (idef.reactions ?? []).map((r) => r.equation ?? equation(r.left, r.right));
       lines.push(`  ${L.name} | ${R.name}: ${law}${align}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}`);
     });
   }
@@ -170,7 +170,7 @@ export function describe(def) {
   (def.ports ?? []).forEach((p, k) => lines.push(`  port ${model.ports[k].name}: ${drive(p)}, in ${regions[model.ports[k].region].name}`));
   if ((def.bulkReactions ?? []).length) {
     lines.push('bulk reactions:');
-    for (const rx of def.bulkReactions) lines.push(`  ${equation(rx.nu)} in ${Object.keys(rx.kf ?? {}).join(', ')}`);
+    for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)} in ${Object.keys(rx.kf ?? {}).join(', ')}`);
   }
   if (times.length) lines.push('time scales:', ...times);
   if (warnings.length) lines.push('warnings:', ...warnings.map((w) => `  ${w}`));

@@ -2,7 +2,7 @@
 // device can be set up from familiar quantities. Nothing here changes what a device means: each
 // helper returns an ordinary spec value (a dipole, a zeroCharge, …) that you can inspect.
 
-import { DeviceError } from './device.js';
+import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
 
 export { build, combine, layer, ohmic, bath } from './stack.js';

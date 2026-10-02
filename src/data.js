@@ -3,7 +3,7 @@
 // only. How levels line up at an interface, and a surface's work function, belong to that
 // interface or surface and are never in here.
 
-import { DeviceError } from './device.js';
+import { DeviceError } from './errors.js';
 import { FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
 
 const fail = (message) => {
