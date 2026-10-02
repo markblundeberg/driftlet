@@ -23,7 +23,7 @@
     large, where series resistance and rising injection bend the curve below it.</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0.3"><output id="Vout"></output></label>
-    <label>lifetime <input id="kf" type="range" min="8" max="12" step="0.5" value="8"><output id="kfOut"></output></label>
+    <label>lifetime <input id="tau" type="range" min="-10.2" max="-6.2" step="0.25" value="-6.2"><output id="tauOut"></output></label>
     <span class="readout" id="I"></span>
   </div>
   <div class="grid">
@@ -68,10 +68,11 @@ const shockley = (V, kf) => {
   return J0 * (Math.exp(V / VT) - 1);
 };
 
-const bias = document.getElementById('V'), life = document.getElementById('kf');
+const bias = document.getElementById('V'), life = document.getElementById('tau');
 fromQuery(bias);
 fromQuery(life);
-const kf = () => 10 ** +life.value; // mol⁻¹·m³/s
+// The slider is the p side's minority lifetime τₙ = 1/(kf·N_A), on a log scale.
+const kf = () => 1 / (10 ** +life.value * NA); // m³/(mol·s)
 
 // The I–V curve: a plain Device swept in bias, each solve warm from the last. The current flows
 // toward −x under forward bias (from the p side's contact to the n side's).
@@ -79,7 +80,7 @@ let iv;
 function sweep() {
   const dev = new Device(diode(kf()));
   iv = { V: [], J: [], theory: [] };
-  for (let V = -0.39; V <= 0.701; V += 0.02) {
+  for (let V = -0.99; V <= 0.701; V += 0.02) { // off V = 0, where |J| vanishes on the log axis
     dev.set({ contacts: { right: { V } } });
     iv.V.push(V);
     iv.J.push(Math.abs(dev.solve().current) / 1e4); // A/cm²
@@ -98,14 +99,17 @@ life.addEventListener('change', () => {
 });
 update();
 
+const signed = (v) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
+
 function draw(sol, info) {
   const V = sol.terminals.right.V, tau = 1 / (kf() * NA), Ln = Math.sqrt(el.D * tau);
   document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
-  document.getElementById('kfOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
+  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
   document.getElementById('I').textContent =
-    `|J| = ${(Math.abs(sol.current) / 1e4).toExponential(2)} A/cm² · Shockley ${(Math.abs(shockley(V, kf())) / 1e4).toExponential(2)} · ${info.ms.toFixed(1)} ms` + (info.failed ? ' · (no solution here)' : '');
+    `J = ${signed(-sol.current / 1e4)} A/cm², forward positive · Shockley ${signed(shockley(V, kf()) / 1e4)} · solved in ${info.ms.toFixed(1)} ms` +
+    (info.failed ? ' · (no solution here)' : '');
   chart(document.getElementById('iv'), {
-    xlabel: 'bias V (V)', ylabel: '|J| (A/cm²)', logy: true,
+    xlabel: 'bias V (V)', ylabel: '|J| (A/cm²)', logy: true, xlim: [-1, 0.7],
     series: [
       { x: iv.V, y: iv.J, color: colors[2], label: 'simulated' },
       { x: iv.V, y: iv.theory, color: colors[0], dash: [6, 4], width: 1.5, label: 'Shockley + depletion-layer recombination' },

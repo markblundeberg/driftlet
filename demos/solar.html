@@ -22,7 +22,7 @@
   <div class="controls">
     <label>bias V <input id="V" type="range" min="0" max="0.65" step="0.005" value="0.5"><output id="Vout"></output></label>
     <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
-    <label>base lifetime <input id="kf" type="range" min="6" max="10" step="0.5" value="8"><output id="kfOut"></output></label>
+    <label>base lifetime <input id="tau" type="range" min="-8.2" max="-4.2" step="0.25" value="-6.2"><output id="tauOut"></output></label>
     <span class="readout" id="stats"></span>
   </div>
   <div class="grid">
@@ -54,9 +54,10 @@ const cell = (V, light, kf) =>
     grid: { hmin: units.nm(1), hmax: units.um(1) },
   });
 
-const V = document.getElementById('V'), light = document.getElementById('G'), life = document.getElementById('kf');
+const V = document.getElementById('V'), light = document.getElementById('G'), life = document.getElementById('tau');
 for (const el of [V, light, life]) fromQuery(el);
-const kf = () => 10 ** +life.value;
+// The slider is the base's minority lifetime τₙ = 1/(kf·N_A), on a log scale.
+const kf = () => 1 / (10 ** +life.value * NA); // m³/(mol·s)
 
 // The collecting width: the depletion layer, plus L tanh(W/2L) on each side (a sink at each contact).
 const { 'e-': el, 'h+': ho } = Si.materials.Si.species, VT = (GAS_CONSTANT * 300) / FARADAY;
@@ -105,7 +106,7 @@ function draw(sol) {
   const v = sol.terminals.right.V, tau = 1 / (kf() * NA);
   document.getElementById('Vout').textContent = `${v.toFixed(3)} V`;
   document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
-  document.getElementById('kfOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(collecting(kf()).Ln * 1e6).toPrecision(2)} µm`;
+  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(collecting(kf()).Ln * 1e6).toPrecision(2)} µm`;
   document.getElementById('stats').textContent = jv.stats;
   chart(document.getElementById('jv'), {
     xlabel: 'V (V)', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.3 * jv.Jsc, 1.15 * jv.Jsc],
