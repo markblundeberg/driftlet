@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daniell cell</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>A Daniell cell discharging through a load</h1>
+  <p>Zn | 0.1 M ZnSO₄ | separator | 0.1 M CuSO₄ | Cu, each solution 0.5 mm deep and still, the separator passing only sulfate. At open circuit
+    each metal's Fermi level sits at its couple's redox level (Zn²⁺/Zn and Cu²⁺/Cu), and the cell voltage
+    is the 1.10 V between them. Connect a load and current flows: each metal departs from its couple's level
+    by an overpotential, the redox levels tilt across the electrolyte (ohmic drop, and the compositions
+    changing near each electrode), and the voltage left for the load shrinks. As zinc dissolves and copper
+    plates, sulfate crosses the separator to keep each side neutral.</p>
+  <div class="controls">
+    <label>load R <input id="R" type="range" min="-3" max="0" step="0.1" value="-1.5"><output id="Rout"></output></label>
+    <button id="run">connect</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="levels"></div>
+    <canvas id="vt"></canvas>
+    <div class="readout" id="ledger"></div>
+  </div>
+</main>
+<script type="module">
+import { Device } from '../src/index.js';
+import { build, layer, ohmic, half, level, aqueous, metal } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, showCode, fromQuery } from './common.js';
+
+const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
+const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
+const electrode = (couple) => ({ reactions: [{ ...couple, k0: 1e-3, alpha: 0.5 }] });
+const cell = (right) =>
+  build({
+    library: [
+      aqueous(['Zn2+', 'SO42-'], { epsr: 0, material: 'anolyte' }), // strictly neutral solutions
+      aqueous(['Cu2+', 'SO42-'], { epsr: 0, material: 'catholyte' }),
+      metal('Zn'),
+      metal('Cu'),
+    ],
+    stack: [
+      ohmic(0, ['e-']),
+      layer('Zn', 40e-6), // a metal is one cell whatever its length: this just shows on the diagram
+      electrode(zinc),
+      layer('anolyte', 500e-6, { c0: { 'Zn2+': 100, 'SO42-': 100 } }),
+      {}, // the separator: only sulfate is in both solutions, so only sulfate crosses
+      layer('catholyte', 500e-6, { c0: { 'Cu2+': 100, 'SO42-': 100 } }),
+      electrode(copper),
+      layer('Cu', 40e-6),
+      ohmic(right, ['e-']),
+    ],
+    grid: { hmin: 10e-9, hmax: 10e-6 },
+  });
+
+// The faces' edge nodes, where the overpotentials are read.
+const probe = new Device(cell({ I: 0 }));
+const gZn = probe.grid.regionStart[1], gCu = probe.grid.regionEnd[2];
+const ledger = (sol) => {
+  const Vzn = sol.V['e-'][0], Vcu = sol.V['e-'].at(-1);
+  const Lzn = level(sol, zinc)[gZn], Lcu = level(sol, copper)[gCu];
+  // V = (V_Cu − L_Cu) + (L_Cu − L_Zn) + (L_Zn − V_Zn): each metal's departure from its couple's
+  // level at its face (an overpotential, negative on discharge), and the couples' levels between.
+  return { V: Vcu - Vzn, etaZn: Lzn - Vzn, etaCu: Vcu - Lcu, couples: Lcu - Lzn };
+};
+
+const Rslider = document.getElementById('R');
+fromQuery(Rslider);
+const R = () => 10 ** +Rslider.value; // Ω·m²
+const show = () => (document.getElementById('Rout').textContent = `${(R() * 1e4).toPrecision(2)} Ω·cm²`);
+Rslider.addEventListener('input', show);
+show();
+
+let dev, emf, trace, running = false;
+function start() {
+  // At open circuit (the right terminal floating at zero current), then the load.
+  dev = new Device(cell({ I: 0 }));
+  const oc = dev.solve();
+  emf = ledger(oc).V;
+  dev.set({ contacts: { right: { I: undefined, V: 0, R: R() } } }); // the load: I = (0 − V)/R
+  trace = { t: [], V: [] };
+  first = true;
+  if (!running) requestAnimationFrame(frame);
+  running = true;
+}
+
+const tEnd = 3000, stop = +new URLSearchParams(location.search).get('t') || tEnd;
+let first = true;
+function frame() {
+  // Each frame reaches a little further in log time; ?t=… goes straight there (for a screenshot).
+  const target = first && stop < tEnd ? stop : Math.min(stop, Math.max(1e-3, dev.solver.time * 1.12));
+  const sol = dev.advance(target, first && stop < tEnd ? {} : { budgetMs: 12 });
+  first = false;
+  sol.trace.t.forEach((t, k) => {
+    trace.t.push(t);
+    trace.V.push(sol.trace.voltage[k]);
+  });
+  const L = ledger(sol);
+  document.getElementById('status').textContent = `t = ${sol.time.toPrecision(3)} s · I = ${(-sol.current / 10).toFixed(2)} mA/cm² through the load`;
+  levels(document.getElementById('levels'), sol, {
+    title: `cell voltage ${L.V.toFixed(3)} V after ${sol.time.toPrecision(2)} s`,
+    species: ['e-'],
+    labels: { 'V:e-': 'Fermi level (V e⁻)' },
+    levels: [
+      { half: zinc, label: 'Zn²⁺/Zn level' },
+      { half: copper, label: 'Cu²⁺/Cu level' },
+    ],
+    ylabel: 'electron voltage (V)',
+  });
+  chart(document.getElementById('vt'), {
+    xlabel: 'log₁₀ t (s)', ylabel: 'cell voltage (V)', ylim: [0, 1.2],
+    series: [{ x: trace.t.map(Math.log10), y: trace.V, color: colors[2], label: 'V(t) across the load' }],
+  });
+  // Where the voltage goes: exact, as differences of levels at the two faces.
+  const row = (name, v, strong) => `<tr${strong ? ' style="font-weight:600"' : ''}><td>${name}</td><td style="text-align:right;white-space:nowrap;padding-left:12px">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)} V</td></tr>`;
+  document.getElementById('ledger').innerHTML =
+    `<table style="width:100%;max-width:420px">` +
+    row('open-circuit voltage (the two couples, at the start)', emf, true) +
+    row('electrolyte: ohmic drop and concentration changes', L.couples - emf) +
+    row('zinc overpotential', L.etaZn) +
+    row('copper overpotential', L.etaCu) +
+    row('cell voltage', L.V, true) +
+    `</table><p class="note">The overpotentials are each metal's distance from its couple's level at its own face;
+    the electrolyte's share is what's left between the two couples' levels there. How that share splits into
+    ohmic drop, concentration and junction terms is a convention; the diagram shows where it happens.</p>`;
+  if (sol.time < stop && sol.converged) requestAnimationFrame(frame);
+  else running = false;
+}
+document.getElementById('run').addEventListener('click', start);
+Rslider.addEventListener('change', start);
+start();
+showCode();
+</script>
+</body>
+</html>

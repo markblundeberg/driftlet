@@ -26,7 +26,9 @@
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { chart, colors, fromQuery } from './plot.js';
+import { build, layer } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
 const Q = FARADAY * cMax * L; // capacity, C/m²
@@ -48,22 +50,26 @@ let dev, profiles, curve, running = false, I;
 function start() {
   const Om = +omega.value * RT;
   I = (+rate.value * Q) / 3600;
-  dev = new Device({
-    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
-    materials: {
-      host: {
-        epsr: 0,
-        species: { 'Li+': { D: 1e-15, mu0, cRef: cMax }, 'e-': { D: 1e-6, mu0: 0, cRef: cMax } },
-        statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, A: [Om] }],
+  dev = new Device(
+    build({
+      species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+      materials: {
+        // A strictly neutral host whose Li⁺ and e⁻ are one neutral combination, Li, with a
+        // regular-solution OCV (interaction Ω): φ is undefined inside.
+        host: {
+          epsr: 0,
+          species: { 'Li+': { D: 1e-15, mu0, cRef: cMax }, 'e-': { D: 1e-6, mu0: 0, cRef: cMax } },
+          statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, A: [Om] }],
+        },
       },
-    },
-    regions: [{ material: 'host', length: L }],
-    contacts: {
-      left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' },
-      right: { V: E(x0, Om), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
-    },
-    grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
-  });
+      stack: [
+        { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, // the electrolyte: Li⁺ at 0 V vs Li
+        layer('host', L),
+        { V: E(x0, Om), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, // the current collector
+      ],
+      grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
+    }),
+  );
   dev.solve();
   dev.set({ contacts: { right: { V: undefined, I: -I } } }); // electrons in from the right, Li⁺ from the left
   profiles = [];
@@ -123,6 +129,7 @@ function frame() {
 }
 document.getElementById('run').addEventListener('click', start);
 start();
+showCode();
 </script>
 </body>
 </html>

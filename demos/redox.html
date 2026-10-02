@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyclic voltammetry</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>A redox couple at an electrode: cyclic voltammetry</h1>
+  <p>Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl, through a 20 µm stagnant layer to a stirred bulk.
+    The diagram shows the platinum's Fermi level and the couple's redox level, the electronic level at which
+    the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the overpotential,
+    which drives Butler–Volmer kinetics; the slope of the redox level across the layer is concentration
+    polarisation. Slow scans give the steady, sigmoidal wave of a convective electrode; fast ones outrun
+    diffusion and give peaks. A small rate constant pulls the waves apart.</p>
+  <div class="controls">
+    <label>scan rate <input id="rate" type="range" min="-3" max="1" step="0.25" value="-1"><output id="rateOut"></output></label>
+    <label>k⁰ <input id="k0" type="range" min="-6" max="-1" step="0.5" value="-3"><output id="k0Out"></output></label>
+    <label>playback <select id="pace">
+      <option value="20">slow (20 s a cycle)</option>
+      <option value="6" selected>6 s a cycle</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <button id="run">restart</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="levels"></div>
+    <canvas id="cv"></canvas>
+    <canvas id="conc"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, showCode, fromQuery } from './common.js';
+
+const iron = half('Fe3+ + e- = Fe2+');
+// The bulk's composition, and a reference that reads the SHE scale: the bath's terminal voltage
+// is φ in the bulk when Cl⁻ sits at V_Cl⁻ − φ = −(μ°_Cl⁻ + RT ln(c/c_ref))/F above it (with table μ°,
+// the SHE level in a solution is φ). So every level below is a potential against SHE.
+const bulk = { 'K+': 500, 'Cl-': 525, 'Fe3+': 5, 'Fe2+': 5 };
+const she = -(IONS['Cl-'].mu0 + GAS_CONSTANT * 298.15 * Math.log(bulk['Cl-'] / 1000)) / FARADAY;
+const electrode = (drive, k0) =>
+  build({
+    library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(drive, ['e-']), // the working electrode's terminal: the platinum's electrons
+      layer('Pt', 1e-6),
+      { reactions: [{ ...iron, k0, alpha: 0.5 }] },
+      layer('water', 20e-6, { name: 'diffusion layer' }),
+      bath(bulk, 'Cl-', 0, { offset: she }), // the stirred bulk, its terminal on the SHE scale
+    ],
+    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+  });
+
+const rate = document.getElementById('rate'), k0 = document.getElementById('k0');
+fromQuery(rate);
+fromQuery(k0);
+const scan = () => 10 ** +rate.value; // V/s
+const k = () => 10 ** +k0.value; // mol/(m²·s)
+
+let dev, Erest, cv, running = false;
+function start() {
+  // At rest, the electrode floats to the couple's Nernst potential; then a triangle wave about it.
+  const rest = new Device(electrode({ I: 0 }, k())).solve();
+  Erest = rest.terminals.left.V; // E° + (RT/F) ln(c₃/c₂), against SHE
+  const span = 0.5, period = (4 * span) / scan();
+  const wave = { t: [0, period / 4, (3 * period) / 4, period], values: [Erest, Erest + span, Erest - span, Erest], repeat: true };
+  dev = new Device(electrode(Erest, k()));
+  dev.solve();
+  dev.set({ contacts: { left: { V: wave } } });
+  cv = { E: [], I: [], end: 1.5 * period, stop: +new URLSearchParams(location.search).get('t') || Infinity };
+  document.getElementById('rateOut').textContent = `${scan() < 0.1 ? scan().toFixed(3) : scan().toFixed(2)} V/s`;
+  document.getElementById('k0Out').textContent = `${k().toExponential(0)} mol/(m²·s)`;
+  lastFrame = undefined;
+  if (!running) requestAnimationFrame(frame);
+  running = true;
+}
+
+// Playback: the sweep is shown over a chosen wall-clock time per cycle (the solver is far faster);
+// "as fast as it solves" advances as far as 12 ms of computing allows each frame.
+const pace = document.getElementById('pace');
+let lastFrame;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  const perCycle = +pace.value, period = (4 * 0.5) / scan();
+  const target = perCycle > 0 && !(cv.stop < Infinity) ? Math.min(cv.end, dev.solver.time + (wall * period) / perCycle) : Math.min(cv.end, cv.stop);
+  const sol = dev.advance(target, { budgetMs: 12, tol: 1e-3 });
+  sol.trace.t.forEach((t, j) => {
+    cv.E.push(-sol.trace.voltage[j]); // the trace's voltage is V_right − V_left: the bath (0) minus the electrode
+    cv.I.push(sol.trace.current[j] / 10); // into the device at the electrode: anodic positive, mA/cm²
+  });
+  const E = sol.terminals.left.V;
+  document.getElementById('status').textContent = `t = ${sol.time.toFixed(2)} s · E = ${E.toFixed(3)} V vs SHE`;
+  levels(document.getElementById('levels'), sol, {
+    title: `E = ${E.toFixed(3)} V vs SHE`,
+    species: ['e-'],
+    levels: [{ half: iron, label: 'Fe³⁺/Fe²⁺ redox level' }],
+    range: [Erest - 0.6, Erest + 0.6],
+    ylabel: 'electron voltage (V vs SHE)',
+  });
+  chart(document.getElementById('cv'), {
+    // Fixed axes (the sweep's span, and at least the limiting currents), so the curve draws into them.
+    xlabel: 'E (V vs SHE)', ylabel: 'I (mA/cm², anodic +)', xlim: [Erest - 0.5, Erest + 0.5],
+    ylim: (() => { const m = Math.max(2, 1.1 * Math.max(0, ...cv.I.map(Math.abs))); return [-m, m]; })(),
+    series: [{ x: cv.E, y: cv.I, color: colors[2], label: 'voltammogram' }],
+  });
+  chart(document.getElementById('conc'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', xlim: [1, 21],
+    series: [
+      { x: sol.x, y: sol.c['Fe3+'], color: colors[3], label: 'Fe³⁺' },
+      { x: sol.x, y: sol.c['Fe2+'], color: colors[4], label: 'Fe²⁺' },
+    ],
+  });
+  if (sol.time < Math.min(cv.end, cv.stop) && sol.converged) requestAnimationFrame(frame);
+  else running = false;
+}
+for (const el of [rate, k0]) el.addEventListener('change', start);
+document.getElementById('run').addEventListener('click', start);
+start();
+showCode();
+</script>
+</body>
+</html>

@@ -4,9 +4,11 @@
 //   series: [{ x, y, color, label, dash, width }]. NaN values break a line; repeated x values
 //   (doubled interface nodes) draw as vertical steps.
 
-export const colors = ['#2563eb', '#dc2626', '#059669', '#9333ea', '#d97706', '#0891b2'];
+// The same categorical palette as driftlet/plot (style.css defines --c1 … --c8, light and dark).
+export const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)', 'var(--c7)', 'var(--c8)'];
 
 const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+const paint = (c) => (c.startsWith('var(') ? css(c.slice(4, -1), '#888') : c);
 
 export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, logy = false, xscale = 1, legend = true }) {
   canvas.setAttribute('role', 'img');
@@ -72,7 +74,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   ctx.rect(pad.l, pad.t, W - pad.l - pad.r, H - pad.t - pad.b);
   ctx.clip();
   series.forEach((s, k) => {
-    ctx.strokeStyle = s.color ?? colors[k % colors.length];
+    ctx.strokeStyle = paint(s.color ?? colors[k % colors.length]);
     ctx.lineWidth = s.width ?? 2;
     ctx.setLineDash(s.dash ?? []);
     ctx.beginPath();
@@ -108,7 +110,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   let xx = pad.l;
   ctx.textAlign = 'left';
   for (const s of items) {
-    ctx.strokeStyle = s.color ?? colors[series.indexOf(s) % colors.length];
+    ctx.strokeStyle = paint(s.color ?? colors[series.indexOf(s) % colors.length]);
     ctx.lineWidth = 2;
     ctx.setLineDash(s.dash ?? []);
     ctx.beginPath();

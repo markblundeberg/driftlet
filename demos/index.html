@@ -9,14 +9,30 @@
 <body>
 <main>
   <h1>driftlet demos</h1>
-  <p>Each page builds a device, solves it in the browser, and replots as you move the controls.
-    View source for the device definitions.</p>
-  <ul>
-    <li><a href="pn.html">Silicon pn junction</a>: species voltages and band edges under bias.</li>
-    <li><a href="double-layer.html">Double layer at a blocking electrode</a>: dilute vs crowded ions.</li>
-    <li><a href="cell.html">Ag | AgNO₃ | Ag</a>: concentration polarization after a voltage step, and the impedance spectrum.</li>
-    <li><a href="insertion.html">Intercalation host</a>: lithiation at constant current against a regular-solution OCV.</li>
-  </ul>
+  <p>Each page builds its device with <code>driftlet/kit</code>, solves it in your browser, and redraws as you move
+    the controls. The level diagram is the centrepiece: species voltages, band edges, Fermi and redox levels,
+    across the device. Every page shows its whole script at the bottom, as a worked example to copy.</p>
+
+  <h2>Semiconductors</h2>
+  <div class="cards">
+    <a class="card" href="pn.html"><img src="screenshots/pn.png" alt="pn junction level diagram"><div><b>pn junction</b><span>Quasi-Fermi levels and band edges under bias; the I–V curve.</span></div></a>
+    <a class="card" href="solar.html"><img src="screenshots/solar.png" alt="solar cell"><div><b>Solar cell</b><span>Photogeneration from a photon reservoir: J–V, V<sub>oc</sub>, fill factor, and the split quasi-Fermi levels.</span></div></a>
+    <a class="card" href="mos.html"><img src="screenshots/mos.png" alt="MOS capacitor"><div><b>MOS capacitor</b><span>Accumulation, depletion and inversion under a metal gate; the low-frequency C–V curve.</span></div></a>
+  </div>
+
+  <h2>Electrochemistry</h2>
+  <div class="cards">
+    <a class="card" href="redox.html"><img src="screenshots/redox.png" alt="cyclic voltammetry"><div><b>Cyclic voltammetry</b><span>Fe³⁺/Fe²⁺ at platinum: the Fermi level against the couple's redox level, Butler–Volmer kinetics and diffusion.</span></div></a>
+    <a class="card" href="daniell.html"><img src="screenshots/daniell.png" alt="Daniell cell"><div><b>Daniell cell</b><span>Zn | Zn²⁺ ‖ Cu²⁺ | Cu discharging through a load, and where its voltage goes.</span></div></a>
+    <a class="card" href="cell.html"><img src="screenshots/cell.png" alt="concentration polarisation"><div><b>Concentration polarisation</b><span>Ag | AgNO₃ | Ag after a voltage step, live; the impedance spectrum.</span></div></a>
+  </div>
+
+  <h2>Interfaces and materials</h2>
+  <div class="cards">
+    <a class="card" href="membrane.html"><img src="screenshots/membrane.png" alt="ion-exchange membrane"><div><b>Ion-exchange membrane</b><span>Donnan exclusion and permselectivity: why the cell has a voltage, ion by ion.</span></div></a>
+    <a class="card" href="double-layer.html"><img src="screenshots/double-layer.png" alt="double layer"><div><b>Double layer</b><span>Gouy–Chapman against crowded (lattice-gas) ions at a blocking electrode.</span></div></a>
+    <a class="card" href="insertion.html"><img src="screenshots/insertion.png" alt="intercalation host"><div><b>Intercalation host</b><span>Lithiation at constant current against a regular-solution OCV.</span></div></a>
+  </div>
 </main>
 </body>
 </html>

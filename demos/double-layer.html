@@ -24,17 +24,26 @@
 </main>
 <script type="module">
 import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
-import { chart, colors, fromQuery } from './plot.js';
+import { build, layer, bath, aqueous, WATER_EPSR } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery } from './common.js';
 
-const RT = GAS_CONSTANT * 298.15, c0 = 100, epsr = 78.5;
-const lam = Math.sqrt((epsr * EPS0 * RT) / (2 * FARADAY * FARADAY * c0));
-const def = (statistics) => ({
-  species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
-  materials: { water: { epsr, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } }, statistics } },
-  regions: [{ material: 'water', length: 30 * lam }],
-  contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0 }, right: { V: 0, bath: { c: { 'Na+': c0, 'Cl-': c0 }, reference: 'Cl-' } } },
-  grid: { hmin: lam / 200, hmax: lam / 3, ratio: 1.08 },
-});
+const RT = GAS_CONSTANT * 298.15, c0 = 100; // 0.1 M NaCl
+const lam = Math.sqrt((WATER_EPSR * EPS0 * RT) / (2 * FARADAY * FARADAY * c0)); // the Debye length
+// Water with Na⁺ and Cl⁻, with given statistics: none (ideal), or a lattice gas (crowding).
+const def = (statistics) => {
+  const water = aqueous(['Na+', 'Cl-']);
+  water.materials.water.statistics = statistics;
+  return build({
+    library: [water],
+    stack: [
+      { V: 0, phi: 'pinned', zeroCharge: 0 }, // the electrode: φ at its face is V − zeroCharge, blocking every ion
+      layer('water', 30 * lam),
+      bath({ 'Na+': c0, 'Cl-': c0 }, 'Cl-'), // the bulk solution
+    ],
+    grid: { hmin: lam / 200, hmax: lam / 3, ratio: 1.08 },
+  });
+};
 const cMax = (a) => 1 / (a ** 3 * AVOGADRO); // one ion per a³
 const ideal = new Device(def([]));
 let crowded;
@@ -101,6 +110,7 @@ size.addEventListener('change', rebuild);
 size.addEventListener('input', () => (document.getElementById('aOut').textContent = `${size.value} nm`));
 addEventListener('resize', update);
 rebuild();
+showCode();
 </script>
 </body>
 </html>

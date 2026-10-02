@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOS capacitor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>MOS capacitor: accumulation, depletion, inversion</h1>
+  <p>p-type silicon under 5 nm of oxide and a metal gate. The gate voltage sets the gate metal's Fermi level;
+    the silicon's bands bend at the surface to meet it. Negative bias pulls holes to the surface
+    (accumulation), moderate positive bias pushes them away (depletion), and beyond threshold electrons gather
+    in a thin inversion layer. Those electrons come from a port holding them at ground beside the oxide, the
+    1D stand-in for a transistor's source and drain; without it, they'd have to diffuse in from the back
+    contact. The capacitance at 1 kHz then follows the low-frequency C–V curve.</p>
+  <div class="controls">
+    <label>gate V <input id="V" type="range" min="-3" max="2" step="0.05" value="0.5"><output id="Vout"></output></label>
+    <span class="readout" id="Q"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="levels"></div>
+    <canvas id="cv"></canvas>
+    <canvas id="conc"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, EPS0, AVOGADRO, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, metal, live } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, showCode, fromQuery } from './common.js';
+
+const Lsi = units.um(0.5), tox = units.nm(5);
+const def = build({
+  T: 300,
+  library: [semiconductor('Si'), metal('Au')],
+  materials: { SiO2: { epsr: 3.9, species: {} } }, // an insulator: no mobile species
+  stack: [
+    ohmic(0), // the back contact
+    layer('Si', Lsi, { name: 'p-Si', acceptors: units.perCm3(1e17) }),
+    { dipole: 0 }, // Si | SiO2: φ continuous (the oxide has no levels of its own to align)
+    layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+    // Oxide | gate metal. Its zeroCharge, the gate's Fermi level minus φ there when it's uncharged,
+    // is a property of this interface (a work-function difference). φ in this p-Si bulk is −1.00 V
+    // (the library anchors φ at the conduction band), so the flat-band voltage is 0.1 − 1.0 = −0.9 V.
+    { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.1 },
+    layer('Au', units.nm(50)),
+    ohmic(0, ['e-']), // the gate's terminal
+  ],
+  // Source and drain in 1D: the inversion layer's electrons held at ground beside the oxide.
+  ports: [{ name: 'channel', region: 'p-Si', from: Lsi - units.nm(5), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+  grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+});
+
+// The C–V curve, once, from the small-signal impedance at 1 kHz at each gate voltage.
+const sweep = new Device(def), Cox = (3.9 * EPS0) / tox, cv = { V: [], C: [] };
+for (let V = -3; V <= 2.001; V += 0.1) {
+  sweep.set({ contacts: { right: { V } } });
+  const Z = sweep.impedance([1e3]).Z;
+  cv.V.push(V);
+  cv.C.push(-1 / (2 * Math.PI * 1e3 * Z.im[0]) / Cox);
+}
+
+const dev = live(def, { onsolution: draw });
+const slider = document.getElementById('V');
+fromQuery(slider);
+slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
+dev.set({ contacts: { right: { V: +slider.value } } });
+
+function draw(sol) {
+  const V = sol.terminals.right.V;
+  document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
+  const surface = sol.x.findLastIndex((x, g) => sol.region[g] === 0);
+  const perCm3 = (c) => (c * AVOGADRO * 1e-6).toExponential(1);
+  document.getElementById('Q').textContent = `at the silicon surface: n = ${perCm3(sol.c['e-'][surface])} cm⁻³, p = ${perCm3(sol.c['h+'][surface])} cm⁻³`;
+  levels(document.getElementById('levels'), sol, {
+    title: `bands and Fermi levels near the oxide, gate at ${V.toFixed(2)} V`,
+    xlim: [Lsi - units.nm(150), sol.x.at(-1)],
+    labels: { 'V:e-': 'V e⁻ (the gate: its Fermi level)' },
+  });
+  chart(document.getElementById('cv'), {
+    xlabel: 'gate V (V)', ylabel: 'C / C_ox at 1 kHz', ylim: [0, 1.05],
+    series: [
+      { x: cv.V, y: cv.C, color: colors[2], label: 'low-frequency C–V' },
+      { x: [V], y: [cv.C[Math.round((V + 3) / 0.1)]], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  chart(document.getElementById('conc'), {
+    xscale: 1e9, xlabel: 'x (nm)', ylabel: 'concentration (mol/m³)', logy: true, xlim: [(Lsi - units.nm(150)) * 1e9, Lsi * 1e9],
+    series: [
+      { x: sol.x, y: sol.c['e-'], color: colors[0], label: 'e⁻' },
+      { x: sol.x, y: sol.c['h+'], color: colors[1], label: 'h⁺' },
+    ],
+  });
+}
+showCode();
+</script>
+</body>
+</html>

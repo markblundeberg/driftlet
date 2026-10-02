@@ -9,67 +9,79 @@
 <body>
 <main>
   <h1>Silicon pn junction</h1>
-  <p>Species voltages V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F) (quasi-Fermi levels, solid) and standard levels
-    V°<sub>i</sub> (band edges, dashed), with a bias on the p side. In voltage units the conduction band sits
-    below the valence band. With recombination.</p>
+  <p>Electrons and holes are ordinary species. Solid lines are their species voltages
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), the quasi-Fermi levels; dashed lines are their standard
+    levels V°<sub>i</sub>, the band edges (in voltage units the conduction band sits below the valence band).
+    The bias moves the p side's metal contact: forward bias splits the quasi-Fermi levels across the junction,
+    and the carriers recombine as they cross.</p>
   <div class="controls">
-    <label>Bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0"><output id="Vout"></output></label>
+    <label>bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0.3"><output id="Vout"></output></label>
     <span class="readout" id="I"></span>
   </div>
   <div class="grid">
-    <canvas id="levels"></canvas>
+    <div class="levels wide" id="levels"></div>
     <canvas id="conc"></canvas>
+    <canvas id="iv"></canvas>
   </div>
 </main>
 <script type="module">
-import { units } from '../src/index.js';
+import { Device, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
-import { chart, colors, fromQuery } from './plot.js';
+import { chart, colors } from './plot.js';
+import { levels, showCode, fromQuery } from './common.js';
 
-const dev = live(
-  build({
-    T: 300,
-    library: [semiconductor('Si')],
-    stack: [
-      ohmic(0),
-      layer('Si', 1.5e-6, { name: 'n', donors: units.perCm3(1e17) }),
-      layer('Si', 1.5e-6, { name: 'p', acceptors: units.perCm3(1e16) }),
-      ohmic(0),
-    ],
-    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], // τ = 1/(kf·N) ≈ 0.6 µs at 1e16 cm⁻³
-    grid: { hmin: 0.5e-9, hmax: 15e-9 },
-  }),
-  { onsolution: draw },
-);
+// The device, as it's drawn: a contact, n-type silicon, p-type silicon, a contact.
+const def = build({
+  T: 300, // the library's silicon data (Sze) are for 300 K
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0), // e⁻ and h⁺ in equilibrium with the metal
+    layer('Si', units.um(1.5), { name: 'n', donors: units.perCm3(1e17) }),
+    layer('Si', units.um(1.5), { name: 'p', acceptors: units.perCm3(1e16) }),
+    ohmic(0), // its voltage is the bias
+  ],
+  // Band-to-band recombination: a minority lifetime τ = 1/(kf·N) ≈ 0.6 µs at 1e16 cm⁻³.
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: units.nm(0.5), hmax: units.nm(15) },
+});
 
+// The I–V curve, once: a plain Device swept in bias, each solve warm from the last.
+const sweep = new Device(def), iv = { V: [], I: [] };
+for (let V = -0.39; V <= 0.701; V += 0.02) {
+  sweep.set({ contacts: { right: { V } } });
+  iv.V.push(V);
+  iv.I.push(Math.abs(sweep.solve().current));
+}
+
+// live() solves each change warm from the last, merging slider moves made during a solve.
+const dev = live(def, { onsolution: draw });
 const slider = document.getElementById('V');
 fromQuery(slider);
-let last = null;
-function draw(s, info) {
-  last = [s, info];
-  document.getElementById('Vout').textContent = `${s.terminals.right.V.toFixed(2)} V`;
-  document.getElementById('I').textContent = `I = ${s.current.toExponential(2)} A/m² (toward +x) · solved in ${info.ms.toFixed(1)} ms, ${s.iterations} Newton iterations`;
-  chart(document.getElementById('levels'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'voltage (V)',
-    series: [
-      { x: s.x, y: s.Vstd['h+'], color: colors[1], dash: [6, 4], label: 'V° h⁺' },
-      { x: s.x, y: s.V['h+'], color: colors[1], label: 'V h⁺' },
-      { x: s.x, y: s.V['e-'], color: colors[0], label: 'V e⁻' },
-      { x: s.x, y: s.Vstd['e-'], color: colors[0], dash: [6, 4], label: 'V° e⁻' },
-    ],
-  });
+slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
+dev.set({ contacts: { right: { V: +slider.value } } });
+
+function draw(sol, info) {
+  const V = sol.terminals.right.V;
+  document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
+  document.getElementById('I').textContent =
+    `I = ${sol.current.toExponential(2)} A/m² toward +x · ${info.ms.toFixed(1)} ms` + (info.failed ? ' · (no solution here)' : '');
+  levels(document.getElementById('levels'), sol, { title: `species voltages and band edges at V = ${V.toFixed(2)} V` });
   chart(document.getElementById('conc'), {
     xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
     series: [
-      { x: s.x, y: s.c['e-'], color: colors[0], label: 'e⁻' },
-      { x: s.x, y: s.c['h+'], color: colors[1], label: 'h⁺' },
+      { x: sol.x, y: sol.c['e-'], color: colors[0], label: 'e⁻' },
+      { x: sol.x, y: sol.c['h+'], color: colors[1], label: 'h⁺' },
+    ],
+  });
+  chart(document.getElementById('iv'), {
+    xlabel: 'bias V (V)', ylabel: '|I| (A/m²)', logy: true,
+    series: [
+      { x: iv.V, y: iv.I, color: colors[2], label: 'I–V' },
+      { x: [V], y: [Math.abs(sol.current)], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
 }
-const update = () => dev.set({ contacts: { right: { V: +slider.value } } });
-slider.addEventListener('input', update);
-addEventListener('resize', () => last && draw(...last));
-update();
+showCode();
 </script>
 </body>
 </html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar cell</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Silicon solar cell under light</h1>
+  <p>A thin n⁺ emitter on a thick p base. Light is a reservoir: the reaction photon → e⁻ + h⁺, with the
+    photons' μ far above the gap, generates pairs uniformly. Carriers made within a diffusion length of the
+    junction are collected, so the short-circuit current is about qG(L<sub>n</sub> + L<sub>p</sub> + W). Under
+    light the quasi-Fermi levels split even at zero bias; at open circuit they split by qV<sub>oc</sub> and
+    no current flows.</p>
+  <div class="controls">
+    <label>bias V <input id="V" type="range" min="0" max="0.65" step="0.005" value="0.5"><output id="Vout"></output></label>
+    <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
+    <span class="readout" id="stats"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="levels"></div>
+    <canvas id="jv"></canvas>
+    <canvas id="conc"></canvas>
+  </div>
+</main>
+<script type="module">
+import { Device, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, showCode, fromQuery } from './common.js';
+
+const G1 = 50; // generation at "1×" light, mol/(m³·s): 3e19 pairs per cm³ per second
+const cell = (V, light) =>
+  build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(0.5), { name: 'n⁺', donors: units.perCm3(1e19) }),
+      layer('Si', units.um(60), { name: 'p', acceptors: units.perCm3(1e16) }),
+      ohmic(V),
+    ],
+    bulkReactions: [
+      // Recombination: τ = 1/(kf·N) ≈ 0.6 µs in the base, so L_n = √(D τ) ≈ 48 µm.
+      { equation: 'e- + h+ = 0', kf: { Si: 1e8 } },
+      // Photogeneration from a photon reservoir, at the rate kf (mol/(m³·s)).
+      { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G1 * light } },
+    ],
+    grid: { hmin: units.nm(1), hmax: units.um(1) },
+  });
+
+const V = document.getElementById('V'), light = document.getElementById('G');
+fromQuery(V);
+fromQuery(light);
+
+// The J–V curve for the present light: a plain Device swept in bias, warm from point to point.
+// Power out is −V·J here, since the photocurrent flows toward +x (holes to the p side).
+const curve = (G) => {
+  const dev = new Device(cell(0, G)), J = [];
+  for (let v = 0; v <= 0.651; v += 0.01) {
+    dev.set({ contacts: { right: { V: v } } });
+    J.push(dev.solve().current);
+  }
+  return J;
+};
+const dark = curve(0); // in the dark: the diode alone (superposition: the light shifts it by J_sc)
+let jv;
+function sweep() {
+  jv = { V: dark.map((_, k) => k * 0.01), J: curve(+light.value) };
+  const oc = new Device(cell({ I: 0 }, +light.value)).solve(); // open circuit: the terminal floats
+  const Jsc = jv.J[0], Voc = oc.terminals.right.V;
+  const Pmax = Math.max(...jv.V.map((v, k) => v * jv.J[k]));
+  jv.stats = `J_sc = ${(Jsc / 10).toFixed(1)} mA/cm² · V_oc = ${Voc.toFixed(3)} V · FF = ${(Pmax / (Jsc * Voc)).toFixed(3)} · P_max = ${(Pmax / 10).toFixed(1)} mW/cm²`;
+}
+
+const dev = live(cell(+V.value, +light.value), { onsolution: draw });
+const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: cell(0, +light.value).bulkReactions });
+V.addEventListener('input', update);
+light.addEventListener('change', () => {
+  sweep();
+  update();
+});
+sweep();
+
+function draw(sol) {
+  const v = sol.terminals.right.V;
+  document.getElementById('Vout').textContent = `${v.toFixed(3)} V`;
+  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  document.getElementById('stats').textContent = jv.stats;
+  levels(document.getElementById('levels'), sol, { title: `bands and quasi-Fermi levels at V = ${v.toFixed(3)} V`, xlim: [0, 20e-6] });
+  chart(document.getElementById('jv'), {
+    xlabel: 'V (V)', ylabel: 'J (mA/cm²)', ylim: [-0.3 * jv.J[0] / 10, 1.15 * jv.J[0] / 10],
+    series: [
+      { x: jv.V, y: dark.map((j) => j / 10), color: colors[6], dash: [6, 4], label: 'dark' },
+      { x: jv.V, y: jv.J.map((j) => j / 10), color: colors[2], label: 'under light' },
+      { x: [v], y: [sol.current / 10], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  chart(document.getElementById('conc'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
+    series: [
+      { x: sol.x, y: sol.c['e-'], color: colors[0], label: 'e⁻' },
+      { x: sol.x, y: sol.c['h+'], color: colors[1], label: 'h⁺' },
+    ],
+  });
+}
+showCode();
+</script>
+</body>
+</html>

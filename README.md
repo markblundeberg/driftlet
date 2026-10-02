@@ -117,15 +117,18 @@ level diagrams, slider demos and `describe()`, which flags likely unit slips.
 
 ## Demos
 
-Live pages in [`demos/`](demos/), each solving its device in the browser as you move a slider.
-Serve the repository root (e.g. `python3 -m http.server`) and open `/demos/`.
+Live pages in [`demos/`](demos/), each building its device with `driftlet/kit`, solving it in the
+browser as you move the controls, and showing its whole script as a worked example. Serve the
+repository root (e.g. `python3 -m http.server`) and open `/demos/`.
 
-| | |
-|---|---|
-| [![pn junction](demos/screenshots/pn.png)](demos/pn.html) | [![double layer](demos/screenshots/double-layer.png)](demos/double-layer.html) |
-| **pn junction**: species voltages and band edges under bias | **Double layer**: dilute vs crowded (lattice-gas) ions |
-| [![cell](demos/screenshots/cell.png)](demos/cell.html) | [![insertion](demos/screenshots/insertion.png)](demos/insertion.html) |
-| **Ag \| AgNO₃ \| Ag**: polarization transient and impedance | **Intercalation host**: constant-current lithiation vs the OCV |
+| | | |
+|---|---|---|
+| [![pn junction](demos/screenshots/pn.png)](demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](demos/mos.html) |
+| **pn junction**: quasi-Fermi levels and band edges under bias | **Solar cell**: J–V, V<sub>oc</sub> and fill factor under light | **MOS capacitor**: band bending and the C–V curve |
+| [![cyclic voltammetry](demos/screenshots/redox.png)](demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](demos/daniell.html) | [![concentration polarisation](demos/screenshots/cell.png)](demos/cell.html) |
+| **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: discharging, and where its voltage goes | **Ag \| AgNO₃ \| Ag**: polarisation transient and impedance |
+| [![ion-exchange membrane](demos/screenshots/membrane.png)](demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](demos/double-layer.html) | [![insertion host](demos/screenshots/insertion.png)](demos/insertion.html) |
+| **Ion-exchange membrane**: Donnan exclusion, ion by ion | **Double layer**: dilute vs crowded ions | **Intercalation host**: lithiation against the OCV |
 
 ## How to think about it
 
