@@ -41,7 +41,7 @@ function freeEnergyBalance(dev, sol) {
   });
 
   // Dissipation, term by term.
-  const terms = { transport: 0, conduction: 0, bulk: 0, interface: 0 };
+  const terms = { transport: 0, conduction: 0, bulk: 0, interface: 0, links: 0 };
   let worst = 0; // the most negative single term
   const add = (key, v) => {
     terms[key] += v;
@@ -90,7 +90,31 @@ function freeEnergyBalance(dev, sol) {
       add('interface', sol.interfaces[f].rates[k] * a * RT);
     });
   });
-  const dissipation = terms.transport + terms.conduction + terms.bulk + terms.interface;
+  // Links to outside phases that aren't in equilibrium (conductance, exchange): each flux in
+  // drops from the outside level to the node's, at a contact or across a port's window.
+  model.ports.forEach((port) => {
+    const V = sol.terminals[port.name].V;
+    species.forEach((sp, i) => {
+      const link = port.species[i];
+      if (link.type !== 'conductance' && link.type !== 'exchange') return;
+      const muOut = outside(link, V, i);
+      for (const g of port.nodes) {
+        const k = link.type === 'conductance' ? (link.G * VT) / (sp.z * sp.z * FARADAY) : link.k;
+        const nIn = grid.vol[g] * k * ((muOut - mu[i][g]) / RT);
+        add('links', nIn * (muOut - mu[i][g]));
+      }
+    });
+  });
+  for (const side of ['left', 'right']) {
+    const ct = model.contacts[side], V = sol.terminals[side].V, g = side === 'left' ? 0 : grid.nNodes - 1;
+    species.forEach((sp, i) => {
+      const link = ct.species[i];
+      if (link.type !== 'conductance' && link.type !== 'exchange') return;
+      const nIn = side === 'left' ? sol.contacts[side].flux[sp.name] : -sol.contacts[side].flux[sp.name];
+      add('links', nIn * (outside(link, V, i) - mu[i][g]));
+    });
+  }
+  const dissipation = terms.transport + terms.conduction + terms.bulk + terms.interface + terms.links;
   return { input, electrical, dissipation, terms, worst };
 }
 
@@ -174,4 +198,18 @@ test('second law: silver electrodes and a bipolar plate, with resistance, reacti
   const b = check('silver cell', dev);
   assert.ok(Math.abs(b.electrical / b.input - 1) < 1e-9, 'only electrons cross the terminals');
   assert.ok(b.terms.transport > 0 && b.terms.conduction > 0 && b.terms.interface > 0);
+});
+
+test('second law: silver nitrate with a port behind a conductance and a contact through one', () => {
+  const links = { terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' };
+  const dev = new Device({
+    species: ions,
+    materials: { water: water(0) },
+    regions: [{ name: 'cell', material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
+    contacts: { left: { V: 0, ...links }, right: { V: 0.05, ...links, species: { 'Ag+': { type: 'conductance', G: 50 }, 'NO3-': 'blocked' } } },
+    ports: [{ name: 'p', region: 'cell', from: 8e-6, to: 12e-6, V: 0.02, terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 1e7 } } }],
+    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+  });
+  const b = check('port and conductance links', dev);
+  assert.ok(b.terms.links > 0.01 * b.input, 'the links take a real share');
 });
