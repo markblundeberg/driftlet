@@ -127,7 +127,7 @@ and open `/demos/`.
 | [![pn junction](demos/screenshots/pn.png)](demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](demos/mos.html) |
 | **pn junction**: quasi-Fermi levels under bias; I–V against Shockley | **Solar cell**: J<sub>sc</sub> and V<sub>oc</sub> against collection theory | **MOS capacitor**: band bending; C–V against ideal theory |
 | [![cyclic voltammetry](demos/screenshots/redox.png)](demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](demos/daniell.html) | [![concentration polarisation](demos/screenshots/cell.png)](demos/cell.html) |
-| **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: run flat, and where its voltage and energy go | **Ag \| AgNO₃ \| Ag**: square-wave polarisation and impedance |
+| **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: a real salt bridge, leaking, ion by ion | **Ag \| AgNO₃ \| Ag**: square-wave polarisation and impedance |
 | [![ion-exchange membrane](demos/screenshots/membrane.png)](demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](demos/double-layer.html) | [![insertion host](demos/screenshots/insertion.png)](demos/insertion.html) |
 | **Ion-exchange membrane**: Donnan steps, ion by ion, against TMS theory | **Double layer**: dilute vs crowded ions, against closed forms | **Intercalation host**: cycling between cutoffs against the OCV |
 
