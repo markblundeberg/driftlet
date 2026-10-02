@@ -1,4 +1,9 @@
-# driftlet
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://markblundeberg.github.io/driftlet/docs/logo-dark.svg">
+    <img alt="driftlet" src="https://markblundeberg.github.io/driftlet/docs/logo.svg" width="300">
+  </picture>
+</h1>
 
 [![test](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml/badge.svg)](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml)
 [![npm](https://img.shields.io/npm/v/driftlet)](https://www.npmjs.com/package/driftlet)
