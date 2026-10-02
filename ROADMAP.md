@@ -86,12 +86,12 @@ for live demos.
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
-   - Voltage ledgers, written per family of devices (there's no general one): the terminal
-     voltage as named contributions that sum exactly, for that family's usual simplifications.
-     They annotate the spatial diagram, which stays the primary picture and keeps telling the
-     story where a ledger's division breaks down.
-   - Recipes built from the library (pn junction, galvanic and concentration cells, double layer,
-     membrane), returning editable definitions.
+   - A worked example of an electrochemical cell (e.g. Daniell) with its voltage ledger: the
+     Nernst voltage, then junction, ohmic drop, each electrode's overpotential and
+     concentration polarisation, summing exactly to the terminal voltage, each read off the
+     solution. A ledger's division is specific to its device family, so it belongs in a worked
+     example, not the library; the spatial diagram stays the primary picture.
+
 3. **Ship 0.1.0.** npm package and jsdelivr (the agent guide's pinned CDN version is checked
    against `package.json` once it's set), live demos (code sandboxes, screenshots in the
    README), JSDoc types and a `.d.ts`, CI. (Tests already check what browsers and CDNs need:
