@@ -204,3 +204,18 @@ test('a jump in a strictly neutral cell: advance() finds its first step (longer,
   const run = dev.advance(1e-3);
   assert.ok(run.converged && run.done, JSON.stringify({ steps: run.steps, rejected: run.rejected }));
 });
+
+test('advance() to where it already is changes nothing, and the next call still moves', () => {
+  // As an animation frame with no time to add would ask.
+  const dev = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'm', length: 1e-6, c0: { X: 1 } }],
+    contacts: { left: { species: { X: { type: 'equilibrium', mu: 1000 } }, phi: 'neutral' } },
+    grid: { minCells: 10 },
+  });
+  const still = dev.advance(0);
+  assert.ok(still.converged && still.done && still.steps === 0);
+  const moved = dev.advance(1e-4);
+  assert.ok(moved.converged && moved.done && moved.steps > 0 && dev.solver.time === 1e-4);
+});

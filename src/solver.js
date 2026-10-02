@@ -1793,7 +1793,11 @@ export class Solver {
     const start = clock();
     const trace = { t: [], current: [], voltage: [] };
     let steps = 0, rejected = 0, iterations = 0, failed = false;
+    // Already there (an animation frame with no time to add): nothing to do, and the step size
+    // carried to the next call stays as it was.
+    if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [] } };
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
+    if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
     let grow = 0; // longer first steps tried after a Newton failure (see below)
     const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
