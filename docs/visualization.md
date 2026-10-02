@@ -131,7 +131,7 @@ less each electrode's overpotential and the solution's share. The
 | thick, dashed | a redox level V_e⁻(Ox/Red) |
 | thin, dashed | a standard redox level V°_e⁻(Ox/Red) |
 | thin, solid | a standard level V°_i (below) |
-| thin, dotted, grey | φ |
+| thin, dotted, grey | φ, only on request (see below) |
 
 Electrons are steel blue, cations (and holes) warm colours, anions cool colours, and redox levels
 blue-violet.
@@ -178,10 +178,51 @@ to see:
   [Phys. Chem. Chem. Phys. 3, 1668 (2001)](https://doi.org/10.1039/b100180i)). The
   [impedance demo](../demos/impedance.html) draws the voltages on those rails.
 
-Different species' levels sit volts apart, because their μ° differ by hundreds of kJ/mol.
-Comparing V_i between two species means nothing on its own (only combinations that a reaction
-weights do), so moving one species' lines up or down loses nothing. `traces()` does this with
-`shifts`, and marks the shifted lines ⌇.
+Different species' levels sit volts apart, because their μ° differ by hundreds of kJ/mol. The gap
+between two species' lines carries a constant fixed by convention (below), so moving one species'
+lines up or down loses nothing. `traces()` does this with `shifts`, and marks the shifted lines ⌇.
+
+## What's left out, and why
+
+### φ
+
+The electrostatic potential φ isn't drawn by default, though it's in the same volts. Inside a material, φ
+is a bookkeeping convention: each material's standard potentials fix where its φ sits, and any
+consistent choice gives the same physics (see [conventions](conventions.md)). Its steps between
+materials can't be measured, and inside a metal it has no measurable meaning at all. And while
+the electron diagram is in volts, every line on it should be an electronically meaningful level;
+−eφ isn't the energy of any electron.
+
+What φ would show is drawn anyway, more usefully. The standard levels V°_i = φ + μ°_i/(z_iF) of a
+material move together with its φ, so their bending ladder carries the same variation in space
+within each material. Unlike φ, the ladder means something across materials too: its offsets at a
+face are band offsets and the like, which belong to the interface and can be measured.
+
+(`traces(sol, { phi: true })` can draw φ anyway. The electrochemistry demos draw it only as the
+SHE's standard level, which is what it equals in water with the library's data.)
+
+### A reference
+
+Nor is anything drawn against a reference: not E(x) vs SHE, not energies from the vacuum. The
+diagrams are reference-free. The simulation grounds one terminal at 0 V because it has to put the
+zero somewhere, but nothing depends on where: shift the whole diagram up or down and the physics
+is unchanged. So pick your own reference. Every vertical gap on the electron diagram is
+physical, so choose a level at a point (the SHE's standard level in the stirred bulk, a reference
+electrode's Fermi level, a band edge deep in a contact) and read everything else against it.
+
+That's also why "vs SHE" and "from the vacuum" need a place. The SHE's standard level and the
+vacuum level both vary in space wherever there's current or charge: the SHE's slopes with the
+ohmic drop in a solution, and the vacuum level follows the electrostatics. Plotting E(x) against
+the local SHE level would subtract a sloping line from every other line, mixing changes in the
+reference into changes in the thing measured.
+
+On the species diagram there's one technicality. A gap V_i − V_j between two species at a point is
+free of φ (it cancels), so its changes in space and time are physical. Its absolute value carries
+one constant for that pair, though, fixed once by the chemical convention for the elements' zeros
+(μ = 0 for each element in its standard state, as in every table). For instance, V_Ag⁺ − V_e⁻ =
+μ_Ag/F at equilibrium, which is zero only because the convention says so. Electron levels carry no
+such constant, which is why the redox levels are drawn as electron levels: the conventions cancel
+out of V_e⁻(Ag⁺/Ag) = V_Ag⁺ − μ_Ag/F.
 
 These diagrams are developed at length, from what a voltmeter measures through semiconductors,
 electrolytes and electrochemical cells, in

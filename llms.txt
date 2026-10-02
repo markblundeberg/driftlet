@@ -246,8 +246,15 @@ has the long form):
 - **Standard level** V°_i = φ + μ°_i/(z_iF) (thin, solid): a band edge for e⁻ and h⁺; V_i − V°_i =
   (RT/z_iF) ln(c/c_ref) for ideal species. Steps in V°_i at faces (Donnan, junctions, dipoles) are
   bookkeeping. In volts the conduction band sits below the valence band.
-- Comparing V_i of different species means nothing on its own, so `shifts` (marked ⌇) moves a
-  species' lines to share a plot without losing anything.
+- **What's left out.** φ isn't drawn: it's a per-material convention (meaningless in a metal), and
+  −eφ isn't any electron's energy; the V°_i ladder shows its variation within a material and means
+  something across faces too. Nor is anything drawn against a reference: the diagrams are
+  reference-free (shifting everything changes nothing), every gap on the electron diagram is
+  physical, so a reader picks a level at a point as their reference. "vs SHE" and "from the vacuum"
+  need a place, since both levels vary in space.
+- A gap V_i − V_j between two species is free of φ, but carries one constant fixed by the elements'
+  conventional zeros (μ = 0 per element). So `shifts` (marked ⌇) moves a species' lines to share a
+  plot without losing anything.
 - Call V_i the species voltage and say what it is; it's new to most readers. Credit Jamnik and
   Maier (Phys. Chem. Chem. Phys. 3, 1668 (2001)) where V_i rails explain impedance or linear
   response.
