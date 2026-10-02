@@ -10,30 +10,37 @@
 <main>
   <h1>A cation-exchange membrane between two salt solutions</h1>
   <p>A membrane with fixed negative charge separates 0.1 M NaCl from a more dilute solution, at open circuit,
-    with a Ag/AgCl electrode in each solution. The fixed charge keeps chloride out (Donnan exclusion), so the
-    salt that leaks through is carried almost entirely by Na⁺. The diagram shows why the cell has a voltage:
-    each ion's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F). Na⁺ stays nearly level across
-    the membrane, in equilibrium between the solutions, so the whole salt difference lands on Cl⁻, which the
-    electrodes sense: E = 2t₊V<sub>T</sub> ln(c₁/c₂), with t₊ → 1 for an ideal membrane. (The often-quoted
-    59 mV per decade "membrane potential" is this minus the electrodes' own Nernst terms, a conventional split.)
-    With less fixed charge, chloride gets in and t₊ falls to its free-solution value, D₊/(D₊ + D₋) = 0.40.</p>
+    with a Ag/AgCl electrode in each stirred solution and an unstirred layer of water on each side of the
+    membrane. The fixed charge keeps chloride out (Donnan exclusion), so the salt that leaks through is carried
+    almost entirely by Na⁺. Na⁺ then stays nearly level across the membrane, in equilibrium between the
+    solutions, and the whole salt difference lands on Cl⁻, which the electrodes sense:
+    E = 2t₊V<sub>T</sub> ln(c₁/c₂), with t₊ → 1 for an ideal membrane. (The often-quoted 59 mV per decade
+    "membrane potential" is this minus the electrodes' own Nernst terms, a conventional split.) With less
+    fixed charge, chloride gets in and t₊ falls toward its free-solution value, D₊/(D₊ + D₋) = 0.40.</p>
+  <p>The dashed curve is the Teorell–Meyer–Sievers theory: a Donnan equilibrium at each face and diffusion
+    between. It's the limit of thin unstirred layers. Thicker ones polarise, since the salt leaking through
+    piles up on the dilute side and is drawn down on the other, so the membrane sees less of the difference.
+    The level diagram is the ESBD view: each ion's voltage V<sub>i</sub> (thick) is continuous through each
+    face, while its standard level V°<sub>i</sub> (thin) steps there, following φ. Those steps are the
+    Donnan potentials, bookkeeping that cancels from anything measured. Na⁺ is drawn 4.4 V higher (⌇) to
+    share the plot.</p>
   <div class="controls">
     <label>dilute side <input id="c2" type="range" min="-3" max="-1" step="0.1" value="-2"><output id="c2Out"></output></label>
     <label>fixed charge <input id="X" type="range" min="-2" max="0.5" step="0.1" value="0"><output id="XOut"></output></label>
+    <label>unstirred layers <input id="Lw" type="range" min="0" max="2" step="0.25" value="1.25"><output id="LwOut"></output></label>
     <span class="readout" id="Em"></span>
   </div>
   <div class="grid">
+    <canvas class="wide" id="sweep"></canvas>
     <div class="levels wide" id="levels"></div>
-    <canvas id="conc"></canvas>
-    <canvas id="sweep"></canvas>
+    <div class="levels wide" id="conc"></div>
   </div>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, bath, aqueous, live, traces } from '../src/kit.js';
-import { levelChart } from '../src/plot.js';
+import { build, layer, bath, aqueous, live, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, speciesColor } from './common.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
 
 // Solution and membrane, both strictly neutral (macroscopic). The membrane is the same water,
 // with its ions ten times slower and a fixed charge.
@@ -43,82 +50,83 @@ for (const sp of Object.values(membrane.materials.membrane.species)) sp.D /= 10;
 
 const c1 = 100; // mol/m³: 0.1 M on the left
 const salt = (c) => ({ 'Na+': c, 'Cl-': c });
-const cell = (c2, X) =>
+const cell = (c2, X, Lw) =>
   build({
     library: [water, membrane],
     stack: [
-      bath(salt(c1), 'Cl-'), // the reference: a Ag/AgCl electrode in the left solution
-      layer('water', 20e-6, { name: 'left' }),
+      bath(salt(c1), 'Cl-'), // the reference: a Ag/AgCl electrode in the stirred left solution
+      layer('water', Lw, { name: 'unstirred' }),
       layer('membrane', 50e-6, { fixedCharge: -X * FARADAY }), // X mol/m³ of fixed anions
-      layer('water', 20e-6, { name: 'right' }),
+      layer('water', Lw, { name: 'unstirred' }),
       bath(salt(c2), 'Cl-', { I: 0 }), // the same kind of electrode on the right, drawing no current
     ],
     grid: { hmin: 20e-9, hmax: 1e-6 },
   });
 
-const c2s = document.getElementById('c2'), Xs = document.getElementById('X');
-fromQuery(c2s);
-fromQuery(Xs);
+const c2s = document.getElementById('c2'), Xs = document.getElementById('X'), Ls = document.getElementById('Lw');
+for (const el of [c2s, Xs, Ls]) fromQuery(el);
 const c2 = () => 1000 * 10 ** +c2s.value; // mol/m³
 const X = () => 1000 * 10 ** +Xs.value;
+const Lw = () => 1e-6 * 10 ** +Ls.value; // m
 
 // What's measured: the voltage between the two Ag/AgCl electrodes, V_right − V_left (each the
-// voltage of Cl⁻ at its bath). It's 2t₊V_T ln(c₁/c₂), defining the apparent transport number t₊.
-const VT = (GAS_CONSTANT * 298.15) / FARADAY;
-const potential = (sol) => sol.terminalVoltage;
+// voltage of Cl⁻ at its bath, the cell's terminal voltage). It's 2t₊V_T ln(c₁/c₂), defining the
+// apparent transport number t₊.
+const VT = (GAS_CONSTANT * 298.15) / FARADAY, Dp = IONS['Na+'].D, Dm = IONS['Cl-'].D;
+
+// Teorell–Meyer–Sievers: Donnan equilibrium at each face, where Cl⁻ inside is s = (√(X² + 4c²) − X)/2,
+// and a zero-current diffusion potential between. V_Cl⁻ is continuous through the faces, so the
+// cell voltage is its change across the membrane's interior.
+const tms = (c2, X) => {
+  const s = (c) => (Math.sqrt(X * X + 4 * c * c) - X) / 2, s1 = s(c1), s2 = s(c2);
+  const diffusion = ((Dm - Dp) / (Dp + Dm)) * Math.log(((Dp + Dm) * s2 + Dp * X) / ((Dp + Dm) * s1 + Dp * X));
+  return VT * (diffusion - Math.log(s2 / s1));
+};
 
 let sweep;
 function curve() {
-  const dev = new Device(cell(c1 / 10, X()));
-  sweep = { r: [], E: [] };
+  const dev = new Device(cell(c1 / 10, X(), Lw()));
+  sweep = { r: [], E: [], tms: [] };
   for (let e = -3; e <= -0.99; e += 0.1) {
     dev.set({ contacts: { right: bath(salt(1000 * 10 ** e), 'Cl-', { I: 0 }) } });
     sweep.r.push(Math.log10(c1 / (1000 * 10 ** e)));
-    sweep.E.push(1000 * potential(dev.solve()));
+    sweep.E.push(1000 * dev.solve().terminalVoltage);
+    sweep.tms.push(1000 * tms(1000 * 10 ** e, X()));
   }
 }
 
-const dev = live(cell(c2(), X()), { onsolution: draw });
-const update = () => dev.set(cell(c2(), X()));
-c2s.addEventListener('input', update);
-Xs.addEventListener('input', update);
-Xs.addEventListener('change', () => {
-  curve();
-  update();
-});
+const dev = live(cell(c2(), X(), Lw()), { onsolution: draw });
+const update = () => dev.set(cell(c2(), X(), Lw()));
+for (const el of [c2s, Xs, Ls]) el.addEventListener('input', update);
+for (const el of [Xs, Ls])
+  el.addEventListener('change', () => {
+    curve();
+    update();
+  });
 curve();
 
 function draw(sol) {
   document.getElementById('c2Out').textContent = `${(c2() / 1000).toPrecision(2)} M`;
   document.getElementById('XOut').textContent = `${(X() / 1000).toPrecision(2)} M`;
-  const Em = potential(sol), ideal = 2 * VT * Math.log(c1 / c2());
+  document.getElementById('LwOut').textContent = `${+(Lw() * 1e6).toPrecision(2)} µm`;
+  const Em = sol.terminalVoltage, ideal = 2 * VT * Math.log(c1 / c2());
   document.getElementById('Em').textContent =
-    `cell voltage ${(1000 * Em).toFixed(1)} mV · ideal membrane ${(1000 * ideal).toFixed(1)} mV · apparent t₊ = ${(Em / ideal).toFixed(3)}`;
-  // The two ions' levels sit volts apart (their μ° differ), and only changes matter here, so each
-  // is drawn relative to its value in the left solution: traces are plain data, edited to suit.
-  const tr = traces(sol, { species: ['Na+', 'Cl-'], standard: false, labels: { 'V:Na+': 'ΔV Na⁺', 'V:Cl-': 'ΔV Cl⁻' } });
-  for (const line of tr.series) line.y = line.y.map((v) => 1000 * (v - line.y[0]));
-  const all = tr.series.flatMap((line) => [...line.y]);
-  const lo = Math.min(...all), hi = Math.max(...all), pad = 0.08 * (hi - lo || 1);
-  document.getElementById('levels').innerHTML = levelChart(tr, {
-    width: 720, height: 380, range: [lo - pad, hi + pad],
-    ylabel: 'V_i − V_i(left solution) (mV)', title: 'species voltages across the membrane',
-  });
-  chart(document.getElementById('conc'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
-    series: [
-      { x: sol.x, y: sol.c['Na+'], color: speciesColor(sol, 'Na+'), label: 'Na⁺' },
-      { x: sol.x, y: sol.c['Cl-'], color: speciesColor(sol, 'Cl-'), label: 'Cl⁻' },
-    ],
-  });
+    `cell voltage ${(1000 * Em).toFixed(1)} mV · TMS ${(1000 * tms(c2(), X())).toFixed(1)} mV · ideal membrane ${(1000 * ideal).toFixed(1)} mV · apparent t₊ = ${(Em / ideal).toFixed(3)}`;
   chart(document.getElementById('sweep'), {
     xlabel: 'log₁₀ (c₁/c₂)', ylabel: 'cell voltage (mV)',
     series: [
-      { x: sweep.r, y: sweep.r.map((r) => 2000 * VT * Math.LN10 * r), color: colors[6], dash: [6, 4], label: 'ideal membrane (t₊ = 1)' },
-      { x: sweep.r, y: sweep.E, color: colors[2], label: 'this membrane' },
+      { x: sweep.r, y: sweep.r.map((r) => 2000 * VT * Math.LN10 * r), color: colors[6], dash: [2, 3], label: 'ideal membrane (t₊ = 1)' },
+      { x: sweep.r, y: sweep.tms, color: colors[0], dash: [6, 4], label: 'TMS theory (thin unstirred layers)' },
+      { x: sweep.r, y: sweep.E, color: colors[2], label: 'this cell' },
       { x: [Math.log10(c1 / c2())], y: [1000 * Em], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
+  levels(document.getElementById('levels'), sol, {
+    title: 'species voltages and standard levels across the membrane',
+    shifts: { 'Na+': 4.4 },
+    ylabel: 'voltage (V)',
+  });
+  profiles(document.getElementById('conc'), sol, { species: ['Na+', 'Cl-'], title: 'concentrations', ylabel: 'concentration (M)', scale: 1e-3, log: true });
 }
 showCode();
 </script>
