@@ -89,3 +89,13 @@ test('the agent guide pins the CDN version being released', () => {
   assert.equal(pinned.size, 1, [...pinned].join(', '));
   if (pkg.version !== '0.0.0') assert.deepEqual([...pinned], [pkg.version]);
 });
+
+test("the docs' inline math is $`…`$, which markdown's emphasis rules can't break", () => {
+  for (const file of [...docs.filter((f) => f.endsWith('.md')).map((f) => `docs/${f}`), 'ROADMAP.md', 'CHANGELOG.md']) {
+    const prose = readFileSync(join(root, file), 'utf8').replace(/```[\s\S]*?```/g, '');
+    prose.split('\n').forEach((line, k) => {
+      const bare = line.replace(/\$`[^`]*`\$/g, '').replace(/`[^`]*`/g, '');
+      assert.ok(!/(?<!\\)\$/.test(bare), `${file}:${k + 1}: a bare $ (write inline math as $\`…\`$): ${line.trim()}`);
+    });
+  }
+});
