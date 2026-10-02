@@ -4,6 +4,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- The npm package ships `docs/`, so the guide's references to them work from the tarball.
+- `llms.txt`: a transient template (a pulse injected through a current-driven port, sampled
+  downstream), and what makes transients expensive.
+- Device reference: what a driven port's conductance does, and that a device's time starts at 0
+  when it's made (`solve()` doesn't advance it).
 - `SPEC.md`, the original design brief, retired: it lives on in the docs and in git history.
 
 ## 0.1.1 (2026-10-02)

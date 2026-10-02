@@ -185,6 +185,49 @@ const dev = new Device(electrode(rest.terminals.left.V + 0.2));
 console.log(`anodic current ${dev.solve().terminals.left.current.toFixed(2)} A/m²`);
 ```
 
+## Template: a transient, with a pulse injected sideways
+
+A **port** feeds a window of nodes inside a region from the side (a point contact, an injector,
+a MOS channel's source and drain), held at a voltage or driven by a current waveform. Transients
+run with `advance(t)`, adaptively, from the steady state that `solve()` finds at time 0.
+
+```js
+import { Device, units, FARADAY } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+
+// A pulse of holes injected into an n-type germanium bar under a field (Haynes–Shockley), and the
+// excess hole density sampled downstream as it drifts past.
+const L = 4e-3, ND = units.perCm3(1e15), E = 1000; // m, mol/m³, V/m (10 V/cm)
+const tau = 20e-6, pulse = 0.5e-6, Ip = 0.05 * ND * FARADAY * 50e-6 / pulse; // s, s, A/m²: 5% of n₀ over 50 µm
+const def = build({
+  T: 300,
+  library: [semiconductor('Ge')],
+  stack: [ohmic(E * L), layer('Ge', L, { name: 'bar', donors: ND }), ohmic(0)], // holes drift toward +x
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Ge: 1 / (tau * ND) } }], // τ = 1/(kf·n₀) for minority holes
+  // The emitter: a port driven by a current waveform, feeding holes into a 50 µm window. Its
+  // voltage floats to deliver that current; G only sets how evenly it's spread over the window.
+  ports: [{ name: 'emitter', region: 'bar', from: 0.5e-3, to: 0.55e-3, terminal: 'h+',
+    species: { 'h+': { type: 'conductance', G: 1e6 } },
+    I: { t: [0, 1e-9, pulse, pulse + 1e-9], values: [0, Ip, Ip, 0] } }], // A/m², t from the device's time 0
+  grid: { hmin: units.um(10), hmax: units.um(10) },
+});
+const dev = new Device(def);
+const rest = dev.solve(); // the steady state at t = 0 (solve() doesn't advance time)
+const probe = rest.x.findIndex((x) => x >= 1.5e-3); // 1 mm downstream of the emitter
+const trace = [];
+for (let k = 1; k <= 100; k++) {
+  // advance() lands exactly on its target; in a page, call it once per animation frame with
+  // { budgetMs: 12 } and carry on next frame while sol.done is false.
+  const sol = dev.advance(k * 0.1e-6);
+  trace.push([sol.time, sol.c['h+'][probe] - rest.c['h+'][probe]]);
+}
+const [tPeak] = trace.reduce((a, b) => (b[1] > a[1] ? b : a));
+console.log(`peak at ${(tPeak * 1e6).toFixed(2)} µs: μ_p ≈ ${(1e-3 / (E * (tPeak - pulse / 2)) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1980 against the 1900 put in: a spreading, decaying pulse peaks a little early
+```
+
+Transients cost more where a carrier's density spans many decades (minority holes in silicon
+ahead of the pulse) and at strong injection (Δp near n₀); budget for that, or coarsen the grid.
+
 ## Template: a live page with a slider
 
 `live()` merges slider moves made during a solve, warm-starts each solve and keeps the last

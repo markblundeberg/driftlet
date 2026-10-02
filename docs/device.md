@@ -352,6 +352,12 @@ the port brings into the device.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
 
+A port driven by a current (`I`, or a waveform) floats to whatever voltage delivers it, so a
+conductance link's `G` doesn't set how much enters, only how it's shared across the window: in
+proportion to each node's level below the port's. Any large value spreads it evenly. At `I: 0`
+the port still ties that species' level together across its window (a large `G` shorts the
+window for it), so keep such windows narrow.
+
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance
 $`R \cdot A`$ to the port's voltage as $`G = 1/(R \cdot A)`$). That's how a floating electrode is tied
@@ -398,7 +404,9 @@ from its first jumps back each period (a sawtooth); a square wave is steps both 
 as a step rather than as a very fast ramp, which the time-step control has to resolve. A time step
 ending at t sees the sources as they are just before t (so it ends on a jump's near side, and the
 next step carries the jump); `solve()` and `impedance()` use the values at the present time, after
-any jump there. `advance()` lands on every breakpoint and restarts its time stepping there.
+any jump there. `advance()` lands on every breakpoint and restarts its time stepping there. A
+device's time starts at 0 when it's made, and waveforms are read against it: `solve()` doesn't
+advance it, `advance()` and `step()` do.
 
 ## Grid
 

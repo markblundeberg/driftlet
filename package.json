@@ -21,6 +21,7 @@
   "types": "./types/index.d.ts",
   "files": [
     "src",
+    "docs",
     "types",
     "llms.txt"
   ],
