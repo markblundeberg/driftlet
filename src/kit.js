@@ -7,7 +7,7 @@ import { FARADAY } from './constants.js';
 
 export { build, combine, layer, ohmic, bath } from './stack.js';
 export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
-export { traces } from './traces.js';
+export { traces, speciesRole } from './traces.js';
 export { live } from './live.js';
 export { describe, unitWarnings } from './describe.js';
 export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal } from './data.js';

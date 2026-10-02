@@ -18,6 +18,7 @@ export function makeSolution(solver, result = {}) {
   const sol = {
     x: Float64Array.from(grid.x),
     region: Int32Array.from(grid.nodeRegion),
+    species: species.map(({ name, z }) => ({ name, z })),
     regions: model.regions.map((r, k) => ({ name: r.name, material: model.materials[r.material].name, x0: grid.x[grid.regionStart[k]], x1: grid.x[grid.regionEnd[k]] })),
     phi,
     c: {},

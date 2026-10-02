@@ -3,16 +3,45 @@
 // `element.innerHTML = bandDiagram(sol)`. For your own plotting, `traces()` in driftlet/kit gives
 // the same lines as data.
 //
-// Colour follows the species (its slot), solid lines are species voltages V_i, dashed ones
-// standard levels V°_i, and regions are shaded bands labelled with their material. The colours
-// are CSS custom properties (--driftlet-1 … --driftlet-8, --driftlet-ink, …) with light and dark
-// defaults of no specificity, so any rule on the page restyles them.
+// The theme follows the ESBD book's: species voltages V_i are thick solid lines and standard levels
+// V°_i thin solid ones, in the species' colour; redox levels are thick dashed lines and their
+// standard levels thin dashed ones; φ is thin, dotted and grey. Electrons are steel blue, cations
+// (holes too) warm colours, anions cool ones, redox levels blue-violets; each colour follows its
+// species. A species drawn with a display offset carries a ⌇ mark. The colours are CSS custom
+// properties (--driftlet-electron, --driftlet-cation-1 …, --driftlet-anion-1 …,
+// --driftlet-redox-1 …, --driftlet-ink, …) with light and dark defaults of no specificity, so any
+// rule on the page restyles them.
 
 import { traces } from './traces.js';
 
-// Categorical hues in a fixed order (validated for colour-vision deficiency, light and dark).
-const LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
-const DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+// Colours by role, light and dark (validated together for colour-vision deficiency; line weight,
+// dash and the legend carry identity too). A role with more members than colours cycles.
+export const THEME = Object.freeze({
+  light: { electron: ['#3a74b4'], cation: ['#d1362f', '#c8650f', '#b8417a', '#8a5a12'], anion: ['#11968a', '#0a9bbd', '#2e8b57'], redox: ['#5a4bc6', '#9a3fae', '#3f5fa8'] },
+  dark: { electron: ['#5b95d6'], cation: ['#e8584f', '#d0772a', '#d65d95', '#b88a3e'], anion: ['#219c8f', '#2aa5bb', '#3aa874'], redox: ['#8b7ff0', '#a86bc9', '#7a9ae0'] },
+});
+const ROLES = ['electron', 'cation', 'anion', 'redox'];
+
+/**
+ * The colour of a trace's role and slot (a CSS colour), for drawing other charts in the same
+ * colours as the level diagrams.
+ * @param {'electron' | 'cation' | 'anion' | 'redox'} role
+ * @param {number} slot
+ * @param {{ dark?: boolean }} [opts]
+ */
+export function themeColor(role, slot, { dark = false } = {}) {
+  const list = THEME[dark ? 'dark' : 'light'][role];
+  return list[slot % list.length];
+}
+
+// Line weight and dash by kind (thick: what carriers feel; thin: standard levels).
+const STROKE = {
+  level: { width: 2.8, dash: '' },
+  standard: { width: 1.3, dash: '' },
+  redox: { width: 2.8, dash: '8 5' },
+  'redox-standard': { width: 1.3, dash: '6 4' },
+  phi: { width: 1.3, dash: '1.5 3' },
+};
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -49,12 +78,14 @@ function lengthUnit(L) {
 }
 
 const style = (id) => {
-  const vars = (cols) => cols.map((c, k) => `--driftlet-${k + 1}:${c};`).join('');
+  const vars = (mode) => ROLES.flatMap((role) => THEME[mode][role].map((c, k) => `--driftlet-${role}${role === 'electron' ? '' : `-${k + 1}`}:${c};`)).join('');
+  const light = `${vars('light')}--driftlet-ink:#0b0b0b;--driftlet-muted:#52514e;--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1`;
+  const dark = `${vars('dark')}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64`;
   return (
     `<style>` +
-    `:where(#${id}){${vars(LIGHT)}--driftlet-ink:#0b0b0b;--driftlet-muted:#52514e;--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1}` +
-    `@media (prefers-color-scheme: dark){:where(:root:not([data-theme="light"]) #${id}){${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}}` +
-    `:where(:root[data-theme="dark"] #${id}){${vars(DARK)}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64}` +
+    `:where(#${id}){${light}}` +
+    `@media (prefers-color-scheme: dark){:where(:root:not([data-theme="light"]) #${id}){${dark}}}` +
+    `:where(:root[data-theme="dark"] #${id}){${dark}}` +
     `</style>`
   );
 };
@@ -130,10 +161,20 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
 
   // Lines, clipped to the plot, broken where undefined.
   out.push(`<clipPath id="${id}-clip"><rect x="${pad.l}" y="${pad.t}" width="${pw}" height="${ph}"/></clipPath>`);
-  out.push(`<g clip-path="url(#${id}-clip)" fill="none" stroke-width="2" stroke-linejoin="round">`);
-  const dash = { level: '', standard: ' stroke-dasharray="6 4"', phi: ' stroke-dasharray="1 3"', redox: ' stroke-dasharray="10 3 2 3"' };
-  const colour = (s) => `var(--driftlet-${(s.slot % 8) + 1})`;
-  for (const s of series) {
+  out.push(`<g clip-path="url(#${id}-clip)" fill="none" stroke-linejoin="round">`);
+  const colour = (s) => {
+    if (s.role === 'phi' || !s.role) return 'var(--driftlet-muted)';
+    if (s.role === 'electron') return 'var(--driftlet-electron)';
+    return `var(--driftlet-${s.role}-${(s.slot % THEME.light[s.role].length) + 1})`;
+  };
+  const stroke = (s) => {
+    const st = STROKE[s.kind] ?? STROKE.level;
+    return `stroke="${colour(s)}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}`;
+  };
+  // Thin lines first, so the thick ones the carriers feel sit on top.
+  const order = [...series].sort((a, b) => (STROKE[a.kind]?.width ?? 2) - (STROKE[b.kind]?.width ?? 2));
+  const marks = [];
+  for (const s of order) {
     let d = '', pen = false;
     for (let g = 0; g < x.length; g++) {
       const v = s.y[g];
@@ -144,9 +185,21 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
       d += `${pen ? 'L' : 'M'}${r2(px(x[g]))} ${r2(py(v))}`;
       pen = true;
     }
-    if (d) out.push(`<path d="${d}" stroke="${colour(s)}"${dash[s.kind]}><title>${esc(s.label)}</title></path>`);
+    if (d) out.push(`<path d="${d}" ${stroke(s)}><title>${esc(s.label)}</title></path>`);
+    // A species drawn with a display offset: a small zigzag across its V_i, near the left.
+    if (s.shift && s.kind === 'level') {
+      const g = [...x.keys()].find((k) => x[k] >= xs + 0.04 * (xe - xs) && Number.isFinite(s.y[k]) && s.y[k] >= y0 && s.y[k] <= y1);
+      if (g !== undefined) marks.push({ x: px(x[g]), y: py(s.y[g]), s });
+    }
+  }
+  for (const m of marks) {
+    const zz = `M${r2(m.x - 3)} ${r2(m.y - 9)}l6 4.5l-6 4.5l6 4.5l-6 4.5`;
+    out.push(`<path d="${zz}" stroke="var(--driftlet-ink)" stroke-width="1.6" fill="none"><title>${esc(m.s.label)}</title></path>`);
   }
   out.push(`</g>`);
+  if (series.some((s) => s.shift)) {
+    out.push(`<text x="${pad.l + pw - 6}" y="${pad.t + ph - 6}" text-anchor="end" fill="var(--driftlet-muted)">⌇ = per-species offset</text>`);
+  }
   out.push(`<rect x="${pad.l}" y="${pad.t}" width="${pw}" height="${ph}" fill="none" stroke="var(--driftlet-face)"/>`);
 
   // Legend (two or more lines): a swatch in each line's colour and dash, its label in ink.
@@ -154,7 +207,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     rows.forEach((row, k) => {
       const yy = (title ? 22 : 0) + 14 + k * 18;
       for (const { s, x: xx } of row) {
-        out.push(`<line x1="${xx}" x2="${xx + 22}" y1="${yy - 4}" y2="${yy - 4}" stroke="${colour(s)}" stroke-width="2"${dash[s.kind]}/>`);
+        out.push(`<line x1="${xx}" x2="${xx + 22}" y1="${yy - 4}" y2="${yy - 4}" ${stroke(s)}/>`);
         out.push(`<text x="${xx + 28}" y="${yy}" fill="var(--driftlet-ink)">${esc(s.label)}</text>`);
       }
     });
@@ -164,8 +217,8 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
 }
 
 /**
- * A solution's level diagram as an SVG string: each charged species' voltage (solid) and
- * standard level (dashed), regions as bands. Options are those of `traces()` and `levelChart()`.
+ * A solution's level diagram as an SVG string: each charged species' voltage (thick) and
+ * standard level (thin), regions as bands. Options are those of `traces()` and `levelChart()`.
  * @param {import('./types.js').Solution} sol
  * @param {Parameters<typeof traces>[1] & Parameters<typeof levelChart>[1]} [opts]
  * @returns {string}

@@ -37,19 +37,25 @@ test('traces: a line per level, colour slots that follow the species, regions an
   const sol = cell();
   const tr = traces(sol, { phi: true, levels: [{ half: silver, label: 'Ag+/Ag' }] });
   assert.deepEqual(
-    tr.series.map((s) => [s.id, s.kind, s.slot]),
+    tr.series.map((s) => [s.id, s.kind, s.role, s.slot]),
     [
-      ['V:Ag+', 'level', 0],
-      ['Vstd:Ag+', 'standard', 0],
-      ['V:NO3-', 'level', 1],
-      ['Vstd:NO3-', 'standard', 1],
-      ['V:e-', 'level', 2], // a metal's Fermi level, with no standard level
-      ['phi', 'phi', 3],
-      ['level:0', 'redox', 4],
+      ['V:Ag+', 'level', 'cation', 0],
+      ['Vstd:Ag+', 'standard', 'cation', 0],
+      ['V:NO3-', 'level', 'anion', 0],
+      ['Vstd:NO3-', 'standard', 'anion', 0],
+      ['V:e-', 'level', 'electron', 0], // a metal's Fermi level, with no standard level
+      ['phi', 'phi', 'phi', 0],
+      ['level:0', 'redox', 'redox', 0],
     ],
   );
-  // Showing fewer species doesn't repaint the rest.
-  assert.deepEqual(traces(sol, { species: ['e-'] }).series.map((s) => s.slot), [2]);
+  // Showing fewer species doesn't repaint the rest; a couple's two levels share a colour.
+  assert.deepEqual(traces(sol, { species: ['NO3-'] }).series.map((s) => [s.role, s.slot]), [['anion', 0], ['anion', 0]]);
+  const both = traces(sol, { species: [], levels: [{ half: silver }, { half: silver, standard: true }] }).series;
+  assert.deepEqual(both.map((s) => [s.kind, s.slot]), [['redox', 0], ['redox-standard', 0]]);
+  // A display offset moves all of a species' lines, and says so.
+  const shifted = traces(sol, { species: ['NO3-'], shifts: { 'NO3-': -1.5 } }).series[0];
+  const g = sol.x.length >> 1;
+  assert.ok(Math.abs(shifted.y[g] - (sol.V['NO3-'][g] - 1.5)) < 1e-12 && shifted.shift === -1.5 && /⌇−1.5 V$/.test(shifted.label));
   assert.deepEqual(tr.regions.map((r) => [r.name, r.material]), [['region 0', 'Ag'], ['electrolyte', 'water'], ['region 2', 'Ag']]);
   assert.ok(Math.abs(tr.regions[1].x1 - 11e-6) < 1e-15 && tr.faces.length === 2 && tr.faces[0] === tr.regions[1].x0);
   for (const s of tr.series) for (const v of s.y) if (Number.isFinite(v)) assert.ok(v > tr.range[0] && v < tr.range[1]);
@@ -67,15 +73,23 @@ test('the SVG level diagram: one path per line, broken where a level is undefine
     assert.equal(open, close, tag);
   }
   const paths = [...svg.matchAll(/<path d="([^"]*)"[^>]*><title>([^<]*)<\/title>/g)].map((m) => ({ d: m[1], label: m[2] }));
-  assert.deepEqual(paths.map((p) => p.label), ['V Ag+', 'V° Ag+', 'V NO3-', 'V° NO3-', 'V e-']);
+  // Thin standard levels first, so the thick species voltages sit on top.
+  assert.deepEqual(paths.map((p) => p.label), ['V° Ag+', 'V° NO3-', 'V Ag+', 'V NO3-', 'V e-']);
+  const byLabel = Object.fromEntries(paths.map((p) => [p.label, p]));
   // Ag⁺ lives in the solution only: one stretch. The Fermi level is in both metals: two.
   const moves = (p) => p.d.match(/M/g).length;
-  assert.equal(moves(paths[0]), 1);
-  assert.equal(moves(paths[4]), 2);
+  assert.equal(moves(byLabel['V Ag+']), 1);
+  assert.equal(moves(byLabel['V e-']), 2);
   assert.match(svg, />electrolyte \(water\)<\/text>/);
   // A single line needs no legend.
   const one = levelChart(traces(sol, { species: ['e-'] }));
-  assert.equal((one.match(/<line [^>]*stroke-width="2"/g) ?? []).length, 0);
+  assert.equal((one.match(/<line [^>]*stroke-width=/g) ?? []).length, 0);
+  // Species voltages thick, standard levels thin; a shifted species is marked and explained.
+  assert.match(svg, /stroke-width="2.8"><title>V Ag\+<\/title>/);
+  assert.match(svg, /stroke-width="1.3"><title>V° Ag\+<\/title>/);
+  const marked = bandDiagram(sol, { shifts: { 'NO3-': -1 } });
+  assert.match(marked, /⌇ = per-species offset/);
+  assert.match(marked, /<path d="M[^"]*l6 4.5l-6 4.5[^"]*" stroke="var\(--driftlet-ink\)"[^>]*><title>V NO3- ⌇−1 V<\/title>/);
   // Two diagrams in one page don't share ids.
   assert.notEqual(svg.match(/id="([^"]+)"/)[1], one.match(/id="([^"]+)"/)[1]);
 });

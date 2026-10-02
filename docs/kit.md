@@ -118,21 +118,29 @@ console.log(`redox level at mid-cell: ${redox[sol.x.length >> 1].toFixed(4)} V`)
 Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the bookkeeping of
 a level diagram:
 
-- `traces(sol, { species, standard, phi, levels })` (in `driftlet/kit`) returns its lines as
-  data: per charged species its voltage V_i (`kind: 'level'`) and standard level V°_i
-  (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
-  (`levels: [{ half, label, standard }]`), and `labels` by trace id to rename lines
-  (`{ 'V:e-': 'Fermi level' }`). Each line has a label and a colour `slot`, its
-  species' index, so a colour follows its species whichever lines are shown. Undefined values are
-  `NaN` (break the line there), and doubled interface nodes share an x, so steps draw as
-  vertical lines. It also gives the regions (`{ name, material, x0, x1 }`), the faces' positions
-  and a suggested range.
-- `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed:
-  solid lines for species voltages, dashed for standard levels, regions as labelled bands. Its
-  colours are CSS custom properties (`--driftlet-1` … `--driftlet-8`, `--driftlet-ink`, …) with
-  light and dark defaults of no specificity, so a rule such as `.figure svg { --driftlet-1: … }`
-  restyles them. `xlim` (m) zooms into a window, with ticks and range fitted to it.
-  `levelChart(traces, opts)` draws traces you've edited.
+- `traces(sol, { species, standard, phi, levels, labels, shifts })` (in `driftlet/kit`) returns
+  its lines as data: per charged species its voltage V_i (`kind: 'level'`) and standard level
+  V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
+  (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). `labels`
+  renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
+  volts (`{ 'K+': 3.5 }`), moving all of a species' lines together so that widely separated
+  species share one readable plot, as the ESBD book does; the label says so (⌇). Each line has a
+  colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`, `'redox'`, `'phi'`) and a
+  `slot` within it, so a colour follows its species whichever lines are shown
+  (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
+  there), and doubled interface nodes share an x, so steps draw as vertical lines. It also gives
+  the regions (`{ name, material, x0, x1 }`), the faces' positions and a suggested range.
+- `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed, in
+  the ESBD book's style: species voltages thick and solid, standard levels thin and solid, redox
+  levels thick and dashed, standard redox levels thin and dashed, φ thin, dotted and grey;
+  electrons steel blue, cations warm colours, anions cool ones, redox levels blue-violets (a
+  palette checked for colour-vision deficiency, light and dark); a ⌇ across a shifted species,
+  with a note. The colours are CSS custom properties (`--driftlet-electron`,
+  `--driftlet-cation-1` …, `--driftlet-anion-1` …, `--driftlet-redox-1` …, `--driftlet-ink`, …)
+  with defaults of no specificity, so a rule such as `.figure svg { --driftlet-electron: … }`
+  restyles them; `THEME` and `themeColor(role, slot, { dark })` give them to other charts.
+  `xlim` (m) zooms into a window, with ticks and range fitted to it. `levelChart(traces, opts)`
+  draws traces you've edited.
 
 ```js
 import { Device } from 'driftlet';

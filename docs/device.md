@@ -478,7 +478,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | Field | Contents |
 |---|---|
 | `x`, `region` | node positions and region index; each interface position appears twice (one node per side) |
-| `regions` | `{ name, material, x0, x1 }` for each region |
+| `species`, `regions` | `{ name, z }` for each species; `{ name, material, x0, x1 }` for each region |
 | `phi` | bookkeeping φ, V (`NaN` where undefined) |
 | `c[name]`, `mu[name]`, `muStd[name]` | concentration, μ̄, standard level μ° + zFφ (`NaN` where absent) |
 | `V[name]`, `Vstd[name]` | species voltage μ̄/(zF) and standard level as a voltage (charged species) |

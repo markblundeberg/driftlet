@@ -178,6 +178,7 @@
  * @typedef {object} Solution
  * @property {Float64Array} x node positions, m (interface positions appear twice)
  * @property {Int32Array} region region index per node
+ * @property {{ name: string, z: number }[]} species the species, in order, with their charge numbers
  * @property {{ name: string, material: string, x0: number, x1: number }[]} regions each region's name, material and extent, m
  * @property {Float64Array} phi bookkeeping φ, V (NaN where undefined)
  * @property {Record<string, Float64Array>} c concentrations, mol/m³ (NaN where absent)
