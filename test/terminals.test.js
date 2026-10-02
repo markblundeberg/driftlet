@@ -82,6 +82,45 @@ test('a triangle wave on a series capacitor: I = C dV/dt exactly, with steps on 
   });
 });
 
+test('a sawtooth and a step: advance() runs through jumps, with I = C dV/dt between them and the jump charge after', () => {
+  const C1 = 0.2, C2 = 0.5, Ld = 50e-9, epsr = 10, period = 1e-3;
+  const Cs = 1 / (1 / C1 + Ld / (epsr * EPS0) + 1 / C2);
+  const device = (V) =>
+    new Device({
+      species: [{ name: 'X', z: 0, cRef: 1 }],
+      materials: { oxide: { epsr, species: { X: { D: 0, mu0: 0 } } } },
+      regions: [{ material: 'oxide', length: Ld, c0: { X: 1 } }],
+      contacts: { left: { V, phi: { type: 'capacitive', C: C1 }, zeroCharge: 0 }, right: { V: 0, phi: { type: 'capacitive', C: C2 }, zeroCharge: 0 } },
+      grid: { minCells: 4 },
+    });
+  // A sawtooth: 0 → 1 V over each period, then straight back to 0 (the repeat wraps).
+  const saw = device({ t: [0, period], values: [0, 1], repeat: true });
+  saw.solve();
+  const run = saw.advance(2.5 * period);
+  assert.ok(run.converged && run.done);
+  let prev = 0, charge = 0;
+  run.trace.t.forEach((t, k) => {
+    const wrapped = prev > 0 && Math.abs(prev / period - Math.round(prev / period)) < 1e-9; // this step began at a wrap
+    if (!wrapped) assert.ok(Math.abs(run.trace.current[k] / (Cs / period) - 1) < 1e-9, `t=${t}`);
+    charge += run.trace.current[k] * (t - prev);
+    prev = t;
+  });
+  // Over whole periods the charge returns to where it started; after 2.5 the ramp is half up.
+  assert.ok(Math.abs(charge / (Cs * 0.5) - 1) < 1e-9, `${charge} vs ${Cs * 0.5}`);
+  // A step: two points at one time.
+  const step = device({ t: [0, 1e-3, 1e-3], values: [0, 0, 0.7] });
+  step.solve();
+  const s = step.advance(3e-3);
+  assert.ok(s.converged && s.done && s.trace.t.some((t) => t === 1e-3), 'a step lands on the jump');
+  let q = 0, last = 0;
+  s.trace.t.forEach((t, k) => {
+    q += s.trace.current[k] * (t - last);
+    last = t;
+  });
+  assert.ok(Math.abs(q / (Cs * 0.7) - 1) < 1e-9, `${q} vs ${Cs * 0.7}`);
+  assert.throws(() => device({ t: [0, 1, 1, 1], values: [0, 1, 2, 3] }), /at most two points at one time/);
+});
+
 test('impedance at either terminal of a two-terminal device is the same', () => {
   const dev = new Device(silverNitrate());
   const fs = [0.01, 1, 100];

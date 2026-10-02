@@ -584,7 +584,7 @@ export class Solver {
   _refreshSources() {
     this.terms.forEach((t, k) => {
       if (t.drive.kind !== 'V' || t.drive.R > 0) return;
-      this.termV[k] = this.sourceOverride.has(k) ? this.sourceOverride.get(k) : sourceAt(t.drive.src, this.sourceTime);
+      this.termV[k] = this.sourceOverride.has(k) ? this.sourceOverride.get(k) : sourceAt(t.drive.src, this.sourceTime, this.sourceBefore);
     });
   }
 
@@ -1358,7 +1358,7 @@ export class Solver {
   // A floating terminal's circuit law: I − I_set = 0 (driven by a current), or I − (V_src − V)/R = 0
   // (a source behind a resistance).
   _circuit(k) {
-    const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime);
+    const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime, this.sourceBefore);
     if (d.kind === 'I') this.termRes[k] = this.termI[k] - src;
     else {
       this.termRes[k] = this.termI[k] - (src - this.termV[k]) / d.R;
@@ -1735,13 +1735,17 @@ export class Solver {
       this.cOld.set(cN);
       this.contactDStart = DN;
     }
-    this.sourceTime = this.steady ? this.time : this.time + dt; // implicit: sources at the step's end
+    // Implicit: sources at the step's end, as seen from within the step (before any jump there).
+    // A step landing on a breakpoint ends on it exactly.
+    const tEnd = this.landing !== undefined && Math.abs(this.time + dt - this.landing) <= 1e-9 * dt ? this.landing : this.time + dt;
+    this.sourceTime = this.steady ? this.time : tEnd;
+    this.sourceBefore = !this.steady;
     const result = this.newton(dtEff, opts);
     result.bdf = bdf;
     if (result.converged) {
       this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, D: DN });
       if (this.history.length > 3) this.history.length = 3;
-      this.time += dt;
+      this.time = tEnd;
       this.lastDt = dtEff;
       this.contactDOld = this.contactDStart;
       this._accumulateBoundaryIntake(dtEff, cN);
@@ -1752,6 +1756,7 @@ export class Solver {
       this.sourceTime = this.time;
       this.computeConcentrations();
     }
+    this.sourceBefore = false;
     return result;
   }
 
@@ -1784,8 +1789,9 @@ export class Solver {
         h = tb - this.time;
         clamped = true;
       }
+      this.landing = atBreak ? tb : clamped ? tEnd : undefined;
       const snap = this._snapshot();
-      let err, p;
+      let err, p, half = null;
       if (this.history.length === 0) {
         // First step: backward Euler, checked against two half steps (whose result is kept).
         const full = this.step(h);
@@ -1793,7 +1799,10 @@ export class Solver {
         if (full.converged) {
           const uFull = Float64Array.from(this.u);
           this._restore(snap);
-          const a = this.step(h / 2), b = a.converged ? this.step(h / 2) : a;
+          const a = this.step(h / 2);
+          // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
+          half = a.converged ? { t: this.time, current: this._terminalCurrent(), voltage: this.termV[1] - this.termV[0] } : null;
+          const b = a.converged ? this.step(h / 2) : a;
           iterations += a.iterations + (b === a ? 0 : b.iterations);
           if (b.converged) {
             err = this._errorNorm(uFull);
@@ -1829,11 +1838,17 @@ export class Solver {
       steps++;
       dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
       if (atBreak) this.history = []; // the solution's slope jumps here: restart the order
+      if (half) {
+        trace.t.push(half.t);
+        trace.current.push(half.current);
+        trace.voltage.push(half.voltage);
+      }
       trace.t.push(this.time);
       trace.current.push(this._terminalCurrent());
       trace.voltage.push(this.termV[1] - this.termV[0]);
     }
     this.dtNext = dt;
+    this.landing = undefined;
     return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace };
   }
 

@@ -437,11 +437,12 @@ function normalizeSource(v, path) {
   need(Array.isArray(v.t) && Array.isArray(v.values) && v.t.length >= 1 && v.t.length === v.values.length, `${path}: t and values need the same length, at least 1`);
   v.t.forEach((t, k) => {
     finite(t, `${path}.t[${k}]`);
-    need(k === 0 || t > v.t[k - 1], `${path}.t must increase strictly`);
+    need(k === 0 || t >= v.t[k - 1], `${path}.t must not decrease`);
+    need(k < 2 || t > v.t[k - 2], `${path}.t: at most two points at one time (a step)`);
   });
   v.values.forEach((x, k) => finite(x, `${path}.values[${k}]`));
   need(v.repeat === undefined || typeof v.repeat === 'boolean', `${path}.repeat must be true or false`);
-  need(!v.repeat || v.t.length >= 2, `${path}: a repeating waveform needs at least two points`);
+  need(!v.repeat || v.t[v.t.length - 1] > v.t[0], `${path}: a repeating waveform needs a period (its last time after its first)`);
   return { t: Float64Array.from(v.t), values: Float64Array.from(v.values), repeat: v.repeat === true };
 }
 
@@ -462,18 +463,26 @@ export function normalizeDrives(def, model) {
   return drives;
 }
 
-/** A source's value at time t (s). */
-export function sourceAt(src, t) {
+/**
+ * A source's value at time t (s). At a step (two points at one time) it's the value after the
+ * step; with `before`, the limit from earlier times, as a time step ending at t sees it.
+ */
+export function sourceAt(src, t, before = false) {
   if (src.value !== undefined) return src.value;
   const { t: ts, values: vs, repeat } = src, n = ts.length;
+  if (before) t -= 8 * Number.EPSILON * Math.max(Math.abs(t), ts[n - 1] - ts[0], 1e-300); // just before: a few ulps
   if (repeat) {
     const T = ts[n - 1] - ts[0];
     t = ts[0] + ((((t - ts[0]) % T) + T) % T);
   }
-  if (t <= ts[0]) return vs[0];
+  if (t < ts[0]) return vs[0];
   if (t >= ts[n - 1]) return vs[n - 1];
-  let k = 1;
+  let k = 0;
   while (ts[k] < t) k++;
+  if (ts[k] === t) {
+    while (k + 1 < n && ts[k + 1] === t) k++; // after a step
+    return vs[k];
+  }
   const w = (t - ts[k - 1]) / (ts[k] - ts[k - 1]);
   return vs[k - 1] + w * (vs[k] - vs[k - 1]);
 }

@@ -366,9 +366,13 @@ something passes it (a linked species, or a gate's displacement).
 **Waveforms.** `V` and `I` can be piecewise linear in time:
 `{ t: [0, 1, 2], values: [0, 0.5, 0], repeat: true }` (s and V, or s and A/m²), constant beyond
 the points, or periodic with period t_last − t_0 when `repeat` is set: a triangle wave is a cyclic
-voltammogram. Steps take the sources at their end time; `advance()` lands on every breakpoint
-and restarts its time stepping there, where the slope jumps. `solve()` and `impedance()` use the
-values at the present time.
+voltammogram. A **step** is two points at one time, `{ t: [0, 1e-3, 1e-3], values: [0, 0, 0.5] }`,
+and a repeating waveform whose last value differs from its first jumps back each period (a
+sawtooth); a square wave is steps both ways. Write a jump as a step rather than as a very fast
+ramp, which the time-step control has to resolve. A time step ending at t sees the sources as
+they are just before t (so it ends on a jump's near side, and the next step carries the jump);
+`solve()` and `impedance()` use the values at the present time, after any jump there.
+`advance()` lands on every breakpoint and restarts its time stepping there.
 
 ## Grid
 
