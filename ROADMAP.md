@@ -18,6 +18,9 @@ for live demos.
   either side (each rate an unknown of the face block); electrodes as conductor regions.
 - Circuits: voltage, galvanostatic (incl. open circuit), load resistor.
 - Bulk mass-action reactions.
+- Strictly neutral regions solved in better-conditioned unknowns on transient steps (current
+  continuity for one balance, φ̂' and η − zφ̂ as unknowns): a 3 M KCl salt bridge with 1 µM traces
+  of every other ion, between eddy-mixed solutions, runs from its unmixed start through days.
 - Backward-Euler transients with step halving, and conservation bookkeeping.
 - Statistics: one general per-material interface, c(ζ) with its capacitance matrix, and the
   excess-potential Scharfetter–Gummel flux. Fermi–Dirac, lattice gas (Bikerman crowding, site
@@ -71,6 +74,13 @@ for live demos.
      10⁻¹² Hz) as converged, so the convergence test can't see an imbalance carried by so tiny
      a conductance. Once robust, the MOS demo can get a frequency control sweeping from the
      low-frequency C–V to the high-frequency one.
+   - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes
+     and the edges of neutral faces are solved in better-conditioned unknowns (φ̂', η − zφ̂),
+     but at a neutral face the two edge nodes still pass every species' flux through its own
+     unknown, which carries storage-sized values, so round-off returns at ~1e-5 thermal units
+     on steps of ~1e-11 s with 3 M against 1 µM. A perfectly sharp junction between such
+     solutions then can't start (a pre-mixed zone a few layers wide can). A fix would combine
+     the two edge nodes' balances, which the block-tridiagonal layout can't hold as a row.
    - Conserved combinations (moieties) as constraint rows in the direct steady solve, as
      spectators already are, instead of huge time steps. A closed Pt | Fe³⁺, Fe²⁺, FeCl²⁺ | Pt
      cell with a complexation reaction reports `converged: false` at its true steady state
@@ -102,11 +112,11 @@ for live demos.
    - A worked membrane-potential example with a validation against Goldman–Hodgkin–Katz in its
      own regime (a thin membrane with ε > 0 and few ions, so the field is constant), not the
      electroneutral one a guinea pig reached for.
-   - A worked example of an electrochemical cell (e.g. Daniell) with its voltage ledger: the
-     Nernst voltage, then junction, ohmic drop, each electrode's overpotential and
-     concentration polarisation, summing exactly to the terminal voltage, each read off the
-     solution. A ledger's division is specific to its device family, so it belongs in a worked
-     example, not the library; the spatial diagram stays the primary picture.
+   - A written worked example of an electrochemical cell with its voltage ledger (the Daniell
+     demo has one: the couples' levels, the electrolyte's share, each electrode's
+     overpotential, summing exactly to the terminal voltage). A ledger's division is specific
+     to its device family, so it belongs in a worked example, not the library; the spatial
+     diagram stays the primary picture.
 
 3. **Ship 0.1.0.** npm package and jsdelivr (the agent guide's pinned CDN version is checked
    against `package.json` once it's set), live demos (code sandboxes, screenshots in the
