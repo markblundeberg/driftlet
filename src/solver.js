@@ -145,6 +145,7 @@ import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js
 import { bernoulli, bernoulliDerivative } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { nextBreakpoint, sourceAt } from './device.js';
+import { DeviceError } from './errors.js';
 
 export class SolverError extends Error {
   constructor(message, details) {
@@ -2078,11 +2079,12 @@ export class Solver {
     const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
     const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
     const start = clock();
-    const trace = { t: [], current: [], voltage: [] };
+    const sample = this._probes(opts.probes);
+    const trace = { t: [], current: [], voltage: [], ...(sample ? { probes: sample.out } : {}) };
     let steps = 0, rejected = 0, iterations = 0, failed = false;
     // Already there (an animation frame with no time to add): nothing to do, and the step size
     // carried to the next call stays as it was.
-    if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [] } };
+    if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace };
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
     let grow = 0; // longer first steps tried after a Newton failure (see below)
@@ -2120,7 +2122,7 @@ export class Solver {
           this._restore(snap);
           const a = this.step(h / 2);
           // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
-          half = a.converged ? { t: this.time, current: this._terminalCurrent(), voltage: this.termV[1] - this.termV[0] } : null;
+          half = a.converged ? { t: this.time, current: this._terminalCurrent(), voltage: this.termV[1] - this.termV[0], probes: sample?.read() } : null;
           const b = a.converged ? this.step(h / 2) : a;
           iterations += a.iterations + (b === a ? 0 : b.iterations);
           if (b.converged) {
@@ -2172,10 +2174,12 @@ export class Solver {
         trace.t.push(half.t);
         trace.current.push(half.current);
         trace.voltage.push(half.voltage);
+        if (sample) sample.push(half.probes);
       }
       trace.t.push(this.time);
       trace.current.push(this._terminalCurrent());
       trace.voltage.push(this.termV[1] - this.termV[0]);
+      if (sample) sample.push(sample.read());
     }
     this.dtNext = dt;
     this.landing = undefined;
@@ -2229,6 +2233,54 @@ export class Solver {
     // Backward Euler's error against a linear predictor; after a BDF2 step without enough
     // history this overestimates, which is safe.
     return { scale: bdf ? 1 : h / (2 * h + hp), order: 1 };
+  }
+
+  // Probes for a transient's trace: { x, species, quantity: 'c' | 'V', region } read after every
+  // accepted step, linearly between the two nodes of x's region around it. At an interface x
+  // belongs to both regions, so `region` (a name or index) picks the side; it defaults to the
+  // first region that holds x.
+  _probes(probes) {
+    if (probes === undefined) return null;
+    const { grid, regions, species } = this.model;
+    const fail = (m) => {
+      throw new DeviceError(m);
+    };
+    if (!Array.isArray(probes)) fail('advance: probes must be an array of { x, species, quantity, region }');
+    const plan = probes.map((p, k) => {
+      const path = `advance: probes[${k}]`;
+      const i = species.findIndex((sp) => sp.name === p?.species);
+      if (i < 0) fail(`${path}.species: no species ${JSON.stringify(p?.species)}`);
+      const quantity = p.quantity ?? 'c';
+      if (quantity !== 'c' && quantity !== 'V') fail(`${path}.quantity must be 'c' (mol/m³) or 'V' (the species voltage)`);
+      if (quantity === 'V' && species[i].z === 0) fail(`${path}: '${p.species}' is neutral, so it has no voltage; read 'c'`);
+      const x = grid.x, inside = (r) => p.x >= x[grid.regionStart[r]] && p.x <= x[grid.regionEnd[r]];
+      let r;
+      if (p.region !== undefined) {
+        r = typeof p.region === 'number' ? p.region : regions.findIndex((reg) => reg.name === p.region);
+        if (!(r >= 0 && r < regions.length)) fail(`${path}.region: no region ${JSON.stringify(p.region)}`);
+        if (!inside(r)) fail(`${path}.x (${p.x} m) is outside region ${JSON.stringify(p.region)}`);
+      } else {
+        r = regions.findIndex((_, rr) => inside(rr));
+        if (!(Number.isFinite(p.x) && r >= 0)) fail(`${path}.x must be a position in the device, in m (got ${p.x})`);
+      }
+      let g = grid.regionStart[r];
+      while (g + 1 < grid.regionEnd[r] && x[g + 1] < p.x) g++;
+      const w = x[g + 1] > x[g] ? (p.x - x[g]) / (x[g + 1] - x[g]) : 0;
+      return { i, g, w, quantity };
+    });
+    const out = plan.map(() => []);
+    const { n, M } = this;
+    const at = (q, g) => {
+      if (!this.present[g * n + q.i]) return NaN;
+      if (q.quantity === 'c') return this.c[g * n + q.i];
+      const o = this.blockOfNode[g] * M + 1 + q.i;
+      return (this.VT * (this.u[o] + this.uLo[o])) / this.z[q.i];
+    };
+    return {
+      out,
+      read: () => plan.map((q) => (1 - q.w) * at(q, q.g) + q.w * at(q, q.g + 1)),
+      push: (values) => values.forEach((v, k) => out[k].push(v)),
+    };
   }
 
   // Largest difference from ref among the potentials that carry state, in thermal units.

@@ -33,4 +33,15 @@ export const units = Object.freeze({
   um: (x) => x * 1e-6,
   /** cm²/s → m²/s */
   cm2PerS: (x) => x * 1e-4,
+  // Back out of SI, for display.
+  /** mol/m³ → mol/L */
+  toMolar: (x) => x * 1e-3,
+  /** mol/m³ → particles per cm³ */
+  toPerCm3: (x) => (x * AVOGADRO) / 1e6,
+  /** m → nm */
+  toNm: (x) => x * 1e9,
+  /** m → µm */
+  toUm: (x) => x * 1e6,
+  /** m²/s → cm²/s */
+  toCm2PerS: (x) => x * 1e4,
 });

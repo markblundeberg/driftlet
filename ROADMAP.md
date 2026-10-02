@@ -124,6 +124,14 @@ for live demos.
    - A worked membrane-potential example with a validation against Goldman–Hodgkin–Katz in its
      own regime (a thin membrane with $`\varepsilon > 0`$ and few ions, so the field is constant), not the
      electroneutral one a guinea pig reached for.
+   - Done: sources as data (`pulse`, `square`, `triangle`, `ramp`, an `injector` port,
+     `recombination` from a lifetime), probes in a transient's trace, `units` back out of SI.
+   - An initial profile as plain data: `c0` tabulated against x (piecewise linear), so a
+     transient can start from an already-injected or relaxing state without simulating how it
+     got there, and without a back door around the conservation bookkeeping.
+   - Before 1.0, definitions as a contract: an optional `version` field, and errors that name
+     renames ("`foo` became `bar` in 0.3"), since agents will copy old definitions long after the
+     API moves on.
    - A written worked example of an electrochemical cell with its voltage ledger (the Daniell
      demo has one: the couples' levels, the electrolyte's share, each electrode's
      overpotential, summing exactly to the terminal voltage). A ledger's division is specific

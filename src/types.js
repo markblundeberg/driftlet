@@ -204,8 +204,9 @@
  * @property {number} time s
  * @property {boolean} [done] advance(): whether tEnd was reached (false if the frame budget ran out)
  * @property {number} [rejected] advance(): steps rejected by error control or Newton failure
- * @property {{ t: number[], current: number[], voltage: number[] }} [trace] advance(): terminal
- *   current (A/m², toward +x) and voltage after each accepted step
+ * @property {{ t: number[], current: number[], voltage: number[], probes?: number[][] }} [trace] advance():
+ *   terminal current (A/m², toward +x) and voltage after each accepted step, and each probe's
+ *   reading (mol/m³, or V for quantity 'V'), interpolated between the nodes around its x
  */
 
 /**

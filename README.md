@@ -230,6 +230,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Floating island | Gauss's law; conserved amounts through gate sweeps | 1e-12 |
 | pn junction | exact built-in potential; depletion charge; short-diode J–V | 1e-12; 1%; 2e-3 |
 | Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
+| Haynes–Shockley pulse | an injected hole packet's drift, spread and decay at the ambipolar μ*, D*, 1/τ*; nothing lost while it goes in | 2e-4; 1e-2; 2e-3 |
 | Illuminated long pn diode | `J_sc = qG(L_n + L_p + W)` from a cold start; superposition at low injection | 5e-3; 1e-2 |
 | Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |

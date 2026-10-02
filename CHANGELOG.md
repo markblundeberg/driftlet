@@ -4,6 +4,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Kit sources: waveforms (`pulse`, `square`, `triangle`, `ramp`), `injector()` (a port that
+  spreads a driven current evenly) and `recombination()` (from a minority lifetime).
+- `advance(t, { probes })`: a species' concentration or voltage at points inside the device, in
+  the trace after every accepted step.
+- `units` back out of SI: `toPerCm3`, `toMolar`, `toCm2PerS`, `toUm`, `toNm`.
+- Validation: a Haynes–Shockley pulse against the ambipolar drift, spread and decay.
 - Newton damps only the device's potentials, not floating terminal voltages (which enter
   linearly): a current-driven port switching off, its voltage collapsing by hundreds of volts,
   no longer crawls. A strong Haynes–Shockley pulse takes 55% fewer factorisations.

@@ -113,6 +113,51 @@ const redox = level(sol, silver); // V_Ag⁺(x) in the solution
 console.log(`redox level at mid-cell: ${redox[sol.x.length >> 1].toFixed(4)} V`);
 ```
 
+## Sources
+
+Helpers that write sources as plain data:
+
+- **Waveforms** for a terminal's `V` or `I`: `pulse({ start, width, amplitude, rise, base })`,
+  `square({ high, low, period, duty })`, `triangle({ from, to, period })` (a voltammogram's sweep)
+  and `ramp({ from, to, duration, start })`. Each returns `{ t, values }` (with `repeat` for the
+  periodic ones), times from the device's time 0. A pulse keeps its area,
+  `amplitude · width`, whatever its `rise`; with no rise its edges are jumps, which the time
+  stepping handles exactly, so it must start after t = 0 (where a device starts, and `solve()`
+  reads it).
+- **`injector({ name, region, from, to, species, I, headroom })`**: a port that injects a species
+  into a window at a driven current (a number or a waveform), spread evenly. Its conductance is
+  set small enough that at the peak current the port sits `headroom` volts (default 2.5) above
+  the window, so every node takes the same share, like a current source.
+- **`recombination({ material, tau, majority })`**: band-to-band recombination e⁻ + h⁺ ⇌ 0 as
+  a bulk reaction, from the low-injection minority lifetime it gives at that majority density,
+  $`k_f = 1/(\tau \cdot n_{\mathrm{maj}})`$.
+
+Read a transient at points inside the device with `advance(t, { probes })` (see the
+[device reference](device.md#using-a-device)). And `units` converts back out of SI for display:
+`toPerCm3`, `toMolar`, `toCm2PerS`, `toUm`, `toNm`, `toEV`.
+
+```js
+import { Device, FARADAY, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor, pulse, injector, recombination } from 'driftlet/kit';
+
+// Holes injected for 0.5 µs into n-Ge under 10 V/cm (Haynes–Shockley), read 1 mm downstream.
+const ND = units.perCm3(1e15), I = (0.01 * ND * FARADAY * 50e-6) / 0.5e-6; // 1% of n₀ over 50 µm
+const dev = new Device(
+  build({
+    T: 300,
+    library: [semiconductor('Ge')],
+    stack: [ohmic(3), layer('Ge', 3e-3, { name: 'bar', donors: ND }), ohmic(0)],
+    bulkReactions: [recombination({ material: 'Ge', tau: 20e-6, majority: ND })],
+    ports: [injector({ region: 'bar', from: 0.475e-3, to: 0.525e-3, species: 'h+', I: pulse({ width: 0.5e-6, amplitude: I, rise: 1e-9 }) })],
+    grid: { hmin: 10e-6, hmax: 10e-6 },
+  }),
+);
+dev.solve();
+const run = dev.advance(8e-6, { dtMax: 20e-9, probes: [{ x: 1.5e-3, species: 'h+' }] });
+const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
+console.log(`the pulse passes at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ≈ ${units.toPerCm3(seen[k]).toExponential(1)} cm⁻³`);
+```
+
 ## Plotting
 
 Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the bookkeeping of

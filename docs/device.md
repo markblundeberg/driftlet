@@ -455,7 +455,12 @@ const now = dev.solution();                   // snapshot of the current state
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
-  `rejected`, and a `trace` of terminal current and voltage after every accepted step.
+  `rejected`, and a `trace` of terminal current and voltage after every accepted step. With
+  `probes: [{ x, species, quantity, region }]` the trace also reads a species inside the device,
+  as `trace.probes[k]` beside `trace.t`: its concentration (`quantity: 'c'`, the default, mol/m³)
+  or species voltage (`'V'`), linearly between the nodes around `x` (at an interface, `region`
+  picks the side). That's what a detector at `x` sees. Probes read at accepted steps, which grow
+  as a transient slows, so give `dtMax` to resolve a signal in time.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
   device. A held terminal's voltage is perturbed, or a driven one's current; the other terminals

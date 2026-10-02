@@ -44,7 +44,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
 - **Exports.** `driftlet`: `Device`, `units`, and the constants `FARADAY`, `GAS_CONSTANT`,
   `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
-  `level`, `SHE`, `describe`, `live`, `traces`, the data library (`aqueous`, `semiconductor`,
+  `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
+  `injector`, `recombination`), the data library (`aqueous`, `semiconductor`,
   `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`).
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
@@ -188,42 +189,34 @@ console.log(`anodic current ${dev.solve().terminals.left.current.toFixed(2)} A/m
 ## Template: a transient, with a pulse injected sideways
 
 A **port** feeds a window of nodes inside a region from the side (a point contact, an injector,
-a MOS channel's source and drain), held at a voltage or driven by a current waveform. Transients
-run with `advance(t)`, adaptively, from the steady state that `solve()` finds at time 0.
+a MOS channel's source and drain), held at a voltage or driven by a current; `injector()` writes
+one that spreads a driven current evenly. Transients run with `advance(t)`, adaptively, from the
+steady state that `solve()` finds at time 0, and `probes` read the device at points inside it.
 
 ```js
 import { Device, units, FARADAY } from 'driftlet';
-import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+import { build, layer, ohmic, semiconductor, pulse, injector, recombination } from 'driftlet/kit';
 
-// A pulse of holes injected into an n-type germanium bar under a field (Haynes–Shockley), and the
-// excess hole density sampled downstream as it drifts past.
+// A pulse of holes injected into an n-type germanium bar under a field (Haynes–Shockley), and
+// the hole density read 1 mm downstream as it drifts past.
 const L = 4e-3, ND = units.perCm3(1e15), E = 1000; // m, mol/m³, V/m (10 V/cm)
-const tau = 20e-6, pulse = 0.5e-6, Ip = 0.05 * ND * FARADAY * 50e-6 / pulse; // s, s, A/m²: 5% of n₀ over 50 µm
+const width = 0.5e-6, I = (0.05 * ND * FARADAY * 50e-6) / width; // s; A/m²: 5% of n₀ over 50 µm
 const def = build({
   T: 300,
   library: [semiconductor('Ge')],
   stack: [ohmic(E * L), layer('Ge', L, { name: 'bar', donors: ND }), ohmic(0)], // holes drift toward +x
-  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Ge: 1 / (tau * ND) } }], // τ = 1/(kf·n₀) for minority holes
-  // The emitter: a port driven by a current waveform, feeding holes into a 50 µm window. Its
-  // voltage floats to deliver that current (here ~16 V above the window); a small G like this
-  // spreads it evenly over the window, a large one sends it where holes are drawn away fastest.
-  ports: [{ name: 'emitter', region: 'bar', from: 0.5e-3, to: 0.55e-3, terminal: 'h+',
-    species: { 'h+': { type: 'conductance', G: 1e6 } },
-    I: { t: [0, 1e-9, pulse, pulse + 1e-9], values: [0, Ip, Ip, 0] } }], // A/m², t from the device's time 0
+  bulkReactions: [recombination({ material: 'Ge', tau: 20e-6, majority: ND })], // the minority lifetime
+  ports: [injector({ region: 'bar', from: 0.5e-3, to: 0.55e-3, species: 'h+', I: pulse({ width, amplitude: I, rise: 1e-9 }) })],
   grid: { hmin: units.um(10), hmax: units.um(10) },
 });
 const dev = new Device(def);
 const rest = dev.solve(); // the steady state at t = 0 (solve() doesn't advance time)
-const probe = rest.x.findIndex((x) => x >= 1.5e-3); // 1 mm downstream of the emitter
-const trace = [];
-for (let k = 1; k <= 100; k++) {
-  // advance() lands exactly on its target; in a page, call it once per animation frame with
-  // { budgetMs: 12 } and carry on next frame while sol.done is false.
-  const sol = dev.advance(k * 0.1e-6);
-  trace.push([sol.time, sol.c['h+'][probe] - rest.c['h+'][probe]]);
-}
-const [tPeak] = trace.reduce((a, b) => (b[1] > a[1] ? b : a));
-console.log(`peak at ${(tPeak * 1e6).toFixed(2)} µs: μ_p ≈ ${(1e-3 / (E * (tPeak - pulse / 2)) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1980 against the 1900 put in: a spreading, decaying pulse peaks a little early
+// In a page, call advance(tNext, { budgetMs: 12, probes }) once per animation frame, carrying on
+// next frame while sol.done is false. Probes read at accepted steps; dtMax keeps them close.
+const run = dev.advance(10e-6, { dtMax: 20e-9, probes: [{ x: 1.525e-3, species: 'h+' }] });
+const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
+const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
+console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1950 for the 1900 put in: a spreading, decaying pulse peaks a little early
 ```
 
 Transients cost more where a carrier's density spans many decades (minority holes in silicon
