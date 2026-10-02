@@ -56,6 +56,14 @@ export function relativeLevels(el, sol, { species, title, labels = {} }) {
   el.innerHTML = levelChart(tr, { width: 720, height: 360, range: [lo - pad, hi + pad], ylabel: 'V_i − V_i(left) (mV)', title });
 }
 
+// Concentration profiles drawn like the level diagrams (same layout, x axis and species colours),
+// so they line up beneath them: levelChart() takes any lines as traces.
+export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim }) {
+  const series = species.map((name) => ({ id: `c:${name}`, label: `c ${name}`, kind: 'level', ...speciesRole(sol, name), y: sol.c[name] }));
+  const tr = { x: sol.x, series, regions: sol.regions, faces: sol.regions.slice(1).map((r) => r.x0), range };
+  el.innerHTML = levelChart(tr, { width: 720, height: 300, title, ylabel, range, xlim });
+}
+
 // A slider's value from the URL (?V=0.4), for sharing a state or taking a screenshot.
 export function fromQuery(input) {
   const v = new URLSearchParams(location.search).get(input.id);
