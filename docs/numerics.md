@@ -349,8 +349,7 @@ column by column on devices that cover every assembly path.
 - Converged when a full, undamped update is below 1e-10 (thermal units). Quadratic
   convergence makes the remaining residual negligible.
 - Or converged as far as round-off allows: updates already below 1e-6 thermal units (~26 nV)
-  in a steady solve, or 1e-5 on a time step (whose error control works at ~1e-3), that have
-  stopped shrinking for two iterations. A badly conditioned system's round-off floor can sit
+  that have stopped shrinking for two iterations. A badly conditioned system's round-off floor can sit
   above 1e-10: a strictly neutral material on a short step, where φ is fixed only through
   fluxes that the storage term dwarfs (a condition number of about h²/(D·dt), much reduced by
   the change of variables below), converges quadratically to ~1e-9 and then rattles there.

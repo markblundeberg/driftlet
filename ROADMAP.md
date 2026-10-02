@@ -75,8 +75,11 @@ for live demos.
      (GMRES with the residual's J·v), but the steady solve is fragile: stepping the gate up warm
      from depletion fails at the onset of inversion ("exactly singular"), and cold starts
      converge at some gate voltages and grids, not others (a grid shifted by round-off can flip
-     it). Once robust, the MOS demo can get a frequency control sweeping from the low-frequency
-     C–V to the high-frequency one.
+     it). Its transients struggle too: after a 10 mV gate step, `advance()` takes ~66,000 steps
+     to reach 1e5 s, and the gate charge overshoots the low-frequency value (1.01 against 0.885
+     × C_ox·δV) with a residual current of ~1e-9 A/m² through the oxide. Once robust, the MOS
+     demo can get a frequency control sweeping from the low-frequency C–V to the high-frequency
+     one.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes
      and the edges of neutral faces are solved in better-conditioned unknowns (φ̂', η − zφ̂),
      but at a neutral face the two edge nodes still pass every species' flux through its own

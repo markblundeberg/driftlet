@@ -1918,8 +1918,9 @@ export class Solver {
       // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
       // above tol: a strictly neutral material on a short step, where φ is fixed only through
       // fluxes that the storage term dwarfs, rattles at ~1e-9 after converging quadratically.
-      // On a time step, whose error control works at ~1e-3, the floor may sit up to 1e-5.
-      const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = dt === Infinity ? 1e-6 : 1e-5;
+      // (Raising this floor lets a weakly held population drift: a MOS capacitor without a
+      // channel port then showed a DC leak through its oxide.)
+      const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = 1e-6;
       if (alpha === 1 && it >= 4 && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax, roundoff: true };
