@@ -270,6 +270,22 @@ export class Solver {
     const need = new Uint8Array(nNodes);
     need[0] = need[nNodes - 1] = 1;
     for (const port of model.ports) for (const g of port.nodes) need[g] = 1;
+    // Nodes of strictly neutral (ε = 0) regions that stay neutral, where φ is defined: interior
+    // ones, and edges at neutral faces (an electrode face's edge node holds its double layer's
+    // charge), away from contacts and ports. On a transient step one charged species' balance
+    // there becomes charge conservation (see _chargeRows).
+    this.chargeNode = new Uint8Array(nNodes);
+    const neutralFace = (f) => f >= 0 && f < model.interfaces.length && !model.interfaces[f].conductor && model.interfaces[f].phi.type === 'neutral';
+    regions.forEach((reg, r) => {
+      const mat = materials[reg.material];
+      if (mat.conductor || mat.epsr !== 0) return;
+      const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
+      for (let g = g0; g <= g1; g++) {
+        const edgeOk = (g > g0 || neutralFace(r - 1)) && (g < g1 || neutralFace(r));
+        if (edgeOk && !need[g] && !this.phiUndefined[g]) this.chargeNode[g] = 1;
+      }
+    });
+    this.combining = false;
     this.bookkeeping = regions.map((_, r) => {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], nodes = [], segs = [];
       for (let g = g0; g <= g1; g++) if (need[g]) nodes.push(g);
@@ -899,6 +915,7 @@ export class Solver {
 
     // Faces: the flux node carries D, the linked species' fluxes and the reaction rates.
     for (let f = 0; f < this.nFaces; f++) this._face(f);
+    if (this.combining && dt !== Infinity) this._chargeRows(dt);
 
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
@@ -926,19 +943,20 @@ export class Solver {
     for (let g = g0; g <= g1; g++) {
       const b = blockOfNode[g], v = vol[g];
       const m = sizes[b], oB = offB[b], lb = b * M, p = loc[lb]; // p: φ's row, −1 where undefined
+      const combined = this.combining && this.chargeNode[g] === 1 && dt !== Infinity; // (storage added in _chargeRows)
       let q = rhoFixed[g], dq = 0;
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
         const ck = c[k], l = loc[lb + 1 + i];
-        res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
-        JB[oB + l * m + l] += (v * ck) / dt;
+        if (!(combined && z[i] !== 0)) {
+          res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+          JB[oB + l * m + l] += (v * ck) / dt;
+          if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+        }
         q += F * z[i] * ck;
         dq += F * z[i] * z[i] * ck;
-        if (p >= 0 && z[i] !== 0) {
-          JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
-          JB[oB + p * m + l] += -v * F * z[i] * ck;
-        }
+        if (p >= 0 && z[i] !== 0) JB[oB + p * m + l] += -v * F * z[i] * ck;
       }
       if (p >= 0) {
         res[R[lb]] -= v * q;
@@ -949,19 +967,15 @@ export class Solver {
 
   // A concentrated node (any statistics): ∂c_i/∂η_j = K_ij and ∂c_i/∂φ̂ = −(Kz)_i.
   _nodeConcentrated(g, dt) {
-    const { n, M, res, c, cOld, z } = this, R = this.rix, F = FARADAY;
-    const b = this.blockOfNode[g], v = this.model.grid.vol[g], Kg = g * n * n;
+    const { n, M, res, c, z } = this, R = this.rix, F = FARADAY;
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g];
+    const combined = this.combining && this.chargeNode[g] === 1 && dt !== Infinity; // (storage added in _chargeRows)
     let q = this.rhoFixed[g], dq = 0;
     for (let i = 0; i < n; i++) {
       const k = g * n + i, r = 1 + i;
       if (!this.present[k]) continue;
-      res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
-      for (let j = 0; j < n; j++) {
-        const Kij = this.K[Kg + i * n + j];
-        if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
-      }
       const Kz = this._Kz(g, i);
-      this._j(b, r, b, 0, (-v * Kz) / dt);
+      if (!(combined && z[i] !== 0)) this._storage(g, i, dt, Kz);
       q += F * z[i] * c[k];
       dq += F * z[i] * Kz;
       if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
@@ -970,6 +984,58 @@ export class Solver {
     if (!this.phiUndefined[g]) {
       res[R[b * M]] -= v * q;
       this._j(b, 0, b, 0, v * dq);
+    }
+  }
+
+  // Species i's storage at node g, v(c − c_old)/dt, in its balance row and the Jacobian
+  // (∂c_i/∂η_j = K_ij, ∂c_i/∂φ̂ = −(Kz)_i; for ideal statistics K is diagonal, c_i).
+  _storage(g, i, dt, Kz = this._Kz(g, i)) {
+    const { n, M, res, c, cOld } = this, R = this.rix;
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g], k = g * n + i, r = 1 + i;
+    res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
+    if (this.nodeIdeal[g]) this._j(b, r, b, r, (v * c[k]) / dt);
+    else {
+      const Kg = g * n * n;
+      for (let j = 0; j < n; j++) {
+        const Kij = this.K[Kg + i * n + j];
+        if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
+      }
+    }
+    if (Kz !== 0 && !this.phiUndefined[g]) this._j(b, r, b, 0, (-v * Kz) / dt);
+  }
+
+  // Charge conservation in a strictly neutral region on a transient step. There, the balances
+  // weighted by z_i sum to (v/dt)·(change in net charge) plus the current's divergence, while the
+  // neutrality row is v times the net charge itself: on a short step the two rows are nearly
+  // dependent, and elimination loses digits in proportion to storage/flux times the range of
+  // concentrations (a trace ion beside 3 M KCl lost ten). So at such nodes the balance of the
+  // most abundant charged species (by z²c) is replaced by Σ (z_i/z_k)·balance_i assembled without
+  // storage: current continuity, with the storage terms cancelling against neutrality exactly.
+  // The other species get their storage back. (A start-of-step charge, round-off in a solved
+  // state, is not carried over; the neutrality row holds the new state neutral.)
+  _chargeRows(dt) {
+    const { n, M, res, c, z, sys, loc, present } = this, R = this.rix;
+    const { A, B, C, sizes, offA, offB, offC } = sys;
+    for (let g = 0; g < this.nNodes; g++) {
+      if (this.chargeNode[g] !== 1) continue;
+      const b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < this.nB - 1 ? sizes[b + 1] : 0;
+      let k = -1, best = -1;
+      for (let i = 0; i < n; i++) {
+        const w = present[g * n + i] && z[i] !== 0 ? z[i] * z[i] * c[g * n + i] : -1;
+        if (w > best) [k, best] = [i, w];
+      }
+      if (k < 0) continue;
+      const lk = loc[lb + 1 + k];
+      for (let i = 0; i < n; i++) {
+        if (i === k || !present[g * n + i] || z[i] === 0) continue;
+        const li = loc[lb + 1 + i], w = z[i] / z[k];
+        for (let q = 0; q < mp; q++) A[offA[b] + lk * mp + q] += w * A[offA[b] + li * mp + q];
+        for (let q = 0; q < m; q++) B[offB[b] + lk * m + q] += w * B[offB[b] + li * m + q];
+        for (let q = 0; q < mn; q++) C[offC[b] + lk * mn + q] += w * C[offC[b] + li * mn + q];
+        res[R[lb + 1 + k]] += w * res[R[lb + 1 + i]];
+        for (const t of this.termB) t[R[lb + 1 + k]] += w * t[R[lb + 1 + i]];
+      }
+      for (let i = 0; i < n; i++) if (i !== k && present[g * n + i] && z[i] !== 0) this._storage(g, i, dt);
     }
   }
 
@@ -1769,7 +1835,13 @@ export class Solver {
     const tEnd = this.landing !== undefined && Math.abs(this.time + dt - this.landing) <= 1e-9 * dt ? this.landing : this.time + dt;
     this.sourceTime = this.steady ? this.time : tEnd;
     this.sourceBefore = !this.steady;
-    const result = this.newton(dtEff, opts);
+    this.combining = true;
+    let result;
+    try {
+      result = this.newton(dtEff, opts);
+    } finally {
+      this.combining = false;
+    }
     result.bdf = bdf;
     if (result.converged) {
       this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, D: DN });

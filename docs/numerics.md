@@ -506,7 +506,22 @@ resolve (because ε is tiny, or the cells are coarse), the charge the interface 
 into the two half-boxes beside it. The bulk stays right, but the interface compositions and D_f
 become mesh-dependent. The true ε → 0 limit has no interface charge and a free Donnan-type jump,
 which is the `neutral` law. The defaults follow from this: `neutral` between two ε = 0
-materials, `pinned` otherwise. Solutions warn when a resolved-model double layer is under-resolved.
+materials, `pinned` otherwise (and `pinned` between two ε = 0 materials is an error: with no field
+on either side, nothing would determine its charge). Solutions warn when a resolved-model double
+layer is under-resolved.
+
+On a transient step, a strictly neutral node's balances weighted by z_i sum to (v/dt) times the
+change in its net charge plus the current's divergence, while its neutrality row is v times the
+net charge itself. On a short step the two are nearly the same row, and elimination loses digits
+in proportion to storage/flux, h²/(D·dt), times the range of concentrations: a trace ion beside
+3 M KCl lost about ten, enough to stall Newton. So at each node that stays neutral (interior
+nodes, and edges at `neutral` faces; not an electrode face's edge, which holds its double layer's
+charge), the balance of the most abundant charged species (by z²c) is replaced by
+Σ (z_i/z_k)·balance_i assembled without storage: current continuity, with the storage terms
+cancelling against neutrality exactly. The new state is held neutral by the neutrality row; a
+start-of-step charge (round-off, in a solved state) isn't carried over. Steady solves and the
+impedance keep the plain rows (there's no storage at dt = ∞, and the impedance reads the storage
+matrix from them).
 
 A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when λ_D ≪ h, is on the
 [roadmap](../ROADMAP.md). It would handle macroscopic devices with real double-layer charge at

@@ -190,3 +190,37 @@ test('a coarse grid at a depleted electrode is reported, and a graded one is qui
     assert.deepEqual(fine.warnings, [], `V=${V}`);
   }
 });
+
+test('ε = 0: a short step converges cleanly across a wide range of concentrations (3 M KCl beside 10 mM ions)', () => {
+  // A zinc electrode, ZnSO₄, then a KCl bridge carrying 10 mM of each other ion, then copper. On a
+  // 1 µs step the z-weighted balances nearly duplicate the neutrality row; assembled naively,
+  // elimination lost ~10 digits here and Newton rattled at ~1e-6 thermal units, never converging.
+  const ions = { 'Zn2+': [2, 0.703e-9, -147.06e3], 'Cu2+': [2, 0.714e-9, 65.49e3], 'K+': [1, 1.957e-9, -283.27e3], 'SO42-': [-2, 1.065e-9, -744.53e3], 'Cl-': [-1, 2.032e-9, -131.228e3] };
+  const names = Object.keys(ions), tr = 10;
+  const c0A = { 'Zn2+': 100, 'SO42-': 100, 'Cu2+': tr, 'K+': tr, 'Cl-': 3 * tr };
+  const c0B = { 'K+': 3000, 'Cl-': 3000 + 2 * tr, 'Zn2+': tr, 'Cu2+': tr, 'SO42-': tr };
+  const electrode = (metal) => ({
+    phi: 'neutral',
+    reactions: [{ equation: `${metal}2+ + 2 e- = ${metal}(s)`, fixed: { [`${metal}(s)`]: 0 }, k0: 1e-3, alpha: 0.5 }],
+  });
+  const dev = new Device({
+    species: [...names.map((name) => ({ name, z: ions[name][0], cRef: 1000 })), { name: 'e-', z: -1 }],
+    materials: {
+      water: { epsr: 0, species: Object.fromEntries(names.map((name) => [name, { D: ions[name][1], mu0: ions[name][2] }])) },
+      Zn: { conductor: { species: 'e-', conductivity: 1.7e7 } },
+      Cu: { conductor: { species: 'e-', conductivity: 6e7 } },
+    },
+    regions: [
+      { material: 'Zn', length: 1e-3 },
+      { name: 'ZnSO4', material: 'water', length: 0.01, c0: c0A },
+      { name: 'KCl', material: 'water', length: 0.01, c0: c0B },
+      { material: 'Cu', length: 1e-3 },
+    ],
+    interfaces: [electrode('Zn'), {}, electrode('Cu')],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 1.1015, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin: 1e-6, hmax: 2e-4 },
+  });
+  const r = dev.step(1e-6);
+  assert.ok(r.converged, JSON.stringify(r.history));
+  assert.ok(r.history.at(-1) < 1e-8, `final update ${r.history.at(-1)}`);
+});
