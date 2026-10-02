@@ -98,7 +98,9 @@ regions: [
   host it's balanced by background electronic carriers.
 - `c0`: initial concentrations, mol/m³. Species connected to a contact start from that
   contact's level and don't need it. Any other species (blocked everywhere, or only made and
-  consumed by reactions) does: its `c0` fixes the amount it conserves.
+  consumed by reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive (μ̄
+  is logarithmic in them); to have none of a species in a region, leave it out of that region's
+  material.
 - `velocity`: imposed flow toward +x, m/s (default 0). It carries every mobile species
   (D > 0) along with the fluid. It's uniform within the region: in strict 1D, incompressible
   flow is the same everywhere, so different velocities in different regions stand for lateral

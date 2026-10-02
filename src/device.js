@@ -189,7 +189,12 @@ export function normalizeDevice(def) {
         need(speciesIndex.has(sname), `${path}.c0.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
         const i = speciesIndex.get(sname);
         need(mat.present[i], `${path}.c0.${sname}: '${sname}' is absent from material '${mat.name}'`);
-        c0[i] = positive(v, `${path}.c0.${sname}`);
+        need(
+          isFiniteNumber(v) && v > 0,
+          `${path}.c0.${sname} must be a concentration > 0 (mol/m³), got ${JSON.stringify(v)}; to have none of '${sname}' here, ` +
+            `leave it out of material '${mat.name}' (a region of another material without it, if it's present elsewhere)`,
+        );
+        c0[i] = v;
       }
     }
     return {
