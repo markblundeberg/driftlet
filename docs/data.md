@@ -2,9 +2,9 @@
 
 `driftlet/kit` carries a small library of bulk properties, each with its source, so a demo can
 start from vetted numbers. It's kept small on purpose, because a wrong library number is worse
-than a wrong demo number. Each entry is checked in the tests against an independent table: μ°
-against the electrochemical series, D against limiting conductivities, band data against the
-quoted intrinsic concentrations.
+than a wrong demo number. The ions and semiconductors are checked in the tests against
+independent tables: μ° against the electrochemical series, D against limiting conductivities,
+band data against the quoted intrinsic concentrations.
 
 The library holds **bulk properties only**. How levels line up at an interface, a surface's
 work function, a pzc and rate constants all belong to a particular interface or surface, so
@@ -14,7 +14,7 @@ you give them yourself (see [conventions](conventions.md)).
 
 `aqueous(names, { epsr, material })` returns water holding the named ions, as a library piece
 for `build()`: each ion a species with c_ref = 1000 mol/m³ (1 M), and the material `water` with
-its D and μ°. `epsr` defaults to water's 78.36 (Malmberg and Maryott 1956); `epsr: 0` makes the
+its D and μ°. `epsr` defaults to water's 78.30 at 25 °C (Malmberg and Maryott 1956); `epsr: 0` makes the
 solution strictly neutral, for macroscopic models without double layers. The data are in `IONS`,
 and μ° of liquid water is `H2O` (−237.129 kJ/mol), for reactions such as H₂O ⇌ H⁺ + OH⁻.
 
@@ -45,7 +45,7 @@ and μ° of liquid water is `H2O` (−237.129 kJ/mol), for reactions such as H�
 - **Standard state**: the tables use 1 mol/kg, and the library uses 1 M. In dilute water at 25 °C
   they differ by 0.3%, about 7 J/mol in μ°.
 - **Iron**: Fe²⁺'s ΔfG° gives E°(Fe²⁺/Fe) = −0.41 V, where the CRC series lists −0.447 V; sources
-  disagree on iron. The difference between Fe³⁺ and Fe²⁺ does reproduce E°(Fe³⁺/Fe²⁺) = 0.771 V,
+  disagree on iron. The difference between Fe³⁺ and Fe²⁺ gives E°(Fe³⁺/Fe²⁺) = 0.769 V, against the tabulated 0.771 V,
   which is what a Fe³⁺/Fe²⁺ redox demo needs.
 
 ## Semiconductors, 300 K
@@ -75,11 +75,15 @@ degenerate doping. The data are in `SEMICONDUCTORS`, in the source's units (cm�
 ## Metals, 20 °C
 
 `metal(name, { material })` returns a conductor material carrying `e-`, with its conductivity
-(S/m) from the CRC Handbook's resistivities. The data are in `METALS`.
+1/ρ from the CRC Handbook's resistivities of pure metals at 293 K ("Electrical resistivity of
+pure metals"). The data are in `METALS`, as `rho` (10⁻⁸ Ω·m) and `conductivity` (S/m). They
+aren't cross-checked against a second table in the tests; a metal's conductivity only sets the
+ohmic drop inside it, which is usually negligible.
 
 | | Ag | Cu | Au | Al | Zn | Li | Pt |
 |---|---|---|---|---|---|---|---|
-| σ (10⁷ S/m) | 6.29 | 5.96 | 4.10 | 3.77 | 1.69 | 1.08 | 0.943 |
+| ρ (10⁻⁸ Ω·m) | 1.587 | 1.678 | 2.214 | 2.65 | 5.90 | 9.28 | 10.5 |
+| σ (10⁷ S/m) | 6.30 | 5.96 | 4.52 | 3.77 | 1.69 | 1.08 | 0.952 |
 
 There are no work functions: a work function belongs to a surface, not a metal, and it varies
 by facet and adsorbate. Give a face's `zeroCharge` (or use `vacuumZeroCharge` with a work
@@ -92,7 +96,7 @@ import { Device } from 'driftlet';
 import { build, layer, ohmic, half, level, SHE, aqueous, metal } from 'driftlet/kit';
 
 // A platinum electrode in Fe³⁺/Fe²⁺ chloride at equilibrium: its Fermi level sits at the
-// couple's redox level, E° = 0.771 V against SHE when the two are equal.
+// couple's redox level, E° against SHE when the two are equal: 0.769 V from the library's NBS values (tables list 0.771 V).
 const iron = half('Fe3+ + e- = Fe2+');
 const def = build({
   library: [aqueous(['H+', 'Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 }), metal('Pt')],

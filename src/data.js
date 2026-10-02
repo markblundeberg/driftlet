@@ -39,7 +39,7 @@ export const IONS = freeze({
 export const H2O = -237.129e3;
 
 /** Relative permittivity of water at 25 °C (Malmberg and Maryott, J. Res. NBS 56, 1, 1956). */
-export const WATER_EPSR = 78.36;
+export const WATER_EPSR = 78.3;
 
 /**
  * Semiconductors at 300 K (Sze, Physics of Semiconductor Devices, 2nd ed., 1981, appendix):
@@ -53,16 +53,15 @@ export const SEMICONDUCTORS = freeze({
   GaAs: { epsr: 13.1, Eg: 1.424, chi: 4.07, Nc: 4.7e17, Nv: 7.0e18, mun: 8500, mup: 400 },
 });
 
-/** Electrical conductivity of metals at 20 °C, S/m (the inverse of the resistivities in the CRC Handbook). */
-export const METALS = freeze({
-  Ag: { conductivity: 6.29e7 },
-  Cu: { conductivity: 5.96e7 },
-  Au: { conductivity: 4.10e7 },
-  Al: { conductivity: 3.77e7 },
-  Zn: { conductivity: 1.69e7 },
-  Li: { conductivity: 1.08e7 },
-  Pt: { conductivity: 9.43e6 },
-});
+/**
+ * Metals at 293 K: resistivity rho (10⁻⁸ Ω·m, CRC Handbook, "Electrical resistivity of pure
+ * metals") and the conductivity 1/rho (S/m).
+ */
+export const METALS = freeze(
+  Object.fromEntries(
+    Object.entries({ Ag: 1.587, Cu: 1.678, Au: 2.214, Al: 2.65, Zn: 5.9, Li: 9.28, Pt: 10.5 }).map(([name, rho]) => [name, { rho, conductivity: 1e8 / rho }]),
+  ),
+);
 
 /**
  * Water with the named ions, as a library piece for `build()`: each ion as a species
