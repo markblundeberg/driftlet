@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.2.0 (2026-10-02)
 
 - Kit sources: waveforms (`pulse`, `square`, `triangle`, `ramp`), `injector()` (a port that
   spreads a driven current evenly) and `recombination()` (from a minority lifetime).
