@@ -36,6 +36,86 @@ function complexSolve(Ar, Ai, K) {
   return { re, im };
 }
 
+// GMRES(m), restarted, for a complex system op(x) = b, with vectors as [re, im] pairs and op
+// already preconditioned; x holds the starting guess and receives the answer.
+function gmres(op, b, x, { m = 12, restarts = 4, tol = 1e-8 } = {}) {
+  const N = b[0].length;
+  const cdot = (a, c) => {
+    let re = 0, im = 0;
+    for (let j = 0; j < N; j++) {
+      re += a[0][j] * c[0][j] + a[1][j] * c[1][j];
+      im += a[0][j] * c[1][j] - a[1][j] * c[0][j];
+    }
+    return [re, im]; // conj(a)·c
+  };
+  const norm = (a) => Math.sqrt(cdot(a, a)[0]);
+  const bn = norm(b) || 1;
+  for (let cycle = 0; cycle < restarts; cycle++) {
+    const ax = op(x), r = [Float64Array.from(b[0], (v, j) => v - ax[0][j]), Float64Array.from(b[1], (v, j) => v - ax[1][j])];
+    const beta = norm(r);
+    if (!(beta > tol * bn)) return;
+    const V = [[r[0].map((v) => v / beta), r[1].map((v) => v / beta)]];
+    const H = Array.from({ length: m + 1 }, () => Array.from({ length: m }, () => [0, 0]));
+    const cs = [], sn = [], g = Array.from({ length: m + 1 }, () => [0, 0]);
+    g[0] = [beta, 0];
+    let k = 0, converged = false;
+    for (; k < m; k++) {
+      const w = op(V[k]);
+      for (let i = 0; i <= k; i++) {
+        const [hr, hi] = cdot(V[i], w);
+        H[i][k] = [hr, hi];
+        for (let j = 0; j < N; j++) {
+          w[0][j] -= hr * V[i][0][j] - hi * V[i][1][j];
+          w[1][j] -= hr * V[i][1][j] + hi * V[i][0][j];
+        }
+      }
+      const hn = norm(w);
+      H[k + 1][k] = [hn, 0];
+      V.push([w[0].map((v) => v / (hn || 1)), w[1].map((v) => v / (hn || 1))]);
+      // The earlier rotations, then a new one zeroing H[k+1][k]: x' = c x + s y, y' = −s̄ x + c y.
+      for (let i = 0; i < k; i++) {
+        const [xr, xi] = H[i][k], [yr, yi] = H[i + 1][k], c = cs[i], [sr, si] = sn[i];
+        H[i][k] = [c * xr + sr * yr - si * yi, c * xi + sr * yi + si * yr];
+        H[i + 1][k] = [-(sr * xr + si * xi) + c * yr, -(sr * xi - si * xr) + c * yi];
+      }
+      const [ar, ai] = H[k][k], am = Math.hypot(ar, ai), t = Math.hypot(am, hn);
+      const c = t > 0 ? am / t : 1, s = am > 0 ? [(ar / am) * (hn / t), (ai / am) * (hn / t)] : [1, 0];
+      cs.push(c);
+      sn.push(s);
+      H[k][k] = am > 0 ? [(ar / am) * t, (ai / am) * t] : [hn, 0];
+      H[k + 1][k] = [0, 0];
+      const [gr, gi] = g[k];
+      g[k] = [c * gr, c * gi];
+      g[k + 1] = [-(s[0] * gr + s[1] * gi), -(s[0] * gi - s[1] * gr)];
+      if (!(Math.hypot(g[k + 1][0], g[k + 1][1]) > tol * bn)) {
+        k++;
+        converged = true;
+        break;
+      }
+    }
+    // Back-substitute H y = g over the first k columns, then x += V y.
+    const y = Array.from({ length: k }, () => [0, 0]);
+    for (let i = k - 1; i >= 0; i--) {
+      let [vr, vi] = g[i];
+      for (let j = i + 1; j < k; j++) {
+        const [hr, hi] = H[i][j], [yr, yi] = y[j];
+        vr -= hr * yr - hi * yi;
+        vi -= hr * yi + hi * yr;
+      }
+      const [dr, di] = H[i][i], d2 = dr * dr + di * di;
+      y[i] = [(vr * dr + vi * di) / d2, (vi * dr - vr * di) / d2];
+    }
+    for (let i = 0; i < k; i++) {
+      const [yr, yi] = y[i];
+      for (let j = 0; j < N; j++) {
+        x[0][j] += yr * V[i][0][j] - yi * V[i][1][j];
+        x[1][j] += yr * V[i][1][j] + yi * V[i][0][j];
+      }
+    }
+    if (converged) return; // (by its own residual estimate)
+  }
+}
+
 // Discretisation and nonlinear solver.
 //
 // Unknowns, per solver block (M = 1 + nSpecies slots):
@@ -2231,6 +2311,52 @@ export class Solver {
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
     const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
+    // J·v + (∂res/∂V_k)σ from the residual itself, by a central difference: the assembled J holds
+    // a flux's dependence on η_L and η_R as two entries, and where both are huge (an inversion
+    // layer) and v nearly uniform, J·v loses the flux to round-off; the residual takes the η
+    // difference first, in double-double. So η moves in the low word, φ̂ and the flux unknowns
+    // in the high one (φ̂ only scales expm1(Δη), near zero there).
+    const u0 = Float64Array.from(this.u), uLo0 = Float64Array.from(this.uLo), V0 = Float64Array.from(this.termV);
+    // The unknowns perturbed in the low word: a node's η (not φ̂, a metal's segment flux, or a
+    // face's unknowns, which are read from the high word).
+    const low = new Uint8Array(this.fullOf.length);
+    const nodeBlock = new Uint8Array(nB);
+    for (let g = 0; g < this.nNodes; g++) if (this.nodeConductor[g] < 0) nodeBlock[this.blockOfNode[g]] = 1;
+    for (let j = 0; j < low.length; j++) {
+      const full = this.fullOf[j];
+      low[j] = nodeBlock[Math.floor(full / M)] && full % M !== 0 ? 1 : 0;
+    }
+    const resP = new Float64Array(this.res.length), resM = new Float64Array(this.res.length);
+    const derivative = (v, k, sigma, out) => {
+      let mx = Math.abs(sigma);
+      for (let j = 0; j < v.length; j++) mx = Math.max(mx, Math.abs(v[j]));
+      const h = 1e-4 / (mx || 1);
+      for (const [sgn, into] of [[1, resP], [-1, resM]]) {
+        this.u.set(u0);
+        this.uLo.set(uLo0);
+        this.termV.set(V0);
+        for (let j = 0; j < v.length; j++) {
+          const full = this.fullOf[j];
+          if (low[j]) this.uLo[full] += sgn * h * v[j];
+          else this.u[full] += sgn * h * v[j];
+        }
+        // A held terminal's voltage comes from its source at each assembly; a floating one's is
+        // an unknown.
+        if (k >= 0 && fl.includes(k)) this.termV[k] += sgn * h * sigma;
+        else if (k >= 0) this.sourceOverride.set(k, V0[k] + sgn * h * sigma);
+        this.assemble(Infinity);
+        if (k >= 0) this.sourceOverride.delete(k);
+        into.set(this.res);
+      }
+      for (let j = 0; j < out.length; j++) out[j] = (resP[j] - resM[j]) / (2 * h);
+    };
+    const restore = () => {
+      this.u.set(u0);
+      this.uLo.set(uLo0);
+      this.termV.set(V0);
+      this._refreshSources();
+      this.computeConcentrations();
+    };
 
     const { sizes, offA, offB, offC, offX } = sys;
     const csys = new ComplexBlockTridiagonal(nB, sizes);
@@ -2239,6 +2365,8 @@ export class Solver {
     const yr = new Float64Array(Nc), yi = new Float64Array(Nc);
     const Xr = fl.map(() => new Float64Array(Nc)), Xi = fl.map(() => new Float64Array(Nc));
     const xr = new Float64Array(N), xi = new Float64Array(N);
+    const rRes = new Float64Array(Nc), iRes = new Float64Array(Nc);
+    const jr = new Float64Array(Nc), ji = new Float64Array(Nc), sr = new Float64Array(Nc), si = new Float64Array(Nc);
     const out = { f: Float64Array.from(frequencies), Z: { re: new Float64Array(frequencies.length), im: new Float64Array(frequencies.length) } };
     if (profiles) out.profiles = [];
     // (C + iωC′)·(ar + i ai) for terminal k
@@ -2274,17 +2402,64 @@ export class Solver {
         }
       }
       csys.factor();
+      // Each solve uses that residual-based J·v (S·v is safe from the matrix): in an inversion
+      // layer fed by minority carriers that number ~1e3 cm⁻³ in the bulk, the assembled J alone
+      // gives the layer an exchange path many orders too fast.
+      const sx = (X, vr, out) => {
+        for (let blk = 0; blk < nB; blk++) {
+          const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
+          for (let r = 0; r < m; r++) {
+            let acc = 0;
+            for (let c = 0; c < mp; c++) acc += X.A[offA[blk] + r * mp + c] * vr[offX[blk - 1] + c];
+            for (let c = 0; c < m; c++) acc += X.B[offB[blk] + r * m + c] * vr[offX[blk] + c];
+            for (let c = 0; c < mn; c++) acc += X.C[offC[blk] + r * mn + c] * vr[offX[blk + 1] + c];
+            out[offX[blk] + r] = acc;
+          }
+        }
+      };
+      // A x = −σ ∂res/∂V_k, x = outr + i outi (σ = 1 for the response to the measured terminal,
+      // −1 for a floating one's unit δV): GMRES on the system preconditioned by the factorised one
+      // (whose error is concentrated in a few slow modes, which it finds in a few iterations).
+      const zero = new Float64Array(Nc);
+      const precondition = (ar, ai) => {
+        const outR = new Float64Array(Nc), outI = new Float64Array(Nc);
+        for (let j = 0; j < Nc; j++) {
+          rRes[j] = ar[j] * scale[j];
+          iRes[j] = ai[j] * scale[j];
+        }
+        csys.solve(rRes, iRes, outR, outI);
+        return [outR, outI];
+      };
+      const op = ([vr, vi]) => {
+        derivative(vr, -1, 0, jr);
+        derivative(vi, -1, 0, ji);
+        sx(S, vi, si);
+        sx(S, vr, sr);
+        const ar = new Float64Array(Nc), ai = new Float64Array(Nc);
+        for (let j = 0; j < Nc; j++) {
+          ar[j] = jr[j] - w * si[j];
+          ai[j] = ji[j] + w * sr[j];
+        }
+        return precondition(ar, ai);
+      };
+      const solve = (br, bi, outr, outi, k, sigma) => {
+        const rhs = k >= 0 ? precondition(Bt[k].map((v) => -sigma * v), zero) : [new Float64Array(Nc), new Float64Array(Nc)];
+        outr.set(rhs[0]);
+        outi.set(rhs[1]);
+        gmres(op, rhs, [outr, outi]);
+        restore();
+      };
       // y: the response with the floating terminals held; X_k: to a unit δV_k.
       const heldT = dT.kind === 'V';
       for (let j = 0; j < Nc; j++) {
         rr[j] = heldT ? -Bt[kT][j] * scale[j] : 0;
         ri[j] = 0;
       }
-      csys.solve(rr, ri, yr, yi);
+      solve(rr, ri, yr, yi, heldT ? kT : -1, heldT ? 1 : 0);
       fl.forEach((k, a) => {
         for (let j = 0; j < Nc; j++) rr[j] = Bt[k][j] * scale[j];
         ri.fill(0);
-        csys.solve(rr, ri, Xr[a], Xi[a]);
+        solve(rr, ri, Xr[a], Xi[a], k, -1);
       });
       // The floating terminals' circuit rows, a small complex system for their δV.
       const Ar = Array.from({ length: K }, () => new Float64Array(K + 1)), Ai = Array.from({ length: K }, () => new Float64Array(K + 1));

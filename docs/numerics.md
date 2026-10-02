@@ -436,6 +436,16 @@ entry), plus one back-substitution per floating terminal for the bordering. Cons
 species make J singular, but J + iωM isn't for ω > 0: at low frequency a blocking device looks
 like a capacitor, as it should.
 
+The factorised system is used as a preconditioner, not trusted alone: each solve runs GMRES with
+J·v taken from the residual itself, by a central difference (η perturbed in the state's low word,
+φ̂ and the face unknowns in the high one). The assembled J holds a flux's dependence on η_L and
+η_R as two entries; in an inversion layer both are huge (~1e11), and for a nearly uniform δη
+they cancel to round-off of order 1e-5, while the residual takes the η difference first, in
+double-double. That round-off had given a MOS capacitor's inversion layer, fed by minority
+diffusion from a bulk with ~1e3 electrons per cm³ (a time constant of minutes), an exchange path
+that followed the gate at 1 Hz. Where the plain solve is already accurate, one application of
+the operator confirms it; the bench's impedance cases take about twice as long as before.
+
 ## Steady state
 
 - **If every species stretch is fed by a contact,** nothing is conserved on its own, and the

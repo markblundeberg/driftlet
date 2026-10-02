@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -103,6 +104,48 @@ test('MOS: a port grounding the channel gives the low-frequency C–V, inversion
   }
   // The full low-frequency curve: accumulation near C_ox, a depletion dip, inversion back up.
   assert.ok(seen[0] > 0.9 && Math.min(...seen) < 0.2 && seen.at(-1) > 0.9, `C/C_ox: ${seen.map((c) => c.toFixed(3))}`);
+});
+
+test('MOS without a port: the impedance gives the high-frequency C–V at 1 Hz, as a time-domain run does', () => {
+  // The inversion layer's electrons can only come by minority diffusion from the back contact,
+  // through a bulk with ~1e3 cm⁻³ of them: minutes. The assembled Jacobian alone (two huge entries
+  // per inversion-layer flux, nearly cancelling) gave the layer an exchange path that followed
+  // the gate at 1 Hz; the impedance now takes J·v from the residual, by GMRES.
+  // (Its steady solve is itself fragile, the roadmap's weakly held minority: it converges on
+  // this grid, built from units' values exactly, and not on some within round-off of it.)
+  const Lsi = units.um(0.5), tox = units.nm(5), Cox = (3.9 * EPS0) / tox;
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Au')],
+    materials: { SiO2: { epsr: 3.9, species: {} } },
+    stack: [
+      ohmic(0),
+      layer('Si', Lsi, { name: 'p-Si', acceptors: units.perCm3(1e17) }),
+      { dipole: 0 },
+      layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+      { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.1 },
+      layer('Au', units.nm(50)),
+      ohmic(0, ['e-']),
+    ],
+    grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+  });
+  const at = (V) => {
+    const d = new Device(def);
+    d.set({ contacts: { right: { V } } });
+    assert.ok(d.solve().converged);
+    return d;
+  };
+  const dev = at(0.6);
+  const C = (f) => -1 / (2 * Math.PI * f * dev.impedance([f]).Z.im[0]) / Cox;
+  const [low, high] = [C(1e-6), C(1)];
+  assert.ok(low > 0.85 && high < 0.15, `C/C_ox ${low} at 1 µHz, ${high} at 1 Hz`);
+  // A 10 mV gate step, stepped in time: the charge at 1 s is the high-frequency value.
+  const run = at(0.6);
+  run.set({ contacts: { right: { V: 0.61 } } });
+  let q = 0, t0 = 0;
+  const s = run.advance(1);
+  s.trace.t.forEach((t, k) => ((q += s.trace.current[k] * (t - t0)), (t0 = t)));
+  assert.ok(Math.abs(Math.abs(q) / (Cox * 0.01) / high - 1) < 0.1, `step: ${Math.abs(q) / (Cox * 0.01)} vs ${high}`);
 });
 
 test('ports are checked', () => {
