@@ -145,7 +145,8 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     if (k % 2 === 1) out.push(`<rect x="${r2(a)}" y="${pad.t}" width="${r2(b - a)}" height="${ph}" fill="var(--driftlet-band)"/>`);
     // A region's own name where it was given one (not the default 'region k'), with its material.
     const label = r.name && !/^region \d+$/.test(r.name) && r.name !== r.material ? `${r.name} (${r.material})` : r.material;
-    const shown = b - a > label.length * charW + 4 ? label : b - a > r.material.length * charW + 4 ? r.material : null;
+    const named = r.name && !/^region \d+$/.test(r.name) ? r.name : r.material;
+    const shown = [label, named, r.material].find((t) => b - a > t.length * charW + 4) ?? null;
     if (shown) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(shown)}</text>`);
   });
   // Grid and axes.
