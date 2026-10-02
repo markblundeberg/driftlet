@@ -239,6 +239,12 @@ slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider
 - **Unit slips.** D in cm²/s, μ° in eV, capacitance in µF/cm², T in °C. `describe(def)` flags
   numbers that look like these.
 - **A closed system with no amount.** A species that doesn't reach a contact needs `c0`.
+- **A strictly neutral `c0` that doesn't balance.** With `epsr: 0`, Σ z·c0 must be zero (traces
+  included): `… carries a net charge of … mol/m³`. Add the counter-ion's share.
+- **A sharp junction between very different solutions** (3 M KCl against 1 µM traces) can't
+  start: grade it over a few thin layers mixing one solution into the other, as at a frit.
+- **A steady solve of a closed cell where every ion can cross.** Its steady state is complete
+  mixing. To watch a junction or a salt bridge, step in time from the unmixed `c0` (`advance`).
 - **Everything floating.** At least one terminal must be held at a voltage `V`.
 - **The library's semiconductors are at 300 K.** Give `T: 300`.
 - **Sign of the current.** `sol.current` is positive toward +x: a forward-biased diode with its
