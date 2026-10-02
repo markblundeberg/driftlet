@@ -13,7 +13,7 @@ const finite = (a) => {
  * One line of a level diagram.
  * @typedef {object} Trace
  * @property {string} id e.g. 'V:e-', 'Vstd:e-', 'phi', 'level:0'
- * @property {string} label e.g. 'V e-', 'V° e-'
+ * @property {string} label e.g. 'V e⁻', 'V° SO₄²⁻'
  * @property {'level' | 'standard' | 'phi' | 'redox' | 'redox-standard'} kind a species voltage, its
  *   standard level, φ, or a half-reaction's level or standard level
  * @property {string} [species]
@@ -41,6 +41,22 @@ export function speciesRole(sol, name) {
   return { role: role(name), slot: charged.filter((n) => role(n) === role(name)).indexOf(name) };
 }
 
+const SUB = '₀₁₂₃₄₅₆₇₈₉', SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+/**
+ * A species name typeset for labels, given its charge: the charge as a superscript and the counts
+ * in its formula as subscripts ('SO42-' with z = −2 is 'SO₄²⁻', 'Fe3+' with z = 3 is 'Fe³⁺').
+ * A name that doesn't end in its charge is returned as it is.
+ * @param {string} name
+ * @param {number} z
+ * @returns {string}
+ */
+export function typeset(name, z) {
+  const charge = z === 0 ? '' : `${Math.abs(z) > 1 ? Math.abs(z) : ''}${z > 0 ? '+' : '-'}`;
+  if (!name.endsWith(charge)) return name;
+  const formula = name.slice(0, name.length - charge.length).replace(/([A-Za-z)\]])(\d+)/g, (_, a, d) => a + [...d].map((c) => SUB[+c]).join(''));
+  return formula + [...charge].map((c) => (c === '+' ? '⁺' : c === '-' ? '⁻' : SUP[+c])).join('');
+}
+
 /**
  * The level diagram of a solution as traces: per charged species, its voltage V_i (`level`) and
  * its standard level V°_i (`standard`, the band edge for e⁻ and h⁺), optionally φ and
@@ -61,14 +77,16 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
   const role = (name) => speciesRole(sol, name).role;
   const slotOf = (name) => speciesRole(sol, name).slot;
   const shown = species ?? names.filter((name) => finite(sol.V[name]));
+  const zOf = Object.fromEntries(sol.species.map((sp) => [sp.name, sp.z]));
+  const pretty = (name) => (name in zOf ? typeset(name, zOf[name]) : name);
   const series = [];
   for (const name of shown) {
     if (!names.includes(name)) throw new Error(`traces: no charged species '${name}' in the solution`);
     const shift = shifts[name] ?? 0;
     const at = (y) => (shift ? y.map((v) => v + shift) : y);
     const common = { species: name, role: role(name), slot: slotOf(name), ...(shift ? { shift } : {}) };
-    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V ${name}`, kind: 'level', ...common, y: at(sol.V[name]) });
-    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V° ${name}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
+    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V ${pretty(name)}`, kind: 'level', ...common, y: at(sol.V[name]) });
+    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V° ${pretty(name)}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
   }
   if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: sol.phi });
   const couples = [...new Set(levels.map((lv) => lv.half.equation))];
@@ -76,7 +94,7 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
     const y = level(sol, lv.half, { standard: lv.standard });
     series.push({
       id: `level:${k}`,
-      label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation}`,
+      label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation.split(' ').map(pretty).join(' ')}`,
       kind: lv.standard ? 'redox-standard' : 'redox',
       role: 'redox',
       slot: couples.indexOf(lv.half.equation),

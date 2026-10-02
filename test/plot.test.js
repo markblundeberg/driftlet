@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device } from '../src/index.js';
-import { build, layer, ohmic, half, traces } from '../src/kit.js';
+import { build, layer, ohmic, half, traces, typeset } from '../src/kit.js';
 import { bandDiagram, levelChart } from '../src/plot.js';
 
 // Plot-ready traces, and the SVG level diagram drawn from them.
@@ -65,7 +65,7 @@ test('traces: a line per level, colour slots that follow the species, regions an
 test('the SVG level diagram: one path per line, broken where a level is undefined, a legend, a label', () => {
   const sol = cell();
   const svg = bandDiagram(sol, { title: 'silver cell' });
-  assert.match(svg, /^<svg [^>]*role="img"[^>]*aria-label="silver cell: V Ag\+, V° Ag\+, V NO3-, V° NO3-, V e- against x"/);
+  assert.match(svg, /^<svg [^>]*role="img"[^>]*aria-label="silver cell: V Ag⁺, V° Ag⁺, V NO₃⁻, V° NO₃⁻, V e⁻ against x"/);
   assert.ok(svg.endsWith('</svg>'));
   // Tags balance (no parser in node, so count them).
   for (const tag of ['svg', 'g', 'path', 'text', 'style', 'clipPath', 'title']) {
@@ -74,22 +74,22 @@ test('the SVG level diagram: one path per line, broken where a level is undefine
   }
   const paths = [...svg.matchAll(/<path d="([^"]*)"[^>]*><title>([^<]*)<\/title>/g)].map((m) => ({ d: m[1], label: m[2] }));
   // Thin standard levels first, so the thick species voltages sit on top.
-  assert.deepEqual(paths.map((p) => p.label), ['V° Ag+', 'V° NO3-', 'V Ag+', 'V NO3-', 'V e-']);
+  assert.deepEqual(paths.map((p) => p.label), ['V° Ag⁺', 'V° NO₃⁻', 'V Ag⁺', 'V NO₃⁻', 'V e⁻']);
   const byLabel = Object.fromEntries(paths.map((p) => [p.label, p]));
   // Ag⁺ lives in the solution only: one stretch. The Fermi level is in both metals: two.
   const moves = (p) => p.d.match(/M/g).length;
-  assert.equal(moves(byLabel['V Ag+']), 1);
-  assert.equal(moves(byLabel['V e-']), 2);
+  assert.equal(moves(byLabel['V Ag⁺']), 1);
+  assert.equal(moves(byLabel['V e⁻']), 2);
   assert.match(svg, />electrolyte \(water\)<\/text>/);
   // A single line needs no legend.
   const one = levelChart(traces(sol, { species: ['e-'] }));
   assert.equal((one.match(/<line [^>]*stroke-width=/g) ?? []).length, 0);
   // Species voltages thick, standard levels thin; a shifted species is marked and explained.
-  assert.match(svg, /stroke-width="2.8"><title>V Ag\+<\/title>/);
-  assert.match(svg, /stroke-width="1.3"><title>V° Ag\+<\/title>/);
+  assert.match(svg, /stroke-width="2.8"><title>V Ag⁺<\/title>/);
+  assert.match(svg, /stroke-width="1.3"><title>V° Ag⁺<\/title>/);
   const marked = bandDiagram(sol, { shifts: { 'NO3-': -1 } });
   assert.match(marked, /⌇ = per-species offset/);
-  assert.match(marked, /<path d="M[^"]*l6 4.5l-6 4.5[^"]*" stroke="var\(--driftlet-ink\)"[^>]*><title>V NO3- ⌇−1 V<\/title>/);
+  assert.match(marked, /<path d="M[^"]*l6 4.5l-6 4.5[^"]*" stroke="var\(--driftlet-ink\)"[^>]*><title>V NO₃⁻ ⌇−1 V<\/title>/);
   // Two diagrams in one page don't share ids.
   assert.notEqual(svg.match(/id="([^"]+)"/)[1], one.match(/id="([^"]+)"/)[1]);
 });
@@ -112,4 +112,16 @@ test('ytick writes the y axis labels, escaped: say powers of ten for log profile
   const svg = levelChart(tr, { range: [-3, 2], ytick: (v) => `<10^${v}>` });
   const labels = [...svg.matchAll(/text-anchor="end"[^>]*>([^<]*)</g)].map((m) => m[1]);
   assert.ok(labels.includes('&lt;10^-2&gt;') && labels.includes('&lt;10^1&gt;'), labels.join(' '));
+});
+
+test('typeset: a species name with its charge as a superscript and its counts as subscripts', () => {
+  assert.equal(typeset('SO42-', -2), 'SO₄²⁻');
+  assert.equal(typeset('Fe(CN)63-', -3), 'Fe(CN)₆³⁻');
+  assert.equal(typeset('e-', -1), 'e⁻');
+  assert.equal(typeset('H2PO4-', -1), 'H₂PO₄⁻');
+  assert.equal(typeset('Li', 0), 'Li');
+  assert.equal(typeset('odd', 1), 'odd', 'a name not ending in its charge is left alone');
+  // Redox levels' default labels typeset the species they know.
+  const tr = traces(cell(), { species: [], levels: [{ half: silver }] });
+  assert.equal(tr.series[0].label, 'Ag⁺ + e⁻ = Ag(s)');
 });

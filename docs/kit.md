@@ -121,8 +121,9 @@ a level diagram:
 - `traces(sol, { species, standard, phi, levels, labels, shifts })` (in `driftlet/kit`) returns
   its lines as data: per charged species its voltage V_i (`kind: 'level'`) and standard level
   V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
-  (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). `labels`
-  renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
+  (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). Labels
+  typeset the species (`V SO₄²⁻`, as `typeset(name, z)` does); `labels` renames lines by id
+  (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
   volts (`{ 'K+': 3.5 }`), moving all of a species' lines together so that widely separated
   species share one readable plot, as the ESBD book does; the label says so (⌇). Each line has a
   colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`, `'redox'`, `'phi'`) and a
