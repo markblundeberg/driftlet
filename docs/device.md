@@ -156,14 +156,21 @@ takes part in a reaction at the face and exists on both sides has no default: gi
 (`'blocked'` if it crosses only through the reaction), since free crossing alongside would
 short-circuit the kinetics.
 
-**Reactions** `reactions` at the face: each is a list of participants on each side, with signed
-stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward reaction):
+**Reactions** `reactions` at the face, each written as an equation or as its participants on
+each side, with signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward
+reaction):
 
 ```js nocheck
-{ left: { 'e-': -1 }, right: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-4, alpha: 0.5 } // a metal on the left
-{ left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0: 1e-3 }                         // Li⁺ transfer
-{ left: { 'e-': -1, Ag: 1 }, right: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3 }  // Ag⁺ + e⁻ ⇌ Ag(s)
+{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-4, alpha: 0.5 }                          // a metal on one side
+{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3 }               // Ag⁺ + e⁻ ⇌ Ag(s)
+{ equation: 'Li+(left) = Li+(right)', k0: 1e-3 }                                // Li⁺ transfer
+{ left: { 'e-': -1 }, right: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-4, alpha: 0.5 }  // by sides
 ```
+
+In an equation, terms are separated by ` + ` (with spaces), sides by `=`, a coefficient is an
+integer and a space (`2 e-`), and an empty side is `0`. Each participant goes to the side whose
+material holds it (on a conductor's side, only its carrier); a species held on both sides is
+labelled with its side, `'Li+(left)'`, or its material, `'Li+(graphite)'`.
 
 For example, an intercalation electrode taking Li⁺ from the electrolyte through a
 desolvation (or SEI) step has Li⁺ on both sides, with `species: { 'Li+': 'blocked' }` and the
@@ -209,12 +216,14 @@ floating conductor region with reactions on both faces is a bipolar electrode.
 
 ```js nocheck
 bulkReactions: [
-  { nu: { 'e-': -1, 'h+': -1 }, kf: { Si: 2e8 } }, // e⁻ + h⁺ ⇌ ∅
-  { nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: -237.13e3 }, kf: { water: 1.4e8 } },
+  { equation: 'e- + h+ = 0', kf: { Si: 2e8 } },
+  { equation: 'H+ + OH- = H2O', fixed: { H2O: -237.13e3 }, kf: { water: 1.4e8 } },
+  { nu: { 'H+': -1, 'OH-': -1, H2O: 1 }, fixed: { H2O: -237.13e3 }, kf: { water: 1.4e8 } }, // the same, as nu
 ]
 ```
 
-`nu` gives signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by the forward
+`equation`, or `nu` with signed stoichiometric coefficients (ν < 0 consumed, ν > 0 produced by
+the forward reaction); a participant on both sides of an equation is an error (give the net
 reaction). Participants that aren't species are fixed-activity neutrals, given by their μ in
 `fixed` (J/mol). Charge must balance. The rate is mass action,
 `r = k_f Π_{ν<0} c^{|ν|} (1 − e^{−A/RT})` with A = −Σ ν μ̄ the affinity. That's
@@ -230,7 +239,7 @@ listed in `kf` (there's no optical absorption profile). The photons' μ is the h
 is a reservoir far from the device's temperature, and the rate still vanishes at A = 0.
 
 ```js nocheck
-bulkReactions: [{ nu: { photon: -1, 'e-': 1, 'h+': 1 }, fixed: { photon: units.eV(3) }, kf: { Si: 0.1 } }]
+bulkReactions: [{ equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 0.1 } }]
 ```
 
 ## Contacts

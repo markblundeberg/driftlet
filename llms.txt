@@ -41,6 +41,19 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   initial amount (`c0`). An error names the path and says what to give.
 - **Check before trusting.** `sol.converged` must be true, and read `sol.warnings`.
   `describe(def)` (kit) summarises a definition and flags likely unit slips.
+- **Exports.** `driftlet`: `Device`, `units`, and the constants `FARADAY`, `GAS_CONSTANT`,
+  `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
+  V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
+  `level`, `SHE`, `describe`, `live`, `traces`, the data library (`aqueous`, `semiconductor`,
+  `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`.
+- **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
+  `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
+- **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),
+  with c in mol/m³ (and 1e16 cm⁻³ is only 0.0166 mol/m³). Band-to-band recombination,
+  `e- + h+ = 0`, gives a minority lifetime τ = 1/(kf·N) with N the majority density in mol/m³:
+  `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Generation is a reaction from a reservoir, rate `kf` in
+  mol/(m³·s) (`units.perCm3` converts cm⁻³·s⁻¹ too). A face reaction's `k0` is in mol/(m²·s);
+  its exchange current density is F·k0 per electron at the reference concentrations.
 
 ## Template: a semiconductor junction
 
@@ -57,7 +70,7 @@ const def = build({
     layer('Si', units.um(1), { name: 'p', acceptors: units.perCm3(1e16) }),
     ohmic(0.5), // the p side at +0.5 V: forward bias
   ],
-  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }], // recombination
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], // recombination: τ = 1/(kf·N) ≈ 0.6 µs at N = 1e16 cm⁻³
   grid: { hmin: units.nm(1), hmax: units.nm(20) },
 });
 console.log(describe(def));
@@ -105,6 +118,73 @@ console.log(`I = ${sol.current.toFixed(2)} A/m²`);
 console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]); // ≈ 0.80 + (RT/F) ln(c/1 M)
 ```
 
+## Template: a solar cell
+
+Light is a reservoir: `photon = e- + h+` with the photons' μ well above the gap generates at
+the rate `kf` (uniform in the material). Open circuit is a terminal driven at `I: 0`, whose
+voltage is then V_oc. The photocurrent flows toward +x here (holes to the p side on the right).
+
+```js
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+
+const cell = (right) =>
+  build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { name: 'n', donors: units.perCm3(1e18) }),
+      layer('Si', units.um(100), { name: 'p', acceptors: units.perCm3(1e16) }),
+      ohmic(right),
+    ],
+    bulkReactions: [
+      { equation: 'e- + h+ = 0', kf: { Si: 1e8 } }, // τ ≈ 0.6 µs in the p base: L ≈ 48 µm
+      { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 50 } }, // G, mol/(m³·s)
+    ],
+    grid: { hmin: units.nm(1), hmax: units.um(1) },
+  });
+const sc = new Device(cell(0)).solve(); // short circuit
+const oc = new Device(cell({ I: 0 })).solve(); // open circuit
+console.log(`J_sc = ${sc.current.toFixed(1)} A/m², V_oc = ${oc.terminals.right.V.toFixed(3)} V`);
+```
+
+## Template: an electrode in a stirred solution
+
+One working electrode, a stagnant layer of solution, and the well-stirred bulk as a bath. The
+bath's terminal is its reference species (Cl⁻ here, like a Ag/AgCl reference), so terminal
+voltages are against that. With table μ° (μ°_H⁺ = 0), V − φ in the solution reads against SHE.
+A terminal's current is into the device, so at the working electrode it's positive when
+oxidising (anodic). An excess of supporting electrolyte (KCl) suppresses migration but doesn't
+remove it: at 100:1 the limiting current is still about 1% off pure diffusion.
+
+```js
+import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
+import { build, layer, ohmic, bath, half, aqueous, metal } from 'driftlet/kit';
+
+const iron = half('Fe3+ + e- = Fe2+');
+const electrode = (drive) =>
+  build({
+    library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(drive, ['e-']), // the working electrode's terminal: the platinum's electrons
+      layer('Pt', 1e-6),
+      { reactions: [{ ...iron, k0: 1e-3 }] },
+      layer('water', 20e-6), // the stagnant layer
+      bath({ 'K+': 500, 'Cl-': 535, 'Fe3+': 5, 'Fe2+': 10 }, 'Cl-'), // the stirred bulk (neutral)
+    ],
+    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+  });
+// At rest (no current), the electrode sits at the couple's Nernst potential.
+const rest = new Device(electrode({ I: 0 })).solve();
+const E = rest.V['e-'][0] - rest.phi[rest.x.length - 1]; // against SHE
+const VT = (GAS_CONSTANT * 298.15) / FARADAY;
+console.log(`rest potential ${E.toFixed(4)} V vs SHE; E° + V_T ln(c₃/c₂) = ${(0.769 + VT * Math.log(5 / 10)).toFixed(4)} V`);
+// Polarised 0.2 V positive of rest: oxidising Fe²⁺, toward its limiting current F·D·c/L.
+const dev = new Device(electrode(rest.terminals.left.V + 0.2));
+console.log(`anodic current ${dev.solve().terminals.left.current.toFixed(2)} A/m²`);
+```
+
 ## Template: a live page with a slider
 
 `live()` merges slider moves made during a solve, warm-starts each solve and keeps the last
@@ -127,7 +207,7 @@ const def = build({
   T: 300,
   library: [semiconductor('Si')],
   stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
-  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
   grid: { hmin: 1e-9, hmax: 20e-9 },
 });
 const slider = document.getElementById('V');
@@ -161,7 +241,13 @@ slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider
 - **A closed system with no amount.** A species that doesn't reach a contact needs `c0`.
 - **Everything floating.** At least one terminal must be held at a voltage `V`.
 - **The library's semiconductors are at 300 K.** Give `T: 300`.
-- **Sign of the current.** Positive toward +x. A forward-biased diode with its p side on the
-  right carries negative current.
+- **Sign of the current.** `sol.current` is positive toward +x: a forward-biased diode with its
+  p side on the right carries negative current. A terminal's current is into the device.
+- **Sign of a voltage across a membrane.** `sol.terminalVoltage` is V_right − V_left. Physiology
+  quotes V_inside − V_outside, so put the inside on the right or flip the sign.
+- **A coefficient without its space.** `'2e- + …'` reads `2e-` as a species name; the error says
+  to write `2 e-`.
+- **Changing c0 with `set()`.** A carried state keeps what it holds; `c0` is only the starting
+  composition. Make a new `Device` to start over from it.
 - **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
   Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).

@@ -91,6 +91,9 @@ for live demos.
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
+   - A worked membrane-potential example with a validation against Goldman–Hodgkin–Katz in its
+     own regime (a thin membrane with ε > 0 and few ions, so the field is constant), not the
+     electroneutral one a guinea pig reached for.
    - A worked example of an electrochemical cell (e.g. Daniell) with its voltage ledger: the
      Nernst voltage, then junction, ohmic drop, each electrode's overpotential and
      concentration polarisation, summing exactly to the terminal voltage, each read off the

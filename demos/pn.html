@@ -36,7 +36,7 @@ const dev = live(
       layer('Si', 1.5e-6, { name: 'p', acceptors: units.perCm3(1e16) }),
       ohmic(0),
     ],
-    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e-6 } }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], // τ = 1/(kf·N) ≈ 0.6 µs at 1e16 cm⁻³
     grid: { hmin: 0.5e-9, hmax: 15e-9 },
   }),
   { onsolution: draw },

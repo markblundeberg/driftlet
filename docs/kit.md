@@ -41,7 +41,7 @@ const def = build({
     layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
     ohmic(0.5),
   ],
-  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
   grid: { hmin: 1e-9, hmax: 20e-9 },
 });
 console.log(JSON.stringify(def.regions)); // plain data: fixedCharge, in C/m³
@@ -63,19 +63,13 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   (`combine()` does the merging on its own). A species or material given twice must be given
   identically.
 - Nested lists in the stack are flattened, so a helper can return several items.
+- Reactions pass through as written (see below).
 
-## Reactions as equations
+## Reactions and half-reactions
 
-Anywhere a reaction goes, `equation` can stand in for its stoichiometry: `'Ag+ + e- = Ag(s)'`,
-`'2 H+ + 2 e- = H2'`, `'e- + h+ = 0'`. Terms are separated by ` + ` with spaces, which keeps it
-apart from charges, a leading integer is a coefficient, and an empty side is `0`.
-
-- In `bulkReactions`, it becomes `nu`. A participant on both sides is an error (give the net
-  reaction).
-- At a face, each participant goes to the side whose material holds it: on a metal's side, only
-  its carrier. Participants that aren't species are fixed-activity neutrals, with their μ in
-  `fixed`, as in the plain form. A species held on **both** sides is ambiguous, so it's labelled
-  with its side or its material: `'Li+(left) = Li+(right)'`, `'Li+(electrolyte) = Li+(graphite)'`.
+Reactions are written as equations, `'Ag+ + e- = Ag(s)'`, in the definition itself (see the
+[device reference](device.md#interfaces)), so `build()`, `new Device` and `set()` all take them.
+A coefficient is an integer and a space (`2 e-`); names may start with digits (`3He`).
 
 `half(equation, fixed)` writes a half-reaction, with electrons `e-` on one side, as plain
 `{ equation, fixed }`: spread it into a face reaction with its kinetics. `level(sol, half)` is the
@@ -134,7 +128,8 @@ a level diagram:
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed:
   solid lines for species voltages, dashed for standard levels, regions as labelled bands. Its
   colours are CSS custom properties (`--driftlet-1` … `--driftlet-8`, `--driftlet-ink`, …) with
-  light and dark defaults. `levelChart(traces, opts)` draws traces you've edited.
+  light and dark defaults. `xlim` (m) zooms into a window, with ticks and range fitted to it.
+  `levelChart(traces, opts)` draws traces you've edited.
 
 ```js
 import { Device } from 'driftlet';
@@ -150,7 +145,7 @@ const def = build({
   stack: [bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-'), layer('water', 10e-6), bath({ 'Na+': 10, 'Cl-': 10 }, 'Cl-', { I: 0 })],
   grid: { hmin: 0.2e-9, hmax: 50e-9, ratio: 1.15 },
 });
-const svg = bandDiagram(new Device(def).solve(), { title: 'liquid junction', phi: true });
+const svg = bandDiagram(new Device(def).solve(), { title: 'liquid junction', phi: true, xlim: [0, 1e-6] });
 console.log(svg.length); // in a page: element.innerHTML = svg
 ```
 
@@ -225,7 +220,7 @@ const dev = live(
       Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: units.perCm3(2.8e19) }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: units.perCm3(1.04e19) } } },
     },
     stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
-    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e13 } }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
     grid: { hmin: 1e-9, hmax: 20e-9 },
   }),
 );
