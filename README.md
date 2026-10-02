@@ -1,79 +1,119 @@
 # driftlet
 
-A small, dependency-free JavaScript library for **1D drift–diffusion–reaction** problems:
-Poisson–Nernst–Planck transport of ions, electrons and holes, with bulk reactions, electrode
-kinetics, interfaces between materials, and external circuits. It's built to be fast enough to
-run behind a slider in a web page.
+**driftlet solves 1D drift–diffusion–reaction problems properly**: any mix of charged and
+neutral species, Poisson electrostatics (or strict neutrality), bulk and interfacial reactions,
+heterointerfaces, metals, and external circuits, in steady state, in time, and as small-signal
+impedance. It's validated against analytic results, and small enough to run live in a web page:
+pure JavaScript, no dependencies, millisecond solves.
 
-**Status: pre-alpha.** Not yet published to npm, and the API may still change.
+**Status: pre-release.** Not yet on npm, and the API may still change.
 
-What it's for: teaching, live interactive demos, and quick exploration of electrochemical
-cells, membranes, junctions, double layers, mixed conductors and simple semiconductor devices,
-all in one formulation.
+## Is it for your problem?
 
-What it's not: a TCAD or battery-modelling package. For 2D/3D, thermal, concentrated-solution
-transport or parameter fitting, see
-[ChargeTransport.jl](https://github.com/WIAS-PDELib/ChargeTransport.jl),
-[Driftfusion](https://github.com/barnesgroupICL/Driftfusion),
-[SIMsalabim](https://github.com/kostergroup/SIMsalabim),
-[PyBaMM](https://github.com/pybamm-team/PyBaMM) or COMSOL.
+The same equations go by different names in different fields. If your problem is one-dimensional
+(planar), it's probably here:
 
-## A first example
+| If you work on | you may call it | start from | checked against |
+|---|---|---|---|
+| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions | [first example](#a-semiconductor-junction), [pn demo](demos/pn.html), [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
+| Solar cells | photogeneration, radiative and SRH recombination | [`reactions`](test/reactions.test.js) test: generation is a reaction from a photon reservoir (uniform per material), SRH runs through explicit trap species | J_sc = qG(L_n + L_p + W); Shockley J–V in the dark |
+| Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry | [second example](#an-electrochemical-cell), [cell demo](demos/cell.html), [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | i_lim·tanh(V/4V_T), Butler–Volmer closed form, finite-length Warburg |
+| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
+| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
+| Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
+| Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
+| Biophysics | Poisson–Nernst–Planck, ion channels, membrane potentials | the electrochemistry setups, with fixed charge in the channel region | no dedicated check yet |
 
-A silicon pn junction with ohmic contacts, at equilibrium and then under forward bias:
+The tests are worked setups, each with its analytic check, so they double as recipes. The
+[validation table](#validation) lists them all.
+
+## Install
+
+```sh
+npm install driftlet
+```
+
+```js nocheck
+import { Device, units } from 'driftlet';       // the solver
+import { build, layer, ohmic } from 'driftlet/kit'; // helpers that write definitions, data, live demos
+import { bandDiagram } from 'driftlet/plot';    // a level diagram as an SVG string
+```
+
+Or straight from a CDN in a page, pinned to a version:
+`https://cdn.jsdelivr.net/npm/driftlet@0.1.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
+TypeScript declarations ship in the package. Writing a demo with an LLM agent? Point it at
+[`llms.txt`](llms.txt).
+
+## A semiconductor junction
+
+A silicon pn junction with ohmic contacts, at equilibrium and then under forward bias. A device
+is plain data; `build()` from `driftlet/kit` writes it from the stack as it's drawn, with a
+[data library](docs/data.md) for the material:
 
 ```js
-import { Device, units, FARADAY } from 'driftlet';
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
 
-const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19); // effective densities of states
-const ohmic = (V) => ({
-  V, // terminal voltage
-  terminal: 'e-',
-  species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, // V_h+ = V_e- at a metal
-  phi: 'bulk',
-});
-
-const dev = new Device({
-  species: [
-    { name: 'e-', z: -1 },
-    { name: 'h+', z: 1 },
-  ],
-  materials: {
-    Si: {
-      epsr: 11.7,
-      species: {
-        'e-': { D: 36e-4, mu0: 0, cRef: Nc }, // conduction band edge as the standard level
-        'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: Nv }, // gap 1.12 eV
-      },
-    },
-  },
-  regions: [
-    { name: 'n', material: 'Si', length: 2e-6, fixedCharge: units.perCm3(1e17) * FARADAY },
-    { name: 'p', material: 'Si', length: 2e-6, fixedCharge: -units.perCm3(1e16) * FARADAY },
-  ],
-  contacts: { left: ohmic(0), right: ohmic(0) },
-  grid: { hmin: 0.5e-9, hmax: 20e-9 },
-});
+const dev = new Device(
+  build({
+    T: 300,
+    library: [semiconductor('Si')], // e⁻ and h⁺ with Sze's band data at 300 K
+    stack: [
+      ohmic(0), // e⁻ and h⁺ in equilibrium with a metal, the terminal at 0 V
+      layer('Si', units.um(2), { name: 'n', donors: units.perCm3(1e17) }),
+      layer('Si', units.um(2), { name: 'p', acceptors: units.perCm3(1e16) }),
+      ohmic(0),
+    ],
+    grid: { hmin: units.nm(0.5), hmax: units.nm(20) },
+  }),
+);
 
 const eq = dev.solve();
-console.log('built-in potential (V):', eq.phi[0] - eq.phi[eq.phi.length - 1]); // ≈ 0.797
+console.log('built-in potential (V):', eq.phi[0] - eq.phi[eq.phi.length - 1]); // ≈ 0.795
 
 dev.set({ contacts: { right: { V: 0.4 } } }); // p side at +0.4 V: forward bias
 const on = dev.solve(); // warm-started from the previous solution
-console.log('current (A/m²):', on.current); // ≈ −6.5 (flowing toward −x, from p to n)
+console.log('current (A/m²):', on.current); // negative: it flows toward −x, from p to n
 ```
 
-Solutions are plain objects of `Float64Array`s, ready to plot: `x`, `phi`, and per species `c`,
-`mu` (electrochemical potential μ̄), `muStd` (standard level) and the voltage views `V`,
-`Vstd`. They also carry currents, contact fluxes, conservation bookkeeping and warnings; see
-[the device reference](docs/device.md).
+## An electrochemical cell
 
-The definition is plain data, so anything can write it. The optional `driftlet/kit` writes it
-from the device as it's drawn, a stack of contacts, layers and faces, with reactions as
-equations (`'Ag+ + e- = Ag(s)'`) and doping as donors and acceptors, draws level diagrams,
-runs slider demos, and has a small sourced [data library](docs/data.md). It never makes a
-physical choice for you; see [the kit](docs/kit.md). Writing a demo with an LLM agent? Point
-it at [`llms.txt`](llms.txt).
+Silver nitrate between two silver electrodes, as a macroscopic (strictly neutral) electrolyte.
+A reversible electrode is a contact whose terminal species is the ion it exchanges: Ag⁺ in
+equilibrium with the metal, NO₃⁻ blocked. Polarized, the cell's current saturates at the
+limiting current, i_lim = 4FD₊c₀/L for this binary salt:
+
+```js
+import { Device, FARADAY } from 'driftlet';
+import { build, layer, aqueous } from 'driftlet/kit';
+
+const L = 100e-6, c0 = 10; // m, mol/m³ (10 mM)
+// Ag⁺ + e⁻ ⇌ Ag at the metal: V is the voltage of Ag⁺ there, i.e. the electrode potential.
+const silver = (V) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+const dev = new Device(
+  build({
+    library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 })], // epsr 0: no double layers resolved
+    // Ag⁺ reaches the contacts and takes their level; NO₃⁻ doesn't, so it needs its amount.
+    stack: [silver(0), layer('water', L, { c0: { 'NO3-': c0 } }), silver(0)],
+    grid: { hmin: 10e-9, hmax: 2e-6 }, // graded: fine where Ag⁺ depletes at the electrode
+  }),
+);
+const iLim = (4 * FARADAY * 1.648e-9 * c0) / L;
+for (const V of [0.05, 0.1, 0.2, 0.4]) {
+  dev.set({ contacts: { right: { V } } });
+  const sol = dev.solve();
+  // V > 0 raises Ag⁺'s level on the right: silver dissolves there and plates on the left, so the
+  // current flows toward −x.
+  console.log(`${V} V: I/i_lim = ${(-sol.current / iLim).toFixed(4)}`); // ≈ tanh(V/4V_T): 0.451, 0.750, 0.961, 0.999
+}
+```
+
+Solutions are plain objects of `Float64Array`s, ready to plot (fresh arrays from every solve):
+`x`, `phi`, and per species `c`, `mu` (electrochemical potential μ̄), `muStd` (standard level)
+and the voltage views `V`, `Vstd`. They also carry the terminals' voltages and currents, fluxes,
+conservation bookkeeping and warnings; see [the device reference](docs/device.md). The
+[kit](docs/kit.md) adds reactions written as equations (`'Ag+ + e- = Ag(s)'`), redox levels,
+level diagrams, slider demos and `describe()`, which flags likely unit slips.
 
 ## Demos
 
@@ -136,6 +176,22 @@ current. Supported physics:
   frame budgets for animation; exact conservation bookkeeping;
 - small-signal impedance spectra Z(f), with complex profiles.
 
+## What it doesn't do
+
+- **More than one dimension.** Planar 1D only, so no porous-electrode (P2D) models. For 2D/3D,
+  see [ChargeTransport.jl](https://github.com/WIAS-PDELib/ChargeTransport.jl), TCAD tools or
+  COMSOL.
+- **Cross-diffusion.** Each species moves down its own μ̄ with its own D (the statistics can be
+  non-ideal); there are no Stefan–Maxwell or Onsager cross terms beyond eddy mixing.
+- **Heat and optics.** Temperature is uniform. Generation is a reaction, uniform within a
+  material; there's no optical model or absorption profile. For those, see
+  [Driftfusion](https://github.com/barnesgroupICL/Driftfusion),
+  [SIMsalabim](https://github.com/kostergroup/SIMsalabim) or
+  [PyBaMM](https://github.com/pybamm-team/PyBaMM).
+- **Field-dependent transport.** No high-field mobility, impact ionisation, field-enhanced
+  dissociation (second Wien effect) or tunnelling.
+- **Fitting.** It solves forward problems; parameter estimation is up to you.
+
 How it works numerically is in [numerics](docs/numerics.md).
 
 ## Validation
@@ -152,6 +208,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Floating island | Gauss's law; conserved amounts through gate sweeps | 1e-12 |
 | pn junction | exact built-in potential; depletion charge; short-diode J–V | 1e-12; 1%; 2e-3 |
 | Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
+| Illuminated long pn diode | J_sc = qG(L_n + L_p + W) from a cold start; superposition at low injection | 5e-3; 1e-2 |
 | Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
 | Concentration polarization | i = i_lim tanh(V/4V_T), incl. galvanostatic and load modes | 2e-4 |

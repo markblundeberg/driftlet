@@ -34,7 +34,7 @@ const def = {
   materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
   regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
   contacts: { left: electrode(0), right: electrode(0) },
-  grid: { minCells: 100 },
+  grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine at the electrodes, where Ag⁺ depletes
 };
 const slider = document.getElementById('V');
 fromQuery(slider);
