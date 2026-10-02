@@ -60,6 +60,8 @@ for live demos.
 - Transport extras: imposed advection (exact exponential fitting) and current-free eddy mixing
   (an Onsager term projected to carry no current).
 - Validation suite (see the README), and docs.
+- Shipped as 0.1.0: on npm and jsDelivr, with JSDoc types and a `.d.ts`, live demos on GitHub
+  Pages (screenshots in the README), and CI on Node 22, 24 and 26.
 
 ## Next
 
@@ -126,11 +128,10 @@ for live demos.
      to its device family, so it belongs in a worked example, not the library; the spatial
      diagram stays the primary picture.
 
-3. **Ship 0.1.0.** npm package and jsdelivr (the agent guide's pinned CDN version is checked
-   against `package.json` once it's set), live demos (code sandboxes, screenshots in the
-   README), JSDoc types and a `.d.ts`, CI. (Tests already check what browsers and CDNs need:
-   relative `.js` imports only, no Node or DOM globals, and a definition solving identically on
-   a worker thread. A real-browser smoke test remains.)
+3. **Releases.** Trusted publishing (a tagged GitHub Actions workflow, with provenance, no
+   stored token), and a real-browser smoke test of the demos in CI. (Tests already check what
+   browsers and CDNs need: relative `.js` imports only, no Node or DOM globals, and a definition
+   solving identically on a worker thread.)
 
 ## Later
 
