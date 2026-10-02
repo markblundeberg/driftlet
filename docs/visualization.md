@@ -205,11 +205,14 @@ There are two places where φ is the right line to draw:
   mobile lives there, the plain sloped φ line says it best: its slope is the field. It's also
   harmless to the reader, since there's no interfacial step in φ in view to mistake for something
   measurable, just a lone line connected to nothing else. The [MOS demo](../demos/mos.html) draws φ
-  across its oxide this way.
+  across its oxide this way. It draws φ in its silicon too, deliberately anchored at an
+  arbitrary offset from the band edges and stepping at the oxide's face, to show the band edges
+  riding on it while its position is a convention.
 - **In vacuum**, −eφ is exactly what it claims to be: the energy of an electron at rest there.
 
-`traces(sol, { phi: true })` draws φ. Besides the MOS oxide, the demos draw it only as the SHE's
-standard level in water, which is what it equals with the library's data.
+`traces(sol, { phi: true })` draws φ everywhere it's defined, and `phi: ['SiO2']` only in the
+regions named. Besides the MOS demo, the demos draw it only as the SHE's standard level in water,
+which is what it equals with the library's data.
 
 ### A reference
 
