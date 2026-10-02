@@ -42,7 +42,7 @@ function drive(c) {
 export function unitWarnings(def) {
   const out = [];
   const warn = (path, msg) => out.push(`${path}: ${msg}`);
-  if (def.T !== undefined && def.T < 200) warn('T', `${def.T} K is cold; T is in kelvin (if that's °C, add 273.15)`);
+  if (def.T !== undefined && def.T < 60) warn('T', `${def.T} K is very cold; T is in kelvin (if that's °C, add 273.15)`);
   if (def.T > 5000) warn('T', `${def.T} K is hotter than any device; T is in kelvin`);
   const conc = (path, c) => {
     if (c > 1e6) warn(path, `${num(c)} mol/m³ is over 1000 M; concentrations are mol/m³ (units.molar, and units.perCm3 for carriers)`);
@@ -56,8 +56,11 @@ export function unitWarnings(def) {
     for (const [sname, sp] of Object.entries(mat.species ?? {})) {
       if (!isObject(sp)) continue;
       const sp_ = `${path}.species.${sname}`;
+      const z = (def.species ?? []).find((x) => x?.name === sname)?.z;
+      const ion = z !== undefined && z !== 0 && sname !== 'e-' && sname !== 'h+';
       if (sp.D > 1) warn(`${sp_}.D`, `${num(sp.D)} m²/s is beyond any real diffusivity; D is m²/s (units.cm2PerS)`);
-      if (sp.mu0 !== 0 && Math.abs(sp.mu0) < 100) warn(`${sp_}.mu0`, `${sp.mu0} J/mol is tiny; mu0 is J/mol (units.eV for per-particle energies, or ×F for volts)`);
+      else if (ion && sp.D > 1e-7) warn(`${sp_}.D`, `${num(sp.D)} m²/s is fast for an ion (H⁺ in water is 9.3e-9 m²/s); D is m²/s, so cm²/s needs units.cm2PerS`);
+      if (sp.mu0 !== 0 && Math.abs(sp.mu0) < 2000) warn(`${sp_}.mu0`, `${sp.mu0} J/mol is small for a standard potential; mu0 is J/mol (kJ/mol × 1000, units.eV for per-particle energies, × F for volts)`);
       if (Math.abs(sp.mu0) > 1e7) warn(`${sp_}.mu0`, `${num(sp.mu0)} J/mol is over 100 eV per particle; mu0 is J/mol`);
       if (sp.cRef !== undefined) conc(`${sp_}.cRef`, sp.cRef);
     }
@@ -87,6 +90,7 @@ export function unitWarnings(def) {
     const c = def.contacts?.[side];
     if (!isObject(c)) continue;
     capacitance(`contacts.${side}`, c.phi);
+    for (const [sname, v] of Object.entries(c.bath?.c ?? {})) conc(`contacts.${side}.bath.c.${sname}`, v);
     if (typeof c.V === 'number' && Math.abs(c.V) > 50) warn(`contacts.${side}.V`, `${c.V} V is a very large bias; voltages are V`);
   }
   return out;
@@ -132,9 +136,17 @@ export function describe(def) {
     const Dmin = Math.min(...species.map((sp, i) => (mat.present[i] && mat.D[i] > 0 ? mat.D[i] : Infinity)));
     if (mat.epsr > 0 && zzc > 0) {
       const lambda = Math.sqrt((mat.epsr * EPS0 * RT) / (FARADAY * FARADAY * zzc));
-      const hEnd = Math.max(grid.segLength[a], grid.segLength[b - 1]);
-      parts.push(`Debye length ${si(lambda, 'm')} (end cells ${si(hEnd, 'm')})`);
-      if (hEnd > lambda) warnings.push(`${reg.name}: end cells of ${si(hEnd, 'm')} are coarser than the Debye length, ${si(lambda, 'm')}; a double layer there won't be resolved (grid.hmin)`);
+      // Double layers form at faces that aren't neutral, and at gate or pinned contacts.
+      const pins = (side) => ['capacitive', 'pinned'].includes(model.contacts[side].phi.type);
+      const atLeft = r === 0 ? pins('left') : model.interfaces[r - 1].phi.type !== 'neutral';
+      const atRight = r === regions.length - 1 ? pins('right') : model.interfaces[r].phi.type !== 'neutral';
+      const hEnd = Math.max(atLeft ? grid.segLength[a] : 0, atRight ? grid.segLength[b - 1] : 0);
+      parts.push(`Debye length ${si(lambda, 'm')}${hEnd > 0 ? ` (end cells ${si(hEnd, 'm')})` : ''}`);
+      if (lambda < 2e-10) {
+        warnings.push(`${reg.name}: a Debye length of ${si(lambda, 'm')} is below atomic size, where a continuum double layer means little; consider epsr: 0 (strict neutrality)`);
+      } else if (hEnd > lambda) {
+        warnings.push(`${reg.name}: end cells of ${si(hEnd, 'm')} are coarser than the Debye length, ${si(lambda, 'm')}; a double layer there won't be resolved (grid.hmin)`);
+      }
       if (Dmax > 0) times.push(`  dielectric relaxation in ${reg.name}: ~${si((lambda * lambda) / Dmax, 's')}`);
     }
     if (Number.isFinite(Dmin)) times.push(`  diffusion across ${reg.name}: L²/D up to ${si((reg.length * reg.length) / Dmin, 's')}`);

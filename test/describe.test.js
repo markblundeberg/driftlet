@@ -38,7 +38,7 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   const slips = unitWarnings(pn(silicon({ D: 36, mu0: 4.05 })));
   assert.equal(slips.length, 2);
   assert.match(slips[0], /^materials\.Si\.species\.e-\.D: .*cm2PerS/);
-  assert.match(slips[1], /^materials\.Si\.species\.e-\.mu0: 4.05 J\/mol is tiny/);
+  assert.match(slips[1], /^materials\.Si\.species\.e-\.mu0: 4.05 J\/mol is small/);
   const more = unitWarnings({
     T: 25,
     species: [{ name: 'Na+', z: 1, cRef: 1e8 }],
@@ -49,6 +49,21 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   for (const path of ['T', 'species[0].cRef', 'regions[0].length', 'regions[0].fixedCharge', 'regions[0].c0.Na+', 'interfaces[0].phi.C', 'interfaces[0].reactions[0].k0', 'contacts.left.V']) {
     assert.ok(more.some((w) => w.startsWith(`${path}:`)), path);
   }
+  // Ions: D in cm²/s and μ° in kJ/mol, the commonest slips in electrochemistry.
+  const ions = {
+    species: [
+      { name: 'Na+', z: 1, cRef: 1000 },
+      { name: 'Cl-', z: -1, cRef: 1000 },
+    ],
+    materials: { water: { epsr: 78.4, species: { 'Na+': { D: 1.334e-5, mu0: -261.905 }, 'Cl-': { D: 2.032e-9, mu0: -131.228e3 } } } },
+    contacts: { left: { bath: { c: { 'Na+': 1e20, 'Cl-': 1e20 }, reference: 'Cl-' } } },
+  };
+  const ionSlips = unitWarnings(ions);
+  for (const path of ['materials.water.species.Na+.D', 'materials.water.species.Na+.mu0', 'contacts.left.bath.c.Na+']) {
+    assert.ok(ionSlips.some((w) => w.startsWith(`${path}:`)), path);
+  }
+  assert.ok(!ionSlips.some((w) => w.startsWith('materials.water.species.Cl-')));
+  assert.deepEqual(unitWarnings({ T: 77 }), [], 'liquid nitrogen is a real temperature');
   const coarse = describe(pn(silicon(), { hmin: 30e-9, hmax: 50e-9 }));
   assert.match(coarse, /warnings:\n {2}n: end cells of [\d.]+ nm are coarser than the Debye length, 12.9 nm/);
   assert.throws(() => describe({ species: [] }), DeviceError);
