@@ -10,11 +10,16 @@
 <main>
   <h1>A redox couple at an electrode: cyclic voltammetry</h1>
   <p>Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl, through a 20 µm stagnant layer to a stirred bulk.
-    The diagram shows the platinum's Fermi level and the couple's redox level, the electronic level at which
-    the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the overpotential,
-    which drives Butler–Volmer kinetics; the slope of the redox level across the layer is concentration
-    polarisation. Slow scans give the steady, sigmoidal wave of a convective electrode; fast ones outrun
-    diffusion and give peaks. A small rate constant pulls the waves apart.</p>
+    Slow scans give the steady, sigmoidal wave of a convective electrode; fast ones outrun diffusion and give
+    the peaks of a still solution. A small rate constant pulls the waves apart.</p>
+  <p>The first diagram is electronic: the platinum's Fermi level, and the couple's redox level, the electronic
+    level at which the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the
+    overpotential, which drives Butler–Volmer kinetics; the redox level's slope across the layer is
+    concentration polarisation. It sits V<sub>T</sub> ln(c₃/c₂) from the couple's standard level, which in turn
+    rides a fixed distance above the SHE's standard level, φ itself with table μ°. That one is nearly level
+    thanks to the supporting electrolyte, and "vs SHE" means against it in the stirred bulk, at the right.
+    The last diagram is the same story ion by ion: each species' voltage V<sub>i</sub> and standard level
+    V°<sub>i</sub> (K⁺, about 3 V lower, is left out).</p>
   <div class="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="1" step="0.25" value="-1"><output id="rateOut"></output></label>
     <label>k⁰ <input id="k0" type="range" min="-6" max="-1" step="0.5" value="-3"><output id="k0Out"></output></label>
@@ -27,9 +32,10 @@
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
+    <canvas class="wide" id="cv"></canvas>
     <div class="levels wide" id="levels"></div>
-    <canvas id="cv"></canvas>
-    <canvas id="conc"></canvas>
+    <canvas class="wide" id="conc"></canvas>
+    <div class="levels wide" id="ions"></div>
   </div>
 </main>
 <script type="module">
@@ -97,25 +103,43 @@ function frame(now = performance.now()) {
   });
   const E = sol.terminals.left.V;
   document.getElementById('status').textContent = `t = ${sol.time.toFixed(2)} s · E = ${E.toFixed(3)} V vs SHE`;
-  levels(document.getElementById('levels'), sol, {
-    title: `E = ${E.toFixed(3)} V vs SHE`,
-    species: ['e-'],
-    levels: [{ half: iron, label: 'Fe³⁺/Fe²⁺ redox level' }],
-    range: [Erest - 0.6, Erest + 0.6],
-    ylabel: 'electron voltage (V vs SHE)',
-  });
   chart(document.getElementById('cv'), {
     // Fixed axes (the sweep's span, and at least the limiting currents), so the curve draws into them.
     xlabel: 'E (V vs SHE)', ylabel: 'I (mA/cm², anodic +)', xlim: [Erest - 0.5, Erest + 0.5],
     ylim: (() => { const m = Math.max(2, 1.1 * Math.max(0, ...cv.I.map(Math.abs))); return [-m, m]; })(),
-    series: [{ x: cv.E, y: cv.I, color: colors[2], label: 'voltammogram' }],
-  });
-  chart(document.getElementById('conc'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', xlim: [1, 21],
     series: [
-      { x: sol.x, y: sol.c['Fe3+'], color: colors[3], label: 'Fe³⁺' },
-      { x: sol.x, y: sol.c['Fe2+'], color: colors[4], label: 'Fe²⁺' },
+      { x: cv.E, y: cv.I, color: colors[2], label: 'voltammogram' },
+      { x: [E], y: [cv.I.at(-1) ?? 0], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
+  });
+  // Electronic levels: the metal's Fermi level; the couple's redox level and its standard level;
+  // and the SHE's standard level, which with table μ° (μ°_H⁺ = 0, μ_H₂ = 0) is φ itself.
+  levels(document.getElementById('levels'), sol, {
+    title: `electronic levels at E = ${E.toFixed(3)} V vs SHE`,
+    species: ['e-'],
+    phi: true,
+    labels: { 'V:e-': 'Fermi level (V e⁻)', phi: 'V° e⁻(SHE) = φ' },
+    levels: [
+      { half: iron, label: 'Fe³⁺/Fe²⁺ redox level' },
+      { half: iron, standard: true, label: 'V° e⁻(Fe³⁺/Fe²⁺)' },
+    ],
+    range: [Math.min(-0.1, Erest - 0.6), Erest + 0.6],
+    ylabel: 'electron voltage (V vs SHE)',
+  });
+  // Same x range as the diagrams above; log scale, so the iron shows beside 0.5 M of chloride.
+  chart(document.getElementById('conc'), {
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', xlim: [0, 21], logy: true, ylim: [1e-3, 2000],
+    series: [
+      { x: sol.x, y: sol.c['Fe3+'], color: colors[2], label: 'Fe³⁺' },
+      { x: sol.x, y: sol.c['Fe2+'], color: colors[3], label: 'Fe²⁺' },
+      { x: sol.x, y: sol.c['Cl-'], color: colors[1], label: 'Cl⁻' },
+    ],
+  });
+  // The ionic view (ESBD): each ion's voltage V_i = μ̄_i/(z_i F), solid, and standard level V°_i, dashed.
+  levels(document.getElementById('ions'), sol, {
+    title: 'ionic species voltages and standard levels',
+    species: ['Fe3+', 'Fe2+', 'Cl-'],
+    ylabel: 'voltage (V)',
   });
   if (sol.time < Math.min(cv.end, cv.stop) && sol.converged) requestAnimationFrame(frame);
   else running = false;
