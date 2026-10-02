@@ -2415,7 +2415,9 @@ export class Solver {
     const { n, M, u } = this;
     let changed = false;
     this.stretches.forEach((st, k) => {
-      if (!st.spectator) return;
+      // A floating conductor holds its charge on its faces, not as an amount: the huge steps keep
+      // it, and there's nothing here to shift.
+      if (!st.spectator || this.model.materials[this.model.regions[st.regions[0]].material].conductor) return;
       const want = this.referenceAmounts[k];
       const ideal = this.nodeIdeal.subarray(st.nodes[0], st.nodes[1] + 1).every((v) => v === 1);
       for (let it = 0; it < (ideal ? 1 : 30); it++) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, FARADAY, units } from '../src/index.js';
+import { Device, DeviceError, EPS0, FARADAY, units } from '../src/index.js';
 import { vacuumZeroCharge } from '../src/kit.js';
 
 const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
@@ -254,4 +254,37 @@ test('a port grounds a floating metal: a bipolar plate tied to the middle voltag
   // The wire takes the difference between the two cells' currents, and the plate sits near 0.
   assert.ok(Math.abs(grounded.contacts.left.current + grounded.ports[0].current - grounded.contacts.right.current) < 1e-9 * Math.abs(grounded.current));
   assert.ok(Math.abs(grounded.ports[0].current) > 0.1 * Math.abs(grounded.current));
+});
+
+test('a floating gate (a metal with no reactions between two oxides) stays neutral and divides the bias capacitively', () => {
+  const gate = (V, grid) =>
+    new Device({
+      species: [{ name: 'e-', z: -1 }],
+      materials: { ox: { epsr: 3.9, species: {} }, Au: { conductor: { species: 'e-', conductivity: 4e7 } } },
+      regions: [
+        { material: 'ox', length: 5e-9 },
+        { material: 'Au', length: 20e-9 },
+        { material: 'ox', length: 10e-9 },
+      ],
+      interfaces: [
+        { phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.3 },
+        { phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.3 },
+      ],
+      contacts: { left: { V: 0, phi: { type: 'capacitive', C: 1 }, zeroCharge: 0 }, right: { V, phi: { type: 'capacitive', C: 1 }, zeroCharge: 0.2 } },
+      grid,
+    });
+  // Each side is a series of capacitors: contact, oxide, face.
+  const ox = (d) => (3.9 * EPS0) / d;
+  const CL = 1 / (1 / 1 + 1 / ox(5e-9) + 1 / 10), CR = 1 / (1 / 10 + 1 / ox(10e-9) + 1 / 1);
+  for (const grid of [{ minCells: 4 }, { minCells: 8 }, { hmin: 0.2e-9, hmax: 10e-9 }]) {
+    const VF = (V) => {
+      const dev = gate(V, grid), sol = dev.solve();
+      assert.ok(sol.converged, `${JSON.stringify(grid)}, V = ${V}`);
+      const [a, b] = sol.interfaces.map((f) => f.D);
+      assert.ok(Math.abs(a - b) < 1e-12 * Math.abs(a), 'the metal carries no net charge');
+      return sol.V['e-'][dev.grid.regionStart[1]];
+    };
+    const slope = VF(1) - VF(0);
+    assert.ok(Math.abs(slope / (CR / (CL + CR)) - 1) < 1e-9, `${slope} vs ${CR / (CL + CR)}`);
+  }
 });
