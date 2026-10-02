@@ -32,7 +32,7 @@
     "types": "rm -rf types && npx -y -p typescript@5 tsc --allowJs --declaration --emitDeclarationOnly --target es2022 --module nodenext --moduleResolution nodenext --outDir types src/index.js src/kit.js src/plot.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "keywords": [
     "drift-diffusion",

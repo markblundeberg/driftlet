@@ -1,5 +1,7 @@
 # driftlet
 
+[![test](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml/badge.svg)](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml)
+
 **driftlet solves 1D drift–diffusion–reaction problems properly**: any mix of charged and
 neutral species, Poisson electrostatics (or strict neutrality), bulk and interfacial reactions,
 heterointerfaces, metals, and external circuits, in steady state, in time, and as small-signal
