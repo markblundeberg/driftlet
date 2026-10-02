@@ -1846,7 +1846,7 @@ export class Solver {
   }
 
   // Largest update among the potential-like unknowns (φ̂ and η at grid nodes).
-  _maxPotentialStep(delta, deltaV = this.deltaV) {
+  _maxPotentialStep(delta, deltaV = this.deltaV) { // (deltaV null: the device's potentials only)
     const { n, M } = this;
     const R = this.rix; // (the sink entry of delta is 0)
     let mx = 0;
@@ -1868,7 +1868,7 @@ export class Solver {
   newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10 } = {}) {
     const { delta, res } = this;
     const deltaV = this.deltaV ?? (this.deltaV = new Float64Array(this.floating.length));
-    const history = [];
+    const history = [], ownHistory = [];
     // A steady solve that fails: record how nearly singular the system was, and where.
     const fail = (r) => {
       if (dt === Infinity) this._noteConditioning();
@@ -1899,15 +1899,22 @@ export class Solver {
         if (!(err instanceof SolverError)) throw err;
         return fail({ converged: false, iterations: it, history, error: err.message });
       }
+      // Convergence counts every unknown, floating terminal voltages too. Damping and the
+      // divergence check count only the device's own potentials: a terminal voltage enters
+      // linearly (conductance links, held levels, a capacitive face), so a large swing in one is
+      // safe, and damping it would throttle the whole update (a current-driven port switching
+      // off, its voltage collapsing by hundreds of volts, crawled 10 thermal units at a time).
       const step = this._maxPotentialStep(delta, deltaV);
+      const own = this._maxPotentialStep(delta, null);
       history.push(step);
+      ownHistory.push(own);
       if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
       // Give up early on clear divergence; the caller will take a smaller step instead.
-      if (step > 1e4 || (it > 6 && step > 10 * history[0])) {
+      if (own > 1e4 || (it > 6 && own > 10 * ownHistory[0])) {
         this.computeConcentrations();
         return fail({ converged: false, iterations: it, history, error: 'diverging' });
       }
-      const alpha = step > maxStep ? maxStep / step : 1;
+      const alpha = own > maxStep ? maxStep / own : 1;
       this._addToState(delta, -alpha);
       this.floating.forEach((k, a) => (this.termV[k] -= alpha * deltaV[a]));
       if (alpha === 1 && step < tol) {

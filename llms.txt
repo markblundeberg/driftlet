@@ -205,7 +205,8 @@ const def = build({
   stack: [ohmic(E * L), layer('Ge', L, { name: 'bar', donors: ND }), ohmic(0)], // holes drift toward +x
   bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Ge: 1 / (tau * ND) } }], // τ = 1/(kf·n₀) for minority holes
   // The emitter: a port driven by a current waveform, feeding holes into a 50 µm window. Its
-  // voltage floats to deliver that current; G only sets how evenly it's spread over the window.
+  // voltage floats to deliver that current (here ~16 V above the window); a small G like this
+  // spreads it evenly over the window, a large one sends it where holes are drawn away fastest.
   ports: [{ name: 'emitter', region: 'bar', from: 0.5e-3, to: 0.55e-3, terminal: 'h+',
     species: { 'h+': { type: 'conductance', G: 1e6 } },
     I: { t: [0, 1e-9, pulse, pulse + 1e-9], values: [0, Ip, Ip, 0] } }], // A/m², t from the device's time 0

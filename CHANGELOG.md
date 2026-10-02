@@ -2,6 +2,15 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Newton damps only the device's potentials, not floating terminal voltages (which enter
+  linearly): a current-driven port switching off, its voltage collapsing by hundreds of volts,
+  no longer crawls. A strong Haynes–Shockley pulse takes 55% fewer factorisations.
+- Device reference: what a driven port's conductance actually does (it shares the current; a
+  small one spreads it evenly), correcting 0.1.2's note.
+- `llms.txt`: good habits (draw the closed form alongside, stay honestly in 1D).
+
 ## 0.1.2 (2026-10-02)
 
 - The npm package ships `docs/`, so the guide's references to them work from the tarball.

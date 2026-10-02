@@ -352,11 +352,13 @@ the port brings into the device.
 
 A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
 
-A port driven by a current (`I`, or a waveform) floats to whatever voltage delivers it, so a
-conductance link's `G` doesn't set how much enters, only how it's shared across the window: in
-proportion to each node's level below the port's. Any large value spreads it evenly. At `I: 0`
-the port still ties that species' level together across its window (a large `G` shorts the
-window for it), so keep such windows narrow.
+A port driven by a current (`I`, or a waveform) floats to whatever voltage delivers it: with a
+conductance `G` per volume over a window of width $`w`$, it sits about $`I/(G w)`$ above the
+window's level for that species. So `G` decides how the current is shared across the window, not
+how much enters. A small `G`, with the port volts above the window, spreads it evenly, like a
+current source; a large one pins the window near the port's level, and the current enters
+wherever the species is drawn away fastest. At `I: 0` the port still ties that species' level
+together across its window (a large `G` shorts the window for it), so keep such windows narrow.
 
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance

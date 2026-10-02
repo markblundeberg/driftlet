@@ -165,3 +165,29 @@ test('ports are checked', () => {
   def.ports[0].to = 2.6e-6; // between nodes (1 µm cells)
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /holds no grid node/.test(e.message));
 });
+
+test('a port driven by a current pulse: it delivers I·t_p, and switching off is quick however far its voltage falls', () => {
+  // Holes injected for 0.5 µs into n-Si under a field, with no recombination: the port's
+  // voltage floats hundreds of volts above the window at this current (small G), then collapses
+  // when the current stops. Holes are conserved until they reach the right contact.
+  const ND = units.perCm3(1e15), Lb = 3e-3, E = 3000, tp = 0.5e-6, I = (ND * FARADAY * 50e-6) / tp; // A/m²: about n₀ over the window
+  const dev = new Device(
+    build({
+      T: 300,
+      library: [semiconductor('Si')],
+      stack: [ohmic(E * Lb), layer('Si', Lb, { name: 'bar', donors: ND }), ohmic(0)],
+      ports: [{ name: 'emitter', region: 'bar', from: 0.5e-3, to: 0.55e-3, terminal: 'h+', species: { 'h+': { type: 'conductance', G: 1e6 } },
+        I: { t: [0, 1e-9, tp, tp + 1e-9], values: [0, I, I, 0] } }],
+      grid: { hmin: 10e-6, hmax: 10e-6 },
+    }),
+  );
+  const rest = dev.solve();
+  const holes = (s) => s.x.reduce((a, x, g) => (g ? a + ((s.c['h+'][g] - rest.c['h+'][g] + s.c['h+'][g - 1] - rest.c['h+'][g - 1]) / 2) * (x - s.x[g - 1]) : 0), 0);
+  const on = dev.advance(tp);
+  assert.ok(on.ports[0].V > 100, `the port floats far above the window while driven (${on.ports[0].V} V)`);
+  const off = dev.advance(tp + 50e-9);
+  assert.ok(off.converged && off.steps + off.rejected < 40, `switching off took ${off.steps} steps and ${off.rejected} rejections`);
+  assert.ok(Math.abs(off.ports[0].V) < 20, `the port's voltage collapses once the current stops (${off.ports[0].V} V)`);
+  // Everything injected is still in the bar (the pulse is far from the right contact).
+  assert.ok(Math.abs(holes(off) / ((I * tp) / FARADAY) - 1) < 1e-3, `${holes(off)} mol/m² of holes`);
+});

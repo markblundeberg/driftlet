@@ -403,8 +403,14 @@ test checks the compact Jacobian column by column on devices that cover every as
 
 ## Newton
 
-- The update of potential-like unknowns ($`\hat\phi`$, $`\eta`$, a floating $`V_t`$) is limited to 10
-  thermal units per iteration by uniform scaling.
+- The update of the device's potentials ($`\hat\phi`$, $`\eta`$) is limited to 10 thermal units per
+  iteration by uniform scaling, which scales a floating terminal voltage's update too. That
+  voltage doesn't count toward the limit: it enters only linearly (conductance links, held
+  levels, a capacitive face), so a large swing in it is safe. When it did count, a port driven by
+  a current pulse, its voltage collapsing by hundreds of volts as the current switched off,
+  dragged every unknown along 10 thermal units at a time (and a swing past 1e4 tripped the
+  divergence check): the strong-injection Haynes–Shockley benchmark took 55% more
+  factorisations.
 - Converged when a full, undamped update is below 1e-10 (thermal units). Quadratic
   convergence makes the remaining residual negligible.
 - Or converged as far as round-off allows: updates already below 1e-6 thermal units (~26 nV)
@@ -414,7 +420,7 @@ test checks the compact Jacobian column by column on devices that cover every as
   much reduced by the change of variables below), converges quadratically to ~1e-9 and then
   rattles there. Short steps come right after every waveform breakpoint, so without this a
   cyclic voltammogram in a neutral electrolyte stalled at its turns.
-- Clear divergence (updates beyond 1e4, or ten times the first update after six iterations)
+- Clear divergence (device updates beyond 1e4, or ten times the first after six iterations)
   bails out early, so the caller can take a smaller step.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
   and where. A running error bound through the factorisation compares each pivot with the
