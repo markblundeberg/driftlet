@@ -156,6 +156,8 @@ for live demos.
   still reports $\bar\mu$, $V_i$ and $c$, and faces still align levels.
 - **More performance**, measured against the committed benchmark baseline: Newton-iteration
   counts (above), and specialised small-block elimination.
+- **Concentration-dependent diffusivities** D(c), beyond what non-ideal statistics already give
+  the flux through the chemical potential.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
