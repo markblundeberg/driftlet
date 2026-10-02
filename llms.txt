@@ -236,13 +236,14 @@ has the long form):
 - **Standard redox level** (`{ standard: true }`), thin and dashed: every participant at reference
   concentration. The redox level sits RT/(zF) ln(a_Ox/a_Red) from it (Nernst, locally).
 - **Electrode potentials** are gaps to the SHE's standard level V°_e⁻(SHE): E = V_e⁻(electrode) −
-  V°_e⁻(SHE), E° = V°_e⁻(Ox/Red) − V°_e⁻(SHE), η = E − E_eq. With the data library's μ°, V°_e⁻(SHE)
-  in water is φ, so `phi: true` draws it. It slopes under current: "vs SHE" needs a place (say,
-  the stirred bulk).
+  V°_e⁻(SHE), E° = V°_e⁻(Ox/Red) − V°_e⁻(SHE), η = E − E_eq. With the data library's μ°,
+  V°_e⁻(SHE) in water is φ, so `phi: true` draws it. It slopes under current: "vs SHE" needs a
+  place (say, the stirred bulk).
 - **Species voltage** V_i = μ̄_i/(z_iF) (thick, solid) for every charged species: the Fermi level
   for e⁻, a quasi-Fermi level for e⁻ and h⁺ in a semiconductor, what a reversible electrode reads
-  for an ion. A species moves down slopes in its own V_i (drift and diffusion together) and is in
-  equilibrium where it's flat. A step at a face means resistance there.
+  for an ion. The current a species carries flows down slopes in its own V_i (drift and diffusion
+  together; cations and holes move downhill, electrons and anions uphill), and it's in equilibrium
+  where V_i is flat. A step at a face means resistance there.
 - **Standard level** V°_i = φ + μ°_i/(z_iF) (thin, solid): a band edge for e⁻ and h⁺; V_i − V°_i =
   (RT/z_iF) ln(c/c_ref) for ideal species. Steps in V°_i at faces (Donnan, junctions, dipoles) are
   bookkeeping. In volts the conduction band sits below the valence band.

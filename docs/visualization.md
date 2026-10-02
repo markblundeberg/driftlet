@@ -167,10 +167,11 @@ and for non-ideal ones the activity replaces $c_i/c_{\mathrm{ref},i}$.
 Drawing every species this way, ions alongside electrons, shows things that are otherwise hard
 to see:
 
-- **Each species' driving force is the slope of its own line.** A species moves down slopes in
-  its $V_i$, and in equilibrium its $V_i$ is flat. That one slope is drift and diffusion together,
-  so there's no need to split it into an electric field and a concentration gradient (a split
-  that depends on how $\phi$ was chosen, and so means little on its own).
+- **Each species' driving force is the slope of its own line.** The current a species carries
+  flows down slopes in its $V_i$ (so cations and holes move downhill, electrons and anions
+  uphill), and in equilibrium its $V_i$ is flat. That one slope is drift and diffusion together,
+  so there's no need to split it into an electric field and a concentration gradient (a split that
+  depends on how $\phi$ was chosen, and so means little on its own).
 - **Interfaces read at a glance.** Where a species crosses a face freely, its $V_i$ is
   continuous. A step in $V_i$ means something resists its transfer and dissipates energy there.
   The standard levels step at faces along with $\phi$ (Donnan potentials, liquid junctions,

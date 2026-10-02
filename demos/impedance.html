@@ -38,17 +38,18 @@
     oscillation δX(x, t) = Re[δX(x) e<sup>iωt</sup>]. That's what the diagrams draw, per 10 mV of excitation
     (it scales with the excitation), with the phase ωt advancing slowly whatever the frequency. The dotted
     lines are each quantity's envelope, ±|δX(x)|, which the oscillation sweeps between.</p>
-  <p>The level diagram uses the <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a> V<sub>i</sub> =
-    μ̄<sub>i</sub>/(z<sub>i</sub>F): an ion's electrochemical potential per unit charge, in volts. Ions drift
-    and diffuse down slopes in their own V<sub>i</sub>. Each electrode holds Ag⁺ level with its own silver, so
-    δV<sub>Ag⁺</sub> is 0 at the left and the excitation at the right. At high frequency the salt has no time
-    to move: both ions' voltages slope straight across the cell like the potential in a resistor, carrying
-    current in proportion to their mobilities, and the impedance is just the bulk resistance R<sub>b</sub>.
-    The salt then piles up and drains only within a diffusion length √(D/ω) of each electrode, where nitrate
-    is stopped. At low frequency that length outgrows the cell: the salt gradient spans it, nitrate's own
-    voltage flattens (it carries no current at the electrodes, so in the end none anywhere), and Ag⁺ carries
-    all the current, by drift and diffusion together. Its added resistance is the diffusion arc's width,
-    R<sub>d</sub>.</p>
+  <p>The level diagram uses the <a
+    href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): an ion's electrochemical potential per unit charge, in
+    volts. The current each ion carries flows down slopes in its own V<sub>i</sub> (Ag⁺ moves downhill, NO₃⁻
+    uphill). Each electrode holds Ag⁺ level with its own silver, so δV<sub>Ag⁺</sub> is 0 at the left and the
+    excitation at the right. At high frequency the salt has no time to move: both ions' voltages slope
+    straight across the cell like the potential in a resistor, carrying current in proportion to their
+    mobilities, and the impedance is just the bulk resistance R<sub>b</sub>. The salt then piles up and drains
+    only within a diffusion length √(D/ω) of each electrode, where nitrate is stopped. At low frequency that
+    length outgrows the cell: the salt gradient spans it, nitrate's own voltage flattens (it carries no
+    current at the electrodes, so in the end none anywhere), and Ag⁺ carries all the current, by drift and
+    diffusion together. Its added resistance is the diffusion arc's width, R<sub>d</sub>.</p>
   <p>The Nyquist plot (each frequency a point, Z′ against −Z″) shows the crossover as a finite-length Warburg
     arc: R<sub>b</sub> + R<sub>d</sub> tanh√(iωτ)/√(iωτ), with τ = (L/2)²/D the salt's diffusion time,
     dashed. There's no double-layer arc at the top of the range, because this electrolyte is strictly

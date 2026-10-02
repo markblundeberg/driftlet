@@ -36,13 +36,15 @@
   <p>The dashed curve is the Teorell–Meyer–Sievers theory: a Donnan equilibrium at each face and diffusion
     between. It's the limit of thin unstirred layers. Thicker ones polarise, since the salt leaking through
     piles up on the dilute side and is drawn down on the other, so the membrane sees less of the difference.</p>
-  <p>The level diagram uses the <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a> V<sub>i</sub> =
-    μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so
-    electrons and ions share one axis. An ion drifts and diffuses down slopes in its own V<sub>i</sub>, and is
-    in equilibrium where it's level. Each ion's V<sub>i</sub> (thick) is continuous through each face, while
-    its standard level V°<sub>i</sub> (thin, where V<sub>i</sub> would sit at the reference concentration)
-    steps there, following φ. Those steps are the Donnan potentials, bookkeeping that cancels from anything
-    measured. Na⁺ is drawn 4.4 V higher (⌇) to share the plot.</p>
+  <p>The level diagram uses the <a
+    href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
+    volts, so electrons and ions share one axis. The current each ion carries flows down slopes in its own
+    V<sub>i</sub> (cations move downhill, anions uphill), and it's in equilibrium where its V<sub>i</sub> is
+    level. Each ion's V<sub>i</sub> (thick) is continuous through each face, while its standard level
+    V°<sub>i</sub> (thin, where V<sub>i</sub> would sit at the reference concentration) steps there, following
+    φ. Those steps are the Donnan potentials, bookkeeping that cancels from anything measured. Na⁺ is drawn
+    4.4 V higher (⌇) to share the plot.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
