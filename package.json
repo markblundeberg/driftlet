@@ -41,6 +41,14 @@
     "semiconductor",
     "simulation"
   ],
+  "homepage": "https://markblundeberg.github.io/driftlet/demos/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/markblundeberg/driftlet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/markblundeberg/driftlet/issues"
+  },
   "author": "Mark Lundeberg",
   "license": "0BSD"
 }

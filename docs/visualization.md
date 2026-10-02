@@ -127,7 +127,7 @@ console.log(`E = ${E.toFixed(4)} V vs SHE, E_eq = ${Eeq.toFixed(4)} V, Nernst: $
 A cell's voltage splits the same way along the electrons' path. It's the difference between
 the two terminals' $V_{\mathrm{e}^-}$: at open circuit, the gap between the two couples' levels;
 under load, less each electrode's overpotential and the solution's share. The
-[Daniell demo](../demos/daniell.html) draws this and adds it up.
+[Daniell demo](https://markblundeberg.github.io/driftlet/demos/daniell.html) draws this and adds it up.
 
 ### How they're drawn
 
@@ -187,7 +187,7 @@ to see:
   transport has a rail for each species' $\bar\mu_i/(z_i F)$, with resistors along it for
   transport and chemical capacitances from it to a $\phi$ rail for storage (J. Jamnik and J. Maier,
   [Phys. Chem. Chem. Phys. 3, 1668 (2001)](https://doi.org/10.1039/b100180i)). The
-  [impedance demo](../demos/impedance.html) draws the voltages on those rails.
+  [impedance demo](https://markblundeberg.github.io/driftlet/demos/impedance.html) draws the voltages on those rails.
 
 Different species' levels sit volts apart, because their $\mu^\circ$ differ by hundreds of
 kJ/mol. The gap between two species' lines carries a constant fixed by convention (below), so
@@ -218,7 +218,7 @@ There are two places where $\phi$ is the right line to draw:
   mobile lives there, the plain sloped $\phi$ line says it best: its slope is the field. It's also
   harmless to the reader, since there's no interfacial step in $\phi$ in view to mistake for
   something measurable, just a lone line connected to nothing else. The
-  [MOS demo](../demos/mos.html) draws $\phi$ across its oxide this way. It draws $\phi$ in its
+  [MOS demo](https://markblundeberg.github.io/driftlet/demos/mos.html) draws $\phi$ across its oxide this way. It draws $\phi$ in its
   silicon too, deliberately anchored at an arbitrary offset from the band edges and stepping at
   the oxide's face, to show the band edges riding on it while its position is a convention.
 - **In vacuum**, $-e\phi$ is exactly what it claims to be: the energy of an electron at rest there.

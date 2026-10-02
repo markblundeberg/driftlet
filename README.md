@@ -15,11 +15,11 @@ The same equations go by different names in different fields. If your problem is
 
 | If you work on | you may call it | start from | checked against |
 |---|---|---|---|
-| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions | [first example](#a-semiconductor-junction), [pn demo](demos/pn.html), [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
+| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions | [first example](#a-semiconductor-junction), [pn demo](https://markblundeberg.github.io/driftlet/demos/pn.html), [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
 | Solar cells | photogeneration, radiative and SRH recombination | [`reactions`](test/reactions.test.js) test: generation is a reaction from a photon reservoir (uniform per material), SRH runs through explicit trap species | `J_sc = qG(L_n + L_p + W)`; Shockley J–V in the dark |
-| Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry | [second example](#an-electrochemical-cell), [saturation](demos/saturation.html) and [impedance](demos/impedance.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg |
-| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
-| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
+| Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry | [second example](#an-electrochemical-cell), [saturation](https://markblundeberg.github.io/driftlet/demos/saturation.html) and [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg |
+| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](https://markblundeberg.github.io/driftlet/demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
+| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
 | Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
 | Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
 | Biophysics | Poisson–Nernst–Planck, ion channels, membrane potentials | the electrochemistry setups, with fixed charge in the channel region | no dedicated check yet |
@@ -119,18 +119,19 @@ level diagrams, slider demos and `describe()`, which flags likely unit slips.
 
 Live pages in [`demos/`](demos/), each building its device with `driftlet/kit`, solving it in the
 browser as you move the controls, and showing its whole script as a worked example. Most draw the
-closed-form theory alongside, as a check. Serve the repository root (e.g. `python3 -m http.server`)
-and open `/demos/`.
+closed-form theory alongside, as a check. They're live at
+[markblundeberg.github.io/driftlet/demos](https://markblundeberg.github.io/driftlet/demos/); to run
+them locally, serve the repository root (e.g. `python3 -m http.server`) and open `/demos/`.
 
 | | | |
 |---|---|---|
-| [![pn junction](demos/screenshots/pn.png)](demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](demos/mos.html) |
+| [![pn junction](demos/screenshots/pn.png)](https://markblundeberg.github.io/driftlet/demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](https://markblundeberg.github.io/driftlet/demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](https://markblundeberg.github.io/driftlet/demos/mos.html) |
 | **pn junction**: quasi-Fermi levels under bias; I–V against Shockley | **Solar cell**: J<sub>sc</sub> and V<sub>oc</sub> against collection theory | **MOS capacitor**: band bending; C–V against ideal theory |
-| [![cyclic voltammetry](demos/screenshots/redox.png)](demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](demos/daniell.html) | [![saturation](demos/screenshots/saturation.png)](demos/saturation.html) |
+| [![cyclic voltammetry](demos/screenshots/redox.png)](https://markblundeberg.github.io/driftlet/demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](https://markblundeberg.github.io/driftlet/demos/daniell.html) | [![saturation](demos/screenshots/saturation.png)](https://markblundeberg.github.io/driftlet/demos/saturation.html) |
 | **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: a real salt bridge, leaking, ion by ion | **Saturation**: Ag \| AgNO₃ \| Ag under a square wave, up to its limiting current |
-| [![impedance](demos/screenshots/impedance.png)](demos/impedance.html) | | |
+| [![impedance](demos/screenshots/impedance.png)](https://markblundeberg.github.io/driftlet/demos/impedance.html) | | |
 | **Impedance**: the Warburg arc, and the cell's small-signal response inside | | |
-| [![ion-exchange membrane](demos/screenshots/membrane.png)](demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](demos/double-layer.html) | [![insertion host](demos/screenshots/insertion.png)](demos/insertion.html) |
+| [![ion-exchange membrane](demos/screenshots/membrane.png)](https://markblundeberg.github.io/driftlet/demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](https://markblundeberg.github.io/driftlet/demos/double-layer.html) | [![insertion host](demos/screenshots/insertion.png)](https://markblundeberg.github.io/driftlet/demos/insertion.html) |
 | **Ion-exchange membrane**: Donnan steps, ion by ion, against TMS theory | **Double layer**: dilute vs crowded ions, against closed forms | **Intercalation host**: cycling between cutoffs against the OCV |
 
 ## How to think about it
