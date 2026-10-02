@@ -96,8 +96,16 @@ export class Device {
       if (old.terms.length === solver.terms.length) {
         for (const k of solver.floating) if (old.terms[k].name === solver.terms[k].name) solver.termV[k] = old.termV[k];
       }
-      solver.referenceAmounts = old.referenceAmounts.slice();
-      if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
+      // What each stretch conserves from here: a stretch that was closed and still is (same
+      // species, same regions) keeps its amount; any other (newly closed, split, merged, open)
+      // starts from what the carried state holds.
+      const key = (st) => `${st.species}:${st.regions[0]}-${st.regions[1]}`;
+      const before = new Map(old.stretches.map((st, k) => [key(st), k]));
+      solver.referenceAmounts = solver.stretches.map((st) => {
+        const k = before.get(key(st));
+        return k !== undefined && !old.stretches[k].connected && !st.connected ? old.referenceAmounts[k] + old.boundaryIntake[k] : solver.amount(st);
+      });
+      solver.boundaryIntake.fill(0);
     }
     return this;
   }

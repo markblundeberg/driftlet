@@ -36,3 +36,26 @@ test('steady state with a conserved spectator, solved directly: I = (4FDc₀/L) 
   const e1 = error(coarse, 0.3), e2 = error(fine, 0.3);
   assert.ok(Math.abs(e1) < 5e-4 && e1 / e2 > 3.6 && e1 / e2 < 4.4, `${e1}, ${e2}`);
 });
+
+test('set() that closes a stretch conserves what it holds then, not what it held at the start', () => {
+  // O₂ diffuses into a film for a while; then its contact is blocked. The film keeps that O₂.
+  const RT = 8.314462618 * 298.15, L = 10e-6;
+  const open = (c) => ({ species: { O2: { type: 'equilibrium', mu: RT * Math.log(c / 1000) } }, phi: 'neutral' });
+  const def = (left) => ({
+    species: [{ name: 'O2', z: 0, cRef: 1000 }],
+    materials: { polymer: { epsr: 3, species: { O2: { D: 1e-11, mu0: 0 } } } },
+    regions: [{ material: 'polymer', length: L, c0: { O2: 1 } }],
+    contacts: { left, right: { phi: 'neutral' } },
+    grid: { minCells: 50 },
+  });
+  const dev = new Device(def(open(1)));
+  dev.solve();
+  dev.set({ contacts: { left: open(2) } });
+  const held = dev.advance(1).conservation[0].amount; // partly filled toward c = 2
+  assert.ok(held > 1.3e-5 && held < 1.4e-5);
+  dev.set({ contacts: { left: { species: { O2: 'blocked' } } } });
+  const closed = dev.solve();
+  assert.ok(closed.converged);
+  assert.ok(Math.abs(closed.conservation[0].amount / held - 1) < 1e-12, `${closed.conservation[0].amount} vs ${held}`);
+  assert.ok(Math.abs(closed.conservation[0].drift) < 1e-12);
+});

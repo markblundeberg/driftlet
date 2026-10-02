@@ -424,7 +424,10 @@ const now = dev.solution();                   // snapshot of the current state
 - `set(patch)` merges plain objects deeply (arrays are replaced). A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
   Otherwise the device is rebuilt: the current state carries over while the grid and species
-  are unchanged, or restarts from the regions' `c0`. Either way the time stepping restarts its
+  are unchanged, or restarts from the regions' `c0`. A carried state keeps what it holds: a
+  stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
+  what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
+  from `c0`, make a new `Device`. Either way the time stepping restarts its
   order, as after any discontinuity.
 
 For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
