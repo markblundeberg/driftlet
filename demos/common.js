@@ -57,12 +57,26 @@ export function relativeLevels(el, sol, { species, title, labels = {} }) {
 }
 
 // Concentration profiles drawn like the level diagrams (same layout, x axis and species colours),
-// so they line up beneath them: levelChart() takes any lines as traces.
-export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim }) {
-  const series = species.map((name) => ({ id: `c:${name}`, label: `c ${name}`, kind: 'level', ...speciesRole(sol, name), y: sol.c[name] }));
+// so they line up beneath them: levelChart() takes any lines as traces. Each entry of `species` is
+// a name, or { name, c, label, kind } to draw some other profile in that species' colour (kind
+// 'standard' draws it thin). `scale` converts units; `log` draws log₁₀, with powers of ten.
+export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, height = 300 }) {
+  const f = log ? (c) => (c > 0 ? Math.log10(c * scale) : NaN) : (c) => c * scale;
+  const series = species.map((entry) => {
+    const { name, c = sol.c[name], label = labels[name] ?? `c ${name}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
+    return { id: `c:${name}:${label}`, label, kind, ...speciesRole(sol, name), y: Array.from(c, f) };
+  });
+  if (!range) {
+    const [xs, xe] = xlim ?? [sol.x[0], sol.x.at(-1)];
+    const shown = series.flatMap((s) => s.y.filter((v, g) => Number.isFinite(v) && sol.x[g] >= xs && sol.x[g] <= xe));
+    const lo = Math.min(...shown), hi = Math.max(...shown);
+    range = log ? [Math.floor(lo - 0.2), Math.ceil(hi + 0.2)] : [Math.min(0, lo), 1.08 * hi || 1];
+  }
   const tr = { x: sol.x, series, regions: sol.regions, faces: sol.regions.slice(1).map((r) => r.x0), range };
-  el.innerHTML = levelChart(tr, { width: 720, height: 300, title, ylabel, range, xlim });
+  el.innerHTML = levelChart(tr, { width: 720, height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
 }
+const superscript = (n) => String(n).replace(/[-0-9]/g, (d) => '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'['-0123456789'.indexOf(d)]);
+const powerOfTen = (v) => (Number.isInteger(v) ? `10${superscript(v)}` : '');
 
 // A slider's value from the URL (?V=0.4), for sharing a state or taking a screenshot.
 export function fromQuery(input) {

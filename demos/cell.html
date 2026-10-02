@@ -9,85 +9,150 @@
 <body>
 <main>
   <h1>Ag | AgNO₃ | Ag: concentration polarisation, live</h1>
-  <p>10 mM silver nitrate between two silver electrodes, 20 µm apart, as a strictly neutral electrolyte.
-    Ag⁺ is plated and stripped at the electrodes; NO₃⁻ is blocked. Step the cell voltage and watch the
-    salt pile up at one electrode and deplete at the other, and the current relax toward its steady value.
-    In the diagram, Ag⁺'s species voltage drops from one electrode to the other, while NO₃⁻'s, carrying no
-    current once it's settled, goes level. The impedance spectrum at rest is the bulk resistance plus a
-    finite-length Warburg arc from salt diffusion.</p>
+  <p>10 mM silver nitrate between two silver electrodes 20 µm apart, as a strictly neutral electrolyte, driven
+    by a square wave of cell voltage. Ag⁺ is plated at one electrode and stripped at the other; NO₃⁻ can't
+    cross either. So each reversal starts with a burst of current limited only by the solution's resistance;
+    then salt piles up at one electrode and depletes at the other, and the current sags toward its steady
+    value, (4FD₊c/L) tanh(FV/4RT) (dashed), which can never exceed the limiting current 4FD₊c/L. Half-periods
+    shorter than the diffusion time, (L/2)²/D ≈ 60 ms here, reverse the salt before it has piled up, and
+    the current stays near ohmic.</p>
+  <p>The diagram is ion by ion: each species' voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F) (thick)
+    and standard level V°<sub>i</sub> (thin). Ag⁺'s voltage slopes from one electrode's to the other's, driving the current. NO₃⁻'s
+    is level once it settles, since nitrate carries no current; meanwhile its standard level is sloped, and
+    that slope is the salt's concentration gradient. The impedance spectrum at rest is the same physics in
+    frequency: the bulk resistance, then a finite-length Warburg arc from salt diffusion (theory dashed).</p>
   <div class="controls">
-    <label>cell voltage <input id="V" type="range" min="-0.2" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
-    <button id="step">apply step</button>
+    <label>cell voltage ± <input id="V" type="range" min="0.01" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
+    <label>half-period <input id="half" type="range" min="-3" max="0" step="0.25" value="-1"><output id="halfOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="20">slow (20 s a cycle)</option>
+      <option value="6" selected>6 s a cycle</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <button id="run">restart</button>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
+    <canvas class="wide" id="current"></canvas>
     <div class="levels wide" id="levels"></div>
-    <canvas id="profile"></canvas>
-    <canvas id="current"></canvas>
-    <canvas id="nyquist"></canvas>
+    <div class="levels wide" id="conc"></div>
+    <canvas class="wide" id="nyquist"></canvas>
   </div>
 </main>
 <script type="module">
-import { Device } from '../src/index.js';
-import { build, layer, aqueous } from '../src/kit.js';
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
+import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { relativeLevels, showCode, fromQuery, speciesColor } from './common.js';
+import { profiles, showCode, fromQuery } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
 const silver = (V) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+const L = 20e-6, c0 = 10; // m, mol/m³
 const def = build({
   library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 })], // strictly neutral: no double layers
-  stack: [silver(0), layer('water', 20e-6, { c0: { 'NO3-': 10 } }), silver(0)], // Ag⁺ follows the electrodes
+  stack: [silver(0), layer('water', L, { c0: { 'NO3-': c0 } }), silver(0)], // Ag⁺ follows the electrodes
   grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine at the electrodes, where Ag⁺ depletes
 });
 
-const slider = document.getElementById('V');
-fromQuery(slider);
-const show = () => (document.getElementById('Vout').textContent = `${(+slider.value).toFixed(2)} V`);
-slider.addEventListener('input', show);
-show();
+// Theory for a binary salt between electrodes reversible to its cation: the bulk resistance, the
+// steady current, and the finite-length Warburg impedance of salt diffusion.
+const RT = GAS_CONSTANT * 298.15, F = FARADAY, Dp = IONS['Ag+'].D, Dm = IONS['NO3-'].D;
+const Rb = (RT * L) / (F * F * (Dp + Dm) * c0); // Ω·m²
+const Rd = (RT * L * Dm) / (F * F * Dp * (Dp + Dm) * c0); // the diffusion arc's width
+const tauD = (L / 2) ** 2 / ((2 * Dp * Dm) / (Dp + Dm)); // s
+const steady = (V) => ((4 * F * Dp * c0) / L) * Math.tanh((F * V) / (4 * RT)); // A/m²
+const warburg = (f) => {
+  // Rb + Rd tanh(√(jωτ))/√(jωτ), with √(jωτ) = s(1 + j)
+  const s = Math.sqrt(Math.PI * f * tauD), den = Math.cosh(2 * s) + Math.cos(2 * s);
+  const tr = Math.sinh(2 * s) / den, ti = Math.sin(2 * s) / den;
+  return { re: Rb + (Rd * (tr + ti)) / (2 * s), im: (Rd * (ti - tr)) / (2 * s) };
+};
 
-// The impedance spectrum at rest, 10 mHz to 10 kHz.
-const freqs = Array.from({ length: 41 }, (_, k) => 10 ** (-2 + k * 0.15));
+// The impedance spectrum at rest, 10 mHz to 100 kHz, against theory.
+const freqs = Array.from({ length: 49 }, (_, k) => 10 ** (-2 + k * 0.15));
 const Z = new Device(def).impedance(freqs).Z;
-const ohmCm2 = (a) => Array.from(a, (v) => v * 1e4);
+const ohmCm2 = (v) => v * 1e4;
+const theory = freqs.map(warburg);
 chart(document.getElementById('nyquist'), {
-  xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, 3.6], ylim: [0, 1.2],
-  series: [{ x: ohmCm2(Z.re), y: ohmCm2(Z.im).map((v) => -v), color: colors[3], marker: true, label: 'impedance, 10 mHz – 10 kHz' }],
+  xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, 3.6], ylim: [0, 1],
+  series: [
+    { x: theory.map((z) => ohmCm2(z.re)), y: theory.map((z) => -ohmCm2(z.im)), color: colors[6], dash: [6, 4], label: 'theory: R_b + finite-length Warburg' },
+    { x: Array.from(Z.re, ohmCm2), y: Array.from(Z.im, (v) => -ohmCm2(v)), color: colors[2], marker: true, width: 0, label: 'impedance at rest, 10 mHz – 100 kHz' },
+  ],
 });
 
-// The step: from rest, then advance in time a little further each animation frame.
+const amp = document.getElementById('V'), halfS = document.getElementById('half');
+fromQuery(amp);
+fromQuery(halfS);
+const half = () => 10 ** +halfS.value; // s
+
 let dev, trace, running = false;
-const tEnd = 0.5, ahead = +new URLSearchParams(location.search).get('t'); // ?t=… jumps ahead
 function start() {
+  // From rest, a square wave: +V for a half-period, then −V, and so on.
+  const V = +amp.value, h = half();
   dev = new Device(def);
   dev.solve();
-  dev.set({ contacts: { right: { V: +slider.value } } });
-  trace = { t: [], I: [] };
-  if (ahead > 0) record(dev.advance(ahead));
+  dev.set({ contacts: { right: { V: { t: [0, h, h, 2 * h], values: [V, V, -V, -V], repeat: true } } } });
+  // It runs on, cycle after cycle (?t=… stops it there, for a screenshot), keeping the last three.
+  trace = { t: [], I: [], range: [Infinity, -Infinity], shift: Math.round((-0.35 + 1.5 * V) * 20) / 20, period: 2 * h, stop: +new URLSearchParams(location.search).get('t') || Infinity };
+  document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
+  document.getElementById('halfOut').textContent = h < 0.1 ? `${(h * 1000).toPrecision(2)} ms` : `${h.toPrecision(2)} s`;
+  lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
 }
-const record = (s) => s.trace.t.forEach((t, k) => (trace.t.push(t), trace.I.push(s.trace.current[k])));
-function frame() {
-  const target = Math.min(tEnd, Math.max(1e-6, dev.solver.time * 1.15)); // log time, roughly
-  const s = dev.advance(target, { budgetMs: 10 });
-  record(s);
-  relativeLevels(document.getElementById('levels'), s, { species: ['Ag+', 'NO3-'], title: `species voltages at t = ${s.time.toPrecision(2)} s` });
-  chart(document.getElementById('profile'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', ylim: [0, 20],
-    series: [{ x: s.x, y: s.c['Ag+'], color: speciesColor(s, 'Ag+'), label: 'Ag⁺ = NO₃⁻ (neutral)' }],
+
+// Playback: each cycle over a chosen wall-clock time; "as fast as it solves" advances as far as
+// 12 ms of computing allows each frame.
+const pace = document.getElementById('pace');
+let lastFrame;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  const { period, stop } = trace, perCycle = +pace.value;
+  const target = stop < Infinity ? stop : dev.solver.time + (perCycle > 0 ? (wall * period) / perCycle : period);
+  const s = dev.advance(target, { budgetMs: 12, tol: 1e-3 });
+  s.trace.t.forEach((t, k) => {
+    trace.t.push(t);
+    trace.I.push(-s.trace.current[k] / 10); // from the right electrode to the left: mA/cm², positive for +V
   });
+  const keep = trace.t.findIndex((t) => t > s.time - 3 * period);
+  if (keep > 0) for (const key of ['t', 'I']) trace[key].splice(0, keep);
+  // Time within the cycle, the cycle under way drawn over the two before it.
+  const split = trace.t.findIndex((t) => t > s.time - period);
+  const base = Math.max(0, Math.floor(s.time / period) - 2) * period, phase = (t) => t - base;
+  const V = +amp.value, ms = 1000 * period;
+  const Iss = steady(V) / 10, Iohm = V / Rb / 10;
   chart(document.getElementById('current'), {
-    xlabel: 'log₁₀ t (s)', ylabel: 'current (A/m²)',
-    series: [{ x: trace.t.map(Math.log10), y: trace.I, color: colors[1], label: 'cell current' }],
+    xlabel: 'time (ms), the last three cycles', ylabel: 'current (mA/cm²)', xlim: [0, 3 * ms], ylim: [-1.1 * 2 * Iohm, 1.1 * 2 * Iohm],
+    series: [
+      { x: [0, 3 * ms, NaN, 0, 3 * ms], y: [Iss, Iss, NaN, -Iss, -Iss], color: colors[0], dash: [6, 4], width: 1.2, label: 'steady current (theory)' },
+      { x: trace.t.slice(0, split + 1).map((t) => 1000 * phase(t)), y: trace.I.slice(0, split + 1), color: colors[6], width: 1.2, label: 'earlier' },
+      { x: trace.t.slice(split).map((t) => 1000 * phase(t)), y: trace.I.slice(split), color: colors[2], label: 'cell current' },
+      { x: [1000 * phase(s.time)], y: [trace.I.at(-1) ?? 0], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
   });
-  document.getElementById('status').textContent = `t = ${s.time.toExponential(2)} s · ${trace.t.length} steps`;
-  if (s.time < tEnd) requestAnimationFrame(frame);
+  document.getElementById('status').textContent =
+    `cycle ${Math.floor(s.time / period) + 1} · V = ${s.terminals.right.V >= 0 ? '+' : '−'}${Math.abs(s.terminals.right.V).toFixed(2)} V · I = ${(trace.I.at(-1) ?? 0).toFixed(1)} mA/cm²`;
+  // The ionic view (ESBD). NO₃⁻ is drawn shifted (⌇) to sit just above Ag⁺, and the y range grows
+  // to hold what the run has shown, so it settles rather than jumping each frame.
+  const tr = traces(s, { shifts: { 'NO3-': trace.shift } });
+  for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) trace.range = [Math.min(trace.range[0], y), Math.max(trace.range[1], y)];
+  const pad = 0.06 * (trace.range[1] - trace.range[0]);
+  document.getElementById('levels').innerHTML = levelChart(tr, {
+    width: 720, height: 380, range: [trace.range[0] - pad, trace.range[1] + pad],
+    title: `species voltages and standard levels, t = ${(1000 * s.time).toFixed(0)} ms`,
+  });
+  profiles(document.getElementById('conc'), s, {
+    species: ['Ag+'], labels: { 'Ag+': 'c Ag⁺ = c NO₃⁻ (neutral)' }, title: 'salt concentration', ylabel: 'concentration (mM)', range: [0, 20],
+  });
+  if (s.time < stop && s.converged) requestAnimationFrame(frame);
   else running = false;
 }
-document.getElementById('step').addEventListener('click', start);
+for (const el of [amp, halfS]) el.addEventListener('change', start);
+document.getElementById('run').addEventListener('click', start);
 start();
 showCode();
 </script>
