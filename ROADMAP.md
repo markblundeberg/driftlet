@@ -63,6 +63,11 @@ for live demos.
      species across many segments, with a mode only weakly held from outside. Candidates are
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
      form for the fast species only. (A failed steady solve already says where it lost its digits.)
+   - Conserved combinations (moieties) as constraint rows in the direct steady solve, as
+     spectators already are, instead of huge time steps. A closed Pt | Fe³⁺, Fe²⁺, FeCl²⁺ | Pt
+     cell with a complexation reaction reports `converged: false` at its true steady state
+     (the huge steps' storage term is tiny beside the reaction Jacobian), though `advance()`
+     reaches it.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
