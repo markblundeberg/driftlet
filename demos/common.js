@@ -1,27 +1,8 @@
-// Shared by the demo pages: the page's own code shown as a worked example, and level diagrams.
+// Shared by the demo pages: the page's own code shown as a worked example, level diagrams, and
+// profiles drawn to line up beneath them.
 
-import { bandDiagram, levelChart, THEME } from '../src/plot.js';
-import { traces, speciesRole, typeset } from '../src/kit.js';
-
-// driftlet/plot's theme colours as page-wide CSS variables (light and dark), so the canvas
-// charts draw each species in the colour its level-diagram lines have.
-{
-  const vars = (mode) =>
-    Object.entries(THEME[mode])
-      .flatMap(([role, list]) => list.map((c, k) => `--driftlet-${role}${role === 'electron' ? '' : `-${k + 1}`}: ${c};`))
-      .join(' ');
-  const style = document.createElement('style');
-  style.textContent =
-    `:root { ${vars('light')} } @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${vars('dark')} } } ` +
-    `:root[data-theme="dark"] { ${vars('dark')} }`;
-  document.head.append(style);
-}
-
-// A species' colour, as in the level diagrams (a CSS variable, which chart() resolves).
-export function speciesColor(sol, name) {
-  const { role, slot } = speciesRole(sol, name);
-  return role === 'electron' ? 'var(--driftlet-electron)' : `var(--driftlet-${role}-${(slot % THEME.light[role].length) + 1})`;
-}
+import { bandDiagram, levelChart } from '../src/plot.js';
+import { speciesRole, typeset } from '../src/kit.js';
 
 // The page's module script, with its imports as they'd read from the package, in a panel.
 export function showCode() {
@@ -41,19 +22,6 @@ export function showCode() {
 // A level diagram from driftlet/plot into an element.
 export function levels(el, sol, opts = {}) {
   el.innerHTML = bandDiagram(sol, { width: 720, height: 380, ...opts });
-}
-
-// Ions' species voltages sit volts apart (their μ° differ), and often only their changes matter:
-// each drawn relative to its value at the left end, in mV. (traces() is plain data, edited here.)
-export function relativeLevels(el, sol, { species, title, labels = {} }) {
-  const tr = traces(sol, { species, standard: false, labels });
-  for (const line of tr.series) {
-    const ref = line.y.find(Number.isFinite);
-    line.y = line.y.map((v) => 1000 * (v - ref));
-  }
-  const all = tr.series.flatMap((line) => [...line.y].filter(Number.isFinite));
-  const lo = Math.min(...all), hi = Math.max(...all), pad = 0.08 * (hi - lo || 1);
-  el.innerHTML = levelChart(tr, { width: 720, height: 360, range: [lo - pad, hi + pad], ylabel: 'V_i − V_i(left) (mV)', title });
 }
 
 // Concentration profiles drawn like the level diagrams (same layout, x axis and species colours),

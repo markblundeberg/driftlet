@@ -97,7 +97,7 @@ for (const page of pages) {
       }
     }
     assert.deepEqual(errors.map((e) => e.stack), []);
-    if (/levels\(|relativeLevels\(/.test(script)) {
+    if (/levels\(|profiles\(|levelChart\(/.test(script)) {
       assert.ok(svgs.length > 0, 'it draws its level diagram');
       for (const svg of svgs) assert.doesNotMatch(svg, /NaN/, 'no NaN in the drawing');
     }
