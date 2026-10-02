@@ -52,6 +52,11 @@ test('traces: a line per level, colour slots that follow the species, regions an
   assert.deepEqual(traces(sol, { species: ['NO3-'] }).series.map((s) => [s.role, s.slot]), [['anion', 0], ['anion', 0]]);
   const both = traces(sol, { species: [], levels: [{ half: silver }, { half: silver, standard: true }] }).series;
   assert.deepEqual(both.map((s) => [s.kind, s.slot]), [['redox', 0], ['redox-standard', 0]]);
+  // φ only in the regions named (by name or material), NaN elsewhere.
+  const phiIn = traces(sol, { species: [], phi: ['electrolyte'] }).series[0].y;
+  sol.x.forEach((_, g) => assert.equal(Number.isNaN(phiIn[g]), sol.regions[sol.region[g]].name !== 'electrolyte'));
+  assert.equal(phiIn[sol.x.length >> 1], sol.phi[sol.x.length >> 1]);
+  assert.throws(() => traces(sol, { phi: ['oxide'] }), /no region or material 'oxide'/);
   // A display offset moves all of a species' lines, and says so.
   const shifted = traces(sol, { species: ['NO3-'], shifts: { 'NO3-': -1.5 } }).series[0];
   const g = sol.x.length >> 1;

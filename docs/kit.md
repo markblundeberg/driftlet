@@ -120,7 +120,9 @@ a level diagram:
 
 - `traces(sol, { species, standard, phi, levels, labels, shifts })` (in `driftlet/kit`) returns
   its lines as data: per charged species its voltage V_i (`kind: 'level'`) and standard level
-  V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
+  V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ (`phi: true`, or a list of
+  regions to draw it in only, by name or material, such as an insulator's: `phi: ['SiO2']`;
+  see [what's left out](visualization.md#whats-left-out-and-why)) and half-reaction levels
   (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). Labels
   typeset the species as a subscript (`V_{SO₄²⁻}`, the species as `typeset(name, z)` writes
   it); `labels` renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in

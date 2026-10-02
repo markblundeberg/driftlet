@@ -62,11 +62,12 @@ export function typeset(name, z) {
  * its standard level V°_i (`standard`, the band edge for e⁻ and h⁺), optionally φ and
  * half-reactions' levels. Doubled interface nodes share an x, so steps draw as vertical lines.
  * @param {import('./types.js').Solution} sol
- * @param {{ species?: string[], standard?: boolean, phi?: boolean,
+ * @param {{ species?: string[], standard?: boolean, phi?: boolean | string[],
  *   levels?: { half: { equation: string, fixed?: Record<string, number> }, label?: string, standard?: boolean }[],
  *   labels?: Record<string, string>, shifts?: Record<string, number> }} [opts]
  *   species to show (default: every charged one), whether to show standard levels (default true)
- *   and φ (default false), half-reaction levels, labels to use by trace id
+ *   and φ (default false; or a list of regions, by name or material, to draw it in only, say an
+ *   insulator's), half-reaction levels, labels to use by trace id
  *   ({ 'V:e-': 'Fermi level' }), and display offsets per species (V), which move all of a
  *   species' lines together so that widely separated species can share one readable plot
  * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number }[],
@@ -88,7 +89,12 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
     if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
     if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
   }
-  if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: sol.phi });
+  if (Array.isArray(phi)) {
+    const known = sol.regions.flatMap((r) => [r.name, r.material]);
+    for (const name of phi) if (!known.includes(name)) throw new Error(`traces: no region or material '${name}' to draw φ in (${[...new Set(known)].join(', ')})`);
+    const inside = sol.regions.map((r) => phi.includes(r.name) || phi.includes(r.material));
+    series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? v : NaN)) });
+  } else if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: sol.phi });
   const couples = [...new Set(levels.map((lv) => lv.half.equation))];
   levels.forEach((lv, k) => {
     const y = level(sol, lv.half, { standard: lv.standard });
