@@ -85,8 +85,14 @@ for live demos.
      but at a neutral face the two edge nodes still pass every species' flux through its own
      unknown, which carries storage-sized values, so round-off returns at ~1e-5 thermal units
      on steps of ~1e-11 s with 3 M against 1 µM. A perfectly sharp junction between such
-     solutions then can't start (a pre-mixed zone a few layers wide can). A fix would combine
-     the two edge nodes' balances, which the block-tridiagonal layout can't hold as a row.
+     solutions then can't start (a pre-mixed zone a few layers wide can). The fix is a
+     supernode: each region still supplies its own edge block, and the interface code merges
+     the two edge nodes and the face's unknowns into one larger block, so every quantity at
+     the face couples to every other. Each species' two edge balances can then be summed, with
+     the face fluxes cancelling exactly, into a row whose outside couplings reach only the
+     nodes just beyond. The block at each face grows (about threefold) and so do its
+     off-diagonal neighbours; the rest of the matrix is unchanged, and the layout stays
+     block-tridiagonal. It may simplify the face code generally.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
@@ -140,6 +146,11 @@ for live demos.
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
   This is also the general mixed conductor with n > 2 mobile species, beyond the metal (n = 1)
   and insertion-host (n = 2) cases.
+- **Concentration unknowns for dilute regions, as an option.** A hybrid basis: conductor
+  regions keep their Fermi level, but a dilute region may ask to be solved internally in
+  {φ, c_i} instead of {φ̂, η_i}, where storage and neutrality are linear and a strongly
+  diluted species (1 µM against 3 M) doesn't cost digits in its level. Transparent to the
+  API: the solution still reports μ̄, V_i and c, and faces still align levels.
 - **More performance**, measured against the committed benchmark baseline: Newton-iteration
   counts (above), and specialised small-block elimination.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
