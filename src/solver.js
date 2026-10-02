@@ -721,6 +721,21 @@ export class Solver {
         return q;
       };
       const responds = mode.some((m, i) => m === 1 && z[i] !== 0);
+      if (!responds && !mat.conductor && !mat.phiFree && mat.epsr === 0) {
+        // Strictly neutral, with every charged species' amount given: its c0 must be neutral.
+        let q = reg.fixedCharge / FARADAY, scale = Math.abs(q);
+        for (let i = 0; i < n; i++) {
+          if (mode[i] !== 2 || z[i] === 0) continue;
+          q += z[i] * cFix[i];
+          scale += Math.abs(z[i] * cFix[i]);
+        }
+        if (Math.abs(q) > 1e-9 * scale) {
+          throw new SolverError(
+            `regions[${r}] (${reg.name}): its initial composition carries a net charge of ${q.toPrecision(3)} mol/m³ (Σ z·c0, with any fixed charge), ` +
+              'but ε = 0 makes it strictly neutral; adjust c0 so that it balances',
+          );
+        }
+      }
       if (!mat.phiFree && !responds && mat.ideal && r > 0 && materials[regions[r - 1].material].conductor) {
         // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
         // that takes a species from this side at equilibrium (the electrode at its open-circuit

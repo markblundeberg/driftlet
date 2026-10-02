@@ -224,3 +224,17 @@ test('ε = 0: a short step converges cleanly across a wide range of concentratio
   assert.ok(r.converged, JSON.stringify(r.history));
   assert.ok(r.history.at(-1) < 1e-8, `final update ${r.history.at(-1)}`);
 });
+
+test('ε = 0: an initial composition that carries net charge, with nothing to neutralise it, is an error', () => {
+  const def = (cl) => ({
+    species: salt,
+    materials: { water: water(0) },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': cl } }],
+    contacts: {
+      left: { V: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
+      right: { V: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
+    },
+  });
+  assert.throws(() => new Device(def(90)).solve(), /net charge of 10\.0 mol\/m³.*strictly neutral/);
+  assert.ok(new Device(def(100)).solve().converged);
+});
