@@ -131,7 +131,7 @@ less each electrode's overpotential and the solution's share. The
 | thick, dashed | a redox level V_e⁻(Ox/Red) |
 | thin, dashed | a standard redox level V°_e⁻(Ox/Red) |
 | thin, solid | a standard level V°_i (below) |
-| thin, dotted, grey | φ, only on request (see below) |
+| thin, dotted, grey | φ, on request: across an insulator, or as the SHE's level (below) |
 
 Electrons are steel blue, cations (and holes) warm colours, anions cool colours, and redox levels
 blue-violet.
@@ -198,8 +198,18 @@ material move together with its φ, so their bending ladder carries the same var
 within each material. Unlike φ, the ladder means something across materials too: its offsets at a
 face are band offsets and the like, which belong to the interface and can be measured.
 
-(`traces(sol, { phi: true })` can draw φ anyway. The electrochemistry demos draw it only as the
-SHE's standard level, which is what it equals in water with the library's data.)
+There are two places where φ is the right line to draw:
+
+- **In an insulator** with no mobile charged species, there are no species levels to draw. Band
+  edges can stand in, unpopulated and with no Fermi level, but when the point is that nothing
+  mobile lives there, the plain sloped φ line says it best: its slope is the field. It's also
+  harmless to the reader, since there's no interfacial step in φ in view to mistake for something
+  measurable, just a lone line connected to nothing else. The [MOS demo](../demos/mos.html) draws φ
+  across its oxide this way.
+- **In vacuum**, −eφ is exactly what it claims to be: the energy of an electron at rest there.
+
+`traces(sol, { phi: true })` draws φ. Besides the MOS oxide, the demos draw it only as the SHE's
+standard level in water, which is what it equals with the library's data.
 
 ### A reference
 

@@ -248,7 +248,9 @@ has the long form):
   bookkeeping. In volts the conduction band sits below the valence band.
 - **What's left out.** φ isn't drawn: it's a per-material convention (meaningless in a metal), and
   −eφ isn't any electron's energy; the V°_i ladder shows its variation within a material and means
-  something across faces too. Nor is anything drawn against a reference: the diagrams are
+  something across faces too. The exceptions: across an insulator with no mobile species, a
+  plain sloped φ (`phi: true`) is the line to draw (its slope is the field), and in vacuum −eφ
+  really is an electron's energy. Nor is anything drawn against a reference: the diagrams are
   reference-free (shifting everything changes nothing), every gap on the electron diagram is
   physical, so a reader picks a level at a point as their reference. "vs SHE" and "from the vacuum"
   need a place, since both levels vary in space.
