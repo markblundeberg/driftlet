@@ -103,8 +103,10 @@ regions: [
   material.
 - `velocity`: imposed flow toward +x, m/s (default 0). It carries every mobile species
   (D > 0) along with the fluid. It's uniform within the region: in strict 1D, incompressible
-  flow is the same everywhere, so different velocities in different regions stand for lateral
-  inflow or outflow.
+  flow is the same everywhere. A step in velocity at a face means solvent enters or leaves
+  there sideways *without* its solutes, which still cross the face by flux continuity: an ideal
+  ultrafiltration membrane, where solutes pile up (concentration polarisation). It isn't a
+  sideways inflow or outflow of solution.
 - `mixing`: eddy (turbulent) mixing diffusivity D_mix, m²/s (default 0). It mixes composition
   without carrying current, and does nothing at equilibrium (see
   [conventions](conventions.md#transport)). A strongly mixed region is the local stand-in for a
