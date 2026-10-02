@@ -42,12 +42,13 @@
   <p>The level diagram uses the <a
     href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
     V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
-    volts, so electrons and ions share one axis. The current a species carries flows down slopes in its own
-    V<sub>i</sub> (so the electrons themselves move uphill). Here they're the host's electrons
-    (V<sub>e⁻</sub>, its Fermi level, level since they move easily) and its Li⁺ (V<sub>Li⁺</sub>, sloped
-    wherever lithium diffuses). Their separation at each depth is the local open-circuit voltage, E(x) =
-    V<sub>e⁻</sub> − V<sub>Li⁺</sub>, larger where the host is emptier. Li⁺ is drawn shifted (⌇) to sit beside
-    the electrons. φ has no meaning inside this neutral host, so neither do standard levels.</p>
+    volts, so electrons and ions share one axis. Each species moves down its own μ̄<sub>i</sub>, so its
+    current flows down slopes in its own V<sub>i</sub> (so the electrons themselves move uphill). Here they're
+    the host's electrons (V<sub>e⁻</sub>, its Fermi level, level since they move easily) and its Li⁺
+    (V<sub>Li⁺</sub>, sloped wherever lithium diffuses). Their separation at each depth is the local
+    open-circuit voltage, E(x) = V<sub>e⁻</sub> − V<sub>Li⁺</sub>, larger where the host is emptier. Li⁺ is
+    drawn shifted (⌇) to sit beside the electrons. φ has no meaning inside this neutral host, so neither do
+    standard levels.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';

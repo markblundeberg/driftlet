@@ -241,8 +241,9 @@ has the long form):
   place (say, the stirred bulk).
 - **Species voltage** V_i = μ̄_i/(z_iF) (thick, solid) for every charged species: the Fermi level
   for e⁻, a quasi-Fermi level for e⁻ and h⁺ in a semiconductor, what a reversible electrode reads
-  for an ion. The current a species carries flows down slopes in its own V_i (drift and diffusion
-  together; cations and holes move downhill, electrons and anions uphill), and it's in equilibrium
+  for an ion. It's a display of μ̄_i (the physics, which also covers neutral species): each
+  species moves down its own μ̄_i, drift and diffusion together, so its current flows down slopes
+  in V_i (cations and holes move downhill, electrons and anions uphill), and it's in equilibrium
   where V_i is flat. A step at a face means resistance there.
 - **Standard level** V°_i = φ + μ°_i/(z_iF) (thin, solid): a band edge for e⁻ and h⁺; V_i − V°_i =
   (RT/z_iF) ln(c/c_ref) for ideal species. Steps in V°_i at faces (Donnan, junctions, dipoles) are

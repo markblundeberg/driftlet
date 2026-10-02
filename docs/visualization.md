@@ -153,10 +153,11 @@ V^\circ_i &= \phi + \mu^\circ_i / (z_i F) && \quad\text{its standard level}
 \end{aligned}
 ```
 
-For electrons, $V_i$ is the Fermi level. For an ion, it's the voltage an electrode reversible to
-that ion would read: a silver wire in equilibrium with the solution's Ag⁺ reads
-$V_{\mathrm{Ag}^+}$. The standard level is where $V_i$ would sit at the reference concentration,
-so for ideal species
+$V_i$ is a way of drawing $\bar\mu_i$, not new physics: the equations, the docs and the API work
+in $\bar\mu_i$, which also covers neutral species (where $V_i$ is undefined). For electrons, $V_i$
+is the Fermi level. For an ion, it's the voltage an electrode reversible to that ion would read: a
+silver wire in equilibrium with the solution's Ag⁺ reads $V_{\mathrm{Ag}^+}$. The standard level
+is where $V_i$ would sit at the reference concentration, so for ideal species
 
 ```math
 V_i - V^\circ_i = \frac{RT}{z_i F} \ln\frac{c_i}{c_{\mathrm{ref},i}}
@@ -167,11 +168,12 @@ and for non-ideal ones the activity replaces $c_i/c_{\mathrm{ref},i}$.
 Drawing every species this way, ions alongside electrons, shows things that are otherwise hard
 to see:
 
-- **Each species' driving force is the slope of its own line.** The current a species carries
-  flows down slopes in its $V_i$ (so cations and holes move downhill, electrons and anions
-  uphill), and in equilibrium its $V_i$ is flat. That one slope is drift and diffusion together,
-  so there's no need to split it into an electric field and a concentration gradient (a split that
-  depends on how $\phi$ was chosen, and so means little on its own).
+- **Each species' driving force is the slope of its own line.** A species moves down its own
+  $\bar\mu_i$, drift and diffusion together, so on the voltage plot the current it carries flows
+  down slopes in its $V_i$ (cations and holes move downhill, electrons and anions uphill), and in
+  equilibrium its $V_i$ is flat. There's no need to split that one slope into an electric field
+  and a concentration gradient (a split that depends on how $\phi$ was chosen, and so means little
+  on its own).
 - **Interfaces read at a glance.** Where a species crosses a face freely, its $V_i$ is
   continuous. A step in $V_i$ means something resists its transfer and dissipates energy there.
   The standard levels step at faces along with $\phi$ (Donnan potentials, liquid junctions,
