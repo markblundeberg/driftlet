@@ -31,7 +31,7 @@
 import { Device } from '../src/index.js';
 import { build, layer, aqueous } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { relativeLevels, showCode, fromQuery } from './common.js';
+import { relativeLevels, showCode, fromQuery, speciesColor } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
@@ -77,7 +77,7 @@ function frame() {
   relativeLevels(document.getElementById('levels'), s, { species: ['Ag+', 'NO3-'], title: `species voltages at t = ${s.time.toPrecision(2)} s` });
   chart(document.getElementById('profile'), {
     xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', ylim: [0, 20],
-    series: [{ x: s.x, y: s.c['Ag+'], color: colors[0], label: 'Ag⁺ = NO₃⁻ (neutral)' }],
+    series: [{ x: s.x, y: s.c['Ag+'], color: speciesColor(s, 'Ag+'), label: 'Ag⁺ = NO₃⁻ (neutral)' }],
   });
   chart(document.getElementById('current'), {
     xlabel: 'log₁₀ t (s)', ylabel: 'current (A/m²)',

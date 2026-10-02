@@ -29,7 +29,7 @@
 import { Device, EPS0, AVOGADRO, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery } from './common.js';
+import { levels, showCode, fromQuery, speciesColor } from './common.js';
 
 const Lsi = units.um(0.5), tox = units.nm(5);
 const def = build({
@@ -89,8 +89,8 @@ function draw(sol) {
   chart(document.getElementById('conc'), {
     xscale: 1e9, xlabel: 'x (nm)', ylabel: 'concentration (mol/m³)', logy: true, xlim: [(Lsi - units.nm(150)) * 1e9, Lsi * 1e9],
     series: [
-      { x: sol.x, y: sol.c['e-'], color: colors[0], label: 'e⁻' },
-      { x: sol.x, y: sol.c['h+'], color: colors[1], label: 'h⁺' },
+      { x: sol.x, y: sol.c['e-'], color: speciesColor(sol, 'e-'), label: 'e⁻' },
+      { x: sol.x, y: sol.c['h+'], color: speciesColor(sol, 'h+'), label: 'h⁺' },
     ],
   });
 }

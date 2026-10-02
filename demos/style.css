@@ -75,8 +75,6 @@ a { color: var(--accent); }
   --driftlet-grid: var(--grid);
   --driftlet-band: var(--bg);
   --driftlet-face: var(--muted);
-  --driftlet-1: var(--c1); --driftlet-2: var(--c2); --driftlet-3: var(--c3); --driftlet-4: var(--c4);
-  --driftlet-5: var(--c5); --driftlet-6: var(--c6); --driftlet-7: var(--c7); --driftlet-8: var(--c8);
   display: block;
   width: 100%;
   height: auto;

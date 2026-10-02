@@ -1,7 +1,27 @@
 // Shared by the demo pages: the page's own code shown as a worked example, and level diagrams.
 
-import { bandDiagram, levelChart } from '../src/plot.js';
-import { traces } from '../src/kit.js';
+import { bandDiagram, levelChart, THEME } from '../src/plot.js';
+import { traces, speciesRole } from '../src/kit.js';
+
+// driftlet/plot's theme colours as page-wide CSS variables (light and dark), so the canvas
+// charts draw each species in the colour its level-diagram lines have.
+{
+  const vars = (mode) =>
+    Object.entries(THEME[mode])
+      .flatMap(([role, list]) => list.map((c, k) => `--driftlet-${role}${role === 'electron' ? '' : `-${k + 1}`}: ${c};`))
+      .join(' ');
+  const style = document.createElement('style');
+  style.textContent =
+    `:root { ${vars('light')} } @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${vars('dark')} } } ` +
+    `:root[data-theme="dark"] { ${vars('dark')} }`;
+  document.head.append(style);
+}
+
+// A species' colour, as in the level diagrams (a CSS variable, which chart() resolves).
+export function speciesColor(sol, name) {
+  const { role, slot } = speciesRole(sol, name);
+  return role === 'electron' ? 'var(--driftlet-electron)' : `var(--driftlet-${role}-${(slot % THEME.light[role].length) + 1})`;
+}
 
 // The page's module script, with its imports as they'd read from the package, in a panel.
 export function showCode() {

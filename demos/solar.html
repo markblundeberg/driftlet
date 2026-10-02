@@ -29,7 +29,7 @@
 import { Device, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery } from './common.js';
+import { levels, showCode, fromQuery, speciesColor } from './common.js';
 
 const G1 = 50; // generation at "1×" light, mol/(m³·s): 3e19 pairs per cm³ per second
 const cell = (V, light) =>
@@ -101,8 +101,8 @@ function draw(sol) {
   chart(document.getElementById('conc'), {
     xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
     series: [
-      { x: sol.x, y: sol.c['e-'], color: colors[0], label: 'e⁻' },
-      { x: sol.x, y: sol.c['h+'], color: colors[1], label: 'h⁺' },
+      { x: sol.x, y: sol.c['e-'], color: speciesColor(sol, 'e-'), label: 'e⁻' },
+      { x: sol.x, y: sol.c['h+'], color: speciesColor(sol, 'h+'), label: 'h⁺' },
     ],
   });
 }

@@ -33,7 +33,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery } from './common.js';
+import { showCode, fromQuery, speciesColor } from './common.js';
 
 // Solution and membrane, both strictly neutral (macroscopic). The membrane is the same water,
 // with its ions ten times slower and a fixed charge.
@@ -107,8 +107,8 @@ function draw(sol) {
   chart(document.getElementById('conc'), {
     xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mol/m³)', logy: true,
     series: [
-      { x: sol.x, y: sol.c['Na+'], color: colors[0], label: 'Na⁺' },
-      { x: sol.x, y: sol.c['Cl-'], color: colors[1], label: 'Cl⁻' },
+      { x: sol.x, y: sol.c['Na+'], color: speciesColor(sol, 'Na+'), label: 'Na⁺' },
+      { x: sol.x, y: sol.c['Cl-'], color: speciesColor(sol, 'Cl-'), label: 'Cl⁻' },
     ],
   });
   chart(document.getElementById('sweep'), {

@@ -26,7 +26,7 @@
 import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, bath, aqueous, WATER_EPSR } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery } from './common.js';
+import { showCode, fromQuery, speciesColor } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, c0 = 100; // 0.1 M NaCl
 const lam = Math.sqrt((WATER_EPSR * EPS0 * RT) / (2 * FARADAY * FARADAY * c0)); // the Debye length
@@ -87,10 +87,10 @@ function update() {
   chart(document.getElementById('profile'), {
     xscale: nm, xlim: lim, xlabel: 'distance from electrode (nm)', ylabel: 'concentration (mol/m³)', logy: true,
     series: [
-      { x: s[0].x, y: s[0].c['Na+'], color: colors[0], dash: [5, 4], label: 'Na⁺ ideal' },
-      { x: s[0].x, y: s[0].c['Cl-'], color: colors[1], dash: [5, 4], label: 'Cl⁻ ideal' },
-      { x: s[1].x, y: s[1].c['Na+'], color: colors[0], label: 'Na⁺ crowded' },
-      { x: s[1].x, y: s[1].c['Cl-'], color: colors[1], label: 'Cl⁻ crowded' },
+      { x: s[0].x, y: s[0].c['Na+'], color: speciesColor(s[0], 'Na+'), dash: [5, 4], label: 'Na⁺ ideal' },
+      { x: s[0].x, y: s[0].c['Cl-'], color: speciesColor(s[0], 'Cl-'), dash: [5, 4], label: 'Cl⁻ ideal' },
+      { x: s[1].x, y: s[1].c['Na+'], color: speciesColor(s[0], 'Na+'), label: 'Na⁺ crowded' },
+      { x: s[1].x, y: s[1].c['Cl-'], color: speciesColor(s[0], 'Cl-'), label: 'Cl⁻ crowded' },
     ],
   });
   const qmax = 1.5 * Math.max(...curves.crowded.y.map(Math.abs));

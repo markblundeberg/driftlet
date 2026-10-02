@@ -9,10 +9,14 @@
 <body>
 <main>
   <h1>A redox couple at an electrode: cyclic voltammetry</h1>
-  <p>Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl, through a 20 µm stagnant layer to a stirred bulk.
-    Slow scans give the steady, sigmoidal wave of a convective electrode; fast ones outrun diffusion and give
-    the peaks of a still solution. A small rate constant pulls the waves apart.</p>
-  <p>The first diagram is electronic: the platinum's Fermi level, and the couple's redox level, the electronic
+  <p>Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl, through a stagnant layer to a stirred bulk. Only the
+    solution within a few √(Dt) of the electrode is ever converted; the bulk is a fixed reservoir. A thin layer
+    stands for vigorous stirring (a rotating disk): once the depleted zone fills it, the wave is steady and
+    sigmoidal. A thick one is a still solution, where the depleted zone keeps growing through the sweep and the
+    current peaks then sags: the classic "duck". With fast kinetics (k⁰ ≳ 1) its peaks sit 59 mV apart, plus a
+    few mV of ohmic drop through the solution; a smaller rate constant pulls them further apart
+    (quasi-reversible, then irreversible). Faster scans outrun diffusion.</p>
+  <p>The first level diagram is electronic: the platinum's Fermi level, and the couple's redox level, the electronic
     level at which the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the
     overpotential, which drives Butler–Volmer kinetics; the redox level's slope across the layer is
     concentration polarisation. It sits V<sub>T</sub> ln(c₃/c₂) from the couple's standard level, which in turn
@@ -22,7 +26,8 @@
     V°<sub>i</sub> (K⁺, about 3 V lower, is left out).</p>
   <div class="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="1" step="0.25" value="-1"><output id="rateOut"></output></label>
-    <label>k⁰ <input id="k0" type="range" min="-6" max="-1" step="0.5" value="-3"><output id="k0Out"></output></label>
+    <label>stagnant layer <input id="L" type="range" min="0.5" max="3" step="0.25" value="1.25"><output id="LOut"></output></label>
+    <label>k⁰ <input id="k0" type="range" min="-6" max="1" step="0.5" value="-3"><output id="k0Out"></output></label>
     <label>playback <select id="pace">
       <option value="20">slow (20 s a cycle)</option>
       <option value="6" selected>6 s a cycle</option>
@@ -42,7 +47,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery } from './common.js';
+import { levels, showCode, fromQuery, speciesColor } from './common.js';
 
 const iron = half('Fe3+ + e- = Fe2+');
 // The bulk's composition, and a reference that reads the SHE scale: the bath's terminal voltage
@@ -50,38 +55,41 @@ const iron = half('Fe3+ + e- = Fe2+');
 // the SHE level in a solution is φ). So every level below is a potential against SHE.
 const bulk = { 'K+': 500, 'Cl-': 525, 'Fe3+': 5, 'Fe2+': 5 };
 const she = -(IONS['Cl-'].mu0 + GAS_CONSTANT * 298.15 * Math.log(bulk['Cl-'] / 1000)) / FARADAY;
-const electrode = (drive, k0) =>
+const electrode = (drive, k0, L) =>
   build({
     library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
     stack: [
       ohmic(drive, ['e-']), // the working electrode's terminal: the platinum's electrons
       layer('Pt', 1e-6),
       { reactions: [{ ...iron, k0, alpha: 0.5 }] },
-      layer('water', 20e-6, { name: 'diffusion layer' }),
+      layer('water', L, { name: 'stagnant layer' }),
       bath(bulk, 'Cl-', 0, { offset: she }), // the stirred bulk, its terminal on the SHE scale
     ],
-    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+    grid: { hmin: 10e-9, hmax: L / 40 },
   });
 
-const rate = document.getElementById('rate'), k0 = document.getElementById('k0');
+const rate = document.getElementById('rate'), k0 = document.getElementById('k0'), Ls = document.getElementById('L');
 fromQuery(rate);
 fromQuery(k0);
+fromQuery(Ls);
+const L = () => 1e-6 * 10 ** +Ls.value; // m: 3 µm (vigorous stirring) to 1 mm (effectively still)
 const scan = () => 10 ** +rate.value; // V/s
 const k = () => 10 ** +k0.value; // mol/(m²·s)
 
 let dev, Erest, cv, running = false;
 function start() {
   // At rest, the electrode floats to the couple's Nernst potential; then a triangle wave about it.
-  const rest = new Device(electrode({ I: 0 }, k())).solve();
+  const rest = new Device(electrode({ I: 0 }, k(), L())).solve();
   Erest = rest.terminals.left.V; // E° + (RT/F) ln(c₃/c₂), against SHE
   const span = 0.5, period = (4 * span) / scan();
   const wave = { t: [0, period / 4, (3 * period) / 4, period], values: [Erest, Erest + span, Erest - span, Erest], repeat: true };
-  dev = new Device(electrode(Erest, k()));
+  dev = new Device(electrode(Erest, k(), L()));
   dev.solve();
   dev.set({ contacts: { left: { V: wave } } });
   cv = { E: [], I: [], end: 1.5 * period, stop: +new URLSearchParams(location.search).get('t') || Infinity };
   document.getElementById('rateOut').textContent = `${scan() < 0.1 ? scan().toFixed(3) : scan().toFixed(2)} V/s`;
   document.getElementById('k0Out').textContent = `${k().toExponential(0)} mol/(m²·s)`;
+  document.getElementById('LOut').textContent = L() >= 1e-3 ? '1 mm (still)' : `${(L() * 1e6).toPrecision(2)} µm`;
   lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
@@ -126,25 +134,28 @@ function frame(now = performance.now()) {
     range: [Math.min(-0.1, Erest - 0.6), Erest + 0.6],
     ylabel: 'electron voltage (V vs SHE)',
   });
-  // Same x range as the diagrams above; log scale, so the iron shows beside 0.5 M of chloride.
+  // Same x range as the diagrams above.
   chart(document.getElementById('conc'), {
-    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', xlim: [0, 21], logy: true, ylim: [1e-3, 2000],
+    xscale: 1e6, xlabel: 'x (µm)', ylabel: 'concentration (mM)', xlim: [0, (sol.x.at(-1)) * 1e6], ylim: [0, 10.5],
     series: [
-      { x: sol.x, y: sol.c['Fe3+'], color: colors[2], label: 'Fe³⁺' },
-      { x: sol.x, y: sol.c['Fe2+'], color: colors[3], label: 'Fe²⁺' },
-      { x: sol.x, y: sol.c['Cl-'], color: colors[1], label: 'Cl⁻' },
+      { x: sol.x, y: sol.c['Fe3+'], color: speciesColor(sol, 'Fe3+'), label: 'Fe³⁺' },
+      { x: sol.x, y: sol.c['Fe2+'], color: speciesColor(sol, 'Fe2+'), label: 'Fe²⁺' },
     ],
   });
-  // The ionic view (ESBD): each ion's voltage V_i = μ̄_i/(z_i F), solid, and standard level V°_i, dashed.
+  // The ionic view (ESBD): each carrier's voltage V_i = μ̄_i/(z_i F), thick, and standard level V°_i,
+  // thin, with the platinum's electrons. The ions' levels sit volts apart (their μ° differ), so
+  // each is drawn with a display offset (⌇) to share one readable plot.
   levels(document.getElementById('ions'), sol, {
-    title: 'ionic species voltages and standard levels',
-    species: ['Fe3+', 'Fe2+', 'Cl-'],
+    title: 'species voltages and standard levels, ion by ion',
+    species: ['e-', 'K+', 'Cl-', 'Fe3+', 'Fe2+'],
+    shifts: { 'K+': 3.55, 'Cl-': -0.6, 'Fe2+': 0.25 },
+    range: [-0.4, 1.45],
     ylabel: 'voltage (V)',
   });
   if (sol.time < Math.min(cv.end, cv.stop) && sol.converged) requestAnimationFrame(frame);
   else running = false;
 }
-for (const el of [rate, k0]) el.addEventListener('change', start);
+for (const el of [rate, k0, Ls]) el.addEventListener('change', start);
 document.getElementById('run').addEventListener('click', start);
 start();
 showCode();
