@@ -8,7 +8,7 @@
 </head>
 <body>
 <main>
-  <h1>A Daniell cell with a salt bridge, discharged through a load</h1>
+  <h1>A Daniell cell, its separator simulated ion by ion, discharged through a load</h1>
   <p>Zn | 0.1 M ZnSO₄ | 3 M KCl salt bridge | 0.1 M CuSO₄ | Cu, built in a tube: the two solutions are each
     4 cm long and stirred, the bridge 2 cm of unstirred KCl, and everything per unit area of the tube's bore.
     (A real cell has beakers far bigger than its bridge's bore, so its solutions change more slowly; 1D can't
@@ -27,7 +27,18 @@
     the leaked KCl also makes the solutions more conductive, so under a heavy load the voltage rises at first.
     Each end of the bridge starts as a thin zone where the solutions are pre-mixed, as at a frit (a perfectly
     sharp start is harder for the solver, and no real junction is sharp).</p>
+  <p>Daniell's own separator was an unglazed earthenware pot: a porous wall that passes every ion, only slowly
+    (here 5 mm of pores, where ions diffuse ten times slower than in free solution). There's no KCl to leak,
+    and the junction between the two sulfate solutions is tiny. Either way, though, copper sulfate seeps
+    across, and Cu²⁺ that reaches the zinc plates straight onto it, a short circuit inside the cell that
+    wastes its charge. The status line counts it (as the copper that's gone without passing through the
+    load), and the slower the discharge, the bigger its share: at the lightest load here, over ten days, the
+    bridged cell loses about a fifth of its charge this way and the potted one about a twentieth.</p>
   <div class="controls">
+    <label>separator <select id="sep">
+      <option value="bridge" selected>3 M KCl salt bridge</option>
+      <option value="pot">porous pot</option>
+    </select></label>
     <label>load R <input id="R" type="range" min="-3" max="0" step="0.25" value="-1.5"><output id="Rout"></output></label>
     <label>playback <select id="pace">
       <option value="0.1667">10 min of cell time a second</option>
@@ -55,7 +66,7 @@ import { levels, profiles, showCode, fromQuery } from './common.js';
 
 const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
 const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
-const electrode = (couple) => ({ reactions: [{ ...couple, k0: 1e-3, alpha: 0.5 }] });
+const kinetics = (couple) => ({ ...couple, k0: 1e-3, alpha: 0.5 }); // Butler–Volmer
 
 // Every ion is everywhere (a trace of 1 µM where it isn't added), so each can cross each junction.
 const ions = ['Zn2+', 'Cu2+', 'K+', 'SO42-', 'Cl-'], trace = 1e-3; // mol/m³
@@ -73,19 +84,28 @@ const frit = (a, b) => fractions.map((s) => layer('water', 1e-4 / fractions.leng
 // as coarse as a uniform solution allows.
 const stirred = (name, c0) => layer('water', arm, { name, c0, mixing: 1e-4, grid: { hmin: arm / 100, hmax: arm / 20 } });
 
-const cell = (right) =>
+// Daniell's porous pot: a wall of earthenware, where ions diffuse (and conduct) ten times slower than
+// in free solution, starting soaked with the zinc side's solution.
+const water = aqueous(ions, { epsr: 0 }), pot = aqueous(ions, { epsr: 0, material: 'pot' });
+for (const sp of Object.values(pot.materials.pot.species)) sp.D /= 10;
+const wall = 5e-3; // m
+const separator = (kind) =>
+  kind === 'pot'
+    ? [layer('pot', wall, { name: 'porous pot', c0: anolyte }), frit(anolyte, catholyte)]
+    : [frit(anolyte, bridge), layer('water', span, { name: 'salt bridge', c0: bridge }), frit(bridge, catholyte)];
+
+const cell = (right, kind) =>
   build({
-    library: [aqueous(ions, { epsr: 0 }), metal('Zn'), metal('Cu')], // strictly neutral solutions
+    library: [water, pot, metal('Zn'), metal('Cu')], // strictly neutral solutions
     stack: [
       ohmic(0, ['e-']),
       layer('Zn', 1e-3), // a metal is one cell whatever its length: this just shows on the diagram
-      electrode(zinc),
+      // Zinc dissolving, and any Cu²⁺ that reaches the zinc plating straight onto it.
+      { reactions: [kinetics(zinc), kinetics(copper)] },
       stirred('anolyte', anolyte),
-      frit(anolyte, bridge),
-      layer('water', span, { name: 'salt bridge', c0: bridge }),
-      frit(bridge, catholyte),
+      separator(kind),
       stirred('catholyte', catholyte),
-      electrode(copper),
+      { reactions: [kinetics(copper)] },
       layer('Cu', 1e-3),
       ohmic(right, ['e-']),
     ],
@@ -96,10 +116,15 @@ const capacity = 2 * FARADAY * catholyte['Cu2+'] * arm; // C/m²: all the Cu²�
 const emf0 = (IONS['Cu2+'].mu0 - IONS['Zn2+'].mu0) / (2 * FARADAY);
 
 // The faces' edge nodes, where the overpotentials are read, and the zinc-side junction.
-const probe = new Device(cell(emf0));
-const region = (name) => probe.model.regions.findIndex((r) => r.name === name);
-const gZn = probe.grid.regionStart[region('anolyte')], gCu = probe.grid.regionEnd[region('catholyte')];
-const xJunction = probe.grid.x[probe.grid.regionEnd[region('anolyte')]];
+const sep = document.getElementById('sep');
+fromQuery(sep);
+let gZn, gCu, xJunction;
+function locate() {
+  const probe = new Device(cell(emf0, sep.value));
+  const region = (name) => probe.model.regions.findIndex((r) => r.name === name);
+  [gZn, gCu] = [probe.grid.regionStart[region('anolyte')], probe.grid.regionEnd[region('catholyte')]];
+  xJunction = probe.grid.x[probe.grid.regionEnd[region('anolyte')]];
+}
 const ledger = (sol) => {
   const Vzn = sol.V['e-'][0], Vcu = sol.V['e-'].at(-1);
   const Lzn = level(sol, zinc)[gZn], Lcu = level(sol, copper)[gCu];
@@ -118,12 +143,14 @@ show();
 
 let dev, run, running = false;
 function start() {
-  // The copper held at the open-circuit voltage for a microsecond while the junctions form, then
-  // the load: I = (0 − V)/R.
-  dev = new Device(cell(emf0));
-  dev.advance(1e-6);
+  // The copper held at the open-circuit voltage for a microsecond while the junctions form, in one
+  // backward-Euler step (the trace of Cu²⁺ at the zinc plates out at once: a stiff start that a
+  // single implicit step takes in its stride), then the load: I = (0 − V)/R.
+  locate();
+  dev = new Device(cell(emf0, sep.value));
+  dev.step(1e-6);
   dev.set({ contacts: { right: { V: 0, R: R() } } });
-  run = { t: [], V: [], q: [0], energy: 0, I: 0, stop: +new URLSearchParams(location.search).get('t') || Infinity };
+  run = { t: [], V: [], q: [0], energy: 0, I: 0, plated: 0, copper: copperLeft(dev.solution()), stop: +new URLSearchParams(location.search).get('t') || Infinity };
   // ?t=… runs ahead to that time (for sharing a state, or a screenshot).
   if (run.stop < Infinity) record(dev.advance(run.stop, { budgetMs: 60000 }));
   lastFrame = undefined;
@@ -131,7 +158,18 @@ function start() {
   running = true;
 }
 
-// Charge and energy through the load, by the trapezoid rule.
+// The Cu²⁺ in the cell, mol/m².
+const copperLeft = (sol) => {
+  let m = 0;
+  for (let g = 0; g + 1 < sol.x.length; g++) {
+    const [a, b] = [sol.c['Cu2+'][g], sol.c['Cu2+'][g + 1]];
+    if (Number.isFinite(a) && Number.isFinite(b)) m += ((sol.x[g + 1] - sol.x[g]) * (a + b)) / 2;
+  }
+  return m;
+};
+
+// Charge and energy through the load, by the trapezoid rule; and the charge lost to Cu²⁺ plating
+// straight onto the zinc: the copper that's gone without passing through the load.
 function record(sol) {
   sol.trace.t.forEach((t, k) => {
     const I = sol.trace.current[k], V = sol.trace.voltage[k]; // through the load, and across it
@@ -144,6 +182,7 @@ function record(sol) {
     run.t.push(t);
     run.V.push(V);
   });
+  run.plated = 2 * FARADAY * (run.copper - copperLeft(sol)) - run.q.at(-1);
   return sol;
 }
 
@@ -155,7 +194,7 @@ function frame(now = performance.now()) {
   const hoursPerSecond = +pace.value, t = dev.solver.time;
   const target = run.stop < Infinity ? t : hoursPerSecond > 0 ? t + wall * hoursPerSecond * 3600 : t + 86400;
   const sol = record(dev.advance(target, { budgetMs: 12 }));
-  const flat = run.q.at(-1) > 0.999 * capacity || (run.t.length > 1 && run.V.at(-1) < 1e-3);
+  const flat = run.q.at(-1) + run.plated > 0.999 * capacity || (run.t.length > 1 && run.V.at(-1) < 1e-3);
   draw(sol, flat);
   if (run.stop === Infinity && sol.converged && !flat) requestAnimationFrame(frame);
   else running = false;
@@ -165,7 +204,7 @@ function draw(sol, flat) {
   const L = ledger(sol), hours = sol.time / 3600;
   document.getElementById('status').textContent =
     `${hours < 10 ? hours.toFixed(2) : hours.toFixed(1)} h · I = ${(sol.current / 10).toFixed(3)} mA/cm² · ` +
-    `delivered ${(run.q.at(-1) / 1e4).toFixed(2)} C/cm², ${(run.energy / 1e4).toFixed(2)} J/cm²` + (flat ? ' · flat' : '');
+    `delivered ${(run.q.at(-1) / 1e4).toFixed(2)} C/cm², ${(run.energy / 1e4).toFixed(2)} J/cm² · plated onto the zinc ${(run.plated / 1e4).toFixed(2)} C/cm²` + (flat ? ' · flat' : '');
   const tMax = Math.max(1, 1.1 * hours);
   chart(document.getElementById('vt'), {
     xlabel: 'time (h)', ylabel: 'cell voltage (V)', xlim: [0, tMax], ylim: [0, 1.2],
@@ -199,13 +238,14 @@ function draw(sol, flat) {
   });
   profiles(document.getElementById('conc'), sol, {
     species: ['K+', 'Cl-', 'Zn2+', 'Cu2+', 'SO42-'],
-    title: 'concentrations: the bridge leaking', ylabel: 'concentration (M)', scale: 1e-3, log: true, range: [-6, 1],
+    title: sep.value === 'pot' ? 'concentrations: copper seeping through the wall' : 'concentrations: the bridge leaking', ylabel: 'concentration (M)', scale: 1e-3, log: true, range: [-6, 1],
   });
-  // The zinc-side junction, ion by ion: each species' voltage relative to its value in the
-  // stirred anolyte (mV), and φ likewise. The window widens as the junction spreads (√(Dt)).
-  const w = Math.min(span, Math.max(5e-4, 4 * Math.sqrt(2e-9 * sol.time)));
+  // The zinc-side junction (or the pot's wall), ion by ion: each species' voltage relative to its
+  // value in the stirred anolyte (mV), and φ likewise. A junction's window widens as it spreads.
+  const isPot = sep.value === 'pot';
+  const w = isPot ? wall * 1.2 : Math.min(span, Math.max(5e-4, 4 * Math.sqrt(2e-9 * sol.time)));
   const xlim = [xJunction - w / 4, xJunction + w];
-  const tr = traces(sol, { species: ['K+', 'Cl-', 'Zn2+', 'SO42-'], standard: false, phi: true });
+  const tr = traces(sol, { species: isPot ? ['Zn2+', 'Cu2+', 'SO42-'] : ['K+', 'Cl-', 'Zn2+', 'SO42-'], standard: false, phi: true });
   const g0 = sol.x.findIndex((x) => x >= xlim[0]);
   for (const line of tr.series) {
     const ref = line.y[g0];
@@ -215,7 +255,7 @@ function draw(sol, flat) {
   const iJ = sol.x.findIndex((x) => x >= xJunction + w * 0.9);
   document.getElementById('junction').innerHTML = levelChart(tr, {
     width: 720, height: 360, xlim, ylabel: 'change from the anolyte (mV)',
-    title: `the zinc-side junction: φ changes by ${(1000 * (sol.phi[iJ] - sol.phi[g0])).toFixed(2)} mV across this window, ohmic drop included`,
+    title: `${isPot ? 'the porous wall' : 'the zinc-side junction'}: φ changes by ${(1000 * (sol.phi[iJ] - sol.phi[g0])).toFixed(2)} mV across this window, ohmic drop included`,
   });
   // Where the voltage goes: exact, as differences of levels at the two faces.
   const row = (name, v, strong) => `<tr${strong ? ' style="font-weight:600"' : ''}><td>${name}</td><td style="text-align:right;white-space:nowrap;padding-left:12px">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)} V</td></tr>`;
@@ -232,6 +272,7 @@ function draw(sol, flat) {
 }
 document.getElementById('run').addEventListener('click', start);
 Rslider.addEventListener('change', start);
+sep.addEventListener('change', start);
 start();
 showCode();
 </script>
