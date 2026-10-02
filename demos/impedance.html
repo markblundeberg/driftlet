@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impedance</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Ag | AgNO₃ | Ag: impedance, and what the cell does inside</h1>
+  <p>The impedance spectrum of 10 mM silver nitrate between two silver electrodes 20 µm apart, against
+    theory, and the small-signal response inside the cell at the frequency you choose: each ion's voltage
+    and the salt concentration oscillating across the cell, slowed down to watch. Slide the frequency from
+    salt diffusion's regime to the ohmic one. (More about the model below.)</p>
+  <div class="controls">
+    <label>frequency <input id="f" type="range" min="-2" max="5" step="0.05" value="0.5"><output id="fOut"></output></label>
+    <label>slow motion <select id="pace">
+      <option value="6">a cycle every 6 s</option>
+      <option value="2" selected>a cycle every 2 s</option>
+      <option value="0">paused</option>
+    </select></label>
+    <label><input id="zoom" type="checkbox"> zoom on the left electrode</label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas id="nyquist"></canvas>
+    <canvas id="lissajous"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>The cell is the one in <a href="saturation.html">the saturation demo</a>, at rest: a strictly neutral
+    electrolyte, Ag⁺ plated and stripped at the electrodes, NO₃⁻ blocked at both. Impedance asks how it
+    answers a small sinusoidal voltage, δV cos ωt. The answer is linear, so driftlet solves for it directly at
+    each frequency, as complex amplitudes over the whole cell: δX(x) for every quantity X, with the
+    oscillation δX(x, t) = Re[δX(x) e<sup>iωt</sup>]. That's what the diagrams draw, per 10 mV of excitation
+    (it scales with the excitation), with the phase ωt advancing slowly whatever the frequency. The dotted
+    lines are each quantity's envelope, ±|δX(x)|, which the oscillation sweeps between.</p>
+  <p>The level diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F):
+    an ion's electrochemical potential per unit charge, in volts. Ions drift and diffuse down slopes in their
+    own V<sub>i</sub>. Each electrode holds Ag⁺ level with its own silver, so δV<sub>Ag⁺</sub> is 0 at the
+    left and the excitation at the right. At high frequency the salt has no time to move: both ions' voltages
+    slope straight across the cell like the potential in a resistor, carrying current in proportion to their
+    mobilities, and the impedance is just the bulk resistance R<sub>b</sub>. The salt then piles up and drains
+    only within a diffusion length √(D/ω) of each electrode, where nitrate is stopped. At low frequency that
+    length outgrows the cell: the salt gradient spans it, nitrate's own voltage flattens (it carries no
+    current at the electrodes, so in the end none anywhere), and Ag⁺ carries all the current, by drift and
+    diffusion together. Its added resistance is the diffusion arc's width, R<sub>d</sub>.</p>
+  <p>The Nyquist plot (each frequency a point, Z′ against −Z″) shows the crossover as a finite-length Warburg
+    arc: R<sub>b</sub> + R<sub>d</sub> tanh√(iωτ)/√(iωτ), with τ = (L/2)²/D the salt's diffusion time,
+    dashed. There's no double-layer arc at the top of the range, because this electrolyte is strictly
+    neutral: it has no diffuse layers to charge. The Lissajous figure is the same impedance in time: the
+    current against the voltage over a cycle, a line with slope 1/|Z| when they're in phase and an ellipse
+    when the current leads.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, aqueous, traces, speciesRole, IONS } from '../src/kit.js';
+import { levelChart } from '../src/plot.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery } from './common.js';
+
+// The saturation demo's cell: reversible silver electrodes (Ag⁺ in equilibrium with the metal,
+// NO₃⁻ blocked) either side of 10 mM silver nitrate, strictly neutral.
+const silver = (V) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+const L = 20e-6, c0 = 10; // m, mol/m³
+const def = build({
+  library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 })],
+  stack: [silver(0), layer('water', L, { c0: { 'NO3-': c0 } }), silver(0)],
+  grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine at the electrodes, where the salt moves first
+});
+const dev = new Device(def);
+const rest = dev.solve(); // at rest, for the grid and the species' colours
+
+// Theory: the bulk resistance, the diffusion arc's width and the salt's diffusion time, and the
+// finite-length Warburg impedance Rb + Rd tanh(√(iωτ))/√(iωτ).
+const RT = GAS_CONSTANT * 298.15, F = FARADAY, Dp = IONS['Ag+'].D, Dm = IONS['NO3-'].D;
+const Rb = (RT * L) / (F * F * (Dp + Dm) * c0); // Ω·m²
+const Rd = (RT * L * Dm) / (F * F * Dp * (Dp + Dm) * c0);
+const Dsalt = (2 * Dp * Dm) / (Dp + Dm), tauD = (L / 2) ** 2 / Dsalt; // s
+const warburg = (f) => {
+  const s = Math.sqrt(Math.PI * f * tauD), den = Math.cosh(2 * s) + Math.cos(2 * s); // √(iωτ) = s(1 + i)
+  const tr = Math.sinh(2 * s) / den, ti = Math.sin(2 * s) / den;
+  return { re: Rb + (Rd * (tr + ti)) / (2 * s), im: (Rd * (ti - tr)) / (2 * s) };
+};
+
+// The spectrum, 10 mHz to 100 kHz.
+const freqs = Array.from({ length: 29 }, (_, k) => 10 ** (-2 + k * 0.25));
+const spectrum = dev.impedance(freqs).Z;
+const theory = Array.from({ length: 141 }, (_, k) => warburg(10 ** (-2 + k * 0.05)));
+const ohmCm2 = (v) => v * 1e4;
+
+// At the chosen frequency: Z and the complex profiles per volt at the right electrode.
+const dV = 0.01; // V: what the diagrams show, per 10 mV
+const fIn = document.getElementById('f');
+fromQuery(fIn);
+let at;
+function solveAt() {
+  const f = 10 ** +fIn.value;
+  const { Z, profiles } = dev.impedance([f], { profiles: true });
+  const z = { re: Z.re[0], im: Z.im[0] };
+  at = { f, z, p: profiles[0] };
+  document.getElementById('fOut').textContent = f < 1 ? `${short(f * 1000)} mHz` : f < 1000 ? `${short(f)} Hz` : `${short(f / 1000)} kHz`;
+}
+
+// Re[δX e^{iθ}] at each node, and its envelope ±|δX| as one line: the grid twice over, with a
+// break between.
+const wave = (a, k, theta) => [...Array.from(a.re, (re, g) => k * (re * Math.cos(theta) - a.im[g] * Math.sin(theta))), ...a.re.map(() => NaN), NaN];
+const envelope = (a, k) => {
+  const m = Array.from(a.re, (re, g) => k * Math.hypot(re, a.im[g]));
+  return [...m, NaN, ...m.map((v) => -v)];
+};
+const x2 = [...rest.x, rest.x[0], ...rest.x];
+const pace = document.getElementById('pace'), zoom = document.getElementById('zoom');
+const short = (v) => String(+v.toPrecision(2));
+let theta = 0, last, drawn;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (last ?? now)) / 1000);
+  last = now;
+  requestAnimationFrame(frame);
+  if (+pace.value > 0) theta = (theta + (2 * Math.PI * wall) / +pace.value) % (2 * Math.PI);
+  else if (drawn === `${fIn.value} ${zoom.checked}`) return; // paused, and nothing new to draw
+  drawn = `${fIn.value} ${zoom.checked}`;
+  const { f, z, p } = at;
+  const mag2 = z.re * z.re + z.im * z.im, y = { re: z.re / mag2, im: -z.im / mag2 }; // admittance 1/Z
+
+  // Nyquist, with the chosen frequency marked.
+  chart(document.getElementById('nyquist'), {
+    xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, 3.6], ylim: [0, 1.2],
+    series: [
+      { x: theory.map((w) => ohmCm2(w.re)), y: theory.map((w) => -ohmCm2(w.im)), color: colors[6], dash: [6, 4], label: 'theory' },
+      { x: Array.from(spectrum.re, ohmCm2), y: Array.from(spectrum.im, (v) => -ohmCm2(v)), color: colors[2], marker: true, width: 0, label: 'simulated, 10 mHz – 100 kHz' },
+      { x: [ohmCm2(z.re)], y: [-ohmCm2(z.im)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+
+  // Current against voltage over a cycle (mV, mA/cm²), between the two limits.
+  const ring = Array.from({ length: 97 }, (_, k) => (2 * Math.PI * k) / 96);
+  const I = (t) => (dV * (y.re * Math.cos(t) - y.im * Math.sin(t))) / 10;
+  const Imax = (1.15 * dV) / Rb / 10;
+  chart(document.getElementById('lissajous'), {
+    xlabel: 'δV (mV)', ylabel: 'δI (mA/cm²)', xlim: [-11.5, 11.5], ylim: [-Imax, Imax],
+    series: [
+      { x: [-10, 10], y: [-dV / Rb / 10, dV / Rb / 10], color: colors[0], dash: [6, 4], width: 1.2, label: 'ohmic, 1/R_b' },
+      { x: [-10, 10], y: [-dV / (Rb + Rd) / 10, dV / (Rb + Rd) / 10], color: colors[6], dash: [2, 3], width: 1.2, label: 'dc, 1/(R_b + R_d)' },
+      { x: ring.map((t) => 1000 * dV * Math.cos(t)), y: ring.map(I), color: colors[2], label: 'over a cycle' },
+      { x: [1000 * dV * Math.cos(theta)], y: [I(theta)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+
+  // Zoomed, the spatial plots show a few diffusion lengths √(D/ω) at the left electrode.
+  const reach = Math.sqrt(Dsalt / (2 * Math.PI * f));
+  const xlim = zoom.checked ? [0, Math.min(L, Math.max(6 * reach, 0.1e-6))] : undefined;
+
+  // Each ion's δV_i = δμ̄_i/(z_i F), in mV, swinging between its envelope.
+  const base = { ...traces(rest, { species: [] }), x: x2 };
+  const ion = (name, zi) => {
+    const sub = name === 'Ag+' ? 'Ag⁺' : 'NO₃⁻', role = speciesRole(rest, name);
+    return [
+      { id: `V:${name}`, label: `δV_{${sub}}`, kind: 'level', ...role, y: wave(p.mu[name], (1000 * dV) / (zi * F), theta) },
+      { id: `env:${name}`, label: `±|δV_{${sub}}|`, kind: 'phi', ...role, y: envelope(p.mu[name], (1000 * dV) / F) },
+    ];
+  };
+  document.getElementById('levels').innerHTML = levelChart(
+    { ...base, series: [...ion('Ag+', 1), ...ion('NO3-', -1)] },
+    { width: 720, height: 340, range: [-11.5, 11.5], xlim, ylabel: 'δV_i (mV)', title: `species voltages, ωt = ${Math.round((theta * 180) / Math.PI)}°` },
+  );
+
+  // The salt: δc of either ion (the electrolyte is neutral), in mM.
+  const salt = speciesRole(rest, 'Ag+');
+  // Its axis fits what's in view when zoomed: at high frequency the salt barely moves.
+  const cMax = xlim ? 1.15 * Math.max(...rest.x.map((x, g) => (x <= xlim[1] ? dV * Math.hypot(p.c['Ag+'].re[g], p.c['Ag+'].im[g]) : 0))) : 1.15;
+  document.getElementById('conc').innerHTML = levelChart(
+    {
+      ...base,
+      series: [
+        { id: 'c', label: 'δc_{Ag⁺} = δc_{NO₃⁻}', kind: 'level', ...salt, y: wave(p.c['Ag+'], dV, theta) },
+        { id: 'env', label: '±|δc|', kind: 'phi', ...salt, y: envelope(p.c['Ag+'], dV) },
+      ],
+    },
+    {
+      width: 720, height: 300, range: [-cMax, cMax], xlim, ylabel: 'δc (mM)',
+      title: `salt concentration: a diffusion length √(D/ω) = ${reach < 1e-6 ? `${(reach * 1e9).toFixed(0)} nm` : `${short(reach * 1e6)} µm`}${reach > L / 2 ? ', spanning the cell' : ' from each electrode'}`,
+    },
+  );
+
+  const phase = (Math.atan2(-z.im, z.re) * 180) / Math.PI;
+  document.getElementById('status').textContent =
+    `Z = ${ohmCm2(z.re).toFixed(2)} − ${ohmCm2(-z.im).toFixed(2)}i Ω·cm² · the current leads by ${phase.toFixed(1)}° · one cycle is ${1 / f < 1 ? `${short(1000 / f)} ms` : `${short(1 / f)} s`}`;
+}
+fIn.addEventListener('input', solveAt);
+zoom.checked = new URLSearchParams(location.search).has('zoom');
+solveAt();
+requestAnimationFrame(frame);
+showCode();
+</script>
+</body>
+</html>

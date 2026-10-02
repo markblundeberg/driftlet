@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Concentration polarisation</title>
+<title>Saturation</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
-  <h1>Ag | AgNO₃ | Ag: concentration polarisation, live</h1>
+  <h1>Ag | AgNO₃ | Ag: concentration polarisation and saturation</h1>
   <p>10 mM silver nitrate between two silver electrodes 20 µm apart, driven by a square wave of cell
-    voltage: the current's burst and sag as salt piles up at one electrode and depletes at the other, against
-    the steady-state theory, and the impedance at rest. Vary the voltage and the half-period. (More about the
-    model below.)</p>
+    voltage: the current's burst and sag as salt piles up at one electrode and depletes at the other, and its
+    saturation at a limiting current however hard the cell is driven. Vary the voltage and the half-period.
+    (More about the model below; <a href="impedance.html">the impedance demo</a> is the same cell's small-signal
+    side.)</p>
   <div class="controls">
     <label>cell voltage ± <input id="V" type="range" min="0.01" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
     <label>half-period <input id="half" type="range" min="-3" max="0" step="0.25" value="-1"><output id="halfOut"></output></label>
@@ -28,7 +29,6 @@
     <canvas class="wide" id="current"></canvas>
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
-    <canvas class="wide" id="nyquist"></canvas>
   </div>
   <h2>About this simulation</h2>
   <p>The electrolyte is strictly neutral. Ag⁺ is plated at one electrode and stripped at the other; NO₃⁻
@@ -37,12 +37,16 @@
     steady value, (4FD₊c/L) tanh(FV/4RT) (dashed), which can never exceed the limiting current 4FD₊c/L.
     Half-periods shorter than the diffusion time, (L/2)²/D ≈ 60 ms here, reverse the salt before it has piled
     up, and the current stays near ohmic.</p>
+  <p>The steady current is distinctly nonlinear. Below about 4RT/F ≈ 0.1 V it rises in proportion to the
+    voltage, but beyond that it saturates: the salt at the depleting electrode is nearly gone, and no more
+    voltage can draw Ag⁺ to it any faster than it diffuses there. The extra voltage goes into the burst at
+    each reversal instead, which only the solution's resistance limits, because the salt hasn't had time to
+    move.</p>
   <p>The level diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. Each ion drifts and diffuses down slopes in its own V<sub>i</sub> (thick);
     the thin line under it, the standard level V°<sub>i</sub>, is where V<sub>i</sub> would sit at the
     reference concentration. Ag⁺'s voltage slopes from one electrode's to the other's, driving the current.
     NO₃⁻'s is level once it settles, since nitrate carries no current; meanwhile its standard level is sloped,
-    and that slope is the salt's concentration gradient. The impedance spectrum at rest is the same physics in
-    frequency: the bulk resistance, then a finite-length Warburg arc from salt diffusion (theory dashed).</p>
+    and that slope is the salt's concentration gradient.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -61,32 +65,11 @@ const def = build({
   grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine at the electrodes, where Ag⁺ depletes
 });
 
-// Theory for a binary salt between electrodes reversible to its cation: the bulk resistance, the
-// steady current, and the finite-length Warburg impedance of salt diffusion.
+// Theory for a binary salt between electrodes reversible to its cation: the bulk resistance and
+// the steady current.
 const RT = GAS_CONSTANT * 298.15, F = FARADAY, Dp = IONS['Ag+'].D, Dm = IONS['NO3-'].D;
 const Rb = (RT * L) / (F * F * (Dp + Dm) * c0); // Ω·m²
-const Rd = (RT * L * Dm) / (F * F * Dp * (Dp + Dm) * c0); // the diffusion arc's width
-const tauD = (L / 2) ** 2 / ((2 * Dp * Dm) / (Dp + Dm)); // s
 const steady = (V) => ((4 * F * Dp * c0) / L) * Math.tanh((F * V) / (4 * RT)); // A/m²
-const warburg = (f) => {
-  // Rb + Rd tanh(√(jωτ))/√(jωτ), with √(jωτ) = s(1 + j)
-  const s = Math.sqrt(Math.PI * f * tauD), den = Math.cosh(2 * s) + Math.cos(2 * s);
-  const tr = Math.sinh(2 * s) / den, ti = Math.sin(2 * s) / den;
-  return { re: Rb + (Rd * (tr + ti)) / (2 * s), im: (Rd * (ti - tr)) / (2 * s) };
-};
-
-// The impedance spectrum at rest, 10 mHz to 100 kHz, against theory.
-const freqs = Array.from({ length: 49 }, (_, k) => 10 ** (-2 + k * 0.15));
-const Z = new Device(def).impedance(freqs).Z;
-const ohmCm2 = (v) => v * 1e4;
-const theory = freqs.map(warburg);
-chart(document.getElementById('nyquist'), {
-  xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, 3.6], ylim: [0, 1],
-  series: [
-    { x: theory.map((z) => ohmCm2(z.re)), y: theory.map((z) => -ohmCm2(z.im)), color: colors[6], dash: [6, 4], label: 'theory: R_b + finite-length Warburg' },
-    { x: Array.from(Z.re, ohmCm2), y: Array.from(Z.im, (v) => -ohmCm2(v)), color: colors[2], marker: true, width: 0, label: 'impedance at rest, 10 mHz – 100 kHz' },
-  ],
-});
 
 const amp = document.getElementById('V'), halfS = document.getElementById('half');
 fromQuery(amp);
