@@ -292,8 +292,8 @@ species relative to V.
 - `{ type: 'capacitive', C }` with the contact's `zeroCharge`: a gate or Stern layer to a
   conductor at the terminal voltage V. The displacement into the device is
   `C·((V − zeroCharge) − φ_edge)`, so `zeroCharge` is the value of V − φ_edge at which the
-  interface carries no charge: the flat-band voltage of a gate, or the potential of zero charge
-  (pzc) of an electrode.
+  interface carries no charge: the potential of zero charge (pzc) of an electrode, or for a gate
+  the flat-band voltage less the semiconductor's bulk φ (V_FB = zeroCharge + φ_bulk).
 - `'pinned'` with `zeroCharge`: the C → ∞ limit, φ_edge = V − zeroCharge. This is what a "fixed
   φ" boundary honestly means. For example, a Schottky barrier φ_B on n-type material with
   μ°_e = 0 is `zeroCharge: φ_B`.

@@ -923,7 +923,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       need(!mat.phiFree, `${path}.phi: φ is undefined in '${mat.name}' (only neutral combinations are charged there), so use 'bulk' or 'neutral'`);
       if (raw.type === 'capacitive') positive(raw.C, `${path}.phi.C`);
       // The alignment sits beside the law, as at a conductor's face: V − φ_edge at zero charge.
-      phi = { ...raw, zeroCharge: finite(cdef.zeroCharge, `${path}.zeroCharge (V − φ_edge at zero charge: flat-band voltage, pzc or barrier)`) };
+      phi = { ...raw, zeroCharge: finite(cdef.zeroCharge, `${path}.zeroCharge (V − φ_edge at zero charge: a pzc, a barrier, or a gate's flat-band voltage less the bulk φ)`) };
     } else {
       need(cdef.zeroCharge === undefined, `${path}.zeroCharge: only a capacitive or pinned φ law takes an alignment`);
       phi = { ...raw };

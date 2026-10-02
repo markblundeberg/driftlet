@@ -137,9 +137,11 @@ at faces between regions: an electrode is a conductor region with reactions at i
   reversible reference electrode would sense, e.g. Cl⁻ for Ag/AgCl), driftlet works out every
   species' equilibrium level.
 - **Gates and Stern layers** are capacitive φ laws to a conductor at the terminal voltage.
-  Their `zeroCharge` is the value of V − φ_edge at which the interface is uncharged: the
-  flat-band voltage, or the potential of zero charge. Like every alignment, it's a property
-  of that interface. The `pinned` law is the C → ∞ limit (e.g. a Schottky barrier),
+  Their `zeroCharge` is the value of V − φ_edge at which the interface is uncharged. For an
+  electrode in a solution with table μ° (where V − φ reads against SHE) that's the potential of
+  zero charge; for a gate it sets the flat-band voltage, V_FB = zeroCharge + φ_bulk, with φ_bulk
+  in the semiconductor's own anchoring (−1.00 V in p-type silicon at 1e17 cm⁻³ with μ°_e⁻ = 0).
+  Like every alignment, it's a property of that interface. The `pinned` law is the C → ∞ limit (e.g. a Schottky barrier),
   which is what a "fixed φ" boundary honestly means.
 - **`bulk`** says the end node is plain bulk (locally neutral, no double layer), while
   **`neutral`** says no charge sits at the face (D = 0), as for internal faces.
