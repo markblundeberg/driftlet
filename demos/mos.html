@@ -129,7 +129,7 @@ function draw(sol) {
     title: `bands, Fermi levels and φ near the oxide, gate at ${V.toFixed(2)} V`,
     phi: true,
     xlim,
-    labels: { 'V:e-': 'V e⁻ (the Fermi level: under V h⁺ in the silicon)' },
+    labels: { 'V:e-': 'V_{e⁻} (the Fermi level: under V_{h⁺} in the silicon)' },
   });
   profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }

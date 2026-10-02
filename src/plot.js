@@ -45,6 +45,42 @@ const STROKE = {
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/**
+ * A label split into plain and subscript runs. Labels mark subscripts TeX-style: `V_{e⁻}`, or
+ * `C_ox` for a run of letters, digits and charge signs. Everything else is literal.
+ * @param {string} label
+ * @returns {{ text: string, sub: boolean }[]}
+ */
+export function labelParts(label) {
+  const out = [];
+  const re = /_(?:\{([^}]*)\}|([\p{L}\p{N}⁺⁻]+))/gu;
+  let at = 0;
+  for (const m of String(label).matchAll(re)) {
+    if (m.index > at) out.push({ text: label.slice(at, m.index), sub: false });
+    out.push({ text: m[1] ?? m[2], sub: true });
+    at = m.index + m[0].length;
+  }
+  if (at < label.length) out.push({ text: label.slice(at), sub: false });
+  return out;
+}
+// The label as plain text (for titles and accessible names): braces dropped, `_` kept.
+const plain = (label) => labelParts(label).map((p) => (p.sub ? `_${p.text}` : p.text)).join('');
+// The label as SVG text content, subscripts lowered and shrunk (`dy`, which every browser
+// supports, rather than baseline-shift).
+const rich = (label, font) => {
+  const dy = Math.round(0.3 * font * 10) / 10;
+  let low = false;
+  return labelParts(label)
+    .map((p) => {
+      const shift = p.sub === low ? '' : ` dy="${p.sub ? dy : -dy}"`;
+      low = p.sub;
+      return p.sub ? `<tspan${shift} font-size="${0.75 * font}">${esc(p.text)}</tspan>` : shift ? `<tspan${shift}>${esc(p.text)}</tspan>` : esc(p.text);
+    })
+    .join('');
+};
+// Its width in characters, for layout.
+const span = (label) => labelParts(label).reduce((n, p) => n + (p.sub ? 0.75 : 1) * [...p.text].length, 0);
+
 function ticks(a, b, n) {
   const step0 = (b - a) / n;
   const mag = 10 ** Math.floor(Math.log10(step0));
@@ -114,7 +150,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   const rows = [[]];
   let rowW = 0;
   for (const s of series) {
-    const w = 28 + s.label.length * charW + 14;
+    const w = 28 + span(s.label) * charW + 14;
     if (rowW + w > width - 16 && rows[rows.length - 1].length) {
       rows.push([]);
       rowW = 0;
@@ -132,11 +168,11 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   const out = [];
   out.push(
     `<svg id="${id}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="max-width:100%;height:auto" role="img" ` +
-      `aria-label="${esc(`${title ? `${title}: ` : ''}${series.map((s) => s.label).join(', ')} against x`)}" ` +
+      `aria-label="${esc(`${title ? `${plain(title)}: ` : ''}${series.map((s) => plain(s.label)).join(', ')} against x`)}" ` +
       `font-family="system-ui, sans-serif" font-size="${font}">`,
   );
   out.push(style(id));
-  if (title) out.push(`<text x="8" y="16" fill="var(--driftlet-ink)" font-weight="600">${esc(title)}</text>`);
+  if (title) out.push(`<text x="8" y="16" fill="var(--driftlet-ink)" font-weight="600">${rich(title, font)}</text>`);
 
   // Region bands (every other one shaded) with their materials, and the faces between them.
   regions.forEach((r, k) => {
@@ -159,7 +195,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   }
   for (const f of tr.faces.filter((f) => f > xs && f < xe)) out.push(`<line x1="${r2(px(f))}" x2="${r2(px(f))}" y1="${pad.t}" y2="${pad.t + ph}" stroke="var(--driftlet-face)" stroke-dasharray="2 3"/>`);
   out.push(`<text x="${r2(pad.l + pw / 2)}" y="${height - 8}" text-anchor="middle" fill="var(--driftlet-ink)">x (${unit.name})</text>`);
-  out.push(`<text transform="translate(14 ${r2(pad.t + ph / 2)}) rotate(-90)" text-anchor="middle" fill="var(--driftlet-ink)">${esc(ylabel)}</text>`);
+  out.push(`<text transform="translate(14 ${r2(pad.t + ph / 2)}) rotate(-90)" text-anchor="middle" fill="var(--driftlet-ink)">${rich(ylabel, font)}</text>`);
 
   // Lines, clipped to the plot, broken where undefined.
   out.push(`<clipPath id="${id}-clip"><rect x="${pad.l}" y="${pad.t}" width="${pw}" height="${ph}"/></clipPath>`);
@@ -187,7 +223,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
       d += `${pen ? 'L' : 'M'}${r2(px(x[g]))} ${r2(py(v))}`;
       pen = true;
     }
-    if (d) out.push(`<path d="${d}" ${stroke(s)}><title>${esc(s.label)}</title></path>`);
+    if (d) out.push(`<path d="${d}" ${stroke(s)}><title>${esc(plain(s.label))}</title></path>`);
     // A species drawn with a display offset: a small zigzag across its V_i, near the left.
     if (s.shift && s.kind === 'level') {
       const g = [...x.keys()].find((k) => x[k] >= xs + 0.04 * (xe - xs) && Number.isFinite(s.y[k]) && s.y[k] >= y0 && s.y[k] <= y1);
@@ -196,7 +232,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   }
   for (const m of marks) {
     const zz = `M${r2(m.x - 3)} ${r2(m.y - 9)}l6 4.5l-6 4.5l6 4.5l-6 4.5`;
-    out.push(`<path d="${zz}" stroke="var(--driftlet-ink)" stroke-width="1.6" fill="none"><title>${esc(m.s.label)}</title></path>`);
+    out.push(`<path d="${zz}" stroke="var(--driftlet-ink)" stroke-width="1.6" fill="none"><title>${esc(plain(m.s.label))}</title></path>`);
   }
   out.push(`</g>`);
   if (series.some((s) => s.shift)) {
@@ -210,7 +246,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
       const yy = (title ? 22 : 0) + 14 + k * 18;
       for (const { s, x: xx } of row) {
         out.push(`<line x1="${xx}" x2="${xx + 22}" y1="${yy - 4}" y2="${yy - 4}" ${stroke(s)}/>`);
-        out.push(`<text x="${xx + 28}" y="${yy}" fill="var(--driftlet-ink)">${esc(s.label)}</text>`);
+        out.push(`<text x="${xx + 28}" y="${yy}" fill="var(--driftlet-ink)">${rich(s.label, font)}</text>`);
       }
     });
   }

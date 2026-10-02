@@ -170,14 +170,14 @@ function draw(s) {
   });
   // The ESBD view: Li⁺ shifted up 2.9 V to sit beside the electrons; the range grows to hold what the
   // run has shown.
-  const tr = traces(s, { shifts: { 'Li+': 2.9 }, labels: { 'V:e-': 'V e⁻ (the host’s Fermi level)' } });
+  const tr = traces(s, { shifts: { 'Li+': 2.9 }, labels: { 'V:e-': 'V_{e⁻} (the host’s Fermi level)' } });
   for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) run.range = [Math.min(run.range[0], y), Math.max(run.range[1], y)];
   const span = run.range[1] - run.range[0];
   document.getElementById('levels').innerHTML = levelChart(tr, {
     width: 720, height: 340, range: [run.range[0] - 0.2 * span, run.range[1] + 0.06 * span], // room for the ⌇ note
     title: `species voltages in the host, E = ${s.terminalVoltage.toFixed(3)} V`,
   });
-  profiles(document.getElementById('profile'), s, { species: ['Li+'], labels: { 'Li+': 'x = c Li⁺ / c_max' }, title: 'filling across the host', ylabel: 'site fraction x', scale: 1 / cMax, range: [0, 1] });
+  profiles(document.getElementById('profile'), s, { species: ['Li+'], labels: { 'Li+': 'x = c_{Li⁺} / c_max' }, title: 'filling across the host', ylabel: 'site fraction x', scale: 1 / cMax, range: [0, 1] });
 }
 document.getElementById('run').addEventListener('click', start);
 for (const el of [rate, omega]) el.addEventListener('change', start);

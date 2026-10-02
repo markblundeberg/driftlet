@@ -135,8 +135,8 @@ function update() {
     ylabel: 'voltage (V)',
   });
   profiles(document.getElementById('conc'), sc, {
-    species: ['Na+', 'Cl-', { name: 'Na+', c: si.c['Na+'], kind: 'standard', label: 'c Na⁺ ideal' }, { name: 'Cl-', c: si.c['Cl-'], kind: 'standard', label: 'c Cl⁻ ideal' }],
-    labels: { 'Na+': 'c Na⁺ crowded', 'Cl-': 'c Cl⁻ crowded' },
+    species: ['Na+', 'Cl-', { name: 'Na+', c: si.c['Na+'], kind: 'standard', label: 'c_{Na⁺} ideal' }, { name: 'Cl-', c: si.c['Cl-'], kind: 'standard', label: 'c_{Cl⁻} ideal' }],
+    labels: { 'Na+': 'c_{Na⁺} crowded', 'Cl-': 'c_{Cl⁻} crowded' },
     title: 'concentrations: crowded (thick) and ideal (thin)', ylabel: 'concentration (M)', scale: 1e-3, log: true, xlim,
     range: [Math.floor(Math.log10(c / 1000)) - 3, Math.max(1, Math.ceil(Math.log10(cMax / 1000)) + 1)],
   });

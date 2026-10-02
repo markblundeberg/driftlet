@@ -133,10 +133,10 @@ function frame(now = performance.now()) {
     title: `electronic levels at E = ${E.toFixed(3)} V vs SHE`,
     species: ['e-'],
     phi: true,
-    labels: { 'V:e-': 'Fermi level (V e⁻)', phi: 'V° e⁻(SHE) = φ' },
+    labels: { 'V:e-': 'Fermi level (V_{e⁻})', phi: 'V°_{e⁻}(SHE) = φ' },
     levels: [
       { half: iron, label: 'Fe³⁺/Fe²⁺ redox level' },
-      { half: iron, standard: true, label: 'V° e⁻(Fe³⁺/Fe²⁺)' },
+      { half: iron, standard: true, label: 'V°_{e⁻}(Fe³⁺/Fe²⁺)' },
     ],
     range: [Math.min(-0.1, Erest - 0.6), Erest + 0.6],
     ylabel: 'electron voltage (V vs SHE)',

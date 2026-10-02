@@ -13,7 +13,7 @@ const finite = (a) => {
  * One line of a level diagram.
  * @typedef {object} Trace
  * @property {string} id e.g. 'V:e-', 'Vstd:e-', 'phi', 'level:0'
- * @property {string} label e.g. 'V e⁻', 'V° SO₄²⁻'
+ * @property {string} label e.g. 'V_{e⁻}', 'V°_{SO₄²⁻}' (subscripts marked TeX-style, as `labelParts()` in driftlet/plot reads them)
  * @property {'level' | 'standard' | 'phi' | 'redox' | 'redox-standard'} kind a species voltage, its
  *   standard level, φ, or a half-reaction's level or standard level
  * @property {string} [species]
@@ -85,8 +85,8 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
     const shift = shifts[name] ?? 0;
     const at = (y) => (shift ? y.map((v) => v + shift) : y);
     const common = { species: name, role: role(name), slot: slotOf(name), ...(shift ? { shift } : {}) };
-    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V ${pretty(name)}`, kind: 'level', ...common, y: at(sol.V[name]) });
-    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V° ${pretty(name)}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
+    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
+    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
   }
   if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: sol.phi });
   const couples = [...new Set(levels.map((lv) => lv.half.equation))];

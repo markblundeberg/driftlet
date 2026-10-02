@@ -31,7 +31,7 @@ export function levels(el, sol, opts = {}) {
 export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, height = 300 }) {
   const f = log ? (c) => (c > 0 ? Math.log10(c * scale) : NaN) : (c) => c * scale;
   const series = species.map((entry) => {
-    const { name, c = sol.c[name], label = labels[name] ?? `c ${typeset(name, sol.species.find((sp) => sp.name === name).z)}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
+    const { name, c = sol.c[name], label = labels[name] ?? `c_{${typeset(name, sol.species.find((sp) => sp.name === name).z)}}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
     return { id: `c:${name}:${label}`, label, kind, ...speciesRole(sol, name), y: Array.from(c, f) };
   });
   if (!range) {

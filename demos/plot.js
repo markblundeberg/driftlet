@@ -2,7 +2,10 @@
 //
 // chart(canvas, { series, xlabel, ylabel, xlim, ylim, logy, xscale })
 //   series: [{ x, y, color, label, dash, width }]. NaN values break a line; repeated x values
-//   (doubled interface nodes) draw as vertical steps.
+//   (doubled interface nodes) draw as vertical steps. Labels mark subscripts as driftlet/plot's
+//   do: `C_ox`, `c_{Zn²⁺}`.
+
+import { labelParts } from '../src/plot.js';
 
 // The same categorical palette as driftlet/plot (style.css defines --c1 … --c8, light and dark).
 export const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)', 'var(--c7)', 'var(--c8)'];
@@ -10,9 +13,32 @@ export const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(
 const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 const paint = (c) => (c.startsWith('var(') ? css(c.slice(4, -1), '#888') : c);
 
+// Draws a label with its subscripts lowered and shrunk, aligned as given; returns its width.
+function label(ctx, text, x, y, align = 'left') {
+  const parts = labelParts(text), font = ctx.font;
+  const small = font.replace(/^\d+px/, '9px');
+  const widths = parts.map((p) => {
+    ctx.font = p.sub ? small : font;
+    return ctx.measureText(p.text).width;
+  });
+  const total = widths.reduce((a, b) => a + b, 0);
+  let at = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+  const was = ctx.textAlign;
+  ctx.textAlign = 'left';
+  parts.forEach((p, k) => {
+    ctx.font = p.sub ? small : font;
+    ctx.fillText(p.text, at, p.sub ? y + 3.6 : y);
+    at += widths[k];
+  });
+  ctx.font = font;
+  ctx.textAlign = was;
+  return total;
+}
+const plain = (text) => labelParts(text).map((p) => (p.sub ? `_${p.text}` : p.text)).join('');
+
 export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, logy = false, xscale = 1, legend = true }) {
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', `${ylabel} against ${xlabel}: ${series.map((s) => s.label).filter(Boolean).join(', ')}`);
+  canvas.setAttribute('aria-label', `${plain(ylabel)} against ${plain(xlabel)}: ${series.map((s) => s.label).filter(Boolean).map(plain).join(', ')}`);
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
@@ -60,12 +86,11 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
     ctx.fillText(logy ? `1e${t}` : fmt(t), pad.l - 6, py(t) + 4);
   }
   ctx.fillStyle = ink;
-  ctx.textAlign = 'center';
-  ctx.fillText(xlabel, (pad.l + W - pad.r) / 2, H - 6);
+  label(ctx, xlabel, (pad.l + W - pad.r) / 2, H - 6, 'center');
   ctx.save();
   ctx.translate(14, (pad.t + H - pad.b) / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText(ylabel, 0, 0);
+  label(ctx, ylabel, 0, 0, 'center');
   ctx.restore();
 
   // lines
@@ -119,8 +144,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = ink;
-    ctx.fillText(s.label, xx + 25, 18);
-    xx += 25 + ctx.measureText(s.label).width + 16;
+    xx += 25 + label(ctx, s.label, xx + 25, 18) + 16;
   }
 }
 

@@ -45,7 +45,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`.
+  `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`).
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
 - **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),

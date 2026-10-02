@@ -122,8 +122,8 @@ a level diagram:
   its lines as data: per charged species its voltage V_i (`kind: 'level'`) and standard level
   V°_i (`'standard'`, the band edges for e⁻ and h⁺), optionally φ and half-reaction levels
   (`levels: [{ half, label, standard }]`, kinds `'redox'` and `'redox-standard'`). Labels
-  typeset the species (`V SO₄²⁻`, as `typeset(name, z)` does); `labels` renames lines by id
-  (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
+  typeset the species as a subscript (`V_{SO₄²⁻}`, the species as `typeset(name, z)` writes
+  it); `labels` renames lines by id (`{ 'V:e-': 'Fermi level' }`). `shifts` gives species display offsets in
   volts (`{ 'K+': 3.5 }`), moving all of a species' lines together so that widely separated
   species share one readable plot, as the ESBD book does; the label says so (⌇). Each line has a
   colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`, `'redox'`, `'phi'`) and a
@@ -142,7 +142,10 @@ a level diagram:
   restyles them; `THEME` and `themeColor(role, slot, { dark })` give them to other charts.
   `xlim` (m) zooms into a window, with ticks and range fitted to it; `ytick(v)` writes the y
   axis's tick labels. `levelChart(traces, opts)` draws traces you've edited, or any profiles
-  against x (log₁₀ concentrations, say, with `ytick` writing powers of ten).
+  against x (log₁₀ concentrations, say, with `ytick` writing powers of ten). Labels, titles and
+  the y label mark subscripts TeX-style, `V_{e⁻}` or `C_ox` (a run of letters, digits and
+  charge signs), drawn lowered and smaller; tooltips and the accessible name read `V_e⁻`.
+  `labelParts(label)` splits a label into its plain and subscript runs, for other renderers.
 
 ```js
 import { Device } from 'driftlet';

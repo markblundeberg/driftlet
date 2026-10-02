@@ -146,7 +146,7 @@ function frame(now = performance.now()) {
     title: `species voltages and standard levels, t = ${(1000 * s.time).toFixed(0)} ms`,
   });
   profiles(document.getElementById('conc'), s, {
-    species: ['Ag+'], labels: { 'Ag+': 'c Ag⁺ = c NO₃⁻ (neutral)' }, title: 'salt concentration', ylabel: 'concentration (mM)', range: [0, 20],
+    species: ['Ag+'], labels: { 'Ag+': 'c_{Ag⁺} = c_{NO₃⁻} (neutral)' }, title: 'salt concentration', ylabel: 'concentration (mM)', range: [0, 20],
   });
   if (s.time < stop && s.converged) requestAnimationFrame(frame);
   else running = false;

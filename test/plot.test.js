@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device } from '../src/index.js';
 import { build, layer, ohmic, half, traces, typeset } from '../src/kit.js';
-import { bandDiagram, levelChart } from '../src/plot.js';
+import { bandDiagram, levelChart, labelParts } from '../src/plot.js';
 
 // Plot-ready traces, and the SVG level diagram drawn from them.
 
@@ -65,33 +65,47 @@ test('traces: a line per level, colour slots that follow the species, regions an
 test('the SVG level diagram: one path per line, broken where a level is undefined, a legend, a label', () => {
   const sol = cell();
   const svg = bandDiagram(sol, { title: 'silver cell' });
-  assert.match(svg, /^<svg [^>]*role="img"[^>]*aria-label="silver cell: V Ag⁺, V° Ag⁺, V NO₃⁻, V° NO₃⁻, V e⁻ against x"/);
+  assert.match(svg, /^<svg [^>]*role="img"[^>]*aria-label="silver cell: V_Ag⁺, V°_Ag⁺, V_NO₃⁻, V°_NO₃⁻, V_e⁻ against x"/);
   assert.ok(svg.endsWith('</svg>'));
   // Tags balance (no parser in node, so count them).
-  for (const tag of ['svg', 'g', 'path', 'text', 'style', 'clipPath', 'title']) {
+  for (const tag of ['svg', 'g', 'path', 'text', 'tspan', 'style', 'clipPath', 'title']) {
     const open = svg.match(new RegExp(`<${tag}[ >]`, 'g'))?.length ?? 0, close = svg.match(new RegExp(`</${tag}>`, 'g'))?.length ?? 0;
     assert.equal(open, close, tag);
   }
   const paths = [...svg.matchAll(/<path d="([^"]*)"[^>]*><title>([^<]*)<\/title>/g)].map((m) => ({ d: m[1], label: m[2] }));
   // Thin standard levels first, so the thick species voltages sit on top.
-  assert.deepEqual(paths.map((p) => p.label), ['V° Ag⁺', 'V° NO₃⁻', 'V Ag⁺', 'V NO₃⁻', 'V e⁻']);
+  assert.deepEqual(paths.map((p) => p.label), ['V°_Ag⁺', 'V°_NO₃⁻', 'V_Ag⁺', 'V_NO₃⁻', 'V_e⁻']);
   const byLabel = Object.fromEntries(paths.map((p) => [p.label, p]));
   // Ag⁺ lives in the solution only: one stretch. The Fermi level is in both metals: two.
   const moves = (p) => p.d.match(/M/g).length;
-  assert.equal(moves(byLabel['V Ag⁺']), 1);
-  assert.equal(moves(byLabel['V e⁻']), 2);
+  assert.equal(moves(byLabel['V_Ag⁺']), 1);
+  assert.equal(moves(byLabel['V_e⁻']), 2);
   assert.match(svg, />electrolyte \(water\)<\/text>/);
   // A single line needs no legend.
   const one = levelChart(traces(sol, { species: ['e-'] }));
   assert.equal((one.match(/<line [^>]*stroke-width=/g) ?? []).length, 0);
   // Species voltages thick, standard levels thin; a shifted species is marked and explained.
-  assert.match(svg, /stroke-width="2.8"><title>V Ag⁺<\/title>/);
-  assert.match(svg, /stroke-width="1.3"><title>V° Ag⁺<\/title>/);
+  assert.match(svg, /stroke-width="2.8"><title>V_Ag⁺<\/title>/);
+  assert.match(svg, /stroke-width="1.3"><title>V°_Ag⁺<\/title>/);
   const marked = bandDiagram(sol, { shifts: { 'NO3-': -1 } });
   assert.match(marked, /⌇ = per-species offset/);
-  assert.match(marked, /<path d="M[^"]*l6 4.5l-6 4.5[^"]*" stroke="var\(--driftlet-ink\)"[^>]*><title>V NO₃⁻ ⌇−1 V<\/title>/);
+  assert.match(marked, /<path d="M[^"]*l6 4.5l-6 4.5[^"]*" stroke="var\(--driftlet-ink\)"[^>]*><title>V_NO₃⁻ ⌇−1 V<\/title>/);
+  // Legend entries set the species as a subscript, lowered with dy and raised back after it.
+  assert.match(marked, />V<tspan dy="3.6" font-size="9">NO₃⁻<\/tspan><tspan dy="-3.6"> ⌇−1 V<\/tspan><\/text>/);
   // Two diagrams in one page don't share ids.
   assert.notEqual(svg.match(/id="([^"]+)"/)[1], one.match(/id="([^"]+)"/)[1]);
+});
+
+test('labels mark subscripts TeX-style: braced, or a bare run of letters, digits and charge signs', () => {
+  assert.deepEqual(labelParts('V°_{e⁻}(SHE) = φ'), [{ text: 'V°', sub: false }, { text: 'e⁻', sub: true }, { text: '(SHE) = φ', sub: false }]);
+  assert.deepEqual(labelParts('C / C_ox at 1 kHz'), [{ text: 'C / C', sub: false }, { text: 'ox', sub: true }, { text: ' at 1 kHz', sub: false }]);
+  assert.deepEqual(labelParts('V_SO₄²⁻'), [{ text: 'V', sub: false }, { text: 'SO₄²⁻', sub: true }]);
+  assert.deepEqual(labelParts('plain'), [{ text: 'plain', sub: false }]);
+  // In titles and axis labels too, escaped.
+  const svg = bandDiagram(cell(), { title: 'a <b>_{x}', ylabel: 'V_{e⁻} (V)' });
+  assert.match(svg, />a &lt;b&gt;<tspan dy="3.6" font-size="9">x<\/tspan><\/text>/);
+  assert.match(svg, /aria-label="a &lt;b&gt;_x: /);
+  assert.match(svg, />V<tspan dy="3.6" font-size="9">e⁻<\/tspan><tspan dy="-3.6"> \(V\)<\/tspan><\/text>/);
 });
 
 test('zooming with xlim: only the regions in view, ticks over the window, the range fitted to it', () => {
