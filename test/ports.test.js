@@ -63,8 +63,9 @@ test('a held port level: a neutral species pinned in a window, fed by diffusion 
 
 test('MOS: a port grounding the channel gives the low-frequency C–V, inversion included', () => {
   // p-Si under a gate (right). Without generation, inversion electrons could only arrive by
-  // minority-carrier diffusion from the back contact (weeks), and the inversion layer's Fermi
-  // level is floating to within round-off: no steady state can be computed. A port holding the
+  // minority-carrier diffusion from the back contact (minutes, through a bulk with ~1e3 of them
+  // per cm³), and the inversion layer's Fermi level is held so weakly that the steady solve is
+  // fragile (see the next test, and the roadmap). A port holding the
   // electrons at ground beside the oxide (as source and drain would, in 2D) anchors the channel,
   // and the small-signal capacitance then follows the quasi-static C–V.
   const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19), NA = units.perCm3(1e17);
