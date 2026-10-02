@@ -1651,6 +1651,15 @@ export class Solver {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax };
       }
+      // Converged as far as round-off allows: the updates are already tiny (below 1e-6 thermal
+      // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
+      // above tol: a strictly neutral material on a short step, where φ is fixed only through
+      // fluxes that the storage term dwarfs, rattles at ~1e-9 after converging quadratically.
+      const [p1, p2] = [history[history.length - 2], history[history.length - 3]];
+      if (alpha === 1 && it >= 4 && step < 1e-6 && p1 < 1e-6 && step > 0.25 * p1 && p1 > 0.25 * p2) {
+        this.computeConcentrations();
+        return { converged: true, iterations: it, history, residual: rmax, roundoff: true };
+      }
     }
     this.computeConcentrations();
     return fail({ converged: false, iterations: maxIter, history });
@@ -1803,6 +1812,13 @@ export class Solver {
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
     while (this.time < tEnd) {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
+      // Within round-off of the end (a target a hair past a breakpoint just landed on, say):
+      // snap to it rather than attempt a step of ~1e-13 s, which can't be resolved and, in a
+      // strictly neutral device, fails outright.
+      if (tEnd - this.time <= 1e-10 * Math.abs(tEnd)) {
+        this.time = tEnd;
+        break;
+      }
       const remaining = tEnd - this.time;
       let h = Math.min(dt, dtMax);
       let clamped = h >= remaining * (1 - 1e-9);

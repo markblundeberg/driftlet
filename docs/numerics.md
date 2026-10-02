@@ -348,6 +348,13 @@ column by column on devices that cover every assembly path.
   units per iteration by uniform scaling.
 - Converged when a full, undamped update is below 1e-10 (thermal units). Quadratic
   convergence makes the remaining residual negligible.
+- Or converged as far as round-off allows: updates already below 1e-6 thermal units (~26 nV)
+  that have stopped shrinking for two iterations. A badly conditioned system's round-off floor
+  can sit above 1e-10: a strictly neutral material on a short step, where φ is fixed only
+  through fluxes that the storage term dwarfs (a condition number of about h²/(D·dt)), converges
+  quadratically to ~1e-9 and then rattles there. Short steps come right after every waveform
+  breakpoint, so without this a cyclic voltammogram in a neutral electrolyte stalled at its
+  turns.
 - Clear divergence (updates beyond 1e4, or ten times the first update after six iterations)
   bails out early, so the caller can take a smaller step.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
@@ -396,7 +403,12 @@ column by column on devices that cover every assembly path.
     accuracy of the terminal current it cost 50% more.
   - A step is rejected above `tol`. The next step size is h·min(2, max(0.2,
     0.9 (tol/err)^{1/(p+1)})).
-  - Newton failure quarters the step.
+  - Newton failure quarters the step; on the first step after a start or a jump in a device
+    with a strictly neutral material, longer steps are tried first, since there shorter ones are
+    worse conditioned.
+  - A target within round-off of the present time (1e-10 relative), such as an animation
+    frame's that lands a hair past a breakpoint just reached, is snapped to rather than
+    stepped to: a step of 1e-13 s can't be resolved.
   - Newton starts each step from the state extrapolated through the last three, which saves
     about a third of the iterations.
   - The wall-clock budget is checked between steps.

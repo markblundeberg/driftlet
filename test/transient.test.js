@@ -219,3 +219,28 @@ test('advance() to where it already is changes nothing, and the next call still 
   const moved = dev.advance(1e-4);
   assert.ok(moved.converged && moved.done && moved.steps > 0 && dev.solver.time === 1e-4);
 });
+
+test('cyclic voltammetry in a strictly neutral cell runs through its turns (round-off at breakpoints)', async () => {
+  // Pt | Fe³⁺, Fe²⁺ in KCl (ε = 0) through 1 mm to a bath, swept by a triangle wave. Short steps
+  // after each turn are badly conditioned (φ fixed only through fluxes), so Newton converges to a
+  // round-off floor above its tolerance there; and a frame's target can land a hair past a turn.
+  const { build, layer, ohmic, bath, half, aqueous, metal } = await import('../src/kit.js');
+  const iron = half('Fe3+ + e- = Fe2+');
+  const cell = (drive) =>
+    build({
+      library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+      stack: [ohmic(drive, ['e-']), layer('Pt', 40e-6), { reactions: [{ ...iron, k0: 1e-3 }] }, layer('water', 1e-3), bath({ 'K+': 500, 'Cl-': 525, 'Fe3+': 5, 'Fe2+': 5 }, 'Cl-')],
+      grid: { hmin: 10e-9, hmax: 25e-6 },
+    });
+  const E0 = new Device(cell({ I: 0 })).solve().terminals.left.V, period = 0.2;
+  const dev = new Device(cell(E0));
+  dev.solve();
+  dev.set({ contacts: { left: { V: { t: [0, period / 4, (3 * period) / 4, period], values: [E0, E0 + 0.5, E0 - 0.5, E0], repeat: true } } } });
+  assert.ok(dev.advance(period / 4).converged, 'up to the first turn');
+  assert.ok(dev.step(7e-6).converged, 'a short step right after it');
+  // Frames of period/360, as an animation takes them: one lands 1e-13 past a turn.
+  for (let f = 0; f < 720; f++) {
+    const run = dev.advance(dev.solver.time + period / 360);
+    assert.ok(run.converged, `frame ${f}, t = ${dev.solver.time}`);
+  }
+});
