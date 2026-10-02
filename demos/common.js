@@ -1,7 +1,7 @@
 // Shared by the demo pages: the page's own code shown as a worked example, and level diagrams.
 
 import { bandDiagram, levelChart, THEME } from '../src/plot.js';
-import { traces, speciesRole } from '../src/kit.js';
+import { traces, speciesRole, typeset } from '../src/kit.js';
 
 // driftlet/plot's theme colours as page-wide CSS variables (light and dark), so the canvas
 // charts draw each species in the colour its level-diagram lines have.
@@ -63,7 +63,7 @@ export function relativeLevels(el, sol, { species, title, labels = {} }) {
 export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, height = 300 }) {
   const f = log ? (c) => (c > 0 ? Math.log10(c * scale) : NaN) : (c) => c * scale;
   const series = species.map((entry) => {
-    const { name, c = sol.c[name], label = labels[name] ?? `c ${name}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
+    const { name, c = sol.c[name], label = labels[name] ?? `c ${typeset(name, sol.species.find((sp) => sp.name === name).z)}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
     return { id: `c:${name}:${label}`, label, kind, ...speciesRole(sol, name), y: Array.from(c, f) };
   });
   if (!range) {

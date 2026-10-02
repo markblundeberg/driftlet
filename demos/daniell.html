@@ -8,33 +8,54 @@
 </head>
 <body>
 <main>
-  <h1>A Daniell cell discharging through a load</h1>
-  <p>Zn | 0.1 M ZnSO₄ | separator | 0.1 M CuSO₄ | Cu, each solution 0.5 mm deep and still, the separator passing only sulfate. At open circuit
-    each metal's Fermi level sits at its couple's redox level (Zn²⁺/Zn and Cu²⁺/Cu), and the cell voltage
-    is the 1.10 V between them. Connect a load and current flows: each metal departs from its couple's level
-    by an overpotential, the redox levels tilt across the electrolyte (ohmic drop, and the compositions
-    changing near each electrode), and the voltage left for the load shrinks. As zinc dissolves and copper
-    plates, sulfate crosses the separator to keep each side neutral.</p>
+  <h1>A Daniell cell, discharged through a load</h1>
+  <p>Zn | 0.1 M ZnSO₄ | separator | 0.1 M CuSO₄ | Cu, each solution 0.5 mm deep and still, the separator
+    passing only sulfate. At open circuit each metal's Fermi level sits at its couple's redox level (Zn²⁺/Zn
+    and Cu²⁺/Cu), and the cell voltage is the 1.10 V between them. Connect a load and current flows: each
+    metal departs from its couple's level by an overpotential, the redox levels tilt across the electrolyte
+    (ohmic drop, and the compositions changing near each electrode), and the voltage left for the load
+    shrinks. Zinc dissolves, copper plates, and sulfate crosses the separator to keep each side neutral. The
+    run goes on, in log time, until the cell is flat: 0.5 mm of 0.1 M Cu²⁺ holds 0.96 C/cm², or 1.06 J/cm² at
+    1.10 V. A light load drains it slowly, near the open-circuit voltage throughout, and gets 97% of that
+    energy (the rest because the couples' levels close in as Cu²⁺ runs low and Zn²⁺ builds up). The heaviest
+    load here asks for more current than diffusion can supply: the Cu²⁺ at the copper runs out early and the
+    voltage sags, so although nearly all the charge still comes out, less than a fifth of the energy reaches
+    the load. The rest is dissipated in the cell.</p>
+  <p>The first level diagram is electronic: the metals' Fermi levels, each couple's redox level, the electronic
+    level at which the local mixture is in equilibrium, and their standard levels, which ride on the SHE's
+    standard level (φ itself, with table μ°): zinc's 0.76 V below it, copper's 0.34 V above. The second is
+    the same story ion by ion: each species' voltage V<sub>i</sub> (thick) and standard level V°<sub>i</sub>
+    (thin), with sulfate drawn 4.1 V lower (⌇) to share the plot. Zn²⁺'s voltage meets zinc's electrons,
+    and Cu²⁺'s meets copper's: that's what equilibrium at each electrode means.</p>
   <div class="controls">
-    <label>load R <input id="R" type="range" min="-3" max="0" step="0.1" value="-1.5"><output id="Rout"></output></label>
-    <button id="run">connect</button>
+    <label>load R <input id="R" type="range" min="-3" max="1" step="0.25" value="-1.5"><output id="Rout"></output></label>
+    <label>playback <select id="pace">
+      <option value="3">a decade of time every 3 s</option>
+      <option value="1" selected>a decade every second</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <button id="run">restart</button>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
-    <div class="levels wide" id="levels"></div>
     <canvas id="vt"></canvas>
-    <div class="readout" id="ledger"></div>
+    <canvas id="vq"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
+    <div class="levels wide" id="ions"></div>
+    <div class="readout wide" id="ledger"></div>
   </div>
 </main>
 <script type="module">
-import { Device } from '../src/index.js';
+import { Device, FARADAY } from '../src/index.js';
 import { build, layer, ohmic, half, level, aqueous, metal } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
 
 const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
 const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
 const electrode = (couple) => ({ reactions: [{ ...couple, k0: 1e-3, alpha: 0.5 }] });
+const depth = 500e-6, c0 = 100; // each solution: m, mol/m³
 const cell = (right) =>
   build({
     library: [
@@ -47,15 +68,16 @@ const cell = (right) =>
       ohmic(0, ['e-']),
       layer('Zn', 40e-6), // a metal is one cell whatever its length: this just shows on the diagram
       electrode(zinc),
-      layer('anolyte', 500e-6, { c0: { 'Zn2+': 100, 'SO42-': 100 } }),
+      layer('anolyte', depth, { c0: { 'Zn2+': c0, 'SO42-': c0 } }),
       {}, // the separator: only sulfate is in both solutions, so only sulfate crosses
-      layer('catholyte', 500e-6, { c0: { 'Cu2+': 100, 'SO42-': 100 } }),
+      layer('catholyte', depth, { c0: { 'Cu2+': c0, 'SO42-': c0 } }),
       electrode(copper),
       layer('Cu', 40e-6),
       ohmic(right, ['e-']),
     ],
     grid: { hmin: 10e-9, hmax: 10e-6 },
   });
+const capacity = 2 * FARADAY * c0 * depth; // C/m²: all the Cu²⁺ plated
 
 // The faces' edge nodes, where the overpotentials are read.
 const probe = new Device(cell({ I: 0 }));
@@ -79,46 +101,88 @@ let dev, emf, trace, running = false;
 function start() {
   // At open circuit (the right terminal floating at zero current), then the load.
   dev = new Device(cell({ I: 0 }));
-  const oc = dev.solve();
-  emf = ledger(oc).V;
+  emf = ledger(dev.solve()).V;
   dev.set({ contacts: { right: { I: undefined, V: 0, R: R() } } }); // the load: I = (0 − V)/R
-  trace = { t: [], V: [] };
-  first = true;
+  // ?t=… goes straight to that time (for a screenshot).
+  trace = { t: [], V: [], q: [0], energy: 0, stop: +new URLSearchParams(location.search).get('t') || Infinity };
+  lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
 }
 
-const tEnd = 3000, stop = +new URLSearchParams(location.search).get('t') || tEnd;
-let first = true;
-function frame() {
-  // Each frame reaches a little further in log time; ?t=… goes straight there (for a screenshot).
-  const target = first && stop < tEnd ? stop : Math.min(stop, Math.max(1e-3, dev.solver.time * 1.12));
-  const sol = dev.advance(target, first && stop < tEnd ? {} : { budgetMs: 12 });
-  first = false;
+// Playback in log time, from 1 ms: a decade of time every few seconds, or as far as 12 ms of
+// computing reaches each frame. The run ends when the cell is flat.
+const pace = document.getElementById('pace');
+let lastFrame;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  const perDecade = +pace.value, t = Math.max(1e-3, dev.solver.time);
+  const target = trace.stop < Infinity ? trace.stop : perDecade > 0 ? t * 10 ** (wall / perDecade) : t * 100;
+  const sol = dev.advance(target, { budgetMs: 12 });
   sol.trace.t.forEach((t, k) => {
+    // Charge and energy through the load, by the trapezoid rule.
+    const I = sol.trace.current[k], V = sol.trace.voltage[k]; // through the load, and across it
+    if (trace.t.length) {
+      const dt = t - trace.t.at(-1);
+      trace.q.push(trace.q.at(-1) + (dt * (trace.I + I)) / 2);
+      trace.energy += (dt * (trace.I * trace.V.at(-1) + I * V)) / 2;
+    }
+    trace.I = I;
     trace.t.push(t);
     trace.V.push(sol.trace.voltage[k]);
   });
-  const L = ledger(sol);
-  document.getElementById('status').textContent = `t = ${sol.time.toPrecision(3)} s · I = ${(-sol.current / 10).toFixed(2)} mA/cm² through the load`;
+  const L = ledger(sol), flat = trace.t.length > 1 && L.V < 0.01 * emf;
+  const q = trace.q.at(-1) / 1e4; // C/cm²
+  document.getElementById('status').textContent =
+    `t = ${sol.time < 100 ? sol.time.toPrecision(2) : sol.time.toFixed(0)} s · I = ${(sol.current / 10).toFixed(2)} mA/cm² · delivered ${q.toFixed(3)} C/cm², ${(trace.energy / 1e4).toFixed(3)} J/cm²` +
+    (flat ? ` · flat: the load got ${((100 * trace.energy) / (capacity * emf)).toFixed(0)}% of the energy` : '');
+  chart(document.getElementById('vt'), {
+    xlabel: 'log₁₀ t (s)', ylabel: 'cell voltage (V)', xlim: [-3, 5], ylim: [0, 1.2],
+    series: [
+      { x: [-3, 5], y: [emf, emf], color: colors[0], dash: [6, 4], width: 1.2, label: 'open circuit' },
+      { x: trace.t.map(Math.log10), y: trace.V, color: colors[2], label: 'across the load' },
+    ],
+  });
+  chart(document.getElementById('vq'), {
+    xlabel: 'charge delivered (C/cm²)', ylabel: 'cell voltage (V)', xlim: [0, 1.05 * capacity / 1e4], ylim: [0, 1.2],
+    series: [
+      { x: [capacity / 1e4, capacity / 1e4], y: [0, 1.2], color: colors[0], dash: [6, 4], width: 1.2, label: 'all the Cu²⁺' },
+      { x: trace.q.map((v) => v / 1e4), y: trace.V, color: colors[2], label: 'discharge curve' },
+    ],
+  });
+  // Electronic levels: the Fermi levels, each couple's redox level and standard level, and the
+  // SHE's standard level, which with table μ° (μ°_H⁺ = 0, μ_H₂ = 0) is φ itself.
   levels(document.getElementById('levels'), sol, {
-    title: `cell voltage ${L.V.toFixed(3)} V after ${sol.time.toPrecision(2)} s`,
+    title: `electronic levels: cell voltage ${L.V.toFixed(3)} V at t = ${sol.time.toPrecision(2)} s`,
     species: ['e-'],
-    labels: { 'V:e-': 'Fermi level (V e⁻)' },
+    phi: true,
+    labels: { 'V:e-': 'Fermi level (V e⁻)', phi: 'V° e⁻(SHE) = φ' },
     levels: [
       { half: zinc, label: 'Zn²⁺/Zn level' },
+      { half: zinc, standard: true, label: 'V° e⁻(Zn²⁺/Zn)' },
       { half: copper, label: 'Cu²⁺/Cu level' },
+      { half: copper, standard: true, label: 'V° e⁻(Cu²⁺/Cu)' },
     ],
+    range: [-0.2, 1.3],
     ylabel: 'electron voltage (V)',
   });
-  chart(document.getElementById('vt'), {
-    xlabel: 'log₁₀ t (s)', ylabel: 'cell voltage (V)', ylim: [0, 1.2],
-    series: [{ x: trace.t.map(Math.log10), y: trace.V, color: colors[2], label: 'V(t) across the load' }],
+  // Sulfate (thin) follows each side's cation exactly: the solutions are strictly neutral.
+  profiles(document.getElementById('conc'), sol, {
+    species: ['Zn2+', 'Cu2+', { name: 'SO42-', kind: 'standard', label: 'c SO₄²⁻ (= the cation’s)' }],
+    title: 'concentrations', ylabel: 'concentration (mM)', range: [0, 230],
+  });
+  levels(document.getElementById('ions'), sol, {
+    title: 'species voltages and standard levels, ion by ion',
+    species: ['e-', 'Zn2+', 'Cu2+', 'SO42-'],
+    shifts: { 'SO42-': -4.1 },
+    range: [-0.2, 1.3],
+    ylabel: 'voltage (V)',
   });
   // Where the voltage goes: exact, as differences of levels at the two faces.
   const row = (name, v, strong) => `<tr${strong ? ' style="font-weight:600"' : ''}><td>${name}</td><td style="text-align:right;white-space:nowrap;padding-left:12px">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)} V</td></tr>`;
   document.getElementById('ledger').innerHTML =
-    `<table style="width:100%;max-width:420px">` +
+    `<table style="width:100%;max-width:460px">` +
     row('open-circuit voltage (the two couples, at the start)', emf, true) +
     row('electrolyte: ohmic drop and concentration changes', L.couples - emf) +
     row('zinc overpotential', L.etaZn) +
@@ -126,8 +190,8 @@ function frame() {
     row('cell voltage', L.V, true) +
     `</table><p class="note">The overpotentials are each metal's distance from its couple's level at its own face;
     the electrolyte's share is what's left between the two couples' levels there. How that share splits into
-    ohmic drop, concentration and junction terms is a convention; the diagram shows where it happens.</p>`;
-  if (sol.time < stop && sol.converged) requestAnimationFrame(frame);
+    ohmic drop, concentration and junction terms is a convention; the diagrams show where it happens.</p>`;
+  if (sol.time < trace.stop && sol.converged && !flat) requestAnimationFrame(frame);
   else running = false;
 }
 document.getElementById('run').addEventListener('click', start);
