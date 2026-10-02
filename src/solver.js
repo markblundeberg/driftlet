@@ -122,21 +122,35 @@ export class Solver {
 
     // Regions where φ is undefined: no charged species, and either ε = 0 or nothing couples the
     // region electrostatically (neutral faces, no gate). φ there gets an identity row.
+    // φ is undefined in a conductor or an insertion host, and in a charge-free region (no
+    // charged species) unless its electrostatic cluster, the regions joined to it by faces that
+    // aren't neutral, reaches something that fixes φ: a region with charged species, a gate or
+    // pinned contact, or a capacitive face to a conductor. (Else φ there is a free constant.)
     this.phiUndefined = new Uint8Array(nNodes);
+    const charged = (mat) => species.some((sp, i) => mat.present[i] && sp.z !== 0);
+    const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
+    const free = (r) => materials[regions[r].material].phiFree || materials[regions[r].material].epsr === 0;
+    const anchored = new Uint8Array(regions.length);
+    for (let r0 = 0; r0 < regions.length; r0++) {
+      if (free(r0) || anchored[r0]) continue;
+      let r1 = r0;
+      while (r1 + 1 < regions.length && model.interfaces[r1].phi.type !== 'neutral' && !free(r1 + 1)) r1++;
+      let anchor = (r0 === 0 && pins(contacts.left)) || (r1 === regions.length - 1 && pins(contacts.right));
+      for (let r = r0; r <= r1; r++) if (charged(materials[regions[r].material])) anchor = true;
+      if (r0 > 0 && model.interfaces[r0 - 1].phi.type !== 'neutral' && materials[regions[r0 - 1].material].conductor) anchor = true;
+      if (r1 < regions.length - 1 && model.interfaces[r1].phi.type !== 'neutral' && materials[regions[r1 + 1].material].conductor) anchor = true;
+      for (let r = r0; r <= r1; r++) anchored[r] = anchor ? 1 : 2;
+      r0 = r1;
+    }
     regions.forEach((reg, r) => {
       const mat = materials[reg.material];
-      if (mat.phiFree) {
-        for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) this.phiUndefined[g] = 1;
-        return;
-      }
-      if (species.some((sp, i) => mat.present[i] && sp.z !== 0)) return;
-      const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
-      const leftOpen = r === 0 ? pins(contacts.left) : model.interfaces[r - 1].phi.type !== 'neutral';
-      const rightOpen =
-        r === regions.length - 1 ? pins(contacts.right) : model.interfaces[r].phi.type !== 'neutral';
-      if (mat.epsr === 0 || !(leftOpen || rightOpen)) {
+      if (mat.phiFree || (!charged(mat) && (mat.epsr === 0 || anchored[r] !== 1))) {
         for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) this.phiUndefined[g] = 1;
       }
+    });
+    // A face with φ undefined on both sides holds no charge, whatever its law says.
+    model.interfaces.forEach((itf, f) => {
+      if (itf.phi.type !== 'neutral' && this.phiUndefined[grid.regionEnd[f]] && this.phiUndefined[grid.regionEnd[f] + 1]) itf.phi = { type: 'neutral' };
     });
 
     // Unknowns as compensated double-doubles, u + uLo. Only differences of η need the extra

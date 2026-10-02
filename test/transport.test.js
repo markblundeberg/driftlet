@@ -114,3 +114,24 @@ test('exchange link at a contact: N = k (μ_out − μ)/RT in series with diffus
   assert.ok(Math.abs(sol.contacts.left.flux.X / want - 1) < 1e-10, `${sol.contacts.left.flux.X} vs ${want}`);
   assert.ok(Math.abs(sol.c.X[0] / lo - 1) < 1e-10);
 });
+
+test('a neutral species diffusing through two regions of a dielectric: no charge anywhere, so no φ to solve for', () => {
+  const RT = GAS_CONSTANT * 298.15;
+  const bath = (c) => ({ species: { O2: { type: 'equilibrium', mu: RT * Math.log(c / 1000) } }, phi: 'neutral' });
+  for (const epsr of [3, 0]) {
+    for (const grid of [{ minCells: 8 }, { hmin: 1e-8, hmax: 1e-6 }]) {
+      const sol = new Device({
+        species: [{ name: 'O2', z: 0, cRef: 1000 }],
+        materials: { polymer: { epsr, species: { O2: { D: 1e-11, mu0: 0 } } } },
+        regions: [
+          { material: 'polymer', length: 5e-6 },
+          { material: 'polymer', length: 5e-6 },
+        ],
+        contacts: { left: bath(1), right: bath(0.1) },
+        grid,
+      }).solve();
+      assert.ok(sol.converged, `epsr ${epsr}, ${JSON.stringify(grid)}`);
+      assert.ok(Math.abs(sol.contacts.left.flux.O2 / ((1e-11 * 0.9) / 10e-6) - 1) < 1e-12);
+    }
+  }
+});
