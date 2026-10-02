@@ -9,18 +9,10 @@
 <body>
 <main>
   <h1>Ag | AgNO₃ | Ag: concentration polarisation, live</h1>
-  <p>10 mM silver nitrate between two silver electrodes 20 µm apart, as a strictly neutral electrolyte, driven
-    by a square wave of cell voltage. Ag⁺ is plated at one electrode and stripped at the other; NO₃⁻ can't
-    cross either. So each reversal starts with a burst of current limited only by the solution's resistance;
-    then salt piles up at one electrode and depletes at the other, and the current sags toward its steady
-    value, (4FD₊c/L) tanh(FV/4RT) (dashed), which can never exceed the limiting current 4FD₊c/L. Half-periods
-    shorter than the diffusion time, (L/2)²/D ≈ 60 ms here, reverse the salt before it has piled up, and
-    the current stays near ohmic.</p>
-  <p>The diagram is ion by ion: each species' voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F) (thick)
-    and standard level V°<sub>i</sub> (thin). Ag⁺'s voltage slopes from one electrode's to the other's, driving the current. NO₃⁻'s
-    is level once it settles, since nitrate carries no current; meanwhile its standard level is sloped, and
-    that slope is the salt's concentration gradient. The impedance spectrum at rest is the same physics in
-    frequency: the bulk resistance, then a finite-length Warburg arc from salt diffusion (theory dashed).</p>
+  <p>10 mM silver nitrate between two silver electrodes 20 µm apart, driven by a square wave of cell
+    voltage: the current's burst and sag as salt piles up at one electrode and depletes at the other, against
+    the steady-state theory, and the impedance at rest. Vary the voltage and the half-period. (More about the
+    model below.)</p>
   <div class="controls">
     <label>cell voltage ± <input id="V" type="range" min="0.01" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
     <label>half-period <input id="half" type="range" min="-3" max="0" step="0.25" value="-1"><output id="halfOut"></output></label>
@@ -38,6 +30,19 @@
     <div class="levels wide" id="conc"></div>
     <canvas class="wide" id="nyquist"></canvas>
   </div>
+  <h2>About this simulation</h2>
+  <p>The electrolyte is strictly neutral. Ag⁺ is plated at one electrode and stripped at the other; NO₃⁻
+    can't cross either. So each reversal starts with a burst of current limited only by the solution's
+    resistance; then salt piles up at one electrode and depletes at the other, and the current sags toward its
+    steady value, (4FD₊c/L) tanh(FV/4RT) (dashed), which can never exceed the limiting current 4FD₊c/L.
+    Half-periods shorter than the diffusion time, (L/2)²/D ≈ 60 ms here, reverse the salt before it has piled
+    up, and the current stays near ohmic.</p>
+  <p>The level diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. Each ion drifts and diffuses down slopes in its own V<sub>i</sub> (thick);
+    the thin line under it, the standard level V°<sub>i</sub>, is where V<sub>i</sub> would sit at the
+    reference concentration. Ag⁺'s voltage slopes from one electrode's to the other's, driving the current.
+    NO₃⁻'s is level once it settles, since nitrate carries no current; meanwhile its standard level is sloped,
+    and that slope is the salt's concentration gradient. The impedance spectrum at rest is the same physics in
+    frequency: the bulk resistance, then a finite-length Warburg arc from salt diffusion (theory dashed).</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';

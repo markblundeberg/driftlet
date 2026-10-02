@@ -9,21 +9,10 @@
 <body>
 <main>
   <h1>A redox couple at an electrode: cyclic voltammetry</h1>
-  <p>Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl, through a stagnant layer to a stirred bulk. Only the
-    solution within a few √(Dt) of the electrode is ever converted; the bulk is a fixed reservoir. A thin layer
-    stands for vigorous stirring (a rotating disk): once the depleted zone fills it, the wave is steady and
-    sigmoidal. A thick one is a still solution, where the depleted zone keeps growing through the sweep and the
-    current peaks then sags: the classic "duck". With fast kinetics (k⁰ ≳ 1) its peaks sit 59 mV apart, plus a
-    few mV of ohmic drop through the solution; a smaller rate constant pulls them further apart
-    (quasi-reversible, then irreversible). Faster scans outrun diffusion.</p>
-  <p>The first level diagram is electronic: the platinum's Fermi level, and the couple's redox level, the electronic
-    level at which the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the
-    overpotential, which drives Butler–Volmer kinetics; the redox level's slope across the layer is
-    concentration polarisation. It sits V<sub>T</sub> ln(c₃/c₂) from the couple's standard level, which in turn
-    rides a fixed distance above the SHE's standard level, φ itself with table μ°. That one is nearly level
-    thanks to the supporting electrolyte, and "vs SHE" means against it in the stirred bulk, at the right.
-    The last diagram is the same story ion by ion: each species' voltage V<sub>i</sub> and standard level
-    V°<sub>i</sub> (K⁺, about 3 V lower, is left out).</p>
+  <p>Cyclic voltammetry of Fe³⁺ + e⁻ ⇌ Fe²⁺ at platinum, in 0.5 M KCl: the voltammogram as it's swept, and
+    the electrode's Fermi level, the couple's redox level and each ion's level across the layer of solution
+    by the electrode. Vary the scan rate, the stirring (as the thickness of a stagnant layer) and the rate
+    constant k⁰. (More about the model below.)</p>
   <div class="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="1" step="0.25" value="-1"><output id="rateOut"></output></label>
     <label>stagnant layer <input id="L" type="range" min="0.5" max="3" step="0.25" value="1.25"><output id="LOut"></output></label>
@@ -42,6 +31,25 @@
     <div class="levels wide" id="conc"></div>
     <div class="levels wide" id="ions"></div>
   </div>
+  <h2>About this simulation</h2>
+  <p>The electrode faces a stagnant layer, then a stirred bulk. Only the solution within a few √(Dt) of the
+    electrode is ever converted; the bulk is a fixed reservoir. A thin layer stands for vigorous stirring (a
+    rotating disk): once the depleted zone fills it, the wave is steady and sigmoidal. A thick one is a still
+    solution, where the depleted zone keeps growing through the sweep and the current peaks then sags: the
+    classic "duck". With fast kinetics (k⁰ ≳ 1) its peaks sit 59 mV apart, plus a few mV of ohmic drop
+    through the solution; a smaller rate constant pulls them further apart (quasi-reversible, then
+    irreversible). Faster scans outrun diffusion.</p>
+  <p>The first level diagram is electronic: the platinum's Fermi level, and the couple's redox level, the electronic
+    level at which the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the surface is the
+    overpotential, which drives Butler–Volmer kinetics; the redox level's slope across the layer is
+    concentration polarisation. It sits V<sub>T</sub> ln(c₃/c₂) from the couple's standard level, which in turn
+    rides a fixed distance above the SHE's standard level, φ itself with table μ°. That one is nearly level
+    thanks to the supporting electrolyte, and "vs SHE" means against it in the stirred bulk, at the right.</p>
+  <p>The last diagram is the same story ion by ion, using the ESBD book's species voltage
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): an ion's electrochemical potential per unit charge, in volts,
+    so it can be drawn on the same axis as the electrons' Fermi level. Ions drift and diffuse down slopes in
+    their own V<sub>i</sub> (thick); the thin line under each, the standard level V°<sub>i</sub>, is where
+    V<sub>i</sub> would sit at the reference concentration. K⁺, about 3 V lower, is left out.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';

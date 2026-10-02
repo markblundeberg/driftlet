@@ -9,18 +9,10 @@
 <body>
 <main>
   <h1>Silicon pn junction</h1>
-  <p>Electrons and holes are ordinary species. Thick lines are their species voltages
-    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), the quasi-Fermi levels; thin lines are their standard
-    levels V°<sub>i</sub>, the band edges (in voltage units the conduction band sits below the valence band).
-    The bias moves the p side's metal contact: forward bias splits the quasi-Fermi levels across the
-    junction, and the carriers recombine as they cross, in the layers or at the contacts.</p>
-  <p>The lifetime control sets band-to-band recombination. With a long lifetime the minority carriers'
-    diffusion length L far exceeds the 1.5 µm layers: they cross to the contacts and recombine there (a short
-    diode). With a short one, L shrinks below the layer
-    thickness and they recombine inside (a long diode). Shockley's law covers both, with the current
-    J₀(e<sup>V/V<sub>T</sub></sup> − 1) and J₀ = qn<sub>i</sub>²[D<sub>n</sub>/(N<sub>A</sub>L<sub>n</sub>) coth(W<sub>p</sub>/L<sub>n</sub>) + D<sub>p</sub>/(N<sub>D</sub>L<sub>p</sub>) coth(W<sub>n</sub>/L<sub>p</sub>)],
-    plus the recombination in the depletion layer (dashed). It holds to a few percent until the current is
-    large, where series resistance and rising injection bend the curve below it.</p>
+  <p>A silicon pn diode between metal contacts, with electrons and holes simulated as ordinary species: its
+    current–voltage curve against Shockley's law, and the band diagram and carrier densities at the bias you
+    choose. The lifetime takes it from a short diode, whose carriers recombine at the contacts, to a long one,
+    whose carriers recombine inside. (More about the model below.)</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0.3"><output id="Vout"></output></label>
     <label>lifetime <input id="tau" type="range" min="-10.2" max="-6.2" step="0.25" value="-6.2"><output id="tauOut"></output></label>
@@ -31,6 +23,20 @@
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
   </div>
+  <h2>About this simulation</h2>
+  <p>The band diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. A species drifts and diffuses down slopes in its own V<sub>i</sub>, and
+    is in equilibrium where it's level. For electrons and holes the thick lines, V<sub>i</sub>, are the
+    quasi-Fermi levels; the thin ones, the standard levels V°<sub>i</sub>, are the band edges (in voltage
+    units the conduction band sits below the valence band, since an electron's charge is negative). The bias
+    moves the p side's metal contact: forward bias splits the quasi-Fermi levels across the junction, and the
+    carriers recombine as they cross, in the layers or at the contacts.</p>
+  <p>The lifetime control sets band-to-band recombination. With a long lifetime the minority carriers'
+    diffusion length L far exceeds the 1.5 µm layers: they cross to the contacts and recombine there (a short
+    diode). With a short one, L shrinks below the layer thickness and they recombine inside (a long diode).
+    Shockley's law covers both, with the current
+    J₀(e<sup>V/V<sub>T</sub></sup> − 1) and J₀ = qn<sub>i</sub>²[D<sub>n</sub>/(N<sub>A</sub>L<sub>n</sub>) coth(W<sub>p</sub>/L<sub>n</sub>) + D<sub>p</sub>/(N<sub>D</sub>L<sub>p</sub>) coth(W<sub>n</sub>/L<sub>p</sub>)],
+    plus the recombination in the depletion layer (dashed). It holds to a few percent until the current is
+    large, where series resistance and rising injection bend the curve below it.</p>
 </main>
 <script type="module">
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';

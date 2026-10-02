@@ -9,16 +9,10 @@
 <body>
 <main>
   <h1>Silicon solar cell under light</h1>
-  <p>A thin n⁺ emitter on a 60 µm p base, with metal contacts front and back. Light is a reservoir: the reaction
-    photon → e⁻ + h⁺, with the photons' μ far above the gap, generates pairs uniformly. Under light the
-    quasi-Fermi levels split even at zero bias; at open circuit they split by qV<sub>oc</sub> and no current
-    flows. A pair made in the base is collected if its electron reaches the junction before it recombines or
-    reaches the back contact, which is a sink here (there's no back-surface field). Integrating that chance
-    over the base gives L<sub>n</sub> tanh(W<sub>b</sub>/2L<sub>n</sub>) of collecting width: about L<sub>n</sub>
-    for a short diffusion length, but never more than half the base however long it is. The readout checks
-    J<sub>sc</sub> = qG(that + the depletion layer + the emitter's share) and
-    V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from the dark curve. The dashed curve is
-    the dark curve shifted by J<sub>sc</sub>, the superposition principle.</p>
+  <p>A silicon solar cell, a thin n⁺ emitter on a 60 µm p base, under uniform light: its current–voltage
+    curve, with the short-circuit current and open-circuit voltage checked against textbook theory, and the
+    quasi-Fermi levels splitting under the light. Vary the bias, the light and the base's lifetime. (More about
+    the model below.)</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="0" max="0.65" step="0.005" value="0.5"><output id="Vout"></output></label>
     <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
@@ -30,6 +24,19 @@
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
   </div>
+  <h2>About this simulation</h2>
+  <p>Light is a reservoir: the reaction photon → e⁻ + h⁺, with the photons' μ far above the gap, generates
+    pairs uniformly. The band diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. Carriers drift and diffuse down slopes in their own
+    V<sub>i</sub>: for electrons and holes these are the quasi-Fermi levels (thick), drawn with their standard
+    levels V°<sub>i</sub>, the band edges (thin). Under light the quasi-Fermi levels split even at zero bias;
+    at open circuit they split by qV<sub>oc</sub> and no current flows.</p>
+  <p>A pair made in the base is collected if its electron reaches the junction before it recombines or
+    reaches the back contact, which is a sink here (there's no back-surface field). Integrating that chance
+    over the base gives L<sub>n</sub> tanh(W<sub>b</sub>/2L<sub>n</sub>) of collecting width: about L<sub>n</sub>
+    for a short diffusion length, but never more than half the base however long it is. The readout checks
+    J<sub>sc</sub> = qG(that + the depletion layer + the emitter's share) and
+    V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from the dark curve. The dashed curve is
+    the dark curve shifted by J<sub>sc</sub>, the superposition principle.</p>
 </main>
 <script type="module">
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';

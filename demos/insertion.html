@@ -9,21 +9,9 @@
 <body>
 <main>
   <h1>Cycling an intercalation host at constant current</h1>
-  <p>A 2 µm host layer (strictly neutral, with Li⁺ + e⁻ as one neutral combination) takes Li⁺ from the
-    electrolyte on the left and electrons from a current collector on the right. Its open-circuit voltage is a
-    regular solution with interaction Ω, which flattens the curve as Ω/RT nears 2, where the host would split
-    into two phases. It's cycled at constant current between voltage cutoffs: filling until the collector
-    falls to the lower cutoff, then emptying until it reaches the upper one, and so on. Slowly, the curves
-    hug the OCV and the host fills and empties almost completely. Faster, lithium piles up at the surface (or
-    drains from it) while the inside lags, the voltage leaves the OCV by more, and a cutoff arrives early.
-    Emptying is the harder direction: lithium diffuses faster through a fuller host (here its chemical
-    diffusivity is D(1/(1−x) − 2xΩ/RT)), so at high rates the surface runs dry long before the host does.
-    Then the mean filling ratchets over several cycles before the loop settles.</p>
-  <p>The level diagram is ESBD-style: the host's electrons (V e⁻, level, since they move easily) and its Li⁺
-    (V Li⁺, sloped wherever lithium diffuses). Their separation at each depth is the local open-circuit
-    voltage, E(x) = V<sub>e⁻</sub> − V<sub>Li⁺</sub>, larger where the host is emptier. Li⁺ is drawn
-    shifted (⌇) to sit beside the electrons. φ has no meaning inside this neutral host, so neither do
-    standard levels.</p>
+  <p>A lithium intercalation host, cycled at constant current between voltage cutoffs: its voltage against
+    the open-circuit curve, and lithium piling up and draining inside it. Vary the rate (C-rate) and the
+    interaction Ω that flattens the open-circuit curve. (More about the model below.)</p>
   <div class="controls">
     <label>C-rate <input id="rate" type="range" min="-1" max="1" step="0.1" value="0.3"><output id="rateOut"></output></label>
     <label>Ω/RT <input id="omega" type="range" min="0" max="1.9" step="0.1" value="1.2"><output id="omegaOut"></output></label>
@@ -40,6 +28,22 @@
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="profile"></div>
   </div>
+  <h2>About this simulation</h2>
+  <p>A 2 µm host layer (strictly neutral, with Li⁺ + e⁻ as one neutral combination) takes Li⁺ from the
+    electrolyte on the left and electrons from a current collector on the right. Its open-circuit voltage is a
+    regular solution with interaction Ω, which flattens the curve as Ω/RT nears 2, where the host would split
+    into two phases. It's filled until the collector falls to the lower cutoff, then emptied until it reaches
+    the upper one, and so on. Slowly, the curves hug the OCV and the host fills and empties almost completely.
+    Faster, lithium piles up at the surface (or drains from it) while the inside lags, the voltage leaves the
+    OCV by more, and a cutoff arrives early. Emptying is the harder direction: lithium diffuses faster through
+    a fuller host (here its chemical diffusivity is D(1/(1−x) − 2xΩ/RT)), so at high rates the surface runs dry
+    long before the host does. Then the mean filling ratchets over several cycles before the loop settles.</p>
+  <p>The level diagram uses the ESBD book's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in volts, so electrons and ions share one axis. A species drifts and diffuses down slopes in its own V<sub>i</sub>. Here
+    they're the host's electrons (V<sub>e⁻</sub>, its Fermi level, level since they move easily) and its Li⁺
+    (V<sub>Li⁺</sub>, sloped wherever lithium diffuses). Their separation at each depth is the local
+    open-circuit voltage, E(x) = V<sub>e⁻</sub> − V<sub>Li⁺</sub>, larger where the host is emptier. Li⁺ is
+    drawn shifted (⌇) to sit beside the electrons. φ has no meaning inside this neutral host, so neither do
+    standard levels.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
