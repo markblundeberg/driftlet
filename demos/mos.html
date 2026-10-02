@@ -10,89 +10,128 @@
 <main>
   <h1>MOS capacitor: accumulation, depletion, inversion</h1>
   <p>p-type silicon under 5 nm of oxide and a metal gate. The gate voltage sets the gate metal's Fermi level;
-    the silicon's bands bend at the surface to meet it. Negative bias pulls holes to the surface
-    (accumulation), moderate positive bias pushes them away (depletion), and beyond threshold electrons gather
-    in a thin inversion layer. Those electrons come from a port holding them at ground beside the oxide, the
-    1D stand-in for a transistor's source and drain; without it, they'd have to diffuse in from the back
-    contact. The capacitance at 1 kHz then follows the low-frequency C–V curve.</p>
+    the silicon's bands bend at the surface to meet it, and φ (dotted) drops straight across the oxide, its
+    slope the oxide field. (In the silicon φ runs along the conduction band edge, where the library's data
+    anchor it.) Negative bias pulls holes to the surface (accumulation), moderate positive bias
+    pushes them away (depletion), and beyond threshold electrons gather in a thin inversion layer. Those
+    electrons come from a port holding them at ground beside the oxide, the 1D stand-in for a transistor's
+    source and drain; without it, they'd have to diffuse in from the back contact.</p>
+  <p>The capacitance at 1 kHz follows the ideal low-frequency C–V curve (dashed: the oxide in series with the
+    silicon's dQ/dψ, from the closed-form surface charge), to four digits. Flat band is at
+    V<sub>FB</sub> = zeroCharge + φ<sub>bulk</sub>, set by the gate interface's work-function difference;
+    threshold is where the surface has inverted as strongly as the bulk is doped, ψ<sub>s</sub> = 2φ<sub>F</sub>.
+    More doping widens the window between them and deepens the dip.</p>
   <div class="controls">
     <label>gate V <input id="V" type="range" min="-3" max="2" step="0.05" value="0.5"><output id="Vout"></output></label>
+    <label>doping <input id="NA" type="range" min="16" max="18" step="0.25" value="17"><output id="NAout"></output></label>
     <span class="readout" id="Q"></span>
   </div>
   <div class="grid">
+    <canvas class="wide" id="cv"></canvas>
     <div class="levels wide" id="levels"></div>
-    <canvas id="cv"></canvas>
-    <canvas id="conc"></canvas>
+    <div class="levels wide" id="conc"></div>
   </div>
 </main>
 <script type="module">
-import { Device, EPS0, AVOGADRO, units } from '../src/index.js';
+import { Device, EPS0, AVOGADRO, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, showCode, fromQuery, speciesColor } from './common.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
 
-const Lsi = units.um(0.5), tox = units.nm(5);
-const def = build({
-  T: 300,
-  library: [semiconductor('Si'), metal('Au')],
-  materials: { SiO2: { epsr: 3.9, species: {} } }, // an insulator: no mobile species
-  stack: [
-    ohmic(0), // the back contact
-    layer('Si', Lsi, { name: 'p-Si', acceptors: units.perCm3(1e17) }),
-    { dipole: 0 }, // Si | SiO2: φ continuous (the oxide has no levels of its own to align)
-    layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
-    // Oxide | gate metal. Its zeroCharge, the gate's Fermi level minus φ there when it's uncharged,
-    // is a property of this interface (a work-function difference). φ in this p-Si bulk is −1.00 V
-    // (the library anchors φ at the conduction band), so the flat-band voltage is 0.1 − 1.0 = −0.9 V.
-    { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.1 },
-    layer('Au', units.nm(50)),
-    ohmic(0, ['e-']), // the gate's terminal
-  ],
-  // Source and drain in 1D: the inversion layer's electrons held at ground beside the oxide.
-  ports: [{ name: 'channel', region: 'p-Si', from: Lsi - units.nm(5), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
-  grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
-});
+const Lsi = units.um(0.5), tox = units.nm(5), zeroCharge = 0.1;
+const mos = (NA) =>
+  build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Au')],
+    materials: { SiO2: { epsr: 3.9, species: {} } }, // an insulator: no mobile species
+    stack: [
+      ohmic(0), // the back contact
+      layer('Si', Lsi, { name: 'p-Si', acceptors: NA }),
+      { dipole: 0 }, // Si | SiO2: φ continuous (the oxide has no levels of its own to align)
+      layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+      // Oxide | gate metal. Its zeroCharge, the gate's Fermi level minus φ there when it's uncharged,
+      // is a property of this interface (a work-function difference): it sets the flat-band voltage.
+      { phi: { type: 'capacitive', C: 100 }, zeroCharge },
+      layer('Au', units.nm(50)),
+      ohmic(0, ['e-']), // the gate's terminal
+    ],
+    // Source and drain in 1D: the inversion layer's electrons held at ground beside the oxide.
+    ports: [{ name: 'channel', region: 'p-Si', from: Lsi - units.nm(5), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+  });
 
-// The C–V curve, once, from the small-signal impedance at 1 kHz at each gate voltage.
-const sweep = new Device(def), Cox = (3.9 * EPS0) / tox, cv = { V: [], C: [] };
-for (let V = -3; V <= 2.001; V += 0.1) {
-  sweep.set({ contacts: { right: { V } } });
-  const Z = sweep.impedance([1e3]).Z;
-  cv.V.push(V);
-  cv.C.push(-1 / (2 * Math.PI * 1e3 * Z.im[0]) / Cox);
+const gate = document.getElementById('V'), doping = document.getElementById('NA');
+fromQuery(gate);
+fromQuery(doping);
+const NA = () => units.perCm3(10 ** +doping.value); // from 1e16: below, depletion would reach the back contact
+
+// The ideal low-frequency C–V: the surface charge Q_s(ψ_s) in closed form (p₀, n₀ the bulk's
+// densities), the gate voltage V_FB + ψ_s − Q_s/C_ox, and C_ox in series with dQ_s/dψ_s.
+const kT = GAS_CONSTANT * 300, VT = kT / FARADAY, eps = 11.9 * EPS0, Cox = (3.9 * EPS0) / tox;
+function ideal({ p0, n0, VFB }) {
+  const Qs = (psi) => {
+    const b = psi / VT, F2 = Math.exp(-b) + b - 1 + (n0 / p0) * (Math.exp(b) - b - 1);
+    return -Math.sign(psi) * Math.sqrt(2 * eps * kT * p0 * Math.max(F2, 0));
+  };
+  const V = [], C = [];
+  for (let psi = -0.4; psi <= 1.4; psi += 0.005) {
+    const h = 1e-5, Cs = Math.abs(Qs(psi + h) - Qs(psi - h)) / (2 * h);
+    V.push(VFB + psi - Qs(psi) / Cox);
+    C.push(1 / (1 + Cox / Cs));
+  }
+  const phiF = VT * Math.log(p0 / Math.sqrt(p0 * n0));
+  return { V, C, VFB, Vth: VFB + 2 * phiF - Qs(2 * phiF) / Cox };
 }
 
-const dev = live(def, { onsolution: draw });
-const slider = document.getElementById('V');
-fromQuery(slider);
-slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
-dev.set({ contacts: { right: { V: +slider.value } } });
+// The C–V curve from the small-signal impedance at 1 kHz at each gate voltage, and the theory.
+let cv;
+function sweep() {
+  const dev = new Device(mos(NA())), rest = dev.solve(), bulk = Math.floor(rest.x.length / 5);
+  cv = { V: [], C: [], theory: ideal({ p0: rest.c['h+'][bulk], n0: rest.c['e-'][bulk], VFB: zeroCharge + rest.phi[bulk] }) };
+  for (let V = -3; V <= 2.001; V += 0.05) {
+    dev.set({ contacts: { right: { V } } });
+    cv.V.push(V);
+    cv.C.push(-1 / (2 * Math.PI * 1e3 * dev.impedance([1e3]).Z.im[0]) / Cox);
+  }
+}
+sweep();
+
+const dev = live(mos(NA()), { onsolution: draw });
+const update = () => dev.set({ contacts: { right: { V: +gate.value } } });
+gate.addEventListener('input', update);
+doping.addEventListener('input', () => (document.getElementById('NAout').textContent = `${(10 ** +doping.value).toExponential(1)} cm⁻³`));
+doping.addEventListener('change', () => {
+  sweep();
+  dev.set(mos(NA()));
+  update();
+});
+update();
 
 function draw(sol) {
-  const V = sol.terminals.right.V;
+  const V = sol.terminals.right.V, { VFB, Vth } = cv.theory;
   document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
+  document.getElementById('NAout').textContent = `${(10 ** +doping.value).toExponential(1)} cm⁻³`;
   const surface = sol.x.findLastIndex((x, g) => sol.region[g] === 0);
   const perCm3 = (c) => (c * AVOGADRO * 1e-6).toExponential(1);
-  document.getElementById('Q').textContent = `at the silicon surface: n = ${perCm3(sol.c['e-'][surface])} cm⁻³, p = ${perCm3(sol.c['h+'][surface])} cm⁻³`;
-  levels(document.getElementById('levels'), sol, {
-    title: `bands and Fermi levels near the oxide, gate at ${V.toFixed(2)} V`,
-    xlim: [Lsi - units.nm(150), sol.x.at(-1)],
-    labels: { 'V:e-': 'V e⁻ (the gate: its Fermi level)' },
-  });
+  document.getElementById('Q').textContent =
+    `V_FB = ${VFB.toFixed(2)} V · V_th = ${Vth.toFixed(2)} V · at the silicon surface: n = ${perCm3(sol.c['e-'][surface])} cm⁻³, p = ${perCm3(sol.c['h+'][surface])} cm⁻³`;
   chart(document.getElementById('cv'), {
-    xlabel: 'gate V (V)', ylabel: 'C / C_ox at 1 kHz', ylim: [0, 1.05],
+    xlabel: 'gate V (V)', ylabel: 'C / C_ox at 1 kHz', xlim: [-3, 2], ylim: [0, 1.05],
     series: [
-      { x: cv.V, y: cv.C, color: colors[2], label: 'low-frequency C–V' },
-      { x: [V], y: [cv.C[Math.round((V + 3) / 0.1)]], color: colors[3], marker: true, width: 0, label: 'now' },
+      { x: cv.V, y: cv.C, color: colors[2], label: 'simulated' },
+      { x: cv.theory.V, y: cv.theory.C, color: colors[0], dash: [6, 4], width: 1.5, label: 'ideal low-frequency C–V' },
+      { x: [VFB, VFB, NaN, Vth, Vth], y: [0, 1.05, NaN, 0, 1.05], color: colors[6], dash: [2, 3], width: 1, label: 'V_FB and V_th' },
+      { x: [V], y: [cv.C[Math.round((V + 3) / 0.05)]], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
-  chart(document.getElementById('conc'), {
-    xscale: 1e9, xlabel: 'x (nm)', ylabel: 'concentration (mol/m³)', logy: true, xlim: [(Lsi - units.nm(150)) * 1e9, Lsi * 1e9],
-    series: [
-      { x: sol.x, y: sol.c['e-'], color: speciesColor(sol, 'e-'), label: 'e⁻' },
-      { x: sol.x, y: sol.c['h+'], color: speciesColor(sol, 'h+'), label: 'h⁺' },
-    ],
+  const xlim = [Lsi - units.nm(150), sol.x.at(-1)];
+  levels(document.getElementById('levels'), sol, {
+    title: `bands, Fermi levels and φ near the oxide, gate at ${V.toFixed(2)} V`,
+    phi: true,
+    xlim,
+    labels: { 'V:e-': 'V e⁻ (the Fermi level: under V h⁺ in the silicon)' },
   });
+  profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }
 showCode();
 </script>
