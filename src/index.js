@@ -74,38 +74,44 @@ export class Device {
     // Only the terminals' drives changed: update them in place, keeping the solver and its state
     // (a step in a source restarts the time stepping's order, as at any discontinuity).
     if (this._solver && sameExceptDrives(this.def, def)) {
-      const drives = normalizeDrives(def, this.model);
-      this.model.terminals.forEach((t, k) => (t.drive = drives[k]));
-      this.model.contacts.left.drive = drives[0];
-      this.model.contacts.right.drive = drives[1];
-      this.model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
-      this.def = def;
-      this._solver.redrive();
+      this._redefineDrives(def);
       return this;
     }
+    // A rebuild. Everything that can fail (validation, building the solver) happens before the
+    // device changes, so a change that fails leaves it as it was.
     const model = normalizeDevice(def);
     const old = this._solver;
+    const solver = old ? new Solver(model) : null;
     this.def = def;
     this.model = model;
-    this._solver = null;
-    if (old) {
-      const solver = this.solver;
-      if (old.u.length === solver.u.length && old.n === solver.n) {
-        solver.u.set(old.u);
-        solver.uLo.set(old.uLo);
-        solver.computeConcentrations();
-        solver.time = old.time;
-        solver.contactDEnd = old.contactDEnd;
-        solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
-        // Floating terminals keep their voltages (a good start), where the terminals match.
-        if (old.terms.length === solver.terms.length) {
-          for (const k of solver.floating) if (old.terms[k].name === solver.terms[k].name) solver.termV[k] = old.termV[k];
-        }
-        solver.referenceAmounts = old.referenceAmounts.slice();
-        if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
+    this._solver = solver;
+    if (old && old.u.length === solver.u.length && old.n === solver.n) {
+      solver.u.set(old.u);
+      solver.uLo.set(old.uLo);
+      solver.computeConcentrations();
+      solver.time = old.time;
+      solver.contactDEnd = old.contactDEnd;
+      solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
+      // Floating terminals keep their voltages (a good start), where the terminals match.
+      if (old.terms.length === solver.terms.length) {
+        for (const k of solver.floating) if (old.terms[k].name === solver.terms[k].name) solver.termV[k] = old.termV[k];
       }
+      solver.referenceAmounts = old.referenceAmounts.slice();
+      if (old.stretches.length === solver.stretches.length) solver.boundaryIntake.set(old.boundaryIntake);
     }
     return this;
+  }
+
+  // The definition def, which differs from the current one only in the terminals' drives: set
+  // them in place. (Validated before anything changes.)
+  _redefineDrives(def) {
+    const drives = normalizeDrives(def, this.model);
+    this.model.terminals.forEach((t, k) => (t.drive = drives[k]));
+    this.model.contacts.left.drive = drives[0];
+    this.model.contacts.right.drive = drives[1];
+    this.model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
+    this.def = def;
+    this._solver.redrive();
   }
 
   /**
@@ -172,7 +178,7 @@ export class Device {
    * @internal
    */
   _rollback(cp) {
-    if (this._solver === cp.solver) this.set(cp.def); // only drives changed since: restore them in place
+    if (this._solver === cp.solver) this._redefineDrives(cp.def); // only drives changed since: restore them exactly
     else {
       this.def = cp.def;
       this.model = cp.model;

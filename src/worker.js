@@ -13,6 +13,12 @@ globalThis.addEventListener('message', (e) => {
       error = err.message;
     }
   } else if (m.type === 'update') {
-    globalThis.postMessage(session ? session.update(m.patch) : { solution: null, info: { ms: 0, ramp: 0, failed: true, error } });
+    let reply;
+    try {
+      reply = session ? session.update(m.patches) : { solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error } };
+    } catch (err) {
+      reply = { solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error: err.message } };
+    }
+    globalThis.postMessage(reply);
   }
 });

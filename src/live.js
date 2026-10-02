@@ -36,48 +36,58 @@ export class Session {
   }
 
   /**
-   * @param {object} patch merged into the definition, as by Device.set()
-   * @returns {{ solution: object | null, info: { ms: number, ramp: number, failed: boolean, error?: string, warnings?: string[] } }}
+   * Apply changes in order, then solve once. Each change is applied on its own, so an invalid
+   * one is refused (its message in `errors`) without losing the others.
+   * @param {object[]} patches each merged into the definition, as by Device.set()
+   * @returns {{ solution: object | null, errors: (string | undefined)[], info: { ms: number, ramp: number, failed: boolean, error?: string, warnings?: string[] } }}
    */
-  update(patch) {
+  update(patches) {
     const t0 = now();
-    const dev = this.device;
-    let target;
-    try {
-      target = merge(dev.def, patch);
-      dev.set(patch);
-    } catch (e) {
-      // An invalid change leaves the device as it was.
-      return { solution: this.good?.sol ?? null, info: { ms: now() - t0, ramp: 0, failed: true, error: e.message } };
-    }
-    let sol = dev.solve();
+    const errors = patches.map(() => undefined);
     let ramp = 0;
-    // Ramp from the last good state in more and more steps.
-    for (let n = 2; !sol.converged && this.good && n <= this.maxRamp; n *= 2) {
-      ramp = n;
-      dev._rollback(this.good.cp);
-      const from = this.good.cp.def;
-      for (let k = 1; k <= n; k++) {
-        dev.set(between(from, target, k / n));
-        sol = dev.solve();
-        if (!sol.converged) break;
+    const done = (sol, info) => ({ solution: sol, errors, info: { ms: now() - t0, ramp, ...info } });
+    patches.forEach((patch, k) => {
+      try {
+        this.device.set(patch); // a change that fails leaves the device as it was
+      } catch (e) {
+        errors[k] = e.message;
       }
-    }
-    if (!sol.converged) {
-      // Last, from scratch (with the solver's own continuation in bias).
-      const fresh = new Device(target);
-      const cold = fresh.solve();
-      if (cold.converged) {
-        this.device = fresh;
-        sol = cold;
+    });
+    if (this.good && errors.every(Boolean)) return done(this.good.sol, { failed: true }); // nothing changed
+    const target = this.device.def;
+    try {
+      let sol = this.device.solve();
+      // Ramp from the last good state in more and more steps.
+      for (let n = 2; !sol.converged && this.good && n <= this.maxRamp; n *= 2) {
+        ramp = n;
+        this.device._rollback(this.good.cp);
+        const from = this.good.cp.def;
+        for (let k = 1; k <= n; k++) {
+          this.device.set(between(from, target, k / n));
+          sol = this.device.solve();
+          if (!sol.converged) break;
+        }
       }
+      if (!sol.converged) {
+        // Last, from scratch (with the solver's own continuations).
+        const fresh = new Device(target);
+        const cold = fresh.solve();
+        if (cold.converged) {
+          this.device = fresh;
+          sol = cold;
+        }
+      }
+      if (sol.converged) {
+        this.good = { cp: this.device._checkpoint(), sol };
+        return done(sol, { failed: false });
+      }
+      if (this.good) this.device._rollback(this.good.cp);
+      return done(this.good?.sol ?? sol, { failed: true, warnings: sol.warnings });
+    } catch (e) {
+      // Something the definition's checks can't see, found while building or solving.
+      if (this.good) this.device._rollback(this.good.cp);
+      return done(this.good?.sol ?? null, { failed: true, error: e.message });
     }
-    if (sol.converged) {
-      this.good = { cp: this.device._checkpoint(), sol };
-      return { solution: sol, info: { ms: now() - t0, ramp, failed: false } };
-    }
-    if (this.good) this.device._rollback(this.good.cp);
-    return { solution: this.good?.sol ?? sol, info: { ms: now() - t0, ramp, failed: true, warnings: sol.warnings } };
   }
 }
 
@@ -109,30 +119,43 @@ export class Session {
  */
 export function live(def, { worker = false, onsolution, maxRamp = 32 } = {}) {
   const engine = worker ? workerEngine(def, worker, maxRamp) : localEngine(def, maxRamp);
-  let pending = null, waiters = [], busy = false;
+  let pending = [], busy = false;
   const api = {
     solution: null,
     set(patch) {
-      pending = pending ? merge(pending, patch) : patch;
-      const p = new Promise((resolve) => waiters.push(resolve));
+      const p = new Promise((resolve) => pending.push({ patch, resolve }));
       if (!busy) pump();
       return p;
     },
     close: () => engine.close(),
   };
   function pump() {
-    if (pending === null) return;
+    if (pending.length === 0) return;
     busy = true;
-    const patch = pending, ws = waiters;
-    pending = null;
-    waiters = [];
-    engine.run(patch).then((res) => {
-      if (res.solution && !res.info.failed) api.solution = res.solution;
-      if (onsolution && res.solution) onsolution(res.solution, res.info);
-      for (const w of ws) w(res);
-      busy = false;
-      pump();
-    });
+    const batch = pending;
+    pending = [];
+    engine
+      .run(batch.map((b) => b.patch))
+      .catch((e) => ({ solution: api.solution, errors: [], info: { ms: 0, ramp: 0, failed: true, error: String(e?.message ?? e) } }))
+      .then((res) => {
+        if (res.solution && !res.info.failed) api.solution = res.solution;
+        batch.forEach((b, k) => {
+          const own = res.errors?.[k];
+          b.resolve({ solution: res.solution, info: own ? { ...res.info, failed: true, error: own } : res.info });
+        });
+        busy = false;
+        pump();
+        if (onsolution && res.solution) {
+          try {
+            onsolution(res.solution, res.info);
+          } catch (e) {
+            // The page's own error: reported (as an uncaught error would be, in a browser) without
+            // stopping the device.
+            if (typeof globalThis.reportError === 'function') globalThis.reportError(e);
+            else console.error(e);
+          }
+        }
+      });
   }
   api.ready = api.set({});
   return api;
@@ -147,9 +170,9 @@ function localEngine(def, maxRamp) {
     error = e;
   }
   return {
-    run: (patch) =>
+    run: (patches) =>
       new Promise((resolve) =>
-        setTimeout(() => resolve(session ? session.update(patch) : { solution: null, info: { ms: 0, ramp: 0, failed: true, error: error.message } }), 0),
+        setTimeout(() => resolve(session ? session.update(patches) : { solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error: error.message } }), 0),
       ),
     close() {},
   };
@@ -159,13 +182,23 @@ function localEngine(def, maxRamp) {
 function workerEngine(def, worker, maxRamp) {
   const w = typeof worker === 'function' ? worker() : startWorker();
   const queue = [];
-  w.onmessage = (e) => queue.shift()(e.data);
+  const failAll = (message) => {
+    while (queue.length) queue.shift()({ solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error: message } });
+  };
+  w.onmessage = (e) => queue.shift()?.(e.data);
+  w.onerror = (e) => failAll(`the worker failed: ${e?.message ?? e}`);
   w.postMessage({ type: 'init', def, maxRamp });
   return {
-    run(patch) {
+    run(patches) {
       return new Promise((resolve) => {
         queue.push(resolve);
-        w.postMessage({ type: 'update', patch });
+        try {
+          w.postMessage({ type: 'update', patches });
+        } catch (e) {
+          // A change that can't be posted (a function, such as custom statistics).
+          queue.pop();
+          resolve({ solution: null, errors: patches.map(() => `can't be sent to a worker: ${e.message}`), info: { ms: 0, ramp: 0, failed: true } });
+        }
       });
     },
     close: () => w.terminate(),
