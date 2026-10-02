@@ -12,9 +12,9 @@ The first release published by trusted publishing from GitHub Actions, with prov
 
 - README: what driftlet is for, links to the live demos, npm and docs, and every demo in the
   table of fields.
-- Guide and demos: the current a species carries flows down its species voltage $V_i$, so
-  electrons and anions themselves move uphill (they said every species drifts down); $V_i$ is
-  described as a display of $\bar\mu_i$, which also covers neutral species.
+- Guide and demos: the current a species carries flows down its species voltage $`V_i`$, so
+  electrons and anions themselves move uphill (they said every species drifts down); $`V_i`$ is
+  described as a display of $`\bar\mu_i`$, which also covers neutral species.
 
 ## 0.1.0 (2026-10-02)
 

@@ -7,11 +7,11 @@ for live demos.
 ## Done
 
 - Solver core: graded grid with doubled interface nodes, block Thomas, Scharfetter–Gummel in
-  quasi-Fermi (expm1) form, compensated double-double $\bar\mu$, damped Newton.
+  quasi-Fermi (expm1) form, compensated double-double $`\bar\mu`$, damped Newton.
 - Equilibrium and steady transport: direct steady solves when nothing is conserved, and
   exactly conserving giant steps when something is.
-- Materials, regions and explicit per-interface alignment; interface $\phi$ laws (dipole, neutral,
-  Helmholtz); strictly neutral ($\varepsilon = 0$) materials.
+- Materials, regions and explicit per-interface alignment; interface $`\phi`$ laws (dipole, neutral,
+  Helmholtz); strictly neutral ($`\varepsilon = 0`$) materials.
 - Contacts: fixed levels with offsets, ohmic contacts, baths, gates and Stern layers,
   conductance links.
 - Interfaces: blocking, conductance, and Butler–Volmer reactions with signed participants on
@@ -19,18 +19,18 @@ for live demos.
 - Circuits: voltage, galvanostatic (incl. open circuit), load resistor.
 - Bulk mass-action reactions.
 - Strictly neutral regions solved in better-conditioned unknowns on transient steps (current
-  continuity for one balance, $\hat\phi'$ and $\eta - z\hat\phi$ as unknowns): a 3 M KCl salt bridge
+  continuity for one balance, $`\hat\phi'`$ and $`\eta - z\hat\phi`$ as unknowns): a 3 M KCl salt bridge
   with 1 µM traces of every other ion, between eddy-mixed solutions, runs from its unmixed start
   through days.
 - Conserved combinations of reacting stretches (moieties) as constraint rows in the direct
   steady solve, as spectators already were: a closed cell with complexation solves straight to
   its steady state, cold or warm.
 - Backward-Euler transients with step halving, and conservation bookkeeping.
-- Statistics: one general per-material interface, $c(\zeta)$ with its capacitance matrix, and the
+- Statistics: one general per-material interface, $`c(\zeta)`$ with its capacitance matrix, and the
   excess-potential Scharfetter–Gummel flux. Fermi–Dirac, lattice gas (Bikerman crowding, site
   filling), Redlich–Kister, Debye–Hückel, custom functions.
-- Neutral-combination (insertion) statistics for $\varepsilon = 0$ hosts, from an isotherm or a tabulated
-  OCV curve, with $\phi$ undefined inside.
+- Neutral-combination (insertion) statistics for $`\varepsilon = 0`$ hosts, from an isotherm or a tabulated
+  OCV curve, with $`\phi`$ undefined inside.
 - Time and frequency: variable-step BDF2; adaptive `advance(tEnd, { tol, budgetMs })` for
   animation; small-signal impedance with complex block Thomas and complex profiles.
 - Source continuation for cold starts at bias.
@@ -44,8 +44,8 @@ for live demos.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
   conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
 - A second-law validation: in steady state the free energy brought in through every terminal,
-  $\sum N\bar\mu$ over every species, equals the dissipation inside (fluxes down their own $\bar\mu$
-  drops, reactions by their affinities, interface and conductor resistance), each term $\ge 0$,
+  $`\sum N\bar\mu`$ over every species, equals the dissipation inside (fluxes down their own $`\bar\mu`$
+  drops, reactions by their affinities, interface and conductor resistance), each term $`\ge 0`$,
   exactly for the discrete equations.
 - Terminals: the contacts and every port, each held at a voltage, behind a resistance or driven
   by a current (reference electrodes, three-electrode cells, grounded floating electrodes), with
@@ -68,7 +68,7 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
-   - Floating conductors in $\eta$ form. A floating metal is fixed by the mixed form, but the same
+   - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same
      cancellation awaits a floating mixed conductor or semiconductor region held only by face
      reactions or recombination, in steady state (in transients, storage anchors it): a fast
      species across many segments, with a mode only weakly held from outside. Candidates are
@@ -77,17 +77,17 @@ for live demos.
    - A minority population held only weakly: the MOS capacitor without its channel port, whose
      inversion electrons reach the back contact only through a p-type bulk of ~1e3 cm⁻³ (minutes to
      fill, so a high-frequency C–V at 1 Hz). The impedance now gets this right (GMRES with the
-     residual's $J \cdot v$), but the steady solve is fragile: stepping the gate up warm from
+     residual's $`J \cdot v`$), but the steady solve is fragile: stepping the gate up warm from
      depletion fails at the onset of inversion ("exactly singular"), and cold starts converge at
      some gate voltages and grids, not others (a grid shifted by round-off can flip it). Its
      transients struggle too: after a 10 mV gate step, `advance()` takes ~66,000 steps to reach
      1e5 s, and the gate charge overshoots the low-frequency value (1.01 against
-     $0.885 \times C_{\mathrm{ox}} \cdot \delta V$) with a residual current of ~1e-9 A/m² through
+     $`0.885 \times C_{\mathrm{ox}} \cdot \delta V`$) with a residual current of ~1e-9 A/m² through
      the oxide. Once robust, the MOS demo can get a frequency control sweeping from the
      low-frequency C–V to the high-frequency one.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
-     the edges of neutral faces are solved in better-conditioned unknowns ($\hat\phi'$,
-     $\eta - z\hat\phi$), but at a neutral face the two edge nodes still pass every species' flux
+     the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
+     $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
      through its own unknown, which carries storage-sized values, so round-off returns at ~1e-5
      thermal units on steps of ~1e-11 s with 3 M against 1 µM. A perfectly sharp junction between
      such solutions then can't start (a pre-mixed zone a few layers wide can). The fix is a
@@ -122,7 +122,7 @@ for live demos.
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
    - A worked membrane-potential example with a validation against Goldman–Hodgkin–Katz in its
-     own regime (a thin membrane with $\varepsilon > 0$ and few ions, so the field is constant), not the
+     own regime (a thin membrane with $`\varepsilon > 0`$ and few ions, so the field is constant), not the
      electroneutral one a guinea pig reached for.
    - A written worked example of an electrochemical cell with its voltage ledger (the Daniell
      demo has one: the couples' levels, the electrolyte's share, each electrode's
@@ -141,19 +141,19 @@ for live demos.
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
   overpotential); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
   such as hydrogen evolution emerge from elementary steps; and a custom forward rate
-  $r_f(\mathrm{state})$ as an escape hatch, which the solver multiplies by $(1 - e^{-A/RT})$ so
+  $`r_f(\mathrm{state})`$ as an escape hatch, which the solver multiplies by $`(1 - e^{-A/RT})`$ so
   equilibrium stays exact. Not a bare current–overpotential curve, which loses the concentration
   dependence and can break detailed balance.
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.
-  This is also the general mixed conductor with $n > 2$ mobile species, beyond the metal ($n = 1$)
-  and insertion-host ($n = 2$) cases.
+  This is also the general mixed conductor with $`n > 2`$ mobile species, beyond the metal ($`n = 1`$)
+  and insertion-host ($`n = 2`$) cases.
 - **Concentration unknowns for dilute regions, as an option.** A hybrid basis: conductor regions
-  keep their Fermi level, but a dilute region may ask to be solved internally in $\{\phi, c_i\}$
-  instead of $\{\hat\phi, \eta_i\}$, where storage and neutrality are linear and a strongly diluted
+  keep their Fermi level, but a dilute region may ask to be solved internally in $`\{\phi, c_i\}`$
+  instead of $`\{\hat\phi, \eta_i\}`$, where storage and neutrality are linear and a strongly diluted
   species (1 µM against 3 M) doesn't cost digits in its level. Transparent to the API: the solution
-  still reports $\bar\mu$, $V_i$ and $c$, and faces still align levels.
+  still reports $`\bar\mu`$, $`V_i`$ and $`c`$, and faces still align levels.
 - **More performance**, measured against the committed benchmark baseline: Newton-iteration
   counts (above), and specialised small-block elimination.
 - **Concentration-dependent diffusivities** D(c), beyond what non-ideal statistics already give
@@ -165,18 +165,18 @@ for live demos.
   for screenshots, and concentration/flux sampling to drive particle animations consistently
   with the model.
 - **Phase separation (Cahn–Hilliard).** A non-convex free energy (e.g. LFP's miscibility gap)
-  makes $c(\zeta)$ multivalued. It needs c as an extra unknown plus a gradient-energy term, which is
+  makes $`c(\zeta)`$ multivalued. It needs c as an extra unknown plus a gradient-energy term, which is
   still local and block-tridiagonal.
-- **Graded materials.** $\mu^\circ(x)$, $c_{\mathrm{ref}}(x)$, $\varepsilon(x)$, $D(x)$ varying
-  within a region, with the full $z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}$ change across
-  each segment. $\phi$'s gauge freedom then becomes a continuous function.
+- **Graded materials.** $`\mu^\circ(x)`$, $`c_{\mathrm{ref}}(x)`$, $`\varepsilon(x)`$, $`D(x)`$ varying
+  within a region, with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change across
+  each segment. $`\phi`$'s gauge freedom then becomes a continuous function.
 - **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where
-  $\lambda_D \ll h$, for macroscopic devices with real double-layer charge on any grid. It tends to
-  `neutral` as $\varepsilon \to 0$.
+  $`\lambda_D \ll h`$, for macroscopic devices with real double-layer charge on any grid. It tends to
+  `neutral` as $`\varepsilon \to 0`$.
 - **Driven species fluxes.** A terminal driving one species' molar flux instead of the charge
   current (a gas feed at a fixed rate, a neutral species injected), the flux-side twin of a held
-  $\mu$ for neutral species.
-- **Interface states** (charge that depends on the local $\bar\mu_{\mathrm{e}^-}$, i.e. Fermi-level
+  $`\mu`$ for neutral species.
+- **Interface states** (charge that depends on the local $`\bar\mu_{\mathrm{e}^-}`$, i.e. Fermi-level
   pinning) and thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.
 
