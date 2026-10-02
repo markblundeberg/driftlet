@@ -376,7 +376,8 @@ they are just before t (so it ends on a jump's near side, and the next step carr
 
 ## Grid
 
-`{ hmin, hmax, ratio = 1.2, minCells = 8 }`, per device, overridable per region. Cells grow
+`{ hmin, hmax, ratio = 1.2, minCells = 8 }`, per device, overridable per region. With no grid
+options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length. Cells grow
 geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly. Each
 region boundary becomes a pair of nodes at the same x, one per side. The grid is never refined
 automatically. If a double layer that the model resolves is coarser than the local Debye
@@ -386,7 +387,8 @@ Grade the grid toward wherever a profile is steep: double layers, and electrodes
 is depleted. Near a limiting current the depleted species' profile is steep in a thin layer at
 the electrode, and a uniform grid there overshoots: a 100 µm silver nitrate cell on 100 uniform
 cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax: 2e-6 }` stays
-within 0.1% with as many nodes.
+within 0.1% with as many nodes. Where a species carrying the current is steep across a region's
+end cells in this way, the solution's `warnings` say so, with a rough estimate of the excess.
 
 ## Using a device
 

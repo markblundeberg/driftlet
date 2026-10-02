@@ -167,3 +167,26 @@ test('a cluster cut off by neutral faces with nothing crossing is reported as fl
   };
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /regions\[0\].*electrostatically floating/.test(e.message));
 });
+
+test('a coarse grid at a depleted electrode is reported, and a graded one is quiet', () => {
+  // Near the limiting current, Ag⁺ is depleted at one electrode and its profile there is
+  // steeper than one coarse cell can carry: the current comes out too large (exact: tanh).
+  const el = (V = 0) => ({ V, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
+  const cell = (grid, V) =>
+    new Device({
+      species: [
+        { name: 'Ag+', z: 1, cRef: 1000 },
+        { name: 'NO3-', z: -1, cRef: 1000 },
+      ],
+      materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+      regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
+      contacts: { left: el(), right: el(V) },
+      grid,
+    }).solve();
+  const coarse = cell({ minCells: 20 }, 0.5);
+  assert.ok(coarse.warnings.some((w) => /Ag\+: a steep profile.*too large/.test(w)), coarse.warnings.join('\n'));
+  for (const V of [0.2, 0.5, 1]) {
+    const fine = cell({ hmin: 2e-9, hmax: 1e-6 }, V);
+    assert.deepEqual(fine.warnings, [], `V=${V}`);
+  }
+});

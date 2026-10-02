@@ -169,6 +169,56 @@ export function makeSolution(solver, result = {}) {
   if (resolves(contacts.left)) check(0, grid.segLength[0], 'contacts.left');
   if (resolves(contacts.right)) check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
 
+  // Steep profiles carrying current: Scharfetter–Gummel takes the field as uniform across each
+  // cell, which fails where it isn't, as at an electrode where a species is nearly depleted (there
+  // φ̂ ≈ ln c, and on a coarse cell the flux comes out too large: by (1+r)ln(1/r)/(2(1−r)) for
+  // a concentration ratio r across it). Flag a region's end cell whose field is well above its
+  // neighbour's while its concentration changes steeply, for species carrying the current. (A
+  // pn depletion region's field changes smoothly from cell to cell, which SG handles.)
+  if (Number.isFinite(sol.current)) {
+    const share = species.map((sp, i) =>
+      Math.max(Math.abs(sp.z * (sol.contacts.left.flux[sp.name] ?? 0)), Math.abs(sp.z * (sol.contacts.right.flux[sp.name] ?? 0))),
+    );
+    const total = share.reduce((a, b) => a + b, 0);
+    species.forEach((sp, i) => {
+      if (sp.z === 0 || !(share[i] > 0.1 * total)) return;
+      const cc = sol.c[sp.name];
+      let lo = Infinity, hi = -Infinity;
+      for (const v of cc) if (Number.isFinite(v)) [lo, hi] = [Math.min(lo, v), Math.max(hi, v)];
+      const span = hi - lo;
+      if (!(span > 0)) return;
+      // At each region end, the two outermost cells, each with its inner neighbour.
+      const ends = [];
+      model.regions.forEach((reg, r) => {
+        const a = grid.regionStart[r], b = grid.regionEnd[r];
+        if (model.materials[reg.material].conductor || b - a < 3) return;
+        ends.push([[a, a + 1], [a + 1, a + 2]], [[b - 1, b - 2], [b - 2, b - 3]]);
+      });
+      const field = (j) => (sol.phi[j + 1] - sol.phi[j]) / grid.segLength[j];
+      let worst = 0, at = -1, hAt = 0;
+      for (const cells of ends) {
+        // The bulk fixes the flux, so a cell whose flux comes out too large by e takes too small
+        // a share of the concentration drop; the missing drop shifts the whole profile, and the
+        // current with it, by about e times the cell's share of the drop.
+        let err = 0;
+        for (const [s, k] of cells) {
+          const ratio = Math.min(cc[s], cc[s + 1]) / Math.max(cc[s], cc[s + 1]);
+          if (!(ratio < 0.5) || !(Math.abs(field(s)) > 2 * Math.abs(field(k))) || Math.abs(sol.phi[s + 1] - sol.phi[s]) < VT) continue;
+          const e = ((1 + ratio) * Math.log(1 / ratio)) / (2 * (1 - ratio)) - 1;
+          err += (e * Math.abs(cc[s + 1] - cc[s])) / span;
+        }
+        if (err > worst) [worst, at, hAt] = [err, cells[0][0], grid.segLength[cells[0][0]]];
+      }
+      if (worst > 0.003) {
+        sol.warnings.push(
+          `${sp.name}: a steep profile near x = ${grid.x[at].toExponential(3)} m on a ${hAt.toExponential(2)} m cell, where the field ` +
+            `isn't uniform across the cell; the current may come out too large (an estimate, likely low: ${(100 * worst).toFixed(worst < 0.1 ? 1 : 0)}%). ` +
+            'Refine the grid toward that end (a smaller hmin).',
+        );
+      }
+    });
+  }
+
   // Conservation bookkeeping for each species stretch.
   // Amount now vs the reference amount plus what came in through the contacts. The drift is
   // relative to the larger of the two; NaN where a reaction also makes or consumes it.

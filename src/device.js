@@ -203,7 +203,9 @@ export function normalizeDevice(def) {
       background,
       velocity,
       mixing,
-      grid: reg.grid,
+      // With no grid options at all, each region is graded toward its ends: fine where profiles
+      // are steep (double layers, depleted electrodes), coarse inside.
+      grid: reg.grid ?? (def.grid === undefined ? { hmin: length / 1000, hmax: length / 20 } : undefined),
       cells: mat.conductor ? [length] : undefined,
     };
   });
