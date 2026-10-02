@@ -9,105 +9,152 @@
 <body>
 <main>
   <h1>Double layer at a blocking electrode: dilute vs crowded ions</h1>
-  <p>0.1 M salt against an electrode held ψ above the bulk. Ideal (Poisson–Boltzmann) ions pile up
-    without limit; on a lattice of finite size (Bikerman / Kilic–Bazant–Ajdari statistics) the
-    counter-ions saturate and the layer thickens instead, so the charge grows as √ψ rather than
-    exponentially.</p>
+  <p>A salt solution against an electrode held ψ above the bulk. Ideal (Poisson–Boltzmann) ions pile up
+    without limit: the Gouy–Chapman charge grows as sinh(Fψ/2RT), so by half a volt the counter-ions at the
+    wall would be packed 10⁸ times denser than in the bulk. On a lattice of sites of size a (Bikerman /
+    Kilic–Bazant–Ajdari statistics) the counter-ions saturate at one per a³ instead, the layer thickens,
+    and the charge grows only as √ψ. Crowding starts once the wall concentration nears the lattice's, so it
+    starts sooner for big ions and strong solutions. Both simulations (points) are drawn against their
+    closed-form theory (lines).</p>
+  <p>The level diagram is the crowded layer, ion by ion. In equilibrium each ion's voltage V<sub>i</sub>
+    (thick) is level, from the bulk right up to the wall, while its standard level V°<sub>i</sub> (thin)
+    bends with φ. The gap between them is the ion's concentration term, and its activity term on a crowded
+    lattice. Each ion is drawn with an offset (⌇), Na⁺ above and Cl⁻ below.</p>
   <div class="controls">
     <label>ψ <input id="psi" type="range" min="-0.5" max="0.5" step="0.01" value="0.3"><output id="psiOut"></output></label>
     <label>ion size a <input id="a" type="range" min="0.2" max="1.2" step="0.05" value="0.7"><output id="aOut"></output></label>
+    <label>salt <input id="c" type="range" min="-3" max="-0.5" step="0.25" value="-1"><output id="cOut"></output></label>
+    <span class="readout" id="status"></span>
   </div>
   <div class="grid">
-    <canvas id="profile"></canvas>
-    <canvas id="charge"></canvas>
+    <canvas class="wide" id="charge"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
   </div>
 </main>
 <script type="module">
 import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, bath, aqueous, WATER_EPSR } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, speciesColor } from './common.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
 
-const RT = GAS_CONSTANT * 298.15, c0 = 100; // 0.1 M NaCl
-const lam = Math.sqrt((WATER_EPSR * EPS0 * RT) / (2 * FARADAY * FARADAY * c0)); // the Debye length
-// Water with Na⁺ and Cl⁻, with given statistics: none (ideal), or a lattice gas (crowding).
-const def = (statistics) => {
+const RT = GAS_CONSTANT * 298.15, eps = WATER_EPSR * EPS0;
+const psi = document.getElementById('psi'), size = document.getElementById('a'), salt = document.getElementById('c');
+for (const el of [psi, size, salt]) fromQuery(el);
+const c0 = () => 1000 * 10 ** +salt.value; // mol/m³ of NaCl, at most 0.32 M: both ions must fit on the lattice
+const debye = (c) => Math.sqrt((eps * RT) / (2 * FARADAY * FARADAY * c));
+
+// Water with Na⁺ and Cl⁻, with given statistics: none (ideal), or a lattice gas (crowding). The
+// grid reaches λ/10⁶ at the wall, fine enough for even the ideal layer's sliver at half a volt.
+const def = (c, statistics) => {
   const water = aqueous(['Na+', 'Cl-']);
   water.materials.water.statistics = statistics;
+  const lam = debye(c);
   return build({
     library: [water],
     stack: [
       { V: 0, phi: 'pinned', zeroCharge: 0 }, // the electrode: φ at its face is V − zeroCharge, blocking every ion
       layer('water', 30 * lam),
-      bath({ 'Na+': c0, 'Cl-': c0 }, 'Cl-'), // the bulk solution
+      bath({ 'Na+': c, 'Cl-': c }, 'Cl-'), // the bulk solution
     ],
-    grid: { hmin: lam / 200, hmax: lam / 3, ratio: 1.08 },
+    grid: { hmin: lam / 1e6, hmax: lam / 3, ratio: 1.08 },
   });
 };
-const cMax = (a) => 1 / (a ** 3 * AVOGADRO); // one ion per a³
-const ideal = new Device(def([]));
-let crowded;
-const phiBulk = ideal.solve().phi.at(-1);
-const psi = document.getElementById('psi'), size = document.getElementById('a');
-fromQuery(psi);
-fromQuery(size);
 
+// Theory: Gouy–Chapman, and Kilic–Bazant–Ajdari with packing ν = 2c/c_max.
+const gouyChapman = (v, c) => Math.sqrt(8 * eps * RT * c) * Math.sinh((FARADAY * v) / (2 * RT));
+const kba = (v, c, cMax) => {
+  const nu = (2 * c) / cMax;
+  return Math.sign(v) * 2 * FARADAY * c * debye(c) * Math.sqrt((2 / nu) * Math.log(1 + 2 * nu * Math.sinh((FARADAY * v) / (2 * RT)) ** 2));
+};
+
+// The electrode's charge per area: minus the diffuse layer's.
 const charge = (sol) => {
   let q = 0;
-  const x = sol.x;
-  for (let k = 0; k + 1 < x.length; k++) {
-    const h = x[k + 1] - x[k];
+  for (let k = 0; k + 1 < sol.x.length; k++) {
+    const h = sol.x[k + 1] - sol.x[k];
     q += 0.5 * h * FARADAY * (sol.c['Na+'][k] - sol.c['Cl-'][k] + sol.c['Na+'][k + 1] - sol.c['Cl-'][k + 1]);
   }
-  return -q; // on the electrode
+  return -q;
 };
-function sweep(dev) {
-  const xs = [], ys = [];
+
+// Each device holds the electrode ψ above its own bulk φ. (The bulks differ: at the same
+// composition, crowded ions have a different activity, so a different φ against the same reference.)
+let ideal, crowded, cMax, curves;
+const at = (d, v) => (d.set({ contacts: { left: { V: d.phiBulk + v } } }), d.solve());
+const device = (statistics) => {
+  const d = new Device(def(c0(), statistics));
+  d.phiBulk = d.solve().phi.at(-1);
+  return d;
+};
+const sweep = (d) => {
+  const x = [], y = [];
   for (let v = -0.5; v <= 0.5001; v += 0.025) {
-    dev.set({ contacts: { left: { V: phiBulk + v } } });
-    xs.push(v);
-    ys.push(charge(dev.solve()));
+    x.push(v);
+    y.push(charge(at(d, v)));
   }
-  return { x: xs, y: ys };
-}
-let curves;
+  return { x, y };
+};
 function rebuild() {
-  const a = +size.value * 1e-9;
-  document.getElementById('aOut').textContent = `${size.value} nm`;
-  crowded = new Device(def([{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: cMax(a) }]));
-  crowded.solve();
-  curves = { ideal: curves?.ideal ?? sweep(ideal), crowded: sweep(crowded) };
+  cMax = 1 / ((+size.value * 1e-9) ** 3 * AVOGADRO); // one ion per a³
+  ideal = device([]);
+  crowded = device([{ type: 'lattice', species: ['Na+', 'Cl-'], cMax }]);
+  curves = { ideal: sweep(ideal), crowded: sweep(crowded) };
   update();
 }
+const labels = () => {
+  document.getElementById('psiOut').textContent = `${(+psi.value).toFixed(2)} V`;
+  document.getElementById('aOut').textContent = `${size.value} nm`;
+  document.getElementById('cOut').textContent = `${+(c0() / 1000).toPrecision(2)} M`;
+};
 function update() {
-  const v = +psi.value;
-  document.getElementById('psiOut').textContent = `${v.toFixed(2)} V`;
-  const s = [ideal, crowded].map((d) => (d.set({ contacts: { left: { V: phiBulk + v } } }), d.solve()));
-  const nm = 1e9, lim = [0, 6 * lam * nm];
-  chart(document.getElementById('profile'), {
-    xscale: nm, xlim: lim, xlabel: 'distance from electrode (nm)', ylabel: 'concentration (mol/m³)', logy: true,
-    series: [
-      { x: s[0].x, y: s[0].c['Na+'], color: speciesColor(s[0], 'Na+'), dash: [5, 4], label: 'Na⁺ ideal' },
-      { x: s[0].x, y: s[0].c['Cl-'], color: speciesColor(s[0], 'Cl-'), dash: [5, 4], label: 'Cl⁻ ideal' },
-      { x: s[1].x, y: s[1].c['Na+'], color: speciesColor(s[0], 'Na+'), label: 'Na⁺ crowded' },
-      { x: s[1].x, y: s[1].c['Cl-'], color: speciesColor(s[0], 'Cl-'), label: 'Cl⁻ crowded' },
-    ],
-  });
+  labels();
+  const v = +psi.value, c = c0(), lam = debye(c);
+  const [si, sc] = [at(ideal, v), at(crowded, v)];
+  document.getElementById('status').textContent =
+    `Debye length ${(lam * 1e9).toPrecision(2)} nm · lattice ${(cMax / 1000).toFixed(1)} M · at the wall: ideal ${(si.c[v > 0 ? 'Cl-' : 'Na+'][0] / 1000).toPrecision(2)} M, crowded ${(sc.c[v > 0 ? 'Cl-' : 'Na+'][0] / 1000).toPrecision(2)} M counter-ions`;
   const qmax = 1.5 * Math.max(...curves.crowded.y.map(Math.abs));
+  const vs = curves.ideal.x;
   chart(document.getElementById('charge'), {
     xlabel: 'ψ (V)', ylabel: 'electrode charge (C/m²)', ylim: [-qmax, qmax],
     series: [
-      { ...curves.ideal, color: colors[2], dash: [5, 4], label: 'ideal (Gouy–Chapman)' },
-      { ...curves.crowded, color: colors[3], label: 'crowded' },
-      { x: [v, v], y: [charge(s[0]), charge(s[1])], color: colors[4], width: 0, marker: true },
+      { x: vs, y: vs.map((w) => gouyChapman(w, c)), color: colors[0], width: 1.2, label: 'Gouy–Chapman theory' },
+      { x: vs, y: vs.map((w) => kba(w, c, cMax)), color: colors[2], width: 1.2, label: 'Kilic–Bazant–Ajdari theory' },
+      { ...curves.ideal, color: colors[0], marker: true, width: 0, label: 'ideal ions, simulated' },
+      { ...curves.crowded, color: colors[2], marker: true, width: 0, label: 'crowded ions, simulated' },
+      { x: [v, v], y: [charge(si), charge(sc)], color: colors[3], width: 0, marker: true, label: 'now' },
     ],
+  });
+  // The crowded layer's ionic view, Na⁺ drawn with its voltage 0.3 V above Cl⁻'s. The window: a few
+  // Debye lengths, plus the width of the saturated layer, which holds the charge at c_max.
+  const xlim = [0, Math.min(30 * lam, 6 * lam + (2 * Math.abs(charge(sc))) / (FARADAY * cMax))];
+  levels(document.getElementById('levels'), sc, {
+    title: `the crowded layer: species voltages and standard levels, ψ = ${v.toFixed(2)} V`,
+    shifts: { 'Na+': Math.round((0.3 - sc.V['Na+'].at(-1)) * 100) / 100, 'Cl-': -0.3 },
+    xlim, range: [-0.95, 0.95],
+    ylabel: 'voltage (V)',
+  });
+  profiles(document.getElementById('conc'), sc, {
+    species: ['Na+', 'Cl-', { name: 'Na+', c: si.c['Na+'], kind: 'standard', label: 'c Na⁺ ideal' }, { name: 'Cl-', c: si.c['Cl-'], kind: 'standard', label: 'c Cl⁻ ideal' }],
+    labels: { 'Na+': 'c Na⁺ crowded', 'Cl-': 'c Cl⁻ crowded' },
+    title: 'concentrations: crowded (thick) and ideal (thin)', ylabel: 'concentration (M)', scale: 1e-3, log: true, xlim,
+    range: [Math.floor(Math.log10(c / 1000)) - 3, Math.max(1, Math.ceil(Math.log10(cMax / 1000)) + 1)],
   });
 }
 let pending = false;
-const later = (fn) => () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; fn(); }); };
+const later = (fn) => () => {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => {
+    pending = false;
+    fn();
+  });
+};
 psi.addEventListener('input', later(update));
-size.addEventListener('change', rebuild);
-size.addEventListener('input', () => (document.getElementById('aOut').textContent = `${size.value} nm`));
+for (const el of [size, salt]) {
+  el.addEventListener('change', rebuild);
+  el.addEventListener('input', labels);
+}
 addEventListener('resize', update);
 rebuild();
 showCode();
