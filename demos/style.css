@@ -43,6 +43,10 @@ main { max-width: 1000px; margin: 0 auto; }
 h1 { font-size: 1.3rem; margin: 0 0 4px; }
 p { margin: 4px 0 12px; color: var(--muted); max-width: 70ch; }
 .controls {
+  position: sticky; /* stays in reach while you scroll down to the lower plots */
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
