@@ -140,6 +140,23 @@ const msj = () =>
     grid: { hmin: 0.05e-9, hmax: 20e-9, ratio: 1.1 },
   });
 
+// Haynes–Shockley: holes injected for 0.5 µs through a current-driven port into an n-Si bar
+// under 30 V/cm, then drifting, spreading and recombining (τ = 20 µs). `injection` is the peak
+// Δp at the emitter relative to n₀, roughly.
+const pulse = (injection) => {
+  const ND = units.perCm3(1e15), L = 3e-3, E = 3000, tp = 0.5e-6, I = (injection * ND * FARADAY * 50e-6) / tp;
+  return new Device({
+    T: 300,
+    species: carriers,
+    materials: { Si: silicon },
+    regions: [{ material: 'Si', length: L, fixedCharge: FARADAY * ND }],
+    contacts: { left: ohmic(E * L), right: ohmic(0) },
+    ports: [{ name: 'emitter', region: 0, from: 0.5e-3, to: 0.55e-3, terminal: 'h+', species: { 'h+': { type: 'conductance', G: 1e6 } },
+      I: { t: [0, 1e-9, tp, tp + 1e-9], values: [0, I, I, 0] } }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (20e-6 * ND) } }],
+    grid: { hmin: 10e-6, hmax: 10e-6 },
+  });
+};
 const sweep = (dev, side, Vs) => {
   for (const V of Vs) {
     dev.set({ contacts: { [side]: { V } } });
@@ -186,6 +203,18 @@ const cases = [
       d.set({ contacts: { right: { V: 0.5 } } });
       return d.advance(1e-7);
     },
+  },
+  {
+    name: 'Haynes–Shockley pulse in n-Si (weak, 5% of n₀): advance 12 µs',
+    runs: 3,
+    setup: () => (d => (d.solve(), d))(pulse(0.05)),
+    run: (d) => d.advance(12e-6),
+  },
+  {
+    name: 'Haynes–Shockley pulse in n-Si (strong, 100% of n₀): advance 12 µs',
+    runs: 3,
+    setup: () => (d => (d.solve(), d))(pulse(1)),
+    run: (d) => d.advance(12e-6),
   },
   {
     name: 'pn diode: impedance, 20 frequencies',
