@@ -453,6 +453,13 @@ like a capacitor, as it should.
   tight.
 - **If a direct solve diverges,** it's retried once with tighter damping (3 thermal units per
   iteration). That's enough for most large jumps, such as a cold start at forward bias.
+- **Generation continuation.** A device with generation reactions (species made only from, or
+  turned only into, fixed reservoirs, such as photogeneration from a photon reservoir) can be
+  held far from equilibrium even with its terminals level, where bias continuation can't help.
+  If a direct solve fails there, the generation rates are scaled down to 10⁻¹² and ramped back
+  up, ×100 a step while each solve converges (warm from the last) and by the square root of the
+  factor when one doesn't. An illuminated 80 µm silicon diode solves cold this way in about 80
+  iterations.
 - **If that fails too,** source continuation ramps the right terminal's voltage to its target.
   It ramps from the voltage of the last converged solve when the state is that solution, and
   otherwise from level terminals, where a cold start is consistent. The ramp step starts at

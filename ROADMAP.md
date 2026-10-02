@@ -100,6 +100,8 @@ for live demos.
 
 ## Later
 
+- **Generation profiles.** Position-dependent generation (Beer–Lambert absorption) for solar
+  cells and photodetectors: today a reaction's rate constant is uniform within each material.
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
   overpotential); surface species (adsorbed intermediates with a coverage), so multi-step
   mechanisms such as hydrogen evolution emerge from elementary steps; and a custom forward rate

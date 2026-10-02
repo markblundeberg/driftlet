@@ -231,10 +231,15 @@ export class Solver {
     // Bulk reactions as flat participant lists: reactants with +ν, products with −ν.
     this.rxs = model.reactions.map((rx) => ({
       kf: rx.kf,
+      generation: rx.generation,
       fixedA: rx.fixedA,
       sp: Int32Array.from([...rx.reactants, ...rx.products], (p) => p.i),
       nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
     }));
+
+    // Scales the generation reactions' rates during a steady solve's continuation (else 1).
+    this.generationScale = 1;
+    this.hasGeneration = this.rxs.some((rx) => rx.generation);
 
     // The bulk reactions running in each material.
     this.rxsIn = materials.map((_, m) => this.rxs.filter((rx) => rx.kf[m] > 0));
@@ -956,7 +961,7 @@ export class Solver {
     const dr = this.dA;
     for (let x = 0; x < rxs.length; x++) {
       const rx = rxs[x];
-      let P = rx.kf[m], aHi = rx.fixedA, aLo = 0;
+      let P = rx.generation ? rx.kf[m] * this.generationScale : rx.kf[m], aHi = rx.fixedA, aLo = 0;
       dr.fill(0); // ∂ ln P / ∂slot
       // Participants: reactants with ν > 0, then products with ν < 0.
       for (let p = 0; p < rx.sp.length; p++) {
@@ -2199,9 +2204,35 @@ export class Solver {
     const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), v0 = Float64Array.from(this.termV);
     // Where a direct solve applies and continuation is possible, don't spend long on the
     // pseudo-transient ramp: one direct attempt first.
-    let r = this._solveSteady(canContinue && direct ? { ...opts, maxSteps: 1 } : opts);
+    const quick = (canContinue || this.hasGeneration) && direct && opts.continuation !== false;
+    let r = this._solveSteady(quick ? { ...opts, maxSteps: 1 } : opts);
     if (r.converged) this.solvedV = target;
-    if (r.converged || !canContinue) return r;
+    if (r.converged) return r;
+    // Generation (e.g. light) holding the device far from equilibrium: ramp it up from nearly
+    // nothing, each solve warm from the last.
+    if (this.hasGeneration && opts.continuation !== false) {
+      this.u.set(u0);
+      this.uLo.set(u0Lo);
+      this.termV.set(v0);
+      this.computeConcentrations();
+      const g = this._generationContinuation(opts, r);
+      if (g.converged) {
+        this.solvedV = target;
+        return g;
+      }
+      r = g;
+    }
+    if (!canContinue) {
+      if (quick) {
+        this.u.set(u0);
+        this.uLo.set(u0Lo);
+        this.termV.set(v0);
+        this.computeConcentrations();
+        const full = this._solveSteady(opts); // the full pseudo-transient ramp
+        return { ...full, steps: full.steps + r.steps, iterations: full.iterations + r.iterations };
+      }
+      return r;
+    }
     // Source continuation: solve with both terminals level (consistent with a cold start), then
     // ramp the right terminal's voltage to its target in adaptive steps.
     const restart = () => {
@@ -2223,6 +2254,44 @@ export class Solver {
     r = this._solveSteady(opts); // the full pseudo-transient ramp
     if (r.converged) this.solvedV = target;
     return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
+  }
+
+  // Steady solves with the generation reactions' rates scaled from 1e-12 up to 1, ×100 a step
+  // while they converge, smaller steps where they don't.
+  _generationContinuation(opts, r) {
+    const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
+    let s = 1e-12, factor = 100, steps = r.steps, iterations = r.iterations;
+    const history = r.history.slice();
+    try {
+      this.generationScale = s;
+      let q = this._solveSteady(sub);
+      steps += q.steps;
+      iterations += q.iterations;
+      if (!q.converged) return { converged: false, steps, iterations, history };
+      while (s < 1) {
+        const next = Math.min(1, s * factor);
+        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
+        this.generationScale = next;
+        q = this._solveSteady(sub);
+        steps += q.steps;
+        iterations += q.iterations;
+        history.push({ generation: next, converged: q.converged });
+        if (q.converged) {
+          s = next;
+          factor = Math.min(100, factor * factor);
+        } else {
+          this.u.set(u1);
+          this.uLo.set(u1Lo);
+          this.termV.set(v1);
+          this.computeConcentrations();
+          factor = Math.sqrt(factor);
+          if (factor < 1.01) return { converged: false, steps, iterations, history };
+        }
+      }
+      return { converged: true, steps, iterations, history };
+    } finally {
+      this.generationScale = 1;
+    }
   }
 
   _continuation(opts, level, target, r, warm) {

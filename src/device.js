@@ -314,11 +314,16 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
       need(materials[m].present[i], `${path}.kf.${mname}: '${species[i].name}' is absent from material '${mname}'`);
     }
   }
+  const reactants = st.list.filter((p) => p.nu < 0).map(({ i, nu }) => ({ i, nu: -nu }));
+  const products = st.list.filter((p) => p.nu > 0);
   return {
-    reactants: st.list.filter((p) => p.nu < 0).map(({ i, nu }) => ({ i, nu: -nu })),
-    products: st.list.filter((p) => p.nu > 0),
+    reactants,
+    products,
     fixedA: st.fixedA, // fixed participants' share of A/RT
     kf,
+    // Species made only from (or turned only into) fixed reservoirs, such as photogeneration
+    // from a photon reservoir: a source that can hold the device far from equilibrium.
+    generation: st.nFixed > 0 && (reactants.length === 0 || products.length === 0),
   };
 }
 
@@ -331,7 +336,7 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
   need(isObject(map), `${path} must map participants to signed stoichiometric coefficients (ν < 0 consumed)`);
   need(isObject(fixed), `${fixedPath} must map fixed-activity participants to their μ (J/mol)`);
   const list = [];
-  let fixedA = 0, charge = 0;
+  let fixedA = 0, charge = 0, nFixed = 0;
   for (const [name, nu] of Object.entries(map)) {
     need(Number.isInteger(nu) && nu !== 0, `${path}.${name} must be a non-zero integer, got ${JSON.stringify(nu)}`);
     if (speciesIndex.has(name)) {
@@ -341,9 +346,10 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
     } else {
       need(fixed[name] !== undefined, `${path}.${name}: not a species, so give its μ in ${fixedPath} (fixed-activity participants are neutral)`);
       fixedA -= (nu * finite(fixed[name], `${fixedPath}.${name}`)) / RT;
+      nFixed++;
     }
   }
-  return { list, fixedA, charge };
+  return { list, fixedA, charge, nFixed };
 }
 
 // Reactions at a face, Butler–Volmer, with participants on either side (signed stoichiometry

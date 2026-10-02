@@ -55,6 +55,30 @@ test('long pn diode: Shockley J–V with diffusion and depletion-region recombin
   }
 });
 
+test('illuminated long pn diode: J_sc = qG(L_n + L_p + W), and superposition at low injection, from a cold start', () => {
+  // Uniform photogeneration as a reaction from a photon reservoir, photon → e⁻ + h⁺, with the
+  // photons' μ far above the gap, so the rate is G whatever the carriers do. Carriers made
+  // within a diffusion length of the depletion region (or inside it) are collected.
+  const G = 0.1; // mol/(m³·s)
+  const lit = (V) => {
+    const def = diode();
+    def.bulkReactions = [...def.bulkReactions, { nu: { photon: -1, 'e-': 1, 'h+': 1 }, fixed: { photon: units.eV(3) }, kf: { Si: G } }];
+    def.contacts.right = ohmic(V);
+    return new Device(def);
+  };
+  const sc = lit(0).solve(); // cold, far from equilibrium: solved by ramping the generation up
+  assert.ok(sc.converged);
+  const nn = ND / 2 + Math.sqrt((ND * ND) / 4 + ni2), pp = NA / 2 + Math.sqrt((NA * NA) / 4 + ni2);
+  const W = Math.sqrt(((2 * 11.7 * EPS0 * VT * Math.log((nn * pp) / ni2)) / FARADAY) * (1 / NA + 1 / ND));
+  const Jsc = FARADAY * G * (Ln + Lp + W);
+  assert.ok(Math.abs(sc.current / Jsc - 1) < 5e-3, `${sc.current} vs ${Jsc}`); // toward +x: holes to p
+  // Low injection: the light adds the same current at any bias (superposition).
+  const V = 0.2, dark = diode();
+  dark.contacts.right = ohmic(V);
+  const shift = lit(V).solve().current - new Device(dark).solve().current;
+  assert.ok(Math.abs(shift / sc.current - 1) < 1e-2, `${shift} vs ${sc.current}`);
+});
+
 // Water autoionisation H⁺ + OH⁻ ⇌ H₂O in a closed, gated box of dilute NaCl.
 const mu0 = { 'H+': 0, 'OH-': -157.24e3, 'Na+': -261.9e3, 'Cl-': -131.2e3 };
 const muH2O = -237.13e3;

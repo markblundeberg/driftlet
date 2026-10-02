@@ -219,6 +219,16 @@ A = 0. `kf` maps material
 names to forward rate constants (units making r mol/(m³·s)), and the reaction runs only in
 those materials.
 
+**Generation** is a reaction from a reservoir: photogeneration is `photon → e⁻ + h⁺`, with the
+photons a fixed participant whose μ sits well above the gap, so that e^{−A/RT} is negligible and
+the rate is `kf` itself, the generation rate (mol/(m³·s)). It's uniform within each material
+listed in `kf` (there's no optical absorption profile). The photons' μ is the honest part: light
+is a reservoir far from the device's temperature, and the rate still vanishes at A = 0.
+
+```js nocheck
+bulkReactions: [{ nu: { photon: -1, 'e-': 1, 'h+': 1 }, fixed: { photon: units.eV(3) }, kf: { Si: 0.1 } }]
+```
+
 ## Contacts
 
 A contact is an interface whose far side is an **outside phase with known levels**: think of
@@ -366,6 +376,12 @@ region boundary becomes a pair of nodes at the same x, one per side. The grid is
 automatically. If a double layer that the model resolves is coarser than the local Debye
 length, the solution's `warnings` say so.
 
+Grade the grid toward wherever a profile is steep: double layers, and electrodes where a species
+is depleted. Near a limiting current the depleted species' profile is steep in a thin layer at
+the electrode, and a uniform grid there overshoots: a 100 µm silver nitrate cell on 100 uniform
+cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax: 2e-6 }` stays
+within 0.1% with as many nodes.
+
 ## Using a device
 
 ```js nocheck
@@ -385,7 +401,8 @@ const now = dev.solution();                   // snapshot of the current state
   species is fed by a contact, it solves the steady equations directly. Otherwise conserved
   amounts (blocked species, reactive moieties) are kept exactly. If a direct solve fails at a
   bias (a cold start far from equilibrium), it solves with both terminals level and ramps the
-  right terminal's voltage to its target.
+  right terminal's voltage to its target; with generation reactions (below), it ramps their
+  rates up from nearly nothing.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
@@ -423,7 +440,7 @@ const dev = new Device({
   materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
   regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
   contacts: { left: electrode(0), right: electrode(0) },
-  grid: { minCells: 100 },
+  grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine at the electrodes, where Ag⁺ depletes
 });
 
 const { f, Z } = dev.impedance([0.01, 1, 100, 1e4]);
