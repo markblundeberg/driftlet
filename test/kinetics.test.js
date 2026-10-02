@@ -207,3 +207,38 @@ test('a redox couple between inert electrodes conserves its total: equilibrium a
   assert.ok(run.converged && Math.abs(run.current) > 0);
   assert.ok(Math.abs(iron(run) / total - 1) < 1e-10, `iron ${iron(run)} vs ${total}`);
 });
+
+test('with complexation too, the closed cell solves straight to its steady state, from cold or warm', () => {
+  // Pt | Fe³⁺, Fe²⁺, FeCl²⁺, K⁺, Cl⁻ | Pt with Fe³⁺ + Cl⁻ ⇌ FeCl²⁺ in the bulk: the total iron and
+  // the total chloride are conserved combinations of reacting stretches, solved as constraints.
+  const water = {
+    'K+': { D: 1.96e-9, mu0: -283.3e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 },
+    'Fe3+': { D: 0.6e-9, mu0: -4.7e3 }, 'Fe2+': { D: 0.72e-9, mu0: -78.9e3 }, 'FeCl2+': { D: 0.7e-9, mu0: -155.9e3 },
+  };
+  const redoxFace = (metal) => ({ reactions: [{ [metal]: { 'e-': -1 }, [metal === 'left' ? 'right' : 'left']: { 'Fe3+': -1, 'Fe2+': 1 }, k0: 1e-3 }] });
+  const def = {
+    species: [
+      { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'Fe3+', z: 3, cRef: 1000 },
+      { name: 'Fe2+', z: 2, cRef: 1000 }, { name: 'FeCl2+', z: 2, cRef: 1000 }, { name: 'e-', z: -1 },
+    ],
+    materials: { water: { epsr: 0, species: water }, Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } } },
+    regions: [
+      { material: 'Pt', length: 1e-6 },
+      { material: 'water', length: 100e-6, c0: { 'K+': 500, 'Cl-': 527, 'Fe3+': 5, 'Fe2+': 5, 'FeCl2+': 1 } },
+      { material: 'Pt', length: 1e-6 },
+    ],
+    interfaces: [redoxFace('left'), redoxFace('right')],
+    bulkReactions: [{ equation: 'Fe3+ + Cl- = FeCl2+', kf: { water: 1e3 } }],
+    contacts: { left: collector(0), right: collector(0.1) },
+    grid: { hmin: 1e-8, hmax: 2e-6 },
+  };
+  const cold = new Device(def).solve();
+  const run = new Device(def);
+  run.advance(1e6);
+  const warm = run.solve();
+  // From its own steady state the solve used to creep through giant steps and report failure.
+  assert.ok(cold.converged && warm.converged);
+  assert.ok(Math.abs(cold.current / warm.current - 1) < 1e-10, `${cold.current} vs ${warm.current}`);
+  const iron = (s) => s.conservation.filter((st) => /^Fe/.test(st.species)).reduce((a, st) => a + st.amount, 0);
+  assert.ok(Math.abs(iron(cold) / (11 * 100e-6) - 1) < 1e-10, `iron ${iron(cold)}`);
+});

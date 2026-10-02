@@ -451,13 +451,20 @@ like a capacitor, as it should.
   level a well-conditioned unknown, and the response to a unit pin (one extra
   back-substitution per spectator) is added in the amount that satisfies the constraint, from
   a k×k system for k spectators.
+- **Conserved combinations** (moieties) of reacting stretches are solved the same way: the
+  total iron of Fe³⁺, Fe²⁺ and FeCl²⁺ in a closed cell with a complexation reaction, say. The
+  basis of combinations w comes from the null space of the stoichiometry. In steady state the
+  w-weighted sum of their balance rows is zero identically (the reactions cancel by w·ν = 0,
+  and nothing crosses the stretches' ends), so one of them is replaced by Σ_k w_k Σ v c_k =
+  the combination's amount, bordered like a spectator's. (Spectators are the one-stretch
+  case.)
 
   Holding the amount through a storage term at huge dt instead is badly conditioned: the
   stretch's level is then held only by v·c/dt, against internal conductances D·c/h larger by
   D·dt/(hL), around 1e12 for a micron-scale cell (see [metal regions](#metal-regions) for the
   same cancellation). Newton then needs dozens of iterations, or fails.
-- **Otherwise** (moieties conserved by reactions, or immobile spectators, which conserve node by
-  node), backward-Euler steps at a huge dt (10⁶ × the slowest diffusion time) keep the storage
+- **Otherwise** (immobile spectators, which conserve node by node, or a combination that
+  includes a floating conductor), backward-Euler steps at a huge dt (10⁶ × the slowest diffusion time) keep the storage
   term, which pins each conserved amount exactly: sum a species' rows and the fluxes cancel. dt
   grows ×10 (capped) while the state still moves. Before each huge step, each spectator's level
   is shifted uniformly to restore its amount exactly (in one step for ideal statistics, by

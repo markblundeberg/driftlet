@@ -21,6 +21,9 @@ for live demos.
 - Strictly neutral regions solved in better-conditioned unknowns on transient steps (current
   continuity for one balance, φ̂' and η − zφ̂ as unknowns): a 3 M KCl salt bridge with 1 µM traces
   of every other ion, between eddy-mixed solutions, runs from its unmixed start through days.
+- Conserved combinations of reacting stretches (moieties) as constraint rows in the direct
+  steady solve, as spectators already were: a closed cell with complexation solves straight to
+  its steady state, cold or warm.
 - Backward-Euler transients with step halving, and conservation bookkeeping.
 - Statistics: one general per-material interface, c(ζ) with its capacitance matrix, and the
   excess-potential Scharfetter–Gummel flux. Fermi–Dirac, lattice gas (Bikerman crowding, site
@@ -81,11 +84,6 @@ for live demos.
      on steps of ~1e-11 s with 3 M against 1 µM. A perfectly sharp junction between such
      solutions then can't start (a pre-mixed zone a few layers wide can). A fix would combine
      the two edge nodes' balances, which the block-tridiagonal layout can't hold as a row.
-   - Conserved combinations (moieties) as constraint rows in the direct steady solve, as
-     spectators already are, instead of huge time steps. A closed Pt | Fe³⁺, Fe²⁺, FeCl²⁺ | Pt
-     cell with a complexation reaction reports `converged: false` at its true steady state
-     (the huge steps' storage term is tiny beside the reaction Jacobian), though `advance()`
-     reaches it.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export

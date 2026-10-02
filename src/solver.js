@@ -411,15 +411,19 @@ export class Solver {
       st.mobile = true;
       for (let q = st.regions[0]; q <= st.regions[1]; q++) if (!(materials[regions[q].material].D[st.species] > 0)) st.mobile = false;
     }
-    // Spectators whose steady state is solved directly, with the conservation of their amount
-    // in place of one (redundant) balance row. Immobile ones conserve node by node instead, and
-    // are left to giant time steps.
+    // Conserved amounts solved directly, each in place of one (redundant) balance row: a
+    // spectator's own amount, and each conserved combination of reacting stretches (the total
+    // iron of Fe³⁺, Fe²⁺ and FeCl²⁺, say), whose weighted balances sum to zero at steady state.
+    // Immobile stretches conserve node by node instead, and a floating conductor holds charge on
+    // its faces; both are left to giant time steps.
     this.constraints = [];
-    this.stretches.forEach((st, k) => {
-      if (!st.spectator || !st.mobile) return;
-      const nNodes = st.nodes[1] - st.nodes[0] + 1;
+    const conductor = (st) => materials[regions[st.regions[0]].material].conductor;
+    const add = (parts, rowStretch) => {
+      const st = this.stretches[rowStretch];
+      const nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
+      for (const p of parts) this.stretches[p.stretch].conserved = true;
       this.constraints.push({
-        stretch: k,
+        parts,
         row: this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
         idx: new Int32Array(nNodes * this.M),
         w: new Float64Array(nNodes * this.M),
@@ -427,7 +431,17 @@ export class Solver {
         res: 0,
         q: new Float64Array(this.sys.size + 1),
       });
+    };
+    this.stretches.forEach((st, k) => {
+      if (st.spectator && st.mobile) add([{ stretch: k, w: 1 }], k);
     });
+    for (const w of this.moieties) {
+      const parts = [...w.keys()].filter((k) => w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
+      if (parts.length === 1 && this.stretches[parts[0].stretch].spectator) continue; // (above)
+      if (parts.some((p) => !this.stretches[p.stretch].mobile || conductor(this.stretches[p.stretch]))) continue;
+      // The row replaced: the basis vector's own stretch (its weight is 1, and no other vector has one).
+      add(parts, parts.find((p) => w[p.stretch] === 1)?.stretch ?? parts[0].stretch);
+    }
     this.constrained = false;
   }
 
@@ -496,7 +510,7 @@ export class Solver {
   // Every stretch either reaches a contact or is a mobile spectator: the steady equations can
   // be solved directly (dt = ∞), with the spectators' amounts as constraints.
   _directSteady() {
-    return this.stretches.every((st) => st.connected || (st.spectator && st.mobile));
+    return this.stretches.every((st) => st.connected || st.conserved);
   }
 
   // Conservation rows for the spectators (steady solves only): Σ v c_i = amount over the
@@ -507,20 +521,23 @@ export class Solver {
     const { n, M, res, c, dA: d } = this;
     const vol = this.model.grid.vol;
     for (const cs of this.constraints) {
-      const st = this.stretches[cs.stretch], i = st.species;
-      let amount = 0, len = 0;
-      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
-        amount += vol[g] * c[g * n + i];
-        this._dc(g, i, d);
-        const b = this.blockOfNode[g];
-        for (let r = 0; r < M; r++) {
-          if (d[r] === 0 || this.loc[b * M + r] < 0) continue;
-          cs.idx[len] = this.rix[b * M + r];
-          cs.w[len++] = vol[g] * d[r];
+      let amount = 0, reference = 0, len = 0;
+      for (const { stretch, w } of cs.parts) {
+        const st = this.stretches[stretch], i = st.species;
+        reference += w * this.referenceAmounts[stretch];
+        for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+          amount += w * vol[g] * c[g * n + i];
+          this._dc(g, i, d);
+          const b = this.blockOfNode[g];
+          for (let r = 0; r < M; r++) {
+            if (d[r] === 0 || this.loc[b * M + r] < 0) continue;
+            cs.idx[len] = this.rix[b * M + r];
+            cs.w[len++] = w * vol[g] * d[r];
+          }
         }
       }
       cs.len = len;
-      cs.res = amount - this.referenceAmounts[cs.stretch];
+      cs.res = amount - reference;
       const b0 = Math.floor(cs.row / M), r0 = cs.row % M;
       this._replaceRow(b0, r0);
       this._j(b0, r0, b0, r0, 1);
