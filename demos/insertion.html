@@ -8,35 +8,54 @@
 </head>
 <body>
 <main>
-  <h1>Lithiating an intercalation host at constant current</h1>
-  <p>A 2 µm host layer (strictly neutral, with Li⁺ + e⁻ as one neutral combination) takes Li⁺ from
-    the electrolyte on the left and electrons from a current collector on the right. Its OCV is a
-    regular solution with interaction Ω. The collector's voltage against Li is solved for as the
-    current is held fixed. At high rates, lithium piles up at the surface and the voltage drops early.</p>
+  <h1>Cycling an intercalation host at constant current</h1>
+  <p>A 2 µm host layer (strictly neutral, with Li⁺ + e⁻ as one neutral combination) takes Li⁺ from the
+    electrolyte on the left and electrons from a current collector on the right. Its open-circuit voltage is a
+    regular solution with interaction Ω, which flattens the curve as Ω/RT nears 2, where the host would split
+    into two phases. It's cycled at constant current between voltage cutoffs: filling until the collector
+    falls to the lower cutoff, then emptying until it reaches the upper one, and so on. Slowly, the curves
+    hug the OCV and the host fills and empties almost completely. Faster, lithium piles up at the surface (or
+    drains from it) while the inside lags, the voltage leaves the OCV by more, and a cutoff arrives early.
+    Emptying is the harder direction: lithium diffuses faster through a fuller host (here its chemical
+    diffusivity is D(1/(1−x) − 2xΩ/RT)), so at high rates the surface runs dry long before the host does.
+    Then the mean filling ratchets over several cycles before the loop settles.</p>
+  <p>The level diagram is ESBD-style: the host's electrons (V e⁻, level, since they move easily) and its Li⁺
+    (V Li⁺, sloped wherever lithium diffuses). Their separation at each depth is the local open-circuit
+    voltage, E(x) = V<sub>e⁻</sub> − V<sub>Li⁺</sub>, larger where the host is emptier. Li⁺ is drawn
+    shifted (⌇) to sit beside the electrons. φ has no meaning inside this neutral host, so neither do
+    standard levels.</p>
   <div class="controls">
-    <label>C-rate <input id="rate" type="range" min="0.2" max="10" step="0.1" value="2"><output id="rateOut"></output></label>
+    <label>C-rate <input id="rate" type="range" min="-1" max="1" step="0.1" value="0.3"><output id="rateOut"></output></label>
     <label>Ω/RT <input id="omega" type="range" min="0" max="1.9" step="0.1" value="1.2"><output id="omegaOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="20">slow (20 s a full charge)</option>
+      <option value="6" selected>6 s a full charge</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
     <button id="run">restart</button>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
-    <canvas id="profile"></canvas>
-    <canvas id="voltage"></canvas>
+    <canvas class="wide" id="voltage"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="profile"></div>
   </div>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer } from '../src/kit.js';
+import { build, layer, traces } from '../src/kit.js';
+import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery } from './common.js';
+import { profiles, showCode, fromQuery } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
 const Q = FARADAY * cMax * L; // capacity, C/m²
 const rate = document.getElementById('rate'), omega = document.getElementById('omega');
 fromQuery(rate);
 fromQuery(omega);
+const C = () => 10 ** +rate.value; // C-rate: 1 C fills the host in an hour
 const labels = () => {
-  document.getElementById('rateOut').textContent = `${(+rate.value).toFixed(1)} C`;
+  document.getElementById('rateOut').textContent = `${C() < 1 ? C().toFixed(2) : C().toFixed(1)} C`;
   document.getElementById('omegaOut').textContent = (+omega.value).toFixed(1);
 };
 rate.addEventListener('input', labels);
@@ -46,10 +65,9 @@ labels();
 // OCV against Li metal (μ_Li = 0), dilute-referenced regular solution: see docs/statistics.md.
 const E = (x, Om) => -(mu0 + RT * Math.log(x / (1 - x)) - 2 * Om * x) / FARADAY;
 
-let dev, profiles, curve, running = false, I;
+let dev, run, running = false;
 function start() {
-  const Om = +omega.value * RT;
-  I = (+rate.value * Q) / 3600;
+  const Om = +omega.value * RT, I = (C() * Q) / 3600;
   dev = new Device(
     build({
       species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
@@ -71,63 +89,98 @@ function start() {
     }),
   );
   dev.solve();
-  dev.set({ contacts: { right: { V: undefined, I: -I } } }); // electrons in from the right, Li⁺ from the left
-  profiles = [];
-  last = undefined;
-  curve = { x: [], V: [], ocv: [] };
-  for (let k = 1; k < 100; k++) {
-    curve.ocv.push([k / 100, E(k / 100, Om)]);
-  }
-  nextProfile = 0;
-  // ?x=0.6 runs ahead to that state of charge first (for sharing a state, or a screenshot).
-  const ahead = +new URLSearchParams(location.search).get('x');
-  while (ahead > 0 && !(last?.done) && (last?.soc ?? 0) < ahead) slice(Infinity);
+  // Filling first: a terminal's I is the current into the device there, so −I at the collector
+  // (electrons in), with Li⁺ coming in from the left.
+  dev.set({ contacts: { right: { V: undefined, I: -I } } });
+  // The cutoffs: the OCV at 1% and 99% full.
+  run = { I, sign: -1, cutoffs: [E(0.99, Om), E(0.01, Om)], ocv: [], x: [], V: [], q: x0 * Q, turns: [0], halves: 0, range: [Infinity, -Infinity] };
+  for (let k = 1; k < 100; k++) run.ocv.push([k / 100, E(k / 100, Om)]);
+  // ?t=… runs ahead to that time first (for sharing a state, or a screenshot).
+  const ahead = +new URLSearchParams(location.search).get('t');
+  while (ahead > dev.solver.time && slice(ahead - dev.solver.time, Infinity).converged);
+  lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
 }
-let nextProfile = 0, last;
-// Advance by one slice of the run (at most budgetMs of compute), recording the curve and profiles.
-function slice(budgetMs) {
-  const tEnd = ((0.97 - x0) * Q) / I;
-  const s = dev.advance(Math.min(tEnd, dev.solver.time + tEnd / 60), { budgetMs });
-  s.trace.t.forEach((t, k) => {
-    curve.x.push(x0 + (I * t) / Q);
-    curve.V.push(s.trace.voltage[k]);
-  });
-  const soc = x0 + (I * s.time) / Q;
-  if (soc >= nextProfile) {
-    profiles.push({ x: s.x, y: Array.from(s.c['Li+'], (c) => c / cMax) });
-    nextProfile += 0.15;
-  }
-  last = { s, soc, done: s.time >= tEnd };
-  return last;
-}
-function draw() {
-  const { s, soc } = last;
-  chart(document.getElementById('profile'), {
-    xscale: 1e6, xlabel: 'depth into the host (µm)', ylabel: 'site fraction x', ylim: [0, 1],
-    series: [
-      ...profiles.map((p) => ({ ...p, color: colors[0], width: 1.2 })),
-      { x: s.x, y: Array.from(s.c['Li+'], (c) => c / cMax), color: colors[1], label: 'now' },
-      { x: [], y: [], color: colors[0], label: 'every 0.15 in x̄' },
-    ],
-  });
-  chart(document.getElementById('voltage'), {
-    xlabel: 'state of charge (mean x)', ylabel: 'E vs Li (V)', xlim: [0, 1],
-    series: [
-      { x: curve.ocv.map((p) => p[0]), y: curve.ocv.map((p) => p[1]), color: colors[2], dash: [5, 4], label: 'OCV' },
-      { x: curve.x, y: curve.V, color: colors[1], label: `${(+rate.value).toFixed(1)} C` },
-    ],
-  });
-  document.getElementById('status').textContent = `x̄ = ${soc.toFixed(3)} · E = ${s.terminalVoltage.toFixed(3)} V`;
-}
-function frame() {
-  const { done } = slice(12);
-  draw();
-  if (!done) requestAnimationFrame(frame);
+
+// Playback: a full charge's worth of time over a chosen wall-clock time, in slices short enough
+// to catch each cutoff; "as fast as it solves" advances as far as 12 ms of computing allows.
+const pace = document.getElementById('pace');
+fromQuery(pace);
+let lastFrame;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  const perCharge = +pace.value; // wall-clock seconds to fill the host
+  const s = slice(perCharge > 0 ? (wall * Q) / run.I / perCharge : Infinity, 12);
+  draw(s);
+  if (s.converged) requestAnimationFrame(frame);
   else running = false;
 }
+
+// One slice of the run, at most dt long: record the curve, and reverse at a cutoff.
+function slice(dt, budgetMs) {
+  // Short enough to catch a cutoff: the voltage diverges as the surface fills or runs dry, so a
+  // slice moves it by at most about 5 mV, judging by the last one.
+  const t0 = dev.solver.time;
+  const s = dev.advance(t0 + Math.min(Q / run.I / 150, run.dtE ?? Infinity, dt), { budgetMs });
+  let t = run.t ?? 0;
+  s.trace.t.forEach((tk, k) => {
+    run.q += s.trace.current[k] * (tk - t); // the current toward +x: Li⁺ in from the electrolyte
+    t = tk;
+    run.x.push(run.q / Q);
+    run.V.push(s.trace.voltage[k]);
+  });
+  run.t = t;
+  const Ev = s.terminalVoltage, [low, high] = run.cutoffs;
+  const rate = Math.abs(Ev - (run.E ?? Ev)) / Math.max(s.time - t0, 1e-12);
+  run.E = Ev;
+  run.dtE = rate > 0 ? 0.005 / rate : Infinity;
+  if ((run.sign < 0 && Ev <= low) || (run.sign > 0 && Ev >= high)) {
+    run.sign = -run.sign;
+    run.halves++;
+    run.turns.push(run.x.length);
+    dev.set({ contacts: { right: { I: run.sign * run.I } } });
+    run.dtE = Infinity;
+    // Keep the last three cycles (six half-cycles).
+    if (run.turns.length > 7) {
+      const drop = run.turns[run.turns.length - 7];
+      run.x.splice(0, drop);
+      run.V.splice(0, drop);
+      run.turns = run.turns.slice(-7).map((k) => k - drop);
+    }
+  }
+  return s;
+}
+
+function draw(s) {
+  const split = run.turns.length > 2 ? run.turns.at(-3) : 0; // the current cycle: the last two half-cycles
+  document.getElementById('status').textContent =
+    `cycle ${Math.floor(run.halves / 2) + 1}, ${run.sign < 0 ? 'filling' : 'emptying'} · x̄ = ${(run.q / Q).toFixed(3)} · E = ${s.terminalVoltage.toFixed(3)} V`;
+  const [low, high] = run.cutoffs;
+  chart(document.getElementById('voltage'), {
+    xlabel: 'mean filling x̄', ylabel: 'E vs Li (V)', xlim: [0, 1], ylim: [low - 0.05, high + 0.05],
+    series: [
+      { x: run.ocv.map((p) => p[0]), y: run.ocv.map((p) => p[1]), color: colors[0], dash: [6, 4], width: 1.2, label: 'OCV' },
+      { x: [0, 1, NaN, 0, 1], y: [low, low, NaN, high, high], color: colors[7], dash: [2, 3], width: 1, label: 'cutoffs' },
+      { x: run.x.slice(0, split + 1), y: run.V.slice(0, split + 1), color: colors[6], width: 1.2, label: 'earlier cycles' },
+      { x: run.x.slice(split), y: run.V.slice(split), color: colors[2], label: 'this cycle' },
+      { x: [run.q / Q], y: [s.terminalVoltage], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  // The ESBD view: Li⁺ shifted up 2.9 V to sit beside the electrons; the range grows to hold what the
+  // run has shown.
+  const tr = traces(s, { shifts: { 'Li+': 2.9 }, labels: { 'V:e-': 'V e⁻ (the host’s Fermi level)' } });
+  for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) run.range = [Math.min(run.range[0], y), Math.max(run.range[1], y)];
+  const span = run.range[1] - run.range[0];
+  document.getElementById('levels').innerHTML = levelChart(tr, {
+    width: 720, height: 340, range: [run.range[0] - 0.2 * span, run.range[1] + 0.06 * span], // room for the ⌇ note
+    title: `species voltages in the host, E = ${s.terminalVoltage.toFixed(3)} V`,
+  });
+  profiles(document.getElementById('profile'), s, { species: ['Li+'], labels: { 'Li+': 'x = c Li⁺ / c_max' }, title: 'filling across the host', ylabel: 'site fraction x', scale: 1 / cMax, range: [0, 1] });
+}
 document.getElementById('run').addEventListener('click', start);
+for (const el of [rate, omega]) el.addEventListener('change', start);
 start();
 showCode();
 </script>
