@@ -70,8 +70,9 @@ for live demos.
 - Position-dependent rate constants (`kf` as a profile against x, averaged over each node's box
   so the total is exact on any grid), and Beer–Lambert `photogeneration()` in the kit, validated
   against collection theory from blue to red.
-- A transient recorder (`recorder()`: the trace across calls, frames at set times for
-  scrubbing), asked for by the perovskite agent.
+- Curated devices with reference results from an independent code (`perovskiteCell()` and
+  IonMonger's scans of it), and a transient recorder (`recorder()`: the trace across calls,
+  frames at set times for scrubbing), both asked for by the perovskite agent.
 - Screenshots retaken by script (`npm run shots`): each demo held at a set state (`?t=…`,
   `?phase=…`) on virtual time, so an unchanged page comes out byte-identical.
 
@@ -152,8 +153,10 @@ for live demos.
        concentration today), and `describe()` reporting derived quantities to check against intent
        (built-in voltage, n_i, band offsets, the equilibrium levels against vacuum).
      - **Frozen species** as a named switch (today D → 1e-40) for separating time scales.
-     - **Curated device sets** with a reference result, like IonMonger's default cell and its
-       benchmark: whole devices with sources, so agents don't invent numbers.
+     - **More curated devices** with a reference result, as `perovskiteCell()` has IonMonger's
+       scans: a silicon solar cell (with silicon's absorption spectrum as data), an organic
+       bilayer, an electrochemical cell, each where an independent code or measurement gives
+       numbers to check against.
      - **Failure messages that prescribe the next step** (continuation, a smaller first step), as
        the lost-digits warning already does.
    - Before 1.0, definitions as a contract: an optional `version` field, and errors that name

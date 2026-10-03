@@ -73,83 +73,31 @@
     <a href="https://github.com/PerovskiteSCModelling/IonMonger">github.com/PerovskiteSCModelling/IonMonger</a>.</p>
 </main>
 <script type="module">
-import { Device, units, AVOGADRO, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { photogeneration } from '../src/kit.js';
+import { Device, AVOGADRO } from '../src/index.js';
+import { perovskiteCell, PEROVSKITE_SCANS, hysteresis, recorder } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
-// IonMonger's default parameters (per m³ and eV, converted below).
-const T = 298, VT = (GAS_CONSTANT * T) / FARADAY, m3 = (x) => x / AVOGADRO, eV = units.eV;
-const P = {
-  b: 400e-9, eps: 24.1, alpha: 1.3e7, Ec: -3.7, Ev: -5.4, Dn: 1.7e-4, Dp: 1.7e-4, gc: 8.1e24, gv: 5.8e24,
-  N0: 1.6e25, DI: 6.5e-8 * Math.exp(-0.58 / (8.61733035e-5 * T)), // vacancies: Arrhenius, ≈ 1.0e-17 m²/s
-  dE: 1e24, gcE: 5e25, EcE: -4.0, bE: 100e-9, epsE: 10, DE: 1e-5, // TiO₂
-  dH: 1e24, gvH: 5e25, EvH: -5.1, bH: 200e-9, epsH: 3, DH: 1e-6, // spiro-OMeTAD
-  tn: 3e-9, tp: 3e-7, vnE: 1e5, vpE: 10, vnH: 0.1, vpH: 1e5, Fph: 1.4e21,
+// The cell, as plain definition data: IonMonger's default device, from the kit (print it to see
+// every parameter). V is the spiro side's (the anode's) voltage. Frozen, the vacancies stay where
+// they are (D → 0).
+const cell = (V, frozen) => {
+  const def = perovskiteCell({ V });
+  if (frozen) def.materials['MAPbI₃'].species['V+'].D = 1e-40;
+  return def;
 };
-const ni = Math.sqrt(P.gc * P.gv) * Math.exp(-(P.Ec - P.Ev) / (2 * VT));
-const n0 = P.gc * Math.exp((P.EcE + VT * Math.log(P.dE / P.gcE) - P.Ec) / VT); // perovskite e⁻ at the TiO₂'s Fermi level
-
-// The cell as a plain definition. V is the spiro side's (the anode's) voltage; DI the vacancies'.
-const cell = (V, DI = P.DI) => ({
-  T,
-  species: [
-    { name: 'e-', z: -1 },
-    { name: 'h+', z: 1 },
-    { name: 'V+', z: 1 }, // iodide vacancies
-  ],
-  materials: {
-    // Levels on the vacuum scale: μ° is the band edge's depth (minus it, for electrons).
-    'TiO₂': { epsr: P.epsE, species: { 'e-': { D: P.DE, mu0: eV(P.EcE), cRef: m3(P.gcE) } } },
-    'MAPbI₃': {
-      epsr: P.eps,
-      species: {
-        'e-': { D: P.Dn, mu0: eV(P.Ec), cRef: m3(P.gc) },
-        'h+': { D: P.Dp, mu0: eV(-P.Ev), cRef: m3(P.gv) },
-        'V+': { D: DI, mu0: 0, cRef: m3(P.N0) },
-      },
-    },
-    spiro: { epsr: P.epsH, species: { 'h+': { D: P.DH, mu0: eV(-P.EvH), cRef: m3(P.gvH) } } },
-  },
-  regions: [
-    { material: 'TiO₂', length: P.bE, fixedCharge: FARADAY * m3(P.dE) },
-    { material: 'MAPbI₃', length: P.b, fixedCharge: -FARADAY * m3(P.N0), c0: { 'V+': m3(P.N0) } },
-    { material: 'spiro', length: P.bH, fixedCharge: -FARADAY * m3(P.dH) },
-  ],
-  interfaces: [
-    // Recombination through interface states (SRH), saturating at one carrier's capture: holes
-    // reaching the TiO₂ recombine at v_p however many electrons wait there.
-    { dipole: 0, species: { 'e-': 'equilibrium' }, reactions: [{ equation: 'e-(left) + h+ = 0', srh: { vn: P.vnE, vp: P.vpE, n1: m3((P.dE / n0) * ni) } }] },
-    { dipole: 0, species: { 'h+': 'equilibrium' }, reactions: [{ equation: 'e- + h+(right) = 0', srh: { vn: P.vnH, vp: P.vpH, n1: m3(ni) } }] },
-  ],
-  contacts: {
-    left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
-    right: { V, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'bulk' },
-  },
-  bulkReactions: [
-    { equation: 'e- + h+ = 0', srh: { 'MAPbI₃': { tauN: P.tn, tauP: P.tp } } }, // through midgap traps
-    photogeneration({ material: 'MAPbI₃', flux: m3(P.Fph), alpha: P.alpha, mu: eV(3), from: P.bE, to: P.bE + P.b }),
-  ],
-  grid: { hmin: 0.05e-9, hmax: 5e-9, ratio: 1.15 },
-});
+const [bE, bP] = cell(0).regions.map((r) => r.length), N0 = cell(0).regions[1].c0['V+']; // N₀ in mol/m³
 
 // A loop: preconditioned at 1.2 V (steady state, light on), then 1.2 → 0 → 1.2 V.
-function loopDevice(rate, DI) {
-  const dev = new Device(cell(1.2, DI));
+function loopDevice(rate, frozen) {
+  const dev = new Device(cell(1.2, frozen));
   dev.solve();
   const half = 1.2 / rate;
   dev.set({ contacts: { right: { V: { t: [0, half, 2 * half], values: [1.2, 0, 1.2] } } } });
-  return { dev, half, rows: [] };
+  return { dev, half, rec: recorder(dev, { times: [half] }) }; // the trace from the start, and a frame at the turn
 }
 const opts = (half, budgetMs) => ({ budgetMs, tol: 1e-4, dtMax: (2 * half) / 480 });
-const record = (run, sol) => sol.trace.t.forEach((t, k) => run.rows.push([t, sol.trace.voltage[k], sol.trace.current[k] / 10])); // mA/cm², photocurrent +
-
-// Each sweep's maximum power, and the hysteresis index.
-function index(rows, half) {
-  const pm = (on) => Math.max(...rows.filter(([t, , J]) => on(t) && Number.isFinite(J)).map(([, V, J]) => V * J));
-  const rev = pm((t) => t <= half), fwd = pm((t) => t >= half);
-  return { rev, fwd, hi: (rev - fwd) / rev };
-}
+const rows = (run) => run.rec.trace.t.map((t, k) => [t, run.rec.trace.voltage[k], run.rec.trace.current[k] / 10]); // mA/cm², photocurrent +
 
 // Work done a little each frame: the steady-state and frozen-vacancy curves, then the
 // hysteresis index from 1 mV/s to 1 kV/s.
@@ -170,10 +118,10 @@ const jobs = [];
 {
   let run;
   jobs.push((budget) => {
-    run ??= loopDevice(1, 1e-40); // vacancies frozen where 1.2 V left them
-    record(run, run.dev.advance(run.half, opts(run.half, budget)));
+    run ??= loopDevice(1, true); // vacancies frozen where 1.2 V left them
+    run.rec.advance(run.half, opts(run.half, budget));
     if (run.dev.solver.time < run.half) return false;
-    refs.frozen = { V: run.rows.map((r) => r[1]), J: run.rows.map((r) => r[2]) };
+    refs.frozen = { V: rows(run).map((r) => r[1]), J: rows(run).map((r) => r[2]) };
     return true;
   });
 }
@@ -181,9 +129,9 @@ for (const rate of RATES) {
   let run;
   jobs.push((budget) => {
     run ??= loopDevice(rate);
-    record(run, run.dev.advance(2 * run.half, opts(run.half, budget)));
+    run.rec.advance(2 * run.half, opts(run.half, budget));
     if (run.dev.solver.time < 2 * run.half) return false;
-    refs.hi.push({ rate, hi: index(run.rows, run.half).hi });
+    refs.hi.push({ rate, hi: hysteresis(run.rec.trace, run.half).hi });
     return true;
   });
 }
@@ -192,19 +140,8 @@ const work = (budget) => {
   while (jobs.length > 0 && performance.now() - t0 < budget) if (jobs[0](budget - (performance.now() - t0))) jobs.shift();
 };
 
-// IonMonger's own runs of the same cell (from driftlet's test suite): its hysteresis index.
-const ionmonger = [];
-const loaded = Promise.all(
-  ['0.001', '0.01', '0.1', '1', '10', '100', '1000'].map((r) =>
-    fetch(`../test/fixtures/ionmonger/full_${r}.csv`)
-      .then((res) => (res.ok ? res.text() : Promise.reject(new Error(res.status))))
-      .then((text) => {
-        const rows = text.trim().split('\n').map((line) => line.split(',').map(Number));
-        ionmonger.push({ rate: +r, hi: index(rows, 1.2 / +r).hi });
-      })
-      .catch(() => {}),
-  ),
-);
+// IonMonger's own runs of the same cell (shipped with the kit): its hysteresis index.
+const ionmonger = PEROVSKITE_SCANS.full;
 
 const rate = document.getElementById('rate'), pace = document.getElementById('pace');
 fromQuery(rate);
@@ -221,8 +158,8 @@ function start() {
   lastFrame = undefined;
   if (stopAt < Infinity) {
     work(Infinity);
-    record(run, run.dev.advance(stopAt * 2 * run.half, opts(run.half, Infinity)));
-    loaded.then(() => draw(run.dev.solution()));
+    run.rec.advance(stopAt * 2 * run.half, opts(run.half, Infinity));
+    draw(run.dev.solution());
     return;
   }
   if (!running) requestAnimationFrame(frame);
@@ -234,8 +171,7 @@ function frame(now = performance.now()) {
   lastFrame = now;
   const perLoop = +pace.value, end = 2 * run.half;
   const target = Math.min(end, perLoop > 0 ? run.dev.solver.time + (wall * end) / perLoop : end);
-  const sol = run.dev.advance(target, opts(run.half, 10));
-  record(run, sol);
+  const sol = run.rec.advance(target, opts(run.half, 10));
   work(6);
   draw(sol);
   if (sol.converged && (run.dev.solver.time < end || jobs.length > 0)) requestAnimationFrame(frame);
@@ -244,12 +180,12 @@ function frame(now = performance.now()) {
 
 function draw(sol) {
   const V = sol.terminals.right.V, t = run.dev.solver.time, sweeping = t <= run.half ? 'down' : 'up';
-  const rows = run.rows, done = t >= 2 * run.half;
-  const status = done ? (() => { const m = index(rows, run.half); return `loop done · P_max ${m.rev.toFixed(1)} going down, ${m.fwd.toFixed(1)} coming up (mW/cm²) · hysteresis index ${m.hi.toFixed(3)}`; })()
+  const loop = rows(run), done = t >= 2 * run.half;
+  const status = done ? (() => { const m = hysteresis(run.rec.trace, run.half); return `loop done · P_max ${(m.rev.Pmax / 10).toFixed(1)} going down, ${(m.fwd.Pmax / 10).toFixed(1)} coming up (mW/cm²) · hysteresis index ${m.hi.toFixed(3)}`; })()
     : `sweeping ${sweeping} · V = ${V.toFixed(3)} V · J = ${(sol.current / 10).toFixed(1)} mA/cm² · t = ${t < 10 ? t.toPrecision(2) : t.toFixed(0)} s of ${(2 * run.half).toPrecision(2)} s`;
   document.getElementById('status').textContent = status;
 
-  const down = rows.filter((r) => r[0] <= run.half), up = rows.filter((r) => r[0] >= run.half);
+  const down = loop.filter((r) => r[0] <= run.half), up = loop.filter((r) => r[0] >= run.half);
   chart(document.getElementById('jv'), {
     xlabel: 'V (V)', ylabel: 'J (mA/cm²), photocurrent +', xlim: [0, 1.2], ylim: [-5, 26],
     series: [
@@ -266,7 +202,7 @@ function draw(sol) {
     series: [
       { x: done_.map((d) => Math.log10(d.rate)), y: done_.map((d) => d.hi), color: colors[0], marker: true, label: 'driftlet' },
       { x: im.map((d) => Math.log10(d.rate)), y: im.map((d) => d.hi), color: colors[6], marker: true, width: 0, label: 'IonMonger' },
-      { x: [Math.log10(scanRate())], y: [done ? index(rows, run.half).hi : NaN], color: colors[3], marker: true, width: 0, label: 'this loop' },
+      { x: [Math.log10(scanRate())], y: [done ? hysteresis(run.rec.trace, run.half).hi : NaN], color: colors[3], marker: true, width: 0, label: 'this loop' },
     ],
   });
   // The carriers' levels, and the vacancies' shifted up beside them (in the bulk it's φ).
@@ -277,12 +213,12 @@ function draw(sol) {
   });
   // The vacancies against their background density, in the 5 nm by each face.
   const near = (x0, side) => profiles(document.getElementById(side), sol, {
-    species: [{ name: 'V+', label: 'c_{V⁺}/N₀' }, { name: 'V+', c: sol.x.map(() => m3(P.N0)), label: 'background', kind: 'standard' }],
-    title: `vacancies at the ${side === 'left' ? 'TiO₂' : 'spiro'} face`, ylabel: 'c / N₀', scale: 1 / m3(P.N0),
+    species: [{ name: 'V+', label: 'c_{V⁺}/N₀' }, { name: 'V+', c: sol.x.map(() => N0), label: 'background', kind: 'standard' }],
+    title: `vacancies at the ${side === 'left' ? 'TiO₂' : 'spiro'} face`, ylabel: 'c / N₀', scale: 1 / N0,
     range: [0, 4], xlim: side === 'left' ? [x0, x0 + 5e-9] : [x0 - 5e-9, x0], width: 380, height: 260,
   });
-  near(P.bE, 'left');
-  near(P.bE + P.b, 'right');
+  near(bE, 'left');
+  near(bE + bP, 'right');
   profiles(document.getElementById('carriers'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true });
 }
 

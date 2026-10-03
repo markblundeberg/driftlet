@@ -59,7 +59,7 @@ export function layer(material, length, more = {}) {
 
 // A drive: a number is a held voltage, a waveform { t, values } a voltage waveform, and an
 // object with V, I or R is the drive itself.
-function drive(d, path) {
+export function drive(d, path) {
   if (d === undefined) return { V: 0 };
   if (typeof d === 'number') return { V: d };
   if (isObject(d) && Array.isArray(d.t)) return { V: d };

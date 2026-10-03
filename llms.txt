@@ -46,8 +46,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
   `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …), `recorder` (a transient's trace and frames across calls),
-  and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
+  `metal`, `IONS`, …), `recorder` (a transient's trace and frames across calls), the curated
+  `perovskiteCell` with IonMonger's `PEROVSKITE_SCANS` and `hysteresis`, and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
 - **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),
@@ -240,6 +240,12 @@ ahead of the pulse) and at strong injection (Δp near n₀); budget for that, or
 opts)` takes the same options, `rec.trace` is the whole run's trace from the start, and
 `rec.frames` are whole solutions (at the start, then at `times`, every `every` s, or the end of
 each call), with `rec.frame(t)` the one at or before t, for a time slider.
+
+**Prefer a curated device to inventing numbers** where one fits: `perovskiteCell({ V, light,
+bulkSRH })` is IonMonger's default perovskite solar cell (mobile iodide vacancies, SRH in the bulk
+and at both faces), and `PEROVSKITE_SCANS` holds IonMonger's J–V scans of it at seven rates;
+`hysteresis(rec.trace, turn)` reads the same figures from yours, so a demo can show its agreement.
+The definition is plain data: print it, edit what your demo varies.
 
 ## Template: a live page with a slider
 

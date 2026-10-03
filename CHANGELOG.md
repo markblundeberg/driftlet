@@ -4,6 +4,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Curated devices in the kit: `perovskiteCell({ V, light, bulkSRH })`, IonMonger's default
+  perovskite solar cell as a plain definition, and `PEROVSKITE_SCANS`, IonMonger's own J–V scans
+  of it (current at 0 V, each sweep's P_max and V_oc, hysteresis index, at seven rates, with and
+  without bulk SRH), so a demo can start from benchmarked numbers and show its agreement;
+  `hysteresis(trace, turn)` reads the same figures from a run. The IonMonger test and the
+  perovskite demo use them. Asked for by the perovskite agent.
 - `recorder(device, { every, times, probes })` in the kit: a transient run in pieces (or in
   animation-frame budgets, step for step the same run), with the trace joined up from the start
   and whole solutions kept as frames at set times, `frame(t)` to scrub. Validated on a

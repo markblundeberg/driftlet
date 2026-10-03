@@ -1,107 +1,72 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Device, units, AVOGADRO, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { photogeneration } from '../src/kit.js';
+import { Device, AVOGADRO, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { perovskiteCell, PEROVSKITE_SCANS, hysteresis, recorder } from '../src/kit.js';
 
 // A benchmark against an independent code: J–V hysteresis in a planar perovskite solar cell,
 // computed by IonMonger (finite elements in MATLAB/Octave, Courtier et al. 2019) and by
 // driftlet, scan by scan from 1 mV/s to 1 kV/s. The reference scans and how they were made are
-// in test/fixtures/ionmonger.
+// in test/fixtures/ionmonger; the cell is the kit's perovskiteCell().
 //
 // TiO₂ | MAPbI₃ with mobile iodide vacancies | spiro-OMeTAD, IonMonger's default parameters,
-// bulk SRH off. Three species: electrons, holes, vacancies (over an equal immobile background).
-// IonMonger's interface recombination is SRH at each face, saturating at one carrier's capture;
-// written with the ETL's own electron density it's exactly driftlet's face SRH law, with n₁ =
-// (d_E/n₀)·n_i at the TiO₂ face (n₀ the perovskite's electron density at the ETL's Fermi level)
-// and n₁ = n_i at the spiro face. Levels are on the vacuum scale, as IonMonger's are.
+// with bulk SRH on and off. Three species: electrons, holes, vacancies (over an equal immobile
+// background). IonMonger's interface recombination is SRH at each face, saturating at one
+// carrier's capture; written with the ETL's own electron density it's exactly driftlet's face SRH
+// law, with n₁ = (d_E/n₀)·n_i at the TiO₂ face (n₀ the perovskite's electron density at the
+// ETL's Fermi level) and n₁ = n_i at the spiro face. Levels are on the vacuum scale, as
+// IonMonger's are.
 
-const T = 298, VT = (GAS_CONSTANT * T) / FARADAY, m3 = (x) => x / AVOGADRO, eV = units.eV;
-const P = {
-  b: 400e-9, eps: 24.1, alpha: 1.3e7, Ec: -3.7, Ev: -5.4, Dn: 1.7e-4, Dp: 1.7e-4, gc: 8.1e24, gv: 5.8e24,
-  N0: 1.6e25, DI: 6.5e-8 * Math.exp(-0.58 / (8.61733035e-5 * T)), // IonMonger's Arrhenius form, ≈ 1.0e-17 m²/s
-  dE: 1e24, gcE: 5e25, EcE: -4.0, bE: 100e-9, epsE: 10, DE: 1e-5,
-  dH: 1e24, gvH: 5e25, EvH: -5.1, bH: 200e-9, epsH: 3, DH: 1e-6,
-  tn: 3e-9, tp: 3e-7, vnE: 1e5, vpE: 10, vnH: 0.1, vpH: 1e5, Fph: 1.4e21,
-};
-const ni = Math.sqrt(P.gc * P.gv) * Math.exp(-(P.Ec - P.Ev) / (2 * VT));
-const n0 = P.gc * Math.exp((P.EcE + VT * Math.log(P.dE / P.gcE) - P.Ec) / VT);
+const T = 298, m3 = (x) => x / AVOGADRO;
+const P = { b: 400e-9, eps: 24.1, alpha: 1.3e7, N0: 1.6e25, Fph: 1.4e21 };
+const cell = (V, bulkSRH) => perovskiteCell({ V, bulkSRH });
 
-const cell = (V, bulk) => ({
-  T,
-  species: [
-    { name: 'e-', z: -1 },
-    { name: 'h+', z: 1 },
-    { name: 'V+', z: 1 }, // iodide vacancies
-  ],
-  materials: {
-    TiO2: { epsr: P.epsE, species: { 'e-': { D: P.DE, mu0: eV(P.EcE), cRef: m3(P.gcE) } } },
-    MAPI: {
-      epsr: P.eps,
-      species: {
-        'e-': { D: P.Dn, mu0: eV(P.Ec), cRef: m3(P.gc) },
-        'h+': { D: P.Dp, mu0: eV(-P.Ev), cRef: m3(P.gv) },
-        'V+': { D: P.DI, mu0: 0, cRef: m3(P.N0) },
-      },
-    },
-    spiro: { epsr: P.epsH, species: { 'h+': { D: P.DH, mu0: eV(-P.EvH), cRef: m3(P.gvH) } } },
-  },
-  regions: [
-    { name: 'TiO₂', material: 'TiO2', length: P.bE, fixedCharge: FARADAY * m3(P.dE) },
-    { name: 'MAPbI₃', material: 'MAPI', length: P.b, fixedCharge: -FARADAY * m3(P.N0), c0: { 'V+': m3(P.N0) } },
-    { name: 'spiro-OMeTAD', material: 'spiro', length: P.bH, fixedCharge: -FARADAY * m3(P.dH) },
-  ],
-  interfaces: [
-    { dipole: 0, species: { 'e-': 'equilibrium' }, reactions: [{ equation: 'e-(left) + h+ = 0', srh: { vn: P.vnE, vp: P.vpE, n1: m3((P.dE / n0) * ni) } }] },
-    { dipole: 0, species: { 'h+': 'equilibrium' }, reactions: [{ equation: 'e- + h+(right) = 0', srh: { vn: P.vnH, vp: P.vpH, n1: m3(ni) } }] },
-  ],
-  contacts: {
-    left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
-    right: { V, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'bulk' },
-  },
-  bulkReactions: [
-    // IonMonger's bulk SRH (midgap traps) is driftlet's bulk SRH law.
-    ...(bulk ? [{ equation: 'e- + h+ = 0', srh: { MAPI: { tauN: P.tn, tauP: P.tp } } }] : []),
-    photogeneration({ material: 'MAPI', flux: m3(P.Fph), alpha: P.alpha, mu: eV(3), from: P.bE, to: P.bE + P.b })],
-  grid: { hmin: 0.05e-9, hmax: 5e-9, ratio: 1.15 },
-});
-
-// Preconditioned at 1.2 V (steady state, light on), then 1.2 → 0 → 1.2 V: [t, V, J (mA/cm²)].
-function scan(rate, bulk) {
-  const dev = new Device(cell(1.2, bulk));
+// Preconditioned at 1.2 V (steady state, light on), then 1.2 → 0 → 1.2 V, recorded: the trace
+// in SI, and rows [t, V, J (mA/cm²)].
+function scan(rate, bulkSRH) {
+  const dev = new Device(cell(1.2, bulkSRH));
   assert.ok(dev.solve().converged);
   const half = 1.2 / rate;
   dev.set({ contacts: { right: { V: { t: [0, half, 2 * half], values: [1.2, 0, 1.2] } } } });
-  const r = dev.advance(2 * half, { tol: 1e-4, dtMax: (2 * half) / 480 });
+  const rec = recorder(dev, { times: [half] });
+  const r = rec.advance(2 * half, { tol: 1e-4, dtMax: (2 * half) / 480 });
   assert.ok(r.converged && r.done);
-  return r.trace.t.map((t, k) => [t, r.trace.voltage[k], r.trace.current[k] / 10]);
-}
-
-// Each sweep's maximum power and open-circuit voltage, and the hysteresis index.
-function loop(rows, rate) {
-  const half = 1.2 / rate, out = {};
-  for (const [name, on] of [['rev', (t) => t <= half], ['fwd', (t) => t >= half]]) {
-    const pts = rows.filter(([t, , J]) => on(t) && Number.isFinite(J)).map(([, V, J]) => [V, J]).sort((a, b) => a[0] - b[0]);
-    const k = pts.findIndex(([, J], j) => j > 0 && pts[j - 1][1] > 0 && J <= 0);
-    const [[v0, j0], [v1, j1]] = [pts[k - 1], pts[k]];
-    out[name] = { pmax: Math.max(...pts.map(([V, J]) => V * J)), voc: v0 + (j0 * (v1 - v0)) / (j0 - j1) };
-  }
-  return { ...out, hi: (out.rev.pmax - out.fwd.pmax) / out.rev.pmax };
+  assert.deepEqual(rec.frames.map((f) => f.time), [0, half]);
+  const { trace } = rec;
+  return { trace, rows: trace.t.map((t, k) => [t, trace.voltage[k], trace.current[k] / 10]) };
 }
 
 const reference = (set, rate) =>
   readFileSync(new URL(`fixtures/ionmonger/${set}_${rate}.csv`, import.meta.url), 'utf8').trim().split('\n').map((line) => line.split(',').map(Number));
+const asTrace = (rows) => ({ t: rows.map((r) => r[0]), voltage: rows.map((r) => r[1]), current: rows.map((r) => r[2] * 10) });
+const RATES = ['0.001', '0.01', '0.1', '1', '10', '100', '1000'];
 
-for (const [set, bulk, what] of [['scan', false, 'bulk SRH off'], ['full', true, "IonMonger's full defaults"]]) {
+test("PEROVSKITE_SCANS is IonMonger's runs, read by hysteresis()", () => {
+  for (const [set, key] of [['full', 'full'], ['scan', 'noBulkSRH']]) {
+    assert.deepEqual(PEROVSKITE_SCANS[key].map((r) => r.rate), RATES.map(Number));
+    for (const ref of PEROVSKITE_SCANS[key]) {
+      const rows = reference(set, ref.rate), half = 1.2 / ref.rate, m = hysteresis(asTrace(rows), half);
+      const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, `${set} ${ref.rate} V/s ${what}: ${a} vs ${b}`);
+      near(m.hi, ref.hi, 5e-6, 'hi');
+      near(rows.find(([t]) => Math.abs(t - half) < 1e-9 * half)[2] * 10, ref.J0, 0.006, 'J0');
+      for (const s of ['rev', 'fwd']) {
+        near(m[s].Pmax, ref[s].Pmax, 0.006, `${s} Pmax`);
+        near(m[s].Voc, ref[s].Voc, 5e-6, `${s} Voc`);
+      }
+    }
+  }
+});
+
+for (const [set, key, bulkSRH, what] of [['scan', 'noBulkSRH', false, 'bulk SRH off'], ['full', 'full', true, "IonMonger's full defaults"]]) {
   test(`perovskite hysteresis against IonMonger (${what}), 1 mV/s to 1 kV/s: hysteresis index, maximum power, V_oc and the whole J–V loop (to 0.03 mA/cm² where gentle, 1 mV where steep)`, () => {
-    for (const rate of ['0.001', '0.01', '0.1', '1', '10', '100', '1000']) {
-      const ours = scan(+rate, bulk), theirs = reference(set, rate);
-      const a = loop(ours, +rate), b = loop(theirs, +rate);
+    for (const b of PEROVSKITE_SCANS[key]) {
+      const rate = String(b.rate), { trace, rows: ours } = scan(b.rate, bulkSRH), theirs = reference(set, rate);
+      const a = hysteresis(trace, 1.2 / b.rate);
       const at = `${rate} V/s`;
       assert.ok(Math.abs(a.hi - b.hi) < 1.5e-3, `${at}: hysteresis index ${a.hi} vs ${b.hi}`);
       for (const s of ['rev', 'fwd']) {
-        assert.ok(Math.abs(a[s].pmax - b[s].pmax) < 0.05, `${at} ${s}: P_max ${a[s].pmax} vs ${b[s].pmax} mW/cm²`);
-        assert.ok(Math.abs(a[s].voc - b[s].voc) < 2e-3, `${at} ${s}: V_oc ${a[s].voc} vs ${b[s].voc} V`);
+        assert.ok(Math.abs(a[s].Pmax - b[s].Pmax) < 0.5, `${at} ${s}: P_max ${a[s].Pmax} vs ${b[s].Pmax} W/m²`);
+        assert.ok(Math.abs(a[s].Voc - b[s].Voc) < 2e-3, `${at} ${s}: V_oc ${a[s].Voc} vs ${b[s].Voc} V`);
       }
       // The loop itself, at IonMonger's own points (matched in time): as a current difference
       // where the curve is gentle, and as a voltage offset where it's steep (near V_oc it falls at
@@ -139,7 +104,7 @@ test('the same cell in steady state: every pair made is collected or recombines 
   // and the SRH reaction is listed where it runs.
   const text = describe(cell(1.2, true));
   const lambda = Math.sqrt((P.eps * 8.8541878128e-12 * GAS_CONSTANT * T) / (FARADAY * FARADAY * m3(P.N0)));
-  assert.match(text, new RegExp(`MAPbI₃ .*Debye length ${(lambda * 1e9).toPrecision(3)} nm`));
-  assert.match(text, /e- \+ h\+ = 0 \(SRH\) in MAPI/);
+  assert.match(text, new RegExp(`\\[MAPbI₃\\] .*Debye length ${(lambda * 1e9).toPrecision(3)} nm`));
+  assert.match(text, /e- \+ h\+ = 0 \(SRH\) in MAPbI₃/);
 });
 

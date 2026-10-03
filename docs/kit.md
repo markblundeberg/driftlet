@@ -201,6 +201,39 @@ rec.advance(10, { tol: 1e-4 });
 console.log(`${rec.frames.length} frames, ${rec.trace.t.length} steps; at the wall after 5 s: ${rec.frame(5).c['K+'].at(-1).toFixed(2)} mol/m³`);
 ```
 
+## Curated devices
+
+Whole devices from a published parameter set, with reference results from an independent code
+to check a run against, so a demo starts from numbers that someone has measured or
+benchmarked rather than invented ones. Each returns an ordinary definition (print it to see
+every parameter, or edit it).
+
+- **`perovskiteCell({ V, light, bulkSRH })`**: IonMonger's default planar perovskite solar
+  cell (Courtier et al., J. Comput. Electron. 18, 1435 (2019)): TiO₂ (100 nm) | MAPbI₃ (400 nm)
+  with mobile iodide vacancies over an equal immobile background | spiro-OMeTAD (200 nm), at
+  298 K, lit through the TiO₂ (1.4e21 photons/(m²·s) at α = 1.3e7 /m, times `light`). SRH at
+  both faces and, unless `bulkSRH: false`, in the perovskite. `V` drives the spiro side's contact,
+  so photocurrent is positive. `PEROVSKITE_SCANS` holds IonMonger's own J–V scans of it (steady
+  at 1.2 V under light, then 1.2 → 0 → 1.2 V, at seven rates from 1 mV/s to 1 kV/s): per scan
+  the current at 0 V, each sweep's maximum power and V_oc, and the hysteresis index, with bulk
+  SRH (`full`) and without (`noBulkSRH`). driftlet's test suite reproduces them (and the whole
+  loops, to 0.03 mA/cm² where they're gentle and 1 mV where steep). `hysteresis(trace, turn)`
+  reads the same figures from a run's trace.
+
+```js
+import { Device } from 'driftlet';
+import { perovskiteCell, PEROVSKITE_SCANS, hysteresis, recorder } from 'driftlet/kit';
+
+const rate = 10, half = 1.2 / rate; // V/s
+const dev = new Device(perovskiteCell({ V: 1.2 }));
+dev.solve();
+dev.set({ contacts: { right: { V: { t: [0, half, 2 * half], values: [1.2, 0, 1.2] } } } });
+const rec = recorder(dev);
+rec.advance(2 * half, { tol: 1e-4, dtMax: (2 * half) / 480 });
+const ours = hysteresis(rec.trace, half), theirs = PEROVSKITE_SCANS.full.find((s) => s.rate === rate);
+console.log(`P_max ${ours.rev.Pmax.toFixed(1)} W/m² going down (IonMonger ${theirs.rev.Pmax}), hysteresis index ${ours.hi.toFixed(4)} (${theirs.hi})`);
+```
+
 ## Plotting
 
 Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the bookkeeping of
