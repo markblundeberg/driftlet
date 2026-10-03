@@ -58,6 +58,7 @@ test('excitons diffuse to the interface and split: the current is qΦ∫αe^{−
     const integral = 0.5 * (-Math.expm1(-(alpha - k) * d) / (alpha - k) + -Math.expm1(-(alpha + k) * d) / (alpha + k));
     const split = (flux * alpha * integral) / (Math.cosh(d / LX) + (D / (v * LX)) * Math.sinh(d / LX));
     const [rSplit, rCT] = s.interfaces[0].rates;
+    assert.deepEqual([s.interfaces[0].left, s.interfaces[0].right], ['region 0', 'region 1']); // the regions it joins
     assert.ok(Math.abs(rSplit / split - 1) < 5e-4, `d ${d}, L ${LX}: split ${rSplit / split} of theory`);
     assert.ok(Math.abs(-s.current / (FARADAY * (rSplit - rCT)) - 1) < 1e-12); // holes leave by the anode: J < 0
     assert.ok(rCT < 1e-2 * rSplit, `little recombines at short circuit: ${rCT / rSplit}`);

@@ -34,6 +34,14 @@ test('a clean pn diode: regions with doping and Debye lengths, faces, contacts, 
   assert.doesNotMatch(text, /warnings/);
 });
 
+test("the Debye length counts the doping's carriers, even when c0 lists a trace of something else", () => {
+  const def = pn(silicon());
+  def.species.push({ name: 'T', z: 1, cRef: 1 });
+  def.materials.Si.species.T = { D: 0, mu0: 0 };
+  def.regions[0].c0 = { T: 1e-12 };
+  assert.match(describe(def), /n \[Si\] 1 µm: .*Debye length 12.9 nm/);
+});
+
 test('unit slips are flagged where they are, and a coarse grid against the Debye length', () => {
   const slips = unitWarnings(pn(silicon({ D: 36, mu0: 4.05 })));
   assert.equal(slips.length, 2);

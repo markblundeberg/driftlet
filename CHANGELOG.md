@@ -2,6 +2,15 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- `set()`: a contact given `V` or `I` drops the other, so `{ I: 0 }` switches a held contact to
+  open circuit (it used to need `V: undefined` alongside).
+- A face reaction's α may be 0 or 1 (plain mass action one way), not only strictly between.
+- Each solution's `interfaces[f]` names the regions it joins, `left` and `right`.
+- `describe()`: a region's Debye length counts the carriers balancing its doping, not only what
+  `c0` lists (a trace in `c0` made a doped layer's read in µm instead of nm).
+
 ## 0.4.0 (2026-10-03)
 
 - A bulk reaction's `kf` can vary with position: a profile `{ x, values }` against the device's

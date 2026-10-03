@@ -79,6 +79,22 @@ test('Butler–Volmer electrode: zero current at the Nernst potential, mixed-con
   }
 });
 
+test('Butler–Volmer at the ends of α: α = 0 and α = 1 are plain mass action each way, still exact at equilibrium', () => {
+  for (const a of [0, 1]) {
+    const def = redox('left', Veq);
+    def.interfaces[0].reactions[0].alpha = a;
+    const dev = new Device(def);
+    assert.ok(Math.abs(dev.solve().current) < 1e-12, `α = ${a}: no current at equilibrium`);
+    for (const eta of [0.1, -0.1]) {
+      dev.set({ contacts: { left: { V: Veq + eta } } });
+      const sol = dev.solve();
+      const x = (E0p - (Veq + eta)) / VT, ea = Math.exp(a * x), eb = Math.exp(-(1 - a) * x);
+      const want = (-FARADAY * (kp * (cO * ea - cR * eb))) / (1 + ((kp * L) / DO) * ea + ((kp * L) / DR) * eb);
+      assert.ok(Math.abs(sol.current / want - 1) < 5e-4, `α = ${a}, η = ${eta}: ${sol.current} vs ${want}`);
+    }
+  }
+});
+
 test('galvanostatic kinetic electrode', () => {
   const dev = new Device(redox('right', Veq, -2)); // 2 A/m² toward +x, out at the right
   const sol = dev.solve();

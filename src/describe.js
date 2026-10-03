@@ -139,14 +139,15 @@ export function describe(def) {
     }
     const parts = [mat.epsr > 0 ? `εr ${mat.epsr}` : 'strictly neutral (ε = 0)'];
     if (reg.fixedCharge !== 0) parts.push(`fixed charge ${reg.fixedCharge > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(Math.abs(reg.fixedCharge) / FARADAY)}`);
-    // The screening concentration: Σ z²c from the initial composition, else the fixed charge's.
+    // The screening concentration: Σ z²c from the initial composition, plus the carriers that
+    // balance the fixed charge (doping), which c0 doesn't list.
     let zzc = 0;
     species.forEach((sp, i) => {
       if (!mat.present[i]) return;
       if (Number.isFinite(reg.c0[i])) zzc += sp.z * sp.z * reg.c0[i];
       else if (reg.c0Profile[i]) zzc += sp.z * sp.z * Math.max(...reg.c0Profile[i].values);
     });
-    if (zzc === 0) zzc = Math.abs(reg.fixedCharge) / FARADAY;
+    zzc += Math.abs(reg.fixedCharge) / FARADAY; // the mobile charge that balances the doping
     const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));
     const Dmin = Math.min(...species.map((sp, i) => (mat.present[i] && mat.D[i] > 0 ? mat.D[i] : Infinity)));
     if (mat.epsr > 0 && zzc > 0) {

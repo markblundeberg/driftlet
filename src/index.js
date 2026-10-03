@@ -63,13 +63,22 @@ export class Device {
   }
 
   /**
-   * Change part of the definition (deep-merged). A change to the terminals' drives alone (V, I,
-   * R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
+   * Change part of the definition (deep-merged). A contact given V or I drops the other, so
+   * `{ contacts: { right: { I: 0 } } }` switches it to open circuit. A change to the terminals'
+   * drives alone (V, I, R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
    * the warm start when the grid and species are unchanged (else restarting from the regions' c0).
    * @param {object} patch a partial device definition, merged into the current one
    * @returns {this}
    */
   set(patch) {
+    // A contact given a new kind of drive drops the old one: { I: 0 } replaces a held V.
+    for (const side of ['left', 'right']) {
+      const c = patch?.contacts?.[side];
+      if (c && typeof c === 'object') {
+        if ('I' in c && !('V' in c)) patch = { ...patch, contacts: { ...patch.contacts, [side]: { ...c, V: undefined } } };
+        else if ('V' in c && !('I' in c)) patch = { ...patch, contacts: { ...patch.contacts, [side]: { ...c, I: undefined } } };
+      }
+    }
     const def = merge(this.def, patch);
     // Only the terminals' drives changed: update them in place, keeping the solver and its state
     // (a step in a source restarts the time stepping's order, as at any discontinuity).

@@ -203,7 +203,8 @@ Butler–Volmer,
 r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|(1-\alpha)} \prod_{\nu>0} (c/c_{\mathrm{ref}})^{\nu\alpha} \left(e^{\alpha a} - e^{-(1-\alpha)a}\right)
 ```
 
-with $`k_0`$ in mol/(m²·s) and $`\alpha`$ (default 0.5) between 0 and 1. A conductor's carrier has
+with $`k_0`$ in mol/(m²·s) and $`\alpha`$ (default 0.5) from 0 to 1 inclusive ($`\alpha = 0`$ makes the
+forward rate plain mass action, independent of the energetics). A conductor's carrier has
 activity 1 and no factor. That's mass action with rate constants that depend on the electrical part
 of the affinity: exactly zero at $`A = 0`$, whatever $`k_0`$ and $`\alpha`$. Each participant is made or
 consumed at its side's edge node, just behind any Stern layer, so Frumkin effects arise by
@@ -486,7 +487,8 @@ const now = dev.solution();                   // snapshot of the current state
   be the one measured: the resistance belongs to the external circuit. With `profiles: true`, each
   frequency also returns complex profiles of $`\delta\phi`$, $`\delta\bar\mu`$ and $`\delta c`$ per unit
   excitation.
-- `set(patch)` merges plain objects deeply (arrays are replaced). A patch that changes only the
+- `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
+  or `I` drops the other: `{ contacts: { right: { I: 0 } } }` switches it to open circuit. A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
   Otherwise the device is rebuilt: the current state carries over while the grid and species
   are unchanged, or restarts from the regions' `c0`. A carried state keeps what it holds: a
@@ -535,7 +537,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
-| `interfaces[f]` | `{ dipole, sheetCharge, D, N: {name}, rates }`: what crosses each face by its links, and each face reaction's rate (mol/(m²·s)) |
+| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates }`: the names of the regions the face joins, what crosses it by its links, and each face reaction's rate (mol/(m²·s)) |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |

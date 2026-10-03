@@ -820,7 +820,7 @@ function defaultInterfaceLinks(matL, matR, species) {
 
 function transferCoefficient(v, path) {
   if (v === undefined) return 0.5;
-  need(isFiniteNumber(v) && v > 0 && v < 1, `${path} must be between 0 and 1, got ${JSON.stringify(v)}`);
+  need(isFiniteNumber(v) && v >= 0 && v <= 1, `${path} must be between 0 and 1, got ${JSON.stringify(v)}`);
   return v;
 }
 

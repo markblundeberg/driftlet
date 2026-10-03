@@ -139,11 +139,13 @@ test('set() with only new sources keeps the solver, and gives what a rebuild wou
   const fast = dev.solve();
   const fresh = new Device(silverNitrate({ contacts: { left: { V: 0, ...links }, right: { V: 0.08, ...links } } })).solve();
   assert.ok(Math.abs(fast.current / fresh.current - 1) < 1e-10);
-  // From held to driven and back, in place too.
-  dev.set({ contacts: { right: { V: undefined, I: fast.terminals.right.current } } });
+  // From held to driven and back, in place too: a new kind of drive replaces the old.
+  dev.set({ contacts: { right: { I: fast.terminals.right.current } } });
   assert.equal(dev.solver, solver);
   const driven = dev.solve();
   assert.ok(Math.abs(driven.terminals.right.V - 0.08) < 1e-9);
+  dev.set({ contacts: { right: { V: 0.08 } } });
+  assert.ok(Math.abs(dev.solve().current / fast.current - 1) < 1e-10);
   dev.set({ regions: [{ name: 'cell', material: 'water', length: 2 * L, c0: { 'NO3-': c0 } }] });
   assert.notEqual(dev.solver, solver, 'a structural change rebuilds');
 });
