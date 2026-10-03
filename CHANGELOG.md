@@ -4,6 +4,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- `traces()` and `bandDiagram()` take `energy: true`: the familiar band diagram, energy up (E_c,
+  E_v and the quasi-Fermi levels in eV). The semiconductor demos (pn, solar, MOS, organic) now use
+  it; species voltages stay where ions share the diagram (electrochemistry, the perovskite's
+  vacancies). The docs say which picture to use when.
 - Demo: a perovskite solar cell's J–V hysteresis from mobile iodide vacancies (IonMonger's default
   cell), with a scan-rate control, the vacancies' layers at each face, the steady and frozen
   limits, and the hysteresis index against scan rate with IonMonger's own points.

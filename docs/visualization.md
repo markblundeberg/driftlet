@@ -7,6 +7,15 @@ electronic levels, Fermi levels and redox levels, which connect directly to elec
 and other familiar quantities. The second half covers the species voltages of every charged
 species, ions included. For how to draw them, see [the kit's plotting helpers](kit.md#plotting).
 
+**Which to use.** For electrons and holes alone (a pn junction, a solar cell, a MOS capacitor),
+draw the familiar band diagram, energy up: `bandDiagram(sol, { energy: true })` gives E_c and
+E_v (thin) and the quasi-Fermi levels E_Fn and E_Fp (thick), in eV, with the conduction band on
+top. Species voltages are the same lines in volts, turned over, and don't add anything there.
+They earn their place where the familiar picture can't go: ions and other charged species that
+have no band (a vacancy's level drifting out of flat as the ions lag a voltage sweep), and
+questions of equilibrium between species (an electrode against a redox couple). Bring them in
+there, as an extra tool, not in place of the band diagram.
+
 ## Electron levels
 
 ### The Fermi level

@@ -257,12 +257,13 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
 
 /**
  * A solution's level diagram as an SVG string: each charged species' voltage (thick) and
- * standard level (thin), regions as bands. Options are those of `traces()` and `levelChart()`.
+ * standard level (thin), regions as bands; or with `energy: true`, the familiar energy-up band
+ * diagram of electrons and holes. Options are those of `traces()` and `levelChart()`.
  * @param {import('./types.js').Solution} sol
  * @param {Parameters<typeof traces>[1] & Parameters<typeof levelChart>[1]} [opts]
  * @returns {string}
  */
 export function bandDiagram(sol, opts = {}) {
-  const { width, height, ylabel, range, xlim, title, ytick, ...pick } = opts;
+  const { width, height, ylabel = opts.energy ? 'electron energy (eV)' : undefined, range, xlim, title, ytick, ...pick } = opts;
   return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title, ytick });
 }

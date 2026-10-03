@@ -62,7 +62,11 @@ export function typeset(name, z) {
  * its standard level V°_i (`standard`, the band edge for e⁻ and h⁺), optionally φ and
  * half-reactions' levels. Doubled interface nodes share an x, so steps draw as vertical lines.
  * @param {import('./types.js').Solution} sol
- * @param {{ species?: string[], standard?: boolean, phi?: boolean | string[],
+ * With `energy: true` it's the familiar band diagram instead, energy up: electrons and holes as
+ * electron energies in eV (E = −V: E_c and E_v from the standard levels, E_Fn and E_Fp, or E_F
+ * where only electrons are present, from the levels), with any redox levels and φ (as −qφ) turned
+ * over too. Only electrons and holes have bands; ions are refused (draw them as species voltages).
+ * @param {{ species?: string[], standard?: boolean, phi?: boolean | string[], energy?: boolean,
  *   levels?: { half: { equation: string, fixed?: Record<string, number> }, label?: string, standard?: boolean }[],
  *   labels?: Record<string, string>, shifts?: Record<string, number> }} [opts]
  *   species to show (default: every charged one), whether to show standard levels (default true)
@@ -73,31 +77,40 @@ export function typeset(name, z) {
  * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number }[],
  *   faces: number[], range: [number, number] }}
  */
-export function traces(sol, { species, standard = true, phi = false, levels = [], labels = {}, shifts = {} } = {}) {
+export function traces(sol, { species, standard = true, phi = false, energy = false, levels = [], labels = {}, shifts = {} } = {}) {
   const names = Object.keys(sol.V);
   const role = (name) => speciesRole(sol, name).role;
   const slotOf = (name) => speciesRole(sol, name).slot;
-  const shown = species ?? names.filter((name) => finite(sol.V[name]));
+  const carriers = ['e-', 'h+'];
+  const shown = species ?? names.filter((name) => finite(sol.V[name]) && (!energy || carriers.includes(name)));
+  if (energy) {
+    for (const name of shown) {
+      if (!carriers.includes(name)) throw new Error(`traces: '${name}' has no band to draw as an energy; draw it as a species voltage (energy: false)`);
+    }
+  }
+  const sign = energy ? -1 : 1, unit = energy ? 'eV' : 'V';
+  const bipolar = names.includes('h+');
+  const energyLabels = { 'V:e-': bipolar ? 'E_{Fn}' : 'E_F', 'Vstd:e-': 'E_c', 'V:h+': 'E_{Fp}', 'Vstd:h+': 'E_v' };
   const zOf = Object.fromEntries(sol.species.map((sp) => [sp.name, sp.z]));
   const pretty = (name) => (name in zOf ? typeset(name, zOf[name]) : name);
   const series = [];
   for (const name of shown) {
     if (!names.includes(name)) throw new Error(`traces: no charged species '${name}' in the solution`);
     const shift = shifts[name] ?? 0;
-    const at = (y) => (shift ? y.map((v) => v + shift) : y);
+    const at = (y) => (shift || energy ? Array.from(y, (v) => sign * v + shift) : y);
     const common = { species: name, role: role(name), slot: slotOf(name), ...(shift ? { shift } : {}) };
-    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
-    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
+    if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: energy ? energyLabels[`V:${name}`] : `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
+    if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: energy ? energyLabels[`Vstd:${name}`] : `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
   }
   if (Array.isArray(phi)) {
     const known = sol.regions.flatMap((r) => [r.name, r.material]);
     for (const name of phi) if (!known.includes(name)) throw new Error(`traces: no region or material '${name}' to draw φ in (${[...new Set(known)].join(', ')})`);
     const inside = sol.regions.map((r) => phi.includes(r.name) || phi.includes(r.material));
-    series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? v : NaN)) });
-  } else if (phi) series.push({ id: 'phi', label: 'φ', kind: 'phi', role: 'phi', slot: 0, y: sol.phi });
+    series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? sign * v : NaN)) });
+  } else if (phi) series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: energy ? Array.from(sol.phi, (v) => -v) : sol.phi });
   const couples = [...new Set(levels.map((lv) => lv.half.equation))];
   levels.forEach((lv, k) => {
-    const y = level(sol, lv.half, { standard: lv.standard });
+    const y = energy ? Array.from(level(sol, lv.half, { standard: lv.standard }), (v) => -v) : level(sol, lv.half, { standard: lv.standard });
     series.push({
       id: `level:${k}`,
       label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation.split(' ').map(pretty).join(' ')}`,
@@ -109,7 +122,7 @@ export function traces(sol, { species, standard = true, phi = false, levels = []
   });
   for (const s of series) {
     if (labels[s.id] !== undefined) s.label = labels[s.id];
-    if (s.shift) s.label += ` ⌇${s.shift > 0 ? '+' : '−'}${Math.abs(s.shift)} V`;
+    if (s.shift) s.label += ` ⌇${s.shift > 0 ? '+' : '−'}${Math.abs(s.shift)} ${unit}`;
   }
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {

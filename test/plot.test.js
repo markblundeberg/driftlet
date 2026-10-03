@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device } from '../src/index.js';
-import { build, layer, ohmic, half, traces, typeset } from '../src/kit.js';
+import { Device, units } from '../src/index.js';
+import { build, layer, ohmic, half, traces, typeset, semiconductor } from '../src/kit.js';
 import { bandDiagram, levelChart, labelParts } from '../src/plot.js';
 
 // Plot-ready traces, and the SVG level diagram drawn from them.
@@ -143,4 +143,29 @@ test('typeset: a species name with its charge as a superscript and its counts as
   // Redox levels' default labels typeset the species they know.
   const tr = traces(cell(), { species: [], levels: [{ half: silver }] });
   assert.equal(tr.series[0].label, 'Ag⁺ + e⁻ = Ag(s)');
+});
+
+test('energy: true draws the familiar band diagram, energy up: E_c, E_v and the quasi-Fermi levels in eV', () => {
+  const sol = new Device(
+    build({
+      T: 300,
+      library: [semiconductor('Si')],
+      stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0.3)],
+      bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    }),
+  ).solve();
+  const tr = traces(sol, { energy: true, phi: true });
+  const by = Object.fromEntries(tr.series.map((s) => [s.id, s]));
+  assert.deepEqual(tr.series.map((s) => s.label), ['E_{Fn}', 'E_c', 'E_{Fp}', 'E_v', '−qφ']);
+  const g = sol.x.length >> 2;
+  assert.equal(by['V:e-'].y[g], -sol.V['e-'][g]);
+  assert.equal(by['Vstd:h+'].y[g], -sol.Vstd['h+'][g]);
+  assert.equal(by.phi.y[g], -sol.phi[g]);
+  assert.ok(by['Vstd:e-'].y[g] > by['Vstd:h+'].y[g], 'the conduction band on top');
+  assert.match(bandDiagram(sol, { energy: true }), /electron energy \(eV\)/);
+  assert.match(traces(sol, { energy: true, shifts: { 'h+': 0.5 } }).series.find((s) => s.id === 'V:h+').label, /⌇\+0\.5 eV/);
+  // Electrons alone (in metals) have one Fermi level; ions have no band.
+  const ions = cell();
+  assert.deepEqual(traces(ions, { energy: true }).series.map((s) => s.label), ['E_F']);
+  assert.throws(() => traces(ions, { energy: true, species: ['Ag+'] }), /no band to draw as an energy/);
 });

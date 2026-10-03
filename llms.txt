@@ -262,7 +262,7 @@ const def = build({
 const slider = document.getElementById('V');
 const dev = live(def, {
   onsolution(sol, info) {
-    document.getElementById('figure').innerHTML = bandDiagram(sol, { title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
+    document.getElementById('figure').innerHTML = bandDiagram(sol, { energy: true, title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
     document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${sol.current.toExponential(2)} A/m²`;
   },
 });
@@ -274,6 +274,11 @@ slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider
 
 What `bandDiagram()` and `traces()` draw, and how to explain it to a reader (docs/visualization.md
 has the long form):
+
+- **Which picture.** For a device of electrons and holes only, draw the familiar band diagram,
+  energy up: `bandDiagram(sol, { energy: true })` (E_c, E_v, E_Fn, E_Fp in eV). The species
+  voltages below are the same lines in volts, turned over; use them where ions share the diagram,
+  or for equilibrium between species, and don't present them in place of the band diagram.
 
 - **Fermi level** V_e⁻ = −μ̄_e⁻/F: the circuit voltage, what a voltmeter reads. A cell's voltage is
   the difference between its terminals' V_e⁻.

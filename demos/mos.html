@@ -26,27 +26,25 @@
   </div>
   <h2>About this simulation</h2>
   <p>The gate voltage sets the gate metal's Fermi level, and the silicon's bands bend at the surface to meet
-    it. The band diagram uses the <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
-    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge.
-    For electrons and holes this is the ordinary band diagram
-    turned upside down, in volts: V<sub>e⁻</sub> = −E<sub>Fn</sub>/q and V<sub>h⁺</sub> = −E<sub>Fp</sub>/q are the
-    quasi-Fermi levels (thick), and their standard levels V°<sub>i</sub> the band edges (thin), so the
-    conduction band sits below the valence band. Nothing else changes: electrons are a species of charge −1
-    and holes one of +1, each with its own electrochemical potential (μ̄<sub>e⁻</sub> = E<sub>Fn</sub> and
-    μ̄<sub>h⁺</sub> = −E<sub>Fp</sub> per particle), which is exactly the usual drift–diffusion
-    (van Roosbroeck) model. Generation and recombination are the reaction e⁻ + h⁺ ⇌ 0, so at equilibrium
-    μ̄<sub>e⁻</sub> + μ̄<sub>h⁺</sub> = 0 and the two lines are one Fermi level. The flip is the price of
-    putting electrons on the same axis as ions and electrode potentials. Negative bias pulls holes to the surface (accumulation), moderate
+    it. The band diagram is the familiar one, electron energy up: the band edges
+    E<sub>c</sub> and E<sub>v</sub> (thin) and the quasi-Fermi levels E<sub>Fn</sub> and E<sub>Fp</sub>
+    (thick), one Fermi level wherever the carriers are in equilibrium with each other. A slope in a
+    quasi-Fermi level is what drives its carriers' current. Underneath, driftlet works in electrochemical
+    potentials: electrons are a species of charge −1 with μ̄<sub>e⁻</sub> = E<sub>Fn</sub> per particle, holes
+    one of +1 with μ̄<sub>h⁺</sub> = −E<sub>Fp</sub>, which is exactly the usual drift–diffusion (van
+    Roosbroeck) model, and generation and recombination are the reaction e⁻ + h⁺ ⇌ 0. (The same lines in
+    volts and turned over are <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltages</a>, which earn
+    their place where ions share the diagram, as in the electrochemistry and perovskite demos.) Negative bias pulls holes to the surface (accumulation), moderate
     positive bias pushes them away (depletion), and beyond threshold electrons gather in a thin inversion
     layer. Those electrons come from a port holding them at ground beside the oxide, the 1D stand-in for a
     transistor's source and drain; without it, they'd have to diffuse in from the back contact, which takes
     minutes.</p>
-  <p>φ (dotted) is drawn in the silicon and across the oxide, to show what it is and what it isn't. In the
-    oxide, which holds no mobile charge, it's the only line there is, and its slope is the oxide field. In
-    the silicon the band edges ride on it, V°<sub>i</sub> = φ + μ°<sub>i</sub>/(z<sub>i</sub>F), so it bends
-    with them. But where it sits is a convention. This page anchors it 0.3 V below the silicon's conduction
-    band edge and steps it down 0.3 V into the oxide; the library's own data would put it on the band edge,
-    with no step. Any choice gives the same physics, once the gate's zeroCharge (the gate's Fermi level
+  <p>The electrostatic potential is drawn too, as −qφ (dotted), in the silicon and across the oxide, to show
+    what it is and what it isn't. In the oxide, which holds no mobile charge, it's the only line there is,
+    and its slope is the oxide field. In the silicon the band edges ride on it, E<sub>c</sub> = −qφ + const,
+    so it bends with them. But where it sits is a convention. This page anchors it 0.3 eV above the
+    silicon's conduction band edge and steps it up 0.3 eV into the oxide; the library's own data would put
+    it on the band edge, with no step. Any choice gives the same physics, once the gate's zeroCharge (the gate's Fermi level
     minus φ beside it, when the gate is uncharged) changes to match: the capacitance comes out the same to
     every digit. And φ doesn't meet the gate's Fermi level: a metal has no φ worth comparing, so the line
     just stops.</p>
@@ -161,9 +159,10 @@ function draw(sol) {
   const xlim = [Lsi - units.nm(150), Lsi + tox + units.nm(15)]; // the surface, the oxide and a little gate
   levels(document.getElementById('levels'), sol, {
     title: `bands, Fermi levels and φ near the oxide, gate at ${V.toFixed(2)} V`,
+    energy: true,
     phi: ['p-Si', 'SiO2'], // not in the gate metal, which has no φ
     xlim,
-    labels: { 'V:e-': 'V_{e⁻} (the Fermi level: under V_{h⁺} in the silicon)' },
+    labels: { 'V:e-': 'E_F (E_{Fp} on it, in the silicon)' },
   });
   profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }

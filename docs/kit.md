@@ -189,6 +189,12 @@ a level diagram:
   shown (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
   there), and doubled interface nodes share an x, so steps draw as vertical lines. It also gives
   the regions (`{ name, material, x0, x1 }`), the faces' positions and a suggested range.
+- `energy: true` (in `traces` and `bandDiagram`) gives the familiar band diagram instead, energy
+  up: electrons and holes as electron energies in eV (E_c and E_v from the standard levels, E_Fn
+  and E_Fp, or E_F where there are no holes, from the levels), with redox levels and $`\phi`$ (as
+  $`-q\phi`$) turned over too and shifts in eV. Ions have no band, so asking for one is an error.
+  It's the right picture for semiconductor devices; species voltages earn their place where ions
+  share the diagram (see [which to use](visualization.md)).
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed, in
   the style [reading level diagrams](visualization.md) explains: species voltages thick and solid, standard levels thin and solid, redox
   levels thick and dashed, standard redox levels thin and dashed, $`\phi`$ thin, dotted and grey;

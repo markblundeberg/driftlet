@@ -32,4 +32,7 @@ Guide for coding agents working in this repo.
   μ̄_i/(z_i F)`. driftlet doesn't require V_i (it's a display of μ̄_i, which also covers neutral
   species; the physics and the API are in μ̄), but it does insist on honest thermodynamics
   ([conventions](docs/conventions.md)): controls are μ̄ differences, φ is bookkeeping, band
-  alignment is per interface.
+  alignment is per interface. V_i is unorthodox, so don't push it: a device of electrons and holes
+  alone gets the familiar energy-up band diagram (`energy: true`), and V_i comes in where it shows
+  something that picture can't (ions, equilibrium between species), as an extra tool rather than a
+  replacement.
