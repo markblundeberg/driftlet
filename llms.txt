@@ -52,7 +52,10 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
 - **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),
   with c in mol/m³ (and 1e16 cm⁻³ is only 0.0166 mol/m³). Band-to-band recombination,
   `e- + h+ = 0`, gives a minority lifetime τ = 1/(kf·N) with N the majority density in mol/m³:
-  `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Generation is a reaction from a reservoir, rate `kf` in
+  `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Trap-assisted (SRH) recombination is
+  `{ equation: 'e- + h+ = 0', srh: { Si: { tauN, tauP } } }` (lifetimes in s), and at a face
+  `{ equation: 'e-(left) + h+(right) = 0', srh: { vn, vp } }` (velocities in m/s); both default to a
+  midgap trap. Generation is a reaction from a reservoir, rate `kf` in
   mol/(m³·s) (`units.perCm3` converts cm⁻³·s⁻¹ too); light absorbed as it goes in is
   `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })` (flux in
   mol/(m²·s), α in 1/m), a `kf` that varies with x. A face reaction's `k0` is in mol/(m²·s);

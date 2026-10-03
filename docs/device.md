@@ -211,6 +211,21 @@ consumed at its side's edge node, just behind any Stern layer, so Frumkin effect
 themselves. A face can carry several reactions; a conductor coupled to two couples settles at their
 mixed potential. Each solution reports the rates as `interfaces[f].rates`.
 
+**Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
+`srh: { vn, vp, n1 }`, on a reaction consuming one negative and one positive species and making
+none, such as `'e-(left) + h+(right) = 0'`:
+
+```math
+r = \frac{n\,p\,(1 - e^{-A/RT})}{(n + n_1)/v_p + (p + p_1)/v_n}, \qquad p_1 = \frac{n\,p\,e^{-A/RT}}{n_1}
+```
+
+with n and p each at its own side's edge node, the capture velocities $`v_n`$ and $`v_p`$ in m/s,
+and $`n_1`$ (mol/m³) the negative species' concentration with its level at the trap (default:
+$`n_1 = p_1 = n_i`$, a midgap trap). Taking $`p_1`$ from the state keeps equilibrium exact whatever
+lies between the two sides (a band offset, a $`\phi`$ jump). Where one carrier is plentiful the
+rate saturates at the other's capture, $`r \to v_p\,p`$: holes reaching an electron-rich layer
+recombine at $`v_p`$ however many electrons wait there, which plain mass action can't do.
+
 ### Faces next to a conductor
 
 A conductor has no $`\phi`$, so a face beside it can't take a `dipole` or `step` alignment. Its $`\phi`$
@@ -253,6 +268,17 @@ $`k_f \prod c_R - k_b \prod c_P`$, with $`k_b`$ fixed by the standard potentials
 $`A = 0`$. `kf` maps material
 names to forward rate constants (units making r mol/(m³·s)), and the reaction runs only in
 those materials.
+
+**SRH (trap-assisted) recombination** replaces `kf` with `srh`, a map from material names to
+`{ tauN, tauP, n1 }`, on a reaction consuming one negative and one positive species and making
+none (`'e- + h+ = 0'`):
+$`r = n p (1 - e^{-A/RT}) / (\tau_p (n + n_1) + \tau_n (p + p_1))`$, with lifetimes in s and $`n_1`$ as
+for [interface SRH](#interfaces) (default midgap). It's what explicit trap species reduce to when
+the traps are few and fast, without them.
+
+```js nocheck
+bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }]
+```
 
 **Generation** is a reaction from a reservoir: photogeneration is
 $`\text{photon} \to \mathrm{e}^- + \mathrm{h}^+`$, with the photons a fixed participant whose $`\mu`$

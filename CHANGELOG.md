@@ -4,6 +4,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- SRH (trap-assisted) recombination as a rate law, without trap species: in the bulk,
+  `srh: { material: { tauN, tauP, n1 } }` in place of `kf`; at a face, `srh: { vn, vp, n1 }` in place
+  of `k0` and `alpha`, with n and p each from its own side. Equilibrium stays exact (p₁ comes from
+  the state), and at a face it saturates at one carrier's capture, as interface recombination in
+  perovskite cells does. Validated against the bulk closed form, and at a face against the law
+  and the device's bookkeeping.
 - `set()`: a contact given `V` or `I` drops the other, so `{ I: 0 }` switches a held contact to
   open circuit (it used to need `V: undefined` alongside).
 - A face reaction's α may be 0 or 1 (plain mass action one way), not only strictly between.

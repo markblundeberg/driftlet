@@ -70,6 +70,29 @@ function profile(v, path, what, ok, okText) {
   return { x: Float64Array.from(v.x), values: Float64Array.from(v.values) };
 }
 
+// SRH (trap-assisted) kinetics in place of mass action, for a reaction that consumes exactly one
+// negative and one positive species and makes none, e⁻ + h⁺ = 0:
+//   r = n p (1 − e^{−A/RT}) / (t_p (n + n₁) + t_n (p + p₁)),  p₁ = n p e^{−A/RT} / n₁,
+// with t = τ (s) in the bulk, 1/v (m/s) at a face, and n₁ the negative species' concentration
+// with its level at the trap (default n_i, a midgap trap). p₁ from the state keeps detailed
+// balance exact, whatever lies between the two (a band offset, a φ jump).
+function srhLaw(sdef, path, list, species, timeKeys) {
+  const [kn, kp] = timeKeys;
+  need(isObject(sdef), `${path} must be { ${kn}, ${kp}, n1 }`);
+  fields(sdef, path, [kn, kp, 'n1']);
+  const reactants = list.filter((p) => p.nu < 0);
+  need(
+    list.length === 2 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
+    `${path}: SRH kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0'`,
+  );
+  const neg = species[list[0].i].z < 0 ? list[0] : list[1], pos = neg === list[0] ? list[1] : list[0];
+  const time = (key) => {
+    const v = positive(sdef[key], `${path}.${key}`);
+    return key.startsWith('v') ? 1 / v : v; // a velocity's reciprocal is the time it stands for
+  };
+  return { n: neg, p: pos, tn: time(kn), tp: time(kp), n1: sdef.n1 === undefined ? NaN : positive(sdef.n1, `${path}.n1`) };
+}
+
 function nonNegative(v, path) {
   need(isFiniteNumber(v) && v >= 0, `${path} must be a non-negative number, got ${JSON.stringify(v)}`);
   return v;
@@ -324,12 +347,27 @@ export function normalizeDevice(def) {
 // reaction runs only in those materials).
 function normalizeReaction(rdef, path, species, speciesIndex, materials, materialIndex, regions, RT) {
   need(isObject(rdef), `${path} must be an object`);
-  fields(rdef, path, ['nu', 'equation', 'fixed', 'kf']);
+  fields(rdef, path, ['nu', 'equation', 'fixed', 'kf', 'srh']);
   need((rdef.nu === undefined) !== (rdef.equation === undefined), `${path}: give the reaction as nu or as an equation, one of them`);
   const nu = rdef.nu ?? equationStoichiometry(rdef.equation, `${path}.equation`);
   const st = stoichiometry(nu, rdef.equation === undefined ? `${path}.nu` : `${path}.equation`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
   need(st.list.length > 0, `${path}: no mobile participants`);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
+  // SRH kinetics instead: srh maps material names to { tauN, tauP, n1 }.
+  need((rdef.kf === undefined) !== (rdef.srh === undefined), `${path}: give kf (mass action) or srh (trap-assisted), one of them`);
+  if (rdef.srh !== undefined) {
+    need(isObject(rdef.srh), `${path}.srh must map material names to { tauN, tauP, n1 }`);
+    const srh = new Array(materials.length).fill(null), kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
+    for (const [mname, v] of Object.entries(rdef.srh)) {
+      need(materialIndex.has(mname), `${path}.srh.${mname}: unknown material`);
+      const m = materialIndex.get(mname);
+      srh[m] = srhLaw(v, `${path}.srh.${mname}`, st.list, species, ['tauN', 'tauP']);
+      for (const { i } of st.list) need(materials[m].present[i], `${path}.srh.${mname}: '${species[i].name}' is absent from material '${mname}'`);
+      kf[m] = 1; // (runs here)
+    }
+    const reactants = st.list.map(({ i, nu }) => ({ i, nu: -nu }));
+    return { reactants, products: [], fixedA: st.fixedA, kf, kfProfile, srh, generation: false };
+  }
   need(isObject(rdef.kf), `${path}.kf must map material names to forward rate constants`);
   // Each a number, or a profile { x, values } against the device's x (e.g. absorption); kf[m]
   // is then its largest value, which says whether the reaction runs in that material at all.
@@ -400,7 +438,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
     need(isObject(rdef), `${rpath} must be { equation, fixed, k0, alpha } or { left, right, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha']);
+    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'srh']);
     let sides = rdef;
     if (rdef.equation !== undefined) {
       need(rdef.left === undefined && rdef.right === undefined, `${rpath}: give the reaction as an equation or as left and right, not both`);
@@ -420,6 +458,15 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     }
     need(part.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
+    if (rdef.srh !== undefined) {
+      need(rdef.k0 === undefined && rdef.alpha === undefined, `${rpath}: give srh or k0 (and alpha), not both`);
+      const srh = srhLaw(rdef.srh, `${rpath}.srh`, part, species, ['vn', 'vp']);
+      for (const p of part) {
+        const mat = p.side ? matR : matL;
+        need(!mat.conductor, `${rpath}.srh: SRH kinetics is for carriers in semiconductors, not a metal's ${species[p.i].name}`);
+      }
+      return { part, fixedA, srh };
+    }
     return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
   });
 }

@@ -362,6 +362,7 @@ export class Solver {
     const { x: gx, segLength } = model.grid;
     this.rxs = model.reactions.map((rx) => ({
       kf: rx.kf,
+      srh: rx.srh, // per material: SRH kinetics in place of mass action, or null
       kfNode: Float64Array.from(gx, (x, g) => {
         const m = this.nodeMaterial[g], p = rx.kfProfile[m];
         return p ? profileMean(p, x - (g > 0 ? segLength[g - 1] : 0) / 2, x + (g < segLength.length ? segLength[g] : 0) / 2) : rx.kf[m];
@@ -1304,6 +1305,26 @@ export class Solver {
     const dr = this.dA;
     for (let x = 0; x < rxs.length; x++) {
       const rx = rxs[x];
+      const law = rx.srh?.[this.nodeMaterial[g]];
+      if (law) {
+        // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p and a.
+        let aHi = rx.fixedA, aLo = 0;
+        for (let p = 0; p < rx.sp.length; p++) {
+          aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
+          aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
+        }
+        const { rate, Cn, Cp, Ca } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo);
+        dr.fill(0);
+        this._dlnc(g, law.n.i, Cn, dr);
+        this._dlnc(g, law.p.i, Cp, dr);
+        for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Ca * rx.nu[p];
+        for (let p = 0; p < rx.sp.length; p++) {
+          const row = 1 + rx.sp[p], w = v * rx.nu[p];
+          res[R[b * M + row]] += w * rate;
+          for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
+        }
+        continue;
+      }
       let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g], aHi = rx.fixedA, aLo = 0;
       dr.fill(0); // ∂ ln P / ∂slot
       // Participants: reactants with ν > 0, then products with ν < 0.
@@ -1639,6 +1660,25 @@ export class Solver {
     d[0] = -this._Kz(g, k);
   }
 
+  // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and
+  // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}).
+  _srhRate(law, cn, cp, a) {
+    const { tn, tp } = law, lnnp = Math.log(cn) + Math.log(cp);
+    let n1, kN = 0, kP = 0, kA = 0; // ln n₁ = kN ln n + kP ln p + kA a + const
+    if (Number.isNaN(law.n1)) {
+      n1 = Math.exp((lnnp - a) / 2);
+      kN = kP = 0.5;
+      kA = -0.5;
+    } else n1 = law.n1;
+    const p1 = Math.exp(lnnp - a - Math.log(n1)), np = cn * cp;
+    const den = tp * (cn + n1) + tn * (cp + p1), f = -Math.expm1(-a);
+    const rate = (np * f) / den;
+    const dDn = tp * cn + tp * n1 * kN + tn * p1 * (1 - kN);
+    const dDp = tp * n1 * kP + tn * cp + tn * p1 * (1 - kP);
+    const dDa = tp * n1 * kA + tn * p1 * (-1 - kA);
+    return { rate, Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
+  }
+
   // A face reaction (see normalizeFaceReactions). Its rate r_k is an unknown of the face block,
   // with the row r_k − rate(u_L, u_R) = 0, and each participant's edge node takes ν·r_k (made
   // there when ν > 0). The rate couples the two edge nodes only through the face block between
@@ -1650,24 +1690,34 @@ export class Solver {
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     const al = rx.alpha;
     const dL = this.dA.fill(0), dR = this.dB.fill(0); // ∂ ln(prefactor)/∂slot, per side
-    let pref = rx.k0, aHi = rx.fixedA, aLo = 0;
+    let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
       aHi -= p.nu * u[o];
       aLo -= p.nu * uLo[o];
-      if (this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
+      if (rx.srh || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
     }
-    const { g: bv, gp } = bvFactor(aHi + aLo, al);
-    const rate = pref * bv;
-    // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η_i = −ν
-    for (let s = 0; s < M; s++) {
-      dL[s] *= rate;
-      dR[s] *= rate;
+    if (rx.srh) {
+      // SRH, with n and p each at its own side's edge node.
+      const { n: pn, p: pp } = rx.srh, gn = pn.side ? gR : gL, gq = pp.side ? gR : gL;
+      const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo);
+      rate = s.rate;
+      this._dlnc(gn, pn.i, s.Cn, pn.side ? dR : dL);
+      this._dlnc(gq, pp.i, s.Cp, pp.side ? dR : dL);
+      for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= s.Ca * p.nu;
+    } else {
+      const { g: bv, gp } = bvFactor(aHi + aLo, al);
+      rate = pref * bv;
+      // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η_i = −ν
+      for (let s = 0; s < M; s++) {
+        dL[s] *= rate;
+        dR[s] *= rate;
+      }
+      for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= pref * gp * p.nu;
     }
-    for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= pref * gp * p.nu;
     const slot = 1 + n + k, o = bf * M + slot;
     res[R[o]] = u[o] - rate;
     this._j(bf, slot, bf, slot, 1);
