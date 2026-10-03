@@ -148,8 +148,8 @@ import { nextBreakpoint, sourceAt } from './device.js';
 import { DeviceError } from './errors.js';
 import { powi, powr } from './pow.js';
 
-// A c0 profile's value at x: piecewise linear, constant beyond its ends.
-function profileAt({ x, c }, at) {
+// A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
+function profileAt({ x, values: c }, at) {
   if (at <= x[0]) return c[0];
   const last = x.length - 1;
   if (at >= x[last]) return c[last];
@@ -160,6 +160,23 @@ function profileAt({ x, c }, at) {
     else hi = mid;
   }
   return c[lo] + ((c[hi] - c[lo]) * (at - x[lo])) / (x[hi] - x[lo]);
+}
+
+// A profile's mean over [a, b], exactly (its integral is piecewise quadratic).
+function profileMean(p, a, b) {
+  if (!(b > a)) return profileAt(p, a);
+  const { x, values: v } = p, last = x.length - 1;
+  // ∫ from x[0] to t.
+  const integral = (t) => {
+    if (t <= x[0]) return v[0] * (t - x[0]);
+    let sum = 0;
+    for (let k = 0; k < last; k++) {
+      if (t <= x[k + 1]) return sum + ((v[k] + profileAt(p, t)) / 2) * (t - x[k]);
+      sum += ((v[k] + v[k + 1]) / 2) * (x[k + 1] - x[k]);
+    }
+    return sum + v[last] * (t - x[last]);
+  };
+  return (integral(b) - integral(a)) / (b - a);
 }
 
 export class SolverError extends Error {
@@ -339,8 +356,16 @@ export class Solver {
     this.dtNext = undefined;
 
     // Bulk reactions as flat participant lists: reactants with +ν, products with −ν.
+    // Each has its rate constant at every node: its material's, or its profile's mean over the
+    // node's box, so that what a sharply varying profile (strongly absorbed light) generates
+    // in all is exact on any grid.
+    const { x: gx, segLength } = model.grid;
     this.rxs = model.reactions.map((rx) => ({
       kf: rx.kf,
+      kfNode: Float64Array.from(gx, (x, g) => {
+        const m = this.nodeMaterial[g], p = rx.kfProfile[m];
+        return p ? profileMean(p, x - (g > 0 ? segLength[g - 1] : 0) / 2, x + (g < segLength.length ? segLength[g] : 0) / 2) : rx.kf[m];
+      }),
       generation: rx.generation,
       fixedA: rx.fixedA,
       sp: Int32Array.from([...rx.reactants, ...rx.products], (p) => p.i),
@@ -1269,11 +1294,11 @@ export class Solver {
   // (compensated) η. Reactants are consumed (+v·ν·r in their balance), products made (−v·ν·r).
   _bulkReactions(g, rxs) {
     const { n, M, u, uLo, res, c } = this, R = this.rix;
-    const b = this.blockOfNode[g], v = this.model.grid.vol[g], m = this.nodeMaterial[g];
+    const b = this.blockOfNode[g], v = this.model.grid.vol[g];
     const dr = this.dA;
     for (let x = 0; x < rxs.length; x++) {
       const rx = rxs[x];
-      let P = rx.generation ? rx.kf[m] * this.generationScale : rx.kf[m], aHi = rx.fixedA, aLo = 0;
+      let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g], aHi = rx.fixedA, aLo = 0;
       dr.fill(0); // ∂ ln P / ∂slot
       // Participants: reactants with ν > 0, then products with ν < 0.
       for (let p = 0; p < rx.sp.length; p++) {

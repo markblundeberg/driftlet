@@ -9,7 +9,7 @@ export { build, combine, layer, ohmic, bath } from './stack.js';
 export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
 export { traces, speciesRole, typeset } from './traces.js';
 export { live } from './live.js';
-export { pulse, square, triangle, ramp, injector, recombination } from './sources.js';
+export { pulse, square, triangle, ramp, injector, recombination, photogeneration } from './sources.js';
 export { describe, unitWarnings } from './describe.js';
 export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal } from './data.js';
 

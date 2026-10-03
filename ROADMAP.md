@@ -67,6 +67,9 @@ for live demos.
 - A real-browser smoke test of the demos in CI (`npm run smoke`): headless Chrome over the
   DevTools protocol, every control moved to its extremes, failing on any exception, console
   error, failed request or NaN drawn.
+- Position-dependent rate constants (`kf` as a profile against x, averaged over each node's box
+  so the total is exact on any grid), and Beer–Lambert `photogeneration()` in the kit, validated
+  against collection theory from blue to red.
 - Screenshots retaken by script (`npm run shots`): each demo held at a set state (`?t=…`,
   `?phase=…`) on virtual time, so an unchanged page comes out byte-identical.
 
@@ -145,8 +148,6 @@ for live demos.
 
 ## Later
 
-- **Generation profiles.** Position-dependent generation (Beer–Lambert absorption) for solar
-  cells and photodetectors: today a reaction's rate constant is uniform within each material.
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
   overpotential); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
   such as hydrogen evolution emerge from elementary steps; and a custom forward rate

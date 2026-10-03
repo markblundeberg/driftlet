@@ -31,7 +31,7 @@ The same equations go by different names in different fields. If your problem is
 | If you work on | you may call it | start from | checked against |
 |---|---|---|---|
 | Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions | [first example](#a-semiconductor-junction), [pn](https://markblundeberg.github.io/driftlet/demos/pn.html) and [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html) demos, [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
-| Solar cells | photogeneration, radiative and SRH recombination | [solar demo](https://markblundeberg.github.io/driftlet/demos/solar.html), [`reactions`](test/reactions.test.js) test: generation is a reaction from a photon reservoir (uniform per material), SRH runs through explicit trap species | `J_sc = qG(L_n + L_p + W)`; Shockley J–V in the dark |
+| Solar cells | photogeneration, radiative and SRH recombination | [solar demo](https://markblundeberg.github.io/driftlet/demos/solar.html), [`reactions`](test/reactions.test.js) and [`generation`](test/generation.test.js) tests: generation is a reaction from a photon reservoir (uniform, or Beer–Lambert with `photogeneration()`), SRH runs through explicit trap species | `J_sc = qG(L_n + L_p + W)`; J_sc under Beer–Lambert against collection theory; Shockley J–V in the dark |
 | Electrochemistry | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry, salt bridges and liquid junctions | [second example](#an-electrochemical-cell), [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [saturation](https://markblundeberg.github.io/driftlet/demos/saturation.html) and [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg |
 | Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](https://markblundeberg.github.io/driftlet/demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
 | Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
@@ -205,8 +205,9 @@ current. Supported physics:
   COMSOL.
 - **Cross-diffusion.** Each species moves down its own μ̄ with its own D (the statistics can be
   non-ideal); there are no Stefan–Maxwell or Onsager cross terms beyond eddy mixing.
-- **Heat and optics.** Temperature is uniform. Generation is a reaction, uniform within a
-  material; there's no optical model or absorption profile. For those, see
+- **Heat and optics.** Temperature is uniform. Generation is a reaction, with Beer–Lambert
+  absorption as its profile at most; there's no optical model (reflection, interference,
+  photon recycling). For those, see
   [Driftfusion](https://github.com/barnesgroupICL/Driftfusion),
   [SIMsalabim](https://github.com/kostergroup/SIMsalabim) or
   [PyBaMM](https://github.com/pybamm-team/PyBaMM).
@@ -232,6 +233,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
 | Haynes–Shockley pulse | an injected hole packet's drift, spread and decay at the ambipolar μ*, D*, 1/τ*; nothing lost while it goes in | 2e-4; 1e-2; 2e-3 |
 | A packet laid down as a `c0` profile | the same rates from a Gaussian at t = 0: μ*E t, σ₀² + 2D*t, e^(−t/τ*) | 3e-4; 1e-2; 1e-3 |
+| Beer–Lambert photogeneration in an n⁺p cell | J_sc = qΦ∫αe^(−αx)η(x)dx with the emitter's, depletion layer's and base's collection, α from 1e3 to 1e7 /m on one coarse grid | 5e-4 (3e-3 in the emitter) |
 | Illuminated long pn diode | `J_sc = qG(L_n + L_p + W)` from a cold start; superposition at low injection | 5e-3; 1e-2 |
 | Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |

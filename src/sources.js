@@ -101,3 +101,36 @@ export function recombination({ material, tau, majority } = {}) {
   need(num(majority) && majority > 0, `recombination: majority must be the majority carrier density > 0 (mol/m³; units.perCm3 converts), got ${majority}`);
   return { equation: 'e- + h+ = 0', kf: { [material]: 1 / (tau * majority) } };
 }
+
+/**
+ * Photogeneration by light absorbed in a material (Beer–Lambert): a photon flux entering at x =
+ * `from` and travelling toward +x, generating pairs at G(x) = flux · α · e^{−α(x − from)} up to
+ * x = `to`. Written as photon ⇌ e⁻ + h⁺ from a photon reservoir at μ = `mu` (J/mol; well above
+ * the gap, so the rate is G itself), with kf as a profile against the device's x. The table is
+ * exact in what it generates in all (each segment's mean is the exponential's), and the solver
+ * averages it over each node's box, so the total is right on any grid.
+ * @param {{ material: string, flux: number, alpha: number, mu: number, from?: number, to: number }} opts
+ *   material name; photons absorbed, mol/(m²·s); absorption coefficient, 1/m; the photons' μ,
+ *   J/mol; where the light enters and where the material ends (m, the device's x)
+ * @returns {{ equation: string, fixed: Record<string, number>, kf: Record<string, { x: number[], values: number[] }> }} a bulk reaction
+ */
+export function photogeneration({ material, flux, alpha, mu, from = 0, to } = {}) {
+  need(typeof material === 'string', 'photogeneration: give the material, by name');
+  need(num(flux) && flux >= 0, `photogeneration: flux must be the photon flux ≥ 0 entering the material (mol/(m²·s)), got ${flux}`);
+  need(num(alpha) && alpha > 0, `photogeneration: alpha must be the absorption coefficient > 0 (1/m; 1/cm × 100), got ${alpha}`);
+  need(num(mu), `photogeneration: mu must be the photons' μ (J/mol), well above the gap: units.eV(3), say`);
+  need(num(from) && num(to) && to > from, `photogeneration: from and to must be positions with to > from (m, the device's x), got ${from} and ${to}`);
+  // Evenly spaced points, at most 0.05 absorption lengths apart, out to 50 of them (beyond,
+  // nothing is left), then `to`.
+  const depth = alpha * (to - from), reach = Math.min(depth, 50), n = Math.ceil(reach / 0.05), step = reach / n;
+  const taus = Array.from({ length: n + 1 }, (_, k) => k * step);
+  if (depth > 50) taus.push(depth);
+  // A straight line between two points of e^{−τ} encloses (Δτ/2)·coth(Δτ/2) times too much: each
+  // value is scaled back by that, so the total is the exponential's own (to ~Δτ⁴).
+  const fix = (step / 2) / Math.tanh(step / 2);
+  return {
+    equation: 'photon = e- + h+',
+    fixed: { photon: mu },
+    kf: { [material]: { x: taus.map((t) => from + t / alpha), values: taus.map((t) => (flux * alpha * Math.exp(-t)) / fix) } },
+  };
+}

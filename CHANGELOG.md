@@ -2,6 +2,16 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A bulk reaction's `kf` can vary with position: a profile `{ x, values }` against the device's
+  x, averaged over each node's box, so the total rate is exact on any grid.
+- `photogeneration({ material, flux, alpha, mu, from, to })` in the kit: Beer–Lambert absorption
+  as a generation reaction. Validation: J_sc in an n⁺p cell against collection theory, from blue
+  light lost in the emitter to red collected deep in the base.
+- Breaking: a `c0` profile is `{ x, values }` (it was `{ x, c }`), the same shape as a `kf`
+  profile and, against t, a waveform.
+
 ## 0.3.0 (2026-10-02)
 
 - `c0` profiles: a region's initial concentration can be tabulated against x (`{ x, c }`,

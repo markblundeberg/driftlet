@@ -55,6 +55,21 @@ function positive(v, path) {
   return v;
 }
 
+// A profile against the device's x: { x, values }, piecewise linear between its points and
+// constant beyond its ends (read with profileAt).
+function profile(v, path, what, ok, okText) {
+  fields(v, path, ['x', 'values']);
+  need(
+    Array.isArray(v.x) && Array.isArray(v.values) && v.x.length > 0 && v.x.length === v.values.length,
+    `${path} must be a profile { x, values }: two arrays of the same length, positions (m, the device's x) and ${what}`,
+  );
+  v.x.forEach((xk, k) => {
+    need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${path}.x must be finite and strictly increasing, but x[${k}] is ${JSON.stringify(xk)}`);
+  });
+  v.values.forEach((y, k) => need(isFiniteNumber(y) && ok(y), `${path}.values[${k}] must be ${okText}, got ${JSON.stringify(y)}`));
+  return { x: Float64Array.from(v.x), values: Float64Array.from(v.values) };
+}
+
 function nonNegative(v, path) {
   need(isFiniteNumber(v) && v >= 0, `${path} must be a non-negative number, got ${JSON.stringify(v)}`);
   return v;
@@ -179,8 +194,7 @@ export function normalizeDevice(def) {
       );
     }
     // Initial composition: the starting state, and the conserved amount of any spectator. Each
-    // entry is a number, or a profile { x, c } against the device's x (piecewise linear, constant
-    // beyond its ends), which is the starting state even for a species a contact feeds.
+    // entry is a number or a profile { x, values } against the device's x.
     const c0 = new Float64Array(nSpecies).fill(NaN);
     const c0Profile = new Array(nSpecies).fill(null);
     if (reg.c0 !== undefined) {
@@ -192,19 +206,10 @@ export function normalizeDevice(def) {
         need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
         const none = `; to have none of '${sname}' here, leave it out of material '${mat.name}' (a region of another material without it, if it's present elsewhere)`;
         if (isObject(v)) {
-          fields(v, at, ['x', 'c']);
-          need(
-            Array.isArray(v.x) && Array.isArray(v.c) && v.x.length > 0 && v.x.length === v.c.length,
-            `${at} must be a profile { x, c }: two arrays of the same length, positions (m, the device's x) and concentrations (mol/m³)`,
-          );
-          v.x.forEach((xk, k) => {
-            need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${at}.x must be finite and strictly increasing, but x[${k}] is ${JSON.stringify(xk)}`);
-          });
-          v.c.forEach((ck, k) => need(isFiniteNumber(ck) && ck > 0, `${at}.c[${k}] must be a concentration > 0 (mol/m³), got ${JSON.stringify(ck)}${none}`));
-          c0Profile[i] = { x: Float64Array.from(v.x), c: Float64Array.from(v.c) };
+          c0Profile[i] = profile(v, at, 'concentrations (mol/m³)', (ck) => ck > 0, `a concentration > 0 (mol/m³)${none}`);
           continue;
         }
-        need(isFiniteNumber(v) && v > 0, `${at} must be a concentration > 0 (mol/m³) or a profile { x, c }, got ${JSON.stringify(v)}${none}`);
+        need(isFiniteNumber(v) && v > 0, `${at} must be a concentration > 0 (mol/m³) or a profile { x, values }, got ${JSON.stringify(v)}${none}`);
         c0[i] = v;
       }
     }
@@ -326,11 +331,16 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
   need(st.list.length > 0, `${path}: no mobile participants`);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
   need(isObject(rdef.kf), `${path}.kf must map material names to forward rate constants`);
-  const kf = new Float64Array(materials.length);
+  // Each a number, or a profile { x, values } against the device's x (e.g. absorption); kf[m]
+  // is then its largest value, which says whether the reaction runs in that material at all.
+  const kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
   for (const [mname, v] of Object.entries(rdef.kf)) {
     need(materialIndex.has(mname), `${path}.kf.${mname}: unknown material`);
     const m = materialIndex.get(mname);
-    kf[m] = nonNegative(v, `${path}.kf.${mname}`);
+    if (isObject(v)) {
+      kfProfile[m] = profile(v, `${path}.kf.${mname}`, 'rate constants', (k) => k >= 0, 'a rate constant ≥ 0');
+      kf[m] = Math.max(...kfProfile[m].values);
+    } else kf[m] = nonNegative(v, `${path}.kf.${mname}`);
     for (const { i } of st.list) {
       need(materials[m].present[i], `${path}.kf.${mname}: '${species[i].name}' is absent from material '${mname}'`);
     }
@@ -342,6 +352,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
     products,
     fixedA: st.fixedA, // fixed participants' share of A/RT
     kf,
+    kfProfile,
     // Species made only from (or turned only into) fixed reservoirs, such as photogeneration
     // from a photon reservoir: a source that can hold the device far from equilibrium.
     generation: st.nFixed > 0 && (reactants.length === 0 || products.length === 0),

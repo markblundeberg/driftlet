@@ -45,7 +45,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
-  `injector`, `recombination`), the data library (`aqueous`, `semiconductor`,
+  `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
   `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`).
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
@@ -53,7 +53,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   with c in mol/m³ (and 1e16 cm⁻³ is only 0.0166 mol/m³). Band-to-band recombination,
   `e- + h+ = 0`, gives a minority lifetime τ = 1/(kf·N) with N the majority density in mol/m³:
   `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Generation is a reaction from a reservoir, rate `kf` in
-  mol/(m³·s) (`units.perCm3` converts cm⁻³·s⁻¹ too). A face reaction's `k0` is in mol/(m²·s);
+  mol/(m³·s) (`units.perCm3` converts cm⁻³·s⁻¹ too); light absorbed as it goes in is
+  `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })` (flux in
+  mol/(m²·s), α in 1/m), a `kf` that varies with x. A face reaction's `k0` is in mol/(m²·s);
   its exchange current density is F·k0 per electron at the reference concentrations.
 
 ## Template: a semiconductor junction
@@ -221,7 +223,7 @@ console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPer
 
 To start from a state instead of simulating how it got there (a packet already injected, a
 salt gradient laid down), give a region's `c0` a profile against the device's x:
-`c0: { 'h+': { x: [...], c: [...] } }`, piecewise linear. A given `c0` is the starting state,
+`c0: { 'h+': { x: [...], values: [...] } }`, piecewise linear. A given `c0` is the starting state,
 even for a species a contact feeds; species without one start at their contact's level, with φ
 made neutral node by node (electrons follow the holes). Then `advance()` without `solve()`, which would go straight to the steady
 state.

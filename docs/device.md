@@ -103,7 +103,7 @@ regions: [
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's
   material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero.
-  An entry can instead be a profile, `{ x: [...], c: [...] }`, against the device's x (m, not
+  An entry can instead be a profile, `{ x: [...], values: [...] }`, against the device's x (m, not
   the region's own), piecewise linear between its points and constant beyond its ends, so a
   transient can start from a state it didn't simulate reaching: a packet already injected, a
   gradient laid down. Skip `solve()`, which goes straight to the steady state, and `advance()`
@@ -256,13 +256,19 @@ those materials.
 **Generation** is a reaction from a reservoir: photogeneration is
 $`\text{photon} \to \mathrm{e}^- + \mathrm{h}^+`$, with the photons a fixed participant whose $`\mu`$
 sits well above the gap, so that $`e^{-A/RT}`$ is negligible and the rate is `kf` itself, the
-generation rate (mol/(m³·s)). It's uniform within each material listed in `kf` (there's no optical
-absorption profile). The photons' $`\mu`$ is the honest part: light is a reservoir far from the
+generation rate (mol/(m³·s)). The photons' $`\mu`$ is the honest part: light is a reservoir far from the
 device's temperature, and the rate still vanishes at $`A = 0`$.
 
 ```js nocheck
 bulkReactions: [{ equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 0.1 } }]
 ```
+
+A rate constant can also vary with position: give it as a profile `{ x: [...], values: [...] }`
+against the device's x (the same tables as `c0`), piecewise linear and constant beyond its ends,
+used only at that material's nodes. Each node takes the profile's mean over its box (not its
+value at the node), so the total rate is exact on any grid: light absorbed within a fraction of
+a cell still generates what it should. The kit's `photogeneration()` writes Beer–Lambert
+absorption this way.
 
 ## Contacts
 

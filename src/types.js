@@ -52,12 +52,17 @@
  */
 
 /**
+ * A table against the device's x (m): piecewise linear between its points, constant beyond them.
+ * @typedef {{ x: number[], values: number[] }} Profile
+ */
+
+/**
  * @typedef {object} RegionDef
  * @property {string} material material name
  * @property {number} length m
  * @property {string} [name]
  * @property {number} [fixedCharge] immobile charge density, C/m³
- * @property {Record<string, number | { x: number[], c: number[] }>} [c0] initial concentrations,
+ * @property {Record<string, number | Profile>} [c0] initial concentrations,
  *   mol/m³ (required for species not connected to a contact: it fixes the amount they conserve);
  *   or a profile against the device's x (m), piecewise linear; either is the starting state
  * @property {number} [velocity] imposed flow toward +x, m/s, carrying every mobile species
@@ -99,7 +104,8 @@
  * @property {Record<string, number>} [nu] signed stoichiometric coefficients (ν < 0 consumed)
  * @property {string} [equation] the reaction as an equation, e.g. 'e- + h+ = 0' (instead of nu)
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
- * @property {Record<string, number>} kf forward rate constant per material name
+ * @property {Record<string, number | Profile>} kf forward rate constant per material name, or a
+ *   profile of it against the device's x (an absorption profile, for photogeneration)
  */
 
 /**

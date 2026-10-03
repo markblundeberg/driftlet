@@ -131,6 +131,16 @@ Helpers that write sources as plain data:
 - **`recombination({ material, tau, majority })`**: band-to-band recombination e⁻ + h⁺ ⇌ 0 as
   a bulk reaction, from the low-injection minority lifetime it gives at that majority density,
   $`k_f = 1/(\tau \cdot n_{\mathrm{maj}})`$.
+- **`photogeneration({ material, flux, alpha, mu, from, to })`**: light absorbed as it goes in
+  (Beer–Lambert). A photon flux (mol/(m²·s); a power P at photon energy E is
+  $`P/(E N_A)`$) enters the material at x = `from` heading toward +x and generates pairs at
+  $`G(x) = \Phi\alpha e^{-\alpha(x - \mathrm{from})}`$ until `to`, the material's far end. It's
+  photon ⇌ e⁻ + h⁺ from a photon reservoir at $`\mu`$ = `mu` (J/mol, well above the gap, e.g.
+  `units.eV(3)`), with `kf` a profile against x. The table generates exactly what the light
+  loses, $`\Phi(1 - e^{-\alpha(\mathrm{to} - \mathrm{from})})`$, and the solver averages it
+  over each node's box, so the total stays right on a grid coarser than $`1/\alpha`$ (where
+  carriers start within a cell still needs the grid). Light through several materials is one
+  call per material, each with the flux that reaches it.
 
 Read a transient at points inside the device with `advance(t, { probes })` (see the
 [device reference](device.md#using-a-device)). And `units` converts back out of SI for display:

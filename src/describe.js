@@ -78,7 +78,7 @@ export function unitWarnings(def) {
         conc(`${path}.c0.${sname}`, c);
         continue;
       }
-      if (Array.isArray(c.c)) conc(`${path}.c0.${sname}.c`, Math.max(...c.c));
+      if (Array.isArray(c.values)) conc(`${path}.c0.${sname}.values`, Math.max(...c.values));
       // A profile is against the device's x, not the region's own.
       const x0 = regionX0[r], x1 = x0 + reg.length;
       if (Array.isArray(c.x) && c.x.length > 0 && (c.x.at(-1) < x0 || c.x[0] > x1)) {
@@ -144,7 +144,7 @@ export function describe(def) {
     species.forEach((sp, i) => {
       if (!mat.present[i]) return;
       if (Number.isFinite(reg.c0[i])) zzc += sp.z * sp.z * reg.c0[i];
-      else if (reg.c0Profile[i]) zzc += sp.z * sp.z * Math.max(...reg.c0Profile[i].c);
+      else if (reg.c0Profile[i]) zzc += sp.z * sp.z * Math.max(...reg.c0Profile[i].values);
     });
     if (zzc === 0) zzc = Math.abs(reg.fixedCharge) / FARADAY;
     const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));
