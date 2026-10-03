@@ -2,21 +2,19 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.5.0 (2026-10-03)
 
-- `traces()` and `bandDiagram()` take `energy: true`: the familiar band diagram, energy up (E_c,
-  E_v and the quasi-Fermi levels in eV). The semiconductor demos (pn, solar, MOS, organic) now use
-  it; species voltages stay where ions share the diagram (electrochemistry, the perovskite's
-  vacancies). The docs say which picture to use when.
-- Demo: a perovskite solar cell's J–V hysteresis from mobile iodide vacancies (IonMonger's default
-  cell), with a scan-rate control, the vacancies' layers at each face, the steady and frozen
-  limits, and the hysteresis index against scan rate with IonMonger's own points.
+- SRH (trap-assisted) recombination as a rate law, without trap species: in the bulk,
+  `srh: { material: { tauN, tauP, n1 } }` in place of `kf`; at a face, `srh: { vn, vp, n1 }` in place
+  of `k0` and `alpha`, with n and p each from its own side. Equilibrium stays exact (p₁ comes from
+  the state), and at a face it saturates at one carrier's capture, as interface recombination in
+  perovskite cells does. Validated against the bulk closed form, and at a face against the law
+  and the device's bookkeeping.
 - A benchmark against an independent code: perovskite J–V hysteresis (mobile iodide vacancies,
   interface SRH, with and without bulk SRH) against IonMonger at seven scan rates from 1 mV/s to
-  1 kV/s. Hysteresis index
-  within 5e-4, maximum power within 0.02 mW/cm², V_oc within 1 mV, whole loops within
-  0.06 mA/cm² (0.23 at the fastest-changing sweep). Three species and two face SRH laws; each scan
-  takes 0.3 s against IonMonger's 50.
+  1 kV/s. Hysteresis index within 5e-4, maximum power within 0.02 mW/cm², V_oc within 1 mV, whole
+  loops within 0.06 mA/cm² (0.23 at the fastest-changing sweep). Three species and two face SRH
+  laws; each scan takes 0.3 s against IonMonger's 50.
 - Immobile reacting species (trap states, fixed charge states) in steady solves: a combination
   of them that reactions conserve is now held node by node, as a row of that node's block, so
   the steady solve goes direct instead of through giant time steps (which stalled when the
@@ -27,12 +25,13 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   shrink as far as the device's fastest time scale, not only to a fraction of the slowest (or
   of the run's length). Both used to give up a few decades short. Reported, with a minimal
   repro and the diagnosis, by an agent building a perovskite demo.
-- SRH (trap-assisted) recombination as a rate law, without trap species: in the bulk,
-  `srh: { material: { tauN, tauP, n1 } }` in place of `kf`; at a face, `srh: { vn, vp, n1 }` in place
-  of `k0` and `alpha`, with n and p each from its own side. Equilibrium stays exact (p₁ comes from
-  the state), and at a face it saturates at one carrier's capture, as interface recombination in
-  perovskite cells does. Validated against the bulk closed form, and at a face against the law
-  and the device's bookkeeping.
+- `traces()` and `bandDiagram()` take `energy: true`: the familiar band diagram, energy up (E_c,
+  E_v and the quasi-Fermi levels in eV). The semiconductor demos (pn, solar, MOS, organic) now use
+  it; species voltages stay where ions share the diagram (electrochemistry, the perovskite's
+  vacancies). The docs say which picture to use when.
+- Demo: a perovskite solar cell's J–V hysteresis from mobile iodide vacancies (IonMonger's default
+  cell), with a scan-rate control, the vacancies' layers at each face, the steady and frozen
+  limits, and the hysteresis index against scan rate with IonMonger's own points.
 - `set()`: a contact given `V` or `I` drops the other, so `{ I: 0 }` switches a held contact to
   open circuit (it used to need `V: undefined` alongside).
 - A face reaction's α may be 0 or 1 (plain mass action one way), not only strictly between.
