@@ -112,6 +112,10 @@ for live demos.
      block at each face grows (about threefold) and so do its off-diagonal neighbours; the rest of
      the matrix is unchanged, and the layout stays block-tridiagonal. It may simplify the face code
      generally.
+   - Cold steady solves at open circuit (a floating terminal, `{ I: 0 }`) can fail where the
+     same state is easy warm: the solar demo's n⁺p cell in dim 1050 nm light with a 60 µs base
+     lifetime fails from cold with hmin ≤ 0.5 nm, and solves warm from a bias sweep. Continuation
+     for floating terminals (from held at a guess of V_oc, or from the light ramped up) would fix it.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
