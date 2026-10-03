@@ -288,6 +288,7 @@ No dependencies. Tests use node's built-in runner (Node ≥ 22):
 npm test         # the validation suite
 npm run bench    # typical workloads against bench/baseline.json (--save to update it)
 npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
+npm run smoke    # every demo in headless Chrome, every control to its extremes (CHROME=… to choose)
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),

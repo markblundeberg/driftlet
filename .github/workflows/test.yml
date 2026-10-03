@@ -20,3 +20,12 @@ jobs:
       - run: npm run bench -- --check
       - run: npm run types
       - run: npx -y -p typescript@5 tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext types/index.d.ts types/kit.d.ts types/plot.d.ts
+
+  demos:
+    runs-on: ubuntu-latest # has Chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm run smoke

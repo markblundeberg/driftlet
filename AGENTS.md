@@ -14,6 +14,8 @@ Guide for coding agents working in this repo.
   block-tridiagonal Jacobian, runs in a Web Worker, loadable from jsdelivr.
 - **Tests are the deliverable.** Every physics feature lands with an analytic validation test
   (the validation suite). Use node's built-in test runner (`node --test`), no test dependencies.
+  The demos have a browser smoke test, `npm run smoke` (headless Chrome, also in CI): run it after
+  touching a demo or anything they import.
 - **Commits:** small and logically scoped. End messages with the Co-Authored-By trailer only;
   never a `Claude-Session:` line (a local commit-msg hook strips it as a backstop). Commit and
   push freely. Releases: add a CHANGELOG.md entry, bump `version` in package.json (and the CDN

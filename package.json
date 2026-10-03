@@ -29,6 +29,7 @@
   "scripts": {
     "test": "node --test",
     "bench": "node bench/bench.js",
+    "smoke": "node tools/smoke.js",
     "prepublishOnly": "npm test && npm run types",
     "types": "rm -rf types && npx -y -p typescript@5 tsc --allowJs --declaration --emitDeclarationOnly --target es2022 --module nodenext --moduleResolution nodenext --outDir types src/index.js src/kit.js src/plot.js"
   },

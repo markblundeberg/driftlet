@@ -64,6 +64,9 @@ for live demos.
   Pages (screenshots in the README), and CI on Node 22, 24 and 26.
 - Releases by trusted publishing: a version tag stages the package on npm from GitHub Actions,
   with signed provenance and no stored token, and the owner approves it with 2FA (from 0.1.1).
+- A real-browser smoke test of the demos in CI (`npm run smoke`): headless Chrome over the
+  DevTools protocol, every control moved to its extremes, failing on any exception, console
+  error, failed request or NaN drawn.
 
 ## Next
 
@@ -137,10 +140,6 @@ for live demos.
      overpotential, summing exactly to the terminal voltage). A ledger's division is specific
      to its device family, so it belongs in a worked example, not the library; the spatial
      diagram stays the primary picture.
-
-3. **A real-browser smoke test** of the demos in CI. (Tests already check what browsers and CDNs
-   need: relative `.js` imports only, no Node or DOM globals, and a definition solving
-   identically on a worker thread.)
 
 ## Later
 
