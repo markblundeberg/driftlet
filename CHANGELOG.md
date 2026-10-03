@@ -2,18 +2,22 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.3.0 (2026-10-02)
 
 - `c0` profiles: a region's initial concentration can be tabulated against x (`{ x, c }`,
-  piecewise linear), the starting state of a transient, with $`\phi`$ neutral node by node.
+  piecewise linear), so a transient starts from a state it didn't simulate reaching (a packet
+  already injected, a gradient laid down). Species without a `c0` start at their contact's
+  level, with $`\phi`$ chosen node by node for local neutrality, so a counter-ion or majority
+  carrier follows the profile. `describe()` warns when a profile misses its region.
 - A `c0` given for a species a contact feeds is now its starting state (it was ignored, the
-  species starting at the contact's level); without one, nothing changes. `describe()` warns when a profile misses its region.
-  Validation: a Gaussian hole packet drifting, spreading and decaying at the ambipolar rates,
-  and a salt's diffusion mode decaying at $`\pi^2 D/4L^2`$.
-- `npm run smoke`: every demo in headless Chrome with every control moved to its extremes,
-  in CI.
+  species starting at the contact's level); without one, nothing changes.
+- Validation: a Gaussian hole packet laid down as a profile drifting, spreading and decaying at
+  the ambipolar rates, and a salt's diffusion mode decaying at $`\pi^2 D/4L^2`$.
 - Results identical across JavaScript engines: powers go through `powi`/`powr` instead of `**`,
   whose last bit differs between Node 22 and 24 (enough to flip a step in a long adaptive run).
+- Demos: a real-browser smoke test in CI (`npm run smoke`: every page in headless Chrome, every
+  control moved to its extremes), and screenshots retaken by script (`npm run shots`), each
+  page held at a set state (`?t=…`, and `?phase=…` on the impedance page).
 
 ## 0.2.0 (2026-10-02)
 
