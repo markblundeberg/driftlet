@@ -13,6 +13,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   exciton. Validation: an organic bilayer, with excitons as a third, neutral species diffusing to
   the donor/acceptor interface and splitting there (J_sc against exciton-diffusion theory), and
   V_oc from charge-transfer recombination by detailed balance.
+- Demo: an organic bilayer solar cell, where light makes neutral excitons that diffuse to the
+  donor/acceptor interface and split; J_sc against donor thickness and V_oc by detailed balance,
+  each against theory.
 - The cold start of an undoped layer holding one carrier (which can't be neutral) keeps the
   running φ instead of driving it to an extreme, and φ starts from a pinned or gated left
   contact. Such devices used to fail on the first Newton step.

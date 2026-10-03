@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Organic solar cell</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
+  <h1>Organic bilayer solar cell: excitons</h1>
+  <p>In an organic semiconductor, light doesn't make free electrons and holes: it makes excitons, bound pairs
+    that are electrically neutral. They wander by diffusion, whatever the field, for about ten nanometres
+    before they decay, and they split into an electron and a hole only at an interface between a donor and an
+    acceptor. So a third species, beside the electrons and holes, decides how much current the cell gives:
+    a thicker donor absorbs more light, but excitons made far from the interface never reach it. Vary the
+    bias, the donor's thickness, the excitons' diffusion length and the light, and compare with theory.
+    (More about the model below.)</p>
+  <div class="controls">
+    <label>bias V <input id="V" type="range" min="0" max="0.6" step="0.005" value="0.4"><output id="Vout"></output></label>
+    <label>donor thickness <input id="d" type="range" min="5" max="150" step="5" value="20"><output id="dOut"></output></label>
+    <label>exciton diffusion length <input id="LX" type="range" min="3" max="50" step="1" value="10"><output id="LXout"></output></label>
+    <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
+    <span class="readout" id="stats"></span>
+  </div>
+  <div class="grid">
+    <canvas id="jv"></canvas>
+    <canvas id="thick"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="excitons"></div>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>The cell is anode | donor | acceptor | cathode, with light entering through the anode. The donor carries
+    holes and excitons, the acceptor electrons; the numbers are illustrative, of the order of the classic
+    copper phthalocyanine/C<sub>60</sub> cell: the donor's HOMO 5.2 eV below the vacuum level, the acceptor's
+    LUMO 4.0 eV, an exciton energy of 1.7 eV, α = 10<sup>5</sup> cm<sup>−1</sup>, and contacts with work
+    functions 5.0 and 4.2 eV. The levels are aligned on the vacuum level, an estimate stated as such. Only
+    the donor absorbs here (a real acceptor absorbs too), and the anode blocks excitons.</p>
+  <p>Three species, each with its own electrochemical potential. Light makes excitons, photon → X, which
+    decay, X → 0, in τ = 1 ns, or reach the interface and split there, X → h⁺(donor) + e⁻(acceptor), downhill
+    by the 0.5 eV between the exciton's energy and the interface's charge-transfer gap
+    E<sub>CT</sub> = 1.2 eV (from the acceptor's LUMO to the donor's HOMO). The reverse of that, and the
+    interface's recombination e⁻ + h⁺ → 0, are the same reactions run backward, so detailed balance holds
+    exactly. An exciton has no species voltage, being neutral; its chemical potential μ<sub>X</sub> is what
+    the splitting reaction compares with μ̄<sub>e⁻</sub> + μ̄<sub>h⁺</sub>, the quasi-Fermi levels'
+    splitting across the interface. Its concentration tells the same story here, so that's what's drawn.</p>
+  <p>The band diagram uses the <a
+    href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge. For
+    electrons and holes it's the ordinary band diagram turned upside down, in volts: the thick lines are the
+    quasi-Fermi levels, the thin ones the HOMO (as V°<sub>h⁺</sub>) and the LUMO (as V°<sub>e⁻</sub>).</p>
+  <p>The checks. An exciton made at depth x reaches the interface with probability
+    η(x) = cosh(x/L)/(cosh(d/L) + (D/vL) sinh(d/L)), from diffusion with decay (L = √(Dτ)), a blocking anode,
+    and the interface taking excitons at the velocity v its splitting reaction gives; so
+    J<sub>sc</sub> = qΦ∫αe<sup>−αx</sup>η(x)dx, which the thickness plot draws against simulated points.
+    At open circuit no current flows in either layer, the quasi-Fermi levels are flat out to the interface, and
+    there the charge-transfer recombination balances the splitting:
+    V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>ph</sub>/J₀ + 1), with J₀ = F k₀ e<sup>−(1−α)E<sub>CT</sub>/kT</sup>
+    by detailed balance, whatever the layers' transport. A bilayer like this is honestly one-dimensional; the
+    bulk heterojunctions that solve the diffusion-length problem, by mixing donor and acceptor on a 10 nm scale,
+    are not.</p>
+</main>
+<script type="module">
+import { Device, units, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
+import { photogeneration, live } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
+
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, N = units.perCm3(1e21), eV = units.eV;
+const EX = 1.7, HOMO = 5.2, LUMO = 4.0, tauX = 1e-9, alpha = 1e7, PHI1 = 1e-3, kSplit = 1e3, kCT = 1e-2, La = units.nm(40);
+
+// The cell as a plain definition: three species, two layers, two reactions at the interface.
+const cell = ({ V, d, LX, light }) => ({
+  T,
+  species: [
+    { name: 'e-', z: -1, cRef: N },
+    { name: 'h+', z: 1, cRef: N },
+    { name: 'X', z: 0, cRef: N }, // the exciton: neutral
+  ],
+  materials: {
+    // μ° from the vacuum level: the hole's is the HOMO's depth, the electron's minus the LUMO's.
+    donor: { epsr: 3.5, species: { 'h+': { D: 1e-7 * VT, mu0: eV(HOMO) }, X: { D: (LX * LX) / tauX, mu0: eV(EX) } } },
+    acceptor: { epsr: 3.5, species: { 'e-': { D: 1e-6 * VT, mu0: eV(-LUMO) } } },
+  },
+  regions: [
+    { name: 'donor', material: 'donor', length: d, c0: { X: 1e-12 } },
+    { name: 'acceptor', material: 'acceptor', length: La },
+  ],
+  interfaces: [
+    {
+      dipole: 0, // vacuum-level alignment (an estimate)
+      reactions: [
+        { equation: 'X = h+ + e-', k0: kSplit }, // excitons split, downhill by E_X − E_CT
+        { equation: 'e- + h+ = 0', k0: kCT }, // charge-transfer recombination
+      ],
+    },
+  ],
+  contacts: {
+    // Each contact holds its carrier at the metal's Fermi level, pinned at its work function.
+    left: { V: 0, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'pinned', zeroCharge: 5.0 },
+    right: { ...(typeof V === 'number' ? { V: -V } : V), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'pinned', zeroCharge: 4.2 },
+  },
+  bulkReactions: [
+    { equation: 'X = 0', kf: { donor: 1 / tauX } }, // excitons decay
+    ...(light > 0 ? [photogeneration({ material: 'donor', flux: PHI1 * light, alpha, mu: eV(2.0), to: d, makes: 'X' })] : []),
+  ],
+  grid: { hmin: units.nm(0.05), hmax: units.nm(1) },
+});
+
+const V = document.getElementById('V'), dIn = document.getElementById('d'), LXin = document.getElementById('LX'), light = document.getElementById('G');
+for (const el of [V, dIn, LXin, light]) fromQuery(el);
+const params = () => ({ d: units.nm(+dIn.value), LX: units.nm(+LXin.value), light: +light.value });
+
+// Theory: the fraction of photons whose excitons split, and V_oc by detailed balance.
+const v = (kSplit * Math.exp((0.5 * (EX - (HOMO - LUMO))) / VT)) / N; // the interface's velocity for excitons
+function collected(d, LX) {
+  const D = (LX * LX) / tauX, k = 1 / LX;
+  const integral = 0.5 * (-Math.expm1(-(alpha - k) * d) / (alpha - k) + -Math.expm1(-(alpha + k) * d) / (alpha + k));
+  return (alpha * integral) / (Math.cosh(d / LX) + (D / (v * LX)) * Math.sinh(d / LX));
+}
+const J0 = FARADAY * kCT * Math.exp((-0.5 * (HOMO - LUMO)) / VT); // A/m²
+
+// The J–V curves, lit and dark (V is the anode above the cathode, J the photocurrent positive), the
+// open-circuit voltage, and J_sc against the donor's thickness.
+let jv, thick;
+function sweep() {
+  const p = params();
+  const curve = (lightLevel) => {
+    const dev = new Device(cell({ V: 0, ...p, light: lightLevel })), J = [];
+    for (let k = 0; k <= 30; k++) {
+      dev.set({ contacts: { right: { V: -0.02 * k } } });
+      J.push(-dev.solve().current / 10); // mA/cm²
+    }
+    return J;
+  };
+  const oc = new Device(cell({ V: { I: 0 }, ...p })).solve();
+  const lit = curve(p.light), Voc = oc.terminals.left.V - oc.terminals.right.V;
+  const Jph = FARADAY * oc.interfaces[0].rates[0];
+  jv = {
+    V: lit.map((_, k) => 0.02 * k), lit, dark: curve(0), Jsc: lit[0],
+    stats: `J_sc = ${lit[0].toFixed(3)} mA/cm² (exciton theory ${((FARADAY * PHI1 * p.light * collected(p.d, p.LX)) / 10).toFixed(3)}) · V_oc = ${Voc.toFixed(4)} V (detailed balance ${(VT * Math.log(Jph / J0 + 1)).toFixed(4)})`,
+  };
+}
+function thickness() {
+  const { LX } = params(), ds = [5, 10, 20, 30, 45, 60, 80, 100, 150];
+  thick = {
+    d: ds,
+    sim: ds.map((d) => -new Device(cell({ V: 0, d: units.nm(d), LX, light: 1 })).solve().current / (FARADAY * PHI1)),
+    fine: Array.from({ length: 151 }, (_, k) => k),
+  };
+  thick.theory = thick.fine.map((d) => collected(units.nm(d), LX));
+  thick.absorbed = thick.fine.map((d) => -Math.expm1(-alpha * units.nm(d)));
+}
+sweep();
+thickness();
+
+const dev = live(cell({ V: +V.value, ...params() }), { onsolution: draw });
+const update = () => dev.set(cell({ V: +V.value, ...params() }));
+V.addEventListener('input', () => dev.set({ contacts: { right: { V: -V.value } } }));
+dIn.addEventListener('change', () => {
+  sweep();
+  update();
+});
+LXin.addEventListener('change', () => {
+  sweep();
+  thickness();
+  update();
+});
+light.addEventListener('change', () => {
+  sweep();
+  update();
+});
+
+function draw(sol) {
+  const p = params(), bias = sol.terminals.left.V - sol.terminals.right.V;
+  document.getElementById('Vout').textContent = `${bias.toFixed(3)} V`;
+  document.getElementById('dOut').textContent = `${dIn.value} nm`;
+  document.getElementById('LXout').textContent = `${LXin.value} nm`;
+  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  document.getElementById('stats').textContent = jv.stats;
+  chart(document.getElementById('jv'), {
+    xlabel: 'V (V), anode above cathode', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.4 * jv.Jsc, 1.2 * jv.Jsc],
+    series: [
+      { x: jv.V, y: jv.lit, color: colors[2], label: 'under light' },
+      { x: jv.V, y: jv.dark, color: colors[6], width: 1.2, label: 'dark' },
+      { x: [bias], y: [-sol.current / 10], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  chart(document.getElementById('thick'), {
+    // The absorbed fraction runs off the top: most of what's absorbed is lost.
+    xlabel: 'donor thickness (nm)', ylabel: 'EQE at short circuit, J_sc/qΦ', xlim: [0, 150], ylim: [0, Math.min(1.05 * Math.max(...thick.absorbed), 3 * Math.max(...thick.theory))],
+    series: [
+      { x: thick.fine, y: thick.absorbed, color: colors[6], dash: [6, 4], width: 1.2, label: 'absorbed' },
+      { x: thick.fine, y: thick.theory, color: colors[0], width: 1.5, label: 'exciton theory' },
+      { x: thick.d, y: thick.sim, color: colors[2], marker: true, width: 0, label: 'simulated' },
+      { x: [+dIn.value], y: [collected(p.d, p.LX)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  levels(document.getElementById('levels'), sol, { title: `bands and quasi-Fermi levels at V = ${bias.toFixed(3)} V` });
+  // In units of a power of ten of cm⁻³ that suits the peak.
+  const unit = 10 ** Math.floor(Math.log10(Math.max(...sol.c.X.filter(Number.isFinite)) * AVOGADRO * 1e-6));
+  profiles(document.getElementById('excitons'), sol, {
+    species: [{ c: sol.c.X, label: 'c_X, excitons', role: 'redox' }],
+    title: 'excitons: made where the light is absorbed, gone at the interface', ylabel: `density (10${String(Math.log10(unit)).replace(/\d/g, (c) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[c])} cm⁻³)`, scale: (AVOGADRO * 1e-6) / unit,
+  });
+  profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true });
+}
+showCode();
+</script>
+</body>
+</html>
