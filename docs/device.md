@@ -110,6 +110,9 @@ regions: [
   from it. Species without a `c0` start from their contact's level, and $`\phi`$ is chosen node
   by node for local neutrality, so a mobile counter-ion follows the profile (electrons follow an
   injected hole packet); what the cold start leaves unbalanced settles within the first steps.
+  That fill-in is right in a quasi-neutral bulk (it's what dielectric relaxation would do), not
+  where the rest state carries charge: a packet laid into a junction starts with the junction
+  itself unformed.
   For a spectator, the profile's integral is the amount it conserves. Where nothing else sets
   $`\phi`$ at the start, a region beside an electrode starts with the electrode's first reaction at
   equilibrium (the electrode at its open-circuit level); otherwise $`\phi`$ carries over from the
