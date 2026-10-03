@@ -11,24 +11,34 @@
 <main>
 <nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
   <h1>Silicon solar cell under light</h1>
-  <p>A silicon solar cell, a thin n⁺ emitter on a 60 µm p base, under uniform light: its current–voltage
-    curve, with the short-circuit current and open-circuit voltage checked against textbook theory, and the
-    quasi-Fermi levels splitting under the light. Vary the bias, the light and the base's lifetime. (More about
-    the model below.)</p>
+  <p>A silicon solar cell, a thin n⁺ emitter on a 60 µm p base, lit by one colour at a time: its
+    current–voltage curve and its spectral response, both checked against textbook theory, and where the light
+    makes electron–hole pairs and the quasi-Fermi levels split. Blue light is absorbed within a fraction of a
+    micron, in the emitter; infrared goes deep into the base, or straight through. Vary the bias, the
+    wavelength, the light and the base's lifetime. (More about the model below.)</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="0" max="0.65" step="0.005" value="0.5"><output id="Vout"></output></label>
+    <label>wavelength <input id="lambda" type="range" min="400" max="1100" step="10" value="600"><output id="lambdaOut"></output></label>
     <label>light <input id="G" type="range" min="0.1" max="3" step="0.1" value="1"><output id="Gout"></output></label>
     <label>base lifetime <input id="tau" type="range" min="-8.2" max="-4.2" step="0.25" value="-6.2"><output id="tauOut"></output></label>
+    <label><input id="zoom" type="checkbox"> zoom on the front 3 µm</label>
     <span class="readout" id="stats"></span>
   </div>
   <div class="grid">
-    <canvas class="wide" id="jv"></canvas>
+    <canvas id="jv"></canvas>
+    <canvas id="eqe"></canvas>
     <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="gen"></div>
     <div class="levels wide" id="conc"></div>
   </div>
   <h2>About this simulation</h2>
-  <p>Light is a reservoir: the reaction photon → e⁻ + h⁺, with the photons' μ far above the gap, generates
-    pairs uniformly. The band diagram uses the <a
+  <p>Light is a reservoir: the reaction photon → e⁻ + h⁺, its rate falling off as the light is absorbed
+    (Beer–Lambert), G(x) = Φα e<sup>−αx</sup>, with silicon's absorption coefficient α at each wavelength from
+    M. A. Green, <i>Sol. Energy Mater. Sol. Cells</i> <b>92</b>, 1305 (2008). The photons' μ is their energy
+    ħω, the most it can be: the reverse reaction, a pair recombining into the light, is then negligible while
+    the quasi-Fermi levels split by much less than ħω. There's no reflection; every photon enters the front,
+    and what reaches the back leaves.</p>
+  <p>The band diagram uses the <a
     href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
     V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
     volts, so electrons and ions share one axis. Each carrier moves down its own μ̄<sub>i</sub>, so its
@@ -36,102 +46,171 @@
     and holes these are the quasi-Fermi levels (thick), drawn with their standard levels V°<sub>i</sub>, the
     band edges (thin). Under light the quasi-Fermi levels split even at zero bias; at open circuit they split
     by qV<sub>oc</sub> and no current flows.</p>
-  <p>A pair made in the base is collected if its electron reaches the junction before it recombines or
-    reaches the back contact, which is a sink here (there's no back-surface field). Integrating that chance
-    over the base gives L<sub>n</sub> tanh(W<sub>b</sub>/2L<sub>n</sub>) of collecting width: about L<sub>n</sub>
-    for a short diffusion length, but never more than half the base however long it is. The readout checks
-    J<sub>sc</sub> = qG(that + the depletion layer + the emitter's share) and
-    V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from the dark curve. The dashed curve is
-    the dark curve shifted by J<sub>sc</sub>, the superposition principle.</p>
+  <p>A pair is collected if its minority carrier reaches the junction before it recombines or reaches a
+    contact, which is a sink here (no back-surface field, no front passivation). That chance η(x) is 1 in the
+    depletion layer and falls off as sinh toward each contact, over a diffusion length: L<sub>n</sub> in the
+    base, L<sub>p</sub> in the heavily doped emitter, where the lifetime is a thousand times shorter. So blue
+    light, absorbed in the emitter, is mostly lost to the front contact; red light, absorbed within a
+    diffusion length of the junction, is collected; and infrared is barely absorbed at all. The middle plot
+    draws G(x) and the part collected, G(x)η(x), whose area is J<sub>sc</sub>/q. The spectral response plots
+    J<sub>sc</sub>/qΦ, the external quantum efficiency, simulated at each colour against
+    ∫αe<sup>−αx</sup>η(x)dx, the generalisation of Gärtner's formula to this cell (from the depletion
+    approximation). The readout checks V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from
+    the dark curve, and the dashed J–V curve is the dark curve shifted by J<sub>sc</sub>, the superposition
+    principle.</p>
 </main>
 <script type="module">
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, photogeneration, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
-const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), ND = units.perCm3(1e19), NA = units.perCm3(1e16);
-const G1 = 50; // generation at "1×" light, mol/(m³·s): 3e19 pairs per cm³ per second
-const reactions = (light, kf) => [
+const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), W = We + Wb, ND = units.perCm3(1e19), NA = units.perCm3(1e16);
+const PHI1 = 3e-3; // photon flux at "1×" light, mol/(m²·s): 1.8e17 photons per cm² per second, 29 mA/cm² if all collected
+// Silicon's absorption coefficient (1/cm) at 300 K, every 50 nm from 400 nm (Green 2008); log-linear between.
+const ALPHA = [9.30e4, 2.41e4, 1.11e4, 6.39e3, 4.18e3, 2.79e3, 1.89e3, 1.31e3, 850, 534, 303, 156, 64, 16.3, 3.5];
+const alphaAt = (nm) => {
+  const t = Math.min(ALPHA.length - 1.000001, (nm - 400) / 50), k = Math.floor(t);
+  return 100 * Math.exp(Math.log(ALPHA[k]) + (t - k) * Math.log(ALPHA[k + 1] / ALPHA[k])); // 1/m
+};
+const photonEnergy = (nm) => (6.62607015e-34 * 299792458 * AVOGADRO) / (nm * 1e-9); // J/mol
+
+const reactions = (nm, light, kf) => [
   // Band-to-band recombination: τ = 1/(kf·N), so L_n = √(D τ) ≈ 48 µm in the base at kf = 1e8.
   { equation: 'e- + h+ = 0', kf: { Si: kf } },
-  // Photogeneration from a photon reservoir, at the rate kf (mol/(m³·s)).
-  { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G1 * light } },
+  // Light absorbed as it goes in, from x = 0: kf is a profile G(x) = Φα e^{−αx}, mol/(m³·s).
+  photogeneration({ material: 'Si', flux: PHI1 * light, alpha: alphaAt(nm), mu: photonEnergy(nm), to: W }),
 ];
-const cell = (V, light, kf) =>
+const cell = (V, nm, light, kf) =>
   build({
     T: 300,
     library: [Si],
     stack: [ohmic(0), layer('Si', We, { name: 'n⁺', donors: ND }), layer('Si', Wb, { name: 'p', acceptors: NA }), ohmic(V)],
-    bulkReactions: reactions(light, kf),
+    bulkReactions: reactions(nm, light, kf),
     grid: { hmin: units.nm(1), hmax: units.um(1) },
   });
 
-const V = document.getElementById('V'), light = document.getElementById('G'), life = document.getElementById('tau');
-for (const el of [V, light, life]) fromQuery(el);
+const V = document.getElementById('V'), lambda = document.getElementById('lambda'), light = document.getElementById('G'), life = document.getElementById('tau');
+const zoom = document.getElementById('zoom');
+for (const el of [V, lambda, light, life]) fromQuery(el);
+zoom.checked = new URLSearchParams(location.search).has('zoom');
 // The slider is the base's minority lifetime τₙ = 1/(kf·N_A), on a log scale.
 const kf = () => 1 / (10 ** +life.value * NA); // m³/(mol·s)
 
-// The collecting width: the depletion layer, plus L tanh(W/2L) on each side (a sink at each contact).
+// Collection theory: the chance η(x) that a pair made at x is collected (depletion approximation).
 const { 'e-': el, 'h+': ho } = Si.materials.Si.species, VT = (GAS_CONSTANT * 300) / FARADAY;
 const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 - el.mu0) / (GAS_CONSTANT * 300));
-function collecting(k) {
+function collection(k) {
   const Vbi = VT * Math.log((ND * NA) / ni2), Wd = Math.sqrt(((2 * Si.materials.Si.epsr * EPS0 * Vbi) / FARADAY) * (1 / NA + 1 / ND));
-  const xp = (Wd * ND) / (NA + ND), Ln = Math.sqrt(el.D / (k * NA)), Lp = Math.sqrt(ho.D / (k * ND));
-  return { width: Wd + Ln * Math.tanh((Wb - xp) / (2 * Ln)) + Lp * Math.tanh((We - (Wd - xp)) / (2 * Lp)), Ln };
+  const xe = We - (Wd * NA) / (NA + ND), xb = We + (Wd * ND) / (NA + ND);
+  const Ln = Math.sqrt(el.D / (k * NA)), Lp = Math.sqrt(ho.D / (k * ND));
+  const eta = (x) => (x < xe ? Math.sinh(x / Lp) / Math.sinh(xe / Lp) : x <= xb ? 1 : Math.sinh((W - x) / Ln) / Math.sinh((W - xb) / Ln));
+  // ∫αe^{−αx}η(x)dx over the cell, on points spaced geometrically from the front.
+  const xs = [0, ...Array.from({ length: 3000 }, (_, j) => 1e-10 * (W / 1e-10) ** (j / 2999))];
+  const eqe = (alpha) => xs.slice(1).reduce((a, x, j) => a + ((alpha * Math.exp(-alpha * x) * eta(x) + alpha * Math.exp(-alpha * xs[j]) * eta(xs[j])) / 2) * (x - xs[j]), 0);
+  return { Ln, Lp, eta, eqe };
 }
 
 // The J–V curves for the present light and lifetime, dark and lit: plain Devices swept in bias,
 // warm from point to point. The photocurrent flows toward +x (holes to the p side), so power out is V·J.
-const curve = (G) => {
-  const dev = new Device(cell(0, G, kf())), J = [];
+const curve = (nm, light) => {
+  const dev = new Device(cell(0, nm, light, kf())), J = [];
   for (let v = 0; v <= 0.651; v += 0.01) {
     dev.set({ contacts: { right: { V: v } } });
     J.push(dev.solve().current / 10); // mA/cm²
   }
   return J;
 };
-let jv;
+let jv, dark, spectrum;
 function sweep() {
-  const dark = curve(0), lit = curve(+light.value);
-  const oc = new Device(cell({ I: 0 }, +light.value, kf())).solve(); // open circuit: the terminal floats
+  const nm = +lambda.value;
+  const lit = curve(nm, +light.value);
+  const oc = new Device(cell({ I: 0 }, nm, +light.value, kf())).solve(); // open circuit: the terminal floats
   const Jsc = lit[0], Voc = oc.terminals.right.V, vs = dark.map((_, k) => k * 0.01);
   const Pmax = Math.max(...vs.map((v, k) => v * lit[k]));
   const J0 = -dark[30] / (Math.exp(0.3 / VT) - 1); // from the dark curve at 0.3 V
-  const theory = (FARADAY * G1 * +light.value * collecting(kf()).width) / 10;
+  const theory = (FARADAY * PHI1 * +light.value * collection(kf()).eqe(alphaAt(nm))) / 10;
   jv = {
-    V: vs, dark, lit, Jsc,
+    V: vs, lit, Jsc,
     stats: `J_sc = ${Jsc.toFixed(2)} mA/cm² (collection theory ${theory.toFixed(2)}) · V_oc = ${Voc.toFixed(3)} V (V_T ln(J_sc/J₀ + 1) = ${(VT * Math.log(Jsc / J0 + 1)).toFixed(3)}) · FF = ${(Pmax / (Jsc * Voc)).toFixed(3)} · P_max = ${Pmax.toFixed(2)} mW/cm²`,
   };
 }
+// The spectral response at short circuit, every 50 nm, against theory every 5 nm.
+function spectral() {
+  const { eqe } = collection(kf());
+  const nms = Array.from({ length: 15 }, (_, k) => 400 + 50 * k), fine = Array.from({ length: 141 }, (_, k) => 400 + 5 * k);
+  spectrum = {
+    nm: nms,
+    sim: nms.map((nm) => new Device(cell(0, nm, 1, kf())).solve().current / (FARADAY * PHI1)),
+    fine,
+    theory: fine.map((nm) => eqe(alphaAt(nm))),
+    absorbed: fine.map((nm) => -Math.expm1(-alphaAt(nm) * W)),
+  };
+}
+const recompute = () => {
+  dark = curve(400, 0);
+  spectral();
+  sweep();
+};
 
-const dev = live(cell(+V.value, +light.value, kf()), { onsolution: draw });
-const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: reactions(+light.value, kf()) });
+recompute();
+const dev = live(cell(+V.value, +lambda.value, +light.value, kf()), { onsolution: draw });
+const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: reactions(+lambda.value, +light.value, kf()) });
 V.addEventListener('input', update);
-for (const el of [light, life])
+for (const el of [lambda, light])
   el.addEventListener('change', () => {
     sweep();
     update();
   });
-sweep();
+life.addEventListener('change', () => {
+  recompute();
+  update();
+});
+zoom.addEventListener('change', () => draw(last));
 
+// A wavelength's colour, roughly, for the readout.
+const hue = (nm) => (nm < 440 ? 270 : nm < 490 ? 270 - ((nm - 440) * 90) / 50 : nm < 580 ? 180 - ((nm - 490) * 120) / 90 : nm < 645 ? 60 - ((nm - 580) * 60) / 65 : 0);
+let last;
 function draw(sol) {
-  const v = sol.terminals.right.V, tau = 1 / (kf() * NA);
+  last = sol;
+  const v = sol.terminals.right.V, tau = 1 / (kf() * NA), nm = +lambda.value, alpha = alphaAt(nm);
+  const { Ln, eta } = collection(kf());
   document.getElementById('Vout').textContent = `${v.toFixed(3)} V`;
+  const depth = 1 / alpha;
+  document.getElementById('lambdaOut').innerHTML =
+    `<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;vertical-align:-0.05em;background:${nm > 700 ? '#555' : `hsl(${hue(nm)} 90% 50%)`}"></span> ${nm} nm, 1/α = ${depth < 1e-6 ? `${(depth * 1e9).toFixed(0)} nm` : depth < 1e-3 ? `${+(depth * 1e6).toPrecision(2)} µm` : `${+(depth * 1e3).toPrecision(2)} mm`}`;
   document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
-  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(collecting(kf()).Ln * 1e6).toPrecision(2)} µm`;
+  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
   document.getElementById('stats').textContent = jv.stats;
   chart(document.getElementById('jv'), {
     xlabel: 'V (V)', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.3 * jv.Jsc, 1.15 * jv.Jsc],
     series: [
       { x: jv.V, y: jv.lit, color: colors[2], label: 'under light' },
-      { x: jv.V, y: jv.dark.map((j) => j + jv.Jsc), color: colors[0], dash: [6, 4], width: 1.5, label: 'dark + J_sc (superposition)' },
-      { x: jv.V, y: jv.dark, color: colors[6], width: 1.2, label: 'dark' },
+      { x: jv.V, y: dark.map((j) => j + jv.Jsc), color: colors[0], dash: [6, 4], width: 1.5, label: 'dark + J_sc' },
+      { x: jv.V, y: dark, color: colors[6], width: 1.2, label: 'dark' },
       { x: [v], y: [sol.current / 10], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
-  levels(document.getElementById('levels'), sol, { title: `bands and quasi-Fermi levels at V = ${v.toFixed(3)} V` });
-  profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true });
+  const at = spectrum.nm.indexOf(nm);
+  chart(document.getElementById('eqe'), {
+    xlabel: 'wavelength (nm)', ylabel: 'quantum efficiency, J_sc/qΦ', xlim: [400, 1100], ylim: [0, 1.05],
+    series: [
+      { x: spectrum.fine, y: spectrum.absorbed, color: colors[6], dash: [6, 4], width: 1.2, label: 'absorbed' },
+      { x: spectrum.fine, y: spectrum.theory, color: colors[0], width: 1.5, label: 'collection theory' },
+      { x: spectrum.nm, y: spectrum.sim, color: colors[2], marker: true, width: 0, label: 'simulated' },
+      { x: [nm], y: [jv.Jsc * 10 / (FARADAY * PHI1 * +light.value)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  const xlim = zoom.checked ? [0, units.um(3)] : undefined;
+  levels(document.getElementById('levels'), sol, { xlim, title: `bands and quasi-Fermi levels at V = ${v.toFixed(3)} V` });
+  // Generation where the light is absorbed, and the part of it collected, in cm⁻³s⁻¹.
+  const G = sol.x.map((x) => PHI1 * +light.value * alpha * Math.exp(-alpha * x));
+  profiles(document.getElementById('gen'), sol, {
+    species: [{ c: G, label: 'G, pairs made', kind: 'standard' }, { c: G.map((g, k) => g * eta(sol.x[k])), label: 'Gη, collected (theory)', role: 'redox' }],
+    title: `where the light makes pairs, and which are collected, at ${nm} nm`, ylabel: 'rate (cm⁻³s⁻¹)', scale: AVOGADRO * 1e-6, log: true, xlim,
+    range: [Math.floor(Math.log10(G[0] * AVOGADRO * 1e-6)) - 5, Math.ceil(Math.log10(G[0] * AVOGADRO * 1e-6)) + 0.3],
+  });
+  profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }
 showCode();
 </script>

@@ -27,12 +27,13 @@ export function levels(el, sol, opts = {}) {
 // Concentration profiles drawn like the level diagrams (same layout, x axis and species colours),
 // so they line up beneath them: levelChart() takes any lines as traces. Each entry of `species` is
 // a name, or { name, c, label, kind } to draw some other profile in that species' colour (kind
-// 'standard' draws it thin). `scale` converts units; `log` draws log₁₀, with powers of ten.
+// 'standard' draws it thin), or { c, label, kind, role } for a profile of no species (role
+// 'redox', or none for muted). `scale` converts units; `log` draws log₁₀, with powers of ten.
 export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, height = 300 }) {
   const f = log ? (c) => (c > 0 ? Math.log10(c * scale) : NaN) : (c) => c * scale;
   const series = species.map((entry) => {
-    const { name, c = sol.c[name], label = labels[name] ?? `c_{${typeset(name, sol.species.find((sp) => sp.name === name).z)}}`, kind = 'level' } = typeof entry === 'string' ? { name: entry } : entry;
-    return { id: `c:${name}:${label}`, label, kind, ...speciesRole(sol, name), y: Array.from(c, f) };
+    const { name, c = sol.c[name], label = labels[name] ?? `c_{${typeset(name, sol.species.find((sp) => sp.name === name).z)}}`, kind = 'level', role } = typeof entry === 'string' ? { name: entry } : entry;
+    return { id: `c:${name}:${label}`, label, kind, ...(name === undefined ? { role, slot: 0 } : speciesRole(sol, name)), y: Array.from(c, f) };
   });
   if (!range) {
     const [xs, xe] = xlim ?? [sol.x[0], sol.x.at(-1)];
