@@ -36,6 +36,15 @@ test('no Node or DOM globals in the library', () => {
   }
 });
 
+test('no ** or Math.pow in the library: their last bit differs between engine versions', () => {
+  // V8's changed between Node 22 and 24, enough to flip adaptive time steps; src/pow.js has
+  // versions that agree everywhere (repeated squaring, a square root, exp and log).
+  for (const f of sources) {
+    const found = code(f).match(/\*\*|Math\.pow/);
+    assert.equal(found, null, `${f} uses ${found?.[0]}: use powi or powr from pow.js`);
+  }
+});
+
 test('a definition posted to a worker solves there exactly as here', async () => {
   const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19);
   const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });

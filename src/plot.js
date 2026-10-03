@@ -13,6 +13,7 @@
 // rule on the page restyles them.
 
 import { traces } from './traces.js';
+import { powi } from './pow.js';
 
 // Colours by role, light and dark (validated together for colour-vision deficiency; line weight,
 // dash and the legend carry identity too). A role with more members than colours cycles.
@@ -83,7 +84,7 @@ const span = (label) => labelParts(label).reduce((n, p) => n + (p.sub ? 0.75 : 1
 
 function ticks(a, b, n) {
   const step0 = (b - a) / n;
-  const mag = 10 ** Math.floor(Math.log10(step0));
+  const mag = powi(10, Math.floor(Math.log10(step0)));
   const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= step0) ?? 10 * mag;
   const out = [];
   for (let t = Math.ceil(a / step) * step; t <= b + 1e-9 * step; t += step) out.push(Math.abs(t) < 1e-9 * step ? 0 : t);

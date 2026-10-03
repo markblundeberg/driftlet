@@ -16,6 +16,7 @@
 
 import { FARADAY, EPS0, AVOGADRO } from './constants.js';
 import { fermiHalf, fermiMinusHalf } from './fermi.js';
+import { powi } from './pow.js';
 import { SolverError } from './solver.js';
 
 const MODEL_TYPES = ['ideal', 'fermi-dirac', 'lattice', 'redlich-kister', 'debye-huckel', 'insertion', 'custom'];
@@ -189,7 +190,7 @@ function fermiDiracModel(idx, cRef, order) {
         const r = target[a] / cRef[a];
         // ln 𝓕(ζ) is increasing with slope 𝓕′/𝓕 ∈ (0, 1]
         const f = (y) => ({ v: Math.log(F(y)), d: dF(y) / F(y) });
-        const guess = r < 1 ? Math.log(r) : order === 0.5 ? Math.cbrt((0.75 * Math.sqrt(Math.PI) * r) ** 2) : r;
+        const guess = r < 1 ? Math.log(r) : order === 0.5 ? Math.cbrt(powi(0.75 * Math.sqrt(Math.PI) * r, 2)) : r;
         zeta[a] = solveIncreasing(f, Math.log(r), Math.log(r) - 1, Math.max(guess, Math.log(r)) + 10, guess);
       }
     },
@@ -264,7 +265,7 @@ function debyeHuckelModel(idx, cRef, z, epsr, a, RT) {
     let q = 0;
     for (let b = 0; b < k; b++) q += s[b] * c[b];
     const kappa = Math.sqrt((FARADAY * FARADAY * q) / (eps * RT));
-    const A = kappa > 0 ? (lB * FARADAY * FARADAY) / (4 * eps * RT * kappa * (1 + kappa * a) ** 2) : 0;
+    const A = kappa > 0 ? (lB * FARADAY * FARADAY) / (4 * eps * RT * kappa * (1 + kappa * a) * (1 + kappa * a)) : 0;
     let s2c = 0;
     for (let b = 0; b < k; b++) s2c += s[b] * s[b] * c[b];
     for (let b = 0; b < k; b++) lng[b] = (-s[b] * lB * kappa) / (2 * (1 + kappa * a));
@@ -425,7 +426,7 @@ function choleskyOk(K, k) {
   const L = Float64Array.from(K);
   for (let j = 0; j < k; j++) {
     let d = L[j * k + j];
-    for (let p = 0; p < j; p++) d -= L[j * k + p] ** 2;
+    for (let p = 0; p < j; p++) d -= L[j * k + p] * L[j * k + p];
     if (!(d > 0)) return false;
     d = Math.sqrt(d);
     L[j * k + j] = d;

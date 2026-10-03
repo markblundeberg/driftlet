@@ -146,6 +146,7 @@ import { bernoulli, bernoulliDerivative } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { nextBreakpoint, sourceAt } from './device.js';
 import { DeviceError } from './errors.js';
+import { powi, powr } from './pow.js';
 
 export class SolverError extends Error {
   constructor(message, details) {
@@ -1251,7 +1252,7 @@ export class Solver {
         const i = rx.sp[p], nu = rx.nu[p];
         if (nu > 0) {
           const ci = c[g * n + i];
-          P *= nu === 1 ? ci : ci ** nu;
+          P *= nu === 1 ? ci : powi(ci, nu);
           this._dlnc(g, i, nu, dr);
         }
         aHi += nu * u[b * M + 1 + i];
@@ -1597,7 +1598,7 @@ export class Solver {
       aLo -= p.nu * uLo[o];
       if (this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
-      pref *= (c[g * n + p.i] / this.cRef[g * n + p.i]) ** e;
+      pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
     }
     const { g: bv, gp } = bvFactor(aHi + aLo, al);
@@ -2089,7 +2090,7 @@ export class Solver {
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
     let grow = 0; // longer first steps tried after a Newton failure (see below)
     const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
-    const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * (tol / err) ** (1 / (p + 1)))) : 2);
+    const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
     while (this.time < tEnd) {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
       // Within round-off of the end (a target a hair past a breakpoint just landed on, say):
@@ -2224,7 +2225,7 @@ export class Solver {
       const l2 = ((t - t0) * (t - t1)) / ((t2 - t0) * (t2 - t1));
       for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
       const w = h / hp;
-      const Cc = (h ** 3 * (1 + w) ** 2) / (w * (1 + 2 * w));
+      const Cc = (h * h * h * (1 + w) * (1 + w)) / (w * (1 + 2 * w));
       const Cp = h * (h + hp) * (h + hp + hpp);
       return { scale: Cc / (Cc + Cp), order: 2 };
     }

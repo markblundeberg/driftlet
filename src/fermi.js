@@ -6,6 +6,8 @@
 //   −2 ≤ x ≤ 50  piecewise Chebyshev fits, built on first use from an exact quadrature
 //   x > 50       Sommerfeld's asymptotic expansion (its error is ~e^{−x})
 
+import { powi, powr } from './pow.js';
+
 const INTERVALS = [-2, 1, 5, 12, 25, 50];
 const NCHEB = 24;
 const SQRT_PI = Math.sqrt(Math.PI);
@@ -64,7 +66,7 @@ function series(j, x) {
   const e = Math.exp(x);
   let term = e, s = 0;
   for (let k = 1; k <= 40; k++) {
-    const t = term / k ** (j + 1);
+    const t = term / powr(k, j + 1);
     s += k % 2 ? t : -t;
     if (t < 1e-17 * s) break;
     term *= e;
@@ -73,7 +75,7 @@ function series(j, x) {
 }
 
 // η(2k) = (1 − 2^{1−2k}) ζ(2k), the Dirichlet eta function at even arguments.
-const ETA = [Math.PI ** 2 / 12, (7 * Math.PI ** 4) / 720, (31 * Math.PI ** 6) / 30240, 0.99623300185264789922, 0.99903950759827156564, 0.99975768514385819085];
+const ETA = [powi(Math.PI, 2) / 12, (7 * powi(Math.PI, 4)) / 720, (31 * powi(Math.PI, 6)) / 30240, 0.99623300185264789922, 0.99903950759827156564, 0.99975768514385819085];
 
 function asymptotic(j, x) {
   // 𝓕_j(x) ~ x^{j+1}/Γ(j+2) · [1 + Σ_k 2η(2k) (j+1)(j)…(j+2−2k) x^{−2k}]
@@ -86,7 +88,7 @@ function asymptotic(j, x) {
     s += 2 * ETA[k - 1] * fall * p;
   }
   const gamma = j === 0.5 ? (3 * SQRT_PI) / 4 : SQRT_PI / 2; // Γ(j + 2)
-  return (x ** (j + 1) / gamma) * s;
+  return (powr(x, j + 1) / gamma) * s;
 }
 
 function fermi(j, x) {
