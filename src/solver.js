@@ -754,9 +754,8 @@ export class Solver {
   }
 
   /**
-   * Cold start. Species connected to a contact take that contact's level; spectators take
-   * their region's c0 (which fixes their conserved amount), and a c0 profile is taken as given
-   * by any species. φ in each region is then chosen for local neutrality (node by node where a
+   * Cold start. Each species takes its region's c0 where one is given (for a spectator, it fixes
+   * the conserved amount), else its contact's level. φ in each region is then chosen for local neutrality (node by node where a
    * profile varies), or continued across the interface dipole if nothing there responds.
    */
   initFromComposition() {
@@ -775,10 +774,10 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (!mat.present[i]) continue;
         const st = this.stretches[this.stretchOf[r * n + i]];
-        if (reg.c0Profile[i]) {
-          // A profile is the starting state as given, even where a contact feeds the species.
+        if (reg.c0Profile[i] || reg.c0[i] > 0) {
+          // A given c0 is the starting state, even where a contact feeds the species.
           mode[i] = 2;
-          cFix[i] = profileAt(reg.c0Profile[i], grid.x[grid.regionStart[r]]);
+          cFix[i] = reg.c0Profile[i] ? profileAt(reg.c0Profile[i], grid.x[grid.regionStart[r]]) : reg.c0[i];
         } else if (!st.contactFed && mat.conductor) {
           // A conductor away from the contacts: start uncharged, with its carrier's level in
           // equilibrium with the first reaction on its left face that takes it, else at the

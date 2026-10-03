@@ -5,8 +5,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 ## Unreleased
 
 - `c0` profiles: a region's initial concentration can be tabulated against x (`{ x, c }`,
-  piecewise linear), the starting state of a transient even for a species a contact feeds, with
-  $`\phi`$ neutral node by node. `describe()` warns when a profile misses its region.
+  piecewise linear), the starting state of a transient, with $`\phi`$ neutral node by node.
+- A `c0` given for a species a contact feeds is now its starting state (it was ignored, the
+  species starting at the contact's level); without one, nothing changes. `describe()` warns when a profile misses its region.
   Validation: a Gaussian hole packet drifting, spreading and decaying at the ambipolar rates,
   and a salt's diffusion mode decaying at $`\pi^2 D/4L^2`$.
 - `npm run smoke`: every demo in headless Chrome with every control moved to its extremes,

@@ -221,9 +221,9 @@ console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPer
 
 To start from a state instead of simulating how it got there (a packet already injected, a
 salt gradient laid down), give a region's `c0` a profile against the device's x:
-`c0: { 'h+': { x: [...], c: [...] } }`, piecewise linear. It's the starting state even for a
-species a contact feeds; other species start cold, with φ made neutral node by node (electrons
-follow the holes). Then `advance()` without `solve()`, which would go straight to the steady
+`c0: { 'h+': { x: [...], c: [...] } }`, piecewise linear. A given `c0` is the starting state,
+even for a species a contact feeds; species without one start at their contact's level, with φ
+made neutral node by node (electrons follow the holes). Then `advance()` without `solve()`, which would go straight to the steady
 state.
 
 Transients cost more where a carrier's density spans many decades (minority holes in silicon

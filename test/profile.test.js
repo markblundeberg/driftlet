@@ -111,7 +111,7 @@ test("a spectator's profile fixes the amount it conserves: the steady state hold
   s.c['NO3-'].forEach((c) => assert.ok(Math.abs(c / 10 - 1) < 1e-9, `${c}`));
 });
 
-test('c0 profiles: checked as data, neutral where ε = 0, and against the region in describe()', () => {
+test('c0 profiles: checked as data, neutral where ε = 0, a number as much a start, and against the region in describe()', () => {
   const wall = { species: { 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' };
   const def = (c0) =>
     build({
@@ -139,6 +139,9 @@ test('c0 profiles: checked as data, neutral where ε = 0, and against the region
   // One given, and the other follows it.
   const s = new Device(def({ 'K+': { x: [0, 1e-4], c: [10, 20] } })).solution();
   s.c['K+'].forEach((c, k) => assert.ok(Math.abs(c - s.c['Cl-'][k]) < 1e-9));
+  // A plain number is the starting state too, though the bath feeds K⁺ at 10.
+  const n = new Device(def({ 'K+': 15 })).solution();
+  n.c['K+'].forEach((c, k) => assert.ok(Math.abs(c / 15 - 1) < 1e-12 && Math.abs(n.c['Cl-'][k] / 15 - 1) < 1e-9));
   // A profile in the region's own x, or in µm, misses the region.
   assert.match(describe(def({ 'K+': { x: [100, 200], c: [10, 20] } })), /misses the region/);
   assert.doesNotMatch(describe(def({ 'K+': { x: [0, 1e-4], c: [10, 20] } })), /misses the region/);
