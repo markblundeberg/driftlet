@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js';
+import { build, layer, ohmic } from '../src/kit.js';
 
 const VT = (GAS_CONSTANT * 298.15) / FARADAY;
 
@@ -58,4 +59,49 @@ test('set() that closes a stretch conserves what it holds then, not what it held
   assert.ok(closed.converged);
   assert.ok(Math.abs(closed.conservation[0].amount / held - 1) < 1e-12, `${closed.conservation[0].amount} vs ${held}`);
   assert.ok(Math.abs(closed.conservation[0].drift) < 1e-12);
+});
+
+// Slow ions sharing a layer with charged, reacting, immobile traps (SRH through explicit trap
+// states, X⁰ + e⁻ = X⁻, X⁻ + h⁺ = X⁰): a cold start needs steps far below anything the ions'
+// time scale suggests. (From a perovskite cell: iodide vacancies, D = 1e-17 m²/s, in MAPbI₃.)
+test('a cold start with slow ions and immobile traps: solve() and advance() both reach equilibrium', () => {
+  const F = FARADAY, T = 298, RT = GAS_CONSTANT * T, m3 = (n) => n / AVOGADRO;
+  const gc = 8.1e24, gv = 5.8e24, Eg = 1.7, N0 = 1.6e25, Nt = 1e20;
+  const ni = Math.sqrt(gc * gv) * Math.exp(-(Eg * F) / (2 * RT));
+  const def = build({
+    T,
+    species: [{ name: 'e-', z: -1 }, { name: 'h+', z: 1 }, { name: 'X0', z: 0 }, { name: 'X-', z: -1 }, { name: 'V+', z: 1 }],
+    materials: {
+      MAPI: {
+        epsr: 24.1,
+        species: {
+          'e-': { D: 1.7e-4, mu0: 0, cRef: m3(gc) },
+          'h+': { D: 1.7e-4, mu0: units.eV(Eg), cRef: m3(gv) },
+          X0: { D: 0, mu0: 0, cRef: m3(Nt) },
+          'X-': { D: 0, mu0: RT * Math.log(ni / gc), cRef: m3(Nt) },
+          'V+': { D: 1e-17, mu0: 0, cRef: m3(N0) },
+        },
+      },
+    },
+    stack: [ohmic(0), layer('MAPI', 400e-9, { fixedCharge: -F * m3(N0), c0: { X0: m3(Nt) / 2, 'X-': m3(Nt) / 2, 'V+': m3(N0) } }), ohmic(0)],
+    bulkReactions: [
+      { equation: 'e- + X0 = X-', kf: { MAPI: 1 / (3e-9 * m3(Nt)) } },
+      { equation: 'X- + h+ = X0', kf: { MAPI: 1 / (3e-7 * m3(Nt)) } },
+    ],
+    grid: { hmin: 0.05e-9, hmax: 10e-9, ratio: 1.15 },
+  });
+  const flat = (s) => {
+    for (const name of ['e-', 'h+', 'X-']) {
+      const mu = s.mu[name];
+      if ((Math.max(...mu) - Math.min(...mu)) / RT > 1e-6) return `${name} not flat`;
+    }
+    return '';
+  };
+  const s = new Device(def).solve();
+  assert.ok(s.converged, 'cold steady solve');
+  assert.equal(flat(s), '');
+  const dev = new Device(def);
+  const r = dev.advance(1e5, { tol: 1e-4 }); // from the cold start, with the default first step
+  assert.ok(r.done && r.converged, `advance: done ${r.done}, ${r.steps} steps`);
+  assert.equal(flat(dev.solution()), '');
 });

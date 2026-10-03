@@ -2198,6 +2198,9 @@ export class Solver {
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
     let grow = 0; // longer first steps tried after a Newton failure (see below)
+    // The shortest step worth trying: round-off relative to the time, or the device's fastest
+    // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
+    const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), this.fastestTime() * 1e-2);
     const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
     while (this.time < tEnd) {
@@ -2254,7 +2257,7 @@ export class Solver {
             grow = 3;
             dt = h / 4;
           }
-          if (dt < 1e-14 * Math.max(tEnd, 1e-300)) { failed = true; break; }
+          if (dt < floor) { failed = true; break; }
           continue;
         }
       } else {
@@ -2263,7 +2266,7 @@ export class Solver {
         if (!r.converged) {
           rejected++;
           dt = h / 4;
-          if (dt < 1e-14 * Math.max(tEnd, 1e-300)) { failed = true; break; }
+          if (dt < floor) { failed = true; break; }
           continue;
         }
         p = this._predict(pred, r.bdf);
@@ -2784,6 +2787,17 @@ export class Solver {
     return Number.isFinite(dMin) ? (L * L) / dMin : 1;
   }
 
+  // The fastest diffusion time: across the smallest cell, at the largest D.
+  fastestTime() {
+    let dMax = 0;
+    for (const mat of this.model.materials) {
+      for (let i = 0; i < this.n; i++) if (mat.present[i]) dMax = Math.max(dMax, mat.D[i]);
+    }
+    let h = Infinity;
+    for (const s of this.model.grid.segLength) if (s > 0) h = Math.min(h, s);
+    return dMax > 0 && Number.isFinite(h) ? (h * h) / dMax : this.slowestTime();
+  }
+
   /**
    * Steady state.
    * - If every species stretch is fed by a contact, nothing is conserved on its own, so the
@@ -2971,8 +2985,10 @@ export class Solver {
         history.push({ dt, converged: r.converged, iterations: r.iterations, maxStep: 3 });
       }
       if (!r.converged) {
+        // Pseudo-transient continuation: down from a slow time scale until a step converges,
+        // as far as the fastest (slow ions mustn't stop it short of what a cold start needs).
         dt = dt >= giant ? tau * 1e-6 : dt / 4;
-        if (dt < tau * 1e-15) break;
+        if (dt < Math.min(tau * 1e-15, this.fastestTime() * 1e-2)) break;
         continue;
       }
       if (dt === Infinity) {

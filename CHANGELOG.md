@@ -4,6 +4,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- A cold start with slow ions alongside fast physics (a perovskite's vacancies with carriers and
+  charged traps) solves: the steady solve's fallback time steps, and `advance()`'s first step,
+  shrink as far as the device's fastest time scale, not only to a fraction of the slowest (or
+  of the run's length). Both used to give up a few decades short. Reported, with a minimal
+  repro and the diagnosis, by an agent building a perovskite demo.
 - SRH (trap-assisted) recombination as a rate law, without trap species: in the bulk,
   `srh: { material: { tauN, tauP, n1 } }` in place of `kf`; at a face, `srh: { vn, vp, n1 }` in place
   of `k0` and `alpha`, with n and p each from its own side. Equilibrium stays exact (p₁ comes from
