@@ -116,3 +116,22 @@ for (const [set, bulk, what] of [['scan', false, 'bulk SRH off'], ['full', true,
     }
   });
 }
+
+test('the same cell in steady state: every pair made is collected or recombines (J = F(G − R_bulk − R_faces)), and describe() reads it right', async () => {
+  const { describe } = await import('../src/kit.js');
+  for (const V of [0, 0.9, 1.1]) {
+    const s = new Device(cell(V, true)).solve();
+    assert.ok(s.converged);
+    const [srh, light] = s.bulkReactions, faces = s.interfaces[0].rates[0] + s.interfaces[1].rates[0];
+    assert.ok(Math.abs(light.total / (m3(P.Fph) * -Math.expm1(-P.alpha * P.b)) - 1) < 1e-9, 'Beer–Lambert, absorbed in full');
+    const J = FARADAY * (light.total - srh.total - faces);
+    assert.ok(Math.abs(s.current / J - 1) < 1e-6, `${V} V: J ${s.current} vs F(G − R) ${J}`);
+  }
+  // The perovskite's Debye length is set by its vacancies alone (the background doesn't move),
+  // and the SRH reaction is listed where it runs.
+  const text = describe(cell(1.2, true));
+  const lambda = Math.sqrt((P.eps * 8.8541878128e-12 * GAS_CONSTANT * T) / (FARADAY * FARADAY * m3(P.N0)));
+  assert.match(text, new RegExp(`MAPbI₃ .*Debye length ${(lambda * 1e9).toPrecision(3)} nm`));
+  assert.match(text, /e- \+ h\+ = 0 \(SRH\) in MAPI/);
+});
+

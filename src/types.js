@@ -201,7 +201,9 @@
  * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
  * @property {{ name: string, V: number, flux: Record<string, number>, current: number }[]} ports what each
  *   internal port brings into the device
- * @property {{ dipole: number, sheetCharge: number, D: number, N: Record<string, number>, rates: number[] }[]} interfaces
+ * @property {{ left: string, right: string, dipole: number, sheetCharge: number, D: number, N: Record<string, number>, rates: number[] }[]} interfaces
+ * @property {{ rate: Float64Array, regions: number[], total: number }[]} bulkReactions each bulk reaction's
+ *   forward rate per node (mol/(m³·s), NaN where it doesn't run), and per region and in all (mol/(m²·s))
  * @property {number} charge total charge in the device, C/m²
  * @property {{ species: string, regions: number[], spectator: boolean, connected: boolean, reactive: boolean,
  *   amount: number, reference: number, intake: number, drift: number }[]} conservation

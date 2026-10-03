@@ -141,13 +141,17 @@ export function describe(def) {
     if (reg.fixedCharge !== 0) parts.push(`fixed charge ${reg.fixedCharge > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(Math.abs(reg.fixedCharge) / FARADAY)}`);
     // The screening concentration: Σ z²c from the initial composition, plus the carriers that
     // balance the fixed charge (doping), which c0 doesn't list.
-    let zzc = 0;
+    let zzc = 0, q = reg.fixedCharge / FARADAY; // q: the charge c0 leaves unbalanced
     species.forEach((sp, i) => {
       if (!mat.present[i]) return;
-      if (Number.isFinite(reg.c0[i])) zzc += sp.z * sp.z * reg.c0[i];
-      else if (reg.c0Profile[i]) zzc += sp.z * sp.z * Math.max(...reg.c0Profile[i].values);
+      const c = Number.isFinite(reg.c0[i]) ? reg.c0[i] : reg.c0Profile[i] ? Math.max(...reg.c0Profile[i].values) : 0;
+      zzc += sp.z * sp.z * c;
+      q += sp.z * c;
     });
-    zzc += Math.abs(reg.fixedCharge) / FARADAY; // the mobile charge that balances the doping
+    // Plus the mobile charge that balances whatever c0 leaves unbalanced: a doped layer's
+    // carriers, which c0 doesn't list (and nothing, where c0 lists them, as a perovskite's
+    // vacancies over their background).
+    zzc += Math.abs(q);
     const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));
     const Dmin = Math.min(...species.map((sp, i) => (mat.present[i] && mat.D[i] > 0 ? mat.D[i] : Infinity)));
     if (mat.epsr > 0 && zzc > 0) {
@@ -198,7 +202,7 @@ export function describe(def) {
   (def.ports ?? []).forEach((p, k) => lines.push(`  port ${model.ports[k].name}: ${drive(p)}, in ${regions[model.ports[k].region].name}`));
   if ((def.bulkReactions ?? []).length) {
     lines.push('bulk reactions:');
-    for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)} in ${Object.keys(rx.kf ?? {}).join(', ')}`);
+    for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)}${rx.srh ? ' (SRH)' : ''} in ${Object.keys(rx.kf ?? rx.srh ?? {}).join(', ')}`);
   }
   if (times.length) lines.push('time scales:', ...times);
   if (warnings.length) lines.push('warnings:', ...warnings.map((w) => `  ${w}`));

@@ -47,6 +47,11 @@ test('bulk SRH under uniform light: G = R_SRH(n, p) with n = N_D + p, for a midg
       const p = root((q) => R(q) - G, 0, 1e3 * (ND + G * tauP));
       const mid = s.x.length >> 1;
       assert.ok(Math.abs(s.c['h+'][mid] / p - 1) < 1e-6, `n1 ${n1}, G ${G}: p ${s.c['h+'][mid]} vs ${p}`);
+      // The solution reports each bulk reaction's rate: SRH matching G at every node, and in all.
+      const [srh, light] = s.bulkReactions;
+      assert.ok(Math.abs(srh.rate[mid] / G - 1) < 1e-6);
+      assert.ok(Math.abs(srh.total / light.total - 1) < 1e-9, `R ${srh.total} vs G ${light.total} in all`);
+      assert.ok(Math.abs(light.total / (G * 10e-6) - 1) < 1e-12);
       assert.ok(Math.abs(s.c['e-'][mid] / (ND + p) - 1) < 1e-6);
     }
   }

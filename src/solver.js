@@ -1715,6 +1715,21 @@ export class Solver {
     d[0] = -this._Kz(g, k);
   }
 
+  // A bulk reaction's rate at node g (mol/(m³·s), forward), as assembled: for the solution.
+  bulkRate(rx, g) {
+    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    let aHi = rx.fixedA, aLo = 0;
+    for (let p = 0; p < rx.sp.length; p++) {
+      aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
+      aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
+    }
+    const law = rx.srh?.[this.nodeMaterial[g]];
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo).rate;
+    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
+    for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    return P * -Math.expm1(-(aHi + aLo));
+  }
+
   // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and
   // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}).
   _srhRate(law, cn, cp, a) {

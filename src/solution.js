@@ -124,6 +124,23 @@ export function makeSolution(solver, result = {}) {
     return { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
   });
 
+  // Bulk reactions: each one's forward rate at every node (mol/(m³·s), NaN where it doesn't run),
+  // and integrated over each region and the device (mol/(m²·s)), by the nodes' control volumes,
+  // just as the balances count it.
+  sol.bulkReactions = solver.rxs.map((rx) => {
+    const rate = new Float64Array(nNodes).fill(NaN), regions = model.regions.map(() => 0);
+    let total = 0;
+    for (let g = 0; g < nNodes; g++) {
+      const m = solver.nodeMaterial[g];
+      if (!(rx.kf[m] > 0)) continue;
+      rate[g] = solver.bulkRate(rx, g);
+      const amount = grid.vol[g] * rate[g];
+      regions[grid.nodeRegion[g]] += amount;
+      total += amount;
+    }
+    return { rate, regions, total };
+  });
+
   // Total charge per area in the device (space charge plus sheet charges).
   let q = 0;
   for (let g = 0; g < nNodes; g++) {

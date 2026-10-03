@@ -2,6 +2,14 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Each solution reports its bulk reactions' rates, `bulkReactions[k]`: per node, per region and in
+  all, so charge balance J = F(G − R) is a few lines (validated to 1e-6 in the IonMonger cell).
+- `describe()`: an SRH reaction is listed where it runs; a region's Debye length counts only the
+  mobile charge `c0` leaves unbalanced on top of `c0` itself (0.5.0 counted a perovskite's
+  vacancies twice, once as themselves and once as balancing their background).
+
 ## 0.5.0 (2026-10-03)
 
 - SRH (trap-assisted) recombination as a rate law, without trap species: in the bulk,
