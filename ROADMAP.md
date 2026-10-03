@@ -70,6 +70,8 @@ for live demos.
 - Position-dependent rate constants (`kf` as a profile against x, averaged over each node's box
   so the total is exact on any grid), and Beer–Lambert `photogeneration()` in the kit, validated
   against collection theory from blue to red.
+- A transient recorder (`recorder()`: the trace across calls, frames at set times for
+  scrubbing), asked for by the perovskite agent.
 - Screenshots retaken by script (`npm run shots`): each demo held at a set state (`?t=…`,
   `?phase=…`) on virtual time, so an unchanged page comes out byte-identical.
 
@@ -149,7 +151,6 @@ for live demos.
      - **Inputs in the source's vocabulary**: a trap level against a band edge (SRH takes n₁ as a
        concentration today), and `describe()` reporting derived quantities to check against intent
        (built-in voltage, n_i, band offsets, the equilibrium levels against vacuum).
-     - **A transient recorder**: frames captured during `advance()` for scrubbing.
      - **Frozen species** as a named switch (today D → 1e-40) for separating time scales.
      - **Curated device sets** with a reference result, like IonMonger's default cell and its
        benchmark: whole devices with sources, so agents don't invent numbers.

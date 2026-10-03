@@ -4,6 +4,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- `recorder(device, { every, times, probes })` in the kit: a transient run in pieces (or in
+  animation-frame budgets, step for step the same run), with the trace joined up from the start
+  and whole solutions kept as frames at set times, `frame(t)` to scrub. Validated on a
+  diffusion mode decaying frame by frame at its analytic rate.
 - The IonMonger benchmark measures the loop as a current difference where it's gentle and as a
   voltage offset where it's steep: within 0.010 mA/cm² and 0.31 mV at all seven rates (the
   0.06–0.23 mA/cm² reported before was a sub-millivolt shift read on a near-vertical curve). The

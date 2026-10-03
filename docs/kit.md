@@ -169,6 +169,38 @@ const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
 console.log(`the pulse passes at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ≈ ${units.toPerCm3(seen[k]).toExponential(1)} cm⁻³`);
 ```
 
+## Recording a transient
+
+`recorder(device, { every, times, probes })` runs a transient in pieces and keeps what a demo
+needs to show it: `trace`, the terminal current and voltage (and the probes' readings) at every
+accepted step from the start, joined up across calls; and `frames`, whole solutions to scrub back
+through or draw side by side. Frames are kept at the start, then at each of `times` or every
+`every` seconds, which the stepping lands on exactly; with neither, at the end of each call.
+Its `advance(tEnd, opts)` takes `Device.advance()`'s options, so an animation calls it once per
+frame with a `budgetMs` (`done` says whether it got there), and a run in budgets is step for
+step the run made in one go. `frame(t)` is the frame at or just before t.
+
+```js
+import { Device } from 'driftlet';
+import { build, layer, bath, recorder } from 'driftlet/kit';
+
+// A salt step relaxing: 100 mM KCl in from a bath, into 10 mM held behind a blocking wall.
+const dev = new Device(
+  build({
+    species: [
+      { name: 'K+', z: 1, cRef: 1000 },
+      { name: 'Cl-', z: -1, cRef: 1000 },
+    ],
+    materials: { water: { epsr: 0, species: { 'K+': { D: 1.96e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+    stack: [bath({ 'K+': 100, 'Cl-': 100 }, 'Cl-'), layer('water', 100e-6, { c0: { 'K+': 10, 'Cl-': 10 } }), { species: { 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' }],
+    grid: { hmin: 2e-6, hmax: 2e-6 },
+  }),
+);
+const rec = recorder(dev, { every: 1, probes: [{ x: 100e-6, species: 'K+' }] });
+rec.advance(10, { tol: 1e-4 });
+console.log(`${rec.frames.length} frames, ${rec.trace.t.length} steps; at the wall after 5 s: ${rec.frame(5).c['K+'].at(-1).toFixed(2)} mol/m³`);
+```
+
 ## Plotting
 
 Solutions are plain arrays, ready for any plotting toolkit. Two helpers save the bookkeeping of
