@@ -16,7 +16,8 @@
     0 V and back, the vacancies take seconds to follow: scanned slowly they keep up, scanned fast they stay
     frozen, and in between the two sweeps disagree. Watch the loop open and close with the scan rate, and the
     vacancies pile up in nanometre-thin layers at each face, screening the field the carriers need. Checked
-    against IonMonger, an independent perovskite simulator. (More about the model below.)</p>
+    against <a href="https://github.com/PerovskiteSCModelling/IonMonger">IonMonger</a>, an independent perovskite
+    simulator. (More about the model below.)</p>
   <div class="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="3" step="0.25" value="-1"><output id="rateOut"></output></label>
     <label>playback <select id="pace">
@@ -42,7 +43,8 @@
     immobile negative background, moving with D = 1.0 × 10⁻¹⁷ m²/s; they can't leave it. That's three
     species, electrons, holes and vacancies, each moving down its own electrochemical potential. The same
     device runs in driftlet's test suite against IonMonger's own results at seven scan rates, agreeing to a
-    few parts in 10⁴ in the hysteresis index; the rings on the right are IonMonger's.</p>
+    few parts in 10⁴ in the hysteresis index and within a third of a millivolt along the whole loop; the
+    rings on the right are IonMonger's.</p>
   <p>The level diagram uses the <a
     href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
     V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge.
@@ -67,7 +69,8 @@
   <p>[1] N. E. Courtier, J. M. Cave, J. M. Foster, A. B. Walker and G. Richardson, "How transport layer
     properties affect perovskite solar cell performance: insights from a coupled charge transport/ion
     migration model", <i>Energy Environ. Sci.</i> <b>12</b>, 396 (2019); IonMonger: N. E. Courtier et al.,
-    <i>J. Comput. Electron.</i> <b>18</b>, 1435 (2019).</p>
+    <i>J. Comput. Electron.</i> <b>18</b>, 1435 (2019),
+    <a href="https://github.com/PerovskiteSCModelling/IonMonger">github.com/PerovskiteSCModelling/IonMonger</a>.</p>
 </main>
 <script type="module">
 import { Device, units, AVOGADRO, FARADAY, GAS_CONSTANT } from '../src/index.js';
