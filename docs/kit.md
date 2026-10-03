@@ -328,6 +328,58 @@ const def = build({
 console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s is beyond any real diffusivity …
 ```
 
+## Checking a result
+
+`check(device, sol, { refine, tol })` checks a solved device, and says what it compared, so a
+page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned.
+
+- **converged**: the solve converged.
+- **warnings**: the solution's warnings (unresolved double layers, steep profiles, a weakly held
+  part) and the definition's likely unit slips. They're heuristics, so they're marked `?`, a
+  prompt to look, and don't fail the check.
+- **balance**, in a steady state: each species' ledger, what comes in through each terminal and
+  what each reaction (bulk, or at a face) makes or uses, in mol/(m²·s) and for a charged species
+  as a current. The terms must sum to zero. Under light it's J = F(G − R), and it says where
+  every carrier went: collected, or recombined in the bulk or at which face. A species at rest
+  (in equilibrium, flows only of round-off against what it could carry) isn't listed.
+- **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
+  what came in.
+- **grid**, in a steady state (unless `refine: false`): the device solved again on a grid twice
+  as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
+  from this solution interpolated onto it. The current, each floating terminal's voltage (an open-circuit voltage) and each
+  region's charge must agree to `tol` (relative; default 1e-2, about what a plot shows; a
+  benchmark wants 1e-3 or less). The discretisation is second order, so the change estimates
+  this grid's own error (about ¾ of it). It costs one more solve, so run it once, not on every
+  slider move.
+
+It returns `{ ok, items, text }`: `ok` when nothing failed, an item per check
+(`{ name, ok, summary, details }`, with `ok: null` for a prompt to look), and `text`, a line
+per check marked `ok`, `FAIL` or `?`, ready to log or put on the page.
+
+```js
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor, photogeneration, check } from 'driftlet/kit';
+
+// An n⁺p silicon cell under blue-green light (α = 1e5 /m), at 0.5 V.
+const W = units.um(60.5);
+const dev = new Device(
+  build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: units.perCm3(1e16) }), ohmic(0.5)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }, photogeneration({ material: 'Si', flux: 3e-3, alpha: 1e5, mu: units.eV(3), to: W })],
+    grid: { hmin: units.nm(1), hmax: units.um(1) },
+  }),
+);
+const report = check(dev, dev.solve());
+console.log(report.text);
+// ok   balance: 2 species' sources and sinks sum to zero …
+//        e-: photon = e- + h+: +2.99e-3 (289 A/m²); left contact: -2.23e-3 (-215 A/m²); …
+// FAIL grid: on a grid twice as fine (172 → 339 nodes), the largest change is region 0 (Si)
+//      charge, … (0.021, over 0.01: refine the grid …): the current is fine (1e-4), but the
+//      emitter's depletion charge is 2 % off on this grid; hmin: units.nm(0.25) fixes it.
+```
+
 ## Live demos
 
 `live(def, opts)` wraps a device for sliders. Call `set(patch)` as often as a control moves

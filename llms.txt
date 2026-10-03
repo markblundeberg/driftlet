@@ -40,13 +40,17 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   next to a dielectric needs its φ law. Every species that doesn't reach a contact needs its
   initial amount (`c0`). An error names the path and says what to give.
 - **Check before trusting.** `sol.converged` must be true, and read `sol.warnings`.
-  `describe(def)` (kit) summarises a definition and flags likely unit slips.
+  `describe(def)` (kit) summarises a definition and flags likely unit slips. Once a device
+  works, run `check(dev, sol)` (kit) and show or log its `text`: each species' ledger (what
+  every terminal and reaction brings in or uses, summing to zero: J = F(G − R) under light),
+  conservation in transients, and the same device on a grid twice as fine (a FAIL means the
+  answer depends on the grid: refine it). It costs a solve, so run it once, not per frame.
 - **Exports.** `driftlet`: `Device`, `units`, and the constants `FARADAY`, `GAS_CONSTANT`,
   `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
   `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …), `recorder` (a transient's trace and frames across calls), the curated
+  `metal`, `IONS`, …), `check` (a solution's checks), `recorder` (a transient's trace and frames across calls), the curated
   `perovskiteCell` with IonMonger's `PEROVSKITE_SCANS` and `hysteresis`, and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).

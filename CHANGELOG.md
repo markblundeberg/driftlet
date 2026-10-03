@@ -4,6 +4,16 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- `check(device, sol)` in the kit: checks on a solved device, each saying what it compared, as
+  `{ ok, items, text }`. Convergence; warnings and likely unit slips (marked `?`, a prompt to
+  look); in a steady state, each species' ledger (what every terminal and reaction brings in or
+  uses, summing to zero: J = F(G − R) under light, and where each carrier went), and the device
+  solved again on a grid twice as fine (current, floating voltages and region charges to 1 %, the
+  change estimating the grid's own error); in a transient, conservation. Validated on a lit
+  silicon cell (the ledger term by term, and the grid change against a 16× finer solve) and run
+  over every steady solve in the test suite without false alarms. The solar demo shows it, and
+  its grid is finer for it (hmin 1 nm had left the emitter's depletion charge 2 % off).
+- Solutions say whether they're a steady state, `sol.steady`.
 - Curated devices in the kit: `perovskiteCell({ V, light, bulkSRH })`, IonMonger's default
   perovskite solar cell as a plain definition, and `PEROVSKITE_SCANS`, IonMonger's own J–V scans
   of it (current at 0 V, each sweep's P_max and V_oc, hysteresis index, at seven rates, with and

@@ -129,6 +129,7 @@ and the voltage views `V`, `Vstd`. They also carry the terminals' voltages and c
 conservation bookkeeping and warnings; see [the device reference](docs/device.md). The
 [kit](docs/kit.md) adds reactions written as equations (`'Ag+ + e- = Ag(s)'`), redox levels,
 level diagrams, slider demos, a transient recorder, `describe()` (which flags likely unit slips),
+`check()` (a solution's ledgers and a grid-convergence check),
 and curated devices with reference results: IonMonger's perovskite cell, with its J–V scans.
 
 ## Demos

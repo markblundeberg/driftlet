@@ -321,6 +321,7 @@ export class Solver {
     this.jR = new Float64Array(M);
     this.time = 0;
     this.lastDt = Infinity;
+    this.atSteady = false; // whether the state is a converged steady solve
     // Contact bookkeeping, filled by assemble(): particle flux toward +x through each contact,
     // and the displacement there (the metal's surface charge for a neutral link).
     this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
@@ -802,6 +803,7 @@ export class Solver {
   // After the terminals' drives change (Device.set): which are floating, and the held values. A
   // change of source is a discontinuity, so time stepping restarts its order.
   redrive() {
+    this.atSteady = false;
     const before = this.floating;
     this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
     if (this.floating.length !== before.length) this.deltaV = null;
@@ -1730,6 +1732,19 @@ export class Solver {
     return P * -Math.expm1(-(aHi + aLo));
   }
 
+  // The larger of a bulk reaction's two one-way rates at node g (mol/(m³·s)): the scale its net
+  // rate is read against (in equilibrium the net rate is their round-off).
+  bulkOneWay(rx, g) {
+    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    let a = rx.fixedA;
+    for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
+    const law = rx.srh?.[this.nodeMaterial[g]];
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a).oneWay;
+    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
+    for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    return P * Math.max(1, Math.exp(-a));
+  }
+
   // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and
   // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}).
   _srhRate(law, cn, cp, a) {
@@ -1746,7 +1761,7 @@ export class Solver {
     const dDn = tp * cn + tp * n1 * kN + tn * p1 * (1 - kN);
     const dDp = tp * n1 * kP + tn * cp + tn * p1 * (1 - kP);
     const dDa = tp * n1 * kA + tn * p1 * (-1 - kA);
-    return { rate, Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
+    return { rate, oneWay: (np / den) * Math.max(1, Math.exp(-a)), Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
   }
 
   // A face reaction (see normalizeFaceReactions). Its rate r_k is an unknown of the face block,
@@ -2186,6 +2201,7 @@ export class Solver {
    * the start-of-step values, and dt/a0 replaces dt.
    */
   step(dt, opts = {}) {
+    this.atSteady = false;
     const prev = this.history[0];
     const w = prev ? dt / prev.dt : 0;
     const bdf = opts.method === 'bdf2' && prev !== undefined && w <= 2;
@@ -2480,6 +2496,39 @@ export class Solver {
     return mx;
   }
 
+  // Start from another solver's state for the same device on another grid (a refined one): each
+  // node's unknowns interpolated linearly in x within its region, each face's copied, and the
+  // terminals' voltages. A warm start for a steady solve; nothing else is carried over.
+  _warmFrom(src) {
+    const { M, u, uLo } = this, grid = this.model.grid, sg = src.model.grid;
+    if (src.M !== M || sg.regionStart.length !== grid.regionStart.length) throw new Error('_warmFrom: a different device');
+    const value = (b, k) => src.u[b * M + k] + src.uLo[b * M + k];
+    for (let r = 0; r < grid.regionStart.length; r++) {
+      let a = sg.regionStart[r];
+      for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
+        const x = grid.x[g];
+        while (a + 1 < sg.regionEnd[r] && sg.x[a + 1] < x) a++;
+        const b = Math.min(a + 1, sg.regionEnd[r]), h = sg.x[b] - sg.x[a];
+        const w = h > 0 ? Math.min(1, Math.max(0, (x - sg.x[a]) / h)) : 0;
+        const ba = src.blockOfNode[a], bb = src.blockOfNode[b], bg = this.blockOfNode[g];
+        for (let k = 0; k < M; k++) {
+          u[bg * M + k] = (1 - w) * value(ba, k) + w * value(bb, k);
+          uLo[bg * M + k] = 0;
+        }
+      }
+    }
+    for (let f = 0; f < this.nFaces; f++) {
+      for (let k = 0; k < M; k++) {
+        u[this.blockOfFace[f] * M + k] = value(src.blockOfFace[f], k);
+        uLo[this.blockOfFace[f] * M + k] = 0;
+      }
+    }
+    this.termV.set(src.termV);
+    this.solvedV = src.solvedV;
+    this.time = src.time;
+    this.computeConcentrations();
+  }
+
   _snapshot() {
     return {
       u: Float64Array.from(this.u),
@@ -2487,6 +2536,7 @@ export class Solver {
       cOld: Float64Array.from(this.cOld),
       time: this.time,
       lastDt: this.lastDt,
+      atSteady: this.atSteady,
       contactDStart: this.contactDStart,
       contactDOld: this.contactDOld,
       contactDEnd: this.contactDEnd,
@@ -2503,6 +2553,7 @@ export class Solver {
     this.cOld.set(s.cOld);
     this.time = s.time;
     this.lastDt = s.lastDt;
+    this.atSteady = s.atSteady;
     this.contactDStart = s.contactDStart;
     this.contactDOld = s.contactDOld;
     this.contactDEnd = s.contactDEnd;
@@ -2878,7 +2929,15 @@ export class Solver {
    * If Newton fails, dt ramps up from a small value (pseudo-transient continuation) instead.
    * The clock is not advanced, and open-system conservation bookkeeping restarts here.
    */
+  // Steady state from the present one; `atSteady` says whether the state is one (until a step or
+  // a change of drive).
   solveSteady(opts = {}) {
+    const r = this._steadyFromHere(opts);
+    this.atSteady = r.converged;
+    return r;
+  }
+
+  _steadyFromHere(opts) {
     this.conditioning = null;
     this.computeConcentrations();
     this._captureLocal(); // immobile combinations keep, node by node, what they hold now

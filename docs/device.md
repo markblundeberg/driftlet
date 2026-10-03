@@ -564,11 +564,12 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates }`: the names of the regions the face joins, what crosses it by its links, and each face reaction's rate (mol/(m²·s)) |
-| `bulkReactions[k]` | `{ rate, regions, total }`: each bulk reaction's forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination) |
+| `bulkReactions[k]` | `{ rate, regions, total }`: each bulk reaction's forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |
+| `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |
 
 A stretch is a run of regions in which a species is present and connected. Its `drift`

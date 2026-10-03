@@ -70,6 +70,9 @@ for live demos.
 - Position-dependent rate constants (`kf` as a profile against x, averaged over each node's box
   so the total is exact on any grid), and Beer–Lambert `photogeneration()` in the kit, validated
   against collection theory from blue to red.
+- Checks as results: `check(device, sol)` reports each species' ledger (J = F(G − R) under
+  light), conservation, and the same device on a grid twice as fine, asked for by the perovskite
+  agent.
 - Curated devices with reference results from an independent code (`perovskiteCell()` and
   IonMonger's scans of it), and a transient recorder (`recorder()`: the trace across calls,
   frames at set times for scrubbing), both asked for by the perovskite agent.
@@ -141,11 +144,11 @@ for live demos.
      from an already-injected or relaxing state without simulating how it got there (and
      without a back door around the conservation bookkeeping: it's the definition's start).
    - From the perovskite agent's review: the pieces every demo rebuilds.
-     - **Checks as first-class results.** Many verifications follow from the definition alone:
-       charge balance J = q(G − R), J_sc against the absorbed photon flux, V_oc against detailed
-       balance, an ionic RC time, a transient's slow and fast limits. A solution could report the
-       limits that apply to it and whether it sits inside them, so an LLM-built demo is checked by
-       default rather than only when its author is diligent.
+     - **More checks.** `check()` covers each species' ledger, conservation and grid
+       convergence; still to come are limits that need a device family's theory (V_oc against
+       detailed balance, an ionic RC time), a transient's time step against the device's fast
+       and slow time scales, and the second law's ledger (free energy in = dissipation ≥ 0, which
+       the test suite checks) as a reported item.
      - **Energy-up band diagrams** in `driftlet/plot` for electrons and holes (E_c, E_v, quasi-Fermi
        levels in eV), with species voltages kept for what that picture can't show: ions, and
        equilibrium between species.

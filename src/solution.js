@@ -27,6 +27,7 @@ export function makeSolution(solver, result = {}) {
     V: {},
     Vstd: {},
     time: solver.time,
+    steady: solver.atSteady,
     converged: result.converged ?? true,
     iterations: result.iterations ?? 0,
     steps: result.steps,

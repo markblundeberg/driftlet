@@ -211,6 +211,7 @@
  * @property {boolean} converged
  * @property {number} iterations
  * @property {number} time s
+ * @property {boolean} steady whether this is a converged steady state (solve()), not a transient's
  * @property {boolean} [done] advance(): whether tEnd was reached (false if the frame budget ran out)
  * @property {number} [rejected] advance(): steps rejected by error control or Newton failure
  * @property {{ t: number[], current: number[], voltage: number[], probes?: number[][] }} [trace] advance():
