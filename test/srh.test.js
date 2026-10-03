@@ -103,3 +103,36 @@ test('SRH definitions are checked', () => {
     assert.throws(() => new Device(def(rx)), (e) => e instanceof DeviceError && message.test(e.message), JSON.stringify(rx));
   }
 });
+
+test('explicit immobile traps in steady state recombine exactly at the SRH rate, and keep their total node by node', () => {
+  // The same lit n-type slab, recombining through trap states X⁰/X⁻ that don't move (D = 0):
+  // e⁻ + X⁰ = X⁻ (capture coefficient c_n) and X⁻ + h⁺ = X⁰ (c_p). In steady state a single
+  // trap level recombines at exactly R_SRH(n, p) with τ_n = 1/(c_n N_t), τ_p = 1/(c_p N_t), and
+  // n₁ the electron density that half-fills it. The trap total X⁰ + X⁻ is conserved at each node
+  // on its own, which the steady solve now holds as a row of that node's block (no time steps).
+  const ND = units.perCm3(1e15), Nt = units.perCm3(1e12), tauN = 2e-6, tauP = 1e-6, G = units.perCm3(1e20);
+  const n1 = units.perCm3(1e12);
+  const cn = 1 / (tauN * Nt), cp = 1 / (tauP * Nt);
+  const species = [...Si.species, { name: 'X0', z: 0, cRef: Nt }, { name: 'X-', z: -1, cRef: Nt }];
+  const mat = { ...Si.materials.Si, species: { ...Si.materials.Si.species, X0: { D: 0, mu0: 0 }, 'X-': { D: 0, mu0: el.mu0 + RT * Math.log(n1 / el.cRef) } } };
+  const dev = new Device(
+    build({
+      T,
+      species,
+      materials: { Si: mat },
+      stack: [ohmic(0, ['e-']), layer('Si', 10e-6, { donors: ND, c0: { 'h+': 1e-12, X0: Nt / 2, 'X-': Nt / 2 } }), ohmic(0, ['e-'])],
+      bulkReactions: [
+        { equation: 'e- + X0 = X-', kf: { Si: cn } },
+        { equation: 'X- + h+ = X0', kf: { Si: cp } },
+        { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G } },
+      ],
+    }),
+  );
+  const s = dev.solve();
+  assert.ok(s.converged);
+  assert.ok(s.history.every((h) => !(h.dt < Infinity)), 'solved directly, with no time steps');
+  const mid = s.x.length >> 1, n = s.c['e-'][mid], p = s.c['h+'][mid];
+  const R = (n * p - ni2) / (tauP * (n + n1) + tauN * (p + ni2 / n1));
+  assert.ok(Math.abs(R / G - 1) < 1e-6, `R_SRH ${R} against G ${G}`);
+  s.c.X0.forEach((x, g) => assert.ok(Math.abs((x + s.c['X-'][g]) / Nt - 1) < 1e-12, `trap total at node ${g}`));
+});

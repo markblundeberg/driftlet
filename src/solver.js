@@ -564,7 +564,61 @@ export class Solver {
       // The row replaced: the basis vector's own stretch (its weight is 1, and no other vector has one).
       add(parts, parts.find((p) => w[p.stretch] === 1)?.stretch ?? parts[0].stretch);
     }
+    // A combination of immobile stretches (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻) is conserved
+    // node by node, since nothing carries it anywhere: at each node its weighted sum stays what
+    // it was, a row local to that node's block, in place of the balance row of one of them.
+    this.localConstraints = [];
+    const immobile = (st) => {
+      for (let q = st.regions[0]; q <= st.regions[1]; q++) if (materials[regions[q].material].D[st.species] > 0) return false;
+      return true;
+    };
+    for (const w of this.moieties) {
+      const parts = [...w.keys()].filter((k) => w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
+      const sts = parts.map((p) => this.stretches[p.stretch]);
+      if (sts.some((st) => st.conserved || !immobile(st) || conductor(st))) continue;
+      if (sts.some((st) => st.nodes[0] !== sts[0].nodes[0] || st.nodes[1] !== sts[0].nodes[1])) continue; // (side by side only)
+      for (const st of sts) st.conserved = true;
+      const row = parts.find((p) => p.w === 1) ?? parts[0];
+      this.localConstraints.push({
+        parts: parts.map((p) => ({ i: this.stretches[p.stretch].species, w: p.w })),
+        row: 1 + this.stretches[row.stretch].species,
+        nodes: sts[0].nodes,
+        reference: new Float64Array(sts[0].nodes[1] - sts[0].nodes[0] + 1),
+      });
+    }
     this.constrained = false;
+  }
+
+  // Each local constraint's weighted sum at each node, as the state holds it now: what a steady
+  // solve keeps.
+  _captureLocal() {
+    const { n, c } = this;
+    for (const lc of this.localConstraints) {
+      for (let g = lc.nodes[0]; g <= lc.nodes[1]; g++) {
+        let t = 0;
+        for (const { i, w } of lc.parts) t += w * c[g * n + i];
+        lc.reference[g - lc.nodes[0]] = t;
+      }
+    }
+  }
+
+  // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.
+  _applyLocalConstraints() {
+    const { n, M, c, res, dA: d } = this;
+    for (const lc of this.localConstraints) {
+      for (let g = lc.nodes[0]; g <= lc.nodes[1]; g++) {
+        const b = this.blockOfNode[g];
+        if (this.loc[b * M + lc.row] < 0) continue;
+        this._replaceRow(b, lc.row);
+        let t = 0;
+        for (const { i, w } of lc.parts) {
+          t += w * c[g * n + i];
+          this._dc(g, i, d);
+          for (let s = 0; s < M; s++) if (d[s] !== 0) this._j(b, lc.row, b, s, w * d[s]);
+        }
+        res[this.rix[b * M + lc.row]] = t - lc.reference[g - lc.nodes[0]];
+      }
+    }
   }
 
   // A basis of the conserved combinations of stretch amounts: the null space of the
@@ -1116,6 +1170,7 @@ export class Solver {
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
+    if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
   }
@@ -2810,6 +2865,8 @@ export class Solver {
    */
   solveSteady(opts = {}) {
     this.conditioning = null;
+    this.computeConcentrations();
+    this._captureLocal(); // immobile combinations keep, node by node, what they hold now
     this.sourceTime = this.time;
     // Continuation applies where the right terminal is held at a voltage, against a held left one.
     const [dl, dr] = [this.terms[0].drive, this.terms[1].drive];

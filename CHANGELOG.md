@@ -4,6 +4,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Immobile reacting species (trap states, fixed charge states) in steady solves: a combination
+  of them that reactions conserve is now held node by node, as a row of that node's block, so
+  the steady solve goes direct instead of through giant time steps (which stalled when the
+  traps relaxed slowly). Validated: explicit immobile traps recombine at exactly the SRH rate
+  in steady state, their totals kept at every node.
 - A cold start with slow ions alongside fast physics (a perovskite's vacancies with carriers and
   charged traps) solves: the steady solve's fallback time steps, and `advance()`'s first step,
   shrink as far as the device's fastest time scale, not only to a fraction of the slowest (or

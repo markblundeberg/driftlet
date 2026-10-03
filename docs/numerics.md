@@ -545,8 +545,12 @@ take about twice as long as before.
   larger by $`D \cdot dt/(hL)`$, around 1e12 for a micron-scale cell (see
   [metal regions](#metal-regions) for the same cancellation). Newton then needs dozens of
   iterations, or fails.
-- **Otherwise** (immobile spectators, which conserve node by node, or a combination that
-  includes a floating conductor), backward-Euler steps at a huge $`dt`$ (10⁶ × the slowest
+- **Immobile combinations** (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) conserve
+  node by node, since nothing carries them anywhere. At each node the combination's weighted sum
+  replaces one of its balance rows, kept at what it was when the solve began. The row is local
+  to that node's block, so nothing is bordered, and the solve goes direct.
+- **Otherwise** (an immobile spectator on its own, or a combination that includes a floating
+  conductor or mixes mobile and immobile stretches), backward-Euler steps at a huge $`dt`$ (10⁶ × the slowest
   diffusion time) keep the storage term, which pins each conserved amount exactly: sum a
   species' rows and the fluxes cancel. $`dt`$ grows ×10 (capped) while the state still moves.
   Before each huge step, each spectator's level is shifted uniformly to restore its amount
