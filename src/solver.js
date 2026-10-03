@@ -790,7 +790,9 @@ export class Solver {
     u.fill(0);
     this.uLo.fill(0);
     const eta = new Float64Array(n), cFix = new Float64Array(n), mode = new Int8Array(n); // 1 level, 2 amount
-    let phiHat = 0;
+    // φ̂ runs from the left: from a pinned (or gated) left contact's φ at its zero charge, else 0.
+    const leftPhi = model.contacts.left.phi;
+    let phiHat = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive' ? (this.termV[0] - leftPhi.zeroCharge) / this.VT : 0;
     for (let r = 0; r < regions.length; r++) {
       if (r > 0) phiHat += interfaces[r - 1].dipole / this.VT;
       const reg = regions[r], mat = materials[reg.material];
@@ -822,7 +824,8 @@ export class Solver {
         } else if (!st.contactFed) {
           if (!(reg.c0[i] > 0)) {
             throw new SolverError(
-              `regions[${r}].c0.${species[i].name}: a species that doesn't reach a contact needs its initial concentration`,
+              `regions[${r}].c0.${species[i].name}: a species that doesn't reach a contact needs its initial concentration` +
+                (st.connected ? ' (reactions make and consume it, so this is only where the solve starts, not an amount it keeps: a tiny value will do)' : ', which fixes the amount it conserves'),
             );
           }
           mode[i] = 2;
@@ -905,6 +908,9 @@ export class Solver {
         let lo = ph - 1, hi = ph + 1;
         while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
         while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
+        // Out of reach (every responding carrier has one sign and nothing balances it, as in an
+        // undoped layer that holds only holes): keep the running φ̂ rather than run it to ±∞.
+        if (charge(lo) < 0 || charge(hi) > 0) return ph;
         for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
           const m = 0.5 * (lo + hi);
           if (charge(m) > 0) lo = m;

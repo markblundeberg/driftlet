@@ -9,6 +9,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `photogeneration({ material, flux, alpha, mu, from, to })` in the kit: Beer–Lambert absorption
   as a generation reaction. Validation: J_sc in an n⁺p cell against collection theory, from blue
   light lost in the emitter to red collected deep in the base.
+- `photogeneration({ makes })`: light can make something other than e⁻ + h⁺, such as an
+  exciton. Validation: an organic bilayer, with excitons as a third, neutral species diffusing to
+  the donor/acceptor interface and splitting there (J_sc against exciton-diffusion theory), and
+  V_oc from charge-transfer recombination by detailed balance.
+- The cold start of an undoped layer holding one carrier (which can't be neutral) keeps the
+  running φ instead of driving it to an extreme, and φ starts from a pinned or gated left
+  contact. Such devices used to fail on the first Newton step.
+- A species fed only by reactions still needs a `c0`, and the error now says that it's only a
+  starting point, not an amount it keeps.
 - Breaking: a `c0` profile is `{ x, values }` (it was `{ x, c }`), the same shape as a `kf`
   profile and, against t, a waveform.
 
