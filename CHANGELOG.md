@@ -4,6 +4,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- A benchmark against an independent code: perovskite J–V hysteresis (mobile iodide vacancies,
+  interface SRH) against IonMonger at seven scan rates from 1 mV/s to 1 kV/s. Hysteresis index
+  within 5e-4, maximum power within 0.02 mW/cm², V_oc within 1 mV, whole loops within
+  0.06 mA/cm² (0.23 at the fastest-changing sweep). Three species and two face SRH laws; each scan
+  takes 0.3 s against IonMonger's 50.
 - Immobile reacting species (trap states, fixed charge states) in steady solves: a combination
   of them that reactions conserve is now held node by node, as a row of that node's block, so
   the steady solve goes direct instead of through giant time steps (which stalled when the
