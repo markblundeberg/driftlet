@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.6.0 (2026-10-03)
 
 - `check(device, sol)` in the kit: checks on a solved device, each saying what it compared, as
   `{ ok, items, text }`. Convergence; warnings and likely unit slips (marked `?`, a prompt to
