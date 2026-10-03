@@ -93,7 +93,7 @@ const reference = (set, rate) =>
   readFileSync(new URL(`fixtures/ionmonger/${set}_${rate}.csv`, import.meta.url), 'utf8').trim().split('\n').map((line) => line.split(',').map(Number));
 
 for (const [set, bulk, what] of [['scan', false, 'bulk SRH off'], ['full', true, "IonMonger's full defaults"]]) {
-  test(`perovskite hysteresis against IonMonger (${what}), 1 mV/s to 1 kV/s: hysteresis index, maximum power, V_oc and the whole J–V loop`, () => {
+  test(`perovskite hysteresis against IonMonger (${what}), 1 mV/s to 1 kV/s: hysteresis index, maximum power, V_oc and the whole J–V loop (to 0.03 mA/cm² where gentle, 1 mV where steep)`, () => {
     for (const rate of ['0.001', '0.01', '0.1', '1', '10', '100', '1000']) {
       const ours = scan(+rate, bulk), theirs = reference(set, rate);
       const a = loop(ours, +rate), b = loop(theirs, +rate);
@@ -103,16 +103,24 @@ for (const [set, bulk, what] of [['scan', false, 'bulk SRH off'], ['full', true,
         assert.ok(Math.abs(a[s].pmax - b[s].pmax) < 0.05, `${at} ${s}: P_max ${a[s].pmax} vs ${b[s].pmax} mW/cm²`);
         assert.ok(Math.abs(a[s].voc - b[s].voc) < 2e-3, `${at} ${s}: V_oc ${a[s].voc} vs ${b[s].voc} V`);
       }
-      // The loop itself, point by point in time (up to 1.1 V, short of the steep rise past V_oc).
-      let worst = 0;
-      for (const [t, V, J] of theirs) {
-        if (!Number.isFinite(J) || V > 1.1 || t <= 0) continue;
+      // The loop itself, at IonMonger's own points (matched in time): as a current difference
+      // where the curve is gentle, and as a voltage offset where it's steep (near V_oc it falls at
+      // up to 1100 mA/cm² per volt, so a sub-millivolt shift would read as a large current gap).
+      let gentle = 0, steep = 0;
+      for (let q = 1; q < theirs.length - 1; q++) {
+        const [t, V, J] = theirs[q];
+        if (!Number.isFinite(J) || V > 1.15 || t <= 0) continue;
         const k = ours.findIndex(([tk]) => tk >= t);
         if (k <= 0) continue;
         const [[t0, , J0], [t1, , J1]] = [ours[k - 1], ours[k]];
-        worst = Math.max(worst, Math.abs(J0 + ((J1 - J0) * (t - t0)) / (t1 - t0) - J));
+        const gap = Math.abs(J0 + ((J1 - J0) * (t - t0)) / (t1 - t0) - J);
+        const [, Va, Ja] = theirs[q - 1], [, Vb, Jb] = theirs[q + 1];
+        const slope = Math.abs((Jb - Ja) / (Vb - Va)); // mA/cm² per V
+        if (slope < 50) gentle = Math.max(gentle, gap);
+        else steep = Math.max(steep, gap / slope);
       }
-      assert.ok(worst < 0.3, `${at}: J differs by up to ${worst} mA/cm²`);
+      assert.ok(gentle < 0.03, `${at}: J differs by up to ${gentle} mA/cm² where the curve is gentle`);
+      assert.ok(steep < 1e-3, `${at}: the steep part is offset by up to ${steep * 1000} mV`);
     }
   });
 }
