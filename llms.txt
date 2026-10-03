@@ -219,6 +219,13 @@ const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
 console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1950 for the 1900 put in: a spreading, decaying pulse peaks a little early
 ```
 
+To start from a state instead of simulating how it got there (a packet already injected, a
+salt gradient laid down), give a region's `c0` a profile against the device's x:
+`c0: { 'h+': { x: [...], c: [...] } }`, piecewise linear. It's the starting state even for a
+species a contact feeds; other species start cold, with φ made neutral node by node (electrons
+follow the holes). Then `advance()` without `solve()`, which would go straight to the steady
+state.
+
 Transients cost more where a carrier's density spans many decades (minority holes in silicon
 ahead of the pulse) and at strong injection (Δp near n₀); budget for that, or coarsen the grid.
 
@@ -349,5 +356,7 @@ has the long form):
   to write `2 e-`.
 - **Changing c0 with `set()`.** A carried state keeps what it holds; `c0` is only the starting
   composition. Make a new `Device` to start over from it.
+- **`solve()` before advancing from a `c0` profile.** It replaces the profile with the steady
+  state. Advance from the new `Device` directly. A profile's x is the device's, in m.
 - **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
   Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).

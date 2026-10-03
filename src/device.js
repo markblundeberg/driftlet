@@ -178,19 +178,33 @@ export function normalizeDevice(def) {
           'so it must have the opposite sign to that carrier',
       );
     }
-    // Initial composition: the starting state, and the conserved amount of any spectator.
+    // Initial composition: the starting state, and the conserved amount of any spectator. Each
+    // entry is a number, or a profile { x, c } against the device's x (piecewise linear, constant
+    // beyond its ends), which is the starting state even for a species a contact feeds.
     const c0 = new Float64Array(nSpecies).fill(NaN);
+    const c0Profile = new Array(nSpecies).fill(null);
     if (reg.c0 !== undefined) {
       need(isObject(reg.c0), `${path}.c0 must be an object mapping species names to concentrations`);
       for (const [sname, v] of Object.entries(reg.c0)) {
-        need(speciesIndex.has(sname), `${path}.c0.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
+        const at = `${path}.c0.${sname}`;
+        need(speciesIndex.has(sname), `${at}: unknown species '${sname}'${known(speciesIndex)}`);
         const i = speciesIndex.get(sname);
-        need(mat.present[i], `${path}.c0.${sname}: '${sname}' is absent from material '${mat.name}'`);
-        need(
-          isFiniteNumber(v) && v > 0,
-          `${path}.c0.${sname} must be a concentration > 0 (mol/m³), got ${JSON.stringify(v)}; to have none of '${sname}' here, ` +
-            `leave it out of material '${mat.name}' (a region of another material without it, if it's present elsewhere)`,
-        );
+        need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
+        const none = `; to have none of '${sname}' here, leave it out of material '${mat.name}' (a region of another material without it, if it's present elsewhere)`;
+        if (isObject(v)) {
+          fields(v, at, ['x', 'c']);
+          need(
+            Array.isArray(v.x) && Array.isArray(v.c) && v.x.length > 0 && v.x.length === v.c.length,
+            `${at} must be a profile { x, c }: two arrays of the same length, positions (m, the device's x) and concentrations (mol/m³)`,
+          );
+          v.x.forEach((xk, k) => {
+            need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${at}.x must be finite and strictly increasing, but x[${k}] is ${JSON.stringify(xk)}`);
+          });
+          v.c.forEach((ck, k) => need(isFiniteNumber(ck) && ck > 0, `${at}.c[${k}] must be a concentration > 0 (mol/m³), got ${JSON.stringify(ck)}${none}`));
+          c0Profile[i] = { x: Float64Array.from(v.x), c: Float64Array.from(v.c) };
+          continue;
+        }
+        need(isFiniteNumber(v) && v > 0, `${at} must be a concentration > 0 (mol/m³) or a profile { x, c }, got ${JSON.stringify(v)}${none}`);
         c0[i] = v;
       }
     }
@@ -200,6 +214,7 @@ export function normalizeDevice(def) {
       length,
       fixedCharge,
       c0,
+      c0Profile,
       background,
       velocity,
       mixing,

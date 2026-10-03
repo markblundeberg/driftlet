@@ -4,6 +4,13 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- `c0` profiles: a region's initial concentration can be tabulated against x (`{ x, c }`,
+  piecewise linear), the starting state of a transient even for a species a contact feeds, with
+  $`\phi`$ neutral node by node. `describe()` warns when a profile misses its region.
+  Validation: a Gaussian hole packet drifting, spreading and decaying at the ambipolar rates,
+  and a salt's diffusion mode decaying at $`\pi^2 D/4L^2`$.
+- `npm run smoke`: every demo in headless Chrome with every control moved to its extremes,
+  in CI.
 - Results identical across JavaScript engines: powers go through `powi`/`powr` instead of `**`,
   whose last bit differs between Node 22 and 24 (enough to flip a step in a long adaptive run).
 

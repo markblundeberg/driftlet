@@ -65,13 +65,26 @@ export function unitWarnings(def) {
       if (sp.cRef !== undefined) conc(`${sp_}.cRef`, sp.cRef);
     }
   }
+  const regionX0 = [0];
+  for (const reg of def.regions ?? []) regionX0.push(regionX0.at(-1) + (isObject(reg) && reg.length > 0 ? reg.length : 0));
   (def.regions ?? []).forEach((reg, r) => {
     if (!isObject(reg)) return;
     const path = `regions[${r}]`;
     if (reg.length > 1) warn(`${path}.length`, `${num(reg.length)} m is over a metre; lengths are m (units.um, units.nm)`);
     if (reg.length > 0 && reg.length < 1e-10) warn(`${path}.length`, `${num(reg.length)} m is less than an atom; lengths are m`);
     if (Math.abs(reg.fixedCharge) > 1e10) warn(`${path}.fixedCharge`, `${num(reg.fixedCharge)} C/m³ is over 6e22 cm⁻³ of charge; fixedCharge is C/m³ (units.perCm3(N) * FARADAY)`);
-    for (const [sname, c] of Object.entries(reg.c0 ?? {})) conc(`${path}.c0.${sname}`, c);
+    for (const [sname, c] of Object.entries(reg.c0 ?? {})) {
+      if (!isObject(c)) {
+        conc(`${path}.c0.${sname}`, c);
+        continue;
+      }
+      if (Array.isArray(c.c)) conc(`${path}.c0.${sname}.c`, Math.max(...c.c));
+      // A profile is against the device's x, not the region's own.
+      const x0 = regionX0[r], x1 = x0 + reg.length;
+      if (Array.isArray(c.x) && c.x.length > 0 && (c.x.at(-1) < x0 || c.x[0] > x1)) {
+        warn(`${path}.c0.${sname}.x`, `the profile (x from ${num(c.x[0])} to ${num(c.x.at(-1))} m) misses the region (${num(x0)} to ${num(x1)} m); x is the device's, in m`);
+      }
+    }
   });
   const capacitance = (path, phi) => {
     if (isObject(phi) && phi.C > 10) warn(`${path}.phi.C`, `${num(phi.C)} F/m² is over 1000 µF/cm²; C is F/m² (1 µF/cm² = 0.01 F/m²)`);
@@ -129,7 +142,9 @@ export function describe(def) {
     // The screening concentration: Σ z²c from the initial composition, else the fixed charge's.
     let zzc = 0;
     species.forEach((sp, i) => {
-      if (mat.present[i] && Number.isFinite(reg.c0[i])) zzc += sp.z * sp.z * reg.c0[i];
+      if (!mat.present[i]) return;
+      if (Number.isFinite(reg.c0[i])) zzc += sp.z * sp.z * reg.c0[i];
+      else if (reg.c0Profile[i]) zzc += sp.z * sp.z * Math.max(...reg.c0Profile[i].c);
     });
     if (zzc === 0) zzc = Math.abs(reg.fixedCharge) / FARADAY;
     const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));

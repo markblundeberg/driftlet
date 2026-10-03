@@ -101,7 +101,16 @@ regions: [
   level and don't need it. Any other species (blocked everywhere, or only made and consumed by
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's
-  material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero. Where nothing else sets
+  material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero.
+  An entry can instead be a profile, `{ x: [...], c: [...] }`, against the device's x (m, not
+  the region's own), piecewise linear between its points and constant beyond its ends. A profile
+  is the starting state of its species even where a contact feeds it (a number isn't), so a
+  transient can start from a state it didn't simulate reaching: a packet already injected, a
+  gradient laid down. Skip `solve()`, which goes straight to the steady state, and `advance()`
+  from it. Species without a profile take their usual cold start, and $`\phi`$ is chosen node by
+  node for local neutrality, so a mobile counter-ion follows the profile (electrons follow an
+  injected hole packet); what the cold start leaves unbalanced settles within the first steps.
+  For a spectator, the profile's integral is the amount it conserves. Where nothing else sets
   $`\phi`$ at the start, a region beside an electrode starts with the electrode's first reaction at
   equilibrium (the electrode at its open-circuit level); otherwise $`\phi`$ carries over from the
   left.

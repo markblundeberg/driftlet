@@ -148,6 +148,20 @@ import { nextBreakpoint, sourceAt } from './device.js';
 import { DeviceError } from './errors.js';
 import { powi, powr } from './pow.js';
 
+// A c0 profile's value at x: piecewise linear, constant beyond its ends.
+function profileAt({ x, c }, at) {
+  if (at <= x[0]) return c[0];
+  const last = x.length - 1;
+  if (at >= x[last]) return c[last];
+  let lo = 0, hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (x[mid] <= at) lo = mid;
+    else hi = mid;
+  }
+  return c[lo] + ((c[hi] - c[lo]) * (at - x[lo])) / (x[hi] - x[lo]);
+}
+
 export class SolverError extends Error {
   constructor(message, details) {
     super(message);
@@ -741,8 +755,9 @@ export class Solver {
 
   /**
    * Cold start. Species connected to a contact take that contact's level; spectators take
-   * their region's c0 (which fixes their conserved amount). φ in each region is then chosen
-   * for local neutrality, or continued across the interface dipole if nothing there responds.
+   * their region's c0 (which fixes their conserved amount), and a c0 profile is taken as given
+   * by any species. φ in each region is then chosen for local neutrality (node by node where a
+   * profile varies), or continued across the interface dipole if nothing there responds.
    */
   initFromComposition() {
     const { model, n, M, u, z } = this;
@@ -756,10 +771,15 @@ export class Solver {
       if (r > 0) phiHat += interfaces[r - 1].dipole / this.VT;
       const reg = regions[r], mat = materials[reg.material];
       mode.fill(0);
+      const profiled = reg.c0Profile.some((p) => p !== null);
       for (let i = 0; i < n; i++) {
         if (!mat.present[i]) continue;
         const st = this.stretches[this.stretchOf[r * n + i]];
-        if (!st.contactFed && mat.conductor) {
+        if (reg.c0Profile[i]) {
+          // A profile is the starting state as given, even where a contact feeds the species.
+          mode[i] = 2;
+          cFix[i] = profileAt(reg.c0Profile[i], grid.x[grid.regionStart[r]]);
+        } else if (!st.contactFed && mat.conductor) {
           // A conductor away from the contacts: start uncharged, with its carrier's level in
           // equilibrium with the first reaction on its left face that takes it, else at the
           // running φ.
@@ -820,7 +840,8 @@ export class Solver {
         return q;
       };
       const responds = mode.some((m, i) => m === 1 && z[i] !== 0);
-      if (!responds && !mat.conductor && !mat.phiFree && mat.epsr === 0) {
+      const mustBalance = !responds && !mat.conductor && !mat.phiFree && mat.epsr === 0;
+      const checkNeutral = (where) => {
         // Strictly neutral, with every charged species' amount given: its c0 must be neutral.
         let q = reg.fixedCharge / FARADAY, scale = Math.abs(q);
         for (let i = 0; i < n; i++) {
@@ -830,11 +851,12 @@ export class Solver {
         }
         if (Math.abs(q) > 1e-9 * scale) {
           throw new SolverError(
-            `regions[${r}] (${reg.name}): its initial composition carries a net charge of ${q.toPrecision(3)} mol/m³ (Σ z·c0, with any fixed charge), ` +
+            `regions[${r}] (${reg.name}): its initial composition carries a net charge of ${q.toPrecision(3)} mol/m³${where} (Σ z·c0, with any fixed charge), ` +
               'but ε = 0 makes it strictly neutral; adjust c0 so that it balances',
           );
         }
-      }
+      };
+      if (mustBalance && !profiled) checkNeutral('');
       if (!mat.phiFree && !responds && mat.ideal && r > 0 && materials[regions[r - 1].material].conductor) {
         // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
         // that takes a species from this side at equilibrium (the electrode at its open-circuit
@@ -855,8 +877,8 @@ export class Solver {
           }
         }
       }
-      if (!mat.phiFree && responds) {
-        let lo = phiHat - 1, hi = phiHat + 1;
+      const neutralPhi = (ph) => {
+        let lo = ph - 1, hi = ph + 1;
         while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
         while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
         for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
@@ -864,10 +886,17 @@ export class Solver {
           if (charge(m) > 0) lo = m;
           else hi = m;
         }
-        phiHat = 0.5 * (lo + hi);
-      }
+        return 0.5 * (lo + hi);
+      };
+      if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
       if (!mat.ideal) this._materialAt(mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
+        if (profiled) {
+          for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[g]);
+          if (mustBalance) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
+          if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
+          if (!mat.ideal) this._materialAt(mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
+        }
         const b = this.blockOfNode[g];
         u[b * M] = mat.conductor ? 0 : phiHat; // a metal's slot 0 is its segment flux
         for (let i = 0; i < n; i++) {
