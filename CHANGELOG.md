@@ -4,8 +4,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Demo: a perovskite solar cell's J–V hysteresis from mobile iodide vacancies (IonMonger's default
+  cell), with a scan-rate control, the vacancies' layers at each face, the steady and frozen
+  limits, and the hysteresis index against scan rate with IonMonger's own points.
 - A benchmark against an independent code: perovskite J–V hysteresis (mobile iodide vacancies,
-  interface SRH) against IonMonger at seven scan rates from 1 mV/s to 1 kV/s. Hysteresis index
+  interface SRH, with and without bulk SRH) against IonMonger at seven scan rates from 1 mV/s to
+  1 kV/s. Hysteresis index
   within 5e-4, maximum power within 0.02 mW/cm², V_oc within 1 mV, whole loops within
   0.06 mA/cm² (0.23 at the fastest-changing sweep). Three species and two face SRH laws; each scan
   takes 0.3 s against IonMonger's 50.

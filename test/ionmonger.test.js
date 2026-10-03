@@ -22,12 +22,12 @@ const P = {
   N0: 1.6e25, DI: 6.5e-8 * Math.exp(-0.58 / (8.61733035e-5 * T)), // IonMonger's Arrhenius form, ≈ 1.0e-17 m²/s
   dE: 1e24, gcE: 5e25, EcE: -4.0, bE: 100e-9, epsE: 10, DE: 1e-5,
   dH: 1e24, gvH: 5e25, EvH: -5.1, bH: 200e-9, epsH: 3, DH: 1e-6,
-  vnE: 1e5, vpE: 10, vnH: 0.1, vpH: 1e5, Fph: 1.4e21,
+  tn: 3e-9, tp: 3e-7, vnE: 1e5, vpE: 10, vnH: 0.1, vpH: 1e5, Fph: 1.4e21,
 };
 const ni = Math.sqrt(P.gc * P.gv) * Math.exp(-(P.Ec - P.Ev) / (2 * VT));
 const n0 = P.gc * Math.exp((P.EcE + VT * Math.log(P.dE / P.gcE) - P.Ec) / VT);
 
-const cell = (V) => ({
+const cell = (V, bulk) => ({
   T,
   species: [
     { name: 'e-', z: -1 },
@@ -59,13 +59,16 @@ const cell = (V) => ({
     left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
     right: { V, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'bulk' },
   },
-  bulkReactions: [photogeneration({ material: 'MAPI', flux: m3(P.Fph), alpha: P.alpha, mu: eV(3), from: P.bE, to: P.bE + P.b })],
+  bulkReactions: [
+    // IonMonger's bulk SRH (midgap traps) is driftlet's bulk SRH law.
+    ...(bulk ? [{ equation: 'e- + h+ = 0', srh: { MAPI: { tauN: P.tn, tauP: P.tp } } }] : []),
+    photogeneration({ material: 'MAPI', flux: m3(P.Fph), alpha: P.alpha, mu: eV(3), from: P.bE, to: P.bE + P.b })],
   grid: { hmin: 0.05e-9, hmax: 5e-9, ratio: 1.15 },
 });
 
 // Preconditioned at 1.2 V (steady state, light on), then 1.2 → 0 → 1.2 V: [t, V, J (mA/cm²)].
-function scan(rate) {
-  const dev = new Device(cell(1.2));
+function scan(rate, bulk) {
+  const dev = new Device(cell(1.2, bulk));
   assert.ok(dev.solve().converged);
   const half = 1.2 / rate;
   dev.set({ contacts: { right: { V: { t: [0, half, 2 * half], values: [1.2, 0, 1.2] } } } });
@@ -86,28 +89,30 @@ function loop(rows, rate) {
   return { ...out, hi: (out.rev.pmax - out.fwd.pmax) / out.rev.pmax };
 }
 
-const reference = (rate) =>
-  readFileSync(new URL(`fixtures/ionmonger/scan_${rate}.csv`, import.meta.url), 'utf8').trim().split('\n').map((line) => line.split(',').map(Number));
+const reference = (set, rate) =>
+  readFileSync(new URL(`fixtures/ionmonger/${set}_${rate}.csv`, import.meta.url), 'utf8').trim().split('\n').map((line) => line.split(',').map(Number));
 
-test('perovskite hysteresis against IonMonger, 1 mV/s to 1 kV/s: hysteresis index, maximum power, V_oc and the whole J–V loop', () => {
-  for (const rate of ['0.001', '0.01', '0.1', '1', '10', '100', '1000']) {
-    const ours = scan(+rate), theirs = reference(rate);
-    const a = loop(ours, +rate), b = loop(theirs, +rate);
-    const at = `${rate} V/s`;
-    assert.ok(Math.abs(a.hi - b.hi) < 1.5e-3, `${at}: hysteresis index ${a.hi} vs ${b.hi}`);
-    for (const s of ['rev', 'fwd']) {
-      assert.ok(Math.abs(a[s].pmax - b[s].pmax) < 0.05, `${at} ${s}: P_max ${a[s].pmax} vs ${b[s].pmax} mW/cm²`);
-      assert.ok(Math.abs(a[s].voc - b[s].voc) < 2e-3, `${at} ${s}: V_oc ${a[s].voc} vs ${b[s].voc} V`);
+for (const [set, bulk, what] of [['scan', false, 'bulk SRH off'], ['full', true, "IonMonger's full defaults"]]) {
+  test(`perovskite hysteresis against IonMonger (${what}), 1 mV/s to 1 kV/s: hysteresis index, maximum power, V_oc and the whole J–V loop`, () => {
+    for (const rate of ['0.001', '0.01', '0.1', '1', '10', '100', '1000']) {
+      const ours = scan(+rate, bulk), theirs = reference(set, rate);
+      const a = loop(ours, +rate), b = loop(theirs, +rate);
+      const at = `${rate} V/s`;
+      assert.ok(Math.abs(a.hi - b.hi) < 1.5e-3, `${at}: hysteresis index ${a.hi} vs ${b.hi}`);
+      for (const s of ['rev', 'fwd']) {
+        assert.ok(Math.abs(a[s].pmax - b[s].pmax) < 0.05, `${at} ${s}: P_max ${a[s].pmax} vs ${b[s].pmax} mW/cm²`);
+        assert.ok(Math.abs(a[s].voc - b[s].voc) < 2e-3, `${at} ${s}: V_oc ${a[s].voc} vs ${b[s].voc} V`);
+      }
+      // The loop itself, point by point in time (up to 1.1 V, short of the steep rise past V_oc).
+      let worst = 0;
+      for (const [t, V, J] of theirs) {
+        if (!Number.isFinite(J) || V > 1.1 || t <= 0) continue;
+        const k = ours.findIndex(([tk]) => tk >= t);
+        if (k <= 0) continue;
+        const [[t0, , J0], [t1, , J1]] = [ours[k - 1], ours[k]];
+        worst = Math.max(worst, Math.abs(J0 + ((J1 - J0) * (t - t0)) / (t1 - t0) - J));
+      }
+      assert.ok(worst < 0.3, `${at}: J differs by up to ${worst} mA/cm²`);
     }
-    // The loop itself, point by point in time (up to 1.1 V, short of the steep rise past V_oc).
-    let worst = 0;
-    for (const [t, V, J] of theirs) {
-      if (!Number.isFinite(J) || V > 1.1 || t <= 0) continue;
-      const k = ours.findIndex(([tk]) => tk >= t);
-      if (k <= 0) continue;
-      const [[t0, , J0], [t1, , J1]] = [ours[k - 1], ours[k]];
-      worst = Math.max(worst, Math.abs(J0 + ((J1 - J0) * (t - t0)) / (t1 - t0) - J));
-    }
-    assert.ok(worst < 0.3, `${at}: J differs by up to ${worst} mA/cm²`);
-  }
-});
+  });
+}

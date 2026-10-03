@@ -29,7 +29,7 @@ export function levels(el, sol, opts = {}) {
 // a name, or { name, c, label, kind } to draw some other profile in that species' colour (kind
 // 'standard' draws it thin), or { c, label, kind, role } for a profile of no species (role
 // 'redox', or none for muted). `scale` converts units; `log` draws log₁₀, with powers of ten.
-export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, height = 300 }) {
+export function profiles(el, sol, { species, title, ylabel = 'concentration (mol/m³)', range, xlim, scale = 1, log = false, labels = {}, width = 720, height = 300 }) {
   const f = log ? (c) => (c > 0 ? Math.log10(c * scale) : NaN) : (c) => c * scale;
   const series = species.map((entry) => {
     const { name, c = sol.c[name], label = labels[name] ?? `c_{${typeset(name, sol.species.find((sp) => sp.name === name).z)}}`, kind = 'level', role } = typeof entry === 'string' ? { name: entry } : entry;
@@ -42,7 +42,7 @@ export function profiles(el, sol, { species, title, ylabel = 'concentration (mol
     range = log ? [Math.floor(lo - 0.2), Math.ceil(hi + 0.2)] : [Math.min(0, lo), 1.08 * hi || 1];
   }
   const tr = { x: sol.x, series, regions: sol.regions, faces: sol.regions.slice(1).map((r) => r.x0), range };
-  el.innerHTML = levelChart(tr, { width: 720, height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
+  el.innerHTML = levelChart(tr, { width, height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
 }
 const superscript = (n) => String(n).replace(/[-0-9]/g, (d) => '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'['-0123456789'.indexOf(d)]);
 const powerOfTen = (v) => (Number.isInteger(v) ? `10${superscript(v)}` : '');

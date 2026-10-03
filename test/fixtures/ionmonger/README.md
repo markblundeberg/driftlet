@@ -5,13 +5,16 @@ J–V hysteresis scans of a planar perovskite solar cell computed with
 Richardson & Foster, J. Comput. Electron. 18, 1435 (2019); commit `1ae4f9e`), for
 [`test/ionmonger.test.js`](../../ionmonger.test.js), which runs the same cell in driftlet.
 
-Each `scan_<rate>.csv` has columns t (s), V (V), J (mA/cm², photocurrent positive); the first
-row's J is NaN. Rates are in V/s.
+Each `scan_<rate>.csv` (bulk SRH off) and `full_<rate>.csv` (IonMonger's full defaults, bulk SRH
+on) has columns t (s), V (V), J (mA/cm², photocurrent positive); the first row's J is NaN. Rates
+are in V/s. The `full_` set is also what the [perovskite demo](../../../demos/perovskite.html)
+draws as IonMonger's.
 
 **The cell.** IonMonger's default parameters (`parameters_template.m`): TiO₂ (100 nm) | MAPbI₃
 (400 nm) with mobile iodide vacancies over an equal immobile background | spiro-OMeTAD (200 nm),
 298 K, Boltzmann statistics, light (1.4e21 m⁻² s⁻¹, α = 1.3e7 m⁻¹) entering through the TiO₂,
-interface SRH at both faces, with **bulk SRH turned off** (`tn = tp = 0`).
+interface SRH at both faces; bulk SRH (midgap, τ_n = 3 ns, τ_p = 300 ns) is on in the `full_`
+set and turned off (`tn = tp = 0`) in the `scan_` set.
 
 **The protocol.** Steady state at 1.2 V under light, then 1.2 → 0 → 1.2 V at the given rate
 (IonMonger's own option of starting from a steady state, in place of its default tanh
