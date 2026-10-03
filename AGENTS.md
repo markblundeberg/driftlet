@@ -20,8 +20,9 @@ Guide for coding agents working in this repo.
 - **Commits:** small and logically scoped. End messages with the Co-Authored-By trailer only;
   never a `Claude-Session:` line (a local commit-msg hook strips it as a backstop). Commit and
   push freely. Releases: add a CHANGELOG.md entry, bump `version` in package.json (and the CDN
-  pins in the README and llms.txt, which a test checks), commit it as the bare version, tag
-  `vX.Y.Z` and push with `--follow-tags`. The release workflow stages it on npm through trusted
+  pins in the README and llms.txt, which a test checks), commit it as the bare version, tag it
+  annotated (`git tag -a vX.Y.Z -m X.Y.Z`; `--follow-tags` skips lightweight tags) and push with
+  `--follow-tags`. The release workflow stages it on npm through trusted
   publishing, and it goes public only when the owner approves it with 2FA, so the owner decides
   when. Primary branch is `master`.
 - **Hook setup after a fresh clone** (`.claude/` is gitignored, local infra):
