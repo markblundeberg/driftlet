@@ -137,6 +137,24 @@ for live demos.
    - Done: an initial profile as plain data, `c0` tabulated against x, so a transient starts
      from an already-injected or relaxing state without simulating how it got there (and
      without a back door around the conservation bookkeeping: it's the definition's start).
+   - From the perovskite agent's review: the pieces every demo rebuilds.
+     - **Checks as first-class results.** Many verifications follow from the definition alone:
+       charge balance J = q(G − R), J_sc against the absorbed photon flux, V_oc against detailed
+       balance, an ionic RC time, a transient's slow and fast limits. A solution could report the
+       limits that apply to it and whether it sits inside them, so an LLM-built demo is checked by
+       default rather than only when its author is diligent.
+     - **Energy-up band diagrams** in `driftlet/plot` for electrons and holes (E_c, E_v, quasi-Fermi
+       levels in eV), with species voltages kept for what that picture can't show: ions, and
+       equilibrium between species.
+     - **Inputs in the source's vocabulary**: a trap level against a band edge (SRH takes n₁ as a
+       concentration today), and `describe()` reporting derived quantities to check against intent
+       (built-in voltage, n_i, band offsets, the equilibrium levels against vacuum).
+     - **A transient recorder**: frames captured during `advance()` for scrubbing.
+     - **Frozen species** as a named switch (today D → 1e-40) for separating time scales.
+     - **Curated device sets** with a reference result, like IonMonger's default cell and its
+       benchmark: whole devices with sources, so agents don't invent numbers.
+     - **Failure messages that prescribe the next step** (continuation, a smaller first step), as
+       the lost-digits warning already does.
    - Before 1.0, definitions as a contract: an optional `version` field, and errors that name
      renames ("`foo` became `bar` in 0.3"), since agents will copy old definitions long after the
      API moves on.
