@@ -31,6 +31,7 @@
     <div class="levels wide" id="gen"></div>
     <div class="levels wide" id="conc"></div>
   </div>
+  <details class="code" id="checks"><summary></summary><pre></pre></details>
   <h2>About this simulation</h2>
   <p>Light is a reservoir: the reaction photon → e⁻ + h⁺, its rate falling off as the light is absorbed
     (Beer–Lambert), G(x) = Φα e<sup>−αx</sup>, with silicon's absorption coefficient α at each wavelength from
@@ -61,11 +62,14 @@
     ∫αe<sup>−αx</sup>η(x)dx, the generalisation of Gärtner's formula to this cell (from the depletion
     approximation). The readout checks V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from
     the dark curve, and the dashed J–V curve is the dark curve shifted by J<sub>sc</sub>, the superposition
-    principle.</p>
+    principle. Under the plots, the kit's <code>check()</code> audits the open-circuit state: where every
+    pair goes (nothing is collected, so each one recombines, in the base or at a contact, which is a sink
+    for both carriers), and the same cell on a grid twice as fine, whose V<sub>oc</sub> and charges must
+    agree to 1%.</p>
 </main>
 <script type="module">
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, photogeneration, live } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, photogeneration, live, check } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
@@ -91,7 +95,7 @@ const cell = (V, nm, light, kf) =>
     library: [Si],
     stack: [ohmic(0), layer('Si', We, { name: 'n⁺', donors: ND }), layer('Si', Wb, { name: 'p', acceptors: NA }), ohmic(V)],
     bulkReactions: reactions(nm, light, kf),
-    grid: { hmin: units.nm(1), hmax: units.um(1) },
+    grid: { hmin: units.nm(0.25), hmax: units.um(1) }, // check() says hmin 1 nm left the emitter's depletion charge 2 % off
   });
 
 const V = document.getElementById('V'), lambda = document.getElementById('lambda'), light = document.getElementById('G'), life = document.getElementById('tau');
@@ -123,13 +127,20 @@ const curve = (nm, light) => {
     dev.set({ contacts: { right: { V: v } } });
     J.push(dev.solve().current / 10); // mA/cm²
   }
-  return J;
+  return { J, dev };
 };
 let jv, dark, spectrum;
 function sweep() {
   const nm = +lambda.value;
-  const lit = curve(nm, +light.value);
-  const oc = new Device(cell({ I: 0 }, nm, +light.value, kf())).solve(); // open circuit: the terminal floats
+  const { J: lit, dev } = curve(nm, +light.value);
+  dev.set({ contacts: { right: { I: 0 } } }); // open circuit: the terminal floats (warm from the end of the sweep)
+  const oc = dev.solve();
+  // The kit's checks at open circuit: where every pair goes (nothing collected: they recombine in
+  // the base or at the contacts), and the same cell on a grid twice as fine (V_oc and the charges
+  // unchanged).
+  const report = check(dev, oc), checks = document.getElementById('checks');
+  checks.querySelector('summary').textContent = `checks at open circuit: ${report.ok ? 'all pass' : 'something to look at'}`;
+  checks.querySelector('pre').textContent = report.text;
   const Jsc = lit[0], Voc = oc.terminals.right.V, vs = dark.map((_, k) => k * 0.01);
   const Pmax = Math.max(...vs.map((v, k) => v * lit[k]));
   const J0 = -dark[30] / (Math.exp(0.3 / VT) - 1); // from the dark curve at 0.3 V
@@ -153,7 +164,7 @@ function spectral() {
   };
 }
 const recompute = () => {
-  dark = curve(400, 0);
+  dark = curve(400, 0).J;
   spectral();
   sweep();
 };
