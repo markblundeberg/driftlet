@@ -202,7 +202,13 @@ function frame(now = performance.now()) {
     `Z = ${ohmCm2(z.re).toFixed(2)} − ${ohmCm2(-z.im).toFixed(2)}i Ω·cm² · the current leads by ${phase.toFixed(1)}° · one cycle is ${1 / f < 1 ? `${short(1000 / f)} ms` : `${short(1 / f)} s`}`;
 }
 fIn.addEventListener('input', solveAt);
-zoom.checked = new URLSearchParams(location.search).has('zoom');
+const query = new URLSearchParams(location.search);
+zoom.checked = query.has('zoom');
+// ?phase=… (degrees) holds the cycle there, paused (for sharing a state, or a screenshot).
+if (query.has('phase')) {
+  theta = (+query.get('phase') * Math.PI) / 180;
+  pace.value = '0';
+}
 solveAt();
 requestAnimationFrame(frame);
 showCode();

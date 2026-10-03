@@ -15,7 +15,8 @@ Guide for coding agents working in this repo.
 - **Tests are the deliverable.** Every physics feature lands with an analytic validation test
   (the validation suite). Use node's built-in test runner (`node --test`), no test dependencies.
   The demos have a browser smoke test, `npm run smoke` (headless Chrome, also in CI): run it after
-  touching a demo or anything they import.
+  touching a demo or anything they import. `npm run shots` retakes the screenshots (each page at
+  a set state, on virtual time, so unchanged pages come out byte-identical).
 - **Commits:** small and logically scoped. End messages with the Co-Authored-By trailer only;
   never a `Claude-Session:` line (a local commit-msg hook strips it as a backstop). Commit and
   push freely. Releases: add a CHANGELOG.md entry, bump `version` in package.json (and the CDN

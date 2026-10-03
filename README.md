@@ -291,6 +291,7 @@ npm test         # the validation suite
 npm run bench    # typical workloads against bench/baseline.json (--save to update it)
 npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
 npm run smoke    # every demo in headless Chrome, every control to its extremes (CHROME=… to choose)
+npm run shots    # retake the demos' screenshots, each caught at a set state (tools/shots.js)
 ```
 
 Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),

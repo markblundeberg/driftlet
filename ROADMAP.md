@@ -67,6 +67,8 @@ for live demos.
 - A real-browser smoke test of the demos in CI (`npm run smoke`): headless Chrome over the
   DevTools protocol, every control moved to its extremes, failing on any exception, console
   error, failed request or NaN drawn.
+- Screenshots retaken by script (`npm run shots`): each demo held at a set state (`?t=…`,
+  `?phase=…`) on virtual time, so an unchanged page comes out byte-identical.
 
 ## Next
 
@@ -168,9 +170,8 @@ for live demos.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
-- **Demo extras.** A tiny optional plotting entry point (`driftlet/plot`), a deterministic mode
-  for screenshots, and concentration/flux sampling to drive particle animations consistently
-  with the model.
+- **Demo extras.** Concentration/flux sampling to drive particle animations consistently with
+  the model.
 - **Phase separation (Cahn–Hilliard).** A non-convex free energy (e.g. LFP's miscibility gap)
   makes $`c(\zeta)`$ multivalued. It needs c as an extra unknown plus a gradient-energy term, which is
   still local and block-tridiagonal.

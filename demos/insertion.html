@@ -75,7 +75,7 @@ labels();
 // OCV against Li metal (μ_Li = 0), dilute-referenced regular solution: see docs/statistics.md.
 const E = (x, Om) => -(mu0 + RT * Math.log(x / (1 - x)) - 2 * Om * x) / FARADAY;
 
-let dev, run, running = false;
+let dev, run, running = false, held = true; // held: the first start honours ?t
 function start() {
   const Om = +omega.value * RT, I = (C() * Q) / 3600;
   dev = new Device(
@@ -105,9 +105,16 @@ function start() {
   // The cutoffs: the OCV at 1% and 99% full.
   run = { I, sign: -1, cutoffs: [E(0.99, Om), E(0.01, Om)], ocv: [], x: [], V: [], q: x0 * Q, turns: [0], halves: 0, range: [Infinity, -Infinity] };
   for (let k = 1; k < 100; k++) run.ocv.push([k / 100, E(k / 100, Om)]);
-  // ?t=… runs ahead to that time first (for sharing a state, or a screenshot).
-  const ahead = +new URLSearchParams(location.search).get('t');
-  while (ahead > dev.solver.time && slice(ahead - dev.solver.time, Infinity).converged);
+  // ?t=… runs to that time and stops there (for sharing a state, or a screenshot); restart
+  // plays on from the start.
+  const ahead = held ? +new URLSearchParams(location.search).get('t') : 0;
+  held = false;
+  if (ahead > 0) {
+    let s;
+    while (ahead > dev.solver.time && (s = slice(ahead - dev.solver.time, Infinity)).converged);
+    if (s) draw(s);
+    return;
+  }
   lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
