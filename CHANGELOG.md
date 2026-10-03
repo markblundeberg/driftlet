@@ -2,6 +2,11 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Results identical across JavaScript engines: powers go through `powi`/`powr` instead of `**`,
+  whose last bit differs between Node 22 and 24 (enough to flip a step in a long adaptive run).
+
 ## 0.2.0 (2026-10-02)
 
 - Kit sources: waveforms (`pulse`, `square`, `triangle`, `ramp`), `injector()` (a port that
