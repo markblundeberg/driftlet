@@ -28,12 +28,17 @@
   <h2>About this simulation</h2>
   <p>The band diagram uses the <a
     href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
-    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
-    volts, so electrons and ions share one axis. Each species moves down its own μ̄<sub>i</sub>, so its
-    current flows down slopes in its own V<sub>i</sub> (holes move downhill, electrons uphill), and it's in
-    equilibrium where its V<sub>i</sub> is level. For electrons and holes the thick lines, V<sub>i</sub>, are
-    the quasi-Fermi levels; the thin ones, the standard levels V°<sub>i</sub>, are the band edges (in voltage
-    units the conduction band sits below the valence band, since an electron's charge is negative). The bias
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge.
+    For electrons and holes this is the ordinary band diagram
+    turned upside down, in volts: V<sub>e⁻</sub> = −E<sub>Fn</sub>/q and V<sub>h⁺</sub> = −E<sub>Fp</sub>/q are the
+    quasi-Fermi levels (thick), and their standard levels V°<sub>i</sub> the band edges (thin), so the
+    conduction band sits below the valence band. Nothing else changes: electrons are a species of charge −1
+    and holes one of +1, each with its own electrochemical potential (μ̄<sub>e⁻</sub> = E<sub>Fn</sub> and
+    μ̄<sub>h⁺</sub> = −E<sub>Fp</sub> per particle), which is exactly the usual drift–diffusion
+    (van Roosbroeck) model. Generation and recombination are the reaction e⁻ + h⁺ ⇌ 0, so at equilibrium
+    μ̄<sub>e⁻</sub> + μ̄<sub>h⁺</sub> = 0 and the two lines are one Fermi level. The flip is the price of
+    putting electrons on the same axis as ions and electrode potentials. Each carrier's current flows down slopes in its own V<sub>i</sub> (holes move downhill,
+    electrons uphill), and it's in equilibrium where its V<sub>i</sub> is level. The bias
     moves the p side's metal contact: forward bias splits the quasi-Fermi levels across the junction, and the
     carriers recombine as they cross, in the layers or at the contacts.</p>
   <p>The lifetime control sets band-to-band recombination. With a long lifetime the minority carriers'

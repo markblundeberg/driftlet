@@ -27,9 +27,16 @@
   <h2>About this simulation</h2>
   <p>The gate voltage sets the gate metal's Fermi level, and the silicon's bands bend at the surface to meet
     it. The band diagram uses the <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
-    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
-    volts. For electrons and holes these are the quasi-Fermi levels (thick), drawn with their standard levels
-    V°<sub>i</sub>, the band edges (thin). Negative bias pulls holes to the surface (accumulation), moderate
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge.
+    For electrons and holes this is the ordinary band diagram
+    turned upside down, in volts: V<sub>e⁻</sub> = −E<sub>Fn</sub>/q and V<sub>h⁺</sub> = −E<sub>Fp</sub>/q are the
+    quasi-Fermi levels (thick), and their standard levels V°<sub>i</sub> the band edges (thin), so the
+    conduction band sits below the valence band. Nothing else changes: electrons are a species of charge −1
+    and holes one of +1, each with its own electrochemical potential (μ̄<sub>e⁻</sub> = E<sub>Fn</sub> and
+    μ̄<sub>h⁺</sub> = −E<sub>Fp</sub> per particle), which is exactly the usual drift–diffusion
+    (van Roosbroeck) model. Generation and recombination are the reaction e⁻ + h⁺ ⇌ 0, so at equilibrium
+    μ̄<sub>e⁻</sub> + μ̄<sub>h⁺</sub> = 0 and the two lines are one Fermi level. The flip is the price of
+    putting electrons on the same axis as ions and electrode potentials. Negative bias pulls holes to the surface (accumulation), moderate
     positive bias pushes them away (depletion), and beyond threshold electrons gather in a thin inversion
     layer. Those electrons come from a port holding them at ground beside the oxide, the 1D stand-in for a
     transistor's source and drain; without it, they'd have to diffuse in from the back contact, which takes

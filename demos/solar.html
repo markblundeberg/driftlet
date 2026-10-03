@@ -40,12 +40,18 @@
     and what reaches the back leaves.</p>
   <p>The band diagram uses the <a
     href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
-    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F): a species' electrochemical potential per unit charge, in
-    volts, so electrons and ions share one axis. Each carrier moves down its own μ̄<sub>i</sub>, so its
-    current flows down slopes in its own V<sub>i</sub> (holes move downhill, electrons uphill): for electrons
-    and holes these are the quasi-Fermi levels (thick), drawn with their standard levels V°<sub>i</sub>, the
-    band edges (thin). Under light the quasi-Fermi levels split even at zero bias; at open circuit they split
-    by qV<sub>oc</sub> and no current flows.</p>
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), a species' electrochemical potential per unit charge.
+    For electrons and holes this is the ordinary band diagram
+    turned upside down, in volts: V<sub>e⁻</sub> = −E<sub>Fn</sub>/q and V<sub>h⁺</sub> = −E<sub>Fp</sub>/q are the
+    quasi-Fermi levels (thick), and their standard levels V°<sub>i</sub> the band edges (thin), so the
+    conduction band sits below the valence band. Nothing else changes: electrons are a species of charge −1
+    and holes one of +1, each with its own electrochemical potential (μ̄<sub>e⁻</sub> = E<sub>Fn</sub> and
+    μ̄<sub>h⁺</sub> = −E<sub>Fp</sub> per particle), which is exactly the usual drift–diffusion
+    (van Roosbroeck) model. Generation and recombination are the reaction e⁻ + h⁺ ⇌ 0, so at equilibrium
+    μ̄<sub>e⁻</sub> + μ̄<sub>h⁺</sub> = 0 and the two lines are one Fermi level. The flip is the price of
+    putting electrons on the same axis as ions and electrode potentials. Each carrier's current flows down slopes in its own V<sub>i</sub> (holes move downhill, electrons
+    uphill). Under light the quasi-Fermi levels split even at zero bias; at open circuit they split by
+    qV<sub>oc</sub> and no current flows.</p>
   <p>A pair is collected if its minority carrier reaches the junction before it recombines or reaches a
     contact, which is a sink here (no back-surface field, no front passivation). That chance η(x) is 1 in the
     depletion layer and falls off as sinh toward each contact, over a diffusion length: L<sub>n</sub> in the
@@ -53,7 +59,9 @@
     light, absorbed in the emitter, is mostly lost to the front contact; red light, absorbed within a
     diffusion length of the junction, is collected; and infrared is barely absorbed at all. The middle plot
     draws G(x) and the part collected, G(x)η(x), whose area is J<sub>sc</sub>/q. The spectral response plots
-    J<sub>sc</sub>/qΦ, the external quantum efficiency, simulated at each colour against
+    J<sub>sc</sub>/qΦ, the external quantum efficiency, at short circuit (so the bias doesn't enter) and the
+    present light (which, at low injection, doesn't matter either: the response is linear), simulated at
+    each colour against
     ∫αe<sup>−αx</sup>η(x)dx, the generalisation of Gärtner's formula to this cell (from the depletion
     approximation). The readout checks V<sub>oc</sub> = V<sub>T</sub> ln(J<sub>sc</sub>/J₀ + 1), with J₀ from
     the dark curve, and the dashed J–V curve is the dark curve shifted by J<sub>sc</sub>, the superposition
@@ -135,13 +143,14 @@ function sweep() {
     stats: `J_sc = ${Jsc.toFixed(2)} mA/cm² (collection theory ${theory.toFixed(2)}) · V_oc = ${Voc.toFixed(3)} V (V_T ln(J_sc/J₀ + 1) = ${(VT * Math.log(Jsc / J0 + 1)).toFixed(3)}) · FF = ${(Pmax / (Jsc * Voc)).toFixed(3)} · P_max = ${Pmax.toFixed(2)} mW/cm²`,
   };
 }
-// The spectral response at short circuit, every 50 nm, against theory every 5 nm.
+// The spectral response at short circuit and the present light, every 50 nm, against theory every
+// 5 nm (which, at low injection, doesn't depend on the light: the response is linear).
 function spectral() {
   const { eqe } = collection(kf());
   const nms = Array.from({ length: 15 }, (_, k) => 400 + 50 * k), fine = Array.from({ length: 141 }, (_, k) => 400 + 5 * k);
   spectrum = {
     nm: nms,
-    sim: nms.map((nm) => new Device(cell(0, nm, 1, kf())).solve().current / (FARADAY * PHI1)),
+    sim: nms.map((nm) => new Device(cell(0, nm, +light.value, kf())).solve().current / (FARADAY * PHI1 * +light.value)),
     fine,
     theory: fine.map((nm) => eqe(alphaAt(nm))),
     absorbed: fine.map((nm) => -Math.expm1(-alphaAt(nm) * W)),
@@ -157,11 +166,15 @@ recompute();
 const dev = live(cell(+V.value, +lambda.value, +light.value, kf()), { onsolution: draw });
 const update = () => dev.set({ contacts: { right: { V: +V.value } }, bulkReactions: reactions(+lambda.value, +light.value, kf()) });
 V.addEventListener('input', update);
-for (const el of [lambda, light])
-  el.addEventListener('change', () => {
-    sweep();
-    update();
-  });
+lambda.addEventListener('change', () => {
+  sweep();
+  update();
+});
+light.addEventListener('change', () => {
+  spectral();
+  sweep();
+  update();
+});
 life.addEventListener('change', () => {
   recompute();
   update();
@@ -193,7 +206,7 @@ function draw(sol) {
   });
   const at = spectrum.nm.indexOf(nm);
   chart(document.getElementById('eqe'), {
-    xlabel: 'wavelength (nm)', ylabel: 'quantum efficiency, J_sc/qΦ', xlim: [400, 1100], ylim: [0, 1.05],
+    xlabel: 'wavelength (nm)', ylabel: 'EQE at short circuit, J_sc/qΦ', xlim: [400, 1100], ylim: [0, 1.05],
     series: [
       { x: spectrum.fine, y: spectrum.absorbed, color: colors[6], dash: [6, 4], width: 1.2, label: 'absorbed' },
       { x: spectrum.fine, y: spectrum.theory, color: colors[0], width: 1.5, label: 'collection theory' },
