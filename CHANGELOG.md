@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.4.0 (2026-10-03)
 
 - A bulk reaction's `kf` can vary with position: a profile `{ x, values }` against the device's
   x, averaged over each node's box, so the total rate is exact on any grid.
@@ -13,6 +13,8 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   exciton. Validation: an organic bilayer, with excitons as a third, neutral species diffusing to
   the donor/acceptor interface and splitting there (J_sc against exciton-diffusion theory), and
   V_oc from charge-transfer recombination by detailed balance.
+- Solar demo: a wavelength control (silicon's α from Green 2008), the spectral response against
+  collection theory, and where the light makes pairs and which are collected.
 - Demo: an organic bilayer solar cell, where light makes neutral excitons that diffuse to the
   donor/acceptor interface and split; J_sc against donor thickness and V_oc by detailed balance,
   each against theory.
