@@ -107,7 +107,8 @@ function frame(now = performance.now()) {
   lastFrame = now;
   const { period, stop } = trace, perCycle = +pace.value;
   const target = stop < Infinity ? stop : dev.solver.time + (perCycle > 0 ? (wall * period) / perCycle : period);
-  const s = dev.advance(target, { budgetMs: 12, tol: 1e-3 });
+  // With ?t, straight there in one go: the same steps however fast the machine.
+  const s = dev.advance(target, { budgetMs: stop < Infinity ? Infinity : 12, tol: 1e-3 });
   s.trace.t.forEach((t, k) => {
     trace.t.push(t);
     trace.I.push(-s.trace.current[k] / 10); // from the right electrode to the left: mA/cm², positive for +V
