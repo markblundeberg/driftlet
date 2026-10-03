@@ -46,7 +46,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
   `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot`: `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`).
+  `metal`, `IONS`, …) and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
 - **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),
@@ -274,6 +274,16 @@ slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider
 
 What `bandDiagram()` and `traces()` draw, and how to explain it to a reader (docs/visualization.md
 has the long form):
+
+- **Plotting in your own style.** `bandDiagram()` is a quick look. For a page of your own, draw
+  with your own charting code from `traces(sol, opts)` (in `driftlet/kit`, the same options):
+  `{ x, series: [{ id, label, kind, role, slot, y }], regions, faces, range }`, where `kind` says how
+  a line reads (`'level'` thick, `'standard'` thin, `'redox'`, `'phi'`), `role` and `slot` keep a
+  species' colour stable (`themeColor(role, slot)` in `driftlet/plot` gives ours), labels mark
+  subscripts TeX-style (`labelParts(label)` splits them), `NaN` breaks a line, and doubled
+  interface nodes share an x (draw them as vertical steps). Or read the solution directly:
+  `sol.x`, `sol.V[name]`, `sol.Vstd[name]`, `sol.c[name]`, `sol.phi`; electron energies are
+  E = −V (eV) for both carriers' levels and band edges.
 
 - **Which picture.** For a device of electrons and holes only, draw the familiar band diagram,
   energy up: `bandDiagram(sol, { energy: true })` (E_c, E_v, E_Fn, E_Fp in eV). The species
