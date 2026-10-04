@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.8.0 (2026-10-03)
 
 - Devices with a cross-section A(x): `geometry: { type: 'spherical' | 'cylindrical', r0 }` (shells
   about a centre r0 to the left of x = 0) or `{ area: { x, values } }`. The finite volumes carry
@@ -12,7 +12,6 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   for bit, with A = 1 m²). Validated in test/geometry.test.js: steady diffusion to a sphere and a
   cylinder (exact on any grid), Cottrell's transient with the spherical term, uptake by a sphere
   from its surface (centre at x = 0), Debye–Hückel screening around a charged sphere.
-
 - Electrodes spread through a window: a port with `reactions` (Butler–Volmer per area, as at a
   face) against its terminal species, a metal's carrier at the port's level, and an `area` of
   electrode per volume (a number or a profile). Used for the metal under a thin film of electrolyte,
@@ -27,12 +26,13 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   returns each reaction's rate, partial current (anodic positive) and redox level, and the net
   current: the curves of an Evans diagram. It uses the solver's own law, so at the metal's actual
   level it gives the solved rates (test/polarization.test.js, with the Tafel slopes).
-
 - Fixed: a port that only exchanges (an O₂ supply from the air, say) in a strictly neutral region
   could stop a transient at its first step. With a face reaction setting the electrolyte's
   potential, as in a drop of salt water on iron, no step converged. The port's window is now solved
   in the same well-conditioned terms as the rest of the region. A port that exchanges only neutral
   species carries no current, and driving one by a current is now an error.
+- The liquid-junction demo says what the minority ions show: Mg²⁺'s plateau, and K⁺ riding the
+  front.
 
 ## 0.7.0 (2026-10-03)
 
