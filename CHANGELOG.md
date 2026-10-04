@@ -17,6 +17,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `check()` keeps a ledger per compartment: a species a face lets through only by a law or a
   reaction gets one on each side, with what crosses as a term (in a cell: Na⁺ leaks in as fast as
   it's pumped out). `describe()` lists what crosses a face by a law, and saturating kinetics.
+- Liquid-junction potentials in the kit: `henderson()` (the closed form JPCalc uses) and `planck()`
+  (the steady state of constrained diffusion, by shooting on the Nernst–Planck equations), for any
+  mixture and valences. Validated in test/junction.test.js against JPCalc's published values,
+  against driftlet's own steady junction (to 2e-4 mV) and the stationary codes LJPcalc and JLJP
+  (to 0.02 mV: a patch pipette's K-gluconate, ZnCl₂ | KCl), and a free-diffusion junction grown
+  from a sharp boundary, constant in time and between the two.
+- A liquid-junction demo: a patch pipette's junction growing from contact against Henderson,
+  Planck and the published values (and why patch-clampers correct for it), ZnCl₂ | KCl, and a
+  3 M KCl salt bridge whose charged frit turns permselective against a dilute sample.
 - A charged-nanochannel demo: a channel 10 nm across with charged walls, resolved along its axis;
   Donnan layers at each mouth that overlap in dilute salt (where Poisson's equation, not
   electroneutrality, sets what it does), K⁺ selectivity, the conductance plateau at low salt

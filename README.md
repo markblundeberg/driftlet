@@ -150,8 +150,8 @@ them locally, serve the repository root (e.g. `python3 -m http.server`) and open
 | **Impedance**: the Warburg arc, and the cell's small-signal response inside | **Ion-exchange membrane**: Donnan steps, ion by ion, against TMS theory | **Double layer**: dilute vs crowded ions, against closed forms |
 | [![insertion host](demos/screenshots/insertion.png)](https://markblundeberg.github.io/driftlet/demos/insertion.html) | [![organic solar cell](demos/screenshots/organic.png)](https://markblundeberg.github.io/driftlet/demos/organic.html) | [![perovskite hysteresis](demos/screenshots/perovskite.png)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) |
 | **Intercalation host**: cycling between cutoffs against the OCV | **Organic solar cell**: excitons diffusing to a donor/acceptor interface, against theory | **Perovskite hysteresis**: mobile ions and scan rate, against IonMonger |
-| [![charged nanochannel](demos/screenshots/channel.png)](https://markblundeberg.github.io/driftlet/demos/channel.html) | [![resting potential](demos/screenshots/cell.png)](https://markblundeberg.github.io/driftlet/demos/cell.html) | |
-| **Charged nanochannel**: selectivity, overlapping Donnan layers and rectification, against Teorell–Meyer–Sievers | **Resting potential**: leaks and the Na⁺/K⁺ pump, against Mullins–Noda; the run-down to Donnan | |
+| [![charged nanochannel](demos/screenshots/channel.png)](https://markblundeberg.github.io/driftlet/demos/channel.html) | [![resting potential](demos/screenshots/cell.png)](https://markblundeberg.github.io/driftlet/demos/cell.html) | [![liquid junctions](demos/screenshots/junction.png)](https://markblundeberg.github.io/driftlet/demos/junction.html) |
+| **Charged nanochannel**: selectivity, overlapping Donnan layers and rectification, against Teorell–Meyer–Sievers | **Resting potential**: leaks and the Na⁺/K⁺ pump, against Mullins–Noda; the run-down to Donnan | **Liquid junctions**: a patch pipette's against Henderson, Planck and LJPcalc; a charged frit |
 
 ## How to think about it
 
@@ -245,6 +245,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
 | Charged pore or nanochannel (resolved Donnan layers at each mouth) | conductance against salt, down to its plateau, as Teorell–Meyer–Sievers in a long pore (short ones short by end layers ∝ 1/L); the zero-current voltage across a salt gradient; a symmetric pore's I–V odd, rectification with charge on one side or bipolar | 1%; 5e-3 to 1e-4; 1e-9 |
 | Cell membrane (a capacitive face with permeabilities) | GHK resting potential (neutral or resolved solutions) and current–voltage curve; the same as a resolved 5 nm lipid layer; charging at I/C; with the Na⁺/K⁺ pump in a closed cell, Mullins–Noda, the static head 3Δμ̄_Na − 2Δμ̄_K = ΔG_ATP, and Donnan with the pump off | 1e-5 V; 3e-3; 2e-5 V; 1%; 1e-9 |
+| Liquid junctions in mixtures | Henderson's formula against JPCalc's published values; driftlet's steady junction against Planck by shooting and the stationary Nernst–Planck codes LJPcalc and JLJP, a patch pipette's K-gluconate among them; a free-diffusion junction constant in time, between the two | 0.015 mV; 2e-4 and 0.02 mV; 5e-3 mV |
 | Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
 | Salt diffusion mode from a `c0` profile | c̄ + a·sin(πx/2L) decaying at π²D/4L², D = 2D₊D₋/(D₊ + D₋) | 2e-5 |
 | Concentration polarization | `i = i_lim tanh(V/4V_T)`, incl. galvanostatic and load modes | 2e-4 |

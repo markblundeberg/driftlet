@@ -24,6 +24,7 @@ const SHOTS = {
   impedance: { query: 'f=1.25&phase=15', budget: 60000 },
   cell: { query: '', budget: 60000 },
   channel: { query: '', budget: 60000 },
+  junction: { query: 't=5', budget: 60000 },
   membrane: { query: '', budget: 60000 },
   'double-layer': { query: '', budget: 60000 },
   insertion: { query: 't=6000', budget: 60000 },
