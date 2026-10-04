@@ -224,6 +224,9 @@ export class Solver {
     model.ports.forEach((port, k) => {
       if (port.surface.length > 0) port.nodes.forEach((g, w) => ((this.surfPort[g] = k), (this.surfW[g] = w)));
     });
+    // Each surface species of each port, as a column of what's conserved: [port, species].
+    this.surfCols = model.ports.flatMap((port, k) => port.surface.map((_, q) => [k, q]));
+    this.surfColOf = model.ports.map((port, k) => this.surfCols.findIndex(([kk]) => kk === k));
     this.th = new Float64Array(nNodes * nSurf);
     this.thOld = new Float64Array(nNodes * nSurf);
     // The bare fraction θ₀, directly (1 − Σθ cancels as θ → 1); 1 where there's no surface.
@@ -468,6 +471,8 @@ export class Solver {
     this._findStretches();
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
+    // And what each surface species held then (a conserved combination through one counts it).
+    this.surfaceRef = Float64Array.from(this.surfCols, (_, j) => this.surfaceAmount(j));
     // ∫ (flux in − flux out) dt through the contacts, per stretch, since the reference.
     this.boundaryIntake = new Float64Array(this.stretches.length);
   }
@@ -594,12 +599,14 @@ export class Solver {
     // its faces; both are left to giant time steps.
     this.constraints = [];
     const conductor = (st) => materials[regions[st.regions[0]].material].conductor;
-    const add = (parts, rowStretch) => {
+    const add = (parts, rowStretch, surface = []) => {
       const st = this.stretches[rowStretch];
-      const nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
+      let nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
+      for (const p of surface) nNodes += model.ports[this.surfCols[p.col][0]].nodes.length * model.ports[this.surfCols[p.col][0]].surface.length;
       for (const p of parts) this.stretches[p.stretch].conserved = true;
       this.constraints.push({
         parts,
+        surface,
         row: this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
         idx: new Int32Array(nNodes * this.M),
         w: new Float64Array(nNodes * this.M),
@@ -611,12 +618,15 @@ export class Solver {
     this.stretches.forEach((st, k) => {
       if (st.spectator && st.mobile) add([{ stretch: k, w: 1 }], k);
     });
+    const S = this.stretches.length;
     for (const w of this.moieties) {
-      const parts = [...w.keys()].filter((k) => w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
-      if (parts.length === 1 && this.stretches[parts[0].stretch].spectator) continue; // (above)
+      const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
+      const surface = [...w.keys()].filter((k) => k >= S && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
+      if (parts.length === 0) continue; // (a surface's own: left to giant time steps)
+      if (parts.length === 1 && surface.length === 0 && this.stretches[parts[0].stretch].spectator) continue; // (above)
       if (parts.some((p) => !this.stretches[p.stretch].mobile || conductor(this.stretches[p.stretch]))) continue;
       // The row replaced: the basis vector's own stretch (its weight is 1, and no other vector has one).
-      add(parts, parts.find((p) => w[p.stretch] === 1)?.stretch ?? parts[0].stretch);
+      add(parts, parts.find((p) => w[p.stretch] === 1)?.stretch ?? parts[0].stretch, surface);
     }
     // A combination of immobile stretches (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻) is conserved
     // node by node, since nothing carries it anywhere: at each node its weighted sum stays what
@@ -679,26 +689,32 @@ export class Solver {
   // stoichiometry (a row per reaction, over the stretches it touches) together with a unit row
   // for each stretch fed from outside. Exact integer data, so plain elimination will do.
   _conservedMoieties() {
-    const { model, n } = this, S = this.stretches.length;
+    const { model, n } = this, S = this.stretches.length, C = S + this.surfCols.length;
     const rows = [];
     model.interfaces.forEach((itf, f) => {
       for (const rx of itf.reactions) {
-        const row = new Float64Array(S);
+        const row = new Float64Array(C);
         for (const p of rx.part) row[this.stretchOf[(f + p.side) * n + p.i]] += p.nu;
         rows.push(row);
       }
     });
-    for (const port of model.ports) {
+    // An electrode surface's species are columns too, after the stretches (S + j for surface
+    // column j), so a combination that passes through them (A⁺ + e⁻ = S, S + e⁻ = B⁻) is conserved
+    // with what the surface holds.
+    model.ports.forEach((port, k) => {
       for (const rx of port.reactions) {
-        const row = new Float64Array(S); // (the electrode's carrier is outside the device)
-        for (const p of rx.part) if (p.side === 0) row[this.stretchOf[port.region * n + p.i]] += p.nu;
+        const row = new Float64Array(C); // (the electrode's carrier is outside the device)
+        for (const p of rx.part) {
+          if (p.side === 0) row[this.stretchOf[port.region * n + p.i]] += p.nu;
+          else if (p.side === 2) row[S + this.surfColOf[k] + p.s] += p.nu;
+        }
         rows.push(row);
       }
-    }
+    });
     model.regions.forEach((reg, q) => {
       for (const rx of model.reactions) {
         if (!(rx.kf[reg.material] > 0)) continue;
-        const row = new Float64Array(S);
+        const row = new Float64Array(C);
         for (const p of rx.reactants) row[this.stretchOf[q * n + p.i]] -= p.nu;
         for (const p of rx.products) row[this.stretchOf[q * n + p.i]] += p.nu;
         rows.push(row);
@@ -706,34 +722,34 @@ export class Solver {
     });
     this.stretches.forEach((st, k) => {
       if (!st.contactFed) return;
-      const row = new Float64Array(S);
+      const row = new Float64Array(C);
       row[k] = 1;
       rows.push(row);
     });
     // Reduced row echelon form; the free columns give the null space.
     const pivots = [];
     let r = 0;
-    for (let col = 0; col < S && r < rows.length; col++) {
+    for (let col = 0; col < C && r < rows.length; col++) {
       let best = r;
       for (let i = r + 1; i < rows.length; i++) if (Math.abs(rows[i][col]) > Math.abs(rows[best][col])) best = i;
       if (Math.abs(rows[best][col]) < 1e-9) continue;
       [rows[r], rows[best]] = [rows[best], rows[r]];
       const pr = rows[r], pv = pr[col];
-      for (let j = 0; j < S; j++) pr[j] /= pv;
+      for (let j = 0; j < C; j++) pr[j] /= pv;
       for (let i = 0; i < rows.length; i++) {
         if (i === r || rows[i][col] === 0) continue;
         const fct = rows[i][col];
-        for (let j = 0; j < S; j++) rows[i][j] -= fct * pr[j];
+        for (let j = 0; j < C; j++) rows[i][j] -= fct * pr[j];
       }
       pivots.push(col);
       r++;
     }
-    const isPivot = new Uint8Array(S);
+    const isPivot = new Uint8Array(C);
     for (const col of pivots) isPivot[col] = 1;
     const basis = [];
-    for (let free = 0; free < S; free++) {
+    for (let free = 0; free < C; free++) {
       if (isPivot[free]) continue;
-      const w = new Float64Array(S);
+      const w = new Float64Array(C);
       w[free] = 1;
       pivots.forEach((col, i) => {
         const v = -rows[i][free];
@@ -772,6 +788,19 @@ export class Solver {
             cs.w[len++] = w * vol[g] * d[r];
           }
         }
+      }
+      // What the electrodes' surfaces hold of it: Γ Σ v·a·θ, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
+      for (const { col, w } of cs.surface) {
+        const [k, q] = this.surfCols[col], port = this.model.ports[k], G = port.surface[0].capacity, ns = port.surface.length;
+        reference += w * this.surfaceRef[col];
+        port.nodes.forEach((g, j) => {
+          const f = w * G * vol[g] * this.portArea[k][j], b = this.blockOfNode[g], tq = this.th[g * this.nSurf + q];
+          amount += f * tq;
+          for (let x = 0; x < ns; x++) {
+            cs.idx[len] = this.rix[b * M + 1 + n + x];
+            cs.w[len++] = f * tq * ((q === x ? 1 : 0) - this.th[g * this.nSurf + x]);
+          }
+        });
       }
       cs.len = len;
       cs.res = amount - reference;
@@ -850,6 +879,14 @@ export class Solver {
     }
   }
 
+
+  /** Amount (mol per unit area) of surface column j's species, Γ Σ v·a·θ, in the current state. */
+  surfaceAmount(j) {
+    const [k, q] = this.surfCols[j], port = this.model.ports[k], vol = this.model.grid.vol;
+    let s = 0;
+    port.nodes.forEach((g, w) => (s += vol[g] * this.portArea[k][w] * this.th[g * this.nSurf + q]));
+    return port.surface[0].capacity * s;
+  }
 
   /** Total amount (mol per unit area) of a stretch's species in the current state. */
   amount(stretch) {

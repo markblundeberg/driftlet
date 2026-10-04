@@ -119,6 +119,37 @@ test('a metal dissolving on bare sites only: the active–passive curve, the fil
   assert.ok(dissolving.at(-1) < dissolving[peak] / 10, `passive: ${dissolving}`);
 });
 
+test('what passes through a surface is conserved with it: the steady state of A⁺ + e⁻ = S, S + e⁻ = B⁻ is where the transient ends', () => {
+  // A and B are fed only through the surface species S, so A + B + (what S holds) is fixed; the
+  // steady solve has to count the surface's share, or A and B look fed from outside.
+  const species = [{ name: 'A+', z: 1, cRef: 1000 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }];
+  const D = { D: 1e-9, mu0: 0 }, Gs = 1e-5, a = 1e6;
+  const dev = () =>
+    new Device({
+      T,
+      species,
+      materials: { water: { epsr: 0, species: { 'A+': D, 'B-': D, 'Na+': D, 'Cl-': D } } },
+      regions: [{ material: 'water', length: 1e-6, c0: { 'A+': 10, 'B-': 10, 'Na+': 100, 'Cl-': 100 } }],
+      contacts: { left: { V: 0, terminal: 'Na+', species: { 'Na+': 'equilibrium' }, phi: 'bulk' }, right: {} },
+      ports: [{ name: 'el', region: 0, V: 0.03, terminal: 'e-', area: a, surface: { S: { mu0: 2000, capacity: Gs, theta0: 1e-3 } },
+        reactions: [{ equation: 'A+ + e- = S', k0: 1e-4, alpha: 0.5 }, { equation: 'S + e- = B-', k0: 1e-4, alpha: 0.5 }] }],
+      grid: { hmin: 50e-9, hmax: 50e-9 },
+    });
+  const total = (d, sol) => {
+    const v = d.model.grid.vol, p = sol.ports[0];
+    let t = 0;
+    for (let g = 0; g < sol.x.length; g++) t += v[g] * (sol.c['A+'][g] + sol.c['B-'][g]);
+    p.x.forEach((x, w) => (t += Gs * a * v[sol.x.indexOf(x)] * p.coverage.S[w]));
+    return t;
+  };
+  const d = dev(), start = total(d, d.solution()), steady = d.solve();
+  assert.ok(steady.converged && Math.abs(total(d, steady) / start - 1) < 1e-12, `${total(d, steady)} vs ${start}`);
+  const e = dev(), late = e.advance(1e4);
+  assert.ok(late.converged && Math.abs(total(e, late) / start - 1) < 1e-12);
+  const [cs, cl] = [steady.c['A+'][5], late.c['A+'][5]], [ts, tl] = [steady.ports[0].coverage.S[3], late.ports[0].coverage.S[3]];
+  assert.ok(Math.abs(cl / cs - 1) < 1e-9 && Math.abs(tl / ts - 1) < 1e-9 && Math.abs(cs - 10) > 1, `A⁺ ${cs} vs ${cl}, θ ${ts} vs ${tl}`);
+});
+
 test('surfaces are checked', () => {
   const r = (s) => [{ equation: 'OH- = OHads + e-', k0: 1, alpha: 0.5 }].map((x) => ({ ...x, ...s }));
   assert.throws(() => cell(0, { surface: { OHads: { mu0: 0, capacity: G } }, reactions: [{ equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 1, alpha: 0.5 }] }), (e) => e instanceof DeviceError && /no reaction of the port makes or uses it/.test(e.message));

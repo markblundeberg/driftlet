@@ -118,6 +118,16 @@ export class Device {
         return sameBoxes && k !== undefined && !old.stretches[k].connected && !st.connected ? old.referenceAmounts[k] + old.boundaryIntake[k] : solver.amount(st);
       });
       solver.boundaryIntake.fill(0);
+      // Each surface's reference likewise: kept where its window and the boxes are unchanged.
+      const sameSurface = (j) => {
+        const [k, q] = solver.surfCols[j], o = old.surfCols.findIndex(([kk, qq]) => old.model.ports[kk].name === model.ports[k].name && qq === q);
+        const a = old.model.ports[old.surfCols[o]?.[0]], b = model.ports[k];
+        return o >= 0 && a.surface[q].name === b.surface[q].name && a.nodes.length === b.nodes.length && a.nodes.every((g, w) => g === b.nodes[w]) ? o : -1;
+      };
+      solver.surfaceRef = Float64Array.from(solver.surfCols, (_, j) => {
+        const o = sameBoxes ? sameSurface(j) : -1;
+        return o >= 0 ? old.surfaceRef[o] : solver.surfaceAmount(j);
+      });
     }
     return this;
   }
@@ -192,7 +202,7 @@ export class Device {
    */
   _checkpoint() {
     const solver = this.solver;
-    return { def: this.def, model: this.model, solver, snap: solver._snapshot(), solvedV: solver.solvedV, referenceAmounts: solver.referenceAmounts.slice() };
+    return { def: this.def, model: this.model, solver, snap: solver._snapshot(), solvedV: solver.solvedV, referenceAmounts: solver.referenceAmounts.slice(), surfaceRef: solver.surfaceRef.slice() };
   }
 
   /**
@@ -210,6 +220,7 @@ export class Device {
     cp.solver._restore(cp.snap);
     cp.solver.solvedV = cp.solvedV;
     cp.solver.referenceAmounts = cp.referenceAmounts.slice();
+    cp.solver.surfaceRef = cp.surfaceRef.slice();
   }
 
   /**

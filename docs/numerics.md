@@ -358,7 +358,9 @@ reaction) and that nothing outside feeds ($`w = 0`$ on stretches reached by a co
 the null space of that stoichiometry. A stretch in none of them is fed. So Ag⁺ between silver
 electrodes is fed (Ag⁺ + e⁻ ⇌ Ag(s), the electrons fed by the contacts), and the steady equations
 are solved directly; Fe³⁺ and Fe²⁺ between platinum electrodes aren't, since Fe³⁺ + e⁻ ⇌ Fe²⁺
-conserves the iron whatever the electrons do, so their total is kept by huge steps (below). A
+conserves the iron whatever the electrons do, so their total is kept by huge steps (below). An
+electrode surface's species are columns too, holding $`\Gamma \sum v\,a\,\theta`$, so species fed only
+through one (A⁺ + e⁻ = S, S + e⁻ = B⁻) conserve their total with what the surface holds. A
 floating conductor starts uncharged, with its carrier's level in equilibrium with the first
 reaction on its left face that takes it.
 
@@ -366,7 +368,8 @@ reaction on its left face that takes it.
 
 A port adds a source per volume to the balance rows of the nodes in its window, after every
 other term at those nodes and before the contacts. A held (`'equilibrium'`) level replaces the
-balance row with a Dirichlet row. The port's flux is then that row's residual, read just
+balance row with a Dirichlet row, after every port's other terms (another port's electrode can
+react in the same window). The port's flux is then that row's residual, read just
 before replacement, exactly as at a contact. Conductance and exchange links are linear in
 $`(\bar\mu_{\mathrm{out}} - \bar\mu)`$. Everything stays on the node's own block. A contact's flux
 readout at an end node already includes any port source there, so contact and port fluxes always
