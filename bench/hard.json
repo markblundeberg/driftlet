@@ -5,7 +5,7 @@
     "steps": 1009,
     "rejected": 13,
     "factorizations": 3538,
-    "ms": 1878,
+    "ms": 1881,
     "value": {
       "Δφ (mV)": 8.773400894366151
     }
@@ -16,7 +16,7 @@
     "steps": 472,
     "rejected": 29,
     "factorizations": 1876,
-    "ms": 957,
+    "ms": 966,
     "value": {
       "Δφ (mV)": 8.773400115767757
     }
@@ -27,7 +27,7 @@
     "steps": 1009,
     "rejected": 23,
     "factorizations": 3401,
-    "ms": 1706,
+    "ms": 1683,
     "value": {
       "Δφ (mV)": 8.773400894351996
     }
@@ -49,7 +49,7 @@
     "steps": 668,
     "rejected": 11,
     "factorizations": 2319,
-    "ms": 511,
+    "ms": 501,
     "value": {
       "Δφ (mV)": -6.708420470013514
     }
@@ -60,7 +60,7 @@
     "steps": 5,
     "rejected": 22,
     "factorizations": 487,
-    "ms": 103,
+    "ms": 104,
     "value": {
       "Δφ (mV)": -1.6748614987697614
     }
@@ -68,34 +68,34 @@
   "electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-8": {
     "ok": true,
     "note": "",
-    "steps": 14,
-    "rejected": 0,
-    "factorizations": 53,
-    "ms": 13,
+    "steps": 836,
+    "rejected": 2,
+    "factorizations": 1681,
+    "ms": 97,
     "value": {
-      "θ": 0.000944530736190363
+      "θ": 0.000944530723081529
     }
   },
   "electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-6": {
     "ok": true,
     "note": "",
-    "steps": 14,
-    "rejected": 0,
-    "factorizations": 53,
-    "ms": 6,
+    "steps": 186,
+    "rejected": 1,
+    "factorizations": 381,
+    "ms": 18,
     "value": {
-      "θ": 0.000944530736190363
+      "θ": 0.0009445307230650187
     }
   },
   "electrode port filling its surface (ε = 0): to 10 s, tol 1e-3": {
     "ok": true,
     "note": "",
-    "steps": 17,
-    "rejected": 2,
-    "factorizations": 182,
-    "ms": 9,
+    "steps": 87,
+    "rejected": 6,
+    "factorizations": 381,
+    "ms": 14,
     "value": {
-      "θ": 0.8750313215488837
+      "θ": 0.8750193692571602
     }
   },
   "silver face in AgNO₃ (ε = 0): to 1e-7 s, tol 1e-8": {
@@ -115,7 +115,7 @@
     "steps": 908,
     "rejected": 4,
     "factorizations": 1899,
-    "ms": 54,
+    "ms": 46,
     "value": {
       "I (A/m²)": 4872.543562682728
     }
@@ -137,31 +137,31 @@
     "steps": 330,
     "rejected": 22,
     "factorizations": 1183,
-    "ms": 101,
+    "ms": 103,
     "value": {
-      "I_Fe (A/m²)": 1.8700672376144019
+      "I_Fe (A/m²)": 1.8700672376143996
     }
   },
   "radial drop on a passivating iron electrode, double layer 0.2 F/m²: to 3600 s": {
     "ok": true,
     "note": "",
-    "steps": 410,
-    "rejected": 61,
-    "factorizations": 1656,
-    "ms": 473,
+    "steps": 468,
+    "rejected": 78,
+    "factorizations": 1766,
+    "ms": 520,
     "value": {
-      "E − φ₀ (V)": 0.28871234747644137
+      "E − φ₀ (V)": 0.2887103812413092
     }
   },
   "radial drop on a passivating iron electrode, no double layer: to 3600 s": {
     "ok": false,
     "note": "stopped at t = 1.82e+3 s",
-    "steps": 381,
-    "rejected": 109,
+    "steps": 394,
+    "rejected": 108,
     "factorizations": 1997,
-    "ms": 523,
+    "ms": 524,
     "value": {
-      "E − φ₀ (V)": 0.11530928944923248
+      "E − φ₀ (V)": 0.11529892688475822
     }
   },
   "MOS without a channel port: cold steady solves, 0 → 1 V in 0.1 V": {
@@ -170,7 +170,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 1422,
-    "ms": 158,
+    "ms": 134,
     "value": {
       "failures": 3
     }
@@ -181,7 +181,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 292,
-    "ms": 34,
+    "ms": 37,
     "value": {}
   },
   "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1 s": {
@@ -190,7 +190,7 @@
     "steps": 14,
     "rejected": 0,
     "factorizations": 124,
-    "ms": 18,
+    "ms": 19,
     "value": {
       "ΔQ/(C_ox·δV)": 0.12468883426409444
     }
@@ -201,7 +201,7 @@
     "steps": 1447,
     "rejected": 720,
     "factorizations": 21977,
-    "ms": 1547,
+    "ms": 1556,
     "value": {
       "ΔQ/(C_ox·δV)": 0.8735731128285491
     }
@@ -212,7 +212,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 519,
-    "ms": 83,
+    "ms": 84,
     "value": {
       "V_oc (V)": 0.3844219440748137
     }
@@ -223,7 +223,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 1913,
-    "ms": 303,
+    "ms": 294,
     "value": {
       "V_oc (V)": 0
     }
