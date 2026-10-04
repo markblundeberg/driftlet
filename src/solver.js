@@ -374,6 +374,13 @@ export class Solver {
       nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
     }));
 
+    // Each reacting port's electrode area per volume at its window's nodes (a profile's mean over
+    // each node's box, as for a rate constant), and its reactions' rates there, mol/(m²·s).
+    this.portArea = model.ports.map((port) =>
+      port.area === null ? null : Float64Array.from(port.nodes, (g) => port.area.value ?? profileMean(port.area, gx[g] - (g > 0 ? segLength[g - 1] : 0) / 2, gx[g] + (g < segLength.length ? segLength[g] : 0) / 2)),
+    );
+    this.portRates = model.ports.map((port) => port.reactions.map(() => new Float64Array(port.nodes.length)));
+
     // Whether any region is strictly neutral (ε = 0, not a conductor): see integrate().
     this.strictlyNeutral = model.regions.some((reg) => {
       const mat = materials[reg.material];
@@ -508,10 +515,15 @@ export class Solver {
             if (rx.kf[m] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
           }
         }
-        const ports = model.ports.flatMap((port, k) => (port.region >= r0 && port.region <= r && port.species[i].type !== 'blocked' ? [k] : []));
-        const connected = leftOpen || rightOpen || ports.length > 0;
+        const inside = (port) => port.region >= r0 && port.region <= r;
+        const linked = model.ports.flatMap((port, k) => (inside(port) && port.species[i].type !== 'blocked' ? [k] : []));
+        // made or consumed by a port's reactions (an electrode spread through its window)
+        const reacting = model.ports.flatMap((port, k) => (inside(port) && port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i)) ? [k] : []));
+        if (reacting.length > 0) reactive = true;
+        const connected = leftOpen || rightOpen || linked.length > 0;
         this.stretches.push({
-          ports,
+          linked, // ports that hold or exchange it
+          ports: [...new Set([...linked, ...reacting])], // ports that bring any in
           species: i,
           regions: [r0, r],
           nodes: [grid.regionStart[r0], grid.regionEnd[r]],
@@ -641,6 +653,13 @@ export class Solver {
         rows.push(row);
       }
     });
+    for (const port of model.ports) {
+      for (const rx of port.reactions) {
+        const row = new Float64Array(S); // (the electrode's carrier is outside the device)
+        for (const p of rx.part) if (p.side === 0) row[this.stretchOf[port.region * n + p.i]] += p.nu;
+        rows.push(row);
+      }
+    }
     model.regions.forEach((reg, q) => {
       for (const rx of model.reactions) {
         if (!(rx.kf[reg.material] > 0)) continue;
@@ -826,11 +845,11 @@ export class Solver {
     });
   }
 
-  /** η_i (μ̄/RT) of a port's outside level for species i. */
+  /** η_i (μ̄/RT) of a port's outside level for species i (its electrode's carrier: at V itself). */
   portEta(port, i) {
     const link = port.species[i];
     const V = this.termV[2 + this.model.ports.indexOf(port)];
-    return this.z[i] === 0 ? link.mu / this.model.RT : (this.z[i] * (V + link.offset)) / this.VT;
+    return this.z[i] === 0 ? link.mu / this.model.RT : (this.z[i] * (V + (link.offset ?? 0))) / this.VT;
   }
 
   /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
@@ -896,7 +915,7 @@ export class Solver {
         } else {
           const left = st.regions[0] === 0 ? this.contactEta('left', i) : NaN;
           eta[i] = Number.isFinite(left) ? left : this.contactEta('right', i);
-          if (!Number.isFinite(eta[i]) && st.ports.length > 0) eta[i] = this.portEta(model.ports[st.ports[0]], i);
+          if (!Number.isFinite(eta[i]) && st.linked.length > 0) eta[i] = this.portEta(model.ports[st.linked[0]], i);
           mode[i] = 1;
           if (!Number.isFinite(eta[i])) {
             // Fed only through reactions (no level held at a contact): start from c0.
@@ -967,6 +986,25 @@ export class Solver {
           }
         }
       }
+      const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
+      if (!mat.phiFree && !responds && mat.ideal && electrode) {
+        // Nor here, but an electrode spread through it does: start with the port's first reaction
+        // that can be balanced at equilibrium with the port's level (the electrode at open circuit).
+        for (const rx of electrode.reactions) {
+          let a = rx.fixedA, s = 0;
+          for (const p of rx.part) {
+            if (p.side === 1) a -= p.nu * this.portEta(electrode, p.i);
+            else if (mode[p.i] === 2) {
+              a -= p.nu * (Math.log(cFix[p.i] / mat.cRef[p.i]) + mat.mu0[p.i] / model.RT);
+              s += p.nu * z[p.i];
+            } else s = NaN;
+          }
+          if (s !== 0 && Number.isFinite(s)) {
+            phiHat = a / s;
+            break;
+          }
+        }
+      }
       const neutralPhi = (ph) => {
         let lo = ph - 1, hi = ph + 1;
         while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
@@ -1018,6 +1056,50 @@ export class Solver {
       if (Number.isFinite(shift)) this.termV[k] = this.termV[held] + shift;
     }
     this.computeConcentrations();
+    // A floating electrode spread through a port starts where its reactions pass the current it's
+    // set (none, behind a resistance): at its mixed potential in the start's composition, not
+    // level with a held terminal, which can be volts away and pass an absurd current.
+    for (const k of this.floating) {
+      const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
+      if (!port || port.reactions.length === 0) continue;
+      const want = t.drive.kind === 'I' ? sourceAt(t.drive.src, this.time) : 0;
+      const current = (V) => {
+        this.termV[k] = V;
+        let I = 0;
+        port.reactions.forEach((rx) => {
+          let q = 0;
+          for (const p of rx.part) if (p.side === 0) q += p.nu * z[p.i];
+          port.nodes.forEach((g, w) => (I += q * FARADAY * this.model.grid.vol[g] * this.portArea[t.index][w] * this._portRate(port, rx, g)));
+        });
+        return I;
+      };
+      // Current into the device rises with V (oxidation); bracket, then bisect.
+      let lo = this.termV[k] - 1, hi = this.termV[k] + 1;
+      while (current(lo) > want && lo > -1e3) lo -= 2 * (hi - lo);
+      while (current(hi) < want && hi < 1e3) hi += 2 * (hi - lo);
+      for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
+        const m = 0.5 * (lo + hi);
+        if (current(m) < want) lo = m;
+        else hi = m;
+      }
+      this.termV[k] = 0.5 * (lo + hi);
+    }
+  }
+
+  // A port reaction's rate per area at node g (mol/(m²·s), forward), at the present state.
+  _portRate(port, rx, g) {
+    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    let pref = rx.k0, a = rx.fixedA;
+    for (const p of rx.part) {
+      if (p.side === 1) {
+        a -= p.nu * this.portEta(port, p.i);
+        continue;
+      }
+      a -= p.nu * (u[b * M + 1 + p.i] + uLo[b * M + 1 + p.i]);
+      pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
+    }
+    // (far from equilibrium, the plain difference: bvFactor's product would give 0·∞ there)
+    return pref * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a) : bvFactor(a, rx.alpha).g);
   }
 
   // A non-ideal material's composition at φ̂ = ph: level-fixed species (mode 1) at their η,
@@ -1954,7 +2036,56 @@ export class Solver {
         }
       }
     }
+    port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
     for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
+  }
+
+  // A port's reaction at each node of its window: Butler–Volmer per area, as at a face, against
+  // the electrode's carrier at the port's level (activity 1), times the electrode's area per
+  // volume. Each node's rate is explicit (no unknown of its own): it enters the balances of the
+  // species it makes and consumes, and the port's current.
+  _portReaction(port, rx, area, rates, flux, k) {
+    const { n, M, u, uLo, c, res, z, VT } = this, R = this.rix, F = FARADAY, vol = this.model.grid.vol;
+    const B = this.termB[k], C = this.termC[k], al = rx.alpha, d = this.dA;
+    // The carrier's part of the affinity, and how it moves with the port's voltage.
+    let aV = rx.fixedA, daV = 0, q = 0; // q: charge the forward reaction brings into the device, per event
+    for (const p of rx.part) {
+      if (p.side === 1) {
+        aV -= p.nu * this.portEta(port, p.i);
+        daV -= (p.nu * z[p.i]) / VT;
+      } else q += p.nu * z[p.i];
+    }
+    port.nodes.forEach((g, w) => {
+      const b = this.blockOfNode[g], s = vol[g] * area[w];
+      d.fill(0);
+      let pref = rx.k0, aHi = aV, aLo = 0;
+      for (const p of rx.part) {
+        if (p.side === 1) continue;
+        const o = b * M + 1 + p.i;
+        aHi -= p.nu * u[o];
+        aLo -= p.nu * uLo[o];
+        const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
+        pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+        this._dlnc(g, p.i, e, d);
+      }
+      const { g: bv, gp } = bvFactor(aHi + aLo, al);
+      const rate = pref * bv;
+      rates[w] = rate;
+      // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η_i = −ν
+      for (let t = 0; t < M; t++) d[t] *= rate;
+      for (const p of rx.part) if (p.side === 0) d[1 + p.i] -= pref * gp * p.nu;
+      const dV = pref * gp * daV;
+      for (const p of rx.part) {
+        if (p.side === 1) continue;
+        const row = 1 + p.i, o = b * M + row;
+        res[R[o]] -= s * p.nu * rate;
+        flux[p.i] += s * p.nu * rate;
+        for (let t = 0; t < M; t++) if (d[t] !== 0) this._j(b, row, b, t, -s * p.nu * d[t]);
+        B[R[o]] -= s * p.nu * dV;
+      }
+      for (let t = 0; t < M; t++) if (d[t] !== 0) C[R[b * M + t]] += q * F * s * d[t];
+      this.termDI[k] += q * F * s * dV;
+    });
   }
 
 

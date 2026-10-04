@@ -171,8 +171,14 @@ export function normalizeDevice(def) {
     materialIndex.set(mname, materials.length);
     materials.push(m);
   }
+  // (an electrode's carrier can live outside the device: a reacting port's terminal species)
+  const outside = (sp) => (def.ports ?? []).some((p) => p?.terminal === sp.name && Array.isArray(p.reactions) && p.reactions.length > 0);
   species.forEach((sp, i) => {
-    need(materials.some((m) => m.present[i]), `species '${sp.name}' is not present in any material`);
+    const reacting = (def.ports ?? []).some((p) => Array.isArray(p?.reactions) && p.reactions.length > 0);
+    need(
+      materials.some((m) => m.present[i]) || outside(sp),
+      `species '${sp.name}' is not present in any material` + (reacting ? " (an electrode's carrier can instead be a reacting port's terminal)" : ''),
+    );
   });
 
   // --- regions
@@ -280,7 +286,7 @@ export function normalizeDevice(def) {
 
   // --- internal ports (outside phases attached over windows of interior nodes)
   need(def.ports === undefined || Array.isArray(def.ports), 'ports must be an array');
-  const ports = (def.ports ?? []).map((pdef, k) => normalizePort(pdef, `ports[${k}]`, regions, materials, species, speciesIndex));
+  const ports = (def.ports ?? []).map((pdef, k) => normalizePort(pdef, `ports[${k}]`, regions, materials, species, speciesIndex, RT));
 
   // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
   // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.
@@ -607,10 +613,12 @@ export function nextBreakpoint(src, t) {
 // Links per species: 'equilibrium' (μ̄ held at the outside level throughout the window),
 // { type: 'conductance', G } for charged species (G in S/m³: a source G (V_out − V_i)/(zF) per
 // volume), { type: 'exchange', k, mu } for neutral ones (k in mol/(m³·s): a source
-// k (μ_out − μ)/RT per volume), or 'blocked' (the default).
-function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
+// k (μ_out − μ)/RT per volume), or 'blocked' (the default). And reactions with the port's
+// terminal species, a metal's carrier at the port's level: an electrode surface spread through
+// the window, `area` (m²/m³) of it per volume.
+function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -627,9 +635,10 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(pdef.terminal);
   }
-  need(isObject(pdef.species), `${path}.species must map species names to port links`);
+  const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT);
+  need(pdef.species === undefined ? reactions.length > 0 : isObject(pdef.species), `${path}.species must map species names to port links`);
   const links = species.map(() => ({ type: 'blocked' }));
-  for (const [sname, raw] of Object.entries(pdef.species)) {
+  for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
     const lpath = `${path}.species.${sname}`;
     need(speciesIndex.has(sname), `${lpath}: unknown species '${sname}'${known(speciesIndex)}`);
     const i = speciesIndex.get(sname);
@@ -657,12 +666,49 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
     links[i] = { type: link.type, ...level };
   }
-  need(links.some((l) => l.type !== 'blocked'), `${path}.species: the port exchanges no species`);
+  need(links.some((l) => l.type !== 'blocked') || reactions.length > 0, `${path}.species: the port exchanges no species`);
   // One that exchanges only neutral species (an O₂ supply) carries no current, so its voltage is
   // nobody's business: it can't be driven by one.
-  const passes = links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+  const passes = reactions.length > 0 || links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
   need(passes || drive.kind === 'V', `${path}.I: this port passes no current (it exchanges only neutral species), so give it no drive`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes };
+  let area = null;
+  if (reactions.length > 0) {
+    need(pdef.area !== undefined, `${path}.area: give the electrode's area per volume of the window (m²/m³, e.g. 1/h for a film of thickness h on it), a number or a profile`);
+    area = typeof pdef.area === 'number' ? { value: positive(pdef.area, `${path}.area (m²/m³)`) } : profile(pdef.area, `${path}.area`, 'areas per volume (m²/m³)', (a) => a >= 0, 'an area per volume ≥ 0');
+  } else need(pdef.area === undefined, `${path}.area: only a port with reactions has an electrode area`);
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area };
+}
+
+// A port's reactions: Butler–Volmer, as at a face, between species of the port's region and the
+// port's terminal species (a metal's carrier, activity 1, at the port's level), per area of the
+// electrode: part side 0 for the region's species, side 1 for the carrier.
+function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT) {
+  need(pdef.reactions === undefined || Array.isArray(pdef.reactions), `${path}.reactions must be an array`);
+  const list = pdef.reactions ?? [];
+  if (list.length === 0) return [];
+  need(!mat.conductor, `${path}.reactions: a port on a conductor is a wire; reactions belong on a face, or on a port in the solution`);
+  need(terminal !== null && species[terminal].z !== 0, `${path}.terminal: a port with reactions needs its electrode's carrier as its terminal species (e.g. 'e-')`);
+  need(!mat.present[terminal], `${path}.terminal: '${species[terminal].name}' is in the port's region too, so a reaction can't tell the electrode's from the region's`);
+  const carrier = species[terminal].name;
+  return list.map((rdef, k) => {
+    const rpath = `${path}.reactions[${k}]`;
+    need(isObject(rdef) && typeof rdef.equation === 'string', `${rpath} must be { equation, fixed, k0, alpha }`);
+    fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha']);
+    const holds = (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
+    const sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: mat.name, holds, conductor: false }, { name: 'the electrode', holds: (name) => name === carrier, conductor: true }, rdef.fixed, `${rpath}.equation`);
+    const part = [];
+    let fixedA = 0, charge = 0;
+    for (const [key, side] of [['left', 0], ['right', 1]]) {
+      const st = stoichiometry(sides[key], `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
+      for (const { i, nu } of st.list) part.push({ i, nu, side });
+      fixedA += st.fixedA;
+      charge += st.charge;
+    }
+    need(part.some((p) => p.side === 1), `${rpath}: no '${carrier}' from the electrode takes part`);
+    need(part.some((p) => p.side === 0), `${rpath}: no species of the port's region takes part`);
+    need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
+    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
+  });
 }
 
 function checkAnchors(regions, materials, interfaces, contacts, species, ports = []) {
@@ -685,7 +731,7 @@ function checkAnchors(regions, materials, interfaces, contacts, species, ports =
   const anchored = new Set();
   if (anchors(contacts.left)) anchored.add(find(0));
   if (anchors(contacts.right)) anchored.add(find(nR - 1));
-  for (const port of ports) if (port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
+  for (const port of ports) if (port.reactions.length > 0 || port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
   for (let r = 0; r < nR; r++) {
     const mat = materials[regions[r].material];
     const charged = species.some((sp, i) => mat.present[i] && sp.z !== 0);

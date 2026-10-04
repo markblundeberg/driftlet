@@ -42,7 +42,10 @@ for live demos.
   sheets), capacitive faces aligned by work function, electrode reactions at internal faces,
   bipolar electrodes.
 - Internal ports: reservoirs attached to a window of interior nodes (held levels, volumetric
-  conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal.
+  conductance or exchange), e.g. grounding a 1D MOS channel, or a wire to a whole metal. And
+  electrodes spread through a window (a port with Butler–Volmer reactions against its carrier, per
+  area of electrode): the metal under a thin film, a crevice's walls, a porous electrode's matrix,
+  held or floating at its mixed potential.
 - A second-law validation: in steady state the free energy brought in through every terminal,
   $`\sum N\bar\mu`$ over every species, equals the dissipation inside (fluxes down their own $`\bar\mu`$
   drops, reactions by their affinities, interface and conductor resistance), each term $`\ge 0`$,
@@ -152,6 +155,18 @@ for live demos.
      Today a page can change `P` with `set()` between steps.
    - Electron transport and the protonmotive force: a mitochondrial or thylakoid membrane as a
      face, with V_H⁺ the quantity that couples the respiratory chain to ATP synthase.
+   - From the corrosion agent's review:
+     - **A cross-section that varies along x**, A(x) in the divergence: a drop's film thinning
+       toward its rim (and its radius, A ∝ r·h(r)), a pit or a crevice that widens to its mouth.
+       With electrode ports, that's the honest radial Evans drop.
+     - **Rates at a hypothetical level**: a face's or an electrode port's reaction rates with the
+       concentrations held and the metal's level moved, for Evans diagrams (log|i| against E at
+       each spot), without each page re-deriving Butler–Volmer.
+     - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
+       it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
+       anodic, and lost time finding out why.
+     - **Cheap mid-run parameter changes**: `set()` of a reaction's k0 between steps restarts the
+       stepper (a page updating it every frame ran 30× slower). Drive changes already have a fast path.
    - Done: sources as data (`pulse`, `square`, `triangle`, `ramp`, an `injector` port,
      `recombination` from a lifetime), probes in a transient's trace, `units` back out of SI.
    - Done: an initial profile as plain data, `c0` tabulated against x, so a transient starts
@@ -193,6 +208,11 @@ for live demos.
   $`r_f(\mathrm{state})`$ as an escape hatch, which the solver multiplies by $`(1 - e^{-A/RT})`$ so
   equilibrium stays exact. Not a bare current–overpotential curve, which loses the concentration
   dependence and can break detailed balance.
+
+- **Solid phases**: an immobile phase at unit activity while any is present, its amount never
+  negative (a complementarity condition, so it dissolves only what's there), optionally with a
+  supersaturation threshold for nucleation and a volume fraction that blocks transport. A pit's
+  salt film, a real precipitate (rust, not an ideal solute), a passive film.
 
 - **Cross-species transport coefficients together with cross chemical capacitances.** They're
   the two halves of one Onsager / Jamnik–Maier network, so one shouldn't come without the other.

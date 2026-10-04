@@ -206,7 +206,13 @@ export function describe(def) {
     const term = ct.terminal === null ? '' : ` (terminal ${species[ct.terminal].name})`;
     lines.push(`  ${side}: ${drive(cdef)}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}`);
   }
-  (def.ports ?? []).forEach((p, k) => lines.push(`  port ${model.ports[k].name}: ${drive(p)}, in ${regions[model.ports[k].region].name}`));
+  (def.ports ?? []).forEach((p, k) => {
+    const port = model.ports[k];
+    lines.push(`  port ${port.name}: ${drive(p)}, in ${regions[port.region].name}`);
+    // an electrode spread through the window
+    if (port.reactions.length) lines.push(`    an electrode (its ${species[port.terminal].name} at the port's level), ${typeof p.area === 'number' ? `${p.area} m²` : 'a profile of m²'} of it per m³, reacting:`);
+    for (const rx of p.reactions ?? []) lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), α ${rx.alpha}`);
+  });
   if ((def.bulkReactions ?? []).length) {
     lines.push('bulk reactions:');
     for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)}${rx.srh ? ' (SRH)' : ''} in ${Object.keys(rx.kf ?? rx.srh ?? {}).join(', ')}`);

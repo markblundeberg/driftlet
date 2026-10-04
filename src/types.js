@@ -154,9 +154,14 @@
  * @property {Source} [V] held terminal voltage, V (default 0, if no I)
  * @property {Source} [I] or: the current driven into the device, A/m² (e.g. 0 for a reference electrode)
  * @property {number} [R] with V: a series resistance, Ω·m²
- * @property {string} [terminal] species whose offset defaults to 0
+ * @property {string} [terminal] species whose offset defaults to 0; with reactions, the electrode's carrier
  * @property {Record<string, 'blocked' | 'equilibrium' | { type: 'equilibrium', offset?: number, mu?: number }
- *   | { type: 'conductance', G: number, offset?: number } | { type: 'exchange', k: number, mu: number }>} species
+ *   | { type: 'conductance', G: number, offset?: number } | { type: 'exchange', k: number, mu: number }>} [species]
+ * @property {{ equation: string, fixed?: Record<string, number>, k0: number, alpha: number }[]} [reactions] an
+ *   electrode spread through the window: Butler–Volmer per area (k0 in mol/(m²·s)) between the region's
+ *   species and the terminal species at the port's level
+ * @property {number | { x: number[], values: number[] }} [area] with reactions: electrode area per volume,
+ *   m²/m³ (1/h for a film of thickness h), or a profile against the device's x
  */
 
 /**
@@ -199,8 +204,10 @@
  *   then the ports by name): its voltage, and its current into the device (A/m²)
  * @property {{ left: ContactResult, right: ContactResult }} contacts
  * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
- * @property {{ name: string, V: number, flux: Record<string, number>, current: number }[]} ports what each
- *   internal port brings into the device
+ * @property {{ name: string, V: number, flux: Record<string, number>, current: number, x?: Float64Array,
+ *   area?: Float64Array, rates?: Float64Array[] }[]} ports what each internal port brings into the device;
+ *   with reactions, also its window's nodes (x, m), area per volume there, and each reaction's rate per area
+ *   at each node (mol/(m²·s), forward)
  * @property {{ left: string, right: string, dipole: number, sheetCharge: number, D: number, N: Record<string, number>, rates: number[] }[]} interfaces
  * @property {{ rate: Float64Array, regions: number[], total: number }[]} bulkReactions each bulk reaction's
  *   forward rate per node (mol/(m³·s), NaN where it doesn't run), and per region and in all (mol/(m²·s))

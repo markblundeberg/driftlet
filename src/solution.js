@@ -105,7 +105,14 @@ export function makeSolution(solver, result = {}) {
       flux[species[i].name] = solver.portFlux[k][i];
       current += F * species[i].z * solver.portFlux[k][i];
     }
-    return { name: port.name, V: solver.termV[2 + k], flux, current };
+    const out = { name: port.name, V: solver.termV[2 + k], flux, current };
+    if (port.reactions.length > 0) {
+      // An electrode spread through the window: where it sits, and each reaction's rate there.
+      out.x = Float64Array.from(port.nodes, (g) => model.grid.x[g]);
+      out.area = Float64Array.from(solver.portArea[k]);
+      out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), forward
+    }
+    return out;
   });
   sol.terminalVoltage = sol.contacts.right.V - sol.contacts.left.V;
   // Every terminal (the contacts, then the ports by name): its voltage and its current into the

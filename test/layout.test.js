@@ -96,6 +96,14 @@ const devices = {
       grid: coarse,
     };
   },
+  'an electrode spread through a port, floating in current mode, its area varying': () => ({
+    species: [...ions, { name: 'e-', z: -1 }],
+    materials: { water: water(78.5) },
+    regions: [{ material: 'water', length: 1e-6, c0: salt }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+    ports: [{ region: 0, from: 0.3e-6, I: 2, terminal: 'e-', area: { x: [0.3e-6, 1e-6], values: [1e5, 3e6] }, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] }],
+    grid: coarse,
+  }),
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },

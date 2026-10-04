@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, metal, aqueous, check } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, metal, aqueous, bath, check } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -59,6 +59,73 @@ test('a held port level: a neutral species pinned in a window, fed by diffusion 
   const N = (Dx * (cL - cP)) / (Lx / 2);
   assert.ok(Math.abs(sol.contacts.left.flux.X / N - 1) < 1e-9);
   assert.ok(Math.abs(sol.ports[0].flux.X / -N - 1) < 1e-9, 'the port absorbs what enters');
+});
+
+// An electrode spread through a window: a port with reactions, its carrier at the port's level.
+// In linear response each node's reaction is a conductance to the port, so the single-ion bar
+// with lithium plating along it is the transmission line above, G = F² a k₀ (c/c_ref)^(1−α)/RT.
+test('an electrode spread along a bar (reactions on a port): in linear response, the transmission line', () => {
+  for (const G of [1e6, 1e9]) {
+    const lam = Math.sqrt(sigma / G), V1 = 1e-5;
+    const want = ((sigma * V1) / lam) * Math.tanh(L / lam);
+    const area = 1e6, k0 = (G * RT) / (FARADAY * FARADAY * area * Math.sqrt(X / 1000));
+    const err = [100, 400].map((cells) => {
+      const def = line(G, cells, V1).def;
+      def.species.push({ name: 'e-', z: -1 });
+      def.ports = [{ region: 'bar', V: 0, terminal: 'e-', area, reactions: [{ equation: 'Li+ + e- = Li(s)', fixed: { 'Li(s)': 0 }, k0, alpha: 0.5 }] }];
+      const sol = new Device(def).solve();
+      assert.ok(sol.converged);
+      assert.ok(Math.abs(sol.contacts.left.current + sol.ports[0].current) < 1e-9 * want);
+      // Each node's rate, per area of electrode, follows the line's cosh profile.
+      const r = sol.ports[0].rates[0], x = sol.ports[0].x;
+      const at = (xx) => (G * V1 * Math.cosh((L - xx) / lam)) / Math.cosh(L / lam) / (FARADAY * area);
+      assert.ok(Math.abs(r[0] / at(x[0]) - 1) < 2e-3 && Math.abs(r.at(-1) / at(x.at(-1)) - 1) < 2e-3, `${r[0]} vs ${at(x[0])}`);
+      return Math.abs(sol.contacts.left.current / want - 1);
+    });
+    // (A line much longer than λ's scale, G = 1e6, is nearly uniform: already at the floor.)
+    assert.ok(err[1] < 1e-4 && (err[0] / err[1] > 12 || err[0] < 1e-6), `G=${G}: errors ${err}`);
+  }
+});
+
+test('a floating electrode spread through a solution corrodes at the Wagner–Traud mixed potential, between the two couples\' levels', () => {
+  // Iron in acid: Fe²⁺ + 2e⁻ ⇌ Fe and 2H⁺ + 2e⁻ ⇌ H₂, each Butler–Volmer with α = ½, on iron
+  // spread thinly through 10 µm of solution beside a bath (so the composition is the bath's).
+  // At I = 0 the iron's electron level V sits where the two rates cancel. With α = ½ that's
+  // exact: e^{2V/V_T} = (k₁e^{v₁} + k₂e^{v₂})/(k₁e^{−v₁} + k₂e^{−v₂}), where v = V_i/V_T is each
+  // couple's level (Fe²⁺'s V_i for iron, H⁺'s for hydrogen) and k the prefactor.
+  const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
+  const lib = aqueous(['Fe2+', 'H+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const c = { 'Fe2+': 10, 'H+': 10, 'Cl-': 30 }, k1 = 1e-7, k2 = 1e-9;
+  let V0;
+  for (const I of [0, 0.05]) {
+    const dev = new Device(build({
+      T,
+      library: [lib],
+      stack: [bath(c, 'Cl-'), layer('water', 10e-6, { name: 'film' }), {}],
+      ports: [{ name: 'iron', region: 'film', I, terminal: 'e-', area: 1e3, reactions: [
+        { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: k1, alpha: 0.5 },
+        { equation: '2 H+ + 2 e- = H2', fixed: { H2: 0 }, k0: k2, alpha: 0.5 },
+      ] }],
+      grid: { hmin: 0.5e-6, hmax: 0.5e-6 },
+    }));
+    const sol = dev.solve();
+    assert.ok(sol.converged);
+    const p = sol.ports[0], g = 0;
+    // Electrons the forward reactions take from the iron, per second, over the window: −I/F.
+    const len = (w) => ((w < p.x.length - 1 ? p.x[w + 1] - p.x[w] : 0) + (w > 0 ? p.x[w] - p.x[w - 1] : 0)) / 2;
+    const taken = p.x.reduce((sum, _, w) => sum + 2 * (p.rates[0][w] + p.rates[1][w]) * p.area[w] * len(w), 0);
+    assert.ok(Math.abs(-FARADAY * taken - I) < 1e-9 * Math.max(I, FARADAY * Math.abs(p.rates[1][0]) * 1e3 * 10e-6), `${-FARADAY * taken} vs ${I} A/m²`);
+    if (I === 0) {
+      const v1 = sol.V['Fe2+'][g] / VT, v2 = sol.V['H+'][g] / VT;
+      const K1 = k1 * Math.sqrt(sol.c['Fe2+'][g] / 1000), K2 = k2 * (sol.c['H+'][g] / 1000);
+      const V = (VT / 2) * Math.log((K1 * Math.exp(v1) + K2 * Math.exp(v2)) / (K1 * Math.exp(-v1) + K2 * Math.exp(-v2)));
+      assert.ok(Math.abs(p.V - V) < 1e-6, `${p.V} vs ${V} V`);
+      assert.ok(v1 * VT < p.V && p.V < v2 * VT);
+      assert.ok(p.rates[0][0] < 0 && p.rates[1][0] > 0, 'iron dissolves (backward) as hydrogen comes off (forward)');
+    } else assert.ok(p.V > V0 + 0.01, 'driven anodically, the iron sits higher');
+    V0 = p.V;
+  }
 });
 
 test('an exchange port feeding a face reaction in a closed, strictly neutral electrolyte: the transient runs from the start, the iron corroding at the mixed potential', () => {
@@ -200,6 +267,16 @@ test('ports are checked', () => {
   def.ports[0].from = 2.5e-6;
   def.ports[0].to = 2.6e-6; // between nodes (1 µm cells)
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /holds no grid node/.test(e.message));
+  // An electrode port: its reactions need its carrier and its area per volume.
+  const el = line(1e6, 10).def;
+  el.species.push({ name: 'e-', z: -1 });
+  const plate = { equation: 'Li+ + e- = Li(s)', fixed: { 'Li(s)': 0 }, k0: 1e-6, alpha: 0.5 };
+  el.ports = [{ region: 'bar', reactions: [plate], area: 1e6 }];
+  assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /a reacting port's terminal/.test(e.message));
+  el.ports = [{ region: 'bar', terminal: 'e-', reactions: [plate] }];
+  assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /area: give the electrode's area per volume/.test(e.message));
+  el.ports = [{ region: 'bar', terminal: 'e-', reactions: [{ ...plate, equation: 'Li+ = Li(s)' }], area: 1e6 }];
+  assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /no 'e-' from the electrode takes part/.test(e.message));
 });
 
 test('a port driven by a current pulse: it delivers I·t_p, and switching off is quick however far its voltage falls', () => {

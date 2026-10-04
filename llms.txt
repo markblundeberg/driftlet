@@ -409,7 +409,10 @@ has the long form):
   say so and pick the slice that still tells the true story: a MOSFET's gate stack, read as the
   MOS capacitor its channel sits on (pinch-off along the channel is 2D); a BJT along its
   emitter–base–collector axis; one particle of a porous battery electrode, or a thin dense film,
-  rather than the whole porous electrode (that's a P2D model).
+  rather than the whole porous electrode with diffusion inside its particles (that's a P2D model).
+  A metal that reacts all along a film of electrolyte (corroding iron under a drop, a crevice's
+  walls, a well-conducting porous matrix) is a port with `reactions` and an `area` per volume:
+  an electrode spread through a window, not a face at each end.
 - **Check `sol.converged` and `sol.warnings`** on every solve, and pin the CDN version you
   tested against.
 

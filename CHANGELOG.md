@@ -4,6 +4,16 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Electrodes spread through a window: a port with `reactions` (Butler–Volmer per area, as at a
+  face) against its terminal species, a metal's carrier at the port's level, and an `area` of
+  electrode per volume (a number or a profile). Used for the metal under a thin film of electrolyte,
+  a crevice's walls, or a porous electrode with a well-conducting matrix. Held, it's a
+  potentiostat; floating (or with nothing else to carry current) it settles at the mixed potential,
+  each spot a net anode or cathode. Solutions report each reaction's rate along the window
+  (`ports[k].x`, `.rates`, `.area`). Validated against the transmission line (linear kinetics along
+  a bar) and the Wagner–Traud mixed potential of two couples. A floating electrode port starts at
+  its mixed potential.
+
 - Fixed: a port that only exchanges (an O₂ supply from the air, say) in a strictly neutral region
   could stop a transient at its first step. With a face reaction setting the electrolyte's
   potential, as in a drop of salt water on iron, no step converged. The port's window is now solved

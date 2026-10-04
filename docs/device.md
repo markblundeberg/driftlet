@@ -476,6 +476,43 @@ steady state can be computed there. A port holding the electrons beside the oxid
 channel's potential anchors it, as source and drain would, and the device then shows the
 low-frequency C–V.
 
+### Electrodes spread through a window
+
+A port can also hold an electrode: a metal whose carrier sits at the port's level, reacting all
+through the window rather than at one face. That's the floor under a thin film of electrolyte, the
+walls of a crevice or a pit, or the matrix of a porous electrode, wherever the metal conducts well
+enough to be one level. Give the port its `reactions` (Butler–Volmer, as at a face), the carrier as
+its `terminal` (the species need be in no material), and the electrode's `area` per volume of the
+window:
+
+```js nocheck
+ports: [{
+  name: 'iron', region: 'film', terminal: 'e-', V: 0,
+  area: 1 / 100e-6,           // m²/m³: a film 100 µm thick on the metal; or a profile against x
+  reactions: [
+    { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5 },
+    { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.13e3 }, k0: 3e-9, alpha: 0.125 },
+  ],
+}]
+```
+
+Each node's rate per area is the face's law, with the region's species at that node and the
+carrier at activity 1 and level $`V`$. Times the area per volume, it makes and consumes the
+region's species there, and the electrons it takes or gives are the port's current. The port is
+a terminal like any other. Held at a voltage, it's a potentiostat. At `I: 0` (or with nothing
+else to carry current), the reactions settle at the mixed potential, the corrosion potential where
+anodic and cathodic currents cancel over the window, while each node can be a net anode or a net
+cathode. A floating one starts there, for the start's composition. Each solution reports the
+window's nodes and every reaction's rate at each, `ports[k].x` and `ports[k].rates`
+(mol/(m²·s) of electrode, forward), with `ports[k].area`.
+
+Validated against the transmission line (linear kinetics along a bar, test/ports.test.js) and the
+Wagner–Traud mixed potential of two Butler–Volmer couples. In 1D, a film on a metal is a slice
+along the metal: the film's thickness enters through `area`, and through a bulk reaction for
+anything that reaches the film from above (O₂ from the air, see the exchange link above). Its
+cross-section, and so how hard it is for ions to travel along it, is the region's own, the same
+everywhere.
+
 ## Terminals
 
 The two contacts and every port are the device's terminals, named `left`, `right` and by each
