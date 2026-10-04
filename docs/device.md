@@ -445,7 +445,16 @@ contact: held at a voltage, behind a resistance, or driven by a current (a refer
 is a port at `I: 0`). Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what
 the port brings into the device.
 
-A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts.
+A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts. A port that
+exchanges only neutral species carries no current, so its voltage means nothing: give it no drive.
+
+An exchange link's source is linear in $`\mu_{out} - \mu`$, so it grows without bound as the
+species runs out ($`\ln c`$). A supply limited by diffusion through a film above the window, such as O₂
+reaching a thin layer of water from the air, is linear in $`c`$ instead: $`k(c_{sat} - c)`$. For that,
+use a [bulk reaction](#bulk-reactions) with the outside phase as a fixed participant, e.g.
+`{ equation: 'Air = O2', fixed: { Air: muSat }, kf: { water: profile } }`. Its rate is
+$`k_f (1 - c/c_{sat})`$, and a profile gives $`k_f`$ its spatial variation (a film of thickness $`h(x)`$:
+$`D c_{sat}/h^2`$).
 
 A port driven by a current (`I`, or a waveform) floats to whatever voltage delivers it: with a
 conductance `G` per volume over a window of width $`w`$, it sits about $`I/(G w)`$ above the

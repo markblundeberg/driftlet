@@ -395,8 +395,14 @@ export class Solver {
     for (const port of model.ports) for (const g of port.nodes) need[g] = 1;
     // Nodes of strictly neutral (ε = 0) regions that stay neutral, where φ is defined: interior
     // ones, and edges at neutral faces (a capacitive or pinned face's edge node holds the face's
-    // charge), away from contacts and ports. On a transient step these are solved in better-
-    // conditioned terms (see _chargeRows).
+    // charge), away from the contacts and from ports that hold a level (which replaces a balance
+    // row). On a transient step these are solved in better-conditioned terms (see _chargeRows).
+    // A port that only exchanges (an O₂ supply, a leak) is solved there too: left out, its window
+    // fell back on the ill-conditioned terms, and a closed neutral electrolyte whose potential is
+    // set only by a face reaction couldn't take a step.
+    const held = new Uint8Array(nNodes);
+    held[0] = held[nNodes - 1] = 1;
+    for (const port of model.ports) if (port.species.some((l) => l.type === 'equilibrium')) for (const g of port.nodes) held[g] = 1;
     this.chargeNode = new Uint8Array(nNodes);
     const neutralFace = (f) => f >= 0 && f < model.interfaces.length && model.interfaces[f].phi.type === 'neutral';
     regions.forEach((reg, r) => {
@@ -405,7 +411,7 @@ export class Solver {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
       for (let g = g0; g <= g1; g++) {
         const edgeOk = (g > g0 || neutralFace(r - 1)) && (g < g1 || neutralFace(r));
-        if (edgeOk && !need[g] && !this.phiUndefined[g]) this.chargeNode[g] = 1;
+        if (edgeOk && !held[g] && !this.phiUndefined[g]) this.chargeNode[g] = 1;
       }
     });
     this.chargeNodes = Int32Array.from([...this.chargeNode.keys()].filter((g) => this.chargeNode[g]));

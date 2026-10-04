@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, metal, aqueous, check } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -59,6 +59,42 @@ test('a held port level: a neutral species pinned in a window, fed by diffusion 
   const N = (Dx * (cL - cP)) / (Lx / 2);
   assert.ok(Math.abs(sol.contacts.left.flux.X / N - 1) < 1e-9);
   assert.ok(Math.abs(sol.ports[0].flux.X / -N - 1) < 1e-9, 'the port absorbs what enters');
+});
+
+test('an exchange port feeding a face reaction in a closed, strictly neutral electrolyte: the transient runs from the start, the iron corroding at the mixed potential', () => {
+  // A drop of salt water on iron (two iron faces, one piece of metal), O₂ supplied from the air
+  // by a port over part of it and reduced at the faces while the iron dissolves: the water's
+  // potential is set only by the face reactions. The port's window was once left out of the
+  // better-conditioned terms a strictly neutral transient is solved in, and no step converged.
+  const water = aqueous(['Na+', 'Cl-', 'Fe2+', 'OH-'], { epsr: 0 });
+  water.species.push({ name: 'O2', z: 0, cRef: 1000 });
+  water.materials.water.species.O2 = { D: 2e-9, mu0: 16.4e3 };
+  const iron = { species: [{ name: 'e-', z: -1 }], materials: { Fe: { conductor: { species: 'e-', conductivity: 1e7 } } } };
+  const face = {
+    reactions: [
+      { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5 },
+      { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.129e3 }, k0: 3e-9, alpha: 0.125 },
+    ],
+  };
+  const Lw = 1e-3, cO2 = 0.26;
+  const def = (drive = {}) =>
+    build({
+      library: [water, iron],
+      stack: [ohmic(0, ['e-']), layer('Fe', 1e-4), face, layer('water', Lw, { name: 'drop', c0: { 'Na+': 500, 'Cl-': 500, 'Fe2+': 1e-6, 'OH-': 2e-6, O2: cO2 } }), face, layer('Fe', 1e-4), ohmic(0, ['e-'])],
+      ports: [{ name: 'air', region: 'drop', from: Lw / 2, species: { O2: { type: 'exchange', k: 0.05, mu: 16.4e3 + RT * Math.log(cO2 / 1000) } }, ...drive }],
+      grid: { hmin: 5e-6, hmax: 50e-6 },
+    });
+  const dev = new Device(def());
+  for (const t of [1, 1000]) {
+    const s = dev.advance(t);
+    assert.ok(s.converged, `to ${t} s: ${s.steps} steps, ${s.rejected} rejected`);
+    assert.ok(check(dev, s, { refine: false }).ok, check(dev, s, { refine: false }).text);
+    // No current leaves the drop: what the iron loses, the O₂ takes, at whatever potential that needs.
+    const [a, b] = s.interfaces.map((f) => f.rates), iFe = -2 * FARADAY * (a[0] + b[0]), iO2 = 4 * FARADAY * (a[1] + b[1]);
+    assert.ok(iFe > 0.1 && Math.abs(iO2 / iFe - 1) < 1e-9, `${iFe} vs ${iO2} A/m²`);
+  }
+  // A port that exchanges only neutral species carries no current, so can't be driven by one.
+  assert.throws(() => new Device(def({ I: 0 })), (e) => e instanceof DeviceError && /passes no current/.test(e.message));
 });
 
 test('MOS: a port grounding the channel gives the low-frequency C–V, inversion included', () => {

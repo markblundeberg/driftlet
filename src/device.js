@@ -555,6 +555,7 @@ export function normalizeDrives(def, model) {
   for (const [k, side] of [[0, 'left'], [1, 'right']]) {
     need(model.contacts[side].passes || drives[k].kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
   }
+  model.ports.forEach((port, k) => need(port.passes || drives[2 + k].kind === 'V', `ports[${k}].I: this port passes no current (it exchanges only neutral species), so give it no drive`));
   need(drives.some((d) => d.kind === 'V'), "every terminal is driven by a current, so the device's overall level floats: hold at least one at a voltage V");
   return drives;
 }
@@ -657,7 +658,11 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex) {
     links[i] = { type: link.type, ...level };
   }
   need(links.some((l) => l.type !== 'blocked'), `${path}.species: the port exchanges no species`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links };
+  // One that exchanges only neutral species (an O₂ supply) carries no current, so its voltage is
+  // nobody's business: it can't be driven by one.
+  const passes = links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+  need(passes || drive.kind === 'V', `${path}.I: this port passes no current (it exchanges only neutral species), so give it no drive`);
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes };
 }
 
 function checkAnchors(regions, materials, interfaces, contacts, species, ports = []) {

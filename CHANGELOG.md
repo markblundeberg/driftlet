@@ -2,6 +2,14 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Fixed: a port that only exchanges (an O₂ supply from the air, say) in a strictly neutral region
+  could stop a transient at its first step. With a face reaction setting the electrolyte's
+  potential, as in a drop of salt water on iron, no step converged. The port's window is now solved
+  in the same well-conditioned terms as the rest of the region. A port that exchanges only neutral
+  species carries no current, and driving one by a current is now an error.
+
 ## 0.7.0 (2026-10-03)
 
 - Membranes as faces: a species law `{ type: 'permeability', P }` (m/s), electrodiffusion through a
