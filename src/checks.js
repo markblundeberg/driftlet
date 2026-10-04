@@ -24,9 +24,9 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  * - **warnings**: the solution's warnings (unresolved double layers, steep profiles, weakly held
  *   parts) and the definition's likely unit slips.
  * - **balance** (a steady state): each species' ledger, what comes in through each terminal and
- *   what each reaction (bulk or at a face) makes or uses, in mol/(m²·s) and, for a charged
- *   species, as a current F·|z|·rate. The terms must sum to zero; under light it's J = F(G − R),
- *   and it says where every carrier went.
+ *   what each reaction (bulk or at a face) makes or uses, in mol/(m²·s) (mol/s if the device
+ *   isn't planar) and, for a charged species, as a current F·|z|·rate. The terms must sum to
+ *   zero; under light it's J = F(G − R), and it says where every carrier went.
  * - **conservation** (a transient): every closed, unreacting stretch keeps what it held plus
  *   what came in.
  * - **grid** (a steady state, with `refine`, the default): the device solved again on a grid
@@ -75,10 +75,13 @@ export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
   return { ok, items, text };
 }
 
+// The units of totals through the cross-section: per m² of a planar device, or whole.
+const unitsOf = (model) => (model.geometry.type === 'planar' ? { rate: 'mol/(m²·s)', current: 'A/m²', charge: 'C/m²' } : { rate: 'mol/s', current: 'A', charge: 'C' });
+
 // Each species' steady ledger: in through the terminals, made by the reactions. Rates in
-// mol/(m²·s), positive into the device or made.
+// mol/(m²·s) (mol/s if not planar), positive into the device or made.
 function balance(device, sol) {
-  const { model, def } = device, { species, regions, interfaces } = model;
+  const { model, def } = device, { species, regions, interfaces } = model, units = unitsOf(model);
   const label = (rdef) => rdef?.equation ?? JSON.stringify(rdef?.nu ?? rdef);
   // Each species' compartments: runs of regions it's present in, joined by faces it crosses
   // freely (in equilibrium). A face it crosses only by a law (a permeability, a conductance) or
@@ -114,16 +117,18 @@ function balance(device, sol) {
     });
   });
   interfaces.forEach((itf, f) => {
+    // A face's flux and rates are per area; everything else here is a total, through A there.
+    const Af = model.grid.area[model.grid.regionEnd[f]];
     // Across the face, where it divides a species' compartments.
     species.forEach((sp, i) => {
       const type = itf.links[i].type;
       if (type === 'equilibrium' || type === 'blocked') return;
-      const N = sol.interfaces[f].N[sp.name];
+      const N = Af * sol.interfaces[f].N[sp.name];
       add(i, f, `across face ${f} (${type})`, -N);
       add(i, f + 1, `across face ${f} (${type})`, N);
     });
     itf.reactions.forEach((rx, k) => {
-      const rate = sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
+      const rate = Af * sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
       for (const { i, nu, side } of rx.part) add(i, f + side, what, nu * rate);
     });
   });
@@ -147,14 +152,14 @@ function balance(device, sol) {
     worst = Math.max(worst, Math.abs(l.residual));
     // Terms that matter, largest first; a charged species' as a current too.
     const shown = l.terms.filter((t) => Math.abs(t.rate) > 1e-6 * size(l)).sort((a, b) => Math.abs(b.rate) - Math.abs(a.rate));
-    const amp = (r) => (l.z !== 0 ? ` (${sig(FARADAY * Math.abs(l.z) * r)} A/m²)` : '');
+    const amp = (r) => (l.z !== 0 ? ` (${sig(FARADAY * Math.abs(l.z) * r)} ${units.current})` : '');
     lines.push(`${l.title}: ${shown.map((t) => `${t.what}: ${t.rate > 0 ? '+' : ''}${sig(t.rate)}${amp(t.rate)}`).join('; ')}`);
   }
   const ok = worst < 1e-6;
   const summary =
     moving.length === 0
       ? 'nothing flows or reacts (equilibrium)'
-      : `${moving.length === 1 ? 'one ledger sums' : `${moving.length} ledgers sum`} to zero ${ok ? `(to ${sig(worst, 1)})` : `only to ${sig(worst, 2)}: not a steady state`}: each species' sources and sinks, mol/(m²·s), + in or made`;
+      : `${moving.length === 1 ? 'one ledger sums' : `${moving.length} ledgers sum`} to zero ${ok ? `(to ${sig(worst, 1)})` : `only to ${sig(worst, 2)}: not a steady state`}: each species' sources and sinks, ${units.rate}, + in or made`;
   // The largest current any charged species carries anywhere: the scale a net current is read against.
   const gross = Math.max(0, ...moving.filter((l) => l.z !== 0).map((l) => FARADAY * Math.abs(l.z) * size(l)));
   return { name: 'balance', ok, summary, details: { ledgers, worst, lines, gross } };
@@ -223,15 +228,17 @@ function gridCheck(device, sol, tol, gross) {
     }),
   };
   // Started from this solution, interpolated onto the finer grid; failing that, from cold.
-  let other;
+  let other, otherGrid;
   try {
     const dev = new Device(fine);
     dev.solver._warmFrom(device.solver);
     other = dev.solve();
+    otherGrid = dev.model.grid;
     if (!other.converged) {
       const cold = new Device(fine);
       if (sol.time > 0) cold.solver.time = sol.time; // waveforms at the same time
       other = cold.solve();
+      otherGrid = cold.model.grid;
     }
   } catch (e) {
     return { name: 'grid', ok: null, summary: `couldn't solve the refined device (${e.message})` };
@@ -242,7 +249,7 @@ function gridCheck(device, sol, tol, gross) {
   // The current, against the largest current any species carries (so at open circuit, or in
   // equilibrium, round-off isn't read as a change).
   const scaleI = Math.max(Math.abs(sol.current), Math.abs(other.current), gross);
-  if (gross > 0) diffs.push({ what: 'current', a: sol.current, b: other.current, rel: Math.abs(other.current - sol.current) / scaleI, unit: 'A/m²' });
+  if (gross > 0) diffs.push({ what: 'current', a: sol.current, b: other.current, rel: Math.abs(other.current - sol.current) / scaleI, unit: unitsOf(model).current });
   // Floating terminals (driven by a current): their voltages, against the larger and the thermal voltage.
   const VT = model.RT / FARADAY;
   model.terminals.forEach((t, k) => {
@@ -251,33 +258,30 @@ function gridCheck(device, sol, tol, gross) {
       diffs.push({ what: `${t.name} voltage`, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), VT), unit: 'V' });
     }
   });
-  // Each region's charge (C/m²), against the largest: summed over the nodes' boxes, as the
-  // solver's Gauss law counts it.
-  const charges = (s) => s.regions.map((_, r) => {
+  // Each region's charge, against the largest: summed over the nodes' boxes, as the solver's
+  // Gauss law counts it.
+  const charges = (s, grid) => s.regions.map((_, r) => {
     let q = 0;
-    for (let g = 0; g < s.x.length; g++) {
-      if (s.region[g] !== r) continue;
-      const left = g > 0 && s.region[g - 1] === r ? s.x[g] - s.x[g - 1] : 0, right = g + 1 < s.x.length && s.region[g + 1] === r ? s.x[g + 1] - s.x[g] : 0;
-      q += rho(s, g, model, r) * ((left + right) / 2);
-    }
+    for (let g = 0; g < s.x.length; g++) if (s.region[g] === r) q += rho(s, g, model, r) * grid.vol[g];
     return q;
   });
   // Charges at round-off (strictly neutral regions) aren't compared: against the gross charge
   // the regions hold, |fixed| + Σ|z|c, they must be more than a millionth.
   const content = Math.max(...sol.regions.map((reg, r) => {
-    let q = 0;
+    let q = 0, v = 0;
     for (let g = 0; g < sol.x.length; g++) {
       if (sol.region[g] !== r) continue;
       let a = Math.abs(model.regions[r].fixedCharge ?? 0);
       for (const sp of model.species) if (Number.isFinite(sol.c[sp.name][g])) a += FARADAY * Math.abs(sp.z * sol.c[sp.name][g]);
       q = Math.max(q, a);
+      v += model.grid.vol[g];
     }
-    return q * (reg.x1 - reg.x0);
+    return q * v;
   }));
-  const qa = charges(sol), qb = charges(other), scaleQ = Math.max(0, ...qa.map(Math.abs), ...qb.map(Math.abs));
+  const qa = charges(sol, model.grid), qb = charges(other, otherGrid), scaleQ = Math.max(0, ...qa.map(Math.abs), ...qb.map(Math.abs));
   if (scaleQ > 1e-6 * content) {
     const named = (reg) => (/^region \d+$/.test(reg.name) ? `${reg.name} (${reg.material})` : reg.name);
-    qa.forEach((a, r) => diffs.push({ what: `${named(sol.regions[r])} charge`, a, b: qb[r], rel: Math.abs(qb[r] - a) / scaleQ, unit: 'C/m²' }));
+    qa.forEach((a, r) => diffs.push({ what: `${named(sol.regions[r])} charge`, a, b: qb[r], rel: Math.abs(qb[r] - a) / scaleQ, unit: unitsOf(model).charge }));
   }
   const worst = diffs.reduce((w, d) => (d.rel > (w?.rel ?? -1) ? d : w), null);
   if (!worst) return { name: 'grid', ok: true, summary: 'nothing to compare (no current, charge or floating voltage)' };

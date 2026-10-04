@@ -149,3 +149,21 @@ test('set() to a new geometry keeps the concentrations, not the old amounts', ()
   const mid = fresh.x.length >> 1;
   assert.ok(Math.abs(moved.c['NO3-'][mid] / fresh.c['NO3-'][mid] - 1) < 1e-9, `${moved.c['NO3-'][mid]} vs ${fresh.c['NO3-'][mid]}`);
 });
+
+test('check() on a sphere: a face\'s rates, per area, enter the ledgers through the area there', () => {
+  const ions = [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }];
+  const plating = { left: { 'e-': -1, Ag: 1 }, right: { 'Ag+': -1 }, fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.4 };
+  const dev = new Device({
+    geometry: { type: 'spherical', r0: 0.3e-6 },
+    species: ions,
+    materials: { water: { epsr: 78.5, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } }, Ag: { conductor: { species: 'e-', conductivity: 6.3e7 } } },
+    regions: [{ material: 'Ag', length: 0.2e-6 }, { material: 'water', length: 1e-6, c0: { 'NO3-': 10, 'Ag+': 10 } }],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating] }],
+    contacts: { left: { V: -0.05, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin: 2e-9, hmax: 100e-9, ratio: 1.5, minCells: 4 },
+  });
+  const sol = dev.solve();
+  const r = check(dev, sol, { refine: false });
+  assert.ok(sol.converged && Math.abs(sol.current) > 1e-12 && r.ok, r.text);
+  assert.ok(/mol\/s/.test(r.items.find((i) => i.name === 'balance').summary), 'totals, not per m²');
+});
