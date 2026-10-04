@@ -29,7 +29,7 @@ const fail = (message) => {
 export function polarization(device, sol, where, V) {
   const model = device.model, { species, grid, RT } = model, solver = device.solver;
   const Vs = Float64Array.from(typeof V === 'number' ? [V] : V);
-  let reactions, nodeOf, carrier, names;
+  let reactions, nodeOf, carrier, names, surface = null; // (an electrode port's coverages at the spot)
   if (where?.face !== undefined) {
     const f = where.face, itf = model.interfaces[f];
     if (!itf) fail(`polarization: no face ${f} (the device has ${model.interfaces.length})`);
@@ -49,6 +49,10 @@ export function polarization(device, sol, where, V) {
     if (where.x !== undefined) for (const h of port.nodes) if (Math.abs(grid.x[h] - where.x) < Math.abs(grid.x[g] - where.x)) g = h;
     carrier = { side: 1, i: port.terminal };
     nodeOf = () => g;
+    if (port.surface.length > 0) {
+      const w = port.nodes.indexOf(g), theta = port.surface.map((sp) => sol.ports[k].coverage[sp.name][w]);
+      surface = { sp: port.surface, theta, bare: 1 - theta.reduce((t, v) => t + v, 0) };
+    }
     reactions = port.reactions;
     names = device.def.ports?.[k]?.reactions;
   } else fail('polarization: say where, { face: f } or { port: name, x }');
@@ -59,6 +63,13 @@ export function polarization(device, sol, where, V) {
     // a = A/RT = a0 + s·V: everything but the carrier at its level, and the carrier's part.
     let a0 = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0;
     rx.part.forEach((p, x) => {
+      if (p.side === 2) {
+        // a surface species, at activity θ/θ₀ (μ = μ° + RT ln(θ/θ₀))
+        const ln = Math.log(surface.theta[p.s] / surface.bare), e = p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha;
+        a0 -= (p.nu * (surface.sp[p.s].mu0 / RT + ln));
+        pref *= Math.exp(e * ln);
+        return;
+      }
       if (p.side === carrier.side && p.i === carrier.i) {
         s -= (p.nu * species[p.i].z * FARADAY) / RT;
         return;
@@ -72,6 +83,7 @@ export function polarization(device, sol, where, V) {
       } else pref *= powr(c / solver.cRef[g * species.length + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     });
     if (s === 0) fail(`polarization: reaction ${k} there takes no ${species[carrier.i].name} from the metal`);
+    if (rx.bare) pref *= surface ? surface.bare : 1; // on bare metal only
     const rate = Float64Array.from(Vs, (v) => {
       const a = a0 + s * v;
       return rx.vmax ? pref * -Math.expm1(-a) : pref * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));

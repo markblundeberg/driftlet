@@ -351,6 +351,15 @@ export function normalizeDevice(def) {
     need(nodes.length > 0, `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node; widen it or refine the grid`);
     port.nodes = Int32Array.from(nodes);
   });
+  // A node's surface belongs to one electrode.
+  const surfaced = new Int32Array(grid.nNodes).fill(-1);
+  ports.forEach((port, k) => {
+    if (port.surface.length === 0) return;
+    for (const g of port.nodes) {
+      need(surfaced[g] < 0, `ports[${k}]: its window overlaps ports[${surfaced[g]}]'s, and both have a surface; a spot of metal has one surface`);
+      surfaced[g] = k;
+    }
+  });
 
   return {
     T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry,
@@ -649,7 +658,7 @@ function normalizeGeometry(g) {
 // the window, `area` (m²/m³) of it per volume.
 function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -666,7 +675,9 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(pdef.terminal);
   }
-  const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT);
+  const surface = portSurface(pdef, path, speciesIndex);
+  const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface);
+  surface.forEach((sp, s) => need(reactions.some((rx) => rx.part.some((p) => p.side === 2 && p.s === s)), `${path}.surface.${sp.name}: no reaction of the port makes or uses it`));
   need(pdef.species === undefined ? reactions.length > 0 : isObject(pdef.species), `${path}.species must map species names to port links`);
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
@@ -707,38 +718,72 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     need(pdef.area !== undefined, `${path}.area: give the electrode's area per volume of the window (m²/m³, e.g. 1/h for a film of thickness h on it), a number or a profile`);
     area = typeof pdef.area === 'number' ? { value: positive(pdef.area, `${path}.area (m²/m³)`) } : profile(pdef.area, `${path}.area`, 'areas per volume (m²/m³)', (a) => a >= 0, 'an area per volume ≥ 0');
   } else need(pdef.area === undefined, `${path}.area: only a port with reactions has an electrode area`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area };
+  need(surface.length === 0 || reactions.length > 0, `${path}.surface: only an electrode (a port with reactions) has a surface`);
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area, surface };
+}
+
+// An electrode port's surface species: coverages θ of its sites (Langmuir: each takes one site,
+// μ = μ° + RT ln(θ/θ₀) with θ₀ = 1 − Σθ the bare fraction), Γ mol of sites per m² of electrode.
+function portSurface(pdef, path, speciesIndex) {
+  if (pdef.surface === undefined) return [];
+  need(isObject(pdef.surface), `${path}.surface must map surface species to { mu0, capacity, theta0 }`);
+  const list = Object.entries(pdef.surface).map(([name, d]) => {
+    const spath = `${path}.surface.${name}`;
+    need(!speciesIndex.has(name), `${spath}: '${name}' is a species of the device; a surface species is the port's own, with its own name`);
+    need(isObject(d), `${spath} must be { mu0, capacity, theta0 }`);
+    fields(d, spath, ['mu0', 'capacity', 'theta0']);
+    const theta0 = d.theta0 === undefined ? 1e-6 : positive(d.theta0, `${spath}.theta0`);
+    return { name, mu0: finite(d.mu0, `${spath}.mu0 (J/mol)`), capacity: positive(d.capacity, `${spath}.capacity (mol of sites per m² of electrode)`), theta0 };
+  });
+  need(list.length > 0, `${path}.surface: give at least one surface species, or leave it out`);
+  const caps = new Set(list.map((sp) => sp.capacity));
+  need(caps.size === 1, `${path}.surface: the species share the electrode's sites, so give them one capacity`);
+  need(list.reduce((t, sp) => t + sp.theta0, 0) < 1, `${path}.surface: the starting coverages (theta0) must sum to less than 1`);
+  return list;
 }
 
 // A port's reactions: Butler–Volmer, as at a face, between species of the port's region and the
 // port's terminal species (a metal's carrier, activity 1, at the port's level), per area of the
 // electrode: part side 0 for the region's species, side 1 for the carrier.
-function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT) {
+function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface = []) {
   need(pdef.reactions === undefined || Array.isArray(pdef.reactions), `${path}.reactions must be an array`);
   const list = pdef.reactions ?? [];
   if (list.length === 0) return [];
   need(!mat.conductor, `${path}.reactions: a port on a conductor is a wire; reactions belong on a face, or on a port in the solution`);
+  // The metal's countercharge (each spot's double layer) is below the grid, so the solution
+  // beside it must be neutral, as in porous-electrode theory; with ε > 0 the reactions would
+  // leave a net charge with nothing to balance it.
+  need(mat.epsr === 0 || mat.phiFree, `${path}.reactions: an electrode spread through a window needs its region strictly neutral (ε = 0): its double layers are below the grid`);
   need(terminal !== null && species[terminal].z !== 0, `${path}.terminal: a port with reactions needs its electrode's carrier as its terminal species (e.g. 'e-')`);
   need(!mat.present[terminal], `${path}.terminal: '${species[terminal].name}' is in the port's region too, so a reaction can't tell the electrode's from the region's`);
   const carrier = species[terminal].name;
   return list.map((rdef, k) => {
     const rpath = `${path}.reactions[${k}]`;
     need(isObject(rdef) && typeof rdef.equation === 'string', `${rpath} must be { equation, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha']);
+    fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha', 'bare']);
     const holds = (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
-    const sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: mat.name, holds, conductor: false }, { name: 'the electrode', holds: (name) => name === carrier, conductor: true }, rdef.fixed, `${rpath}.equation`);
+    const onSurface = (name) => surface.findIndex((sp) => sp.name === name);
+    const sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: mat.name, holds, conductor: false }, { name: 'the electrode', holds: (name) => name === carrier || onSurface(name) >= 0, conductor: true }, rdef.fixed, `${rpath}.equation`);
     const part = [];
     let fixedA = 0, charge = 0;
-    for (const [key, side] of [['left', 0], ['right', 1]]) {
-      const st = stoichiometry(sides[key], `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
+    // The electrode's side: its carrier, and its surface species (side 2, neutral, by index s).
+    const electrode = {};
+    for (const [name, nu] of Object.entries(sides.right)) {
+      const s = onSurface(name);
+      if (s >= 0) part.push({ s, nu, side: 2 });
+      else electrode[name] = nu;
+    }
+    for (const [map, side] of [[sides.left, 0], [electrode, 1]]) {
+      const st = stoichiometry(map, `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
       for (const { i, nu } of st.list) part.push({ i, nu, side });
       fixedA += st.fixedA;
       charge += st.charge;
     }
     need(part.some((p) => p.side === 1), `${rpath}: no '${carrier}' from the electrode takes part`);
-    need(part.some((p) => p.side === 0), `${rpath}: no species of the port's region takes part`);
+    need(part.some((p) => p.side === 0 || p.side === 2), `${rpath}: no species of the port's region or its surface takes part`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
-    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
+    need(rdef.bare === undefined || typeof rdef.bare === 'boolean', `${rpath}.bare must be true or false`);
+    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`), bare: rdef.bare === true };
   });
 }
 

@@ -123,7 +123,7 @@ console.log(curve.reactions[0].level, curve.current[40]); // the couple's level 
 solution beside it held as `sol` has it and the metal's level set to each `V` (an electron
 voltage, the terminals' convention). It works at a face (`{ face: f }`, the face's metal side) or
 at a spot of an [electrode port](device.md#electrodes-spread-through-a-window)
-(`{ port: name, x }`). Each reaction comes back with its rate (mol/(m²·s), forward), its partial
+(`{ port: name, x }`, with its surface's coverages there held too). Each reaction comes back with its rate (mol/(m²·s), forward), its partial
 current (A/m², anodic positive: into the solution) and its `level`, where the rate vanishes (the
 couple's redox level there, as `level()` gives it). The net current is their sum. Plotting
 log|current| against V gives the Evans diagram. The net crosses zero at the spot's open-circuit

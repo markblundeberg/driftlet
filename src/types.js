@@ -157,9 +157,12 @@
  * @property {string} [terminal] species whose offset defaults to 0; with reactions, the electrode's carrier
  * @property {Record<string, 'blocked' | 'equilibrium' | { type: 'equilibrium', offset?: number, mu?: number }
  *   | { type: 'conductance', G: number, offset?: number } | { type: 'exchange', k: number, mu: number }>} [species]
- * @property {{ equation: string, fixed?: Record<string, number>, k0: number, alpha: number }[]} [reactions] an
+ * @property {{ equation: string, fixed?: Record<string, number>, k0: number, alpha: number, bare?: boolean }[]} [reactions] an
  *   electrode spread through the window: Butler–Volmer per area (k0 in mol/(m²·s)) between the region's
  *   species and the terminal species at the port's level
+ * @property {Record<string, { mu0: number, capacity: number, theta0?: number }>} [surface] with reactions: species
+ *   on the electrode's sites, Langmuir (μ = μ° + RT ln(θ/θ₀)), capacity in mol of sites per m² of electrode,
+ *   shared; a reaction with `bare: true` runs only on the bare fraction θ₀ = 1 − Σθ
  * @property {number | { x: number[], values: number[] }} [area] with reactions: electrode area per volume,
  *   m²/m³ (1/h for a film of thickness h), or a profile against the device's x
  */

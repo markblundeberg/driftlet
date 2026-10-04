@@ -195,13 +195,16 @@ export class Solver {
     // Slots per block: φ̂ (or D, or a conductor's segment flux J), one per species, and at a face
     // one per face reaction (its rate), as many as the busiest face has.
     const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length), 0);
-    const M = n + 1 + nRx;
+    // (and at an electrode port's nodes, one per surface species: its coverage's η)
+    const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
+    const M = n + 1 + Math.max(nRx, nSurf);
     const nNodes = grid.nNodes;
     const nFaces = regions.length - 1;
     const nB = nNodes + nFaces;
     this.n = n;
     this.M = M;
     this.nRx = nRx;
+    this.nSurf = nSurf;
     this.nNodes = nNodes;
     this.nFaces = nFaces;
     this.nB = nB;
@@ -213,6 +216,16 @@ export class Solver {
     for (let g = 0; g < nNodes; g++) this.blockOfNode[g] = g + grid.nodeRegion[g];
     this.blockOfFace = new Int32Array(nFaces);
     for (let f = 0; f < nFaces; f++) this.blockOfFace[f] = grid.regionEnd[f] + f + 1;
+
+    // Electrode ports' surfaces: each node's port (−1: none) and its index in the port's window;
+    // the coverages there, θ [g·nSurf + s], now and at the step's start.
+    this.surfPort = new Int32Array(nNodes).fill(-1);
+    this.surfW = new Int32Array(nNodes);
+    model.ports.forEach((port, k) => {
+      if (port.surface.length > 0) port.nodes.forEach((g, w) => ((this.surfPort[g] = k), (this.surfW[g] = w)));
+    });
+    this.th = new Float64Array(nNodes * nSurf);
+    this.thOld = new Float64Array(nNodes * nSurf);
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -453,6 +466,8 @@ export class Solver {
       }
       active[b * M] = this.phiUndefined[g] ? 0 : 1;
       for (let i = 0; i < n; i++) active[b * M + 1 + i] = this.present[g * n + i];
+      const k = this.surfPort[g];
+      if (k >= 0) for (let q = 0; q < model.ports[k].surface.length; q++) active[b * M + 1 + n + q] = 1;
     }
     model.interfaces.forEach((itf, f) => {
       const bf = this.blockOfFace[f];
@@ -1055,6 +1070,13 @@ export class Solver {
       const shift = level(t.side) - level(this.terms[held].side);
       if (Number.isFinite(shift)) this.termV[k] = this.termV[held] + shift;
     }
+    // Electrode surfaces at their starting coverages: η = μ°/RT + ln(θ/θ₀).
+    for (let g = 0; g < this.nNodes; g++) {
+      const k = this.surfPort[g];
+      if (k < 0) continue;
+      const surf = model.ports[k].surface, b = this.blockOfNode[g], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
+      surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
+    }
     this.computeConcentrations();
     // A floating electrode spread through a port starts where its reactions pass the current it's
     // set (none, behind a resistance): at its mixed potential in the start's composition, not
@@ -1088,15 +1110,21 @@ export class Solver {
 
   // A port reaction's rate per area at node g (mol/(m²·s), forward), at the present state.
   _portRate(port, rx, g) {
-    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    const { n, M, u, uLo, c, nSurf, th } = this, b = this.blockOfNode[g], RT = this.model.RT;
     let pref = rx.k0, a = rx.fixedA;
     for (const p of rx.part) {
       if (p.side === 1) {
         a -= p.nu * this.portEta(port, p.i);
         continue;
       }
-      a -= p.nu * (u[b * M + 1 + p.i] + uLo[b * M + 1 + p.i]);
-      pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
+      const o = b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i), e = p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha;
+      a -= p.nu * (u[o] + uLo[o]);
+      pref *= p.side === 2 ? Math.exp(e * (u[o] + uLo[o] - port.surface[p.s].mu0 / RT)) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+    }
+    if (rx.bare) {
+      let free = 1;
+      for (let x = 0; x < port.surface.length; x++) free -= th[g * nSurf + x];
+      pref *= free;
     }
     // (far from equilibrium, the plain difference: bvFactor's product would give 0·∞ there)
     return pref * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a) : bvFactor(a, rx.alpha).g);
@@ -1128,6 +1156,22 @@ export class Solver {
     }
   }
 
+  // Each electrode surface's coverages from its η: Langmuir on shared sites, θ_s = e^{ζ_s}/(1 + Σ e^{ζ}),
+  // ζ = η − μ°/RT (so θ_s/θ₀ = e^{ζ_s}), at every node of a surfaced window.
+  _coverages() {
+    const { n, M, u, uLo, nSurf, th } = this, RT = this.model.RT;
+    for (let g = 0; g < this.nNodes; g++) {
+      const k = this.surfPort[g];
+      if (k < 0) continue;
+      const surf = this.model.ports[k].surface, b = this.blockOfNode[g];
+      let m = 0;
+      for (let q = 0; q < surf.length; q++) m = Math.max(m, u[b * M + 1 + n + q] + uLo[b * M + 1 + n + q] - surf[q].mu0 / RT);
+      let sum = Math.exp(-m);
+      for (let q = 0; q < surf.length; q++) sum += (th[g * nSurf + q] = Math.exp(u[b * M + 1 + n + q] + uLo[b * M + 1 + n + q] - surf[q].mu0 / RT - m));
+      for (let q = 0; q < surf.length; q++) th[g * nSurf + q] /= sum;
+    }
+  }
+
   computeConcentrations() {
     const { n, M, u, uLo, c, z } = this;
     for (let g = 0; g < this.nNodes; g++) {
@@ -1150,6 +1194,7 @@ export class Solver {
         c[k] = this.present[k] ? this.cRef[k] * Math.exp(u[b * M + 1 + i] + uLo[b * M + 1 + i] - this.mu0hat[k] - z[i] * phiHat) : 0;
       }
     }
+    this._coverages();
   }
 
   _work(md) {
@@ -1969,7 +2014,7 @@ export class Solver {
       this.termDI[k] = 0;
       this.termI[k] = 0;
     }
-    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k));
+    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt));
     this._contact('left', dt);
     this._contact('right', dt);
     for (const k of this.floating) this._circuit(k);
@@ -2002,7 +2047,7 @@ export class Solver {
   // An internal port (terminal k): its exchange with each node of its window, as a source per
   // volume. A held ('equilibrium') level replaces the node's balance row; the source is then that
   // row's residual, read just before. Its current into the device is Σ z F × the sources.
-  _port(port, flux, k) {
+  _port(port, flux, k, dt) {
     const R = this.rix;
     const { n, M, u, uLo, res, z, VT } = this;
     const F = FARADAY, vol = this.model.grid.vol;
@@ -2038,6 +2083,7 @@ export class Solver {
       }
     }
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
+    if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(port, dt);
     for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
   }
 
@@ -2046,49 +2092,79 @@ export class Solver {
   // volume. Each node's rate is explicit (no unknown of its own): it enters the balances of the
   // species it makes and consumes, and the port's current.
   _portReaction(port, rx, area, rates, flux, k) {
-    const { n, M, u, uLo, c, res, z, VT } = this, R = this.rix, F = FARADAY, vol = this.model.grid.vol;
-    const B = this.termB[k], C = this.termC[k], al = rx.alpha, d = this.dA;
+    const { n, M, u, uLo, c, res, z, VT, nSurf, th } = this, R = this.rix, F = FARADAY, vol = this.model.grid.vol, RT = this.model.RT;
+    const B = this.termB[k], C = this.termC[k], al = rx.alpha, d = this.dA, surf = port.surface;
     // The carrier's part of the affinity, and how it moves with the port's voltage.
     let aV = rx.fixedA, daV = 0, q = 0; // q: charge the forward reaction brings into the device, per event
     for (const p of rx.part) {
       if (p.side === 1) {
         aV -= p.nu * this.portEta(port, p.i);
         daV -= (p.nu * z[p.i]) / VT;
-      } else q += p.nu * z[p.i];
+      } else if (p.side === 0) q += p.nu * z[p.i];
     }
+    const slot = (p) => (p.side === 2 ? 1 + n + p.s : 1 + p.i);
     port.nodes.forEach((g, w) => {
       const b = this.blockOfNode[g], s = vol[g] * area[w];
       d.fill(0);
       let pref = rx.k0, aHi = aV, aLo = 0;
       for (const p of rx.part) {
         if (p.side === 1) continue;
-        const o = b * M + 1 + p.i;
+        const o = b * M + slot(p);
         aHi -= p.nu * u[o];
         aLo -= p.nu * uLo[o];
         const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
-        pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
-        this._dlnc(g, p.i, e, d);
+        if (p.side === 2) {
+          // a surface species at activity θ/θ₀ = e^ζ
+          pref *= Math.exp(e * (u[o] + uLo[o] - surf[p.s].mu0 / RT));
+          d[1 + n + p.s] += e;
+        } else {
+          pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+          this._dlnc(g, p.i, e, d);
+        }
+      }
+      if (rx.bare) {
+        // on bare metal only: the free fraction θ₀ = 1 − Σθ, with ∂ln θ₀/∂η_s = −θ_s
+        let free = 1;
+        for (let x = 0; x < surf.length; x++) {
+          free -= th[g * nSurf + x];
+          d[1 + n + x] -= th[g * nSurf + x];
+        }
+        pref *= free;
       }
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
       const rate = pref * bv;
       rates[w] = rate;
-      // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η_i = −ν
+      // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η = −ν
       for (let t = 0; t < M; t++) d[t] *= rate;
-      for (const p of rx.part) if (p.side === 0) d[1 + p.i] -= pref * gp * p.nu;
+      for (const p of rx.part) if (p.side !== 1) d[slot(p)] -= pref * gp * p.nu;
       const dV = pref * gp * daV;
       for (const p of rx.part) {
         if (p.side === 1) continue;
-        const row = 1 + p.i, o = b * M + row;
-        res[R[o]] -= s * p.nu * rate;
-        flux[p.i] += s * p.nu * rate;
-        for (let t = 0; t < M; t++) if (d[t] !== 0) this._j(b, row, b, t, -s * p.nu * d[t]);
-        B[R[o]] -= s * p.nu * dV;
+        // the region's species per volume of the window; a surface's per area of electrode
+        const row = slot(p), o = b * M + row, f = p.side === 2 ? 1 : s;
+        res[R[o]] -= f * p.nu * rate;
+        if (p.side === 0) flux[p.i] += s * p.nu * rate;
+        for (let t = 0; t < M; t++) if (d[t] !== 0) this._j(b, row, b, t, -f * p.nu * d[t]);
+        B[R[o]] -= f * p.nu * dV;
       }
       for (let t = 0; t < M; t++) if (d[t] !== 0) C[R[b * M + t]] += q * F * s * d[t];
       this.termDI[k] += q * F * s * dV;
     });
   }
 
+  // An electrode surface's storage, per area of electrode: Γ (θ_s − θ_s,old)/dt in each surface
+  // species' row, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
+  _surfaceStorage(port, dt) {
+    const { n, M, res, nSurf, th, thOld } = this, R = this.rix, surf = port.surface, G = surf[0].capacity;
+    for (const g of port.nodes) {
+      const b = this.blockOfNode[g];
+      for (let q = 0; q < surf.length; q++) {
+        const tq = th[g * nSurf + q];
+        res[R[b * M + 1 + n + q]] += (G * (tq - thOld[g * nSurf + q])) / dt;
+        for (let x = 0; x < surf.length; x++) this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * ((q === x ? 1 : 0) - th[g * nSurf + x]));
+      }
+    }
+  }
 
   // One contact (terminal 0 or 1): record the flux through its outer face and the current into
   // the device (read from the end box before anything here is added: whatever the box needs
@@ -2245,6 +2321,8 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + i]]));
       }
+      const k = this.surfPort[g]; // an electrode surface's coverages, as η
+      if (k >= 0) for (let q = 0; q < this.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
     }
     return mx;
   }
@@ -2401,7 +2479,7 @@ export class Solver {
     this.uPrevLo.set(this.uLo);
     this.termVPrev.set(this.termV);
     this.computeConcentrations();
-    const cN = Float64Array.from(this.c);
+    const cN = Float64Array.from(this.c), thN = Float64Array.from(this.th);
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd) {
@@ -2419,10 +2497,12 @@ export class Solver {
       const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
       const { cOld } = this;
       for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
+      for (let k = 0; k < thN.length; k++) this.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
       this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
       dtEff = dt / a0;
     } else {
       this.cOld.set(cN);
+      this.thOld.set(thN);
       this.contactDStart = DN;
     }
     // Implicit: sources at the step's end, as seen from within the step (before any jump there).
@@ -2439,7 +2519,7 @@ export class Solver {
     }
     result.bdf = bdf;
     if (result.converged) {
-      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, D: DN });
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, D: DN });
       if (this.history.length > 3) this.history.length = 3;
       this.time = tEnd;
       this.lastDt = dtEff;
@@ -2727,6 +2807,7 @@ export class Solver {
       u: Float64Array.from(this.u),
       uLo: Float64Array.from(this.uLo),
       cOld: Float64Array.from(this.cOld),
+      thOld: Float64Array.from(this.thOld),
       time: this.time,
       lastDt: this.lastDt,
       atSteady: this.atSteady,
@@ -2744,6 +2825,7 @@ export class Solver {
     this.u.set(s.u);
     this.uLo.set(s.uLo);
     this.cOld.set(s.cOld);
+    this.thOld.set(s.thOld);
     this.time = s.time;
     this.lastDt = s.lastDt;
     this.atSteady = s.atSteady;
@@ -2786,6 +2868,7 @@ export class Solver {
     this.sourceTime = this.time;
     this.computeConcentrations();
     this.cOld.set(this.c);
+    this.thOld.set(this.th);
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
     this.assemble(Infinity);

@@ -216,7 +216,8 @@ export function describe(def) {
     lines.push(`  port ${port.name}: ${drive(p)}, in ${regions[port.region].name}`);
     // an electrode spread through the window
     if (port.reactions.length) lines.push(`    an electrode (its ${species[port.terminal].name} at the port's level), ${typeof p.area === 'number' ? `${p.area} m²` : 'a profile of m²'} of it per m³, reacting:`);
-    for (const rx of p.reactions ?? []) lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), α ${rx.alpha}`);
+    for (const rx of p.reactions ?? []) lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), α ${rx.alpha}${rx.bare ? ', on bare metal' : ''}`);
+    if (port.surface.length) lines.push(`    its surface: ${port.surface.map((sp) => sp.name).join(', ')} on ${num(port.surface[0].capacity)} mol/m² of sites (Langmuir)`);
   });
   if ((def.bulkReactions ?? []).length) {
     lines.push('bulk reactions:');

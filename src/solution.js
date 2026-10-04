@@ -112,6 +112,8 @@ export function makeSolution(solver, result = {}) {
       out.x = Float64Array.from(port.nodes, (g) => model.grid.x[g]);
       out.area = Float64Array.from(solver.portArea[k]);
       out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), forward
+      // its surface: each species' coverage θ at each node of the window
+      if (port.surface.length > 0) out.coverage = Object.fromEntries(port.surface.map((sp, q) => [sp.name, Float64Array.from(port.nodes, (g) => solver.th[g * solver.nSurf + q])]));
     }
     return out;
   });

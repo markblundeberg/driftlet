@@ -98,7 +98,7 @@ const devices = {
   },
   'an electrode spread through a port, floating in current mode, its area varying': () => ({
     species: [...ions, { name: 'e-', z: -1 }],
-    materials: { water: water(78.5) },
+    materials: { water: water(0) },
     regions: [{ material: 'water', length: 1e-6, c0: salt }],
     contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
     ports: [{ region: 0, from: 0.3e-6, I: 2, terminal: 'e-', area: { x: [0.3e-6, 1e-6], values: [1e5, 3e6] }, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] }],
@@ -119,10 +119,27 @@ const devices = {
   'an electrode port in a profiled cross-section': () => ({
     geometry: { area: { x: [0, 1e-6], values: [2, 0.5] } },
     species: [...ions, { name: 'e-', z: -1 }],
-    materials: { water: water(78.5) },
+    materials: { water: water(0) },
     regions: [{ material: 'water', length: 1e-6, c0: salt }],
     contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
     ports: [{ region: 0, from: 0.3e-6, I: 1, terminal: 'e-', area: 2e6, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] }],
+    grid: coarse,
+  }),
+  'an electrode port with a surface: two adsorbates, dissolution on bare sites': () => ({
+    species: [...ions, { name: 'e-', z: -1 }],
+    materials: { water: water(0) },
+    regions: [{ material: 'water', length: 1e-6, c0: salt }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+    ports: [{
+      // (μ° chosen so both coverages sit near 0.3, where every term is well above round-off)
+      region: 0, from: 0.3e-6, V: 0, terminal: 'e-', area: 2e6,
+      surface: { 'Ag(ads)': { mu0: 1e3, capacity: 1e-5, theta0: 0.2 }, 'O(ads)': { mu0: 58e3, capacity: 1e-5, theta0: 0.1 } },
+      reactions: [
+        { equation: 'Ag+ + e- = Ag(ads)', k0: 1e-3, alpha: 0.4, bare: true },
+        { equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.6, bare: true },
+        { equation: 'O(ads) + NO3- = Ag+ + 2 e- + Ag(ads)', k0: 1e-6, alpha: 0.5 },
+      ],
+    }],
     grid: coarse,
   }),
   'floating terminal (a conductance link) in current mode': () => ({

@@ -277,6 +277,9 @@ test('ports are checked', () => {
   assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /area: give the electrode's area per volume/.test(e.message));
   el.ports = [{ region: 'bar', terminal: 'e-', reactions: [{ ...plate, equation: 'Li+ = Li(s)' }], area: 1e6 }];
   assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /no 'e-' from the electrode takes part/.test(e.message));
+  el.ports = [{ region: 'bar', terminal: 'e-', reactions: [plate], area: 1e6 }];
+  el.materials.solid.epsr = 10;
+  assert.throws(() => new Device(el), (e) => e instanceof DeviceError && /needs its region strictly neutral/.test(e.message));
 });
 
 test('a port driven by a current pulse: it delivers I·t_p, and switching off is quick however far its voltage falls', () => {

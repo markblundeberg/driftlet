@@ -518,6 +518,43 @@ the film's thickness varies, give the device its [cross-section](#geometry) too,
 travelling along the film squeeze through where it thins: for a drop on a metal, seen from its
 centre, $`A = 2\pi r\,h(r)`$ with `area` $`1/h(r)`$.
 
+The region must be strictly neutral ($`\varepsilon = 0`$), as in porous-electrode theory: each spot's
+double layer, the metal's countercharge, is below the grid, so the reactions can't leave the
+solution charged.
+
+### An electrode's surface: adsorbates and passive films
+
+An electrode port can carry species on its surface, sharing its sites: an adsorbed intermediate,
+or a passive film taken as a coverage. Each has a coverage $`\theta`$ at every node of the window,
+Langmuir statistics, $`\mu = \mu^\circ + RT\ln(\theta/\theta_0)`$ with $`\theta_0 = 1 - \sum\theta`$ the
+bare fraction, and `capacity` $`\Gamma`$, mol of sites per m² of electrode. Reactions name them like
+species, and a reaction with `bare: true` runs only on bare metal: its rate is multiplied by
+$`\theta_0`$, both ways, so equilibrium stays exact. Written for adsorption itself, that's Langmuir
+kinetics (on at a rate ∝ $`\theta_0`$, off ∝ $`\theta`$).
+
+```js nocheck
+ports: [{
+  name: 'iron', region: 'film', terminal: 'e-', V: 0, area: 1 / 100e-6,
+  surface: { 'Fe(OH)2': { mu0: -490e3, capacity: 2e-5, theta0: 1e-6 } }, // theta0: the start
+  reactions: [
+    { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5, bare: true },  // dissolves where bare
+    { equation: 'Fe(s) + 2 OH- = Fe(OH)2 + 2 e-', fixed: { 'Fe(s)': 0 }, k0: 1e-6, alpha: 0.5, bare: true }, // the film forms
+    { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.13e3 }, k0: 3e-9, alpha: 0.125 }, // on film or not
+  ],
+}]
+```
+
+A film forms where the potential and the pH favour it, through its own thermodynamics, and blocks
+what needs bare metal: the dissolution current climbs with potential, peaks, and falls as the film
+covers the metal, the active–passive curve. Each node's surface stores
+$`\Gamma\,d\theta/dt`$ per area of electrode, so filling it passes a current, and a solution reports
+`ports[k].coverage[name][j]`. It's a monolayer picture: a real passive oxide is nanometres thick,
+grows, and breaks down under chloride, none of which a coverage has.
+
+Validated in test/coverage.test.js: the Langmuir isotherm against the electrode's potential (to
+1e-9), the charge to fill the surface, $`F\,\Gamma\,\Delta\theta`$ per area of electrode, and the
+active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer.
+
 ## Terminals
 
 The two contacts and every port are the device's terminals, named `left`, `right` and by each

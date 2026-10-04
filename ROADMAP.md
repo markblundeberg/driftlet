@@ -126,7 +126,11 @@ for live demos.
      two, a 1 nM trace beside 145 mM): with strictly neutral water, the first step fails at a few ns
      unless the tolerance is loose (1e-4) and the step a few cells wide; with ε > 0 on a grid coarser
      than the Debye length, likewise. The liquid-junction demo and test start from a boundary 1–20 µm
-     wide to stay clear. Related to the short-step conditioning of neutral regions below.
+     wide to stay clear. Related to the short-step conditioning of neutral regions below. An
+     electrode spread through strictly neutral water shows it too: the first step's error
+     estimate grows as the step shrinks (round-off, ∝ 1/h), so a short first target at a tight
+     tolerance (1e-8) fails, where 1e-6 steps fine. When shrinking makes the estimate worse, the
+     stepper could grow the step instead, as it does when Newton fails.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export

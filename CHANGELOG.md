@@ -2,6 +2,20 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- An electrode port's surface: species on its sites with a coverage at each node (Langmuir,
+  μ = μ° + RT ln(θ/θ₀), Γ mol of sites per m² of electrode), named in its reactions like species,
+  and `bare: true` for a reaction that runs only on bare metal (its rate times θ₀). Adsorbed
+  intermediates, and passive films as a coverage: a film forms where potential and pH favour it,
+  and blocks dissolution, the active–passive curve. Solutions report `ports[k].coverage`, and
+  `polarization()` holds the coverages with the solution. Validated: the Langmuir isotherm, the
+  charge to fill the surface, the blocking (test/coverage.test.js).
+- An electrode spread through a port now requires its region strictly neutral (ε = 0): its double
+  layers are below the grid, and with ε > 0 its reactions left the solution charged (steady solves
+  converged, transients didn't).
+- `build()` passes `geometry` through. The docs give the shapes of a port's outputs.
+
 ## 0.8.0 (2026-10-03)
 
 - Devices with a cross-section A(x): `geometry: { type: 'spherical' | 'cylindrical', r0 }` (shells
