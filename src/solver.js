@@ -226,8 +226,9 @@ export class Solver {
     });
     this.th = new Float64Array(nNodes * nSurf);
     this.thOld = new Float64Array(nNodes * nSurf);
-    this.th0 = new Float64Array(nNodes); // the bare fraction θ₀, directly (1 − Σθ cancels as θ → 1)
-    this.th0Old = new Float64Array(nNodes);
+    // The bare fraction θ₀, directly (1 − Σθ cancels as θ → 1); 1 where there's no surface.
+    this.th0 = new Float64Array(nNodes).fill(1);
+    this.th0Old = new Float64Array(nNodes).fill(1);
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -2611,7 +2612,7 @@ export class Solver {
   /**
    * Adaptive time stepping to tEnd: variable-step BDF2 (or backward Euler), with the local error
    * estimated against an explicit predictor through the previous states, and controlled to
-   * `tol` thermal units per step in every potential (φ̂, each η, a floating terminal). The first
+   * `tol` thermal units per step in every potential (φ̂, each η, a surface's coverages as η). The first
    * step is checked by step doubling. Stops early when `budgetMs` of wall time is used, so an
    * animation can call it once per frame; the step size carries over between calls.
    */
@@ -2843,6 +2844,8 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(u[b * M + 1 + i] - ref[b * M + 1 + i]));
       }
+      const k = this.surfPort[g]; // an electrode surface's coverages, as η
+      if (k >= 0) for (let q = 0; q < this.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
     }
     return mx;
   }

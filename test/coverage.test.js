@@ -60,6 +60,26 @@ test('filling the surface passes F·Γ·(electrode area)·Δθ through the elect
   assert.ok(Math.abs(Q / charge - 1) < 1e-3, `${Q} vs ${charge} C/m²`);
 });
 
+test('the coverage is under the time step\'s error control: Langmuir filling follows its exponential', () => {
+  // A slow adsorption (k0 1e-6) barely disturbs the solution, so θ relaxes exponentially to the
+  // isotherm: dθ/dt = (k_f θ₀ − k_b θ)/Γ, at the rate constants of the solution beside it.
+  const dev = cell(0.05, { surface: { OHads: { mu0: 0, capacity: G, theta0: 1e-4 } }, reactions: [{ ...adsorb, k0: 1e-6 }] });
+  const sol0 = dev.solution(), g = sol0.x.indexOf(sol0.ports[0].x[3]);
+  const A = (sol0.mu['OH-'][g] + FARADAY * 0.05) / RT, pre = 1e-6 * Math.sqrt(sol0.c['OH-'][g] / 1000);
+  const kf = pre * Math.exp(A / 2), kb = pre * Math.exp(-A / 2), thInf = kf / (kf + kb), tau = G / (kf + kb);
+  for (const t of [0.3, 1, 3].map((x) => x * tau)) {
+    const theta = dev.advance(t, { tol: 1e-5 }).ports[0].coverage.OHads[3];
+    const exact = thInf + (1e-4 - thInf) * Math.exp(-t / tau);
+    assert.ok(Math.abs(theta - exact) < 2e-4 * thInf, `t = ${t / tau} τ: θ ${theta} vs ${exact}`);
+  }
+});
+
+test('a reaction on bare sites, on an electrode with no surface species: every site is bare', () => {
+  const rate = (bare) => cell(0.05, { reactions: [{ ...adsorb, equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, bare }] }).solve().ports[0].rates[0][3];
+  const [plain, onBare] = [rate(false), rate(true)];
+  assert.ok(plain !== 0 && onBare === plain, `${onBare} vs ${plain}`);
+});
+
 test('a metal dissolving on bare sites only: the active–passive curve, the film\'s Langmuir blocking exact', () => {
   // Fe²⁺ + 2e⁻ ⇌ Fe on bare metal, and Fe + 2OH⁻ ⇌ Fe(OH)₂ + 2e⁻ as a passivating film on the
   // same sites. Dissolution climbs with V (Tafel, one V_T per e-fold at α = ½), the film's bare

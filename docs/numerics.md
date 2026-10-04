@@ -485,7 +485,8 @@ test checks the compact Jacobian column by column on devices that cover every as
     as error that shrank only as fast as the step, and a junction from a sharp boundary at a
     tight tolerance stepped down into round-off.
   - The error is measured in thermal units over every state potential ($`\hat\phi`$ where defined,
-    each present $`\eta`$, a floating terminal voltage). That includes species far below their
+    each present $`\eta`$, an electrode surface's coverages as their $`\eta`$; a floating terminal's
+    voltage follows from these). That includes species far below their
     largest concentration, such as minority carriers ahead of a diffusion front. Weighting
     them down (a mixed relative/absolute tolerance,
     $`\delta\eta \cdot c/(c + 10^{-10} c_{\mathrm{max}})`$) took a third fewer steps on a pn turn-on,
