@@ -43,6 +43,7 @@ main { max-width: 1000px; margin: 0 auto; }
 nav.site { display: flex; gap: 20px; font-size: 0.9rem; margin-bottom: 8px; }
 h1 { font-size: 1.3rem; margin: 0 0 4px; }
 p { margin: 4px 0 12px; color: var(--muted); max-width: 70ch; }
+ul { color: var(--muted); max-width: 70ch; padding-left: 1.4em; }
 .controls {
   position: sticky; /* stays in reach while you scroll down to the lower plots */
   top: 0;

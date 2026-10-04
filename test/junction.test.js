@@ -4,7 +4,7 @@ import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { henderson, planck } from '../src/kit.js';
 
 // Liquid-junction potentials, φ_R − φ_L between two neutral solutions, three ways: Henderson's
-// formula (concentrations mixing linearly), Planck's (the steady state of constrained diffusion
+// formula (the two solutions mixed in one proportion at every point), Planck's (the steady state of constrained diffusion
 // between two held solutions), and a free-diffusion junction grown from a sharp boundary. driftlet
 // simulates the last two as devices: a steady solve between two baths, and a transient.
 //

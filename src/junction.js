@@ -31,8 +31,8 @@ function neutral(list, side, what) {
 }
 
 /**
- * Henderson's liquid-junction potential, φ_R − φ_L (V): the concentrations taken to mix linearly
- * through the junction. Exact for a single binary salt, a close estimate otherwise (it's what
+ * Henderson's liquid-junction potential, φ_R − φ_L (V): the junction taken to be the two solutions
+ * mixed in one proportion at every point (every ion's mixing fraction the same curve). Exact for a single binary salt, a close estimate otherwise (it's what
  * JPCalc and most electrophysiology corrections use).
  * @param {Record<string, number>} left mol/m³ by ion
  * @param {Record<string, number>} right mol/m³ by ion

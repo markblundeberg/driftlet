@@ -45,8 +45,9 @@
     junction potential is φ<sub>right</sub> − φ<sub>left</sub> between the two solutions' bulk. Its classical
     estimates differ in what they assume the mixing zone looks like:</p>
   <ul>
-    <li><b>Henderson</b>: the concentrations change linearly through the zone, a "continuous mixture". A closed
-      form, and what JPCalc and most electrophysiology corrections use.</li>
+    <li><b>Henderson</b>: at every point the junction is the two solutions mixed in some proportion, a "continuous
+      mixture", so every ion's mixing fraction is the same curve (whatever its shape). A closed form, and what
+      JPCalc and most electrophysiology corrections use.</li>
     <li><b>Planck</b>: the steady state of diffusion through a zone held between the two solutions (a frit or a
       bridge, renewed at both ends). Exact for that junction; driftlet's steady state between two baths is it,
       checked against a direct numerical (shooting) solution and the stationary Nernst–Planck codes LJPcalc and
@@ -186,6 +187,7 @@ function start() {
   const p = ['patch', 'zinc', 'bridge'].includes(preset.value) ? preset.value : 'patch';
   document.querySelectorAll('.bridge').forEach((e) => (e.style.display = p === 'bridge' ? '' : 'none'));
   document.querySelectorAll('.free').forEach((e) => (e.style.display = p === 'bridge' ? 'none' : ''));
+  el('checks').style.display = p === 'bridge' ? '' : 'none'; // the checks are the bridge's steady state
   run = null;
   if (p === 'bridge') return bridge();
   const set = PRESETS[p], ions = ionsAt(set.T), dev = freeJunction(set);

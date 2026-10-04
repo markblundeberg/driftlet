@@ -175,7 +175,8 @@ console.log(`the pulse passes at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp �
 potential $`\phi_R - \phi_L`$ (V) between two neutral solutions (mol/m³ by ion), with `ions` their
 `{ z, D }` (the data library's `IONS` has that shape):
 
-- **Henderson's** formula takes the concentrations to change linearly through the junction. It's
+- **Henderson's** formula takes the junction to be the two solutions mixed in one proportion at
+  every point (so every ion's mixing fraction follows the same curve). It's
   a closed form, exact for one salt, and what JPCalc and most electrophysiology corrections use.
 - **Planck's** is the steady state of diffusion through a zone held between the two solutions,
   electroneutral and carrying no current, solved by shooting on the Nernst–Planck equations. It's
