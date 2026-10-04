@@ -13,6 +13,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   (`ports[k].x`, `.rates`, `.area`). Validated against the transmission line (linear kinetics along
   a bar) and the Wagner–Traud mixed potential of two couples. A floating electrode port starts at
   its mixed potential.
+- `polarization(device, sol, where, V)` in the kit: an electrode's reactions (at a face, or at a
+  spot of an electrode port) with the solution beside it held and the metal's level moved. It
+  returns each reaction's rate, partial current (anodic positive) and redox level, and the net
+  current: the curves of an Evans diagram. It uses the solver's own law, so at the metal's actual
+  level it gives the solved rates (test/polarization.test.js, with the Tafel slopes).
 
 - Fixed: a port that only exchanges (an O₂ supply from the air, say) in a strictly neutral region
   could stop a transient at its first step. With a face reaction setting the electrolyte's

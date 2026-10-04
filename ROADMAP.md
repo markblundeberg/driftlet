@@ -159,9 +159,7 @@ for live demos.
      - **A cross-section that varies along x**, A(x) in the divergence: a drop's film thinning
        toward its rim (and its radius, A ∝ r·h(r)), a pit or a crevice that widens to its mouth.
        With electrode ports, that's the honest radial Evans drop.
-     - **Rates at a hypothetical level**: a face's or an electrode port's reaction rates with the
-       concentrations held and the metal's level moved, for Evans diagrams (log|i| against E at
-       each spot), without each page re-deriving Butler–Volmer.
+     - Done: rates at a hypothetical level, `polarization()`, for Evans diagrams.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
        anodic, and lost time finding out why.

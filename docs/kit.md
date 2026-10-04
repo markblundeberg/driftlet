@@ -82,7 +82,7 @@ $`\mu_{\mathrm{H_2}} = 0`$, so its standard level is $`\phi + \mu^\circ_{\mathrm
 
 ```js
 import { Device } from 'driftlet';
-import { build, layer, ohmic, half, level } from 'driftlet/kit';
+import { build, layer, ohmic, half, level, polarization } from 'driftlet/kit';
 
 const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 });
 const stern = { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 }; // an assumed pzc
@@ -108,10 +108,34 @@ const def = build({
   grid: { hmin: 0.1e-9, hmax: 100e-9, ratio: 1.15 },
 });
 console.log(JSON.stringify(def.interfaces[0].reactions[0])); // { left: { e-: -1, Ag(s): 1 }, right: { Ag+: -1 }, … }
-const sol = new Device(def).solve();
+const dev = new Device(def), sol = dev.solve();
 const redox = level(sol, silver); // V_Ag⁺(x) in the solution
 console.log(`redox level at mid-cell: ${redox[sol.x.length >> 1].toFixed(4)} V`);
+// The left electrode's polarization curve, 0.2 V either side of its own level (see below).
+const metalSide = sol.V['e-'][0];
+const curve = polarization(dev, sol, { face: 0 }, Array.from({ length: 81 }, (_, j) => metalSide - 0.2 + j * 0.005));
+console.log(curve.reactions[0].level, curve.current[40]); // the couple's level here, and the current at the metal's own
 ```
+
+### Polarization curves: an Evans diagram
+
+`polarization(device, sol, where, V)` evaluates every electrode reaction at one spot with the
+solution beside it held as `sol` has it and the metal's level set to each `V` (an electron
+voltage, the terminals' convention). It works at a face (`{ face: f }`, the face's metal side) or
+at a spot of an [electrode port](device.md#electrodes-spread-through-a-window)
+(`{ port: name, x }`). Each reaction comes back with its rate (mol/(m²·s), forward), its partial
+current (A/m², anodic positive: into the solution) and its `level`, where the rate vanishes (the
+couple's redox level there, as `level()` gives it). The net current is their sum. Plotting
+log|current| against V gives the Evans diagram. The net crosses zero at the spot's open-circuit
+potential, between the couples' levels, and the metal's actual level is where the solve put it.
+The law is the solver's own, so at that level the rates are the solution's. Against SHE, subtract
+the SHE level (`sol.phi` with the usual tables' ions).
+
+The example above ends with the left electrode's curve.
+
+Concentrations are held, so these are the curves of that instant (for a mixed potential, the
+kinetic picture). Away from the actual level the composition beside the electrode would change,
+which is the transport the full solve accounts for.
 
 ## Sources
 
