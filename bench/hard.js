@@ -69,6 +69,22 @@ const junction = (w) => {
     grid: { hmin: 1e-6, hmax: 1e-6 },
   });
 };
+// 3 M KCl against 1 µM, sharp
+const kcl = () => {
+  const L = 400e-6, cl = { K: 3000, Cl: 3000 }, cr = { K: 1e-3, Cl: 1e-3 };
+  return new Device({
+    T,
+    species: [{ name: 'K', z: 1, cRef: 1000 }, { name: 'Cl', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 0, species: { K: { D: 1.96e-9, mu0: 0 }, Cl: { D: 2.03e-9, mu0: 0 } } } },
+    regions: [{ material: 'water', length: L / 2, c0: cl }, { material: 'water', length: L / 2, c0: cr }],
+    contacts: { left: { bath: { c: cl, reference: 'Cl' } }, right: { bath: { c: cr, reference: 'Cl' }, I: 0 } },
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+};
+const kclCase = (tol) => (tally) => {
+  const s = tally.advance(kcl(), 0.1, { tol });
+  return { 'Δφ (mV)': 1000 * (s.phi.at(-1) - s.phi[0]) };
+};
 const junctionCase = (w, tol) => (tally) => {
   const dev = junction(w);
   const s = tally.advance(dev, 0.5, { tol });
@@ -252,6 +268,8 @@ const cases = {
   'liquid junction from a sharp boundary (ε = 0), tol 1e-3': junctionCase(0, 1e-3),
   'liquid junction from a 1 µm boundary (ε = 0), tol 1e-4': junctionCase(1e-6, 1e-4),
   'liquid junction from a 1 µm boundary (ε = 0), tol 1e-6': junctionCase(1e-6, 1e-6),
+  'liquid junction, 3 M KCl | 1 µM, sharp (ε = 0), tol 1e-4': kclCase(1e-4),
+  'liquid junction, 3 M KCl | 1 µM, sharp (ε = 0), tol 1e-6': kclCase(1e-6),
   'electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-8': coverageCase(1e-4, 1e-8),
   'electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-6': coverageCase(1e-4, 1e-6),
   'electrode port filling its surface (ε = 0): to 10 s, tol 1e-3': coverageCase(10, 1e-3),

@@ -478,6 +478,12 @@ test checks the compact Jacobian column by column on devices that cover every as
     $`C_c = h^3(1+\omega)^2/(\omega(1+2\omega))`$ and $`C_p = h(h+h_1)(h+h_1+h_2)`$; linear after
     backward Euler, scaled by $`h/(2h + h_1)`$. The first step, with no history, is checked by step
     doubling.
+  - The state a first step starts from needn't satisfy the algebraic equations ($`\hat\phi`$ in a
+    strictly neutral material, an interface's unknowns), after a start or a jump; they jump in
+    the first instant. So the history starts from the first step's half step, not from there,
+    and the second step is backward Euler: a predictor through the starting state saw the jump
+    as error that shrank only as fast as the step, and a junction from a sharp boundary at a
+    tight tolerance stepped down into round-off.
   - The error is measured in thermal units over every state potential ($`\hat\phi`$ where defined,
     each present $`\eta`$, a floating terminal voltage). That includes species far below their
     largest concentration, such as minority carriers ahead of a diffusion front. Weighting
@@ -627,8 +633,10 @@ was, so storage and neutrality don't see it. Only the fluxes do. But in $`(\hat\
 and neutrality see it as pairs of huge entries that cancel, and round-off in that cancellation, of
 order storage/flux ~ $`h^2/(D \cdot dt)`$ times the range of concentrations, swamps the fluxes that
 fix it: a trace ion beside 3 M KCl lost about ten digits, and Newton stalled. So at each node that
-stays neutral (interior nodes, and edges at `neutral` faces; not the edge of a capacitive or
-pinned face, which holds the face's charge), assembled without storage and neutrality:
+stays neutral (interior nodes, edges at `neutral` faces, and a device's end where its contact is
+closed to every ion and leaves $`\phi`$ alone; not the edge of a capacitive or pinned face, which
+holds the face's charge, nor an end whose contact holds a level), assembled without storage and
+neutrality:
 - rows: the balance of the most abundant charged species (by $`z^2 c`$) becomes
   $`\sum (z_i/z_k) \times`$ each balance, which without storage is current continuity;
 - columns: the unknowns become $`\hat\phi'`$ and $`\eta'_i = \eta_i - z_i \hat\phi`$ (the update is

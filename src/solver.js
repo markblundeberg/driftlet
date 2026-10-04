@@ -433,11 +433,15 @@ export class Solver {
     // A port that only exchanges (an O₂ supply, a leak) is solved there too: left out, its window
     // fell back on the ill-conditioned terms, and a closed neutral electrolyte whose potential is
     // set only by a face reaction couldn't take a step.
+    // An end node is solved there too if its contact is closed to every ion and leaves φ alone.
     const held = new Uint8Array(nNodes);
-    held[0] = held[nNodes - 1] = 1;
+    const closed = (side) => model.contacts[side].phi.type === 'neutral' && model.contacts[side].species.every((l, i) => species[i].z === 0 ? l.type !== 'equilibrium' : l.type === 'blocked');
+    this.closedEnd = { left: closed('left'), right: closed('right') };
+    held[0] = this.closedEnd.left ? 0 : 1;
+    held[nNodes - 1] = this.closedEnd.right ? 0 : 1;
     for (const port of model.ports) if (port.species.some((l) => l.type === 'equilibrium')) for (const g of port.nodes) held[g] = 1;
     this.chargeNode = new Uint8Array(nNodes);
-    const neutralFace = (f) => f >= 0 && f < model.interfaces.length && model.interfaces[f].phi.type === 'neutral';
+    const neutralFace = (f) => (f === -1 ? this.closedEnd.left : f === model.interfaces.length ? this.closedEnd.right : model.interfaces[f].phi.type === 'neutral');
     regions.forEach((reg, r) => {
       const mat = materials[reg.material];
       if (mat.conductor || mat.epsr !== 0) return;
@@ -2242,10 +2246,13 @@ export class Solver {
     const Ac = model.grid.area[g]; // the links' laws are per area: what they pass is that times A here
     const dyn = Number.isFinite(dt);
 
-    // Before anything is added, each balance residual is the flux into the device here.
+    // Before anything is added, each balance residual is the flux into the device here. (A
+    // closed end solved in charge rows has its ions' storage left out until later: none of them
+    // passes, so their flux is zero.)
+    const closedIons = this.combining && dyn && this.chargeNode[g] === 1;
     let I = 0;
     for (let i = 0; i < n; i++) {
-      const active = this.loc[b * M + 1 + i] >= 0;
+      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0);
       const nIn = active ? res[R[b * M + 1 + i]] : 0;
       flux[i] = sgn * nIn; // (toward +x)
       if (active && z[i] !== 0) {
@@ -2684,7 +2691,8 @@ export class Solver {
           continue;
         }
       } else {
-        const r = this.step(h, { method, guess: this._extrapolate(guess, this.time + h) });
+        // (Order 2 once three consistent states can check it.)
+        const r = this.step(h, { method: this.history.length >= 2 ? method : 'be', guess: this._extrapolate(guess, this.time + h) });
         iterations += r.iterations;
         if (!r.converged) {
           rejected++;
@@ -2704,6 +2712,11 @@ export class Solver {
       }
       steps++;
       grow = 0;
+      // The state the first step started from needn't satisfy the algebraic equations (φ in a
+      // strictly neutral region, an interface's unknowns, after a start or a jump), and they
+      // jump in the first instant; a predictor through it would see that jump as error on every
+      // step after. The history starts from the half step.
+      if (half) this.history.length = 1;
       dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
       if (atBreak) this.history = []; // the solution's slope jumps here: restart the order
       if (half) {
