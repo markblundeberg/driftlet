@@ -1,6 +1,6 @@
 // driftlet: 1D drift–diffusion–reaction solver.
 
-import { normalizeDevice } from './device.js';
+import { normalizeDevice, DeviceError } from './device.js';
 import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 import { merge } from './merge.js';
@@ -64,20 +64,32 @@ export class Device {
 
   /**
    * Change part of the definition (deep-merged). A contact given V or I drops the other, so
-   * `{ contacts: { right: { I: 0 } } }` switches it to open circuit. A change to the terminals'
+   * `{ contacts: { right: { I: 0 } } }` switches it to open circuit. Ports are patched by name,
+   * `{ ports: { gate: { V: 0.2 } } }` (an array replaces them all). A change to the terminals'
    * drives alone (V, I, R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
    * the warm start when the grid and species are unchanged (else restarting from the regions' c0).
    * @param {object} patch a partial device definition, merged into the current one
    * @returns {this}
    */
   set(patch) {
-    // A contact given a new kind of drive drops the old one: { I: 0 } replaces a held V.
+    // A terminal given a new kind of drive drops the old one: { I: 0 } replaces a held V.
+    const redrive = (c) => (c && typeof c === 'object' && !Array.isArray(c) ? ('I' in c && !('V' in c) ? { ...c, V: undefined } : 'V' in c && !('I' in c) ? { ...c, I: undefined } : c) : c);
     for (const side of ['left', 'right']) {
       const c = patch?.contacts?.[side];
-      if (c && typeof c === 'object') {
-        if ('I' in c && !('V' in c)) patch = { ...patch, contacts: { ...patch.contacts, [side]: { ...c, V: undefined } } };
-        else if ('V' in c && !('I' in c)) patch = { ...patch, contacts: { ...patch.contacts, [side]: { ...c, I: undefined } } };
+      if (c && typeof c === 'object') patch = { ...patch, contacts: { ...patch.contacts, [side]: redrive(c) } };
+    }
+    // Ports: an array replaces them all; an object patches them by name, { gate: { V: 0.2 } }.
+    const ports = patch?.ports;
+    if (ports !== undefined && !Array.isArray(ports)) {
+      if (ports === null || typeof ports !== 'object') throw new DeviceError('set: ports must be an array (replacing them all) or an object of patches by port name, e.g. { gate: { V: 0.2 } }');
+      const old = this.def.ports ?? [];
+      for (const name of Object.keys(ports)) {
+        if (!old.some((p, k) => (p.name ?? `ports[${k}]`) === name)) throw new DeviceError(`set: ports.${name}: no port named '${name}'${old.length ? ` (the ports: ${old.map((p, k) => p.name ?? `ports[${k}]`).join(', ')})` : ''}`);
       }
+      patch = { ...patch, ports: old.map((p, k) => {
+        const q = ports[p.name ?? `ports[${k}]`];
+        return q === undefined ? p : merge(p, redrive(q));
+      }) };
     }
     const def = merge(this.def, patch);
     // Only the terminals' drives changed: update them in place, keeping the solver and its state

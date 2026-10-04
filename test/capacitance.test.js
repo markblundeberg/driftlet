@@ -160,6 +160,19 @@ test('two capacitances on one window add: two gates of C/2 hold what one of C do
   one.forEach((q, j) => assert.ok(Math.abs(two[j] / q - 1) < 1e-6, `${two[j]} vs ${q}`));
 });
 
+test('set() patches ports by name: a gate\'s voltage is a drive, changed in place', () => {
+  const dev = tft(1, 0.5), solver = dev.solver, before = dev.solve().current;
+  dev.set({ ports: { gate: { V: 2 } } });
+  assert.equal(dev.solver, solver, 'a drive alone: the same solver, its state kept');
+  const after = dev.solve().current;
+  assert.ok(Math.abs(after / tft(2, 0.5).solve().current - 1) < 1e-9 && Math.abs(after) > 2 * Math.abs(before));
+  assert.equal(dev.def.ports[0].region, 'channel', 'the rest of the port kept');
+  dev.set({ ports: { gate: { I: 0 } } }); // a new kind of drive drops the old
+  assert.equal(dev.def.ports[0].V, undefined);
+  assert.throws(() => dev.set({ ports: { gat: { V: 1 } } }), (e) => e instanceof DeviceError && /no port named 'gat' \(the ports: gate\)/.test(e.message));
+  assert.throws(() => dev.set({ ports: 3 }), (e) => e instanceof DeviceError && /ports must be an array/.test(e.message));
+});
+
 test('a capacitance is checked', () => {
   const def = tft(1, 0.1).def;
   def.ports[0].capacitance = { C: -1 };

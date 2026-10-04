@@ -2,6 +2,19 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A transient starting at a bath that floats beside a strictly neutral region now resolves short
+  steps: the contact's current had come from its end box's balance, where the ions' storage and
+  the box's charge (∝ c/dt, cancelling under neutrality) left round-off that swamped the flux. A
+  sharp 3 M | 1 µM KCl junction now starts at tol 1e-6, and every junction case takes fewer steps.
+- `set({ ports: { gate: { V: 0.2 } } })` patches ports by name (an array still replaces them
+  all); a new kind of drive drops the old, as for contacts. A wrong `ports` patch is a clear error.
+- Docs, from an outside agent building an OECT from llms.txt: a volumetric capacitance C* as
+  `area: 1/t, C: C*·t`; Bernards–Malliaras as the charge-sheet formula without its V_T term;
+  `R` and the impedance in Ω with a geometry; which current `trace` records; and tightening `tol`
+  before fitting a time constant to a decay's tail.
+
 ## 0.10.0 (2026-10-04)
 
 - The saturation demo has a thin-film transistor below the silver cell: the gate a capacitance

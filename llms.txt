@@ -346,6 +346,11 @@ for (const Vd of [0.1, 0.5, 1, 1.5, 2, 3]) {
 }
 ```
 
+To sweep the gate on one device instead, patch the port by name: `dev.set({ ports: { gate: { V } } })`
+(a drive only, so it's cheap and keeps the state as a warm start). An organic electrochemical
+transistor is the same with a volumetric capacitance C*: `area: 1 / t, capacitance: { C: Cstar * t }`
+(docs/device.md, "A capacitance through a window").
+
 ## Template: a transient, with a pulse injected sideways
 
 A **port** feeds a window of nodes inside a region from the side (a point contact, an injector,

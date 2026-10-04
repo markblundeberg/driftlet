@@ -594,10 +594,20 @@ ports: [{ name: 'gate', region: 'channel', V: 1.5, area: 1 / 10e-9, capacitance:
 ports: [{ name: 'iron', region: 'film', terminal: 'e-', V: 0, area: 1e4, capacitance: { C: 0.2, zeroCharge: -0.4 }, reactions: [/* … */] }]
 ```
 
+A volumetric capacitance $`C^*`$ (F/m³, an organic electrochemical transistor's) goes in per
+area of a nominal electrode: `area: 1 / t, capacitance: { C: Cstar * t }` for a film t thick
+(`area: 1, C: Cstar` is the same physics, but reads to `describe()` like a unit slip). To read the
+gate's voltage as the film's effective one, put the undisturbed film at φ = 0 (its carrier's
+`cRef` at its doping, `mu0: 0`) and leave `zeroCharge` at 0. The gate charges the carriers
+through their own chemical capacitance too, in series, so $`dQ/dV_G`$ comes out below $`C^*`$
+(about 12% for holes at 1e20 cm⁻³ against 40 F/cm³).
+
 That's the gradual-channel approximation of a field-effect transistor, exact for a thin film
 with no body (a TFT, an organic or oxide transistor) while the channel is long against the gate
 dielectric, and failing where it pinches off (where the 2D field takes over). It's also the
-Bernards model of an organic electrochemical transistor (a volumetric capacitance), cable theory
+Bernards model of an organic electrochemical transistor (a volumetric capacitance; the
+Bernards–Malliaras current is the charge-sheet formula below without its $`V_T`$ term, so they
+part near pinch-off, where driftlet keeps the diffusion that formula drops), cable theory
 for an axon's membrane, and a porous electrode's double layer. The gate's flat level pins the
 channel's standard level through C, as a blocked spectator's flat level does in an electrolyte,
 and the current saturates as the carriers run out at the drain, in both.
@@ -636,7 +646,7 @@ contacts: {
   right: { I: -2, ... },             // driven by a current into the device, A/m² (I: 0 is open circuit)
 },
 ports: [{ name: 'ref', I: 0, ... },  // a reference electrode: no current, its voltage read off
-        { name: 'wire', V: 0, R: 1e-3, ... }], // a source V behind a series resistance R (Ω·m²)
+        { name: 'wire', V: 0, R: 1e-3, ... }], // a source V behind a series resistance R (Ω·m², or Ω with a geometry)
 ```
 
 - **`V`**: the terminal's voltage, the shift of its outside phase's ladder, as the voltage of
@@ -703,7 +713,8 @@ its middle, and nothing passes the end. Only an end may have $`A = 0`$. Flow (`v
 planar devices.
 
 With a cross-section, the solution's currents, contact and port fluxes, terminal currents and
-`charge` are totals (A, mol/s; per metre for cylinders), and so are `I` drives. Face laws,
+`charge` are totals (A, mol/s; per metre for cylinders), and so are `I` drives, a series `R`
+and the impedance (Ω, not Ω·m²). Face laws,
 rates, `interfaces[f].N` and `D`, and concentrations stay per area or per volume. Validated against
 steady diffusion to a sphere and a cylinder (exact), Cottrell's transient with the spherical term,
 uptake by a sphere filling from its surface, and Debye–Hückel screening around a charged sphere
@@ -715,6 +726,7 @@ uptake by a sphere filling from its surface, and Debye–Hückel screening aroun
 const dev = new Device(def);
 const sol = dev.solve();                      // steady state (or equilibrium)
 dev.set({ contacts: { right: { V: 0.3 } } }); // deep-merged change; the state is kept as a warm start
+dev.set({ ports: { gate: { V: 0.2 } } });     // ports patched by name (an array replaces them all)
 const sol2 = dev.solve();
 const tr = dev.step(1e-6);                    // one backward-Euler step (auto-subdivided if needed)
 const tr2 = dev.step(1e-6, { method: 'bdf2' }); // second-order BDF2 once a previous step exists
@@ -734,12 +746,15 @@ const now = dev.solution();                   // snapshot of the current state
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
   the local error per step to `tol` (default 1e-3) in thermal units of every potential ($`\phi`$ and
-  each $`\bar\mu/RT`$): roughly 0.1% in concentrations. It lands exactly on `tEnd`. Options: `tol`,
+  each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step. That's local: over a long decay
+  the errors add up, and a small current at the end of one can be tens of percent off, so tighten
+  `tol` (1e-5, say) before fitting a time constant to a tail. It lands exactly on `tEnd`. Options: `tol`,
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
   `rejected`, and a `trace` of terminal current and voltage after every accepted step (the
-  voltage is the right contact's minus the left's: what a meter between the terminals reads,
+  current is the right contact's, toward +x, as `sol.current`; a port's is in `sol.terminals`
+  after each call; the voltage is the right contact's minus the left's: what a meter between the terminals reads,
   which at a bath is its reference species' level, not $`\phi`$). With
   `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
   as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
