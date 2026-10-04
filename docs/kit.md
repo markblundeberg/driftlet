@@ -169,6 +169,33 @@ const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
 console.log(`the pulse passes at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ≈ ${units.toPerCm3(seen[k]).toExponential(1)} cm⁻³`);
 ```
 
+## Liquid junctions
+
+`henderson(left, right, ions, { T })` and `planck(left, right, ions, { T })` give the junction
+potential $`\phi_R - \phi_L`$ (V) between two neutral solutions (mol/m³ by ion), with `ions` their
+`{ z, D }` (the data library's `IONS` has that shape):
+
+- **Henderson's** formula takes the concentrations to change linearly through the junction. It's
+  a closed form, exact for one salt, and what JPCalc and most electrophysiology corrections use.
+- **Planck's** is the steady state of diffusion through a zone held between the two solutions,
+  electroneutral and carrying no current, solved by shooting on the Nernst–Planck equations. It's
+  exact for that junction, and equal to driftlet's own steady state between two baths.
+
+A junction growing freely from first contact is neither: simulate it, as a transient from a
+`c0` step. For one salt all three agree; for mixtures they differ by up to a millivolt or so.
+Validated against JPCalc (Henderson), and LJPcalc and JLJP (stationary Nernst–Planck), in
+test/junction.test.js.
+
+```js
+import { henderson, planck, IONS } from 'driftlet/kit';
+
+// 50 mM NaCl against 50 mM KCl, and a K-gluconate pipette (gluconate's D from its relative mobility, 0.33 of K⁺'s).
+const ions = { ...IONS, 'gluconate-': { z: -1, D: 0.33 * IONS['K+'].D } };
+console.log(1000 * henderson({ 'Na+': 50, 'Cl-': 50 }, { 'K+': 50, 'Cl-': 50 }, ions), 'mV');
+const pipette = { 'K+': 140, 'gluconate-': 130, 'Cl-': 10 }, bath = { 'Na+': 145, 'K+': 5, 'Cl-': 150 };
+console.log(`Henderson ${(1000 * henderson(pipette, bath, ions)).toFixed(2)} mV, Planck ${(1000 * planck(pipette, bath, ions)).toFixed(2)} mV`);
+```
+
 ## Recording a transient
 
 `recorder(device, { every, times, probes })` runs a transient in pieces and keeps what a demo

@@ -12,6 +12,7 @@ export { live } from './live.js';
 export { pulse, square, triangle, ramp, injector, recombination, photogeneration } from './sources.js';
 export { describe, unitWarnings } from './describe.js';
 export { recorder } from './recorder.js';
+export { henderson, planck } from './junction.js';
 export { check } from './checks.js';
 export { perovskiteCell, PEROVSKITE_SCANS, hysteresis } from './devices.js';
 export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal } from './data.js';

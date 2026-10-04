@@ -50,7 +50,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
   `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
   `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …), `check` (a solution's checks), `recorder` (a transient's trace and frames across calls), the curated
+  `metal`, `IONS`, …), `check` (a solution's checks), `henderson` and `planck` (liquid-junction potentials), `recorder` (a transient's trace and frames across calls), the curated
   `perovskiteCell` with IonMonger's `PEROVSKITE_SCANS` and `hysteresis`, and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
