@@ -87,12 +87,15 @@ export function pauser(controls, resume, { watch } = {}) {
       hidden = document.hidden;
       update(was);
     });
-    const target = watch ?? controls.closest('section') ?? document.querySelector('main');
-    new IntersectionObserver(([entry]) => {
-      const was = paused();
-      offscreen = !entry.isIntersecting;
-      update(was);
-    }).observe(target);
+    const target = watch ?? controls.closest?.('section') ?? document.querySelector('main');
+    // (Where there's no IntersectionObserver, as in a test's stub document, it just keeps running.)
+    if (typeof IntersectionObserver !== 'undefined' && target) {
+      new IntersectionObserver(([entry]) => {
+        const was = paused();
+        offscreen = !entry.isIntersecting;
+        update(was);
+      }).observe(target);
+    }
   }
   update(false);
   controls.append(button);
