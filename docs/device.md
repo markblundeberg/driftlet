@@ -504,8 +504,11 @@ a terminal like any other. Held at a voltage, it's a potentiostat. At `I: 0` (or
 else to carry current), the reactions settle at the mixed potential, the corrosion potential where
 anodic and cathodic currents cancel over the window, while each node can be a net anode or a net
 cathode. A floating one starts there, for the start's composition. Each solution reports the
-window's nodes and every reaction's rate at each, `ports[k].x` and `ports[k].rates`
-(mol/(m²·s) of electrode, forward), with `ports[k].area`.
+window's nodes and every reaction's rate at each: `ports[k].x[j]` (m) and `ports[k].area[j]`
+(m²/m³) for the window's node j, and `ports[k].rates[q][j]` for reaction q there (mol/(m²·s) of
+electrode, forward), so reaction first, then node. They're typed arrays (`Float64Array`), so
+`Array.from` them before mapping to anything but numbers. Per volume of the window it's
+`rates[q][j] * area[j]`, and per area of a film's floor (thickness h, `area` 1/h) the rate itself.
 
 Validated against the transmission line (linear kinetics along a bar, test/ports.test.js) and the
 Wagner–Traud mixed potential of two Butler–Volmer couples. In 1D, a film on a metal is a slice

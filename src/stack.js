@@ -100,7 +100,7 @@ export function bath(c, reference, d = 0, { offset } = {}) {
   return { ...drive(d, 'bath'), bath: { c: { ...c }, reference, ...(offset === undefined ? {} : { offset }) } };
 }
 
-const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid'];
+const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid', 'geometry'];
 
 /**
  * Build a plain device definition from a stack:
@@ -112,7 +112,7 @@ const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReac
  *   between them get the default face. Nested lists are flattened.
  * - Layers may give doping as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`.
  * - `library`: pieces with species and materials, merged with `species` and `materials`.
- * - `T`, `grid`, `ports` pass through.
+ * - `T`, `grid`, `ports`, `geometry` pass through.
  * @param {object} def
  * @returns {object} a device definition for `new Device`
  */
@@ -168,5 +168,6 @@ export function build(def) {
   if (def.bulkReactions !== undefined) out.bulkReactions = def.bulkReactions;
   if (def.ports !== undefined) out.ports = def.ports;
   if (def.grid !== undefined) out.grid = def.grid;
+  if (def.geometry !== undefined) out.geometry = def.geometry;
   return out;
 }

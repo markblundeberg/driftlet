@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { check } from '../src/kit.js';
+import { build, layer, check } from '../src/kit.js';
 
 // Devices that aren't planar: a cross-section A(x) that the conservation laws carry, flux × A
 // through each face of a box and ∫A dx in it. Spherical and cylindrical shells about a centre
@@ -107,6 +107,12 @@ test('Debye–Hückel around a charged sphere: ψ = ψ₀ (a/r) e^(−κ(r−a))
   }
   const Q = 4 * Math.PI * eps * a * (1 + kappa * a) * psi0;
   assert.ok(Math.abs(sol.gates.left.charge / Q - 1) < 3e-4, `${sol.gates.left.charge} vs ${Q} C`);
+});
+
+test('build() passes geometry through', () => {
+  const library = { species: [{ name: 'X', z: 0, cRef: 1000 }], materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } } };
+  const def = build({ library: [library], geometry: { type: 'spherical', r0: 1e-6 }, stack: [{}, layer('m', 1e-6, { c0: { X: 1 } }), {}] });
+  assert.deepEqual(def.geometry, { type: 'spherical', r0: 1e-6 });
 });
 
 test('geometry is checked', () => {

@@ -64,7 +64,7 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   (`combine()` does the merging on its own). A species or material given twice must be given
   identically.
 - Nested lists in the stack are flattened, so a helper can return several items.
-- Reactions pass through as written (see below).
+- Reactions pass through as written (see below), and so do `T`, `grid`, `ports` and `geometry`.
 
 ## Reactions and half-reactions
 
