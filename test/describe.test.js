@@ -53,8 +53,9 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
     regions: [{ material: 'x', length: 5, fixedCharge: 1e17, c0: { 'Na+': 2e6 } }],
     interfaces: [{ phi: { type: 'capacitive', C: 20 }, reactions: [{ k0: 100 }] }],
     contacts: { left: { V: 300 } },
+    ports: [{ capacitance: { C: 20 }, reactions: [{ k0: 100 }] }],
   });
-  for (const path of ['T', 'species[0].cRef', 'regions[0].length', 'regions[0].fixedCharge', 'regions[0].c0.Na+', 'interfaces[0].phi.C', 'interfaces[0].reactions[0].k0', 'contacts.left.V']) {
+  for (const path of ['T', 'species[0].cRef', 'regions[0].length', 'regions[0].fixedCharge', 'regions[0].c0.Na+', 'interfaces[0].phi.C', 'interfaces[0].reactions[0].k0', 'contacts.left.V', 'ports[0].capacitance.C', 'ports[0].reactions[0].k0']) {
     assert.ok(more.some((w) => w.startsWith(`${path}:`)), path);
   }
   // Ions: D in cm²/s and μ° in kJ/mol, the commonest slips in electrochemistry.

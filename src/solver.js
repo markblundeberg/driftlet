@@ -2,7 +2,9 @@
 // and its derivative g′(a) = α e^{αa} + (1−α) e^{−(1−α)a}.
 function bvFactor(a, alpha) {
   const e = Math.exp(-(1 - alpha) * a);
-  return { g: e * Math.expm1(a), gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
+  // (far from equilibrium, the plain difference: the product would give 0·∞ there)
+  const g = Math.abs(a) > 50 ? Math.exp(alpha * a) - e : e * Math.expm1(a);
+  return { g, gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
 }
 
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
@@ -1193,8 +1195,7 @@ export class Solver {
       pref *= p.side === 2 ? Math.exp(e * (u[o] + uLo[o] - port.surface[p.s].mu0 / RT)) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
     }
     if (rx.bare) pref *= this.th0[g];
-    // (far from equilibrium, the plain difference: bvFactor's product would give 0·∞ there)
-    return pref * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a) : bvFactor(a, rx.alpha).g);
+    return pref * bvFactor(a, rx.alpha).g;
   }
 
   // A non-ideal material's composition at φ̂ = ph: level-fixed species (mode 1) at their η,

@@ -87,8 +87,8 @@ export function unitWarnings(def) {
       }
     }
   });
-  const capacitance = (path, phi) => {
-    if (isObject(phi) && phi.C > 10) warn(`${path}.phi.C`, `${num(phi.C)} F/m² is over 1000 µF/cm²; C is F/m² (1 µF/cm² = 0.01 F/m²)`);
+  const capacitance = (path, C) => {
+    if (C > 10) warn(path, `${num(C)} F/m² is over 1000 µF/cm²; C is F/m² (1 µF/cm² = 0.01 F/m²)`);
   };
   const kinetics = (path, reactions) => {
     (reactions ?? []).forEach((rx, k) => {
@@ -97,13 +97,18 @@ export function unitWarnings(def) {
   };
   (def.interfaces ?? []).forEach((f, k) => {
     if (!isObject(f)) return;
-    capacitance(`interfaces[${k}]`, f.phi);
+    capacitance(`interfaces[${k}].phi.C`, f.phi?.C);
     kinetics(`interfaces[${k}]`, f.reactions);
+  });
+  (def.ports ?? []).forEach((p, k) => {
+    if (!isObject(p)) return;
+    capacitance(`ports[${k}].capacitance.C`, p.capacitance?.C);
+    kinetics(`ports[${k}]`, p.reactions);
   });
   for (const side of ['left', 'right']) {
     const c = def.contacts?.[side];
     if (!isObject(c)) continue;
-    capacitance(`contacts.${side}`, c.phi);
+    capacitance(`contacts.${side}.phi.C`, c.phi?.C);
     for (const [sname, v] of Object.entries(c.bath?.c ?? {})) conc(`contacts.${side}.bath.c.${sname}`, v);
     if (typeof c.V === 'number' && Math.abs(c.V) > 50) warn(`contacts.${side}.V`, `${c.V} V is a very large bias; voltages are V`);
   }
