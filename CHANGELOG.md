@@ -2,6 +2,12 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- The saturation demo has a thin-film transistor below the silver cell: the gate a capacitance
+  along the channel, its output characteristic against the charge-sheet model, and the bands
+  pinching off at the drain under the gate's flat Fermi level.
+
 ## 0.9.1 (2026-10-04)
 
 - Fixed: with a capacitance through a port in strictly neutral water, the most abundant ion leaked

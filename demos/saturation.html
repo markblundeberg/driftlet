@@ -15,7 +15,7 @@
     voltage: the current's burst and sag as salt piles up at one electrode and depletes at the other, and its
     saturation at a limiting current however hard the cell is driven. Vary the voltage and the half-period.
     (More about the model below; <a href="impedance.html">the impedance demo</a> is the same cell's small-signal
-    side.)</p>
+    side.) Further down, <a href="#transistor">a transistor</a> saturates for the same reason.</p>
   <div class="controls">
     <label>cell voltage ± <input id="V" type="range" min="0.01" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
     <label>half-period <input id="half" type="range" min="-3" max="0" step="0.25" value="-1"><output id="halfOut"></output></label>
@@ -53,9 +53,43 @@
     Ag⁺'s voltage slopes from one electrode's to the other's, driving the current. NO₃⁻'s is level once it
     settles, since nitrate carries no current; meanwhile its standard level is sloped, and that slope is the
     salt's concentration gradient.</p>
+
+  <h2 id="transistor">The same ceiling in a transistor</h2>
+  <p>A thin-film transistor: an undoped semiconductor film 10 nm thick and 10 µm long between a
+    source and a drain, with a gate along it through 1 mF/m² of dielectric (35 nm of SiO₂). The gate
+    draws electrons into the film, and the drain pulls them along it. Raise the drain voltage and the
+    current climbs, then stops climbing: it saturates.</p>
+  <div class="controls">
+    <label>gate <input id="Vg" type="range" min="0" max="3" step="0.05" value="2"><output id="VgOut"></output></label>
+    <label>drain <input id="Vd" type="range" min="0" max="3" step="0.05" value="2.4"><output id="VdOut"></output></label>
+    <span class="readout" id="fetStatus"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="iv"></canvas>
+    <div class="levels wide" id="bands"></div>
+    <div class="levels wide" id="density"></div>
+  </div>
+  <p>The film is thin and the channel long, so each slice of it sees the gate straight across: the
+    gate holds a charge C(V<sub>G</sub> − V<sub>FB</sub> − φ) per area against it, and the film's electrons
+    balance it (the gradual-channel approximation). That makes this a 1D problem along the channel,
+    the gate a capacitance spread along the film. The band diagram is the familiar one, electron
+    energy up. The gate's Fermi level is flat, since no current flows into it, and it holds the band
+    edge E<sub>c</sub> through the capacitance, much as the blocked nitrate's flat level holds the salt
+    in the cell above. The current flows down the electrons' quasi-Fermi level E<sub>Fn</sub>, which
+    the drain pulls down. Where E<sub>Fn</sub> falls away below E<sub>c</sub>, the electrons thin out,
+    until at the drain they all but vanish: the channel pinches off. There E<sub>c</sub> flattens onto
+    a ceiling set by the gate's level, the gate rather than the electrons now holding it, and any more
+    drain voltage drops across that sliver while the current hardly changes. The dashed curve is the charge-sheet model's current,
+    I/W = (μ/L)[(σ<sub>s</sub>² − σ<sub>d</sub>²)/(2C) + V<sub>T</sub>(σ<sub>s</sub> − σ<sub>d</sub>)], with σ
+    the gate charge at each end; it's exact for this model, from below threshold to saturation.</p>
+  <p>That's where 1D stops. Near pinch-off the field in a real transistor turns two-dimensional, and
+    the saturated current keeps creeping up as the pinch-off point moves toward the source
+    (channel-length modulation, absent here). A silicon MOSFET also has a body under its channel,
+    whose depletion charge this film doesn't have. The model is the textbook long-channel one, not a
+    device simulation.</p>
 </main>
 <script type="module">
-import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
@@ -149,6 +183,84 @@ function frame(now = performance.now()) {
 for (const el of [amp, halfS]) el.addEventListener('change', start);
 document.getElementById('run').addEventListener('click', start);
 start();
+
+// ── The transistor: a 10 nm film, its electrons from source (left) and drain (right) contacts,
+// the gate a capacitance spread along it (a port with `capacitance`, area 1/t per volume).
+const tf = 10e-9, Lch = 10e-6, Cg = 1e-3, mu = 1e-2, VFB = 0.3; // m, m, F/m², m²/(V·s), V
+const VT = RT / F;
+const electrode = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' });
+const fet = (Vg, Vd) => ({
+  species: [{ name: 'e-', z: -1, cRef: 46 }], // N_c = 2.8e19 cm⁻³, Boltzmann
+  materials: { film: { epsr: 0, species: { 'e-': { D: mu * VT, mu0: 0 } } } }, // strictly neutral across its section
+  regions: [{ name: 'channel', material: 'film', length: Lch }],
+  contacts: { left: electrode(0), right: electrode(Vd) },
+  ports: [{ name: 'gate', region: 'channel', V: Vg, area: 1 / tf, capacitance: { C: Cg, zeroCharge: VFB } }],
+  grid: { hmin: Lch / 4000, hmax: Lch / 200, ratio: 1.05 },
+});
+// The charge-sheet model: σ at an end held at electron level V, where the film's electrons
+// F n t = σ balance the gate, n = N_c e^((φ − V)/V_T); then the current per width (A/m = µA/µm).
+const sigmaAt = (Vg, V) => {
+  let lo = -5, hi = 5;
+  for (let k = 0; k < 100; k++) {
+    const phi = (lo + hi) / 2;
+    if (F * 46 * Math.exp((phi - V) / VT) * tf > Cg * (Vg - VFB - phi)) hi = phi;
+    else lo = phi;
+  }
+  return Cg * (Vg - VFB - (lo + hi) / 2);
+};
+const chargeSheet = (Vg, Vd) => {
+  const ss = sigmaAt(Vg, 0), sd = sigmaAt(Vg, Vd);
+  return (mu / Lch) * ((ss * ss - sd * sd) / (2 * Cg) + VT * (ss - sd));
+};
+const vg = document.getElementById('Vg'), vd = document.getElementById('Vd');
+fromQuery(vg);
+fromQuery(vd);
+const VDs = Array.from({ length: 31 }, (_, j) => j * 0.1);
+let curve = null;
+function sweep() {
+  // The output characteristic at this gate: steady states from V_D = 0 up, each from the last.
+  const dev = new Device(fet(+vg.value, 0));
+  curve = VDs.map((Vd) => {
+    dev.set({ contacts: { right: { V: Vd } } });
+    return -dev.solve().current * tf; // A/m of width = µA/µm
+  });
+}
+function drawFet() {
+  const Vg = +vg.value, Vd = +vd.value;
+  document.getElementById('VgOut').textContent = `${Vg.toFixed(2)} V`;
+  document.getElementById('VdOut').textContent = `${Vd.toFixed(2)} V`;
+  const sol = new Device(fet(Vg, Vd)).solve();
+  const I = -sol.current * tf; // A/m of width = µA/µm
+  const theory = VDs.map((v) => chargeSheet(Vg, v));
+  chart(document.getElementById('iv'), {
+    xlabel: 'drain voltage V_D (V)', ylabel: 'drain current (µA/µm of width)', xlim: [0, 3], ylim: [0, 1.1 * Math.max(...theory, 1e-9)],
+    series: [
+      { x: VDs, y: curve, color: colors[2], label: 'simulated' },
+      { x: VDs, y: theory, color: colors[0], dash: [6, 4], width: 1.5, label: 'charge-sheet model' },
+      { x: [Vd], y: [I], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  document.getElementById('fetStatus').textContent = `drain current ${I.toPrecision(3)} µA/µm`;
+  // Energy up: E_c and E_Fn along the channel, and the gate's Fermi level, flat at −V_G.
+  const tr = traces(sol, { energy: true, labels: { 'V:e-': 'E_{Fn}' } });
+  tr.series.push({ id: 'gate', label: 'E_F of the gate', kind: 'level', role: 'redox', slot: 0, y: Array.from(sol.x, () => -Vg) });
+  const ys = tr.series.flatMap((line) => Array.from(line.y).filter(Number.isFinite));
+  const lo = Math.min(-3.1, ...ys), hi = Math.max(0.3, ...ys), pad = 0.05 * (hi - lo);
+  document.getElementById('bands').innerHTML = levelChart(tr, {
+    width: 720, height: 380, ylabel: 'electron energy (eV)', range: [lo - pad, hi + pad],
+    title: `bands along the channel, V_G = ${Vg.toFixed(2)} V, V_D = ${Vd.toFixed(2)} V`,
+  });
+  profiles(document.getElementById('density'), sol, {
+    species: ['e-'], title: 'electrons in the film', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true,
+  });
+}
+vg.addEventListener('input', () => {
+  sweep();
+  drawFet();
+});
+vd.addEventListener('input', drawFet);
+sweep();
+drawFet();
 showCode();
 </script>
 </body>

@@ -165,8 +165,8 @@ for live demos.
      - Done: rates at a hypothetical level, `polarization()`, for Evans diagrams.
      - Done: an electrode's surface (Langmuir coverages, reactions on bare metal), for passive
        films, and a capacitance through a port's window (a double layer, a gate along a channel),
-       which carries a transient through a film's passivation. Next for it: a FET panel in the
-       saturation demo, the gate's flat V_e⁻ beside an electrolyte's flat spectator.
+       which carries a transient through a film's passivation, and a thin-film transistor in the
+       saturation demo.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
        anodic, and lost time finding out why.
