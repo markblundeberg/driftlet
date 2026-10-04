@@ -33,6 +33,13 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - A capacitance alone driven by a current starts uncharged and charges in a transient; `solve()`
   says it has no steady state instead of running its voltage off. `ports[k].sigma` is zero where a
   contact holds that charge, as the solver counts it. Unit warnings cover ports' k0 and C.
+- A floating electrode with a double layer starts uncharged (as the neutral starting composition
+  has it) and charges toward its mixed potential; it had started at the mixed potential, charged,
+  and the first step failed. A terminal driven by a current where every held terminal passes
+  nothing (closed ends) is now an error that says to hold one that does, where Newton diverged.
+- device.md's ports section is arranged by what a port does, its outputs in one table; llms.txt
+  has templates for corrosion under a drop (an electrode port, a double layer, a cross-section, an
+  Evans diagram) and a thin-film transistor.
 
 ## 0.9.1 (2026-10-04)
 
