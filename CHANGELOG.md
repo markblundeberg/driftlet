@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.9.0 (2026-10-04)
 
 - A capacitance spread through a port's window, `capacitance: { C, zeroCharge }` with `area`:
   σ = C (V − zeroCharge − φ) per area of electrode, aσ in each node's charge balance (neutrality
@@ -12,7 +12,6 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   swings continuously when a passive film covers the last active patch. Validated: a TFT against
   the charge-sheet model from below threshold through saturation, the de Levie impedance, the
   gate's low-frequency impedance against dQ/dV (test/capacitance.test.js).
-
 - An electrode port's surface: species on its sites with a coverage at each node (Langmuir,
   μ = μ° + RT ln(θ/θ₀), Γ mol of sites per m² of electrode), named in its reactions like species,
   and `bare: true` for a reaction that runs only on bare metal (its rate times θ₀). Adsorbed
@@ -20,9 +19,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   and blocks dissolution, the active–passive curve. Solutions report `ports[k].coverage`, and
   `polarization()` holds the coverages with the solution. Validated: the Langmuir isotherm, the
   charge to fill the surface, the blocking (test/coverage.test.js). The bare fraction is carried to
-  full precision, and a nearly full surface's storage computed from its small complements. A
-  transient stops where a film passivates an electrode's last active patch: with no double-layer
-  capacitance the mixed potential must jump there (see the device docs).
+  full precision, and a nearly full surface's storage computed from its small complements. When a
+  film passivates an electrode's last active patch the mixed potential must jump; give the port a
+  capacitance (its double layer) and the swing is continuous.
 - An electrode spread through a port now requires its region strictly neutral (ε = 0): its double
   layers are below the grid, and with ε > 0 its reactions left the solution charged (steady solves
   converged, transients didn't).
