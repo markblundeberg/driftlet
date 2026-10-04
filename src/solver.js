@@ -1098,6 +1098,20 @@ export class Solver {
       surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
     }
     this.computeConcentrations();
+    // A floating capacitance alone starts uncharged (σ = 0 at the window's mean φ), as the
+    // starting composition, neutral without it, assumes.
+    for (const k of this.floating) {
+      const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
+      if (!port?.capacitance || port.reactions.length > 0) continue;
+      let w = 0, sum = 0;
+      port.nodes.forEach((g, j) => {
+        if (this.phiUndefined[g]) return;
+        const a = this.model.grid.vol[g] * this.portArea[t.index][j];
+        w += a;
+        sum += a * this.VT * u[this.blockOfNode[g] * M];
+      });
+      if (w > 0) this.termV[k] = port.capacitance.zeroCharge + sum / w;
+    }
     // A floating electrode spread through a port starts where its reactions pass the current it's
     // set (none, behind a resistance): at its mixed potential in the start's composition, not
     // level with a held terminal, which can be volts away and pass an absurd current.
@@ -3308,6 +3322,18 @@ export class Solver {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
+    // A terminal that passes current only by charging (a gate, a capacitance with no species
+    // through it) has no steady state under a current drive: it charges for ever, or at I = 0
+    // keeps whatever charge it started with, which a steady solve doesn't know.
+    const { species } = this.model, ions = (links) => links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+    for (const k of this.floating) {
+      const t = this.terms[k];
+      if (t.drive.kind !== 'I') continue;
+      const only = t.kind === 'port' ? (p) => p.reactions.length === 0 && !ions(p.species) : (c) => !ions(c.species);
+      if (only(t.kind === 'port' ? this.model.ports[t.index] : this.model.contacts[t.side])) {
+        throw new DeviceError(`${t.kind === 'port' ? `ports[${t.index}]` : `contacts.${t.side}`} passes current only by charging, so driven by a current it has no steady state; hold it at V (or a source behind R), or advance() in time`);
+      }
+    }
     const r = this._steadyFromHere(opts);
     this.atSteady = r.converged;
     return r;

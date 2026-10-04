@@ -168,3 +168,25 @@ test('a capacitance is checked', () => {
   delete def.ports[0].area;
   assert.throws(() => new Device(def), /area: give the electrode's area/);
 });
+
+test('a capacitance driven by a current only charges: no steady state, but a transient at I·t', () => {
+  // A double layer in NaCl, fed 1 mA/m² from an uncharged start, the current returning through
+  // an electrode that exchanges Cl⁻ (which also sets the potentials' level).
+  const dev = () =>
+    new Device({
+      T,
+      species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 0, species: { 'Na+': { D: 1.3e-9, mu0: -261.9e3 }, 'Cl-': { D: 2e-9, mu0: -131.2e3 } } } },
+      regions: [{ material: 'water', length: 1e-3, c0: { 'Na+': 500, 'Cl-': 500 } }],
+      contacts: { left: { V: 0, terminal: 'Cl-', species: { 'Cl-': 'equilibrium' }, phi: 'neutral' }, right: { phi: 'neutral' } },
+      ports: [{ name: 'dl', region: 0, from: 0.5e-3, I: 1e-3, area: 1e4, capacitance: { C: 0.2 } }],
+      grid: { hmin: 10e-6, hmax: 50e-6 },
+    });
+  assert.throws(() => dev().solve(), (e) => e instanceof DeviceError && /passes current only by charging/.test(e.message));
+  const d = dev();
+  assert.ok(Math.abs(d.solution().ports[0].charge) < 1e-12, 'starts uncharged');
+  for (const t of [1e-3, 1]) {
+    const s = d.advance(t);
+    assert.ok(s.converged && Math.abs(s.ports[0].charge / (1e-3 * t) - 1) < 1e-6, `at ${t} s: ${s.ports[0].charge} C/m²`);
+  }
+});

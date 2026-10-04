@@ -577,7 +577,9 @@ $`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$, and at $`\varepsi
 $`\rho + a\sigma = 0`$, the mobile species rearranging to supply it (counter-ions in, co-ions out).
 The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$, none in a steady state. Solutions
 report `ports[k].sigma` at each node of the window and the total `ports[k].charge`. Capacitances
-on overlapping windows add (a channel's top and bottom gates).
+on overlapping windows add (a channel's top and bottom gates). A capacitance alone, driven by a
+current, only charges: it starts uncharged, `advance()` follows it, and `solve()` refuses (there's
+no steady state, as for a gate contact driven by one).
 
 ```js nocheck
 // a thin-film transistor: the gate along a 10 nm channel through 1 mF/m² (35 nm of SiO₂)
