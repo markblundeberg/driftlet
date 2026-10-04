@@ -4,6 +4,7 @@
 
 import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
+import { powi, powr } from './pow.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -67,8 +68,8 @@ export function polarization(device, sol, where, V) {
       q += p.side === carrier.side ? 0 : p.nu * species[p.i].z; // charge the forward reaction puts into the solution
       const c = sol.c[name][g];
       if (rx.vmax) {
-        if (p.nu < 0) pref *= (c / (c + rx.K[x])) ** -p.nu;
-      } else pref *= (c / solver.cRef[g * species.length + p.i]) ** (p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
+        if (p.nu < 0) pref *= powi(c / (c + rx.K[x]), -p.nu);
+      } else pref *= powr(c / solver.cRef[g * species.length + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     });
     if (s === 0) fail(`polarization: reaction ${k} there takes no ${species[carrier.i].name} from the metal`);
     const rate = Float64Array.from(Vs, (v) => {
