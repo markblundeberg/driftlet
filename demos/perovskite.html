@@ -18,7 +18,7 @@
     vacancies pile up in nanometre-thin layers at each face, screening the field the carriers need. Checked
     against <a href="https://github.com/PerovskiteSCModelling/IonMonger">IonMonger</a>, an independent perovskite
     simulator. (More about the model below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="3" step="0.25" value="-1"><output id="rateOut"></output></label>
     <label>playback <select id="pace">
       <option value="20">slow (20 s a loop)</option>
@@ -76,7 +76,7 @@
 import { Device, AVOGADRO } from '../src/index.js';
 import { perovskiteCell, PEROVSKITE_SCANS, hysteresis, recorder } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser } from './common.js';
 
 // The cell, as plain definition data: IonMonger's default device, from the kit (print it to see
 // every parameter). V is the spiro side's (the anode's) voltage. Frozen, the vacancies stay where
@@ -174,9 +174,18 @@ function frame(now = performance.now()) {
   const sol = run.rec.advance(target, opts(run.half, 10));
   work(6);
   draw(sol);
-  if (sol.converged && (run.dev.solver.time < end || jobs.length > 0)) requestAnimationFrame(frame);
+  more = sol.converged && (run.dev.solver.time < end || jobs.length > 0);
+  if (more && !pause.paused) requestAnimationFrame(frame);
   else running = false;
 }
+// Paused by hand, or scrolled away: it stops where it is, and picks up from there.
+let more = true;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (running || !more) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
 
 function draw(sol) {
   const V = sol.terminals.right.V, t = run.dev.solver.time, sweeping = t <= run.half ? 'down' : 'up';

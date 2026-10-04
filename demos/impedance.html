@@ -15,7 +15,7 @@
     theory, and the small-signal response inside the cell at the frequency you choose: each ion's voltage
     and the salt concentration oscillating across the cell, slowed down to watch. Slide the frequency from
     salt diffusion's regime to the ohmic one. (More about the model below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>frequency <input id="f" type="range" min="-2" max="5" step="0.05" value="0.5"><output id="fOut"></output></label>
     <label>slow motion <select id="pace">
       <option value="6">a cycle every 6 s</option>
@@ -71,7 +71,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, aqueous, traces, speciesRole, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery } from './common.js';
+import { showCode, fromQuery, pauser } from './common.js';
 
 // The saturation demo's cell: reversible silver electrodes (Ag⁺ in equilibrium with the metal,
 // NO₃⁻ blocked) either side of 10 mM silver nitrate, strictly neutral.
@@ -130,7 +130,8 @@ let theta = 0, last, drawn;
 function frame(now = performance.now()) {
   const wall = Math.min(0.1, (now - (last ?? now)) / 1000);
   last = now;
-  requestAnimationFrame(frame);
+  if (!pause.paused) requestAnimationFrame(frame);
+  else looping = false;
   if (+pace.value > 0) theta = (theta + (2 * Math.PI * wall) / +pace.value) % (2 * Math.PI);
   else if (drawn === `${fIn.value} ${zoom.checked}`) return; // paused, and nothing new to draw
   drawn = `${fIn.value} ${zoom.checked}`;
@@ -209,6 +210,14 @@ if (query.has('phase')) {
   theta = (+query.get('phase') * Math.PI) / 180;
   pace.value = '0';
 }
+// Paused by hand, or scrolled away: the wave holds still, and moves on from there.
+let looping = true;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (looping) return;
+  last = undefined;
+  looping = true;
+  requestAnimationFrame(frame);
+});
 solveAt();
 requestAnimationFrame(frame);
 showCode();

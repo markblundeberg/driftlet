@@ -16,7 +16,8 @@
     saturation at a limiting current however hard the cell is driven. Vary the voltage and the half-period.
     (More about the model below; <a href="impedance.html">the impedance demo</a> is the same cell's small-signal
     side.) Further down, <a href="#transistor">a transistor</a> saturates for the same reason.</p>
-  <div class="controls">
+  <section>
+  <div class="controls" id="cellControls">
     <label>cell voltage ± <input id="V" type="range" min="0.01" max="0.2" step="0.01" value="0.1"><output id="Vout"></output></label>
     <label>half-period <input id="half" type="range" min="-3" max="0" step="0.25" value="-1"><output id="halfOut"></output></label>
     <label>playback <select id="pace">
@@ -53,7 +54,9 @@
     Ag⁺'s voltage slopes from one electrode's to the other's, driving the current. NO₃⁻'s is level once it
     settles, since nitrate carries no current; meanwhile its standard level is sloped, and that slope is the
     salt's concentration gradient.</p>
+  </section>
 
+  <section>
   <h2 id="transistor">The same ceiling in a transistor</h2>
   <p>A thin-film transistor: an undoped semiconductor film 10 nm thick and 10 µm long between a
     source and a drain, with a gate along it through 1 mF/m² of dielectric (35 nm of SiO₂). The gate
@@ -87,13 +90,14 @@
     (channel-length modulation, absent here). A silicon MOSFET also has a body under its channel,
     whose depletion charge this film doesn't have. The model is the textbook long-channel one, not a
     device simulation.</p>
+  </section>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery } from './common.js';
+import { profiles, showCode, fromQuery, pauser } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
@@ -177,9 +181,16 @@ function frame(now = performance.now()) {
   profiles(document.getElementById('conc'), s, {
     species: ['Ag+'], labels: { 'Ag+': 'c_{Ag⁺} = c_{NO₃⁻} (neutral)' }, title: 'salt concentration', ylabel: 'concentration (mM)', range: [0, 20],
   });
-  if (s.time < stop && s.converged) requestAnimationFrame(frame);
+  if (s.time < stop && s.converged && !pause.paused) requestAnimationFrame(frame);
   else running = false;
 }
+// Paused by hand, or scrolled away: the cycle stops where it is, and picks up from there.
+const pause = pauser(document.getElementById('cellControls'), () => {
+  if (running || !(dev.solver.time < trace.stop)) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
 for (const el of [amp, halfS]) el.addEventListener('change', start);
 document.getElementById('run').addEventListener('click', start);
 start();

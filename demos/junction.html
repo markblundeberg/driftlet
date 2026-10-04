@@ -18,7 +18,7 @@
     steady state; a junction growing freely from first contact is neither. Here it's simulated ion by ion, and
     the formulas sit alongside it. (More about the model below; the <a href="daniell.html">Daniell cell</a> has a
     salt bridge at work, leaking ion by ion.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>junction <select id="preset">
       <option value="patch" selected>patch pipette: K-gluconate | bath</option>
       <option value="zinc">9 mM ZnCl₂ | 3 mM KCl</option>
@@ -105,7 +105,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { recorder, henderson, planck, check, typeset } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery } from './common.js';
+import { profiles, showCode, fromQuery, pauser } from './common.js';
 
 // Charge, equivalent conductivity (10⁻⁴ m² S/mol), as LJPcalc tabulates them; D = λRT/(|z|F²).
 const LAMBDA = { 'K+': [1, 73.5], 'Na+': [1, 50.11], 'Mg2+': [2, 53.06], 'Ca2+': [2, 59.5], 'Zn2+': [2, 52.8], 'Cl-': [-1, 76.31], 'gluconate-': [-1, 0.33 * 73.5], 'HEPES-': [-1, 0.3 * 73.5] };
@@ -207,18 +207,32 @@ function start() {
     run.rec.advance(stopAt, { tol: 1e-4 });
     return drawFree();
   }
-  requestAnimationFrame(frame);
+  more = true;
+  if (!looping && !pause.paused) {
+    looping = true;
+    requestAnimationFrame(frame);
+  }
 }
 // Played on a log clock: from a millisecond to 1000 s in about twelve seconds.
 function frame(now) {
-  if (!run) return;
+  if (!run) return (looping = false);
   run.wall += Math.min(0.1, (now - (run.last ?? now)) / 1000);
   run.last = now;
   const target = Math.min(END, 1e-3 * 10 ** (run.wall * 0.5));
   const s = run.rec.advance(target, { budgetMs: 15, tol: 1e-4 });
   drawFree();
-  if (run && s.converged && run.dev.solver.time < END) requestAnimationFrame(frame);
+  more = s.converged && run.dev.solver.time < END;
+  if (more && !pause.paused) requestAnimationFrame(frame);
+  else looping = false;
 }
+// Paused by hand, or scrolled away: the junction stops growing where it is, and picks up there.
+let looping = false, more = false;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (!run || looping || !more) return;
+  run.last = undefined;
+  looping = true;
+  requestAnimationFrame(frame);
+});
 function drawFree() {
   const { set, rec, H, P } = run, sol = run.dev.solution(), t = sol.time, E = sol.phi.at(-1) - sol.phi[0];
   const pub = set.published.map(([w, v]) => `${w} ${v.toFixed(2)}`).join(', ');

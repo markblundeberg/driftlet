@@ -15,7 +15,7 @@
     potential settles where the leaks' currents cancel the pump's, against the Mullins–Noda equation. Vary
     the K⁺ outside, how leaky the membrane is to Na⁺, and the free energy each ATP gives the pump; then stop
     the pump and watch the cell run down, over hours, to Donnan equilibrium. (More about the model below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>K⁺ outside <input id="Ko" type="range" min="0" max="1.3" step="0.05" value="0.7"><output id="KoOut"></output></label>
     <label>P<sub>Na</sub> : P<sub>K</sub> <input id="rNa" type="range" min="-2.5" max="0" step="0.1" value="-1.4"><output id="rNaOut"></output></label>
     <label>ATP's free energy <input id="dG" type="range" min="30" max="60" step="1" value="50"><output id="dGOut"></output></label>
@@ -66,7 +66,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, traces, recorder, check, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery } from './common.js';
+import { showCode, fromQuery, pauser } from './common.js';
 
 const T = 310.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 const IONS = ['Na+', 'K+', 'Cl-'];
@@ -181,7 +181,11 @@ function startRun() {
     rec.advance(Math.min(stopAt, end), { tol: 1e-4 });
     return showRun();
   }
-  requestAnimationFrame(frame);
+  more = true;
+  if (!looping && !pause.paused) {
+    looping = true;
+    requestAnimationFrame(frame);
+  }
 }
 function stopRun() {
   run = null;
@@ -190,14 +194,24 @@ function stopRun() {
 document.getElementById('stop').addEventListener('click', () => (run ? (stopRun(), draw(latest)) : startRun()));
 
 function frame(now) {
-  if (!run) return;
+  if (!run) return (looping = false);
   const wall = Math.min(0.1, (now - (run.last ?? now)) / 1000);
   run.last = now;
   const t = run.d.solver.time, perSecond = +pace.value;
   const sol = run.rec.advance(Math.min(end, perSecond > 0 ? t + wall * perSecond : end), { budgetMs: 12, tol: 1e-4 });
   showRun();
-  if (sol.converged && run.d.solver.time < end) requestAnimationFrame(frame);
+  more = sol.converged && run.d.solver.time < end;
+  if (more && !pause.paused) requestAnimationFrame(frame);
+  else looping = false;
 }
+// Paused by hand, or scrolled away: the run-down stops where it is, and picks up from there.
+let looping = false, more = false;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (!run || looping || !more) return;
+  run.last = undefined;
+  looping = true;
+  requestAnimationFrame(frame);
+});
 function showRun() {
   const { o, A } = run, t = run.d.solver.time;
   const { Vm, i } = read(run.d.solution()), dn = donnan(o, A);

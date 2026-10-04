@@ -14,7 +14,7 @@
   <p>A lithium intercalation host, cycled at constant current between voltage cutoffs: its voltage against
     the open-circuit curve, and lithium piling up and draining inside it. Vary the rate (C-rate) and the
     interaction Ω that flattens the open-circuit curve. (More about the model below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>C-rate <input id="rate" type="range" min="-1" max="1" step="0.1" value="0.3"><output id="rateOut"></output></label>
     <label>Ω/RT <input id="omega" type="range" min="0" max="1.9" step="0.1" value="1.2"><output id="omegaOut"></output></label>
     <label>playback <select id="pace">
@@ -56,7 +56,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery } from './common.js';
+import { profiles, showCode, fromQuery, pauser } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
 const Q = FARADAY * cMax * L; // capacity, C/m²
@@ -131,9 +131,18 @@ function frame(now = performance.now()) {
   const perCharge = +pace.value; // wall-clock seconds to fill the host
   const s = slice(perCharge > 0 ? (wall * Q) / run.I / perCharge : Infinity, 12);
   draw(s);
-  if (s.converged) requestAnimationFrame(frame);
+  more = s.converged;
+  if (more && !pause.paused) requestAnimationFrame(frame);
   else running = false;
 }
+// Paused by hand, or scrolled away: it stops where it is, and picks up from there.
+let more = true;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (running || !more) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
 
 // One slice of the run, at most dt long: record the curve, and reverse at a cutoff.
 function slice(dt, budgetMs) {

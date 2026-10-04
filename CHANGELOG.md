@@ -6,7 +6,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 - The saturation demo has a thin-film transistor below the silver cell: the gate a capacitance
   along the channel, its output characteristic against the charge-sheet model, and the bands
-  pinching off at the drain under the gate's flat Fermi level.
+  pinching off at the drain under the gate's flat Fermi level. Each part's controls stay with it
+  as you scroll.
+- The live demos have a pause button, and pause themselves while scrolled out of view or in a
+  hidden tab, so a page doesn't keep a CPU busy unseen.
 
 ## 0.9.1 (2026-10-04)
 

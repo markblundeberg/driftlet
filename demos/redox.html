@@ -15,7 +15,7 @@
     the electrode's Fermi level, the couple's redox level and each ion's level across the layer of solution
     by the electrode. Vary the scan rate, the stirring (as the thickness of a stagnant layer) and the rate
     constant k⁰. (More about the model below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>scan rate <input id="rate" type="range" min="-3" max="1" step="0.25" value="-1"><output id="rateOut"></output></label>
     <label>stagnant layer <input id="L" type="range" min="0.5" max="3" step="0.25" value="1.25"><output id="LOut"></output></label>
     <label>k⁰ <input id="k0" type="range" min="-6" max="1" step="0.5" value="-3"><output id="k0Out"></output></label>
@@ -60,7 +60,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser } from './common.js';
 
 const iron = half('Fe3+ + e- = Fe2+');
 // The bulk's composition, and a reference that reads the SHE scale: the bath's terminal voltage
@@ -166,9 +166,18 @@ function frame(now = performance.now()) {
     range: [-0.4, 1.45],
     ylabel: 'voltage (V)',
   });
-  if (sol.time < cv.stop && sol.converged) requestAnimationFrame(frame);
+  more = sol.time < cv.stop && sol.converged;
+  if (more && !pause.paused) requestAnimationFrame(frame);
   else running = false;
 }
+// Paused by hand, or scrolled away: it stops where it is, and picks up from there.
+let more = true;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (running || !more) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
 for (const el of [rate, k0, Ls]) el.addEventListener('change', start);
 document.getElementById('run').addEventListener('click', start);
 start();

@@ -59,3 +59,42 @@ if (new URLSearchParams(location.search).has('shot')) {
   style.textContent = 'nav.site, main > p, main > ul, main > h2, .controls, details.code { display: none !important; } h1 { margin-bottom: 10px; }';
   document.head.append(style);
 }
+
+// A live demo's pause: a button in its controls, and a pause of its own while the demo is
+// scrolled out of view or the tab is hidden (back on when it returns, unless paused by hand), so
+// a page doesn't keep a CPU busy unseen. The demo's frame loop asks `paused` before requesting its
+// next frame; `resume` (called when it's unpaused) restarts the loop where it stopped. `watch` is
+// the element whose visibility counts (default: the controls' section, or the page).
+export function pauser(controls, resume, { watch } = {}) {
+  let byHand = false, hidden = false, offscreen = false;
+  const button = document.createElement('button');
+  button.id = `${controls.id || 'controls'}-pause`;
+  button.type = 'button';
+  const paused = () => byHand || hidden || offscreen;
+  const update = (was) => {
+    button.textContent = byHand ? 'resume' : 'pause';
+    if (was && !paused()) resume();
+  };
+  button.addEventListener('click', () => {
+    const was = paused();
+    byHand = !byHand;
+    update(was);
+  });
+  // (Screenshots and ?t= states run headless on virtual time: never pause those.)
+  if (!new URLSearchParams(location.search).has('shot')) {
+    document.addEventListener('visibilitychange', () => {
+      const was = paused();
+      hidden = document.hidden;
+      update(was);
+    });
+    const target = watch ?? controls.closest('section') ?? document.querySelector('main');
+    new IntersectionObserver(([entry]) => {
+      const was = paused();
+      offscreen = !entry.isIntersecting;
+      update(was);
+    }).observe(target);
+  }
+  update(false);
+  controls.append(button);
+  return { get paused() { return paused(); } };
+}

@@ -15,7 +15,7 @@
     the load, the electrode levels that set it, the salt leaking out
     of the bridge, and where the voltage goes. Choose Daniell's own porous pot instead of the bridge, a lighter
     or heavier load, and how fast to play it. (More about the model, and what to look for, below.)</p>
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>separator <select id="sep">
       <option value="bridge" selected>3 M KCl salt bridge</option>
       <option value="pot">porous pot</option>
@@ -84,7 +84,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, half, level, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser } from './common.js';
 
 const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
 const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
@@ -217,9 +217,18 @@ function frame(now = performance.now()) {
   const sol = record(dev.advance(target, { budgetMs: 12 }));
   const flat = run.q.at(-1) + run.plated > 0.999 * capacity || (run.t.length > 1 && run.V.at(-1) < 1e-3);
   draw(sol, flat);
-  if (run.stop === Infinity && sol.converged && !flat) requestAnimationFrame(frame);
+  more = run.stop === Infinity && sol.converged && !flat;
+  if (more && !pause.paused) requestAnimationFrame(frame);
   else running = false;
 }
+// Paused by hand, or scrolled away: it stops where it is, and picks up from there.
+let more = true;
+const pause = pauser(document.getElementById('controls'), () => {
+  if (running || !more) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
 
 function draw(sol, flat) {
   const L = ledger(sol), hours = sol.time / 3600;
