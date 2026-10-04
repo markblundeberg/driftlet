@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.7.0 (2026-10-03)
 
 - Membranes as faces: a species law `{ type: 'permeability', P }` (m/s), electrodiffusion through a
   thin membrane in a constant field (Goldman–Hodgkin–Katz), exactly zero where μ̄ is level. With a
