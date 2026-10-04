@@ -167,8 +167,8 @@ test('an exchange port feeding a face reaction in a closed, strictly neutral ele
 test('MOS: a port grounding the channel gives the low-frequency C–V, inversion included', () => {
   // p-Si under a gate (right). Without generation, inversion electrons could only arrive by
   // minority-carrier diffusion from the back contact (minutes, through a bulk with ~1e3 of them
-  // per cm³), and the inversion layer's Fermi level is held so weakly that the steady solve is
-  // fragile (see the next test, and the roadmap). A port holding the
+  // per cm³), and the inversion layer's Fermi level is held only weakly (see the next tests). A
+  // port holding the
   // electrons at ground beside the oxide (as source and drain would, in 2D) anchors the channel,
   // and the small-signal capacitance then follows the quasi-static C–V.
   const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19), NA = units.perCm3(1e17);
@@ -210,13 +210,88 @@ test('MOS: a port grounding the channel gives the low-frequency C–V, inversion
   assert.ok(seen[0] > 0.9 && Math.min(...seen) < 0.2 && seen.at(-1) > 0.9, `C/C_ox: ${seen.map((c) => c.toFixed(3))}`);
 });
 
+test('MOS without a port: its steady states are equilibrium, the same as with the channel held, on any grid', () => {
+  // Without generation, the inversion electrons reach only the back contact (the oxide blocks
+  // them), so in a steady state they carry nothing and their level is the contact's, flat:
+  // equilibrium, which a port holding the channel at that level gives too. The steady solve pins
+  // such a level outright; found through the bulk's ~1e3 cm⁻³ of electrons instead, it failed at
+  // some gate voltages and grids and not others.
+  const Lsi = units.um(0.5), tox = units.nm(5), Cox = (3.9 * EPS0) / tox;
+  const def = (hmin, port) => build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Au')],
+    materials: { SiO2: { epsr: 3.9, species: {} } },
+    stack: [
+      ohmic(0),
+      layer('Si', Lsi, { name: 'p-Si', acceptors: units.perCm3(1e17) }),
+      { dipole: 0 },
+      layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+      { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.1 },
+      layer('Au', units.nm(50)),
+      ohmic(0, ['e-']),
+    ],
+    ports: port ? [{ region: 'p-Si', from: Lsi - units.nm(5), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }] : undefined,
+    grid: { hmin, hmax: units.nm(10), ratio: 1.1 },
+  });
+  const charge = (d, V) => {
+    d.set({ contacts: { right: { V } } });
+    const s = d.solve();
+    assert.ok(s.converged, `V = ${V}`);
+    return s.interfaces.at(-1).D; // the gate's charge, C/m²
+  };
+  for (const hmin of [units.nm(0.1), units.nm(0.13), units.nm(0.2)]) {
+    const bare = new Device(def(hmin)), held = new Device(def(hmin, true)), C = [];
+    for (const V of [-1.5, -0.5, 0, 0.3, 0.6, 1, 1.5]) {
+      const q = charge(bare, V), want = charge(held, V);
+      assert.ok(Math.abs(q - want) < 1e-6 * Math.abs(Cox * 1.5), `hmin ${hmin}, V = ${V}: ${q} vs ${want} C/m²`);
+      C.push(q);
+    }
+    // Accumulation, depletion, then inversion: its electrons add charge fast above threshold.
+    assert.ok(C[0] > 0 && C.at(-1) < C[3] && (C.at(-1) - C.at(-2)) / 0.5 < 0.5 * -Cox, `${C}`);
+    // Cold too, at each voltage
+    for (const V of [0.3, 0.4, 0.9]) assert.ok(new Device(def(hmin)).set({ contacts: { right: { V } } }).solve().converged, `cold at ${V} V, hmin ${hmin}`);
+  }
+});
+
+test('MOS without a port: after a gate step, the inversion layer fills over minutes to the low-frequency charge', () => {
+  // The electrons come by minority diffusion from the back contact, so the gate's charge creeps
+  // from the high-frequency value to the low-frequency one, dQ/dV from two steady states. The
+  // inversion layer's 0.1 nm cells couple their electrons ~1e18 times more tightly than its
+  // storage over a second: Newton's factorised solves lose the layer's level to round-off, and
+  // refine it by GMRES (it once took 80,000 steps to get here, 1.5% off).
+  const Lsi = units.um(0.5), tox = units.nm(5), Cox = (3.9 * EPS0) / tox;
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Au')],
+    materials: { SiO2: { epsr: 3.9, species: {} } },
+    stack: [
+      ohmic(0),
+      layer('Si', Lsi, { name: 'p-Si', acceptors: units.perCm3(1e17) }),
+      { dipole: 0 },
+      layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+      { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.1 },
+      layer('Au', units.nm(50)),
+      ohmic(0, ['e-']),
+    ],
+    grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+  });
+  const at = (V) => new Device(def).set({ contacts: { right: { V } } });
+  const D = (V) => at(V).solve().interfaces.at(-1).D;
+  const low = (D(0.61) - D(0.6)) / 0.01;
+  const dev = at(0.6), D0 = dev.solve().interfaces.at(-1).D;
+  dev.set({ contacts: { right: { V: 0.61 } } });
+  const s = dev.advance(1e5);
+  assert.ok(s.converged && s.done && s.steps < 1000, `${s.steps} steps`);
+  const C = (s.interfaces.at(-1).D - D0) / 0.01;
+  assert.ok(Math.abs(C / low - 1) < 1e-3 && low / -Cox > 0.85, `${C / -Cox} vs ${low / -Cox} × C_ox`);
+  assert.ok(Math.abs(s.current) < 1e-12, `still ${s.current} A/m² through the oxide`);
+});
+
 test('MOS without a port: the impedance gives the high-frequency C–V at 1 Hz, as a time-domain run does', () => {
   // The inversion layer's electrons can only come by minority diffusion from the back contact,
   // through a bulk with ~1e3 cm⁻³ of them: minutes. The assembled Jacobian alone (two huge entries
   // per inversion-layer flux, nearly cancelling) gave the layer an exchange path that followed
   // the gate at 1 Hz; the impedance now takes J·v from the residual, by GMRES.
-  // (Its steady solve is itself fragile, the roadmap's weakly held minority: it converges on
-  // this grid, built from units' values exactly, and not on some within round-off of it.)
   const Lsi = units.um(0.5), tox = units.nm(5), Cox = (3.9 * EPS0) / tox;
   const def = build({
     T: 300,

@@ -4,6 +4,14 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- A MOS capacitor without a channel port is robust. Steady solves pin a species' level flat at
+  its contact's where it's reached by that one contact only and nothing else touches it (no flux
+  in a steady state), rather than find it through the bulk's ~1e3 minority electrons per cm³: they
+  converge at every gate voltage and grid, cold or warm, where they had failed at some. And
+  Newton refines its solves by GMRES (J·v from the residual, as the impedance does) when the
+  factorisation loses a mode, as it does an inversion layer's level: a 10 mV gate step reaches
+  the low-frequency charge in ~70 steps instead of 80,000, exactly instead of 1.5% over.
+
 - A transient starting at a bath that floats beside a strictly neutral region now resolves short
   steps: the contact's current had come from its end box's balance, where the ions' storage and
   the box's charge (∝ c/dt, cancelling under neutrality) left round-off that swamped the flux. A

@@ -439,6 +439,23 @@ test checks the compact Jacobian column by column on devices that cover every as
   much reduced by the change of variables below), converges quadratically to ~1e-9 and then
   rattles there. Short steps come right after every waveform breakpoint, so without this a
   cyclic voltammogram in a neutral electrolyte stalled at its turns.
+- **Refined solves, where the factorisation loses a mode.** The assembled $`J`$ holds a flux's
+  dependence on $`\eta`$ at its two ends as two entries; where they're huge, eliminating them loses
+  what they share to round-off. In a MOS capacitor's inversion layer the electrons' cells, 0.1 nm
+  wide, are coupled about $`h^2/(D\,dt)`$ ~ 1e-18 times more tightly than they store charge over a
+  second, so the layer's overall level, set by its storage and the trickle of minority electrons
+  from the bulk, is lost, and Newton's update there is noise. When Newton stalls short of
+  convergence (updates below 1e-4 that stopped shrinking quadratically), the solve is refined:
+  GMRES on $`J\delta = r`$, the factorised system as the preconditioner and $`J \cdot v`$ taken from
+  the residual by a central difference ($`\eta`$ moved in the state's low word; the residual takes
+  $`\eta`$ differences in double-double, so it keeps that level), as the impedance does. A lost mode
+  takes GMRES a couple of iterations, and its correction dwarfs the plain update, which along it
+  came out as noise. The refined update is kept only then (and under a thermal unit). A
+  correction no bigger than the plain update means the system is near-singular more broadly (a
+  slow ion over a long step), with round-off for a residual along it; solving that exactly
+  only chases the round-off, so refining stops for the rest of the solve. A MOS capacitor's
+  gate step now reaches the low-frequency charge in ~70 steps (it took 80,000, and ended 1.5%
+  off), for about 8% more time on the Haynes–Shockley benchmarks.
 - Clear divergence (device updates beyond 1e4, or ten times the first after six iterations)
   bails out early, so the caller can take a smaller step.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
@@ -550,6 +567,14 @@ take about twice as long as before.
   because slow physics can take seconds, far beyond any $`L^2/D`$ estimate, and stepping would
   never finish. An example is exponentially scarce minority carriers slowly filling an inversion
   layer behind a Schottky contact.
+- **A flat level,** where a stretch's steady state is known outright: a species that no reaction
+  or port touches, reached by one contact only (blocked at the other end), carries no flux in a
+  steady state, so its level is that contact's throughout. Steady solves (not the impedance,
+  where it carries a current) pin it there in place of its balances, rather than find it
+  through its own conduction, which can be all but nothing: a MOS capacitor's inversion
+  electrons reach the back contact only through a bulk with ~1e3 of them per cm³, and found that
+  way, the solve converged at some gate voltages and grids and not others. (Not through flow or
+  mixing, nor a concentrated material's cross-diffusion, where zero flux isn't a flat level.)
 - **Spectators** (a species blocked all round, mobile throughout its stretch) are solved
   directly too. In steady state the sum of a spectator's balance rows over its stretch is zero
   identically, so one of them (the first node's) is redundant, and it's replaced by the

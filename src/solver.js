@@ -7,6 +7,62 @@ function bvFactor(a, alpha) {
   return { g, gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
 }
 
+// GMRES(m), restarted, for a real system op(x) = b, op already preconditioned; x holds the
+// starting guess and receives the answer. Returns whether it converged.
+function gmresReal(op, b, x, { m = 10, restarts = 3, tol = 1e-12 } = {}) {
+  const N = b.length;
+  const dot = (a, c) => {
+    let t = 0;
+    for (let j = 0; j < N; j++) t += a[j] * c[j];
+    return t;
+  };
+  const bn = Math.sqrt(dot(b, b)) || 1;
+  for (let cycle = 0; cycle < restarts; cycle++) {
+    const ax = op(x), r = Float64Array.from(b, (v, j) => v - ax[j]);
+    const beta = Math.sqrt(dot(r, r));
+    if (!(beta > tol * bn)) return true;
+    const V = [r.map((v) => v / beta)], H = Array.from({ length: m + 1 }, () => new Float64Array(m));
+    const cs = [], sn = [], g = new Float64Array(m + 1);
+    g[0] = beta;
+    let k = 0, converged = false;
+    for (; k < m; k++) {
+      const w = op(V[k]);
+      for (let i = 0; i <= k; i++) {
+        const h = dot(V[i], w);
+        H[i][k] = h;
+        for (let j = 0; j < N; j++) w[j] -= h * V[i][j];
+      }
+      const hn = Math.sqrt(dot(w, w));
+      V.push(w.map((v) => v / (hn || 1)));
+      for (let i = 0; i < k; i++) {
+        const a = H[i][k], c = H[i + 1][k];
+        H[i][k] = cs[i] * a + sn[i] * c;
+        H[i + 1][k] = -sn[i] * a + cs[i] * c;
+      }
+      const t = Math.hypot(H[k][k], hn), c = t > 0 ? H[k][k] / t : 1, sv = t > 0 ? hn / t : 0;
+      cs.push(c);
+      sn.push(sv);
+      H[k][k] = t;
+      g[k + 1] = -sv * g[k];
+      g[k] *= c;
+      if (!(Math.abs(g[k + 1]) > tol * bn) || !(hn > 0)) {
+        k++;
+        converged = true;
+        break;
+      }
+    }
+    const y = new Float64Array(k);
+    for (let i = k - 1; i >= 0; i--) {
+      let v = g[i];
+      for (let j = i + 1; j < k; j++) v -= H[i][j] * y[j];
+      y[i] = v / H[i][i];
+    }
+    for (let i = 0; i < k; i++) for (let j = 0; j < N; j++) x[j] += y[i] * V[i][j];
+    if (converged) return true;
+  }
+  return false;
+}
+
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
 function complexSolve(Ar, Ai, K) {
   for (let col = 0; col < K; col++) {
@@ -521,6 +577,7 @@ export class Solver {
     }
     this.res = new Float64Array(N + 1);
     this.delta = new Float64Array(N + 1);
+    this.rowScale = new Float64Array(N + 1).fill(1); // each row's scaling in the factorised system
   }
 
   _factor() {
@@ -570,6 +627,8 @@ export class Solver {
         if (reacting.length > 0) reactive = true;
         const connected = leftOpen || rightOpen || linked.length > 0;
         this.stretches.push({
+          leftOpen,
+          rightOpen,
           linked, // ports that hold or exchange it
           ports: [...new Set([...linked, ...reacting])], // ports that bring any in
           species: i,
@@ -600,6 +659,22 @@ export class Solver {
       st.mobile = true;
       for (let q = st.regions[0]; q <= st.regions[1]; q++) if (!(materials[regions[q].material].D[st.species] > 0)) st.mobile = false;
     }
+    // Stretches whose steady state is known outright: a species that no reaction or port touches,
+    // reached by one contact only (the other end blocked), carries no flux at steady state, so its
+    // level is flat at that contact's. Steady solves pin it there (_flatRows) rather than find it
+    // through its own conduction, which can be all but nothing: a MOS capacitor's inversion
+    // electrons reach the back contact only through a bulk with ~1e3 of them per cm³. (Not
+    // through flow or mixing, nor a concentrated material's cross-diffusion, where zero flux
+    // isn't a flat level.)
+    this.flatStretches = this.stretches.filter((st) => {
+      if (st.reactive || st.ports.length > 0 || !st.mobile || st.leftOpen === st.rightOpen) return false;
+      for (let q = st.regions[0]; q <= st.regions[1]; q++) {
+        const reg = regions[q], mat = materials[reg.material];
+        if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0) return false;
+      }
+      return true;
+    });
+    this.flattening = false;
     // Conserved amounts solved directly, each in place of one (redundant) balance row: a
     // spectator's own amount, and each conserved combination of reacting stretches (the total
     // iron of Fe³⁺, Fe²⁺ and FeCl²⁺, say), whose weighted balances sum to zero at steady state.
@@ -1398,6 +1473,7 @@ export class Solver {
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
+    if (this.flattening && dt === Infinity) this._flatRows();
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
     if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
     this.transformed = this.combining && dt !== Infinity;
@@ -2426,6 +2502,26 @@ export class Solver {
 
 
 
+  // Steady solves: each flat stretch's level held at its contact's throughout (see
+  // flatStretches), in place of its balances, as an equilibrium link holds it at the end node.
+  _flatRows() {
+    const { M, u, uLo, res, z, VT, model } = this, R = this.rix;
+    for (const st of this.flatStretches) {
+      const i = st.species, side = st.leftOpen ? 'left' : 'right', k = side === 'left' ? 0 : 1;
+      const link = model.contacts[side].species[i];
+      const level = z[i] === 0 ? link.mu / model.RT : (z[i] * (this.termV[k] + link.offset)) / VT;
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+        const b = this.blockOfNode[g], o = b * M + 1 + i;
+        if (this.loc[o] < 0) continue;
+        this._replaceRow(b, 1 + i);
+        for (const B of this.termB) B[R[o]] = 0; // (the row's old terminal terms: the end node's own link)
+        this._j(b, 1 + i, b, 1 + i, 1);
+        res[R[o]] = u[o] + uLo[o] - level;
+        if (z[i] !== 0) this.termB[k][R[o]] += -z[i] / VT;
+      }
+    }
+  }
+
   // Zero one row of the Jacobian (all three blocks), ready to be replaced.
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
@@ -2448,14 +2544,118 @@ export class Solver {
         for (let k = 0; k < mp; k++) mx = Math.max(mx, Math.abs(A[oa + k]));
         for (let k = 0; k < m; k++) mx = Math.max(mx, Math.abs(B[ob + k]));
         for (let k = 0; k < mn; k++) mx = Math.max(mx, Math.abs(C[oc + k]));
-        if (mx === 0) continue;
+        if (mx === 0) {
+          this.rowScale[offX[b] + r] = 1;
+          continue;
+        }
         const s = 1 / mx;
+        this.rowScale[offX[b] + r] = s;
         for (let k = 0; k < mp; k++) A[oa + k] *= s;
         for (let k = 0; k < m; k++) B[ob + k] *= s;
         for (let k = 0; k < mn; k++) C[oc + k] *= s;
         res[offX[b] + r] *= s;
         for (let k = 0; k < termB.length; k++) termB[k][offX[b] + r] *= s; // (each terminal's ∂/∂V)
       }
+    }
+  }
+
+  // A Newton solve refined by GMRES: the factorised Jacobian as the preconditioner, and J·x
+  // taken from the residual itself, by a central difference (η moved in the state's low word),
+  // as the impedance does. The assembled J holds a flux's dependence on η at its two ends as two
+  // entries; where they're huge (an inversion layer's 0.1 nm cells, a conductance ~1e11 against
+  // the layer's own storage and the trickle from the bulk), eliminating them loses the layer's
+  // overall level to round-off, and Newton rattles there. The residual takes η differences
+  // first, in double-double, so it keeps that level. delta and deltaV come in as the plain
+  // solve's and leave refined (in the transformed unknowns, as _solveBordered gives them); false
+  // if refining didn't help, leaving them as they came.
+  _refine(dt, delta, deltaV) {
+    const { res, termRes, termB, termC, termDI, rowScale, floating: fl } = this;
+    const N = this.sys.size, K = fl.length;
+    const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), transformed: this.transformed };
+    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), V0 = Float64Array.from(this.termV);
+    const restoreArrays = () => {
+      res.set(save.res);
+      termRes.set(save.termRes);
+      save.termB.forEach((b, k) => termB[k].set(b));
+      save.termC.forEach((c, k) => termC[k].set(c));
+      termDI.set(save.termDI);
+      this.transformed = save.transformed;
+    };
+    const restoreState = () => {
+      this.u.set(u0);
+      this.uLo.set(u0Lo);
+      this.termV.set(V0);
+    };
+    const fd = this.sysFD ?? (this.sysFD = new BlockTridiagonal(this.sys.n, this.sys.sizes));
+    const at = (x, sgn, hh, out) => {
+      restoreState();
+      const v = this.dWork2 ?? (this.dWork2 = new Float64Array(N + 1));
+      for (let j = 0; j < N; j++) v[j] = x[j];
+      v[N] = 0;
+      if (save.transformed) this._untransform(v);
+      this._addToState(v, sgn * hh);
+      fl.forEach((k, a) => (this.termV[k] += sgn * hh * x[N + a]));
+      const keep = this.sys;
+      this.sys = fd;
+      try {
+        this.assemble(dt);
+      } finally {
+        this.sys = keep;
+      }
+      for (let j = 0; j < N; j++) out[j] = res[j] * rowScale[j];
+      fl.forEach((k, a) => (out[N + a] = termRes[k]));
+    };
+    const plus = new Float64Array(N + K), minus = new Float64Array(N + K);
+    const rhs = new Float64Array(N + 1), out = new Float64Array(N + 1), outV = new Float64Array(K);
+    const precondition = (r) => {
+      restoreArrays();
+      for (let j = 0; j < N; j++) rhs[j] = r[j];
+      fl.forEach((k, a) => (termRes[k] = r[N + a]));
+      this._solveBordered(rhs, out, outV, []);
+      const z = new Float64Array(N + K);
+      for (let j = 0; j < N; j++) z[j] = out[j];
+      for (let a = 0; a < K; a++) z[N + a] = outV[a];
+      return z;
+    };
+    const op = (x) => {
+      let mx = 0;
+      for (let j = 0; j < N + K; j++) mx = Math.max(mx, Math.abs(x[j]));
+      if (mx === 0) return new Float64Array(N + K);
+      const hh = 1e-6 / mx;
+      at(x, 1, hh, plus);
+      at(x, -1, hh, minus);
+      const jx = new Float64Array(N + K);
+      for (let j = 0; j < N + K; j++) jx[j] = (plus[j] - minus[j]) / (2 * hh);
+      return precondition(jx);
+    };
+    try {
+      const b = new Float64Array(N + K);
+      for (let j = 0; j < N; j++) b[j] = save.res[j];
+      fl.forEach((k, a) => (b[N + a] = save.termRes[k]));
+      const pb = precondition(b), x = Float64Array.from(pb);
+      // A lost mode or two, GMRES finds in a couple of iterations. The refined update is kept if
+      // its correction dwarfs the plain update (which, along a lost mode, comes out as noise)
+      // and is under a thermal unit. A correction no bigger than the plain update means the
+      // system is near-singular more broadly (a slow ion over a long step), its residual there
+      // round-off: solving it exactly would only chase that, so newton() stops refining.
+      const x0 = Float64Array.from(x);
+      const ok = gmresReal(op, pb, x, { m: 8, restarts: 1, tol: 1e-8 });
+      let c = 0, size = 0;
+      for (let j = 0; j < N + K; j++) {
+        c = Math.max(c, Math.abs(x[j] - x0[j]));
+        size = Math.max(size, Math.abs(x0[j]));
+      }
+      if (!ok || !(c > 10 * size) || !(c < 1)) {
+        x.set(x0);
+        return false;
+      }
+      for (let j = 0; j < N; j++) delta[j] = x[j];
+      for (let a = 0; a < K; a++) deltaV[a] = x[N + a];
+      return true;
+    } finally {
+      restoreState();
+      restoreArrays();
+      this.computeConcentrations();
     }
   }
 
@@ -2485,6 +2685,8 @@ export class Solver {
     const { delta, res } = this;
     const deltaV = this.deltaV ?? (this.deltaV = new Float64Array(this.floating.length));
     const history = [], ownHistory = [];
+    // Refined solves (see _refine), once the plain ones stall.
+    let refine = false, refined = 0, noRefine = false;
     // A steady solve that fails: record how nearly singular the system was, and where.
     const fail = (r) => {
       if (dt === Infinity) this._noteConditioning();
@@ -2510,6 +2712,10 @@ export class Solver {
         const pins = this.constrained && dt === Infinity ? this.constraints : [];
         deltaV.fill(0);
         this._solveBordered(res, delta, deltaV, pins);
+        if (refine && pins.length === 0 && !this._refine(dt, delta, deltaV)) {
+          refine = false; // (nothing lost: the plain solves are as good as any here)
+          noRefine = true;
+        }
         if (this.transformed) this._untransform(delta);
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
@@ -2544,7 +2750,12 @@ export class Solver {
       // (Raising this floor lets a weakly held population drift: a MOS capacitor without a
       // channel port then showed a DC leak through its oxide.)
       const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = 1e-6;
-      if (alpha === 1 && it >= 4 && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
+      // Stalled near the solution (not shrinking quadratically): the factorised Jacobian may
+      // have lost a slow mode to cancellation, and round-off's floor would accept it wrong.
+      // Refine the solves from here.
+      if (refine) refined++;
+      else if (!noRefine && alpha === 1 && it >= 3 && step < 1e-4 && step > 0.25 * p1) refine = true;
+      if (alpha === 1 && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax, roundoff: true };
       }
@@ -3371,6 +3582,15 @@ export class Solver {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
+    this.flattening = true;
+    try {
+      return this._solveSteadyAll(opts);
+    } finally {
+      this.flattening = false;
+    }
+  }
+
+  _solveSteadyAll(opts) {
     // A terminal that passes current only by charging (a gate, a capacitance with no species
     // through it) has no steady state under a current drive: it charges for ever, or at I = 0
     // keeps whatever charge it started with, which a steady solve doesn't know.

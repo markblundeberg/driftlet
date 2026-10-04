@@ -93,18 +93,8 @@ for live demos.
      reactions or recombination, in steady state (in transients, storage anchors it): a fast
      species across many segments, with a mode only weakly held from outside. Candidates are
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
-     form for the fast species only. (A failed steady solve already says where it lost its digits.)
-   - A minority population held only weakly: the MOS capacitor without its channel port, whose
-     inversion electrons reach the back contact only through a p-type bulk of ~1e3 cm⁻³ (minutes to
-     fill, so a high-frequency C–V at 1 Hz). The impedance now gets this right (GMRES with the
-     residual's $`J \cdot v`$), but the steady solve is fragile: stepping the gate up warm from
-     depletion fails at the onset of inversion ("exactly singular"), and cold starts converge at
-     some gate voltages and grids, not others (a grid shifted by round-off can flip it). Its
-     transients struggle too: after a 10 mV gate step, `advance()` takes ~66,000 steps to reach
-     1e5 s, and the gate charge overshoots the low-frequency value (1.01 against
-     $`0.885 \times C_{\mathrm{ox}} \cdot \delta V`$) with a residual current of ~1e-9 A/m² through
-     the oxide. Once robust, the MOS demo can get a frequency control sweeping from the
-     low-frequency C–V to the high-frequency one.
+     form for the fast species only. (A failed steady solve already says where it lost its digits.
+     Newton's refined solves, which recover a MOS inversion layer's lost level, may cover it.)
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
@@ -124,6 +114,9 @@ for live demos.
      for floating terminals (from held at a guess of V_oc, or from the light ramped up) would fix it.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
+   - The MOS demo's frequency control, sweeping from the low-frequency C–V to the high-frequency
+     one: without a channel port, the inversion layer's steady states and its minutes-long
+     transients are now robust (flat levels in steady solves, Newton's refined solves).
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
    (started, with the vacuum-level alignment helpers), still dependency-free, that writes plain
    specs, so users and LLM agents start from something
