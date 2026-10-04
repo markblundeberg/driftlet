@@ -17,6 +17,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `check()` keeps a ledger per compartment: a species a face lets through only by a law or a
   reaction gets one on each side, with what crosses as a term (in a cell: Na⁺ leaks in as fast as
   it's pumped out). `describe()` lists what crosses a face by a law, and saturating kinetics.
+- A resting-potential demo: a closed cell's leaks and the Na⁺/K⁺ pump on a membrane face, V_m
+  against Mullins–Noda, each ion's species voltage stepping at the membrane by its driving force
+  V_m − E_i, and the run-down to Donnan equilibrium over hours when the pump stops.
 - Probes read φ (`{ x, quantity: 'phi' }`), so a transient's trace can carry a membrane potential.
 - A floating contact starts where the start's own composition puts it, so a cold-start
   transient's first trace point is right (it read the held terminal's voltage, off by a Nernst

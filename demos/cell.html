@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resting potential</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
+  <h1>A cell's resting potential: leaks, a pump, and what happens when the pump stops</h1>
+  <p>A cell membrane leaks K⁺ out and Na⁺ in, and the Na⁺/K⁺ pump, spending ATP, puts them back. The membrane
+    potential settles where the leaks' currents cancel the pump's, against the Mullins–Noda equation. Vary
+    the K⁺ outside, how leaky the membrane is to Na⁺, and the free energy each ATP gives the pump; then stop
+    the pump and watch the cell run down, over hours, to Donnan equilibrium. (More about the model below.)</p>
+  <div class="controls">
+    <label>K⁺ outside <input id="Ko" type="range" min="0" max="1.3" step="0.05" value="0.7"><output id="KoOut"></output></label>
+    <label>P<sub>Na</sub> : P<sub>K</sub> <input id="rNa" type="range" min="-2.5" max="0" step="0.1" value="-1.4"><output id="rNaOut"></output></label>
+    <label>ATP's free energy <input id="dG" type="range" min="30" max="60" step="1" value="50"><output id="dGOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="300">5 min a second</option>
+      <option value="1200" selected>20 min a second</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <button id="stop">stop the pump</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="levels"></div>
+    <canvas id="vt"></canvas>
+    <canvas id="ct"></canvas>
+  </div>
+  <details class="code" id="checks"><summary></summary><pre></pre></details>
+  <h2>About this simulation</h2>
+  <p>A slice through the cell: 1 µm of unstirred fluid outside, the membrane, and 3.3 µm of cytoplasm, the
+    volume per membrane area of a cell 20 µm across. The fluid outside is held at a fixed composition, like
+    the blood; the cytoplasm is closed, so what's in it is set by what crosses the membrane. Both solutions
+    are strictly neutral. Inside are 142 mM of anions that can't cross (proteins, phosphates, A⁻).</p>
+  <p>The membrane is a capacitor (1 µF/cm²) that K⁺, Na⁺ and Cl⁻ cross through channels, each by
+    electrodiffusion in the field across the membrane, with a permeability P (Goldman–Hodgkin–Katz). The
+    Na⁺/K⁺-ATPase moves 3 Na⁺ out and 2 K⁺ in per ATP, at a rate that saturates in each (half-saturated at
+    10 mM Na⁺ inside and 1.5 mM K⁺ outside) and falls to zero as the work it does approaches the free energy
+    of the ATP: its static head, 3Δμ̄<sub>Na</sub> − 2Δμ̄<sub>K</sub> = ΔG<sub>ATP</sub>. In steady state no
+    ion accumulates, so the Na⁺ and K⁺ leaks stand in the pump's 3 : 2 ratio, which gives the Mullins–Noda
+    equation, V<sub>m</sub> = V<sub>T</sub> ln((r P<sub>K</sub>[K]<sub>o</sub> + P<sub>Na</sub>[Na]<sub>o</sub>)/(r
+    P<sub>K</sub>[K]<sub>i</sub> + P<sub>Na</sub>[Na]<sub>i</sub>)) with r = 3/2, whatever the pump's
+    kinetics. Cl⁻ has no pump, so it sits at its Nernst potential.</p>
+  <p>The level diagram draws each ion's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F),
+    against its own value outside, and φ the same way. Each ion's line is flat through each solution and
+    steps at the membrane by V<sub>m</sub> − E<sub>i</sub>: the driving force physiologists use, which is its
+    electrochemical potential difference per charge. An ion with no step (Cl⁻ here) is in equilibrium across
+    the membrane, whatever φ does; the sign and size of a step say which way that ion leaks and how hard.</p>
+  <p>Stopping the pump, nothing holds the gradients: Na⁺ leaks in, K⁺ out, the cell depolarizes, and
+    it slides, over hours (a cell's contents are large against what crosses), toward Donnan equilibrium,
+    where every permeant ion's step is zero and the impermeant anions alone hold a potential, the dashed line.
+    A real cell also takes in water as it goes (here the volume is fixed) and would swell; the pump is what
+    keeps it from bursting.</p>
+  <p>Concentrations are typical of a mammalian neuron (Hille, <i>Ion Channels of Excitable Membranes</i>, 3rd
+    ed.), P<sub>K</sub> = 10⁻⁸ m/s, and the pump's v<sub>max</sub> is 5 × 10⁻⁷ mol/(m²·s), about 3000 pumps per
+    µm² at 100 cycles a second.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, bath, aqueous, live, traces, recorder, check, speciesRole } from '../src/kit.js';
+import { levelChart, themeColor } from '../src/plot.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery } from './common.js';
+
+const T = 310.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
+const IONS = ['Na+', 'K+', 'Cl-'];
+const PK = 1e-8, A_IN = 142, A_OUT = 40; // m/s; mM of anions that don't cross
+const START = { 'Na+': 12, 'K+': 140, 'Cl-': 10, 'A-': A_IN }; // the cytoplasm as it starts (A⁻ stays)
+const outside = (Ko) => ({ 'Na+': 145, 'K+': Ko, 'Cl-': 145 + Ko - A_OUT, 'A-': A_OUT });
+
+// Strictly neutral salt water, at body temperature, with the impermeant anions.
+const water = aqueous(IONS, { epsr: 0 });
+water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+
+const pump = (dG) => ({ equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: dG, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } });
+const cell = ({ Ko, rNa, dG, pumping = true, inside = START }) =>
+  build({
+    T,
+    library: [water],
+    stack: [
+      bath(outside(Ko), 'Cl-'), // the extracellular fluid, held
+      layer('water', 1e-6, { name: 'outside', c0: outside(Ko) }),
+      {
+        phi: { type: 'capacitive', C: 0.01 }, // the membrane, 1 µF/cm²
+        species: { 'K+': { type: 'permeability', P: PK }, 'Na+': { type: 'permeability', P: rNa * PK }, 'Cl-': { type: 'permeability', P: 0.45 * PK }, 'A-': 'blocked' },
+        reactions: pumping ? [pump(dG)] : [],
+      },
+      layer('water', 3.3e-6, { name: 'cytoplasm', c0: inside }),
+      { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' }, // the cell's far side
+    ],
+    grid: { hmin: 50e-9, hmax: 200e-9 },
+  });
+
+const Ko = document.getElementById('Ko'), rNa = document.getElementById('rNa'), dG = document.getElementById('dG'), pace = document.getElementById('pace');
+for (const el of [Ko, rNa, dG, pace]) fromQuery(el);
+const params = () => ({ Ko: 10 ** +Ko.value, rNa: 10 ** +rNa.value, dG: 1000 * +dG.value });
+
+// Reading a solution: φ and the concentrations in each solution (its far ends), V_m = φ_in − φ_out.
+const read = (sol) => {
+  const g = sol.x.length - 1, c = (sp, k) => sol.c[sp][k];
+  return { Vm: sol.phi[g] - sol.phi[0], o: Object.fromEntries(IONS.map((s) => [s, c(s, 0)])), i: Object.fromEntries([...IONS, 'A-'].map((s) => [s, c(s, g)])) };
+};
+const nernst = (s, o, i) => (s === 'Cl-' ? -1 : 1) * VT * Math.log(o[s] / i[s]);
+const mullinsNoda = ({ rNa: r }, o, i) => VT * Math.log((1.5 * o['K+'] + r * o['Na+']) / (1.5 * i['K+'] + r * i['Na+']));
+// Donnan equilibrium of the closed cell: every permeant ion at one ratio r across the membrane,
+// the cytoplasm neutral with its A⁻: r²(K_o + Na_o) − A r − Cl_o = 0.
+const donnan = (o, A) => {
+  const r = (A + Math.sqrt(A * A + 4 * (o['K+'] + o['Na+']) * o['Cl-'])) / (2 * (o['K+'] + o['Na+']));
+  return { r, Vm: -VT * Math.log(r), i: { 'Na+': r * o['Na+'], 'K+': r * o['K+'], 'Cl-': o['Cl-'] / r } };
+};
+
+// The level diagram: each ion's V_i and φ against their values outside, so the steps at the
+// membrane are V_m − E_i (and V_m for φ).
+function drawLevels(sol, title) {
+  const tr = traces(sol, { species: IONS, standard: false, phi: true });
+  for (const s of tr.series) {
+    const y0 = s.y.find(Number.isFinite);
+    s.y = s.y.map((v) => (v - y0) * 1000);
+  }
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 360, title, ylabel: 'against outside (mV)', range: [-150, 90] });
+}
+
+const pct = (x) => `${(100 * x).toFixed(0)}%`;
+const mV = (v) => `${(1000 * v).toFixed(1)} mV`;
+function showControls() {
+  const p = params();
+  document.getElementById('KoOut').textContent = `${p.Ko.toPrecision(2)} mM`;
+  document.getElementById('rNaOut').textContent = `${p.rNa.toPrecision(2)} : 1`;
+  document.getElementById('dGOut').textContent = `${dG.value} kJ/mol`;
+}
+
+// Pump running: a live device, solved to steady state as the sliders move.
+let run = null, latest;
+const dev = live(cell(params()), { onsolution: (sol) => ((latest = sol), run || draw(sol)) });
+const update = () => {
+  showControls();
+  stopRun();
+  dev.set(cell(params()));
+};
+for (const el of [Ko, rNa, dG]) el.addEventListener('input', update);
+for (const el of [Ko, rNa, dG]) el.addEventListener('change', () => latest && audit());
+showControls();
+
+function draw(sol) {
+  const p = params(), { Vm, o, i } = read(sol), mn = mullinsNoda(p, o, i);
+  const rate = sol.interfaces[0].rates[0], perUm2 = rate * 6.02214076e23 * 1e-12;
+  const E = Object.fromEntries(IONS.map((s) => [s, nernst(s, o, i)]));
+  document.getElementById('status').textContent =
+    `V_m ${mV(Vm)} (Mullins–Noda ${mV(mn)}) · E_K ${mV(E['K+'])}, E_Na ${mV(E['Na+'])}, E_Cl ${mV(E['Cl-'])} · inside Na⁺ ${i['Na+'].toFixed(1)}, K⁺ ${i['K+'].toFixed(1)} mM · pump ${perUm2.toFixed(0)} cycles per µm² per s`;
+  drawLevels(sol, `species voltages across the membrane, pump running: V_m = ${mV(Vm)}`);
+  drawTime();
+}
+
+// The kit's checks on the steady state: each ion's ledger in each compartment (in the cytoplasm,
+// Na⁺ leaks in as fast as it's pumped out) and the same cell on a grid twice as fine.
+function audit() {
+  const d = new Device(cell(params())), sol = d.solve(), report = check(d, sol), el = document.getElementById('checks');
+  el.querySelector('summary').textContent = `checks on the steady state: ${report.ok ? 'all pass' : 'something to look at'}`;
+  el.querySelector('pre').textContent = report.text;
+}
+audit();
+
+// Pump stopped: from the steady state, a transient over hours, recorded.
+const HOURS = 8, end = HOURS * 3600;
+const stopAt = +new URLSearchParams(location.search).get('t') * 60 || 0; // ?t=… minutes: straight there
+function startRun() {
+  const p = params(), d = new Device(cell(p)), steady = d.solve();
+  d.set(cell({ ...p, pumping: false })); // the pump stops (the cell keeps what it holds)
+  const g = steady.x.length - 1;
+  const rec = recorder(d, { every: 60, probes: [{ x: 0, quantity: 'phi' }, { x: steady.x[g], quantity: 'phi' }, ...IONS.map((s) => ({ x: steady.x[g], species: s }))] });
+  run = { p, d, rec, o: read(steady).o, A: read(steady).i['A-'], last: undefined };
+  document.getElementById('stop').textContent = 'restart the pump';
+  if (stopAt) {
+    rec.advance(Math.min(stopAt, end), { tol: 1e-4 });
+    return showRun();
+  }
+  requestAnimationFrame(frame);
+}
+function stopRun() {
+  run = null;
+  document.getElementById('stop').textContent = 'stop the pump';
+}
+document.getElementById('stop').addEventListener('click', () => (run ? (stopRun(), draw(latest)) : startRun()));
+
+function frame(now) {
+  if (!run) return;
+  const wall = Math.min(0.1, (now - (run.last ?? now)) / 1000);
+  run.last = now;
+  const t = run.d.solver.time, perSecond = +pace.value;
+  const sol = run.rec.advance(Math.min(end, perSecond > 0 ? t + wall * perSecond : end), { budgetMs: 12, tol: 1e-4 });
+  showRun();
+  if (sol.converged && run.d.solver.time < end) requestAnimationFrame(frame);
+}
+function showRun() {
+  const { o, A } = run, t = run.d.solver.time;
+  const { Vm, i } = read(run.d.solution()), dn = donnan(o, A);
+  document.getElementById('status').textContent =
+    `pump stopped ${(t / 60).toFixed(0)} min ago · V_m ${mV(Vm)} · inside Na⁺ ${i['Na+'].toFixed(1)}, K⁺ ${i['K+'].toFixed(1)}, Cl⁻ ${i['Cl-'].toFixed(1)} mM · Donnan: ${mV(dn.Vm)}, Na⁺ ${dn.i['Na+'].toFixed(0)}, K⁺ ${dn.i['K+'].toFixed(1)}, Cl⁻ ${dn.i['Cl-'].toFixed(0)} mM`;
+  drawLevels(run.d.solution(), `species voltages, ${(t / 60).toFixed(0)} min after the pump stopped: V_m = ${mV(Vm)}`);
+  drawTime();
+}
+
+// Over time, once the pump stops: V_m and each ion's Nernst potential, and what's in the cell.
+function drawTime() {
+  const vt = document.getElementById('vt'), ct = document.getElementById('ct');
+  if (!run) {
+    chart(vt, { xlabel: 'hours after the pump stops', ylabel: 'mV', xlim: [0, HOURS], ylim: [-110, 70], series: [] });
+    chart(ct, { xlabel: 'hours after the pump stops', ylabel: 'inside (mM)', xlim: [0, HOURS], ylim: [0, 200], series: [] });
+    return;
+  }
+  const { t, probes } = run.rec.trace, h = t.map((s) => s / 3600), [pOut, pIn, ...cIn] = probes, o = run.o, dn = donnan(o, run.A);
+  const ci = Object.fromEntries(IONS.map((s, k) => [s, cIn[k]]));
+  // Each ion in its colour from the level diagram.
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches, sol = run.d.solution();
+  const col = (s) => { const { role, slot } = speciesRole(sol, s); return themeColor(role, slot, { dark }); };
+  const E = (s) => ci[s].map((c) => 1000 * (s === 'Cl-' ? -1 : 1) * VT * Math.log(o[s] / c));
+  chart(vt, {
+    xlabel: 'hours after the pump stops', ylabel: 'mV', xlim: [0, HOURS], ylim: [-110, 70],
+    series: [
+      { x: [0, HOURS], y: [1000 * dn.Vm, 1000 * dn.Vm], color: colors[6], dash: [6, 4], width: 1.2, label: 'Donnan' },
+      { x: h, y: E('K+'), color: col('K+'), width: 1.5, dash: [2, 3], label: 'E_K' },
+      { x: h, y: E('Na+'), color: col('Na+'), width: 1.5, dash: [2, 3], label: 'E_Na' },
+      { x: h, y: E('Cl-'), color: col('Cl-'), width: 1.5, dash: [2, 3], label: 'E_Cl' },
+      { x: h, y: t.map((_, k) => 1000 * (pIn[k] - pOut[k])), color: colors[6], label: 'V_m' },
+    ],
+  });
+  chart(ct, {
+    xlabel: 'hours after the pump stops', ylabel: 'inside (mM)', xlim: [0, HOURS], ylim: [0, 200],
+    series: [
+      { x: [], y: [], color: colors[6], dash: [6, 4], width: 1.2, label: 'Donnan' }, // (the legend's entry)
+      ...IONS.map((s) => ({ x: [0, HOURS], y: [dn.i[s], dn.i[s]], color: col(s), dash: [6, 4], width: 1.2 })),
+      ...IONS.map((s) => ({ x: h, y: ci[s], color: col(s), label: { 'Na+': 'Na⁺', 'K+': 'K⁺', 'Cl-': 'Cl⁻' }[s] })),
+    ],
+  });
+}
+
+if (stopAt) dev.ready.then(startRun);
+showCode();
+</script>
+</body>
+</html>

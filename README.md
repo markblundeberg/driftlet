@@ -37,7 +37,7 @@ The same equations go by different names in different fields. If your problem is
 | Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
 | Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [membrane demo](https://markblundeberg.github.io/driftlet/demos/membrane.html), [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
 | Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
-| Biophysics | resting potentials, Goldman–Hodgkin–Katz, Nernst, Donnan, pumps and leaks | a membrane as a face: a capacitor with ion permeabilities, and the Na⁺/K⁺ pump as a reaction on it ([`membrane`](test/membrane.test.js) test) | GHK potential and current–voltage curve; a resolved lipid layer; Mullins–Noda; the pump's static head; Donnan |
+| Biophysics | resting potentials, Goldman–Hodgkin–Katz, Nernst, Donnan, pumps and leaks | [resting-potential demo](https://markblundeberg.github.io/driftlet/demos/cell.html); a membrane as a face: a capacitor with ion permeabilities, and the Na⁺/K⁺ pump as a reaction on it ([`membrane`](test/membrane.test.js) test) | GHK potential and current–voltage curve; a resolved lipid layer; Mullins–Noda; the pump's static head; Donnan |
 
 The tests are worked setups, each with its analytic check, so they double as recipes. The
 [validation table](#validation) lists them all.
@@ -149,7 +149,9 @@ them locally, serve the repository root (e.g. `python3 -m http.server`) and open
 | [![impedance](demos/screenshots/impedance.png)](https://markblundeberg.github.io/driftlet/demos/impedance.html) | [![ion-exchange membrane](demos/screenshots/membrane.png)](https://markblundeberg.github.io/driftlet/demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](https://markblundeberg.github.io/driftlet/demos/double-layer.html) |
 | **Impedance**: the Warburg arc, and the cell's small-signal response inside | **Ion-exchange membrane**: Donnan steps, ion by ion, against TMS theory | **Double layer**: dilute vs crowded ions, against closed forms |
 | [![insertion host](demos/screenshots/insertion.png)](https://markblundeberg.github.io/driftlet/demos/insertion.html) | [![organic solar cell](demos/screenshots/organic.png)](https://markblundeberg.github.io/driftlet/demos/organic.html) | [![perovskite hysteresis](demos/screenshots/perovskite.png)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) |
-| **Intercalation host**: cycling between cutoffs against the OCV |  |  |
+| **Intercalation host**: cycling between cutoffs against the OCV | **Organic solar cell**: excitons diffusing to a donor/acceptor interface, against theory | **Perovskite hysteresis**: mobile ions and scan rate, against IonMonger |
+| [![resting potential](demos/screenshots/cell.png)](https://markblundeberg.github.io/driftlet/demos/cell.html) | | |
+| **Resting potential**: leaks and the Na⁺/K⁺ pump, against Mullins–Noda; the run-down to Donnan | | |
 
 ## How to think about it
 
