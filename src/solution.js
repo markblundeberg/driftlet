@@ -106,17 +106,17 @@ export function makeSolution(solver, result = {}) {
       flux[species[i].name] = solver.portFlux[k][i];
       current += F * species[i].z * solver.portFlux[k][i];
     }
-    if (port.capacitance) {
-      // a capacitance's charging current, and its charge (the port's side), like a gate's
-      const dt = solver.lastDt;
-      current += Number.isFinite(dt) ? (solver.portQ[k] - solver.portQOld[k]) / dt : 0;
-    }
     const out = { name: port.name, V: solver.termV[2 + k], flux, current };
-    if (port.capacitance) out.charge = solver.portQ[k];
     if (port.capacitance) {
-      // its charge per area of electrode at each node, σ = C (V − zeroCharge − φ)
-      const { C: Cs, zeroCharge } = port.capacitance;
-      out.sigma = Float64Array.from(port.nodes, (g) => Cs * (solver.termV[2 + k] - zeroCharge - phi[g]));
+      // A capacitance's charging current, and its charge (the port's side), like a gate's; and
+      // its charge per area of electrode at each node, σ = C (V − zeroCharge − φ) (none at an
+      // end whose φ its contact sets: the contact holds that charge).
+      const dt = solver.lastDt;
+      out.current += Number.isFinite(dt) ? (solver.portQ[k] - solver.portQOld[k]) / dt : 0;
+      out.charge = solver.portQ[k];
+      const { C: Cs, zeroCharge } = port.capacitance, last = model.grid.nNodes - 1;
+      const sets = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
+      out.sigma = Float64Array.from(port.nodes, (g) => ((g === 0 && sets('left')) || (g === last && sets('right')) ? 0 : Cs * (solver.termV[2 + k] - zeroCharge - phi[g])));
     }
     if (port.area !== null) {
       out.x = Float64Array.from(port.nodes, (g) => model.grid.x[g]);
