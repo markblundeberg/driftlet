@@ -421,65 +421,74 @@ with the contact behind it holding the conductor's electrons (see
 ## Internal ports
 
 A port is an outside phase with known levels, like a contact's, attached to a window of nodes
-inside one region instead of at an end. It's the 1D stand-in for whatever feeds or drains a
-species sideways: source and drain grounding a MOS channel, salt injected mid-solution, a
-reference electrode's reservoir.
+inside one region instead of at an end: the 1D stand-in for whatever feeds, drains or charges the
+region sideways. It's a [terminal](#terminals) like a contact (held at `V`, behind `R`, or driven
+by `I`; a reference electrode is a port at `I: 0`), and in its window it does any of these, in
+any combination:
+
+| Field | What it adds | For |
+|---|---|---|
+| `species` | [levels held or exchanged](#levels-held-or-exchanged), per volume | source and drain grounding a channel, salt injected mid-solution, O₂ from the air |
+| `reactions`, `area` | an [electrode spread through the window](#electrodes-spread-through-a-window) | a thin film on a metal, a crevice, a porous electrode |
+| `surface` | [species on that electrode's sites](#an-electrodes-surface-adsorbates-and-passive-films) | adsorbates, a passive film |
+| `capacitance`, `area` | [charge held across a capacitance](#a-capacitance-through-a-window) | a gate along a channel, a double layer |
 
 ```js nocheck
 ports: [{
   name: 'channel',
   region: 'Si',              // name or index
   from: 495e-9, to: 500e-9,  // window, m from the region's left end (default: the whole region)
-  V: 0,                      // the port's terminal voltage (or I, or V and R: see terminals)
-  terminal: 'e-',
-  species: {
-    'e-': 'equilibrium',                         // μ̄ held at V_i = V + offset throughout the window
-    'Na+': { type: 'conductance', G: 1e9, offset: 0.2 }, // source G (V_out − V_i)/(zF) per volume, G in S/m³
-    O2: { type: 'exchange', k: 1e-3, mu: -2e3 },  // neutral: source k (μ_out − μ)/RT per volume, k in mol/(m³·s)
-  },
+  V: 0,                      // or I, or V and R (see terminals)
+  terminal: 'e-',            // the species whose level V is
+  species: { 'e-': 'equilibrium' },
 }]
 ```
-
-Links and offsets are those of contacts, per volume instead of per area: 0 by default only for
-the terminal species, and an absolute `mu` for neutral species. A port is a terminal like a
-contact: held at a voltage, behind a resistance, or driven by a current (a reference electrode
-is a port at `I: 0`). Each solution reports `ports[k]`, with `{ name, V, flux, current }`: what
-the port brings into the device.
-
-A held (`'equilibrium'`) level leaves the device's two end nodes to their contacts. A port that
-exchanges only neutral species carries no current, so its voltage means nothing: give it no drive.
-
-An exchange link's source is linear in $`\mu_{out} - \mu`$, so it grows without bound as the
-species runs out ($`\ln c`$). A supply limited by diffusion through a film above the window, such as O₂
-reaching a thin layer of water from the air, is linear in $`c`$ instead: $`k(c_{sat} - c)`$. For that,
-use a [bulk reaction](#bulk-reactions) with the outside phase as a fixed participant, e.g.
-`{ equation: 'Air = O2', fixed: { Air: muSat }, kf: { water: profile } }`. Its rate is
-$`k_f (1 - c/c_{sat})`$, and a profile gives $`k_f`$ its spatial variation (a film of thickness $`h(x)`$:
-$`D c_{sat}/h^2`$).
-
-A port driven by a current (`I`, or a waveform) floats to whatever voltage delivers it: with a
-conductance `G` per volume over a window of width $`w`$, it sits about $`I/(G w)`$ above the
-window's level for that species. So `G` decides how the current is shared across the window, not
-how much enters. A small `G`, with the port volts above the window, spreads it evenly, like a
-current source; a large one pins the window near the port's level, and the current enters
-wherever the species is drawn away fastest. At `I: 0` the port still ties that species' level
-together across its window (a large `G` shorts the window for it), so keep such windows narrow.
 
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance
 $`R \cdot A`$ to the port's voltage as $`G = 1/(R \cdot A)`$). That's how a floating electrode is tied
 to ground through a resistor.
 
-For example, in a 1D MOS capacitor without generation, inversion electrons can only arrive by
-minority-carrier diffusion from the back contact, which can take weeks. The inversion layer is
-then effectively floating, and its Fermi level is undetermined to within round-off, so no
-steady state can be computed there. A port holding the electrons beside the oxide at the
-channel's potential anchors it, as source and drain would, and the device then shows the
-low-frequency C–V.
+### Levels held or exchanged
+
+```js nocheck
+species: {
+  'e-': 'equilibrium',                                // μ̄ held at V_i = V + offset throughout the window
+  'Na+': { type: 'conductance', G: 1e9, offset: 0.2 }, // source G (V_out − V_i)/(zF) per volume, G in S/m³
+  O2: { type: 'exchange', k: 1e-3, mu: -2e3 },         // neutral: source k (μ_out − μ)/RT per volume, k in mol/(m³·s)
+}
+```
+
+Links and offsets are those of contacts, per volume instead of per area: 0 by default only for
+the terminal species, and an absolute `mu` for neutral species. A held (`'equilibrium'`) level
+leaves the device's two end nodes to their contacts. A port that exchanges only neutral species
+carries no current, so its voltage means nothing: give it no drive.
+
+A port driven by a current floats to whatever voltage delivers it: with a conductance `G` per
+volume over a window of width $`w`$, about $`I/(G w)`$ above the window's level for that species. So
+`G` decides how the current is shared across the window, not how much enters. A small `G` spreads
+it evenly, like a current source; a large one pins the window near the port's level, and the
+current enters wherever the species is drawn away fastest. At `I: 0` the port still ties that
+species' level together across its window (a large `G` shorts the window for it), so keep such
+windows narrow.
+
+An exchange link's source is linear in $`\mu_{out} - \mu`$, so it grows without bound as the
+species runs out ($`\ln c`$). A supply limited by diffusion through a film above the window, such
+as O₂ reaching a thin layer of water from the air, is linear in $`c`$ instead: $`k(c_{sat} - c)`$. For
+that, use a [bulk reaction](#bulk-reactions) with the outside phase as a fixed participant,
+`{ equation: 'Air = O2', fixed: { Air: muSat }, kf: { water: profile } }`, whose rate is
+$`k_f (1 - c/c_{sat})`$; a profile gives $`k_f`$ its spatial variation ($`D c_{sat}/h^2`$ under a film
+of thickness $`h(x)`$).
+
+A held level can also anchor what nothing else holds. In a 1D MOS capacitor without generation,
+inversion electrons can only arrive by minority-carrier diffusion from the back contact (weeks),
+so the inversion layer's Fermi level is undetermined to within round-off and no steady state can
+be computed. A port holding the electrons beside the oxide, as source and drain would, anchors it,
+and the device shows the low-frequency C–V.
 
 ### Electrodes spread through a window
 
-A port can also hold an electrode: a metal whose carrier sits at the port's level, reacting all
+A port can hold an electrode: a metal whose carrier sits at the port's level, reacting all
 through the window rather than at one face. That's the floor under a thin film of electrolyte, the
 walls of a crevice or a pit, or the matrix of a porous electrode, wherever the metal conducts well
 enough to be one level. Give the port its `reactions` (Butler–Volmer, as at a face), the carrier as
@@ -499,28 +508,24 @@ ports: [{
 
 Each node's rate per area is the face's law, with the region's species at that node and the
 carrier at activity 1 and level $`V`$. Times the area per volume, it makes and consumes the
-region's species there, and the electrons it takes or gives are the port's current. The port is
-a terminal like any other. Held at a voltage, it's a potentiostat. At `I: 0` (or with nothing
-else to carry current), the reactions settle at the mixed potential, the corrosion potential where
-anodic and cathodic currents cancel over the window, while each node can be a net anode or a net
-cathode. A floating one starts there, for the start's composition. Each solution reports the
-window's nodes and every reaction's rate at each: `ports[k].x[j]` (m) and `ports[k].area[j]`
-(m²/m³) for the window's node j, and `ports[k].rates[q][j]` for reaction q there (mol/(m²·s) of
-electrode, forward), so reaction first, then node. They're typed arrays (`Float64Array`), so
-`Array.from` them before mapping to anything but numbers. Per volume of the window it's
+region's species there, and the electrons it takes or gives are the port's current. Held at a
+voltage, the port is a potentiostat. At `I: 0` (or with nothing else to carry current), the
+reactions settle at the mixed potential, the corrosion potential where anodic and cathodic
+currents cancel over the window, while each node can be a net anode or a net cathode; a floating
+one starts there, for the start's composition. Per volume of the window a rate is
 `rates[q][j] * area[j]`, and per area of a film's floor (thickness h, `area` 1/h) the rate itself.
 
-Validated against the transmission line (linear kinetics along a bar, test/ports.test.js) and the
-Wagner–Traud mixed potential of two Butler–Volmer couples. In 1D, a film on a metal is a slice
-along the metal: the film's thickness enters through `area`, and through a bulk reaction for
-anything that reaches the film from above (O₂ from the air, see the exchange link above). Where
-the film's thickness varies, give the device its [cross-section](#geometry) too, so that ions
+In 1D, a film on a metal is a slice along the metal: the film's thickness enters through `area`,
+and through a bulk reaction for anything that reaches the film from above (O₂ from the air, see
+above). Where the thickness varies, give the device its [cross-section](#geometry) too, so that ions
 travelling along the film squeeze through where it thins: for a drop on a metal, seen from its
-centre, $`A = 2\pi r\,h(r)`$ with `area` $`1/h(r)`$.
+centre, $`A = 2\pi r\,h(r)`$ with `area` $`1/h(r)`$. The region must be strictly neutral
+($`\varepsilon = 0`$), as in porous-electrode theory: each spot's double layer is below the grid, so
+the reactions can't leave the solution charged (give the port a
+[capacitance](#a-capacitance-through-a-window) for the double layer's charge).
 
-The region must be strictly neutral ($`\varepsilon = 0`$), as in porous-electrode theory: each spot's
-double layer, the metal's countercharge, is below the grid, so the reactions can't leave the
-solution charged.
+Validated against the transmission line (linear kinetics along a bar, test/ports.test.js) and the
+Wagner–Traud mixed potential of two Butler–Volmer couples.
 
 ### An electrode's surface: adsorbates and passive films
 
@@ -546,40 +551,39 @@ ports: [{
 
 A film forms where the potential and the pH favour it, through its own thermodynamics, and blocks
 what needs bare metal: the dissolution current climbs with potential, peaks, and falls as the film
-covers the metal, the active–passive curve. Each node's surface stores
-$`\Gamma\,d\theta/dt`$ per area of electrode, so filling it passes a current, and a solution reports
-`ports[k].coverage[name][j]`. It's a monolayer picture: a real passive oxide is nanometres thick,
-grows, and breaks down under chloride, none of which a coverage has.
+covers the metal, the active–passive curve. Each node's surface stores $`\Gamma\,d\theta/dt`$ per area
+of electrode, so filling it passes a current, and what passes through a surface is conserved with
+it. It's a monolayer picture: a real passive oxide is nanometres thick, grows, and breaks down
+under chloride, none of which a coverage has.
 
-Two cautions. Keep a film's stability within reason: blocking the bare fraction to 1e-3–1e-6 is
-already a passive metal, and far below that ($`\theta_0 \lesssim 10^{-10}`$) the coverage's η barely
-affects anything, so Newton struggles with it (a solution warns when a surface gets there). A
-film's μ° is a fitted number: a monolayer given a bulk hydroxide's ΔG°f passivates iron far into
-neutral water, so choose it to put the passivation where the metal's chemistry does. And an electrode port has no double-layer
-capacitance (its solution is strictly neutral), so its potential follows its kinetics instantly.
-With a passivating film, current against potential has the active–passive peak, and when the
-last active patch covers over, the potential where no current flows can vanish from the active
-branch and must jump to the passive one. A real electrode makes that jump quickly but
-continuously, through its double layer; here it's a discontinuity, and a transient stops there.
-Give the port a [capacitance](#a-capacitance-through-a-window-a-gate-along-a-channel-a-double-layer) and the jump becomes a quick, continuous swing.
+Cautions:
+- **Keep a film's stability within reason.** Blocking the bare fraction to 1e-3–1e-6 is already
+  a passive metal; far below that ($`\theta_0 \lesssim 10^{-10}`$) the coverage's η barely affects
+  anything and Newton struggles with it (a solution warns).
+- **A film's μ° is a fitted number.** A monolayer given a bulk hydroxide's ΔG°f passivates iron far
+  into neutral water, so choose it to put the passivation where the metal's chemistry does.
+- **Without a double layer, passivation can jump.** With no capacitance the potential follows the
+  kinetics instantly, and when the last active patch covers over, the potential where no current
+  flows can vanish from the active branch: a discontinuity, where a transient stops. Give the port
+  a [capacitance](#a-capacitance-through-a-window) and it's a quick, continuous swing, as on a real
+  electrode.
 
 Validated in test/coverage.test.js: the Langmuir isotherm against the electrode's potential (to
-1e-9), the charge to fill the surface, $`F\,\Gamma\,\Delta\theta`$ per area of electrode, and the
-active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer.
+1e-9), filling against its exponential and its charge $`F\,\Gamma\,\Delta\theta`$ per area of electrode,
+the active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer, and a steady state
+through a surface intermediate where the transient ends.
 
-### A capacitance through a window: a gate along a channel, a double layer
+### A capacitance through a window
 
 A port can hold charge across a capacitance spread through its window: per area of electrode,
 $`\sigma = C\,(V - \mathtt{zeroCharge} - \phi)`$ on the port's side (C in F/m²), with `area` per volume
 as for reactions, and the window holds the opposite. Each node's charge balance gains $`a\sigma`$:
-Gauss's law averaged across the section,
-$`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$, and at $`\varepsilon = 0`$ neutrality
-$`\rho + a\sigma = 0`$, the mobile species rearranging to supply it (counter-ions in, co-ions out).
-The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$, none in a steady state. Solutions
-report `ports[k].sigma` at each node of the window and the total `ports[k].charge`. Capacitances
-on overlapping windows add (a channel's top and bottom gates). A capacitance alone, driven by a
-current, only charges: it starts uncharged, `advance()` follows it, and `solve()` refuses (there's
-no steady state, as for a gate contact driven by one).
+Gauss's law averaged across the section, $`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$,
+and at $`\varepsilon = 0`$ neutrality $`\rho + a\sigma = 0`$, the mobile species rearranging to supply
+it (counter-ions in, co-ions out). The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$,
+none in a steady state. Capacitances on overlapping windows add (a channel's top and bottom
+gates). A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
+follows it, and `solve()` refuses (there's no steady state, as for a gate contact driven by one).
 
 ```js nocheck
 // a thin-film transistor: the gate along a 10 nm channel through 1 mF/m² (35 nm of SiO₂)
@@ -592,17 +596,32 @@ That's the gradual-channel approximation of a field-effect transistor, exact for
 with no body (a TFT, an organic or oxide transistor) while the channel is long against the gate
 dielectric, and failing where it pinches off (where the 2D field takes over). It's also the
 Bernards model of an organic electrochemical transistor (a volumetric capacitance), cable theory
-for an axon's membrane, and a porous electrode's double layer, which lets an electrode port's
-potential move continuously: without it, a passivating film that covers the last active patch
-forces a jump (see above). The gate's flat level pins the channel's standard level through C, as
-a blocked spectator's flat level does in an electrolyte, and the current saturates as the
-carriers run out at the drain, in both.
+for an axon's membrane, and a porous electrode's double layer. The gate's flat level pins the
+channel's standard level through C, as a blocked spectator's flat level does in an electrolyte,
+and the current saturates as the carriers run out at the drain, in both.
 
 Validated in test/capacitance.test.js: a thin-film transistor's current against the
 charge-sheet model, $`I/W = (\mu/L)[(\sigma_s^2 - \sigma_d^2)/(2C) + V_T(\sigma_s - \sigma_d)]`$, from
 below threshold through saturation (second order in the grid); a porous electrode's de Levie
 impedance $`\sqrt{r/y}\coth(L\sqrt{ry})`$, the double layer in series with the ions' chemical
 capacitance; and the gate's low-frequency impedance against $`dQ/dV_G`$ from steady states.
+
+### What a solution reports
+
+Each solution's `ports[k]`, as the port has them:
+
+| Field | Contents |
+|---|---|
+| `name`, `V` | the port's name and voltage |
+| `flux[name]`, `current` | what it brings into the device: each species (mol/(m²·s)) and the current (A/m², the charging current included), totals through a [cross-section](#geometry) |
+| `x[j]`, `area[j]` | with reactions or a capacitance: the window's node j (m) and the electrode's area per volume there (m²/m³) |
+| `rates[q][j]` | reaction q's forward rate at node j, mol/(m²·s) of electrode (reaction first, then node) |
+| `coverage[name][j]`, `bare[j]` | with a surface: each species' coverage θ, and the bare fraction θ₀ to full precision |
+| `sigma[j]`, `charge` | with a capacitance: σ per area of electrode (C/m²), and the total the port's side holds |
+
+The arrays are typed (`Float64Array`), so `Array.from` them before mapping to anything but
+numbers. The kit's [`polarization()`](kit.md#polarization-curves-an-evans-diagram) gives each reaction's rate at a spot of the
+electrode with its level moved, an Evans diagram.
 
 ## Terminals
 
@@ -779,7 +798,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
-| `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
+| `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device; an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates }`: the names of the regions the face joins, what crosses it by its links, and each face reaction's rate (mol/(m²·s)) |
 | `bulkReactions[k]` | `{ rate, regions, total }`: each bulk reaction's forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section) |
