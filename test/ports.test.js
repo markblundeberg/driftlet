@@ -252,6 +252,33 @@ test('MOS without a port: the impedance gives the high-frequency C–V at 1 Hz, 
   assert.ok(Math.abs(Math.abs(q) / (Cox * 0.01) / high - 1) < 0.1, `step: ${Math.abs(q) / (Cox * 0.01)} vs ${high}`);
 });
 
+test('a level held by one port where another\'s electrode reacts: the same in either order, and the current is conserved', () => {
+  // Ag⁺ held at V = 0 through a window where silver plates at 10 mV: the hold supplies what the
+  // electrode takes, so their currents cancel. A held level replaces its node's balance, and a
+  // reaction once added into the replaced row when its port came after the hold's.
+  const ions = [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }];
+  const water = { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } };
+  const window = { region: 0, from: 0.4e-6, to: 0.6e-6 };
+  const hold = { name: 'hold', ...window, V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium' } };
+  const plate = { name: 'el', ...window, V: 0.01, terminal: 'e-', area: 1e6, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] };
+  const currents = [[hold, plate], [plate, hold]].map((ports) => {
+    const sol = new Device({
+      species: ions,
+      materials: { water },
+      regions: [{ material: 'water', length: 1e-6, c0: { 'NO3-': 10, 'Ag+': 10 } }],
+      contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+      ports,
+      grid: { hmin: 2e-9, hmax: 100e-9, ratio: 1.5, minCells: 4 },
+    }).solve();
+    assert.ok(sol.converged);
+    const total = Object.values(sol.terminals).reduce((t, x) => t + x.current, 0);
+    assert.ok(Math.abs(total) < 1e-9, `the terminals' currents sum to ${total}`);
+    return Object.fromEntries(sol.ports.map((p) => [p.name, p.current]));
+  });
+  assert.ok(currents[0].el > 0.1 && Math.abs(currents[0].el + currents[0].hold) < 1e-9 * currents[0].el, JSON.stringify(currents[0]));
+  assert.ok(Math.abs(currents[1].el / currents[0].el - 1) < 1e-12, JSON.stringify(currents));
+});
+
 test('ports are checked', () => {
   const def = line(1e6, 10).def;
   def.ports[0].species['Li+'] = { type: 'equilibrium', mu: 0 };

@@ -2042,7 +2042,8 @@ export class Solver {
       this.termDI[k] = 0;
       this.termI[k] = 0;
     }
-    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt));
+    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt, false));
+    this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt, true));
     this._contact('left', dt);
     this._contact('right', dt);
     for (const k of this.floating) this._circuit(k);
@@ -2074,16 +2075,18 @@ export class Solver {
 
   // An internal port (terminal k): its exchange with each node of its window, as a source per
   // volume. A held ('equilibrium') level replaces the node's balance row; the source is then that
-  // row's residual, read just before. Its current into the device is Σ z F × the sources.
-  _port(port, flux, k, dt) {
+  // row's residual, read just before. Its current into the device is Σ z F × the sources. In two
+  // passes over the ports: everything else, then the held levels (`holds`), so that a level reads
+  // every other port's terms at its nodes, and none is added into its row after.
+  _port(port, flux, k, dt, holds) {
     const R = this.rix;
     const { n, M, u, uLo, res, z, VT } = this;
     const F = FARADAY, vol = this.model.grid.vol;
     const B = this.termB[k], C = this.termC[k];
-    flux.fill(0);
+    if (!holds) flux.fill(0);
     for (let i = 0; i < n; i++) {
       const link = port.species[i];
-      if (link.type === 'blocked') continue;
+      if (link.type === 'blocked' || (link.type === 'equilibrium') !== holds) continue;
       const r = 1 + i, target = this.portEta(port, i), zF = z[i] * F;
       for (const g of port.nodes) {
         const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
@@ -2110,10 +2113,13 @@ export class Solver {
         }
       }
     }
+    if (holds) {
+      for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
+      return;
+    }
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
     if (port.capacitance) this._portCapacitance(port, k, dt);
     if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(port, dt);
-    for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
   }
 
   // A port's reaction at each node of its window: Butler–Volmer per area, as at a face, against
