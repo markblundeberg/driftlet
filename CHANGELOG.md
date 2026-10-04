@@ -17,6 +17,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `check()` keeps a ledger per compartment: a species a face lets through only by a law or a
   reaction gets one on each side, with what crosses as a term (in a cell: Na⁺ leaks in as fast as
   it's pumped out). `describe()` lists what crosses a face by a law, and saturating kinetics.
+- A charged-pore demo (an ion channel resolved along its axis): Donnan layers at each mouth, K⁺
+  selectivity, the conductance plateau at low salt against Teorell–Meyer–Sievers, the zero-current
+  voltage across a salt gradient, and rectification by a one-sided or bipolar charge. Validated in
+  test/pore.test.js (TMS to 1% in a long pore, its end correction ∝ 1/L, rectification).
 - A resting-potential demo: a closed cell's leaks and the Na⁺/K⁺ pump on a membrane face, V_m
   against Mullins–Noda, each ion's species voltage stepping at the membrane by its driving force
   V_m − E_i, and the run-down to Donnan equilibrium over hours when the pump stops.
