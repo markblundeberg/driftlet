@@ -415,12 +415,6 @@ export class Solver {
     );
     this.portRates = model.ports.map((port) => port.reactions.map(() => new Float64Array(port.nodes.length)));
 
-    // Whether any region is strictly neutral (ε = 0, not a conductor): see integrate().
-    this.strictlyNeutral = model.regions.some((reg) => {
-      const mat = materials[reg.material];
-      return !mat.conductor && mat.epsr === 0;
-    });
-
     // Scales the generation reactions' rates during a steady solve's continuation (else 1).
     this.generationScale = 1;
     this.hasGeneration = this.rxs.some((rx) => rx.generation);
@@ -2716,7 +2710,6 @@ export class Solver {
     if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace };
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
-    let grow = 0; // longer first steps tried after a Newton failure (see below)
     // The shortest step worth trying: round-off relative to the time, or the device's fastest
     // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
     const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), this.fastestTime() * 1e-2);
@@ -2765,17 +2758,7 @@ export class Solver {
         if (err === undefined) {
           this._restore(snap);
           rejected++;
-          // Newton failed on the first step after a start or a jump. Usually a shorter step
-          // helps; but right after a jump in a strictly neutral (ε = 0) material, the shorter the
-          // step the worse conditioned it is (the field is fixed only through fluxes, which the
-          // storage term dwarfs), so try longer ones first.
-          if (this.strictlyNeutral && grow < 3 && h * 16 < tEnd - this.time) {
-            grow++;
-            dt = h * 16;
-          } else {
-            grow = 3;
-            dt = h / 4;
-          }
+          dt = h / 4;
           if (dt < floor) { failed = true; break; }
           continue;
         }
@@ -2800,7 +2783,6 @@ export class Solver {
         continue;
       }
       steps++;
-      grow = 0;
       // The state the first step started from needn't satisfy the algebraic equations (φ in a
       // strictly neutral region, an interface's unknowns, after a start or a jump), and they
       // jump in the first instant; a predictor through it would see that jump as error on every

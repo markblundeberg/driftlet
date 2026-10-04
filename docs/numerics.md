@@ -497,9 +497,9 @@ test checks the compact Jacobian column by column on devices that cover every as
     current it cost 50% more.
   - A step is rejected above `tol`. The next step size is
     $`h \cdot \min(2, \max(0.2, 0.9\, (\mathtt{tol}/\mathrm{err})^{1/(p+1)}))`$.
-  - Newton failure quarters the step; on the first step after a start or a jump in a device
-    with a strictly neutral material, longer steps are tried first, since there shorter ones are
-    worse conditioned.
+  - Newton failure quarters the step. (Strictly neutral materials had tried longer first steps
+    instead, shorter ones being worse conditioned there; with their ends and starts fixed, no
+    case needs it.)
   - A target within round-off of the present time (1e-10 relative), such as an animation
     frame's that lands a hair past a breakpoint just reached, is snapped to rather than
     stepped to: a step of 1e-13 s can't be resolved.
