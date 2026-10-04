@@ -2,6 +2,17 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Fixed: with a capacitance through a port in strictly neutral water, the most abundant ion leaked
+  on time steps (about 1e-6 of it, so `check()` failed conservation): the row that stands for
+  charge continuity there assumed the ions' net charge constant, but against a double layer it's
+  −aσ. It now counts that change.
+- `polarization(..., { surface: 'equilibrium' })`: an electrode port's coverages re-equilibrated at
+  each potential, the steady-state curve with a passive film's active–passive peak.
+- A solution warns when an electrode's surface is covered to a bare fraction below 1e-10, where the
+  solver struggles; the docs' film example forms in minutes, and they say a film's μ° is fitted.
+
 ## 0.9.0 (2026-10-04)
 
 - A capacitance spread through a port's window, `capacitance: { C, zeroCharge }` with `area`:

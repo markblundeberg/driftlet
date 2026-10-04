@@ -36,6 +36,13 @@ test('OH⁻ adsorbing on an electrode: the Langmuir isotherm θ/(1 − θ) = e^(
   }
 });
 
+test('a surface covered almost completely is flagged', () => {
+  const sol = cell(0.1, { surface: { OHads: { mu0: -60e3, capacity: G } }, reactions: [adsorb] }).solve();
+  assert.ok(sol.converged && sol.ports[0].bare[3] < 1e-10);
+  assert.ok(sol.warnings.some((w) => /covered to a bare fraction/.test(w)), sol.warnings.join('; '));
+  assert.ok(!cell(0.1, { surface: { OHads: { mu0: 0, capacity: G } }, reactions: [adsorb] }).solve().warnings.some((w) => /bare fraction/.test(w)));
+});
+
 test('filling the surface passes F·Γ·(electrode area)·Δθ through the electrode, and it ends on the isotherm', () => {
   const dev = cell(0.05, { surface: { OHads: { mu0: 0, capacity: G, theta0: 1e-4 } }, reactions: [adsorb] });
   // The port's current (OH⁻ leaving the water for the surface), sampled on a log clock and integrated.
@@ -82,6 +89,11 @@ test('a metal dissolving on bare sites only: the active–passive curve, the fil
     assert.ok(Math.abs(pol.reactions[0].rate[0] / p.rates[0][w] - 1) < 1e-9);
     return -2 * FARADAY * p.rates[0][w];
   });
+  // The steady-state curve from one solution: polarization() with the film re-equilibrated at
+  // each potential, against the solves above (the solution beside the metal barely changes).
+  const dev0 = cell(0, { surface, reactions: [iron, film] }), sol0 = dev0.solve();
+  const curve = polarization(dev0, sol0, { port: 'metal', x: sol0.ports[0].x[3] }, Vs, { surface: 'equilibrium' });
+  curve.reactions[0].rate.forEach((r, j) => assert.ok(Math.abs(-2 * FARADAY * r / dissolving[j] - 1) < 2e-2, `V = ${Vs[j]}: ${-2 * FARADAY * r} vs ${dissolving[j]}`));
   const peak = dissolving.indexOf(Math.max(...dissolving));
   assert.ok(peak > 0 && peak < Vs.length - 1, `peak inside: ${dissolving}`);
   assert.ok(dissolving.at(-1) < dissolving[peak] / 10, `passive: ${dissolving}`);

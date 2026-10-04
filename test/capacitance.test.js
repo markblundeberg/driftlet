@@ -116,6 +116,26 @@ test('the gate\'s impedance at low frequency is its charge capacitance, dQ/dV_G 
   });
 });
 
+test('a double layer charging in a closed, strictly neutral electrolyte keeps every ion it holds', () => {
+  // The ions supply the double layer's countercharge, so their net charge isn't zero but −aσ;
+  // the solver's charge-continuity row has to count its change, or the most abundant ion leaks.
+  const ions = [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }];
+  const dev = new Device({
+    T,
+    species: ions,
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1.3e-9, mu0: -261.9e3 }, 'Cl-': { D: 2e-9, mu0: -131.2e3 } } } },
+    regions: [{ material: 'water', length: 1e-3, c0: { 'Na+': 500, 'Cl-': 500 } }],
+    contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } },
+    ports: [{ name: 'dl', region: 0, from: 0.5e-3, V: { t: [0, 1e-3], values: [0, 0.2] }, area: 1e4, capacitance: { C: 0.2 } }],
+    grid: { hmin: 10e-6, hmax: 50e-6 },
+  });
+  for (const time of [1e-3, 1, 100]) {
+    const s = dev.advance(time);
+    assert.ok(s.converged);
+    for (const st of s.conservation) assert.ok(Math.abs(st.drift) < 1e-12, `${st.species} at ${time} s: ${st.drift}`);
+  }
+});
+
 test('a capacitance is checked', () => {
   const def = tft(1, 0.1).def;
   def.ports[0].capacitance = { C: -1 };

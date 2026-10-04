@@ -538,7 +538,7 @@ ports: [{
   surface: { 'Fe(OH)2': { mu0: -490e3, capacity: 2e-5, theta0: 1e-6 } }, // theta0: the start
   reactions: [
     { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5, bare: true },  // dissolves where bare
-    { equation: 'Fe(s) + 2 OH- = Fe(OH)2 + 2 e-', fixed: { 'Fe(s)': 0 }, k0: 1e-6, alpha: 0.5, bare: true }, // the film forms
+    { equation: 'Fe(s) + 2 OH- = Fe(OH)2 + 2 e-', fixed: { 'Fe(s)': 0 }, k0: 1e-4, alpha: 0.5, bare: true }, // the film forms (in minutes)
     { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.13e3 }, k0: 3e-9, alpha: 0.125 }, // on film or not
   ],
 }]
@@ -553,7 +553,9 @@ grows, and breaks down under chloride, none of which a coverage has.
 
 Two cautions. Keep a film's stability within reason: blocking the bare fraction to 1e-3–1e-6 is
 already a passive metal, and far below that ($`\theta_0 \lesssim 10^{-10}`$) the coverage's η barely
-affects anything, so Newton struggles with it. And an electrode port has no double-layer
+affects anything, so Newton struggles with it (a solution warns when a surface gets there). A
+film's μ° is a fitted number: a monolayer given a bulk hydroxide's ΔG°f passivates iron far into
+neutral water, so choose it to put the passivation where the metal's chemistry does. And an electrode port has no double-layer
 capacitance (its solution is strictly neutral), so its potential follows its kinetics instantly.
 With a passivating film, current against potential has the active–passive peak, and when the
 last active patch covers over, the potential where no current flows can vanish from the active

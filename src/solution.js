@@ -181,6 +181,18 @@ export function makeSolution(solver, result = {}) {
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
   // gate contacts), check the local Debye length against the adjacent cell.
   sol.warnings = [...(model.warnings ?? [])];
+  // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
+  // and Newton loses them (a transient can stall there).
+  sol.ports.forEach((p) => {
+    if (!p.bare) return;
+    const min = Math.min(...p.bare);
+    if (min < 1e-10) {
+      sol.warnings.push(
+        `ports ${p.name}: its surface is covered to a bare fraction of ${min.toExponential(1)} at x = ${p.x[p.bare.indexOf(min)].toExponential(3)} m. ` +
+          'Below ~1e-10 the coverage barely affects anything and the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
+      );
+    }
+  });
   const cond = solver.conditioning;
   if (result.converged === false && cond && cond.digits > 12) {
     const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';
