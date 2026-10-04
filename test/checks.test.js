@@ -27,7 +27,7 @@ test('check(): the ledger of a lit cell is J = F(G − R), term by term, and an 
   assert.ok(Math.abs(FARADAY * (-term('left contact') + 0) - FARADAY * -term('left contact')) === 0);
   assert.ok(Math.abs((FARADAY * (term('photon = e- + h+') + term('e- + h+ = 0') - out)) / sol.current) < 1e-9);
   assert.ok(out > 0 && hOut > 0);
-  assert.match(report.text, /^ok {3}balance: 2 species' sources and sinks sum to zero/m);
+  assert.match(report.text, /^ok {3}balance: 2 ledgers sum to zero/m);
   assert.match(report.text, /e-: photon = e- \+ h\+: \+2\.99e-3 \(289 A\/m²\)/);
 
   const dark = new Device(build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)] }));

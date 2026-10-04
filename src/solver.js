@@ -995,6 +995,22 @@ export class Solver {
         }
       }
     }
+    // A floating contact facing a held one starts where the start's own composition puts it: the
+    // held voltage plus the difference between the two terminal species' levels beside each
+    // contact (c0 sets them, and φ was chosen for neutrality, not to match either contact), so
+    // that a transient's first reading means something.
+    const level = (side) => {
+      const ct = model.contacts[side], i = ct.terminal;
+      if (i === null || ct.species[i].type !== 'equilibrium' || z[i] === 0) return NaN;
+      const b = this.blockOfNode[side === 'left' ? 0 : grid.nNodes - 1];
+      return (this.VT * u[b * M + 1 + i]) / z[i] - ct.species[i].offset;
+    };
+    for (const k of this.floating) {
+      const t = this.terms[k], held = k === 0 ? 1 : 0;
+      if (t.kind === 'port' || held >= this.terms.length || this.floating.includes(held)) continue;
+      const shift = level(t.side) - level(this.terms[held].side);
+      if (Number.isFinite(shift)) this.termV[k] = this.termV[held] + shift;
+    }
     this.computeConcentrations();
   }
 
@@ -2447,10 +2463,10 @@ export class Solver {
     if (!Array.isArray(probes)) fail('advance: probes must be an array of { x, species, quantity, region }');
     const plan = probes.map((p, k) => {
       const path = `advance: probes[${k}]`;
-      const i = species.findIndex((sp) => sp.name === p?.species);
-      if (i < 0) fail(`${path}.species: no species ${JSON.stringify(p?.species)}`);
-      const quantity = p.quantity ?? 'c';
-      if (quantity !== 'c' && quantity !== 'V') fail(`${path}.quantity must be 'c' (mol/m³) or 'V' (the species voltage)`);
+      const quantity = p?.quantity ?? 'c';
+      if (quantity !== 'c' && quantity !== 'V' && quantity !== 'phi') fail(`${path}.quantity must be 'c' (mol/m³), 'V' (the species voltage) or 'phi' (φ, V)`);
+      const i = quantity === 'phi' ? -1 : species.findIndex((sp) => sp.name === p?.species);
+      if (quantity !== 'phi' && i < 0) fail(`${path}.species: no species ${JSON.stringify(p?.species)}`);
       if (quantity === 'V' && species[i].z === 0) fail(`${path}: '${p.species}' is neutral, so it has no voltage; read 'c'`);
       const x = grid.x, inside = (r) => p.x >= x[grid.regionStart[r]] && p.x <= x[grid.regionEnd[r]];
       let r;
@@ -2470,6 +2486,7 @@ export class Solver {
     const out = plan.map(() => []);
     const { n, M } = this;
     const at = (q, g) => {
+      if (q.quantity === 'phi') return this.phiUndefined[g] ? NaN : this.VT * (this.u[this.blockOfNode[g] * M] + this.uLo[this.blockOfNode[g] * M]);
       if (!this.present[g * n + q.i]) return NaN;
       if (q.quantity === 'c') return this.c[g * n + q.i];
       const o = this.blockOfNode[g] * M + 1 + q.i;

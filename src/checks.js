@@ -78,33 +78,67 @@ export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
 // Each species' steady ledger: in through the terminals, made by the reactions. Rates in
 // mol/(m²·s), positive into the device or made.
 function balance(device, sol) {
-  const { model, def } = device, { species } = model;
+  const { model, def } = device, { species, regions, interfaces } = model;
   const label = (rdef) => rdef?.equation ?? JSON.stringify(rdef?.nu ?? rdef);
-  const ledgers = species.map((sp) => ({ species: sp.name, z: sp.z, terms: [] }));
-  const add = (i, what, rate) => {
-    if (rate !== 0 && Number.isFinite(rate)) ledgers[i].terms.push({ what, rate });
-  };
+  // Each species' compartments: runs of regions it's present in, joined by faces it crosses
+  // freely (in equilibrium). A face it crosses only by a law (a permeability, a conductance) or
+  // by a reaction divides them, and what crosses there is a term in each side's ledger.
+  const ledgers = [], home = species.map(() => new Int32Array(regions.length).fill(-1));
   species.forEach((sp, i) => {
-    add(i, 'left contact', sol.contacts.left.flux[sp.name]);
-    add(i, 'right contact', -sol.contacts.right.flux[sp.name]);
-    sol.ports.forEach((p) => add(i, `port ${p.name}`, p.flux[sp.name]));
-  });
-  model.reactions.forEach((rx, k) => {
-    const total = sol.bulkReactions[k].total, what = label(def.bulkReactions?.[k]);
-    for (const { i, nu } of rx.reactants) add(i, what, -nu * total);
-    for (const { i, nu } of rx.products) add(i, what, nu * total);
-  });
-  model.interfaces.forEach((itf, f) => {
-    itf.reactions.forEach((rx, k) => {
-      const rate = sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
-      for (const { i, nu } of rx.part) add(i, what, nu * rate);
+    let open = null;
+    regions.forEach((reg, r) => {
+      if (!model.materials[reg.material].present[i]) return void (open = null);
+      if (open && interfaces[r - 1].links[i].type === 'equilibrium') open.regions.push(r);
+      else ledgers.push((open = { species: sp.name, z: sp.z, i, regions: [r], terms: [] }));
+      home[i][r] = ledgers.length - 1;
     });
   });
+  const add = (i, r, what, rate) => {
+    const l = home[i][r];
+    if (!(l >= 0 && rate !== 0 && Number.isFinite(rate))) return;
+    const same = ledgers[l].terms.find((t) => t.what === what); // a bulk reaction, region by region
+    if (same) same.rate += rate;
+    else ledgers[l].terms.push({ what, rate });
+  };
+  const last = regions.length - 1;
+  species.forEach((sp, i) => {
+    add(i, 0, 'left contact', sol.contacts.left.flux[sp.name]);
+    add(i, last, 'right contact', -sol.contacts.right.flux[sp.name]);
+    model.ports.forEach((port, k) => add(i, port.region, `port ${sol.ports[k].name}`, sol.ports[k].flux[sp.name]));
+  });
+  model.reactions.forEach((rx, k) => {
+    const what = label(def.bulkReactions?.[k]);
+    sol.bulkReactions[k].regions.forEach((total, r) => {
+      for (const { i, nu } of rx.reactants) add(i, r, what, -nu * total);
+      for (const { i, nu } of rx.products) add(i, r, what, nu * total);
+    });
+  });
+  interfaces.forEach((itf, f) => {
+    // Across the face, where it divides a species' compartments.
+    species.forEach((sp, i) => {
+      const type = itf.links[i].type;
+      if (type === 'equilibrium' || type === 'blocked') return;
+      const N = sol.interfaces[f].N[sp.name];
+      add(i, f, `across face ${f} (${type})`, -N);
+      add(i, f + 1, `across face ${f} (${type})`, N);
+    });
+    itf.reactions.forEach((rx, k) => {
+      const rate = sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
+      for (const { i, nu, side } of rx.part) add(i, f + side, what, nu * rate);
+    });
+  });
+  // A species in one compartment is named alone; one in several, by where.
+  const several = species.map((_, i) => ledgers.filter((l) => l.i === i).length > 1);
+  for (const l of ledgers) {
+    const names = l.regions.map((r) => sol.regions[r].name);
+    l.compartment = names.length === 1 ? names[0] : `${names[0]} to ${names.at(-1)}`;
+    l.title = several[l.i] ? `${l.species} in ${l.compartment}` : l.species;
+  }
 
   // A species at rest (nothing beyond round-off moving, against what it could carry) isn't reported.
   const size = (l) => Math.max(0, ...l.terms.map((t) => Math.abs(t.rate)));
   const natural = naturalScales(device, sol);
-  const moving = ledgers.filter((l, i) => size(l) > 1e-9 * natural[i]);
+  const moving = ledgers.filter((l) => size(l) > 1e-9 * natural[l.i]);
   let worst = 0;
   const lines = [];
   for (const l of moving) {
@@ -114,13 +148,13 @@ function balance(device, sol) {
     // Terms that matter, largest first; a charged species' as a current too.
     const shown = l.terms.filter((t) => Math.abs(t.rate) > 1e-6 * size(l)).sort((a, b) => Math.abs(b.rate) - Math.abs(a.rate));
     const amp = (r) => (l.z !== 0 ? ` (${sig(FARADAY * Math.abs(l.z) * r)} A/m²)` : '');
-    lines.push(`${l.species}: ${shown.map((t) => `${t.what}: ${t.rate > 0 ? '+' : ''}${sig(t.rate)}${amp(t.rate)}`).join('; ')}`);
+    lines.push(`${l.title}: ${shown.map((t) => `${t.what}: ${t.rate > 0 ? '+' : ''}${sig(t.rate)}${amp(t.rate)}`).join('; ')}`);
   }
   const ok = worst < 1e-6;
   const summary =
     moving.length === 0
       ? 'nothing flows or reacts (equilibrium)'
-      : `${moving.length} species' sources and sinks sum to zero ${ok ? `(to ${sig(worst, 1)})` : `only to ${sig(worst, 2)}: not a steady state`}; mol/(m²·s), + in or made`;
+      : `${moving.length === 1 ? 'one ledger sums' : `${moving.length} ledgers sum`} to zero ${ok ? `(to ${sig(worst, 1)})` : `only to ${sig(worst, 2)}: not a steady state`}: each species' sources and sinks, mol/(m²·s), + in or made`;
   // The largest current any charged species carries anywhere: the scale a net current is read against.
   const gross = Math.max(0, ...moving.filter((l) => l.z !== 0).map((l) => FARADAY * Math.abs(l.z) * size(l)));
   return { name: 'balance', ok, summary, details: { ledgers, worst, lines, gross } };

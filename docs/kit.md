@@ -339,7 +339,9 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   prompt to look, and don't fail the check.
 - **balance**, in a steady state: each species' ledger, what comes in through each terminal and
   what each reaction (bulk, or at a face) makes or uses, in mol/(m²·s) and for a charged species
-  as a current. The terms must sum to zero. Under light it's J = F(G − R), and it says where
+  as a current. The terms must sum to zero. A species that a face lets through only by a law (a
+  membrane's permeability, a conductance) or by a reaction has a ledger on each side, with what
+  crosses as a term: in a cell, Na⁺ leaks into the cytoplasm as fast as the pump puts it out. Under light it's J = F(G − R), and it says where
   every carrier went: collected, or recombined in the bulk or at which face. A species at rest
   (in equilibrium, flows only of round-off against what it could carry) isn't listed.
 - **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
@@ -373,7 +375,7 @@ const dev = new Device(
 );
 const report = check(dev, dev.solve());
 console.log(report.text);
-// ok   balance: 2 species' sources and sinks sum to zero …
+// ok   balance: 2 ledgers sum to zero …
 //        e-: photon = e- + h+: +2.99e-3 (289 A/m²); left contact: -2.23e-3 (-215 A/m²); …
 // FAIL grid: on a grid twice as fine (172 → 339 nodes), the largest change is region 0 (Si)
 //      charge, … (0.021, over 0.01: refine the grid …): the current is fine (1e-4), but the

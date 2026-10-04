@@ -160,7 +160,7 @@ export class Device {
    * (one array per probe, alongside `trace.t`): what a detector at x sees.
    * @param {number} tEnd s
    * @param {{ tol?: number, dt0?: number, dtMax?: number, budgetMs?: number, maxSteps?: number, method?: 'bdf2' | 'be',
-   *   probes?: { x: number, species: string, quantity?: 'c' | 'V', region?: string | number }[] }} [opts]
+   *   probes?: { x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number }[] }} [opts]
    * @returns {Solution}
    */
   advance(tEnd, opts) {
