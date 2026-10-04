@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.10.0 (2026-10-04)
 
 - The saturation demo has a thin-film transistor below the silver cell: the gate a capacitance
   along the channel, its output characteristic against the charge-sheet model, and the bands
