@@ -12,16 +12,18 @@
 <nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
   <h1>An ion channel as a charged pore: selectivity, saturation and rectification</h1>
   <p>A pore a nanometre wide through a membrane, between two KCl solutions, its walls lined with negative
-    charge. The charge draws K⁺ in and shuts Cl⁻ out, in layers a fraction of a nanometre thick at each mouth, so
-    the pore conducts almost only K⁺, and goes on conducting when the salt is diluted a thousandfold. Put the
-    charge on one half, or make the pore bipolar, and it conducts better one way than the other. Vary the salt
-    on each side, the charge and its pattern, the pore's length and the voltage across it; the conductance is
-    checked against the Teorell–Meyer–Sievers theory. (More about the model below.)</p>
+    charge. The charge draws K⁺ in and shuts Cl⁻ out, so the pore conducts almost only K⁺, and goes on
+    conducting when the salt is diluted a thousandfold. That happens in layers of space charge a fraction of a
+    nanometre thick at each mouth, and in a pore a couple of nanometres long, as a channel's selectivity
+    filter is, the layers from the two mouths overlap and there's no neutral inside at all. Put the charge on
+    one half, or make the pore bipolar, and it conducts better one way than the other, like a pn junction.
+    Vary the salt on each side, the charge and its pattern, the pore's length and the voltage across it;
+    long pores are checked against the Teorell–Meyer–Sievers theory. (More about the model below.)</p>
   <div class="controls">
     <label>KCl left <input id="cl" type="range" min="0" max="3" step="0.1" value="2"><output id="clOut"></output></label>
     <label>KCl right <input id="cr" type="range" min="0" max="3" step="0.1" value="2"><output id="crOut"></output></label>
     <label>wall charge <input id="X" type="range" min="0" max="3" step="0.1" value="1"><output id="XOut"></output></label>
-    <label>pore length <input id="L" type="range" min="0.3" max="1.7" step="0.05" value="1"><output id="LOut"></output></label>
+    <label>pore length <input id="L" type="range" min="0" max="1.7" step="0.05" value="0.3"><output id="LOut"></output></label>
     <label>charge <select id="pattern">
       <option value="uniform" selected>along the whole pore</option>
       <option value="half">on the left half only</option>
@@ -34,6 +36,7 @@
   <div class="grid">
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
+    <div class="levels wide" id="rho"></div>
     <canvas id="iv"></canvas>
     <canvas id="gc"></canvas>
   </div>
@@ -47,15 +50,26 @@
   <p>Inside a long pore the bulk is neutral, the wall's charge balanced by excess K⁺: K⁺ = (X + √(X² + 4c²))/2
     and Cl⁻ = K⁺ − X, a Donnan equilibrium with the solution at each mouth. With much more wall charge than
     salt, K⁺ inside is pinned at X and Cl⁻ is shut out, so the conductance stops depending on the salt: the
-    plateau at low concentration. That's the Teorell–Meyer–Sievers theory, the dashed curve; a short pore
-    falls a little below it, by the layers at each end (they shrink as 1/L in the tests). The dotted line is
-    the same pore with no charge, conducting like the salt. Across a salt gradient at zero current, K⁺'s level
-    is flat through a strongly charged pore, in equilibrium between the two sides, and the voltage between
-    Ag/AgCl electrodes approaches 2V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>), as for a perfectly selective
-    membrane.</p>
+    plateau at low concentration. That's the Teorell–Meyer–Sievers theory, the dashed curve: the long-pore
+    limit, where all the space charge sits in the thin Donnan layers at the mouths and the theory can treat
+    them as steps. It's the physics of an ion-exchange membrane. The dotted line is the same pore with no
+    charge, conducting like the salt. Across a salt gradient at zero current, K⁺'s level is flat through a
+    strongly charged pore, in equilibrium between the two sides, and the voltage between Ag/AgCl electrodes
+    approaches 2V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>), as for a perfectly selective membrane.</p>
+  <p>A pore as short as a channel's filter is all mouth. The net charge plot shows each mouth's layer pair,
+    the wall's charge (inside) against its screening cloud (outside), and in a 2 nm pore the two pairs run
+    into each other: the pore holds less K⁺ than its wall charge would draw in, and more Cl⁻, and conducts
+    below TMS (at 0.1 M of salt and 1 M of charge, 0.68 of it at 2 nm, half at 1 nm, against 0.92 at 10 nm and
+    0.99 at 80 nm). That's where Poisson's equation, not electroneutrality, decides what the pore does, and why
+    channels are modelled with Poisson–Nernst–Planck theory.</p>
   <p>Charge on one half only, or − on one half and + on the other, makes the current depend on its
     direction: driven one way, ions are carried into the pore faster than they leave, and it fills with salt;
-    the other way, it empties, and conducts poorly. A bipolar pore is an ionic diode.</p>
+    the other way, it empties, and conducts poorly. A bipolar pore is an ionic diode, and its physics is a pn
+    junction's: the negatively charged half, where K⁺ is the majority ion, is the p side (fixed acceptors,
+    majority holes), and the positive half, with Cl⁻, the n side. Where they meet, a depletion layer holds the
+    space charge, and the standard levels V°<sub>i</sub> bend across it by a built-in potential, just as band
+    edges do. Reverse bias widens it and leaves only the minority ions to carry a small, saturating current;
+    forward bias floods it with salt.</p>
   <p>The level diagram draws each ion's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), with
     K⁺'s drawn 4.35 V higher to share the plot (⌇), and their standard levels V°<sub>i</sub> (thin), which
     follow φ. The steps in V°<sub>i</sub> at the mouths are the Donnan potentials; each ion's own level is
@@ -168,6 +182,10 @@ function draw(sol) {
   const charges = X1 === X2 ? `${signed(X1)} of wall charge` : `${signed(X1)} | ${signed(X2)} of wall charge`;
   levels(el('levels'), sol, { title: `species voltages and standard levels through the pore (${charges})`, shifts: { 'K+': 4.35 }, xlim });
   profiles(el('conc'), sol, { species: ['K+', 'Cl-'], title: 'concentrations', ylabel: 'concentration (M)', scale: 1e-3, log: true, xlim });
+  // The net charge, ions and wall together: ρ/F = c_K⁺ − c_Cl⁻ − X, the layers Poisson's equation sets.
+  const wall = [0, -X1, -X2, 0], rho = sol.x.map((_, g) => sol.c['K+'][g] - sol.c['Cl-'][g] + wall[sol.region[g]]);
+  const big = Math.max(...rho.map(Math.abs).filter(Number.isFinite), 1);
+  profiles(el('rho'), sol, { species: [{ c: rho, label: 'ρ/F', kind: 'level' }], title: 'net charge: ions and wall together', ylabel: 'ρ/F (M)', scale: 1e-3, xlim, range: [-1.1e-3 * big, 1.1e-3 * big] });
   const { iv, gc } = sweeps;
   chart(el('iv'), {
     xlabel: 'voltage (mV), right against left', ylabel: 'current through the pore (pA)',

@@ -19,7 +19,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   it's pumped out). `describe()` lists what crosses a face by a law, and saturating kinetics.
 - A charged-pore demo (an ion channel resolved along its axis): Donnan layers at each mouth, K⁺
   selectivity, the conductance plateau at low salt against Teorell–Meyer–Sievers, the zero-current
-  voltage across a salt gradient, and rectification by a one-sided or bipolar charge. Validated in
+  voltage across a salt gradient, and rectification by a one-sided or bipolar charge. It starts at a
+  channel's 2 nm, where the mouths' layers of space charge overlap and the pore conducts well below
+  TMS, with a net-charge profile; the bipolar pore is explained as the pn junction it is. Validated in
   test/pore.test.js (TMS to 1% in a long pore, its end correction ∝ 1/L, rectification).
 - A resting-potential demo: a closed cell's leaks and the Na⁺/K⁺ pump on a membrane face, V_m
   against Mullins–Noda, each ion's species voltage stepping at the membrane by its driving force
