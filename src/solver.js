@@ -888,6 +888,13 @@ export class Solver {
   }
 
 
+  // An electrode surface at its starting coverages at node g: η = μ°/RT + ln(θ/θ₀).
+  _surfaceStart(g) {
+    const { n, M, u, model } = this, surf = model.ports[this.surfPort[g]].surface, b = this.blockOfNode[g];
+    const bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
+    surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
+  }
+
   /** Amount (mol per unit area) of surface column j's species, Γ Σ v·a·θ, in the current state. */
   surfaceAmount(j) {
     const [k, q] = this.surfCols[j], port = this.model.ports[k], vol = this.model.grid.vol;
@@ -1135,13 +1142,7 @@ export class Solver {
       const shift = level(t.side) - level(this.terms[held].side);
       if (Number.isFinite(shift)) this.termV[k] = this.termV[held] + shift;
     }
-    // Electrode surfaces at their starting coverages: η = μ°/RT + ln(θ/θ₀).
-    for (let g = 0; g < this.nNodes; g++) {
-      const k = this.surfPort[g];
-      if (k < 0) continue;
-      const surf = model.ports[k].surface, b = this.blockOfNode[g], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
-      surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
-    }
+    for (let g = 0; g < this.nNodes; g++) if (this.surfPort[g] >= 0) this._surfaceStart(g);
     this.computeConcentrations();
     // A floating capacitance starts uncharged (σ = 0 at the window's mean φ), as the starting
     // composition, neutral without it, assumes; with reactions too, its double layer then charges

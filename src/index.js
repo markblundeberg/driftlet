@@ -109,6 +109,10 @@ export class Device {
     if (old && old.u.length === solver.u.length && old.n === solver.n) {
       solver.u.set(old.u);
       solver.uLo.set(old.uLo);
+      // A node newly on an electrode's surface (a window moved, a surface added) starts at its
+      // starting coverages, not at whatever its slots held.
+      const surfaceAt = (sv, g) => (sv.surfPort[g] < 0 ? '' : sv.model.ports[sv.surfPort[g]].surface.map((sp) => sp.name).join());
+      for (let g = 0; g < solver.nNodes; g++) if (solver.surfPort[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
       solver.computeConcentrations();
       solver.time = old.time;
       solver.contactDEnd = old.contactDEnd;

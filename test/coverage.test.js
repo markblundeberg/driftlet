@@ -150,6 +150,18 @@ test('what passes through a surface is conserved with it: the steady state of A�
   assert.ok(Math.abs(cl / cs - 1) < 1e-9 && Math.abs(tl / ts - 1) < 1e-9 && Math.abs(cs - 10) > 1, `A⁺ ${cs} vs ${cl}, θ ${ts} vs ${tl}`);
 });
 
+test('a surface window widened by set() starts its new nodes at the starting coverage', () => {
+  const def = cell(0.05, { surface: { OHads: { mu0: 0, capacity: G, theta0: 1e-4 } }, reactions: [adsorb] }).def;
+  def.ports[0].to = L / 2;
+  const dev = new Device(def);
+  const half = dev.solve(), n0 = half.ports[0].x.length;
+  assert.ok(half.ports[0].coverage.OHads[0] > 0.8, 'filled where the window was');
+  dev.set({ ports: { metal: { to: L } } });
+  const now = dev.solution().ports[0];
+  assert.ok(now.x.length > n0 && Math.abs(now.coverage.OHads.at(-1) / 1e-4 - 1) < 1e-9, `${now.coverage.OHads.at(-1)}`);
+  assert.ok(now.coverage.OHads[0] > 0.8, 'kept where it was');
+});
+
 test('surfaces are checked', () => {
   const r = (s) => [{ equation: 'OH- = OHads + e-', k0: 1, alpha: 0.5 }].map((x) => ({ ...x, ...s }));
   assert.throws(() => cell(0, { surface: { OHads: { mu0: 0, capacity: G } }, reactions: [{ equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 1, alpha: 0.5 }] }), (e) => e instanceof DeviceError && /no reaction of the port makes or uses it/.test(e.message));
