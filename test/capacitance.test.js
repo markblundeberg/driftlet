@@ -169,6 +169,34 @@ test('a capacitance is checked', () => {
   assert.throws(() => new Device(def), /area: give the electrode's area/);
 });
 
+test('a floating electrode with a double layer starts uncharged and charges to its rest potential', () => {
+  // Silver spread through AgNO₃ at I: 0, against a silver contact: the double layer starts empty
+  // (as the neutral starting composition has it), the plating current charges it, and the
+  // electrode ends level with the contact's silver, its charge C(V − zeroCharge − φ) per area.
+  const ions = [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }];
+  const def = (port) => ({
+    T,
+    species: ions,
+    materials: { water: { epsr: 0, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+    regions: [{ material: 'water', length: 10e-6, c0: { 'NO3-': 10, 'Ag+': 10 } }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium' }, phi: 'neutral' }, right: {} },
+    ports: [{ name: 'el', region: 0, from: 5e-6, terminal: 'e-', area: 1e5, capacitance: { C: 0.2, zeroCharge: 0.1 },
+      reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-4, alpha: 0.5 }], ...port }],
+    grid: { hmin: 0.5e-6, hmax: 0.5e-6 },
+  });
+  const dev = new Device(def({ I: 0 }));
+  assert.ok(Math.abs(dev.solution().ports[0].charge) < 1e-15, 'starts uncharged');
+  const s = dev.advance(100);
+  assert.ok(s.converged);
+  const p = s.ports[0];
+  assert.ok(Math.abs(p.V - s.V['Ag+'][0]) < 1e-6, `rests level with the silver: ${p.V} vs ${s.V['Ag+'][0]}`);
+  assert.ok(Math.abs(p.charge) > 1e-3, `charged: ${p.charge}`);
+  // With every held terminal passing nothing, a floating one's level is nobody's: an error.
+  const closed = def({ I: 0 });
+  closed.contacts.left = {};
+  assert.throws(() => new Device(closed), (e) => e instanceof DeviceError && /no terminal held at a voltage passes any/.test(e.message));
+});
+
 test('a capacitance driven by a current only charges: no steady state, but a transient at I·t', () => {
   // A double layer in NaCl, fed 1 mA/m² from an uncharged start, the current returning through
   // an electrode that exchanges Cl⁻ (which also sets the potentials' level).

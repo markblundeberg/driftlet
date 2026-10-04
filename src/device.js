@@ -312,10 +312,7 @@ export function normalizeDevice(def) {
     need(passes || ct.drive.kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
     ct.passes = passes;
   }
-  need(
-    terminals.some((t) => t.drive.kind === 'V'),
-    'every terminal is driven by a current, so the device\'s overall level floats: hold at least one at a voltage V',
-  );
+  checkLevel(terminals.map((t) => t.drive), terminals.map((t) => (t.kind === 'port' ? ports[t.index] : contacts[t.side])));
 
   // --- grid
   if (def.grid !== undefined) {
@@ -568,6 +565,20 @@ function normalizeSource(v, path) {
   return { t: Float64Array.from(v.t), values: Float64Array.from(v.values), repeat: v.repeat === true };
 }
 
+// Something must hold the device's overall level: a terminal held at a voltage, and if any is
+// driven by a current, one held that passes current (one that passes none, a closed end, ties the
+// level of nothing, and the driven terminal's voltage would float with φ).
+function checkLevel(drives, owners) {
+  need(drives.some((d) => d.kind === 'V'), "every terminal is driven by a current, so the device's overall level floats: hold at least one at a voltage V");
+  const driven = drives.findIndex((d) => d.kind === 'I');
+  if (driven < 0) return;
+  const name = (k) => (k < 2 ? `contacts.${k === 0 ? 'left' : 'right'}` : `ports[${k - 2}]`);
+  need(
+    drives.some((d, k) => d.kind === 'V' && owners[k].passes),
+    `${name(driven)} is driven by a current, but no terminal held at a voltage passes any, so nothing fixes the level its voltage is read against: hold one that does (the port of an electrode at V: 0, say: at the only electrode of a device, the same as I: 0)`,
+  );
+}
+
 /**
  * The terminals' drives alone (in terminal order: left, right, then the ports), from a definition
  * whose structure is unchanged: for a fast update of sources.
@@ -582,7 +593,7 @@ export function normalizeDrives(def, model) {
     need(model.contacts[side].passes || drives[k].kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
   }
   model.ports.forEach((port, k) => need(port.passes || drives[2 + k].kind === 'V', `ports[${k}].I: this port passes no current (it exchanges only neutral species), so give it no drive`));
-  need(drives.some((d) => d.kind === 'V'), "every terminal is driven by a current, so the device's overall level floats: hold at least one at a voltage V");
+  checkLevel(drives, [model.contacts.left, model.contacts.right, ...model.ports]);
   return drives;
 }
 

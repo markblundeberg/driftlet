@@ -1137,11 +1137,12 @@ export class Solver {
       surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
     }
     this.computeConcentrations();
-    // A floating capacitance alone starts uncharged (σ = 0 at the window's mean φ), as the
-    // starting composition, neutral without it, assumes.
+    // A floating capacitance starts uncharged (σ = 0 at the window's mean φ), as the starting
+    // composition, neutral without it, assumes; with reactions too, its double layer then charges
+    // toward their mixed potential.
     for (const k of this.floating) {
       const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
-      if (!port?.capacitance || port.reactions.length > 0) continue;
+      if (!port?.capacitance) continue;
       let w = 0, sum = 0;
       port.nodes.forEach((g, j) => {
         if (this.phiUndefined[g]) return;
@@ -1151,12 +1152,13 @@ export class Solver {
       });
       if (w > 0) this.termV[k] = port.capacitance.zeroCharge + sum / w;
     }
-    // A floating electrode spread through a port starts where its reactions pass the current it's
-    // set (none, behind a resistance): at its mixed potential in the start's composition, not
-    // level with a held terminal, which can be volts away and pass an absurd current.
+    // A floating electrode spread through a port (without a double layer) starts where its
+    // reactions pass the current it's set (none, behind a resistance): at its mixed potential in
+    // the start's composition, not level with a held terminal, which can be volts away and pass
+    // an absurd current.
     for (const k of this.floating) {
       const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
-      if (!port || port.reactions.length === 0) continue;
+      if (!port || port.reactions.length === 0 || port.capacitance) continue;
       const want = t.drive.kind === 'I' ? sourceAt(t.drive.src, this.time) : 0;
       const current = (V) => {
         this.termV[k] = V;

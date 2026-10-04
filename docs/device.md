@@ -512,7 +512,9 @@ region's species there, and the electrons it takes or gives are the port's curre
 voltage, the port is a potentiostat. At `I: 0` (or with nothing else to carry current), the
 reactions settle at the mixed potential, the corrosion potential where anodic and cathodic
 currents cancel over the window, while each node can be a net anode or a net cathode; a floating
-one starts there, for the start's composition. Per volume of the window a rate is
+one starts there, for the start's composition (with a double layer, it starts uncharged and
+charges toward it). An electrode that's the device's only path for current is at `I: 0` whatever
+its drive: hold it at `V: 0`, which also fixes the level the water's φ is read against. Per volume of the window a rate is
 `rates[q][j] * area[j]`, and per area of a film's floor (thickness h, `area` 1/h) the rate itself.
 
 In 1D, a film on a metal is a slice along the metal: the film's thickness enters through `area`,
@@ -644,7 +646,9 @@ ports: [{ name: 'ref', I: 0, ... },  // a reference electrode: no current, its v
   the voltage floats and is solved for.
 - **`V` and `R`**: a source behind a resistance, $`I = (V - V_{\mathrm{terminal}})/R`$.
 
-At least one terminal must be held at a voltage, or the device's overall level floats. In
+At least one terminal must be held at a voltage, or the device's overall level floats, and if
+one is driven by a current, a held one must pass current (a closed end held at a voltage fixes
+nothing). In
 steady state the terminal currents sum to zero. A contact can be driven by a current only if
 something passes it (a linked species, or a gate's displacement).
 
