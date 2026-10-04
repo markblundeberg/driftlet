@@ -186,8 +186,15 @@ export function describe(def) {
       const law = itf.phi.type === 'capacitive' ? `capacitive, C = ${num(itf.phi.C)} F/m²` : itf.phi.type;
       const align = itf.conductor ? (itf.phi.type === 'capacitive' ? `, zeroCharge ${num(itf.zeroCharge)} V` : '') : itf.phi.type === 'neutral' ? '' : `, dipole ${num(itf.dipole)} V`;
       const blocked = species.filter((sp, i) => itf.links[i].type === 'blocked' && materials[L.material].present[i] && materials[R.material].present[i]).map((sp) => sp.name);
-      const rx = (idef.reactions ?? []).map((r) => r.equation ?? equation(r.left, r.right));
-      lines.push(`  ${L.name} | ${R.name}: ${law}${align}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}`);
+      const kinetics = (r) => (r.vmax !== undefined ? ` (saturating, vmax ${num(r.vmax)} mol/(m²·s))` : r.srh ? ' (SRH)' : '');
+      const rx = (idef.reactions ?? []).map((r) => (r.equation ?? equation(r.left, r.right)) + kinetics(r));
+      const laws = species.flatMap((sp, i) => {
+        const l = itf.links[i];
+        return l.type === 'permeability' ? [`${sp.name} ${num(l.P)} m/s`] : l.type === 'conductance' ? [`${sp.name} ${num(l.G)} S/m²`] : [];
+      });
+      lines.push(
+        `  ${L.name} | ${R.name}: ${law}${align}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}`,
+      );
     });
   }
 

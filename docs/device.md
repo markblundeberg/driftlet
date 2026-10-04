@@ -98,7 +98,8 @@ regions: [
 - `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. In an insertion
   host it's balanced by background electronic carriers.
 - `c0`: initial concentrations, mol/m³: the starting state of each species given. Species
-  connected to a contact don't need it (without it, they start from that contact's level). Any
+  connected to a contact don't need it (without it, they start from that contact's level: the
+  left contact's if the species reaches it, else the right's, else a port's). Any
   other species (blocked everywhere, or only made and consumed by
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's
@@ -169,7 +170,8 @@ defaults to no dipole.
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
-`{ type: 'conductance', G }` ($`J = G \cdot (V_L - V_R)`$, G in S/m², charged species). A species that
+`{ type: 'conductance', G }` ($`J = G \cdot (V_L - V_R)`$, G in S/m², charged species), or
+`{ type: 'permeability', P }` (P in m/s; see [membranes](#membranes)). A species that
 takes part in a reaction at the face and exists on both sides has no default: give its link
 (`'blocked'` if it crosses only through the reaction), since free crossing alongside would
 short-circuit the kinetics.
@@ -225,6 +227,54 @@ $`n_1 = p_1 = n_i`$, a midgap trap). Taking $`p_1`$ from the state keeps equilib
 lies between the two sides (a band offset, a $`\phi`$ jump). Where one carrier is plentiful the
 rate saturates at the other's capture, $`r \to v_p\,p`$: holes reaching an electron-rich layer
 recombine at $`v_p`$ however many electrons wait there, which plain mass action can't do.
+
+**Saturating kinetics** (a transporter, a pump, an enzyme: something that turns over at most so
+fast) replaces `k0` and `alpha` with `vmax` (mol/(m²·s)) and `K`, a half-saturation
+concentration (mol/m³) for every species the forward reaction consumes:
+
+```math
+r = v_{\max} \prod_{\nu<0} \left(\frac{c}{c + K}\right)^{|\nu|} \left(1 - e^{-A/RT}\right)
+```
+
+Michaelis–Menten in each substrate, it runs at $`v_{\max}`$ when they're plentiful and the driving
+force is large, and it's still exactly zero at $`A = 0`$, so a pump stalls where the free energy it
+spends is used up: its static head. The backward rate is the one detailed balance implies, and
+isn't itself saturating, so this is for reactions that run forward.
+
+### Membranes
+
+A membrane thin against everything else (a lipid bilayer, 4–5 nm) is a face. Give it a
+capacitive $`\phi`$ law, its capacitance (about 0.01 F/m², 1 µF/cm²), and a species law
+`{ type: 'permeability', P }` for each ion that crosses it, through channels or carriers. The
+flux is electrodiffusion across the membrane in a constant field (Goldman–Hodgkin–Katz),
+
+```math
+N = P\,\frac{z u\,(c_L - c_R\,e^{z u})}{e^{z u} - 1}, \qquad u = \frac{\phi_R - \phi_L}{V_T}
+```
+
+toward +x, with $`c_L`$ and $`c_R`$ at the face's two edge nodes and $`\phi_R - \phi_L`$ the capacitor's
+voltage. (It's Scharfetter–Gummel across the face, with $`D/h \to P`$; where the two sides are
+different materials, the step in standard level between them counts with $`z\Delta\phi`$, so the flux
+is still exactly zero where $`\bar\mu`$ is level.) The solutions on either side can be strictly
+neutral ($`\varepsilon = 0`$), the membrane's charge then held in each edge node's box, or resolve
+their diffuse layers ($`\varepsilon > 0`$); either way the membrane potential comes out the same, to
+a few microvolts. Pumps and other
+transporters go on the same face as reactions with saturating kinetics, for example the
+Na⁺/K⁺-ATPase between the outside (left) and the cytoplasm (right):
+
+```js nocheck
+{
+  phi: { type: 'capacitive', C: 0.01 },
+  species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': { type: 'permeability', P: 4e-10 }, 'Cl-': { type: 'permeability', P: 4.5e-9 }, 'A-': 'blocked' },
+  reactions: [{ equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: 50e3, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } }],
+}
+```
+
+`fixed` gives ATP's hydrolysis free energy (here 50 kJ/mol, with ADP and phosphate taken
+together). Membrane potentials are $`\phi`$ differences between the two solutions, $`\phi_{\mathrm{in}} - \phi_{\mathrm{out}}`$,
+read from `sol.phi` (or a `'phi'` probe in a transient). A bath contact's terminal voltage is
+its reference species' level instead, what an electrode reversible to that species would read,
+so between two different solutions it differs from $`\Delta\phi`$ by that species' Nernst term.
 
 ### Faces next to a conductor
 
@@ -500,11 +550,13 @@ const now = dev.solution();                   // snapshot of the current state
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
-  `rejected`, and a `trace` of terminal current and voltage after every accepted step. With
-  `probes: [{ x, species, quantity, region }]` the trace also reads a species inside the device,
-  as `trace.probes[k]` beside `trace.t`: its concentration (`quantity: 'c'`, the default, mol/m³)
-  or species voltage (`'V'`), linearly between the nodes around `x` (at an interface, `region`
-  picks the side). That's what a detector at `x` sees. Probes read at accepted steps, which grow
+  `rejected`, and a `trace` of terminal current and voltage after every accepted step (the
+  voltage is the right contact's minus the left's: what a meter between the terminals reads,
+  which at a bath is its reference species' level, not $`\phi`$). With
+  `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
+  as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
+  mol/m³) or species voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the
+  nodes around `x` (at an interface, `region` picks the side). That's what a detector at `x` sees. Probes read at accepted steps, which grow
   as a transient slows, so give `dtMax` to resolve a signal in time.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the

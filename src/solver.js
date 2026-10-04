@@ -1554,6 +1554,27 @@ export class Solver {
         res[R[o]] = -deta; // μ̄ continuous
         this._j(bf, r, bR, r, 1);
         this._j(bf, r, bL, r, -1);
+      } else if (type === 'permeability') {
+        // Electrodiffusion through a thin membrane in a constant field: Scharfetter–Gummel across
+        // the face with D/h → P, its drift taken over the face's whole jump in the standard level
+        // zφ̂ + μ°/RT − ln c_ref (the φ jump of a capacitive face, and any step between the two
+        // materials). Between like solutions it's Goldman–Hodgkin–Katz's flux,
+        //   N = P·zu·(c_L − c_R e^{zu})/(e^{zu} − 1),  u = (φ_R − φ_L)/V_T,
+        // and it's exactly zero where μ̄ is level.
+        const gl = grid.regionEnd[f], gr = gl + 1, kl = gl * n + i, kr = gr * n + i, zi = z[i], P = itf.links[i].P;
+        const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
+        const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
+        const E = Math.expm1(-deta); // η_R − η_L
+        const gBc = P * bernoulli(d) * this.c[kl];
+        const dNdd = -P * bernoulliDerivative(d) * this.c[kl] * E;
+        res[R[o]] = u[o] + gBc * E;
+        this._j(bf, r, bf, r, 1);
+        this._j(bf, r, bL, r, -gBc);
+        this._j(bf, r, bR, r, gBc * (E + 1));
+        if (zi !== 0) {
+          this._j(bf, r, bL, 0, zi * dNdd - zi * gBc * E);
+          this._j(bf, r, bR, 0, -zi * dNdd);
+        }
       } else {
         // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F)
         const gG = (itf.links[i].G * VT) / (z[i] * z[i] * F);
@@ -1796,12 +1817,28 @@ export class Solver {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
       aHi -= p.nu * u[o];
       aLo -= p.nu * uLo[o];
-      if (rx.srh || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
+      if (rx.srh || rx.vmax || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
     }
-    if (rx.srh) {
+    if (rx.vmax) {
+      // Saturating: r = vmax Π (c/(c + K))^{|ν|} (1 − e^{−a}); ∂ln S/∂ln c = |ν| K/(c + K).
+      let S = 1;
+      rx.part.forEach((p, q) => {
+        if (p.nu >= 0) return;
+        const g = p.side ? gR : gL, cc = c[g * n + p.i], K = rx.K[q];
+        S *= powi(cc / (cc + K), -p.nu);
+        this._dlnc(g, p.i, (-p.nu * K) / (cc + K), p.side ? dR : dL);
+      });
+      const a = aHi + aLo, back = Math.exp(-a);
+      rate = rx.vmax * S * -Math.expm1(-a);
+      for (let s = 0; s < M; s++) {
+        dL[s] *= rate;
+        dR[s] *= rate;
+      }
+      for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= rx.vmax * S * back * p.nu;
+    } else if (rx.srh) {
       // SRH, with n and p each at its own side's edge node.
       const { n: pn, p: pp } = rx.srh, gn = pn.side ? gR : gL, gq = pp.side ? gR : gL;
       const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo);

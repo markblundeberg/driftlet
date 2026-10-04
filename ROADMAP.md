@@ -70,6 +70,9 @@ for live demos.
 - Position-dependent rate constants (`kf` as a profile against x, averaged over each node's box
   so the total is exact on any grid), and Beer–Lambert `photogeneration()` in the kit, validated
   against collection theory from blue to red.
+- Membranes as faces: a capacitor with Goldman–Hodgkin–Katz permeabilities, and pumps as
+  saturating reactions on it (validated against GHK, Mullins–Noda, the static head and Donnan),
+  from the membrane agent's debrief.
 - Checks as results: `check(device, sol)` reports each species' ledger (J = F(G − R) under
   light), conservation, and the same device on a grid twice as fine, asked for by the perovskite
   agent.
@@ -139,9 +142,11 @@ for live demos.
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
-   - A worked membrane-potential example with a validation against Goldman–Hodgkin–Katz in its
-     own regime (a thin membrane with $`\varepsilon > 0`$ and few ions, so the field is constant), not the
-     electroneutral one a guinea pig reached for.
+   - Voltage-gated channels (an action potential): a permeability that depends on gating
+     variables with their own kinetics (Hodgkin–Huxley), which would be extra unknowns at a face.
+     Today a page can change `P` with `set()` between steps.
+   - Electron transport and the protonmotive force: a mitochondrial or thylakoid membrane as a
+     face, with V_H⁺ the quantity that couples the respiratory chain to ATP synthase.
    - Done: sources as data (`pulse`, `square`, `triangle`, `ramp`, an `injector` port,
      `recombination` from a lifetime), probes in a transient's trace, `units` back out of SI.
    - Done: an initial profile as plain data, `c0` tabulated against x, so a transient starts

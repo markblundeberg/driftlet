@@ -2,6 +2,29 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Membranes as faces: a species law `{ type: 'permeability', P }` (m/s), electrodiffusion through a
+  thin membrane in a constant field (Goldman–Hodgkin–Katz), exactly zero where μ̄ is level. With a
+  capacitive φ law, a cell membrane is one face. Validated: the GHK resting potential with the
+  solutions strictly neutral or their diffuse layers resolved, the GHK current–voltage curve, the
+  agreement with a resolved 5 nm lipid layer, and charging at the GHK current over C.
+- Saturating kinetics for face reactions, `vmax` and `K` in place of `k0` and `alpha`:
+  r = vmax Π (c/(c + K))^|ν| (1 − e^(−A/RT)), Michaelis–Menten in each substrate and exactly zero
+  at A = 0, for pumps and transporters. The Na⁺/K⁺-ATPase on a membrane face, in a closed cell,
+  gives the Mullins–Noda potential, stalls at its static head (3Δμ̄_Na − 2Δμ̄_K = ΔG_ATP) with
+  nothing leaking back, and leaves Donnan equilibrium when off.
+- `check()` keeps a ledger per compartment: a species a face lets through only by a law or a
+  reaction gets one on each side, with what crosses as a term (in a cell: Na⁺ leaks in as fast as
+  it's pumped out). `describe()` lists what crosses a face by a law, and saturating kinetics.
+- Probes read φ (`{ x, quantity: 'phi' }`), so a transient's trace can carry a membrane potential.
+- A floating contact starts where the start's own composition puts it, so a cold-start
+  transient's first trace point is right (it read the held terminal's voltage, off by a Nernst
+  term or more).
+- Docs: a cell-membrane template in the agent guide; a bath terminal reads its reference
+  species' level, not φ; which contact a species without `c0` starts from; `set()` from
+  `onsolution`; the worker from a CDN; the data's 25 °C. All from the membrane agent's debrief.
+
 ## 0.6.0 (2026-10-03)
 
 - `check(device, sol)` in the kit: checks on a solved device, each saying what it compared, as

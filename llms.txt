@@ -160,6 +160,57 @@ const oc = new Device(cell({ I: 0 })).solve(); // open circuit
 console.log(`J_sc = ${sc.current.toFixed(1)} A/m², V_oc = ${oc.terminals.right.V.toFixed(3)} V`);
 ```
 
+## Template: a cell membrane
+
+A lipid bilayer is a face: a capacitor (about 1 µF/cm², 0.01 F/m²) that ions cross through
+channels, each with a permeability (`{ type: 'permeability', P }`, m/s: electrodiffusion in a
+constant field, so Goldman–Hodgkin–Katz comes out of it), and that pumps cross as reactions with
+saturating kinetics (`vmax`, `K`). The solutions on either side can be strictly neutral. The
+membrane potential is φ_in − φ_out from `sol.phi` (a bath's terminal voltage reads its reference
+species' level instead, which differs from Δφ by that ion's Nernst term).
+
+```js
+import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
+import { build, layer, bath, aqueous, check } from 'driftlet/kit';
+
+const T = 310.15, VT = (GAS_CONSTANT * T) / FARADAY;
+const out = { 'Na+': 145, 'K+': 5, 'Cl-': 110, 'A-': 40 }; // mM = mol/m³; A⁻: anions that don't cross
+const inside = { 'Na+': 12, 'K+': 140, 'Cl-': 10, 'A-': 142 };
+const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 }); // strictly neutral solutions
+water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+const P = { 'K+': 1e-8, 'Na+': 0.04e-8, 'Cl-': 0.45e-8 }; // m/s, Hodgkin and Katz's ratios
+const membrane = {
+  phi: { type: 'capacitive', C: 0.01 },
+  species: { 'K+': { type: 'permeability', P: P['K+'] }, 'Na+': { type: 'permeability', P: P['Na+'] }, 'Cl-': { type: 'permeability', P: P['Cl-'] }, 'A-': 'blocked' },
+  // The Na⁺/K⁺ pump (outside on the left): 3 Na⁺ out, 2 K⁺ in, per ATP (50 kJ/mol); vmax ≈ 3000
+  // pumps per µm² at 100 cycles/s.
+  reactions: [{ equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: 50e3, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } }],
+};
+const cell = build({
+  T,
+  library: [water],
+  stack: [
+    bath(out, 'Cl-'), // the extracellular fluid, held
+    layer('water', 1e-6, { name: 'outside', c0: out }),
+    membrane,
+    layer('water', 5e-6, { name: 'cytoplasm', c0: inside }), // a closed cell: its contents set by leaks and the pump
+    { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' },
+  ],
+  grid: { hmin: 50e-9, hmax: 200e-9 },
+});
+const dev = new Device(cell), sol = dev.solve();
+const g = sol.x.length - 1, ci = (s) => sol.c[s][g], Vm = sol.phi[g] - sol.phi[0];
+// Mullins–Noda: in steady state the pump's 3:2 sets the ratio of the Na⁺ and K⁺ leaks.
+const mn = VT * Math.log((1.5 * P['K+'] * out['K+'] + P['Na+'] * out['Na+']) / (1.5 * P['K+'] * ci('K+') + P['Na+'] * ci('Na+')));
+console.log(`V_m = ${(Vm * 1e3).toFixed(2)} mV (Mullins–Noda ${(mn * 1e3).toFixed(2)}), inside Na⁺ ${ci('Na+').toFixed(1)} K⁺ ${ci('K+').toFixed(1)} mM`);
+console.log(check(dev, sol).text); // per compartment: Na⁺ leaks into the cytoplasm as fast as it's pumped out
+```
+
+Between two baths instead (the inside one `bath(inside, 'Cl-', { I: 0 })`: held composition, no
+current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equilibrium. driftlet
+has no voltage-gated channels; a permeability can be changed with `set()` between steps.
+
 ## Template: an electrode in a stirred solution
 
 One working electrode, a stagnant layer of solution, and the well-stirred bulk as a bath. The
@@ -233,8 +284,9 @@ console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPer
 To start from a state instead of simulating how it got there (a packet already injected, a
 salt gradient laid down), give a region's `c0` a profile against the device's x:
 `c0: { 'h+': { x: [...], values: [...] } }`, piecewise linear. A given `c0` is the starting state,
-even for a species a contact feeds; species without one start at their contact's level, with φ
-made neutral node by node (electrons follow the holes). Then `advance()` without `solve()`, which would go straight to the steady
+even for a species a contact feeds; species without one start at their contact's level (the
+left's if they reach it, else the right's), with φ made neutral node by node (electrons follow
+the holes). Between two different solutions, give every region its `c0`. Then `advance()` without `solve()`, which would go straight to the steady
 state.
 
 Transients cost more where a carrier's density spans many decades (minority holes in silicon
@@ -255,7 +307,9 @@ The definition is plain data: print it, edit what your demo varies.
 
 `live()` merges slider moves made during a solve, warm-starts each solve and keeps the last
 good solution. `bandDiagram()` returns an SVG string. Pass `worker: true` to `live()` to solve in
-a Web Worker.
+a Web Worker (it works with the library loaded from a CDN: a same-origin stub imports it). Calling
+`set()` from `onsolution` is fine, for a quantity the page solves for itself (it queues the next
+solve), as long as it settles rather than ping-pongs.
 
 ```html
 <!doctype html>
@@ -384,11 +438,15 @@ has the long form):
 - **A steady solve of a closed cell where every ion can cross.** Its steady state is complete
   mixing. To watch a junction or a salt bridge, step in time from the unmixed `c0` (`advance`).
 - **Everything floating.** At least one terminal must be held at a voltage `V`.
-- **The library's semiconductors are at 300 K.** Give `T: 300`.
+- **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`). At body
+  temperature, `T: 310.15` with the same μ° and D is a fair start; D rises about 2% per kelvin
+  in water.
 - **Sign of the current.** `sol.current` is positive toward +x: a forward-biased diode with its
   p side on the right carries negative current. A terminal's current is into the device.
-- **Sign of a voltage across a membrane.** `sol.terminalVoltage` is V_right − V_left. Physiology
-  quotes V_inside − V_outside, so put the inside on the right or flip the sign.
+- **A membrane potential read from the terminals.** Physiology's V_m is φ_inside − φ_outside:
+  read it from `sol.phi` (or a `{ x, quantity: 'phi' }` probe in a transient), with the inside on
+  the right. `sol.terminalVoltage` (and a trace's `voltage`) is V_right − V_left of the contacts,
+  which at baths are their reference species' levels: it differs from Δφ by that ion's Nernst term.
 - **A coefficient without its space.** `'2e- + …'` reads `2e-` as a species name; the error says
   to write `2 e-`.
 - **Changing c0 with `set()`.** A carried state keeps what it holds; `c0` is only the starting

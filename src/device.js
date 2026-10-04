@@ -16,7 +16,7 @@ export { DeviceError };
 
 // Contacts use the same laws as internal faces: the outside is a phase with known levels.
 const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange']);
-const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance']);
+const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance', 'permeability']);
 const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'pinned']);
 const GRID_FIELDS = ['hmin', 'hmax', 'ratio', 'minCells'];
 // The fields of each kind of species link (to an outside phase, or across a face).
@@ -433,12 +433,17 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
 //   r = k0 Π_{ν<0} (c/c_ref)^{|ν|(1−α)} Π_{ν>0} (c/c_ref)^{να} (e^{αa} − e^{−(1−α)a})
 // (a conductor's carrier has activity 1, so no factor). That's mass action with rate constants
 // that depend on the electrical part of the affinity, and exactly zero at A = 0.
+// Or saturating (a transporter or an enzyme that turns over at most vmax per area): with K a
+// half-saturation concentration for each species the forward reaction consumes,
+//   r = vmax Π_{ν<0} (c/(c + K))^{|ν|} (1 − e^{−a}),
+// Michaelis–Menten in each substrate, and still exactly zero at A = 0 (the backward rate is the
+// one detailed balance implies).
 function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT) {
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
     need(isObject(rdef), `${rpath} must be { equation, fixed, k0, alpha } or { left, right, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'srh']);
+    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'srh', 'vmax', 'K']);
     let sides = rdef;
     if (rdef.equation !== undefined) {
       need(rdef.left === undefined && rdef.right === undefined, `${rpath}: give the reaction as an equation or as left and right, not both`);
@@ -458,6 +463,22 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     }
     need(part.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
+    if (rdef.vmax !== undefined || rdef.K !== undefined) {
+      need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.srh === undefined, `${rpath}: give vmax and K (saturating), srh, or k0 and alpha (Butler–Volmer), one of them`);
+      const vmax = positive(rdef.vmax, `${rpath}.vmax (mol/(m²·s))`);
+      need(isObject(rdef.K), `${rpath}.K must map each species the forward reaction consumes to its half-saturation concentration (mol/m³)`);
+      for (const name of Object.keys(rdef.K)) {
+        need(part.some((p) => p.nu < 0 && species[p.i].name === name), `${rpath}.K.${name}: not a species the forward reaction consumes`);
+        positive(rdef.K[name], `${rpath}.K.${name} (mol/m³)`);
+      }
+      for (const p of part) {
+        if (p.nu >= 0) continue;
+        const mat = p.side ? matR : matL;
+        need(!mat.conductor, `${rpath}: saturating kinetics is for dissolved substrates, not a metal's ${species[p.i].name}`);
+        need(rdef.K[species[p.i].name] !== undefined, `${rpath}.K.${species[p.i].name}: give a half-saturation concentration for every species the forward reaction consumes`);
+      }
+      return { part, fixedA, vmax, K: part.map((p) => (p.nu < 0 ? rdef.K[species[p.i].name] : 0)) };
+    }
     if (rdef.srh !== undefined) {
       need(rdef.k0 === undefined && rdef.alpha === undefined, `${rpath}: give srh or k0 (and alpha), not both`);
       const srh = srhLaw(rdef.srh, `${rpath}.srh`, part, species, ['vn', 'vp']);
@@ -741,7 +762,8 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   const sheetCharge = idef.sheetCharge === undefined ? 0 : finite(idef.sheetCharge, `${where}.sheetCharge`);
 
   // Per-species laws across the face: local equilibrium (default where present on both sides),
-  // blocked, or an ohmic interface conductance G (S/m²).
+  // blocked, an ohmic interface conductance G (S/m²), or a permeability P (m/s): electrodiffusion
+  // through a thin membrane in a constant field, Goldman–Hodgkin–Katz.
   const links = defaultInterfaceLinks(matL, matR, species);
   if (idef.species !== undefined) {
     need(isObject(idef.species), `${where}.species must map species names to interface links`);
@@ -751,11 +773,15 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
-      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : ['type']);
+      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : link.type === 'permeability' ? ['type', 'P'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
         need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
         positive(link.G, `${lpath}.G`);
+      }
+      if (link.type === 'permeability') {
+        positive(link.P, `${lpath}.P (m/s)`);
+        need(matL.modelOf[i] < 0 && matR.modelOf[i] < 0, `${lpath}: a permeability link needs ideal (dilute) statistics for '${sname}' on both sides`);
       }
       links[i] = { ...link };
     }
@@ -847,6 +873,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
+      need(link.type !== 'permeability', `${lpath}: a permeability link is for a membrane between two solutions, not at a conductor`);
       fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
