@@ -197,6 +197,10 @@
  */
 
 /**
+ * The device's totals through its cross-section (currents, fluxes through contacts and ports,
+ * charges, amounts, reaction totals, impedance) are per m² of a planar device, as below, and
+ * whole (A, mol/s, C, mol, Ω; per metre of a cylinder) for one with a `geometry`. Rates at a
+ * face or an electrode are always per m² of it.
  * @typedef {object} Solution
  * @property {Float64Array} x node positions, m (interface positions appear twice)
  * @property {Int32Array} region region index per node

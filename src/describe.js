@@ -27,10 +27,11 @@ function equation(...maps) {
   return `${lhs.join(' + ') || '0'} = ${rhs.join(' + ') || '0'}`;
 }
 
-function drive(c) {
+// (Per m² of a planar device; a whole one's current and resistance otherwise.)
+function drive(c, planar) {
   const v = (x) => (isObject(x) ? 'a waveform' : `${num(x)}`);
-  if (c?.I !== undefined) return `driven at I = ${v(c.I)} A/m²`;
-  if (c?.R !== undefined) return `a source of ${v(c.V ?? 0)} V behind R = ${num(c.R)} Ω·m²`;
+  if (c?.I !== undefined) return `driven at I = ${v(c.I)} ${planar ? 'A/m²' : 'A'}`;
+  if (c?.R !== undefined) return `a source of ${v(c.V ?? 0)} V behind R = ${num(c.R)} ${planar ? 'Ω·m²' : 'Ω'}`;
   return `held at ${v(c?.V ?? 0)} V`;
 }
 
@@ -209,11 +210,11 @@ export function describe(def) {
     const ct = model.contacts[side];
     const linked = species.filter((sp, i) => ct.species[i].type !== 'blocked').map((sp) => sp.name);
     const term = ct.terminal === null ? '' : ` (terminal ${species[ct.terminal].name})`;
-    lines.push(`  ${side}: ${drive(cdef)}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}`);
+    lines.push(`  ${side}: ${drive(cdef, model.geometry.type === 'planar')}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}`);
   }
   (def.ports ?? []).forEach((p, k) => {
     const port = model.ports[k];
-    lines.push(`  port ${port.name}: ${drive(p)}, in ${regions[port.region].name}`);
+    lines.push(`  port ${port.name}: ${drive(p, model.geometry.type === 'planar')}, in ${regions[port.region].name}`);
     // an electrode spread through the window
     if (port.reactions.length) lines.push(`    an electrode (its ${species[port.terminal].name} at the port's level), ${typeof p.area === 'number' ? `${p.area} m²` : 'a profile of m²'} of it per m³, reacting:`);
     for (const rx of p.reactions ?? []) lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), α ${rx.alpha}${rx.bare ? ', on bare metal' : ''}`);
