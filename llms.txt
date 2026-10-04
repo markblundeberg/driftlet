@@ -14,9 +14,9 @@ docs/conventions.md (signs and levels) and docs/data.md (the data library).
 From a CDN, pin the version:
 
 ```js nocheck
-import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/plot.js';
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/plot.js';
 ```
 
 From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
@@ -319,9 +319,9 @@ solve), as long as it settles rather than ping-pongs.
 <span id="readout"></span>
 <div id="figure"></div>
 <script type="module">
-import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.0/src/plot.js';
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.9.1/src/plot.js';
 
 const def = build({
   T: 300,

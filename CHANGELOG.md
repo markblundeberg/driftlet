@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.9.1 (2026-10-04)
 
 - Fixed: with a capacitance through a port in strictly neutral water, the most abundant ion leaked
   on time steps (about 1e-6 of it, so `check()` failed conservation): the row that stands for
