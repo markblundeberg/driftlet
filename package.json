@@ -29,6 +29,7 @@
   "scripts": {
     "test": "node --test",
     "bench": "node bench/bench.js",
+    "hard": "node bench/hard.js",
     "smoke": "node tools/smoke.js",
     "shots": "node tools/shots.js",
     "prepublishOnly": "npm test && npm run types",

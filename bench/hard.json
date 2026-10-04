@@ -1,0 +1,209 @@
+{
+  "liquid junction from a sharp boundary (ε = 0), tol 1e-4": {
+    "ok": true,
+    "note": "",
+    "steps": 1011,
+    "rejected": 15,
+    "factorizations": 3610,
+    "ms": 2011,
+    "value": {
+      "Δφ (mV)": 8.773400894686645
+    }
+  },
+  "liquid junction from a sharp boundary (ε = 0), tol 1e-3": {
+    "ok": true,
+    "note": "",
+    "steps": 473,
+    "rejected": 18,
+    "factorizations": 1826,
+    "ms": 907,
+    "value": {
+      "Δφ (mV)": 8.773400125234781
+    }
+  },
+  "liquid junction from a 1 µm boundary (ε = 0), tol 1e-4": {
+    "ok": true,
+    "note": "",
+    "steps": 1010,
+    "rejected": 24,
+    "factorizations": 3396,
+    "ms": 1636,
+    "value": {
+      "Δφ (mV)": 8.773400894789091
+    }
+  },
+  "liquid junction from a 1 µm boundary (ε = 0), tol 1e-6": {
+    "ok": false,
+    "note": "stopped at t = 1.13e-10 s",
+    "steps": 2,
+    "rejected": 27,
+    "factorizations": 463,
+    "ms": 222,
+    "value": {
+      "Δφ (mV)": 8.774365780436124
+    }
+  },
+  "electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-8": {
+    "ok": false,
+    "note": "stopped at t = 0.00 s",
+    "steps": 0,
+    "rejected": 25,
+    "factorizations": 1019,
+    "ms": 49,
+    "value": {
+      "θ": 0.00009999999999999999
+    }
+  },
+  "electrode port filling its surface (ε = 0): to 1e-4 s, tol 1e-6": {
+    "ok": true,
+    "note": "",
+    "steps": 14,
+    "rejected": 0,
+    "factorizations": 52,
+    "ms": 3,
+    "value": {
+      "θ": 0.0009445307416999238
+    }
+  },
+  "electrode port filling its surface (ε = 0): to 10 s, tol 1e-3": {
+    "ok": true,
+    "note": "",
+    "steps": 19,
+    "rejected": 3,
+    "factorizations": 193,
+    "ms": 8,
+    "value": {
+      "θ": 0.8750318042989552
+    }
+  },
+  "silver face in AgNO₃ (ε = 0): to 1e-7 s, tol 1e-8": {
+    "ok": true,
+    "note": "",
+    "steps": 31,
+    "rejected": 9,
+    "factorizations": 160,
+    "ms": 7,
+    "value": {
+      "I (A/m²)": 4352.265111262266
+    }
+  },
+  "silver face in AgNO₃ (ε = 0): to 1e-3 s, tol 1e-8": {
+    "ok": true,
+    "note": "",
+    "steps": 922,
+    "rejected": 11,
+    "factorizations": 1962,
+    "ms": 47,
+    "value": {
+      "I (A/m²)": 4872.543562555082
+    }
+  },
+  "silver face in AgNO₃ (ε = 0): to 1e-3 s, tol 1e-3": {
+    "ok": true,
+    "note": "",
+    "steps": 38,
+    "rejected": 5,
+    "factorizations": 209,
+    "ms": 4,
+    "value": {
+      "I (A/m²)": 4872.282827836247
+    }
+  },
+  "drop on iron faces, O₂ through an exchange port (ε = 0): to 1000 s": {
+    "ok": true,
+    "note": "",
+    "steps": 334,
+    "rejected": 25,
+    "factorizations": 1224,
+    "ms": 97,
+    "value": {
+      "I_Fe (A/m²)": 1.8700672376104892
+    }
+  },
+  "radial drop on a passivating iron electrode, double layer 0.2 F/m²: to 3600 s": {
+    "ok": true,
+    "note": "",
+    "steps": 414,
+    "rejected": 63,
+    "factorizations": 1669,
+    "ms": 451,
+    "value": {
+      "E − φ₀ (V)": 0.2887123566854634
+    }
+  },
+  "radial drop on a passivating iron electrode, no double layer: to 3600 s": {
+    "ok": false,
+    "note": "stopped at t = 1.82e+3 s",
+    "steps": 364,
+    "rejected": 103,
+    "factorizations": 2437,
+    "ms": 590,
+    "value": {
+      "E − φ₀ (V)": 0.07056839348857098
+    }
+  },
+  "MOS without a channel port: cold steady solves, 0 → 1 V in 0.1 V": {
+    "ok": false,
+    "note": "failed at 0.3, 0.4, 0.9 V",
+    "steps": 0,
+    "rejected": 0,
+    "factorizations": 1422,
+    "ms": 125,
+    "value": {
+      "failures": 3
+    }
+  },
+  "MOS without a channel port: warm steady solves, 0 → 1 V in 0.05 V": {
+    "ok": false,
+    "note": "failed at 0.05 V",
+    "steps": 0,
+    "rejected": 0,
+    "factorizations": 292,
+    "ms": 30,
+    "value": {}
+  },
+  "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1 s": {
+    "ok": true,
+    "note": "",
+    "steps": 14,
+    "rejected": 0,
+    "factorizations": 147,
+    "ms": 17,
+    "value": {
+      "ΔQ/(C_ox·δV)": 0.12468686482590713
+    }
+  },
+  "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1000 s": {
+    "ok": true,
+    "note": "",
+    "steps": 1260,
+    "rejected": 627,
+    "factorizations": 20357,
+    "ms": 1403,
+    "value": {
+      "ΔQ/(C_ox·δV)": 0.8383321971915174
+    }
+  },
+  "solar n⁺p, dim 1050 nm, open circuit from cold, hmin 1 nm": {
+    "ok": true,
+    "note": "",
+    "steps": 0,
+    "rejected": 0,
+    "factorizations": 519,
+    "ms": 83,
+    "value": {
+      "V_oc (V)": 0.3844219440748137
+    }
+  },
+  "solar n⁺p, dim 1050 nm, open circuit from cold, hmin 0.25 nm": {
+    "ok": false,
+    "note": "steady solve failed",
+    "steps": 0,
+    "rejected": 0,
+    "factorizations": 1913,
+    "ms": 285,
+    "value": {
+      "V_oc (V)": 0
+    }
+  }
+}
