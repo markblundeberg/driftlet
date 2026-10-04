@@ -125,6 +125,11 @@ export function describe(def) {
   const warnings = unitWarnings(def);
   const total = grid.x[grid.x.length - 1] - grid.x[0];
   lines.push(`${regions.length} region${regions.length > 1 ? 's' : ''}, ${si(total, 'm')}, ${grid.x.length} nodes, T = ${model.T} K`);
+  const geo = model.geometry;
+  if (geo.type !== 'planar') {
+    const shape = geo.type === 'profile' ? `a cross-section from ${num(Math.min(...grid.area))} to ${num(Math.max(...grid.area))} m²` : `${geo.type} shells, r = ${si(geo.r0, 'm')} + x${geo.type === 'cylindrical' ? ' (per metre of length)' : ''}`;
+    lines.push(`geometry: ${shape}; currents and fluxes are totals through it (A, mol/s)`);
+  }
   lines.push(`species: ${species.map((sp) => `${sp.name} (z = ${sp.z > 0 ? '+' : ''}${sp.z})`).join(', ')}`);
 
   lines.push('regions:');

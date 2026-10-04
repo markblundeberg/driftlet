@@ -24,6 +24,7 @@ too (`FARADAY`, `GAS_CONSTANT`, `EPS0`, …).
 | `contacts` | `{ left, right }` |
 | `ports` | internal ports: outside phases exchanging with a window of nodes |
 | `grid` | default spacing for every region |
+| `geometry` | the cross-section $`A(x)`$: planar (default), spherical or cylindrical shells, or a profile (see [geometry](#geometry)) |
 
 ## Species
 
@@ -509,9 +510,10 @@ window's nodes and every reaction's rate at each, `ports[k].x` and `ports[k].rat
 Validated against the transmission line (linear kinetics along a bar, test/ports.test.js) and the
 Wagner–Traud mixed potential of two Butler–Volmer couples. In 1D, a film on a metal is a slice
 along the metal: the film's thickness enters through `area`, and through a bulk reaction for
-anything that reaches the film from above (O₂ from the air, see the exchange link above). Its
-cross-section, and so how hard it is for ions to travel along it, is the region's own, the same
-everywhere.
+anything that reaches the film from above (O₂ from the air, see the exchange link above). Where
+the film's thickness varies, give the device its [cross-section](#geometry) too, so that ions
+travelling along the film squeeze through where it thins: for a drop on a metal, seen from its
+centre, $`A = 2\pi r\,h(r)`$ with `area` $`1/h(r)`$.
 
 ## Terminals
 
@@ -566,6 +568,34 @@ the electrode, and a uniform grid there overshoots: a 100 µm silver nitrate cel
 cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax: 2e-6 }` stays
 within 0.1% with as many nodes. Where a species carrying the current is steep across a region's
 end cells in this way, the solution's `warnings` say so, with a rough estimate of the excess.
+
+## Geometry
+
+A device is planar unless it says otherwise: a slab whose cross-section $`A`$ is 1 m², so every
+current, flux, amount and charge reads per m². With `geometry`, the cross-section varies along x,
+and the conservation laws hold for totals through it: a box holds $`\int A\,dx`$, and what crosses
+a face is the flux there times $`A`$ there.
+
+```js nocheck
+geometry: { type: 'spherical', r0: 10e-6 },   // shells, r = r0 + x: a microelectrode of radius r0
+geometry: { type: 'cylindrical', r0: 0 },     // a wire or fibre from its axis (per metre of length)
+geometry: { area: { x: [0, 1e-3], values: [3e-6, 1e-7] } }, // A (m²) against x: a film thinning, a pit
+```
+
+This is how radial problems become 1D, with the right $`1/r^2`$ (or $`1/r`$) in every divergence and in
+Gauss's law, without writing them out. The finite volumes integrate over shells, so conservation
+is exact as in a slab. Each segment's transport is weighted by its length over $`\int dx/A`$, which
+makes steady diffusion between two nodes exact for any $`A(x)`$ (the $`1/r`$ and $`\ln r`$ profiles
+on any grid). Where $`A`$ vanishes at an end (a sphere's centre, `r0: 0`), the segment takes $`A`$ at
+its middle, and nothing passes the end. Only an end may have $`A = 0`$. Flow (`velocity`) is for
+planar devices.
+
+With a cross-section, the solution's currents, contact and port fluxes, terminal currents and
+`charge` are totals (A, mol/s; per metre for cylinders), and so are `I` drives. Face laws,
+rates, `interfaces[f].N` and `D`, and concentrations stay per area or per volume. Validated against
+steady diffusion to a sphere and a cylinder (exact), Cottrell's transient with the spherical term,
+uptake by a sphere filling from its surface, and Debye–Hückel screening around a charged sphere
+(test/geometry.test.js).
 
 ## Using a device
 
@@ -656,14 +686,14 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `phi` | bookkeeping $`\phi`$, V (`NaN` where undefined) |
 | `c[name]`, `mu[name]`, `muStd[name]` | concentration, $`\bar\mu`$, standard level $`\mu^\circ + zF\phi`$ (`NaN` where absent) |
 | `V[name]`, `Vstd[name]` | species voltage $`\bar\mu/(zF)`$ and standard level as a voltage (charged species) |
-| `current`, `terminalVoltage` | current toward +x through the device (A/m²) and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
+| `current`, `terminalVoltage` | current toward +x through the device (A/m², or A through a [cross-section](#geometry)) and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
 | `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates }`: the names of the regions the face joins, what crosses it by its links, and each face reaction's rate (mol/(m²·s)) |
 | `bulkReactions[k]` | `{ rate, regions, total }`: each bulk reaction's forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
-| `charge` | total charge in the device, C/m² |
+| `charge` | total charge in the device, C/m² (C through a cross-section) |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |

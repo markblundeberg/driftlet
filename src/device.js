@@ -6,7 +6,7 @@
 // defaults for physically meaningful choices: interface alignments, reference concentrations
 // and standard potentials must all be given.
 
-import { buildGrid } from './grid.js';
+import { buildGrid, applyGeometry } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
 import { DeviceError } from './errors.js';
@@ -105,7 +105,7 @@ function nonNegative(v, path) {
  */
 export function normalizeDevice(def) {
   need(isObject(def), 'device definition must be an object');
-  fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'grid']);
+  fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'grid', 'geometry']);
 
   const T = def.T === undefined ? 298.15 : positive(def.T, 'T');
   const RT = GAS_CONSTANT * T;
@@ -328,6 +328,17 @@ export function normalizeDevice(def) {
   } catch (err) {
     throw new DeviceError(`grid: ${err.message}`);
   }
+  const geometry = normalizeGeometry(def.geometry);
+  if (geometry.type !== 'planar') {
+    regions.forEach((reg, r) => need(reg.velocity === 0, `regions[${r}].velocity: flow is for a planar device (a uniform velocity through a varying cross-section wouldn't conserve the liquid)`));
+  }
+  applyGeometry(grid, geometry);
+  // (zero only at an end, as at a sphere's centre: nothing passes there)
+  const inside = (x) => x > 0 && x < grid.length;
+  need(
+    grid.area.every((a, g) => a > 0 || g === 0 || g === grid.nNodes - 1) && (geometry.type !== 'profile' || geometry.values.every((a, k) => a > 0 || !inside(geometry.x[k]))),
+    'geometry: the cross-section vanishes inside the device; only an end may have A = 0',
+  );
 
   // Port windows: the nodes of the port's region within [from, to] of its left end.
   ports.forEach((port, k) => {
@@ -342,7 +353,7 @@ export function normalizeDevice(def) {
   });
 
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry,
   };
 }
 
@@ -606,6 +617,26 @@ export function nextBreakpoint(src, t) {
     }
   }
   return Infinity;
+}
+
+// The device's cross-section A(x): planar (the default, A = 1 m², so currents read as densities),
+// spherical or cylindrical about a centre r0 to the left of x = 0 (r = r0 + x), or a profile
+// { x, values } of A in m². Every flux, current and amount is then a total through A.
+function normalizeGeometry(g) {
+  if (g === undefined || g === 'planar') return { type: 'planar' };
+  if (g === 'spherical' || g === 'cylindrical') g = { type: g };
+  need(isObject(g), "geometry must be 'planar', 'spherical', 'cylindrical', { type, r0 } or { area: { x, values } }");
+  if (g.area !== undefined) {
+    fields(g, 'geometry', ['area']);
+    const p = profile(g.area, 'geometry.area', 'cross-sections (m²)', (a) => a >= 0, 'a cross-section ≥ 0 (m²)');
+    need([...p.values].some((a) => a > 0), 'geometry.area: the cross-section is zero everywhere');
+    return { type: 'profile', x: p.x, values: p.values };
+  }
+  fields(g, 'geometry', ['type', 'r0']);
+  need(['planar', 'spherical', 'cylindrical'].includes(g.type), "geometry.type must be 'planar', 'spherical' or 'cylindrical'");
+  if (g.type === 'planar') return { type: 'planar' };
+  const r0 = g.r0 === undefined ? 0 : nonNegative(g.r0, 'geometry.r0 (m, the radius at x = 0)');
+  return { type: g.type, r0 };
 }
 
 // An internal port: an outside phase with known levels (V_i = V + offset_i, or μ for neutral

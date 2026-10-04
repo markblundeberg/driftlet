@@ -91,7 +91,8 @@ export function makeSolution(solver, result = {}) {
     const V = solver.termV[side === 'left' ? 0 : 1];
     sol.contacts[side] = { V, flux, D, current: conduction + displacement };
     if (ct.phi.type === 'capacitive' || ct.phi.type === 'pinned') {
-      // Charge per area on the gate (or metal) plate: +D at the left, −D at the right.
+      // Charge on the gate (or metal) plate, per area if the device is planar: +D at the left, −D
+      // at the right.
       sol.gates[side] = { V, D, charge: side === 'left' ? D : -D };
     }
   }
@@ -149,14 +150,14 @@ export function makeSolution(solver, result = {}) {
     return { rate, regions, total };
   });
 
-  // Total charge per area in the device (space charge plus sheet charges).
+  // Total charge in the device (space charge plus sheet charges), per area if it's planar.
   let q = 0;
   for (let g = 0; g < nNodes; g++) {
     let rho = solver.rhoFixed[g];
     for (let i = 0; i < n; i++) rho += F * species[i].z * c[g * n + i];
     q += grid.vol[g] * rho;
   }
-  for (const itf of interfaces) q += itf.sheetCharge;
+  interfaces.forEach((itf, f) => (q += itf.sheetCharge * grid.area[grid.regionEnd[f]]));
   sol.charge = q;
 
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,

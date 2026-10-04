@@ -26,7 +26,7 @@ minor versions.
 ## Is it for your problem?
 
 The same equations go by different names in different fields. If your problem is one-dimensional
-(planar), it's probably here:
+(planar, or radial: spheres and cylinders, or any cross-section varying along x), it's probably here:
 
 | If you work on | you may call it | start from | checked against |
 |---|---|---|---|
@@ -204,7 +204,9 @@ current. Supported physics:
 
 ## What it doesn't do
 
-- **More than one dimension.** Planar 1D only, so no porous-electrode (P2D) models. For 2D/3D,
+- **More than one dimension.** 1D only: planar, or a cross-section varying along x (spheres,
+  cylinders, a thinning film), so no porous electrodes with diffusion inside their particles
+  (P2D models). For 2D/3D,
   see [ChargeTransport.jl](https://github.com/WIAS-PDELib/ChargeTransport.jl), TCAD tools or
   COMSOL.
 - **Cross-diffusion.** Each species moves down its own μ̄ with its own D (the statistics can be
@@ -259,6 +261,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
 | Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
 | Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel | 1e-4; 1e-9; 2e-3 |
+| Cross-sections (spherical, cylindrical, any A(x)) | steady diffusion to a sphere and a cylinder (exact on any grid); Cottrell with the spherical term; uptake by a sphere filling from its surface; Debye–Hückel around a charged sphere, potential and charge | 1e-10; 3e-4; 2e-4; 1e-3, 3e-4 |
 | Electrodes spread through a port | transmission line with the reaction's linear kinetics as the conductance (O(h²)), rates along it; Wagner–Traud mixed potential of two Butler–Volmer couples, floating | 1e-4, 2e-3; 1e-6 V |
 | Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |

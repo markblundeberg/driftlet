@@ -117,6 +117,22 @@ Grids grade geometrically from `hmin` at each region end up to `hmax`. They're n
 automatically, to avoid performance surprises. Instead, solutions warn when a double layer the
 model is meant to resolve is coarser than the local Debye length.
 
+### A cross-section
+
+With a [`geometry`](device.md#geometry), the device has a cross-section $`A(x)`$ (spherical
+shells $`4\pi r^2`$, cylindrical $`2\pi r`$ with $`r = r_0 + x`$, or a profile), and every balance
+is for totals through it:
+$`\partial_t (A c_i) + \partial_x (A N_i) = A \sum_r \nu_{ir} r_r`$, and Gauss's law
+$`-\partial_x (A\varepsilon\,\partial_x\phi) = A\rho`$. The box method carries this without writing out any
+$`1/r`$ terms: a box's volume becomes $`\int A\,dx`$ over it (exactly, for each shape), and what a
+segment, a face or a contact passes is multiplied by the area it passes through. A segment's
+$`1/h`$ becomes $`1/\int dx/A`$ over it, its resistance per unit conductivity, which is the exact
+weighting for steady diffusion (a constant total flux $`AN`$, so $`\Delta c = AN\int dx/A\,/D`$).
+Scharfetter–Gummel keeps its form with that weighting, and so does the displacement. Where $`A`$
+vanishes at an end (a sphere's centre), $`\int dx/A`$ diverges, so that segment takes $`A`$ at its
+middle. A flux node's unknowns stay per area, entering each side's balance times the face's
+area. A planar device has $`A = 1`$ and every factor is exactly 1, so it's unchanged to the last bit.
+
 ### What lives where
 
 | Place | Holds |

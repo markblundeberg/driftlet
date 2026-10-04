@@ -156,9 +156,8 @@ for live demos.
    - Electron transport and the protonmotive force: a mitochondrial or thylakoid membrane as a
      face, with V_H⁺ the quantity that couples the respiratory chain to ATP synthase.
    - From the corrosion agent's review:
-     - **A cross-section that varies along x**, A(x) in the divergence: a drop's film thinning
-       toward its rim (and its radius, A ∝ r·h(r)), a pit or a crevice that widens to its mouth.
-       With electrode ports, that's the honest radial Evans drop.
+     - Done: a cross-section that varies along x (`geometry`), spherical and cylindrical shells
+       included. With electrode ports, that's the radial Evans drop, A = 2πr·h(r).
      - Done: rates at a hypothetical level, `polarization()`, for Evans diagrams.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V

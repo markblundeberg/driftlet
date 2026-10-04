@@ -1142,7 +1142,7 @@ export class Solver {
         // Excess carriers: zero in the bulk, the surface sheet at a charged face.
         for (let i = 0; i < n; i++) c[g * n + i] = 0;
         const f = this.sheetFace[g];
-        if (f >= 0) c[g * n + im] = (this.sheetSign[g] * u[this.blockOfFace[f] * M]) / (z[im] * FARADAY * this.model.grid.vol[g]);
+        if (f >= 0) c[g * n + im] = (this.sheetSign[g] * u[this.blockOfFace[f] * M] * this.model.grid.area[g]) / (z[im] * FARADAY * this.model.grid.vol[g]);
         continue;
       }
       for (let i = 0; i < n; i++) {
@@ -1253,7 +1253,7 @@ export class Solver {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
       if (mat.conductor) {
         for (let g = g0; g <= g1; g++) this._nodeConductor(g, dt);
-        for (let s = g0; s < g1; s++) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s]);
+        for (let s = g0; s < g1; s++) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s] / grid.segArea[s]);
         continue;
       }
       if (mat.ideal) this._nodesDilute(g0, g1, dt);
@@ -1261,7 +1261,7 @@ export class Solver {
       const rxs = this.rxsIn[reg.material];
       if (rxs.length > 0) for (let g = g0; g <= g1; g++) this._bulkReactions(g, rxs);
       for (let s = g0; s < g1; s++) {
-        const bL = s + r, bR = bL + 1, h = grid.segLength[s];
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s]; // (a length over the cross-section: fluxes are totals)
         this._segmentDisplacement(s, bL, bR, mat, h);
         if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat);
         if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, reg.velocity);
@@ -1289,7 +1289,7 @@ export class Solver {
     const r = 1 + im, k = g * n + im;
     res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
     const f = this.sheetFace[g];
-    if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, this.sheetSign[g] / (z[im] * FARADAY * dt));
+    if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, (this.sheetSign[g] * this.model.grid.area[g]) / (z[im] * FARADAY * dt));
   }
 
   // Dilute nodes g0…g1 (ideal statistics, c = c_ref e^ζ): storage of each species and the space
@@ -1538,9 +1538,9 @@ export class Solver {
   _segmentsDilute(g0, g1, region, mat, vel) {
     const { n, M, u, uLo, res, c, z, sys, loc } = this, R = this.rix, F = FARADAY;
     const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys;
-    const segLength = this.model.grid.segLength;
+    const { segLength, segArea } = this.model.grid;
     for (let s = g0; s < g1; s++) {
-      const bL = s + region, bR = bL + 1, h = segLength[s];
+      const bL = s + region, bR = bL + 1, h = segLength[s] / segArea[s]; // (fluxes are totals through the cross-section)
       const mL = sizes[bL], mR = sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
       const phiL = u[bL * M], phiR = u[bR * M];
       for (let i = 0; i < n; i++) {
@@ -1623,15 +1623,16 @@ export class Solver {
         this._j(bf, 0, bL, 0, -kC);
       }
     }
-    // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead.
-    const gL = grid.regionEnd[f], gR = gL + 1;
+    // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead. The
+    // flux node's unknowns are per area, so what they carry is that times the face's area.
+    const gL = grid.regionEnd[f], gR = gL + 1, Af = grid.area[gL];
     if (this.nodeConductor[gL] < 0) {
-      res[R[bL * M]] += u[bf * M];
-      this._j(bL, 0, bf, 0, 1);
+      res[R[bL * M]] += Af * u[bf * M];
+      this._j(bL, 0, bf, 0, Af);
     }
     if (this.nodeConductor[gR] < 0) {
-      res[R[bR * M]] -= u[bf * M] + itf.sheetCharge;
-      this._j(bR, 0, bf, 0, -1);
+      res[R[bR * M]] -= Af * (u[bf * M] + itf.sheetCharge);
+      this._j(bR, 0, bf, 0, -Af);
     }
     for (let i = 0; i < n; i++) {
       const r = 1 + i, o = bf * M + r;
@@ -1671,12 +1672,12 @@ export class Solver {
         this._j(bf, r, bL, r, -gG);
         this._j(bf, r, bR, r, gG);
       }
-      res[R[bL * M + r]] += u[o];
-      this._j(bL, r, bf, r, 1);
-      res[R[bR * M + r]] -= u[o];
-      this._j(bR, r, bf, r, -1);
+      res[R[bL * M + r]] += Af * u[o];
+      this._j(bL, r, bf, r, Af);
+      res[R[bR * M + r]] -= Af * u[o];
+      this._j(bR, r, bf, r, -Af);
     }
-    itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR));
+    itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR, Af));
   }
 
   // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
@@ -1893,7 +1894,7 @@ export class Solver {
   // with the row r_k − rate(u_L, u_R) = 0, and each participant's edge node takes ν·r_k (made
   // there when ν > 0). The rate couples the two edge nodes only through the face block between
   // them, which keeps the system block-tridiagonal.
-  _faceReaction(rx, k, f, bf, bL, bR) {
+  _faceReaction(rx, k, f, bf, bL, bR, Af) {
     const { n, M, u, uLo, c, res } = this;
     const R = this.rix;
     const grid = this.model.grid;
@@ -1953,8 +1954,8 @@ export class Solver {
     }
     for (const p of rx.part) {
       const b = p.side ? bR : bL;
-      res[R[b * M + 1 + p.i]] -= p.nu * u[o];
-      this._j(b, 1 + p.i, bf, slot, -p.nu);
+      res[R[b * M + 1 + p.i]] -= Af * p.nu * u[o];
+      this._j(b, 1 + p.i, bf, slot, -Af * p.nu);
     }
   }
 
@@ -2103,6 +2104,7 @@ export class Solver {
     const b = this.blockOfNode[g];
     const sgn = side === 'left' ? 1 : -1;
     const flux = this.contactFlux[side];
+    const Ac = model.grid.area[g]; // the links' laws are per area: what they pass is that times A here
     const dyn = Number.isFinite(dt);
 
     // Before anything is added, each balance residual is the flux into the device here.
@@ -2123,13 +2125,13 @@ export class Solver {
       const link = ct.species[i];
       const o = b * M + 1 + i;
       if (link.type === 'exchange') {
-        res[R[o]] -= link.k * (link.mu / model.RT - (u[o] + uLo[o]));
-        this._j(b, 1 + i, b, 1 + i, link.k);
+        res[R[o]] -= Ac * link.k * (link.mu / model.RT - (u[o] + uLo[o]));
+        this._j(b, 1 + i, b, 1 + i, Ac * link.k);
       } else if (link.type === 'conductance') {
         const Vi = (VT * (u[o] + uLo[o])) / z[i];
-        res[R[o]] -= (link.G * (Vt + link.offset - Vi)) / (z[i] * F);
-        this._j(b, 1 + i, b, 1 + i, (link.G * VT) / (z[i] * z[i] * F));
-        B[R[o]] += -link.G / (z[i] * F);
+        res[R[o]] -= (Ac * link.G * (Vt + link.offset - Vi)) / (z[i] * F);
+        this._j(b, 1 + i, b, 1 + i, (Ac * link.G * VT) / (z[i] * z[i] * F));
+        B[R[o]] += (-Ac * link.G) / (z[i] * F);
       }
     }
 
@@ -2151,15 +2153,15 @@ export class Solver {
       this.contactD[side] = 0;
     } else if (link.type === 'capacitive') {
       // Gate, or metal across a Stern layer, at φ_g = V_t − zeroCharge. D toward +x.
-      const Din = link.C * (Vt - link.zeroCharge - VT * u[b * M]);
+      const Din = Ac * link.C * (Vt - link.zeroCharge - VT * u[b * M]);
       res[R[b * M]] -= Din;
-      this._j(b, 0, b, 0, link.C * VT);
-      B[R[b * M]] += -link.C;
+      this._j(b, 0, b, 0, Ac * link.C * VT);
+      B[R[b * M]] += -Ac * link.C;
       this.contactD[side] = sgn * Din;
       if (dyn) {
         I += (Din - Dstart) / dt;
-        C[R[b * M]] += (-link.C * VT) / dt;
-        this.termDI[k] += link.C / dt;
+        C[R[b * M]] += (-Ac * link.C * VT) / dt;
+        this.termDI[k] += (Ac * link.C) / dt;
       }
     } else if (link.type === 'pinned' || link.type === 'bulk') {
       // The Poisson residual is the outside's charge, D_in.
@@ -3047,7 +3049,7 @@ export class Solver {
       const reg = regions[r], mat = materials[reg.material];
       if (mat.conductor) {
         for (const g of nodes) this._nodeConductor(g, dt);
-        for (const s of segs) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s]);
+        for (const s of segs) this._segmentConductor(s, s + r, s + r + 1, mat, grid.segLength[s] / grid.segArea[s]);
         continue;
       }
       for (const g of nodes) {
@@ -3057,7 +3059,7 @@ export class Solver {
       const rxs = this.rxsIn[reg.material];
       if (rxs.length > 0) for (const g of nodes) this._bulkReactions(g, rxs);
       for (const s of segs) {
-        const bL = s + r, bR = bL + 1, h = grid.segLength[s];
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s]; // (a length over the cross-section: fluxes are totals)
         this._segmentDisplacement(s, bL, bR, mat, h);
         if (reg.mixing > 0) this._segmentMixing(s, bL, bR, reg.mixing, h, mat);
         if (!mat.ideal) this._segmentConcentrated(s, bL, bR, mat, h, reg.velocity);

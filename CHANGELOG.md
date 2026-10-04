@@ -4,6 +4,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Devices with a cross-section A(x): `geometry: { type: 'spherical' | 'cylindrical', r0 }` (shells
+  about a centre r0 to the left of x = 0) or `{ area: { x, values } }`. The finite volumes carry
+  totals through A: boxes hold ∫A dx, faces and contacts pass their flux times A there, and each
+  segment is weighted by its length over ∫dx/A, so steady diffusion between nodes is exact for
+  any A. Currents, fluxes, amounts and charges are then totals (planar devices are unchanged, bit
+  for bit, with A = 1 m²). Validated in test/geometry.test.js: steady diffusion to a sphere and a
+  cylinder (exact on any grid), Cottrell's transient with the spherical term, uptake by a sphere
+  from its surface (centre at x = 0), Debye–Hückel screening around a charged sphere.
+
 - Electrodes spread through a window: a port with `reactions` (Butler–Volmer per area, as at a
   face) against its terminal species, a metal's carrier at the port's level, and an `area` of
   electrode per volume (a number or a profile). Used for the metal under a thin film of electrolyte,

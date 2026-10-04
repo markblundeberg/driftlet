@@ -65,7 +65,7 @@ export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
   // The rest checks a solution, which an unconverged state isn't.
   if (sol.converged) {
     const ledger = steady ? balance(device, sol) : null;
-    items.push(ledger ?? conservation(sol));
+    items.push(ledger ?? conservation(sol, Math.max(...device.model.grid.area)));
     if (steady && refine) items.push(gridCheck(device, sol, tol, ledger.details.gross));
   }
 
@@ -164,26 +164,27 @@ function balance(device, sol) {
 // carrier, σRT/(z²F²L)), and by its bulk reactions, their one-way rates. In equilibrium the net
 // flows are round-off of these.
 function naturalScales(device, sol) {
-  const { model, solver } = device, { species } = model;
-  const box = (g) => ((g > 0 && sol.region[g - 1] === sol.region[g] ? sol.x[g] - sol.x[g - 1] : 0) + (g + 1 < sol.x.length && sol.region[g + 1] === sol.region[g] ? sol.x[g + 1] - sol.x[g] : 0)) / 2;
+  const { model, solver } = device, { species, grid } = model;
+  // (totals through the cross-section, as the ledgers are: its largest in each region)
+  const area = model.regions.map((_, r) => Math.max(...grid.area.subarray(grid.regionStart[r], grid.regionEnd[r] + 1)));
   return species.map((sp, i) => {
     let S = 0;
     model.regions.forEach((reg, r) => {
       const mat = model.materials[reg.material], L = reg.length;
       if (mat.conductor) {
-        if (mat.conductor.i === i) S = Math.max(S, (mat.conductor.sigma * model.RT) / (sp.z * sp.z * FARADAY * FARADAY * L));
+        if (mat.conductor.i === i) S = Math.max(S, (area[r] * mat.conductor.sigma * model.RT) / (sp.z * sp.z * FARADAY * FARADAY * L));
         return;
       }
       if (!mat.present[i] || !(mat.D[i] > 0)) return;
       let cmax = 0;
       for (let g = 0; g < sol.x.length; g++) if (sol.region[g] === r && Number.isFinite(sol.c[sp.name][g])) cmax = Math.max(cmax, sol.c[sp.name][g]);
-      S = Math.max(S, (mat.D[i] * cmax) / L);
+      S = Math.max(S, (area[r] * mat.D[i] * cmax) / L);
     });
     solver.rxs.forEach((rx) => {
       const p = rx.sp.indexOf(i);
       if (p < 0) return;
       let gross = 0;
-      for (let g = 0; g < sol.x.length; g++) if (rx.kf[solver.nodeMaterial[g]] > 0) gross += box(g) * solver.bulkOneWay(rx, g);
+      for (let g = 0; g < sol.x.length; g++) if (rx.kf[solver.nodeMaterial[g]] > 0) gross += grid.vol[g] * solver.bulkOneWay(rx, g);
       S = Math.max(S, Math.abs(rx.nu[p]) * gross);
     });
     return S;
@@ -191,12 +192,12 @@ function naturalScales(device, sol) {
 }
 
 // Closed, unreacting stretches keep their amounts in a transient.
-function conservation(sol) {
+function conservation(sol, area = 1) {
   const closed = sol.conservation.filter((st) => !st.connected && !st.reactive);
   if (closed.length === 0) return { name: 'conservation', ok: true, summary: 'nothing closed to conserve (every species reaches a terminal or reacts)' };
   // Relative to the amount, but a drift below 1e-20 mol/m² (1e-15 C/m²) is nothing: a floating
-  // metal's excess electrons are themselves ~0.
-  const worst = Math.max(...closed.map((st) => (Math.abs(st.amount - st.reference - st.intake) < 1e-20 ? 0 : Math.abs(st.drift))));
+  // metal's excess electrons are themselves ~0. (Amounts are totals through the cross-section.)
+  const worst = Math.max(...closed.map((st) => (Math.abs(st.amount - st.reference - st.intake) < 1e-20 * area ? 0 : Math.abs(st.drift))));
   return {
     name: 'conservation',
     ok: worst < 1e-8,

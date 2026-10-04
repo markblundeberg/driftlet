@@ -405,7 +405,9 @@ has the long form):
   do. It checks the setup: a solver's output looks authoritative even when an input is wrong, and
   a mismatch is the cheapest way to catch it. Where the two should differ (high injection, a
   finite pulse), say why.
-- **Stay honestly inside 1D.** driftlet models planar devices. Where the real device isn't one,
+- **Stay honestly inside 1D.** driftlet models devices along one coordinate: planar, or with a
+  cross-section A(x) (`geometry`: spherical or cylindrical shells, or a profile), in which case
+  currents and fluxes are totals through it. Where the real device isn't one,
   say so and pick the slice that still tells the true story: a MOSFET's gate stack, read as the
   MOS capacitor its channel sits on (pinch-off along the channel is 2D); a BJT along its
   emitter–base–collector axis; one particle of a porous battery electrode, or a thin dense film,

@@ -104,6 +104,27 @@ const devices = {
     ports: [{ region: 0, from: 0.3e-6, I: 2, terminal: 'e-', area: { x: [0.3e-6, 1e-6], values: [1e5, 3e6] }, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] }],
     grid: coarse,
   }),
+  'spherical shells: a face with a reaction, a gate, a conductance link in current mode': () => ({
+    geometry: { type: 'spherical', r0: 0.3e-6 },
+    species: [...ions, { name: 'e-', z: -1 }],
+    materials: { water: water(78.5), Ag: { conductor: { species: 'e-', conductivity: 6.3e7 } } },
+    regions: [{ material: 'Ag', length: 0.2e-6 }, { material: 'water', length: 1e-6, c0: salt }],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [plating('left')] }],
+    contacts: {
+      left: collector(0),
+      right: { I: -1e-12, terminal: 'Ag+', species: { 'Ag+': { type: 'conductance', G: 50 } }, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1 },
+    },
+    grid: coarse,
+  }),
+  'an electrode port in a profiled cross-section': () => ({
+    geometry: { area: { x: [0, 1e-6], values: [2, 0.5] } },
+    species: [...ions, { name: 'e-', z: -1 }],
+    materials: { water: water(78.5) },
+    regions: [{ material: 'water', length: 1e-6, c0: salt }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+    ports: [{ region: 0, from: 0.3e-6, I: 1, terminal: 'e-', area: 2e6, reactions: [{ equation: 'Ag+ + e- = Ag(s)', fixed: { 'Ag(s)': 0 }, k0: 1e-3, alpha: 0.4 }] }],
+    grid: coarse,
+  }),
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },

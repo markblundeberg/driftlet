@@ -175,6 +175,10 @@
  * @property {BulkReactionDef[]} [bulkReactions]
  * @property {{ left?: ContactDef, right?: ContactDef }} [contacts]
  * @property {PortDef[]} [ports] internal ports
+ * @property {'planar' | 'spherical' | 'cylindrical' | { type: 'planar' | 'spherical' | 'cylindrical', r0?: number }
+ *   | { area: { x: number[], values: number[] } }} [geometry] the cross-section A(x): planar (A = 1 m², the
+ *   default: currents read per m²), shells about a centre at r = r0 (m) left of x = 0 (cylindrical: per
+ *   metre of length), or A in m² against x. Currents, fluxes, amounts and charges are then totals through A.
  * @property {GridOptions} [grid]
  */
 
