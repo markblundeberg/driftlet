@@ -460,6 +460,18 @@ export class Solver {
       }
     });
     this.chargeNodes = Int32Array.from([...this.chargeNode.keys()].filter((g) => this.chargeNode[g]));
+    // An end node of a strictly neutral region that its contact holds (leaving it neutral: φ law
+    // bulk or neutral): the contact's current is the ions' charge passing, and their storage
+    // carries none under neutrality, nor does the box's net charge change (a bulk law's "D").
+    // Read from the box's balance, both come with round-off ∝ c/dt that cancels only roughly,
+    // which on short steps swamps the flux (a floating bath on a dilute side rattled). So there,
+    // on a transient step, the ions' storage goes in only after the contact has read its current,
+    // and the box's charge isn't counted as displacement (see _contact).
+    this.lateStorage = new Uint8Array(nNodes);
+    [0, nNodes - 1].forEach((g, k) => {
+      const mat = materials[regions[grid.nodeRegion[g]].material], law = contacts[k === 0 ? 'left' : 'right'].phi.type;
+      if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
+    });
     this.combining = false;
     this.bookkeeping = regions.map((_, r) => {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], nodes = [], segs = [];
@@ -1423,18 +1435,19 @@ export class Solver {
         continue;
       }
       let q = rhoFixed[g], dq = 0;
+      const late = this.combining && this.lateStorage[g] === 1 && dt !== Infinity; // (the ions' storage: in _contact)
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
         const ck = c[k], l = loc[lb + 1 + i];
-        res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
-        JB[oB + l * m + l] += (v * ck) / dt;
+        if (!(late && z[i] !== 0)) {
+          res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+          JB[oB + l * m + l] += (v * ck) / dt;
+          if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+        }
         q += F * z[i] * ck;
         dq += F * z[i] * z[i] * ck;
-        if (p >= 0 && z[i] !== 0) {
-          JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
-          JB[oB + p * m + l] += -v * F * z[i] * ck;
-        }
+        if (p >= 0 && z[i] !== 0) JB[oB + p * m + l] += -v * F * z[i] * ck;
       }
       if (p >= 0) {
         res[R[lb]] -= v * q;
@@ -2323,6 +2336,19 @@ export class Solver {
         this._captureRow(b, 1 + i, z[i] * F, C);
       }
     }
+    // The ions' storage, left out until now (see lateStorage): in each balance, and in what
+    // each species brings in, but not in the current.
+    if (this.combining && dyn && this.lateStorage[g] === 1) {
+      const v = model.grid.vol[g], { cOld } = this;
+      for (let i = 0; i < n; i++) {
+        if (z[i] === 0 || this.loc[b * M + 1 + i] < 0) continue;
+        const ci = c[g * n + i], st = (v * (ci - cOld[g * n + i])) / dt;
+        res[R[b * M + 1 + i]] += st;
+        flux[i] += sgn * st;
+        this._j(b, 1 + i, b, 1 + i, (v * ci) / dt);
+        this._j(b, 1 + i, b, 0, (-v * z[i] * ci) / dt);
+      }
+    }
 
     // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset; exchange
     // links (neutral species): N_in = k (μ_out − μ)/RT.
@@ -2372,7 +2398,7 @@ export class Solver {
       // The Poisson residual is the outside's charge, D_in.
       const Din = res[R[b * M]];
       this.contactD[side] = sgn * Din;
-      if (dyn) {
+      if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
         this._captureRow(b, 0, 1 / dt, C);
       }

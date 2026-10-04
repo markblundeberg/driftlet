@@ -648,7 +648,11 @@ neutrality:
 - then storage (on the other balances) and neutrality go in, exactly, in those terms.
 
 A start-of-step net charge (round-off in a solved state) isn't carried over: the neutrality row
-holds the new state neutral. Steady solves and the impedance keep the plain rows (there's no
+holds the new state neutral. An end node that its contact holds (a bath, an electrode's level)
+keeps its plain rows, but the contact's current there is read before the ions' storage goes in,
+and a bulk law doesn't count the box's net charge as displacement: under neutrality neither
+carries charge, and read from the box's balance their round-off (∝ c/dt) cancelled only roughly.
+A bath floating on 1 µM beside 3 M KCl had rattled at 2e-5 thermal units on steps of 1e-14 s. Steady solves and the impedance keep the plain rows (there's no
 storage at $`dt = \infty`$, and the impedance reads the storage matrix from them).
 
 A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when $`\lambda_D \ll h`$, is on

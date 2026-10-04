@@ -110,7 +110,7 @@ for live demos.
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
      through its own unknown, which carries storage-sized values, so round-off returns at ~1e-5
      thermal units on steps of ~1e-11 s with 3 M against 1 µM (a sharp junction between such
-     solutions now starts at ordinary tolerances, but not at 1e-6, above). The fix may be a
+     solutions now starts, even at tol 1e-6; `npm run hard` keeps it so). The fix may be a
      supernode: each region still supplies its own edge block, and the interface code merges the two
      edge nodes and the face's unknowns into one larger block, so every quantity at the face couples
      to every other. Each species' two edge balances can then be summed, with the face fluxes
@@ -122,15 +122,6 @@ for live demos.
      same state is easy warm: the solar demo's n⁺p cell in dim 1050 nm light with a 60 µs base
      lifetime fails from cold with hmin ≤ 0.5 nm, and solves warm from a bias sweep. Continuation
      for floating terminals (from held at a guess of V_oc, or from the light ramped up) would fix it.
-   - A transient's first steps from a steep composition step at a tight tolerance: 3 M KCl against
-     1 µM, strictly neutral, from a sharp boundary or a 1 µm one, steps fine at tol 1e-3 and 1e-4
-     but not 1e-6. There the trace's ln c (what the error is measured in) genuinely changes on
-     ~0.1 ns at first, so the steps it needs reach ~1e-14 s, where Newton stalls at ~2e-5 thermal
-     units in the floating right bath's φ (I: 0, the 1 µM side). That contact's current is read
-     from its end box's balance, where the ions' storage terms (∝ c/dt, cancelling in charge under
-     neutrality) swamp the flux, the cancellation the charge rows remove inside the device. Reading
-     a strictly neutral end's current from its fluxes before storage goes in would fix it.
-     `npm run hard` collects this and the other hard cases, with a baseline of what fails today.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
