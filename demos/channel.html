@@ -3,29 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Charged pore</title>
+<title>Charged nanochannel</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
 <nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
-  <h1>An ion channel as a charged pore: selectivity, saturation and rectification</h1>
-  <p>A pore a nanometre wide through a membrane, between two KCl solutions, its walls lined with negative
-    charge. The charge draws K⁺ in and shuts Cl⁻ out, so the pore conducts almost only K⁺, and goes on
-    conducting when the salt is diluted a thousandfold. That happens in layers of space charge a fraction of a
-    nanometre thick at each mouth, and in a pore a couple of nanometres long, as a channel's selectivity
-    filter is, the layers from the two mouths overlap and there's no neutral inside at all. Put the charge on
-    one half, or make the pore bipolar, and it conducts better one way than the other, like a pn junction.
-    Vary the salt on each side, the charge and its pattern, the pore's length and the voltage across it;
-    long pores are checked against the Teorell–Meyer–Sievers theory. (More about the model below.)</p>
+  <h1>A charged nanochannel: selectivity, saturation and rectification</h1>
+  <p>A pore ten nanometres across through a membrane, between two KCl solutions, its walls charged negative
+    (silica or a polymer in water usually is). The charge draws K⁺ in and keeps Cl⁻ out, so the channel
+    conducts almost only K⁺, and goes on conducting when the salt is diluted a thousandfold. Both happen in
+    layers of space charge at each mouth, and in dilute salt those layers are as long as the channel: the
+    two mouths' layers overlap, and there's no neutral inside. Put the charge on one half, or make the channel
+    bipolar, and it conducts better one way than the other, like a pn junction. Vary the salt on each side,
+    the charge and its pattern, the length and the voltage; long channels are checked against the
+    Teorell–Meyer–Sievers theory. (More about the model below.)</p>
   <div class="controls">
-    <label>KCl left <input id="cl" type="range" min="0" max="3" step="0.1" value="2"><output id="clOut"></output></label>
-    <label>KCl right <input id="cr" type="range" min="0" max="3" step="0.1" value="2"><output id="crOut"></output></label>
-    <label>wall charge <input id="X" type="range" min="0" max="3" step="0.1" value="1"><output id="XOut"></output></label>
-    <label>pore length <input id="L" type="range" min="0" max="1.7" step="0.05" value="0.3"><output id="LOut"></output></label>
+    <label>KCl left <input id="cl" type="range" min="-1" max="3" step="0.1" value="0"><output id="clOut"></output></label>
+    <label>KCl right <input id="cr" type="range" min="-1" max="3" step="0.1" value="0"><output id="crOut"></output></label>
+    <label>wall charge <input id="X" type="range" min="0.5" max="2.5" step="0.1" value="1.5"><output id="XOut"></output></label>
+    <label>length <input id="L" type="range" min="0.7" max="2.7" step="0.05" value="1.3"><output id="LOut"></output></label>
     <label>charge <select id="pattern">
-      <option value="uniform" selected>along the whole pore</option>
+      <option value="uniform" selected>along the whole channel</option>
       <option value="half">on the left half only</option>
       <option value="bipolar">− on the left, + on the right</option>
     </select></label>
@@ -42,44 +42,49 @@
   </div>
   <details class="code" id="checks"><summary></summary><pre></pre></details>
   <h2>About this simulation</h2>
-  <p>The pore runs along x, between two reservoirs of KCl, and everything is resolved: ε > 0 throughout, so
-    the charge at each mouth, where the wall's fixed charge meets the solution, comes out of Poisson's
-    equation together with every ion's drift and diffusion. The wall charge is a density in the pore's
-    volume: 1 M in a pore 1 nm across and 10 nm long is about five electronic charges. Ions move ten times
-    slower in the pore than in water.</p>
-  <p>Inside a long pore the bulk is neutral, the wall's charge balanced by excess K⁺: K⁺ = (X + √(X² + 4c²))/2
-    and Cl⁻ = K⁺ − X, a Donnan equilibrium with the solution at each mouth. With much more wall charge than
-    salt, K⁺ inside is pinned at X and Cl⁻ is shut out, so the conductance stops depending on the salt: the
-    plateau at low concentration. That's the Teorell–Meyer–Sievers theory, the dashed curve: the long-pore
-    limit, where all the space charge sits in the thin Donnan layers at the mouths and the theory can treat
-    them as steps. It's the physics of an ion-exchange membrane. The dotted line is the same pore with no
-    charge, conducting like the salt. Across a salt gradient at zero current, K⁺'s level is flat through a
-    strongly charged pore, in equilibrium between the two sides, and the voltage between Ag/AgCl electrodes
+  <p>The channel runs along x, between two reservoirs of KCl, and everything is resolved: ε > 0 throughout,
+    so the charge at each mouth, where the wall's fixed charge meets the solution, comes out of Poisson's
+    equation together with every ion's drift and diffusion. The wall's charge is spread through the channel
+    as a density X: a surface charge σ on the walls of a channel of diameter d is X = 4σ/(Fd), so 30 mM is
+    about 7 mC/m² in a 10 nm channel. Spreading it evenly across the channel is fair when the Debye length is
+    comparable to the radius, as it is here (10 nm in 1 mM KCl), so the screening clouds from opposite walls
+    overlap and the channel is nearly uniform across.</p>
+  <p>Inside a long channel the bulk is neutral, the wall's charge balanced by excess K⁺:
+    K⁺ = (X + √(X² + 4c²))/2 and Cl⁻ = K⁺ − X, a Donnan equilibrium with the solution at each mouth. With much
+    more wall charge than salt, K⁺ inside is pinned at X and Cl⁻ is shut out, so the conductance stops
+    depending on the salt: the plateau at low concentration, measured in silica nanochannels (Stein,
+    Kruithof and Dekker, 2004). That's the Teorell–Meyer–Sievers theory, the dashed curve: the long-channel
+    limit, where all the space charge sits in thin Donnan layers at the mouths that the theory treats as
+    steps, the physics of an ion-exchange membrane. The dotted line is the same channel uncharged,
+    conducting like the salt. Across a salt gradient at zero current, K⁺'s level is flat through a strongly
+    charged channel, in equilibrium between the two sides, and the voltage between Ag/AgCl electrodes
     approaches 2V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>), as for a perfectly selective membrane.</p>
-  <p>A pore as short as a channel's filter is all mouth. The net charge plot shows each mouth's layer pair,
-    the wall's charge (inside) against its screening cloud (outside), and in a 2 nm pore the two pairs run
-    into each other: the pore holds less K⁺ than its wall charge would draw in, and more Cl⁻, and conducts
-    below TMS (at 0.1 M of salt and 1 M of charge, 0.68 of it at 2 nm, half at 1 nm, against 0.92 at 10 nm and
-    0.99 at 80 nm). That's where Poisson's equation, not electroneutrality, decides what the pore does, and why
-    channels are modelled with Poisson–Nernst–Planck theory.</p>
+  <p>A channel not much longer than its layers is all mouth. What sets the scale is the channel's length
+    against the Donnan length √(εRT/F²X) inside (2.5 nm at 30 mM of wall charge) and the Debye length outside.
+    The net charge plot shows each mouth's pair of layers, the wall's charge against its screening cloud, and
+    in a 20 nm channel at 1 mM they run into each other: the channel holds less K⁺ than its wall charge would
+    draw in, and conducts at 0.74 of TMS (0.57 at 10 nm, 0.88 at 50 nm). There Poisson's equation, not
+    electroneutrality, decides what the channel does.</p>
   <p>Charge on one half only, or − on one half and + on the other, makes the current depend on its
-    direction: driven one way, ions are carried into the pore faster than they leave, and it fills with salt;
-    the other way, it empties, and conducts poorly. A bipolar pore is an ionic diode, and its physics is a pn
-    junction's: the negatively charged half, where K⁺ is the majority ion, is the p side (fixed acceptors,
-    majority holes), and the positive half, with Cl⁻, the n side. Where they meet, a depletion layer holds the
-    space charge, and the standard levels V°<sub>i</sub> bend across it by a built-in potential, just as band
-    edges do. Reverse bias widens it and leaves only the minority ions to carry a small, saturating current;
-    forward bias floods it with salt.</p>
+    direction: driven one way, ions are carried into the channel faster than they leave, and it fills with
+    salt; the other way, it empties, and conducts poorly. A bipolar channel is an ionic diode (built in
+    conical nanopores by Siwy, Vlassiouk and others), and its physics is a pn junction's: the negatively
+    charged half, where K⁺ is the majority ion, is the p side (fixed acceptors, majority holes), and the
+    positive half, with Cl⁻, the n side. Where they meet, a depletion layer holds the space charge, and the
+    standard levels V°<sub>i</sub> bend across it by a built-in potential, just as band edges do. Reverse bias
+    widens it and leaves only the minority ions to carry a small, saturating current; forward bias floods it
+    with salt.</p>
   <p>The level diagram draws each ion's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), with
     K⁺'s drawn 4.35 V higher to share the plot (⌇), and their standard levels V°<sub>i</sub> (thin), which
     follow φ. The steps in V°<sub>i</sub> at the mouths are the Donnan potentials; each ion's own level is
     continuous through them, and an ion flows only where its level slopes.</p>
   <p>What a 1D slice leaves out: the reservoirs widen away from the mouth in 3D and add little resistance,
     so here they're layers whose ions move 10⁴ times faster, standing in for the widening (no equilibrium
-    depends on how fast ions move, so the Donnan layers are unchanged); and the pore's radial structure,
-    the ions' size, and the low-ε protein around it, all of which matter in a real channel. Real channels
-    such as the bacterial porin OmpF have been modelled in just this way (Poisson–Nernst–Planck theory of
-    channels, after Eisenberg and Chen).</p>
+    depends on how fast ions move, so the Donnan layers are unchanged); and the channel's radial structure,
+    which matters once the Debye length is well below the radius (in strong salt). The same equations,
+    Poisson–Nernst–Planck theory, are used for biological ion channels (after Eisenberg and Chen), but
+    there a selectivity filter a couple of nanometres long holds a handful of ions in single file, and a
+    continuum of concentrations and a single permittivity are rough approximations.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -88,19 +93,19 @@ import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
 const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
-const AREA = Math.PI * 0.5e-9 * 0.5e-9; // a pore 1 nm across, for currents per pore
+const AREA = Math.PI * 5e-9 * 5e-9; // a channel 10 nm across, for currents per channel
 
-// Water, and the pore: the same solvent, ions ten times slower. The reservoirs' ions are 10⁴
-// times faster, standing in for their widening away from the mouth (see the text).
+// Water, and the channel: the same solvent, as fast. The reservoirs' ions are 10⁴ times faster,
+// standing in for their widening away from the mouth (see the text).
 const library = aqueous(['K+', 'Cl-'], { epsr: 78.5 });
 const water = library.materials.water.species;
-library.materials.pore = { epsr: 78.5, species: Object.fromEntries(['K+', 'Cl-'].map((s) => [s, { D: water[s].D / 10, mu0: water[s].mu0 }])) };
+library.materials.pore = { epsr: 78.5, species: Object.fromEntries(['K+', 'Cl-'].map((s) => [s, { D: water[s].D, mu0: water[s].mu0 }])) };
 for (const sp of Object.values(water)) sp.D *= 1e4;
 const D = { 'K+': library.materials.pore.species['K+'].D, 'Cl-': library.materials.pore.species['Cl-'].D };
 
 const salt = (c) => ({ 'K+': c, 'Cl-': c });
 const access = (c) => Math.max(10e-9, (8 * 0.304e-9) / Math.sqrt(c / 1000)); // eight Debye lengths of solution
-// The pore in two halves, each with its own fixed charge (X mol/m³ of negative charge, or positive).
+// The channel in two halves, each with its own fixed charge (X mol/m³ of negative charge, or positive).
 const halves = (X, pattern) => (pattern === 'uniform' ? [X, X] : pattern === 'half' ? [X, 0] : [X, -X]);
 const cell = ({ cl, cr, X, L, pattern, drive }) => {
   const [X1, X2] = halves(X, pattern);
@@ -110,13 +115,13 @@ const cell = ({ cl, cr, X, L, pattern, drive }) => {
       bath(salt(cl), 'Cl-'), // an Ag/AgCl electrode in each reservoir
       layer('water', access(cl), { name: 'left' }),
       { dipole: 0 }, // the same solvent: φ continuous
-      layer('pore', L / 2, { name: 'pore', fixedCharge: -X1 * FARADAY }),
-      layer('pore', L / 2, { name: 'pore', fixedCharge: -X2 * FARADAY }),
+      layer('pore', L / 2, { name: 'channel', fixedCharge: -X1 * FARADAY }),
+      layer('pore', L / 2, { name: 'channel', fixedCharge: -X2 * FARADAY }),
       { dipole: 0 },
       layer('water', access(cr), { name: 'right' }),
       bath(salt(cr), 'Cl-', drive),
     ],
-    grid: { hmin: 0.005e-9, hmax: 0.5e-9, ratio: 1.1 },
+    grid: { hmin: 0.02e-9, hmax: 2e-9, ratio: 1.1 },
   });
 };
 
@@ -125,19 +130,19 @@ const inputs = ['cl', 'cr', 'X', 'L', 'pattern', 'V', 'open'].map(el);
 for (const i of inputs) fromQuery(i);
 el('open').checked = new URLSearchParams(location.search).has('open');
 const params = () => ({
-  cl: 10 ** +el('cl').value, cr: 10 ** +el('cr').value, X: 1000 * +el('X').value, L: 1e-9 * 10 ** +el('L').value, pattern: el('pattern').value,
+  cl: 10 ** +el('cl').value, cr: 10 ** +el('cr').value, X: 10 ** +el('X').value, L: 1e-9 * 10 ** +el('L').value, pattern: el('pattern').value,
   drive: el('open').checked ? { I: 0 } : +el('V').value / 1000,
 });
 const mM = (c) => (c >= 1000 ? `${(c / 1000).toPrecision(2)} M` : `${c.toPrecision(2)} mM`);
 
-// The Teorell–Meyer–Sievers pore: Donnan equilibrium at each mouth, so inside K⁺ = (X + √(X² + 4c²))/2
-// and Cl⁻ = K⁺ − X; its conductance per area at small bias; and the same pore uncharged.
+// The Teorell–Meyer–Sievers channel: Donnan equilibrium at each mouth, so inside K⁺ = (X + √(X² + 4c²))/2
+// and Cl⁻ = K⁺ − X; its conductance per area at small bias; and the same channel uncharged.
 const tmsG = (c, X, L) => {
   const k = (X + Math.sqrt(X * X + 4 * c * c)) / 2;
   return ((FARADAY * FARADAY) / (RT * L)) * (D['K+'] * k + D['Cl-'] * (k - X));
 };
 
-// Sweeps for the present pore: its I–V curve, and its conductance against the salt.
+// Sweeps for the present channel: its I–V curve, and its conductance against the salt.
 let sweeps;
 function sweep() {
   const p = params(), iv = { V: [], I: [] }, gc = { c: [], G: [], tms: [], bulk: [] };
@@ -145,14 +150,14 @@ function sweep() {
   for (let v = -200; v <= 200; v += 10) {
     dev.set({ contacts: { right: { V: v / 1000 } } });
     iv.V.push(v);
-    iv.I.push((-dev.solve().current * AREA) / 1e-12); // pA through the pore, into the left (+ for + V)
+    iv.I.push((-dev.solve().current * AREA) / 1e-12); // pA through the channel, into the left (+ for + V)
   }
-  for (let e = 0; e <= 3.001; e += 0.25) {
+  for (let e = -1; e <= 3.001; e += 0.25) {
     const c = 10 ** e, s = new Device(cell({ ...p, cl: c, cr: c, drive: 1e-4 })).solve();
     gc.c.push(e);
-    gc.G.push(Math.log10((-s.current / 1e-4) * AREA * 1e12)); // pS per pore, log
-    gc.tms.push(Math.log10(tmsG(c, p.X, p.L) * AREA * 1e12));
-    gc.bulk.push(Math.log10(tmsG(c, 0, p.L) * AREA * 1e12));
+    gc.G.push(Math.log10((-s.current / 1e-4) * AREA * 1e9)); // nS per channel, log
+    gc.tms.push(Math.log10(tmsG(c, p.X, p.L) * AREA * 1e9));
+    gc.bulk.push(Math.log10(tmsG(c, 0, p.L) * AREA * 1e9));
   }
   sweeps = { iv, gc };
 }
@@ -167,20 +172,20 @@ function draw(sol) {
   const p = params(), [X1, X2] = halves(p.X, p.pattern);
   el('clOut').textContent = mM(p.cl);
   el('crOut').textContent = mM(p.cr);
-  el('XOut').textContent = p.X ? `−${(p.X / 1000).toFixed(1)} M, ${Math.round(p.X * AREA * p.L * 6.02214076e23)} charges` : 'none';
+  el('XOut').textContent = `−${mM(p.X)}, σ ≈ −${((p.X * FARADAY * 10e-9) / 4 * 1000).toPrecision(2)} mC/m²`; // X = 4σ/(F d), d = 10 nm
   el('LOut').textContent = `${+(p.L * 1e9).toPrecision(2)} nm`;
   el('VOut').textContent = `${el('V').value} mV`;
   el('V').disabled = el('open').checked;
-  // Which ion carries the current: each one's flux through the pore (it's the same all along).
+  // Which ion carries the current: each one's flux through the channel (it's the same all along).
   const f = sol.interfaces[0].N, IK = FARADAY * f['K+'], ICl = -FARADAY * f['Cl-'], I = IK + ICl;
   const V = sol.terminalVoltage;
   el('status').textContent = el('open').checked
-    ? `zero-current voltage ${(1000 * V).toFixed(1)} mV between Ag/AgCl electrodes · a perfectly K⁺-selective pore: ${(2000 * VT * Math.log(p.cl / p.cr)).toFixed(1)} mV, an uncharged one (a liquid junction, 2t₊V_T ln(c₁/c₂)): ${((2000 * VT * Math.log(p.cl / p.cr) * D['K+']) / (D['K+'] + D['Cl-'])).toFixed(1)} mV`
-    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the pore, ${I === 0 ? 0 : ((100 * IK) / I).toFixed(1)}% of it carried by K⁺`;
-  const x0 = sol.regions[1].x0, x1 = sol.regions[2].x1, pad = Math.max(3e-9, 0.25 * (x1 - x0)), xlim = [x0 - pad, x1 + pad];
+    ? `zero-current voltage ${(1000 * V).toFixed(1)} mV between Ag/AgCl electrodes · a perfectly K⁺-selective channel: ${(2000 * VT * Math.log(p.cl / p.cr)).toFixed(1)} mV, an uncharged one (a liquid junction, 2t₊V_T ln(c₁/c₂)): ${((2000 * VT * Math.log(p.cl / p.cr) * D['K+']) / (D['K+'] + D['Cl-'])).toFixed(1)} mV`
+    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the channel, ${I === 0 ? 0 : ((100 * IK) / I).toFixed(1)}% of it carried by K⁺`;
+  const x0 = sol.regions[1].x0, x1 = sol.regions[2].x1, pad = Math.max(10e-9, 0.25 * (x1 - x0)), xlim = [x0 - pad, x1 + pad];
   const signed = (x) => (x === 0 ? '0' : `${x > 0 ? '−' : '+'}${mM(Math.abs(x))}`); // X is negative charge
   const charges = X1 === X2 ? `${signed(X1)} of wall charge` : `${signed(X1)} | ${signed(X2)} of wall charge`;
-  levels(el('levels'), sol, { title: `species voltages and standard levels through the pore (${charges})`, shifts: { 'K+': 4.35 }, xlim });
+  levels(el('levels'), sol, { title: `species voltages and standard levels through the channel (${charges})`, shifts: { 'K+': 4.35 }, xlim });
   profiles(el('conc'), sol, { species: ['K+', 'Cl-'], title: 'concentrations', ylabel: 'concentration (M)', scale: 1e-3, log: true, xlim });
   // The net charge, ions and wall together: ρ/F = c_K⁺ − c_Cl⁻ − X, the layers Poisson's equation sets.
   const wall = [0, -X1, -X2, 0], rho = sol.x.map((_, g) => sol.c['K+'][g] - sol.c['Cl-'][g] + wall[sol.region[g]]);
@@ -188,18 +193,18 @@ function draw(sol) {
   profiles(el('rho'), sol, { species: [{ c: rho, label: 'ρ/F', kind: 'level' }], title: 'net charge: ions and wall together', ylabel: 'ρ/F (M)', scale: 1e-3, xlim, range: [-1.1e-3 * big, 1.1e-3 * big] });
   const { iv, gc } = sweeps;
   chart(el('iv'), {
-    xlabel: 'voltage (mV), right against left', ylabel: 'current through the pore (pA)',
+    xlabel: 'voltage (mV), right against left', ylabel: 'current through the channel (pA)',
     series: [
-      { x: iv.V, y: iv.I, color: colors[0], label: 'this pore' },
+      { x: iv.V, y: iv.I, color: colors[0], label: 'this channel' },
       ...(el('open').checked ? [] : [{ x: [1000 * V], y: [(-I * AREA) / 1e-12], color: colors[3], marker: true, width: 0, label: 'now' }]),
     ],
   });
   chart(el('gc'), {
-    xlabel: 'KCl (mM), log₁₀', ylabel: 'conductance per pore (pS), log₁₀',
+    xlabel: 'KCl (mM), log₁₀', ylabel: 'conductance per channel (nS), log₁₀',
     series: [
       { x: gc.c, y: gc.bulk, color: colors[6], dash: [2, 3], width: 1.2, label: 'uncharged' },
       ...(p.pattern === 'uniform' ? [{ x: gc.c, y: gc.tms, color: colors[6], dash: [6, 4], width: 1.2, label: 'TMS' }] : []),
-      { x: gc.c, y: gc.G, color: colors[0], marker: true, label: 'this pore' },
+      { x: gc.c, y: gc.G, color: colors[0], marker: true, label: 'this channel' },
     ],
   });
   audit(sol);
