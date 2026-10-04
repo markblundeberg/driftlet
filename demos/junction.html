@@ -26,6 +26,10 @@
     </select></label>
     <label class="bridge">sample NaCl <input id="cs" type="range" min="-1" max="2.5" step="0.1" value="0"><output id="csOut"></output></label>
     <label class="bridge">frit charge <input id="Xf" type="range" min="0" max="2" step="0.1" value="0"><output id="XfOut"></output></label>
+    <label class="free">show <select id="view">
+      <option value="log" selected>concentrations (log)</option>
+      <option value="mix">each ion's mixing fraction</option>
+    </select></label>
     <button id="run" class="free">restart</button>
     <span class="readout" id="status"></span>
   </div>
@@ -56,7 +60,16 @@
     to. For the patch pipette the published values are 15.6 mV (JPCalc, Henderson) and 16.05 mV (LJPcalc,
     Planck), for Figl et al.'s solutions at 20 °C; driftlet gets 15.61 and 16.05, and 15.74 for the free junction.
     As a free junction's zone reaches whatever holds the two solutions (here the baths, 0.5 mm away, after
-    some tens of seconds), it turns into Planck's: watch the trace move from one to the other.</p>
+    some tens of seconds), it turns into Planck's: watch the trace move from one to the other. On the way it
+    overshoots. A junction's potential depends only on the path it takes through compositions, not on its width,
+    which is why a free junction's is constant. Show each ion's mixing fraction, (c − c<sub>left</sub>)/(c<sub>right</sub>
+    − c<sub>left</sub>), to see the paths: Henderson assumes every ion's is the same curve. In the free junction they
+    sort by mobility (each ion spreads by its own √(Dt), gluconate's front the narrowest); held between the baths
+    they sort by charge instead (in the steady state each ion's profile is set by the field and its charge, its D
+    setting only its flux). The fast ions reach the baths and rearrange a few times sooner than slow gluconate, so
+    for a while the junction holds a mix of the two orderings that neither junction has, and a potential beyond
+    both. With gluconate as fast as Cl⁻, the overshoot all but vanishes, and so does most of the gap between the
+    three junctions.</p>
   <p><b>Why patch-clampers correct for it.</b> The amplifier is zeroed with the pipette in the bath, where the
     junction between pipette solution and bath adds its potential, and zeroing absorbs it. Once the membrane is
     broken into, the pipette solution faces the cytoplasm, which it resembles, and that junction is gone; but
@@ -82,7 +95,7 @@
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { recorder, henderson, planck, check } from '../src/kit.js';
+import { recorder, henderson, planck, check, typeset } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { profiles, showCode, fromQuery } from './common.js';
 
@@ -110,7 +123,7 @@ const PRESETS = {
 
 const el = (id) => document.getElementById(id);
 const preset = el('preset'), cs = el('cs'), Xf = el('Xf');
-for (const i of [preset, cs, Xf]) fromQuery(i);
+for (const i of [preset, cs, Xf, el('view')]) fromQuery(i);
 
 // A solution for the simulation: ions absent on one side present as a 1 nM trace, balanced on
 // the most concentrated ion of the other sign.
@@ -172,7 +185,7 @@ const mV = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(1000 * v).toFixed(2)} mV`;
 function start() {
   const p = ['patch', 'zinc', 'bridge'].includes(preset.value) ? preset.value : 'patch';
   document.querySelectorAll('.bridge').forEach((e) => (e.style.display = p === 'bridge' ? '' : 'none'));
-  el('run').style.display = p === 'bridge' ? 'none' : '';
+  document.querySelectorAll('.free').forEach((e) => (e.style.display = p === 'bridge' ? 'none' : ''));
   run = null;
   if (p === 'bridge') return bridge();
   const set = PRESETS[p], ions = ionsAt(set.T), dev = freeJunction(set);
@@ -203,7 +216,16 @@ function drawFree() {
   el('status').textContent = `t = ${t < 1 ? `${(1000 * t).toPrecision(2)} ms` : `${t.toPrecision(2)} s`} · junction potential ${mV(E)} · Henderson ${mV(H)}, Planck ${mV(P)} · published: ${pub} mV`;
   const xlim = [0, L]; // the whole zone between the baths, so the spreading shows
   const names = Object.keys(sol.c);
-  profiles(el('conc'), sol, { species: names, title: `concentrations across the junction, ${set.names[0]} | ${set.names[1]}`, ylabel: 'concentration (mM)', log: true, range: [-3, 3], xlim });
+  if (el('view').value === 'mix') {
+    // Each ion's way from one solution to the other, (c − c_left)/(c_right − c_left): Henderson's
+    // assumption is that they're all one curve. (Ions the same on both sides have none.)
+    const ends = (n) => [set.left[n] ?? 0, set.right[n] ?? 0];
+    const mixing = names.filter((n) => Math.abs(ends(n)[1] - ends(n)[0]) > 0.01 * Math.max(...ends(n)));
+    profiles(el('conc'), sol, {
+      species: mixing.map((n) => ({ name: n, c: sol.c[n].map((c) => (c - ends(n)[0]) / (ends(n)[1] - ends(n)[0])), label: typeset(n, ionsAt(set.T)[n].z) })),
+      title: `each ion's mixing fraction (Henderson takes them all to be one curve), ${set.names[0]} | ${set.names[1]}`, ylabel: '(c − c_left)/(c_right − c_left)', range: [-0.05, 1.05], xlim,
+    });
+  } else profiles(el('conc'), sol, { species: names, title: `concentrations across the junction, ${set.names[0]} | ${set.names[1]}`, ylabel: 'concentration (mM)', log: true, range: [-3, 3], xlim });
   profiles(el('phi'), sol, {
     species: [{ c: sol.phi.map((v) => 1000 * (v - sol.phi[0])), label: 'φ − φ_left (mV)', kind: 'level' }],
     title: 'potential across the junction', ylabel: 'mV', xlim,
@@ -269,6 +291,7 @@ function audit() {
 }
 
 preset.addEventListener('change', start);
+el('view').addEventListener('change', () => run && drawFree());
 el('run').addEventListener('click', start);
 for (const i of [cs, Xf]) i.addEventListener('input', () => preset.value === 'bridge' && bridge());
 start();

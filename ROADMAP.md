@@ -119,6 +119,11 @@ for live demos.
      same state is easy warm: the solar demo's n⁺p cell in dim 1050 nm light with a 60 µs base
      lifetime fails from cold with hmin ≤ 0.5 nm, and solves warm from a bias sweep. Continuation
      for floating terminals (from held at a guess of V_oc, or from the light ramped up) would fix it.
+   - A transient's first steps from a steep composition step (two solutions meeting over a micron or
+     two, a 1 nM trace beside 145 mM): with strictly neutral water, the first step fails at a few ns
+     unless the tolerance is loose (1e-4) and the step a few cells wide; with ε > 0 on a grid coarser
+     than the Debye length, likewise. The liquid-junction demo and test start from a boundary 1–20 µm
+     wide to stay clear. Related to the short-step conditioning of neutral regions below.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
