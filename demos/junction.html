@@ -16,7 +16,8 @@
     until the field they leave behind holds them back: a junction potential, often 10–20 mV, inside every such
     measurement. It's usually estimated with Henderson's formula; Planck's is exact for a junction held in a
     steady state; a junction growing freely from first contact is neither. Here it's simulated ion by ion, and
-    the formulas sit alongside it. (More about the model below.)</p>
+    the formulas sit alongside it. (More about the model below; the <a href="daniell.html">Daniell cell</a> has a
+    salt bridge at work, leaking ion by ion.)</p>
   <div class="controls">
     <label>junction <select id="preset">
       <option value="patch" selected>patch pipette: K-gluconate | bath</option>
@@ -54,8 +55,8 @@
     mixtures they differ by tenths of a millivolt to a millivolt: about what the corrections claim to be good
     to. For the patch pipette the published values are 15.6 mV (JPCalc, Henderson) and 16.05 mV (LJPcalc,
     Planck), for Figl et al.'s solutions at 20 °C; driftlet gets 15.61 and 16.05, and 15.74 for the free junction.
-    As a free junction's zone reaches whatever holds the two solutions (here the baths, 0.5 mm away), it turns
-    into Planck's.</p>
+    As a free junction's zone reaches whatever holds the two solutions (here the baths, 0.5 mm away, after
+    some tens of seconds), it turns into Planck's: watch the trace move from one to the other.</p>
   <p><b>Why patch-clampers correct for it.</b> The amplifier is zeroed with the pipette in the bath, where the
     junction between pipette solution and bath adds its potential, and zeroing absorbs it. Once the membrane is
     broken into, the pipette solution faces the cytoplasm, which it resembles, and that junction is gone; but
@@ -129,7 +130,7 @@ const library = (names, ions, epsr = 0) => ({
 
 // The free junction: 1 mm of neutral water, the two solutions meeting mid-way over 2 µm, held
 // beyond each end by a bath. Recorded as it grows.
-const L = 1e-3, END = 20; // s
+const L = 1e-3, END = 1000; // s
 function freeJunction({ T, left, right }) {
   const ions = ionsAt(T), names = [...new Set([...Object.keys(left), ...Object.keys(right)])];
   const cl = withTraces(left, names, ions), cr = withTraces(right, names, ions), lib = library(names, ions);
@@ -186,12 +187,12 @@ function start() {
   }
   requestAnimationFrame(frame);
 }
-// Played on a log clock: from a millisecond to 20 s in about ten seconds.
+// Played on a log clock: from a millisecond to 1000 s in about twelve seconds.
 function frame(now) {
   if (!run) return;
   run.wall += Math.min(0.1, (now - (run.last ?? now)) / 1000);
   run.last = now;
-  const target = Math.min(END, 1e-3 * 10 ** (run.wall * 0.43));
+  const target = Math.min(END, 1e-3 * 10 ** (run.wall * 0.5));
   const s = run.rec.advance(target, { budgetMs: 15, tol: 1e-4 });
   drawFree();
   if (run && s.converged && run.dev.solver.time < END) requestAnimationFrame(frame);
@@ -200,7 +201,7 @@ function drawFree() {
   const { set, rec, H, P } = run, sol = run.dev.solution(), t = sol.time, E = sol.phi.at(-1) - sol.phi[0];
   const pub = set.published.map(([w, v]) => `${w} ${v.toFixed(2)}`).join(', ');
   el('status').textContent = `t = ${t < 1 ? `${(1000 * t).toPrecision(2)} ms` : `${t.toPrecision(2)} s`} · junction potential ${mV(E)} · Henderson ${mV(H)}, Planck ${mV(P)} · published: ${pub} mV`;
-  const w = Math.max(3 * Math.sqrt(2e-9 * t), 10e-6), xlim = [L / 2 - w, L / 2 + w];
+  const xlim = [0, L]; // the whole zone between the baths, so the spreading shows
   const names = Object.keys(sol.c);
   profiles(el('conc'), sol, { species: names, title: `concentrations across the junction, ${set.names[0]} | ${set.names[1]}`, ylabel: 'concentration (mM)', log: true, range: [-3, 3], xlim });
   profiles(el('phi'), sol, {
