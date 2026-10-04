@@ -34,7 +34,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   and h⁺). In voltage units the conduction band sits below the valence band. `NaN` marks where a
   species is absent.
 - **Current**: `sol.current` is positive toward +x through the device. `sol.terminals[name]` gives
-  each terminal's `{ V, current }`, current into the device.
+  each terminal's `{ V, current }`, current into the device. Currents, fluxes and amounts are per
+  m² of a planar device; with a `geometry` (spherical, cylindrical or any cross-section A(x)) they
+  are totals through it.
 - **Nothing physical is defaulted.** Every interface between different materials needs an
   alignment (`dipole` or `step`), or `phi: 'neutral'` for a macroscopic model. Every metal face
   next to a dielectric needs its φ law. Every species that doesn't reach a contact needs its
@@ -245,6 +247,103 @@ console.log(`rest potential ${E.toFixed(4)} V vs SHE; E° + V_T ln(c₃/c₂) = 
 // Polarised 0.2 V positive of rest: oxidising Fe²⁺, toward its limiting current F·D·c/L.
 const dev = new Device(electrode(rest.terminals.left.V + 0.2));
 console.log(`anodic current ${dev.solve().terminals.left.current.toFixed(2)} A/m²`);
+```
+
+## Template: corrosion under a drop (an electrode spread through a film)
+
+A **port with reactions** is an electrode spread through a window of a region: a metal under a
+thin film of water, a crevice's walls, a porous electrode. Its `terminal` is the metal's carrier,
+`area` the electrode's area per volume of the window (1/h under a film h thick), and each
+reaction is Butler–Volmer per area, as at a face. The region must be strictly neutral (ε = 0); a
+`capacitance` adds the double layer. A **`geometry`** gives the device a cross-section A(x): here
+x is the radius of a drop seen from its centre, A = 2πr·h(r), and every current and amount becomes
+a total through it (A, mol), not per m².
+
+```js
+import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
+import { aqueous, polarization } from 'driftlet/kit';
+
+// Salt water on iron: a drop 3 mm across. The iron dissolves and reduces O₂, which comes in from
+// the air through the drop's top, fastest at the thin rim: the centre corrodes, the rim doesn't.
+const T = 298.15, RT = GAS_CONSTANT * T, R = 3e-3, h0 = 1e-3, cO2 = 0.26, D = 2e-9;
+const lib = aqueous(['Na+', 'Cl-', 'Fe2+', 'OH-', 'H+'], { epsr: 0 }); // strictly neutral water
+lib.species.push({ name: 'O2', z: 0, cRef: 1000 }, { name: 'e-', z: -1 }); // e⁻: the iron's, in no material
+lib.materials.water.species.O2 = { D, mu0: 16.4e3 };
+const r = Array.from({ length: 61 }, (_, j) => (j / 60) * R);
+const h = r.map((x) => Math.max(h0 * (1 - (x / R) * (x / R)), 0.02 * h0)); // the drop's height
+const dev = new Device({
+  T,
+  species: lib.species,
+  materials: lib.materials,
+  geometry: { area: { x: r, values: r.map((x, j) => 2 * Math.PI * x * h[j]) } }, // ions squeeze through the thin rim
+  regions: [{ name: 'drop', material: 'water', length: R, c0: { 'Na+': 500, 'Cl-': 500 + 2e-6, 'Fe2+': 1e-6, 'OH-': 1e-4, 'H+': 1e-4, O2: cO2 } }],
+  contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } }, // closed: the centre, and the rim
+  bulkReactions: [
+    { equation: 'H+ + OH- = H2O', fixed: { H2O: -237.129e3 }, kf: { water: 1.4e8 } },
+    // O₂ from the air through the drop: a rate k_f (1 − c/c_sat), k_f = D c_sat/h² (not a port's
+    // exchange link, whose rate is linear in μ rather than c)
+    { equation: 'Air = O2', fixed: { Air: 16.4e3 + RT * Math.log(cO2 / 1000) }, kf: { water: { x: r, values: h.map((y) => (D * cO2) / (y * y)) } } },
+  ],
+  ports: [{
+    name: 'iron', region: 'drop', terminal: 'e-',
+    V: 0, // the only metal and the only path for current, so it passes none: held, it fixes the level φ is read against
+    area: { x: r, values: h.map((y) => 1 / y) }, // m² of iron per m³ of water
+    capacitance: { C: 0.2, zeroCharge: -0.4 }, // the double layer: the potential moves continuously
+    reactions: [
+      { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5 },
+      { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.129e3 }, k0: 3e-9, alpha: 0.125 },
+    ],
+  }],
+  grid: { hmin: 5e-6, hmax: 60e-6, ratio: 1.2 },
+});
+const sol = dev.advance(600); // ten minutes
+const iron = sol.ports[0], last = iron.x.length - 1;
+// rates[q][j]: reaction q at node j of the window, forward, mol/(m²·s) of iron; anodic current +
+const anodic = (j) => 2 * FARADAY * -iron.rates[0][j] - 4 * FARADAY * iron.rates[1][j];
+console.log(`iron at ${(iron.V - sol.phi[0]).toFixed(3)} V against the water at the centre (SHE, with table μ°)`);
+console.log(`net current on the iron: ${anodic(0).toFixed(2)} A/m² at the centre, ${anodic(last).toFixed(2)} A/m² at the rim`);
+// The Evans diagram at the centre: each reaction's current with the iron's level moved, the water held.
+const levels = [-0.55, -0.5, -0.45, -0.4].map((v) => v + sol.phi[0]);
+const evans = polarization(dev, sol, { port: 'iron', x: 0 }, levels);
+for (const rx of evans.reactions) console.log(`${rx.equation}: ${Array.from(rx.current, (i) => i.toFixed(2)).join(', ')} A/m²`);
+```
+
+On an electrode's surface, species can take its sites (`surface: { name: { mu0, capacity } }`,
+Langmuir coverages), and a reaction with `bare: true` runs only on bare metal: a passive film
+(docs/device.md, "An electrode's surface").
+
+## Template: a thin-film transistor (a capacitance along a channel)
+
+A **port with a `capacitance`** holds charge σ = C (V − zeroCharge − φ) per area of electrode
+along its window, balanced by the region (Gauss's law, or neutrality at ε = 0): a gate along a
+channel, a porous electrode's double layer. In 1D a field-effect transistor is its channel, x from
+source to drain, with the gate spread along it: the gradual-channel approximation, exact for a thin
+film until it pinches off.
+
+```js
+import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
+
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY;
+const t = 20e-9, L = 10e-6, W = 100e-6, C = 1e-3, mu = 1e-3; // film, length, width (m); F/m² of gate; m²/(V·s)
+const tft = (Vg, Vd) =>
+  new Device({
+    T,
+    species: [{ name: 'e-', z: -1, cRef: 46 }], // an undoped film's electrons (N_c 2.8e19 cm⁻³)
+    materials: { film: { epsr: 0, species: { 'e-': { D: mu * VT, mu0: 0 } } } }, // ε = 0: F·n·t balances σ
+    regions: [{ name: 'channel', material: 'film', length: L }],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // source
+      right: { V: Vd, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // drain
+    },
+    ports: [{ name: 'gate', region: 'channel', V: Vg, area: 1 / t, capacitance: { C, zeroCharge: 0.3 } }],
+    grid: { hmin: L / 2000, hmax: L / 100, ratio: 1.05 }, // fine at the drain, where it pinches off
+  });
+// The output characteristic at V_G = 2 V: linear, then saturating past V_D ≈ V_G − 0.3 V.
+for (const Vd of [0.1, 0.5, 1, 1.5, 2, 3]) {
+  const sol = tft(2, Vd).solve();
+  const I = -sol.current * t * W; // sol.current is per m² of the film's section
+  console.log(`V_D ${Vd.toFixed(1)} V: I_D ${(I * 1e6).toFixed(2)} µA, σ at the drain ${(sol.ports[0].sigma.at(-1) * 1e3).toFixed(3)} mC/m²`);
+}
 ```
 
 ## Template: a transient, with a pulse injected sideways
