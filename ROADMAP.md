@@ -125,9 +125,12 @@ for live demos.
    - A transient's first steps from a steep composition step at a tight tolerance: 3 M KCl against
      1 µM, strictly neutral, from a sharp boundary or a 1 µm one, steps fine at tol 1e-3 and 1e-4
      but not 1e-6. There the trace's ln c (what the error is measured in) genuinely changes on
-     ~0.1 ns at first, so the steps it needs reach ~1e-14 s, where Newton can't converge (the
-     short-step conditioning below). `node bench/hard.js` collects this and the other hard cases,
-     with a baseline of what fails today.
+     ~0.1 ns at first, so the steps it needs reach ~1e-14 s, where Newton stalls at ~2e-5 thermal
+     units in the floating right bath's φ (I: 0, the 1 µM side). That contact's current is read
+     from its end box's balance, where the ions' storage terms (∝ c/dt, cancelling in charge under
+     neutrality) swamp the flux, the cancellation the charge rows remove inside the device. Reading
+     a strictly neutral end's current from its fluxes before storage goes in would fix it.
+     `npm run hard` collects this and the other hard cases, with a baseline of what fails today.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
