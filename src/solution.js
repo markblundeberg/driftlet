@@ -113,7 +113,10 @@ export function makeSolution(solver, result = {}) {
       out.area = Float64Array.from(solver.portArea[k]);
       out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), forward
       // its surface: each species' coverage θ at each node of the window
-      if (port.surface.length > 0) out.coverage = Object.fromEntries(port.surface.map((sp, q) => [sp.name, Float64Array.from(port.nodes, (g) => solver.th[g * solver.nSurf + q])]));
+      if (port.surface.length > 0) {
+        out.coverage = Object.fromEntries(port.surface.map((sp, q) => [sp.name, Float64Array.from(port.nodes, (g) => solver.th[g * solver.nSurf + q])]));
+        out.bare = Float64Array.from(port.nodes, (g) => solver.th0[g]); // θ₀, to full precision however covered
+      }
     }
     return out;
   });

@@ -10,7 +10,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   intermediates, and passive films as a coverage: a film forms where potential and pH favour it,
   and blocks dissolution, the active–passive curve. Solutions report `ports[k].coverage`, and
   `polarization()` holds the coverages with the solution. Validated: the Langmuir isotherm, the
-  charge to fill the surface, the blocking (test/coverage.test.js).
+  charge to fill the surface, the blocking (test/coverage.test.js). The bare fraction is carried to
+  full precision, and a nearly full surface's storage computed from its small complements. A
+  transient stops where a film passivates an electrode's last active patch: with no double-layer
+  capacitance the mixed potential must jump there (see the device docs).
 - An electrode spread through a port now requires its region strictly neutral (ε = 0): its double
   layers are below the grid, and with ε > 0 its reactions left the solution charged (steady solves
   converged, transients didn't).

@@ -226,6 +226,8 @@ export class Solver {
     });
     this.th = new Float64Array(nNodes * nSurf);
     this.thOld = new Float64Array(nNodes * nSurf);
+    this.th0 = new Float64Array(nNodes); // the bare fraction θ₀, directly (1 − Σθ cancels as θ → 1)
+    this.th0Old = new Float64Array(nNodes);
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -1121,11 +1123,7 @@ export class Solver {
       a -= p.nu * (u[o] + uLo[o]);
       pref *= p.side === 2 ? Math.exp(e * (u[o] + uLo[o] - port.surface[p.s].mu0 / RT)) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
     }
-    if (rx.bare) {
-      let free = 1;
-      for (let x = 0; x < port.surface.length; x++) free -= th[g * nSurf + x];
-      pref *= free;
-    }
+    if (rx.bare) pref *= this.th0[g];
     // (far from equilibrium, the plain difference: bvFactor's product would give 0·∞ there)
     return pref * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a) : bvFactor(a, rx.alpha).g);
   }
@@ -1169,6 +1167,7 @@ export class Solver {
       let sum = Math.exp(-m);
       for (let q = 0; q < surf.length; q++) sum += (th[g * nSurf + q] = Math.exp(u[b * M + 1 + n + q] + uLo[b * M + 1 + n + q] - surf[q].mu0 / RT - m));
       for (let q = 0; q < surf.length; q++) th[g * nSurf + q] /= sum;
+      this.th0[g] = Math.exp(-m) / sum;
     }
   }
 
@@ -2124,12 +2123,8 @@ export class Solver {
       }
       if (rx.bare) {
         // on bare metal only: the free fraction θ₀ = 1 − Σθ, with ∂ln θ₀/∂η_s = −θ_s
-        let free = 1;
-        for (let x = 0; x < surf.length; x++) {
-          free -= th[g * nSurf + x];
-          d[1 + n + x] -= th[g * nSurf + x];
-        }
-        pref *= free;
+        for (let x = 0; x < surf.length; x++) d[1 + n + x] -= th[g * nSurf + x];
+        pref *= this.th0[g];
       }
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
       const rate = pref * bv;
@@ -2158,9 +2153,18 @@ export class Solver {
     const { n, M, res, nSurf, th, thOld } = this, R = this.rix, surf = port.surface, G = surf[0].capacity;
     for (const g of port.nodes) {
       const b = this.blockOfNode[g];
+      // Near full coverage θ − θ_old cancels (both ~1, the change ~θ₀): the dominant species'
+      // change comes from the small ones instead, Δθ = −Δθ₀ − Σ_others Δθ.
+      let top = 0;
+      for (let q = 1; q < surf.length; q++) if (th[g * nSurf + q] > th[g * nSurf + top]) top = q;
       for (let q = 0; q < surf.length; q++) {
         const tq = th[g * nSurf + q];
-        res[R[b * M + 1 + n + q]] += (G * (tq - thOld[g * nSurf + q])) / dt;
+        let change = tq - thOld[g * nSurf + q];
+        if (q === top && tq > 0.5) {
+          change = -(this.th0[g] - this.th0Old[g]);
+          for (let x = 0; x < surf.length; x++) if (x !== q) change -= th[g * nSurf + x] - thOld[g * nSurf + x];
+        }
+        res[R[b * M + 1 + n + q]] += (G * change) / dt;
         for (let x = 0; x < surf.length; x++) this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * ((q === x ? 1 : 0) - th[g * nSurf + x]));
       }
     }
@@ -2479,7 +2483,7 @@ export class Solver {
     this.uPrevLo.set(this.uLo);
     this.termVPrev.set(this.termV);
     this.computeConcentrations();
-    const cN = Float64Array.from(this.c), thN = Float64Array.from(this.th);
+    const cN = Float64Array.from(this.c), thN = Float64Array.from(this.th), th0N = Float64Array.from(this.th0);
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd) {
@@ -2498,11 +2502,13 @@ export class Solver {
       const { cOld } = this;
       for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
       for (let k = 0; k < thN.length; k++) this.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
+      for (let k = 0; k < th0N.length; k++) this.th0Old[k] = b1 * th0N[k] - b2 * prev.th0[k];
       this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
       dtEff = dt / a0;
     } else {
       this.cOld.set(cN);
       this.thOld.set(thN);
+      this.th0Old.set(th0N);
       this.contactDStart = DN;
     }
     // Implicit: sources at the step's end, as seen from within the step (before any jump there).
@@ -2519,7 +2525,7 @@ export class Solver {
     }
     result.bdf = bdf;
     if (result.converged) {
-      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, D: DN });
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, th0: th0N, D: DN });
       if (this.history.length > 3) this.history.length = 3;
       this.time = tEnd;
       this.lastDt = dtEff;
@@ -2808,6 +2814,7 @@ export class Solver {
       uLo: Float64Array.from(this.uLo),
       cOld: Float64Array.from(this.cOld),
       thOld: Float64Array.from(this.thOld),
+      th0Old: Float64Array.from(this.th0Old),
       time: this.time,
       lastDt: this.lastDt,
       atSteady: this.atSteady,
@@ -2826,6 +2833,7 @@ export class Solver {
     this.uLo.set(s.uLo);
     this.cOld.set(s.cOld);
     this.thOld.set(s.thOld);
+    this.th0Old.set(s.th0Old);
     this.time = s.time;
     this.lastDt = s.lastDt;
     this.atSteady = s.atSteady;
@@ -2869,6 +2877,7 @@ export class Solver {
     this.computeConcentrations();
     this.cOld.set(this.c);
     this.thOld.set(this.th);
+    this.th0Old.set(this.th0);
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
     this.assemble(Infinity);

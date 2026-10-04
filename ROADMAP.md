@@ -163,6 +163,12 @@ for live demos.
      - Done: a cross-section that varies along x (`geometry`), spherical and cylindrical shells
        included. With electrode ports, that's the radial Evans drop, A = 2πr·h(r).
      - Done: rates at a hypothetical level, `polarization()`, for Evans diagrams.
+     - Done: an electrode's surface (Langmuir coverages, reactions on bare metal), for passive
+       films. Open: an electrode port has no double-layer capacitance, so when a film passivates
+       the last active patch, the mixed potential jumps across a fold of the active–passive curve,
+       and a transient stops there. A capacitance per area of electrode would make the jump
+       continuous (and give porous electrodes their charging current and de Levie impedance), but
+       in a strictly neutral solution it has to say which ions the double layer takes up.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
        anodic, and lost time finding out why.

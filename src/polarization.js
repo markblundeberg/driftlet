@@ -51,7 +51,7 @@ export function polarization(device, sol, where, V) {
     nodeOf = () => g;
     if (port.surface.length > 0) {
       const w = port.nodes.indexOf(g), theta = port.surface.map((sp) => sol.ports[k].coverage[sp.name][w]);
-      surface = { sp: port.surface, theta, bare: 1 - theta.reduce((t, v) => t + v, 0) };
+      surface = { sp: port.surface, theta, bare: sol.ports[k].bare[w] };
     }
     reactions = port.reactions;
     names = device.def.ports?.[k]?.reactions;

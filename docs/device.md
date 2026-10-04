@@ -551,6 +551,15 @@ $`\Gamma\,d\theta/dt`$ per area of electrode, so filling it passes a current, an
 `ports[k].coverage[name][j]`. It's a monolayer picture: a real passive oxide is nanometres thick,
 grows, and breaks down under chloride, none of which a coverage has.
 
+Two cautions. Keep a film's stability within reason: blocking the bare fraction to 1e-3–1e-6 is
+already a passive metal, and far below that ($`\theta_0 \lesssim 10^{-10}`$) the coverage's η barely
+affects anything, so Newton struggles with it. And an electrode port has no double-layer
+capacitance (its solution is strictly neutral), so its potential follows its kinetics instantly.
+With a passivating film, current against potential has the active–passive peak, and when the
+last active patch covers over, the potential where no current flows can vanish from the active
+branch and must jump to the passive one. A real electrode makes that jump quickly but
+continuously, through its double layer; here it's a discontinuity, and a transient stops there.
+
 Validated in test/coverage.test.js: the Langmuir isotherm against the electrode's potential (to
 1e-9), the charge to fill the surface, $`F\,\Gamma\,\Delta\theta`$ per area of electrode, and the
 active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer.
