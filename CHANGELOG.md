@@ -8,6 +8,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   steps: the contact's current had come from its end box's balance, where the ions' storage and
   the box's charge (∝ c/dt, cancelling under neutrality) left round-off that swamped the flux. A
   sharp 3 M | 1 µM KCl junction now starts at tol 1e-6, and every junction case takes fewer steps.
+- The stepper no longer tries longer first steps after a jump in a strictly neutral device: with
+  the starts and ends fixed, nothing needs it.
+- Fixed: a `set()` that widened a surfaced window started the new nodes at θ = 0.5, not `theta0`.
 - `set({ ports: { gate: { V: 0.2 } } })` patches ports by name (an array still replaces them
   all); a new kind of drive drops the old, as for contacts. A wrong `ports` patch is a clear error.
 - Docs, from an outside agent building an OECT from llms.txt: a volumetric capacitance C* as
