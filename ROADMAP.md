@@ -238,19 +238,20 @@ for live demos.
   pinning) and thermionic-emission links at heterojunctions.
 - Non-isothermal transport (Soret, Seebeck/Peltier, a heat equation), which stays local.
 
+- **Not planned, though not ruled out: machinery heavier than a library for live demos usually
+  needs.** Worth taking on if a demo, or the physics, really calls for it.
+  - **Solid phases with complementarity**: a phase at unit activity while any is present, its
+    amount never negative (n ≥ 0, saturation index ≤ 0, one of them zero), so it appears,
+    dissolves away and reappears: a pit's salt film, a real precipitate (rust rather than an ideal
+    solute). It needs semismooth Newton and a stepper that finds when a phase appears or
+    vanishes, which is where reactive-transport codes spend their effort. Surface coverage
+    (Langmuir, smooth, bounded by its own statistics) stands in for a passive film.
+  - **Phase separation (Cahn–Hilliard)**: a non-convex free energy (LFP's miscibility gap) with a
+    gradient-energy term, which is still local and block-tridiagonal. A regular-solution OCV
+    through the gap is the stand-in.
+
 ## Out of scope, for good
 
 2D/3D; non-local couplings such as recirculation or one well-mixed reservoir feeding several
 faces (a region with large mixing is the local stand-in); anything that breaks the
 block-tridiagonal structure.
-
-And machinery out of proportion to a library for live demos, where the equations stop being
-smooth or local in time:
-- **Solid phases with complementarity**: a phase at unit activity while any is present, its
-  amount never negative (n ≥ 0, saturation index ≤ 0, one of them zero), so it appears, dissolves
-  away and reappears: a pit's salt film, a real precipitate (rust rather than an ideal solute).
-  It needs semismooth Newton and a stepper that finds when a phase appears or vanishes, which is
-  where serious reactive-transport codes spend their effort. A surface coverage (Langmuir, smooth,
-  bounded by its own statistics) is the stand-in for a passive film.
-- **Phase separation (Cahn–Hilliard)**: a non-convex free energy (LFP's miscibility gap) with a
-  gradient-energy term. A regular-solution OCV through the gap is as far as it goes.
