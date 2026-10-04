@@ -136,6 +136,30 @@ test('a double layer charging in a closed, strictly neutral electrolyte keeps ev
   }
 });
 
+test('two capacitances on one window add: two gates of C/2 hold what one of C does, ions conserved', () => {
+  const ions = [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }];
+  const gate = (name, C) => ({ name, region: 0, from: 0.5e-3, V: { t: [0, 1e-3], values: [0, 0.2] }, area: 1e4, capacitance: { C } });
+  const run = (ports) => {
+    const dev = new Device({
+      T,
+      species: ions,
+      materials: { water: { epsr: 0, species: { 'Na+': { D: 1.3e-9, mu0: -261.9e3 }, 'Cl-': { D: 2e-9, mu0: -131.2e3 } } } },
+      regions: [{ material: 'water', length: 1e-3, c0: { 'Na+': 500, 'Cl-': 500 } }],
+      contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } },
+      ports,
+      grid: { hmin: 10e-6, hmax: 50e-6 },
+    });
+    return [1e-3, 1].map((time) => {
+      const s = dev.advance(time);
+      assert.ok(s.converged);
+      for (const st of s.conservation) assert.ok(Math.abs(st.drift) < 1e-12, `${st.species} at ${time} s: ${st.drift}`);
+      return s.ports.reduce((t, p) => t + p.charge, 0);
+    });
+  };
+  const one = run([gate('a', 0.2)]), two = run([gate('a', 0.1), gate('b', 0.1)]);
+  one.forEach((q, j) => assert.ok(Math.abs(two[j] / q - 1) < 1e-6, `${two[j]} vs ${q}`));
+});
+
 test('a capacitance is checked', () => {
   const def = tft(1, 0.1).def;
   def.ports[0].capacitance = { C: -1 };

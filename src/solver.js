@@ -349,11 +349,13 @@ export class Solver {
     this.portQStart = new Float64Array(model.ports.length);
     this.portQOld = new Float64Array(model.ports.length);
     this.portQEnd = null;
-    // And per node, the charge per volume a capacitance holds against the window (aσ; the ions
-    // hold −aσ), its slope a·C per volt, and its port.
+    // And per node, the charge per volume the capacitances hold against the window (Σ aσ, over
+    // every port with one there: two gates on one channel, say; the ions hold −Σ aσ), its slope
+    // Σ a·C per volt, and the ports [terminal, index in its window].
     this.qg = new Float64Array(grid.nNodes);
     this.qgSlope = new Float64Array(grid.nNodes);
-    this.qgTerm = new Int32Array(grid.nNodes).fill(-1);
+    this.qgTerms = Array.from({ length: grid.nNodes }, () => []);
+    model.ports.forEach((port, k) => port.capacitance && port.nodes.forEach((g, w) => this.qgTerms[g].push([2 + k, w])));
     this.contactDOld = { left: 0, right: 0 };
     this.contactDStart = { left: 0, right: 0 };
     // Terminals (the two contacts, then the ports): each one's voltage (V), held by its source or
@@ -1508,14 +1510,13 @@ export class Solver {
       // under neutrality. Against a capacitance it isn't: neutrality makes it −(aσ + ρ_fixed)/F,
       // so their storage is that less what the step started with, Σ z c_old, over dt (in units
       // of the pivot's balance).
-      const kq = this.qgTerm[g];
-      if (kq >= 0) {
+      if (this.qgTerms[g].length > 0) {
         const f = -v / (FARADAY * z[k] * dt);
         let qOld = this.rhoFixed[g];
         for (let i = 0; i < n; i++) if (present[gn + i]) qOld += F * z[i] * cOld[gn + i];
         res[rk] += f * (this.qg[g] + qOld);
         B[offB[b] + lk * m + p] += -f * this.qgSlope[g] * this.VT;
-        termB[kq][rk] += f * this.qgSlope[g];
+        for (const [kq, w] of this.qgTerms[g]) termB[kq][rk] += f * this.portArea[kq - 2][w] * this.model.ports[kq - 2].capacitance.C;
       }
     }
   }
@@ -2042,6 +2043,8 @@ export class Solver {
       this.termDI[k] = 0;
       this.termI[k] = 0;
     }
+    this.qg.fill(0);
+    this.qgSlope.fill(0);
     this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt, false));
     this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt, true));
     this._contact('left', dt);
@@ -2196,9 +2199,8 @@ export class Solver {
       if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
       const b = this.blockOfNode[g], s = vol[g] * area[w] * Cs;
       const q = s * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));
-      this.qg[g] = area[w] * Cs * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));
-      this.qgSlope[g] = area[w] * Cs;
-      this.qgTerm[g] = k;
+      this.qg[g] += area[w] * Cs * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));
+      this.qgSlope[g] += area[w] * Cs;
       Q += q;
       dQdV += s;
       res[R[b * M]] -= q;

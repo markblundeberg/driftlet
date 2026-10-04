@@ -576,7 +576,8 @@ Gauss's law averaged across the section,
 $`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$, and at $`\varepsilon = 0`$ neutrality
 $`\rho + a\sigma = 0`$, the mobile species rearranging to supply it (counter-ions in, co-ions out).
 The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$, none in a steady state. Solutions
-report `ports[k].sigma` at each node of the window and the total `ports[k].charge`.
+report `ports[k].sigma` at each node of the window and the total `ports[k].charge`. Capacitances
+on overlapping windows add (a channel's top and bottom gates).
 
 ```js nocheck
 // a thin-film transistor: the gate along a 10 nm channel through 1 mF/m² (35 nm of SiO₂)
