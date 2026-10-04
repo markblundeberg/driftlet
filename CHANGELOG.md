@@ -10,6 +10,29 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   as you scroll.
 - The live demos have a pause button, and pause themselves while scrolled out of view or in a
   hidden tab, so a page doesn't keep a CPU busy unseen.
+- Transients in strictly neutral materials start better. The state a first step starts from
+  needn't satisfy the algebraic equations (φ, an interface's unknowns), which jump in the first
+  instant, and the error estimate had read that jump as error on every later step; the history
+  now starts after it. A closed device end is solved in the better-conditioned charge rows like
+  an interior node, so an electrode spread through neutral water up to one takes its first step
+  at tol 1e-8. `npm run hard` runs a set of hard cases, with a baseline of what still fails.
+- Fixed: an electrode surface's coverages weren't under the time step's error control (a Langmuir
+  filling ran 4% off its exponential at any tolerance).
+- Fixed: species fed only through an electrode surface (A⁺ + e⁻ = S, S + e⁻ = B⁻) looked fed from
+  outside, so a steady solve didn't conserve their total; it now does, with what the surface
+  holds.
+- Fixed: a reaction marked `bare` on a port without surface species ran at zero.
+- Fixed: a held port level beside another port's electrode reaction in the same window (the hold
+  listed first) left the currents unbalanced.
+- Fixed: capacitances on overlapping windows overwrote each other; they add (two gates on a
+  channel).
+- Fixed: `set()` to a new grid or geometry carried the old conserved amounts (a slab's mol/m² as
+  a sphere's mol).
+- Fixed: `check()` on a non-planar device misread a face's per-area rates against the totals, and
+  says mol/s, A and C there; `describe()` likewise for current drives.
+- A capacitance alone driven by a current starts uncharged and charges in a transient; `solve()`
+  says it has no steady state instead of running its voltage off. `ports[k].sigma` is zero where a
+  contact holds that charge, as the solver counts it. Unit warnings cover ports' k0 and C.
 
 ## 0.9.1 (2026-10-04)
 
