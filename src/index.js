@@ -107,13 +107,15 @@ export class Device {
         for (const k of solver.floating) if (old.terms[k].name === solver.terms[k].name) solver.termV[k] = old.termV[k];
       }
       // What each stretch conserves from here: a stretch that was closed and still is (same
-      // species, same regions) keeps its amount; any other (newly closed, split, merged, open)
-      // starts from what the carried state holds.
+      // species, same regions, same boxes) keeps its amount; any other (newly closed, split,
+      // merged, open, or with its boxes resized by a new grid or geometry) starts from what the
+      // carried state holds.
       const key = (st) => `${st.species}:${st.regions[0]}-${st.regions[1]}`;
       const before = new Map(old.stretches.map((st, k) => [key(st), k]));
+      const va = old.model.grid.vol, vb = model.grid.vol, sameBoxes = va.length === vb.length && va.every((v, g) => v === vb[g]);
       solver.referenceAmounts = solver.stretches.map((st) => {
         const k = before.get(key(st));
-        return k !== undefined && !old.stretches[k].connected && !st.connected ? old.referenceAmounts[k] + old.boundaryIntake[k] : solver.amount(st);
+        return sameBoxes && k !== undefined && !old.stretches[k].connected && !st.connected ? old.referenceAmounts[k] + old.boundaryIntake[k] : solver.amount(st);
       });
       solver.boundaryIntake.fill(0);
     }

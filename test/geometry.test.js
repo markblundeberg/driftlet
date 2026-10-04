@@ -129,3 +129,23 @@ test('geometry is checked', () => {
   delete still.regions[0].velocity;
   assert.throws(() => new Device(still), /vanishes inside the device/);
 });
+
+test('set() to a new geometry keeps the concentrations, not the old amounts', () => {
+  // A closed stretch keeps its amount across set(), unless its boxes change size: 10 mol/m³ of
+  // NO₃⁻ in a slab, made a spherical shell, is still 10 mol/m³ (not the slab's mol/m² as mol).
+  const def = {
+    species: [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 78.5, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'NO3-': 10, 'Ag+': 10 } }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+    grid: { hmin: 2e-9, hmax: 100e-9, ratio: 1.5, minCells: 4 },
+  };
+  const geometry = { type: 'spherical', r0: 1e-6 };
+  const fresh = new Device({ ...def, geometry }).solve();
+  const dev = new Device(def);
+  dev.solve();
+  const moved = dev.set({ geometry }).solve();
+  assert.ok(fresh.converged && moved.converged);
+  const mid = fresh.x.length >> 1;
+  assert.ok(Math.abs(moved.c['NO3-'][mid] / fresh.c['NO3-'][mid] - 1) < 1e-9, `${moved.c['NO3-'][mid]} vs ${fresh.c['NO3-'][mid]}`);
+});
