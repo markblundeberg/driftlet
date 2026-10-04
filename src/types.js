@@ -163,7 +163,10 @@
  * @property {Record<string, { mu0: number, capacity: number, theta0?: number }>} [surface] with reactions: species
  *   on the electrode's sites, Langmuir (μ = μ° + RT ln(θ/θ₀)), capacity in mol of sites per m² of electrode,
  *   shared; a reaction with `bare: true` runs only on the bare fraction θ₀ = 1 − Σθ
- * @property {number | { x: number[], values: number[] }} [area] with reactions: electrode area per volume,
+ * @property {{ C: number, zeroCharge?: number }} [capacitance] a capacitance spread through the window (F/m² of
+ *   electrode): σ = C (V − zeroCharge − φ) on the port's side, aσ in each node's charge balance; a gate
+ *   along a channel, a double layer
+ * @property {number | { x: number[], values: number[] }} [area] with reactions or a capacitance: electrode area per volume,
  *   m²/m³ (1/h for a film of thickness h), or a profile against the device's x
  */
 
@@ -212,7 +215,8 @@
  * @property {{ left: ContactResult, right: ContactResult }} contacts
  * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
  * @property {{ name: string, V: number, flux: Record<string, number>, current: number, x?: Float64Array,
- *   area?: Float64Array, rates?: Float64Array[] }[]} ports what each internal port brings into the device;
+ *   area?: Float64Array, rates?: Float64Array[], coverage?: Record<string, Float64Array>, bare?: Float64Array,
+ *   sigma?: Float64Array, charge?: number }[]} ports what each internal port brings into the device;
  *   with reactions, also its window's nodes (x, m), area per volume there, and each reaction's rate per area
  *   at each node (mol/(m²·s), forward)
  * @property {{ left: string, right: string, dipole: number, sheetCharge: number, D: number, N: Record<string, number>, rates: number[] }[]} interfaces

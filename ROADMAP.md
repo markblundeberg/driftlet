@@ -164,11 +164,9 @@ for live demos.
        included. With electrode ports, that's the radial Evans drop, A = 2πr·h(r).
      - Done: rates at a hypothetical level, `polarization()`, for Evans diagrams.
      - Done: an electrode's surface (Langmuir coverages, reactions on bare metal), for passive
-       films. Open: an electrode port has no double-layer capacitance, so when a film passivates
-       the last active patch, the mixed potential jumps across a fold of the active–passive curve,
-       and a transient stops there. A capacitance per area of electrode would make the jump
-       continuous (and give porous electrodes their charging current and de Levie impedance), but
-       in a strictly neutral solution it has to say which ions the double layer takes up.
+       films, and a capacitance through a port's window (a double layer, a gate along a channel),
+       which carries a transient through a film's passivation. Next for it: a FET panel in the
+       saturation demo, the gate's flat V_e⁻ beside an electrolyte's flat spectator.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
        anodic, and lost time finding out why.

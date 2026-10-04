@@ -4,6 +4,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- A capacitance spread through a port's window, `capacitance: { C, zeroCharge }` with `area`:
+  σ = C (V − zeroCharge − φ) per area of electrode, aσ in each node's charge balance (neutrality
+  at ε = 0), and the charging current through the port. A gate along a channel (the
+  gradual-channel model of a thin-film transistor), an organic electrochemical transistor's
+  volumetric capacitance, a porous electrode's double layer. With it an electrode port's potential
+  swings continuously when a passive film covers the last active patch. Validated: a TFT against
+  the charge-sheet model from below threshold through saturation, the de Levie impedance, the
+  gate's low-frequency impedance against dQ/dV (test/capacitance.test.js).
+
 - An electrode port's surface: species on its sites with a coverage at each node (Langmuir,
   μ = μ° + RT ln(θ/θ₀), Γ mol of sites per m² of electrode), named in its reactions like species,
   and `bare: true` for a reaction that runs only on bare metal (its rate times θ₀). Adsorbed

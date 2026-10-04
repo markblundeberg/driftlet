@@ -106,11 +106,24 @@ export function makeSolution(solver, result = {}) {
       flux[species[i].name] = solver.portFlux[k][i];
       current += F * species[i].z * solver.portFlux[k][i];
     }
+    if (port.capacitance) {
+      // a capacitance's charging current, and its charge (the port's side), like a gate's
+      const dt = solver.lastDt;
+      current += Number.isFinite(dt) ? (solver.portQ[k] - solver.portQOld[k]) / dt : 0;
+    }
     const out = { name: port.name, V: solver.termV[2 + k], flux, current };
-    if (port.reactions.length > 0) {
-      // An electrode spread through the window: where it sits, and each reaction's rate there.
+    if (port.capacitance) out.charge = solver.portQ[k];
+    if (port.capacitance) {
+      // its charge per area of electrode at each node, σ = C (V − zeroCharge − φ)
+      const { C: Cs, zeroCharge } = port.capacitance;
+      out.sigma = Float64Array.from(port.nodes, (g) => Cs * (solver.termV[2 + k] - zeroCharge - phi[g]));
+    }
+    if (port.area !== null) {
       out.x = Float64Array.from(port.nodes, (g) => model.grid.x[g]);
       out.area = Float64Array.from(solver.portArea[k]);
+    }
+    if (port.reactions.length > 0) {
+      // An electrode spread through the window: each reaction's rate at its nodes.
       out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), forward
       // its surface: each species' coverage θ at each node of the window
       if (port.surface.length > 0) {

@@ -342,6 +342,12 @@ export class Solver {
     this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
     this.portFlux = model.ports.map(() => new Float64Array(n)); // into the device, mol/(m²·s)
     this.contactD = { left: 0, right: 0 };
+    // A capacitive port's charge (its side's, Σ vol·a·σ over its window), as the contacts' D: now,
+    // at the step's start and at the previous step's end.
+    this.portQ = new Float64Array(model.ports.length);
+    this.portQStart = new Float64Array(model.ports.length);
+    this.portQOld = new Float64Array(model.ports.length);
+    this.portQEnd = null;
     this.contactDOld = { left: 0, right: 0 };
     this.contactDStart = { left: 0, right: 0 };
     // Terminals (the two contacts, then the ports): each one's voltage (V), held by its source or
@@ -2082,6 +2088,7 @@ export class Solver {
       }
     }
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
+    if (port.capacitance) this._portCapacitance(port, k, dt);
     if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(port, dt);
     for (let i = 0; i < n; i++) this.termI[k] += z[i] * F * flux[i];
   }
@@ -2145,6 +2152,33 @@ export class Solver {
       for (let t = 0; t < M; t++) if (d[t] !== 0) C[R[b * M + t]] += q * F * s * d[t];
       this.termDI[k] += q * F * s * dV;
     });
+  }
+
+  // A capacitance spread through a port's window: per area of electrode, σ = C (V − zeroCharge − φ)
+  // on the port's side, so each node's charge balance (its φ row) gains vol·a·σ, and the port
+  // passes the charging current d(Σ vol·a·σ)/dt (none in a steady state). An end node whose φ its
+  // contact sets is left to the contact.
+  _portCapacitance(port, k, dt) {
+    const { M, u, uLo, res, VT } = this, R = this.rix, vol = this.model.grid.vol, area = this.portArea[k - 2];
+    const { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k], B = this.termB[k], Ct = this.termC[k];
+    const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
+    let Q = 0, dQdV = 0;
+    port.nodes.forEach((g, w) => {
+      if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
+      const b = this.blockOfNode[g], s = vol[g] * area[w] * Cs;
+      const q = s * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));
+      Q += q;
+      dQdV += s;
+      res[R[b * M]] -= q;
+      this._j(b, 0, b, 0, s * VT);
+      B[R[b * M]] -= s;
+      if (Number.isFinite(dt)) Ct[R[b * M]] += (-s * VT) / dt;
+    });
+    this.portQ[k - 2] = Q;
+    if (Number.isFinite(dt)) {
+      this.termI[k] += (Q - this.portQStart[k - 2]) / dt;
+      this.termDI[k] += dQdV / dt;
+    }
   }
 
   // An electrode surface's storage, per area of electrode: Γ (θ_s − θ_s,old)/dt in each surface
@@ -2486,11 +2520,12 @@ export class Solver {
     const cN = Float64Array.from(this.c), thN = Float64Array.from(this.th), th0N = Float64Array.from(this.th0);
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
-    if (!this.contactDEnd) {
+    if (!this.contactDEnd || !this.portQEnd) {
       this._assembleBookkeeping(dt);
       this.contactDEnd = { ...this.contactD };
+      this.portQEnd = Float64Array.from(this.portQ);
     }
-    const DN = { ...this.contactDEnd };
+    const DN = { ...this.contactDEnd }, QN = Float64Array.from(this.portQEnd);
     if (opts.guess) {
       // Start Newton from a predicted state (e.g. extrapolated from the history).
       this.u.set(opts.guess);
@@ -2504,12 +2539,14 @@ export class Solver {
       for (let k = 0; k < thN.length; k++) this.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
       for (let k = 0; k < th0N.length; k++) this.th0Old[k] = b1 * th0N[k] - b2 * prev.th0[k];
       this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
+      this.portQStart = QN.map((q, k) => b1 * q - b2 * prev.Q[k]);
       dtEff = dt / a0;
     } else {
       this.cOld.set(cN);
       this.thOld.set(thN);
       this.th0Old.set(th0N);
       this.contactDStart = DN;
+      this.portQStart = QN;
     }
     // Implicit: sources at the step's end, as seen from within the step (before any jump there).
     // A step landing on a breakpoint ends on it exactly.
@@ -2525,11 +2562,12 @@ export class Solver {
     }
     result.bdf = bdf;
     if (result.converged) {
-      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, th0: th0N, D: DN });
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, th0: th0N, D: DN, Q: QN });
       if (this.history.length > 3) this.history.length = 3;
       this.time = tEnd;
       this.lastDt = dtEff;
       this.contactDOld = this.contactDStart;
+      this.portQOld = this.portQStart;
       this._accumulateBoundaryIntake(dtEff, cN);
     } else {
       this.u.set(this.uPrev);
@@ -2821,6 +2859,9 @@ export class Solver {
       contactDStart: this.contactDStart,
       contactDOld: this.contactDOld,
       contactDEnd: this.contactDEnd,
+      portQStart: this.portQStart,
+      portQOld: this.portQOld,
+      portQEnd: this.portQEnd,
       boundaryIntake: Float64Array.from(this.boundaryIntake),
       history: this.history.slice(),
       termV: Float64Array.from(this.termV),
@@ -2840,6 +2881,9 @@ export class Solver {
     this.contactDStart = s.contactDStart;
     this.contactDOld = s.contactDOld;
     this.contactDEnd = s.contactDEnd;
+    this.portQStart = s.portQStart;
+    this.portQOld = s.portQOld;
+    this.portQEnd = s.portQEnd;
     this.boundaryIntake.set(s.boundaryIntake);
     this.history = s.history.slice();
     this.termV.set(s.termV);
@@ -2880,6 +2924,7 @@ export class Solver {
     this.th0Old.set(this.th0);
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
+    this.portQStart = Float64Array.from(this.portQ);
     this.assemble(Infinity);
     // The steady parts, then the storage parts from an assembly at a tiny dt.
     const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
@@ -3167,6 +3212,7 @@ export class Solver {
   _accumulateBoundaryIntake(dt, cN) {
     this._assembleBookkeeping(dt);
     this.contactDEnd = { ...this.contactD };
+    this.portQEnd = Float64Array.from(this.portQ);
     if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;
     const { n, cOld } = this, vol = this.model.grid.vol;

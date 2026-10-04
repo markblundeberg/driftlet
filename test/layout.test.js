@@ -142,6 +142,14 @@ const devices = {
     }],
     grid: coarse,
   }),
+  'a capacitance spread along a port (ε > 0), floating behind a resistance': () => ({
+    species: ions,
+    materials: { water: water(78.5) },
+    regions: [{ material: 'water', length: 1e-6, c0: salt }],
+    contacts: { left: { V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' }, right: {} },
+    ports: [{ name: 'gate', region: 0, from: 0.2e-6, V: 0.02, R: 10, area: { x: [0, 1e-6], values: [1e6, 4e6] }, capacitance: { C: 0.1, zeroCharge: 0.05 } }],
+    grid: coarse,
+  }),
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },

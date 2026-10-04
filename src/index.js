@@ -100,6 +100,7 @@ export class Device {
       solver.computeConcentrations();
       solver.time = old.time;
       solver.contactDEnd = old.contactDEnd;
+      if (old.portQEnd?.length === solver.portQ.length) solver.portQEnd = old.portQEnd;
       solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
       // Floating terminals keep their voltages (a good start), where the terminals match.
       if (old.terms.length === solver.terms.length) {

@@ -658,7 +658,7 @@ function normalizeGeometry(g) {
 // the window, `area` (m²/m³) of it per volume.
 function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -678,7 +678,8 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   const surface = portSurface(pdef, path, speciesIndex);
   const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface);
   surface.forEach((sp, s) => need(reactions.some((rx) => rx.part.some((p) => p.side === 2 && p.s === s)), `${path}.surface.${sp.name}: no reaction of the port makes or uses it`));
-  need(pdef.species === undefined ? reactions.length > 0 : isObject(pdef.species), `${path}.species must map species names to port links`);
+  const capacitance = portCapacitance(pdef, path, mat);
+  need(pdef.species === undefined ? reactions.length > 0 || capacitance !== null : isObject(pdef.species), `${path}.species must map species names to port links`);
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
     const lpath = `${path}.species.${sname}`;
@@ -708,18 +709,30 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
     links[i] = { type: link.type, ...level };
   }
-  need(links.some((l) => l.type !== 'blocked') || reactions.length > 0, `${path}.species: the port exchanges no species`);
+  need(links.some((l) => l.type !== 'blocked') || reactions.length > 0 || capacitance !== null, `${path}.species: the port exchanges no species`);
   // One that exchanges only neutral species (an O₂ supply) carries no current, so its voltage is
   // nobody's business: it can't be driven by one.
-  const passes = reactions.length > 0 || links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+  const passes = reactions.length > 0 || capacitance !== null || links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
   need(passes || drive.kind === 'V', `${path}.I: this port passes no current (it exchanges only neutral species), so give it no drive`);
   let area = null;
-  if (reactions.length > 0) {
+  if (reactions.length > 0 || capacitance !== null) {
     need(pdef.area !== undefined, `${path}.area: give the electrode's area per volume of the window (m²/m³, e.g. 1/h for a film of thickness h on it), a number or a profile`);
     area = typeof pdef.area === 'number' ? { value: positive(pdef.area, `${path}.area (m²/m³)`) } : profile(pdef.area, `${path}.area`, 'areas per volume (m²/m³)', (a) => a >= 0, 'an area per volume ≥ 0');
-  } else need(pdef.area === undefined, `${path}.area: only a port with reactions has an electrode area`);
+  } else need(pdef.area === undefined, `${path}.area: only an electrode (a port with reactions or a capacitance) has an area`);
   need(surface.length === 0 || reactions.length > 0, `${path}.surface: only an electrode (a port with reactions) has a surface`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area, surface };
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area, surface, capacitance };
+}
+
+// A capacitance spread through the window: a gate along a channel, an electrode's double layer.
+// Per area of electrode it holds σ = C (V − zeroCharge − φ) on the port's side, and the window
+// the opposite: the region's charge balance (Gauss's law, or neutrality at ε = 0) gains aσ.
+function portCapacitance(pdef, path, mat) {
+  if (pdef.capacitance === undefined) return null;
+  const cpath = `${path}.capacitance`;
+  need(isObject(pdef.capacitance), `${cpath} must be { C, zeroCharge }`);
+  fields(pdef.capacitance, cpath, ['C', 'zeroCharge']);
+  need(!mat.conductor && !mat.phiFree, `${cpath}: a capacitance couples to φ, which a ${mat.conductor ? 'conductor' : 'region with no free charge'} doesn't have`);
+  return { C: positive(pdef.capacitance.C, `${cpath}.C (F/m² of electrode)`), zeroCharge: pdef.capacitance.zeroCharge === undefined ? 0 : finite(pdef.capacitance.zeroCharge, `${cpath}.zeroCharge (V)`) };
 }
 
 // An electrode port's surface species: coverages θ of its sites (Langmuir: each takes one site,
@@ -807,7 +820,7 @@ function checkAnchors(regions, materials, interfaces, contacts, species, ports =
   const anchored = new Set();
   if (anchors(contacts.left)) anchored.add(find(0));
   if (anchors(contacts.right)) anchored.add(find(nR - 1));
-  for (const port of ports) if (port.reactions.length > 0 || port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
+  for (const port of ports) if (port.reactions.length > 0 || port.capacitance || port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
   for (let r = 0; r < nR; r++) {
     const mat = materials[regions[r].material];
     const charged = species.some((sp, i) => mat.present[i] && sp.z !== 0);

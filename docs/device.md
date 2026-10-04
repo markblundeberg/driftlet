@@ -559,10 +559,45 @@ With a passivating film, current against potential has the active–passive peak
 last active patch covers over, the potential where no current flows can vanish from the active
 branch and must jump to the passive one. A real electrode makes that jump quickly but
 continuously, through its double layer; here it's a discontinuity, and a transient stops there.
+Give the port a [capacitance](#a-capacitance-through-a-window-a-gate-along-a-channel-a-double-layer) and the jump becomes a quick, continuous swing.
 
 Validated in test/coverage.test.js: the Langmuir isotherm against the electrode's potential (to
 1e-9), the charge to fill the surface, $`F\,\Gamma\,\Delta\theta`$ per area of electrode, and the
 active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer.
+
+### A capacitance through a window: a gate along a channel, a double layer
+
+A port can hold charge across a capacitance spread through its window: per area of electrode,
+$`\sigma = C\,(V - \mathtt{zeroCharge} - \phi)`$ on the port's side (C in F/m²), with `area` per volume
+as for reactions, and the window holds the opposite. Each node's charge balance gains $`a\sigma`$:
+Gauss's law averaged across the section,
+$`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$, and at $`\varepsilon = 0`$ neutrality
+$`\rho + a\sigma = 0`$, the mobile species rearranging to supply it (counter-ions in, co-ions out).
+The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$, none in a steady state. Solutions
+report `ports[k].sigma` at each node of the window and the total `ports[k].charge`.
+
+```js nocheck
+// a thin-film transistor: the gate along a 10 nm channel through 1 mF/m² (35 nm of SiO₂)
+ports: [{ name: 'gate', region: 'channel', V: 1.5, area: 1 / 10e-9, capacitance: { C: 1e-3, zeroCharge: 0.3 } }]
+// a porous electrode's double layer, alongside its reactions
+ports: [{ name: 'iron', region: 'film', terminal: 'e-', V: 0, area: 1e4, capacitance: { C: 0.2, zeroCharge: -0.4 }, reactions: [/* … */] }]
+```
+
+That's the gradual-channel approximation of a field-effect transistor, exact for a thin film
+with no body (a TFT, an organic or oxide transistor) while the channel is long against the gate
+dielectric, and failing where it pinches off (where the 2D field takes over). It's also the
+Bernards model of an organic electrochemical transistor (a volumetric capacitance), cable theory
+for an axon's membrane, and a porous electrode's double layer, which lets an electrode port's
+potential move continuously: without it, a passivating film that covers the last active patch
+forces a jump (see above). The gate's flat level pins the channel's standard level through C, as
+a blocked spectator's flat level does in an electrolyte, and the current saturates as the
+carriers run out at the drain, in both.
+
+Validated in test/capacitance.test.js: a thin-film transistor's current against the
+charge-sheet model, $`I/W = (\mu/L)[(\sigma_s^2 - \sigma_d^2)/(2C) + V_T(\sigma_s - \sigma_d)]`$, from
+below threshold through saturation (second order in the grid); a porous electrode's de Levie
+impedance $`\sqrt{r/y}\coth(L\sqrt{ry})`$, the double layer in series with the ions' chemical
+capacitance; and the gate's low-frequency impedance against $`dQ/dV_G`$ from steady states.
 
 ## Terminals
 
