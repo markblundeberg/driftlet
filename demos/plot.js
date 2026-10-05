@@ -1,6 +1,6 @@
 // Minimal canvas line charts for the demos (no dependencies).
 //
-// chart(canvas, { series, xlabel, ylabel, xlim, ylim, logy, xscale })
+// chart(canvas, { series, xlabel, ylabel, xlim, ylim, logx, logy, xscale })
 //   series: [{ x, y, color, label, dash, width }]. NaN values break a line; repeated x values
 //   (doubled interface nodes) draw as vertical steps. Labels mark subscripts as driftlet/plot's
 //   do: `C_ox`, `c_{Zn²⁺}`.
@@ -36,7 +36,7 @@ function label(ctx, text, x, y, align = 'left') {
 }
 const plain = (text) => labelParts(text).map((p) => (p.sub ? `_${p.text}` : p.text)).join('');
 
-export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, logy = false, xscale = 1, legend = true }) {
+export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, logx = false, logy = false, xscale = 1, legend = true }) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', `${plain(ylabel)} against ${plain(xlabel)}: ${series.map((s) => s.label).filter(Boolean).map(plain).join(', ')}`);
   const dpr = window.devicePixelRatio || 1;
@@ -52,7 +52,8 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   const items = legend ? series.filter((s) => s.label) : [];
   const pad = { l: 64, r: 12, t: items.length ? 30 : 12, b: 42 };
   const fy = logy ? (v) => (v > 0 ? Math.log10(v) : NaN) : (v) => v;
-  let [x0, x1] = xlim ?? extent(series.flatMap((s) => Array.from(s.x, (v) => v * xscale)));
+  const fx = logx ? (v) => (v > 0 ? Math.log10(v * xscale) : NaN) : (v) => v * xscale;
+  let [x0, x1] = xlim ? (logx ? xlim.map(Math.log10) : xlim) : extent(series.flatMap((s) => Array.from(s.x, fx)));
   let [y0, y1] = ylim ? ylim.map(fy) : extent(series.flatMap((s) => Array.from(s.y, fy)));
   if (!(x1 > x0)) [x0, x1] = [x0 - 1, x0 + 1];
   if (!(y1 > y0)) [y0, y1] = [y0 - 1, y0 + 1];
@@ -69,13 +70,13 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   ctx.fillStyle = muted;
   ctx.strokeStyle = grid;
   ctx.lineWidth = 1;
-  for (const t of ticks(x0, x1, 6)) {
+  for (const t of logx ? ticks(Math.ceil(x0), Math.floor(x1), 6).filter(Number.isInteger) : ticks(x0, x1, 6)) {
     ctx.beginPath();
     ctx.moveTo(px(t), pad.t);
     ctx.lineTo(px(t), H - pad.b);
     ctx.stroke();
     ctx.textAlign = 'center';
-    ctx.fillText(fmt(t), px(t), H - pad.b + 16);
+    ctx.fillText(logx ? `1e${t}` : fmt(t), px(t), H - pad.b + 16);
   }
   for (const t of logy ? ticks(Math.ceil(y0), Math.floor(y1), 6).filter(Number.isInteger) : ticks(y0, y1, 5)) {
     ctx.beginPath();
@@ -110,7 +111,11 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
         pen = false;
         continue;
       }
-      const X = px(s.x[i] * xscale), Y = py(y);
+      const X = px(fx(s.x[i])), Y = py(y);
+      if (!Number.isFinite(X)) {
+        pen = false;
+        continue;
+      }
       if (pen) ctx.lineTo(X, Y);
       else ctx.moveTo(X, Y);
       pen = true;
@@ -122,7 +127,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
         const y = fy(s.y[i]);
         if (Number.isFinite(y)) {
           ctx.beginPath();
-          ctx.arc(px(s.x[i] * xscale), py(y), 3, 0, 2 * Math.PI);
+          ctx.arc(px(fx(s.x[i])), py(y), 3, 0, 2 * Math.PI);
           ctx.fill();
         }
       }

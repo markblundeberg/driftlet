@@ -143,7 +143,7 @@ them locally, serve the repository root (e.g. `python3 -m http.server`) and open
 | | | |
 |---|---|---|
 | [![pn junction](demos/screenshots/pn.png)](https://markblundeberg.github.io/driftlet/demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](https://markblundeberg.github.io/driftlet/demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](https://markblundeberg.github.io/driftlet/demos/mos.html) |
-| **pn junction**: quasi-Fermi levels under bias; I–V against Shockley | **Solar cell**: J<sub>sc</sub> and V<sub>oc</sub> against collection theory | **MOS capacitor**: band bending; C–V against ideal theory |
+| **pn junction**: quasi-Fermi levels under bias; I–V against Shockley | **Solar cell**: J<sub>sc</sub> and V<sub>oc</sub> against collection theory | **MOS capacitor**: band bending; C–V at any frequency, low to high |
 | [![cyclic voltammetry](demos/screenshots/redox.png)](https://markblundeberg.github.io/driftlet/demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](https://markblundeberg.github.io/driftlet/demos/daniell.html) | [![saturation](demos/screenshots/saturation.png)](https://markblundeberg.github.io/driftlet/demos/saturation.html) |
 | **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: a real salt bridge, leaking, ion by ion | **Saturation**: Ag \| AgNO₃ \| Ag up to its limiting current, and a thin-film transistor pinching off, against the charge-sheet model |
 | [![impedance](demos/screenshots/impedance.png)](https://markblundeberg.github.io/driftlet/demos/impedance.html) | [![ion-exchange membrane](demos/screenshots/membrane.png)](https://markblundeberg.github.io/driftlet/demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](https://markblundeberg.github.io/driftlet/demos/double-layer.html) |
@@ -260,7 +260,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
 | Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
 | Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
-| Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel | 1e-4; 1e-9; 2e-3 |
+| Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel, and without one the same equilibrium, and a gate step filling the inversion layer to it | 1e-4; 1e-9; 2e-3; 1e-6; 1e-3 |
 | Cross-sections (spherical, cylindrical, any A(x)) | steady diffusion to a sphere and a cylinder (exact on any grid); Cottrell with the spherical term; uptake by a sphere filling from its surface; Debye–Hückel around a charged sphere, potential and charge | 1e-10; 3e-4; 2e-4; 1e-3, 3e-4 |
 | A capacitance through a port | a thin-film transistor against the charge-sheet model (below threshold to saturation, second order); de Levie impedance; gate impedance against dQ/dV | 5e-4; 1e-3; 1e-6 |
 | Electrode surfaces (coverage) | Langmuir isotherm against potential; the charge to fill a surface; the active–passive curve, blocking exactly (1 − θ) | 1e-9; 1e-3; 1e-9 |

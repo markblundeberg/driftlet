@@ -10,17 +10,23 @@
 <body>
 <main>
 <nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
-  <h1>MOS capacitor: accumulation, depletion, inversion</h1>
-  <p>p-type silicon under 5 nm of oxide and a metal gate: its capacitance against the ideal low-frequency
-    C–V curve, and the bands bending at the surface, from accumulation through depletion to inversion. Vary
-    the gate voltage and the doping. (More about the model below.)</p>
-  <div class="controls">
-    <label>gate V <input id="V" type="range" min="-3" max="2" step="0.05" value="0.5"><output id="Vout"></output></label>
+  <h1>MOS capacitor: accumulation, depletion, inversion, and how fast</h1>
+  <p>p-type silicon under 5 nm of oxide and a metal gate: its capacitance at the frequency you choose, against
+    the ideal low- and high-frequency C–V curves, and the bands bending at the surface, from accumulation
+    through depletion to inversion. Slow enough, the inversion layer's electrons follow the gate and the
+    capacitance climbs back to C<sub>ox</sub>; faster, they can't arrive in time, and it stays low. How
+    fast they arrive is set by generation in the silicon (its minority lifetime). (More about the model
+    below.)</p>
+  <div class="controls" id="controls">
+    <label>gate V <input id="V" type="range" min="-3" max="2" step="0.05" value="0.8"><output id="Vout"></output></label>
+    <label>frequency <input id="f" type="range" min="-5" max="6" step="0.05" value="3"><output id="fout"></output></label>
+    <label>lifetime <input id="tau" type="range" min="-9" max="-2" step="0.5" value="-6"><output id="tauout"></output></label>
     <label>doping <input id="NA" type="range" min="16" max="18" step="0.25" value="17"><output id="NAout"></output></label>
     <span class="readout" id="Q"></span>
   </div>
   <div class="grid">
     <canvas class="wide" id="cv"></canvas>
+    <canvas class="wide" id="cf"></canvas>
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
   </div>
@@ -36,9 +42,11 @@
     volts and turned over are <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltages</a>, which earn
     their place where ions share the diagram, as in the electrochemistry and perovskite demos.) Negative bias pulls holes to the surface (accumulation), moderate
     positive bias pushes them away (depletion), and beyond threshold electrons gather in a thin inversion
-    layer. Those electrons come from a port holding them at ground beside the oxide, the 1D stand-in for a
-    transistor's source and drain; without it, they'd have to diffuse in from the back contact, which takes
-    minutes.</p>
+    layer. Those electrons have to come from the silicon itself: generated thermally in the depletion region
+    (the reaction e⁻ + h⁺ ⇌ 0 run backwards, at the Shockley–Read–Hall rate set by the lifetime τ), or
+    diffusing in from the back contact through a bulk that holds only ~10³ of them per cm³. Either way it's
+    slow, which is the point of the frequency control. (In a transistor, source and drain supply them at
+    once; this is the capacitor alone.)</p>
   <p>The electrostatic potential is drawn too, as −qφ (dotted), in the silicon and across the oxide, to show
     what it is and what it isn't. In the oxide, which holds no mobile charge, it's the only line there is,
     and its slope is the oxide field. In the silicon the band edges ride on it, E<sub>c</sub> = −qφ + const,
@@ -48,12 +56,23 @@
     minus φ beside it, when the gate is uncharged) changes to match: the capacitance comes out the same to
     every digit. And φ doesn't meet the gate's Fermi level: a metal has no φ worth comparing, so the line
     just stops.</p>
-  <p>The capacitance at 1 kHz follows the ideal low-frequency C–V curve (dashed: the oxide in series with the
-    silicon's dQ/dψ, from the closed-form surface charge), to four digits. Flat band is at
-    V<sub>FB</sub> = zeroCharge + dipole + φ<sub>bulk</sub>: each term depends on the anchoring, but their sum
-    doesn't, and it's set by the gate interface (a work-function difference). Threshold is where the surface
-    has inverted as strongly as the bulk is doped, ψ<sub>s</sub> = 2φ<sub>F</sub>. More doping widens the
-    window between them and deepens the dip.</p>
+  <p>The capacitance is the small-signal response to a sinusoid on the gate at the chosen frequency
+    (driftlet's impedance, C = −1/(ωZ″)), at each gate voltage, solved for every half decade and interpolated
+    between. Slow enough, it follows the ideal low-frequency C–V curve (dashed: the oxide in series with the
+    silicon's dQ/dψ, from the closed-form surface charge), to 5e-4 of C<sub>ox</sub> at the slowest: accumulation near C<sub>ox</sub>, a
+    depletion dip, and inversion back up, as the inversion layer's electrons come and go with the gate. Fast,
+    only the holes and the depletion edge respond, and in inversion the capacitance stays at its minimum:
+    the high-frequency curve. Its ideal form (dotted) freezes the minority charge in place; here the
+    electrons can't be replaced at that speed but can still shift within the layer, which holds a few percent
+    more (Brews's correction). The lower chart is the capacitance against frequency at the gate voltage
+    you're at: in inversion, a step from one curve to the other, at the frequency where generation can just
+    keep the layer filled. Shorter lifetimes move it up, about tenfold per decade of τ; with no generation at
+    all (the slider's top end), the electrons can only diffuse in from the back contact, and it falls to a
+    millihertz.</p>
+  <p>Flat band is at V<sub>FB</sub> = zeroCharge + dipole + φ<sub>bulk</sub>: each term depends on the
+    anchoring, but their sum doesn't, and it's set by the gate interface (a work-function difference).
+    Threshold is where the surface has inverted as strongly as the bulk is doped, ψ<sub>s</sub> =
+    2φ<sub>F</sub>. More doping widens the window between them and deepens the dip.</p>
 </main>
 <script type="module">
 import { Device, EPS0, AVOGADRO, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
@@ -71,7 +90,7 @@ const anchor = 0.3, dipole = -0.3, zeroCharge = 0.7;
 const silicon = semiconductor('Si');
 silicon.materials.Si.species['e-'].mu0 -= FARADAY * anchor;
 silicon.materials.Si.species['h+'].mu0 += FARADAY * anchor;
-const mos = (NA) =>
+const mos = (NA, tau) =>
   build({
     T: 300,
     library: [silicon, metal('Au')],
@@ -87,73 +106,136 @@ const mos = (NA) =>
       layer('Au', units.nm(50)),
       ohmic(0, ['e-']), // the gate's terminal
     ],
-    // Source and drain in 1D: the inversion layer's electrons held at ground beside the oxide.
-    ports: [{ name: 'channel', region: 'p-Si', from: Lsi - units.nm(5), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    // Generation and recombination through midgap traps (SRH), lifetime τ for both carriers; none at
+    // all leaves the inversion layer only the bulk's minority electrons, diffusing in.
+    bulkReactions: tau ? [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: tau, tauP: tau } } }] : [],
     grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
   });
 
-const gate = document.getElementById('V'), doping = document.getElementById('NA');
-fromQuery(gate);
-fromQuery(doping);
+const gate = document.getElementById('V'), doping = document.getElementById('NA'), freq = document.getElementById('f'), life = document.getElementById('tau');
+for (const el of [gate, doping, freq, life]) fromQuery(el);
 const NA = () => units.perCm3(10 ** +doping.value); // from 1e16: below, depletion would reach the back contact
+const tau = () => (+life.value >= -2 ? 0 : 10 ** +life.value); // the top end: no generation
+const f = () => 10 ** +freq.value;
 
-// The ideal low-frequency C–V: the surface charge Q_s(ψ_s) in closed form (p₀, n₀ the bulk's
-// densities), the gate voltage V_FB + ψ_s − Q_s/C_ox, and C_ox in series with dQ_s/dψ_s.
+// The ideal C–V curves from the surface charge Q_s(ψ_s) in closed form (p₀, n₀ the bulk's densities):
+// the gate voltage V_FB + ψ_s − Q_s/C_ox, and C_ox in series with the silicon's small-signal dQ/dψ_s:
+// all of Q_s at low frequency, only the holes' and the depletion's at high frequency (the minority
+// charge frozen in place).
 const kT = GAS_CONSTANT * 300, VT = kT / FARADAY, eps = 11.9 * EPS0, Cox = (3.9 * EPS0) / tox;
 function ideal({ p0, n0, VFB }) {
-  const Qs = (psi) => {
-    const b = psi / VT, F2 = Math.exp(-b) + b - 1 + (n0 / p0) * (Math.exp(b) - b - 1);
+  const Qs = (psi, minority = true) => {
+    const b = psi / VT, F2 = Math.exp(-b) + b - 1 + (minority ? (n0 / p0) * (Math.exp(b) - b - 1) : 0);
     return -Math.sign(psi) * Math.sqrt(2 * eps * kT * p0 * Math.max(F2, 0));
   };
-  const V = [], C = [];
+  const V = [], low = [], high = [], h = 1e-5;
   for (let psi = -0.4; psi <= 1.4; psi += 0.005) {
-    const h = 1e-5, Cs = Math.abs(Qs(psi + h) - Qs(psi - h)) / (2 * h);
     V.push(VFB + psi - Qs(psi) / Cox);
-    C.push(1 / (1 + Cox / Cs));
+    low.push(1 / (1 + Cox / (Math.abs(Qs(psi + h) - Qs(psi - h)) / (2 * h))));
+    high.push(1 / (1 + Cox / (Math.abs(Qs(psi + h, false) - Qs(psi - h, false)) / (2 * h))));
   }
   const phiF = VT * Math.log(p0 / Math.sqrt(p0 * n0));
-  return { V, C, VFB, Vth: VFB + 2 * phiF - Qs(2 * phiF) / Cox };
+  return { V, low, high, VFB, Vth: VFB + 2 * phiF - Qs(2 * phiF) / Cox };
 }
+const at = (xs, ys, x) => {
+  let k = 0;
+  while (k < xs.length - 2 && xs[k + 1] < x) k++;
+  const w = Math.min(1, Math.max(0, (x - xs[k]) / (xs[k + 1] - xs[k])));
+  return ys[k] + w * (ys[k + 1] - ys[k]);
+};
 
-// The C–V curve from the small-signal impedance at 1 kHz at each gate voltage, and the theory.
-let cv;
+// The capacitance at every gate voltage (each 0.1 V) and every half decade of frequency, from the
+// small-signal impedance about each steady state; the frequency slider interpolates in log f.
+const VS = Array.from({ length: 51 }, (_, k) => -3 + 0.1 * k);
+const FS = Array.from({ length: 23 }, (_, k) => 10 ** (-5 + 0.5 * k));
+let table;
 function sweep() {
-  const dev = new Device(mos(NA())), rest = dev.solve(), bulk = Math.floor(rest.x.length / 5);
-  cv = { V: [], C: [], theory: ideal({ p0: rest.c['h+'][bulk], n0: rest.c['e-'][bulk], VFB: zeroCharge + dipole + rest.phi[bulk] }) };
-  for (let V = -3; V <= 2.001; V += 0.05) {
+  const dev = new Device(mos(NA(), tau())), rest = dev.solve(), bulk = Math.floor(rest.x.length / 5);
+  table = { C: [], theory: ideal({ p0: rest.c['h+'][bulk], n0: rest.c['e-'][bulk], VFB: zeroCharge + dipole + rest.phi[bulk] }) };
+  for (const V of VS) {
     dev.set({ contacts: { right: { V } } });
-    cv.V.push(V);
-    cv.C.push(-1 / (2 * Math.PI * 1e3 * dev.impedance([1e3]).Z.im[0]) / Cox);
+    dev.solve();
+    const Z = dev.impedance(FS).Z;
+    table.C.push(FS.map((fk, k) => -1 / (2 * Math.PI * fk * Z.im[k]) / Cox));
   }
 }
+// C/C_ox at gate voltage V and frequency f, from the table: linear in V, and in log f a monotone
+// cubic (Fritsch–Carlson), smooth through the step without overshooting it.
+const lf = FS.map(Math.log10);
+function pchip(xs, ys, x) {
+  const n = xs.length;
+  let k = 0;
+  while (k < n - 2 && xs[k + 1] < x) k++;
+  const h = xs[k + 1] - xs[k], t = Math.min(1, Math.max(0, (x - xs[k]) / h));
+  const slope = (i) => (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+  const tangent = (i) => {
+    if (i === 0) return slope(0);
+    if (i === n - 1) return slope(n - 2);
+    const a = slope(i - 1), b = slope(i);
+    return a * b <= 0 ? 0 : (2 * a * b) / (a + b);
+  };
+  const m0 = tangent(k) * h, m1 = tangent(k + 1) * h, t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * m1;
+}
+const C = (V, fq) => at(VS, VS.map((_, j) => pchip(lf, table.C[j], Math.log10(fq))), V);
+const FF = Array.from({ length: 221 }, (_, k) => 10 ** (-5 + 0.05 * k)); // for drawing
 sweep();
 
-const dev = live(mos(NA()), { onsolution: draw });
+const dev = live(mos(NA(), tau()), { onsolution: draw });
 const update = () => dev.set({ contacts: { right: { V: +gate.value } } });
 gate.addEventListener('input', update);
-doping.addEventListener('input', () => (document.getElementById('NAout').textContent = `${(10 ** +doping.value).toExponential(1)} cm⁻³`));
-doping.addEventListener('change', () => {
-  sweep();
-  dev.set(mos(NA()));
-  update();
-});
+freq.addEventListener('input', () => draw(dev.solution));
+const labels = () => {
+  document.getElementById('NAout').textContent = `${(10 ** +doping.value).toExponential(1)} cm⁻³`;
+  const t = tau();
+  document.getElementById('tauout').textContent = t === 0 ? 'no generation' : t < 1e-6 ? `${+(t * 1e9).toPrecision(2)} ns` : t < 1e-3 ? `${+(t * 1e6).toPrecision(2)} µs` : `${+(t * 1e3).toPrecision(2)} ms`;
+  const fq = f();
+  document.getElementById('fout').textContent = fq < 1 ? `${+fq.toPrecision(2)} Hz` : fq < 1e3 ? `${+fq.toPrecision(2)} Hz` : fq < 1e6 ? `${+(fq / 1e3).toPrecision(2)} kHz` : `${+(fq / 1e6).toPrecision(2)} MHz`;
+};
+for (const el of [doping, life]) {
+  el.addEventListener('input', labels);
+  el.addEventListener('change', () => {
+    sweep();
+    dev.set(mos(NA(), tau()));
+    update();
+  });
+}
 update();
 
 function draw(sol) {
-  const V = sol.terminals.right.V, { VFB, Vth } = cv.theory;
+  if (!sol) return;
+  labels();
+  const V = sol.terminals.right.V, fq = f(), { VFB, Vth } = table.theory;
   document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
-  document.getElementById('NAout').textContent = `${(10 ** +doping.value).toExponential(1)} cm⁻³`;
   const surface = sol.x.findLastIndex((x, g) => sol.region[g] === 0);
   const perCm3 = (c) => (c * AVOGADRO * 1e-6).toExponential(1);
+  // Where the inversion layer stops keeping up, at this gate voltage: halfway from its low- to its
+  // high-frequency capacitance (only once it has inverted).
+  const cf = FF.map((fk) => C(V, fk)), lo = cf[0], hi = cf.at(-1);
+  let corner = '';
+  if (V > Vth && lo - hi > 0.1) {
+    const k = cf.findIndex((c) => c < (lo + hi) / 2);
+    if (k > 0) corner = ` · the inversion layer keeps up below ~${(FF[k] < 1 ? FF[k].toPrecision(1) : Math.round(FF[k]).toPrecision(1))} Hz`;
+  }
   document.getElementById('Q').textContent =
-    `V_FB = ${VFB.toFixed(2)} V · V_th = ${Vth.toFixed(2)} V · at the silicon surface: n = ${perCm3(sol.c['e-'][surface])} cm⁻³, p = ${perCm3(sol.c['h+'][surface])} cm⁻³`;
+    `V_FB = ${VFB.toFixed(2)} V · V_th = ${Vth.toFixed(2)} V · at the silicon surface: n = ${perCm3(sol.c['e-'][surface])} cm⁻³, p = ${perCm3(sol.c['h+'][surface])} cm⁻³${corner}`;
   chart(document.getElementById('cv'), {
-    xlabel: 'gate V (V)', ylabel: 'C / C_ox at 1 kHz', xlim: [-3, 2], ylim: [0, 1.05],
+    xlabel: 'gate V (V)', ylabel: 'C / C_ox', xlim: [-3, 2], ylim: [0, 1.05],
     series: [
-      { x: cv.V, y: cv.C, color: colors[2], label: 'simulated' },
-      { x: cv.theory.V, y: cv.theory.C, color: colors[0], dash: [6, 4], width: 1.5, label: 'ideal low-frequency C–V' },
+      { x: VS, y: VS.map((v) => C(v, fq)), color: colors[2], label: `simulated, at ${document.getElementById('fout').textContent}` },
+      { x: table.theory.V, y: table.theory.low, color: colors[0], dash: [6, 4], width: 1.5, label: 'ideal low-frequency' },
+      { x: table.theory.V, y: table.theory.high, color: colors[1], dash: [2, 3], width: 1.5, label: 'ideal high-frequency' },
       { x: [VFB, VFB, NaN, Vth, Vth], y: [0, 1.05, NaN, 0, 1.05], color: colors[6], dash: [2, 3], width: 1, label: 'V_FB and V_th' },
-      { x: [V], y: [cv.C[Math.round((V + 3) / 0.05)]], color: colors[3], marker: true, width: 0, label: 'now' },
+      { x: [V], y: [C(V, fq)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  chart(document.getElementById('cf'), {
+    xlabel: 'frequency (Hz)', ylabel: `C / C_ox at ${V.toFixed(2)} V`, logx: true, xlim: [FS[0], FS.at(-1)], ylim: [0, 1.05],
+    series: [
+      { x: FF, y: cf, color: colors[2], label: 'simulated' },
+      { x: [FS[0], FS.at(-1)], y: [at(table.theory.V, table.theory.low, V), at(table.theory.V, table.theory.low, V)], color: colors[0], dash: [6, 4], width: 1.5, label: 'ideal low-frequency' },
+      { x: [FS[0], FS.at(-1)], y: [at(table.theory.V, table.theory.high, V), at(table.theory.V, table.theory.high, V)], color: colors[1], dash: [2, 3], width: 1.5, label: 'ideal high-frequency' },
+      { x: [fq], y: [C(V, fq)], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
   const xlim = [Lsi - units.nm(150), Lsi + tox + units.nm(15)]; // the surface, the oxide and a little gate
