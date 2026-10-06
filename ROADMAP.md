@@ -95,6 +95,12 @@ for live demos.
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
      form for the fast species only. (A failed steady solve already says where it lost its digits.
      Newton's refined solves, which recover a MOS inversion layer's lost level, may cover it.)
+     `npm run stress` finds the same thing in a bipolar stack's floating base (a p⁺ base between
+     light n layers, its holes held ~1e14 weaker than they move within it: 25 digits lost even
+     at 10 mV), and in a closed Fe³⁺/Fe²⁺ cell driven near its limit, where Fe³⁺ falls 20 orders
+     below Fe²⁺ (33 digits). The level of such a population could be deflated: a bordered unknown
+     for its uniform shift, its row the summed balance, read from the residual as the impedance
+     reads its current.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
@@ -108,6 +114,13 @@ for live demos.
      block at each face grows (about threefold) and so do its off-diagonal neighbours; the rest of
      the matrix is unchanged, and the layout stays block-tridiagonal. It may simplify the face code
      generally.
+   - The impedance's δx in double-double. A redox electrode at its open circuit against a bath
+     responds to its terminal with a nearly uniform shift of every level, and its current is the
+     slope, which some cells need to better than 1e-14 of the response: plain doubles can't hold
+     it, and the finite-difference J·v rounds at ~1e-11 (φ̂ in the high word, the exponentials'
+     arguments summed before exp). Their DC conductance can come out 2–40% low, a few in a
+     thousand of `npm run stress`'s electrodes. Solving for the deviation from a per-region
+     uniform shift, whose J·v is exactly zero inside each region, may be the way.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export

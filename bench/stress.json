@@ -1,0 +1,113 @@
+{
+  "n": 500,
+  "tally": {
+    "semi: cold at 0 V": {
+      "ok": 500,
+      "of": 500
+    },
+    "semi: cold at bias": {
+      "ok": 499,
+      "of": 500
+    },
+    "semi: warm sweep": {
+      "ok": 498,
+      "of": 500
+    },
+    "semi: transient": {
+      "ok": 500,
+      "of": 500
+    },
+    "semi: impedance": {
+      "ok": 395,
+      "of": 395
+    },
+    "semi: open circuit": {
+      "ok": 105,
+      "of": 105
+    },
+    "mos: cold at 0 V": {
+      "ok": 500,
+      "of": 500
+    },
+    "mos: cold at bias": {
+      "ok": 500,
+      "of": 500
+    },
+    "mos: warm sweep": {
+      "ok": 500,
+      "of": 500
+    },
+    "mos: transient": {
+      "ok": 500,
+      "of": 500
+    },
+    "mos: impedance": {
+      "ok": 500,
+      "of": 500
+    },
+    "cell: cold at 0 V": {
+      "ok": 500,
+      "of": 500
+    },
+    "cell: cold at bias": {
+      "ok": 500,
+      "of": 500
+    },
+    "cell: warm sweep": {
+      "ok": 500,
+      "of": 500
+    },
+    "cell: transient": {
+      "ok": 500,
+      "of": 500
+    },
+    "cell: impedance": {
+      "ok": 381,
+      "of": 381
+    },
+    "echem: cold at 0 V": {
+      "ok": 500,
+      "of": 500
+    },
+    "echem: cold at bias": {
+      "ok": 500,
+      "of": 500
+    },
+    "echem: warm sweep": {
+      "ok": 500,
+      "of": 500
+    },
+    "echem: current-driven": {
+      "ok": 498,
+      "of": 500
+    },
+    "echem: transient": {
+      "ok": 500,
+      "of": 500
+    },
+    "echem: impedance": {
+      "ok": 496,
+      "of": 500
+    },
+    "junction: steady": {
+      "ok": 500,
+      "of": 500
+    },
+    "junction: transient": {
+      "ok": 499,
+      "of": 500
+    }
+  },
+  "failures": [
+    "semi 158 · cold at bias: not converged",
+    "semi 158 · warm sweep: not converged at -0.093 V",
+    "semi 472 · warm sweep: not converged at -0.669 V",
+    "echem 133 · current-driven: not converged",
+    "echem 215 · current-driven: not converged",
+    "echem 299 · impedance: not passive at 0.000001 Hz: Re Z = -1.25e+5 of |Z| 1.31e+5",
+    "echem 358 · impedance: at 1.7e-8 Hz Re Y = 3.647e-5, steady dI/dV = 4.090e-5 S/m²",
+    "echem 404 · impedance: not passive at 0.01 Hz: Re Z = -8.59e-2 of |Z| 8.50e+1",
+    "echem 490 · impedance: at 6.1e-7 Hz Re Y = 7.205e-4, steady dI/dV = 7.309e-4 S/m²",
+    "junction 387 · transient: failed at t = 0.0000130 s (1 steps)"
+  ]
+}

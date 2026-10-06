@@ -584,7 +584,7 @@ electrolyte far above its corner frequency, $`\delta c/c`$ is $`\omega\tau`$ sma
 of a neutrality row, so the central difference's ~1e-10 noise there is amplified a millionfold,
 while the assembled $`J`$, exact for an electrolyte, gives the factorised solve to 1e-9.
 
-The current is read where its terms are smallest. At a contact it is a sum of terms that can
+The current is read where its error is smallest. At a contact it is a sum of terms that can
 be far larger than itself: across a junction without recombination, between heavily doped
 sides, what passes is minority carriers of ~1e8 per m³, while the contact's terms are its
 majority conductances times a $`\delta\eta`$ cancelling its neighbours' to 1e-17, and their
@@ -592,11 +592,23 @@ round-off reads as a constant conductance of order 1 S/m², a silicon p⁺n⁺ j
 9× off at 100 Hz. Between the two contacts of a device without ports, the total current
 (conduction plus displacement, $`i\omega\,\delta D`$) is the same through every cut, so it is also
 read across each segment of an ideal region, linearised as the Scharfetter–Gummel flux is, and
-the reading with the smallest sum of term magnitudes is taken: in that junction, the depletion
-region's; in a MOS capacitor, the oxide's displacement. A reading's error counts its terms'
-round-off and the solves' error (δx to their residual, relative to its largest entry) through
-its coefficients: in a neutral bulk the current crosses a huge conductance on a tiny gradient,
-which the solves don't resolve.
+the reading with the least estimated error is taken: in that junction, the depletion region's;
+in a MOS capacitor, the oxide's displacement. A reading's error is its terms' round-off, and the
+solves' error in $`\delta x`$ (their residual, relative to its largest entry) through its
+coefficients: a contact's reading is a flux too (a held contact's balance row is replaced by its
+level, so nothing solved pins it), and in a neutral bulk the current crosses a huge conductance
+on a tiny gradient.
+
+Where even the best reading's estimated error exceeds 1% of the current, the solve is continued
+toward GMRES's own floor (1e-11). An electrolyte at its open circuit needs it: the response to its
+terminal is a nearly uniform shift of every level, and the current is their slope, uniform to
+1e-8 per segment, so a solve to 1e-8 left a redox cell's DC conductance 50% off, and different
+from one call to the next. (Not where the plain solve had already fallen back to the
+factorised one; and the continued solve is kept only if it cuts the residual tenfold.) That
+floor is the limit: $`\delta x`$ is held in plain doubles, while a steady solve keeps $`\eta`$ in
+double-double, and some redox electrodes against a bath need their levels' slope to better than
+1e-14 of the response. Their DC conductance can then come out 2–40% low (`npm run stress` finds
+a few in a thousand).
 
 ## Steady state
 

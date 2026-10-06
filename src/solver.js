@@ -3553,11 +3553,12 @@ export class Solver {
       if (heldT) {
         // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal…
         let { Ir, Ii, err } = read();
-        // …and where the solves leave that uncertain (an electrolyte's current, the slope of
-        // levels uniform to 1e-8 per segment), the solve continued toward GMRES's own floor.
+        // …and where the solves leave that unresolved (the estimate, pessimistic, past the current
+        // itself: an electrolyte's current, the slope of levels uniform to 1e-8 per segment), the
+        // solve continued toward GMRES's own floor.
         // (Not where the op's round-off is what GMRES would chase, and kept only where it falls
         // tenfold.)
-        if (K === 0 && !noisy && err > 1e-3 * Math.hypot(Ir, Ii) && accuracy > 1e-12) {
+        if (K === 0 && !noisy && err > 1e-2 * Math.hypot(Ir, Ii) && accuracy > 1e-12) {
           const rhs = precondition(Bt[kT].map((v) => -v), zero), y0 = [Float64Array.from(yr), Float64Array.from(yi)];
           const { initial, residual } = gmres(op, rhs, [yr, yi], { tol: 1e-11 });
           restore();

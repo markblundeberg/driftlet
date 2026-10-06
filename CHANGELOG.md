@@ -7,7 +7,7 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - The impedance's low-frequency current is now right where the response is a nearly uniform
   shift of levels (an electrolyte at its open circuit: the current is the slope of levels uniform
   to 1e-8 per segment). A reading whose estimated error, from the solves' residual through its
-  coefficients, exceeds 0.1% of the current has its solve continued to GMRES's floor (1e-11), and
+  coefficients, exceeds 1% of the current has its solve continued to GMRES's floor (1e-11), and
   readings at a contact count that error too. A redox cell's DC conductance had come out 50% off
   (and different from call to call); now it equals the steady dI/dV to five digits.
 - `check()` judges a reaction's net rate as round-off against its partners' scales too (not a

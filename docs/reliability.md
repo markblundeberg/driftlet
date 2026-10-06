@@ -52,15 +52,27 @@ devices in five families:
 Each device goes through what a user would do with it: a cold solve at no bias, and one at a
 bias; a warm sweep to that bias; open circuit, where it's lit; a current drive (a fraction of
 what passes at 1 V); a transient after a voltage step; and the impedance about equilibrium,
-1 µHz to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
+from far below its slowest relaxation to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
 levels flat at equilibrium with no current, warm and cold solves agreeing, the current driven
 being the one passed, the impedance passive and, at low frequency, equal to the steady dI/dV,
 and a MOS capacitance never above its oxide's. Each case is seeded from its family and index, so
 any failure reruns alone (`npm run stress -- semi 79`).
 
-At 500 devices per family (11,000-odd solves, about three minutes on a desktop):
+At 500 devices per family (about four minutes on a desktop), 11,371 of 11,381 scenarios pass:
 
-RESULTS
+| Family | Cold at 0 V | Cold at bias | Warm sweep | Open circuit or current | Transient | Impedance |
+|---|---|---|---|---|---|---|
+| Semiconductor stacks | 500/500 | 499/500 | 498/500 | 105/105 | 500/500 | 395/395 |
+| MOS capacitors | 500/500 | 500/500 | 500/500 | | 500/500 | 500/500 |
+| Electrolyte cells | 500/500 | 500/500 | 500/500 | | 500/500 | 381/381 |
+| Electrodes | 500/500 | 500/500 | 500/500 | 498/500 | 500/500 | 496/500 |
+| Liquid junctions | | | | 500/500 | 499/500 | |
+
+(Impedance only where the device has an equilibrium to linearise about; open circuit only for
+lit cells.) The ten that fail, all among the known limits below: two bipolar stacks with a
+floating base, two closed Fe³⁺/Fe²⁺ cells driven near their limit, four redox electrodes'
+low-frequency impedance, and one junction on a grid far too coarse for its double layers.
+`bench/stress.json` keeps the summary.
 
 Most of what driftlet's numerics do differently began as a failure here: the impedance's
 current read across the quietest cut of the device rather than at the contact, GMRES judged by
@@ -76,15 +88,28 @@ so a change that makes one worse shows.
 
 ## Known limits
 
-- **One case in the hard corpus still fails:** a radial drop on a passivating iron electrode
-  without a double layer stops partway through its hour.
+- **A population held only through couplings far below double precision** can't be solved in
+  steady state: a bipolar stack's floating base at bias (a p⁺ base whose holes are held ~1e14
+  more weakly than they move within it), or a closed Fe³⁺/Fe²⁺ cell driven near its limit, where
+  Fe³⁺ falls 20 orders below Fe²⁺. The solve fails and its warning says where it lost its digits.
+  (A transient gets there.)
+- **The low-frequency impedance of some redox electrodes against a bath** can come out 2–40% low,
+  or slightly non-passive, where the current is the slope of levels that shift almost uniformly
+  and that slope needs more than double precision. The impedance has no convergence flag, so this
+  is returned as a result; compare its DC limit with the steady dI/dV where it matters.
 - **Strictly neutral regions on very short steps** lose digits at a neutral face between very
   different solutions (3 M against 1 µM at steps of 1e-11 s).
 - **An unresolved double layer** (a cell coarser than the Debye length) gives a charge that
-  depends on the grid; the solution warns. So does a steep profile on too coarse a cell.
+  depends on the grid, and in a sharp junction between very different solutions can stop a
+  transient; the solution warns. So does a steep profile on too coarse a cell.
+- **A surface covered to a bare fraction below ~1e-10** barely affects anything any more, and
+  the solver struggles with it (the hard corpus's passivating drop without a double layer stops
+  partway through its hour); the solution warns, and suggests a less stable film.
+- **Currents below ~0.1 nA/m²** (a GaAs junction's leakage without recombination) aren't resolved
+  between solves; such a current is zero for any practical purpose.
 - **A failed solve says so:** `converged: false`, with a warning naming where the system lost
-  its digits, or which current no voltage reaches. It never returns a wrong answer as converged
-  that `check()` can't catch, as far as these tests know.
+  its digits, or which current no voltage reaches. In these tests, every steady state and
+  transient reported converged has passed `check()` and the invariants above.
 - What driftlet doesn't model at all (more than one dimension, cross-diffusion, heat, optics,
   field-dependent mobility) is in the [README](../README.md#what-it-doesnt-do), and open
   numerical work in the [roadmap](../ROADMAP.md).
