@@ -21,7 +21,7 @@ what is known not to work.
 ## Correct: the validation suite
 
 Every physics feature is checked against an analytic result, or an independent code where
-there isn't one: `npm test`, 315 tests, each a worked device with its closed form. They include
+there isn't one: `npm test`, over 300 tests, each a worked device with its closed form. They include
 Shockley's diode equation, depletion and MOS charge, collection theory under Beer–Lambert light,
 Gouy–Chapman and Kilic–Bazant–Ajdari double layers, Donnan and Teorell–Meyer–Sievers
 partitions, Goldman–Hodgkin–Katz, the limiting current and Butler–Volmer kinetics, the
