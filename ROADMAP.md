@@ -128,7 +128,13 @@ for live demos.
      loses its digits from the conditioning warning. So the summed rows would need a structured
      elimination at the face, not generic pivoting.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
-     factorisations for 100 ns) and large warm jumps.
+     factorisations for 100 ns) and large warm jumps. The pn transient's 295 steps are set by
+     BDF2's error control (about 50 a decade over six decades), and almost every one takes three
+     updates, 3.5e-3, 7e-6, 3e-11 thermal units, the third predicted by the quadratic estimate
+     to within 10%. Stopping at the second saves a third of the factorisations, but leaves each
+     step's equations solved only to ~3e-11, and conservation then drifts ~1e-11 a step (the
+     tests hold it to 1e-12). A chord update with the second's factors (a residual and a
+     back-substitution, no factorisation) would keep it exact.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
    (started, with the vacuum-level alignment helpers), still dependency-free, that writes plain
    specs, so users and LLM agents start from something
