@@ -2,89 +2,79 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.11.0 (2026-10-05)
 
-- The impedance's low-frequency current is now right where the response is a nearly uniform
-  shift of levels (an electrolyte at its open circuit: the current is the slope of levels uniform
-  to 1e-8 per segment). A reading whose estimated error, from the solves' residual through its
-  coefficients, exceeds 1% of the current has its solve continued to GMRES's floor (1e-11), and
-  readings at a contact count that error too. A redox cell's DC conductance had come out 50% off
-  (and different from call to call); now it equals the steady dI/dV to five digits.
-- `check()` judges a reaction's net rate as round-off against its partners' scales too (not a
-  metal's): a species all but absent no longer reads as unsteady through its reactions' noise.
-- The block factorisation perturbs a pivot that cancels to exactly zero (static pivoting) rather
-  than failing: GaAs stacks without recombination, minority carriers ~1 per m³, now solve, and so
-  does a region held only by face conductances 1e17 weaker than its insides (its current right
-  to 1e-11). `BlockTridiagonal` takes it as `staticPivots` (off by default).
-- The light's continuation starts at 1e-30 of it (1e-12 was still a billion times a GaAs layer's
-  equilibrium recombination), and when it stalls, the pseudo-transient ramp starts from its
-  dimmer solution. A lit GaAs n/p diode with a Schottky contact solves cold.
-- Cold steady solves: a lit phototransistor (GaAs n⁺pn, floating base) now solves in 1000
-  iterations where it failed after 20,000. Newton's divergence check spares the first update,
-  the light's continuation gives up crawling sooner, the pseudo-transient's time step grows
-  gently after a failure, and the direct solve is tried once steps reach the slowest diffusion
-  time. A cold start with immobile traps takes 191 iterations (280), Haynes–Shockley 7% fewer.
-- `check()` counts a species at rest below 1e-8 (was 1e-9) of what it could carry: a steady
-  solve resolves a supporting ion's net flux only to ~1e-9 of that, and had been called unsteady.
-- Steady solves hold a blocked species' level flat within a region (its amount fixing where),
-  rather than find it through its own conduction: a closed Zn | ZnSO₄ | Zn cell past its
-  limiting current, where extended space charge excludes the sulfate to 1e-25 mol/m³, now
-  solves at any voltage in 6 iterations, where it had failed from 0.7 V. And a cold continuation
-  whose level start fails from a layout made for the target voltage lays it out again, level.
-- The impedance reads the current where its terms are smallest: between the contacts of a
-  device without ports, the total current is the same through every cut, and a junction without
-  recombination now has its steady dI/dV and its charge's dQ/dV as the low-frequency limits,
-  where the contact's sum of huge terms had read a constant conductance of round-off (a p⁺n⁺
-  junction's capacitance had been 9× off at 100 Hz). And its GMRES judges convergence by the
-  true residual: its running estimate had declared solves converged that weren't, at low
-  frequency where the preconditioner is nearly singular (n-Si | KCl had a negative resistance
-  at 0.01 Hz, a MOS capacitor 5% off its capacitance at 1 nHz). Where GMRES can't converge (a
-  strictly neutral electrolyte above ~1 MHz, its operator's round-off amplified), the factorised
-  solve is kept: those spectra had gone non-passive.
-- `npm run stress`: random but plausible devices (semiconductor stacks, MOS capacitors,
-  electrolyte cells), each solved cold, swept warm, stepped in time and probed by its
-  impedance, judged by `check()` and by invariants (flat levels at equilibrium, warm and cold
-  agreeing, a passive impedance).
-- Cold steady solves with a terminal driven by a current (open circuit) hold it at a voltage
-  and march to the crossing: the solar cell's V_oc in dim light on a 0.25 nm grid, a lit Schottky
-  diode's open circuit, a redox electrode driven at a current needing 3 V. A lit device's voltage
-  continuation ramps the light up at its level start. A current no voltage reaches (beyond a
-  limiting current) fails with a warning saying so, and what currents the voltages passed.
-  Fixed: a flat level through a face between two regions left the face's flux undetermined (a
-  singular solve).
-- A transient's first step whose error doesn't shrink with it (a jump in a held boundary level
-  starts a self-similar profile, so any first step errs alike) is taken rather than shrunk until
-  Newton fails: a voltage step on a 0.6 M electrolyte with resolved double layers couldn't start,
-  and transients from a jump take 5–30% fewer factorisations.
+Robustness, found by a new stress test of random devices and fixed where it pointed.
 
-- The MOS demo has frequency and lifetime controls: its C–V at any frequency from 10 µHz to 1 MHz,
-  against the ideal low- and high-frequency curves, and the capacitance against frequency at the
-  present gate voltage, the step where generation (SRH, lifetime τ) stops keeping the inversion
-  layer filled, and where in the silicon the AC charge is answered (electrons at the surface,
-  holes at the depletion edge). Without a channel port now, as a capacitor alone. The demos'
-  charts take `logx`.
+**Testing, and what it says**
+- `npm run stress`: random but plausible devices in five families (semiconductor stacks, MOS
+  capacitors, electrolyte cells, electrodes, liquid junctions), each solved cold, swept warm,
+  driven at open circuit or a current, stepped in time and probed by its impedance, every result
+  judged by `check()` and by invariants (flat levels at equilibrium, warm and cold agreeing, the
+  impedance passive and its DC limit the steady dI/dV). At 500 per family, 11,371 of 11,381
+  pass. [docs/reliability.md](docs/reliability.md) has the families, the results and the known
+  limits, and the README says plainly what it's tested on, linking there.
 
-- A MOS capacitor without a channel port is robust. Steady solves pin a species' level flat at
-  its contact's where it's reached by that one contact only and nothing else touches it (no flux
-  in a steady state), rather than find it through the bulk's ~1e3 minority electrons per cm³: they
-  converge at every gate voltage and grid, cold or warm, where they had failed at some. And
-  Newton refines its solves by GMRES (J·v from the residual, as the impedance does) when the
-  factorisation loses a mode, as it does an inversion layer's level: a 10 mV gate step reaches
-  the low-frequency charge in ~70 steps instead of 80,000, exactly instead of 1.5% over.
+**Steady solves**
+- A MOS capacitor without a channel port is robust: steady solves pin a species' level flat at
+  its contact's where one contact alone reaches it and nothing else touches it, rather than find
+  it through the bulk's ~1e3 minority electrons per cm³, and Newton refines its solves by GMRES
+  (J·v from the residual) when the factorisation loses a mode, as it does an inversion layer's
+  level. A 10 mV gate step reaches the low-frequency charge in ~70 steps instead of 80,000.
+- A blocked species mobile through one region is held flat too, at the level its amount fixes:
+  a closed Zn | ZnSO₄ | Zn cell past its limiting current, its sulfate excluded to 1e-25 mol/m³,
+  solves at any voltage in 6 iterations, where it had failed from 0.7 V.
+- The block factorisation perturbs a pivot that cancels to exactly zero (static pivoting): GaAs
+  stacks without recombination (minority carriers ~1 per m³) solve, and so does a region held
+  only by face conductances 1e17 weaker than its insides. `BlockTridiagonal` takes it as
+  `staticPivots` (off by default).
+- A terminal driven by a current (open circuit) is held at a voltage and marched to the
+  crossing: a solar cell's V_oc in dim light on a 0.25 nm grid, a lit Schottky diode's, a redox
+  electrode driven at a current needing 3 V. A current no voltage reaches fails with a warning
+  saying so, and what the voltages passed.
+- Cold starts: the light's continuation starts at 1e-30 of it and hands a stall to the
+  pseudo-transient from its dimmer solution; Newton's divergence check spares the first update
+  (a flooded scarce population predicts 1e10 thermal units, which damping covers); the
+  pseudo-transient's dt grows gently after a failure and tries the direct solve once past the
+  slowest diffusion time; a level start that fails from a layout made for the target voltage is
+  laid out again. A lit GaAs phototransistor solves in ~1000 iterations (it failed after
+  20,000), a cold start with immobile traps in 191 (280).
+- Fixed: a flat level through a face between two regions left the face's flux undetermined.
 
-- A transient starting at a bath that floats beside a strictly neutral region now resolves short
-  steps: the contact's current had come from its end box's balance, where the ions' storage and
-  the box's charge (∝ c/dt, cancelling under neutrality) left round-off that swamped the flux. A
-  sharp 3 M | 1 µM KCl junction now starts at tol 1e-6, and every junction case takes fewer steps.
-- The stepper no longer tries longer first steps after a jump in a strictly neutral device: with
-  the starts and ends fixed, nothing needs it.
+**Impedance**
+- The current is read where its error is least: between the contacts of a device without
+  ports, the total current is the same through every cut, so it's read across each segment
+  too. A p⁺n⁺ junction without recombination had its capacitance 9× off at 100 Hz (the contact's
+  sum of huge terms read a constant conductance of round-off); now its DC limit is the steady
+  dI/dV and its capacitance dQ/dV. Where a reading's estimated error passes 1%, the solve is
+  continued to GMRES's floor: a redox cell's DC conductance had been 50% off.
+- GMRES judges convergence by the true residual (its running estimate had passed unconverged
+  solves: n-Si | KCl had a negative resistance at 0.01 Hz), keeps its best iterate, and falls
+  back to the factorised solve where it can't converge (a strictly neutral electrolyte above
+  1 MHz had gone non-passive).
+
+**Transients**
+- A first step whose error doesn't shrink with it (a jump starting a self-similar profile) is
+  taken rather than shrunk until Newton fails: transients from a jump take 5–30% fewer
+  factorisations. A bath beside a strictly neutral region resolves short steps (a sharp
+  3 M | 1 µM junction starts at tol 1e-6). Haynes–Shockley takes 7% fewer factorisations.
+
+**API and checks**
+- `set({ ports: { gate: { V: 0.2 } } })` patches ports by name; a new kind of drive drops the
+  old, as for contacts.
+- `check()` counts a species at rest below 1e-8 of what it or its reactions' (non-metal)
+  partners could carry: a supporting ion's round-off flux, or a nearly absent species' reaction
+  noise, had read as unsteady.
 - Fixed: a `set()` that widened a surfaced window started the new nodes at θ = 0.5, not `theta0`.
-- `set({ ports: { gate: { V: 0.2 } } })` patches ports by name (an array still replaces them
-  all); a new kind of drive drops the old, as for contacts. A wrong `ports` patch is a clear error.
-- Docs, from an outside agent building an OECT from llms.txt: a volumetric capacitance C* as
+
+**Demos and docs**
+- The MOS demo: C–V at any frequency from 10 µHz to 1 MHz against the ideal low- and
+  high-frequency curves, the lifetime, the capacitance against frequency, and where the AC
+  charge is answered. The demos' charts take `logx`.
+- From an outside agent building an OECT from llms.txt: a volumetric capacitance C* as
   `area: 1/t, C: C*·t`; Bernards–Malliaras as the charge-sheet formula without its V_T term;
-  `R` and the impedance in Ω with a geometry; which current `trace` records; and tightening `tol`
-  before fitting a time constant to a decay's tail.
+  `R` and the impedance in Ω with a geometry; which current `trace` records; tightening `tol`
+  before fitting a decay's time constant.
 
 ## 0.10.0 (2026-10-04)
 
