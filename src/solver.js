@@ -797,22 +797,35 @@ export class Solver {
         }
         const row = this.blockOfNode[grid.regionStart[p0]] * this.M + 1 + i;
         if (reactive || used.has(row)) continue;
-        // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right.
-        const faces = [];
-        if (p0 > s0) faces.push([p0 - 1, -1]);
-        if (q1 < s1) faces.push([q1, 1]);
+        used.add(row);
+        // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right. Across
+        // a face that holds μ̄ level, u is set only by the edge balances, and eliminated, it can
+        // come out of the piece's own (G Δη, its two η all but equal: a neighbour 1e20 times
+        // less conductive, and the piece's level was seen through one face of two, and Newton
+        // swung it back and forth across both). There the outside edge node's balance is added:
+        // u cancels, and the outside's first segment carries the flux instead.
+        const faces = [], outside = [];
+        if (p0 > s0) faces.push([p0 - 1, -1, grid.regionEnd[p0 - 1]]);
+        if (q1 < s1) faces.push([q1, 1, grid.regionStart[q1 + 1]]);
+        for (const [f, , g] of faces) {
+          if (model.interfaces[f].links[i].type !== 'equilibrium' || g === 0 || g === this.nNodes - 1) continue;
+          if (model.ports.some((port) => port.nodes.includes(g))) continue;
+          outside.push(this.blockOfNode[g] * this.M + 1 + i);
+        }
         this.islands.push({
           stretch: st,
           row,
           flux: faces.map(([f]) => this.blockOfFace[f] * this.M + 1 + i),
           weight: faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]),
-          idx: new Int32Array(faces.length),
-          w: new Float64Array(faces.length),
+          outside,
+          idx: new Int32Array(faces.length + 3 * this.M * outside.length),
+          w: new Float64Array(faces.length + 3 * this.M * outside.length),
           len: 0,
           res: 0,
         });
       }
     }
+    for (const isl of this.islands) isl.outside = isl.outside.filter((o) => !used.has(o));
     this.constrained = false;
   }
 
@@ -838,13 +851,33 @@ export class Solver {
       if (this.flattening && this.flatStretches.includes(isl.stretch)) continue;
       const b0 = Math.floor(isl.row / this.M), r0 = isl.row % this.M;
       if (this.loc[isl.row] < 0) continue;
-      let t = 0, len = 0;
+      // Gathered by column (the faces' u, then each outside row's entries, which cancel those u
+      // exactly where they meet), then the nonzeros kept.
+      const acc = this.islandRow ?? (this.islandRow = new Float64Array(this.sys.size + 1));
+      const cols = [];
+      const add = (col, v) => {
+        if (acc[col] === 0) cols.push(col);
+        acc[col] += v;
+      };
+      let t = 0;
       isl.flux.forEach((o, j) => {
         if (this.loc[o] < 0) return;
         t += isl.weight[j] * u[o];
-        isl.idx[len] = R[o];
-        isl.w[len++] = isl.weight[j];
+        add(R[o], isl.weight[j]);
       });
+      for (const o of isl.outside) {
+        if (this.loc[o] < 0) continue;
+        t += res[R[o]];
+        this._rowInto(o, add);
+      }
+      let len = 0;
+      for (const col of cols) {
+        if (col < this.sys.size && acc[col] !== 0) {
+          isl.idx[len] = col;
+          isl.w[len++] = acc[col];
+        }
+        acc[col] = 0;
+      }
       isl.len = len;
       isl.res = t;
       this._replaceRow(b0, r0);
@@ -854,6 +887,24 @@ export class Solver {
       out.push(isl);
     }
     return out;
+  }
+
+  // Row o's Jacobian entries, as add(compact column, value): the assembled ones, and the dilute
+  // kernels' kept aside in difference form (see _assembleDifference) when they are.
+  _rowInto(o, add) {
+    const { sys, M, nB } = this, b = Math.floor(o / M), l = this.loc[o];
+    const { A, B, C, sizes, offA, offB, offC, offX } = sys, m = sizes[b];
+    for (let k = 0; k < m; k++) if (B[offB[b] + l * m + k] !== 0) add(offX[b] + k, B[offB[b] + l * m + k]);
+    if (b > 0) for (let k = 0, mp = sizes[b - 1]; k < mp; k++) if (A[offA[b] + l * mp + k] !== 0) add(offX[b - 1] + k, A[offA[b] + l * mp + k]);
+    if (b < nB - 1) for (let k = 0, mn = sizes[b + 1]; k < mn; k++) if (C[offC[b] + l * mn + k] !== 0) add(offX[b + 1] + k, C[offC[b] + l * mn + k]);
+    if (this.lin) {
+      const into = this.linRow ?? (this.linRow = new Float64Array(sys.size + 1));
+      this.lin.capture(this.rix[o], 1, 0, into);
+      for (let k = 0; k < sys.size; k++) {
+        if (into[k] !== 0) add(k, into[k]);
+        into[k] = 0;
+      }
+    }
   }
 
   // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.

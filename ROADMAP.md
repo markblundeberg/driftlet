@@ -104,9 +104,8 @@ for live demos.
      its own: the plain solves gave no update along its level at all, so nothing stalled). Such
      regions are now deflated: each one's balance summed over it, in which its own fluxes cancel
      exactly, is bordered like a conserved amount, once the plain solves converge with terminal
-     currents that don't add up. Not covered yet: neighbours conducting 1e20 times less (the
-     face's own elimination loses the digits, and the pinned solves cycle), a population held
-     that weakly within a region, or one fed by a reaction. Where that leaves the currents not
+     currents that don't add up. Not covered yet: a population held that weakly within a region,
+     or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and

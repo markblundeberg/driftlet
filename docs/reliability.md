@@ -95,13 +95,12 @@ so a change that makes one worse shows.
   it) is, and a closed Fe³⁺/Fe²⁺ cell driven by a current near its limit, where Fe³⁺ falls 20
   orders below Fe²⁺, is found as the held voltage that passes it. Where a solve fails, its warning
   says where it lost its digits (a transient gets there). A region held only through its faces (by
-  conductances 1e-24 of its own, or by neighbours conducting 1e16 times less) is solved directly
+  conductances 1e-24 of its own, or by neighbours conducting 1e20 times less) is solved directly
   through its balance summed over it, where its own fluxes cancel exactly
   ([islands](numerics.md#steady-state)): its current comes out right to ~1e-15, where it was
-  up to 16× off. Past that, a solve can still converge to the wrong level: behind neighbours
-  conducting 1e20 times less (the face's own elimination loses the digits), or for a population
-  held that weakly within a region, or fed by a reaction. The terminal currents then don't add
-  up, which is the thing to check.
+  up to 16× off. A population held that weakly within a region, or fed by a reaction, isn't
+  covered, and its solve can still converge to the wrong level; the terminal currents then
+  don't add up, which is the thing to check.
 - **The impedance is resolved to about 1e-4 of |Z|** where its solves are hardest: the real
   part of a nearly ideal capacitor (a closed redox cell with almost none of one partner), 1e-7 of
   |Z|, can come out slightly negative. Its DC limit matches the steady dI/dV in every stress case.

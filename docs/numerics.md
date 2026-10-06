@@ -689,13 +689,18 @@ only resolved to ~1e-4 of $`|Z|`$.
 - **Islands**: the pieces of a stretch between its faces, where nothing else feeds a piece (no
   contact, port or reaction). In steady state such a piece's level is held only through its
   faces' fluxes, which can be far weaker than its own conduction: a face conductance of
-  1e-15 S/m² against a region conducting ~4e2 S/m, or neighbours that conduct 1e16 times less
+  1e-15 S/m² against a region conducting ~4e2 S/m, or neighbours that conduct 1e20 times less
   than it. Eliminated, the level was lost to round-off below anything Newton could see (the
   plain solves gave no update along it, so nothing stalled), and solves converged to a wrong one
   silently: currents 2× or 16× off. Summed over the piece's nodes, its balance rows are its
   faces' flux unknowns alone, $`A_R u_R - A_L u_L`$: the internal fluxes cancel exactly, by
-  construction rather than in round-off. That sum can replace the first node's row, bordered like
-  a spectator's amount. The response to the unit pin is the island's uniform shift, with whatever
+  construction rather than in round-off. Across a face that holds $`\bar\mu`$ level, $`u`$ is
+  set only by the edge balances, and eliminated it can come out of the piece's own, as
+  $`G\,\Delta\eta`$ with its two $`\eta`$ all but equal; so there the outside edge node's
+  balance is added too, $`u`$ cancels, and the outside's first segment carries the flux. (Seen
+  through one face of two, a level behind neighbours 1e20 times less conductive was overshot
+  twofold, and Newton swung it from one contact's level to the other's.) That sum can replace
+  the first node's row, bordered like a spectator's amount. The response to the unit pin is the island's uniform shift, with whatever
   $`\hat\phi`$ and the other species do along with it, so no mode needs guessing; refined solves
   carry the pinned rows too.
 
@@ -710,9 +715,7 @@ only resolved to ~1e-4 of $`|Z|`$.
   update polishes them. If Newton doesn't converge again within a dozen updates (a GaAs stack's
   minority carriers, whose own rows rest on static pivots, at 1e-17 A/m² of noise), the plain
   solution stands; and a steady solve that fails outright is tried once more with the summed rows
-  in from the start. Such devices now solve directly, their currents right to ~1e-15. Past a
-  contrast of ~1e18 the face's own elimination loses the digits, and the pinned solves cycle:
-  neighbours conducting 1e20 times less still leave the level wrong, as before.
+  in from the start. Such devices now solve directly, their currents right to ~1e-15.
 - **Immobile combinations** (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) conserve
   node by node, since nothing carries them anywhere. At each node the combination's weighted sum
   replaces one of its balance rows, kept at what it was when the solve began. The row is local

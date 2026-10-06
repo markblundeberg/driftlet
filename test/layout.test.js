@@ -316,7 +316,7 @@ test('bookkeeping readouts from the end boxes and port windows equal a full asse
 test('a region held only weakly: its level found through its summed balance, exactly', () => {
   // A strictly neutral region whose one carrier is held only weakly: by tiny conductances at its
   // faces, ~1e17–1e26 times less than its own conduction, or through equilibrium faces by bulk
-  // neighbours that conduct ~1e16 times less. Eliminated, its level is lost to round-off, and
+  // neighbours that conduct ~1e20 times less. Eliminated, its level is lost to round-off, and
   // Newton used to settle at a wrong one silently (a current 2× or 16× off). Summed over the
   // region, its balance is the faces' fluxes alone, exactly; with that row in place of one node's,
   // the direct solve finds the level, and both ends pass the same current.
@@ -337,12 +337,12 @@ test('a region held only weakly: its level found through its summed balance, exa
     });
   };
   // The two face conductances in series, G/2 per volt; or the two outer regions' resistances,
-  // 1 µm each of σ = F²Dc/RT (the fast region's, 1e16 times less, doesn't show).
+  // 1 µm each of σ = F²Dc/RT (the fast region's, 1e20 times less, doesn't show).
   const sigma = (FARADAY * FARADAY * 1e-24 * 1e4) / (GAS_CONSTANT * 298.15);
   for (const [p, I] of [
     [{ G: 1e-6, V: 0.3 }, (-0.3 * 1e-6) / 2],
     [{ G: 1e-15, V: 0.01 }, (-0.01 * 1e-15) / 2],
-    [{ Dout: 1e-24, V: 0.3 }, (-0.3 * sigma) / 2e-6],
+    [{ Dout: 1e-24, Df: 1e-4, V: 0.3 }, (-0.3 * sigma) / 2e-6],
   ]) {
     const sol = dev(p).solve({ continuation: false, maxSteps: 1 });
     assert.ok(sol.converged, JSON.stringify(p));

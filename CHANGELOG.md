@@ -2,6 +2,15 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Islands behind neighbours that conduct 1e20 times less than they do (across faces that hold μ̄
+  level) solve too: there the summed row takes in the outside edge node's balance, so the flux
+  is carried by the outside's own first segment rather than by the face flux unknown, which
+  elimination could leave to the island's cancellation. Seen through one face of two, the
+  island's level had been overshot twofold and swung between the two contacts', and the solves
+  kept the plain, wrong level.
+
 ## 0.11.3 (2026-10-06)
 
 - A region held only through its faces (a conductance there 1e-24 of its own, or neighbours that
