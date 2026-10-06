@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.11.2 (2026-10-06)
 
 - J·v is exact where a solve needs it (the impedance's GMRES and Newton's refined solves): the
   dilute kernels' terms are kept in difference form, each flux on its η difference, instead of a
@@ -10,11 +10,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   impedance is 15–40% faster, and keeps GMRES's answer always (its fallback to the factorised
   solve, for the old operator's noise, is gone). Newton keeps every converged refinement: a GaAs
   junction without recombination, its ~1.5e-7 A/m² carried by minority carriers from the
-  contacts, had cold and warm solves 1e-3 apart, now 1e-14; a MOS gate step takes 244
-  factorisations (408), a dim solar cell's open circuit on a 0.25 nm grid 258 (790).
+  contacts, had cold and warm solves 1e-3 apart, now 1e-14; a dim solar cell's open circuit on a
+  0.25 nm grid takes 258 factorisations (790).
 - Newton also refines its solves when its undamped updates grow twice running: a bipolar
   stack's floating base (its holes held ~1e14 more weakly than they move within it) now solves
-  in steady state, cold and swept, and the MOS gate step takes 146 factorisations.
+  in steady state, cold and swept, and a MOS capacitor's gate step over 1000 s takes 146
+  factorisations (408).
 - A current drive whose floated solve fails is found by held solves instead: the voltage that
   passes the target, by regula falsi within the bracket the continuation found, to 1e-10 of the
   current. A closed Fe³⁺/Fe²⁺ cell driven near its limit (Fe³⁺ 20 orders below Fe²⁺, the floated
