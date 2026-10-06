@@ -3967,8 +3967,9 @@ export class Solver {
     };
     const fail = () => ({ converged: false, steps, iterations, history });
     const seen = []; // [V, I] of each held solve that converged
+    let Va = this.termV[k], fa, Vb, fb;
     try {
-      let Va = this.termV[k], fa = hold(Va);
+      fa = hold(Va);
       if (!Number.isFinite(fa)) {
         Va = 0;
         fa = hold(Va);
@@ -3978,7 +3979,7 @@ export class Solver {
       // terminal's voltage raises the current into a passive device (the other way, from the
       // start again, if 20 V brings no crossing).
       const start = Va, f0 = fa;
-      let Vb = Va, fb = fa;
+      [Vb, fb] = [Va, fa];
       for (const dir of [fa < 0 ? 1 : -1, fa < 0 ? -1 : 1]) {
         [Va, fa] = [start, f0];
         if (dir !== (f0 < 0 ? 1 : -1)) hold(start); // (back to the start, for a warm march)
@@ -4014,7 +4015,35 @@ export class Solver {
       this.redrive();
     }
     const q = this._solveSteady(opts);
-    return { ...q, steps: steps + (q.steps ?? 0), iterations: iterations + (q.iterations ?? 0), history: [...history, ...(q.history ?? [])] };
+    steps += q.steps ?? 0;
+    iterations += q.iterations ?? 0;
+    history.push(...(q.history ?? []));
+    if (q.converged) return { ...q, steps, iterations, history };
+    // Floated, the system can lose what held it doesn't (a closed redox cell driven near its
+    // limit: its bordered row 33 digits short), but a current-driven steady state is the held
+    // one at the voltage that passes the target: found by held solves, by regula falsi
+    // (Illinois) within the bracket, to 1e-10 of the target.
+    try {
+      let side = 0;
+      for (let it = 0; it < 60; it++) {
+        const Vm = Va - (fa * (Vb - Va)) / (fb - fa), fm = hold(Vm);
+        if (!Number.isFinite(fm)) return fail();
+        if (Math.abs(fm) <= 1e-10 * Math.abs(target)) return { converged: true, steps, iterations, history, residual: Math.abs(fm) };
+        if (Math.sign(fm) === Math.sign(fb)) {
+          [Vb, fb] = [Vm, fm];
+          if (side === -1) fa /= 2;
+          side = -1;
+        } else {
+          [Va, fa] = [Vm, fm];
+          if (side === 1) fb /= 2;
+          side = 1;
+        }
+      }
+      return fail();
+    } finally {
+      this.terms[k].drive = drive;
+      this.redrive();
+    }
   }
 
   // Steady solves with the generation reactions' rates scaled from 1e-12 up to 1, ×100 a step

@@ -189,6 +189,37 @@ test('cold steady solves that need continuation: open circuit, a lit cell at for
   assert.ok(!over.converged && over.warnings.some((w) => w.startsWith('right: no steady state passes the driven current -20.0 A/m²')), over.warnings.join('\n'));
 });
 
+test('a closed Fe³⁺/Fe²⁺ cell driven by a current near its limit: the held voltage that passes it', () => {
+  // Pt | Fe³⁺, Fe²⁺, Cl⁻ | Pt with resolved double layers, closed, at 70% of what passes at −1 V:
+  // Fe³⁺ falls ~20 orders below Fe²⁺ at the cathode, and floated, the system loses ~33 digits. A
+  // current-driven steady state is the held one at the voltage that passes the current, so that
+  // is what the solve finds where the floated one can't.
+  const face = { phi: { type: 'capacitive', C: 0.35 }, zeroCharge: -0.3, reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 0.07, alpha: 0.4 }] };
+  const def = (right) => ({
+    T: 300,
+    species: [{ name: 'Fe3+', z: 3, cRef: 1000 }, { name: 'Fe2+', z: 2, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }],
+    materials: {
+      water: { epsr: 78.3, species: { 'Fe3+': { D: 6.04e-10, mu0: -4700 }, 'Fe2+': { D: 7.19e-10, mu0: -78900 }, 'Cl-': { D: 2.032e-9, mu0: -131228 } } },
+      Pt: { conductor: { species: 'e-', conductivity: 9.5e6 } },
+    },
+    regions: [{ material: 'Pt', length: 1e-6 }, { material: 'water', length: 1.37e-6, c0: { 'Fe3+': 0.2, 'Fe2+': 15.5, 'Cl-': 31.6 } }, { material: 'Pt', length: 1e-6 }],
+    interfaces: [face, face],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk', ...right } },
+    grid: { hmin: 4e-10, hmax: 2e-8, ratio: 1.15 },
+  });
+  const swept = new Device(def({ V: 0 }));
+  swept.solve();
+  let s;
+  for (let j = 1; j <= 10; j++) s = swept.set({ contacts: { right: { V: -j / 10 } } }).solve();
+  const I = 0.7 * s.terminals.right.current;
+  const driven = new Device(def({ V: 0 }));
+  driven.solve();
+  const d = driven.set({ contacts: { right: { I } } }).solve();
+  assert.ok(d.converged && Math.abs(d.terminals.right.current / I - 1) < 1e-9, `${d.converged}: ${d.terminals.right.current} vs ${I}`);
+  const held = new Device(def({ V: d.terminals.right.V })).solve();
+  assert.ok(held.converged && Math.abs(held.terminals.right.current / I - 1) < 1e-6, `held at ${d.terminals.right.V} V: ${held.terminals.right.current} vs ${I}`);
+});
+
 test('past the limiting current: a closed zinc cell, its blocked sulfate held flat, as a long transient finds it', () => {
   // Zn | ZnSO₄ | Zn, resolved double layers, at 1.1 i_lim (8FD₊c/L for a closed cell of a 2:2
   // salt): extended space charge at the cathode excludes the sulfate to ~1e-25 mol/m³. Its level

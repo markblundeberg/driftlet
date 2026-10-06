@@ -14,8 +14,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   factorisations (408), a dim solar cell's open circuit on a 0.25 nm grid 258 (790).
 - Newton also refines its solves when its undamped updates grow twice running: a bipolar
   stack's floating base (its holes held ~1e14 more weakly than they move within it) now solves
-  in steady state, cold and swept, and the MOS gate step takes 146 factorisations. Stress:
-  11,378 of 11,381, every semiconductor stack passing.
+  in steady state, cold and swept, and the MOS gate step takes 146 factorisations.
+- A current drive whose floated solve fails is found by held solves instead: the voltage that
+  passes the target, by regula falsi within the bracket the continuation found, to 1e-10 of the
+  current. A closed Fe³⁺/Fe²⁺ cell driven near its limit (Fe³⁺ 20 orders below Fe²⁺, the floated
+  system 33 digits short) now solves. Stress: 11,380 of 11,381.
 
 ## 0.11.1 (2026-10-05)
 

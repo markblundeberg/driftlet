@@ -78,7 +78,7 @@
       "of": 500
     },
     "echem: current-driven": {
-      "ok": 498,
+      "ok": 500,
       "of": 500
     },
     "echem: transient": {
@@ -99,8 +99,6 @@
     }
   },
   "failures": [
-    "echem 133 · current-driven: not converged",
-    "echem 215 · current-driven: not converged",
     "junction 387 · transient: failed at t = 0.00 s (0 steps)"
   ]
 }

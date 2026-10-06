@@ -97,8 +97,9 @@ for live demos.
      Newton's refined solves, which recover a MOS inversion layer's lost level, may cover it.)
      `npm run stress` found the same thing in a bipolar stack's floating base (a p⁺ base between
      light n layers, its holes held ~1e14 weaker than they move within it: 25 digits lost even
-     at 10 mV), which refined solves now reach, and in a closed Fe³⁺/Fe²⁺ cell driven near its
-     limit, where Fe³⁺ falls 20 orders below Fe²⁺ (33 digits), which they don't. Past ~1e-22, a
+     at 10 mV), which refined solves now reach, and in a closed Fe³⁺/Fe²⁺ cell driven by a
+     current near its limit, where Fe³⁺ falls 20 orders below Fe²⁺ (33 digits floated), now found
+     by held solves instead. Past ~1e-22, a
      solve can converge to the wrong level outright (a region behind face conductances 1e-24 of
      its own: the plain solves give no update along its level at all, so nothing stalls). The
      level of such a population could be deflated: a bordered unknown for its uniform shift, its

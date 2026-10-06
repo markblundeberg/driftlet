@@ -652,7 +652,11 @@ only resolved to ~1e-4 of $`|Z|`$.
   the voltage marched from the start's, the step growing, until the current crosses its target:
   up where the current is below it, since raising a terminal's voltage raises the current into
   a passive device (the other way if 20 V brings no crossing). Bisection narrows the crossing
-  to 0.1 mV, and the terminal is floated from beside it. The voltage continuation's own start,
+  to 0.1 mV, and the terminal is floated from beside it. Floated, the system can lose what held
+  it doesn't (a closed Fe³⁺/Fe²⁺ cell driven near its limit, Fe³⁺ 20 orders below Fe²⁺: 33 digits
+  short), but the current-driven steady state is the held one at the voltage that passes the
+  target, so where the floated solve fails, held solves find that voltage instead, by regula
+  falsi within the bracket, to 1e-10 of the current. The voltage continuation's own start,
   with the terminals level, ramps the light up when there is some.
 - **Spectators** (a species blocked all round, mobile throughout its stretch) are solved
   directly too. In steady state the sum of a spectator's balance rows over its stretch is zero
