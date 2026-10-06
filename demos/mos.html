@@ -27,6 +27,7 @@
   <div class="grid">
     <canvas class="wide" id="cv"></canvas>
     <canvas class="wide" id="cf"></canvas>
+    <canvas class="wide" id="ac"></canvas>
     <div class="levels wide" id="levels"></div>
     <div class="levels wide" id="conc"></div>
   </div>
@@ -69,6 +70,17 @@
     keep the layer filled. Shorter lifetimes move it up, about tenfold per decade of τ; with no generation at
     all (the slider's top end), the electrons can only diffuse in from the back contact, and it falls to a
     millihertz.</p>
+  <p>The third chart says where the silicon answers the gate's AC charge: the in-phase part of
+    −F(δp − δn), gathered from the oxide inward (on a log scale of depth) and divided by C<sub>ox</sub>δV, so
+    that deep in the bulk it reaches the capacitance itself. In inversion at low frequency the electrons
+    take it all within a few nanometres of the surface; at high frequency the holes take it at the
+    depletion edge, ~100 nm down, while the electrons only shuffle within the layer, in and out again,
+    which is that few percent above the frozen ideal. In between, both, and a quadrature part (not
+    drawn) that is the loss as generation drags behind the gate. The step's frequency also depends on
+    the gate voltage: just past threshold the inversion layer is thin and takes little charge per volt,
+    so generation keeps it filled at a few tenths of a hertz (τ = 1 µs), ten times faster than in strong
+    inversion. That's why, around 0.05 Hz, the C–V curve rises a little just past threshold before
+    settling to the high-frequency one.</p>
   <p>Flat band is at V<sub>FB</sub> = zeroCharge + dipole + φ<sub>bulk</sub>: each term depends on the
     anchoring, but their sum doesn't, and it's set by the gate interface (a work-function difference).
     Threshold is where the surface has inverted as strongly as the bulk is doped, ψ<sub>s</sub> =
@@ -181,6 +193,17 @@ const C = (V, fq) => at(VS, VS.map((_, j) => pchip(lf, table.C[j], Math.log10(fq
 const FF = Array.from({ length: 221 }, (_, k) => 10 ** (-5 + 0.05 * k)); // for drawing
 sweep();
 
+// The small-signal response at the present gate voltage and frequency, on a device of its own.
+let ac = new Device(mos(NA(), tau())), acAt = null;
+function response(V, fq) {
+  if (acAt?.V !== V || acAt?.fq !== fq) {
+    ac.set({ contacts: { right: { V } } });
+    const sol = ac.solve();
+    acAt = { V, fq, sol, p: ac.impedance([fq], { profiles: true }).profiles[0] };
+  }
+  return acAt;
+}
+
 const dev = live(mos(NA(), tau()), { onsolution: draw });
 const update = () => dev.set({ contacts: { right: { V: +gate.value } } });
 gate.addEventListener('input', update);
@@ -196,6 +219,8 @@ for (const el of [doping, life]) {
   el.addEventListener('input', labels);
   el.addEventListener('change', () => {
     sweep();
+    ac = new Device(mos(NA(), tau()));
+    acAt = null;
     dev.set(mos(NA(), tau()));
     update();
   });
@@ -236,6 +261,31 @@ function draw(sol) {
       { x: [FS[0], FS.at(-1)], y: [at(table.theory.V, table.theory.low, V), at(table.theory.V, table.theory.low, V)], color: colors[0], dash: [6, 4], width: 1.5, label: 'ideal low-frequency' },
       { x: [FS[0], FS.at(-1)], y: [at(table.theory.V, table.theory.high, V), at(table.theory.V, table.theory.high, V)], color: colors[1], dash: [2, 3], width: 1.5, label: 'ideal high-frequency' },
       { x: [fq], y: [C(V, fq)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  // Where the gate's AC charge is answered in the silicon: the in-phase charge per C_ox·δV gathered
+  // from the oxide inward, −∫ F(δp − δn) dx, the electrons' share and the holes'. In the bulk it's
+  // C/C_ox: at low frequency mostly electrons at the surface, at high frequency holes at the
+  // depletion edge.
+  const r = response(V, fq), sx = r.sol.x, inSi = sx.map((_, g) => r.sol.region[g] === 0), top = sx.findLastIndex((_, g) => inSi[g]);
+  const depth = [], e = [], h = [];
+  let qe = 0, qh = 0;
+  for (let g = top; g >= 0 && inSi[g]; g--) {
+    if (g < top) {
+      const dx = sx[g + 1] - sx[g], avg = (a) => (a.re[g] + a.re[g + 1]) / 2;
+      qe += (FARADAY * avg(r.p.c['e-']) * dx) / Cox;
+      qh -= (FARADAY * avg(r.p.c['h+']) * dx) / Cox;
+    }
+    depth.push(sx[top] - sx[g]);
+    e.push(qe);
+    h.push(qh);
+  }
+  chart(document.getElementById('ac'), {
+    xlabel: 'depth below the oxide (nm)', ylabel: 'in-phase charge / (C_ox δV)', xscale: 1e9, logx: true, xlim: [0.1, 500], ylim: [0, 1.05],
+    series: [
+      { x: depth, y: e.map((v, k) => v + h[k]), color: colors[2], label: 'gathered so far' },
+      { x: depth, y: e, color: colors[0], dash: [6, 4], width: 1.5, label: 'electrons' },
+      { x: depth, y: h, color: colors[3], dash: [2, 3], width: 1.5, label: 'holes' },
     ],
   });
   const xlim = [Lsi - units.nm(150), Lsi + tox + units.nm(15)]; // the surface, the oxide and a little gate

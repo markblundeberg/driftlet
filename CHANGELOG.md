@@ -7,7 +7,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - The MOS demo has frequency and lifetime controls: its C–V at any frequency from 10 µHz to 1 MHz,
   against the ideal low- and high-frequency curves, and the capacitance against frequency at the
   present gate voltage, the step where generation (SRH, lifetime τ) stops keeping the inversion
-  layer filled. Without a channel port now, as a capacitor alone. The demos' charts take `logx`.
+  layer filled, and where in the silicon the AC charge is answered (electrons at the surface,
+  holes at the depletion edge). Without a channel port now, as a capacitor alone. The demos'
+  charts take `logx`.
 
 - A MOS capacitor without a channel port is robust. Steady solves pin a species' level flat at
   its contact's where it's reached by that one contact only and nothing else touches it (no flux
