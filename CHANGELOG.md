@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.11.4 (2026-10-06)
 
 - Islands behind neighbours that conduct 1e20 times less than they do (across faces that hold μ̄
   level) solve too: there the summed row takes in the outside edge node's balance, so the flux
