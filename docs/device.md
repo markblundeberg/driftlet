@@ -743,7 +743,8 @@ const now = dev.solution();                   // snapshot of the current state
   right terminal's voltage to its target; with generation reactions (below), it ramps their
   rates up from nearly nothing. A terminal driven by a current (open circuit, say) is held at a
   voltage instead, the voltage marched until the current crosses its target, and floated from
-  there.
+  there. If 20 V either way brings no crossing (a current beyond the limiting one), the solve
+  fails with a warning giving the range of currents the held voltages passed.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling

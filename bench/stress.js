@@ -189,11 +189,10 @@ const families = {
       ],
       grid: epsr > 0 ? { hmin: debye / r.u(3, 10), hmax: Math.max(L / r.u(20, 80), debye), ratio: r.u(1.08, 1.2) } : { hmin: L / r.u(200, 2000), hmax: L / r.u(20, 80), ratio: r.u(1.08, 1.2) },
     });
-    const iLim = (FARADAY * 1e-9 * Math.min(...active.map((n) => c[n]))) / L;
     return {
       def,
       params: { kind, names, c, epsr, L, debye, farBath, k0: reaction.k0 },
-      plan: { side: 'right', V: r.u(-0.2, 0.2), equilibrium: !farBath, step: r.u(0.005, 0.1), t: r.log(-3, 1), I: iLim * r.u(-0.5, 0.5) },
+      plan: { side: 'right', V: r.u(-0.2, 0.2), equilibrium: !farBath, step: r.u(0.005, 0.1), t: r.log(-3, 1), Ifrac: r.u(-0.9, 0.9) },
     };
   },
 
@@ -327,17 +326,28 @@ function runCase(family, k) {
       return judged(d, d.solve());
     });
   }
-  // 3c. Driven by a current.
-  if (plan.I !== undefined) {
+  // 3c. Driven by a current: a fraction of what passes at ±1 V (kinetics or transport can hold
+  // that to nanoamps), found by a warm sweep.
+  if (plan.Ifrac !== undefined) {
     attempt('current-driven', () => {
       const d = new Device(def);
       d.solve();
-      d.set({ contacts: { [plan.side]: { I: plan.I } } });
-      const sol = d.solve();
-      const bad = judged(d, sol);
+      const V1 = Math.sign(plan.Ifrac);
+      let sol;
+      for (let j = 1; j <= 10; j++) {
+        d.set(drive(plan.side, (V1 * j) / 10));
+        sol = d.solve();
+        if (!sol.converged) return `no steady state at ${((V1 * j) / 10).toFixed(1)} V to find the limit`;
+      }
+      const target = Math.abs(plan.Ifrac) * sol.terminals[plan.side].current;
+      const e = new Device(def);
+      e.solve();
+      e.set({ contacts: { [plan.side]: { I: target } } });
+      const s1 = e.solve();
+      const bad = judged(e, s1);
       if (bad) return bad;
-      const I = sol.terminals[plan.side].current;
-      return Math.abs(I - plan.I) <= 1e-6 * Math.abs(plan.I) + 1e-12 ? '' : `drove ${plan.I}, got ${I} A/m²`;
+      const I = s1.terminals[plan.side].current;
+      return Math.abs(I - target) <= 1e-6 * Math.abs(target) + 1e-12 ? '' : `drove ${target}, got ${I} A/m²`;
     });
   }
   // 4. A step, then time.

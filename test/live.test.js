@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { Device, units } from '../src/index.js';
 import { build, layer, ohmic, live } from '../src/kit.js';
+import { Session } from '../src/live.js';
 
 // The live wrapper: changes merged while a solve runs, warm starts, ramps from the last good
 // state, the last good solution kept on failure, and the same results from a worker.
@@ -37,20 +38,28 @@ test('changes made during a solve are merged and solved once, and match a direct
 });
 
 test('a jump that fails from the warm start is ramped to; an invalid change keeps the last good solution', async () => {
-  const dev = live(pn(1e15, 1e15, 0));
-  await dev.ready;
-  // From light doping at equilibrium to heavy doping at bias: Newton fails from the old state.
-  const warm = new Device(pn(1e15, 1e15, 0));
-  warm.solve();
-  assert.ok(!warm.set(pn(1e19, 1e19, 0.6)).solve().converged, 'needs the ramp (else this test checks nothing)');
-  const jump = await dev.set(pn(1e19, 1e19, 0.6));
+  // From light doping at equilibrium to heavy doping at bias. The solver's own continuations
+  // now make that jump, so its first solve is made to fail, as a harder one would.
+  const session = new Session(pn(1e15, 1e15, 0));
+  session.update([]);
+  const solve = session.device.solve.bind(session.device);
+  let failures = 1;
+  session.device.solve = (opts) => {
+    const sol = solve(opts);
+    return failures-- > 0 ? { ...sol, converged: false } : sol;
+  };
+  const jump = session.update([pn(1e19, 1e19, 0.6)]);
   assert.ok(!jump.info.failed && jump.info.ramp >= 2, JSON.stringify(jump.info));
   const direct = new Device(pn(1e19, 1e19, 0.6)).solve();
   assert.ok(Math.abs(jump.solution.current / direct.current - 1) < 1e-8);
 
+  const dev = live(pn(1e15, 1e15, 0));
+  await dev.ready;
+  const jumped = await dev.set(pn(1e19, 1e19, 0.6));
+
   const bad = await dev.set({ contacts: { right: { V: 'high' } } });
   assert.ok(bad.info.failed && /contacts\.right\.V/.test(bad.info.error));
-  assert.equal(bad.solution, jump.solution);
+  assert.equal(bad.solution, jumped.solution);
   const next = await dev.set({ contacts: { right: { V: 0.5 } } });
   assert.ok(!next.info.failed && next.info.ramp === 0 && next.solution.converged);
 });

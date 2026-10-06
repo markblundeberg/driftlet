@@ -4,6 +4,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Steady solves hold a blocked species' level flat within a region (its amount fixing where),
+  rather than find it through its own conduction: a closed Zn | ZnSO₄ | Zn cell past its
+  limiting current, where extended space charge excludes the sulfate to 1e-25 mol/m³, now
+  solves at any voltage in 6 iterations, where it had failed from 0.7 V. And a cold continuation
+  whose level start fails from a layout made for the target voltage lays it out again, level.
 - The impedance reads the current where its terms are smallest: between the contacts of a
   device without ports, the total current is the same through every cut, and a junction without
   recombination now has its steady dI/dV and its charge's dQ/dV as the low-frequency limits,
@@ -21,8 +26,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - Cold steady solves with a terminal driven by a current (open circuit) hold it at a voltage
   and march to the crossing: the solar cell's V_oc in dim light on a 0.25 nm grid, a lit Schottky
   diode's open circuit, a redox electrode driven at a current needing 3 V. A lit device's voltage
-  continuation ramps the light up at its level start. Fixed: a flat level through a face between
-  two regions left the face's flux undetermined (a singular solve).
+  continuation ramps the light up at its level start. A current no voltage reaches (beyond a
+  limiting current) fails with a warning saying so, and what currents the voltages passed.
+  Fixed: a flat level through a face between two regions left the face's flux undetermined (a
+  singular solve).
 - A transient's first step whose error doesn't shrink with it (a jump in a held boundary level
   starts a self-similar profile, so any first step errs alike) is taken rather than shrunk until
   Newton fails: a voltage step on a 0.6 M electrolyte with resolved double layers couldn't start,

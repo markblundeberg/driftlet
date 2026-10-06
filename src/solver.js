@@ -689,6 +689,17 @@ export class Solver {
       }
       return true;
     });
+    // Likewise a spectator that's mobile throughout: no flux at steady state, so its level is flat,
+    // at a value its amount fixes. Steady solves hold its levels equal (_levelRows) rather than
+    // find them through its own conduction: blocked SO₄²⁻ driven from a zinc cathode's extended
+    // space charge is down to 1e-25 mol/m³ there, and the chain of conductances through it lost
+    // the steady system 14 digits. (Within one region: across a face, the rows that would hold
+    // the level and pin the face's flux leave a diagonal block singular.)
+    this.levelStretches = this.stretches.filter((st) => {
+      if (!st.spectator || !st.mobile || st.ports.length > 0 || st.regions[0] !== st.regions[1]) return false;
+      const reg = regions[st.regions[0]], mat = materials[reg.material];
+      return !mat.conductor && mat.ideal && reg.velocity === 0 && !(reg.mixing > 0);
+    });
     this.flattening = false;
     // Conserved amounts solved directly, each in place of one (redundant) balance row: a
     // spectator's own amount, and each conserved combination of reacting stretches (the total
@@ -1489,6 +1500,7 @@ export class Solver {
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
     if (this.flattening && dt === Infinity) this._flatRows();
+    if (this.flattening && this.constrained && dt === Infinity) this._levelRows();
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
     if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
     this.transformed = this.combining && dt !== Infinity;
@@ -2549,6 +2561,23 @@ export class Solver {
   }
 
   // Zero one row of the Jacobian (all three blocks), ready to be replaced.
+  // Steady solves: each level stretch's levels held equal (see levelStretches), node to node in
+  // place of the balances. The first node's row is the amount's (see _applyConstraints).
+  _levelRows() {
+    const { M, u, uLo, res } = this, R = this.rix;
+    for (const st of this.levelStretches) {
+      const i = st.species;
+      for (let g = st.nodes[0] + 1; g <= st.nodes[1]; g++) {
+        const b = this.blockOfNode[g], o = b * M + 1 + i, p = o - M;
+        if (this.loc[o] < 0 || this.loc[p] < 0) continue;
+        this._replaceRow(b, 1 + i);
+        for (const B of this.termB) B[R[o]] = 0;
+        this._j(b, 1 + i, b, 1 + i, 1);
+        this._j(b, 1 + i, b - 1, 1 + i, -1);
+        res[R[o]] = u[o] + uLo[o] - (u[p] + uLo[p]);
+      }
+    }
+  }
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
     if (l < 0) return;
@@ -3713,6 +3742,7 @@ export class Solver {
   // a change of drive).
   solveSteady(opts = {}) {
     this.flattening = true;
+    this.unreached = null; // (a driven current no held voltage reaches: see _floatingContinuation)
     try {
       return this._solveSteadyAll(opts);
     } finally {
@@ -3832,9 +3862,11 @@ export class Solver {
       steps += q.steps ?? 0;
       iterations += q.iterations ?? 0;
       history.push({ held: V, converged: q.converged });
+      if (q.converged) seen.push([V, this.termI[k]]);
       return q.converged ? this.termI[k] - target : NaN;
     };
     const fail = () => ({ converged: false, steps, iterations, history });
+    const seen = []; // [V, I] of each held solve that converged
     try {
       let Va = this.termV[k], fa = hold(Va);
       if (!Number.isFinite(fa)) {
@@ -3861,7 +3893,14 @@ export class Solver {
         }
         if (Number.isFinite(fb) && (Math.sign(fb) !== Math.sign(fa) || fa === 0)) break;
       }
-      if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) return fail();
+      if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) {
+        // What the held voltages passed, at the two extremes reached.
+        if (seen.length > 1) {
+          seen.sort((a, b) => a[0] - b[0]);
+          this.unreached = { terminal: this.terms[k].name, target, low: seen[0], high: seen.at(-1) };
+        }
+        return fail();
+      }
       // Bisect (each held solve warm from the last) to a tenth of a millivolt.
       for (let it = 0; it < 40 && Math.abs(Vb - Va) > 1e-4; it++) {
         const Vm = (Va + Vb) / 2, fm = hold(Vm);
@@ -3925,6 +3964,15 @@ export class Solver {
       let q;
       if (!warm) {
         q = this._solveSteady(opts);
+        if (!q.converged) {
+          // A cold device's start was laid out for the target (a set() before the first solve
+          // builds it there): lay it out again, level.
+          steps += q.steps;
+          iterations += q.iterations;
+          this._refreshSources();
+          this.initFromComposition();
+          q = this._solveSteady(opts);
+        }
         // (lit, the level start may need the light ramped up too)
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
         steps += q.steps;

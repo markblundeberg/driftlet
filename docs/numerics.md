@@ -621,7 +621,14 @@ which the solves don't resolve.
   bordered: the matrix is factorised with a pin (an identity row) in its place, which makes the
   stretch's level a well-conditioned unknown, and the response to a unit pin (one extra
   back-substitution per spectator) is added in the amount that satisfies the constraint, from
-  a $`k \times k`$ system for $`k`$ spectators.
+  a $`k \times k`$ system for $`k`$ spectators. Within one ideal region (no flow or mixing), a
+  spectator's level is flat at steady state, at a value its amount fixes, so its other balance
+  rows are replaced by $`\eta_g - \eta_{g-1} = 0`$, rather than found through its own conduction.
+  Past a closed zinc cell's limiting current, extended space charge at the cathode excludes the
+  blocked sulfate to ~1e-25 mol/m³, and the chain of conductances through it had lost the steady
+  system 14 digits: steady solves failed from 0.7 V, and took 37,000 iterations at 0.6 V. (Not
+  across a face: the rows that would hold the level there and pin its flux leave a diagonal
+  block singular.)
 - **Conserved combinations** (moieties) of reacting stretches are solved the same way: the
   total iron of Fe³⁺, Fe²⁺ and FeCl²⁺ in a closed cell with a complexation reaction, say. The
   basis of combinations $`w`$ comes from the null space of the stoichiometry. In steady state the
@@ -658,7 +665,9 @@ which the solves don't resolve.
   iterations.
 - **If that fails too,** source continuation ramps the right terminal's voltage to its target.
   It ramps from the voltage of the last converged solve when the state is that solution, and
-  otherwise from level terminals, where a cold start is consistent. The ramp step starts at
+  otherwise from level terminals, where a cold start is consistent. (A device first solved
+  after a `set()` was laid out for its new voltages; if the level start fails from there, it's
+  laid out again, level, and retried.) The ramp step starts at
   1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
 - **If Newton still fails,** $`dt`$ ramps up from a small value (pseudo-transient continuation),
   ending in the direct solve where applicable.

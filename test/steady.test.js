@@ -183,4 +183,31 @@ test('cold steady solves that need continuation: open circuit, a lit cell at for
   }));
   const r = iron.solve();
   assert.ok(r.converged && Math.abs(r.terminals.right.current / 0.89 - 1) < 1e-6 && r.terminals.right.V > 2, `${r.terminals.right.current} A/m² at ${r.terminals.right.V} V`);
+  // Oxidizing beyond the scarce Fe²⁺'s limiting current (~1.5 A/m²): no voltage gets there, and
+  // the warning says so.
+  const over = iron.set({ contacts: { right: { I: -20 } } }).solve();
+  assert.ok(!over.converged && over.warnings.some((w) => w.startsWith('right: no steady state passes the driven current -20.0 A/m²')), over.warnings.join('\n'));
+});
+
+test('past the limiting current: a closed zinc cell, its blocked sulfate held flat, as a long transient finds it', () => {
+  // Zn | ZnSO₄ | Zn, resolved double layers, at 1.1 i_lim (8FD₊c/L for a closed cell of a 2:2
+  // salt): extended space charge at the cathode excludes the sulfate to ~1e-25 mol/m³. Its level
+  // is flat at steady state, so steady solves hold it flat (the amount fixing where) rather than
+  // find it through conductances that small, which had lost the system 14 digits.
+  const face = { phi: { type: 'capacitive', C: 0.26 }, zeroCharge: -0.12, reactions: [{ ...half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 }), k0: 4e-3, alpha: 0.5 }] };
+  const c = { 'Zn2+': 0.12, 'SO42-': 0.12 };
+  const def = (V) =>
+    build({
+      T: 300,
+      library: [aqueous(['Zn2+', 'SO42-'], { epsr: 78.3 }), metal('Zn')],
+      stack: [ohmic(0, ['e-']), layer('Zn', 1e-6), face, layer('water', 4.9e-5, { c0: c }), face, layer('Zn', 1e-6), ohmic(V, ['e-'])],
+      grid: { hmin: 1.8e-9, hmax: 1.4e-6, ratio: 1.15 },
+    });
+  const cold = new Device(def(0.7)).solve();
+  const d = new Device(def(0));
+  d.solve();
+  const t = d.set({ contacts: { right: { V: 0.7 } } }).advance(100);
+  const iLim = (8 * FARADAY * 7.03e-10 * 0.12) / 4.9e-5;
+  assert.ok(cold.converged && t.done && Math.abs(cold.current / t.current - 1) < 1e-9, `${cold.current} vs ${t.current} A/m²`);
+  assert.ok(Math.abs(cold.current) > 1.08 * iLim, `${cold.current} vs i_lim ${iLim}`);
 });

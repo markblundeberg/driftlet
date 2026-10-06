@@ -193,8 +193,14 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
-  const cond = solver.conditioning;
-  if (result.converged === false && cond && cond.digits > 12) {
+  const cond = solver.conditioning, un = solver.unreached;
+  if (result.converged === false && un) {
+    const [[V0, I0], [V1, I1]] = [un.low, un.high], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
+    sol.warnings.push(
+      `${un.terminal}: no steady state passes the driven current ${g(un.target)} ${A}; held from ${g(V0)} V to ${g(V1)} V ` +
+        `it passed ${g(I0)} to ${g(I1)} ${A} (a limiting current, or kinetics too slow). Drive less, or hold a voltage.`,
+    );
+  } else if (result.converged === false && cond && cond.digits > 12) {
     const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';
     sol.warnings.push(
       `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): part of the device is held ` +
