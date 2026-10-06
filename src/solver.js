@@ -2787,7 +2787,7 @@ export class Solver {
       ownHistory.push(own);
       if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
       // Give up early on clear divergence; the caller will take a smaller step instead.
-      if (own > 1e4 || (it > 6 && own > 10 * ownHistory[0])) {
+      if ((it > 1 && own > 1e4) || (it > 6 && own > 10 * ownHistory[0])) {
         this.computeConcentrations();
         return fail({ converged: false, iterations: it, history, error: 'diverging' });
       }
@@ -3946,7 +3946,7 @@ export class Solver {
           this.termV.set(v1);
           this.computeConcentrations();
           factor = Math.sqrt(factor);
-          if (factor < 1.01) return { converged: false, steps, iterations, history };
+          if (factor < 1.5) return { converged: false, steps, iterations, history }; // (crawling: time steps do better)
         }
       }
       return { converged: true, steps, iterations, history };
@@ -4023,7 +4023,8 @@ export class Solver {
     const direct = this._directSteady();
     const giant = direct ? Infinity : 1e6 * tau;
     if (direct) this._renormalizeSpectators(); // a starting point with the right amounts
-    let dt = giant;
+    let dt = giant, grow = 10; // (after a failure, dt grows by less, then back up to ×10)
+    let triedDirect = 0;
     let totalIter = 0, steps = 0, converged = false;
     const history = [];
     while (steps < maxSteps) {
@@ -4044,12 +4045,28 @@ export class Solver {
         // Pseudo-transient continuation: down from a slow time scale until a step converges,
         // as far as the fastest (slow ions mustn't stop it short of what a cold start needs).
         dt = dt >= giant ? tau * 1e-6 : dt / 4;
+        grow = 2;
         if (dt < Math.min(tau * 1e-15, this.fastestTime() * 1e-2)) break;
         continue;
       }
       if (dt === Infinity) {
         converged = true; // the steady equations themselves were solved
         break;
+      }
+      // Past the slowest diffusion time, the direct solve may already reach from here: try it
+      // once a decade (the state kept if it fails), rather than step on to the giant dt through
+      // steps that can fail for slow ions' sake.
+      if (direct && dt < giant && dt >= tau && dt >= 10 * triedDirect) {
+        triedDirect = dt;
+        const snap = this._snapshot();
+        const d = this.step(Infinity);
+        totalIter += d.iterations;
+        history.push({ dt: Infinity, converged: d.converged, iterations: d.iterations });
+        if (d.converged) {
+          converged = true;
+          break;
+        }
+        this._restore(snap);
       }
       if (dt >= giant && this._maxPotentialStep(this._diff()) < tol) {
         converged = true;
@@ -4063,7 +4080,8 @@ export class Solver {
         break;
       }
       if (dt < giant) {
-        dt *= 10; // ramping up after a failure
+        dt *= grow; // ramping up after a failure
+        grow = Math.min(10, grow * 1.5);
         if (dt > 1e6 * tau) dt = giant; // then the direct steady solve (or the giant step)
       } else if (dt < 1e6 * giant) {
         dt *= 10; // conserved amounts present and still moving: let dt keep growing (capped)

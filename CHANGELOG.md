@@ -4,6 +4,13 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Cold steady solves: a lit phototransistor (GaAs n⁺pn, floating base) now solves in 1000
+  iterations where it failed after 20,000. Newton's divergence check spares the first update,
+  the light's continuation gives up crawling sooner, the pseudo-transient's time step grows
+  gently after a failure, and the direct solve is tried once steps reach the slowest diffusion
+  time. A cold start with immobile traps takes 191 iterations (280), Haynes–Shockley 7% fewer.
+- `check()` counts a species at rest below 1e-8 (was 1e-9) of what it could carry: a steady
+  solve resolves a supporting ion's net flux only to ~1e-9 of that, and had been called unsteady.
 - Steady solves hold a blocked species' level flat within a region (its amount fixing where),
   rather than find it through its own conduction: a closed Zn | ZnSO₄ | Zn cell past its
   limiting current, where extended space charge excludes the sulfate to 1e-25 mol/m³, now

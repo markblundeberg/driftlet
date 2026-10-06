@@ -143,7 +143,7 @@ function balance(device, sol) {
   // A species at rest (nothing beyond round-off moving, against what it could carry) isn't reported.
   const size = (l) => Math.max(0, ...l.terms.map((t) => Math.abs(t.rate)));
   const natural = naturalScales(device, sol);
-  const moving = ledgers.filter((l) => size(l) > 1e-9 * natural[l.i]);
+  const moving = ledgers.filter((l) => size(l) > 1e-8 * natural[l.i]);
   let worst = 0;
   const lines = [];
   for (const l of moving) {

@@ -456,8 +456,11 @@ test checks the compact Jacobian column by column on devices that cover every as
   only chases the round-off, so refining stops for the rest of the solve. A MOS capacitor's
   gate step now reaches the low-frequency charge in ~70 steps (it took 80,000, and ended 1.5%
   off), for about 8% more time on the Haynes–Shockley benchmarks.
-- Clear divergence (device updates beyond 1e4, or ten times the first after six iterations)
-  bails out early, so the caller can take a smaller step.
+- Clear divergence (device updates beyond 1e4 after the first iteration, or ten times the
+  first after six) bails out early, so the caller can take a smaller step. The first update is
+  exempt: light flooding a population that starts at ~1e3 per m³ predicts, linearised in
+  $`\eta`$, a change of 1e10 thermal units, which damping covers in a few iterations; bailing
+  out there had a lit phototransistor's pseudo-transient fail at every step above 1e-21 s.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
   and where. A running error bound through the factorisation compares each pivot with the
   magnitudes it was formed from, $`\log_{10}(\sum|\mathrm{terms}| / |\mathrm{pivot}|)`$: the digits
@@ -661,8 +664,10 @@ which the solves don't resolve.
   held far from equilibrium even with its terminals level, where bias continuation can't help.
   If a direct solve fails there, the generation rates are scaled down to 10⁻¹² and ramped back
   up, ×100 a step while each solve converges (warm from the last) and by the square root of the
-  factor when one doesn't. An illuminated 80 µm silicon diode solves cold this way in about 80
-  iterations.
+  factor when one doesn't, giving up when that factor falls below 1.5 (crawling, which time
+  steps do better). An illuminated 80 µm silicon diode solves cold this way in about 80
+  iterations. (A lit n⁺pn stack with a floating base crawled for 20,000 iterations: at a
+  trillionth of the light, the base's level is held by couplings of ~1e-17.)
 - **If that fails too,** source continuation ramps the right terminal's voltage to its target.
   It ramps from the voltage of the last converged solve when the state is that solution, and
   otherwise from level terminals, where a cold start is consistent. (A device first solved
@@ -670,7 +675,10 @@ which the solves don't resolve.
   laid out again, level, and retried.) The ramp step starts at
   1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
 - **If Newton still fails,** $`dt`$ ramps up from a small value (pseudo-transient continuation),
-  ending in the direct solve where applicable.
+  ending in the direct solve where applicable. After a failed step it grows ×2, then ×1.5 more
+  each success, back to ×10. Once steps reach the slowest diffusion time, the direct solve is
+  tried from there, once a decade of $`dt`$ (the state kept if it fails): with immobile traps and
+  ions of D = 1e-17 m²/s, steps from 1e8 to 1e9 s kept failing on the way to the giant step.
 
 `solve()` does not advance the clock.
 
