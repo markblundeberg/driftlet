@@ -54,24 +54,25 @@ bias; a warm sweep to that bias; open circuit, where it's lit; a current drive (
 what passes at 1 V); a transient after a voltage step; and the impedance about equilibrium,
 from far below its slowest relaxation to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
 levels flat at equilibrium with no current, warm and cold solves agreeing, the current driven
-being the one passed, the impedance passive and, at low frequency, equal to the steady dI/dV,
+being the one passed, the impedance passive (to 1e-3 of |Z|) and, at low frequency, equal to
+the steady dI/dV,
 and a MOS capacitance never above its oxide's. Each case is seeded from its family and index, so
 any failure reruns alone (`npm run stress -- semi 79`).
 
-At 500 devices per family (about four minutes on a desktop), 11,371 of 11,381 scenarios pass:
+At 500 devices per family (about four minutes on a desktop), 11,375 of 11,381 scenarios pass:
 
 | Family | Cold at 0 V | Cold at bias | Warm sweep | Open circuit or current | Transient | Impedance |
 |---|---|---|---|---|---|---|
 | Semiconductor stacks | 500/500 | 499/500 | 498/500 | 105/105 | 500/500 | 395/395 |
 | MOS capacitors | 500/500 | 500/500 | 500/500 | | 500/500 | 500/500 |
 | Electrolyte cells | 500/500 | 500/500 | 500/500 | | 500/500 | 381/381 |
-| Electrodes | 500/500 | 500/500 | 500/500 | 498/500 | 500/500 | 496/500 |
+| Electrodes | 500/500 | 500/500 | 500/500 | 498/500 | 500/500 | 500/500 |
 | Liquid junctions | | | | 500/500 | 499/500 | |
 
 (Impedance only where the device has an equilibrium to linearise about; open circuit only for
-lit cells.) The ten that fail, all among the known limits below: two bipolar stacks with a
-floating base, two closed Fe³⁺/Fe²⁺ cells driven near their limit, four redox electrodes'
-low-frequency impedance, and one junction on a grid far too coarse for its double layers.
+lit cells.) The six that fail, all among the known limits below: two bipolar stacks with a
+floating base (three scenarios), two closed Fe³⁺/Fe²⁺ cells driven near their limit, and one
+junction on a grid far too coarse for its double layers.
 `bench/stress.json` keeps the summary.
 
 Most of what driftlet's numerics do differently began as a failure here: the impedance's
@@ -93,10 +94,9 @@ so a change that makes one worse shows.
   more weakly than they move within it), or a closed Fe³⁺/Fe²⁺ cell driven near its limit, where
   Fe³⁺ falls 20 orders below Fe²⁺. The solve fails and its warning says where it lost its digits.
   (A transient gets there.)
-- **The low-frequency impedance of some redox electrodes against a bath** can come out 2–40% low,
-  or slightly non-passive, where the current is the slope of levels that shift almost uniformly
-  and that slope needs more than double precision. The impedance has no convergence flag, so this
-  is returned as a result; compare its DC limit with the steady dI/dV where it matters.
+- **The impedance is resolved to about 1e-4 of |Z|** where its solves are hardest: the real
+  part of a nearly ideal capacitor (a closed redox cell with almost none of one partner), 1e-7 of
+  |Z|, can come out slightly negative. Its DC limit matches the steady dI/dV in every stress case.
 - **Strictly neutral regions on very short steps** lose digits at a neutral face between very
   different solutions (3 M against 1 µM at steps of 1e-11 s).
 - **An unresolved double layer** (a cell coarser than the Debye length) gives a charge that

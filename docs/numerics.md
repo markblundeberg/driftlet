@@ -578,7 +578,7 @@ take about twice as long as before. GMRES judges convergence only by the true re
 recomputed at each restart: its own running estimate can drift far from it where the
 preconditioner is nearly singular (an inversion layer's exchange, lost in the assembled
 $`J`$, at a frequency of µHz), and had declared solves converged that weren't. Its answer is
-kept where it converged, or cut the residual a thousandfold; otherwise the factorised solve is.
+kept where it converged, or cut the residual tenfold; otherwise the factorised solve is.
 That happens when the residual's own round-off is what GMRES chases: in a strictly neutral
 electrolyte far above its corner frequency, $`\delta c/c`$ is $`\omega\tau`$ smaller than each term
 of a neutrality row, so the central difference's ~1e-10 noise there is amplified a millionfold,
@@ -599,16 +599,17 @@ coefficients: a contact's reading is a flux too (a held contact's balance row is
 level, so nothing solved pins it), and in a neutral bulk the current crosses a huge conductance
 on a tiny gradient.
 
-Where even the best reading's estimated error exceeds 1% of the current, the solve is continued
-toward GMRES's own floor (1e-11). An electrolyte at its open circuit needs it: the response to its
-terminal is a nearly uniform shift of every level, and the current is their slope, uniform to
-1e-8 per segment, so a solve to 1e-8 left a redox cell's DC conductance 50% off, and different
-from one call to the next. (Not where the plain solve had already fallen back to the
-factorised one; and the continued solve is kept only if it cuts the residual tenfold.) That
-floor is the limit: $`\delta x`$ is held in plain doubles, while a steady solve keeps $`\eta`$ in
-double-double, and some redox electrodes against a bath need their levels' slope to better than
-1e-14 of the response. Their DC conductance can then come out 2–40% low (`npm run stress` finds
-a few in a thousand).
+Where even the best reading's estimated error exceeds 1% of the current, the response is split
+in two: a uniform shift of each region (every $`\eta_i`$ by $`z_i s_r`$ and $`\hat\phi`$ by $`s_r`$, with
+$`s_r`$ fitted to the solve so far), which changes no flux and no concentration, so its $`J \cdot e`$ is
+exactly zero inside each region and is taken from the assembled matrices at the faces and ends;
+and the rest, small, solved for to GMRES's floor with its error now relative to itself, and read
+separately. An electrolyte at its open circuit needs it: the response to its terminal is nearly
+such a shift, and its current is the slope of levels uniform to 1e-14 of the response, more than
+a double holds. A redox electrode's DC conductance had come out 2–40% low; now it matches the
+steady dI/dV to six digits. (Not where GMRES chases its op's round-off, nor with ports, whose
+exchange sees the shift.) The real part of a nearly ideal capacitor, 1e-7 of $`|Z|`$, is still
+only resolved to ~1e-4 of $`|Z|`$.
 
 ## Steady state
 

@@ -3464,7 +3464,7 @@ export class Solver {
         // corner frequency, where δc/c is ωτ smaller than each term of the neutrality rows), and
         // the factorised solve is the better answer.
         const { initial, residual } = gmres(op, rhs, [outr, outi]);
-        const kept = !(residual > 1e-8 && residual > 1e-3 * initial);
+        const kept = !(residual > 1e-8 && residual > 1e-1 * initial);
         if (!kept) {
           outr.set(rhs[0]);
           outi.set(rhs[1]);
@@ -3523,55 +3523,89 @@ export class Solver {
       // reading's error is its terms' round-off and the solves' error in δx (to `accuracy` of its
       // largest entry) through its coefficients: a contact's or a cut's flux is a difference of
       // levels that the solved rows don't pin.
-      const read = () => {
-        let [Ir, Ii] = dot(kT, w, yr, yi);
-        Ir += DI[kT];
-        Ii += w * DIs[kT];
-        const eps = 1.1e-16;
-        let big = 0;
-        for (let j = 0; j < Nc; j++) big = Math.max(big, Math.hypot(yr[j], yi[j]));
-        const floor = accuracy * big;
-        let err = eps * (Math.abs(DI[kT]) + w * Math.abs(DIs[kT]));
-        const c = Ct[kT], cs = Cs[kT];
-        for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (eps * Math.hypot(yr[j], yi[j]) + floor);
+      // `parts`: the response as a sum, each part compact (r, i) and full-index (fr, fi), with the
+      // absolute error of its entries.
+      const read = (parts) => {
+        const eps = 1.1e-16, c = Ct[kT], cs = Cs[kT];
+        let Ir = DI[kT], Ii = w * DIs[kT], err = eps * (Math.abs(DI[kT]) + w * Math.abs(DIs[kT]));
+        for (const p of parts) {
+          const [re, im] = dot(kT, w, p.r, p.i);
+          Ir += re;
+          Ii += im;
+          for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (eps * Math.hypot(p.r[j], p.i[j]) + p.floor);
+        }
         if (!cuts || kT >= 2) return { Ir, Ii, err };
         const sgn = kT === 0 ? 1 : -1;
         for (const cut of cuts) {
           let re = 0, im = 0, e = 0;
-          for (let a = 0; a < cut.idx.length; a++) {
-            const x = cut.idx[a], gk = cut.g[a], dk = w * cut.d[a];
-            // (g + iωd)(xr + i xi)
-            re += gk * xr[x] - dk * xi[x];
-            im += gk * xi[x] + dk * xr[x];
-            e += (Math.abs(gk) + Math.abs(dk)) * (eps * Math.hypot(xr[x], xi[x]) + floor);
+          for (const p of parts) {
+            for (let a = 0; a < cut.idx.length; a++) {
+              const x = cut.idx[a], gk = cut.g[a], dk = w * cut.d[a];
+              // (g + iωd)(xr + i xi)
+              re += gk * p.fr[x] - dk * p.fi[x];
+              im += gk * p.fi[x] + dk * p.fr[x];
+              e += (Math.abs(gk) + Math.abs(dk)) * (eps * Math.hypot(p.fr[x], p.fi[x]) + p.floor);
+            }
           }
           if (e < err) [err, Ir, Ii] = [e, sgn * re, sgn * im];
         }
         return { Ir, Ii, err };
       };
+      const largest = (r, i) => {
+        let m = 0;
+        for (let j = 0; j < r.length; j++) m = Math.max(m, Math.hypot(r[j], i[j]));
+        return m;
+      };
+      const full = (r, i) => {
+        const fr = new Float64Array(N), fi = new Float64Array(N);
+        for (let j = 0; j < Nc; j++) {
+          fr[this.fullOf[j]] = r[j];
+          fi[this.fullOf[j]] = i[j];
+        }
+        return [fr, fi];
+      };
       let Zr, Zi;
       if (heldT) {
         // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal…
-        let { Ir, Ii, err } = read();
-        // …and where the solves leave that unresolved (the estimate, pessimistic, past the current
-        // itself: an electrolyte's current, the slope of levels uniform to 1e-8 per segment), the
-        // solve continued toward GMRES's own floor.
-        // (Not where the op's round-off is what GMRES would chase, and kept only where it falls
-        // tenfold.)
-        if (K === 0 && !noisy && err > 1e-2 * Math.hypot(Ir, Ii) && accuracy > 1e-12) {
-          const rhs = precondition(Bt[kT].map((v) => -v), zero), y0 = [Float64Array.from(yr), Float64Array.from(yi)];
-          const { initial, residual } = gmres(op, rhs, [yr, yi], { tol: 1e-11 });
+        let { Ir, Ii, err } = read([{ r: yr, i: yi, fr: xr, fi: xi, floor: accuracy * largest(yr, yi) }]);
+        // …and where the solves leave that unresolved (the estimate past 1% of the current), the
+        // response is split: a uniform shift of each region (z_i s on every η_i, s on φ̂), which
+        // changes no flux and no concentration, so that J·e vanishes inside each region and is
+        // taken from the assembled matrices at its edges; and what's left, small, solved for to
+        // GMRES's floor, its error now relative to itself. An electrolyte at its open circuit
+        // needs it: the response to its terminal is nearly such a shift, and its current the
+        // slope of levels uniform to 1e-14, more than a double can hold. (Not where GMRES chases
+        // its op's round-off, nor with ports, whose exchange sees the shift.)
+        if (K === 0 && cuts && !noisy && err > 1e-2 * Math.hypot(Ir, Ii)) {
+          const [er, ei] = this._regionShift(yr, yi);
+          const t1 = new Float64Array(Nc), t2 = new Float64Array(Nc), t3 = new Float64Array(Nc), t4 = new Float64Array(Nc);
+          sx(J, er, t1);
+          sx(S, ei, t2);
+          sx(J, ei, t3);
+          sx(S, er, t4);
+          const edge = this._regionEdgeRows();
+          const ar = new Float64Array(Nc), ai = new Float64Array(Nc);
+          for (let j = 0; j < Nc; j++) {
+            if (!edge[j]) continue;
+            ar[j] = -Bt[kT][j] - (t1[j] - w * t2[j]);
+            ai[j] = -(t3[j] + w * t4[j]);
+          }
+          for (let j = 0; j < Nc; j++) if (!edge[j]) ar[j] = -Bt[kT][j];
+          const rhs = precondition(ar, ai);
+          const dr = yr.map((v, j) => v - er[j]), di = yi.map((v, j) => v - ei[j]);
+          const { residual } = gmres(op, rhs, [dr, di], { tol: 1e-11 });
           restore();
-          if (residual < 0.1 * initial) {
-            accuracy = Math.max(1e-14, residual);
-            for (let j = 0; j < Nc; j++) {
-              xr[this.fullOf[j]] = yr[j];
-              xi[this.fullOf[j]] = yi[j];
+          const [efr, efi] = full(er, ei), [dfr, dfi] = full(dr, di);
+          const r2 = read([
+            { r: er, i: ei, fr: efr, fi: efi, floor: 0 },
+            { r: dr, i: di, fr: dfr, fi: dfi, floor: Math.max(1e-14, residual) * largest(dr, di) },
+          ]);
+          if (r2.err < err) ({ Ir, Ii, err } = r2);
+          if (profiles) {
+            for (let j = 0; j < N; j++) {
+              xr[j] = efr[j] + dfr[j];
+              xi[j] = efi[j] + dfi[j];
             }
-            ({ Ir, Ii } = read());
-          } else {
-            yr.set(y0[0]);
-            yi.set(y0[1]);
           }
         }
         const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
@@ -3588,6 +3622,73 @@ export class Solver {
       if (profiles) out.profiles.push(this._smallSignalProfiles(xr, xi));
     });
     return out;
+  }
+
+  // A uniform shift of each region, fitted to a small-signal response (compact, complex): φ̂ by
+  // s_r and each species' η by z_i s_r, with s_r the region's mean δφ̂ (or, where φ̂ isn't an
+  // unknown, its carriers' mean δη/z). Coverages and flux unknowns aren't shifted.
+  _regionShift(yr, yi) {
+    const { n, M, z, loc, model } = this, R = this.rix, { grid } = model;
+    const er = new Float64Array(yr.length), ei = new Float64Array(yr.length);
+    for (let r = 0; r < model.regions.length; r++) {
+      let sr = 0, si = 0, k = 0;
+      const g0 = grid.regionStart[r], g1 = grid.regionEnd[r];
+      for (let g = g0; g <= g1; g++) {
+        const o = this.blockOfNode[g] * M;
+        if (loc[o] >= 0) {
+          sr += yr[R[o]];
+          si += yi[R[o]];
+          k++;
+        }
+      }
+      if (k === 0) {
+        for (let g = g0; g <= g1; g++) {
+          const o = this.blockOfNode[g] * M;
+          for (let i = 0; i < n; i++) {
+            if (z[i] === 0 || loc[o + 1 + i] < 0) continue;
+            sr += yr[R[o + 1 + i]] / z[i];
+            si += yi[R[o + 1 + i]] / z[i];
+            k++;
+          }
+        }
+      }
+      if (k === 0) continue;
+      sr /= k;
+      si /= k;
+      for (let g = g0; g <= g1; g++) {
+        const o = this.blockOfNode[g] * M;
+        if (loc[o] >= 0) {
+          er[R[o]] = sr;
+          ei[R[o]] = si;
+        }
+        for (let i = 0; i < n; i++) {
+          if (loc[o + 1 + i] < 0) continue;
+          er[R[o + 1 + i]] = z[i] * sr;
+          ei[R[o + 1 + i]] = z[i] * si;
+        }
+      }
+    }
+    return [er, ei];
+  }
+
+  // Compact rows a region's uniform shift can touch: faces, the nodes beside them, and the two
+  // ends (whatever holds a level from outside). Inside a region, every row is unchanged by it.
+  _regionEdgeRows() {
+    const { M, loc, nB } = this, R = this.rix;
+    const edge = new Uint8Array(this.sys.size);
+    const mark = (b) => {
+      if (b < 0 || b >= nB) return;
+      for (let r = 0; r < M; r++) if (loc[b * M + r] >= 0) edge[R[b * M + r]] = 1;
+    };
+    mark(0);
+    mark(nB - 1);
+    for (let f = 0; f < this.nFaces; f++) {
+      const b = this.blockOfFace[f];
+      mark(b - 1);
+      mark(b);
+      mark(b + 1);
+    }
+    return edge;
   }
 
   // The cuts where the impedance may read a small-signal current (null where the current

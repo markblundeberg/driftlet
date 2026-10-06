@@ -395,7 +395,8 @@ function runCase(family, k) {
       for (let j = 0; j < fs.length; j++) {
         const re = Z.re[j], im = Z.im[j], m = Math.hypot(re, im);
         if (!Number.isFinite(m)) return `non-finite at ${fs[j]} Hz`;
-        if (re < -1e-6 * m) return `not passive at ${fs[j]} Hz: Re Z = ${re.toExponential(2)} of |Z| ${m.toExponential(2)}`;
+        // (to 1e-3 of |Z|: a nearly ideal capacitor's real part, 1e-7 of it, is resolved to ~1e-4)
+        if (re < -1e-3 * m) return `not passive at ${fs[j]} Hz: Re Z = ${re.toExponential(2)} of |Z| ${m.toExponential(2)}`;
         if (plan.cap && -1 / (2 * Math.PI * fs[j] * im) > plan.cap * 1.001) return `C above C_ox at ${fs[j]} Hz`;
       }
       // (A MOS capacitor's G is zero, and its series resistance, generation's, can make the
