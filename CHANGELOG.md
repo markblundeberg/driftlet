@@ -2,6 +2,14 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A region held only through its faces (a conductance there 1e-24 of its own, or neighbours that
+  conduct 1e16 times less) solves to the right level in steady state: its balance summed over
+  it, where its own fluxes cancel exactly, goes in as a bordered row once the plain solves
+  converge with terminal currents that don't add up. Such solves had converged silently to a
+  wrong level, their currents 2× or 16× off; now right to ~1e-15, and directly.
+
 ## 0.11.2 (2026-10-06)
 
 - J·v is exact where a solve needs it (the impedance's GMRES and Newton's refined solves): the

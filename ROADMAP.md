@@ -100,11 +100,15 @@ for live demos.
      at 10 mV), which refined solves now reach, and in a closed Fe³⁺/Fe²⁺ cell driven by a
      current near its limit, where Fe³⁺ falls 20 orders below Fe²⁺ (33 digits floated), now found
      by held solves instead. Past ~1e-22, a
-     solve can converge to the wrong level outright (a region behind face conductances 1e-24 of
-     its own: the plain solves give no update along its level at all, so nothing stalls). The
-     level of such a population could be deflated: a bordered unknown for its uniform shift, its
-     row the summed balance (in which the region's own fluxes cancel exactly), judged against
-     its own scale.
+     solve converged to the wrong level outright (a region behind face conductances 1e-24 of
+     its own: the plain solves gave no update along its level at all, so nothing stalled). Such
+     regions are now deflated: each one's balance summed over it, in which its own fluxes cancel
+     exactly, is bordered like a conserved amount, once the plain solves converge with terminal
+     currents that don't add up. Not covered yet: neighbours conducting 1e20 times less (the
+     face's own elimination loses the digits, and the pinned solves cycle), a population held
+     that weakly within a region, or one fed by a reaction. Where that leaves the currents not
+     adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
+     telling apart from it.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux

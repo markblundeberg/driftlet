@@ -313,31 +313,47 @@ test('bookkeeping readouts from the end boxes and port windows equal a full asse
   }
 });
 
-test('a region held only weakly: solved, and where a direct solve fails, it says where', () => {
-  // A strictly neutral region whose one fast carrier is held only by tiny conductances at its
-  // faces: in η form its level is held by G against internal conductances ~1e17 times larger,
-  // past what doubles can resolve. (A conductor region uses a mixed form that avoids this.)
+test('a region held only weakly: its level found through its summed balance, exactly', () => {
+  // A strictly neutral region whose one carrier is held only weakly: by tiny conductances at its
+  // faces, ~1e17–1e26 times less than its own conduction, or through equilibrium faces by bulk
+  // neighbours that conduct ~1e16 times less. Eliminated, its level is lost to round-off, and
+  // Newton used to settle at a wrong one silently (a current 2× or 16× off). Summed over the
+  // region, its balance is the faces' fluxes alone, exactly; with that row in place of one node's,
+  // the direct solve finds the level, and both ends pass the same current.
   const ohm = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
   const mat = (D) => ({ epsr: 0, species: { 'e-': { D, mu0: 0, cRef: 1e5 } } });
-  const weak = { phi: 'neutral', species: { 'e-': { type: 'conductance', G: 1e-6 } } };
-  const dev = () =>
-    new Device({
+  const dev = ({ G, Dout = 1e-4, Df = 1e-8, V }) => {
+    const face = { phi: 'neutral', species: { 'e-': G ? { type: 'conductance', G } : 'equilibrium' } };
+    return new Device({
       species: [{ name: 'e-', z: -1 }],
-      materials: { out: mat(1e-4), fast: mat(1e-8) },
+      materials: { out: mat(Dout), fast: mat(Df) },
       regions: [
         { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
         { name: 'fast', material: 'fast', length: 1e-6, fixedCharge: 1e4 * FARADAY, grid: { minCells: 200 } },
         { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
       ],
-      interfaces: [weak, weak],
-      contacts: { left: ohm(0), right: ohm(0.3) },
+      interfaces: [face, face],
+      contacts: { left: ohm(0), right: ohm(V) },
     });
-  // The two face conductances in series: G/2 per volt (the factorisation's cancelled pivots
-  // perturbed, and refined past).
-  const sol = dev().solve();
-  assert.ok(sol.converged && Math.abs(sol.current / (-0.3 * 1e-6 / 2) - 1) < 1e-9, `${sol.current}`);
-  // The direct solve alone fails, and the warning names the region.
-  const direct = dev().solve({ continuation: false, maxSteps: 1 });
+  };
+  // The two face conductances in series, G/2 per volt; or the two outer regions' resistances,
+  // 1 µm each of σ = F²Dc/RT (the fast region's, 1e16 times less, doesn't show).
+  const sigma = (FARADAY * FARADAY * 1e-24 * 1e4) / (GAS_CONSTANT * 298.15);
+  for (const [p, I] of [
+    [{ G: 1e-6, V: 0.3 }, (-0.3 * 1e-6) / 2],
+    [{ G: 1e-15, V: 0.01 }, (-0.01 * 1e-15) / 2],
+    [{ Dout: 1e-24, V: 0.3 }, (-0.3 * sigma) / 2e-6],
+  ]) {
+    const sol = dev(p).solve({ continuation: false, maxSteps: 1 });
+    assert.ok(sol.converged, JSON.stringify(p));
+    for (const [side, s] of [['left', 1], ['right', -1]]) {
+      assert.ok(Math.abs((s * sol.terminals[side].current) / I - 1) < 1e-9, `${JSON.stringify(p)} ${side}: ${sol.terminals[side].current}`);
+    }
+  }
+  // Without that row the direct solve fails, and the warning names the region.
+  const d = dev({ G: 1e-6, V: 0.3 });
+  d.solver.islands = [];
+  const direct = d.solve({ continuation: false, maxSteps: 1 });
   assert.equal(direct.converged, false);
   assert.ok(direct.warnings.some((w) => /\(fast\): part of the device is held only weakly/.test(w)), direct.warnings.join('\n'));
 });

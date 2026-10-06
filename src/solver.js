@@ -766,6 +766,53 @@ export class Solver {
         reference: new Float64Array(sts[0].nodes[1] - sts[0].nodes[0] + 1),
       });
     }
+    // Islands: the pieces of a stretch between its faces. One that nothing else feeds (no
+    // contact, port or reaction) holds its level only through its faces' fluxes, which can be
+    // ~1e-24 of its own conduction (a tiny conductance at the face, or a neighbour that barely
+    // conducts): eliminated, the level is lost to round-off, and Newton settles at a wrong one with
+    // nothing to show for it. In steady solves the piece's balance summed over its nodes, where
+    // the internal fluxes cancel exactly and the faces' alone are left, replaces its first node's
+    // (see _applyIslands), once the plain solves converge (see newton).
+    this.islands = [];
+    this.pinnedIslands = [];
+    this.islandsOn = false; // (newton() turns them on, see there)
+    this.pins = [];
+    const used = new Set(this.constraints.map((cs) => cs.row));
+    for (const st of this.stretches) {
+      const i = st.species, [s0, s1] = st.regions;
+      if (!st.mobile || conductor(st)) continue;
+      for (let q0 = s0, q1 = s0; q1 <= s1; q1++) {
+        const p0 = q0;
+        q0 = q1 + 1;
+        if (p0 === s0 && q1 === s1) continue; // (uncut)
+        if ((p0 === s0 && st.leftOpen) || (q1 === s1 && st.rightOpen)) continue;
+        const inside = (q) => q >= p0 && q <= q1;
+        if (model.ports.some((port) => inside(port.region) && (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))))) continue;
+        let reactive = false;
+        for (let q = p0; q <= q1; q++) {
+          for (const rx of model.reactions) if (rx.kf[regions[q].material] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
+        }
+        for (let f = Math.max(0, p0 - 1); f <= Math.min(model.interfaces.length - 1, q1); f++) {
+          for (const rx of model.interfaces[f].reactions) if (rx.part.some((p) => p.i === i && inside(f + p.side))) reactive = true;
+        }
+        const row = this.blockOfNode[grid.regionStart[p0]] * this.M + 1 + i;
+        if (reactive || used.has(row)) continue;
+        // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right.
+        const faces = [];
+        if (p0 > s0) faces.push([p0 - 1, -1]);
+        if (q1 < s1) faces.push([q1, 1]);
+        this.islands.push({
+          stretch: st,
+          row,
+          flux: faces.map(([f]) => this.blockOfFace[f] * this.M + 1 + i),
+          weight: faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]),
+          idx: new Int32Array(faces.length),
+          w: new Float64Array(faces.length),
+          len: 0,
+          res: 0,
+        });
+      }
+    }
     this.constrained = false;
   }
 
@@ -780,6 +827,33 @@ export class Solver {
         lc.reference[g - lc.nodes[0]] = t;
       }
     }
+  }
+
+  // The islands' summed balances (steady solves only): Σ A_f u over the faces into each, its
+  // first node's row pinned in the factorised matrix and the sum bordered (_solveBordered) like a
+  // conserved amount's. The pieces of a stretch held flat by its contact are left as they are.
+  _applyIslands() {
+    const { u, res } = this, R = this.rix, out = [];
+    for (const isl of this.islands) {
+      if (this.flattening && this.flatStretches.includes(isl.stretch)) continue;
+      const b0 = Math.floor(isl.row / this.M), r0 = isl.row % this.M;
+      if (this.loc[isl.row] < 0) continue;
+      let t = 0, len = 0;
+      isl.flux.forEach((o, j) => {
+        if (this.loc[o] < 0) return;
+        t += isl.weight[j] * u[o];
+        isl.idx[len] = R[o];
+        isl.w[len++] = isl.weight[j];
+      });
+      isl.len = len;
+      isl.res = t;
+      this._replaceRow(b0, r0);
+      for (const B of this.termB) B[R[isl.row]] = 0;
+      this._j(b0, r0, b0, r0, 1);
+      res[R[isl.row]] = 0;
+      out.push(isl);
+    }
+    return out;
   }
 
   // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.
@@ -929,7 +1003,8 @@ export class Solver {
 
   // Solve the full Newton system, J δ = rhs, with the extra unknowns and rows that don't fit the
   // block-tridiagonal matrix T: the floating terminals' voltages (with their circuit rows), and
-  // the spectators' conservation rows (pinned in T, see _applyConstraints). By low-rank
+  // the rows pinned in T: the spectators' conserved amounts (see _applyConstraints) and the
+  // islands' summed balances (see _applyIslands). By low-rank
   // updates of T (Woodbury): δ = y + Σ_q Q_q μ_q − Σ_k X_k δV_k with y = T⁻¹ rhs, Q_q = T⁻¹ e_q
   // (the response to a unit pin) and X_k = T⁻¹ B_k (to a unit change of V_k), then a small dense
   // system for the μ (pins) and δV (terminals):
@@ -1511,6 +1586,9 @@ export class Solver {
     if (this.flattening && this.constrained && dt === Infinity) this._levelRows();
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
     if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
+    // Rows kept aside for _solveBordered: the conserved amounts' and the islands'.
+    this.pinnedIslands = this.constrained && dt === Infinity && this.islandsOn ? this._applyIslands() : [];
+    this.pins = this.constrained && dt === Infinity ? [...this.constraints, ...this.pinnedIslands] : [];
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
   }
@@ -2662,8 +2740,8 @@ export class Solver {
   // if refining didn't help, leaving them as they came.
   _refine(dt, delta, deltaV) {
     const { res, termRes, termB, termC, termDI, rowScale, floating: fl } = this;
-    const N = this.sys.size, K = fl.length;
-    const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), transformed: this.transformed };
+    const N = this.sys.size, K = fl.length, pins = this.pins, R = this.rix;
+    const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), transformed: this.transformed, pinRes: this.pins.map((p) => p.res) };
     const restoreArrays = () => {
       res.set(save.res);
       termRes.set(save.termRes);
@@ -2671,6 +2749,7 @@ export class Solver {
       save.termC.forEach((c, k) => termC[k].set(c));
       termDI.set(save.termDI);
       this.transformed = save.transformed;
+      this.pins.forEach((p, a) => (p.res = save.pinRes[a]));
     };
     // The same system, its terms kept apart: the rest, and each floating terminal's (unscaled).
     const { rest, lin } = this._assembleDifference(dt);
@@ -2694,13 +2773,23 @@ export class Solver {
         for (let j = 0; j < N; j++) t += Ck[a][j] * x[j];
         out[N + a] = t;
       }
+      // A pinned row is its constraint's (a conserved amount, an island's summed balance).
+      for (const p of pins) {
+        let t = 0;
+        for (let j = 0; j < p.len; j++) t += p.w[j] * x[p.idx[j]];
+        out[R[p.row]] = t;
+      }
       return precondition(out);
     };
     const rhs = new Float64Array(N + 1), out = new Float64Array(N + 1), outV = new Float64Array(K);
     const precondition = (r) => {
       for (let j = 0; j < N; j++) rhs[j] = r[j];
       fl.forEach((k, a) => (termRes[k] = r[N + a]));
-      this._solveBordered(rhs, out, outV, []);
+      for (const p of pins) {
+        p.res = rhs[R[p.row]];
+        rhs[R[p.row]] = 0;
+      }
+      this._solveBordered(rhs, out, outV, pins);
       const z = new Float64Array(N + K);
       for (let j = 0; j < N; j++) z[j] = out[j];
       for (let a = 0; a < K; a++) z[N + a] = outV[a];
@@ -2710,6 +2799,7 @@ export class Solver {
       const b = new Float64Array(N + K);
       for (let j = 0; j < N; j++) b[j] = save.res[j];
       fl.forEach((k, a) => (b[N + a] = save.termRes[k]));
+      pins.forEach((p, a) => (b[R[p.row]] = save.pinRes[a]));
       const pb = precondition(b), x = Float64Array.from(pb);
       // A lost mode or two, GMRES finds in a couple of iterations. The refined update is kept
       // where GMRES converged and its correction is under a thermal unit; otherwise newton()
@@ -2749,18 +2839,55 @@ export class Solver {
    * Newton iteration for one backward-Euler step from the current cOld.
    * @returns {{converged: boolean, iterations: number, history: number[]}}
    */
-  newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10 } = {}) {
+  newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands = false } = {}) {
     const { delta, res } = this;
     const deltaV = this.deltaV ?? (this.deltaV = new Float64Array(this.floating.length));
     const history = [], ownHistory = [];
     // Refined solves (see _refine), once the plain ones stall.
     let refine = false, refined = 0, noRefine = false;
-    // A steady solve that fails: record how nearly singular the system was, and where.
+    // Islands (see _applyIslands): their summed rows go in only once the plain solves converge.
+    // Far from the solution, Newton exact along a weakly held level takes it by 1e5 thermal
+    // units (a floating base, cold at bias), where the plain solves, which barely see that level,
+    // converge. Converged, an island at the wrong level shows: it takes in a different current
+    // than it passes on, so the terminal currents don't add up to zero. Then the summed rows go
+    // in and Newton carries on from there. Converged again, a current that tiny against the
+    // conduction around it rides on differences (~1e-28 thermal units for 5 fA/m² through a bulk
+    // of 1e4 mol/m³ at 1e-4 m²/s) that the last update leaves known only to its own round-off:
+    // where the currents still don't add up, one more update polishes them. Where the islands'
+    // own system is held by static pivots elsewhere (a GaAs stack's minority carriers, at 1e-17
+    // A/m² of noise), their rows can throw Newton off instead: if it doesn't converge again
+    // within a dozen iterations, the plain solution stands.
+    this.islandsOn = islands;
+    let rounds = 0, kept = null;
+    const islandsOff = (it, result) => {
+      if (dt !== Infinity || !this.constrained || this.islands.length === 0 || rounds >= 2 || !(this._kirchhoff() > 1e-9)) return false;
+      this.islandsOn = true;
+      rounds++;
+      kept = { it, result, u: Float64Array.from(this.u), uLo: Float64Array.from(this.uLo), termV: Float64Array.from(this.termV) };
+      return true;
+    };
+    // A steady solve that fails: record how nearly singular the system was, and where; or, failing
+    // with the islands' rows in, go back to the solution without them.
     const fail = (r) => {
+      if (kept) {
+        this.u.set(kept.u);
+        this.uLo.set(kept.uLo);
+        this.termV.set(kept.termV);
+        this.islandsOn = false;
+        this.computeConcentrations();
+        return { ...kept.result, iterations: r.iterations, history };
+      }
       if (dt === Infinity) this._noteConditioning();
       return r;
     };
     for (let it = 1; it <= maxIter; it++) {
+      if (kept && it - kept.it > 12) return fail({ converged: false, iterations: it - 1, history });
+      if (kept && it === kept.it + 2) {
+        // Refined from the islands' second update (their first moves the level, perhaps by
+        // more than a refinement may), since the plain solves have shown a mode they lose.
+        refine = true;
+        noRefine = false;
+      }
       try {
         this.assemble(dt);
       } catch (err) {
@@ -2777,10 +2904,10 @@ export class Solver {
         return fail({ converged: false, iterations: it, history, error: err.message });
       }
       try {
-        const pins = this.constrained && dt === Infinity ? this.constraints : [];
+        const pins = this.pins;
         deltaV.fill(0);
         this._solveBordered(res, delta, deltaV, pins);
-        if (refine && pins.length === 0 && !this._refine(dt, delta, deltaV)) {
+        if (refine && !this._refine(dt, delta, deltaV)) {
           refine = false; // (GMRES didn't converge, or strayed: the plain solves it is)
           noRefine = true;
         }
@@ -2808,8 +2935,10 @@ export class Solver {
       this._addToState(delta, -alpha);
       this.floating.forEach((k, a) => (this.termV[k] -= alpha * deltaV[a]));
       if (alpha === 1 && step < tol) {
+        const done = { converged: true, iterations: it, history, residual: rmax };
+        if (islandsOff(it, done)) continue;
         this.computeConcentrations();
-        return { converged: true, iterations: it, history, residual: rmax };
+        return done;
       }
       // Converged as far as round-off allows: the updates are already tiny (below 1e-6 thermal
       // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
@@ -2826,12 +2955,25 @@ export class Solver {
       if (refine) refined++;
       else if (!noRefine && alpha === 1 && it >= 3 && step > 0.25 * p1 && (step < 1e-4 || (step > p1 && p1 > p2))) refine = true;
       if (alpha === 1 && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
+        const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
+        if (islandsOff(it, done)) continue;
         this.computeConcentrations();
-        return { converged: true, iterations: it, history, residual: rmax, roundoff: true };
+        return done;
       }
     }
     this.computeConcentrations();
     return fail({ converged: false, iterations: maxIter, history });
+  }
+
+  // How far the terminal currents (as last assembled) are from adding up to zero, relative to the
+  // largest of them: Kirchhoff's law, which a steady state keeps.
+  _kirchhoff() {
+    let sum = 0, mx = 0;
+    for (const I of this.termI) {
+      sum += I;
+      mx = Math.max(mx, Math.abs(I));
+    }
+    return mx > 0 ? Math.abs(sum) / mx : 0;
   }
 
   // How many digits the last factorisation lost to cancellation, and where (the worst seen since
@@ -2950,6 +3092,20 @@ export class Solver {
     let result;
     try {
       result = this.newton(dtEff, opts);
+      if (!result.converged && dtEff === Infinity && this.constrained && this.islands.length > 0) {
+        // Plain solves that don't converge may be lost along an island's level (two regions
+        // conducting 1e20 times less hold it): once more from the start, with the islands'
+        // summed rows in throughout (see newton).
+        this.u.set(this.uPrev);
+        this.uLo.set(this.uPrevLo);
+        this.termV.set(this.termVPrev);
+        if (opts.guess) {
+          this.u.set(opts.guess);
+          this.uLo.fill(0);
+        }
+        const again = this.newton(dtEff, { ...opts, islands: true });
+        result = { ...again, iterations: result.iterations + again.iterations };
+      }
     } finally {
       this.combining = false;
     }

@@ -686,6 +686,33 @@ only resolved to ~1e-4 of $`|Z|`$.
   larger by $`D \cdot dt/(hL)`$, around 1e12 for a micron-scale cell (see
   [metal regions](#metal-regions) for the same cancellation). Newton then needs dozens of
   iterations, or fails.
+- **Islands**: the pieces of a stretch between its faces, where nothing else feeds a piece (no
+  contact, port or reaction). In steady state such a piece's level is held only through its
+  faces' fluxes, which can be far weaker than its own conduction: a face conductance of
+  1e-15 S/m² against a region conducting ~4e2 S/m, or neighbours that conduct 1e16 times less
+  than it. Eliminated, the level was lost to round-off below anything Newton could see (the
+  plain solves gave no update along it, so nothing stalled), and solves converged to a wrong one
+  silently: currents 2× or 16× off. Summed over the piece's nodes, its balance rows are its
+  faces' flux unknowns alone, $`A_R u_R - A_L u_L`$: the internal fluxes cancel exactly, by
+  construction rather than in round-off. That sum can replace the first node's row, bordered like
+  a spectator's amount. The response to the unit pin is the island's uniform shift, with whatever
+  $`\hat\phi`$ and the other species do along with it, so no mode needs guessing; refined solves
+  carry the pinned rows too.
+
+  Newton exact along such a level can be worse than Newton blind to it, far from the solution
+  (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so
+  the summed rows go in only once the plain solves converge. An island at the wrong level then
+  shows: it takes in a different current than it passes on, so the terminal currents don't add
+  up to zero (to 1e-9 of the largest). Newton then carries on with the summed rows, refined from
+  their second update. A current that tiny against the conduction around it rides on $`\eta`$
+  differences (~1e-28 for 5 fA/m² through 1e4 mol/m³ at D = 1e-4 m²/s) that the last update
+  leaves known only to its own round-off, so where the currents still don't add up, one more
+  update polishes them. If Newton doesn't converge again within a dozen updates (a GaAs stack's
+  minority carriers, whose own rows rest on static pivots, at 1e-17 A/m² of noise), the plain
+  solution stands; and a steady solve that fails outright is tried once more with the summed rows
+  in from the start. Such devices now solve directly, their currents right to ~1e-15. Past a
+  contrast of ~1e18 the face's own elimination loses the digits, and the pinned solves cycle:
+  neighbours conducting 1e20 times less still leave the level wrong, as before.
 - **Immobile combinations** (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) conserve
   node by node, since nothing carries them anywhere. At each node the combination's weighted sum
   replaces one of its balance rows, kept at what it was when the solve began. The row is local
