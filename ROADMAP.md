@@ -113,7 +113,13 @@ for live demos.
      cancelling exactly, into a row whose outside couplings reach only the nodes just beyond. The
      block at each face grows (about threefold) and so do its off-diagonal neighbours; the rest of
      the matrix is unchanged, and the layout stays block-tridiagonal. It may simplify the face code
-     generally.
+     generally. Tried as merging alone (each face and its edge nodes factorised as one dense
+     block, LU pivoting across all three): it made static pivoting unnecessary (GaAs stacks
+     without recombination solved without it), but partial pivoting across the merged block
+     picked pivots from other nodes' rows for a nearly empty carrier's column, and Newton diverged
+     in most MOS capacitors (462 of 500 stress scenarios); it also hid where a weakly held region
+     loses its digits from the conditioning warning. So the summed rows would need a structured
+     elimination at the face, not generic pivoting.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
