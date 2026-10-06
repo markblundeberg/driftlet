@@ -741,7 +741,9 @@ const now = dev.solution();                   // snapshot of the current state
   amounts (blocked species, reactive moieties) are kept exactly. If a direct solve fails at a
   bias (a cold start far from equilibrium), it solves with both terminals level and ramps the
   right terminal's voltage to its target; with generation reactions (below), it ramps their
-  rates up from nearly nothing.
+  rates up from nearly nothing. A terminal driven by a current (open circuit, say) is held at a
+  voltage instead, the voltage marched until the current crosses its target, and floated from
+  there.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling

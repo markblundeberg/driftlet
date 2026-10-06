@@ -8,6 +8,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   electrolyte cells), each solved cold, swept warm, stepped in time and probed by its
   impedance, judged by `check()` and by invariants (flat levels at equilibrium, warm and cold
   agreeing, a passive impedance).
+- Cold steady solves with a terminal driven by a current (open circuit) hold it at a voltage
+  and march to the crossing: the solar cell's V_oc in dim light on a 0.25 nm grid, a lit Schottky
+  diode's open circuit, a redox electrode driven at a current needing 3 V. A lit device's voltage
+  continuation ramps the light up at its level start. Fixed: a flat level through a face between
+  two regions left the face's flux undetermined (a singular solve).
 - A transient's first step whose error doesn't shrink with it (a jump in a held boundary level
   starts a self-similar profile, so any first step errs alike) is taken rather than shrunk until
   Newton fails: a voltage step on a 0.6 M electrolyte with resolved double layers couldn't start,

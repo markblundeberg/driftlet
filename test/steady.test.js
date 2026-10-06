@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js';
-import { build, layer, ohmic } from '../src/kit.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor, photogeneration } from '../src/kit.js';
 
 const VT = (GAS_CONSTANT * 298.15) / FARADAY;
 
@@ -104,4 +104,83 @@ test('a cold start with slow ions and immobile traps: solve() and advance() both
   const r = dev.advance(1e5, { tol: 1e-4 }); // from the cold start, with the default first step
   assert.ok(r.done && r.converged, `advance: done ${r.done}, ${r.steps} steps`);
   assert.equal(flat(dev.solution()), '');
+});
+
+test('a level flat across a face: holes held by one contact through two regions, blocked at the other', () => {
+  // A Schottky contact that takes only electrons, on intrinsic GaAs, then heavily doped p-GaAs to
+  // an ohmic contact: the holes reach that contact alone, so a steady state pins their level flat
+  // there, through the face between the two layers, whose hole flux is then zero (an unknown
+  // that the edge balances alone had set, and the solve was singular).
+  const def = build({
+    T: 300,
+    library: [semiconductor('GaAs')],
+    stack: [ohmic(0), layer('GaAs', 1.2e-6, { name: 'i' }), layer('GaAs', 1.1e-7, { name: 'p', acceptors: units.perCm3(7e18) }), ohmic(0)],
+    grid: { hmin: 2e-10, hmax: 1.8e-8, ratio: 1.16 },
+  });
+  def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.25 };
+  const s = new Device(def).solve();
+  assert.ok(s.converged);
+  for (const name of ['e-', 'h+']) {
+    const mu = Array.from(s.mu[name]).filter(Number.isFinite);
+    assert.ok((Math.max(...mu) - Math.min(...mu)) / (GAS_CONSTANT * 300) < 1e-9, `${name} flat`);
+  }
+});
+
+test('cold steady solves that need continuation: open circuit, a lit cell at forward bias, a current far from the start', () => {
+  // Open circuit: the floating terminal held at a voltage, marched to where its current crosses
+  // zero, and floated from there; the same V_oc on two grids.
+  const Si = semiconductor('Si'), NA = units.perCm3(1e16), W = units.um(60.5);
+  const cell = (hmin) =>
+    build({
+      T: 300,
+      library: [Si],
+      stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: NA }), { ...ohmic(0), V: undefined, I: 0 }],
+      bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (60e-6 * NA) } }, photogeneration({ material: 'Si', flux: 3e-5, alpha: 1630, mu: units.eV(1.18), to: W })],
+      grid: { hmin, hmax: units.um(1) },
+    });
+  const voc = [units.nm(1), units.nm(0.25)].map((h) => {
+    const s = new Device(cell(h)).solve();
+    assert.ok(s.converged, `hmin ${h}`);
+    return s.terminals.right.V;
+  });
+  assert.ok(voc[0] > 0.3 && Math.abs(voc[1] - voc[0]) < 1e-5, `V_oc ${voc}`);
+
+  // A lit GaAs diode with a Schottky contact, at 0.78 V forward from cold: the voltage
+  // continuation starts with the terminals level, which lit needs the light ramped up too.
+  const diode = () => {
+    const def = build({
+      T: 300,
+      library: [semiconductor('GaAs')],
+      stack: [ohmic(0), layer('GaAs', 1.73e-7, { acceptors: units.perCm3(3.3e18) }), layer('GaAs', 1.98e-7, { donors: units.perCm3(1.6e17) }), ohmic(0)],
+      bulkReactions: [
+        { equation: 'e- + h+ = 0', srh: { GaAs: { tauN: 3.2e-7, tauP: 3.2e-7 } } },
+        photogeneration({ material: 'GaAs', flux: 2e-4, alpha: 1e6, mu: units.eV(1.72), to: 3.71e-7 }),
+      ],
+      grid: { hmin: 3e-10, hmax: 7.7e-9, ratio: 1.13 },
+    });
+    def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.67 };
+    return new Device(def);
+  };
+  const cold = diode().set({ contacts: { right: { V: 0.78 } } }).solve();
+  const warm = diode();
+  warm.solve();
+  for (let V = 0.1; V < 0.785; V += 0.1) warm.set({ contacts: { right: { V: Math.min(V, 0.78) } } }).solve();
+  const w = warm.set({ contacts: { right: { V: 0.78 } } }).solve();
+  assert.ok(cold.converged && w.converged && Math.abs(cold.current - w.current) <= 1e-6 * Math.abs(w.current), `${cold.current} vs ${w.current}`);
+
+  // Fe³⁺/Fe²⁺ on platinum against a bath, driven at a reducing current that needs about 3 V:
+  // the march goes up, the way that raises the current into a passive device.
+  const iron = new Device(build({
+    library: [aqueous(['Fe3+', 'Fe2+', 'SO42-'], { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(0, ['e-']),
+      layer('Pt', 1e-6),
+      { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1.4e-5, alpha: 0.33 }] },
+      layer('water', 1.97e-5, { c0: { 'Fe3+': 27.66, 'Fe2+': 0.435, 'SO42-': 41.925 } }),
+      bath({ 'Fe3+': 27.66, 'Fe2+': 0.435, 'SO42-': 41.925 }, 'SO42-', { I: 0.89 }),
+    ],
+    grid: { hmin: 1.3e-8, hmax: 4.2e-7, ratio: 1.17 },
+  }));
+  const r = iron.solve();
+  assert.ok(r.converged && Math.abs(r.terminals.right.current / 0.89 - 1) < 1e-6 && r.terminals.right.V > 2, `${r.terminals.right.current} A/m² at ${r.terminals.right.V} V`);
 });

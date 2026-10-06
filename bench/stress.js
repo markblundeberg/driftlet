@@ -1,4 +1,5 @@
-// Stress test: random but plausible devices, each put through what a user would do with it (a
+// Stress test: random but plausible devices (semiconductor stacks with ohmic or Schottky
+// contacts, MOS capacitors, electrolyte cells, electrodes with face reactions, liquid junctions), each put through what a user would do with it (a
 // cold solve, a bias sweep, a transient after a step, an impedance), every result judged by
 // check() and by invariants that hold whatever the device: flat levels at equilibrium, a warm
 // sweep and a cold solve agreeing, a passive impedance about equilibrium. Every case comes from
@@ -12,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, bath, aqueous, semiconductor, metal, check, photogeneration, IONS } from '../src/kit.js';
+import { build, layer, ohmic, bath, aqueous, semiconductor, metal, check, photogeneration, half, vacuumZeroCharge, IONS } from '../src/kit.js';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -72,7 +73,19 @@ const families = {
       bulkReactions: reactions,
       grid: { hmin: r.log(-10, -9), hmax: total / r.u(20, 100), ratio: r.u(1.08, 1.2) },
     });
-    return { def, params: { mat, layers: layers.map((l) => ({ length: l.length, donors: l.donors, acceptors: l.acceptors })), rec, tau, light }, plan: { side: 'right', V: r.u(-1.5, 0.8), equilibrium: !light, step: r.u(0.05, 0.5), t: r.log(-9, -6) } };
+    // A Schottky contact on the left now and then: both carriers at the metal's Fermi level (the
+    // usual boundary condition, thermionic emission at a high velocity), the barrier from its
+    // work function (Schottky–Mott).
+    const schottky = r.chance(0.25);
+    if (schottky) {
+      const W = r.u(4.3, 5.3), chi = { Si: 4.05, Ge: 4.0, GaAs: 4.07 }[mat];
+      def.contacts.left = { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: { type: 'capacitive', C: 10 }, zeroCharge: vacuumZeroCharge(def, W, { material: mat, anchor: 'e-', offset: chi }) };
+    }
+    return {
+      def,
+      params: { mat, layers: layers.map((l) => ({ length: l.length, donors: l.donors, acceptors: l.acceptors })), rec, tau, light, schottky },
+      plan: { side: 'right', V: r.u(-1.5, 0.8), equilibrium: !light, step: r.u(0.05, 0.5), t: r.log(-9, -6), openCircuit: light },
+    };
   },
 
   // MOS capacitors: a doped semiconductor, an oxide, a metal gate, with or without generation.
@@ -144,6 +157,77 @@ const families = {
       plan: { side: 'right', V: r.u(-0.3, 0.3), equilibrium: same, step: r.u(0.005, 0.1), t: r.log(-3, 1), noSteadyCurrent: blockingRight },
     };
   },
+
+  // Electrodes with Butler–Volmer face reactions: a metal in its own ions (silver, copper, zinc) or
+  // platinum in a redox couple, with or without supporting electrolyte, strictly neutral or with
+  // the double layers resolved; the far side the same electrode or a bath.
+  echem(r) {
+    const kind = r.pick(['Ag', 'Cu', 'Zn', 'redox']);
+    const anion = r.pick(['NO3-', 'Cl-', 'SO42-']), support = r.chance(0.5) ? r.pick(['K+', 'Na+']) : null;
+    const active = kind === 'redox' ? ['Fe3+', 'Fe2+'] : [{ Ag: 'Ag+', Cu: 'Cu2+', Zn: 'Zn2+' }[kind]];
+    const names = [...active, ...(support ? [support] : []), anion], z = (n) => IONS[n].z;
+    const c = {};
+    for (const n of active) c[n] = r.log(-1, 2);
+    if (support) c[support] = r.log(1, 3);
+    c[anion] = names.filter((n) => n !== anion).reduce((t, n) => t + z(n) * c[n], 0) / -z(anion);
+    const epsr = r.pick([0, 78.3]), L = r.log(-6, -3.5);
+    const I = 0.5 * names.reduce((t, n) => t + z(n) * z(n) * c[n], 0), debye = Math.sqrt((Math.max(epsr, 1) * EPS0 * RT) / (2 * FARADAY * FARADAY * I));
+    const electrodeMetal = kind === 'redox' ? 'Pt' : kind;
+    const rx = kind === 'redox' ? half('Fe3+ + e- = Fe2+') : half(`${active[0]} + ${-z(anion) > 0 && z(active[0]) === 2 ? '2 ' : ''}e- = ${kind}(s)`, { [`${kind}(s)`]: 0 });
+    const reaction = { ...rx, k0: r.log(-5, -1), alpha: r.u(0.3, 0.7) };
+    const face = epsr > 0 ? { phi: { type: 'capacitive', C: r.u(0.1, 0.5) }, zeroCharge: r.u(-0.3, 0.3), reactions: [reaction] } : { reactions: [reaction] };
+    const farBath = r.chance(0.3);
+    const def = build({
+      T,
+      library: [aqueous(names, { epsr }), metal(electrodeMetal)],
+      stack: [
+        ohmic(0, ['e-']),
+        layer(electrodeMetal, 1e-6),
+        face,
+        layer('water', L, { c0: { ...c } }),
+        ...(farBath ? [bath({ ...c }, anion)] : [face, layer(electrodeMetal, 1e-6), ohmic(0, ['e-'])]),
+      ],
+      grid: epsr > 0 ? { hmin: debye / r.u(3, 10), hmax: Math.max(L / r.u(20, 80), debye), ratio: r.u(1.08, 1.2) } : { hmin: L / r.u(200, 2000), hmax: L / r.u(20, 80), ratio: r.u(1.08, 1.2) },
+    });
+    const iLim = (FARADAY * 1e-9 * Math.min(...active.map((n) => c[n]))) / L;
+    return {
+      def,
+      params: { kind, names, c, epsr, L, debye, farBath, k0: reaction.k0 },
+      plan: { side: 'right', V: r.u(-0.2, 0.2), equilibrium: !farBath, step: r.u(0.005, 0.1), t: r.log(-3, 1), I: iLim * r.u(-0.5, 0.5) },
+    };
+  },
+
+  // Liquid junctions: two baths of the same salts in different proportions, the far one floating
+  // (the junction's potential), strictly neutral or not; steady, and grown from a sharp boundary.
+  junction(r) {
+    const cations = ['H+', 'Li+', 'Na+', 'K+', 'Cu2+', 'Zn2+'], anions = ['Cl-', 'NO3-', 'SO42-'];
+    const cs = [...new Set([r.pick(cations), r.pick(cations)])], as = [...new Set([r.pick(anions), ...(r.chance(0.3) ? [r.pick(anions)] : [])])];
+    const names = [...cs, ...as], z = (n) => IONS[n].z;
+    const side = () => {
+      const c = {};
+      for (const n of cs) c[n] = r.log(-3, 3);
+      const plus = cs.reduce((t, n) => t + z(n) * c[n], 0), w = as.map(() => r.u(0.2, 1)), wz = as.reduce((t, n, k) => t + w[k] * -z(n), 0);
+      as.forEach((n, k) => (c[n] = (plus * w[k]) / wz));
+      return c;
+    };
+    const left = side(), right = side(), epsr = r.pick([0, 0, 78.3]), L = r.log(-5, -3);
+    const minI = Math.min(...[left, right].map((c) => 0.5 * names.reduce((t, n) => t + z(n) * z(n) * c[n], 0)));
+    const debye = Math.sqrt((Math.max(epsr, 1) * EPS0 * RT) / (2 * FARADAY * FARADAY * minI));
+    const sharp = r.chance(0.5);
+    const lib = aqueous(names, { epsr });
+    const regions = sharp
+      ? [{ material: 'water', length: L / 2, c0: { ...left } }, { material: 'water', length: L / 2, c0: { ...right } }]
+      : [{ material: 'water', length: L, c0: Object.fromEntries(names.map((n) => [n, { x: [0, 0.45 * L, 0.55 * L, L], values: [left[n], left[n], right[n], right[n]] }])) }];
+    const def = {
+      T,
+      species: lib.species,
+      materials: lib.materials,
+      regions,
+      contacts: { left: { bath: { c: { ...left }, reference: as[0] }, V: 0 }, right: { bath: { c: { ...right }, reference: as[0] }, I: 0 } },
+      grid: epsr > 0 ? { hmin: Math.min(debye / 3, L / 200), hmax: L / r.u(20, 80), ratio: 1.1 } : { hmin: L / r.u(400, 4000), hmax: L / r.u(20, 80), ratio: r.u(1.08, 1.2) },
+    };
+    return { def, params: { names, left, right, epsr, L, sharp }, plan: { side: 'left', V: 0, equilibrium: false, step: 0, t: r.log(-2, 2), transientOnly: true } };
+  },
 };
 
 // --- what's done with each device, and how it's judged
@@ -179,6 +263,20 @@ function runCase(family, k) {
     dev = new Device(def);
   } catch (e) {
     note('build', `threw: ${String(e.message).split('\n')[0].slice(0, 160)}`);
+    return out;
+  }
+  if (plan.transientOnly) {
+    attempt('steady', () => {
+      const d = new Device(def);
+      return judged(d, d.solve());
+    });
+    attempt('transient', () => {
+      const d = new Device(def);
+      const s = d.advance(plan.t, { budgetMs: 4000, maxSteps: 20000 });
+      if (!s.converged) return `failed at t = ${s.time.toPrecision(3)} s (${s.steps} steps)`;
+      if (!s.done) return `too slow: t = ${s.time.toPrecision(3)} of ${plan.t.toPrecision(3)} s in ${s.steps} steps`;
+      return judged(d, s);
+    });
     return out;
   }
   // 1. Cold, at no bias: equilibrium where nothing drives it.
@@ -221,6 +319,27 @@ function runCase(family, k) {
     }
     return '';
   });
+  // 3b. Open circuit (a solar cell's V_oc), from cold.
+  if (plan.openCircuit) {
+    attempt('open circuit', () => {
+      const d = new Device(def);
+      d.set({ contacts: { [plan.side]: { I: 0 } } });
+      return judged(d, d.solve());
+    });
+  }
+  // 3c. Driven by a current.
+  if (plan.I !== undefined) {
+    attempt('current-driven', () => {
+      const d = new Device(def);
+      d.solve();
+      d.set({ contacts: { [plan.side]: { I: plan.I } } });
+      const sol = d.solve();
+      const bad = judged(d, sol);
+      if (bad) return bad;
+      const I = sol.terminals[plan.side].current;
+      return Math.abs(I - plan.I) <= 1e-6 * Math.abs(plan.I) + 1e-12 ? '' : `drove ${plan.I}, got ${I} A/m²`;
+    });
+  }
   // 4. A step, then time.
   attempt('transient', () => {
     const d = new Device(def);

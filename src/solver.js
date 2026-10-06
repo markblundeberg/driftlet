@@ -2519,6 +2519,17 @@ export class Solver {
         res[R[o]] = u[o] + uLo[o] - level;
         if (z[i] !== 0) this.termB[k][R[o]] += -z[i] / VT;
       }
+      // A face inside the stretch whose link holds the level continuous carries the species' flux
+      // as an unknown that only the edge balances, now replaced, determined: it's zero.
+      for (let f = st.regions[0]; f < st.regions[1]; f++) {
+        if (model.interfaces[f].links[i].type !== 'equilibrium') continue;
+        const b = this.blockOfFace[f], o = b * M + 1 + i;
+        if (this.loc[o] < 0) continue;
+        this._replaceRow(b, 1 + i);
+        for (const B of this.termB) B[R[o]] = 0;
+        this._j(b, 1 + i, b, 1 + i, 1);
+        res[R[o]] = u[o] + uLo[o];
+      }
     }
   }
 
@@ -3649,6 +3660,17 @@ export class Solver {
       }
       r = g;
     }
+    // A terminal driven by a current (open circuit, say): hold it at a voltage instead, march the
+    // voltage until the current crosses its target, and float it from there.
+    if (opts.continuation !== false && this.floating.some((k) => this.terms[k].drive.kind === 'I')) {
+      this.u.set(u0);
+      this.uLo.set(u0Lo);
+      this.termV.set(v0);
+      this.computeConcentrations();
+      const q = this._floatingContinuation(opts, r);
+      if (q.converged) return q;
+      r = q;
+    }
     if (!canContinue) {
       if (quick) {
         this.u.set(u0);
@@ -3681,6 +3703,69 @@ export class Solver {
     r = this._solveSteady(opts); // the full pseudo-transient ramp
     if (r.converged) this.solvedV = target;
     return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
+  }
+
+  // A cold steady solve with a terminal driven by a current, which can fail where the same state
+  // is easy warm (a solar cell's open circuit, from cold on a fine grid): the terminal held at a
+  // voltage instead, whose steady solves have their own continuation, the voltage marched from
+  // the start's until the current crosses its target, the crossing narrowed by bisection, and
+  // the terminal floated again from beside it.
+  _floatingContinuation(opts, r) {
+    const k = this.floating.find((j) => this.terms[j].drive.kind === 'I');
+    const drive = this.terms[k].drive, target = sourceAt(drive.src, this.time);
+    let steps = r.steps ?? 0, iterations = r.iterations ?? 0;
+    const history = (r.history ?? []).slice();
+    const hold = (V) => {
+      this.terms[k].drive = { kind: 'V', src: { value: V }, R: 0 };
+      this.redrive();
+      const q = this._steadyFromHere(opts);
+      steps += q.steps ?? 0;
+      iterations += q.iterations ?? 0;
+      history.push({ held: V, converged: q.converged });
+      return q.converged ? this.termI[k] - target : NaN;
+    };
+    const fail = () => ({ converged: false, steps, iterations, history });
+    try {
+      let Va = this.termV[k], fa = hold(Va);
+      if (!Number.isFinite(fa)) {
+        Va = 0;
+        fa = hold(Va);
+      }
+      if (!Number.isFinite(fa)) return fail();
+      // March, the step growing: up where the current is below its target, since raising a
+      // terminal's voltage raises the current into a passive device (the other way, from the
+      // start again, if 20 V brings no crossing).
+      const start = Va, f0 = fa;
+      let Vb = Va, fb = fa;
+      for (const dir of [fa < 0 ? 1 : -1, fa < 0 ? -1 : 1]) {
+        [Va, fa] = [start, f0];
+        if (dir !== (f0 < 0 ? 1 : -1)) hold(start); // (back to the start, for a warm march)
+        let dV = 0.02;
+        Vb = Va + dir * dV;
+        fb = hold(Vb);
+        while (Number.isFinite(fb) && Math.sign(fb) === Math.sign(fa) && fa !== 0 && Math.abs(Vb - start) < 20) {
+          [Va, fa] = [Vb, fb];
+          dV *= 1.5;
+          Vb = Va + dir * dV;
+          fb = hold(Vb);
+        }
+        if (Number.isFinite(fb) && (Math.sign(fb) !== Math.sign(fa) || fa === 0)) break;
+      }
+      if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) return fail();
+      // Bisect (each held solve warm from the last) to a tenth of a millivolt.
+      for (let it = 0; it < 40 && Math.abs(Vb - Va) > 1e-4; it++) {
+        const Vm = (Va + Vb) / 2, fm = hold(Vm);
+        if (!Number.isFinite(fm)) return fail();
+        if (Math.sign(fm) === Math.sign(fa)) [Va, fa] = [Vm, fm];
+        else [Vb, fb] = [Vm, fm];
+      }
+      hold(Math.abs(fa) < Math.abs(fb) ? Va : Vb);
+    } finally {
+      this.terms[k].drive = drive;
+      this.redrive();
+    }
+    const q = this._solveSteady(opts);
+    return { ...q, steps: steps + (q.steps ?? 0), iterations: iterations + (q.iterations ?? 0), history: [...history, ...(q.history ?? [])] };
   }
 
   // Steady solves with the generation reactions' rates scaled from 1e-12 up to 1, ×100 a step
@@ -3730,6 +3815,8 @@ export class Solver {
       let q;
       if (!warm) {
         q = this._solveSteady(opts);
+        // (lit, the level start may need the light ramped up too)
+        if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
         steps += q.steps;
         iterations += q.iterations;
         if (!q.converged) return { ...r, steps, iterations };

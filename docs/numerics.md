@@ -582,6 +582,16 @@ take about twice as long as before.
   electrons reach the back contact only through a bulk with ~1e3 of them per cm³, and found that
   way, the solve converged at some gate voltages and grids and not others. (Not through flow or
   mixing, nor a concentrated material's cross-diffusion, where zero flux isn't a flat level.)
+  At a face inside such a stretch whose link holds the level continuous, the face's flux of the
+  species, which only the replaced edge balances set, is pinned to zero too.
+- **Continuation for a terminal driven by a current.** A cold steady solve at open circuit can
+  fail where the same state is easy warm (a solar cell in dim light on a fine grid). The
+  terminal is held at a voltage instead, its steady solves having their own continuation, and
+  the voltage marched from the start's, the step growing, until the current crosses its target:
+  up where the current is below it, since raising a terminal's voltage raises the current into
+  a passive device (the other way if 20 V brings no crossing). Bisection narrows the crossing
+  to 0.1 mV, and the terminal is floated from beside it. The voltage continuation's own start,
+  with the terminals level, ramps the light up when there is some.
 - **Spectators** (a species blocked all round, mobile throughout its stretch) are solved
   directly too. In steady state the sum of a spectator's balance rows over its stretch is zero
   identically, so one of them (the first node's) is redundant, and it's replaced by the
