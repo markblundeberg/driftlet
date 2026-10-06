@@ -291,7 +291,7 @@ test('MOS without a port: the impedance gives the high-frequency C–V at 1 Hz, 
   // The inversion layer's electrons can only come by minority diffusion from the back contact,
   // through a bulk with ~1e3 cm⁻³ of them: minutes. The assembled Jacobian alone (two huge entries
   // per inversion-layer flux, nearly cancelling) gave the layer an exchange path that followed
-  // the gate at 1 Hz; the impedance now takes J·v from the residual, by GMRES.
+  // the gate at 1 Hz; the impedance's GMRES now takes J·v with each flux on its η difference.
   const Lsi = units.um(0.5), tox = units.nm(5), Cox = (3.9 * EPS0) / tox;
   const def = build({
     T: 300,

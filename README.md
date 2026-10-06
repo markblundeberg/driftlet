@@ -296,10 +296,10 @@ checked in CI; times are from a desktop Ryzen 7600X in Node 22:
 | pn diode: I–V sweep 0 → 0.6 V, 31 points | 29 ms | 137 |
 | pn diode: warm jump from +0.4 V to −1 V | 8 ms | 51 |
 | pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 165 ms | 926 |
-| pn diode: impedance at 20 frequencies | 22 ms | 21 |
+| pn diode: impedance at 20 frequencies | 14 ms | 21 |
 | MOS with a metal gate: C–V sweep, 26 points | 9 ms | 126 |
 | n-Si \| KCl (4 species, 3 unknowns per node): Mott–Schottky sweep, 31 points | 36 ms | 156 |
-| n-Si \| KCl: impedance at 20 frequencies | 28 ms | 21 |
+| n-Si \| KCl: impedance at 20 frequencies | 16 ms | 21 |
 | Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 12 ms | 81 |
 | Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 24 ms | 186 |
 | Silver electrodes with a bipolar plate: sweep 0 → 1 V, 11 points | 25 ms | 54 |

@@ -218,6 +218,7 @@ import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js
 import { bernoulli, bernoulliDerivative } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { nextBreakpoint, sourceAt } from './device.js';
+import { DifferenceTerms } from './difference.js';
 import { DeviceError } from './errors.js';
 import { powi, powr } from './pow.js';
 
@@ -414,6 +415,7 @@ export class Solver {
     this.time = 0;
     this.lastDt = Infinity;
     this.atSteady = false; // whether the state is a converged steady solve
+    this.lin = null; // (set while assembling for DifferenceTerms)
     // Contact bookkeeping, filled by assemble(): particle flux toward +x through each contact,
     // and the displacement there (the metal's surface charge for a neutral link).
     this.contactFlux = { left: new Float64Array(n), right: new Float64Array(n) };
@@ -1473,6 +1475,7 @@ export class Solver {
     const { grid, materials, regions } = model;
     sys.clear();
     res.fill(0);
+    if (this.lin) this.lin.reset(1 / dt);
     this.computeConcentrations();
 
     // Regions, each assembled by the kernel for its kind: a conductor (its carrier only), a
@@ -1527,7 +1530,7 @@ export class Solver {
   // charge in the Gauss row, written straight into the diagonal blocks by local index. A
   // dielectric is the case with no species.
   _nodesDilute(g0, g1, dt) {
-    const { n, M, res, c, cOld, z, sys, loc, present, rhoFixed, blockOfNode } = this, R = this.rix, F = FARADAY;
+    const { n, M, res, c, cOld, z, sys, loc, present, rhoFixed, blockOfNode, lin } = this, R = this.rix, F = FARADAY;
     const JB = sys.B, sizes = sys.sizes, offB = sys.offB, vol = this.model.grid.vol;
     for (let g = g0; g <= g1; g++) {
       const b = blockOfNode[g], v = vol[g];
@@ -1542,19 +1545,23 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
-        const ck = c[k], l = loc[lb + 1 + i];
-        if (!(late && z[i] !== 0)) {
-          res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+        const ck = c[k], l = loc[lb + 1 + i], stores = !(late && z[i] !== 0);
+        if (stores) res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+        q += F * z[i] * ck;
+        dq += F * z[i] * z[i] * ck;
+        if (lin) {
+          lin.node(R[lb + 1 + i], R[lb], z[i], stores ? v * ck : 0, -v * F * z[i] * ck);
+          continue;
+        }
+        if (stores) {
           JB[oB + l * m + l] += (v * ck) / dt;
           if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
         }
-        q += F * z[i] * ck;
-        dq += F * z[i] * z[i] * ck;
         if (p >= 0 && z[i] !== 0) JB[oB + p * m + l] += -v * F * z[i] * ck;
       }
       if (p >= 0) {
         res[R[lb]] -= v * q;
-        JB[oB + p * m + p] += v * dq;
+        if (!lin) JB[oB + p * m + p] += v * dq;
       }
     }
   }
@@ -1641,6 +1648,7 @@ export class Solver {
         for (let q = 0, o = offC[b] + lk * mn, s = offC[b] + li * mn; q < mn; q++) C[o + q] += w * C[s + q];
         res[rk] += w * res[ri];
         for (let t = 0; t < termB.length; t++) termB[t][rk] += w * termB[t][ri];
+        if (this.lin) this.lin.combine(rk, ri, w);
       }
       // Columns: φ̂' = φ̂ with η fixed becomes φ̂ with η_i shifted by z_i, wherever node g's
       // unknowns appear (its own rows, its neighbours', a terminal's current).
@@ -1767,6 +1775,7 @@ export class Solver {
     const mL = sys.sizes[bL], mR = sys.sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
     res[R[bL * M]] += D;
     res[R[bR * M]] -= D;
+    if (this.lin) return this.lin.displacement(R[bL * M], R[bR * M], k);
     sys.B[sys.offB[bL] + pL * mL + pL] += k;
     sys.C[sys.offC[bL] + pL * mR + pR] -= k;
     sys.A[sys.offA[bR] + pR * mL + pL] -= k;
@@ -1780,7 +1789,7 @@ export class Solver {
   // fluxes (e.g. majority carriers carrying a small current) don't vanish in the cancellation of
   // two huge drift and diffusion terms.
   _segmentsDilute(g0, g1, region, mat, vel) {
-    const { n, M, u, uLo, res, c, z, sys, loc } = this, R = this.rix, F = FARADAY;
+    const { n, M, u, uLo, res, c, z, sys, loc, lin } = this, R = this.rix;
     const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys;
     const { segLength, segArea } = this.model.grid;
     for (let s = g0; s < g1; s++) {
@@ -1805,6 +1814,10 @@ export class Solver {
         const dNdPhiR = zi * dNdd;
         res[R[bL * M + r]] += N;
         res[R[bR * M + r]] -= N;
+        if (lin) {
+          lin.segment(R[bL * M + r], R[bR * M + r], R[bL * M], R[bR * M], zi, -gBc * E, dNdEtaR, zi * dNdd);
+          continue;
+        }
         // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
         const lL = loc[bL * M + r], lR = loc[bR * M + r];
         const oBL = offB[bL] + lL * mL, oCL = offC[bL] + lL * mR, oAR = offA[bR] + lR * mL, oBR = offB[bR] + lR * mR;
@@ -2237,6 +2250,7 @@ export class Solver {
   _captureRow(b, s, w, into) {
     const l = this.loc[b * this.M + s];
     if (l < 0 || w === 0) return;
+    if (this.lin) this.lin.capture(this.rix[b * this.M + s], w, this.lin.rate, into);
     const { sys, nB } = this, { sizes, offA, offB, offC, offX } = sys, m = sizes[b];
     for (const [X, nb, off] of [['A', b - 1, offA], ['B', b, offB], ['C', b + 1, offC]]) {
       if (nb < 0 || nb >= nB) continue;
@@ -2586,6 +2600,7 @@ export class Solver {
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
     if (l < 0) return;
+    if (this.lin) this.lin.kill(this.rix[b * this.M + rs]);
     const { sys, nB } = this, sz = sys.sizes, m = sz[b];
     sys.B.fill(0, sys.offB[b] + l * m, sys.offB[b] + (l + 1) * m);
     if (b > 0) sys.A.fill(0, sys.offA[b] + l * sz[b - 1], sys.offA[b] + (l + 1) * sz[b - 1]);
@@ -2619,20 +2634,36 @@ export class Solver {
     }
   }
 
+  // The Jacobian at dt with the dilute kernels' terms kept aside in difference form (see
+  // DifferenceTerms), the rest assembled into a matrix of its own. The residual and terminal terms
+  // come out as from assemble(dt); the Newton matrix is left as it was.
+  _assembleDifference(dt) {
+    const keep = this.sys;
+    const rest = this.sysRest ?? (this.sysRest = new BlockTridiagonal(keep.n, keep.sizes));
+    const lin = this.diffTerms ?? (this.diffTerms = new DifferenceTerms(keep.size, this.nNodes * this.n, this.nNodes * this.n));
+    this.sys = rest;
+    this.lin = lin;
+    try {
+      this.assemble(dt);
+    } finally {
+      this.sys = keep;
+      this.lin = null;
+    }
+    return { rest, lin };
+  }
+
   // A Newton solve refined by GMRES: the factorised Jacobian as the preconditioner, and J·x
-  // taken from the residual itself, by a central difference (η moved in the state's low word),
-  // as the impedance does. The assembled J holds a flux's dependence on η at its two ends as two
+  // exact, with the dilute kernels' terms in difference form (see DifferenceTerms), as the
+  // impedance does. The assembled J holds a flux's dependence on η at its two ends as two
   // entries; where they're huge (an inversion layer's 0.1 nm cells, a conductance ~1e11 against
   // the layer's own storage and the trickle from the bulk), eliminating them loses the layer's
-  // overall level to round-off, and Newton rattles there. The residual takes η differences
-  // first, in double-double, so it keeps that level. delta and deltaV come in as the plain
+  // overall level to round-off, and Newton rattles there. delta and deltaV come in as the plain
   // solve's and leave refined (in the transformed unknowns, as _solveBordered gives them); false
   // if refining didn't help, leaving them as they came.
   _refine(dt, delta, deltaV) {
     const { res, termRes, termB, termC, termDI, rowScale, floating: fl } = this;
     const N = this.sys.size, K = fl.length;
     const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), transformed: this.transformed };
-    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), V0 = Float64Array.from(this.termV);
     const restoreArrays = () => {
       res.set(save.res);
       termRes.set(save.termRes);
@@ -2641,34 +2672,32 @@ export class Solver {
       termDI.set(save.termDI);
       this.transformed = save.transformed;
     };
-    const restoreState = () => {
-      this.u.set(u0);
-      this.uLo.set(u0Lo);
-      this.termV.set(V0);
-    };
-    const fd = this.sysFD ?? (this.sysFD = new BlockTridiagonal(this.sys.n, this.sys.sizes));
-    const at = (x, sgn, hh, out) => {
-      restoreState();
-      const v = this.dWork2 ?? (this.dWork2 = new Float64Array(N + 1));
+    // The same system, its terms kept apart: the rest, and each floating terminal's (unscaled).
+    const { rest, lin } = this._assembleDifference(dt);
+    const Bk = fl.map((k) => Float64Array.from(termB[k])), Ck = fl.map((k) => Float64Array.from(termC[k])), Dk = fl.map((k) => termDI[k]);
+    restoreArrays();
+    const v = new Float64Array(N + 1), jv = new Float64Array(N);
+    const op = (x) => {
       for (let j = 0; j < N; j++) v[j] = x[j];
       v[N] = 0;
-      if (save.transformed) this._untransform(v);
-      this._addToState(v, sgn * hh);
-      fl.forEach((k, a) => (this.termV[k] += sgn * hh * x[N + a]));
-      const keep = this.sys;
-      this.sys = fd;
-      try {
-        this.assemble(dt);
-      } finally {
-        this.sys = keep;
+      rest.multiply(v, jv);
+      if (save.transformed) this._untransform(v); // (the dilute terms in the plain unknowns)
+      lin.apply(v, jv, 1, 1 / dt);
+      const out = new Float64Array(N + K);
+      for (let j = 0; j < N; j++) {
+        let t = jv[j];
+        for (let a = 0; a < K; a++) t += Bk[a][j] * x[N + a];
+        out[j] = t * rowScale[j];
       }
-      for (let j = 0; j < N; j++) out[j] = res[j] * rowScale[j];
-      fl.forEach((k, a) => (out[N + a] = termRes[k]));
+      for (let a = 0; a < K; a++) {
+        let t = Dk[a] * x[N + a];
+        for (let j = 0; j < N; j++) t += Ck[a][j] * x[j];
+        out[N + a] = t;
+      }
+      return precondition(out);
     };
-    const plus = new Float64Array(N + K), minus = new Float64Array(N + K);
     const rhs = new Float64Array(N + 1), out = new Float64Array(N + 1), outV = new Float64Array(K);
     const precondition = (r) => {
-      restoreArrays();
       for (let j = 0; j < N; j++) rhs[j] = r[j];
       fl.forEach((k, a) => (termRes[k] = r[N + a]));
       this._solveBordered(rhs, out, outV, []);
@@ -2677,45 +2706,24 @@ export class Solver {
       for (let a = 0; a < K; a++) z[N + a] = outV[a];
       return z;
     };
-    const op = (x) => {
-      let mx = 0;
-      for (let j = 0; j < N + K; j++) mx = Math.max(mx, Math.abs(x[j]));
-      if (mx === 0) return new Float64Array(N + K);
-      const hh = 1e-6 / mx;
-      at(x, 1, hh, plus);
-      at(x, -1, hh, minus);
-      const jx = new Float64Array(N + K);
-      for (let j = 0; j < N + K; j++) jx[j] = (plus[j] - minus[j]) / (2 * hh);
-      return precondition(jx);
-    };
     try {
       const b = new Float64Array(N + K);
       for (let j = 0; j < N; j++) b[j] = save.res[j];
       fl.forEach((k, a) => (b[N + a] = save.termRes[k]));
       const pb = precondition(b), x = Float64Array.from(pb);
-      // A lost mode or two, GMRES finds in a couple of iterations. The refined update is kept if
-      // its correction dwarfs the plain update (which, along a lost mode, comes out as noise)
-      // and is under a thermal unit. A correction no bigger than the plain update means the
-      // system is near-singular more broadly (a slow ion over a long step), its residual there
-      // round-off: solving it exactly would only chase that, so newton() stops refining.
+      // A lost mode or two, GMRES finds in a couple of iterations. The refined update is kept
+      // where GMRES converged and its correction is under a thermal unit; otherwise newton()
+      // stops refining.
       const x0 = Float64Array.from(x);
       const ok = gmresReal(op, pb, x, { m: 8, restarts: 1, tol: 1e-8 });
-      let c = 0, size = 0;
-      for (let j = 0; j < N + K; j++) {
-        c = Math.max(c, Math.abs(x[j] - x0[j]));
-        size = Math.max(size, Math.abs(x0[j]));
-      }
-      if (!ok || !(c > 10 * size) || !(c < 1)) {
-        x.set(x0);
-        return false;
-      }
+      let c = 0;
+      for (let j = 0; j < N + K; j++) c = Math.max(c, Math.abs(x[j] - x0[j]));
+      if (!ok || !(c < 1)) return false;
       for (let j = 0; j < N; j++) delta[j] = x[j];
       for (let a = 0; a < K; a++) deltaV[a] = x[N + a];
       return true;
     } finally {
-      restoreState();
       restoreArrays();
-      this.computeConcentrations();
     }
   }
 
@@ -2773,7 +2781,7 @@ export class Solver {
         deltaV.fill(0);
         this._solveBordered(res, delta, deltaV, pins);
         if (refine && pins.length === 0 && !this._refine(dt, delta, deltaV)) {
-          refine = false; // (nothing lost: the plain solves are as good as any here)
+          refine = false; // (GMRES didn't converge, or strayed: the plain solves it is)
           noRefine = true;
         }
         if (this.transformed) this._untransform(delta);
@@ -3324,52 +3332,16 @@ export class Solver {
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
     const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
     const cuts = this._currentCuts();
-    // J·v + (∂res/∂V_k)σ from the residual itself, by a central difference: the assembled J holds
-    // a flux's dependence on η_L and η_R as two entries, and where both are huge (an inversion
-    // layer) and v nearly uniform, J·v loses the flux to round-off; the residual takes the η
-    // difference first, in double-double. So η moves in the low word, φ̂ and the flux unknowns
-    // in the high one (φ̂ only scales expm1(Δη), near zero there).
-    const u0 = Float64Array.from(this.u), uLo0 = Float64Array.from(this.uLo), V0 = Float64Array.from(this.termV);
-    // The unknowns perturbed in the low word: a node's η (not φ̂, a metal's segment flux, or a
-    // face's unknowns, which are read from the high word).
-    const low = new Uint8Array(this.fullOf.length);
-    const nodeBlock = new Uint8Array(nB);
-    for (let g = 0; g < this.nNodes; g++) if (this.nodeConductor[g] < 0) nodeBlock[this.blockOfNode[g]] = 1;
-    for (let j = 0; j < low.length; j++) {
-      const full = this.fullOf[j];
-      low[j] = nodeBlock[Math.floor(full / M)] && full % M !== 0 ? 1 : 0;
-    }
-    const resP = new Float64Array(this.res.length), resM = new Float64Array(this.res.length);
-    const derivative = (v, k, sigma, out) => {
-      let mx = Math.abs(sigma);
-      for (let j = 0; j < v.length; j++) mx = Math.max(mx, Math.abs(v[j]));
-      const h = 1e-4 / (mx || 1);
-      for (const [sgn, into] of [[1, resP], [-1, resM]]) {
-        this.u.set(u0);
-        this.uLo.set(uLo0);
-        this.termV.set(V0);
-        for (let j = 0; j < v.length; j++) {
-          const full = this.fullOf[j];
-          if (low[j]) this.uLo[full] += sgn * h * v[j];
-          else this.u[full] += sgn * h * v[j];
-        }
-        // A held terminal's voltage comes from its source at each assembly; a floating one's is
-        // an unknown.
-        if (k >= 0 && fl.includes(k)) this.termV[k] += sgn * h * sigma;
-        else if (k >= 0) this.sourceOverride.set(k, V0[k] + sgn * h * sigma);
-        this.assemble(Infinity);
-        if (k >= 0) this.sourceOverride.delete(k);
-        into.set(this.res);
-      }
-      for (let j = 0; j < out.length; j++) out[j] = (resP[j] - resM[j]) / (2 * h);
-    };
-    const restore = () => {
-      this.u.set(u0);
-      this.uLo.set(uLo0);
-      this.termV.set(V0);
-      this._refreshSources();
-      this.computeConcentrations();
-    };
+    // J·v for GMRES, exact: the assembled J holds a flux's dependence on η_L and η_R as two
+    // entries, and where both are huge (an inversion layer) and v nearly uniform, J·v loses the
+    // flux to round-off. So the dilute kernels' terms are kept in difference form (see
+    // DifferenceTerms), with the rest from a matrix of their own, steady (Jr) and storage (Sr).
+    this._assembleDifference(Infinity);
+    const Jr = { A: this.sysRest.A.slice(), B: this.sysRest.B.slice(), C: this.sysRest.C.slice() };
+    const { lin } = this._assembleDifference(dts);
+    const Sr = {};
+    for (const X of ['A', 'B', 'C']) Sr[X] = this.sysRest[X].map((v, k) => (v - Jr[X][k]) * dts);
+    this.assemble(Infinity);
 
     const { sizes, offA, offB, offC, offX } = sys;
     const csys = new ComplexBlockTridiagonal(nB, sizes);
@@ -3415,9 +3387,6 @@ export class Solver {
         }
       }
       csys.factor();
-      // Each solve uses that residual-based J·v (S·v is safe from the matrix): in an inversion
-      // layer fed by minority carriers that number ~1e3 cm⁻³ in the bulk, the assembled J alone
-      // gives the layer an exchange path many orders too fast.
       const sx = (X, vr, out) => {
         for (let blk = 0; blk < nB; blk++) {
           const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
@@ -3443,37 +3412,34 @@ export class Solver {
         csys.solve(rRes, iRes, outR, outI);
         return [outR, outI];
       };
-      const op = ([vr, vi]) => {
-        derivative(vr, -1, 0, jr);
-        derivative(vi, -1, 0, ji);
-        sx(S, vi, si);
-        sx(S, vr, sr);
-        const ar = new Float64Array(Nc), ai = new Float64Array(Nc);
+      // (J + iωS)·v, exactly (see DifferenceTerms), into (ar, ai).
+      const jv = (vr, vi, ar, ai) => {
+        sx(Jr, vr, jr);
+        sx(Jr, vi, ji);
+        sx(Sr, vi, si);
+        sx(Sr, vr, sr);
         for (let j = 0; j < Nc; j++) {
           ar[j] = jr[j] - w * si[j];
           ai[j] = ji[j] + w * sr[j];
         }
+        lin.apply(vr, ar, 1, 0);
+        lin.apply(vi, ar, 0, -w);
+        lin.apply(vi, ai, 1, 0);
+        lin.apply(vr, ai, 0, w);
+      };
+      const op = ([vr, vi]) => {
+        const ar = new Float64Array(Nc), ai = new Float64Array(Nc);
+        jv(vr, vi, ar, ai);
         return precondition(ar, ai);
       };
       const solve = (br, bi, outr, outi, k, sigma) => {
         const rhs = k >= 0 ? precondition(Bt[k].map((v) => -sigma * v), zero) : [new Float64Array(Nc), new Float64Array(Nc)];
         outr.set(rhs[0]);
         outi.set(rhs[1]);
-        // GMRES, kept where it converged or at least cut the residual 1000-fold: where it can't, the
-        // op's own round-off is what it's chasing (a strictly neutral electrolyte far above its
-        // corner frequency, where δc/c is ωτ smaller than each term of the neutrality rows), and
-        // the factorised solve is the better answer.
-        const { initial, residual } = gmres(op, rhs, [outr, outi]);
-        const kept = !(residual > 1e-8 && residual > 1e-1 * initial);
-        if (!kept) {
-          outr.set(rhs[0]);
-          outi.set(rhs[1]);
-        }
-        accuracy = Math.max(accuracy, kept ? residual : initial);
-        if (!kept) noisy = true;
-        restore();
+        // (GMRES keeps its best iterate, which is never worse than the factorised solve.)
+        const { residual } = gmres(op, rhs, [outr, outi]);
+        accuracy = Math.max(accuracy, residual);
       };
-      let noisy = false; // (a solve whose GMRES chased its op's round-off: kept factorised)
       let accuracy = 1e-14; // (relative, of the solves: the readouts' error is weighed with it)
       // y: the response with the floating terminals held; X_k: to a unit δV_k.
       const heldT = dT.kind === 'V';
@@ -3571,30 +3537,23 @@ export class Solver {
         // …and where the solves leave that unresolved (the estimate past 1% of the current), the
         // response is split: a uniform shift of each region (z_i s on every η_i, s on φ̂), which
         // changes no flux and no concentration, so that J·e vanishes inside each region and is
-        // taken from the assembled matrices at its edges; and what's left, small, solved for to
-        // GMRES's floor, its error now relative to itself. An electrolyte at its open circuit
-        // needs it: the response to its terminal is nearly such a shift, and its current the
-        // slope of levels uniform to 1e-14, more than a double can hold. (Not where GMRES chases
-        // its op's round-off, nor with ports, whose exchange sees the shift.)
-        if (K === 0 && cuts && !noisy && err > 1e-2 * Math.hypot(Ir, Ii)) {
+        // taken at its edges; and what's left, small, solved for to GMRES's floor, its error now
+        // relative to itself. An electrolyte at its open circuit needs it: the response to its
+        // terminal is nearly such a shift, and its current the slope of levels uniform to 1e-14,
+        // more than a double can hold. (Not with ports, whose exchange sees the shift.)
+        if (K === 0 && cuts && err > 1e-2 * Math.hypot(Ir, Ii)) {
           const [er, ei] = this._regionShift(yr, yi);
-          const t1 = new Float64Array(Nc), t2 = new Float64Array(Nc), t3 = new Float64Array(Nc), t4 = new Float64Array(Nc);
-          sx(J, er, t1);
-          sx(S, ei, t2);
-          sx(J, ei, t3);
-          sx(S, er, t4);
+          const tr = new Float64Array(Nc), ti = new Float64Array(Nc);
+          jv(er, ei, tr, ti);
           const edge = this._regionEdgeRows();
           const ar = new Float64Array(Nc), ai = new Float64Array(Nc);
           for (let j = 0; j < Nc; j++) {
-            if (!edge[j]) continue;
-            ar[j] = -Bt[kT][j] - (t1[j] - w * t2[j]);
-            ai[j] = -(t3[j] + w * t4[j]);
+            ar[j] = -Bt[kT][j] - (edge[j] ? tr[j] : 0);
+            ai[j] = edge[j] ? -ti[j] : 0;
           }
-          for (let j = 0; j < Nc; j++) if (!edge[j]) ar[j] = -Bt[kT][j];
           const rhs = precondition(ar, ai);
           const dr = yr.map((v, j) => v - er[j]), di = yi.map((v, j) => v - ei[j]);
           const { residual } = gmres(op, rhs, [dr, di], { tol: 1e-11 });
-          restore();
           const [efr, efi] = full(er, ei), [dfr, dfi] = full(dr, di);
           const r2 = read([
             { r: er, i: ei, fr: efr, fi: efi, floor: 0 },

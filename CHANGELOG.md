@@ -2,6 +2,18 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- J·v is exact where a solve needs it (the impedance's GMRES and Newton's refined solves): the
+  dilute kernels' terms are kept in difference form, each flux on its η difference, instead of a
+  central difference of the residual, whose truncation swamped a nearly uniform response. The
+  impedance is 15–40% faster, and keeps GMRES's answer always (its fallback to the factorised
+  solve, for the old operator's noise, is gone). Newton keeps every converged refinement: a GaAs
+  junction without recombination, its ~1.5e-7 A/m² carried by minority carriers from the
+  contacts, had cold and warm solves 1e-3 apart, now 1e-14; a MOS gate step takes 244
+  factorisations (408), a dim solar cell's open circuit on a 0.25 nm grid 258 (790). Stress:
+  11,376 of 11,381.
+
 ## 0.11.1 (2026-10-05)
 
 - The impedance splits its response into a uniform shift of each region and the rest, where a

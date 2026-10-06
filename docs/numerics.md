@@ -420,6 +420,29 @@ instead of $`n \cdot M^3`$, which pays wherever species are confined to some reg
 against KCl, three unknowns of five at every node, it's a fifth of the work. A finite-difference
 test checks the compact Jacobian column by column on devices that cover every assembly path.
 
+### Exact J·v
+
+The assembled matrix loses what a flux's two entries share. A Scharfetter–Gummel flux depends on
+$`\eta`$ at its two ends through $`G`$ and $`-G(1 + E)`$, with $`E = \operatorname{expm1}(\Delta\eta)`$;
+for a nearly uniform $`v`$ they cancel, and $`J \cdot v`$ keeps only round-off of $`G|v|`$, which in
+an inversion layer's 0.1 nm cells ($`G`$ ~ 1e11) dwarfs the flux. Where a solve needs
+$`J \cdot v`$ itself (GMRES, in the impedance and in Newton's refined solves), the dilute kernels'
+terms are kept aside instead, each evaluated on differences first:
+
+```math
+\delta N = a\,(\delta\eta_L - z\,\delta\hat\phi_L) + b\,(\delta\eta_R - \delta\eta_L) + d\,(\delta\hat\phi_R - \delta\hat\phi_L),
+```
+
+with $`a = -GE`$ (through $`c_L`$), $`b = -G(1 + E)`$ and $`d`$ the drift's. A node's storage and space
+charge depend on $`\delta\eta_i - z_i\,\delta\hat\phi`$ alone, the displacement on
+$`\delta\hat\phi_R - \delta\hat\phi_L`$. Everything else (faces, contacts, ports, reactions,
+concentrated and metal regions) is assembled into a matrix of its own. Rows that a contact or a
+steady solve replaces drop the kept terms; the transformed rows of strictly neutral nodes combine
+them as they combine the matrix's. A region's uniform shift ($`z_i s`$ on each $`\eta_i`$, $`s`$ on
+$`\hat\phi`$) then gives exactly zero inside it, as it must. It replaced a central difference of
+the residual, whose truncation (~1e-9 of $`|J||v|`$) swamped the answer for such a shift, and
+which cost four assemblies per product.
+
 ## Newton
 
 - The update of the device's potentials ($`\hat\phi`$, $`\eta`$) is limited to 10 thermal units per
@@ -446,16 +469,17 @@ test checks the compact Jacobian column by column on devices that cover every as
   second, so the layer's overall level, set by its storage and the trickle of minority electrons
   from the bulk, is lost, and Newton's update there is noise. When Newton stalls short of
   convergence (updates below 1e-4 that stopped shrinking quadratically), the solve is refined:
-  GMRES on $`J\delta = r`$, the factorised system as the preconditioner and $`J \cdot v`$ taken from
-  the residual by a central difference ($`\eta`$ moved in the state's low word; the residual takes
-  $`\eta`$ differences in double-double, so it keeps that level), as the impedance does. A lost mode
-  takes GMRES a couple of iterations, and its correction dwarfs the plain update, which along it
-  came out as noise. The refined update is kept only then (and under a thermal unit). A
-  correction no bigger than the plain update means the system is near-singular more broadly (a
-  slow ion over a long step), with round-off for a residual along it; solving that exactly
-  only chases the round-off, so refining stops for the rest of the solve. A MOS capacitor's
-  gate step now reaches the low-frequency charge in ~70 steps (it took 80,000, and ended 1.5%
-  off), for about 8% more time on the Haynes–Shockley benchmarks.
+  GMRES on $`J\delta = r`$, the factorised system as the preconditioner and $`J \cdot v`$ exact, each
+  flux on its $`\eta`$ difference (see [exact J·v](#exact-jv)), as the impedance does. A lost mode
+  takes GMRES a couple of iterations. The refined update is kept where GMRES converged and it
+  moves no level by a thermal unit or more; otherwise refining stops for the rest of the solve.
+  A MOS capacitor's gate step now reaches the low-frequency charge in ~70 steps (it took 80,000,
+  and ended 1.5% off). Once refined, a solve stays refined: a GaAs junction without
+  recombination, whose minority carriers reach it only from the contacts, passes ~1.5e-7 A/m²,
+  which plain solves past the first refinement left to round-off (cold and warm solves 1e-3
+  apart), and refined ones give to 1e-14. (When $`J \cdot v`$ was a central difference of the
+  residual, its noise made refining past the first lost mode chase round-off, so it was kept
+  only where its correction dwarfed the plain update.)
 - Clear divergence (device updates beyond 1e4 after the first iteration, or ten times the
   first after six) bails out early, so the caller can take a smaller step. The first update is
   exempt: light flooding a population that starts at ~1e3 per m³ predicts, linearised in
@@ -566,23 +590,16 @@ species make $`J`$ singular, but $`J + i\omega M`$ isn't for $`\omega > 0`$: at 
 device looks like a capacitor, as it should.
 
 The factorised system is used as a preconditioner, not trusted alone: each solve runs GMRES with
-$`J \cdot v`$ taken from the residual itself, by a central difference ($`\eta`$ perturbed in the
-state's low word, $`\hat\phi`$ and the face unknowns in the high one). The assembled $`J`$ holds a
-flux's dependence on $`\eta_L`$ and $`\eta_R`$ as two entries; in an inversion layer both are huge
-(~1e11), and for a nearly uniform $`\delta\eta`$ they cancel to round-off of order 1e-5, while the
-residual takes the $`\eta`$ difference first, in double-double. That round-off had given a MOS
-capacitor's inversion layer, fed by minority diffusion from a bulk with ~1e3 electrons per cm³ (a
-time constant of minutes), an exchange path that followed the gate at 1 Hz. Where the plain solve
-is already accurate, one application of the operator confirms it; the bench's impedance cases
-take about twice as long as before. GMRES judges convergence only by the true residual,
+an exact $`J \cdot v`$ (see [exact J·v](#exact-jv)). The assembled $`J`$ holds a flux's dependence
+on $`\eta_L`$ and $`\eta_R`$ as two entries; in an inversion layer both are huge (~1e11), and for a
+nearly uniform $`\delta\eta`$ they cancel to round-off of order 1e-5. That round-off had given a
+MOS capacitor's inversion layer, fed by minority diffusion from a bulk with ~1e3 electrons per cm³
+(a time constant of minutes), an exchange path that followed the gate at 1 Hz. Where the plain
+solve is already accurate, one application of the operator confirms it. GMRES judges convergence only by the true residual,
 recomputed at each restart: its own running estimate can drift far from it where the
 preconditioner is nearly singular (an inversion layer's exchange, lost in the assembled
-$`J`$, at a frequency of µHz), and had declared solves converged that weren't. Its answer is
-kept where it converged, or cut the residual tenfold; otherwise the factorised solve is.
-That happens when the residual's own round-off is what GMRES chases: in a strictly neutral
-electrolyte far above its corner frequency, $`\delta c/c`$ is $`\omega\tau`$ smaller than each term
-of a neutrality row, so the central difference's ~1e-10 noise there is amplified a millionfold,
-while the assembled $`J`$, exact for an electrolyte, gives the factorised solve to 1e-9.
+$`J`$, at a frequency of µHz), and had declared solves converged that weren't. It keeps its
+best iterate, never worse than the factorised solve.
 
 The current is read where its error is smallest. At a contact it is a sum of terms that can
 be far larger than itself: across a junction without recombination, between heavily doped
@@ -602,13 +619,12 @@ on a tiny gradient.
 Where even the best reading's estimated error exceeds 1% of the current, the response is split
 in two: a uniform shift of each region (every $`\eta_i`$ by $`z_i s_r`$ and $`\hat\phi`$ by $`s_r`$, with
 $`s_r`$ fitted to the solve so far), which changes no flux and no concentration, so its $`J \cdot e`$ is
-exactly zero inside each region and is taken from the assembled matrices at the faces and ends;
+exactly zero inside each region and is taken at the faces and ends;
 and the rest, small, solved for to GMRES's floor with its error now relative to itself, and read
 separately. An electrolyte at its open circuit needs it: the response to its terminal is nearly
 such a shift, and its current is the slope of levels uniform to 1e-14 of the response, more than
 a double holds. A redox electrode's DC conductance had come out 2–40% low; now it matches the
-steady dI/dV to six digits. (Not where GMRES chases its op's round-off, nor with ports, whose
-exchange sees the shift.) The real part of a nearly ideal capacitor, 1e-7 of $`|Z|`$, is still
+steady dI/dV to six digits. (Not with ports, whose exchange sees the shift.) The real part of a nearly ideal capacitor, 1e-7 of $`|Z|`$, is still
 only resolved to ~1e-4 of $`|Z|`$.
 
 ## Steady state

@@ -242,6 +242,53 @@ for (const [name, make] of Object.entries(devices)) {
   });
 }
 
+// J·v with the dilute kernels' terms in difference form (for GMRES), the rest from a matrix of
+// its own: the same product as the assembled Jacobian's, including replaced rows, captured
+// terminal rows and the transformed charge rows of strictly neutral nodes on a step.
+test('J·v in difference form equals the assembled Jacobian, and a uniform shift gives exactly zero inside a region', () => {
+  for (const [name, make] of Object.entries(devices)) {
+    const dev = new Device(make());
+    assert.ok(dev.solve().converged);
+    const s = dev.solver, N = s.sys.size;
+    for (let k = 0; k < N; k++) s.u[s.fullOf[k]] += 0.03 * Math.sin(1 + 7 * k);
+    for (const [dt, combining] of [[Infinity, false], [1e-6, false], [1e-6, true]]) {
+      s.computeConcentrations();
+      s.cOld.set(s.c);
+      s.combining = combining;
+      s.assemble(dt);
+      const J = s.sys, C = s.termC.map((v) => v.slice(0, N)), transformed = s.transformed;
+      const v = new Float64Array(N + 1).map((_, k) => (k < N ? Math.cos(5 * k) : 0));
+      const ref = J.multiply(v);
+      const { rest, lin } = s._assembleDifference(dt);
+      const out = rest.multiply(v);
+      const w = Float64Array.from(v);
+      if (transformed) s._untransform(w);
+      lin.apply(w, out, 1, 1 / dt);
+      s.combining = false;
+      let worst = 0;
+      for (let i = 0; i < N; i++) {
+        worst = Math.max(worst, Math.abs(out[i] - ref[i]) / (Math.abs(ref[i]) + 1e-300));
+      }
+      assert.ok(worst < 1e-9, `${name}, dt=${dt}${combining ? ', charge rows' : ''}: ${worst}`);
+      s.termC.forEach((c, t) => c.slice(0, N).forEach((x, k) => assert.ok(Math.abs(x - C[t][k]) <= 1e-12 * Math.abs(C[t][k]), `${name}: terminal ${t}, column ${k}`)));
+    }
+  }
+  // A pn diode: η_e by −s, η_h by s and φ̂ by s at every node changes no flux, charge or storage.
+  const dev = new Device(devices['pn diode with recombination, and a held port']());
+  dev.solve();
+  const s = dev.solver, N = s.sys.size, M = s.M;
+  const { lin } = s._assembleDifference(1e-6);
+  const e = new Float64Array(N + 1), out = new Float64Array(N);
+  for (let k = 0; k < N; k++) {
+    const slot = s.fullOf[k] % M;
+    e[k] = slot === 0 ? 1 : slot <= s.n ? s.z[slot - 1] : 0;
+  }
+  lin.apply(e, out, 1, 1e6);
+  let inside = 0;
+  for (let k = 0; k < N; k++) if (!lin.dead[k]) inside = Math.max(inside, Math.abs(out[k]));
+  assert.equal(inside, 0);
+});
+
 // After each step, the contact and port readouts come from only the boxes they're read from.
 // They must equal a full assembly's exactly.
 test('bookkeeping readouts from the end boxes and port windows equal a full assembly, bit for bit', () => {
