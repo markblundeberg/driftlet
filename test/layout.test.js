@@ -330,12 +330,12 @@ test('a region held only weakly: solved, and where a direct solve fails, it says
         { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
       ],
       interfaces: [weak, weak],
-      contacts: { left: ohm(0), right: ohm(0.01) },
+      contacts: { left: ohm(0), right: ohm(0.3) },
     });
   // The two face conductances in series: G/2 per volt (the factorisation's cancelled pivots
   // perturbed, and refined past).
   const sol = dev().solve();
-  assert.ok(sol.converged && Math.abs(sol.current / (-0.01 * 1e-6 / 2) - 1) < 1e-9, `${sol.current}`);
+  assert.ok(sol.converged && Math.abs(sol.current / (-0.3 * 1e-6 / 2) - 1) < 1e-9, `${sol.current}`);
   // The direct solve alone fails, and the warning names the region.
   const direct = dev().solve({ continuation: false, maxSteps: 1 });
   assert.equal(direct.converged, false);

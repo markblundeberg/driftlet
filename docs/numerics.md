@@ -468,7 +468,9 @@ which cost four assemblies per product.
   wide, are coupled about $`h^2/(D\,dt)`$ ~ 1e-18 times more tightly than they store charge over a
   second, so the layer's overall level, set by its storage and the trickle of minority electrons
   from the bulk, is lost, and Newton's update there is noise. When Newton stalls short of
-  convergence (updates below 1e-4 that stopped shrinking quadratically), the solve is refined:
+  convergence (updates below 1e-4 that stopped shrinking quadratically), or its undamped updates
+  grow twice running (a bipolar stack's floating base, whose holes are held ~1e14 more weakly
+  than they move within it, kept Newton wandering a thermal unit at a time), the solve is refined:
   GMRES on $`J\delta = r`$, the factorised system as the preconditioner and $`J \cdot v`$ exact, each
   flux on its $`\eta`$ difference (see [exact J·v](#exact-jv)), as the impedance does. A lost mode
   takes GMRES a couple of iterations. The refined update is kept where GMRES converged and it

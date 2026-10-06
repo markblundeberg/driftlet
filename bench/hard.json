@@ -5,7 +5,7 @@
     "steps": 856,
     "rejected": 7,
     "factorizations": 2710,
-    "ms": 1445,
+    "ms": 1425,
     "value": {
       "Δφ (mV)": 8.773400894115893
     }
@@ -27,7 +27,7 @@
     "steps": 1009,
     "rejected": 12,
     "factorizations": 3221,
-    "ms": 1557,
+    "ms": 1543,
     "value": {
       "Δφ (mV)": 8.773400893935024
     }
@@ -38,7 +38,7 @@
     "steps": 4753,
     "rejected": 15,
     "factorizations": 9766,
-    "ms": 4756,
+    "ms": 4810,
     "value": {
       "Δφ (mV)": 8.773401102311048
     }
@@ -49,7 +49,7 @@
     "steps": 668,
     "rejected": 11,
     "factorizations": 2196,
-    "ms": 466,
+    "ms": 463,
     "value": {
       "Δφ (mV)": -6.708420470012691
     }
@@ -60,7 +60,7 @@
     "steps": 3163,
     "rejected": 11,
     "factorizations": 6536,
-    "ms": 1417,
+    "ms": 1397,
     "value": {
       "Δφ (mV)": -6.708387324174038
     }
@@ -71,7 +71,7 @@
     "steps": 836,
     "rejected": 2,
     "factorizations": 1681,
-    "ms": 88,
+    "ms": 87,
     "value": {
       "θ": 0.000944530723081529
     }
@@ -82,7 +82,7 @@
     "steps": 186,
     "rejected": 1,
     "factorizations": 381,
-    "ms": 17,
+    "ms": 16,
     "value": {
       "θ": 0.0009445307230650187
     }
@@ -115,7 +115,7 @@
     "steps": 908,
     "rejected": 4,
     "factorizations": 1899,
-    "ms": 43,
+    "ms": 41,
     "value": {
       "I (A/m²)": 4872.543562682728
     }
@@ -137,7 +137,7 @@
     "steps": 330,
     "rejected": 22,
     "factorizations": 1183,
-    "ms": 98,
+    "ms": 93,
     "value": {
       "I_Fe (A/m²)": 1.8700672376143996
     }
@@ -148,7 +148,7 @@
     "steps": 468,
     "rejected": 69,
     "factorizations": 1688,
-    "ms": 475,
+    "ms": 462,
     "value": {
       "E − φ₀ (V)": 0.2887103812413092
     }
@@ -159,7 +159,7 @@
     "steps": 394,
     "rejected": 108,
     "factorizations": 1997,
-    "ms": 533,
+    "ms": 548,
     "value": {
       "E − φ₀ (V)": 0.11529892688475822
     }
@@ -170,7 +170,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 120,
-    "ms": 28,
+    "ms": 31,
     "value": {
       "failures": 0
     }
@@ -181,7 +181,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 106,
-    "ms": 19,
+    "ms": 18,
     "value": {}
   },
   "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1 s": {
@@ -190,7 +190,7 @@
     "steps": 14,
     "rejected": 0,
     "factorizations": 52,
-    "ms": 11,
+    "ms": 10,
     "value": {
       "ΔQ/(C_ox·δV)": 0.12468896511780037
     }
@@ -198,12 +198,12 @@
   "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1000 s": {
     "ok": true,
     "note": "",
-    "steps": 21,
-    "rejected": 1,
-    "factorizations": 244,
-    "ms": 39,
+    "steps": 19,
+    "rejected": 0,
+    "factorizations": 146,
+    "ms": 28,
     "value": {
-      "ΔQ/(C_ox·δV)": 0.7559482510582018
+      "ΔQ/(C_ox·δV)": 0.7558524748373294
     }
   },
   "solar n⁺p, dim 1050 nm, open circuit from cold, hmin 1 nm": {
@@ -212,7 +212,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 193,
-    "ms": 39,
+    "ms": 38,
     "value": {
       "V_oc (V)": 0.3844219440748137
     }

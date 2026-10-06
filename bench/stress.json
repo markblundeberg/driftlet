@@ -6,11 +6,11 @@
       "of": 500
     },
     "semi: cold at bias": {
-      "ok": 499,
+      "ok": 500,
       "of": 500
     },
     "semi: warm sweep": {
-      "ok": 499,
+      "ok": 500,
       "of": 500
     },
     "semi: transient": {
@@ -99,8 +99,6 @@
     }
   },
   "failures": [
-    "semi 158 · cold at bias: not converged",
-    "semi 158 · warm sweep: not converged at -0.278 V",
     "echem 133 · current-driven: not converged",
     "echem 215 · current-driven: not converged",
     "junction 387 · transient: failed at t = 0.00 s (0 steps)"

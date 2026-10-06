@@ -95,12 +95,15 @@ for live demos.
      a Grassmann–Taksar–Heyman-style elimination that carries leakage separately, or the mixed
      form for the fast species only. (A failed steady solve already says where it lost its digits.
      Newton's refined solves, which recover a MOS inversion layer's lost level, may cover it.)
-     `npm run stress` finds the same thing in a bipolar stack's floating base (a p⁺ base between
+     `npm run stress` found the same thing in a bipolar stack's floating base (a p⁺ base between
      light n layers, its holes held ~1e14 weaker than they move within it: 25 digits lost even
-     at 10 mV), and in a closed Fe³⁺/Fe²⁺ cell driven near its limit, where Fe³⁺ falls 20 orders
-     below Fe²⁺ (33 digits). The level of such a population could be deflated: a bordered unknown
-     for its uniform shift, its row the summed balance, read from the residual as the impedance
-     reads its current.
+     at 10 mV), which refined solves now reach, and in a closed Fe³⁺/Fe²⁺ cell driven near its
+     limit, where Fe³⁺ falls 20 orders below Fe²⁺ (33 digits), which they don't. Past ~1e-22, a
+     solve can converge to the wrong level outright (a region behind face conductances 1e-24 of
+     its own: the plain solves give no update along its level at all, so nothing stalls). The
+     level of such a population could be deflated: a bordered unknown for its uniform shift, its
+     row the summed balance (in which the region's own fluxes cancel exactly), judged against
+     its own scale.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux

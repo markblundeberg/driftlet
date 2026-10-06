@@ -2818,11 +2818,13 @@ export class Solver {
       // (Raising this floor lets a weakly held population drift: a MOS capacitor without a
       // channel port then showed a DC leak through its oxide.)
       const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = 1e-6;
-      // Stalled near the solution (not shrinking quadratically): the factorised Jacobian may
-      // have lost a slow mode to cancellation, and round-off's floor would accept it wrong.
-      // Refine the solves from here.
+      // Stalled near the solution (not shrinking quadratically), or growing undamped twice
+      // running: the factorised Jacobian may have lost a slow mode to cancellation, and
+      // round-off's floor would accept it wrong, or its noise keep Newton from the solution (a
+      // bipolar stack's floating base, its holes held ~1e14 more weakly than they move within
+      // it). Refine the solves from here.
       if (refine) refined++;
-      else if (!noRefine && alpha === 1 && it >= 3 && step < 1e-4 && step > 0.25 * p1) refine = true;
+      else if (!noRefine && alpha === 1 && it >= 3 && step > 0.25 * p1 && (step < 1e-4 || (step > p1 && p1 > p2))) refine = true;
       if (alpha === 1 && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
         this.computeConcentrations();
         return { converged: true, iterations: it, history, residual: rmax, roundoff: true };

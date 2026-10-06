@@ -11,8 +11,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   solve, for the old operator's noise, is gone). Newton keeps every converged refinement: a GaAs
   junction without recombination, its ~1.5e-7 A/m² carried by minority carriers from the
   contacts, had cold and warm solves 1e-3 apart, now 1e-14; a MOS gate step takes 244
-  factorisations (408), a dim solar cell's open circuit on a 0.25 nm grid 258 (790). Stress:
-  11,376 of 11,381.
+  factorisations (408), a dim solar cell's open circuit on a 0.25 nm grid 258 (790).
+- Newton also refines its solves when its undamped updates grow twice running: a bipolar
+  stack's floating base (its holes held ~1e14 more weakly than they move within it) now solves
+  in steady state, cold and swept, and the MOS gate step takes 146 factorisations. Stress:
+  11,378 of 11,381, every semiconductor stack passing.
 
 ## 0.11.1 (2026-10-05)
 
