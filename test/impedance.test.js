@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError } from '../src/index.js';
+import { build, layer, ohmic, bath, aqueous, metal, half } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 const VT = RT / FARADAY;
@@ -157,4 +158,37 @@ test('an abrupt junction without recombination: Re Y is the steady dI/dV, and C 
     if (q === 0) assert.ok(Math.abs(Yr / G - 1) < 1e-4, `${f} Hz: Re Y ${Yr} vs ${G} S/m²`);
     assert.ok(Math.abs(Cq / C - 1) < 1e-6, `${f} Hz: C ${Cq} vs ${C} F/m²`);
   });
+});
+
+test('a redox electrode at its open circuit against a bath: the DC limit is the steady dI/dV', () => {
+  // Fe³⁺/Fe²⁺ on platinum, double layer resolved, a bath 10 µm away. The response to the
+  // terminal is nearly a uniform shift of every level in the solution, and the current is their
+  // slope, uniform to ~1e-14 of the response: solved as a shift of each region plus the rest.
+  const c = { 'Fe3+': 9.6, 'Fe2+': 0.536, 'Cl-': 29.872 };
+  const def = build({
+    T: 300,
+    library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 78.3 }), metal('Pt')],
+    stack: [
+      ohmic(0, ['e-']),
+      layer('Pt', 1e-6),
+      { phi: { type: 'capacitive', C: 0.395 }, zeroCharge: -0.119, reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 0.0411, alpha: 0.377 }] },
+      layer('water', 9.83e-6, { c0: { ...c } }),
+      bath({ ...c }, 'Cl-'),
+    ],
+    grid: { hmin: 2.6e-10, hmax: 3.7e-7, ratio: 1.136 },
+  });
+  const oc = new Device(def);
+  oc.set({ contacts: { right: { I: 0 } } });
+  const V0 = oc.solve().terminals.right.V;
+  const at = (V) => {
+    const d = new Device(def);
+    d.set({ contacts: { right: { V } } });
+    return d;
+  };
+  const Z = at(V0).impedance([1e-8, 1e-4]).Z;
+  const I = (V) => at(V).solve().terminals.right.current, dV = 1e-5, G = (I(V0 + dV) - I(V0 - dV)) / (2 * dV);
+  for (let q = 0; q < 2; q++) {
+    const Y = Z.re[q] / (Z.re[q] ** 2 + Z.im[q] ** 2);
+    assert.ok(Math.abs(Y / G - 1) < 1e-4, `Re Y ${Y} vs dI/dV ${G} S/m²`);
+  }
 });
