@@ -565,7 +565,29 @@ residual takes the $`\eta`$ difference first, in double-double. That round-off h
 capacitor's inversion layer, fed by minority diffusion from a bulk with ~1e3 electrons per cm³ (a
 time constant of minutes), an exchange path that followed the gate at 1 Hz. Where the plain solve
 is already accurate, one application of the operator confirms it; the bench's impedance cases
-take about twice as long as before.
+take about twice as long as before. GMRES judges convergence only by the true residual,
+recomputed at each restart: its own running estimate can drift far from it where the
+preconditioner is nearly singular (an inversion layer's exchange, lost in the assembled
+$`J`$, at a frequency of µHz), and had declared solves converged that weren't. Its answer is
+kept where it converged, or cut the residual a thousandfold; otherwise the factorised solve is.
+That happens when the residual's own round-off is what GMRES chases: in a strictly neutral
+electrolyte far above its corner frequency, $`\delta c/c`$ is $`\omega\tau`$ smaller than each term
+of a neutrality row, so the central difference's ~1e-10 noise there is amplified a millionfold,
+while the assembled $`J`$, exact for an electrolyte, gives the factorised solve to 1e-9.
+
+The current is read where its terms are smallest. At a contact it is a sum of terms that can
+be far larger than itself: across a junction without recombination, between heavily doped
+sides, what passes is minority carriers of ~1e8 per m³, while the contact's terms are its
+majority conductances times a $`\delta\eta`$ cancelling its neighbours' to 1e-17, and their
+round-off reads as a constant conductance of order 1 S/m², a silicon p⁺n⁺ junction's capacitance
+9× off at 100 Hz. Between the two contacts of a device without ports, the total current
+(conduction plus displacement, $`i\omega\,\delta D`$) is the same through every cut, so it is also
+read across each segment of an ideal region, linearised as the Scharfetter–Gummel flux is, and
+the reading with the smallest sum of term magnitudes is taken: in that junction, the depletion
+region's; in a MOS capacitor, the oxide's displacement. A reading's error counts its terms'
+round-off and the solves' error (δx to their residual, relative to its largest entry) through
+its coefficients: in a neutral bulk the current crosses a huge conductance on a tiny gradient,
+which the solves don't resolve.
 
 ## Steady state
 

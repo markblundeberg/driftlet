@@ -4,6 +4,16 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- The impedance reads the current where its terms are smallest: between the contacts of a
+  device without ports, the total current is the same through every cut, and a junction without
+  recombination now has its steady dI/dV and its charge's dQ/dV as the low-frequency limits,
+  where the contact's sum of huge terms had read a constant conductance of round-off (a p⁺n⁺
+  junction's capacitance had been 9× off at 100 Hz). And its GMRES judges convergence by the
+  true residual: its running estimate had declared solves converged that weren't, at low
+  frequency where the preconditioner is nearly singular (n-Si | KCl had a negative resistance
+  at 0.01 Hz, a MOS capacitor 5% off its capacitance at 1 nHz). Where GMRES can't converge (a
+  strictly neutral electrolyte above ~1 MHz, its operator's round-off amplified), the factorised
+  solve is kept: those spectra had gone non-passive.
 - `npm run stress`: random but plausible devices (semiconductor stacks, MOS capacitors,
   electrolyte cells), each solved cold, swept warm, stepped in time and probed by its
   impedance, judged by `check()` and by invariants (flat levels at equilibrium, warm and cold

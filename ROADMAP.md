@@ -108,19 +108,8 @@ for live demos.
      block at each face grows (about threefold) and so do its off-diagonal neighbours; the rest of
      the matrix is unchanged, and the layout stays block-tridiagonal. It may simplify the face code
      generally.
-   - The impedance's current at a contact is the sum of terms some 1e17 times bigger than itself
-     where a junction conducts only through scarce minority carriers (no recombination, heavy
-     doping, 0.1 nm cells): its round-off then reads as a conductance of order 1 S/m², the same
-     at every frequency, and the low-frequency impedance is nonsense (a silicon p⁺n⁺ junction's
-     capacitance 9× off at 100 Hz). The capacitance at higher frequencies is right. The fix is to
-     read the AC current where nothing cancels: the total current (conduction plus displacement)
-     is the same through every cut of a two-terminal device, so read it across a segment where
-     the conductances are small (a depletion region). `npm run stress` finds these.
    - Fewer Newton iterations where the benchmarks show many: the pn transient (about 1000
      factorisations for 100 ns) and large warm jumps.
-   - The MOS demo's frequency control, sweeping from the low-frequency C–V to the high-frequency
-     one: without a channel port, the inversion layer's steady states and its minutes-long
-     transients are now robust (flat levels in steady solves, Newton's refined solves).
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
    (started, with the vacuum-level alignment helpers), still dependency-free, that writes plain
    specs, so users and LLM agents start from something

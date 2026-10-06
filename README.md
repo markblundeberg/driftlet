@@ -265,7 +265,7 @@ Every physics feature is tested against analytic results (`npm test`, node's bui
 | A capacitance through a port | a thin-film transistor against the charge-sheet model (below threshold to saturation, second order); de Levie impedance; gate impedance against dQ/dV | 5e-4; 1e-3; 1e-6 |
 | Electrode surfaces (coverage) | Langmuir isotherm against potential; the charge to fill a surface; the active–passive curve, blocking exactly (1 − θ) | 1e-9; 1e-3; 1e-9 |
 | Electrodes spread through a port | transmission line with the reaction's linear kinetics as the conductance (O(h²)), rates along it; Wagner–Traud mixed potential of two Butler–Volmer couples, floating | 1e-4, 2e-3; 1e-6 V |
-| Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance | 3e-4; 3e-5; 1e-6 |
+| Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance; a p⁺n⁺ junction without recombination, Re Y → dI/dV and C = dQ/dV | 3e-4; 3e-5; 1e-6; 1e-4, 1e-6 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
 | Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
 | Fermi–Dirac statistics | `𝓕_{±1/2}` vs quadrature; degenerate bulk; accumulation charge via `𝓕_{3/2}` | 1e-13; 1e-12; 1e-3 |

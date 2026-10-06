@@ -122,3 +122,39 @@ test('low-frequency limit equals the steady differential resistance (Fermi–Dir
   assert.ok(Math.abs(Z.Z.im[0]) < 1e-6 * R);
   assert.ok(Z.Z.im[1] < 0, 'capacitive (depletion and diffusion charge) at high frequency');
 });
+
+test('an abrupt junction without recombination: Re Y is the steady dI/dV, and C the junction charge dQ/dV', () => {
+  // Heavy doping on both sides: what passes is ~1e8 minority carriers per m³ reaching the far
+  // contacts, a conductance some 1e17 times the terms of the contact's current, which the
+  // impedance reads instead across the depletion region (the same total current).
+  const NA = 6.02214076e23;
+  const ohmic = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' });
+  const def = {
+    species: [
+      { name: 'e-', z: -1 },
+      { name: 'h+', z: 1 },
+    ],
+    materials: { Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: 2.8e25 / NA }, 'h+': { D: 12e-4, mu0: 1.12 * FARADAY, cRef: 1.04e25 / NA } } } },
+    regions: [
+      { material: 'Si', length: 1e-6, fixedCharge: (1e24 / NA) * FARADAY },
+      { material: 'Si', length: 1e-6, fixedCharge: (-1e24 / NA) * FARADAY },
+    ],
+    contacts: { left: ohmic(0), right: ohmic(0) },
+  };
+  const fs = [1e-6, 1e2];
+  const Z = new Device(def).impedance(fs).Z;
+  // Steady states either side: the current, and the charge left of the junction (its D).
+  const at = (V) => {
+    const d = new Device(def);
+    d.set({ contacts: { right: { V } } });
+    const s = d.solve();
+    return [s.current, s.interfaces[0].D];
+  };
+  const dV = 1e-4, [Ip, Dp] = at(dV), [Im, Dm] = at(-dV);
+  const G = -(Ip - Im) / (2 * dV), C = -(Dp - Dm) / (2 * dV);
+  fs.forEach((f, q) => {
+    const m = Z.re[q] ** 2 + Z.im[q] ** 2, Yr = Z.re[q] / m, Cq = -Z.im[q] / m / (2 * Math.PI * f);
+    if (q === 0) assert.ok(Math.abs(Yr / G - 1) < 1e-4, `${f} Hz: Re Y ${Yr} vs ${G} S/m²`);
+    assert.ok(Math.abs(Cq / C - 1) < 1e-6, `${f} Hz: C ${Cq} vs ${C} F/m²`);
+  });
+});

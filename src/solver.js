@@ -95,8 +95,13 @@ function complexSolve(Ar, Ai, K) {
 }
 
 // GMRES(m), restarted, for a complex system op(x) = b, with vectors as [re, im] pairs and op
-// already preconditioned; x holds the starting guess and receives the answer.
-function gmres(op, b, x, { m = 12, restarts = 4, tol = 1e-8 } = {}) {
+// already preconditioned; x holds the starting guess and receives the answer. A cycle's own
+// residual estimate can drift far from the true one (a preconditioner nearly singular at low
+// frequency, or an op whose round-off the preconditioner amplifies), so each cycle is judged by
+// the true residual, at the next one's start: it returns once that's below tol, and gives up when
+// two cycles in a row fail to lower it, leaving x at the best iterate. Returns the true residuals (relative
+// to b) at the start and at that iterate.
+function gmres(op, b, x, { m = 12, restarts = 8, tol = 1e-8 } = {}) {
   const N = b[0].length;
   const cdot = (a, c) => {
     let re = 0, im = 0;
@@ -108,15 +113,24 @@ function gmres(op, b, x, { m = 12, restarts = 4, tol = 1e-8 } = {}) {
   };
   const norm = (a) => Math.sqrt(cdot(a, a)[0]);
   const bn = norm(b) || 1;
-  for (let cycle = 0; cycle < restarts; cycle++) {
+  const best = [Float64Array.from(x[0]), Float64Array.from(x[1])];
+  let initial = Infinity, least = Infinity, idle = 0;
+  for (let cycle = 0; ; cycle++) {
     const ax = op(x), r = [Float64Array.from(b[0], (v, j) => v - ax[0][j]), Float64Array.from(b[1], (v, j) => v - ax[1][j])];
-    const beta = norm(r);
-    if (!(beta > tol * bn)) return;
-    const V = [[r[0].map((v) => v / beta), r[1].map((v) => v / beta)]];
+    const beta = norm(r) / bn;
+    if (cycle === 0) initial = beta;
+    idle = beta < least ? 0 : idle + 1;
+    if (idle === 0) {
+      least = beta;
+      best[0].set(x[0]);
+      best[1].set(x[1]);
+    }
+    if (!(beta > tol) || cycle === restarts || idle === 2) break;
+    const V = [[r[0].map((v) => v / (beta * bn)), r[1].map((v) => v / (beta * bn))]];
     const H = Array.from({ length: m + 1 }, () => Array.from({ length: m }, () => [0, 0]));
     const cs = [], sn = [], g = Array.from({ length: m + 1 }, () => [0, 0]);
-    g[0] = [beta, 0];
-    let k = 0, converged = false;
+    g[0] = [beta * bn, 0];
+    let k = 0;
     for (; k < m; k++) {
       const w = op(V[k]);
       for (let i = 0; i <= k; i++) {
@@ -147,7 +161,6 @@ function gmres(op, b, x, { m = 12, restarts = 4, tol = 1e-8 } = {}) {
       g[k + 1] = [-(s[0] * gr + s[1] * gi), -(s[0] * gi - s[1] * gr)];
       if (!(Math.hypot(g[k + 1][0], g[k + 1][1]) > tol * bn)) {
         k++;
-        converged = true;
         break;
       }
     }
@@ -170,8 +183,10 @@ function gmres(op, b, x, { m = 12, restarts = 4, tol = 1e-8 } = {}) {
         x[1][j] += yr * V[i][1][j] + yi * V[i][0][j];
       }
     }
-    if (converged) return; // (by its own residual estimate)
   }
+  x[0].set(best[0]);
+  x[1].set(best[1]);
+  return { initial, residual: least };
 }
 
 // Discretisation and nonlinear solver.
@@ -3274,6 +3289,7 @@ export class Solver {
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
     const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
+    const cuts = this._currentCuts();
     // J·v + (∂res/∂V_k)σ from the residual itself, by a central difference: the assembled J holds
     // a flux's dependence on η_L and η_R as two entries, and where both are huge (an inversion
     // layer) and v nearly uniform, J·v loses the flux to round-off; the residual takes the η
@@ -3409,9 +3425,20 @@ export class Solver {
         const rhs = k >= 0 ? precondition(Bt[k].map((v) => -sigma * v), zero) : [new Float64Array(Nc), new Float64Array(Nc)];
         outr.set(rhs[0]);
         outi.set(rhs[1]);
-        gmres(op, rhs, [outr, outi]);
+        // GMRES, kept where it converged or at least cut the residual 1000-fold: where it can't, the
+        // op's own round-off is what it's chasing (a strictly neutral electrolyte far above its
+        // corner frequency, where δc/c is ωτ smaller than each term of the neutrality rows), and
+        // the factorised solve is the better answer.
+        const { initial, residual } = gmres(op, rhs, [outr, outi]);
+        const kept = !(residual > 1e-8 && residual > 1e-3 * initial);
+        if (!kept) {
+          outr.set(rhs[0]);
+          outi.set(rhs[1]);
+        }
+        accuracy = Math.max(accuracy, kept ? residual : initial);
         restore();
       };
+      let accuracy = 1e-14; // (relative, of the solves: the readouts' error is weighed with it)
       // y: the response with the floating terminals held; X_k: to a unit δV_k.
       const heldT = dT.kind === 'V';
       for (let j = 0; j < Nc; j++) {
@@ -3453,10 +3480,41 @@ export class Solver {
       }
       let Zr, Zi;
       if (heldT) {
-        // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal
+        // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal…
         let [Ir, Ii] = dot(kT, w, yr, yi);
         Ir += DI[kT];
         Ii += w * DIs[kT];
+        // …a sum whose terms can be far larger than itself (in a junction's neutral ends, a
+        // conductance times a δη that cancels its neighbours' to 1e-17), so it reads a constant
+        // conductance of round-off. Between the two contacts of a device without ports, the total
+        // current (conduction and displacement) is the same through every cut, so it's read where
+        // its terms are smallest, if smaller than the contact's.
+        // Each reading's error is its terms' round-off, and the solves' error (δx to `accuracy`
+        // of its largest entry) times its coefficients.
+        if (cuts && kT < 2) {
+          let big = 0;
+          for (let j = 0; j < Nc; j++) big = Math.max(big, Math.hypot(yr[j], yi[j]));
+          const floor = accuracy * big;
+          let err = Math.abs(DI[kT]) + w * Math.abs(DIs[kT]);
+          const c = Ct[kT], cs = Cs[kT];
+          for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (Math.hypot(yr[j], yi[j]) + floor);
+          const sgn = kT === 0 ? 1 : -1;
+          for (const cut of cuts) {
+            let re = 0, im = 0, e = 0;
+            for (let a = 0; a < cut.idx.length; a++) {
+              const x = cut.idx[a], gk = cut.g[a], dk = w * cut.d[a];
+              // (g + iωd)(xr + i xi)
+              re += gk * xr[x] - dk * xi[x];
+              im += gk * xi[x] + dk * xr[x];
+              e += (Math.abs(gk) + Math.abs(dk)) * (Math.hypot(xr[x], xi[x]) + floor);
+            }
+            if (e < err) {
+              err = e;
+              Ir = sgn * re;
+              Ii = sgn * im;
+            }
+          }
+        }
         const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
         Zr = Ir / d2;
         Zi = -Ii / d2;
@@ -3471,6 +3529,58 @@ export class Solver {
       if (profiles) out.profiles.push(this._smallSignalProfiles(xr, xi));
     });
     return out;
+  }
+
+  // The cuts where the impedance may read a small-signal current (null where the current
+  // differs between cuts: a device with ports). Each is the linearised total current toward +x
+  // through one segment of an ideal region, Σ (g + iω d)·δu over the unknowns idx: the
+  // Scharfetter–Gummel fluxes' derivatives (as in _segmentsDilute) and the displacement's.
+  _currentCuts() {
+    const { model, n, M, u, uLo, c, z } = this, F = FARADAY;
+    if (model.ports.length > 0) return null;
+    const { grid, materials, regions } = model;
+    const cuts = [];
+    for (let r = 0; r < regions.length; r++) {
+      const reg = regions[r], mat = materials[reg.material];
+      if (mat.conductor || !mat.ideal || reg.mixing > 0) continue;
+      const vel = reg.velocity;
+      for (let s = grid.regionStart[r]; s < grid.regionEnd[r]; s++) {
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s];
+        const terms = new Map();
+        const add = (x, g, d) => {
+          const t = terms.get(x) || [0, 0];
+          t[0] += g;
+          t[1] += d;
+          terms.set(x, t);
+        };
+        const phiL = u[bL * M], phiR = u[bR * M], hasPhi = !this.phiUndefined[s];
+        for (let i = 0; i < n; i++) {
+          if (z[i] === 0 || !mat.present[i] || mat.D[i] === 0) continue;
+          const zi = z[i], r1 = 1 + i, cL = c[s * n + i], g = mat.D[i] / h;
+          const pe = (vel * h) / mat.D[i];
+          const d = zi * (phiR - phiL) - pe;
+          const E = Math.expm1(u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe);
+          const gBc = g * bernoulli(d) * cL;
+          const dNdd = -g * bernoulliDerivative(d) * cL * E;
+          add(bL * M + r1, zi * F * gBc, 0);
+          add(bR * M + r1, -zi * F * gBc * (E + 1), 0);
+          if (hasPhi) {
+            add(bL * M, zi * F * (-zi * dNdd + zi * gBc * E), 0);
+            add(bR * M, zi * F * zi * dNdd, 0);
+          }
+        }
+        // The displacement toward +x, ε(φ_L − φ_R)/h (in φ̂ = φ/V_T).
+        const k = hasPhi ? (mat.epsr * EPS0 * this.VT) / h : 0;
+        if (k > 0) {
+          add(bL * M, 0, k);
+          add(bR * M, 0, -k);
+        }
+        if (terms.size === 0) continue;
+        const idx = [...terms.keys()];
+        cuts.push({ idx, g: idx.map((x) => terms.get(x)[0]), d: idx.map((x) => terms.get(x)[1]) });
+      }
+    }
+    return cuts;
   }
 
   // Complex profiles of δφ (V), δμ̄ (J/mol) and δc (mol/m³) from a small-signal solution.

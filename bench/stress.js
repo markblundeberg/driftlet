@@ -350,19 +350,44 @@ function runCase(family, k) {
     if (!s.done) return `too slow: t = ${s.time.toPrecision(3)} of ${plan.t.toPrecision(3)} s in ${s.steps} steps`;
     return judged(d, s);
   });
-  // 5. The impedance about equilibrium: passive.
+  // 5. The impedance about equilibrium: passive, and at the lowest frequency the conductance
+  // of steady solves either side.
   if (plan.equilibrium) {
     attempt('impedance', () => {
       const d = new Device(def);
       const sol = d.solve();
       if (!sol.converged) return 'no equilibrium to linearise about';
-      const fs = [1e-2, 1e2, 1e6, 1e9], Z = d.impedance(fs).Z;
+      // (well below the slowest diffusion's corner, L²/D)
+      const fDC = Math.min(1e-6, 1e-3 / (2 * Math.PI * d._solver.slowestTime()));
+      const fs = [fDC, 1e-2, 1e2, 1e6, 1e9], Z = d.impedance(fs, { terminal: plan.side }).Z;
       for (let j = 0; j < fs.length; j++) {
         const re = Z.re[j], im = Z.im[j], m = Math.hypot(re, im);
         if (!Number.isFinite(m)) return `non-finite at ${fs[j]} Hz`;
         if (re < -1e-6 * m) return `not passive at ${fs[j]} Hz: Re Z = ${re.toExponential(2)} of |Z| ${m.toExponential(2)}`;
         if (plan.cap && -1 / (2 * Math.PI * fs[j] * im) > plan.cap * 1.001) return `C above C_ox at ${fs[j]} Hz`;
       }
+      // (A MOS capacitor's G is zero, and its series resistance, generation's, can make the
+      // corner hours long.)
+      if (plan.cap) return '';
+      const dV = 1e-4, I = (V) => {
+        const e = new Device(def);
+        e.set(drive(plan.side, V));
+        const s = e.solve();
+        return s.converged ? s.terminals[plan.side].current : NaN;
+      };
+      const G = (I(dV) - I(-dV)) / (2 * dV);
+      if (!Number.isFinite(G)) return 'no steady solves either side';
+      // …and below the corner G/C, where that's lower still (a junction leaking only minority
+      // carriers: hours).
+      const admittance = (re, im) => ({ re: re / (re * re + im * im), im: -im / (re * re + im * im) });
+      let f = fs[0], Y = admittance(Z.re[0], Z.im[0]);
+      const tau = Y.im / (2 * Math.PI * f) / Math.abs(G);
+      if (2 * Math.PI * f * tau > 1e-3) {
+        f = 1e-3 / (2 * Math.PI * tau);
+        const z = d.impedance([f], { terminal: plan.side }).Z;
+        Y = admittance(z.re[0], z.im[0]);
+      }
+      if (Math.abs(Y.re - G) > 1e-3 * Math.hypot(Y.re, Y.im, G) + 1e-12) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;
       return '';
     });
   }
