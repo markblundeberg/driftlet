@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.11.3 (2026-10-06)
 
 - A region held only through its faces (a conductance there 1e-24 of its own, or neighbours that
   conduct 1e16 times less) solves to the right level in steady state: its balance summed over
