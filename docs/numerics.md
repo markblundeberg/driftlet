@@ -498,6 +498,13 @@ test checks the compact Jacobian column by column on devices that cover every as
     $`C_c = h^3(1+\omega)^2/(\omega(1+2\omega))`$ and $`C_p = h(h+h_1)(h+h_1+h_2)`$; linear after
     backward Euler, scaled by $`h/(2h + h_1)`$. The first step, with no history, is checked by step
     doubling.
+  - A first step whose error doesn't shrink with it is taken anyway. A jump in a level held at a
+    boundary (a bath's, after a voltage step) starts a profile self-similar in $`x/\sqrt{t}`$, so a
+    first step of any length errs alike (0.11 thermal units over ten decades of step, in a
+    0.6 M electrolyte with resolved double layers), down to the grid's own diffusion time,
+    where Newton runs out of digits. Three tries in a row, each within a factor 2 of the last,
+    mark the error as the jump's; backward Euler damps it as it should, and the steps grow
+    from there. Transients that start with a jump take 5–30% fewer factorisations for it.
   - The state a first step starts from needn't satisfy the algebraic equations ($`\hat\phi`$ in a
     strictly neutral material, an interface's unknowns), after a start or a jump; they jump in
     the first instant. So the history starts from the first step's half step, not from there,

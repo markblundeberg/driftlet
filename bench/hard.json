@@ -2,23 +2,23 @@
   "liquid junction from a sharp boundary (ε = 0), tol 1e-4": {
     "ok": true,
     "note": "",
-    "steps": 1009,
-    "rejected": 13,
-    "factorizations": 3339,
-    "ms": 1777,
+    "steps": 856,
+    "rejected": 7,
+    "factorizations": 2710,
+    "ms": 1463,
     "value": {
-      "Δφ (mV)": 8.773400894269589
+      "Δφ (mV)": 8.773400894115893
     }
   },
   "liquid junction from a sharp boundary (ε = 0), tol 1e-3": {
     "ok": true,
     "note": "",
-    "steps": 472,
-    "rejected": 29,
-    "factorizations": 1770,
-    "ms": 1008,
+    "steps": 407,
+    "rejected": 27,
+    "factorizations": 1450,
+    "ms": 758,
     "value": {
-      "Δφ (mV)": 8.773400115773363
+      "Δφ (mV)": 8.773400115784064
     }
   },
   "liquid junction from a 1 µm boundary (ε = 0), tol 1e-4": {
@@ -27,7 +27,7 @@
     "steps": 1009,
     "rejected": 14,
     "factorizations": 3158,
-    "ms": 1712,
+    "ms": 1555,
     "value": {
       "Δφ (mV)": 8.773400894312818
     }
@@ -38,7 +38,7 @@
     "steps": 4753,
     "rejected": 15,
     "factorizations": 9669,
-    "ms": 5172,
+    "ms": 4834,
     "value": {
       "Δφ (mV)": 8.773401102311714
     }
@@ -49,7 +49,7 @@
     "steps": 668,
     "rejected": 11,
     "factorizations": 2196,
-    "ms": 521,
+    "ms": 483,
     "value": {
       "Δφ (mV)": -6.708420470012691
     }
@@ -60,7 +60,7 @@
     "steps": 3163,
     "rejected": 11,
     "factorizations": 6536,
-    "ms": 1644,
+    "ms": 1486,
     "value": {
       "Δφ (mV)": -6.708387324174038
     }
@@ -71,7 +71,7 @@
     "steps": 836,
     "rejected": 2,
     "factorizations": 1681,
-    "ms": 103,
+    "ms": 91,
     "value": {
       "θ": 0.000944530723081529
     }
@@ -82,7 +82,7 @@
     "steps": 186,
     "rejected": 1,
     "factorizations": 381,
-    "ms": 19,
+    "ms": 18,
     "value": {
       "θ": 0.0009445307230650187
     }
@@ -90,12 +90,12 @@
   "electrode port filling its surface (ε = 0): to 10 s, tol 1e-3": {
     "ok": true,
     "note": "",
-    "steps": 87,
-    "rejected": 6,
-    "factorizations": 381,
-    "ms": 16,
+    "steps": 86,
+    "rejected": 5,
+    "factorizations": 350,
+    "ms": 14,
     "value": {
-      "θ": 0.8750193692571602
+      "θ": 0.8750193685921044
     }
   },
   "silver face in AgNO₃ (ε = 0): to 1e-7 s, tol 1e-8": {
@@ -115,7 +115,7 @@
     "steps": 908,
     "rejected": 4,
     "factorizations": 1899,
-    "ms": 52,
+    "ms": 44,
     "value": {
       "I (A/m²)": 4872.543562682728
     }
@@ -126,7 +126,7 @@
     "steps": 29,
     "rejected": 0,
     "factorizations": 107,
-    "ms": 3,
+    "ms": 2,
     "value": {
       "I (A/m²)": 4872.280334424752
     }
@@ -137,7 +137,7 @@
     "steps": 330,
     "rejected": 22,
     "factorizations": 1183,
-    "ms": 105,
+    "ms": 101,
     "value": {
       "I_Fe (A/m²)": 1.8700672376143996
     }
@@ -148,7 +148,7 @@
     "steps": 468,
     "rejected": 69,
     "factorizations": 1688,
-    "ms": 485,
+    "ms": 474,
     "value": {
       "E − φ₀ (V)": 0.2887103812413092
     }
@@ -159,7 +159,7 @@
     "steps": 394,
     "rejected": 108,
     "factorizations": 1997,
-    "ms": 589,
+    "ms": 575,
     "value": {
       "E − φ₀ (V)": 0.11529892688475822
     }
@@ -170,7 +170,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 120,
-    "ms": 30,
+    "ms": 28,
     "value": {
       "failures": 0
     }
@@ -181,7 +181,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 106,
-    "ms": 17,
+    "ms": 20,
     "value": {}
   },
   "MOS without a channel port: 10 mV gate step at 0.6 V, advance 1 s": {
@@ -201,7 +201,7 @@
     "steps": 27,
     "rejected": 8,
     "factorizations": 408,
-    "ms": 69,
+    "ms": 67,
     "value": {
       "ΔQ/(C_ox·δV)": 0.7573307797663988
     }
@@ -212,7 +212,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 519,
-    "ms": 87,
+    "ms": 92,
     "value": {
       "V_oc (V)": 0.3844219440748137
     }
@@ -223,7 +223,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 666,
-    "ms": 120,
+    "ms": 127,
     "value": {
       "V_oc (V)": 0
     }

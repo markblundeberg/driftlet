@@ -2926,6 +2926,7 @@ export class Solver {
     // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
     const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), this.fastestTime() * 1e-2);
     const pred = new Float64Array(this.u.length), guess = new Float64Array(this.u.length);
+    const firstErrs = []; // the first step's error at each size tried (see below)
     const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
     while (this.time < tEnd) {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
@@ -2950,6 +2951,7 @@ export class Solver {
       this.landing = atBreak ? tb : clamped ? tEnd : undefined;
       const snap = this._snapshot();
       let err, p, half = null;
+      if (this.history.length > 0) firstErrs.length = 0;
       if (this.history.length === 0) {
         // First step: backward Euler, checked against two half steps (whose result is kept).
         const full = this.step(h);
@@ -2988,7 +2990,14 @@ export class Solver {
         err = this._errorNorm(pred) * p.scale;
         p = p.order;
       }
-      if (err > tol) {
+      // A first step whose error doesn't shrink with it: a jump in a level held at a boundary
+      // (a bath's, after a voltage step) starts a profile self-similar in x/√t, so a first step
+      // of any length errs alike, down to the grid's own diffusion time, below Newton's reach.
+      // Three tries in a row, each within a factor 2 of the last, say so: the error is the
+      // jump's, not the step's. Take the step (backward Euler damps it as it should) and grow.
+      if (half && err > tol) firstErrs.push(err);
+      const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e > 0.5 * a[j - 1] && e < 2 * a[j - 1]));
+      if (err > tol && !jump) {
         this._restore(snap);
         rejected++;
         dt = h * factor(err, p);

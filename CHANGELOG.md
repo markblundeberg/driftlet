@@ -4,6 +4,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- `npm run stress`: random but plausible devices (semiconductor stacks, MOS capacitors,
+  electrolyte cells), each solved cold, swept warm, stepped in time and probed by its
+  impedance, judged by `check()` and by invariants (flat levels at equilibrium, warm and cold
+  agreeing, a passive impedance).
+- A transient's first step whose error doesn't shrink with it (a jump in a held boundary level
+  starts a self-similar profile, so any first step errs alike) is taken rather than shrunk until
+  Newton fails: a voltage step on a 0.6 M electrolyte with resolved double layers couldn't start,
+  and transients from a jump take 5–30% fewer factorisations.
+
 - The MOS demo has frequency and lifetime controls: its C–V at any frequency from 10 µHz to 1 MHz,
   against the ideal low- and high-frequency curves, and the capacitance against frequency at the
   present gate voltage, the step where generation (SRH, lifetime τ) stops keeping the inversion
