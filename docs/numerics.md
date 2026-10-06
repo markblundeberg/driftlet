@@ -461,6 +461,12 @@ test checks the compact Jacobian column by column on devices that cover every as
   exempt: light flooding a population that starts at ~1e3 per m³ predicts, linearised in
   $`\eta`$, a change of 1e10 thermal units, which damping covers in a few iterations; bailing
   out there had a lit phototransistor's pseudo-transient fail at every step above 1e-21 s.
+- A pivot that cancels to exactly zero in the block factorisation is perturbed to 1e-15 of its
+  block's largest entry (static pivoting) rather than failing the solve. GaAs minority carriers,
+  ~1 per m³ beside a face, are held through conductances 1e-16 of the face flux's coefficient in
+  their row, and the elimination cancels them exactly: such devices now solve, even at
+  equilibrium. Newton's updates stay meaningful (the factorisation only amplifies the residual,
+  so a small update still means a small residual), and its refined solves correct the rest.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
   and where. A running error bound through the factorisation compares each pivot with the
   magnitudes it was formed from, $`\log_{10}(\sum|\mathrm{terms}| / |\mathrm{pivot}|)`$: the digits
@@ -662,10 +668,13 @@ which the solves don't resolve.
 - **Generation continuation.** A device with generation reactions (species made only from, or
   turned only into, fixed reservoirs, such as photogeneration from a photon reservoir) can be
   held far from equilibrium even with its terminals level, where bias continuation can't help.
-  If a direct solve fails there, the generation rates are scaled down to 10⁻¹² and ramped back
+  If a direct solve fails there, the generation rates are scaled down to 10⁻³⁰ and ramped back
   up, ×100 a step while each solve converges (warm from the last) and by the square root of the
   factor when one doesn't, giving up when that factor falls below 1.5 (crawling, which time
-  steps do better). An illuminated 80 µm silicon diode solves cold this way in about 80
+  steps do better); the pseudo-transient ramp then starts from the dimmer light's solution
+  rather than cold. (At 10⁻¹², a GaAs layer's generation still exceeded its equilibrium
+  recombination, ~3e-24 mol/m³ of minority electrons, a billionfold: the first step was the
+  whole jump.) An illuminated 80 µm silicon diode solves cold this way in about 80
   iterations. (A lit n⁺pn stack with a floating base crawled for 20,000 iterations: at a
   trillionth of the light, the base's level is held by couplings of ~1e-17.)
 - **If that fails too,** source continuation ramps the right terminal's voltage to its target.

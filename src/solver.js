@@ -582,6 +582,11 @@ export class Solver {
     const sizes = new Int32Array(nB), loc = (this.loc = new Int32Array(nB * M).fill(-1));
     for (let b = 0; b < nB; b++) for (let r = 0; r < M; r++) if (active[b * M + r]) loc[b * M + r] = sizes[b]++;
     const sys = (this.sys = new BlockTridiagonal(nB, sizes));
+    // A pivot that cancels to exactly nothing (a population held only through conductances
+    // 1e-16 of its neighbours', as GaAs's minority carriers ~1 per m³ beside a face) is
+    // perturbed, not thrown on: Newton then converges, its small updates meaning small residuals
+    // (the factorisation only amplifies), refining its solves where they stall.
+    sys.staticPivots = true;
     const N = sys.size;
     this.SINK = N;
     const rix = (this.rix = new Int32Array(nB * M).fill(N)), fullOf = (this.fullOf = new Int32Array(N));
@@ -3465,8 +3470,10 @@ export class Solver {
           outi.set(rhs[1]);
         }
         accuracy = Math.max(accuracy, kept ? residual : initial);
+        if (!kept) noisy = true;
         restore();
       };
+      let noisy = false; // (a solve whose GMRES chased its op's round-off: kept factorised)
       let accuracy = 1e-14; // (relative, of the solves: the readouts' error is weighed with it)
       // y: the response with the floating terminals held; X_k: to a unit δV_k.
       const heldT = dT.kind === 'V';
@@ -3507,41 +3514,63 @@ export class Solver {
         xr[this.fullOf[j]] = re;
         xi[this.fullOf[j]] = im;
       }
-      let Zr, Zi;
-      if (heldT) {
-        // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal…
+      // The current into terminal kT per volt, (C + iωC′)·δx + (∂I/∂V)(1 + iω′), with its error.
+      // At the contact it's a sum whose terms can be far larger than itself (in a junction's
+      // neutral ends, a conductance times a δη that cancels its neighbours' to 1e-17), and its
+      // round-off reads as a constant conductance. Between the two contacts of a device without
+      // ports, the total current (conduction and displacement) is the same through every cut, so
+      // it's also read across each segment, and the reading with the least error taken. Each
+      // reading's error is its terms' round-off and the solves' error in δx (to `accuracy` of its
+      // largest entry) through its coefficients: a contact's or a cut's flux is a difference of
+      // levels that the solved rows don't pin.
+      const read = () => {
         let [Ir, Ii] = dot(kT, w, yr, yi);
         Ir += DI[kT];
         Ii += w * DIs[kT];
-        // …a sum whose terms can be far larger than itself (in a junction's neutral ends, a
-        // conductance times a δη that cancels its neighbours' to 1e-17), so it reads a constant
-        // conductance of round-off. Between the two contacts of a device without ports, the total
-        // current (conduction and displacement) is the same through every cut, so it's read where
-        // its terms are smallest, if smaller than the contact's.
-        // Each reading's error is its terms' round-off, and the solves' error (δx to `accuracy`
-        // of its largest entry) times its coefficients.
-        if (cuts && kT < 2) {
-          let big = 0;
-          for (let j = 0; j < Nc; j++) big = Math.max(big, Math.hypot(yr[j], yi[j]));
-          const floor = accuracy * big;
-          let err = Math.abs(DI[kT]) + w * Math.abs(DIs[kT]);
-          const c = Ct[kT], cs = Cs[kT];
-          for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (Math.hypot(yr[j], yi[j]) + floor);
-          const sgn = kT === 0 ? 1 : -1;
-          for (const cut of cuts) {
-            let re = 0, im = 0, e = 0;
-            for (let a = 0; a < cut.idx.length; a++) {
-              const x = cut.idx[a], gk = cut.g[a], dk = w * cut.d[a];
-              // (g + iωd)(xr + i xi)
-              re += gk * xr[x] - dk * xi[x];
-              im += gk * xi[x] + dk * xr[x];
-              e += (Math.abs(gk) + Math.abs(dk)) * (Math.hypot(xr[x], xi[x]) + floor);
+        const eps = 1.1e-16;
+        let big = 0;
+        for (let j = 0; j < Nc; j++) big = Math.max(big, Math.hypot(yr[j], yi[j]));
+        const floor = accuracy * big;
+        let err = eps * (Math.abs(DI[kT]) + w * Math.abs(DIs[kT]));
+        const c = Ct[kT], cs = Cs[kT];
+        for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (eps * Math.hypot(yr[j], yi[j]) + floor);
+        if (!cuts || kT >= 2) return { Ir, Ii, err };
+        const sgn = kT === 0 ? 1 : -1;
+        for (const cut of cuts) {
+          let re = 0, im = 0, e = 0;
+          for (let a = 0; a < cut.idx.length; a++) {
+            const x = cut.idx[a], gk = cut.g[a], dk = w * cut.d[a];
+            // (g + iωd)(xr + i xi)
+            re += gk * xr[x] - dk * xi[x];
+            im += gk * xi[x] + dk * xr[x];
+            e += (Math.abs(gk) + Math.abs(dk)) * (eps * Math.hypot(xr[x], xi[x]) + floor);
+          }
+          if (e < err) [err, Ir, Ii] = [e, sgn * re, sgn * im];
+        }
+        return { Ir, Ii, err };
+      };
+      let Zr, Zi;
+      if (heldT) {
+        // δI per volt: (C + iωC′)·δx + (∂I/∂V)(1 + iω′) at the terminal…
+        let { Ir, Ii, err } = read();
+        // …and where the solves leave that uncertain (an electrolyte's current, the slope of
+        // levels uniform to 1e-8 per segment), the solve continued toward GMRES's own floor.
+        // (Not where the op's round-off is what GMRES would chase, and kept only where it falls
+        // tenfold.)
+        if (K === 0 && !noisy && err > 1e-3 * Math.hypot(Ir, Ii) && accuracy > 1e-12) {
+          const rhs = precondition(Bt[kT].map((v) => -v), zero), y0 = [Float64Array.from(yr), Float64Array.from(yi)];
+          const { initial, residual } = gmres(op, rhs, [yr, yi], { tol: 1e-11 });
+          restore();
+          if (residual < 0.1 * initial) {
+            accuracy = Math.max(1e-14, residual);
+            for (let j = 0; j < Nc; j++) {
+              xr[this.fullOf[j]] = yr[j];
+              xi[this.fullOf[j]] = yi[j];
             }
-            if (e < err) {
-              err = e;
-              Ir = sgn * re;
-              Ii = sgn * im;
-            }
+            ({ Ir, Ii } = read());
+          } else {
+            yr.set(y0[0]);
+            yi.set(y0[1]);
           }
         }
         const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
@@ -3788,12 +3817,15 @@ export class Solver {
     if (r.converged) return r;
     // Generation (e.g. light) holding the device far from equilibrium: ramp it up from nearly
     // nothing, each solve warm from the last.
+    let dimmer = false;
     if (this.hasGeneration && opts.continuation !== false) {
       this.u.set(u0);
       this.uLo.set(u0Lo);
       this.termV.set(v0);
       this.computeConcentrations();
+      this.dimmer = false;
       const g = this._generationContinuation(opts, r);
+      dimmer = this.dimmer;
       if (g.converged) {
         this.solvedV = target;
         return g;
@@ -3813,11 +3845,16 @@ export class Solver {
     }
     if (!canContinue) {
       if (quick) {
-        this.u.set(u0);
-        this.uLo.set(u0Lo);
-        this.termV.set(v0);
+        // The full pseudo-transient ramp: from the dimmer light's solution where the light's
+        // continuation got anywhere (a lit floating base charges from there as it would in
+        // time), else from the start.
+        if (!dimmer) {
+          this.u.set(u0);
+          this.uLo.set(u0Lo);
+          this.termV.set(v0);
+        }
         this.computeConcentrations();
-        const full = this._solveSteady(opts); // the full pseudo-transient ramp
+        const full = this._solveSteady(opts);
         return { ...full, steps: full.steps + r.steps, iterations: full.iterations + r.iterations };
       }
       return r;
@@ -3921,14 +3958,16 @@ export class Solver {
   // while they converge, smaller steps where they don't.
   _generationContinuation(opts, r) {
     const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
-    let s = 1e-12, factor = 100, steps = r.steps, iterations = r.iterations;
+    let s = 1e-30, factor = 100, steps = r.steps, iterations = r.iterations;
     const history = r.history.slice();
     try {
       this.generationScale = s;
+      // (nearly dark: a cold start can need the full ramp, as a dark device's does)
       let q = this._solveSteady(sub);
       steps += q.steps;
       iterations += q.iterations;
       if (!q.converged) return { converged: false, steps, iterations, history };
+      this.dimmer = true; // (the state is now a solution under dimmer light: a better start than cold)
       while (s < 1) {
         const next = Math.min(1, s * factor);
         const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);

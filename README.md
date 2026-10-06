@@ -13,34 +13,23 @@ to be the engine of live, thermodynamically honest web demos of charge transport
 semiconductors, electrochemical cells, membranes and solid ionic conductors. It handles any mix
 of charged and neutral species, Poisson electrostatics (or strict neutrality), bulk and
 interfacial reactions, heterointerfaces, metals and external circuits, in steady state, in time
-and as small-signal impedance. Every physics feature is validated against analytic results, and
-it's small enough to run in a web page: no dependencies, millisecond solves.
+and as small-signal impedance. It's small enough to run in a web page: no dependencies,
+millisecond solves.
 
 [Live demos](https://markblundeberg.github.io/driftlet/demos/) · [npm](https://www.npmjs.com/package/driftlet) ·
 [reading level diagrams](docs/visualization.md) · [device reference](docs/device.md) ·
 [agent guide](llms.txt)
 
+**Built to be relied on.** A drift–diffusion solver that handles a textbook pn junction is a
+weekend's work; one that keeps working on the devices people actually build is not. driftlet is
+tested two ways: every physics feature against an analytic result or an independent code, and
+thousands of randomly generated devices (junctions, MOS capacitors, solar cells, electrolyte
+cells, electrodes) put through cold solves, sweeps, transients and impedance, every result
+checked. A solve that fails reports it, with what went wrong where it can tell.
+[How far to trust it](docs/reliability.md) has the details, the numbers and the known limits.
+
 **Status: 0.x.** Released on npm and used by the demos, but the API may still change between
 minor versions.
-
-## Is it for your problem?
-
-The same equations go by different names in different fields. If your problem is one-dimensional
-(planar, or radial: spheres and cylinders, or any cross-section varying along x), it's probably here:
-
-| If you work on | you may call it | start from | checked against |
-|---|---|---|---|
-| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions; thin-film transistors (gradual channel, in the [saturation demo](https://markblundeberg.github.io/driftlet/demos/saturation.html#transistor)) | [first example](#a-semiconductor-junction), [pn](https://markblundeberg.github.io/driftlet/demos/pn.html) and [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html) demos, [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
-| Solar cells | photogeneration, radiative and SRH recombination | [solar](https://markblundeberg.github.io/driftlet/demos/solar.html) [organic (excitons)](https://markblundeberg.github.io/driftlet/demos/organic.html) and [perovskite (mobile ions)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) demos, [`ionmonger`](test/ionmonger.test.js), [`reactions`](test/reactions.test.js) and [`generation`](test/generation.test.js) tests: generation is a reaction from a photon reservoir (uniform, or Beer–Lambert with `photogeneration()`), SRH as a rate law, in the bulk and at faces | `J_sc = qG(L_n + L_p + W)`; J_sc under Beer–Lambert against collection theory; Shockley J–V in the dark |
-| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry, salt bridges and liquid junctions, mixed potentials, electrodes under a film | [second example](#an-electrochemical-cell), [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [saturation](https://markblundeberg.github.io/driftlet/demos/saturation.html), [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js), [`junction`](test/junction.test.js), [`ports`](test/ports.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg; junction potentials against Henderson, Planck, JPCalc and LJPcalc; Wagner–Traud |
-| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](https://markblundeberg.github.io/driftlet/demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
-| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
-| Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [membrane demo](https://markblundeberg.github.io/driftlet/demos/membrane.html), [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
-| Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
-| Biophysics, nanofluidics | charged nanochannels and pores, resting potentials, Goldman–Hodgkin–Katz, Nernst, Donnan, pumps and leaks | [charged-nanochannel](https://markblundeberg.github.io/driftlet/demos/channel.html), [resting-potential](https://markblundeberg.github.io/driftlet/demos/cell.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) (a patch pipette's) demos, [`pore`](test/pore.test.js) test; a membrane as a face: a capacitor with ion permeabilities, and the Na⁺/K⁺ pump as a reaction on it ([`membrane`](test/membrane.test.js) test) | GHK potential and current–voltage curve; a resolved lipid layer; Mullins–Noda; the pump's static head; Donnan |
-
-The tests are worked setups, each with its analytic check, so they double as recipes. The
-[validation table](#validation) lists them all.
 
 ## Install
 
@@ -152,6 +141,25 @@ them locally, serve the repository root (e.g. `python3 -m http.server`) and open
 | **Intercalation host**: cycling between cutoffs against the OCV | **Organic solar cell**: excitons diffusing to a donor/acceptor interface, against theory | **Perovskite hysteresis**: mobile ions and scan rate, against IonMonger |
 | [![charged nanochannel](demos/screenshots/channel.png)](https://markblundeberg.github.io/driftlet/demos/channel.html) | [![resting potential](demos/screenshots/cell.png)](https://markblundeberg.github.io/driftlet/demos/cell.html) | [![liquid junctions](demos/screenshots/junction.png)](https://markblundeberg.github.io/driftlet/demos/junction.html) |
 | **Charged nanochannel**: selectivity, overlapping Donnan layers and rectification, against Teorell–Meyer–Sievers | **Resting potential**: leaks and the Na⁺/K⁺ pump, against Mullins–Noda; the run-down to Donnan | **Liquid junctions**: a patch pipette's against Henderson, Planck and LJPcalc; a charged frit |
+
+## Is it for your problem?
+
+The same equations go by different names in different fields. If your problem is one-dimensional
+(planar, or radial: spheres and cylinders, or any cross-section varying along x), it's probably here:
+
+| If you work on | you may call it | start from | checked against |
+|---|---|---|---|
+| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions; thin-film transistors (gradual channel, in the [saturation demo](https://markblundeberg.github.io/driftlet/demos/saturation.html#transistor)) | [first example](#a-semiconductor-junction), [pn](https://markblundeberg.github.io/driftlet/demos/pn.html) and [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html) demos, [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
+| Solar cells | photogeneration, radiative and SRH recombination | [solar](https://markblundeberg.github.io/driftlet/demos/solar.html) [organic (excitons)](https://markblundeberg.github.io/driftlet/demos/organic.html) and [perovskite (mobile ions)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) demos, [`ionmonger`](test/ionmonger.test.js), [`reactions`](test/reactions.test.js) and [`generation`](test/generation.test.js) tests: generation is a reaction from a photon reservoir (uniform, or Beer–Lambert with `photogeneration()`), SRH as a rate law, in the bulk and at faces | `J_sc = qG(L_n + L_p + W)`; J_sc under Beer–Lambert against collection theory; Shockley J–V in the dark |
+| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry, salt bridges and liquid junctions, mixed potentials, electrodes under a film | [second example](#an-electrochemical-cell), [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [saturation](https://markblundeberg.github.io/driftlet/demos/saturation.html), [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js), [`junction`](test/junction.test.js), [`ports`](test/ports.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg; junction potentials against Henderson, Planck, JPCalc and LJPcalc; Wagner–Traud |
+| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](https://markblundeberg.github.io/driftlet/demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
+| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
+| Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [membrane demo](https://markblundeberg.github.io/driftlet/demos/membrane.html), [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
+| Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
+| Biophysics, nanofluidics | charged nanochannels and pores, resting potentials, Goldman–Hodgkin–Katz, Nernst, Donnan, pumps and leaks | [charged-nanochannel](https://markblundeberg.github.io/driftlet/demos/channel.html), [resting-potential](https://markblundeberg.github.io/driftlet/demos/cell.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) (a patch pipette's) demos, [`pore`](test/pore.test.js) test; a membrane as a face: a capacitor with ion permeabilities, and the Na⁺/K⁺ pump as a reaction on it ([`membrane`](test/membrane.test.js) test) | GHK potential and current–voltage curve; a resolved lipid layer; Mullins–Noda; the pump's static head; Donnan |
+
+The tests are worked setups, each with its analytic check, so they double as recipes. The
+[validation table](#validation) lists them all.
 
 ## How to think about it
 
@@ -284,17 +292,17 @@ checked in CI; times are from a desktop Ryzen 7600X in Node 22:
 | Task | Time | Factorisations |
 |---|---|---|
 | Linear solve, 300 nodes × 7 unknowns (factor + solve) | 0.4 ms | 1 |
-| pn diode (264 nodes): cold equilibrium | 2 ms | 9 |
-| pn diode: I–V sweep 0 → 0.6 V, 31 points | 31 ms | 137 |
-| pn diode: warm jump from +0.4 V to −1 V | 7 ms | 51 |
-| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 150 ms | 1026 |
-| pn diode: impedance at 20 frequencies | 8 ms | 21 |
-| MOS with a metal gate: C–V sweep, 26 points | 11 ms | 126 |
-| n-Si \| KCl (4 species, 3 unknowns per node): Mott–Schottky sweep, 31 points | 29 ms | 156 |
-| n-Si \| KCl: impedance at 20 frequencies | 10 ms | 21 |
+| pn diode (264 nodes): cold equilibrium | 3 ms | 9 |
+| pn diode: I–V sweep 0 → 0.6 V, 31 points | 29 ms | 137 |
+| pn diode: warm jump from +0.4 V to −1 V | 8 ms | 51 |
+| pn diode: adaptive transient, 0 → 0.5 V, 100 ns | 165 ms | 926 |
+| pn diode: impedance at 20 frequencies | 22 ms | 21 |
+| MOS with a metal gate: C–V sweep, 26 points | 9 ms | 126 |
+| n-Si \| KCl (4 species, 3 unknowns per node): Mott–Schottky sweep, 31 points | 36 ms | 156 |
+| n-Si \| KCl: impedance at 20 frequencies | 28 ms | 21 |
 | Ag \| AgNO₃ \| Ag with double layers: sweep 0 → 0.1 V, 21 points | 12 ms | 81 |
-| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 29 ms | 287 |
-| Silver electrodes with a bipolar plate: sweep 0 → 1 V, 11 points | 27 ms | 63 |
+| Ag \| AgNO₃ \| Ag, neutral: adaptive transient over 1 s | 24 ms | 186 |
+| Silver electrodes with a bipolar plate: sweep 0 → 1 V, 11 points | 25 ms | 54 |
 
 The library has no dependencies and does no DOM access, so it runs in a Web Worker. (A device
 definition is plain data and can be posted to a worker. Devices using custom-function
@@ -307,12 +315,14 @@ No dependencies. Tests use node's built-in runner (Node ≥ 22):
 ```sh
 npm test         # the validation suite
 npm run bench    # typical workloads against bench/baseline.json (--save to update it)
+npm run stress   # random devices, every result checked (--n 500 for more; see docs/reliability.md)
+npm run hard     # the corpus of once-hard cases against bench/hard.json
 npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
 npm run smoke    # every demo in headless Chrome, every control to its extremes (CHROME=… to choose)
 npm run shots    # retake the demos' screenshots, each caught at a set state (tools/shots.js)
 ```
 
-Design notes and plans: [numerics](docs/numerics.md), [conventions](docs/conventions.md),
+Design notes and plans: [reliability](docs/reliability.md), [numerics](docs/numerics.md), [conventions](docs/conventions.md),
 [statistics](docs/statistics.md), [the kit](docs/kit.md), [reading level diagrams](docs/visualization.md),
 [data](docs/data.md), [roadmap](ROADMAP.md).
 

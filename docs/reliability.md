@@ -1,0 +1,90 @@
+# How far to trust it
+
+A drift–diffusion solver is quick to start and slow to finish. The first version solves a pn
+junction; the trouble comes after, with what real devices ask of it:
+
+- concentrations spanning 30 orders of magnitude in one device (majority carriers beside
+  minority ones, a salt beside the ions its double layer excludes);
+- double layers a millionth of the device's length, resolved or not;
+- species whose amount is fixed rather than their level (a blocked ion, a floating base, a
+  closed cell's salt), which makes the steady equations singular;
+- populations held only by couplings of 1e-17 (an inversion layer fed by ~1e3 minority
+  carriers per cm³), which a factorisation loses to round-off;
+- terminals driven by a current, which may be beyond what the device can pass;
+- small-signal currents read from sums whose terms are 1e17 times bigger.
+
+Each of these makes a plain Newton solver fail, or worse, converge to the wrong answer. driftlet
+has met them, mostly through the two kinds of testing below, and its numerics are built around
+them ([numerics](numerics.md)). This page says what that testing covers and what it found, and
+what is known not to work.
+
+## Correct: the validation suite
+
+Every physics feature is checked against an analytic result, or an independent code where
+there isn't one: `npm test`, 315 tests, each a worked device with its closed form. They include
+Shockley's diode equation, depletion and MOS charge, collection theory under Beer–Lambert light,
+Gouy–Chapman and Kilic–Bazant–Ajdari double layers, Donnan and Teorell–Meyer–Sievers
+partitions, Goldman–Hodgkin–Katz, the limiting current and Butler–Volmer kinetics, the
+Macdonald and finite-length Warburg impedances, Cottrell and spherical diffusion, and the
+second law (the free energy in through the terminals equals what's dissipated, every term
+non-negative). Against other codes: IonMonger's perovskite J–V hysteresis (finite elements,
+Octave), and liquid-junction potentials against JPCalc, LJPcalc and JLJP. The README's
+[validation table](../README.md#validation) lists each with its tolerance.
+
+Each solution can check itself too: `check()` from `driftlet/kit` balances every species'
+ledger (what comes in through each terminal, is made or destroyed), the conservation
+bookkeeping of a transient, and the grid (the device solved again on a grid twice as fine).
+
+## Robust: random devices
+
+The validation suite shows driftlet is right where it converges. Whether it converges, on
+devices nobody tuned it for, is what `npm run stress` tests. It builds random but plausible
+devices in five families:
+
+| Family | What's drawn |
+|---|---|
+| Semiconductor stacks | Si, Ge or GaAs; 1–3 layers n, p or intrinsic, doping 1e14–1e19 cm⁻³, 50 nm–10 µm each; no recombination, band-to-band or SRH (τ from 1 ns to 10 µs); sometimes lit; sometimes a Schottky contact |
+| MOS capacitors | Si, Ge or GaAs, doped 1e15–1e18 cm⁻³; oxide 1–20 nm; Au, Al or Pt gate at any flat-band offset; with or without generation |
+| Electrolyte cells | one to three salts from the data library's ions, 0.1 mM–1 M, 1 µm–1 mm; double layers resolved or strictly neutral; bath, reversible or blocking electrodes |
+| Electrodes | Ag, Cu or Zn deposition, or Fe³⁺/Fe²⁺ on platinum, with Butler–Volmer kinetics over four decades of k₀; with or without a supporting salt; against a second electrode or a bath |
+| Liquid junctions | two mixed solutions, 1 µM–1 M, sharp or graded, at open circuit |
+
+Each device goes through what a user would do with it: a cold solve at no bias, and one at a
+bias; a warm sweep to that bias; open circuit, where it's lit; a current drive (a fraction of
+what passes at 1 V); a transient after a voltage step; and the impedance about equilibrium,
+1 µHz to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
+levels flat at equilibrium with no current, warm and cold solves agreeing, the current driven
+being the one passed, the impedance passive and, at low frequency, equal to the steady dI/dV,
+and a MOS capacitance never above its oxide's. Each case is seeded from its family and index, so
+any failure reruns alone (`npm run stress -- semi 79`).
+
+At 500 devices per family (11,000-odd solves, about three minutes on a desktop):
+
+RESULTS
+
+Most of what driftlet's numerics do differently began as a failure here: the impedance's
+current read across the quietest cut of the device rather than at the contact, GMRES judged by
+its true residual, blocked species held flat in steady solves, continuations for a current drive
+and for light, and Newton refining its solves where a factorisation loses a mode.
+
+## Hard cases
+
+`npm run hard` keeps a corpus of named cases that were hard once (sharp 3 M | 1 µM junctions on
+short steps, an inversion layer filling over minutes, a solar cell's open circuit on a 0.25 nm
+grid, corroding drops), with their step and factorisation counts against a committed baseline,
+so a change that makes one worse shows.
+
+## Known limits
+
+- **One case in the hard corpus still fails:** a radial drop on a passivating iron electrode
+  without a double layer stops partway through its hour.
+- **Strictly neutral regions on very short steps** lose digits at a neutral face between very
+  different solutions (3 M against 1 µM at steps of 1e-11 s).
+- **An unresolved double layer** (a cell coarser than the Debye length) gives a charge that
+  depends on the grid; the solution warns. So does a steep profile on too coarse a cell.
+- **A failed solve says so:** `converged: false`, with a warning naming where the system lost
+  its digits, or which current no voltage reaches. It never returns a wrong answer as converged
+  that `check()` can't catch, as far as these tests know.
+- What driftlet doesn't model at all (more than one dimension, cross-diffusion, heat, optics,
+  field-dependent mobility) is in the [README](../README.md#what-it-doesnt-do), and open
+  numerical work in the [roadmap](../ROADMAP.md).

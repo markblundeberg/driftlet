@@ -5,7 +5,7 @@
     "steps": 856,
     "rejected": 7,
     "factorizations": 2710,
-    "ms": 1385,
+    "ms": 1428,
     "value": {
       "Δφ (mV)": 8.773400894115893
     }
@@ -16,7 +16,7 @@
     "steps": 407,
     "rejected": 27,
     "factorizations": 1450,
-    "ms": 738,
+    "ms": 773,
     "value": {
       "Δφ (mV)": 8.773400115784064
     }
@@ -27,7 +27,7 @@
     "steps": 1009,
     "rejected": 12,
     "factorizations": 3221,
-    "ms": 1593,
+    "ms": 1625,
     "value": {
       "Δφ (mV)": 8.773400893935024
     }
@@ -38,7 +38,7 @@
     "steps": 4753,
     "rejected": 15,
     "factorizations": 9766,
-    "ms": 4817,
+    "ms": 4792,
     "value": {
       "Δφ (mV)": 8.773401102311048
     }
@@ -49,7 +49,7 @@
     "steps": 668,
     "rejected": 11,
     "factorizations": 2196,
-    "ms": 465,
+    "ms": 460,
     "value": {
       "Δφ (mV)": -6.708420470012691
     }
@@ -71,7 +71,7 @@
     "steps": 836,
     "rejected": 2,
     "factorizations": 1681,
-    "ms": 88,
+    "ms": 86,
     "value": {
       "θ": 0.000944530723081529
     }
@@ -115,7 +115,7 @@
     "steps": 908,
     "rejected": 4,
     "factorizations": 1899,
-    "ms": 41,
+    "ms": 40,
     "value": {
       "I (A/m²)": 4872.543562682728
     }
@@ -137,7 +137,7 @@
     "steps": 330,
     "rejected": 22,
     "factorizations": 1183,
-    "ms": 94,
+    "ms": 95,
     "value": {
       "I_Fe (A/m²)": 1.8700672376143996
     }
@@ -148,7 +148,7 @@
     "steps": 468,
     "rejected": 69,
     "factorizations": 1688,
-    "ms": 466,
+    "ms": 467,
     "value": {
       "E − φ₀ (V)": 0.2887103812413092
     }
@@ -159,7 +159,7 @@
     "steps": 394,
     "rejected": 108,
     "factorizations": 1997,
-    "ms": 558,
+    "ms": 556,
     "value": {
       "E − φ₀ (V)": 0.11529892688475822
     }
@@ -170,7 +170,7 @@
     "steps": 0,
     "rejected": 0,
     "factorizations": 120,
-    "ms": 28,
+    "ms": 27,
     "value": {
       "failures": 0
     }
@@ -201,7 +201,7 @@
     "steps": 27,
     "rejected": 8,
     "factorizations": 408,
-    "ms": 61,
+    "ms": 66,
     "value": {
       "ΔQ/(C_ox·δV)": 0.7573307797663988
     }
@@ -211,10 +211,10 @@
     "note": "",
     "steps": 0,
     "rejected": 0,
-    "factorizations": 178,
-    "ms": 36,
+    "factorizations": 193,
+    "ms": 38,
     "value": {
-      "V_oc (V)": 0.38442194407481367
+      "V_oc (V)": 0.3844219440748137
     }
   },
   "solar n⁺p, dim 1050 nm, open circuit from cold, hmin 0.25 nm": {
@@ -222,8 +222,8 @@
     "note": "",
     "steps": 0,
     "rejected": 0,
-    "factorizations": 727,
-    "ms": 130,
+    "factorizations": 790,
+    "ms": 144,
     "value": {
       "V_oc (V)": 0.3844219831009786
     }

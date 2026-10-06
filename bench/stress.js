@@ -151,10 +151,12 @@ const families = {
     });
     const same = left.kind === right.kind && left.kind !== 'blocking';
     const blockingRight = right.kind === 'blocking';
+    // (unlike electrodes that both pass: biased from the open circuit, an equilibrium)
+    const relative = !same && passes(left) && passes(right);
     return {
       def,
       params: { names, c, epsr, L, debye, left: left.kind, right: right.kind },
-      plan: { side: 'right', V: r.u(-0.3, 0.3), equilibrium: same, step: r.u(0.005, 0.1), t: r.log(-3, 1), noSteadyCurrent: blockingRight },
+      plan: { side: 'right', V: r.u(-0.3, 0.3), equilibrium: same || relative, step: r.u(0.005, 0.1), t: r.log(-3, 1), noSteadyCurrent: blockingRight, relative },
     };
   },
 
@@ -244,7 +246,9 @@ const judged = (dev, sol) => {
   return c.ok ? '' : c.items.filter((it) => it.ok === false).map((it) => `${it.name}: ${it.summary}`).join('; ');
 };
 const drive = (side, V) => ({ contacts: { [side]: { V } } });
-const sameCurrent = (a, b, scale) => Math.abs(a - b) <= 1e-6 * Math.max(Math.abs(a), Math.abs(b), scale) + 1e-12;
+// (to 1e-6, or 0.1 nA/m²: a GaAs junction's reverse leakage without recombination is 1e-11 A/m²,
+// beyond what its solves resolve)
+const sameCurrent = (a, b, scale) => Math.abs(a - b) <= 1e-6 * Math.max(Math.abs(a), Math.abs(b), scale) + 1e-10;
 
 function runCase(family, k) {
   const r = rng(hash(family) + k), { def, params, plan } = families[family](r), out = { family, k, params, plan, scenarios: {} };
@@ -415,8 +419,9 @@ function runCase(family, k) {
         const z = d.impedance([f], { terminal: plan.side }).Z;
         Y = admittance(z.re[0], z.im[0]);
       }
-      // (0.5%: a cell passing nanoamps at ±0.1 mV has steady currents precise to about that)
-      if (Math.abs(Y.re - G) > 5e-3 * Math.hypot(Y.re, Y.im, G) + 1e-12) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;
+      // (0.5%: a cell passing nanoamps at ±0.1 mV has steady currents precise to about that;
+      // and none below 1e-13 A/m²)
+      if (Math.abs(Y.re - G) > 5e-3 * Math.hypot(Y.re, Y.im, G) + 1e-13 / dV) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;
       return '';
     });
   }

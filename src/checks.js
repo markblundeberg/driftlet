@@ -96,7 +96,9 @@ function balance(device, sol) {
       home[i][r] = ledgers.length - 1;
     });
   });
-  const add = (i, r, what, rate) => {
+  const partners = new Map(); // a reaction term's species: its net rate is round-off against any of theirs
+  const add = (i, r, what, rate, species) => {
+    if (species) partners.set(what, species);
     const l = home[i][r];
     if (!(l >= 0 && rate !== 0 && Number.isFinite(rate))) return;
     const same = ledgers[l].terms.find((t) => t.what === what); // a bulk reaction, region by region
@@ -112,8 +114,9 @@ function balance(device, sol) {
   model.reactions.forEach((rx, k) => {
     const what = label(def.bulkReactions?.[k]);
     sol.bulkReactions[k].regions.forEach((total, r) => {
-      for (const { i, nu } of rx.reactants) add(i, r, what, -nu * total);
-      for (const { i, nu } of rx.products) add(i, r, what, nu * total);
+      const all = [...rx.reactants, ...rx.products].map((p) => p.i);
+      for (const { i, nu } of rx.reactants) add(i, r, what, -nu * total, all);
+      for (const { i, nu } of rx.products) add(i, r, what, nu * total, all);
     });
   });
   interfaces.forEach((itf, f) => {
@@ -129,7 +132,8 @@ function balance(device, sol) {
     });
     itf.reactions.forEach((rx, k) => {
       const rate = Af * sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
-      for (const { i, nu, side } of rx.part) add(i, f + side, what, nu * rate);
+      const all = rx.part.map((p) => p.i);
+      for (const { i, nu, side } of rx.part) add(i, f + side, what, nu * rate, all);
     });
   });
   // A species in one compartment is named alone; one in several, by where.
@@ -140,10 +144,12 @@ function balance(device, sol) {
     l.title = several[l.i] ? `${l.species} in ${l.compartment}` : l.species;
   }
 
-  // A species at rest (nothing beyond round-off moving, against what it could carry) isn't reported.
+  // A species at rest (nothing beyond round-off moving, against what it or its reactions' partners
+  // could carry) isn't reported.
   const size = (l) => Math.max(0, ...l.terms.map((t) => Math.abs(t.rate)));
-  const natural = naturalScales(device, sol);
-  const moving = ledgers.filter((l) => size(l) > 1e-8 * natural[l.i]);
+  const natural = naturalScales(device, sol), inSolution = naturalScales(device, sol, false); // (partners' scale: not a metal's conductance)
+  const scale = (l) => Math.max(natural[l.i], ...l.terms.flatMap((t) => (partners.get(t.what) ?? []).map((j) => inSolution[j])));
+  const moving = ledgers.filter((l) => size(l) > 1e-8 * scale(l));
   let worst = 0;
   const lines = [];
   for (const l of moving) {
@@ -167,8 +173,9 @@ function balance(device, sol) {
 
 // What each species could carry, mol/(m²·s): by transport, D·c/L in each region (a metal's
 // carrier, σRT/(z²F²L)), and by its bulk reactions, their one-way rates. In equilibrium the net
-// flows are round-off of these.
-function naturalScales(device, sol) {
+// flows are round-off of these. Without `conductors`, transport through conductor regions isn't
+// counted.
+function naturalScales(device, sol, conductors = true) {
   const { model, solver } = device, { species, grid } = model;
   // (totals through the cross-section, as the ledgers are: its largest in each region)
   const area = model.regions.map((_, r) => Math.max(...grid.area.subarray(grid.regionStart[r], grid.regionEnd[r] + 1)));
@@ -177,7 +184,7 @@ function naturalScales(device, sol) {
     model.regions.forEach((reg, r) => {
       const mat = model.materials[reg.material], L = reg.length;
       if (mat.conductor) {
-        if (mat.conductor.i === i) S = Math.max(S, (area[r] * mat.conductor.sigma * model.RT) / (sp.z * sp.z * FARADAY * FARADAY * L));
+        if (conductors && mat.conductor.i === i) S = Math.max(S, (area[r] * mat.conductor.sigma * model.RT) / (sp.z * sp.z * FARADAY * FARADAY * L));
         return;
       }
       if (!mat.present[i] || !(mat.D[i] > 0)) return;

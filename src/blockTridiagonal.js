@@ -74,6 +74,14 @@ export class BlockTridiagonal {
     this.minPivotRatio = Infinity;
     /** The block found exactly singular by the last factor(), or −1. */
     this.singularBlock = -1;
+    /**
+     * Static pivoting: an exactly zero pivot (all its candidates cancelled to nothing) is
+     * replaced by 1e-15 of its block's largest entry rather than thrown on, for a caller that
+     * refines its solves (and counted in `perturbedPivots`).
+     */
+    this.staticPivots = false;
+    /** How many pivots the last factor() replaced. */
+    this.perturbedPivots = 0;
   }
 
   /** Zero all of A, B, C (ready for fresh assembly). */
@@ -86,13 +94,14 @@ export class BlockTridiagonal {
 
   /**
    * Factorise the current A, B, C. A, B, C are left untouched.
-   * Throws if a diagonal block is exactly singular.
+   * Throws if a diagonal block is exactly singular (unless `staticPivots`).
    */
   factor() {
     const { n, A, B, C, sizes, offA, offB, offC, offX } = this;
     const lu = this._lu, piv = this._piv, cp = this._cp, tmp = this._tmp;
     let minRatio = Infinity;
     this.singularBlock = -1;
+    this.perturbedPivots = 0;
 
     for (let i = 0; i < n; i++) {
       const m = sizes[i], o = offB[i];
@@ -110,7 +119,7 @@ export class BlockTridiagonal {
           }
         }
       }
-      const ratio = luFactor(lu, o, piv, offX[i], m);
+      const ratio = luFactor(lu, o, piv, offX[i], m, this);
       if (!(ratio > 0)) {
         this.factored = false;
         this.singularBlock = i;
@@ -244,7 +253,7 @@ export class BlockTridiagonal {
 
 // In-place LU with partial pivoting of the m×m block at a[o…]. Row swaps are recorded in
 // piv[p…]. Returns min |pivot| / max |entry| (0 if singular).
-function luFactor(a, o, piv, p, m) {
+function luFactor(a, o, piv, p, m, perturb = null) {
   let maxEntry = 0;
   for (let k = 0; k < m * m; k++) {
     const v = Math.abs(a[o + k]);
@@ -259,7 +268,11 @@ function luFactor(a, o, piv, p, m) {
       if (v > bestVal) { best = r; bestVal = v; }
     }
     piv[p + k] = best;
-    if (bestVal === 0) return 0;
+    if (bestVal === 0) {
+      if (!perturb?.staticPivots) return 0;
+      bestVal = a[o + best * m + k] = 1e-15 * maxEntry;
+      perturb.perturbedPivots++;
+    }
     if (bestVal < minPivot) minPivot = bestVal;
     if (best !== k) {
       for (let c = 0; c < m; c++) {

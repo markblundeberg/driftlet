@@ -4,6 +4,21 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- The impedance's low-frequency current is now right where the response is a nearly uniform
+  shift of levels (an electrolyte at its open circuit: the current is the slope of levels uniform
+  to 1e-8 per segment). A reading whose estimated error, from the solves' residual through its
+  coefficients, exceeds 0.1% of the current has its solve continued to GMRES's floor (1e-11), and
+  readings at a contact count that error too. A redox cell's DC conductance had come out 50% off
+  (and different from call to call); now it equals the steady dI/dV to five digits.
+- `check()` judges a reaction's net rate as round-off against its partners' scales too (not a
+  metal's): a species all but absent no longer reads as unsteady through its reactions' noise.
+- The block factorisation perturbs a pivot that cancels to exactly zero (static pivoting) rather
+  than failing: GaAs stacks without recombination, minority carriers ~1 per m³, now solve, and so
+  does a region held only by face conductances 1e17 weaker than its insides (its current right
+  to 1e-11). `BlockTridiagonal` takes it as `staticPivots` (off by default).
+- The light's continuation starts at 1e-30 of it (1e-12 was still a billion times a GaAs layer's
+  equilibrium recombination), and when it stalls, the pseudo-transient ramp starts from its
+  dimmer solution. A lit GaAs n/p diode with a Schottky contact solves cold.
 - Cold steady solves: a lit phototransistor (GaAs n⁺pn, floating base) now solves in 1000
   iterations where it failed after 20,000. Newton's divergence check spares the first update,
   the light's continuation gives up crawling sooner, the pseudo-transient's time step grows

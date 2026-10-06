@@ -5,8 +5,8 @@ Guide for coding agents working in this repo.
 - **Start with the docs:** [README](README.md), [docs/conventions.md](docs/conventions.md),
   [docs/device.md](docs/device.md), [docs/statistics.md](docs/statistics.md),
   [docs/numerics.md](docs/numerics.md), [docs/kit.md](docs/kit.md),
-  [docs/visualization.md](docs/visualization.md), [docs/data.md](docs/data.md) and
-  [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference. Math
+  [docs/visualization.md](docs/visualization.md), [docs/data.md](docs/data.md),
+  [docs/reliability.md](docs/reliability.md) and [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference. Math
   in the docs is LaTeX for GitHub: inline as $`…`$ (the backticks keep markdown's emphasis rules
   out of it; a bare $…$ breaks wherever a `_` or `*` pairs up), displays in ```math blocks; the
   README stays Unicode, for npm.
