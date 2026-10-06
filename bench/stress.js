@@ -192,7 +192,7 @@ const families = {
     return {
       def,
       params: { kind, names, c, epsr, L, debye, farBath, k0: reaction.k0 },
-      plan: { side: 'right', V: r.u(-0.2, 0.2), equilibrium: !farBath, step: r.u(0.005, 0.1), t: r.log(-3, 1), Ifrac: r.u(-0.9, 0.9) },
+      plan: { side: 'right', V: r.u(-0.2, 0.2), equilibrium: true, step: r.u(0.005, 0.1), t: r.log(-3, 1), Ifrac: r.u(-0.9, 0.9), relative: farBath },
     };
   },
 
@@ -257,6 +257,24 @@ function runCase(family, k) {
       note(name, `threw: ${String(e.message).split('\n')[0].slice(0, 160)}`);
     }
   };
+  // A cell against a bath whose reference isn't its electrode's couple is biased from its open
+  // circuit: at 0 V, a silver electrode sits 0.8 V from Ag⁺/Ag and dissolves until the cell
+  // holds 1e13 mol/m³.
+  let V0 = 0;
+  if (plan.relative) {
+    try {
+      const o = new Device(def);
+      o.set({ contacts: { [plan.side]: { I: 0 } } });
+      const s = o.solve();
+      if (!s.converged) return note('open circuit', 'not converged'), out;
+      V0 = s.terminals[plan.side].V;
+      def.contacts[plan.side] = { ...def.contacts[plan.side], V: V0 };
+      out.V0 = V0;
+    } catch (e) {
+      note('open circuit', `threw: ${String(e.message).split('\n')[0].slice(0, 160)}`);
+      return out;
+    }
+  }
   let dev;
   try {
     dev = new Device(def);
@@ -294,7 +312,7 @@ function runCase(family, k) {
   let cold;
   attempt('cold at bias', () => {
     const d = new Device(def);
-    d.set(drive(plan.side, plan.V));
+    d.set(drive(plan.side, V0 + plan.V));
     cold = d.solve();
     return judged(d, cold);
   });
@@ -304,7 +322,7 @@ function runCase(family, k) {
     let sol = d.solve();
     const n = Math.max(1, Math.ceil(Math.abs(plan.V) / 0.1));
     for (let j = 1; j <= n; j++) {
-      d.set(drive(plan.side, (plan.V * j) / n));
+      d.set(drive(plan.side, V0 + (plan.V * j) / n));
       sol = d.solve();
       if (!sol.converged) return `not converged at ${((plan.V * j) / n).toFixed(3)} V`;
     }
@@ -335,7 +353,7 @@ function runCase(family, k) {
       const V1 = Math.sign(plan.Ifrac);
       let sol;
       for (let j = 1; j <= 10; j++) {
-        d.set(drive(plan.side, (V1 * j) / 10));
+        d.set(drive(plan.side, V0 + (V1 * j) / 10));
         sol = d.solve();
         if (!sol.converged) return `no steady state at ${((V1 * j) / 10).toFixed(1)} V to find the limit`;
       }
@@ -354,7 +372,7 @@ function runCase(family, k) {
   attempt('transient', () => {
     const d = new Device(def);
     d.solve();
-    d.set(drive(plan.side, plan.step));
+    d.set(drive(plan.side, V0 + plan.step));
     const s = d.advance(plan.t, { budgetMs: 4000, maxSteps: 20000 });
     if (!s.converged) return `failed at t = ${s.time.toPrecision(3)} s (${s.steps} steps)`;
     if (!s.done) return `too slow: t = ${s.time.toPrecision(3)} of ${plan.t.toPrecision(3)} s in ${s.steps} steps`;
@@ -381,7 +399,7 @@ function runCase(family, k) {
       if (plan.cap) return '';
       const dV = 1e-4, I = (V) => {
         const e = new Device(def);
-        e.set(drive(plan.side, V));
+        e.set(drive(plan.side, V0 + V));
         const s = e.solve();
         return s.converged ? s.terminals[plan.side].current : NaN;
       };
@@ -397,7 +415,8 @@ function runCase(family, k) {
         const z = d.impedance([f], { terminal: plan.side }).Z;
         Y = admittance(z.re[0], z.im[0]);
       }
-      if (Math.abs(Y.re - G) > 1e-3 * Math.hypot(Y.re, Y.im, G) + 1e-12) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;
+      // (0.5%: a cell passing nanoamps at ±0.1 mV has steady currents precise to about that)
+      if (Math.abs(Y.re - G) > 5e-3 * Math.hypot(Y.re, Y.im, G) + 1e-12) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;
       return '';
     });
   }
