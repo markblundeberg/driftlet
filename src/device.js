@@ -860,7 +860,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
   if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
-  fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions']);
+  fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'gates']);
   const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
   const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'pinned');
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
@@ -916,6 +916,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // blocked, an ohmic interface conductance G (S/m²), or a permeability P (m/s): electrodiffusion
   // through a thin membrane in a constant field, Goldman–Hodgkin–Katz.
   const links = defaultInterfaceLinks(matL, matR, species);
+  const gates = normalizeGates(idef.gates, where, matL, matR);
   if (idef.species !== undefined) {
     need(isObject(idef.species), `${where}.species must map species names to interface links`);
     for (const [sname, raw] of Object.entries(idef.species)) {
@@ -924,7 +925,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
-      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : link.type === 'permeability' ? ['type', 'P'] : ['type']);
+      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : link.type === 'permeability' ? ['type', 'P', 'gates'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
         need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
@@ -934,13 +935,51 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
         positive(link.P, `${lpath}.P (m/s)`);
         need(matL.modelOf[i] < 0 && matR.modelOf[i] < 0, `${lpath}: a permeability link needs ideal (dilute) statistics for '${sname}' on both sides`);
       }
-      links[i] = { ...link };
+      // Gated: P × Π x_q^p over the face's gates (a channel open with probability m³h, say).
+      let gated = [];
+      if (link.gates !== undefined) {
+        need(isObject(link.gates), `${lpath}.gates must map the face's gate names to exponents, e.g. { m: 3, h: 1 }`);
+        gated = Object.entries(link.gates).map(([gname, p]) => {
+          const q = gates.findIndex((gt) => gt.name === gname);
+          need(q >= 0, `${lpath}.gates.${gname}: no such gate on this face${gates.length ? ` (it has ${gates.map((gt) => gt.name).join(', ')})` : ` (define it in ${where}.gates)`}`);
+          need(Number.isInteger(p) && p >= 1 && p <= 8, `${lpath}.gates.${gname}: the exponent must be a whole number from 1 to 8, got ${JSON.stringify(p)}`);
+          return [q, p];
+        });
+      }
+      links[i] = { ...link, gates: gated };
     }
   }
 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  return { phi, dipole, sheetCharge, links, reactions, conductor: null };
+  return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null };
+}
+
+// A face's gates (Hodgkin–Huxley): each a fraction x in [0, 1] with first-order kinetics in the
+// voltage across the face, V = φ_right − φ_left,
+//   dx/dt = α(V) (1 − x) − β(V) x,
+// α and β each one of NeuroML's three standard forms, with rate in 1/s and midpoint and scale in
+// volts: 'exp', rate·e^((V − midpoint)/scale); 'sigmoid', rate/(1 + e^((midpoint − V)/scale));
+// 'expLinear', rate·y/(1 − e^(−y)) with y = (V − midpoint)/scale. They scale permeabilities
+// (a link's gates), and nothing else: a gate holds no charge and exchanges no free energy.
+const GATE_RATE_TYPES = ['exp', 'sigmoid', 'expLinear'];
+function normalizeGates(raw, where, matL, matR) {
+  if (raw === undefined) return [];
+  need(isObject(raw), `${where}.gates must map gate names to { alpha, beta }`);
+  need(!matL.phiFree && !matR.phiFree, `${where}.gates: a gate follows the voltage across the face, which needs φ on both sides`);
+  return Object.entries(raw).map(([name, gdef]) => {
+    const gpath = `${where}.gates.${name}`;
+    need(isObject(gdef), `${gpath} must be { alpha, beta }`);
+    fields(gdef, gpath, ['alpha', 'beta']);
+    const rate = (r, rpath) => {
+      need(isObject(r) && GATE_RATE_TYPES.includes(r.type), `${rpath} must be { type, rate, midpoint, scale } with type one of ${GATE_RATE_TYPES.join(', ')}`);
+      fields(r, rpath, ['type', 'rate', 'midpoint', 'scale']);
+      const scale = finite(r.scale, `${rpath}.scale (V)`);
+      need(scale !== 0, `${rpath}.scale (V) must not be zero`);
+      return { type: r.type, rate: positive(r.rate, `${rpath}.rate (1/s)`), midpoint: finite(r.midpoint, `${rpath}.midpoint (V)`), scale };
+    };
+    return { name, alpha: rate(gdef.alpha, `${gpath}.alpha`), beta: rate(gdef.beta, `${gpath}.beta`) };
+  });
 }
 
 // A conductor (a metal, or a fast ion conductor): only its one mobile carrier, whose single
@@ -1036,7 +1075,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
   }
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, conductor: { side, i: metal.i } };
+  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i } };
 }
 
 function defaultInterfaceLinks(matL, matR, species) {

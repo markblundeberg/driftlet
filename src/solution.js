@@ -148,7 +148,13 @@ export function makeSolution(solver, result = {}) {
     const N = {};
     for (let i = 0; i < n; i++) N[species[i].name] = u[b * M + 1 + i];
     const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), forward
-    return { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
+    const out = { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
+    if (itf.gates.length > 0) {
+      // Each gate's fraction open, and the voltage across the face that drives them.
+      out.gates = Object.fromEntries(itf.gates.map((gate, q) => [gate.name, u[solver._gateSlot(f, q)]]));
+      out.V = solver._faceVoltage(f);
+    }
+    return out;
   });
 
   // Bulk reactions: each one's forward rate at every node (mol/(m³·s), NaN where it doesn't run),

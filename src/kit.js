@@ -10,6 +10,7 @@ export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
 export { traces, speciesRole, typeset } from './traces.js';
 export { live } from './live.js';
 export { pulse, square, triangle, ramp, injector, recombination, photogeneration } from './sources.js';
+export { hodgkinHuxley, ghkCurrent } from './channels.js';
 export { describe, unitWarnings } from './describe.js';
 export { recorder } from './recorder.js';
 export { henderson, planck } from './junction.js';

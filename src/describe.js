@@ -201,10 +201,12 @@ export function describe(def) {
       const rx = (idef.reactions ?? []).map((r) => (r.equation ?? equation(r.left, r.right)) + kinetics(r));
       const laws = species.flatMap((sp, i) => {
         const l = itf.links[i];
-        return l.type === 'permeability' ? [`${sp.name} ${num(l.P)} m/s`] : l.type === 'conductance' ? [`${sp.name} ${num(l.G)} S/m²`] : [];
+        const gated = (l.gates ?? []).map(([q, p]) => itf.gates[q].name + (p > 1 ? `^${p}` : '')).join('·');
+        return l.type === 'permeability' ? [`${sp.name} ${num(l.P)} m/s${gated ? ` × ${gated}` : ''}`] : l.type === 'conductance' ? [`${sp.name} ${num(l.G)} S/m²`] : [];
       });
+      const gates = (itf.gates ?? []).map((g) => g.name);
       lines.push(
-        `  ${L.name} | ${R.name}: ${law}${align}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}`,
+        `  ${L.name} | ${R.name}: ${law}${align}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}${gates.length ? `; gates (voltage-dependent, see interfaces[f].gates): ${gates.join(', ')}` : ''}`,
       );
     });
   }

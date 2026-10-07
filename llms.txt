@@ -210,8 +210,50 @@ console.log(check(dev, sol).text); // per compartment: Na⁺ leaks into the cyto
 ```
 
 Between two baths instead (the inside one `bath(inside, 'Cl-', { I: 0 })`: held composition, no
-current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equilibrium. driftlet
-has no voltage-gated channels; a permeability can be changed with `set()` between steps.
+current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equilibrium.
+
+## Template: an action potential
+
+Voltage-gated channels: a face's `gates` (each a fraction open with Hodgkin–Huxley kinetics,
+dx/dt = α(V)(1 − x) − β(V)x, in V = φ_right − φ_left), and a permeability scaled by them
+(`gates: { m: 3, h: 1 }`). `hodgkinHuxley()` in the kit writes the squid axon's: its gates, and
+GHK permeabilities matched to HH's conductances at rest. A pump-less cell has no steady rest
+(`solve()` finds Donnan), so start the transient from the concentrations given: the membrane
+settles within milliseconds.
+
+```js
+import { Device } from 'driftlet';
+import { build, layer, bath, aqueous, injector, pulse, hodgkinHuxley } from 'driftlet/kit';
+
+const T = 279.45; // HH's 6.3 °C
+const out = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, inside = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
+const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+const hh = hodgkinHuxley({ inside, outside: out, T }); // outside on the left
+const axon = new Device(
+  build({
+    T,
+    library: [water],
+    stack: [
+      bath(out, 'Cl-'),
+      layer('water', 5e-6, { name: 'outside', c0: out }),
+      { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } },
+      layer('water', 20e-6, { name: 'cytoplasm', c0: inside }),
+      { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' },
+    ],
+    // the stimulus: 10 µA/cm² of K⁺ for 1 ms at 20 ms, from a pipette in the cytoplasm
+    ports: [injector({ region: 'cytoplasm', from: 15e-6, to: 20e-6, species: 'K+', I: pulse({ start: 20e-3, width: 1e-3, amplitude: 0.1 }) })],
+    grid: { hmin: 50e-9, hmax: 1e-6 },
+  }),
+);
+let peak = -1;
+for (let k = 1; k <= 300; k++) {
+  const sol = axon.advance(k * 1e-4); // 0.1 ms at a time
+  peak = Math.max(peak, sol.interfaces[0].V); // V_m, and sol.interfaces[0].gates = { m, h, n }
+}
+console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // ~ +12 mV: GHK's Na⁺ current is limited by the 50 mM inside
+```
 
 ## Template: an electrode in a stirred solution
 

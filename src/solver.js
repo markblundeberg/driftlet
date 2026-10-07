@@ -261,14 +261,34 @@ export class SolverError extends Error {
   }
 }
 
+// A gate's rate law (see normalizeGates in device.js) at voltage V: [rate, ∂rate/∂V], 1/s and 1/(s·V).
+function gateRate(law, V) {
+  const { rate, midpoint, scale } = law;
+  if (law.type === 'exp') {
+    const v = rate * Math.exp((V - midpoint) / scale);
+    return [v, v / scale];
+  }
+  if (law.type === 'sigmoid') {
+    const e = Math.exp((midpoint - V) / scale), d = 1 + e;
+    return Number.isFinite(e) ? [rate / d, (rate * e) / (scale * d * d)] : [0, 0];
+  }
+  // expLinear: rate·y/(1 − e^−y), smooth through y = 0 (rate there) and → rate·y for large y
+  const y = (V - midpoint) / scale;
+  if (Math.abs(y) < 1e-6) return [rate * (1 + y / 2), rate / (2 * scale)];
+  if (y < -700) return [0, 0];
+  const em = -Math.expm1(-y), ey = Math.exp(-y); // 1 − e^−y, e^−y
+  return [(rate * y) / em, (rate * (em - y * ey)) / (em * em * scale)];
+}
+
 export class Solver {
   constructor(model) {
     this.model = model;
     const { grid, species, materials, regions, contacts } = model;
     const n = species.length;
     // Slots per block: φ̂ (or D, or a conductor's segment flux J), one per species, and at a face
-    // one per face reaction (its rate), as many as the busiest face has.
-    const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length), 0);
+    // one per face reaction (its rate) and one per gate (its fraction open), as many as the
+    // busiest face has.
+    const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length), 0);
     // (and at an electrode port's nodes, one per surface species: its coverage's η)
     const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
     const M = n + 1 + Math.max(nRx, nSurf);
@@ -306,6 +326,11 @@ export class Solver {
     // The bare fraction θ₀, directly (1 − Σθ cancels as θ → 1); 1 where there's no surface.
     this.th0 = new Float64Array(nNodes).fill(1);
     this.th0Old = new Float64Array(nNodes).fill(1);
+    // Faces' gates: each one's slot (after its face's reaction rates) and value at the step's start.
+    this.gateList = model.interfaces.flatMap((itf, f) => itf.gates.map((gate, q) => ({ f, q, gate, o: (this.blockOfFace[f] * M) + 1 + n + itf.reactions.length + q })));
+    this.gateOld = new Float64Array(this.gateList.length);
+    this.gateIndex = new Int32Array(nFaces); // face f's first gate in gateList
+    for (let f = 0, j = 0; f < nFaces; j += model.interfaces[f].gates.length, f++) this.gateIndex[f] = j;
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -579,7 +604,7 @@ export class Solver {
       const bf = this.blockOfFace[f];
       active[bf * M] = itf.phi.type === 'neutral' ? 0 : 1;
       for (let i = 0; i < n; i++) active[bf * M + 1 + i] = itf.links[i].type === 'blocked' ? 0 : 1;
-      for (let k = 0; k < itf.reactions.length; k++) active[bf * M + 1 + n + k] = 1;
+      for (let k = 0; k < itf.reactions.length + itf.gates.length; k++) active[bf * M + 1 + n + k] = 1;
     });
     const sizes = new Int32Array(nB), loc = (this.loc = new Int32Array(nB * M).fill(-1));
     for (let b = 0; b < nB; b++) for (let r = 0; r < M; r++) if (active[b * M + r]) loc[b * M + r] = sizes[b]++;
@@ -1393,6 +1418,11 @@ export class Solver {
       });
       if (w > 0) this.termV[k] = port.capacitance.zeroCharge + sum / w;
     }
+    // Gates start open as far as the starting voltage across their face holds them, α/(α + β).
+    for (const { f, gate, o } of this.gateList) {
+      const V = this._faceVoltage(f), a = gateRate(gate.alpha, V)[0], b = gateRate(gate.beta, V)[0];
+      u[o] = a + b > 0 ? a / (a + b) : 0;
+    }
     // A floating electrode spread through a port (without a double layer) starts where its
     // reactions pass the current it's set (none, behind a resistance): at its mixed potential in
     // the start's composition, not level with a held terminal, which can be volts away and pass
@@ -1601,6 +1631,7 @@ export class Solver {
     const { grid, materials, regions } = model;
     sys.clear();
     res.fill(0);
+    this.dtNow = dt;
     if (this.lin) this.lin.reset(1 / dt);
     this.computeConcentrations();
 
@@ -2036,14 +2067,27 @@ export class Solver {
         // materials). Between like solutions it's Goldman–Hodgkin–Katz's flux,
         //   N = P·zu·(c_L − c_R e^{zu})/(e^{zu} − 1),  u = (φ_R − φ_L)/V_T,
         // and it's exactly zero where μ̄ is level.
-        const gl = grid.regionEnd[f], gr = gl + 1, kl = gl * n + i, kr = gr * n + i, zi = z[i], P = itf.links[i].P;
+        const gl = grid.regionEnd[f], gr = gl + 1, kl = gl * n + i, kr = gr * n + i, zi = z[i], link = itf.links[i];
         const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
         const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
         const E = Math.expm1(-deta); // η_R − η_L
+        // Gated: P × Π x^p, each x taken in [0, 1] (Newton's iterates can stray past its ends).
+        let P = link.P, open = 1;
+        const gated = link.gates ?? [];
+        for (const [q, p] of gated) open *= powi(Math.min(1, Math.max(0, u[this._gateSlot(f, q)])), p);
+        P *= open;
         const gBc = P * bernoulli(d) * this.c[kl];
         const dNdd = -P * bernoulliDerivative(d) * this.c[kl] * E;
         res[R[o]] = u[o] + gBc * E;
         this._j(bf, r, bf, r, 1);
+        for (const [q, p] of gated) {
+          const x = u[this._gateSlot(f, q)];
+          if (!(x > 0 && x < 1)) continue;
+          // ∂/∂x of P·x^p·(the rest): p/x times the flux term
+          let others = 1;
+          for (const [q2, p2] of gated) if (q2 !== q) others *= powi(Math.min(1, Math.max(0, u[this._gateSlot(f, q2)])), p2);
+          this._j(bf, r, bf, 1 + n + itf.reactions.length + q, link.P * bernoulli(d) * this.c[kl] * E * p * powi(x, p - 1) * others);
+        }
         this._j(bf, r, bL, r, -gBc);
         this._j(bf, r, bR, r, gBc * (E + 1));
         if (zi !== 0) {
@@ -2064,6 +2108,34 @@ export class Solver {
       this._j(bR, r, bf, r, -Af);
     }
     itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR, Af));
+    if (itf.gates.length > 0) this._faceGates(f, bf, bL, bR);
+  }
+
+  // Full index of face f's gate q (its fraction open).
+  _gateSlot(f, q) {
+    return this.blockOfFace[f] * this.M + 1 + this.n + this.model.interfaces[f].reactions.length + q;
+  }
+
+  // The voltage across face f, φ_right − φ_left (V).
+  _faceVoltage(f) {
+    const { M, u, uLo, VT } = this, bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
+    return VT * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]));
+  }
+
+  // Face f's gates, each a row (x − x_old)/dt = α(1 − x) − βx in the voltage across the face.
+  _faceGates(f, bf, bL, bR) {
+    const { res, VT } = this, R = this.rix, itf = this.model.interfaces[f], dt = this.dtNow;
+    const V = this._faceVoltage(f), k0 = 1 + this.n + itf.reactions.length;
+    itf.gates.forEach((gate, q) => {
+      const o = this._gateSlot(f, q), x = this.u[o];
+      const [a, da] = gateRate(gate.alpha, V), [b, db] = gateRate(gate.beta, V);
+      const store = Number.isFinite(dt) ? 1 / dt : 0, j = this.gateIndex[f] + q;
+      res[R[o]] = store * (x - this.gateOld[j]) - (a * (1 - x) - b * x);
+      this._j(bf, k0 + q, bf, k0 + q, store + a + b);
+      const dV = -(da * (1 - x) - db * x) * VT; // per unit φ̂_R, and minus that per unit φ̂_L
+      this._j(bf, k0 + q, bR, 0, dV);
+      this._j(bf, k0 + q, bL, 0, -dV);
+    });
   }
 
   // Scharfetter–Gummel with non-ideal statistics. The excess ex = ζ − ln(c/c_ref) acts as an
@@ -2883,6 +2955,7 @@ export class Solver {
       const k = this.surfPort[g]; // an electrode surface's coverages, as η
       if (k >= 0) for (let q = 0; q < this.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
     }
+    for (const gt of this.gateList) mx = Math.max(mx, Math.abs(delta[R[gt.o]])); // a gate's fraction open
     return mx;
   }
 
@@ -3104,6 +3177,7 @@ export class Solver {
     this.termVPrev.set(this.termV);
     this.computeConcentrations();
     const cN = Float64Array.from(this.c), thN = Float64Array.from(this.th), th0N = Float64Array.from(this.th0);
+    const gN = Float64Array.from(this.gateList, (gt) => this.u[gt.o] + this.uLo[gt.o]);
     // Contact displacement before the step: as it was at the end of the previous step (under
     // the parameters then), so a gate-voltage change shows up as displacement current.
     if (!this.contactDEnd || !this.portQEnd) {
@@ -3124,6 +3198,7 @@ export class Solver {
       for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
       for (let k = 0; k < thN.length; k++) this.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
       for (let k = 0; k < th0N.length; k++) this.th0Old[k] = b1 * th0N[k] - b2 * prev.th0[k];
+      for (let k = 0; k < gN.length; k++) this.gateOld[k] = b1 * gN[k] - b2 * prev.g[k];
       this.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
       this.portQStart = QN.map((q, k) => b1 * q - b2 * prev.Q[k]);
       dtEff = dt / a0;
@@ -3131,6 +3206,7 @@ export class Solver {
       this.cOld.set(cN);
       this.thOld.set(thN);
       this.th0Old.set(th0N);
+      this.gateOld.set(gN);
       this.contactDStart = DN;
       this.portQStart = QN;
     }
@@ -3162,7 +3238,7 @@ export class Solver {
     }
     result.bdf = bdf;
     if (result.converged) {
-      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, th0: th0N, D: DN, Q: QN });
+      this.history.unshift({ t: this.time, dt, u: Float64Array.from(this.uPrev), c: cN, th: thN, th0: th0N, g: gN, D: DN, Q: QN });
       if (this.history.length > 3) this.history.length = 3;
       this.time = tEnd;
       this.lastDt = dtEff;
@@ -3415,6 +3491,7 @@ export class Solver {
       const k = this.surfPort[g]; // an electrode surface's coverages, as η
       if (k >= 0) for (let q = 0; q < this.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
     }
+    for (const { o } of this.gateList) mx = Math.max(mx, Math.abs(u[o] - ref[o])); // (a fraction: 1e-3 of m³ is 0.3% of P)
     return mx;
   }
 
@@ -3458,6 +3535,7 @@ export class Solver {
       cOld: Float64Array.from(this.cOld),
       thOld: Float64Array.from(this.thOld),
       th0Old: Float64Array.from(this.th0Old),
+      gateOld: Float64Array.from(this.gateOld),
       time: this.time,
       lastDt: this.lastDt,
       atSteady: this.atSteady,
@@ -3480,6 +3558,7 @@ export class Solver {
     this.cOld.set(s.cOld);
     this.thOld.set(s.thOld);
     this.th0Old.set(s.th0Old);
+    this.gateOld.set(s.gateOld);
     this.time = s.time;
     this.lastDt = s.lastDt;
     this.atSteady = s.atSteady;
@@ -3527,6 +3606,7 @@ export class Solver {
     this.cOld.set(this.c);
     this.thOld.set(this.th);
     this.th0Old.set(this.th0);
+    this.gateList.forEach((gt, j) => (this.gateOld[j] = this.u[gt.o]));
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
     this.portQStart = Float64Array.from(this.portQ);
@@ -3955,6 +4035,7 @@ export class Solver {
   // Jacobian are left partial (the next assemble() starts afresh). Concentrations must be current.
   _assembleBookkeeping(dt) {
     const { model } = this;
+    this.dtNow = dt;
     const { grid, materials, regions } = model;
     this.res.fill(0);
     for (let r = 0; r < regions.length; r++) {

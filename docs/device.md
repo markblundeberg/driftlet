@@ -277,6 +277,63 @@ read from `sol.phi` (or a `'phi'` probe in a transient). A bath contact's termin
 its reference species' level instead, what an electrode reversible to that species would read,
 so between two different solutions it differs from $`\Delta\phi`$ by that species' Nernst term.
 
+### Voltage-gated channels
+
+A permeability can be gated, as Hodgkin and Huxley's Na⁺ and K⁺ channels are: the face lists its
+`gates`, each a fraction $`x`$ in [0, 1] with first-order kinetics in the voltage across the face,
+$`V = \phi_{\mathrm{right}} - \phi_{\mathrm{left}}`$ at its two edge nodes,
+
+```math
+\frac{dx}{dt} = \alpha(V)\,(1 - x) - \beta(V)\,x ,
+```
+
+and a link names the gates that scale its $`P`$, with their exponents: $`P\,m^3 h`$ for `{ m: 3, h: 1 }`.
+Each of $`\alpha`$ and $`\beta`$ is one of NeuroML's three standard forms, with `rate` in 1/s and `midpoint`
+and `scale` in volts:
+
+| `type` | rate |
+| --- | --- |
+| `'exp'` | $`\mathtt{rate}\; e^{(V - \mathtt{midpoint})/\mathtt{scale}}`$ |
+| `'sigmoid'` | $`\mathtt{rate} / (1 + e^{(\mathtt{midpoint} - V)/\mathtt{scale}})`$ |
+| `'expLinear'` | $`\mathtt{rate}\; y/(1 - e^{-y})`$, $`y = (V - \mathtt{midpoint})/\mathtt{scale}`$ |
+
+With the outside on the left, $`V`$ is the membrane potential $`\phi_{\mathrm{in}} - \phi_{\mathrm{out}}`$. Hodgkin and
+Huxley's squid axon (at their 6.3 °C):
+
+```js nocheck
+{
+  phi: { type: 'capacitive', C: 0.01 },
+  gates: {
+    m: { alpha: { type: 'expLinear', rate: 1000, midpoint: -0.040, scale: 0.010 }, beta: { type: 'exp', rate: 4000, midpoint: -0.065, scale: -0.018 } },
+    h: { alpha: { type: 'exp', rate: 70, midpoint: -0.065, scale: -0.020 }, beta: { type: 'sigmoid', rate: 1000, midpoint: -0.035, scale: 0.010 } },
+    n: { alpha: { type: 'expLinear', rate: 100, midpoint: -0.055, scale: 0.010 }, beta: { type: 'exp', rate: 125, midpoint: -0.065, scale: -0.080 } },
+  },
+  species: {
+    'Na+': { type: 'permeability', P: 1.16e-6, gates: { m: 3, h: 1 } },
+    'K+': { type: 'permeability', P: 1.33e-6, gates: { n: 4 } },
+    'Cl-': { type: 'permeability', P: 6.4e-9 }, // the leak
+    'A-': 'blocked',
+  },
+}
+```
+
+The gates scale permeabilities and nothing else: they hold no charge (the small gating current
+of the channels' voltage sensors is left out, as Hodgkin and Huxley left it out), and each ion
+still crosses by electrodiffusion down its own $`\bar\mu`$, so the dissipation stays positive whatever
+they do. In steady state each gate is at $`\alpha/(\alpha + \beta)`$; each solution reports them as
+`interfaces[f].gates` (`{ m, h, n }`) with the voltage they follow, `interfaces[f].V`.
+
+Two things differ from the textbook equations. The currents are GHK's, which rectify: a channel's
+conductance depends on the voltage, so a permeability matches a conductance $`g`$ at one voltage
+only (above, the chord conductances at rest, −65 mV, for Hodgkin and Huxley's 120, 36 and 0.3
+mS/cm²; matched at the reversal potentials instead, the rest depolarises itself and the axon
+fires on its own). And a cell without a pump has no resting steady state: `solve()` finds its
+Donnan equilibrium, every permeant ion level across the membrane, which the real cell reaches
+only over hours. Start a transient from the concentrations given (it settles to rest within
+milliseconds), or keep the gradients with the Na⁺/K⁺ pump on the same face. Started from the
+same state, a squid axon's action potential follows the space-clamped Hodgkin–Huxley equations
+with GHK currents to within 1 mV ([`gates`](../test/gates.test.js) test).
+
 ### Faces next to a conductor
 
 A conductor has no $`\phi`$, so a face beside it can't take a `dipole` or `step` alignment. Its $`\phi`$

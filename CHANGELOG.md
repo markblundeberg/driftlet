@@ -2,6 +2,16 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Voltage-gated channels: a face's `gates`, each a fraction open with Hodgkin–Huxley kinetics in
+  the voltage across the face (α and β in NeuroML's three standard forms), and permeabilities
+  scaled by them (`gates: { m: 3, h: 1 }`). They're unknowns of the face's block; solutions report
+  `interfaces[f].gates` and `.V`. `hodgkinHuxley()` in the kit writes the squid axon's channels,
+  with GHK permeabilities matched to HH's conductances at rest. Under a voltage clamp each gate
+  sits at α/(α + β) and relaxes at α + β; a squid axon's action potential follows the
+  space-clamped HH equations with GHK currents to within 1 mV.
+
 ## 0.11.4 (2026-10-06)
 
 - Islands behind neighbours that conduct 1e20 times less than they do (across faces that hold μ̄

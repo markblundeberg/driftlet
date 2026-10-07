@@ -142,6 +142,18 @@ Concentrations are held, so these are the curves of that instant (for a mixed po
 kinetic picture). Away from the actual level the composition beside the electrode would change,
 which is the transport the full solve accounts for.
 
+## Channels
+
+**`hodgkinHuxley({ inside, outside, T, g, leak, leakZ, at, names })`**: Hodgkin and Huxley's
+squid-axon channels for a [membrane face](device.md#voltage-gated-channels) with the outside on its
+left: `{ gates, species }`, the face's `gates` (m, h and n, their 1952 rates at 6.3 °C scaled to
+`T` by Q₁₀ = 3) and links for Na⁺ (P·m³h), K⁺ (P·n⁴) and the leak (one ion, `leak`, of charge
+`leakZ`: Cl⁻ by default). The currents are GHK's, which rectify, so each permeability is the one
+whose chord conductance at `at` (−65 mV) is HH's `g` (120, 36 and 0.3 mS/cm²) at the
+concentrations given. Spread it into the face beside its $`\phi`$ law, adding the other species'
+links: `{ phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } }`.
+`ghkCurrent(z, inside, outside, V, T)` is the GHK current (outward, A/m²) at unit permeability.
+
 ## Sources
 
 Helpers that write sources as plain data:

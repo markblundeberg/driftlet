@@ -210,9 +210,14 @@ flux node's own rows are the interface laws:
 | species, blocked or absent on one side | $`N_f = 0`$ |
 | species, conductance | $`N_f - G V_T (\eta_L - \eta_R)/(z^2 F) = 0`$ |
 | face reaction $`k`$ | $`r_k - \mathrm{rate}_k(\mathrm{state}_L, \mathrm{state}_R) = 0`$, and each participant's edge node takes $`\nu \cdot r_k`$ |
+| gate $`q`$ | $`(x_q - x_q^{\mathrm{old}})/dt - \alpha(V)(1 - x_q) + \beta(V)\,x_q = 0`$, $`V = V_T(\hat\phi_R - \hat\phi_L)`$; a gated permeability's $`P`$ takes $`\prod x^p`$ |
 
 Every row couples only neighbours, with no penalty terms. A face reaction's rate is an unknown
-of the face block, so the two edge nodes it couples meet only through the block between them.
+of the face block, so the two edge nodes it couples meet only through the block between them;
+so is a gate's fraction open, its row coupling it to the two edge nodes' $`\hat\phi`$, and the gated
+fluxes to it, all within the face's block and its neighbours'. Newton's convergence and the time
+step's error count a gate's change as they count a potential's in thermal units (1e-3 of $`m`$ is
+0.3% of $`m^3`$), and a gate is evaluated in [0, 1] where Newton's iterates stray past its ends.
 A species can take part in a reaction at a face and also cross it by a link (its flux slot)
 at the same time; where it exists on both sides, that link must be given explicitly. A continuity
 row has a zero diagonal block, but block Thomas still sees a non-singular block there once the
