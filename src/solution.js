@@ -191,7 +191,7 @@ export function makeSolution(solver, result = {}) {
 
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
   // gate contacts), check the local Debye length against the adjacent cell.
-  sol.warnings = [...(model.warnings ?? [])];
+  sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
   // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
   // and Newton loses them (a transient can stall there).
   sol.ports.forEach((p) => {

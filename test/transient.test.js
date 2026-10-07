@@ -244,3 +244,34 @@ test('cyclic voltammetry in a strictly neutral cell runs through its turns (roun
     assert.ok(run.converged, `frame ${f}, t = ${dev.solver.time}`);
   }
 });
+
+test('a potential step a second into a run, on a 5 nm grid: Cottrell (step lengths, not differences of times near 1 s)', async () => {
+  // Pt | Fe³⁺ in KCl (ε = 0) through 1 mm to a bath, held where nothing happens, then stepped
+  // 0.8 V down at t = 1 s: Fe³⁺ is reduced at the diffusion limit. Just after the jump the
+  // profile is self-similar in x/√t and steps of 1e-13 s resolve it, a second into the run.
+  const { build, layer, ohmic, bath, half, aqueous, metal, IONS } = await import('../src/kit.js');
+  const iron = half('Fe3+ + e- = Fe2+');
+  const c = 1, bulk = { 'K+': 1000, 'Cl-': 1003.00002, 'Fe3+': c, 'Fe2+': 1e-5 };
+  const cell = (drive) =>
+    build({
+      library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+      stack: [ohmic(drive, ['e-']), layer('Pt', 1e-6), { reactions: [{ ...iron, k0: 10 }] }, layer('water', 1e-3), bath(bulk, 'Cl-')],
+      grid: { hmin: 5e-9, hmax: 20e-6, ratio: 1.15 },
+    });
+  const Eeq = new Device(cell({ I: 0 })).solve().terminals.left.V; // Fe³⁺/Fe²⁺ at 1e5 : 1
+  const up = Eeq + 0.2, down = Eeq - 0.6;
+  const dev = new Device(cell({ t: [0, 1, 1, 2], values: [up, up, down, down] }));
+  dev.solve();
+  assert.ok(dev.advance(1).done);
+  const run = dev.advance(1.3);
+  assert.ok(run.converged && run.done && run.warnings.length === 0, JSON.stringify({ steps: run.steps, warnings: run.warnings }));
+  const D = IONS['Fe3+'].D, { t, current } = run.trace;
+  for (const after of [1e-3, 1e-2, 0.1, 0.3]) {
+    const k = t.findIndex((tk) => tk - 1 >= after * (1 - 1e-9));
+    const cottrell = FARADAY * c * Math.sqrt(D / (Math.PI * (t[k] - 1)));
+    assert.ok(Math.abs(-current[k] / cottrell - 1) < 0.01, `${after} s after the step: ${-current[k]} A/m² against Cottrell's ${cottrell}`);
+  }
+  // Stopped short: the solution says where, and why.
+  const short = dev.advance(2, { maxSteps: 3 });
+  assert.ok(!short.done && short.warnings.some((w) => /advance stopped at t = .*maxSteps \(3\)/.test(w)), short.warnings.join('\n'));
+});

@@ -3,87 +3,87 @@
   "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
   "results": {
     "linear solve 300 × 7 (factor + solve)": {
-      "ms": 0.429,
+      "ms": 0.441,
       "factorizations": 1,
       "work": 102900
     },
     "pn diode: cold equilibrium": {
-      "ms": 2.648,
+      "ms": 2.65,
       "factorizations": 9,
       "work": 64395
     },
     "pn diode: I–V sweep 0 → 0.6 V, 31 points": {
-      "ms": 27.466,
+      "ms": 28.568,
       "factorizations": 137,
       "work": 980235
     },
     "pn diode: warm jump 0.4 V → −1 V": {
-      "ms": 8.196,
+      "ms": 8.121,
       "factorizations": 51,
       "work": 364905
     },
     "pn diode: advance 0 → 0.5 V, 100 ns": {
-      "ms": 163.87,
+      "ms": 170.016,
       "factorizations": 926,
       "work": 6625530
     },
     "Haynes–Shockley pulse in n-Si (weak, 5% of n₀): advance 12 µs": {
-      "ms": 585.711,
-      "factorizations": 2281,
-      "work": 18537687
+      "ms": 580.997,
+      "factorizations": 2277,
+      "work": 18505179
     },
     "Haynes–Shockley pulse in n-Si (strong, 100% of n₀): advance 12 µs": {
-      "ms": 684.268,
-      "factorizations": 2619,
-      "work": 21284613
+      "ms": 662.027,
+      "factorizations": 2608,
+      "work": 21195216
     },
     "pn diode: impedance, 20 frequencies": {
-      "ms": 20.533,
+      "ms": 14.313,
       "factorizations": 21,
       "work": 150255
     },
     "MOS (Au gate): C–V sweep −1 → 1.5 V, 26 points": {
-      "ms": 9.192,
+      "ms": 9.331,
       "factorizations": 126,
       "work": 288414
     },
     "n-Si | KCl: Mott–Schottky sweep −0.5 → 1 V, 31 points": {
-      "ms": 34.775,
+      "ms": 35.118,
       "factorizations": 156,
       "work": 1322724
     },
     "n-Si | KCl: impedance, 20 frequencies": {
-      "ms": 28.071,
+      "ms": 15.893,
       "factorizations": 21,
       "work": 178059
     },
     "Ag|AgNO₃|Ag (ε > 0): cold steady": {
-      "ms": 0.573,
+      "ms": 0.583,
       "factorizations": 1,
       "work": 5319
     },
     "Ag|AgNO₃|Ag (ε > 0): sweep 0 → 0.1 V, 21 points": {
-      "ms": 11.881,
+      "ms": 13.113,
       "factorizations": 81,
       "work": 430839
     },
     "Ag|AgNO₃|Ag (ε > 0): impedance, 20 frequencies": {
-      "ms": 12.93,
+      "ms": 10.618,
       "factorizations": 21,
       "work": 111699
     },
     "Ag|AgNO₃|Ag (ε = 0): advance 1 s after 50 mV": {
-      "ms": 24.538,
+      "ms": 25.34,
       "factorizations": 186,
       "work": 989334
     },
     "bipolar Ag electrode: sweep 0 → 1 V, 11 points": {
-      "ms": 24.512,
+      "ms": 22.764,
       "factorizations": 54,
       "work": 705942
     },
     "insertion host: OCV sweep 0.55 → 0.25 V, 31 points": {
-      "ms": 15.859,
+      "ms": 15.75,
       "factorizations": 62,
       "work": 27280
     }

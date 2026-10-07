@@ -261,6 +261,11 @@ export class SolverError extends Error {
   }
 }
 
+// Lagrange weights at x through the points s0, s1, s2.
+function lagrange3(x, s0, s1, s2) {
+  return [((x - s1) * (x - s2)) / ((s0 - s1) * (s0 - s2)), ((x - s0) * (x - s2)) / ((s1 - s0) * (s1 - s2)), ((x - s0) * (x - s1)) / ((s2 - s0) * (s2 - s1))];
+}
+
 // A gate's rate law (see normalizeGates in device.js) at voltage V: [rate, ∂rate/∂V], 1/s and 1/(s·V).
 function gateRate(law, V) {
   const { rate, midpoint, scale } = law;
@@ -3410,7 +3415,7 @@ export class Solver {
         }
       } else {
         // (Order 2 once three consistent states can check it.)
-        const r = this.step(h, { method: this.history.length >= 2 ? method : 'be', guess: this._extrapolate(guess, this.time + h) });
+        const r = this.step(h, { method: this.history.length >= 2 ? method : 'be', guess: this._extrapolate(guess, h) });
         iterations += r.iterations;
         if (!r.converged) {
           rejected++;
@@ -3456,24 +3461,28 @@ export class Solver {
     }
     this.dtNext = dt;
     this.landing = undefined;
-    return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace };
+    // Stopped short, other than on the caller's wall-time budget: say where, and why.
+    let stopped;
+    const at = `advance stopped at t = ${this.time.toPrecision(6)} s of ${tEnd.toPrecision(6)}`;
+    if (failed) stopped = `${at}: a step didn't converge even when shortened to ${dt.toExponential(1)} s. A drive's jump too big for one step (ramp it), or a device the steady solves also find hard.`;
+    else if (this.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
+    return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
   }
 
-  // Quadratic (or linear) extrapolation of the state to time t, from the current state and the
-  // two most recent history entries: a starting guess for Newton.
-  _extrapolate(out, t) {
+  // Quadratic (or linear) extrapolation of the state a time h ahead, from the current state and
+  // the two most recent history entries: a starting guess for Newton. (In offsets built from the
+  // steps' own lengths, never differences of absolute times: a second into a run, after a jump
+  // that a fine grid resolves in steps of 1e-13 s, those differences keep only 3 digits.)
+  _extrapolate(out, h) {
     const [e0, e1] = this.history;
-    const t0 = this.time, u = this.u;
+    const u = this.u;
     if (!e0) return undefined;
     if (!e1) {
-      const l = (t - t0) / (t0 - e0.t);
+      const l = h / e0.dt;
       for (let k = 0; k < out.length; k++) out[k] = u[k] + l * (u[k] - e0.u[k]);
       return out;
     }
-    const t1 = e0.t, t2 = e1.t;
-    const l0 = ((t - t1) * (t - t2)) / ((t0 - t1) * (t0 - t2));
-    const l1 = ((t - t0) * (t - t2)) / ((t1 - t0) * (t1 - t2));
-    const l2 = ((t - t0) * (t - t1)) / ((t2 - t0) * (t2 - t1));
+    const [l0, l1, l2] = lagrange3(h, 0, -e0.dt, -(e0.dt + e1.dt));
     for (let k = 0; k < out.length; k++) out[k] = l0 * u[k] + l1 * e0.u[k] + l2 * e1.u[k];
     return out;
   }
@@ -3482,7 +3491,7 @@ export class Solver {
   // linear after backward Euler), and the factor turning |u − pred| into the local error.
   _predict(pred, bdf) {
     const [e0, e1, e2] = this.history;
-    const t = this.time, h = e0.dt;
+    const h = e0.dt;
     if (!e1) {
       pred.set(e0.u);
       return { scale: 1, order: 1 };
@@ -3490,18 +3499,15 @@ export class Solver {
     const hp = e1.dt;
     if (bdf && e2) {
       const hpp = e2.dt;
-      // Lagrange through (t0, u0), (t1, u1), (t2, u2) at t.
-      const t0 = e0.t, t1 = e1.t, t2 = e2.t;
-      const l0 = ((t - t1) * (t - t2)) / ((t0 - t1) * (t0 - t2));
-      const l1 = ((t - t0) * (t - t2)) / ((t1 - t0) * (t1 - t2));
-      const l2 = ((t - t0) * (t - t1)) / ((t2 - t0) * (t2 - t1));
+      // Lagrange through the three states before at the new time (offsets as in _extrapolate).
+      const [l0, l1, l2] = lagrange3(0, -h, -(h + hp), -(h + hp + hpp));
       for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
       const w = h / hp;
       const Cc = (h * h * h * (1 + w) * (1 + w)) / (w * (1 + 2 * w));
       const Cp = h * (h + hp) * (h + hp + hpp);
       return { scale: Cc / (Cc + Cp), order: 2 };
     }
-    const l0 = (t - e1.t) / (e0.t - e1.t), l1 = 1 - l0;
+    const l0 = (h + hp) / hp, l1 = 1 - l0;
     for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
     // Backward Euler's error against a linear predictor; after a BDF2 step without enough
     // history this overestimates, which is safe.
