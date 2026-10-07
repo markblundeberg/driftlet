@@ -28,9 +28,9 @@ materials, insertion hosts), data.md and reliability.md (what's validated, and t
 From a CDN, pin the version you tested against:
 
 ```js nocheck
-import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/plot.js';
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/plot.js';
 ```
 
 From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at the end.
@@ -193,9 +193,9 @@ a CDN needs a long virtual-time budget, 30 s.)
 <span id="readout"></span>
 <div id="figure"></div>
 <script type="module">
-import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.13.0/src/plot.js';
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@0.14.0/src/plot.js';
 
 const def = build({
   T: 300,

@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.14.0
 
 - `particles()` in the kit (experimental): a solution drawn as dots of a fixed amount each,
   hopping between display cells at one-way rates taken from the solution, so their density is
