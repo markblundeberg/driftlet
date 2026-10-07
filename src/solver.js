@@ -265,8 +265,9 @@ export class SolverError extends Error {
 function gateRate(law, V) {
   const { rate, midpoint, scale } = law;
   if (law.type === 'exp') {
-    const v = rate * Math.exp((V - midpoint) / scale);
-    return [v, v / scale];
+    // (held finite where Newton's iterates stray to absurd voltages: β_m at −13 V would overflow)
+    const y = (V - midpoint) / scale, v = rate * Math.exp(Math.min(y, 700));
+    return [v, y > 700 ? 0 : v / scale];
   }
   if (law.type === 'sigmoid') {
     const e = Math.exp((midpoint - V) / scale), d = 1 + e;
@@ -2519,6 +2520,7 @@ export class Solver {
           flux[i] += res[R[o]];
           this._captureRow(b, r, zF, C);
           this._replaceRow(b, r);
+          for (const Bk of this.termB) Bk[R[o]] = 0; // (other ports' terms in the row replaced)
           this._j(b, r, b, r, 1);
           res[R[o]] = -deta;
           B[R[o]] += -z[i] / VT;

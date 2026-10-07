@@ -12,6 +12,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   periaxonal space: K⁺ piles up there with each spike (about 3.5 mM) and clears over 50 ms, and
   E_K, the rest and the after-hyperpolarisation follow it, which Hodgkin and Huxley's fixed E_K
   can't. A test checks that such a space clears as one compartment, e^(−tP/θ), to 2e-3.
+- Fixed: a port holding a level inside another port's window left that port's ∂res/∂V in the
+  row it replaced (a stale entry, ~1e-6 of the row: it touched only that port's impedance, or
+  its circuit if floating). A gate's exponential rate law is held finite at absurd voltages,
+  and `describe()` shows gated conductance links' gates.
 
 ## 0.12.0 (2026-10-07)
 

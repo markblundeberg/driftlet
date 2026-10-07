@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, bath, aqueous, hodgkinHuxley } from '../src/kit.js';
 
 // The Jacobian, assembled straight into blocks that hold only each node's unknowns, against
 // central differences of the residual, column by column. Devices are chosen to cover every
@@ -150,6 +151,32 @@ const devices = {
     ports: [{ name: 'gate', region: 0, from: 0.2e-6, V: 0.02, R: 10, area: { x: [0, 1e-6], values: [1e6, 4e6] }, capacitance: { C: 0.1, zeroCharge: 0.05 } }],
     grid: coarse,
   }),
+  // Gates: a membrane face's (GHK permeabilities, m³h and n⁴), and two membrane ports' along the
+  // inside, one held, one floating behind a resistance.
+  'gated channels on a face and on two ports, one floating': () => {
+    const T = 279.45, OUT = { 'Na+': 440, 'K+': 20, 'Cl-': 460 }, IN = { 'Na+': 50, 'K+': 400, 'Cl-': 450 };
+    const hh = hodgkinHuxley({ inside: IN, outside: OUT, T }), hp = hodgkinHuxley({ area: 1e4, T });
+    const def = build({
+      T,
+      library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+      stack: [bath(OUT, 'Cl-'), layer('water', 1e-6, { name: 'out', c0: OUT }), { phi: { type: 'capacitive', C: 0.01 }, ...hh }, layer('water', 2e-6, { name: 'in', c0: IN }), bath(IN, 'Cl-', -0.02)],
+      grid: { hmin: 2e-7, hmax: 2e-7 },
+    });
+    const port = (name, from, to, drive) => ({ name, region: 'in', from, to, area: 1e4, capacitance: { C: 0.01, zeroCharge: 0.01 }, bath: { c: OUT }, gates: hp.gates, species: hp.species, ...drive });
+    def.ports = [port('p1', 0.3e-6, 0.9e-6, { V: -0.01 }), port('p2', 1.1e-6, 1.7e-6, { V: 0.005, R: 30 })];
+    return def;
+  },
+  // A port holding a level inside another's window: its row replaces the node's balance, the
+  // other's ∂res/∂V there with it.
+  'a held level inside a conductance port\'s window': () => {
+    const S = { 'Na+': 100, 'K+': 100, 'Cl-': 200 };
+    const def = build({ library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })], stack: [bath(S, 'Cl-'), layer('water', 2e-6, { name: 'in', c0: S }), bath(S, 'Cl-')], grid: { hmin: 2e-7, hmax: 2e-7 } });
+    def.ports = [
+      { name: 'p1', region: 'in', from: 0.3e-6, to: 1.7e-6, V: 0.01, terminal: 'K+', species: { 'K+': { type: 'conductance', G: 1e6 } } },
+      { name: 'eq', region: 'in', from: 0.5e-6, to: 0.9e-6, V: 0.003, terminal: 'K+', R: 5, species: { 'K+': 'equilibrium' } },
+    ];
+    return def;
+  },
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },

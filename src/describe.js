@@ -202,7 +202,7 @@ export function describe(def) {
       const laws = species.flatMap((sp, i) => {
         const l = itf.links[i];
         const gated = (l.gates ?? []).map(([q, p]) => itf.gates[q].name + (p > 1 ? `^${p}` : '')).join('·');
-        return l.type === 'permeability' ? [`${sp.name} ${num(l.P)} m/s${gated ? ` × ${gated}` : ''}`] : l.type === 'conductance' ? [`${sp.name} ${num(l.G)} S/m²`] : [];
+        return l.type === 'permeability' ? [`${sp.name} ${num(l.P)} m/s${gated ? ` × ${gated}` : ''}`] : l.type === 'conductance' ? [`${sp.name} ${num(l.G)} S/m²${gated ? ` × ${gated}` : ''}`] : [];
       });
       const gates = (itf.gates ?? []).map((g) => g.name);
       lines.push(

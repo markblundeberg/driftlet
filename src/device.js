@@ -691,7 +691,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   surface.forEach((sp, s) => need(reactions.some((rx) => rx.part.some((p) => p.side === 2 && p.s === s)), `${path}.surface.${sp.name}: no reaction of the port makes or uses it`));
   const capacitance = portCapacitance(pdef, path, mat);
   // Gates (a membrane's channels): they follow the voltage across the port's capacitance.
-  const gates = normalizeGates(pdef.gates, path, mat, mat);
+  const gates = normalizeGates(pdef.gates, path, mat, mat, "the port's capacitance");
   need(gates.length === 0 || capacitance !== null, `${path}.gates: a gate follows the voltage across the port's capacitance (a membrane's), so give the port one`);
   need(pdef.species === undefined ? reactions.length > 0 || capacitance !== null : isObject(pdef.species), `${path}.species must map species names to port links`);
   // A bath: the outside's composition. The port's V is then the outside's φ, and each linked
@@ -987,10 +987,10 @@ function gatedBy(raw, gates, lpath, where) {
     return [q, p];
   });
 }
-function normalizeGates(raw, where, matL, matR) {
+function normalizeGates(raw, where, matL, matR, across = 'the face') {
   if (raw === undefined) return [];
   need(isObject(raw), `${where}.gates must map gate names to { alpha, beta }`);
-  need(!matL.phiFree && !matR.phiFree, `${where}.gates: a gate follows the voltage across the face, which needs φ on both sides`);
+  need(!matL.phiFree && !matR.phiFree, `${where}.gates: a gate follows the voltage across ${across}, which needs φ there`);
   return Object.entries(raw).map(([name, gdef]) => {
     const gpath = `${where}.gates.${name}`;
     need(isObject(gdef), `${gpath} must be { alpha, beta }`);
