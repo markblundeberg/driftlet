@@ -11,8 +11,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   so a junction shows its majority carriers as seas and its minority carriers one by one. The
   pn demo draws its carriers this way, at the bottom, on the band diagram.
 - Solutions carry each species' flux across every segment (`flux`), its diffusivity (`D`), the
-  temperature (`T`), how each species crosses each contact and face (`links`), and a permeable
-  face's one-way fluxes (`oneWay`).
+  temperature (`T`), how each species crosses each contact and face (`links`), a permeable
+  face's one-way fluxes (`oneWay`), and each bulk reaction's one-way forward rate (`forward`)
+  and stoichiometry (`nu`).
 - A visual identity: the logo's wordmark redrawn in Recursive's casual sans (as outlines, so it
   looks the same everywhere), and the demo site in paper and ink with the logo's vermilion, a
   gallery whose sections show each field's cast, charges drifting along a potential at its foot

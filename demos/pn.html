@@ -55,7 +55,8 @@
       carriers, hopping between cells at rates taken from the solution, so that on average the dots fill the
       space as the densities do and cross each place at the currents. Where carriers are plentiful a dot would
       be lost among millions, so they're a shaded sea, darker where denser; the dots are the minority carriers
-      the bias injects, diffusing until they reach a contact or recombine (a line across the gap). A short
+      the bias injects, diffusing until they reach a contact or recombine (an amber line across the gap; a
+      green one is a pair generated, as goes on in balance with recombination even at equilibrium). A short
       lifetime makes recombination common; a long one sends them to the contacts. The majority carriers'
       drift is there too, but at about 10⁻⁷ of their thermal motion, no sample of them would show it.</p>
     <canvas id="dots"></canvas>
@@ -184,7 +185,13 @@ function frame(now) {
   // the device's time: about a hop a frame in a cell of electrons, times the speed
   const h = swarm.cells[1].x1 - swarm.cells[1].x0;
   swarm.step(((0.4 * h * h) / el.D) * 10 ** +speed.value * 60 * secs);
-  for (const ev of swarm.events) if (ev.kind === 'unmade') flashes.push({ x: ev.x, t: now });
+  // An electron crossing the gap, down (recombining) or up (generated): drawn once a pair, from the
+  // electron's event, or the hole's where the electrons are a sea.
+  for (const ev of swarm.events) {
+    if (ev.kind !== 'unmade' && ev.kind !== 'made') continue;
+    const K = swarm.cells.findIndex((cl) => ev.x < cl.x1);
+    if (ev.species === 'e-' || swarm.sea['e-'][K]) flashes.push({ x: ev.x, t: now, up: ev.kind === 'made' });
+  }
   paint(now);
 }
 requestAnimationFrame(frame);
@@ -225,7 +232,7 @@ function paint(now) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
-  // recombinations: a line across the gap, fading over half a second
+  // recombination (amber) and generation (green): a line across the gap, fading over half a second
   for (let k = flashes.length - 1; k >= 0; k--) {
     const f = flashes[k], age = (now - f.t) / 500;
     if (age > 1) {
@@ -233,7 +240,7 @@ function paint(now) {
       continue;
     }
     ctx.globalAlpha = 1 - age;
-    ctx.strokeStyle = css('--c4');
+    ctx.strokeStyle = css(f.up ? '--c3' : '--c4');
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(px(f.x), py(at(Ec, f.x)));

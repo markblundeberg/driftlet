@@ -106,3 +106,32 @@ test('particles: across a membrane, the dots crossing each way are its one-way f
     }
   }
 });
+
+test('particles: in equilibrium, a reaction still makes and unmakes dots, each at its one-way rate', () => {
+  // X = nothing in a closed gel, at equilibrium (c = c_ref = 1 mol/m³): forward and backward
+  // rates both k·c, which the solution reports, and which the dots show as made and unmade.
+  const k = 50;
+  const sol = new Device({
+    species: [{ name: 'X', z: 0 }],
+    materials: { gel: { epsr: 0, species: { X: { D: 1e-9, mu0: 0, cRef: 1 } } } },
+    regions: [{ material: 'gel', length: 1e-4, c0: { X: 1 } }],
+    bulkReactions: [{ equation: 'X = 0', kf: { gel: k } }],
+    contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } },
+  }).solve();
+  const rx = sol.bulkReactions[0];
+  assert.deepEqual(rx.nu, { X: -1 });
+  assert.ok(Math.abs(rx.forward[5] - k) < 1e-9 && Math.abs(rx.rate[5]) < 1e-9);
+  const sw = particles(sol, { dots: 300, cells: 10, random: seeded(11) });
+  const dt = 1e-3, steps = 4000;
+  let made = 0, unmade = 0;
+  for (let i = 0; i < steps; i++) {
+    sw.step(dt);
+    for (const ev of sw.events) {
+      if (ev.kind === 'made') made++;
+      if (ev.kind === 'unmade') unmade++;
+    }
+  }
+  // each about k × (dots) × T
+  const want = k * (1e-4 / sw.weight.X) * dt * steps;
+  for (const count of [made, unmade]) assert.ok(Math.abs(count - want) < 4 * Math.sqrt(want), `${count} made or unmade, expected ${want}`);
+});

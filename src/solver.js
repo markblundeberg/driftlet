@@ -2347,6 +2347,21 @@ export class Solver {
     return P * -Math.expm1(-(aHi + aLo));
   }
 
+  // A bulk reaction's forward one-way rate at node g (mol/(m³·s)); its backward one is that
+  // times e^{−a}, so their difference is bulkRate's.
+  bulkForward(rx, g) {
+    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    const law = rx.srh?.[this.nodeMaterial[g]];
+    if (law) {
+      let a = rx.fixedA;
+      for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
+      return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a).forward;
+    }
+    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
+    for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    return P;
+  }
+
   // The larger of a bulk reaction's two one-way rates at node g (mol/(m³·s)): the scale its net
   // rate is read against (in equilibrium the net rate is their round-off).
   bulkOneWay(rx, g) {
@@ -2376,7 +2391,7 @@ export class Solver {
     const dDn = tp * cn + tp * n1 * kN + tn * p1 * (1 - kN);
     const dDp = tp * n1 * kP + tn * cp + tn * p1 * (1 - kP);
     const dDa = tp * n1 * kA + tn * p1 * (-1 - kA);
-    return { rate, oneWay: (np / den) * Math.max(1, Math.exp(-a)), Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
+    return { rate, forward: np / den, oneWay: (np / den) * Math.max(1, Math.exp(-a)), Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
   }
 
   // A face reaction (see normalizeFaceReactions). Its rate r_k is an unknown of the face block,

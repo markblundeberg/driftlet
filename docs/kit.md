@@ -515,8 +515,9 @@ console.log(`I(0.5 V) = ${solution.current.toFixed(1)} A/m², in ${info.ms.toFix
 mol/m²), hopping between the cells of a display lattice. The hops' one-way rates come from the
 solution, so on average the dots fill each cell as its concentration does and cross each
 boundary, net, at its flux: they're a sample of the solution, not a separate model. Dots are
-made and unmade where the flux diverges (reactions, generation, ports), and enter and leave
-through the contacts and any metal.
+made and unmade by the bulk reactions' one-way rates (so in equilibrium generation and
+recombination both go on, in balance) and wherever else the flux diverges (ports, face
+reactions), and enter and leave through the contacts and any metal.
 
 - Across a boundary the one-way fluxes have the solution's flux as their difference and
   Scharfetter–Gummel's exchange as their product, which gives a dot in a flat potential the

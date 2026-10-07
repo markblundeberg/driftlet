@@ -185,17 +185,22 @@ export function makeSolution(solver, result = {}) {
   // and integrated over each region and the device (mol/(m²·s)), by the nodes' control volumes,
   // just as the balances count it.
   sol.bulkReactions = solver.rxs.map((rx) => {
-    const rate = new Float64Array(nNodes).fill(NaN), regions = model.regions.map(() => 0);
+    const rate = new Float64Array(nNodes).fill(NaN), forward = new Float64Array(nNodes).fill(NaN), regions = model.regions.map(() => 0);
     let total = 0;
     for (let g = 0; g < nNodes; g++) {
       const m = solver.nodeMaterial[g];
       if (!(rx.kf[m] > 0)) continue;
       rate[g] = solver.bulkRate(rx, g);
+      forward[g] = solver.bulkForward(rx, g);
       const amount = grid.vol[g] * rate[g];
       regions[grid.nodeRegion[g]] += amount;
       total += amount;
     }
-    return { rate, regions, total };
+    // Its two one-way rates are forward and forward − rate; what each makes of each species, per
+    // forward reaction: ν, negative for what it consumes.
+    const nu = {};
+    rx.sp.forEach((i, p) => (nu[species[i].name] = (nu[species[i].name] ?? 0) - rx.nu[p]));
+    return { rate, forward, nu, regions, total };
   });
 
   // Total charge in the device (space charge plus sheet charges), per area if it's planar.

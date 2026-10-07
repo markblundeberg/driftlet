@@ -169,11 +169,31 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
         pair(k, net, (2 * D[g] * Math.max(c[g], 0)) / cl.h);
       }
     }
-    // Made (or, negative, unmade) in each cell: what the fluxes don't account for,
-    // ∂N/∂t − (J_in − J_out), with ∂N/∂t from the last solution if time has passed since.
+    // Made and unmade in each cell (mol/(m²·s)): by the bulk reactions' one-way rates (so in
+    // equilibrium, generation and recombination both go on, in balance), and whatever else the
+    // fluxes don't account for, ∂N/∂t − (J_in − J_out) less the reactions' net (ports, face
+    // reactions), with ∂N/∂t from the last solution if time has passed since.
+    const made = new Float64Array(nc), unmade = new Float64Array(nc);
+    for (const rx of sol.bulkReactions ?? []) {
+      const nu = rx.nu?.[nm];
+      if (!nu) continue;
+      lattice.forEach((cl, K) => {
+        for (let g = cl.a; g <= cl.b; g++) {
+          if (!(rx.forward[g] >= 0)) continue;
+          const fwd = rx.forward[g] * box[g], bwd = (rx.forward[g] - rx.rate[g]) * box[g];
+          made[K] += nu > 0 ? nu * fwd : -nu * bwd;
+          unmade[K] += nu > 0 ? nu * bwd : -nu * fwd;
+        }
+      });
+    }
     const dt = prev && sol.time > prev.time ? sol.time - prev.time : Infinity;
-    const make = Float64Array.from(N, (n, K) => (on[K] ? (Number.isFinite(dt) ? (n - prev.N[K]) / dt : 0) + up[K + 1] - down[K + 1] - (up[K] - down[K]) : 0));
-    return { N, on, sea, left, right, face, up, down, make, time: sol.time };
+    for (let K = 0; K < nc; K++) {
+      if (!on[K]) continue;
+      const rest = (Number.isFinite(dt) ? (N[K] - prev.N[K]) / dt : 0) + up[K + 1] - down[K + 1] - (up[K] - down[K]) - (made[K] - unmade[K]);
+      if (rest > 0) made[K] += rest;
+      else unmade[K] -= rest;
+    }
+    return { N, on, sea, left, right, face, up, down, made, unmade, time: sol.time };
   }
 
   /**
@@ -238,7 +258,7 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
       const F = S[nm], w = swarm.weight[nm], cr = swarm.crossed[nm];
       for (let K = 0; K < nc; K++) {
         if (!F.on[K] || F.sea[K]) continue;
-        const made = F.make[K] > 0 ? F.make[K] / w : 0;
+        const made = F.made[K] / w;
         const fromLeft = F.left[K] === OUTSIDE ? F.up[K] / w : 0, fromRight = F.right[K + 1] === OUTSIDE ? F.down[K + 1] / w : 0;
         const rate = made + fromLeft + fromRight;
         if (!(rate > 0)) continue;
@@ -279,7 +299,7 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
     for (let hop = 0; hop < maxHops; hop++) {
       const K = d.cell, N = F.N[K];
       if (!(N > 0)) return true;
-      const r = F.right[K + 1] ? F.up[K + 1] / N : 0, l = F.left[K] ? F.down[K] / N : 0, die = F.make[K] < 0 ? -F.make[K] / N : 0;
+      const r = F.right[K + 1] ? F.up[K + 1] / N : 0, l = F.left[K] ? F.down[K] / N : 0, die = F.unmade[K] / N;
       const total = r + l + die;
       if (!(total > 0)) return true;
       t -= Math.log(1 - random()) / total;
