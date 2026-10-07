@@ -275,7 +275,9 @@ Na⁺/K⁺-ATPase between the outside (left) and the cytoplasm (right):
 together). Membrane potentials are $`\phi`$ differences between the two solutions, $`\phi_{\mathrm{in}} - \phi_{\mathrm{out}}`$,
 read from `sol.phi` (or a `'phi'` probe in a transient). A bath contact's terminal voltage is
 its reference species' level instead, what an electrode reversible to that species would read,
-so between two different solutions it differs from $`\Delta\phi`$ by that species' Nernst term.
+so between two different solutions it differs from $`\Delta\phi`$ by that species' Nernst term;
+a bath given no reference has its $`\phi`$ as its terminal voltage, and between two of those the
+terminals read $`\Delta\phi`$ itself.
 
 ### Voltage-gated channels
 
@@ -329,7 +331,12 @@ Two things differ from the textbook equations. The currents are GHK's, which rec
 conductance depends on the voltage, so a permeability matches a conductance $`g`$ at one voltage
 only (above, the chord conductances at rest, −65 mV, for Hodgkin and Huxley's 120, 36 and 0.3
 mS/cm²; matched at the reversal potentials instead, the rest depolarises itself and the axon
-fires on its own). And a cell without a pump has no resting steady state: `solve()` finds its
+fires on its own). Their own linear channels are conductance links: $`G\,(V_{i,L} - V_{i,R})`$
+toward +x is $`g\,(E_i - V)`$, with $`E_i`$ the Nernst potential at the edge concentrations, so
+`{ type: 'conductance', G: 360, gates: { n: 4 } }` is their K⁺ channel exactly
+(`hodgkinHuxley({ T, linear: true })` writes all three). Between two baths whose terminal
+voltage is their $`\phi`$, a held step is their voltage clamp, and the K⁺ current at its end is
+$`g_K n_\infty^4 (V - E_K)`$ to 2e-3. And a cell without a pump has no resting steady state: `solve()` finds its
 Donnan equilibrium, every permeant ion level across the membrane, which the real cell reaches
 only over hours. Start a transient from the concentrations given (it settles to rest within
 milliseconds), or keep the gradients with the Na⁺/K⁺ pump on the same face. Started from the
@@ -453,7 +460,9 @@ contacts: {
 held in place by a charged `reference` species (as for a reversible reference electrode, e.g.
 Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
 composition implies, and the $`\phi`$ law is `'bulk'`. An optional `offset` places the reference
-species relative to V.
+species relative to V. Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
+(no junction potential), the convention by which membrane potentials are $`\phi`$ differences.
+Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a voltage clamp.
 
 **`phi`**, required whenever any species or reaction connects at the contact (default
 `'neutral'`):

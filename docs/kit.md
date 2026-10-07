@@ -57,8 +57,12 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 - **Contacts** are the first and last items. `ohmic(drive, carriers)` holds each carrier in
   equilibrium with a metal at the terminal voltage (default `['e-', 'h+']`, an
   infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
-  a metal region). `bath(c, reference, drive, { offset })` is a bath (`offset` places the reference species
-  relative to the terminal voltage, e.g. to read a solution's potentials against SHE). A drive is a voltage, a waveform, or
+  a metal region). `bath(c, reference, drive, { offset })` is a bath whose terminal voltage is
+  the level of its `reference` species, as an electrode reversible to it would read (`offset`
+  places that species relative to the terminal voltage, e.g. to read a solution's potentials
+  against SHE). `bath(c, drive)`, without a reference, is a bath whose terminal voltage is its
+  φ: an ideal salt bridge, the convention of membrane potentials, so that between two such baths
+  V_right − V_left is the φ difference a voltage clamp sets. A drive is a voltage, a waveform, or
   `{ V }`, `{ I }`, `{ V, R }`.
 - **`library`** takes pieces with `species` and `materials`, merged with any given directly
   (`combine()` does the merging on its own). A species or material given twice must be given
@@ -144,7 +148,7 @@ which is the transport the full solve accounts for.
 
 ## Channels
 
-**`hodgkinHuxley({ inside, outside, T, g, leak, leakZ, at, names })`**: Hodgkin and Huxley's
+**`hodgkinHuxley({ inside, outside, T, g, leak, leakZ, at, names, linear, area })`**: Hodgkin and Huxley's
 squid-axon channels for a [membrane face](device.md#voltage-gated-channels) with the outside on its
 left: `{ gates, species }`, the face's `gates` (m, h and n, their 1952 rates at 6.3 °C scaled to
 `T` by Q₁₀ = 3) and links for Na⁺ (P·m³h), K⁺ (P·n⁴) and the leak (one ion, `leak`, of charge
@@ -152,7 +156,10 @@ left: `{ gates, species }`, the face's `gates` (m, h and n, their 1952 rates at 
 whose chord conductance at `at` (−65 mV) is HH's `g` (120, 36 and 0.3 mS/cm²) at the
 concentrations given. Spread it into the face beside its $`\phi`$ law, adding the other species'
 links: `{ phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } }`.
-For a [membrane port](device.md#a-membrane-through-a-window-gated-channels) along a region (an axon
+With `linear: true` (and no concentrations) the face gets HH's own linear channels instead:
+conductance links, `G` = g, gated the same, whose currents are g(V − E) with E each ion's Nernst
+level at the concentrations either side; between two `bath`s without a reference species, that's
+their voltage clamp. For a [membrane port](device.md#a-membrane-through-a-window-gated-channels) along a region (an axon
 along x), give `area`, the membrane per volume (2/a for radius a), in place of `inside`, `outside`
 and `at`: the links are then their linear conductances, `G` = g × area, gated the same, each ion's
 reversal potential following from the port's `bath` and the concentrations inside.

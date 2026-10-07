@@ -1203,12 +1203,19 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
     fields(bath, `${path}.bath`, ['c', 'reference', 'offset']);
-    need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}${known(speciesIndex)}`);
-    const r = speciesIndex.get(bath.reference);
+    // Without a reference, V is the bath's φ (an ideal salt bridge: the membrane potential's
+    // convention), and the terminal is the first charged species in it.
+    const byPhi = bath.reference === undefined;
+    if (byPhi) need(bath.offset === undefined, `${path}.bath.offset: an offset places the reference species, and this bath has none (its V is its φ)`);
+    else need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}${known(speciesIndex)}`);
+    const r = byPhi
+      ? species.findIndex((sp) => sp.z !== 0 && bath.c[sp.name] > 0)
+      : speciesIndex.get(bath.reference);
+    need(r >= 0, `${path}.bath: the bath needs a charged species`);
     need(species[r].z !== 0, `${path}.bath.reference: the reference species must be charged`);
-    need(bath.c[bath.reference] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
-    need(cdef.terminal === undefined || terminal === r, `${path}.terminal must be the bath's reference species`);
-    terminal = r;
+    need(bath.c[species[r].name] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
+    need(byPhi || cdef.terminal === undefined || terminal === r, `${path}.terminal must be the bath's reference species`);
+    terminal = byPhi && terminal !== null ? terminal : r;
     let charge = region.fixedCharge / FARADAY, scale = Math.abs(charge);
     const cb = new Float64Array(species.length);
     for (const [sname, v] of Object.entries(bath.c)) {
@@ -1224,7 +1231,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const zb = bathZeta(mat, cb, region.background);
     const level = (i) => mat.mu0[i] + RT * zb[i]; // μ̄ − zFφ_bath
     const refOffset = bath.offset === undefined ? 0 : finite(bath.offset, `${path}.bath.offset`);
-    const beta = refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
+    const beta = byPhi ? 0 : refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
     for (let i = 0; i < species.length; i++) {
       if (!(cb[i] > 0)) continue;
       links[i] =

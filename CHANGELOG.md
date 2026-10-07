@@ -12,6 +12,24 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   periaxonal space: K⁺ piles up there with each spike (about 3.5 mM) and clears over 50 ms, and
   E_K, the rest and the after-hyperpolarisation follow it, which Hodgkin and Huxley's fixed E_K
   can't. A test checks that such a space clears as one compartment, e^(−tP/θ), to 2e-3.
+- A contact `bath` without a reference species, `bath(c, drive)` in the kit: its terminal voltage
+  is its φ (an ideal salt bridge), so between two such baths V_right − V_left is the membrane
+  potential a voltage clamp sets. `hodgkinHuxley({ T, linear: true })` writes Hodgkin and
+  Huxley's own linear channels for a face (gated conductance links); clamped, the K⁺ current
+  is g_K n∞⁴ (V − E_K) to 2e-3.
+- Fixed: a transient a second or more into a run, after a jump that a fine grid resolves in
+  steps of 1e-13 s, stalled and stopped (a potential step at t = 1 s on a 5 nm grid): the error
+  estimate was built from differences of absolute times, which keep only a few digits there.
+  It uses the steps' own lengths now. An `advance()` that stops short, other than on its
+  `budgetMs`, says where and why in its warnings.
+- Fixed: a current-driven solve at I = 0 could find its voltage and still report no
+  convergence (its last stage asked for a current of exactly zero). A solve that doesn't
+  converge always carries a warning now.
+- Fixed: with any port, `impedance()` read a contact's current at the contact, where behind a
+  metal region it's a large conductance times round-off: a MOS capacitor with a metal gate and
+  its channel held by a port read Re Z = −21.7 Ω·m² at its gate, at every bias. It's read across
+  the device where no port's window intervenes now, and the back contact's nearly uniform
+  response is split off as an open electrolyte's is.
 - Fixed: a port holding a level inside another port's window left that port's ∂res/∂V in the
   row it replaced (a stale entry, ~1e-6 of the row: it touched only that port's impedance, or
   its circuit if floating). A gate's exponential rate law is held finite at absurd voltages,

@@ -224,3 +224,40 @@ test("an excitable membrane's impedance: Hodgkin–Huxley gating, linearised, in
   // Inductive at 30 Hz, and |Z| peaks between 30 and 100 Hz, near four times its DC value.
   assert.ok(Z.im[fs.indexOf(30)] > 0 && Math.max(...mags) === mags[fs.indexOf(60)] && mags[fs.indexOf(60)] > 3 * mags[0], mags.join(' '));
 });
+
+test("Hodgkin and Huxley's voltage clamp with their linear channels: g_K n∞⁴ (V − E_K), between baths whose V is their φ", () => {
+  // Squid solutions either side, each a bath whose terminal voltage is its φ (no reference
+  // species), so the clamp sets V_m = V_right − V_left directly. On the face, the kit's
+  // hodgkinHuxley({ linear: true }): conductance links G = g, gated, whose currents are
+  // g(V − E) with E each ion's Nernst level, as in HH's own equations.
+  const hh = hodgkinHuxley({ T, linear: true });
+  assert.deepEqual(hh.species['K+'], { type: 'conductance', G: 360, gates: { n: 4 } });
+  const step = -10 * mV, t1 = 30e-3;
+  const dev = new Device(
+    build({
+      T,
+      library: [water()],
+      stack: [
+        bath(OUT),
+        layer('water', 1e-6, { c0: OUT }),
+        { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } },
+        layer('water', 1e-6, { c0: IN }),
+        bath(IN, { t: [0, 1e-3, 1e-3, 1], values: [-65 * mV, -65 * mV, step, step] }),
+      ],
+      grid: { hmin: 20e-9, hmax: 0.2e-6 },
+    }),
+  );
+  const rest = dev.solve();
+  assert.ok(rest.converged);
+  assert.ok(Math.abs(rest.interfaces[0].V + 65 * mV) < 1e-4, `rest ${rest.interfaces[0].V}`); // (tens of µV: the membrane charge, held in the neutral solutions' edge cells)
+  const run = dev.advance(t1, { dtMax: 0.2e-3, probes: [{ interface: 0, species: 'K+' }, { interface: 0, gate: 'n' }] });
+  assert.ok(run.converged && run.done);
+  const VT = RT / FARADAY, EK = VT * Math.log(OUT['K+'] / IN['K+']);
+  const nInf = rate(HH.n.alpha, step) / (rate(HH.n.alpha, step) + rate(HH.n.beta, step));
+  const n = run.trace.probes[1].at(-1), IK = -FARADAY * run.trace.probes[0].at(-1); // outward
+  assert.ok(Math.abs(n / nInf - 1) < 1e-3, `n ${n} against n∞ ${nInf}`);
+  const Vm = run.interfaces[0].V;
+  assert.ok(Math.abs(Vm - step) < 1e-4, `V_m ${Vm}`);
+  const hhK = 360 * nInf ** 4 * (step - EK);
+  assert.ok(Math.abs(IK / hhK - 1) < 2e-3, `I_K ${IK} A/m² against HH's ${hhK}`);
+});

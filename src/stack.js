@@ -87,16 +87,18 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
 }
 
 /**
- * A bath: a neutral composition `c` (mol/m³) held at the contact, its levels referred to the
- * charged `reference` species (the ion a reference electrode would sense, e.g. Cl⁻ for
- * Ag/AgCl), which is the terminal.
+ * A bath: a neutral composition `c` (mol/m³) held at the contact. With a `reference`, the charged
+ * species a reference electrode would sense (Cl⁻ for Ag/AgCl), its levels are referred to that
+ * species, which is the terminal. Without one, `bath(c, drive)`, the terminal voltage is the
+ * bath's φ: an ideal salt bridge, the convention of membrane potentials.
  * @param {Record<string, number>} c
- * @param {string} reference
+ * @param {string | number | object} [reference] the reference species, or the drive
  * @param {number | object} [drive]
  * @param {{ offset?: number }} [opts] where the reference species sits relative to the terminal
  *   voltage, V_ref = V + offset (V)
  */
 export function bath(c, reference, d = 0, { offset } = {}) {
+  if (typeof reference !== 'string') return { ...drive(reference ?? 0, 'bath'), bath: { c: { ...c } } };
   return { ...drive(d, 'bath'), bath: { c: { ...c }, reference, ...(offset === undefined ? {} : { offset }) } };
 }
 

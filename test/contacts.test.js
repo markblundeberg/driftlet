@@ -192,3 +192,12 @@ test('pinned (dipole) contact: a Schottky barrier directly on n-Si', () => {
     assert.ok(Math.abs(sol.gates.left.charge - sol.contacts.left.D) < 1e-15, 'plate charge is the contact displacement');
   }
 });
+
+test('a bath without a reference species: its terminal voltage is its φ', async () => {
+  const { build, layer, bath, aqueous } = await import('../src/kit.js');
+  const dev = new Device(build({ library: [aqueous(['K+', 'Cl-'], { epsr: 0 })], stack: [bath({ 'K+': 100, 'Cl-': 100 }, 0.02), layer('water', 10e-6), bath({ 'K+': 10, 'Cl-': 10 }, { I: 0 })], grid: { hmin: 1e-8, hmax: 1e-6 } }));
+  const s = dev.solve();
+  assert.ok(s.converged);
+  assert.ok(Math.abs(s.phi[0] - 0.02) < 1e-12 && Math.abs(s.phi.at(-1) - s.terminals.right.V) < 1e-12);
+  assert.throws(() => new Device(build({ library: [aqueous(['K+', 'Cl-'], { epsr: 0 })], stack: [{ V: 0, bath: { c: { 'K+': 1, 'Cl-': 1 }, offset: 0.1 } }, layer('water', 1e-6), bath({ 'K+': 1, 'Cl-': 1 })] })), /bath\.offset: an offset places the reference species, and this bath has none/);
+});
