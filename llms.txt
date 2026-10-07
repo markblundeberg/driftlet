@@ -255,6 +255,46 @@ for (let k = 1; k <= 300; k++) {
 console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // ~ +12 mV: GHK's Na⁺ current is limited by the 50 mM inside
 ```
 
+## Template: an action potential travelling along an axon
+
+With x along the axon, the axoplasm is one region and the membrane a port through all of it: a
+capacitance and gated channels to the outside, given as a `bath` (the port's V is then the
+outside's φ). `hodgkinHuxley({ T, area })` writes Hodgkin and Huxley's linear channels for it, with
+`area` the membrane per volume, 2/a for radius a. Cable theory isn't put in; it comes out of the
+ions' drift along the axoplasm. A myelinated axon is regions (nodes and internodes), each with
+a port of its own (the internodes' a small capacitance only).
+
+```js
+import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
+import { hodgkinHuxley, injector, pulse } from 'driftlet/kit';
+
+const T = 291.65, VT = (GAS_CONSTANT * T) / FARADAY, a = 238e-6; // 18.5 °C, a squid giant axon
+const inside = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 }; // mM
+// Outside levels that put the Nernst potentials at HH's +50, −77 and −54.4 mV (leak as Cl⁻).
+const outside = { 'Na+': 50 * Math.exp(0.05 / VT), 'K+': 400 * Math.exp(-0.077 / VT), 'Cl-': 52.5 * Math.exp(0.054387 / VT) };
+// One D for the small ions, giving HH's 35.4 Ω·cm.
+const D = 1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T)) / (50 + 400 + 52.5);
+const sp = (d) => ({ D: d, mu0: 0, cRef: 1000 });
+const sealed = { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' };
+const hh = hodgkinHuxley({ T, area: 2 / a });
+const axon = new Device({
+  T,
+  species: [{ name: 'Na+', z: 1 }, { name: 'K+', z: 1 }, { name: 'Cl-', z: -1 }, { name: 'A-', z: -1 }],
+  materials: { axoplasm: { epsr: 0, species: { 'Na+': sp(D), 'K+': sp(D), 'Cl-': sp(D), 'A-': sp(1e-12) } } },
+  regions: [{ name: 'axon', material: 'axoplasm', length: 0.06, c0: inside }],
+  contacts: { left: sealed, right: sealed },
+  ports: [
+    { name: 'membrane', region: 'axon', V: 0, area: 2 / a, capacitance: { C: 0.01, zeroCharge: 0 }, bath: { c: outside }, gates: hh.gates, species: hh.species },
+    injector({ name: 'stim', region: 'axon', from: 0, to: 1e-3, species: 'K+', I: pulse({ start: 30e-3, width: 0.2e-3, amplitude: 30 }) }),
+  ],
+  grid: { hmin: 2e-4, hmax: 2e-4 },
+});
+axon.advance(30e-3); // settle to rest (no pump: start from the concentrations, not solve())
+const sol = axon.advance(34e-3, { dtMax: 5e-6, probes: [{ x: 0.02, quantity: 'phi' }, { x: 0.04, quantity: 'phi' }] });
+const { t, probes } = sol.trace, at = (v) => t[v.findIndex((x) => x > 0)];
+console.log(`${(0.02 / (at(probes[1]) - at(probes[0]))).toFixed(1)} m/s`); // 18.8 here (finely resolved, 18.73; HH computed 18.8)
+```
+
 ## Template: an electrode in a stirred solution
 
 One working electrode, a stagnant layer of solution, and the well-stirred bulk as a bath. The
