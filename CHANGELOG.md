@@ -17,7 +17,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   the voltage across the port's capacitance there, scaling its conductance links (Hodgkin and
   Huxley's linear channels, in species voltages). A squid axon's action potential propagates
   at 18.73 m/s, the cable equation's speed to 2e-3, out of the ions' drift along the axon
-  (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well.
+  (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well. A myelinated
+  axon, nodes of Ranvier and internodes as regions with ports of their own, conducts
+  saltatorily, each node's arrival within 1 µs of a compartmental cable's.
 - A demo, [propagation](demos/propagation.html): a spike travelling along a squid axon at Hodgkin
   and Huxley's speed, its local circuit, the ions that carry the current along the axon (mostly
   K⁺), and each ion's driving force along it; radius (speed as √a), temperature (heat block at

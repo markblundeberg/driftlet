@@ -116,3 +116,106 @@ test('a propagating action potential: the cable equation, out of ions drifting a
   const c = d.solution().c;
   for (const s of ['Na+', 'K+']) assert.ok(c[s].every((x) => Math.abs(x / IN[s] - 1) < 1e-3), s);
 });
+
+test('saltatory conduction: a myelinated axon\'s spike jumps node to node, as a compartmental cable says', () => {
+  // A thin axon (a = 5 µm) myelinated: nodes of Ranvier 1 µm long, every millimetre, each with
+  // Hodgkin and Huxley's channels at five times their density (nodes are packed with them), and
+  // internodes whose membrane is myelin, a capacitance 200 times smaller and no channels. Each node
+  // and internode is a region of the same axoplasm, with a port of its own.
+  const a5 = 5e-6, am5 = 2 / a5, nodes = 12, Ln = 1e-6, Li = 1e-3, Cmy = Cm / 200, gN = 5;
+  const offset = (s) => (VT / z[s]) * Math.log(OUT[s] / 1000);
+  const species = (Dv) => ({ D: Dv, mu0: 0, cRef: 1000 });
+  const sealed = { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' };
+  const regions = [], ports = [];
+  for (let k = 0; k < nodes; k++) {
+    regions.push({ name: `node${k}`, material: 'axoplasm', length: Ln, c0: IN });
+    ports.push({
+      name: `node${k}`, region: `node${k}`, V: 0, terminal: 'K+', area: am5, capacitance: { C: Cm, zeroCharge: 0 }, gates,
+      species: {
+        'Na+': { type: 'conductance', G: gN * G['Na+'] * am5, offset: offset('Na+'), gates: { m: 3, h: 1 } },
+        'K+': { type: 'conductance', G: gN * G['K+'] * am5, offset: offset('K+'), gates: { n: 4 } },
+        'Cl-': { type: 'conductance', G: G['Cl-'] * am5, offset: offset('Cl-') },
+      },
+    });
+    if (k === nodes - 1) break;
+    regions.push({ name: `internode${k}`, material: 'axoplasm', length: Li, c0: IN });
+    ports.push({ name: `myelin${k}`, region: `internode${k}`, V: 0, area: am5, capacitance: { C: Cmy, zeroCharge: 0 } });
+  }
+  ports.push(injector({ name: 'stim', region: 'node0', from: 0, to: Ln, species: 'K+', I: pulse({ start: 30.1e-3, width: 0.1e-3, amplitude: 100 }) }));
+  const d = new Device({
+    T,
+    species: Object.entries(z).map(([name, zz]) => ({ name, z: zz })),
+    materials: { axoplasm: { epsr: 0, species: { 'Na+': species(D), 'K+': species(D), 'Cl-': species(D), 'A-': species(DA) } } },
+    regions, contacts: { left: sealed, right: sealed }, ports,
+    grid: { hmin: 0.25e-6, hmax: 25e-6, ratio: 1.3 },
+  });
+  const rest = d.advance(30e-3, { tol: 1e-4 }).ports[0].Vm[2];
+
+  // The compartmental cable: each node isopotential, each internode 50 passive compartments, backward
+  // Euler for V (tridiagonal), the gates exponentially (Rush–Larsen), from rest.
+  const len = [], isNode = [], nodeAt = [];
+  for (let k = 0; k < nodes; k++) {
+    nodeAt.push(len.length);
+    len.push(Ln);
+    isNode.push(true);
+    if (k < nodes - 1) for (let j = 0; j < 50; j++) (len.push(Li / 50), isNode.push(false));
+  }
+  const N = len.length, sigma = 1 / 0.354, dt = 1e-7;
+  const cap = len.map((l, i) => (isNode[i] ? Cm : Cmy) * am5 * l), gAx = len.slice(1).map((l, i) => sigma / (0.5 * (l + len[i])));
+  const Inode = (v, m, hh, n) => gN * (G['Na+'] * m ** 3 * hh * (v - E['Na+']) + G['K+'] * n ** 4 * (v - E['K+'])) + G['Cl-'] * (v - E['Cl-']);
+  let Vr = -0.065;
+  for (let it = 0; it < 60; it++) Vr -= Inode(Vr, inf(gates.m, Vr), inf(gates.h, Vr), inf(gates.n, Vr)) / ((Inode(Vr + 1e-7, inf(gates.m, Vr + 1e-7), inf(gates.h, Vr + 1e-7), inf(gates.n, Vr + 1e-7)) - Inode(Vr - 1e-7, inf(gates.m, Vr - 1e-7), inf(gates.h, Vr - 1e-7), inf(gates.n, Vr - 1e-7))) / 2e-7);
+  assert.ok(Math.abs(rest - Vr) < 0.01 * mV, `rest ${rest} vs ${Vr}`);
+  const V = new Float64Array(N).fill(Vr), x = ['m', 'h', 'n'].map((k) => new Float64Array(N).fill(inf(gates[k], Vr)));
+  const lo = new Float64Array(N), di = new Float64Array(N), up = new Float64Array(N), rhs = new Float64Array(N);
+  const arrive = new Float64Array(nodes).fill(NaN);
+  for (let t = 0; t < 0.45e-3; t += dt) {
+    for (let i = 0; i < N; i++) {
+      if (!isNode[i]) continue;
+      ['m', 'h', 'n'].forEach((k, j) => {
+        const al = rate(gates[k].alpha, V[i]), be = rate(gates[k].beta, V[i]), xi = al / (al + be);
+        x[j][i] = xi + (x[j][i] - xi) * Math.exp(-(al + be) * dt);
+      });
+    }
+    for (let i = 0; i < N; i++) {
+      const A = am5 * len[i];
+      let g = 0, Ie = 0;
+      if (isNode[i]) {
+        const gNa = gN * G['Na+'] * x[0][i] ** 3 * x[1][i], gK = gN * G['K+'] * x[2][i] ** 4, gL = G['Cl-'];
+        g = A * (gNa + gK + gL);
+        Ie = A * (gNa * E['Na+'] + gK * E['K+'] + gL * E['Cl-']);
+      }
+      lo[i] = i > 0 ? -gAx[i - 1] : 0;
+      up[i] = i < N - 1 ? -gAx[i] : 0;
+      di[i] = cap[i] / dt + g - lo[i] - up[i];
+      rhs[i] = (cap[i] / dt) * V[i] + Ie + (i === 0 && t >= 0.1e-3 && t < 0.2e-3 ? 100 : 0);
+    }
+    for (let i = 1; i < N; i++) {
+      const w = lo[i] / di[i - 1];
+      di[i] -= w * up[i - 1];
+      rhs[i] -= w * rhs[i - 1];
+    }
+    const prev = nodeAt.map((i) => V[i]);
+    V[N - 1] = rhs[N - 1] / di[N - 1];
+    for (let i = N - 2; i >= 0; i--) V[i] = (rhs[i] - up[i] * V[i + 1]) / di[i];
+    nodeAt.forEach((i, k) => {
+      if (Number.isNaN(arrive[k]) && prev[k] < -0.03 && V[i] >= -0.03) arrive[k] = t + (dt * (-0.03 - prev[k])) / (V[i] - prev[k]);
+    });
+  }
+
+  // driftlet, sampled every microsecond: when the spike crosses −30 mV at each node's middle.
+  const sites = [2, 4, 6, 8, 10], trace = sites.map(() => []), ts = [];
+  for (let k = 1; k <= 450; k++) {
+    const s = d.advance(30e-3 + k * 1e-6, { tol: 1e-5 });
+    ts.push(s.time - 30e-3);
+    sites.forEach((n, j) => trace[j].push(s.phi[s.x.findIndex((xx) => xx >= n * (Ln + Li) + Ln / 2)]));
+  }
+  const at = (v) => {
+    for (let i = 1; i < ts.length; i++) if (v[i - 1] < -0.03 && v[i] >= -0.03) return ts[i - 1] + ((ts[i] - ts[i - 1]) * (-0.03 - v[i - 1])) / (v[i] - v[i - 1]);
+    return NaN;
+  };
+  sites.forEach((n, j) => assert.ok(Math.abs(at(trace[j]) - arrive[n]) < 1e-6, `node ${n}: ${at(trace[j])} s vs ${arrive[n]}`));
+  // 8 mm in about 0.2 ms: some 40 m/s, against 2.7 m/s for the same axon bare (18.73 √(5/238)).
+  const v = (8 * (Ln + Li)) / (at(trace[4]) - at(trace[0]));
+  assert.ok(v > 10 * 18.73 * Math.sqrt(a5 / a), `${v} m/s`);
+});

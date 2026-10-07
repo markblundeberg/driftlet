@@ -711,7 +711,11 @@ With the axoplasm strictly neutral and the outside held (no resistance outside),
 drift along x and the membrane's charging are cable theory, without its being put in: a squid
 axon's action potential propagates at Hodgkin and Huxley's speed, 18.73 m/s for their 18.5 °C
 axon (they computed 18.8 by hand), the cable equation's own to 2e-3
-([`cable`](../test/cable.test.js) test). Each solution's `ports[k]` reports the gates at each node of the window, `gates[name][j]`,
+([`cable`](../test/cable.test.js) test). A myelinated axon is regions of one axoplasm, each node
+of Ranvier and each internode its own, with a port each: the nodes' gated, the internodes' a small
+capacitance (myelin) and nothing else. The grid refines at every node's faces, and the spike jumps
+node to node, arriving at each within 1 µs of a compartmental cable's prediction (the same test).
+Each solution's `ports[k]` reports the gates at each node of the window, `gates[name][j]`,
 and the voltage they follow, `Vm[j]`. A gated window can't overlap another port's gated or
 surfaced one.
 
