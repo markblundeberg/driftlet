@@ -12,6 +12,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   sits at α/(α + β) and relaxes at α + β; a squid axon's action potential follows the
   space-clamped HH equations with GHK currents to within 1 mV.
 - Probes at a face: `{ interface: f, species }` (the flux through it) and `{ interface: f, gate }`.
+- Gates on a port too: a membrane all along a region (an axon's), each node's gates following
+  the voltage across the port's capacitance there, scaling its conductance links (Hodgkin and
+  Huxley's linear channels, in species voltages). A squid axon's action potential propagates
+  at 18.73 m/s, the cable equation's speed to 2e-3, out of the ions' drift along the axon
+  (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well.
 - A demo, [action potential](demos/axon.html): a squid axon's spikes, their currents and gates,
   and each ion's driving force through them; the stimulus, temperature, and Na⁺ and K⁺ channel
   block.

@@ -348,12 +348,12 @@ export function normalizeDevice(def) {
     need(nodes.length > 0, `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node; widen it or refine the grid`);
     port.nodes = Int32Array.from(nodes);
   });
-  // A node's surface belongs to one electrode.
+  // A node's surface belongs to one electrode, and its gates to one membrane.
   const surfaced = new Int32Array(grid.nNodes).fill(-1);
   ports.forEach((port, k) => {
-    if (port.surface.length === 0) return;
+    if (port.surface.length === 0 && port.gates.length === 0) return;
     for (const g of port.nodes) {
-      need(surfaced[g] < 0, `ports[${k}]: its window overlaps ports[${surfaced[g]}]'s, and both have a surface; a spot of metal has one surface`);
+      need(surfaced[g] < 0, `ports[${k}]: its window overlaps ports[${surfaced[g]}]'s, and both have a surface or gates; a spot of metal has one surface, and of a membrane one set of channels`);
       surfaced[g] = k;
     }
   });
@@ -669,7 +669,7 @@ function normalizeGeometry(g) {
 // the window, `area` (m²/m³) of it per volume.
 function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance', 'gates']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -690,6 +690,9 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface);
   surface.forEach((sp, s) => need(reactions.some((rx) => rx.part.some((p) => p.side === 2 && p.s === s)), `${path}.surface.${sp.name}: no reaction of the port makes or uses it`));
   const capacitance = portCapacitance(pdef, path, mat);
+  // Gates (a membrane's channels): they follow the voltage across the port's capacitance.
+  const gates = normalizeGates(pdef.gates, path, mat, mat);
+  need(gates.length === 0 || capacitance !== null, `${path}.gates: a gate follows the voltage across the port's capacitance (a membrane's), so give the port one`);
   need(pdef.species === undefined ? reactions.length > 0 || capacitance !== null : isObject(pdef.species), `${path}.species must map species names to port links`);
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
@@ -698,7 +701,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     const i = speciesIndex.get(sname);
     const link = typeof raw === 'string' ? { type: raw } : raw;
     need(isObject(link) && ['blocked', 'equilibrium', 'conductance', 'exchange'].includes(link.type), `${lpath}.type must be one of blocked, equilibrium, conductance, exchange`);
-    fields(link, lpath, LINK_FIELDS[link.type]);
+    fields(link, lpath, link.type === 'conductance' ? [...LINK_FIELDS.conductance, 'gates'] : LINK_FIELDS[link.type]);
     if (link.type === 'blocked') continue;
     need(mat.present[i], `${lpath}: '${sname}' is absent from ${reg.name} (material '${mat.name}')`);
     if (mat.conductor) need(i === mat.conductor.i, `${lpath}: a conductor exchanges only its carrier, ${species[mat.conductor.i].name}`);
@@ -718,6 +721,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
     if (link.type === 'conductance') level.G = mat.conductor ? positive(link.G, `${lpath}.G (S/m², for a conductor)`) / reg.length : positive(link.G, `${lpath}.G (S/m³)`);
     if (link.type === 'exchange') level.k = positive(link.k, `${lpath}.k (mol/(m³·s))`);
+    if (link.type === 'conductance') level.gates = gatedBy(link.gates, gates, lpath, path);
     links[i] = { type: link.type, ...level };
   }
   need(links.some((l) => l.type !== 'blocked') || reactions.length > 0 || capacitance !== null, `${path}.species: the port exchanges no species`);
@@ -731,7 +735,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     area = typeof pdef.area === 'number' ? { value: positive(pdef.area, `${path}.area (m²/m³)`) } : profile(pdef.area, `${path}.area`, 'areas per volume (m²/m³)', (a) => a >= 0, 'an area per volume ≥ 0');
   } else need(pdef.area === undefined, `${path}.area: only an electrode (a port with reactions or a capacitance) has an area`);
   need(surface.length === 0 || reactions.length > 0, `${path}.surface: only an electrode (a port with reactions) has a surface`);
-  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area, surface, capacitance };
+  return { name: pdef.name ?? path, region: r, from, to, span: reg.length, drive, terminal, species: links, passes, reactions, area, surface, capacitance, gates };
 }
 
 // A capacitance spread through the window: a gate along a channel, an electrode's double layer.
@@ -925,7 +929,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
       const i = speciesIndex.get(sname);
       const link = typeof raw === 'string' ? { type: raw } : raw;
       need(isObject(link) && INTERFACE_LINK_TYPES.has(link.type), `${lpath}.type must be one of ${[...INTERFACE_LINK_TYPES].join(', ')}`);
-      fields(link, lpath, link.type === 'conductance' ? ['type', 'G'] : link.type === 'permeability' ? ['type', 'P', 'gates'] : ['type']);
+      fields(link, lpath, link.type === 'conductance' ? ['type', 'G', 'gates'] : link.type === 'permeability' ? ['type', 'P', 'gates'] : ['type']);
       if (link.type !== 'blocked') need(matL.present[i] && matR.present[i], `${lpath}: '${sname}' must be present on both sides`);
       if (link.type === 'conductance') {
         need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
@@ -935,18 +939,8 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
         positive(link.P, `${lpath}.P (m/s)`);
         need(matL.modelOf[i] < 0 && matR.modelOf[i] < 0, `${lpath}: a permeability link needs ideal (dilute) statistics for '${sname}' on both sides`);
       }
-      // Gated: P × Π x_q^p over the face's gates (a channel open with probability m³h, say).
-      let gated = [];
-      if (link.gates !== undefined) {
-        need(isObject(link.gates), `${lpath}.gates must map the face's gate names to exponents, e.g. { m: 3, h: 1 }`);
-        gated = Object.entries(link.gates).map(([gname, p]) => {
-          const q = gates.findIndex((gt) => gt.name === gname);
-          need(q >= 0, `${lpath}.gates.${gname}: no such gate on this face${gates.length ? ` (it has ${gates.map((gt) => gt.name).join(', ')})` : ` (define it in ${where}.gates)`}`);
-          need(Number.isInteger(p) && p >= 1 && p <= 8, `${lpath}.gates.${gname}: the exponent must be a whole number from 1 to 8, got ${JSON.stringify(p)}`);
-          return [q, p];
-        });
-      }
-      links[i] = { ...link, gates: gated };
+      // Gated: P (or G) × Π x_q^p over the face's gates (a channel open with probability m³h, say).
+      links[i] = { ...link, gates: gatedBy(link.gates, gates, lpath, where) };
     }
   }
 
@@ -963,6 +957,17 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 // 'expLinear', rate·y/(1 − e^(−y)) with y = (V − midpoint)/scale. They scale permeabilities
 // (a link's gates), and nothing else: a gate holds no charge and exchanges no free energy.
 const GATE_RATE_TYPES = ['exp', 'sigmoid', 'expLinear'];
+// A link's gates, { m: 3, h: 1 }, as [[gate index, exponent]], against the gates defined at `where`.
+function gatedBy(raw, gates, lpath, where) {
+  if (raw === undefined) return [];
+  need(isObject(raw), `${lpath}.gates must map gate names to exponents, e.g. { m: 3, h: 1 }`);
+  return Object.entries(raw).map(([gname, p]) => {
+    const q = gates.findIndex((gt) => gt.name === gname);
+    need(q >= 0, `${lpath}.gates.${gname}: no such gate${gates.length ? ` (there are ${gates.map((gt) => gt.name).join(', ')})` : ` (define it in ${where}.gates)`}`);
+    need(Number.isInteger(p) && p >= 1 && p <= 8, `${lpath}.gates.${gname}: the exponent must be a whole number from 1 to 8, got ${JSON.stringify(p)}`);
+    return [q, p];
+  });
+}
 function normalizeGates(raw, where, matL, matR) {
   if (raw === undefined) return [];
   need(isObject(raw), `${where}.gates must map gate names to { alpha, beta }`);

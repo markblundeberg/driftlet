@@ -217,7 +217,9 @@ of the face block, so the two edge nodes it couples meet only through the block 
 so is a gate's fraction open, its row coupling it to the two edge nodes' $`\hat\phi`$, and the gated
 fluxes to it, all within the face's block and its neighbours'. Newton's convergence and the time
 step's error count a gate's change as they count a potential's in thermal units (1e-3 of $`m`$ is
-0.3% of $`m^3`$), and a gate is evaluated in [0, 1] where Newton's iterates stray past its ends.
+0.3% of $`m^3`$), and a gate is evaluated in [0, 1] where Newton's iterates stray past its ends. A
+membrane port's gates are unknowns of each window node's block, after its surface's coverages,
+with the same row in the voltage across the port's capacitance there.
 A species can take part in a reaction at a face and also cross it by a link (its flux slot)
 at the same time; where it exists on both sides, that link must be given explicitly. A continuity
 row has a zero diagonal block, but block Thomas still sees a non-singular block there once the

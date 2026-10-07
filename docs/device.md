@@ -287,7 +287,9 @@ $`V = \phi_{\mathrm{right}} - \phi_{\mathrm{left}}`$ at its two edge nodes,
 \frac{dx}{dt} = \alpha(V)\,(1 - x) - \beta(V)\,x ,
 ```
 
-and a link names the gates that scale its $`P`$, with their exponents: $`P\,m^3 h`$ for `{ m: 3, h: 1 }`.
+and a link names the gates that scale its $`P`$ (or a conductance link's $`G`$), with their exponents:
+$`P\,m^3 h`$ for `{ m: 3, h: 1 }`. (A membrane along a region instead, an axon's, is a
+[port](#a-membrane-through-a-window-gated-channels).)
 Each of $`\alpha`$ and $`\beta`$ is one of NeuroML's three standard forms, with `rate` in 1/s and `midpoint`
 and `scale` in volts:
 
@@ -489,6 +491,7 @@ any combination:
 | `reactions`, `area` | an [electrode spread through the window](#electrodes-spread-through-a-window) | a thin film on a metal, a crevice, a porous electrode |
 | `surface` | [species on that electrode's sites](#an-electrodes-surface-adsorbates-and-passive-films) | adsorbates, a passive film |
 | `capacitance`, `area` | [charge held across a capacitance](#a-capacitance-through-a-window) | a gate along a channel, a double layer |
+| `gates` | [voltage-gated channels](#a-membrane-through-a-window-gated-channels) on its conductance links | an axon's membrane along it |
 
 ```js nocheck
 ports: [{
@@ -675,6 +678,40 @@ below threshold through saturation (second order in the grid); a porous electrod
 impedance $`\sqrt{r/y}\coth(L\sqrt{ry})`$, the double layer in series with the ions' chemical
 capacitance; and the gate's low-frequency impedance against $`dQ/dV_G`$ from steady states.
 
+### A membrane through a window: gated channels
+
+A port with a capacitance can carry [gates](#voltage-gated-channels), as a face can: at each node of
+its window, each gate is a fraction open with Hodgkin–Huxley kinetics in the voltage across the
+port's capacitance there, $`V_m = \phi - (V - \mathtt{zeroCharge})`$, and its conductance links name
+the gates that scale them (`G × m³h`). That's a membrane all along a region, between it and an
+outside held by the port: an axon's, with x running along the axon. Per volume of axoplasm, a
+cylinder of radius a has $`2/a`$ of membrane (`area`); held at `V: 0` with `zeroCharge: 0`, the port's
+V is the outside's $`\phi`$, and a charged species' `offset` is its level there against that,
+$`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$. A conductance link's current is then
+$`G\,(V_{i,out} - V_i)`$, which is $`g\,a_m (E_i - V_m)`$: Hodgkin and Huxley's linear channel, with $`E_i`$ the
+Nernst potential at the inside's concentration there.
+
+```js nocheck
+ports: [{
+  name: 'membrane', region: 'axon', V: 0, terminal: 'K+', area: 2 / 238e-6, // a squid giant axon
+  capacitance: { C: 0.01, zeroCharge: 0 },
+  gates: hodgkinHuxley({ /* … */ T }).gates,
+  species: {
+    'Na+': { type: 'conductance', G: 1200 * 2 / 238e-6, offset: offsetNa, gates: { m: 3, h: 1 } },
+    'K+': { type: 'conductance', G: 360 * 2 / 238e-6, offset: offsetK, gates: { n: 4 } },
+    'Cl-': { type: 'conductance', G: 3 * 2 / 238e-6, offset: offsetCl }, // the leak
+  },
+}]
+```
+
+With the axoplasm strictly neutral and the outside held (no resistance outside), the ions'
+drift along x and the membrane's charging are cable theory, without its being put in: a squid
+axon's action potential propagates at Hodgkin and Huxley's speed, 18.73 m/s for their 18.5 °C
+axon (they computed 18.8 by hand), the cable equation's own to 2e-3
+([`cable`](../test/cable.test.js) test). Each solution's `ports[k]` reports the gates at each node of the window, `gates[name][j]`,
+and the voltage they follow, `Vm[j]`. A gated window can't overlap another port's gated or
+surfaced one.
+
 ### What a solution reports
 
 Each solution's `ports[k]`, as the port has them:
@@ -687,6 +724,7 @@ Each solution's `ports[k]`, as the port has them:
 | `rates[q][j]` | reaction q's forward rate at node j, mol/(m²·s) of electrode (reaction first, then node) |
 | `coverage[name][j]`, `bare[j]` | with a surface: each species' coverage θ, and the bare fraction θ₀ to full precision |
 | `sigma[j]`, `charge` | with a capacitance: σ per area of electrode (C/m²), and the total the port's side holds |
+| `gates[name][j]`, `Vm[j]` | with gates: each gate's fraction open, and the voltage across the capacitance that they follow (V) |
 
 The arrays are typed (`Float64Array`), so `Array.from` them before mapping to anything but
 numbers. The kit's [`polarization()`](kit.md#polarization-curves-an-evans-diagram) gives each reaction's rate at a spot of the

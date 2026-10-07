@@ -148,7 +148,7 @@ test('gates: what the definition must say', () => {
     contacts: { left: { V: 0, terminal: 'Cl-', species: { 'K+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'Cl-', species: { 'K+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'equilibrium' }, phi: 'bulk' } },
   });
   const n = HH.n;
-  assert.throws(() => new Device(def({ gates: { n }, species: { 'K+': { type: 'permeability', P: 1e-8, gates: { q: 4 } } } })), /gates\.q: no such gate on this face \(it has n\)/);
+  assert.throws(() => new Device(def({ gates: { n }, species: { 'K+': { type: 'permeability', P: 1e-8, gates: { q: 4 } } } })), /gates\.q: no such gate \(there are n\)/);
   assert.throws(() => new Device(def({ gates: { n }, species: { 'K+': { type: 'permeability', P: 1e-8, gates: { n: 2.5 } } } })), /exponent must be a whole number/);
   assert.throws(() => new Device(def({ gates: { n: { alpha: { ...n.alpha, type: 'linear' }, beta: n.beta } } })), /alpha must be \{ type, rate, midpoint, scale \}/);
   assert.throws(() => new Device(def({ gates: { n: { alpha: { ...n.alpha, scale: 0 }, beta: n.beta } } })), /scale \(V\) must not be zero/);

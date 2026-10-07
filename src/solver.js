@@ -291,7 +291,9 @@ export class Solver {
     const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length), 0);
     // (and at an electrode port's nodes, one per surface species: its coverage's η)
     const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
-    const M = n + 1 + Math.max(nRx, nSurf);
+    // (and a membrane port's gates, after them: each one's fraction open)
+    const nPortSlots = model.ports.reduce((m, port) => Math.max(m, port.surface.length + port.gates.length), 0);
+    const M = n + 1 + Math.max(nRx, nPortSlots);
     const nNodes = grid.nNodes;
     const nFaces = regions.length - 1;
     const nB = nNodes + nFaces;
@@ -326,11 +328,20 @@ export class Solver {
     // The bare fraction θ₀, directly (1 − Σθ cancels as θ → 1); 1 where there's no surface.
     this.th0 = new Float64Array(nNodes).fill(1);
     this.th0Old = new Float64Array(nNodes).fill(1);
-    // Faces' gates: each one's slot (after its face's reaction rates) and value at the step's start.
-    this.gateList = model.interfaces.flatMap((itf, f) => itf.gates.map((gate, q) => ({ f, q, gate, o: (this.blockOfFace[f] * M) + 1 + n + itf.reactions.length + q })));
+    // Gates: each one's slot (at a face, after its reaction rates; at a membrane port's nodes, after
+    // the surface's coverages) and value at the step's start. Faces' first, then ports', node by
+    // node through each window.
+    this.gatePort = new Int32Array(nNodes).fill(-1);
+    model.ports.forEach((port, k) => port.gates.length > 0 && port.nodes.forEach((g) => (this.gatePort[g] = k)));
+    this.gateList = [
+      ...model.interfaces.flatMap((itf, f) => itf.gates.map((gate, q) => ({ f, q, gate, o: this.blockOfFace[f] * M + 1 + n + itf.reactions.length + q }))),
+      ...model.ports.flatMap((port, k) => Array.from(port.nodes).flatMap((g) => port.gates.map((gate, q) => ({ port: k, g, q, gate, o: this.blockOfNode[g] * M + 1 + n + port.surface.length + q })))),
+    ];
     this.gateOld = new Float64Array(this.gateList.length);
     this.gateIndex = new Int32Array(nFaces); // face f's first gate in gateList
-    for (let f = 0, j = 0; f < nFaces; j += model.interfaces[f].gates.length, f++) this.gateIndex[f] = j;
+    let j = 0;
+    for (let f = 0; f < nFaces; j += model.interfaces[f].gates.length, f++) this.gateIndex[f] = j;
+    this.portGateIndex = model.ports.map((port) => ((j += port.nodes.length * port.gates.length), j - port.nodes.length * port.gates.length));
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -599,6 +610,8 @@ export class Solver {
       for (let i = 0; i < n; i++) active[b * M + 1 + i] = this.present[g * n + i];
       const k = this.surfPort[g];
       if (k >= 0) for (let q = 0; q < model.ports[k].surface.length; q++) active[b * M + 1 + n + q] = 1;
+      const kg = this.gatePort[g], pg = model.ports[kg];
+      if (kg >= 0) for (let q = 0; q < pg.gates.length; q++) active[b * M + 1 + n + pg.surface.length + q] = 1;
     }
     model.interfaces.forEach((itf, f) => {
       const bf = this.blockOfFace[f];
@@ -1419,8 +1432,8 @@ export class Solver {
       if (w > 0) this.termV[k] = port.capacitance.zeroCharge + sum / w;
     }
     // Gates start open as far as the starting voltage across their face holds them, α/(α + β).
-    for (const { f, gate, o } of this.gateList) {
-      const V = this._faceVoltage(f), a = gateRate(gate.alpha, V)[0], b = gateRate(gate.beta, V)[0];
+    for (const gt of this.gateList) {
+      const { gate, o } = gt, V = this._gateVoltage(gt), a = gateRate(gate.alpha, V)[0], b = gateRate(gate.beta, V)[0];
       u[o] = a + b > 0 ? a / (a + b) : 0;
     }
     // A floating electrode spread through a port (without a double layer) starts where its
@@ -2072,21 +2085,15 @@ export class Solver {
         const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
         const E = Math.expm1(-deta); // η_R − η_L
         // Gated: P × Π x^p, each x taken in [0, 1] (Newton's iterates can stray past its ends).
-        let P = link.P, open = 1;
-        const gated = link.gates ?? [];
-        for (const [q, p] of gated) open *= powi(Math.min(1, Math.max(0, u[this._gateSlot(f, q)])), p);
-        P *= open;
+        const gated = link.gates ?? [], gx = (q) => u[this._gateSlot(f, q)];
+        const P = link.P * (gated.length ? this._open(gated, gx) : 1);
         const gBc = P * bernoulli(d) * this.c[kl];
         const dNdd = -P * bernoulliDerivative(d) * this.c[kl] * E;
         res[R[o]] = u[o] + gBc * E;
         this._j(bf, r, bf, r, 1);
         for (const [q, p] of gated) {
-          const x = u[this._gateSlot(f, q)];
-          if (!(x > 0 && x < 1)) continue;
-          // ∂/∂x of P·x^p·(the rest): p/x times the flux term
-          let others = 1;
-          for (const [q2, p2] of gated) if (q2 !== q) others *= powi(Math.min(1, Math.max(0, u[this._gateSlot(f, q2)])), p2);
-          this._j(bf, r, bf, 1 + n + itf.reactions.length + q, link.P * bernoulli(d) * this.c[kl] * E * p * powi(x, p - 1) * others);
+          const dO = this._dOpen(gated, q, p, gx);
+          if (dO !== 0) this._j(bf, r, bf, 1 + n + itf.reactions.length + q, link.P * bernoulli(d) * this.c[kl] * E * dO);
         }
         this._j(bf, r, bL, r, -gBc);
         this._j(bf, r, bR, r, gBc * (E + 1));
@@ -2095,12 +2102,18 @@ export class Solver {
           this._j(bf, r, bR, 0, -zi * dNdd);
         }
       } else {
-        // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F)
-        const gG = (itf.links[i].G * VT) / (z[i] * z[i] * F);
+        // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F); gated,
+        // G times Π x^p
+        const gated = itf.links[i].gates ?? [], gx = (q) => u[this._gateSlot(f, q)];
+        const gG0 = (itf.links[i].G * VT) / (z[i] * z[i] * F), gG = gG0 * (gated.length ? this._open(gated, gx) : 1);
         res[R[o]] = u[o] - gG * deta;
         this._j(bf, r, bf, r, 1);
         this._j(bf, r, bL, r, -gG);
         this._j(bf, r, bR, r, gG);
+        for (const [q, p] of gated) {
+          const dO = this._dOpen(gated, q, p, gx);
+          if (dO !== 0) this._j(bf, r, bf, 1 + n + itf.reactions.length + q, -gG0 * deta * dO);
+        }
       }
       res[R[bL * M + r]] += Af * u[o];
       this._j(bL, r, bf, r, Af);
@@ -2114,6 +2127,18 @@ export class Solver {
   // Full index of face f's gate q (its fraction open).
   _gateSlot(f, q) {
     return this.blockOfFace[f] * this.M + 1 + this.n + this.model.interfaces[f].reactions.length + q;
+  }
+
+  // The voltage a gate follows: across its face, or across its port's capacitance at its node.
+  _gateVoltage(gt) {
+    return gt.port === undefined ? this._faceVoltage(gt.f) : this._portVoltage(gt.port, gt.g);
+  }
+
+  // The voltage across port k's capacitance at node g, φ − (V − zeroCharge) (V): a membrane's,
+  // inside (the region) minus outside.
+  _portVoltage(k, g) {
+    const { M, u, uLo, VT } = this, b = this.blockOfNode[g], port = this.model.ports[k];
+    return VT * (u[b * M] + uLo[b * M]) - (this.termV[2 + k] - port.capacitance.zeroCharge);
   }
 
   // The voltage across face f, φ_right − φ_left (V).
@@ -2489,8 +2514,11 @@ export class Solver {
           B[R[o]] += -z[i] / VT;
           continue;
         }
-        // conductance: s = G V_T (η_out − η)/(z² F); exchange: s = k (η_out − η)
-        const kk = link.type === 'conductance' ? (link.G * VT) / (z[i] * z[i] * F) : link.k;
+        // conductance: s = G V_T (η_out − η)/(z² F); exchange: s = k (η_out − η). Gated, G times
+        // Π x^p, the gates at this node (each taken in [0, 1]).
+        const kk0 = link.type === 'conductance' ? (link.G * VT) / (z[i] * z[i] * F) : link.k;
+        const gated = link.gates ?? [], q0 = 1 + n + port.surface.length;
+        const open = gated.length ? this._open(gated, (q) => u[b * M + q0 + q]) : 1, kk = kk0 * open;
         res[R[o]] -= v * kk * deta;
         this._j(b, r, b, r, v * kk);
         flux[i] += v * kk * deta;
@@ -2498,6 +2526,12 @@ export class Solver {
           B[R[o]] += (-v * kk * z[i]) / VT;
           C[R[o]] += -zF * v * kk;
           this.termDI[k] += (zF * v * kk * z[i]) / VT;
+        }
+        for (const [q, p] of gated) {
+          const d = this._dOpen(gated, q, p, (qq) => u[b * M + q0 + qq]);
+          if (d === 0) continue;
+          this._j(b, r, b, q0 + q, -v * kk0 * deta * d);
+          if (z[i] !== 0) C[R[b * M + q0 + q]] += zF * v * kk0 * deta * d;
         }
       }
     }
@@ -2507,6 +2541,7 @@ export class Solver {
     }
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
     if (port.capacitance) this._portCapacitance(port, k, dt);
+    if (port.gates.length > 0) this._portGates(port, k, dt);
     if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(port, dt);
   }
 
@@ -2575,6 +2610,38 @@ export class Solver {
   // on the port's side, so each node's charge balance (its φ row) gains vol·a·σ, and the port
   // passes the charging current d(Σ vol·a·σ)/dt (none in a steady state). An end node whose φ its
   // contact sets is left to the contact.
+  // A membrane port's gates, at each node of its window: (x − x_old)/dt = α(1 − x) − βx in the
+  // voltage across its capacitance there, φ − (V − zeroCharge).
+  _portGates(port, k, dt) {
+    const { n, res, VT } = this, R = this.rix, B = this.termB[k], store = Number.isFinite(dt) ? 1 / dt : 0, q0 = 1 + n + port.surface.length;
+    port.nodes.forEach((g, w) => {
+      const b = this.blockOfNode[g], V = this._portVoltage(k - 2, g);
+      port.gates.forEach((gate, q) => {
+        const o = b * this.M + q0 + q, x = this.u[o], j = this.portGateIndex[k - 2] + w * port.gates.length + q;
+        const [a, da] = gateRate(gate.alpha, V), [bb, db] = gateRate(gate.beta, V);
+        res[R[o]] = store * (x - this.gateOld[j]) - (a * (1 - x) - bb * x);
+        this._j(b, q0 + q, b, q0 + q, store + a + bb);
+        const s = -(da * (1 - x) - db * x); // ∂/∂V_m, with V_m = V_T φ̂ − V + zeroCharge
+        this._j(b, q0 + q, b, 0, s * VT);
+        B[R[o]] += -s;
+      });
+    });
+  }
+
+  // Π x^p over a link's gates (each x taken in [0, 1]), and its derivative in gate q.
+  _open(gated, x) {
+    let open = 1;
+    for (const [q, p] of gated) open *= powi(Math.min(1, Math.max(0, x(q))), p);
+    return open;
+  }
+  _dOpen(gated, q, p, x) {
+    const xq = x(q);
+    if (!(xq > 0 && xq < 1)) return 0;
+    let others = 1;
+    for (const [q2, p2] of gated) if (q2 !== q) others *= powi(Math.min(1, Math.max(0, x(q2))), p2);
+    return p * powi(xq, p - 1) * others;
+  }
+
   _portCapacitance(port, k, dt) {
     const { M, u, uLo, res, VT } = this, R = this.rix, vol = this.model.grid.vol, area = this.portArea[k - 2];
     const { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k], B = this.termB[k], Ct = this.termC[k];

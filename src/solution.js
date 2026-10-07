@@ -118,6 +118,11 @@ export function makeSolution(solver, result = {}) {
       const sets = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
       out.sigma = Float64Array.from(port.nodes, (g) => ((g === 0 && sets('left')) || (g === last && sets('right')) ? 0 : Cs * (solver.termV[2 + k] - zeroCharge - phi[g])));
     }
+    if (port.gates.length > 0) {
+      // A membrane's gates at each node, and the voltage they follow, φ − (V − zeroCharge).
+      out.gates = Object.fromEntries(port.gates.map((gate, q) => [gate.name, Float64Array.from(port.nodes, (g) => u[solver.blockOfNode[g] * M + 1 + n + port.surface.length + q])]));
+      out.Vm = Float64Array.from(port.nodes, (g) => solver._portVoltage(k, g));
+    }
     if (port.area !== null) {
       out.x = Float64Array.from(port.nodes, (g) => model.grid.x[g]);
       out.area = Float64Array.from(solver.portArea[k]);
