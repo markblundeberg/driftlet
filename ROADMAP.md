@@ -158,9 +158,12 @@ for live demos.
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
-   - Voltage-gated channels (an action potential): a permeability that depends on gating
-     variables with their own kinetics (Hodgkin–Huxley), which would be extra unknowns at a face.
-     Today a page can change `P` with `set()` between steps.
+   - Done: voltage-gated channels, Hodgkin–Huxley gates as unknowns of a membrane face scaling
+     its permeabilities (`hodgkinHuxley()` in the kit), probes at a face, and the
+     [action-potential demo](demos/axon.html). Still to come: an excitable membrane's impedance
+     (the inductive loop K⁺ gating gives, as Cole measured), and a cable along x (a propagating
+     spike), which in 1D would need the axon's length as the coordinate and the membrane as a
+     distributed port rather than a face.
    - Electron transport and the protonmotive force: a mitochondrial or thylakoid membrane as a
      face, with V_H⁺ the quantity that couples the respiratory chain to ATP synthase.
    - From the corrosion agent's review:
