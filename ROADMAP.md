@@ -158,12 +158,18 @@ for live demos.
    - Whether the stack form should replace `regions` and `interfaces` in the plain definition
      itself, once it has been used for a while.
    - Half-reactions as vacuum-alignment anchors.
-   - Done: voltage-gated channels, Hodgkin–Huxley gates as unknowns of a membrane face scaling
-     its permeabilities (`hodgkinHuxley()` in the kit), probes at a face, and the
-     [action-potential demo](demos/axon.html). Still to come: an excitable membrane's impedance
-     (the inductive loop K⁺ gating gives, as Cole measured), and a cable along x (a propagating
-     spike), which in 1D would need the axon's length as the coordinate and the membrane as a
-     distributed port rather than a face.
+   - Done: voltage-gated channels, Hodgkin–Huxley gates as unknowns of a membrane face (and of
+     each node of a membrane port's window) scaling its permeabilities or conductances
+     (`hodgkinHuxley()` in the kit), probes at a face, a port's `bath`; the
+     [action-potential](demos/axon.html) (with Frankenhaeuser and Hodgkin's periaxonal space),
+     [propagation](demos/propagation.html) and [myelin](demos/myelin.html) demos; validated
+     against the space-clamped HH equations, the linearised ones (the excitable membrane's
+     impedance), the cable equation (18.73 m/s) and a compartmental cable (saltatory
+     conduction). Still to come: Markov-scheme channels (states with transitions, for channels
+     that HH's independent gates can't describe), calcium (its channels, buffering, and the
+     Ca²⁺-activated K⁺ channels behind bursting), and an extracellular space with its own
+     resistance along the axon (two lines, ephaptic coupling between neighbouring axons).
+     Devices with dozens of ports are slower per step than their grid suggests.
    - Electron transport and the protonmotive force: a mitochondrial or thylakoid membrane as a
      face, with V_H⁺ the quantity that couples the respiratory chain to ATP synthase.
    - From the corrosion agent's review:
