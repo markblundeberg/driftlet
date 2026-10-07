@@ -334,7 +334,10 @@ Donnan equilibrium, every permeant ion level across the membrane, which the real
 only over hours. Start a transient from the concentrations given (it settles to rest within
 milliseconds), or keep the gradients with the Na⁺/K⁺ pump on the same face. Started from the
 same state, a squid axon's action potential follows the space-clamped Hodgkin–Huxley equations
-with GHK currents to within 1 mV ([`gates`](../test/gates.test.js) test).
+with GHK currents to within 1 mV; and in small signals, with the membrane held at rest between
+two baths, `impedance()` gives the gates' inductance that Cole measured (the impedance inductive
+below ~50 Hz and resonant near 60 Hz), the linearised equations' to 5e-4
+([`gates`](../test/gates.test.js) test).
 
 ### Faces next to a conductor
 

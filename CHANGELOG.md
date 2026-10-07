@@ -10,7 +10,8 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   `interfaces[f].gates` and `.V`. `hodgkinHuxley()` in the kit writes the squid axon's channels,
   with GHK permeabilities matched to HH's conductances at rest. Under a voltage clamp each gate
   sits at α/(α + β) and relaxes at α + β; a squid axon's action potential follows the
-  space-clamped HH equations with GHK currents to within 1 mV.
+  space-clamped HH equations with GHK currents to within 1 mV, and its impedance at rest (the
+  inductance Cole measured, and a resonance near 60 Hz) the linearised equations' to 5e-4.
 - Probes at a face: `{ interface: f, species }` (the flux through it) and `{ interface: f, gate }`.
 - Gates on a port too: a membrane all along a region (an axon's), each node's gates following
   the voltage across the port's capacitance there, scaling its conductance links (Hodgkin and

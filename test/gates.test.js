@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, bath, aqueous, injector, pulse, hodgkinHuxley } from '../src/kit.js';
+import { build, layer, bath, aqueous, injector, pulse, hodgkinHuxley, ghkCurrent } from '../src/kit.js';
 
 // Voltage-gated channels: a membrane face whose permeabilities are scaled by gates with
 // Hodgkin–Huxley kinetics, dx/dt = α(V)(1 − x) − β(V)x in the voltage across the face. The squid
@@ -173,4 +173,54 @@ test("the kit's hodgkinHuxley(): their gates, Q₁₀ = 3, and GHK permeabilitie
   const warm = hodgkinHuxley({ inside: IN, outside: OUT, T: T + 10 });
   for (const k of ['m', 'h', 'n']) for (const ab of ['alpha', 'beta']) assert.ok(Math.abs(warm.gates[k][ab].rate / HH[k][ab].rate - 3) < 1e-12);
   assert.throws(() => hodgkinHuxley({ inside: { 'Na+': 50 }, outside: OUT }), /give K\+'s concentration inside and outside/);
+});
+
+test("an excitable membrane's impedance: Hodgkin–Huxley gating, linearised, inductive and resonant, as Cole measured", () => {
+  // The squid membrane between two held baths (outside and inside compositions), at the voltage
+  // where it passes no current. Its small-signal admittance per area, linearising the GHK currents
+  // and the gates (each relaxing at α + β toward its level),
+  //   Y = iωC + ∂I/∂V + Σ_q (∂I/∂x_q) (α′_q(1 − x_q) − β′_q x_q)/(iω + α_q + β_q),
+  // is inductive below ~50 Hz (K⁺ activation, and Na⁺ inactivation, lag the voltage and oppose it)
+  // and resonates near 60 Hz. The solutions, 1 µm a side, add their series resistance (below) and
+  // a little polarisation; strictly neutral, they hold the membrane's charge in their edge cells, which
+  // shifts the concentrations there in proportion to C/(c h): with 200 nm cells, by 1e-4.
+  const OUTb = { ...OUT }, INb = { ...IN };
+  const hh = hodgkinHuxley({ inside: INb, outside: OUTb, T });
+  const def = (right) =>
+    build({
+      T,
+      library: [water()],
+      stack: [bath(OUTb, 'Cl-'), layer('water', 1e-6, { c0: OUTb }), { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } }, layer('water', 1e-6, { c0: INb }), bath(INb, 'Cl-', right)],
+      grid: { hmin: 200e-9, hmax: 200e-9 },
+    });
+  const open = new Device(def({ I: 0 })).solve(), d = new Device(def(open.terminals.right.V));
+  const fs = [0.1, 10, 30, 60, 100, 300, 3000, 1e5], { Z } = d.impedance(fs);
+  // The formula, at the steady state's voltage, gates and edge concentrations.
+  const sol = d.solution(), itf = sol.interfaces[0], Vm = itf.V, x0 = itf.gates;
+  const edge = sol.x.findIndex((x, k) => k > 0 && x === sol.x[k - 1]) - 1;
+  const cO = (s) => sol.c[s][edge], cI = (s) => sol.c[s][edge + 1];
+  const I = (V, m, hh2, n) =>
+    hh.species['Na+'].P * m ** 3 * hh2 * ghkCurrent(1, cI('Na+'), cO('Na+'), V, T) + hh.species['K+'].P * n ** 4 * ghkCurrent(1, cI('K+'), cO('K+'), V, T) + hh.species['Cl-'].P * ghkCurrent(-1, cI('Cl-'), cO('Cl-'), V, T);
+  const e = 1e-7, { m, h, n } = x0;
+  const dI = { V: (I(Vm + e, m, h, n) - I(Vm - e, m, h, n)) / (2 * e), m: (I(Vm, m + e, h, n) - I(Vm, m - e, h, n)) / (2 * e), h: (I(Vm, m, h + e, n) - I(Vm, m, h - e, n)) / (2 * e), n: (I(Vm, m, h, n + e) - I(Vm, m, h, n - e)) / (2 * e) };
+  const dr = (r, V) => (rate(r, V + e) - rate(r, V - e)) / (2 * e);
+  // In series, the two solutions' resistance, 1 µm each of σ = (F²/RT) Σ z²Dc.
+  const wat = water().materials.water.species, zz = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
+  const sigma = (c) => ((FARADAY * FARADAY) / RT) * Object.keys(zz).reduce((t, s) => t + zz[s] * zz[s] * wat[s].D * c[s], 0);
+  const Rs = 1e-6 / sigma(OUTb) + 1e-6 / sigma(INb);
+  const mags = [];
+  fs.forEach((f, k) => {
+    const w = 2 * Math.PI * f;
+    let re = dI.V, im = 0.01 * w;
+    for (const q of ['m', 'h', 'n']) {
+      const g = HH[q], ab = rate(g.alpha, Vm) + rate(g.beta, Vm), num = dr(g.alpha, Vm) * (1 - x0[q]) - dr(g.beta, Vm) * x0[q], den = ab * ab + w * w;
+      re += (dI[q] * num * ab) / den;
+      im -= (dI[q] * num * w) / den;
+    }
+    const zr = Rs + re / (re * re + im * im), zi = -im / (re * re + im * im);
+    assert.ok(Math.hypot(Z.re[k] - zr, Z.im[k] - zi) < 5e-4 * Math.hypot(zr, zi), `${f} Hz: ${Z.re[k]} ${Z.im[k]} vs ${zr} ${zi}`);
+    mags.push(Math.hypot(Z.re[k], Z.im[k]));
+  });
+  // Inductive at 30 Hz, and |Z| peaks between 30 and 100 Hz, near four times its DC value.
+  assert.ok(Z.im[fs.indexOf(30)] > 0 && Math.max(...mags) === mags[fs.indexOf(60)] && mags[fs.indexOf(60)] > 3 * mags[0], mags.join(' '));
 });
