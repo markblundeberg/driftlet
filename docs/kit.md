@@ -152,6 +152,10 @@ left: `{ gates, species }`, the face's `gates` (m, h and n, their 1952 rates at 
 whose chord conductance at `at` (−65 mV) is HH's `g` (120, 36 and 0.3 mS/cm²) at the
 concentrations given. Spread it into the face beside its $`\phi`$ law, adding the other species'
 links: `{ phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } }`.
+For a [membrane port](device.md#a-membrane-through-a-window-gated-channels) along a region (an axon
+along x), give `area`, the membrane per volume (2/a for radius a), in place of `inside`, `outside`
+and `at`: the links are then their linear conductances, `G` = g × area, gated the same, each ion's
+reversal potential following from the port's `bath` and the concentrations inside.
 `ghkCurrent(z, inside, outside, V, T)` is the GHK current (outward, A/m²) at unit permeability.
 
 ## Sources

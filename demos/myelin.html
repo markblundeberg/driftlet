@@ -79,13 +79,9 @@ const E0 = { 'Na+': 50 * mV, 'K+': -77 * mV, 'Cl-': -54.387 * mV };
 const OUT = Object.fromEntries(['Na+', 'K+', 'Cl-'].map((s) => [s, IN[s] * Math.exp((z[s] * E0[s]) / VT)]));
 const G = { 'Na+': 1200, 'K+': 360, 'Cl-': 3 };
 const DA = 1e-11, D = (1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T)) - DA * IN['A-']) / (IN['Na+'] + IN['K+'] + IN['Cl-']);
-const gates = hodgkinHuxley({ inside: IN, outside: { ...OUT, 'A-': 1 }, T }).gates;
-const offset = (s) => (VT / z[s]) * Math.log(OUT[s] / 1000);
-const channels = (g) => ({
-  'Na+': { type: 'conductance', G: g * G['Na+'] * am, offset: offset('Na+'), gates: { m: 3, h: 1 } },
-  'K+': { type: 'conductance', G: g * G['K+'] * am, offset: offset('K+'), gates: { n: 4 } },
-  'Cl-': { type: 'conductance', G: G['Cl-'] * am, offset: offset('Cl-') },
-});
+// Hodgkin and Huxley's channels, g times their density for Na⁺ and K⁺ (the leak as theirs).
+const channels = (g) => hodgkinHuxley({ T, area: am, g: { Na: g * G['Na+'], K: g * G['K+'], leak: G['Cl-'] } });
+const gates = channels(1).gates;
 const base = (regions, ports, grid) => ({
   T,
   species: Object.entries(z).map(([name, zz]) => ({ name, z: zz })),
@@ -100,14 +96,14 @@ const base = (regions, ports, grid) => ({
 const stim = (region, to, on, I) => injector({ name: 'stim', region, from: 0, to, species: 'K+', I: on ? square({ high: I, low: 0, period: PERIOD, duty: 0.1e-3 / PERIOD }) : 0 });
 const bare = (on) =>
   base([{ name: 'axon', material: 'axoplasm', length: L, c0: IN }], [
-    { name: 'membrane', region: 'axon', V: 0, terminal: 'K+', area: am, capacitance: { C: 0.01, zeroCharge: 0 }, gates, species: channels(1) },
+    { name: 'membrane', region: 'axon', V: 0, area: am, capacitance: { C: 0.01, zeroCharge: 0 }, bath: { c: OUT }, gates, species: channels(1).species },
     stim('axon', 20e-6, on, 600),
   ], { hmin: 10e-6, hmax: 50e-6, ratio: 1.3 });
 const myelinated = (p, on) => {
   const regions = [], ports = [], n = Math.floor(L / (Ln + p.Lint)) + 1;
   for (let k = 0; k < n; k++) {
     regions.push({ name: `node${k}`, material: 'axoplasm', length: Ln, c0: IN });
-    ports.push({ name: `node${k}`, region: `node${k}`, V: 0, terminal: 'K+', area: am, capacitance: { C: 0.01, zeroCharge: 0 }, gates, species: channels(p.gNode) });
+    ports.push({ name: `node${k}`, region: `node${k}`, V: 0, area: am, capacitance: { C: 0.01, zeroCharge: 0 }, bath: { c: OUT }, gates, species: channels(p.gNode).species });
     if (k === n - 1) break;
     regions.push({ name: `internode${k}`, material: 'axoplasm', length: p.Lint, c0: IN });
     ports.push({ name: `myelin${k}`, region: `internode${k}`, V: 0, area: am, capacitance: { C: 0.01 / p.wraps, zeroCharge: 0 } });

@@ -2,6 +2,13 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A port can take its outside's composition, `bath: { c }`: its V is then the outside's φ, and
+  each linked species' level there follows from the composition (an offset no longer has to be
+  worked out). `hodgkinHuxley({ T, area })` in the kit writes a membrane port's links, Hodgkin
+  and Huxley's linear conductances gated as theirs.
+
 ## 0.12.0 (2026-10-07)
 
 - Voltage-gated channels: a face's `gates`, each a fraction open with Hodgkin–Huxley kinetics in

@@ -28,7 +28,7 @@ export function ghkCurrent(z, inside, outside, V, T) {
 }
 
 /**
- * Hodgkin and Huxley's squid-axon channels, for a membrane face with the outside on its left
+ * Hodgkin and Huxley's squid-axon channels: for a membrane face with the outside on its left
  * (so the gates' voltage, φ_right − φ_left, is the membrane potential): the face's `gates`, and
  * `species` links for Na⁺ (P·m³h), K⁺ (P·n⁴) and the leak (ungated), to spread into the face
  * beside its φ law, `{ phi: { type: 'capacitive', C: 0.01 }, ...hh }`, adding links (or blocks)
@@ -40,13 +40,17 @@ export function ghkCurrent(z, inside, outside, V, T) {
  * (`leak`, of charge `leakZ`: Cl⁻ by default, whose Nernst level in squid is near their leak
  * reversal, −54 mV). The
  * rates are theirs at 6.3 °C, scaled to `T` by Q₁₀ = 3.
+ *
+ * Or, given `area` (membrane per volume of the region, 2/a for an axon of radius a), for a membrane
+ * port along a region: links that are their linear conductances, G = g × area per volume, gated the
+ * same, each ion's reversal potential following from the port's bath and the concentrations inside
+ * (so `inside`, `outside` and `at` aren't needed).
  * @param {{ inside: object, outside: object, T?: number, g?: { Na?: number, K?: number, leak?: number },
- *   leak?: string, leakZ?: number, at?: number, names?: { Na?: string, K?: string } }} opts concentrations in
+ *   leak?: string, leakZ?: number, at?: number, names?: { Na?: string, K?: string }, area?: number }} opts concentrations in
  *   mol/m³ by species name, K, S/m², V
  * @returns {{ gates: object, species: object }}
  */
-export function hodgkinHuxley({ inside, outside, T = HH_T, g = {}, leak = 'Cl-', leakZ = -1, at = -65 * mV, names = {} } = {}) {
-  need(inside && outside && typeof inside === 'object' && typeof outside === 'object', 'hodgkinHuxley: give inside and outside concentrations (mol/m³) by species name');
+export function hodgkinHuxley({ inside, outside, T = HH_T, g = {}, leak = 'Cl-', leakZ = -1, at = -65 * mV, names = {}, area } = {}) {
   need(num(T) && T > 0, `hodgkinHuxley: T must be a temperature in K, got ${T}`);
   need(num(at), `hodgkinHuxley: at must be a voltage (V), got ${at}`);
   const G = { Na: 1200, K: 360, leak: 3, ...g };
@@ -54,6 +58,19 @@ export function hodgkinHuxley({ inside, outside, T = HH_T, g = {}, leak = 'Cl-',
   const q10 = Math.exp(Math.log(3) * ((T - HH_T) / 10)); // Q₁₀ = 3
   const scaled = (r) => ({ ...r, rate: r.rate * q10 });
   const gates = Object.fromEntries(Object.entries(HH_GATES).map(([k, gt]) => [k, { alpha: scaled(gt.alpha), beta: scaled(gt.beta) }]));
+  if (area !== undefined) {
+    need(num(area) && area > 0, `hodgkinHuxley: area must be the membrane per volume (m²/m³; 2/a for an axon of radius a), got ${area}`);
+    for (const [k, v] of Object.entries(G)) need(num(v) && v > 0, `hodgkinHuxley: g.${k} must be a conductance > 0 (S/m²), got ${v}`);
+    return {
+      gates,
+      species: {
+        [Na]: { type: 'conductance', G: G.Na * area, gates: { m: 3, h: 1 } },
+        [K]: { type: 'conductance', G: G.K * area, gates: { n: 4 } },
+        [leak]: { type: 'conductance', G: G.leak * area },
+      },
+    };
+  }
+  need(inside && outside && typeof inside === 'object' && typeof outside === 'object', 'hodgkinHuxley: give inside and outside concentrations (mol/m³) by species name (or, for a membrane port, its area)');
   const P = (name, z, gval, what) => {
     need(num(inside[name]) && inside[name] > 0 && num(outside[name]) && outside[name] > 0, `hodgkinHuxley: give ${name}'s concentration inside and outside (mol/m³), for its ${what}`);
     need(num(gval) && gval > 0, `hodgkinHuxley: g.${what} must be a conductance > 0 (S/m²), got ${gval}`);

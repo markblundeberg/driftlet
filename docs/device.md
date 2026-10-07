@@ -688,22 +688,22 @@ its window, each gate is a fraction open with Hodgkin–Huxley kinetics in the v
 port's capacitance there, $`V_m = \phi - (V - \mathtt{zeroCharge})`$, and its conductance links name
 the gates that scale them (`G × m³h`). That's a membrane all along a region, between it and an
 outside held by the port: an axon's, with x running along the axon. Per volume of axoplasm, a
-cylinder of radius a has $`2/a`$ of membrane (`area`); held at `V: 0` with `zeroCharge: 0`, the port's
-V is the outside's $`\phi`$, and a charged species' `offset` is its level there against that,
-$`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$. A conductance link's current is then
-$`G\,(V_{i,out} - V_i)`$, which is $`g\,a_m (E_i - V_m)`$: Hodgkin and Huxley's linear channel, with $`E_i`$ the
-Nernst potential at the inside's concentration there.
+cylinder of radius a has $`2/a`$ of membrane (`area`). Give the port the outside's composition as a
+`bath`: its V is then the outside's $`\phi`$ (held at 0, with `zeroCharge: 0`), and each linked ion's
+level there follows from the composition, $`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$ against
+it, as an `offset` would give it. (Only the linked ions' levels are taken, so the bath needn't list
+or balance the rest.) A conductance link's current is then $`G\,(V_{i,out} - V_i)`$, which is
+$`g\,a_m (E_i - V_m)`$: Hodgkin and Huxley's linear channel, with $`E_i`$ the Nernst potential at the
+inside's concentration there. The kit's `hodgkinHuxley({ T, area })` writes their links so:
 
 ```js nocheck
+const hh = hodgkinHuxley({ T, area: 2 / 238e-6 }); // a squid giant axon, radius 238 µm
 ports: [{
-  name: 'membrane', region: 'axon', V: 0, terminal: 'K+', area: 2 / 238e-6, // a squid giant axon
+  name: 'membrane', region: 'axon', V: 0, area: 2 / 238e-6,
   capacitance: { C: 0.01, zeroCharge: 0 },
-  gates: hodgkinHuxley({ /* … */ T }).gates,
-  species: {
-    'Na+': { type: 'conductance', G: 1200 * 2 / 238e-6, offset: offsetNa, gates: { m: 3, h: 1 } },
-    'K+': { type: 'conductance', G: 360 * 2 / 238e-6, offset: offsetK, gates: { n: 4 } },
-    'Cl-': { type: 'conductance', G: 3 * 2 / 238e-6, offset: offsetCl }, // the leak
-  },
+  bath: { c: { 'Na+': 367, 'K+': 18.6, 'Cl-': 459 } }, // sea water, as far as the channels go
+  gates: hh.gates,
+  species: hh.species, // Na⁺ (G × m³h), K⁺ (G × n⁴), and the leak (Cl⁻), G = g × area
 }]
 ```
 

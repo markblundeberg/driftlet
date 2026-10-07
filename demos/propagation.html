@@ -90,9 +90,9 @@ const DA = 1e-11, D = (1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T0)) -
 const Dof = { 'Na+': D, 'K+': D, 'Cl-': D, 'A-': DA };
 
 const axon = (p) => {
-  const am = 2 / p.a, VT = (GAS_CONSTANT * p.T) / FARADAY;
-  const gates = hodgkinHuxley({ inside: IN, outside: { ...OUT, 'A-': 1 }, T: p.T }).gates;
-  const offset = (s) => (VT / z[s]) * Math.log(OUT[s] / 1000); // the level outside, against φ there
+  const am = 2 / p.a, hh = hodgkinHuxley({ T: p.T, area: am }); // their channels, per volume of axoplasm
+  // (Na⁺ channels fully blocked keep a millionth open: blocked outright, the state wouldn't carry over)
+  hh.species['Na+'].G *= Math.max(p.na, 1e-6);
   const sp = (Dv) => ({ D: Dv, mu0: 0, cRef: 1000 });
   const sealed = { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' };
   return {
@@ -102,15 +102,8 @@ const axon = (p) => {
     regions: [{ name: 'axon', material: 'axoplasm', length: L, c0: IN }],
     contacts: { left: sealed, right: sealed },
     ports: [
-      {
-        name: 'membrane', region: 'axon', V: 0, terminal: 'K+', area: am, capacitance: { C: 0.01, zeroCharge: 0 }, gates,
-        species: {
-          // (Na⁺ channels fully blocked keep a millionth open: blocked outright, the state wouldn't carry over)
-          'Na+': { type: 'conductance', G: G['Na+'] * am * Math.max(p.na, 1e-6), offset: offset('Na+'), gates: { m: 3, h: 1 } },
-          'K+': { type: 'conductance', G: G['K+'] * am, offset: offset('K+'), gates: { n: 4 } },
-          'Cl-': { type: 'conductance', G: G['Cl-'] * am, offset: offset('Cl-') }, // the leak
-        },
-      },
+      // the membrane, to the sea water outside (held at φ = 0, its composition setting each ion's level there)
+      { name: 'membrane', region: 'axon', V: 0, area: am, capacitance: { C: 0.01, zeroCharge: 0 }, bath: { c: OUT }, gates: hh.gates, species: hh.species },
       // K⁺ into the first millimetre, 0.2 ms at a time: the same charge per area of membrane at any radius
       injector({ name: 'stim', region: 'axon', from: 0, to: 1e-3, species: 'K+', I: p.started ? stimulus(p) : 0 }),
     ],

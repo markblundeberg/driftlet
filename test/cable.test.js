@@ -219,3 +219,24 @@ test('saltatory conduction: a myelinated axon\'s spike jumps node to node, as a 
   const v = (8 * (Ln + Li)) / (at(trace[4]) - at(trace[0]));
   assert.ok(v > 10 * 18.73 * Math.sqrt(a5 / a), `${v} m/s`);
 });
+
+test("a membrane port from its bath and the kit's hodgkinHuxley({ area }): the same axon as the explicit one", () => {
+  // The bath gives each linked ion its level outside, against φ there (the port's V): its chemical
+  // part, (μ° + RT ln(c/c_ref))/(zF), here the offsets written out above.
+  const hh = hodgkinHuxley({ T, area: am });
+  const explicit = axon();
+  const def = structuredClone(explicit.def);
+  const { name, region, V, area: ar, capacitance } = def.ports[0];
+  def.ports[0] = { name, region, V, area: ar, capacitance, gates: hh.gates, species: hh.species, bath: { c: { 'Na+': OUT['Na+'], 'K+': OUT['K+'], 'Cl-': OUT['Cl-'] } } };
+  const viaBath = new Device(def);
+  const links = (d) => d.model.ports[0].species.map((l) => (l.type === 'conductance' ? [l.G, l.offset, l.gates] : null));
+  const [a, b] = [links(explicit), links(viaBath)];
+  a.forEach((l, i) => l && assert.ok(Math.abs(l[0] - b[i][0]) <= 1e-12 * l[0] && Math.abs(l[1] - b[i][1]) < 1e-12 && JSON.stringify(l[2]) === JSON.stringify(b[i][2]), `link ${i}: ${l} vs ${b[i]}`));
+  // and so through a spike, step for step
+  for (const d of [explicit, viaBath]) d.advance(30e-3, { tol: 1e-4 });
+  const sa = explicit.advance(31.5e-3, { tol: 1e-4 }), sb = viaBath.advance(31.5e-3, { tol: 1e-4 });
+  assert.ok(sa.phi.every((v, g) => Math.abs(v - sb.phi[g]) < 1e-12), 'the two axons part');
+  // A bath's ion must be in the region; and a charged link with neither an offset nor a bath entry is refused.
+  assert.throws(() => new Device({ ...def, ports: [{ ...def.ports[0], bath: { c: { 'Na+': 1, 'Ca2+': 1 } } }, def.ports[1]] }), /bath\.c\.Ca2\+: unknown species/);
+  assert.throws(() => new Device({ ...def, ports: [{ ...def.ports[0], bath: { c: { 'Na+': OUT['Na+'] } } }, def.ports[1]] }), /give 'K\+' in the bath/);
+});

@@ -669,7 +669,7 @@ function normalizeGeometry(g) {
 // the window, `area` (m²/m³) of it per volume.
 function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
-  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance', 'gates']);
+  fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance', 'gates', 'bath']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else r = regions.findIndex((reg) => reg.name === pdef.region);
@@ -694,6 +694,24 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   const gates = normalizeGates(pdef.gates, path, mat, mat);
   need(gates.length === 0 || capacitance !== null, `${path}.gates: a gate follows the voltage across the port's capacitance (a membrane's), so give the port one`);
   need(pdef.species === undefined ? reactions.length > 0 || capacitance !== null : isObject(pdef.species), `${path}.species must map species names to port links`);
+  // A bath: the outside's composition. The port's V is then the outside's φ, and each linked
+  // species' level there, against it, follows from the composition through the window's
+  // statistics, (μ° + RT ζ)/(zF) (or μ for a neutral one), unless its link gives one. Only the
+  // linked species' levels are taken, so it needn't list (or balance) the rest.
+  let bathLevel = null;
+  if (pdef.bath !== undefined) {
+    need(isObject(pdef.bath) && isObject(pdef.bath.c), `${path}.bath must be { c: { species: concentration } }`);
+    fields(pdef.bath, `${path}.bath`, ['c']);
+    const cb = new Float64Array(species.length);
+    for (const [sname, v] of Object.entries(pdef.bath.c)) {
+      need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
+      const i = speciesIndex.get(sname);
+      need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${reg.name} (material '${mat.name}'), so its level outside means nothing here`);
+      cb[i] = positive(v, `${path}.bath.c.${sname}`);
+    }
+    const zb = bathZeta(mat, cb, reg.background);
+    bathLevel = (i) => (cb[i] > 0 ? mat.mu0[i] + RT * zb[i] : undefined); // μ̄ − zFφ outside
+  }
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
     const lpath = `${path}.species.${sname}`;
@@ -708,14 +726,15 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     const z = species[i].z;
     // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
     let level;
+    const fromBath = bathLevel?.(i);
     if (z === 0) {
       need(link.type !== 'conductance', `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
-      level = { mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
+      level = { mu: finite(link.mu ?? fromBath, `${lpath}.mu (the outside μ, J/mol${bathLevel ? `; or give '${sname}' in the bath` : ''})`) };
     } else {
       need(link.type !== 'exchange', `${lpath}: a charged species exchanges by { type: 'conductance', G }`);
       need(link.mu === undefined, `${lpath}: a charged species is held by an offset from the port voltage, not by mu`);
-      const offset = link.offset ?? (terminal === i ? 0 : undefined);
-      need(offset !== undefined, `${lpath}.offset: give V_i − V (V); only the terminal species defaults to 0`);
+      const offset = link.offset ?? (fromBath !== undefined ? fromBath / (z * FARADAY) : !bathLevel && terminal === i ? 0 : undefined);
+      need(offset !== undefined, bathLevel ? `${lpath}: give '${sname}' in the bath (or an offset, V_i − V)` : `${lpath}.offset: give V_i − V (V); only the terminal species defaults to 0 (or give the port a bath)`);
       level = { offset: finite(offset, `${lpath}.offset`) };
     }
     // On a metal, G is a lumped conductance per area (S/m²), spread over its thickness.
