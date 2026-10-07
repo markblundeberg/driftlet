@@ -8,6 +8,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   each linked species' level there follows from the composition (an offset no longer has to be
   worked out). `hodgkinHuxley({ T, area })` in the kit writes a membrane port's links, Hodgkin
   and Huxley's linear conductances gated as theirs.
+- The action-potential demo can put the membrane behind Frankenhaeuser and Hodgkin's 30 nm
+  periaxonal space: K⁺ piles up there with each spike (about 3.5 mM) and clears over 50 ms, and
+  E_K, the rest and the after-hyperpolarisation follow it, which Hodgkin and Huxley's fixed E_K
+  can't. A test checks that such a space clears as one compartment, e^(−tP/θ), to 2e-3.
 
 ## 0.12.0 (2026-10-07)
 

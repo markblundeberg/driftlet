@@ -197,3 +197,32 @@ test('membrane definitions are checked', () => {
   const d = cell({ reactions: [pump()] });
   assert.match(describe(d), /outside \| cytoplasm: capacitive, C = 0\.01 F\/m², dipole 0 V; crossing by a law: Na\+ 4\.00e-10 m\/s, K\+ 1\.00e-8 m\/s, Cl- 4\.50e-9 m\/s; blocked: A-; reactions: .* \(saturating, vmax 1\.00e-7 mol\/\(m²·s\)\)/);
 });
+
+test('a restricted space behind a barrier clears as one compartment: an excess decays as e^(−tP/θ)', () => {
+  // Frankenhaeuser and Hodgkin's periaxonal space: 30 nm of solution between a closed wall (here, a
+  // membrane that passes nothing) and a barrier every ion crosses with one permeability P. A
+  // little KCl in excess there leaves as a neutral salt (the diffusion potential across the
+  // barrier vanishes when K⁺ and Cl⁻ cross alike), so the space empties at P/θ, θ its thickness.
+  const S = { 'Na+': 100, 'K+': 20, 'Cl-': 120 }, extra = { 'Na+': 100, 'K+': 21, 'Cl-': 121 };
+  const theta = 30e-9, P = theta / 50e-3, w = aqueous(IONS, { epsr: 0 });
+  const d = new Device(
+    build({
+      T,
+      library: [w],
+      stack: [
+        bath(S, 'Cl-'),
+        layer('water', 1e-6, { c0: S }),
+        { phi: 'neutral', species: { 'Na+': { type: 'permeability', P }, 'K+': { type: 'permeability', P }, 'Cl-': { type: 'permeability', P } } },
+        layer('water', theta, { name: 'space', c0: extra }),
+        { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' },
+      ],
+      grid: { hmin: theta / 6, hmax: 0.2e-6 },
+    }),
+  );
+  const K = (sol) => sol.c['K+'].at(-1) - 20;
+  const k0 = K(d.solution());
+  for (const t of [20e-3, 50e-3, 100e-3]) {
+    const k = K(d.advance(t, { tol: 1e-6 }));
+    assert.ok(Math.abs(k / (k0 * Math.exp(-t / 50e-3)) - 1) < 2e-3, `${t} s: ${k} mM over the bath, vs ${k0 * Math.exp(-t / 50e-3)}`);
+  }
+});
