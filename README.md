@@ -10,10 +10,10 @@
 
 **driftlet is a fast, pure-JavaScript solver for 1D drift–diffusion–reaction problems**, built
 to be the engine of live, thermodynamically honest web demos of charge transport: in
-semiconductors, electrochemical cells, membranes and solid ionic conductors. It handles any mix
-of charged and neutral species, Poisson electrostatics (or strict neutrality), bulk and
-interfacial reactions, heterointerfaces, metals and external circuits, in steady state, in time
-and as small-signal impedance. It's small enough to run in a web page: no dependencies,
+semiconductors, electrochemical cells, membranes and nerves, and solid ionic conductors. It
+handles any mix of charged and neutral species, Poisson electrostatics (or strict neutrality),
+bulk and interfacial reactions, voltage-gated channels, heterointerfaces, metals and external
+circuits, in steady state, in time and as small-signal impedance. It's small enough to run in a web page: no dependencies,
 millisecond solves.
 
 [Live demos](https://markblundeberg.github.io/driftlet/demos/) · [npm](https://www.npmjs.com/package/driftlet) ·
