@@ -229,7 +229,8 @@ recombination; `'cross'` an ion through a membrane between two seas); on a new s
 `swarm.update(sol, { resample: true })`. A membrane's permeability (1e-8 m/s) is tiny beside
 D/h in the water (0.02 m/s for 100 nm cells), so an ion beside it hops ~1e6 times per crossing:
 a membrane page shows seas and crossing events, not walking ions.
-The pn demo's page script draws a diode's carriers on its band diagram this way.
+The pn demo's page script draws a diode's carriers on its band diagram this way, and the axon
+demo's the ions crossing its membrane (`cap: 0`, every cell a sea, so only the crossings).
 
 ## Template: a solar cell
 

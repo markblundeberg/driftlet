@@ -560,7 +560,9 @@ console.log(`${swarm.dots.length} dots, each ${swarm.weight.X.toExponential(1)} 
 
 The dots are a friendly first picture for teaching. Pages that explain driftlet itself lead with
 the fields, so the [pn demo](https://markblundeberg.github.io/driftlet/demos/pn.html) draws its
-carriers this way at the bottom, on the band diagram.
+carriers this way at the bottom, on the band diagram, and the
+[axon demo](https://markblundeberg.github.io/driftlet/demos/axon.html) the ions crossing its
+membrane in each direction, both sides seas (`cap: 0`).
 
 ## Alignment from vacuum levels
 

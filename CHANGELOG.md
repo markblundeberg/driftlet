@@ -9,7 +9,8 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   its concentration and their net crossing rate its flux (tested against Fick's slab, a decaying
   species and Ussing's flux ratio). Dense species are seas that hold no dots but exchange them,
   so a junction shows its majority carriers as seas and its minority carriers one by one. The
-  pn demo draws its carriers this way, at the bottom, on the band diagram.
+  pn demo draws its carriers this way, at the bottom, on the band diagram, and the axon demo
+  the ions crossing its membrane each way, at their unidirectional fluxes.
 - Solutions carry each species' flux across every segment (`flux`), its diffusivity (`D`), the
   temperature (`T`), how each species crosses each contact and face (`links`), a permeable
   face's one-way fluxes (`oneWay`), and each bulk reaction's one-way forward rate (`forward`)

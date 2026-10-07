@@ -6,6 +6,9 @@
 <title>Action potential</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<style>
+  #ions { height: auto; aspect-ratio: 720 / 220; }
+</style>
 </head>
 <body>
 <main>
@@ -88,10 +91,20 @@
     here that doesn't show. The gating currents of the channels' voltage sensors are left out, as Hodgkin and
     Huxley left them out. Against the space-clamped Hodgkin–Huxley equations with GHK currents, solved
     separately, the spike agrees to within 1 mV (the <code>gates</code> test).</p>
+  <section class="illustration">
+    <h2>The ions crossing, drawn as dots</h2>
+    <p>An illustration of the solution above, not a separate simulation: <code>particles()</code> from the kit
+      samples it. Each dot is 2000 ions crossing a square micrometre of membrane, drawn as it crosses, at
+      the rate the solution gives for each direction separately (each ion's unidirectional flux, as a tracer
+      experiment like Ussing's counts it). The ions on either side are far too many to draw. Even at rest, K⁺
+      crosses both ways, a little more out than in; in a spike, Na⁺ pours in and then K⁺ out.</p>
+    <canvas id="ions"></canvas>
+    <p class="note" id="tally"></p>
+  </section>
 </main>
 <script type="module">
 import { Device } from '../src/index.js';
-import { build, layer, bath, aqueous, injector, square, hodgkinHuxley, traces, speciesRole } from '../src/kit.js';
+import { build, layer, bath, aqueous, injector, square, hodgkinHuxley, traces, speciesRole, particles } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
 import { showCode, fromQuery, pauser } from './common.js';
@@ -157,7 +170,7 @@ function showControls() {
 // Readings at each accepted step: φ either side of the membrane, the currents through it, its gates,
 // and K⁺ just outside it.
 const F = 96485.33212;
-let d, rec, probes, space, SETTLE;
+let d, rec, probes, space, SETTLE, swarm = null;
 function start() {
   const p = showControls();
   space = SPACES[p.space] ?? SPACES.open;
@@ -170,6 +183,7 @@ function start() {
     { x: space.x, species: 'K+', region: space.outside },
   ];
   d = new Device(axon(p));
+  swarm = null;
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (the space fills, too)
   d.set({ ports: { stim: { I: stimulus(p) } } });
   rec = { t: [], V: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1 };
@@ -201,6 +215,7 @@ function keep(sol) {
 const mV = (v) => `${(1000 * v).toFixed(1)} mV`;
 function draw() {
   const sol = d.solution(), p = params(), t = sol.time, VT = (8.314462618 * p.T) / F;
+  ions(sol);
   // Each ion's Nernst potential across the membrane now, from the concentrations either side of it.
   const at = sol.x.findIndex((x, g) => g > 0 && x === sol.x[g - 1]); // (in the space: the membrane's the second face)
   const edge = space.face === 0 ? at - 1 : sol.x.findIndex((x, g) => g > at && x === sol.x[g - 1]) - 1;
@@ -257,6 +272,79 @@ function draw() {
   document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 340, xlim: zoom, title: `species voltages across the membrane: V_m = ${mV(Vm)}`, ylabel: 'against the sea water (mV)', range: [-140, 90] });
 }
 
+// The ions crossing the membrane as dots (driftlet/kit's particles()): both sides are seas
+// (cap 0), so the swarm holds no dots, only the crossings between them, each direction at its
+// one-way flux. Each is drawn going through, over a second or so.
+const PER_DOT = 2000, weight = (PER_DOT * 1e12) / 6.02214076e23; // ions per µm² of membrane, as mol/m²
+const crossing = [], tallies = [];
+let lastT = null, roles = {};
+function ions(sol) {
+  if (!swarm || sol.time < lastT) {
+    swarm = particles(sol, { species: IONS, weight, cap: 0, cells: 40 });
+    roles = Object.fromEntries(IONS.map((s) => [s, speciesRole(sol, s)]));
+    lastT = sol.time;
+    return;
+  }
+  swarm.update(sol);
+  if (sol.time > lastT) swarm.step(sol.time - lastT);
+  lastT = sol.time;
+  const at = sol.regions[space.face + 1].x0, now = performance.now();
+  for (const ev of swarm.events) {
+    if (ev.kind !== 'cross' || Math.abs(ev.x - at) > 1e-12) continue;
+    crossing.push({ species: ev.species, dir: ev.dir, y: 0.1 + 0.8 * Math.random(), t0: now });
+    tallies.push({ species: ev.species, dir: ev.dir, t: sol.time });
+  }
+  while (tallies.length && tallies[0].t < sol.time - 0.01) tallies.shift();
+  const count = (s, dir) => tallies.filter((c) => c.species === s && c.dir === dir).length;
+  document.getElementById('tally').textContent =
+    `One dot is ${PER_DOT} ions per µm² of membrane. In the last 10 ms: ` + IONS.map((s) => `${s} ${count(s, 1)} in, ${count(s, -1)} out`).join(' · ');
+}
+const canvas = document.getElementById('ions'), ctx = canvas.getContext('2d');
+function paintIons(now) {
+  requestAnimationFrame(paintIons);
+  const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+  if (W === 0) return;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) [canvas.width, canvas.height] = [Math.round(W * dpr), Math.round(H * dpr)];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const mid = W / 2, half = 7, travel = Math.min(140, W / 3);
+  // the membrane: two leaflets
+  ctx.fillStyle = css('--grid');
+  ctx.fillRect(mid - half, 8, 2 * half, H - 30);
+  ctx.strokeStyle = css('--muted');
+  ctx.lineWidth = 1;
+  for (const xx of [mid - half, mid + half]) {
+    ctx.beginPath();
+    ctx.moveTo(xx, 8);
+    ctx.lineTo(xx, H - 22);
+    ctx.stroke();
+  }
+  ctx.fillStyle = css('--muted');
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('outside', mid / 2, H - 6);
+  ctx.fillText('membrane', mid, H - 6);
+  ctx.fillText('axoplasm', mid * 1.5, H - 6);
+  const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  for (let k = crossing.length - 1; k >= 0; k--) {
+    const c = crossing[k], age = (now - c.t0) / 1200;
+    if (age > 1) {
+      crossing.splice(k, 1);
+      continue;
+    }
+    // through at a steady pace, fading in and out at the ends
+    const xx = mid + c.dir * travel * (2 * age - 1);
+    ctx.globalAlpha = Math.min(1, 4 * age, 4 * (1 - age));
+    const { role, slot } = roles[c.species];
+    ctx.fillStyle = themeColor(role, slot, { dark });
+    ctx.beginPath();
+    ctx.arc(xx, 8 + c.y * (H - 30), 3.2, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+requestAnimationFrame(paintIons);
 // Played back at a pace, on and on; each frame advances in a time budget.
 let last, looping = false;
 function frame(now = performance.now()) {
