@@ -229,12 +229,15 @@ const pause = pauser(document.getElementById('controls'), () => {
 });
 
 start();
-// ?t=… ms: straight there (for screenshots), then on.
+// ?t=… ms: straight there, and held (for screenshots).
 const jump = +new URLSearchParams(location.search).get('t') / 1000 || 0;
 if (jump > 0) keep(d.advance(SETTLE + jump, { tol: 1e-4, dtMax: 5e-5, probes }));
 draw();
-looping = true;
-requestAnimationFrame(frame);
+// (held there, for a screenshot; otherwise on)
+if (!jump) {
+  looping = true;
+  requestAnimationFrame(frame);
+}
 
 // The stimulus changes in place; the channels, by rebuilding (the state carries over).
 for (const id of ['I', 'period']) els[id].addEventListener('input', () => d.set({ ports: { stim: { I: stimulus(showControls()) } } }));

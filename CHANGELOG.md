@@ -17,6 +17,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   Huxley's linear channels, in species voltages). A squid axon's action potential propagates
   at 18.73 m/s, the cable equation's speed to 2e-3, out of the ions' drift along the axon
   (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well.
+- A demo, [propagation](demos/propagation.html): a spike travelling along a squid axon at Hodgkin
+  and Huxley's speed, its local circuit, the ions that carry the current along the axon (mostly
+  K⁺), and each ion's driving force along it; radius (speed as √a), temperature (heat block at
+  35 °C), Na⁺ channel block.
 - A demo, [action potential](demos/axon.html): a squid axon's spikes, their currents and gates,
   and each ion's driving force through them; the stimulus, temperature, and Na⁺ and K⁺ channel
   block.
