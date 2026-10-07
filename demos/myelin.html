@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Myelin</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
+  <h1>Myelin: a spike that jumps from node to node</h1>
+  <p>Two axons of the same thin radius, 5 µm, side by side, both stimulated at their left ends. One is bare, its
+    membrane full of Hodgkin and Huxley's channels all along; the other is wrapped in myelin, which leaves only
+    nodes of Ranvier, 1 µm wide every millimetre, to carry channels. The myelinated spike jumps from node to node,
+    over ten times faster. Vary the myelin's thickness, the spacing of the nodes and how densely they're packed
+    with channels. (More about the model below.)</p>
+  <div class="controls" id="controls">
+    <label>myelin <input id="wraps" type="range" min="1.3" max="3" step="0.05" value="2.3"><output id="wrapsOut"></output></label>
+    <label>nodes every <input id="Lint" type="range" min="0.25" max="3" step="0.25" value="1"><output id="LintOut"></output></label>
+    <label>channels at nodes <input id="gNode" type="range" min="1" max="20" step="1" value="5"><output id="gNodeOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="0.00005" selected>0.05 ms a second</option>
+      <option value="0.0002">0.2 ms a second</option>
+      <option value="1">as fast as it solves</option>
+    </select></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="vx"></canvas>
+    <canvas class="wide" id="ax"></canvas>
+    <canvas id="vt"></canvas>
+    <canvas id="jx"></canvas>
+    <div class="levels wide" id="levels"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>Each axon is 2 cm of axoplasm along x, sealed at both ends, as in the
+    <a href="propagation.html">propagation demo</a>: a strictly neutral salt solution whose ions drift in the field
+    along the axon, and a membrane through it with ports to the sea water outside, held at its composition and at
+    φ = 0. The bare axon's membrane is Hodgkin and Huxley's all along (1 µF/cm², their Na⁺, K⁺ and leak channels).
+    The myelinated one is regions of the same axoplasm: each node of Ranvier, 1 µm long, with their channels at
+    several times their density (nodes are packed with Na⁺ channels), and each internode, whose membrane is
+    myelin: a capacitance divided by the number of wraps (200 by default) and no channels at all. Both are at
+    18.5 °C, with the concentrations and resistivity of the propagation demo, stimulated together every 10 ms by
+    K⁺ injected at the left end (more into the bare one, which spreads it over a millimetre of membrane).</p>
+  <p>A node that fires drives current along the axoplasm, through the internode, to charge the next node past
+    threshold. The internode carries it passively: being myelin, it barely charges and leaks nothing, so the
+    current reaches far, and the spike jumps, the next node firing some tens of microseconds later. That's
+    clearest in the current along the axon: in the myelinated one it's a sawtooth, stepping up at each node,
+    where the channels drive it in, and draining along each internode into the myelin's small capacitance.
+    (The internodes charge in a few microseconds, faster than the nodes take to fire, so the arrival times
+    along them run smoothly from node to node rather than in steps.) And it takes about a tenth of the
+    current: the bare axon charges all of its membrane as the spike goes, the myelinated one its nodes and a
+    little myelin, which is myelin's other saving, in the ions the pumps must later put back. The bare axon
+    has to charge all of its membrane as it goes, at 2.7 m/s (Hodgkin and Huxley's speed scaled by √a, as the
+    propagation demo shows); the myelinated one runs at some 30 m/s, against a compartmental cable to within
+    1 µs a node (the <code>cable</code> test).</p>
+  <p>Thicker myelin (more wraps, less capacitance) is faster: with 50 wraps it runs at 12 m/s, with 800 at 68 m/s,
+    and with 20 the internodes take too much charge and the spike dies. More channels at the nodes are faster too.
+    In this thin axon, nodes closer together are faster (44 m/s at a quarter millimetre, 27 m/s at 3 mm): each
+    internode charges as an RC line, in a time that grows as its length squared, about 7 µs per millimetre here,
+    so a longer jump costs more time than it gains. Thicker fibres with thicker myelin charge faster, which is
+    why their nodes are spaced further apart, about a hundred times the fibre's diameter.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { hodgkinHuxley, injector, square, traces } from '../src/kit.js';
+import { levelChart } from '../src/plot.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery, pauser } from './common.js';
+
+const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
+const T = 273.15 + 18.5, VT = (GAS_CONSTANT * T) / FARADAY, a = 5e-6, am = 2 / a, L = 0.02, Ln = 1e-6;
+const PERIOD = 10e-3, SETTLE = 30e-3, WINDOW = 1.5e-3, SITE = 0.01;
+// The propagation demo's axoplasm and sea water: Nernst potentials at Hodgkin and Huxley's.
+const IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 };
+const E0 = { 'Na+': 50 * mV, 'K+': -77 * mV, 'Cl-': -54.387 * mV };
+const OUT = Object.fromEntries(['Na+', 'K+', 'Cl-'].map((s) => [s, IN[s] * Math.exp((z[s] * E0[s]) / VT)]));
+const G = { 'Na+': 1200, 'K+': 360, 'Cl-': 3 };
+const DA = 1e-11, D = (1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T)) - DA * IN['A-']) / (IN['Na+'] + IN['K+'] + IN['Cl-']);
+const gates = hodgkinHuxley({ inside: IN, outside: { ...OUT, 'A-': 1 }, T }).gates;
+const offset = (s) => (VT / z[s]) * Math.log(OUT[s] / 1000);
+const channels = (g) => ({
+  'Na+': { type: 'conductance', G: g * G['Na+'] * am, offset: offset('Na+'), gates: { m: 3, h: 1 } },
+  'K+': { type: 'conductance', G: g * G['K+'] * am, offset: offset('K+'), gates: { n: 4 } },
+  'Cl-': { type: 'conductance', G: G['Cl-'] * am, offset: offset('Cl-') },
+});
+const base = (regions, ports, grid) => ({
+  T,
+  species: Object.entries(z).map(([name, zz]) => ({ name, z: zz })),
+  materials: { axoplasm: { epsr: 0, species: Object.fromEntries(Object.keys(z).map((s) => [s, { D: s === 'A-' ? DA : D, mu0: 0, cRef: 1000 }])) } },
+  regions,
+  contacts: Object.fromEntries(['left', 'right'].map((side) => [side, { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' }])),
+  ports,
+  grid,
+});
+// The stimulus: K⁺ at the left end, 0.1 ms every 10 ms. The bare axon takes more: it spreads the
+// charge over a millimetre or so of membrane (its length constant), the myelinated one into one node.
+const stim = (region, to, on, I) => injector({ name: 'stim', region, from: 0, to, species: 'K+', I: on ? square({ high: I, low: 0, period: PERIOD, duty: 0.1e-3 / PERIOD }) : 0 });
+const bare = (on) =>
+  base([{ name: 'axon', material: 'axoplasm', length: L, c0: IN }], [
+    { name: 'membrane', region: 'axon', V: 0, terminal: 'K+', area: am, capacitance: { C: 0.01, zeroCharge: 0 }, gates, species: channels(1) },
+    stim('axon', 20e-6, on, 600),
+  ], { hmin: 10e-6, hmax: 50e-6, ratio: 1.3 });
+const myelinated = (p, on) => {
+  const regions = [], ports = [], n = Math.floor(L / (Ln + p.Lint)) + 1;
+  for (let k = 0; k < n; k++) {
+    regions.push({ name: `node${k}`, material: 'axoplasm', length: Ln, c0: IN });
+    ports.push({ name: `node${k}`, region: `node${k}`, V: 0, terminal: 'K+', area: am, capacitance: { C: 0.01, zeroCharge: 0 }, gates, species: channels(p.gNode) });
+    if (k === n - 1) break;
+    regions.push({ name: `internode${k}`, material: 'axoplasm', length: p.Lint, c0: IN });
+    ports.push({ name: `myelin${k}`, region: `internode${k}`, V: 0, area: am, capacitance: { C: 0.01 / p.wraps, zeroCharge: 0 } });
+  }
+  ports.push(stim('node0', Ln, on, 100));
+  return base(regions, ports, { hmin: 0.5e-6, hmax: 50e-6, ratio: 1.5 });
+};
+
+const els = Object.fromEntries(['wraps', 'Lint', 'gNode', 'pace'].map((id) => [id, document.getElementById(id)]));
+for (const el of Object.values(els)) fromQuery(el);
+const params = () => ({ wraps: Math.round(10 ** +els.wraps.value), Lint: +els.Lint.value * 1e-3, gNode: +els.gNode.value });
+function showControls() {
+  const p = params();
+  document.getElementById('wrapsOut').textContent = `${p.wraps} wraps`;
+  document.getElementById('LintOut').textContent = `${els.Lint.value} mm`;
+  document.getElementById('gNodeOut').textContent = `×${p.gNode}`;
+  return p;
+}
+
+// Each axon: a device, settled to rest, then stimulated; φ (V_m) read at every step at the site 1 cm
+// along, and at points along it for when the spike arrives (the bare one's every half millimetre, the
+// myelinated one's at its nodes and between them).
+let axons;
+function start() {
+  const p = showControls();
+  const make = (def, on) => {
+    const d = new Device(def(false));
+    d.advance(SETTLE, { tol: 1e-4 });
+    d.set(def(true));
+    return { d, t: [], V: [], ups: [] };
+  };
+  // (the myelinated site is the middle of the node nearest 1 cm)
+  const k = Math.round(SITE / (Ln + p.Lint)), step = Ln + p.Lint;
+  axons = { bare: make(bare), myelinated: make((on) => myelinated(p, on)) };
+  axons.myelinated.site = k * step + Ln / 2;
+  axons.bare.site = SITE;
+  // (the myelinated axon ends at its last node, a little short of 2 cm)
+  const end = (ax) => ax.d.solution().x.at(-1), along = (xs, ax) => xs.filter((x) => x <= end(ax)).map((x) => ({ x, quantity: 'phi' }));
+  axons.bare.points = along(Array.from({ length: 41 }, (_, i) => i * 0.5e-3), axons.bare);
+  axons.myelinated.points = along(Array.from({ length: Math.floor(L / step) + 1 }, (_, i) => i * step + Ln / 2).flatMap((x) => [x, x + step / 2]), axons.myelinated);
+  for (const ax of Object.values(axons)) {
+    ax.probes = [{ x: ax.site, quantity: 'phi' }, ...ax.points];
+    ax.arrived = ax.points.map(() => NaN); // when the latest spike crossed −30 mV there, after its stimulus
+  }
+}
+function keep(ax, sol) {
+  const { t, probes: pr } = sol.trace;
+  const up = (v, i) => (v[i - 1] < -0.03 && v[i] >= -0.03 ? t[i - 1] + ((t[i] - t[i - 1]) * (-0.03 - v[i - 1])) / (v[i] - v[i - 1]) : NaN);
+  for (let i = 1; i < t.length; i++) {
+    ax.t.push(t[i]);
+    ax.V.push(pr[0][i]);
+    const u = up(pr[0], i);
+    if (!Number.isNaN(u)) ax.ups.push(u);
+    // A new stimulus clears the arrivals; each point keeps the latest spike's.
+    if (Math.floor(t[i] / PERIOD) > Math.floor(t[i - 1] / PERIOD)) ax.arrived.fill(NaN);
+    for (let j = 0; j < ax.points.length; j++) {
+      const a = up(pr[1 + j], i);
+      if (!Number.isNaN(a)) ax.arrived[j] = a - Math.floor(a / PERIOD) * PERIOD;
+    }
+  }
+  const cut = ax.t.findIndex((x) => x >= t.at(-1) - 1.2 * Math.max(WINDOW, 4 * +els.pace.value));
+  if (cut > 0) (ax.t.splice(0, cut), ax.V.splice(0, cut));
+}
+// The latest spike's speed: from its stimulus (the start of the pulse) to the site, less a node's delay ~ nothing.
+const speed = (ax) => {
+  const up = ax.ups.at(-1);
+  if (up === undefined) return NaN;
+  const pulse = Math.floor((up - 0.5e-4) / PERIOD) * PERIOD;
+  return up - pulse < PERIOD ? ax.site / (up - pulse) : NaN;
+};
+
+function draw() {
+  const sb = axons.bare.d.solution(), sm = axons.myelinated.d.solution(), t = sm.time;
+  const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} m/s` : '—');
+  document.getElementById('status').textContent =
+    `t ${(1000 * (t - SETTLE)).toFixed(3)} ms · from the left end to 1 cm: bare ${f(speed(axons.bare))}, myelinated ${f(speed(axons.myelinated))}`;
+  const cm = (s) => Array.from(s.x, (x) => 100 * x), Vm = (s) => Array.from(s.phi, (v) => 1000 * v);
+  // node positions, as faint ticks along the bottom
+  const p = params(), ticks = [];
+  for (let x = 0; x <= L + 1e-9; x += Ln + p.Lint) ticks.push({ x: [100 * x, 100 * x], y: [-100, -94], color: 'var(--muted)', width: 1 });
+  // When the spike reached each point: two lines, the myelinated one's an order of magnitude steeper.
+  const arr = (ax) => ({ x: ax.points.map((q) => 100 * q.x), y: Array.from(ax.arrived, (v) => 1000 * v) });
+  chart(document.getElementById('ax'), {
+    xlabel: 'x along the axon (cm)', ylabel: 'arrives, ms after its stimulus', xlim: [0, 100 * L], ylim: [0, 2],
+    series: [{ ...arr(axons.bare), color: colors[6], width: 2, label: 'bare' }, { ...arr(axons.myelinated), color: colors[1], width: 2, label: 'myelinated' }],
+  });
+  chart(document.getElementById('vx'), {
+    xlabel: 'x along the axon (cm)', ylabel: 'V_m (mV)', xlim: [0, 100 * L], ylim: [-100, 60],
+    series: [...ticks, { x: cm(sb), y: Vm(sb), color: colors[6], width: 2, label: 'bare' }, { x: cm(sm), y: Vm(sm), color: colors[1], width: 2, label: 'myelinated (ticks: nodes)' }],
+  });
+  const ms = (ax) => ax.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE), span = 1000 * Math.max(WINDOW, 4 * +els.pace.value);
+  chart(document.getElementById('vt'), {
+    xlabel: 'time (ms)', ylabel: 'V_m at 1 cm (mV)', xlim: [x1 - span, x1], ylim: [-100, 60],
+    series: [{ x: ms(axons.bare), y: axons.bare.V.map((v) => 1000 * v), color: colors[6], label: 'bare' }, { x: ms(axons.myelinated), y: axons.myelinated.V.map((v) => 1000 * v), color: colors[1], label: 'myelinated' }],
+  });
+  // The current along each axon (µA through the whole axon): in the myelinated one it runs far ahead.
+  const along = (s) => {
+    const RT = GAS_CONSTANT * T, xm = [], j = [];
+    for (let g = 0; g + 1 < s.x.length; g++) {
+      const h = s.x[g + 1] - s.x[g];
+      if (!(h > 0)) continue;
+      let tot = 0;
+      for (const sp of ['K+', 'Na+', 'Cl-']) tot += (-(FARADAY * FARADAY) * D * 0.5 * (s.c[sp][g] + s.c[sp][g + 1]) * (s.V[sp][g + 1] - s.V[sp][g])) / (RT * h);
+      xm.push(50 * (s.x[g] + s.x[g + 1]));
+      j.push(tot * Math.PI * a * a * 1e6);
+    }
+    return { xm, j };
+  };
+  const jb = along(sb), jm = along(sm);
+  // The myelinated axon's species voltages inside, against their levels outside: each ion's driving
+  // force across the membrane along it (and φ's, V_m), the same at nodes and over the myelin.
+  const tr = traces(sm, { species: ['Na+', 'K+', 'Cl-'], standard: false, phi: true });
+  for (const sr of tr.series) {
+    const out = sr.id === 'phi' ? 0 : (VT / z[sr.species]) * Math.log(OUT[sr.species] / 1000);
+    sr.y = sr.y.map((v) => 1000 * (v - out));
+  }
+  tr.regions = []; // (forty regions, nodes and internodes: no bands)
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 320, title: 'the myelinated axon: species voltages along it, against outside', ylabel: 'against outside (mV)', range: [-150, 160] });
+  chart(document.getElementById('jx'), {
+    xlabel: 'x along the axon (cm)', ylabel: 'current along the axon (µA)', xlim: [0, 100 * L],
+    series: [{ x: jb.xm, y: jb.j, color: colors[6], label: 'bare' }, { x: jm.xm, y: jm.j, color: colors[1], label: 'myelinated' }],
+  });
+}
+
+let last, looping = false;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (last ?? now)) / 1000);
+  last = now;
+  const t = axons.myelinated.d.solver.time + wall * +els.pace.value;
+  let ok = true;
+  for (const ax of Object.values(axons)) {
+    const sol = ax.d.advance(t, { budgetMs: 6, tol: 1e-4, dtMax: 5e-6, probes: ax.probes });
+    keep(ax, sol);
+    ok &&= sol.converged;
+  }
+  draw();
+  if (ok && !pause.paused) requestAnimationFrame(frame);
+  else looping = false;
+}
+const pause = pauser(document.getElementById('controls'), () => {
+  if (looping) return;
+  last = undefined;
+  looping = true;
+  requestAnimationFrame(frame);
+});
+
+start();
+// ?t=… ms: straight there, and held (for screenshots).
+const jump = +new URLSearchParams(location.search).get('t') / 1000 || 0;
+if (jump > 0) for (const ax of Object.values(axons)) keep(ax, ax.d.advance(SETTLE + jump, { tol: 1e-4, dtMax: 5e-6, probes: ax.probes }));
+draw();
+if (!jump) {
+  looping = true;
+  requestAnimationFrame(frame);
+}
+// A change of the myelinated axon starts both again (its layout changes with the node spacing).
+for (const id of ['wraps', 'Lint', 'gNode']) els[id].addEventListener('change', () => (start(), draw()));
+for (const id of ['wraps', 'Lint', 'gNode']) els[id].addEventListener('input', showControls);
+showCode();
+</script>
+</body>
+</html>

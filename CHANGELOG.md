@@ -20,6 +20,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well. A myelinated
   axon, nodes of Ranvier and internodes as regions with ports of their own, conducts
   saltatorily, each node's arrival within 1 µs of a compartmental cable's.
+- A demo, [myelin](demos/myelin.html): a bare and a myelinated axon of the same radius racing, the
+  myelinated spike jumping node to node over ten times faster on a tenth of the current; myelin
+  thickness, node spacing, nodal channel density.
 - A demo, [propagation](demos/propagation.html): a spike travelling along a squid axon at Hodgkin
   and Huxley's speed, its local circuit, the ions that carry the current along the axon (mostly
   K⁺), and each ion's driving force along it; radius (speed as √a), temperature (heat block at

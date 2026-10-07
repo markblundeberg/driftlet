@@ -25,6 +25,7 @@ const SHOTS = {
   cell: { query: '', budget: 60000 },
   axon: { query: 't=74', budget: 60000 },
   propagation: { query: 't=19.9', budget: 60000 },
+  myelin: { query: 't=0.3', budget: 60000 },
   channel: { query: '', budget: 60000 },
   junction: { query: 't=5', budget: 60000 },
   membrane: { query: '', budget: 60000 },
