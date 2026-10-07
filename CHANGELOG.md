@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.13.0 (2026-10-07)
 
 - A port can take its outside's composition, `bath: { c }`: its V is then the outside's φ, and
   each linked species' level there follows from the composition (an offset no longer has to be
