@@ -4,51 +4,117 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>driftlet demos</title>
+<meta name="description" content="Live demos of driftlet, a small JavaScript library for charged species moving through one-dimensional devices: semiconductors, electrochemistry, membranes and nerves.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
-<nav class="site"><a href="https://github.com/markblundeberg/driftlet">source, docs and more on GitHub</a></nav>
-  <h1>driftlet demos</h1>
-  <p>driftlet is a small JavaScript library that simulates charged species moving through one-dimensional
-    devices. To it a semiconductor, an electrochemical cell and a nerve are one problem with a different cast:
-    electrons and holes, or ions, drifting and diffusing, reacting, and crossing interfaces.</p>
-  <p>Each page builds its device with <code>driftlet/kit</code>, solves it in your browser, and redraws as you move
-    the controls. It leads with what you'd measure (an I–V curve, a voltammogram, a discharge), mostly drawn
-    against closed-form theory as a check, and beneath it the level diagrams and profiles across the device, on
-    one x axis: species voltages, band edges, Fermi and redox levels, concentrations. Every page shows its whole
-    script at the bottom, as a worked example to copy.</p>
+<nav class="site"><a href="https://github.com/markblundeberg/driftlet">source, docs and more on GitHub</a><a href="https://www.npmjs.com/package/driftlet">npm</a><a href="https://github.com/markblundeberg/driftlet/blob/master/llms.txt">guide for coding agents</a></nav>
+  <header class="hero">
+    <h1><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/logo-dark.svg"><img src="../docs/logo.svg" alt="driftlet" width="269" height="74"></picture></h1>
+    <p class="tagline">Charged species drifting through one-dimensional devices, solved live in your browser.</p>
+  </header>
+  <svg class="rails" id="rails" aria-hidden="true"></svg>
+  <p>driftlet is a small JavaScript library with no dependencies. A pn junction, a battery and a nerve look like
+    different subjects, but to driftlet they're one problem with a different cast: electrons and holes, or ions,
+    each drifting and diffusing down its own electrochemical potential, reacting, and crossing interfaces.</p>
+  <p>Each page builds its device with <code>driftlet/kit</code>, solves it as you move the controls, and draws
+    what you'd measure (an I–V curve, a voltammogram, a discharge), mostly against closed-form theory as a check.
+    Beneath it are the level diagrams and profiles across the device, on one x axis. Every page shows its whole
+    script at the bottom, as a worked example to copy. The stamp on a card names what its page is drawn against
+    (✓), or what the test suite checks it against.</p>
 
-  <h2>Semiconductors</h2>
+  <h2>Semiconductors<span class="cast" title="the cast"><span class="minus">e⁻</span><span class="plus">h⁺</span><span class="zero">exciton</span><span class="plus">vacancy⁺</span></span></h2>
   <div class="cards">
-    <a class="card" href="pn.html"><img src="screenshots/pn.png" alt="pn junction level diagram"><div><b>pn junction</b><span>Quasi-Fermi levels and band edges under bias; the I–V curve against Shockley, short diode to long.</span></div></a>
-    <a class="card" href="solar.html"><img src="screenshots/solar.png" alt="solar cell"><div><b>Solar cell</b><span>Light absorbed as it goes in, colour by colour: J–V and the spectral response against collection theory, blue lost in the emitter, the split quasi-Fermi levels.</span></div></a>
-    <a class="card" href="organic.html"><img src="screenshots/organic.png" alt="organic bilayer solar cell"><div><b>Organic solar cell</b><span>Light makes neutral excitons that diffuse to a donor/acceptor interface and split: J<sub>sc</sub> against thickness and V<sub>oc</sub> by detailed balance, both against theory.</span></div></a>
-    <a class="card" href="perovskite.html"><img src="screenshots/perovskite.png" alt="perovskite hysteresis"><div><b>Perovskite hysteresis</b><span>Mobile iodide vacancies make the J–V curve depend on scan rate: the loop opening and closing, the vacancies' layers at each face, against IonMonger.</span></div></a>
-    <a class="card" href="mos.html"><img src="screenshots/mos.png" alt="MOS capacitor"><div><b>MOS capacitor</b><span>Accumulation, depletion and inversion under a metal gate; C–V at any frequency, from the low-frequency curve to the high, as generation stops keeping up.</span></div></a>
+    <a class="card" href="pn.html"><em class="stamp" title="drawn against Shockley’s law, with depletion-layer recombination">✓ Shockley</em><img src="screenshots/pn.png" alt="pn junction level diagram"><div><b>pn junction</b><span>Quasi-Fermi levels and band edges under bias; the I–V curve against Shockley, short diode to long.</span></div></a>
+    <a class="card" href="solar.html"><em class="stamp" title="drawn against collection theory">✓ collection theory</em><img src="screenshots/solar.png" alt="solar cell"><div><b>Solar cell</b><span>Light absorbed as it goes in, colour by colour: J–V and the spectral response against collection theory, blue lost in the emitter, the split quasi-Fermi levels.</span></div></a>
+    <a class="card" href="organic.html"><em class="stamp" title="drawn against exciton-diffusion theory and detailed balance">✓ exciton theory</em><img src="screenshots/organic.png" alt="organic bilayer solar cell"><div><b>Organic solar cell</b><span>Light makes neutral excitons that diffuse to a donor/acceptor interface and split: J<sub>sc</sub> against thickness and V<sub>oc</sub> by detailed balance, both against theory.</span></div></a>
+    <a class="card" href="perovskite.html"><em class="stamp" title="drawn against IonMonger, an independent perovskite code">✓ IonMonger</em><img src="screenshots/perovskite.png" alt="perovskite hysteresis"><div><b>Perovskite hysteresis</b><span>Mobile iodide vacancies make the J–V curve depend on scan rate: the loop opening and closing, the vacancies' layers at each face, against IonMonger.</span></div></a>
+    <a class="card" href="mos.html"><em class="stamp" title="drawn against the ideal low- and high-frequency C–V curves">✓ ideal C–V</em><img src="screenshots/mos.png" alt="MOS capacitor"><div><b>MOS capacitor</b><span>Accumulation, depletion and inversion under a metal gate; C–V at any frequency, from the low-frequency curve to the high, as generation stops keeping up.</span></div></a>
   </div>
-
-  <h2>Electrochemistry</h2>
+  <h2>Electrochemistry<span class="cast" title="the cast"><span class="minus">e⁻</span><span class="plus">Fe³⁺</span><span class="plus">Ag⁺</span><span class="minus">NO₃⁻</span><span class="plus">Zn²⁺</span><span class="plus">Li⁺</span></span></h2>
   <div class="cards">
-    <a class="card" href="redox.html"><img src="screenshots/redox.png" alt="cyclic voltammetry"><div><b>Cyclic voltammetry</b><span>Fe³⁺/Fe²⁺ at platinum: the Fermi level against the couple's redox level, Butler–Volmer kinetics and diffusion.</span></div></a>
+    <a class="card" href="redox.html"><em class="stamp tested" title="no check on the page; Butler–Volmer kinetics and Nernst levels are validated in the test suite">tested: Butler–Volmer</em><img src="screenshots/redox.png" alt="cyclic voltammetry"><div><b>Cyclic voltammetry</b><span>Fe³⁺/Fe²⁺ at platinum: the Fermi level against the couple's redox level, Butler–Volmer kinetics and diffusion.</span></div></a>
     <a class="card" href="daniell.html"><img src="screenshots/daniell.png" alt="Daniell cell"><div><b>Daniell cell</b><span>Zn | Zn²⁺ | separator | Cu²⁺ | Cu through a load: a KCl salt bridge or a porous pot simulated ion by ion, leaking, and copper plating onto the zinc.</span></div></a>
-    <a class="card" href="saturation.html"><img src="screenshots/saturation.png" alt="concentration polarisation and saturation"><div><b>Saturation</b><span>Ag | AgNO₃ | Ag under a square wave: the salt piling up and reversing, live, and the current saturating at its limit. And a thin-film transistor pinching off, for the same reason.</span></div></a>
-    <a class="card" href="impedance.html"><img src="screenshots/impedance.png" alt="impedance"><div><b>Impedance</b><span>The same cell's spectrum against the finite-length Warburg, and its small-signal response inside, frequency by frequency.</span></div></a>
+    <a class="card" href="saturation.html"><em class="stamp" title="drawn against the steady current’s closed form and the charge-sheet model">✓ steady theory</em><img src="screenshots/saturation.png" alt="concentration polarisation and saturation"><div><b>Saturation</b><span>Ag | AgNO₃ | Ag under a square wave: the salt piling up and reversing, live, and the current saturating at its limit. And a thin-film transistor pinching off, for the same reason.</span></div></a>
+    <a class="card" href="impedance.html"><em class="stamp" title="drawn against the finite-length Warburg impedance">✓ Warburg</em><img src="screenshots/impedance.png" alt="impedance"><div><b>Impedance</b><span>The same cell's spectrum against the finite-length Warburg, and its small-signal response inside, frequency by frequency.</span></div></a>
+    <a class="card" href="insertion.html"><em class="stamp" title="drawn against the host’s open-circuit voltage">✓ OCV</em><img src="screenshots/insertion.png" alt="intercalation host"><div><b>Intercalation host</b><span>Galvanostatic cycling between cutoffs: the loop settling against a regular-solution OCV, Li⁺ and e⁻ level by level.</span></div></a>
+  </div>
+  <h2>Ions at interfaces<span class="cast" title="the cast"><span class="plus">K⁺</span><span class="plus">H⁺</span><span class="minus">Cl⁻</span><span class="zero">fixed charge</span></span></h2>
+  <div class="cards">
+    <a class="card" href="junction.html"><em class="stamp" title="drawn against Henderson’s and Planck’s formulas">✓ Henderson, Planck</em><img src="screenshots/junction.png" alt="liquid junctions"><div><b>Liquid junctions</b><span>A patch pipette's junction growing from contact against Henderson and Planck, and a salt bridge whose charged frit turns into a membrane against a dilute sample.</span></div></a>
+    <a class="card" href="channel.html"><em class="stamp" title="drawn against Teorell–Meyer–Sievers theory">✓ TMS</em><img src="screenshots/channel.png" alt="a charged nanochannel"><div><b>Charged nanochannel</b><span>A channel's charged walls: Donnan layers at each mouth that overlap in dilute salt, K⁺ selectivity, a conductance plateau against Teorell–Meyer–Sievers, and a bipolar channel that rectifies like a pn junction.</span></div></a>
+    <a class="card" href="membrane.html"><em class="stamp" title="drawn against Teorell–Meyer–Sievers theory">✓ TMS</em><img src="screenshots/membrane.png" alt="ion-exchange membrane"><div><b>Ion-exchange membrane</b><span>Donnan exclusion and permselectivity, ion by ion, against Teorell–Meyer–Sievers theory; unstirred layers.</span></div></a>
+    <a class="card" href="double-layer.html"><em class="stamp" title="drawn against Gouy–Chapman and Kilic–Bazant–Ajdari theory">✓ Gouy–Chapman</em><img src="screenshots/double-layer.png" alt="double layer"><div><b>Double layer</b><span>Ideal against crowded (lattice-gas) ions at a blocking electrode, each against its closed-form theory; ion by ion.</span></div></a>
+  </div>
+  <h2>Cells and nerves<span class="cast" title="the cast"><span class="plus">Na⁺</span><span class="plus">K⁺</span><span class="minus">Cl⁻</span><span class="zero">gates</span></span></h2>
+  <div class="cards">
+    <a class="card" href="cell.html"><em class="stamp" title="drawn against the Mullins–Noda equation">✓ Mullins–Noda</em><img src="screenshots/cell.png" alt="a cell's resting potential"><div><b>Resting potential</b><span>A cell membrane's leaks and the Na⁺/K⁺ pump: V<sub>m</sub> against Mullins–Noda, each ion's driving force, and the run-down to Donnan equilibrium when the pump stops.</span></div></a>
+    <a class="card" href="axon.html"><em class="stamp tested" title="no check on the page; the spike is validated against the space-clamped Hodgkin–Huxley equations in the test suite">tested: HH equations</em><img src="screenshots/axon.png" alt="an action potential"><div><b>Action potential</b><span>Hodgkin and Huxley's voltage-gated channels, with the ions solved for: the spike, its currents and gates, and each ion's driving force through it; temperature, TTX and TEA.</span></div></a>
+    <a class="card" href="propagation.html"><em class="stamp" title="its speed shown against Hodgkin and Huxley’s, scaled by √a">✓ HH’s 18.8 m/s</em><img src="screenshots/propagation.png" alt="an action potential travelling along an axon"><div><b>Propagation</b><span>An action potential travelling along a squid axon, at Hodgkin and Huxley's speed, out of the ions drifting along it: the local circuit, which ions carry it, and each one's driving force along the axon; radius, temperature, TTX.</span></div></a>
+    <a class="card" href="myelin.html"><em class="stamp tested" title="no check on the page; node-by-node arrival is validated against a compartmental cable in the test suite">tested: cable</em><img src="screenshots/myelin.png" alt="saltatory conduction in a myelinated axon"><div><b>Myelin</b><span>Two thin axons race: one bare, one myelinated, its spike jumping from node of Ranvier to node over ten times faster, against a compartmental cable; myelin thickness, node spacing and channel density.</span></div></a>
   </div>
 
-  <h2>Interfaces and materials</h2>
-  <div class="cards">
-    <a class="card" href="junction.html"><img src="screenshots/junction.png" alt="liquid junctions"><div><b>Liquid junctions</b><span>A patch pipette's junction growing from contact against Henderson and Planck, and a salt bridge whose charged frit turns into a membrane against a dilute sample.</span></div></a>
-    <a class="card" href="channel.html"><img src="screenshots/channel.png" alt="a charged nanochannel"><div><b>Charged nanochannel</b><span>A channel's charged walls: Donnan layers at each mouth that overlap in dilute salt, K⁺ selectivity, a conductance plateau against Teorell–Meyer–Sievers, and a bipolar channel that rectifies like a pn junction.</span></div></a>
-    <a class="card" href="cell.html"><img src="screenshots/cell.png" alt="a cell's resting potential"><div><b>Resting potential</b><span>A cell membrane's leaks and the Na⁺/K⁺ pump: V<sub>m</sub> against Mullins–Noda, each ion's driving force, and the run-down to Donnan equilibrium when the pump stops.</span></div></a>
-    <a class="card" href="axon.html"><img src="screenshots/axon.png" alt="an action potential"><div><b>Action potential</b><span>Hodgkin and Huxley's voltage-gated channels, with the ions solved for: the spike, its currents and gates, and each ion's driving force through it; temperature, TTX and TEA.</span></div></a>
-    <a class="card" href="propagation.html"><img src="screenshots/propagation.png" alt="an action potential travelling along an axon"><div><b>Propagation</b><span>An action potential travelling along a squid axon, at Hodgkin and Huxley's speed, out of the ions drifting along it: the local circuit, which ions carry it, and each one's driving force along the axon; radius, temperature, TTX.</span></div></a>
-    <a class="card" href="myelin.html"><img src="screenshots/myelin.png" alt="saltatory conduction in a myelinated axon"><div><b>Myelin</b><span>Two thin axons race: one bare, one myelinated, its spike jumping from node of Ranvier to node over ten times faster, against a compartmental cable; myelin thickness, node spacing and channel density.</span></div></a>
-    <a class="card" href="membrane.html"><img src="screenshots/membrane.png" alt="ion-exchange membrane"><div><b>Ion-exchange membrane</b><span>Donnan exclusion and permselectivity, ion by ion, against Teorell–Meyer–Sievers theory; unstirred layers.</span></div></a>
-    <a class="card" href="double-layer.html"><img src="screenshots/double-layer.png" alt="double layer"><div><b>Double layer</b><span>Ideal against crowded (lattice-gas) ions at a blocking electrode, each against its closed-form theory; ion by ion.</span></div></a>
-    <a class="card" href="insertion.html"><img src="screenshots/insertion.png" alt="intercalation host"><div><b>Intercalation host</b><span>Galvanostatic cycling between cutoffs: the loop settling against a regular-solution OCV, Li⁺ and e⁻ level by level.</span></div></a>
-  </div>
+  <footer class="site">Every figure on these pages is computed in your browser as you watch; none of it is a recording.
+    driftlet is free software (0BSD), on <a href="https://www.npmjs.com/package/driftlet">npm</a> and
+    <a href="https://github.com/markblundeberg/driftlet">GitHub</a>.</footer>
 </main>
+<script type="module">
+// The rails: charges drifting along a sloped potential φ(x), cations down it and anions and
+// electrons up, each faster where the field (the slope) is steeper, as drift is.
+const svg = document.getElementById('rails'), NS = 'http://www.w3.org/2000/svg';
+const cast = [
+  { label: 'Na⁺', z: 1, mu: 1.0, at: 0.08 }, { label: 'h⁺', z: 1, mu: 0.7, at: 0.55 }, { label: 'Li⁺', z: 1, mu: 0.55, at: 0.83 },
+  { label: 'Cl⁻', z: -1, mu: 1.05, at: 0.3 }, { label: 'e⁻', z: -1, mu: 1.6, at: 0.7 },
+];
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 84, phi, slope;
+function layout() {
+  W = svg.clientWidth || 1000;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  // φ: high on the left, a smooth drop through the middle (a junction's), low on the right.
+  const top = 24, drop = 40, mid = W * 0.52, w = Math.max(W * 0.07, 30);
+  phi = (x, dy = 0) => top + dy + drop / (1 + Math.exp(-(x - mid) / w));
+  slope = (x) => { const e = Math.exp(-(x - mid) / w); return (drop * e) / (w * (1 + e) ** 2); };
+  const line = (dy) => Array.from({ length: 101 }, (_, k) => `${k ? 'L' : 'M'}${((k / 100) * W).toFixed(1)} ${phi((k / 100) * W, dy).toFixed(1)}`).join(' ');
+  svg.innerHTML = `<path class="rail main" d="${line(0)}"/><path class="rail" d="${line(14)}"/>`;
+  for (const c of cast) {
+    c.g = document.createElementNS(NS, 'g');
+    const color = c.z > 0 ? 'var(--c8)' : 'var(--c1)';
+    c.g.innerHTML = `<path class="trail" stroke="${color}" d="M0 0"/><circle r="5.5" fill="${color}"/><text y="-13" fill="${color}">${c.label}</text>`;
+    svg.append(c.g);
+    c.x ??= c.at * W;
+  }
+}
+function draw() {
+  for (const c of cast) {
+    const x = c.x, y = phi(x), s = slope(x), dir = c.z > 0 ? 1 : -1;
+    // motion lines behind it, longer where it's quicker
+    const len = 4 + 40 * s, back = -dir;
+    c.g.firstChild.setAttribute('d', `M${(back * 9).toFixed(1)} ${(-3).toFixed(1)} l${(back * len).toFixed(1)} ${(-back * s * len * 0.6 - 1).toFixed(1)} M${(back * 8).toFixed(1)} 3 l${(back * len * 0.7).toFixed(1)} ${(-back * s * len * 0.4 - 1).toFixed(1)}`);
+    const fade = Math.min(1, x / 40, (W - x) / 40);
+    c.g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+    c.g.setAttribute('opacity', Math.max(0, fade).toFixed(2));
+  }
+}
+let last = 0;
+function tick(t) {
+  const dt = Math.min(0.05, (t - last) / 1000 || 0);
+  last = t;
+  for (const c of cast) {
+    // a little diffusion's worth of base speed, and drift ∝ mobility × field
+    c.x += (c.z > 0 ? 1 : -1) * c.mu * (6 + 260 * slope(c.x)) * dt;
+    if (c.x > W + 20) c.x = -20;
+    if (c.x < -20) c.x = W + 20;
+  }
+  draw();
+  requestAnimationFrame(tick);
+}
+layout();
+draw();
+if (!still) requestAnimationFrame(tick);
+addEventListener('resize', () => { const f = W; layout(); for (const c of cast) c.x *= W / f; draw(); });
+</script>
 </body>
 </html>

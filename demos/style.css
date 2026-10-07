@@ -1,32 +1,53 @@
+/* driftlet's demos: paper and ink, the logo's vermilion as the one accent, and Recursive (its
+   casual sans for headings, its mono for code) over the system face for reading. The data
+   colours --c1 … --c8 are driftlet/plot's categorical palette, kept as they are: they carry
+   meaning from plot to plot (e⁻ blue, h⁺ red). */
+@font-face {
+  font-family: Recursive;
+  src: url(fonts/recursive.woff2) format('woff2');
+  font-weight: 400 800;
+  font-display: swap;
+}
 :root {
-  --bg: #fbfcfe;
-  --panel: #f1f4f9;
-  --ink: #1b2433;
-  --muted: #5d6878;
-  --grid: #dde3ec;
-  --accent: #2459d6;
+  --bg: #f6f2ea;
+  --panel: #fdfbf7;
+  --line: #e6dfd2;
+  --ink: #1d2330;
+  --muted: #5f5a52;
+  --grid: #e4ddd0;
+  --accent: #b8302a;
+  --mark: #d1362f;
+  --mark-dot: #8a1d18;
   --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7; --c8: #e34948;
+  --display: Recursive, system-ui, sans-serif;
+  --mono: Recursive, ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1522;
-    --panel: #151f31;
-    --ink: #e3e8f0;
-    --muted: #97a3b6;
-    --grid: #243149;
-    --accent: #7aa7ff;
+    --bg: #11151d;
+    --panel: #171c26;
+    --line: #252c39;
+    --ink: #ece6da;
+    --muted: #a39b8e;
+    --grid: #283041;
+    --accent: #ff7a66;
+    --mark: #e8584f;
+    --mark-dot: #ffb3ab;
     --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1522;
-  --panel: #151f31;
-  --ink: #e3e8f0;
-  --muted: #97a3b6;
-  --grid: #243149;
-  --accent: #7aa7ff;
+  --bg: #11151d;
+  --panel: #171c26;
+  --line: #252c39;
+  --ink: #ece6da;
+  --muted: #a39b8e;
+  --grid: #283041;
+  --accent: #ff7a66;
+  --mark: #e8584f;
+  --mark-dot: #ffb3ab;
   --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767;
   color-scheme: dark;
 }
@@ -40,29 +61,52 @@ body {
   font: 15px/1.5 system-ui, sans-serif;
 }
 main { max-width: 1000px; margin: 0 auto; }
-nav.site { display: flex; gap: 20px; font-size: 0.9rem; margin-bottom: 8px; }
-nav.site a:first-child { flex: none; white-space: nowrap; }
-h1 { font-size: 1.3rem; margin: 0 0 4px; }
+h1, h2, h3 { font-family: var(--display); font-variation-settings: 'CASL' 1, 'MONO' 0; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 1.65rem; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 1.2rem; margin: 26px 0 6px; }
 p { margin: 4px 0 12px; color: var(--muted); max-width: 70ch; }
 ul { color: var(--muted); max-width: 70ch; padding-left: 1.4em; }
+a { color: var(--accent); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+code { font-family: var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 0; font-size: 0.92em; }
+
+/* The site's header: the mark and the name, then the way back and the source. */
+nav.site { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; font-size: 0.9rem; margin-bottom: 14px; }
+nav.site a { text-decoration: none; }
+nav.site a:hover { text-decoration: underline; }
+nav.site a:first-child { flex: none; white-space: nowrap; }
+nav.site .brand {
+  display: inline-flex; align-items: center; gap: 7px; margin-right: 4px;
+  font-family: var(--display); font-variation-settings: 'CASL' 1, 'MONO' 0; font-weight: 700; font-size: 1.15rem;
+  color: var(--ink); letter-spacing: -0.01em;
+}
+nav.site .brand:hover { text-decoration: none; }
+nav.site .brand svg { width: 30px; height: 26px; flex: none; }
+.mark-rail { stroke: var(--mark); }
+.mark-rail { fill: none; }
+.mark-trail { stroke: var(--mark-dot); fill: none; }
+.mark-dot { fill: var(--mark-dot); }
+
 .controls {
   position: sticky; /* stays in reach while you scroll down to the lower plots */
   top: 0;
   z-index: 10;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  box-shadow: 0 2px 10px rgb(40 30 10 / 0.10);
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
   align-items: center;
   background: var(--panel);
+  border: 1px solid var(--line);
   padding: 10px 14px;
   border-radius: 8px;
   margin-bottom: 12px;
 }
 .controls label { display: flex; gap: 8px; align-items: center; }
 .controls output { font-variant-numeric: tabular-nums; min-width: 6ch; }
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; }
-canvas { width: 100%; height: 300px; display: block; background: var(--panel); border-radius: 8px; }
+canvas { width: 100%; height: 300px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .readout { font-variant-numeric: tabular-nums; margin: 8px 0; }
 button {
   font: inherit;
@@ -73,7 +117,7 @@ button {
   color: var(--ink);
   cursor: pointer;
 }
-a { color: var(--accent); }
+button:hover { border-color: var(--accent); }
 
 /* Level diagrams from driftlet/plot, in the page's colours. */
 .levels svg {
@@ -86,20 +130,55 @@ a { color: var(--accent); }
   width: 100%;
   height: auto;
 }
-.levels { background: var(--panel); border-radius: 8px; padding: 6px; }
+.levels { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
 .wide { grid-column: 1 / -1; }
 
 /* The page's own code, as a worked example. */
-details.code { margin-top: 16px; background: var(--panel); border-radius: 8px; padding: 8px 14px; }
+details.code { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; }
 details.code summary { cursor: pointer; color: var(--accent); }
-details.code pre { overflow-x: auto; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); margin: 8px 0 0; }
+details.code pre { overflow-x: auto; font: 13px/1.5 var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 0; color: var(--ink); margin: 8px 0 0; }
+details.code pre code { font-size: inherit; }
 .note { color: var(--muted); font-size: 0.9rem; }
 
 /* The gallery. */
+.hero { margin: 6px 0 4px; }
+.hero h1 { margin: 0; line-height: 0; }
+.hero h1 img { width: min(320px, 70vw); height: auto; }
+.hero .tagline { font-family: var(--display); font-variation-settings: 'CASL' 1, 'MONO' 0; font-weight: 500; font-size: 1.2rem; color: var(--ink); margin: 10px 0 2px; max-width: 46ch; }
+/* Charges drifting along a sloped potential: cations down it, anions and electrons up. */
+.rails { display: block; width: 100%; height: 84px; margin: 2px 0 10px; overflow: visible; }
+.rails .rail { fill: none; stroke: var(--grid); stroke-width: 1.5; stroke-linecap: round; }
+.rails .rail.main { stroke: var(--line); stroke-width: 3; }
+.rails text { font: 600 12.5px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+.rails .trail { stroke-width: 1.4; stroke-linecap: round; opacity: 0.5; }
+.cast { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; vertical-align: 0.15em; font: 500 0.78rem/1 system-ui, sans-serif; letter-spacing: 0; }
+.cast span { padding: 3px 7px; border-radius: 999px; border: 1px solid currentColor; background: var(--panel); }
+.cast .plus { color: var(--c8); }
+.cast .minus { color: var(--c1); }
+.cast .zero { color: var(--muted); }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin: 8px 0 20px; }
-.card { background: var(--panel); border-radius: 10px; overflow: hidden; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; }
-.card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; display: block; background: var(--bg); }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  text-decoration: none; color: var(--ink); display: flex; flex-direction: column;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+.card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(40 30 10 / 0.12); border-color: var(--mark); text-decoration: none; }
+.card { position: relative; }
+.card .stamp {
+  position: absolute; top: 10px; right: 10px; transform: rotate(-4deg);
+  font: normal 600 0.72rem/1 var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 1; letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1.5px solid currentColor; border-radius: 4px; padding: 4px 6px;
+}
+.card .stamp.tested { color: var(--muted); border-style: dashed; }
+.card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; display: block; background: var(--bg); border-bottom: 1px solid var(--line); }
 .card div { padding: 10px 12px; }
-.card b { display: block; margin-bottom: 2px; }
+.card b { display: block; margin-bottom: 2px; font-family: var(--display); font-variation-settings: 'CASL' 1, 'MONO' 0; font-weight: 700; font-size: 1.02rem; }
 .card span { color: var(--muted); font-size: 0.9rem; }
-h2 { font-size: 1.05rem; margin: 18px 0 4px; }
+footer.site { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
+/* Screenshots are of the light pages: dimmed a little at night. */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card img { filter: brightness(0.85); } }
+:root[data-theme="dark"] .card img { filter: brightness(0.85); }
+@media (prefers-reduced-motion: reduce) {
+  .card, .card:hover { transition: none; transform: none; }
+}

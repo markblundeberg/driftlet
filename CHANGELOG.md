@@ -4,6 +4,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- A visual identity: the logo's wordmark redrawn in Recursive's casual sans (as outlines, so it
+  looks the same everywhere), and the demo site in paper and ink with the logo's vermilion, a
+  gallery whose sections show each field's cast, charges drifting along a potential (cations
+  down it, anions up), and a stamp on each card naming what its page is checked against.
 - A starting `c0` profile steeper than the grid's cells under it is warned of in every
   solution, with where and the cells that would resolve it: the start was silently the profile
   sampled at the nodes (a liquid junction's potential then seemed to grow as it formed).
