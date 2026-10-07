@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.12.0 (2026-10-07)
 
 - Voltage-gated channels: a face's `gates`, each a fraction open with Hodgkin–Huxley kinetics in
   the voltage across the face (α and β in NeuroML's three standard forms), and permeabilities
@@ -20,6 +20,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   (Hodgkin and Huxley computed 18.8). Face conductance links can be gated as well. A myelinated
   axon, nodes of Ranvier and internodes as regions with ports of their own, conducts
   saltatorily, each node's arrival within 1 µs of a compartmental cable's.
+- A device with many held terminals (an axon's nodes of Ranvier, each a port) steps faster: only
+  the floating terminals' ∂res/∂V and ∂I/∂x are carried through each assembly (all of them while
+  `impedance()` runs).
 - A demo, [myelin](demos/myelin.html): a bare and a myelinated axon of the same radius racing, the
   myelinated spike jumping node to node over ten times faster on a tenth of the current; myelin
   thickness, node spacing, nodal channel density.
