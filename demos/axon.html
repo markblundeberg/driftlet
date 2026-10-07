@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Action potential</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a href="./">← all demos</a><a href="https://github.com/markblundeberg/driftlet">driftlet on GitHub</a></nav>
+  <h1>An action potential: Hodgkin and Huxley's channels, and the ions they let through</h1>
+  <p>A squid axon's membrane with Hodgkin and Huxley's voltage-gated Na⁺ and K⁺ channels, stimulated by a
+    brief current every so often. Past threshold, Na⁺ channels open, which depolarizes the membrane and opens
+    more of them; then they inactivate, K⁺ channels open, and the membrane swings back below rest. Underneath,
+    the ions themselves are solved for, on both sides: the level diagram shows each one's driving force across
+    the membrane, through the spike. Vary the stimulus, the temperature, and block channels as tetrodotoxin
+    (Na⁺) and tetraethylammonium (K⁺) do. (More about the model below.)</p>
+  <div class="controls" id="controls">
+    <label>stimulus <input id="I" type="range" min="0" max="100" step="0.5" value="10"><output id="IOut"></output></label>
+    <label>every <input id="period" type="range" min="4" max="50" step="1" value="25"><output id="periodOut"></output></label>
+    <label>temperature <input id="temp" type="range" min="6.3" max="30" step="0.1" value="6.3"><output id="tempOut"></output></label>
+    <label>Na⁺ channels <input id="na" type="range" min="0" max="100" step="5" value="100"><output id="naOut"></output></label>
+    <label>K⁺ channels <input id="k" type="range" min="0" max="100" step="5" value="100"><output id="kOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="0.002">2 ms a second</option>
+      <option value="0.01" selected>10 ms a second</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="vt"></canvas>
+    <canvas id="it"></canvas>
+    <canvas id="gt"></canvas>
+    <div class="levels wide" id="levels"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>A slice across the axon's membrane: 5 µm of unstirred sea water outside, held at a fixed composition
+    beyond that, the membrane, and 20 µm of axoplasm, closed at its far end. Both solutions are strictly
+    neutral; the membrane is a capacitor (1 µF/cm²) whose charge sits in the solutions beside it. The
+    concentrations are a squid axon's (mM, outside / inside: Na⁺ 440 / 50, K⁺ 20 / 400, Cl⁻ 450 / 52, with
+    anions that don't cross making up the rest). The stimulus is K⁺ injected into the axoplasm from 15 µm in,
+    as from a micropipette, for 1 ms each time.</p>
+  <p>The channels are Hodgkin and Huxley's (1952), from their voltage-clamp measurements at 6.3 °C: the Na⁺
+    channel open with probability m³h and the K⁺ channel with n⁴, each gate relaxing toward its own
+    voltage-dependent level at its own rate. They're gates on the membrane's permeabilities, so each ion still
+    crosses by electrodiffusion in the field across the membrane (Goldman–Hodgkin–Katz), down its own
+    electrochemical potential, rather than through Hodgkin and Huxley's linear conductances. Those differ, so
+    the permeabilities are the ones that give their conductances (Na⁺ 120, K⁺ 36 mS/cm², and their leak,
+    0.3 mS/cm², carried here by Cl⁻) at rest, −65 mV. GHK's currents rectify: the Na⁺ current at positive
+    voltages is limited by the 50 mM of Na⁺ inside, so the spike peaks near +12 mV rather than the +40 mV
+    of Hodgkin and Huxley's linear version. Matched instead where each channel opens, the rest destabilizes
+    and the axon fires on its own: the two models can't agree at every voltage. Warmer, every gate runs
+    faster (three times for each 10 °C, as they measured), and the spike gets briefer and smaller, as K⁺
+    channels and Na⁺ inactivation catch up with Na⁺ activation: a 1 ms stimulus must be stronger to fire it,
+    about 6 µA/cm² at 6.3 °C, 30 at 25 °C and 90 at 30 °C, and there the spike barely reaches 0 mV.
+    That's Hodgkin and Huxley's heat block, coming on.</p>
+  <p>The level diagram draws each ion's <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
+    V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), its electrochemical potential in volts, against its value
+    outside, and φ the same way. Each line is flat through each solution and steps at the membrane by
+    V<sub>m</sub> − E<sub>i</sub>, that ion's driving force; φ steps by V<sub>m</sub> itself. At rest Na⁺ has a
+    big step: it would rush in if it could. As the Na⁺ channels open its step shrinks, as V<sub>m</sub> heads
+    toward E<sub>Na</sub>, while K⁺'s grows; then the K⁺ channels open and bring V<sub>m</sub> back. The ions
+    that cross in a spike are few (V<sub>m</sub> swings by charging the membrane), so the levels in each
+    solution barely move.</p>
+  <p>There's no Na⁺/K⁺ pump, so this axon has no true steady state: over hours it would run down to Donnan
+    equilibrium, as the <a href="cell.html">resting-potential demo</a> shows. Over the milliseconds watched
+    here that doesn't show. The gating currents of the channels' voltage sensors are left out, as Hodgkin and
+    Huxley left them out. Against the space-clamped Hodgkin–Huxley equations with GHK currents, solved
+    separately, the spike agrees to within 1 mV (the <code>gates</code> test).</p>
+</main>
+<script type="module">
+import { Device } from '../src/index.js';
+import { build, layer, bath, aqueous, injector, square, hodgkinHuxley, traces, speciesRole } from '../src/kit.js';
+import { levelChart, themeColor } from '../src/plot.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery, pauser } from './common.js';
+
+const IONS = ['Na+', 'K+', 'Cl-'];
+const OUT = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
+const WIDTH = 1e-3, SETTLE = 30e-3, WINDOW = 60e-3; // the stimulus's length; let it settle first; time shown
+
+// Strictly neutral sea water and axoplasm, with the anions that don't cross.
+const water = aqueous(IONS, { epsr: 0 });
+water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+
+const stimulus = ({ I, period }) => (I > 0 ? square({ high: I, low: 0, period, duty: WIDTH / period }) : 0);
+const axon = (p) => {
+  const hh = hodgkinHuxley({ inside: IN, outside: OUT, T: p.T }); // (outside on the left)
+  // Tetrodotoxin blocks Na⁺ channels, tetraethylammonium K⁺. (Fully blocked, a millionth stay
+  // open: blocked outright, the link would change the solver's layout, and the state wouldn't
+  // carry over.)
+  hh.species['Na+'].P *= Math.max(p.na, 1e-6);
+  hh.species['K+'].P *= Math.max(p.k, 1e-6);
+  return build({
+    T: p.T,
+    library: [water],
+    stack: [
+      bath(OUT, 'Cl-'),
+      layer('water', 5e-6, { name: 'outside', c0: OUT }),
+      { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } },
+      layer('water', 20e-6, { name: 'axoplasm', c0: IN }),
+      { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' },
+    ],
+    // the micropipette: K⁺ into the axoplasm, 15–20 µm in
+    ports: [injector({ name: 'stim', region: 'axoplasm', from: 15e-6, to: 20e-6, species: 'K+', I: p.started ? stimulus(p) : 0 })],
+    grid: { hmin: 50e-9, hmax: 1e-6 },
+  });
+};
+
+const els = Object.fromEntries(['I', 'period', 'temp', 'na', 'k', 'pace'].map((id) => [id, document.getElementById(id)]));
+for (const el of Object.values(els)) fromQuery(el);
+const params = () => ({ I: +els.I.value / 100, period: +els.period.value / 1000, T: 273.15 + +els.temp.value, na: +els.na.value / 100, k: +els.k.value / 100 });
+function showControls() {
+  const p = params();
+  document.getElementById('IOut').textContent = `${els.I.value} µA/cm² for 1 ms`;
+  document.getElementById('periodOut').textContent = `${els.period.value} ms`;
+  document.getElementById('tempOut').textContent = `${(+els.temp.value).toFixed(1)} °C`;
+  document.getElementById('naOut').textContent = `${els.na.value}%`;
+  document.getElementById('kOut').textContent = `${els.k.value}%`;
+  return p;
+}
+
+// Readings at each accepted step: φ either side of the membrane, the currents through it, its gates.
+const probes = [
+  { x: 5e-6, quantity: 'phi', region: 'outside' },
+  { x: 5e-6, quantity: 'phi', region: 'axoplasm' },
+  ...IONS.map((s) => ({ interface: 0, species: s })),
+  ...['m', 'h', 'n'].map((g) => ({ interface: 0, gate: g })),
+];
+const F = 96485.33212;
+let d, rec;
+function start() {
+  const p = showControls();
+  d = new Device(axon(p));
+  d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest
+  d.set({ ports: { stim: { I: stimulus(p) } } });
+  rec = { t: [], V: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, peak: NaN, spikeMax: -1 };
+}
+function keep(sol) {
+  const { t, probes: pr } = sol.trace;
+  for (let k = 1; k < t.length; k++) {
+    rec.t.push(t[k]);
+    const V = pr[1][k] - pr[0][k];
+    rec.V.push(V);
+    // Each ion's current outward (as electrophysiologists draw it), µA/cm²: flux toward +x is inward.
+    IONS.forEach((s, j) => rec.I[s].push(-100 * (s === 'Cl-' ? -1 : 1) * F * pr[2 + j][k]));
+    ['m', 'h', 'n'].forEach((g, j) => rec.g[g].push(pr[5 + j][k]));
+    // the last spike's peak
+    if (V > 0) rec.spikeMax = Math.max(rec.spikeMax, V);
+    else if (rec.spikeMax > 0 && V < -0.03) [rec.peak, rec.spikeMax] = [rec.spikeMax, -1];
+  }
+  // only the window shown (and a little)
+  const cut = rec.t.findIndex((x) => x >= t.at(-1) - 1.2 * WINDOW);
+  if (cut > 0) {
+    rec.t.splice(0, cut);
+    rec.V.splice(0, cut);
+    for (const a of [...Object.values(rec.I), ...Object.values(rec.g)]) a.splice(0, cut);
+  }
+}
+
+const mV = (v) => `${(1000 * v).toFixed(1)} mV`;
+function draw() {
+  const sol = d.solution(), p = params(), t = sol.time, VT = (8.314462618 * p.T) / F;
+  const E = Object.fromEntries(IONS.map((s) => [s, (s === 'Cl-' ? -1 : 1) * VT * Math.log(OUT[s] / IN[s])]));
+  const Vm = sol.interfaces[0].V;
+  document.getElementById('status').textContent =
+    `t ${(1000 * (t - SETTLE)).toFixed(1)} ms · V_m ${mV(Vm)} · last spike's peak ${Number.isFinite(rec.peak) ? mV(rec.peak) : '—'} · E_Na ${mV(E['Na+'])}, E_K ${mV(E['K+'])}, E_Cl ${mV(E['Cl-'])}`;
+  const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  const col = (s) => {
+    const { role, slot } = speciesRole(sol, s);
+    return themeColor(role, slot, { dark });
+  };
+  const ms = rec.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE), xlim = [x1 - 1000 * WINDOW, x1];
+  // the stimulus, drawn along the bottom
+  const stim = ms.map((x) => (p.I > 0 && ((x / 1000 + SETTLE) % p.period) < WIDTH ? -95 + 8 : -95));
+  chart(document.getElementById('vt'), {
+    xlabel: 'time (ms)', ylabel: 'mV', xlim, ylim: [-100, 60],
+    series: [
+      { x: xlim, y: [1000 * E['Na+'], 1000 * E['Na+']], color: col('Na+'), dash: [2, 3], width: 1.2, label: 'E_Na' },
+      { x: xlim, y: [1000 * E['K+'], 1000 * E['K+']], color: col('K+'), dash: [2, 3], width: 1.2, label: 'E_K' },
+      { x: ms, y: stim, color: 'var(--muted)', width: 1, label: 'stimulus' },
+      { x: ms, y: rec.V.map((v) => 1000 * v), color: colors[6], width: 2, label: 'V_m' },
+    ],
+  });
+  chart(document.getElementById('it'), {
+    xlabel: 'time (ms)', ylabel: 'outward current (µA/cm²)', xlim, ylim: [-900, 900],
+    series: IONS.map((s) => ({ x: ms, y: rec.I[s], color: col(s), label: { 'Na+': 'I_Na', 'K+': 'I_K', 'Cl-': 'I_Cl (leak)' }[s] })),
+  });
+  chart(document.getElementById('gt'), {
+    xlabel: 'time (ms)', ylabel: 'fraction', xlim, ylim: [0, 1],
+    series: [
+      { x: ms, y: rec.g.m, color: colors[0], label: 'm' },
+      { x: ms, y: rec.g.h, color: colors[2], label: 'h' },
+      { x: ms, y: rec.g.n, color: colors[4], label: 'n' },
+      { x: ms, y: rec.g.m.map((m, k) => m * m * m * rec.g.h[k]), color: col('Na+'), dash: [5, 3], label: 'm³h (Na⁺ open)' },
+      { x: ms, y: rec.g.n.map((n) => n * n * n * n), color: col('K+'), dash: [5, 3], label: 'n⁴ (K⁺ open)' },
+    ],
+  });
+  // Each ion's V_i, and φ, against outside: steps of V_m − E_i (and V_m) at the membrane.
+  const tr = traces(sol, { species: IONS, standard: false, phi: true });
+  for (const s of tr.series) {
+    const y0 = s.y.find(Number.isFinite);
+    s.y = s.y.map((v) => (v - y0) * 1000);
+  }
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 340, title: `species voltages across the membrane: V_m = ${mV(Vm)}`, ylabel: 'against outside (mV)', range: [-140, 90] });
+}
+
+// Played back at a pace, on and on; each frame advances in a time budget.
+let last, looping = false;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (last ?? now)) / 1000);
+  last = now;
+  const t = d.solver.time, perSecond = +els.pace.value;
+  const sol = d.advance(perSecond > 0 ? t + wall * perSecond : t + 0.2, { budgetMs: 12, tol: 1e-4, dtMax: 5e-5, probes });
+  keep(sol);
+  draw();
+  if (sol.converged && !pause.paused) requestAnimationFrame(frame);
+  else looping = false;
+}
+const pause = pauser(document.getElementById('controls'), () => {
+  if (looping) return;
+  last = undefined;
+  looping = true;
+  requestAnimationFrame(frame);
+});
+
+start();
+// ?t=… ms: straight there (for screenshots), then on.
+const jump = +new URLSearchParams(location.search).get('t') / 1000 || 0;
+if (jump > 0) keep(d.advance(SETTLE + jump, { tol: 1e-4, dtMax: 5e-5, probes }));
+draw();
+looping = true;
+requestAnimationFrame(frame);
+
+// The stimulus changes in place; the channels, by rebuilding (the state carries over).
+for (const id of ['I', 'period']) els[id].addEventListener('input', () => d.set({ ports: { stim: { I: stimulus(showControls()) } } }));
+for (const id of ['temp', 'na', 'k']) els[id].addEventListener('input', () => d.set(axon({ ...showControls(), started: true })));
+showCode();
+</script>
+</body>
+</html>

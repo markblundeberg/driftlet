@@ -11,6 +11,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   with GHK permeabilities matched to HH's conductances at rest. Under a voltage clamp each gate
   sits at α/(α + β) and relaxes at α + β; a squid axon's action potential follows the
   space-clamped HH equations with GHK currents to within 1 mV.
+- Probes at a face: `{ interface: f, species }` (the flux through it) and `{ interface: f, gate }`.
+- A demo, [action potential](demos/axon.html): a squid axon's spikes, their currents and gates,
+  and each ion's driving force through them; the stimulus, temperature, and Na⁺ and K⁺ channel
+  block.
 
 ## 0.11.4 (2026-10-06)
 
