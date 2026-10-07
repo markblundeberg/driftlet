@@ -111,6 +111,29 @@ test("a spectator's profile fixes the amount it conserves: the steady state hold
   s.c['NO3-'].forEach((c) => assert.ok(Math.abs(c / 10 - 1) < 1e-9, `${c}`));
 });
 
+test("a starting profile the grid can't resolve is warned of, with the cells that would", () => {
+  // A liquid junction laid down as a tanh 10 µm wide on 40 µm cells starts as something else,
+  // and its potential then seems to grow as it forms: silently, until this warning.
+  const L = 4e-3, xs = Array.from({ length: 401 }, (_, k) => (k / 400) * L);
+  const step = { x: xs, values: xs.map((x) => 10 + 45 * (1 + Math.tanh((x - L / 2) / 10e-6))) };
+  const tube = (grid) =>
+    new Device({
+      species: [
+        { name: 'H+', z: 1, cRef: 1000 },
+        { name: 'Cl-', z: -1, cRef: 1000 },
+      ],
+      materials: { water: { epsr: 0, species: { 'H+': { D: 9.3e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+      regions: [{ material: 'water', length: L, c0: { 'H+': step, 'Cl-': step } }],
+      contacts: { left: { V: 0, terminal: 'Cl-', species: { 'Cl-': 'equilibrium' }, phi: 'bulk' }, right: { I: 0, terminal: 'Cl-', species: { 'Cl-': 'equilibrium' }, phi: 'bulk' } },
+      grid,
+    }).solution().warnings;
+  const coarse = tube({ hmin: 2e-6, hmax: 40e-6 });
+  assert.equal(coarse.length, 1, coarse.join('\n'));
+  const [, x, h, want] = /^regions\[0\]\.c0 \(H\+, Cl-\): the grid doesn't resolve .*\(at x = (\S+) m, nodes (\S+) m apart .* cells of about (\S+) m there/.exec(coarse[0]);
+  assert.ok(Math.abs(x - L / 2) < 20e-6 && Math.abs(h - 40e-6) < 1e-6, coarse[0]);
+  assert.deepEqual(tube({ hmin: 2e-6, hmax: +want }), [], 'the cells it suggests resolve it');
+});
+
 test('c0 profiles: checked as data, neutral where ε = 0, a number as much a start, and against the region in describe()', () => {
   const wall = { species: { 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' };
   const def = (c0) =>

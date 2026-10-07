@@ -2,6 +2,18 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A starting `c0` profile steeper than the grid's cells under it is warned of in every
+  solution, with where and the cells that would resolve it: the start was silently the profile
+  sampled at the nodes (a liquid junction's potential then seemed to grow as it formed).
+- `check()` in a transient says its grid isn't checked (`?`), rather than leaving the grid item
+  out: a transient's answer depends on the whole run, so it's rerun on a finer grid by hand.
+- The agent guide is shorter (a map of the templates up top, tighter front matter, the
+  level-diagram and mistakes sections halved), with notes from a third round of cold agents: a
+  BJT's base contact, the semiconductor data, `vacuumDipole` with `build()`, a cyclic
+  voltammogram from the stirred-electrode template.
+
 ## 0.13.0 (2026-10-07)
 
 - A port can take its outside's composition, `bath: { c }`: its V is then the outside's φ, and

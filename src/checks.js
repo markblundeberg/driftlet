@@ -29,7 +29,8 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  *   zero; under light it's J = F(G − R), and it says where every carrier went.
  * - **conservation** (a transient): every closed, unreacting stretch keeps what it held plus
  *   what came in.
- * - **grid** (a steady state, with `refine`, the default): the device solved again on a grid
+ * - **grid** (with `refine`, the default; in a transient, `ok: null` and a reminder, since the
+ *   answer depends on the whole run): in a steady state, the device solved again on a grid
  *   twice as fine everywhere, from this solution interpolated onto it. The current, each floating terminal's voltage and each
  *   region's charge must agree to `tol` (relative, default 1e-2, a plot's accuracy; a benchmark
  *   wants less). The discretisation is second order, so the change estimates this grid's error
@@ -67,6 +68,9 @@ export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
     const ledger = steady ? balance(device, sol) : null;
     items.push(ledger ?? conservation(sol, Math.max(...device.model.grid.area)));
     if (steady && refine) items.push(gridCheck(device, sol, tol, ledger.details.gross));
+    // A transient's answer depends on its whole history (and on drives set along the way), so
+    // only a run of its own on a finer grid can check it.
+    else if (refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved) and compare' });
   }
 
   const ok = sol.converged && items.every((it) => it.ok !== false);

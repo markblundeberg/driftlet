@@ -56,6 +56,49 @@ function positive(v, path) {
   return v;
 }
 
+// Where a region's nodes miss a starting profile worst: the profile at each of its points
+// against the line between the nodes either side, as a fraction of its range over the region
+// (the start is the profile sampled at the nodes). Empty where they miss it by under 2%.
+function unresolved(p, grid, r) {
+  const at = (t) => {
+    const { x, values: v } = p, last = x.length - 1;
+    if (t <= x[0]) return v[0];
+    if (t >= x[last]) return v[last];
+    let k = 0;
+    while (x[k + 1] < t) k++;
+    return v[k] + ((v[k + 1] - v[k]) * (t - x[k])) / (x[k + 1] - x[k]);
+  };
+  const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], a = grid.x[g0], b = grid.x[g1];
+  let lo = Math.min(at(a), at(b)), hi = Math.max(at(a), at(b));
+  p.x.forEach((t, k) => {
+    if (t > a && t < b) (lo = Math.min(lo, p.values[k])), (hi = Math.max(hi, p.values[k]));
+  });
+  if (!(hi > lo)) return {};
+  const missAt = (t, xl, xr) => {
+    const cl = at(xl), cr = at(xr);
+    return Math.abs(at(t) - (cl + ((cr - cl) * (t - xl)) / (xr - xl))) / (hi - lo);
+  };
+  let worst = {}, g = g0;
+  p.x.forEach((t) => {
+    if (!(t > a && t < b)) return;
+    while (grid.x[g + 1] < t) g++;
+    const off = missAt(t, grid.x[g], grid.x[g + 1]);
+    if (off > 0.02 && !(off <= worst.off)) worst = { x: t, h: grid.x[g + 1] - grid.x[g], off };
+  });
+  if (!worst.off) return worst;
+  // The cells that would resolve it there: uniform ones, finer until they miss it by under 2%
+  // however they fall on it. (Cells wider than a step miss it by about as much at any size, so
+  // the miss isn't extrapolated.)
+  const near = Array.from(p.x).filter((t) => Math.abs(t - worst.x) <= 5 * worst.h);
+  const misses = (h) => Math.max(...[0, 0.25, 0.5, 0.75].flatMap((f) => near.map((t) => {
+    const xl = worst.x + h * (Math.floor((t - worst.x) / h - f) + f);
+    return missAt(t, xl, xl + h);
+  })));
+  worst.want = worst.h / 2;
+  while (misses(worst.want) > 0.02 && worst.want > worst.h * 1e-3) worst.want /= Math.SQRT2;
+  return worst;
+}
+
 // A profile against the device's x: { x, values }, piecewise linear between its points and
 // constant beyond its ends (read with profileAt).
 function profile(v, path, what, ok, okText) {
@@ -326,6 +369,18 @@ export function normalizeDevice(def) {
   } catch (err) {
     throw new DeviceError(`grid: ${err.message}`);
   }
+  // A starting profile steeper than the cells under it starts as something else, silently: a
+  // liquid junction's potential then looks as if it grows while the junction forms.
+  regions.forEach((reg, r) => {
+    const missed = reg.c0Profile.map((p, i) => p && { i, ...unresolved(p, grid, r) }).filter((m) => m && m.off);
+    if (missed.length === 0) return;
+    const miss = missed.reduce((a, m) => (m.off > a.off ? m : a));
+    warnings.push(
+      `regions[${r}].c0 (${missed.map((m) => species[m.i].name).join(', ')}): the grid doesn't resolve the starting profile ` +
+        `(at x = ${miss.x.toExponential(2)} m, nodes ${miss.h.toExponential(1)} m apart miss it by ${Math.round(100 * miss.off)}% of its range), ` +
+        `so the start isn't the one given; cells of about ${miss.want.toExponential(0)} m there would resolve it (hmax, or a region boundary there to grade toward)`,
+    );
+  });
   const geometry = normalizeGeometry(def.geometry);
   if (geometry.type !== 'planar') {
     regions.forEach((reg, r) => need(reg.velocity === 0, `regions[${r}].velocity: flow is for a planar device (a uniform velocity through a varying cross-section wouldn't conserve the liquid)`));

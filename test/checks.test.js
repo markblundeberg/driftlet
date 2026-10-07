@@ -95,8 +95,11 @@ test('check(): a transient checks conservation; a failed solve and warnings are 
   dev.set({ contacts: { right: { V: 1.0 } } });
   const s = dev.advance(1, { tol: 1e-4 }), report = check(dev, s);
   assert.ok(report.ok, report.text);
-  assert.deepEqual(report.items.map((it) => it.name), ['converged', 'warnings', 'conservation']);
+  assert.deepEqual(report.items.map((it) => it.name), ['converged', 'warnings', 'conservation', 'grid']);
   assert.match(item(report, 'conservation').summary, /^1 closed stretch .* kept to /);
+  // (its grid isn't checked, and it says so rather than passing it)
+  assert.equal(item(report, 'grid').ok, null);
+  assert.match(item(report, 'grid').summary, /not checked in a transient/);
 
   const failed = check(dev, { ...s, converged: false });
   assert.equal(failed.ok, false);

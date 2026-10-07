@@ -114,7 +114,10 @@ regions: [
   injected hole packet); what the cold start leaves unbalanced settles within the first steps.
   That fill-in is right in a quasi-neutral bulk (it's what dielectric relaxation would do), not
   where the rest state carries charge: a packet laid into a junction starts with the junction
-  itself unformed.
+  itself unformed. The grid isn't refined to fit a profile: where it's steeper than the cells
+  under it, the start is the profile sampled at the nodes, something else, and every solution
+  warns of it with the cells that would resolve it (grade toward it, or put a region boundary
+  there).
   For a spectator, the profile's integral is the amount it conserves. Where nothing else sets
   $`\phi`$ at the start, a region beside an electrode starts with the electrode's first reaction at
   equilibrium (the electrode at its open-circuit level); otherwise $`\phi`$ carries over from the

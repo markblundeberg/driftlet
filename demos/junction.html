@@ -149,13 +149,13 @@ const library = (names, ions, epsr = 0) => ({
   water: { epsr, species: Object.fromEntries(names.map((n) => [n, { D: ions[n].D, mu0: 0 }])) },
 });
 
-// The free junction: 1 mm of neutral water, the two solutions meeting mid-way over 2 µm, held
+// The free junction: 1 mm of neutral water, the two solutions meeting mid-way over 4 µm, held
 // beyond each end by a bath. Recorded as it grows.
 const L = 1e-3, END = 1000; // s
 function freeJunction({ T, left, right }) {
   const ions = ionsAt(T), names = [...new Set([...Object.keys(left), ...Object.keys(right)])];
   const cl = withTraces(left, names, ions), cr = withTraces(right, names, ions), lib = library(names, ions);
-  const c0 = Object.fromEntries(names.map((n) => [n, { x: [0, L / 2 - 1e-6, L / 2 + 1e-6, L], values: [cl[n], cl[n], cr[n], cr[n]] }]));
+  const c0 = Object.fromEntries(names.map((n) => [n, { x: [0, L / 2 - 2e-6, L / 2 + 2e-6, L], values: [cl[n], cl[n], cr[n], cr[n]] }]));
   const ref = names.find((n) => ions[n].z < 0);
   return new Device({
     T, species: lib.species, materials: { water: lib.water },

@@ -42,9 +42,10 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   per cm³·s, `units.eV(1.12)` to J/mol, `units.cm2PerS(36)`, `units.molar(0.1)`) and back
   (`units.toPerCm3`, `toEV`, `toMolar`, `toUm`, …). Physiology: 1 mS/cm² = 10 S/m², 1 µF/cm² =
   0.01 F/m², 1 µA/cm² = 0.01 A/m², mM = mol/m³.
-- **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one).
-  A terminal's `V` is the level of its terminal species (`terminal`, which the kit's contacts
-  set): for an electron contact V = −μ̄_e/F, what a voltmeter reads. φ is bookkeeping, per material, and never a control.
+- **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one). A
+  terminal's `V` is the level of its terminal species (`terminal`, which the kit's contacts set):
+  for an electron contact V = −μ̄_e/F, what a voltmeter reads. φ is bookkeeping, per material, and
+  never a control.
 - **Solutions** are plain objects of `Float64Array`s: `x`, `phi`, and per species `c`, `mu` (μ̄),
   `V` (the species voltage μ̄/(zF): a quasi-Fermi level for e⁻ and h⁺) and `Vstd` (the standard
   level: a band edge; in volts, E = −V, so E_c is the lower line). `NaN` marks a value
@@ -60,7 +61,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **Check before trusting.** `sol.converged` must be true; read `sol.warnings`, where a failed
   solve always says why. `describe(def)` (kit) summarises a definition and flags likely unit
   slips. Once a device works, log `check(dev, sol).text` (kit) once: each species' ledger,
-  conservation in transients, and the same device on a grid twice as fine (a FAIL means refine).
+  conservation in transients, and a steady state on a grid twice as fine (a FAIL means refine;
+  a transient you rerun on a finer grid yourself).
 
 ## How a device is written
 
@@ -68,25 +70,25 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   left to right: its first and last items are the contacts, `layer(material, length, opts)`s
   are regions (give one a `name` to refer to it), and any other object between two layers is
   the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works.
-- **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs,
-  at 300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water,
-  at 25 °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu
-  Au Al Zn Li Pt). A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si` (`Eg` and `chi`
-  in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the material, e⁻'s and
-  h⁺'s `cRef` are N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i =
-  √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists (`z: 0` for a neutral one):
-  `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`, `lib.materials.water.species['A-'] =
-  { D, mu0 }`. Only μ° differences within a reaction matter: for a redox couple μ°_red − μ°_ox =
-  −F·E° (against SHE, the library's μ°_H⁺ being 0). An insulator is a material with no species:
-  `{ species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }`.
+- **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
+  300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water, at 25
+  °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
+  Li Pt). A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si` (`Eg` and `chi` in eV, `Nc`
+  and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the material, e⁻'s and h⁺'s `cRef` are
+  N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT),
+  6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists (`z: 0` for a neutral one):
+  `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`, `lib.materials.water.species['A-'] = { D,
+  mu0 }`. Only μ° differences within a reaction matter: for a redox couple μ°_red − μ°_ox = −F·E°
+  (against SHE, the library's μ°_H⁺ being 0). An insulator is a material with no species: `{
+  species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }`.
 - **Faces.** Between two different non-metals, give an alignment, `{ dipole }` or `{ step: {
   species: 'e-', value } }` (J/mol), or `phi: 'neutral'`. `vacuumDipole(def, { material, anchor:
   'e-', offset: χ }, …)` estimates a dipole from electron affinities (Anderson's rule); it reads
-  only the materials, so build with `{ dipole: 0 }`, then put its value in (docs/alignment.md). Next to a metal, a face takes no
-  alignment, but needs a φ law if the other side has ε > 0: `{ phi: { type: 'capacitive', C },
-  zeroCharge }` or `phi: 'neutral'`, where `zeroCharge` is the metal's V − φ at its edge when the
-  face holds no charge (a work-function difference, a potential of zero charge, a Schottky
-  barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`.
+  only the materials, so build with `{ dipole: 0 }`, then put its value in (docs/alignment.md). Next
+  to a metal, a face takes no alignment, but needs a φ law if the other side has ε > 0: `{ phi: {
+  type: 'capacitive', C }, zeroCharge }` or `phi: 'neutral'`, where `zeroCharge` is the metal's V −
+  φ at its edge when the face holds no charge (a work-function difference, a potential of zero
+  charge, a Schottky barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`.
 - **Ports** are terminals attached sideways to a window inside a region (`from`, `to`, m from its
   left end): a source or drain, an injector, a reference electrode (`I: 0`), an electrode spread
   through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon
@@ -175,13 +177,13 @@ for (const V of [0, 0.2, 0.4, 0.6]) {
 ## Template: a live page with a slider
 
 `live()` warm-starts each solve, merges slider moves made during one, and keeps the last good
-solution (on a failure, `info.failed` and `info.error` are set). It returns `{ set, solution,
-ready, close }`; `set()` and `ready` (the first solve) are promises of `{ solution, info }`. `bandDiagram()` returns an SVG
-string; a fixed `range` keeps its axis still. `worker: true` solves in a Web Worker, from a CDN
-too. A few hundred nodes solve in milliseconds; thousands, or transients, want a worker and
-`advance(t, { budgetMs })` per frame. `onsolution` may call `set()`, if that converges rather than
-oscillates. (A headless browser screenshotting a page that loads from a CDN needs a long
-virtual-time budget, 30 s.)
+solution (on a failure, `info.failed` and `info.error` are set). It returns `{ set, solution, ready,
+close }`; `set()` and `ready` (the first solve) are promises of `{ solution, info }`.
+`bandDiagram()` returns an SVG string; a fixed `range` keeps its axis still. `worker: true` solves
+in a Web Worker, from a CDN too. A few hundred nodes solve in milliseconds; thousands, or
+transients, want a worker and `advance(t, { budgetMs })` per frame. `onsolution` may call `set()`,
+if that converges rather than oscillates. (A headless browser screenshotting a page that loads from
+a CDN needs a long virtual-time budget, 30 s.)
 
 ```html
 <!doctype html>
@@ -724,9 +726,12 @@ console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPer
 ```
 
 To start from a state rather than simulate how it got there (a packet already injected, a salt
-gradient laid down), give a region's `c0` a profile, `{ 'h+': { x: [...], values: [...] } }`
-against the device's x, and `advance()` the new `Device` without `solve()`. A given `c0` is the
-starting state even for a species a contact feeds; the rest start at their contact's level.
+gradient laid down), give a region's `c0` a profile, `{ 'h+': { x: [...], values: [...] } }` against
+the device's x, and `advance()` the new `Device` without `solve()`. A given `c0` is the starting
+state even for a species a contact feeds; the rest start at their contact's level. The grid isn't
+fitted to the profile: grade it fine where the profile is steep (a warning says where it isn't).
+`advance()`'s `tol` (1e-3) is each step's error, in thermal units: tighten it, or cap `dtMax`, for
+numbers to compare with theory.
 
 Transients cost more where a carrier's density spans many decades (minority holes in silicon)
 and at strong injection; budget for that, or coarsen the grid. `recorder(dev, { every, times,

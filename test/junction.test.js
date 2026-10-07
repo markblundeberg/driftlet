@@ -32,7 +32,7 @@ const SETS = [
 ];
 
 // A device: the two solutions as baths, a junction zone between, either held in steady state
-// (100 µm of water, ε > 0, quasi-neutral at this scale) or grown from a boundary 1 µm wide
+// (100 µm of water, ε > 0, quasi-neutral at this scale) or grown from a boundary 2 µm wide
 // (strictly neutral water, 400 µm, with the boundary mid-way).
 // Ions absent from one side are there as a 1 nM trace (balanced on the most concentrated ion of
 // the other sign), which shifts nothing measurable.
@@ -48,7 +48,7 @@ function junction(left, right, T, { free = false } = {}) {
     }
     return c;
   };
-  const cl = side(left), cr = side(right), L = free ? 400e-6 : 100e-6, w = 0.5e-6;
+  const cl = side(left), cr = side(right), L = free ? 400e-6 : 100e-6, w = 1e-6;
   const ref = names.find((n) => ions[n].z < 0);
   const region = { material: 'water', length: L };
   if (free) region.c0 = Object.fromEntries(names.map((n) => [n, { x: [0, L / 2 - w, L / 2 + w, L], values: [cl[n], cl[n], cr[n], cr[n]] }]));
@@ -96,7 +96,7 @@ test('a free-diffusion junction grown from a sharp boundary holds a constant pot
       assert.ok(s.converged);
       return 1000 * dphi(s);
     });
-    // Self-similar (√(Dt) from 14 to 30 µm, against a boundary 1 µm wide and baths 200 µm away).
+    // Self-similar (√(Dt) from 14 to 30 µm, against a boundary 2 µm wide and baths 200 µm away).
     assert.ok(Math.abs(E[1] - E[0]) < 5e-3, `${name}: ${E.join(', ')} mV`);
     const H = 1000 * henderson(left, right, ions, { T }), P = 1000 * planck(left, right, ions, { T });
     const [lo, hi] = [Math.min(H, P), Math.max(H, P)];

@@ -432,7 +432,8 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   region's charge must agree to `tol` (relative; default 1e-2, about what a plot shows; a
   benchmark wants 1e-3 or less). The discretisation is second order, so the change estimates
   this grid's own error (about ¾ of it). It costs one more solve, so run it once, not on every
-  slider move.
+  slider move. In a transient it's `?`, not checked: the answer there depends on the whole run
+  (and on drives set along the way), so run it again yourself on a grid twice as fine.
 
 It returns `{ ok, items, text }`: `ok` when nothing failed, an item per check
 (`{ name, ok, summary, details }`, with `ok: null` for a prompt to look), and `text`, a line
