@@ -134,7 +134,9 @@ for live demos.
      to within 10%. Stopping at the second saves a third of the factorisations, but leaves each
      step's equations solved only to ~3e-11, and conservation then drifts ~1e-11 a step (the
      tests hold it to 1e-12). A chord update with the second's factors (a residual and a
-     back-substitution, no factorisation) would keep it exact.
+     back-substitution, no factorisation) would keep it exact, but saves little: assembly costs
+     about twice a factorisation here (~100 µs against ~55 µs for the pn diode's 265 blocks of 3,
+     and for n-Si | KCl's 315 of up to 5), so ~10% of a transient. Assembly is the larger cost.
 2. **Porcelain, for one-shot demos.** An optional layer, the `driftlet/kit` subpath export
    (started, with the vacuum-level alignment helpers), still dependency-free, that writes plain
    specs, so users and LLM agents start from something
