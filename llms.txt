@@ -1,9 +1,12 @@
 # driftlet: a guide for agents
 
 driftlet is a dependency-free JavaScript library that solves 1D drift–diffusion–reaction
-(Poisson–Nernst–Planck) problems fast enough for live web demos: semiconductor junctions,
-electrochemical cells, double layers, membranes, mixed conductors. It runs in a browser, a Web
-Worker or Node, from npm or a CDN.
+(Poisson–Nernst–Planck) problems fast enough for live web demos: semiconductor junctions and
+solar cells, electrochemical cells and batteries, double layers, membranes, nerves, mixed
+conductors. These are one problem with different casts of species: electrons, holes, ions and
+neutral molecules, each moving down its own electrochemical potential μ̄, coupled by Poisson's
+equation, reactions and interfaces. So a device in any field is built the same way, from the
+same pieces. It runs in a browser, a Web Worker or Node, from npm or a CDN.
 
 This guide is for writing a demo or calculation with it. Every code block below runs in the
 test suite. The full references are docs/device.md (the definition), docs/kit.md (the helpers),
@@ -49,11 +52,21 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`.
   answer depends on the grid: refine it). It costs a solve, so run it once, not per frame.
 - **Exports.** `driftlet`: `Device`, `units`, and the constants `FARADAY`, `GAS_CONSTANT`,
   `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage constant:
-  V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`: `build`, `layer`, `ohmic`, `bath`, `half`,
-  `level`, `SHE`, `describe`, `live`, `traces`, the sources (`pulse`, `square`, `triangle`, `ramp`,
-  `injector`, `recombination`, `photogeneration`), the data library (`aqueous`, `semiconductor`,
-  `metal`, `IONS`, …), `check` (a solution's checks), `polarization` (an electrode's reactions at hypothetical metal levels, with the solution held: an Evans diagram), `henderson` and `planck` (liquid-junction potentials), `recorder` (a transient's trace and frames across calls), the curated
-  `perovskiteCell` with IonMonger's `PEROVSKITE_SCANS` and `hysteresis`, and the vacuum-level helpers. `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`, `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
+  V_T = GAS_CONSTANT·T/FARADAY). `driftlet/kit`:
+  - building: `build`, `layer`, `ohmic`, `bath`, `half`, `level`, `SHE`, the vacuum-level
+    helpers, and the data library (`aqueous`, `semiconductor`, `metal`, `IONS`, …);
+  - sources: `pulse`, `square`, `triangle`, `ramp`, `injector`, `recombination`,
+    `photogeneration`;
+  - channels: `hodgkinHuxley` (squid gates and their permeabilities or conductances),
+    `ghkCurrent`;
+  - checking: `describe`, `check`, `polarization` (an electrode's reactions at hypothetical
+    metal levels, with the solution held: an Evans diagram), `henderson` and `planck`
+    (liquid-junction potentials);
+  - pages: `live`, `traces`, `recorder` (a transient's trace and frames across calls);
+  - curated devices: `perovskiteCell`, with IonMonger's `PEROVSKITE_SCANS` and `hysteresis`.
+
+  `driftlet/plot` (a quick look; `traces()` is the data for your own charts): `bandDiagram`,
+  `levelChart`, `labelParts` (labels mark subscripts as `V_{e⁻}`), `themeColor`.
 - **Reactions** are written as equations, `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, in
   `new Device`, `build()` and `set()` alike. A coefficient is a number and a space (`2 e-`).
 - **Rate constants carry units.** A bulk reaction's rate is `kf · Π c_reactants` in mol/(m³·s),

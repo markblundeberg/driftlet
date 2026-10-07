@@ -8,17 +8,27 @@
 [![test](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml/badge.svg)](https://github.com/markblundeberg/driftlet/actions/workflows/test.yml)
 [![npm](https://img.shields.io/npm/v/driftlet)](https://www.npmjs.com/package/driftlet)
 
-**driftlet is a fast, pure-JavaScript solver for 1D drift–diffusion–reaction problems**, built
-to be the engine of live, thermodynamically honest web demos of charge transport: in
-semiconductors, electrochemical cells, membranes and nerves, and solid ionic conductors. It
-handles any mix of charged and neutral species, Poisson electrostatics (or strict neutrality),
-bulk and interfacial reactions, voltage-gated channels, heterointerfaces, metals and external
-circuits, in steady state, in time and as small-signal impedance. It's small enough to run in a web page: no dependencies,
-millisecond solves.
+**driftlet simulates charged species moving through one-dimensional devices**: semiconductor
+junctions and solar cells, electrochemical cells and batteries, double layers, membranes and
+nerves. It's a small JavaScript library with no dependencies, fast enough to solve live in a
+web page as you drag a slider.
 
 [Live demos](https://markblundeberg.github.io/driftlet/demos/) · [npm](https://www.npmjs.com/package/driftlet) ·
 [reading level diagrams](docs/visualization.md) · [device reference](docs/device.md) ·
 [agent guide](llms.txt)
+
+**One kind of physics.** Those look like different subjects, but underneath they're the same
+one. Each is a cast of species (electrons, holes, ions, neutral molecules) that drift and
+diffuse, each down its own electrochemical potential; their charge sets the electric field,
+reactions turn one into another, and at interfaces they pass from one material to the next or
+are stopped. A pn junction is electrons and holes in silicon. A silver electrode is Ag⁺ and NO₃⁻
+in water, with Ag⁺ trading places with the metal's electrons at its surface. A nerve is Na⁺ and
+K⁺ on either side of a membrane, crossing it through channels that open with voltage, and the
+impulse travels along the fibre on the current those same ions carry inside it. Even the levels
+each field draws are one quantity: a quasi-Fermi level, an electrode potential and a Nernst
+potential are each a species' electrochemical potential. driftlet solves that one problem, in
+steady state, in time and as small-signal impedance, so a new field is mostly a new cast, and
+the work that makes it reliable in one field makes it reliable in the others.
 
 **Built to be relied on.** A drift–diffusion solver that handles a textbook pn junction is a
 weekend's work; one that keeps working on the devices people actually build is not. driftlet is
@@ -149,19 +159,19 @@ them locally, serve the repository root (e.g. `python3 -m http.server`) and open
 The same equations go by different names in different fields. If your problem is one-dimensional
 (planar, or radial: spheres and cylinders, or any cross-section varying along x), it's probably here:
 
-| If you work on | you may call it | start from | checked against |
-|---|---|---|---|
-| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions; thin-film transistors (gradual channel, in the [saturation demo](https://markblundeberg.github.io/driftlet/demos/saturation.html#transistor)) | [first example](#a-semiconductor-junction), [pn](https://markblundeberg.github.io/driftlet/demos/pn.html) and [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html) demos, [`contacts`](test/contacts.test.js), [`metal`](test/metal.test.js) tests | exact built-in potential, Shockley J–V, depletion charge, MOS C–V |
-| Solar cells | photogeneration, radiative and SRH recombination | [solar](https://markblundeberg.github.io/driftlet/demos/solar.html) [organic (excitons)](https://markblundeberg.github.io/driftlet/demos/organic.html) and [perovskite (mobile ions)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) demos, [`ionmonger`](test/ionmonger.test.js), [`reactions`](test/reactions.test.js) and [`generation`](test/generation.test.js) tests: generation is a reaction from a photon reservoir (uniform, or Beer–Lambert with `photogeneration()`), SRH as a rate law, in the bulk and at faces | `J_sc = qG(L_n + L_p + W)`; J_sc under Beer–Lambert against collection theory; Shockley J–V in the dark |
-| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry, salt bridges and liquid junctions, mixed potentials, electrodes under a film | [second example](#an-electrochemical-cell), [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [saturation](https://markblundeberg.github.io/driftlet/demos/saturation.html), [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) demos, [`circuit`](test/circuit.test.js), [`kinetics`](test/kinetics.test.js), [`impedance`](test/impedance.test.js), [`junction`](test/junction.test.js), [`ports`](test/ports.test.js) tests | `i_lim·tanh(V/4V_T)`, Butler–Volmer closed form, finite-length Warburg; junction potentials against Henderson, Planck, JPCalc and LJPcalc; Wagner–Traud |
-| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion demo](https://markblundeberg.github.io/driftlet/demos/insertion.html), [`statistics`](test/statistics.test.js) test | composition vs OCV, π²D/4L² relaxation |
-| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer demo](https://markblundeberg.github.io/driftlet/demos/double-layer.html), [`equilibrium`](test/equilibrium.test.js) test | Gouy–Chapman charge and profile, Kilic–Bazant–Ajdari |
-| Membranes, desalination | Donnan, ion exchange, liquid junctions, water dissociation | [membrane demo](https://markblundeberg.github.io/driftlet/demos/membrane.html), [`equilibrium`](test/equilibrium.test.js), [`neutral`](test/neutral.test.js) tests | Donnan partition, Planck EMF |
-| Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js), [`reactions`](test/reactions.test.js) tests | mass action from standard potentials |
-| Biophysics, nanofluidics | charged nanochannels and pores, resting potentials, Goldman–Hodgkin–Katz, Nernst, Donnan, pumps and leaks | [charged-nanochannel](https://markblundeberg.github.io/driftlet/demos/channel.html), [resting-potential](https://markblundeberg.github.io/driftlet/demos/cell.html), [action-potential](https://markblundeberg.github.io/driftlet/demos/axon.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) (a patch pipette's) demos, [`pore`](test/pore.test.js) test; a membrane as a face: a capacitor with ion permeabilities, and the Na⁺/K⁺ pump as a reaction on it ([`membrane`](test/membrane.test.js) test); voltage-gated channels with Hodgkin–Huxley kinetics, action potentials, and their propagation along an axon ([`gates`](test/gates.test.js), [`cable`](test/cable.test.js) tests) | GHK potential and current–voltage curve; a resolved lipid layer; Mullins–Noda; the pump's static head; Donnan; HH gating under voltage clamp; the space-clamped HH equations |
+| If you work on | you may call it | start from |
+|---|---|---|
+| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions, thin-film transistors | the [first example](#a-semiconductor-junction); [pn](https://markblundeberg.github.io/driftlet/demos/pn.html), [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html) and [transistor](https://markblundeberg.github.io/driftlet/demos/saturation.html#transistor) demos |
+| Solar cells | photogeneration, Beer–Lambert, radiative and SRH recombination, excitons, mobile ions | [solar](https://markblundeberg.github.io/driftlet/demos/solar.html), [organic](https://markblundeberg.github.io/driftlet/demos/organic.html) and [perovskite](https://markblundeberg.github.io/driftlet/demos/perovskite.html) demos |
+| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer, Warburg, cyclic voltammetry, salt bridges, liquid junctions, mixed potentials | the [second example](#an-electrochemical-cell); [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [limiting current](https://markblundeberg.github.io/driftlet/demos/saturation.html), [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html) and [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) demos |
+| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion](https://markblundeberg.github.io/driftlet/demos/insertion.html) demo |
+| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman) | [double-layer](https://markblundeberg.github.io/driftlet/demos/double-layer.html) demo |
+| Membranes, nanofluidics | Donnan, ion exchange, Teorell–Meyer–Sievers, charged nanochannels and pores | [membrane](https://markblundeberg.github.io/driftlet/demos/membrane.html) and [nanochannel](https://markblundeberg.github.io/driftlet/demos/channel.html) demos |
+| Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js) and [`reactions`](test/reactions.test.js) tests |
+| Cell physiology, neuroscience | resting potential, Nernst, Goldman–Hodgkin–Katz, the Na⁺/K⁺ pump, patch pipettes, Hodgkin–Huxley, action potentials, the cable equation, myelin | [resting-potential](https://markblundeberg.github.io/driftlet/demos/cell.html), [action-potential](https://markblundeberg.github.io/driftlet/demos/axon.html), [propagation](https://markblundeberg.github.io/driftlet/demos/propagation.html) and [myelin](https://markblundeberg.github.io/driftlet/demos/myelin.html) demos |
 
-The tests are worked setups, each with its analytic check, so they double as recipes. The
-[validation table](#validation) lists them all.
+The tests are worked setups, each with its analytic check, so they double as recipes; the
+[validation table](docs/reliability.md#the-validation-table) lists them all.
 
 ## How to think about it
 
@@ -180,10 +190,12 @@ driftlet insists on thermodynamically honest concepts ([conventions](docs/conven
 - The species voltage `V_i = μ̄_i / (z_i F)` and standard level `V°_i` are available as views,
   alongside redox levels: [reading level diagrams](docs/visualization.md) explains them.
 
+## What it does
+
 A device is a line of **regions** (each a **material** plus a length, fixed charge and
 initial composition), joined at **interfaces**, with a **contact** at each end. The contacts
 and any internal **ports** are its **terminals**, each held at a voltage or driven by a
-current. Supported physics:
+current. Within that:
 
 - any mix of charged and neutral species; per-material diffusivities and standard potentials;
   species absent from some materials;
@@ -201,6 +213,9 @@ current. Supported physics:
 - interfaces with explicit alignment, blocking, interface resistance, and Butler–Volmer
   reactions with participants on either side (electrode reactions, ion and electron transfer,
   mixed potentials), and a choice of electrostatic law (pinned, neutral, Helmholtz);
+- membranes as capacitive faces with ion permeabilities (Goldman–Hodgkin–Katz), pumps as
+  reactions on them and voltage-gated channels with Hodgkin–Huxley kinetics; or spread along a
+  region through a port, as an axon's wall;
 - bulk reactions with thermodynamically consistent mass action (recombination, water
   autoionisation, …);
 - imposed flow (advection) and current-free eddy mixing;
@@ -235,57 +250,11 @@ How it works numerically is in [numerics](docs/numerics.md).
 
 ## Validation
 
-Every physics feature is tested against analytic results (`npm test`, node's built-in runner).
-
-| What | Checked against | Tolerance |
-|---|---|---|
-| Equilibrium of any device | μ̄ of every species flat; zero current | 1e-9 RT or better |
-| Gouy–Chapman double layer | analytic charge and full nonlinear profile | 2e-3 |
-| Debye screening (linear limit) | gate in series with `ε/λ_D` | 1e-3 |
-| Donnan potential | analytic partition, between floating layers and real baths | 1e-8 |
-| Heterointerfaces with unequal dipoles (A \| B \| A) | per-face analytic double-layer split | 3e-3 |
-| Floating island | Gauss's law; conserved amounts through gate sweeps | 1e-12 |
-| pn junction | exact built-in potential; depletion charge; short-diode J–V | 1e-12; 1%; 2e-3 |
-| Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
-| Haynes–Shockley pulse | an injected hole packet's drift, spread and decay at the ambipolar μ*, D*, 1/τ*; nothing lost while it goes in | 2e-4; 1e-2; 2e-3 |
-| A packet laid down as a `c0` profile | the same rates from a Gaussian at t = 0: μ*E t, σ₀² + 2D*t, e^(−t/τ*) | 3e-4; 1e-2; 1e-3 |
-| Beer–Lambert photogeneration in an n⁺p cell | J_sc = qΦ∫αe^(−αx)η(x)dx with the emitter's, depletion layer's and base's collection, α from 1e3 to 1e7 /m on one coarse grid | 5e-4 (3e-3 in the emitter) |
-| Organic bilayer: excitons | J_sc from excitons diffusing to the donor/acceptor interface (Beer–Lambert, a blocking anode, the splitting reaction's finite velocity); V_oc from charge-transfer detailed balance | 5e-4; 1e-6 V |
-| SRH recombination | bulk: G = R_SRH(n, p) with n = N_D + p, midgap and shallow traps, low to high injection; at a face: zero in the dark, the law between the two edge nodes, every pair collected or recombined | 1e-6; 1e-9 |
-| Perovskite J–V hysteresis, against IonMonger | an independent code (finite elements, Octave): mobile iodide vacancies, interface SRH, scans from 1 mV/s to 1 kV/s — hysteresis index, P_max, V_oc, the whole loop (as current where it's gentle, as a voltage offset near V_oc, where it falls at up to 1100 mA/cm² per volt) | 1.5e-3; 0.05 mW/cm²; 2 mV; 0.03 mA/cm² and 1 mV (0.010 and 0.31 mV found) |
-| Illuminated long pn diode | `J_sc = qG(L_n + L_p + W)` from a cold start; superposition at low injection | 5e-3; 1e-2 |
-| Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
-| Charged pore or nanochannel (resolved Donnan layers at each mouth) | conductance against salt, down to its plateau, as Teorell–Meyer–Sievers in a long pore (short ones short by end layers ∝ 1/L); the zero-current voltage across a salt gradient; a symmetric pore's I–V odd, rectification with charge on one side or bipolar | 1%; 5e-3 to 1e-4; 1e-9 |
-| Cell membrane (a capacitive face with permeabilities) | GHK resting potential (neutral or resolved solutions) and current–voltage curve; the same as a resolved 5 nm lipid layer; charging at I/C; with the Na⁺/K⁺ pump in a closed cell, Mullins–Noda, the static head 3Δμ̄_Na − 2Δμ̄_K = ΔG_ATP, and Donnan with the pump off | 1e-5 V; 3e-3; 2e-5 V; 1%; 1e-9 |
-| Voltage-gated channels (Hodgkin–Huxley gates on a membrane face) | each gate at α/(α + β) under a voltage clamp, and relaxing at α + β after a step; a squid axon's action potential against the space-clamped HH equations with GHK currents; its impedance at rest (inductive, resonant) against the linearised equations | 1e-12; 2e-4; 1 mV; 5e-4 |
-| A propagating action potential (a squid axon along x: gated membrane port, ions drifting in the axoplasm) | rest at HH's −65 mV and gate values; conduction velocity against the cable equation solved directly, and HH's 18.8 m/s; a myelinated axon's saltatory conduction, node by node, against a compartmental cable | 0.01 mV, 1e-4; 2e-3; 1%; 1 µs of ~25 per node |
-| Liquid junctions in mixtures | Henderson's formula against JPCalc's published values; driftlet's steady junction against Planck by shooting and the stationary Nernst–Planck codes LJPcalc and JLJP, a patch pipette's K-gluconate among them; a free-diffusion junction constant in time, between the two | 0.015 mV; 2e-4 and 0.02 mV; 5e-3 mV |
-| Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
-| Salt diffusion mode from a `c0` profile | c̄ + a·sin(πx/2L) decaying at π²D/4L², D = 2D₊D₋/(D₊ + D₋) | 2e-5 |
-| Concentration polarization | `i = i_lim tanh(V/4V_T)`, incl. galvanostatic and load modes | 2e-4 |
-| Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
-| Redox couple between inert electrodes | Nernst level of Fe³⁺/Fe²⁺; the couple's total conserved at equilibrium and under current | 1e-9; 1e-10 |
-| Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
-| Mass action | `c(H⁺)c(OH⁻) = K_w` from standard potentials; moiety conservation | 1e-9 |
-| Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate, a port and a contact behind conductances | 1e-10 |
-| Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
-| Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
-| Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
-| Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
-| Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel, and without one the same equilibrium, and a gate step filling the inversion layer to it | 1e-4; 1e-9; 2e-3; 1e-6; 1e-3 |
-| Cross-sections (spherical, cylindrical, any A(x)) | steady diffusion to a sphere and a cylinder (exact on any grid); Cottrell with the spherical term; uptake by a sphere filling from its surface; Debye–Hückel around a charged sphere, potential and charge | 1e-10; 3e-4; 2e-4; 1e-3, 3e-4 |
-| A capacitance through a port | a thin-film transistor against the charge-sheet model (below threshold to saturation, second order); de Levie impedance; gate impedance against dQ/dV | 5e-4; 1e-3; 1e-6 |
-| Electrode surfaces (coverage) | Langmuir isotherm against potential; the charge to fill a surface; the active–passive curve, blocking exactly (1 − θ) | 1e-9; 1e-3; 1e-9 |
-| Electrodes spread through a port | transmission line with the reaction's linear kinetics as the conductance (O(h²)), rates along it; Wagner–Traud mixed potential of two Butler–Volmer couples, floating | 1e-4, 2e-3; 1e-6 V |
-| Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance; a p⁺n⁺ junction without recombination, Re Y → dI/dV and C = dQ/dV; a redox electrode against a bath at its open circuit, Re Y → dI/dV | 3e-4; 3e-5; 1e-6; 1e-4, 1e-6; 1e-4 |
-| Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
-| Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
-| Fermi–Dirac statistics | `𝓕_{±1/2}` vs quadrature; degenerate bulk; accumulation charge via `𝓕_{3/2}` | 1e-13; 1e-12; 1e-3 |
-| Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to `ψ = 40 V_T`; custom function reproduces it | 5e-4; 1e-10 |
-| Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |
-| Debye–Hückel | junction EMF 2t₊(RT/F) ln(a₁/a₂) with activities | 1e-6 |
-| Data library | ion μ° against the electrochemical series and `K_w`; D against limiting conductivities; band data against `n_i` | 10 mV; 0.5%; 15% |
-| Intercalation host (OCV) | composition vs table and isotherm; chemical diffusion flux and relaxation rate | 1e-12; 1e-5; 1e-4 |
+Every physics feature lands with a test against an analytic result, or against an independent
+code where there isn't one: over 300 tests (`npm test`), from Shockley's diode equation and the
+Gouy–Chapman double layer to Hodgkin and Huxley's conduction velocity, and against IonMonger,
+JPCalc, LJPcalc and JLJP. [How far to trust it](docs/reliability.md) lists every check with its
+tolerance, alongside the random-device stress tests and the known limits.
 
 ## Performance
 

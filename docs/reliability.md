@@ -24,16 +24,72 @@ Every physics feature is checked against an analytic result, or an independent c
 there isn't one: `npm test`, over 300 tests, each a worked device with its closed form. They include
 Shockley's diode equation, depletion and MOS charge, collection theory under Beer–Lambert light,
 Gouy–Chapman and Kilic–Bazant–Ajdari double layers, Donnan and Teorell–Meyer–Sievers
-partitions, Goldman–Hodgkin–Katz, the limiting current and Butler–Volmer kinetics, the
+partitions, Goldman–Hodgkin–Katz, Hodgkin and Huxley's action potential and its conduction
+velocity, the limiting current and Butler–Volmer kinetics, the
 Macdonald and finite-length Warburg impedances, Cottrell and spherical diffusion, and the
 second law (the free energy in through the terminals equals what's dissipated, every term
 non-negative). Against other codes: IonMonger's perovskite J–V hysteresis (finite elements,
-Octave), and liquid-junction potentials against JPCalc, LJPcalc and JLJP. The README's
-[validation table](../README.md#validation) lists each with its tolerance.
+Octave), and liquid-junction potentials against JPCalc, LJPcalc and JLJP. The
+[table below](#the-validation-table) lists each with its tolerance.
 
 Each solution can check itself too: `check()` from `driftlet/kit` balances every species'
 ledger (what comes in through each terminal, is made or destroyed), the conservation
 bookkeeping of a transient, and the grid (the device solved again on a grid twice as fine).
+
+### The validation table
+
+Each check, with the tolerance it's held to. The tests are worked setups, so they double as
+recipes.
+
+| What | Checked against | Tolerance |
+|---|---|---|
+| Equilibrium of any device | μ̄ of every species flat; zero current | 1e-9 RT or better |
+| Gouy–Chapman double layer | analytic charge and full nonlinear profile | 2e-3 |
+| Debye screening (linear limit) | gate in series with `ε/λ_D` | 1e-3 |
+| Donnan potential | analytic partition, between floating layers and real baths | 1e-8 |
+| Heterointerfaces with unequal dipoles (A \| B \| A) | per-face analytic double-layer split | 3e-3 |
+| Floating island | Gauss's law; conserved amounts through gate sweeps | 1e-12 |
+| pn junction | exact built-in potential; depletion charge; short-diode J–V | 1e-12; 1%; 2e-3 |
+| Long pn diode with recombination | Shockley J–V incl. depletion recombination | 2e-3 |
+| Haynes–Shockley pulse | an injected hole packet's drift, spread and decay at the ambipolar μ*, D*, 1/τ*; nothing lost while it goes in | 2e-4; 1e-2; 2e-3 |
+| A packet laid down as a `c0` profile | the same rates from a Gaussian at t = 0: μ*E t, σ₀² + 2D*t, e^(−t/τ*) | 3e-4; 1e-2; 1e-3 |
+| Beer–Lambert photogeneration in an n⁺p cell | J_sc = qΦ∫αe^(−αx)η(x)dx with the emitter's, depletion layer's and base's collection, α from 1e3 to 1e7 /m on one coarse grid | 5e-4 (3e-3 in the emitter) |
+| Organic bilayer: excitons | J_sc from excitons diffusing to the donor/acceptor interface (Beer–Lambert, a blocking anode, the splitting reaction's finite velocity); V_oc from charge-transfer detailed balance | 5e-4; 1e-6 V |
+| SRH recombination | bulk: G = R_SRH(n, p) with n = N_D + p, midgap and shallow traps, low to high injection; at a face: zero in the dark, the law between the two edge nodes, every pair collected or recombined | 1e-6; 1e-9 |
+| Perovskite J–V hysteresis, against IonMonger | an independent code (finite elements, Octave): mobile iodide vacancies, interface SRH, scans from 1 mV/s to 1 kV/s — hysteresis index, P_max, V_oc, the whole loop (as current where it's gentle, as a voltage offset near V_oc, where it falls at up to 1100 mA/cm² per volt) | 1.5e-3; 0.05 mW/cm²; 2 mV; 0.03 mA/cm² and 1 mV (0.010 and 0.31 mV found) |
+| Illuminated long pn diode | `J_sc = qG(L_n + L_p + W)` from a cold start; superposition at low injection | 5e-3; 1e-2 |
+| Schottky barrier (metal region \| n-Si) | surface density from the alignment; depletion charge | 5e-3; 2% |
+| Charged pore or nanochannel (resolved Donnan layers at each mouth) | conductance against salt, down to its plateau, as Teorell–Meyer–Sievers in a long pore (short ones short by end layers ∝ 1/L); the zero-current voltage across a salt gradient; a symmetric pore's I–V odd, rectification with charge on one side or bipolar | 1%; 5e-3 to 1e-4; 1e-9 |
+| Cell membrane (a capacitive face with permeabilities) | GHK resting potential (neutral or resolved solutions) and current–voltage curve; the same as a resolved 5 nm lipid layer; charging at I/C; with the Na⁺/K⁺ pump in a closed cell, Mullins–Noda, the static head 3Δμ̄_Na − 2Δμ̄_K = ΔG_ATP, and Donnan with the pump off | 1e-5 V; 3e-3; 2e-5 V; 1%; 1e-9 |
+| Voltage-gated channels (Hodgkin–Huxley gates on a membrane face) | each gate at α/(α + β) under a voltage clamp, and relaxing at α + β after a step; a squid axon's action potential against the space-clamped HH equations with GHK currents; its impedance at rest (inductive, resonant) against the linearised equations | 1e-12; 2e-4; 1 mV; 5e-4 |
+| A propagating action potential (a squid axon along x: gated membrane port, ions drifting in the axoplasm) | rest at HH's −65 mV and gate values; conduction velocity against the cable equation solved directly, and HH's 18.8 m/s; a myelinated axon's saltatory conduction, node by node, against a compartmental cable | 0.01 mV, 1e-4; 2e-3; 1%; 1 µs of ~25 per node |
+| Liquid junctions in mixtures | Henderson's formula against JPCalc's published values; driftlet's steady junction against Planck by shooting and the stationary Nernst–Planck codes LJPcalc and JLJP, a patch pipette's K-gluconate among them; a free-diffusion junction constant in time, between the two | 0.015 mV; 2e-4 and 0.02 mV; 5e-3 mV |
+| Liquid junction, open circuit | cell EMF 2t₊(RT/F) ln(c₁/c₂); Planck diffusion potential | 1e-4 |
+| Salt diffusion mode from a `c0` profile | c̄ + a·sin(πx/2L) decaying at π²D/4L², D = 2D₊D₋/(D₊ + D₋) | 2e-5 |
+| Concentration polarization | `i = i_lim tanh(V/4V_T)`, incl. galvanostatic and load modes | 2e-4 |
+| Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
+| Redox couple between inert electrodes | Nernst level of Fe³⁺/Fe²⁺; the couple's total conserved at equilibrium and under current | 1e-9; 1e-10 |
+| Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
+| Mass action | `c(H⁺)c(OH⁻) = K_w` from standard potentials; moiety conservation | 1e-9 |
+| Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate, a port and a contact behind conductances | 1e-10 |
+| Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
+| Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
+| Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
+| Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
+| Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel, and without one the same equilibrium, and a gate step filling the inversion layer to it | 1e-4; 1e-9; 2e-3; 1e-6; 1e-3 |
+| Cross-sections (spherical, cylindrical, any A(x)) | steady diffusion to a sphere and a cylinder (exact on any grid); Cottrell with the spherical term; uptake by a sphere filling from its surface; Debye–Hückel around a charged sphere, potential and charge | 1e-10; 3e-4; 2e-4; 1e-3, 3e-4 |
+| A capacitance through a port | a thin-film transistor against the charge-sheet model (below threshold to saturation, second order); de Levie impedance; gate impedance against dQ/dV | 5e-4; 1e-3; 1e-6 |
+| Electrode surfaces (coverage) | Langmuir isotherm against potential; the charge to fill a surface; the active–passive curve, blocking exactly (1 − θ) | 1e-9; 1e-3; 1e-9 |
+| Electrodes spread through a port | transmission line with the reaction's linear kinetics as the conductance (O(h²)), rates along it; Wagner–Traud mixed potential of two Butler–Volmer couples, floating | 1e-4, 2e-3; 1e-6 V |
+| Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance; a p⁺n⁺ junction without recombination, Re Y → dI/dV and C = dQ/dV; a redox electrode against a bath at its open circuit, Re Y → dI/dV | 3e-4; 3e-5; 1e-6; 1e-4, 1e-6; 1e-4 |
+| Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
+| Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
+| Fermi–Dirac statistics | `𝓕_{±1/2}` vs quadrature; degenerate bulk; accumulation charge via `𝓕_{3/2}` | 1e-13; 1e-12; 1e-3 |
+| Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to `ψ = 40 V_T`; custom function reproduces it | 5e-4; 1e-10 |
+| Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |
+| Debye–Hückel | junction EMF 2t₊(RT/F) ln(a₁/a₂) with activities | 1e-6 |
+| Data library | ion μ° against the electrochemical series and `K_w`; D against limiting conductivities; band data against `n_i` | 10 mV; 0.5%; 15% |
+| Intercalation host (OCV) | composition vs table and isotherm; chemical diffusion flux and relaxation rate | 1e-12; 1e-5; 1e-4 |
 
 ## Robust: random devices
 
