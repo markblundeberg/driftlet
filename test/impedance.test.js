@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError } from '../src/index.js';
-import { build, layer, ohmic, bath, aqueous, metal, half } from '../src/kit.js';
+import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError, units } from '../src/index.js';
+import { build, layer, ohmic, bath, aqueous, metal, half, semiconductor } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 const VT = RT / FARADAY;
@@ -190,5 +190,35 @@ test('a redox electrode at its open circuit against a bath: the DC limit is the 
   for (let q = 0; q < 2; q++) {
     const Y = Z.re[q] / (Z.re[q] ** 2 + Z.im[q] ** 2);
     assert.ok(Math.abs(Y / G - 1) < 1e-4, `Re Y ${Y} vs dI/dV ${G} S/m²`);
+  }
+});
+
+test('a MOS capacitor with a metal gate and its channel held by a port: the gate is dQ/dV, the back contact passive', () => {
+  // The gate's current, read at its contact, is a metal's σ/h (~1e15 S/m²) times a difference
+  // of levels equal to round-off: it's read across the oxide instead, which the port's window
+  // doesn't reach. The back contact moves the whole silicon nearly uniformly: its current is
+  // resolved by splitting off that shift, the port's window kept with the edges.
+  const zc = -0.95;
+  const def = (V) => ({
+    ...build({
+      T: 300,
+      library: [semiconductor('Si'), metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }],
+      stack: [ohmic(V, ['e-']), layer('Al', 100e-9), { phi: { type: 'capacitive', C: 100 }, zeroCharge: zc }, layer('SiO2', 10e-9), { dipole: 0 }, layer('Si', 2e-6, { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+      grid: { hmin: 0.25e-9, hmax: 100e-9, ratio: 1.1 },
+    }),
+    ports: [{ name: 'channel', region: 'Si', from: 0, to: 1e-9, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+  });
+  const f = [1e-2, 1, 100, 1e4];
+  for (const V of [-1.5, 0, 1.5]) {
+    const dev = new Device(def(V));
+    const gate = dev.impedance(f, { terminal: 'left' }).Z, back = dev.impedance(f, { terminal: 'right' }).Z;
+    const dV = 1e-4, Q = (v) => new Device(def(v)).solve().interfaces[0].D;
+    const C = (Q(V + dV) - Q(V - dV)) / (2 * dV);
+    f.forEach((fq, j) => {
+      const mag = Math.hypot(gate.re[j], gate.im[j]);
+      assert.ok(Math.abs(gate.re[j]) < 1e-6 * mag, `V = ${V}, ${fq} Hz: gate Re Z ${gate.re[j]} of |Z| ${mag}`);
+      if (fq <= 1) assert.ok(Math.abs(-1 / (2 * Math.PI * fq * gate.im[j]) / C - 1) < 1e-3, `V = ${V}, ${fq} Hz: C ${-1 / (2 * Math.PI * fq * gate.im[j])} against dQ/dV ${C}`);
+      assert.ok(back.re[j] > -1e-3 * Math.hypot(back.re[j], back.im[j]), `V = ${V}, ${fq} Hz: back contact Re Z ${back.re[j]}`);
+    });
   }
 });

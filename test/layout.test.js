@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, bath, aqueous, hodgkinHuxley } from '../src/kit.js';
+import { build, layer, bath, ohmic as ohmicKit, aqueous, semiconductor, metal, hodgkinHuxley } from '../src/kit.js';
 
 // The Jacobian, assembled straight into blocks that hold only each node's unknowns, against
 // central differences of the residual, column by column. Devices are chosen to cover every
@@ -177,6 +177,17 @@ const devices = {
     ];
     return def;
   },
+  // A MOS capacitor's gate as a metal region (its face to the oxide capacitive), the channel
+  // grounded by a port holding the electrons' level.
+  'a metal-region gate over an oxide, with a channel port': () => ({
+    ...build({
+      T: 300,
+      library: [semiconductor('Si'), metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }],
+      stack: [ohmicKit(0.3, ['e-']), layer('Al', 20e-9), { phi: { type: 'capacitive', C: 10 }, zeroCharge: -0.9 }, layer('SiO2', 10e-9), { dipole: 0 }, layer('Si', 200e-9, { name: 'Si', acceptors: units.perCm3(1e17) }), ohmicKit(0)],
+      grid: { hmin: 1e-9, hmax: 20e-9, ratio: 1.5 },
+    }),
+    ports: [{ name: 'inv', region: 'Si', from: 0, to: 3e-9, V: 0.01, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+  }),
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },
@@ -299,7 +310,12 @@ test('J·v in difference form equals the assembled Jacobian, and a uniform shift
         worst = Math.max(worst, Math.abs(out[i] - ref[i]) / (Math.abs(ref[i]) + 1e-300));
       }
       assert.ok(worst < 1e-9, `${name}, dt=${dt}${combining ? ', charge rows' : ''}: ${worst}`);
-      s.termC.forEach((c, t) => c.slice(0, N).forEach((x, k) => assert.ok(Math.abs(x - C[t][k]) <= 1e-12 * Math.abs(C[t][k]), `${name}: terminal ${t}, column ${k}`)));
+      // (to round-off of the terminal's largest entry: a full assembly's sum of large terms
+      // leaves ~1e-15 of it where the difference form's is exactly 0)
+      s.termC.forEach((c, t) => {
+        const big = C[t].reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+        c.slice(0, N).forEach((x, k) => assert.ok(Math.abs(x - C[t][k]) <= 1e-12 * Math.abs(C[t][k]) + 1e-14 * big, `${name}: terminal ${t}, column ${k} (block ${s.fullOf[k] / s.M | 0}, slot ${s.fullOf[k] % s.M}): ${x} vs ${C[t][k]} (largest ${big}), dt=${dt}`));
+      });
     }
   }
   // A pn diode: η_e by −s, η_h by s and φ̂ by s at every node changes no flux, charge or storage.

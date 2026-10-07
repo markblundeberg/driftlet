@@ -3728,7 +3728,15 @@ export class Solver {
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
     const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
-    const cuts = this._currentCuts();
+    // Where the measured contact's current may be read across a segment: anywhere without
+    // ports; with them, only between it and the nearest window (a port's exchange takes current
+    // in or out along it). Never for a port's own terminal.
+    let cuts = kT < 2 ? this._currentCuts() : null;
+    if (cuts && this.model.ports.length > 0) {
+      const windows = this.model.ports.flatMap((p) => Array.from(p.nodes));
+      const lo = Math.min(...windows), hi = Math.max(...windows);
+      cuts = cuts.filter((cut) => (kT === 0 ? cut.s + 1 <= lo : cut.s >= hi));
+    }
     // J·v for GMRES, exact: the assembled J holds a flux's dependence on η_L and η_R as two
     // entries, and where both are huge (an inversion layer) and v nearly uniform, J·v loses the
     // flux to round-off. So the dilute kernels' terms are kept in difference form (see
@@ -3897,7 +3905,7 @@ export class Solver {
           Ii += im;
           for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (eps * Math.hypot(p.r[j], p.i[j]) + p.floor);
         }
-        if (!cuts || kT >= 2) return { Ir, Ii, err };
+        if (!cuts) return { Ir, Ii, err };
         const sgn = kT === 0 ? 1 : -1;
         for (const cut of cuts) {
           let re = 0, im = 0, e = 0;
@@ -3937,7 +3945,8 @@ export class Solver {
         // taken at its edges; and what's left, small, solved for to GMRES's floor, its error now
         // relative to itself. An electrolyte at its open circuit needs it: the response to its
         // terminal is nearly such a shift, and its current the slope of levels uniform to 1e-14,
-        // more than a double can hold. (Not with ports, whose exchange sees the shift.)
+        // more than a double can hold. (A port's exchange sees the shift: its window's rows are
+        // kept with the edges'.) So does a MOS capacitor's back contact, its channel held by a port.
         if (K === 0 && cuts && err > 1e-2 * Math.hypot(Ir, Ii)) {
           const [er, ei] = this._regionShift(yr, yi);
           const tr = new Float64Array(Nc), ti = new Float64Array(Nc);
@@ -4027,8 +4036,9 @@ export class Solver {
     return [er, ei];
   }
 
-  // Compact rows a region's uniform shift can touch: faces, the nodes beside them, and the two
-  // ends (whatever holds a level from outside). Inside a region, every row is unchanged by it.
+  // Compact rows a region's uniform shift can touch: faces, the nodes beside them, the two ends
+  // and the ports' windows (whatever holds a level from outside). Elsewhere inside a region,
+  // every row is unchanged by it.
   _regionEdgeRows() {
     const { M, loc, nB } = this, R = this.rix;
     const edge = new Uint8Array(this.sys.size);
@@ -4044,16 +4054,17 @@ export class Solver {
       mark(b);
       mark(b + 1);
     }
+    for (const port of this.model.ports) for (const g of port.nodes) mark(this.blockOfNode[g]);
     return edge;
   }
 
-  // The cuts where the impedance may read a small-signal current (null where the current
-  // differs between cuts: a device with ports). Each is the linearised total current toward +x
-  // through one segment of an ideal region, Σ (g + iω d)·δu over the unknowns idx: the
-  // Scharfetter–Gummel fluxes' derivatives (as in _segmentsDilute) and the displacement's.
+  // The cuts where the impedance may read a small-signal current. Each is the linearised total
+  // current toward +x through one segment s of an ideal region, Σ (g + iω d)·δu over the
+  // unknowns idx: the Scharfetter–Gummel fluxes' derivatives (as in _segmentsDilute) and the
+  // displacement's. Without ports it's the same through every cut; with them, only between a
+  // contact and the nearest port's window (see _impedance).
   _currentCuts() {
     const { model, n, M, u, uLo, c, z } = this, F = FARADAY;
-    if (model.ports.length > 0) return null;
     const { grid, materials, regions } = model;
     const cuts = [];
     for (let r = 0; r < regions.length; r++) {
@@ -4093,7 +4104,7 @@ export class Solver {
         }
         if (terms.size === 0) continue;
         const idx = [...terms.keys()];
-        cuts.push({ idx, g: idx.map((x) => terms.get(x)[0]), d: idx.map((x) => terms.get(x)[1]) });
+        cuts.push({ s, idx, g: idx.map((x) => terms.get(x)[0]), d: idx.map((x) => terms.get(x)[1]) });
       }
     }
     return cuts;
