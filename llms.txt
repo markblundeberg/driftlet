@@ -1,18 +1,24 @@
 # driftlet: a guide for agents
 
 driftlet is a dependency-free JavaScript library that solves 1D drift–diffusion–reaction
-(Poisson–Nernst–Planck) problems fast enough for live web demos: semiconductor junctions and
-solar cells, electrochemical cells and batteries, double layers, membranes, nerves, mixed
-conductors. These are one problem with different casts of species: electrons, holes, ions and
-neutral molecules, each moving down its own electrochemical potential μ̄, coupled by Poisson's
-equation, reactions and interfaces. So a device in any field is built the same way, from the
-same pieces. It runs in a browser, a Web Worker or Node, from npm or a CDN.
+(Poisson–Nernst–Planck) problems fast enough for live web demos. Semiconductor junctions, solar
+cells, electrochemical cells, batteries, membranes and nerves are one problem with different
+casts of species (electrons, holes, ions, neutral molecules), each moving down its own
+electrochemical potential μ̄, coupled by Poisson's equation, reactions and interfaces. So a
+device in any field is built the same way, from the same pieces. It runs in a browser, a Web
+Worker or Node, from npm or a CDN.
 
-This guide is for writing a demo or calculation with it. Every code block below runs in the
-test suite. The references: docs/device.md (the definition), docs/kit.md (the helpers),
-docs/conventions.md (signs and levels), docs/visualization.md (reading level diagrams),
-docs/alignment.md (band offsets and work functions), docs/statistics.md (non-ideal materials),
-docs/data.md (the data library) and docs/reliability.md (what's validated, and the limits).
+Every code block below runs in the test suite and prints its closed-form check. Read as far as
+the first template, then go to the one nearest your device:
+
+- semiconductors: a pn junction, a live page with a slider, a solar cell, a MOS capacitor, a
+  Schottky diode, a thin-film transistor, a pulse drifting along a bar (under Transients);
+- electrochemistry: a cell, an electrode in a stirred solution and a potential step, corrosion;
+- physiology: a cell membrane, a voltage clamp, an action potential, one travelling along an axon.
+
+The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
+(signs and levels), visualization.md, alignment.md (band offsets), statistics.md (non-ideal
+materials, insertion hosts), data.md and reliability.md (what's validated, and the limits).
 
 ## Imports
 
@@ -28,86 +34,74 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 
 ## What to know first
 
-- **Units are SI**: m, mol/m³ (1 M = 1000 mol/m³), J/mol, m²/s, V, A/m², F/m², S/m², C/m³.
-  `units` converts in (`units.um(1)`, `units.perCm3(1e17)` for carriers per cm³ or cm⁻³·s⁻¹,
-  `units.eV(1.12)` to J/mol, `units.cm2PerS(36)`, `units.molar(0.1)`) and back (`units.toPerCm3`,
-  `toEV`, `toMolar`, `toUm`, …). For physiology: 1 mS/cm² = 10 S/m², 1 µF/cm² = 0.01 F/m²,
-  1 µA/cm² = 0.01 A/m², mM = mol/m³.
+- **Units are SI**: m, mol/m³ (1 M = 1000 mol/m³; 1e16 cm⁻³ is only 0.0166 mol/m³), J/mol, m²/s,
+  V, A/m², F/m², S/m². `units` converts in (`units.um(1)`, `units.perCm3(1e17)` for per cm³ or
+  per cm³·s, `units.eV(1.12)` to J/mol, `units.cm2PerS(36)`, `units.molar(0.1)`) and back
+  (`units.toPerCm3`, `toEV`, `toMolar`, `toUm`, …). Physiology: 1 mS/cm² = 10 S/m², 1 µF/cm² =
+  0.01 F/m², 1 µA/cm² = 0.01 A/m², mM = mol/m³.
 - **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one).
-  A terminal's `V` is the voltage of its terminal species: for an electron contact, V = −μ̄_e/F,
-  what a voltmeter reads. φ is bookkeeping, per material, and never a control.
-- **Solutions** are plain objects of `Float64Array`s: `x`, `phi`, and per species `c`
-  (concentration), `mu` (μ̄), `V` (the species voltage μ̄/(zF), a quasi-Fermi level for e⁻ and h⁺)
-  and `Vstd` (the standard level, a band edge for e⁻ and h⁺; in volts the conduction band sits
-  below the valence band). `NaN` marks where a value doesn't exist: a species absent from a
-  material, `V` and `Vstd` of a neutral species, `c` and `Vstd` inside a metal.
+  A terminal's `V` is its terminal species' level: for an electron contact V = −μ̄_e/F, what a
+  voltmeter reads. φ is bookkeeping, per material, and never a control.
+- **Solutions** are plain objects of `Float64Array`s: `x`, `phi`, and per species `c`, `mu` (μ̄),
+  `V` (the species voltage μ̄/(zF): a quasi-Fermi level for e⁻ and h⁺) and `Vstd` (the standard
+  level: a band edge, the conduction band below the valence band in volts). `NaN` marks a value
+  that doesn't exist (a species absent from a material, `V` of a neutral one, `c` in a metal).
 - **Currents.** `sol.terminals[name]` gives each terminal's `{ V, current }`, its current into
-  the device. `sol.current` is the right contact's current toward +x (with ports, the two
-  contacts' differ: read each from `sol.terminals`). Currents, fluxes and amounts are per m² of
-  a planar device; with a `geometry` (spherical, cylindrical or any cross-section A(x)) they are
-  totals through it.
+  the device; a current drive `{ I }` is the same way round (electrons fed in are I < 0).
+  `sol.current` is the right contact's toward +x, so a forward diode with its p side on the right
+  carries a negative one (with ports, read each contact from `sol.terminals`). Everything is per
+  m² of a planar device; with a `geometry` (shells, or any cross-section A(x)) it's a total.
 - **What isn't defaulted**: an alignment between different materials, a φ law where a metal
-  meets a dielectric, and the amount of anything a contact doesn't feed (`c0`). An error names
-  the path and says what to give. (Kinetic details are defaulted, as a symmetric α = 0.5 or a
-  midgap trap, and listed in docs/device.md.)
-- **Check before trusting.** `sol.converged` must be true, and read `sol.warnings` (a solve
-  that fails always says something there). `describe(def)` (kit) summarises a definition and
-  flags likely unit slips. Once a device works, show or log `check(dev, sol).text` (kit): each
-  species' ledger (what every terminal and reaction supplies, summing to zero), conservation in
-  transients, and the same device on a grid twice as fine (a FAIL means the answer depends on
-  the grid: refine it). It costs a solve: run it once, not per frame.
+  meets a dielectric, and the amount of anything a contact doesn't feed (`c0`). The error names
+  the path and says what to give. (Kinetic details are defaulted: listed in docs/device.md.)
+- **Check before trusting.** `sol.converged` must be true; read `sol.warnings`, where a failed
+  solve always says why. `describe(def)` (kit) summarises a definition and flags likely unit
+  slips. Once a device works, log `check(dev, sol).text` (kit) once: each species' ledger,
+  conservation in transients, and the same device on a grid twice as fine (a FAIL means refine).
 
 ## How a device is written
 
 - **`build({ T, library, stack, bulkReactions, ports, grid, geometry })`** (kit) reads a stack
   left to right: its first and last items are the contacts, `layer(material, length, opts)`s
-  are regions, and any other object between two layers is the face between them. Give a layer a
-  `name` to refer to it (a port's `region`, a probe); unnamed, it's only an index. `ohmic()`,
-  `bath()` and the like write contacts, but a plain contact object works as well.
+  are regions (give one a `name` to refer to it), and any other object between two layers is
+  the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works.
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs,
-  at 300 K), `aqueous(names, { epsr })` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in
-  water, at 25 °C), `metal('Ag')` (Ag Cu Au Al Zn Li Pt). `aqueous(names, { epsr: 0 })` makes the
-  water strictly neutral (a macroscopic electrolyte, no double layers). An ion it lacks is pushed
-  into both lists: `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })` and
-  `lib.materials.water.species['A-'] = { D, mu0 }`. Only μ° differences within a reaction
-  matter, so for a redox couple, μ°_red − μ°_ox = −F·E° (E° against SHE, with the library's
-  μ°_H⁺ = 0). An insulator is a material with no mobile species:
+  at 300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water,
+  at 25 °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu
+  Au Al Zn Li Pt). A species it lacks is pushed into both lists (`z: 0` for a neutral one):
+  `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`, `lib.materials.water.species['A-'] =
+  { D, mu0 }`. Only μ° differences within a reaction matter: for a redox couple μ°_red − μ°_ox =
+  −F·E° (against SHE, the library's μ°_H⁺ being 0). An insulator is a material with no species:
   `{ species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }`.
-- **Faces.** Between two different non-metal materials, give an alignment, `{ dipole }` or
-  `{ step: { species: 'e-', value } }` (J/mol), or `phi: 'neutral'` for a macroscopic model.
-  A face next to a metal takes no alignment, but if the other side has ε > 0 it needs a φ law:
-  `{ phi: { type: 'capacitive', C }, zeroCharge }` or `phi: 'neutral'`. Reactions at a face
-  label their sides: `'Li+(left) = Li+(right)'`.
-- **Ports** are terminals attached sideways to a window of nodes inside a region (`from`, `to`,
-  m from its left end): a source or drain, an injector, a reference electrode (at `I: 0`), an
-  electrode spread through a film (`reactions`, `area`), a gate along a channel or a membrane along
-  an axon (`capacitance`, `gates`).
+- **Faces.** Between two different non-metals, give an alignment, `{ dipole }` or `{ step: {
+  species: 'e-', value } }` (J/mol), or `phi: 'neutral'`. Next to a metal, a face takes no
+  alignment, but needs a φ law if the other side has ε > 0: `{ phi: { type: 'capacitive', C },
+  zeroCharge }` or `phi: 'neutral'`. A face's reactions label sides: `'Li+(left) = Li+(right)'`.
+- **Ports** are terminals attached sideways to a window inside a region (`from`, `to`, m from its
+  left end): a source or drain, an injector, a reference electrode (`I: 0`), an electrode spread
+  through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon
+  (`capacitance`, `gates`).
 - **Drives.** A terminal is held at a voltage `V`, driven by a current `I` (open circuit is
-  `I: 0`), or behind a resistance `{ V, R }`. A voltage or current can be a waveform: a table
-  `{ t: [...], values: [...] }`, piecewise linear (a step is two points at one time), or the kit's
-  `pulse({ start, width, amplitude, rise, base })`, `square({ high, low, period, duty })`,
-  `ramp({ from, to, duration, start })` and `triangle({ from, to, period })` (from `from` to `to`
-  and back each period from t = 0, repeating: a cyclic voltammogram, in terminal volts). A drive's
-  current is the conventional current into the device: electrons fed in are I < 0. `dev.set({ contacts: { right: { V } } })`
-  changes a drive and keeps the state as a warm start; ports are patched by name,
-  `{ ports: { gate: { V } } }`.
-- **Reactions** are equations: `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`. A coefficient is a
-  number and a space (`2 e-`); a participant that isn't a species (solid silver) is fixed by its
-  μ: `fixed: { 'Ag(s)': 0 }`. A bulk reaction's forward rate is `kf · Π c_reactants` in
-  mol/(m³·s), with c in mol/m³ (1e16 cm⁻³ is only 0.0166 mol/m³); the backward rate follows from
-  the μ°, so the net rate is the forward rate times (1 − e^(−A/RT)), A the affinity. Band-to-band
-  recombination `e- + h+ = 0` gives a minority lifetime τ = 1/(kf·N), N the majority density in
-  mol/m³: `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Trap-assisted (SRH) recombination is
-  `{ equation: 'e- + h+ = 0', srh: { Si: { tauN, tauP } } }` (s), and at a face
-  `{ equation: 'e-(left) + h+(right) = 0', srh: { vn, vp } }` (m/s). Band-to-band and the kit's
-  `recombination()` are bimolecular, so their lifetime shortens at high injection; for a constant
-  minority lifetime τ_p at any injection, use SRH with τ_N ≪ τ_p. Generation is a reaction from
-  a reservoir (`photon = e- + h+`), and light absorbed as it goes in is
-  `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`. A face reaction's
-  `k0` is in mol/(m²·s), the rate with every participant at its reference concentration (cRef):
-  i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at cRef = 1000 mol/m³:
-  `k0: 10`). A couple the library lacks is two species pushed into it (`z: 0` for a neutral one),
-  with μ°_red − μ°_ox = −F·E°.
+  `I: 0`), or behind a resistance `{ V, R }`. Either can be a waveform: a table `{ t, values }`
+  (piecewise linear; a step is two points at one time), or the kit's `pulse({ start, width,
+  amplitude, rise, base })`, `square({ high, low, period, duty })`, `ramp({ from, to, duration,
+  start })` or `triangle({ from, to, period })` (out and back each period from t = 0: a cyclic
+  voltammogram, in terminal volts). `dev.set({ contacts: { right: { V } } })` changes a drive
+  and keeps the state as a warm start; ports are patched by name, `{ ports: { gate: { V } } }`.
+- **Reactions** are equations: `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, a coefficient
+  written with its space (`2 e-`). A participant that isn't a species (solid silver) is fixed by
+  its μ: `fixed: { 'Ag(s)': 0 }`. A bulk reaction's forward rate is `kf · Π c_reactants`
+  (mol/(m³·s)); the backward one follows from the μ°.
+- **Recombination and light.** Band-to-band `e- + h+ = 0` gives a minority lifetime τ =
+  1/(kf·N), N the majority density in mol/m³ (`kf: 1e8` is 0.6 µs at 1e16 cm⁻³); being
+  bimolecular, as is the kit's `recombination()`, it shortens at high injection. SRH is `srh: { Si:
+  { tauN, tauP } }` in place of `kf` (s), or at a face `{ equation: 'e-(left) + h+(right) = 0',
+  srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it's a constant minority lifetime τ_p. Light is a
+  reaction from a reservoir (`photon = e- + h+`), or absorbed as it goes in,
+  `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`.
+- **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant
+  at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
+  `k0: 10`).
 
 `build()` writes a plain definition for `new Device()`, which can be written by hand too:
 
@@ -164,15 +158,13 @@ for (const V of [0, 0.2, 0.4, 0.6]) {
 
 ## Template: a live page with a slider
 
-`live()` merges slider moves made during a solve, warm-starts each solve and keeps the last
-good solution; on a failure `info.failed` is set (with `info.error`) and the solution is the last
-good one. `bandDiagram()` returns an SVG string; give it a fixed `range: [lo, hi]` so the axis
-doesn't jump as the slider moves. Pass `worker: true` to `live()` to solve in a Web Worker (it
-works with the library loaded from a CDN). `onsolution` may call `set()`, e.g. to iterate toward
-a value the page finds itself: each call queues another solve, so make sure it converges rather
-than oscillates. A device of a few hundred nodes solves in milliseconds; thousands, or
-transients, want a worker and `advance(t, { budgetMs })` per frame. (A headless browser taking a
-screenshot of a page that loads the library from a CDN needs a long virtual-time budget, 30 s.)
+`live()` warm-starts each solve, merges slider moves made during one, and keeps the last good
+solution (on a failure, `info.failed` and `info.error` are set). `bandDiagram()` returns an SVG
+string; a fixed `range` keeps its axis still. `worker: true` solves in a Web Worker, from a CDN
+too. A few hundred nodes solve in milliseconds; thousands, or transients, want a worker and
+`advance(t, { budgetMs })` per frame. `onsolution` may call `set()`, if that converges rather than
+oscillates. (A headless browser screenshotting a page that loads from a CDN needs a long
+virtual-time budget, 30 s.)
 
 ```html
 <!doctype html>
@@ -209,9 +201,9 @@ see "Reading level diagrams" below.
 
 ## Template: a solar cell
 
-Light is a reservoir: `photon = e- + h+` with the photons' μ well above the gap generates at
-the rate `kf` (uniform in the material). Open circuit is a terminal driven at `I: 0`, whose
-voltage is then V_oc. The photocurrent flows toward +x here (holes to the p side on the right).
+`photon = e- + h+`, with the photons' μ well above the gap, generates uniformly at the rate `kf`.
+Open circuit is `I: 0`, and the terminal's V is then V_oc. The photocurrent flows toward +x
+(holes to the p side, on the right).
 
 ```js
 import { Device, units } from 'driftlet';
@@ -244,11 +236,10 @@ and `hysteresis(trace, turn)` to read the same figures from yours.
 
 ## Template: a MOS capacitor
 
-The gate is a metal layer behind its contact, its face to the oxide capacitive (a metal screens
-within Å, so C is large) with the gate's alignment as `zeroCharge`. The oxide holds no species.
-In 1D nothing supplies the inversion layer's electrons (a MOSFET's source and drain do), so a port
-holds their level at the surface: the low-frequency C–V. The gate's charge is the displacement
-into the oxide, `sol.interfaces[0].D`.
+The gate is a metal layer with a capacitive face to the oxide (a metal screens within Å, so C is
+large) and the gate's alignment as `zeroCharge`. In 1D nothing supplies the inversion layer's
+electrons (a MOSFET's source and drain do), so a port holds their level at the surface: the
+low-frequency C–V. The gate's charge is the displacement into the oxide, `sol.interfaces[0].D`.
 
 ```js
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -288,16 +279,14 @@ const LD = Math.sqrt((11.7 * EPS0 * GAS_CONSTANT * 300) / (FARADAY * FARADAY * N
 console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.7 * EPS0))).toFixed(3)}`); // 0.699
 ```
 
-`dev.impedance([f], { terminal: 'left' })` gives the same C at low frequency. Draw the band
-diagram with `bandDiagram(sol, { energy: true, phi: ['SiO2'] })`: φ is the line to draw across
-an insulator, and its slope is the field.
+`dev.impedance([f], { terminal: 'left' })` gives the same C at low frequency. Draw it with
+`bandDiagram(sol, { energy: true, phi: ['SiO2'] })`: across an insulator φ is the line to draw.
 
 ## Template: a Schottky diode
 
-A Schottky contact is a barrier pinned at the metal (`phi: 'pinned'`, `zeroCharge` the barrier,
-for Si whose μ°_e⁻ is 0) with its carriers crossing at their emission velocities: a `velocity`
-link, N_in = v (c_eq − c). With `'equilibrium'` links instead (an infinite velocity), the barrier
-passes whatever the silicon brings it: diffusion theory, some 20 times more current here.
+A barrier pinned at the metal (`phi: 'pinned'`, `zeroCharge` the barrier height for Si, whose
+μ°_e⁻ is 0), crossed at the emission velocity: a `velocity` link, N_in = v (c_eq − c). With
+`'equilibrium'` links (infinite velocity) it's diffusion theory instead, 20 times the current here.
 
 ```js
 import { Device, units, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -321,9 +310,7 @@ for (const V of [0.1, 0.2, 0.3]) {
 }
 ```
 
-The built-in potential is `sol.phi.at(-1) − sol.phi[0]` at zero bias, and ∫(N_D − n)dx/N_D
-gives the depletion width. The same `velocity` link at an ohmic contact is its surface
-recombination velocity.
+The same `velocity` link at an ohmic contact is its surface recombination velocity.
 
 ## Template: an electrochemical cell
 
@@ -360,15 +347,12 @@ console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]);
 
 ## Template: an electrode in a stirred solution, and a potential step
 
-One working electrode, a stagnant layer of solution, and the well-stirred bulk as a bath. The
-bath's terminal is its reference species (Cl⁻ here, like a Ag/AgCl reference), so terminal
-voltages are against that. An electrode's potential against SHE is its electrons' V minus φ in
-the solution (with the library's μ°, μ°_H⁺ = 0), read in the bulk. A terminal's current is into
-the device, so at the working electrode it's positive when oxidising (anodic). The bath sits
-across the stagnant layer, so its resistance is in series (uncompensated IR drop: keep the
-layer thin or the supporting salt strong where the surface potential matters). An excess of
-supporting electrolyte suppresses migration but doesn't remove it: at 100:1 the limiting current
-is still about 1% off pure diffusion.
+A working electrode, a stagnant layer, and the stirred bulk as a bath whose terminal is its
+reference species (Cl⁻: an Ag/AgCl reference). An electrode's potential against SHE is its
+electrons' V minus φ in the bulk (with the library's μ°). The working electrode's current is
+positive when oxidising. The layer's resistance is in series (uncompensated IR: keep it thin, or
+the supporting salt strong); a 100:1 excess of salt still leaves the limiting current about 1%
+off pure diffusion.
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
@@ -411,13 +395,11 @@ for (const t of [3e-3, 1e-2, 3e-2]) {
 
 ## Template: corrosion under a drop (an electrode spread through a film)
 
-A **port with reactions** is an electrode spread through a window of a region: a metal under a
-thin film of water, a crevice's walls, a porous electrode. Its `terminal` is the metal's carrier,
-`area` the electrode's area per volume of the window (1/h under a film h thick), and each
-reaction is Butler–Volmer per area, as at a face. The region must be strictly neutral (ε = 0); a
-`capacitance` adds the double layer. A **`geometry`** gives the device a cross-section A(x): here
-x is the radius of a drop seen from its centre, A = 2πr·h(r), and every current and amount becomes
-a total through it (A, mol), not per m².
+A **port with reactions** is an electrode spread through a strictly neutral region: a metal under
+a film of water, a crevice's walls, a porous electrode. Its `terminal` is the metal's carrier,
+`area` its area per volume (1/h under a film h thick), each reaction Butler–Volmer per area, and
+a `capacitance` the double layer. A **`geometry`** gives the device a cross-section A(x): here x
+is the radius of a drop, A = 2πr·h(r), and currents and amounts become totals (A, mol).
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
@@ -468,18 +450,16 @@ const evans = polarization(dev, sol, { port: 'iron', x: 0 }, levels);
 for (const rx of evans.reactions) console.log(`${rx.equation}: ${Array.from(rx.current, (i) => i.toFixed(2)).join(', ')} A/m²`);
 ```
 
-On an electrode's surface, species can take its sites (`surface: { name: { mu0, capacity } }`,
-Langmuir coverages), and a reaction with `bare: true` runs only on bare metal: a passive film
-(docs/device.md, "An electrode's surface"). For a battery's insertion electrode, a material can
-be described by its OCV curve (docs/statistics.md).
+Species can take an electrode's surface sites (`surface`, Langmuir coverages), and a reaction
+with `bare: true` runs only on bare metal: a passive film (docs/device.md). A battery's insertion
+electrode is a material described by its OCV curve (docs/statistics.md).
 
 ## Template: a thin-film transistor (a capacitance along a channel)
 
 A **port with a `capacitance`** holds charge σ = C (V − zeroCharge − φ) per area of electrode
-along its window, balanced by the region (Gauss's law, or neutrality at ε = 0): a gate along a
-channel, a porous electrode's double layer. In 1D a field-effect transistor is its channel, x from
-source to drain, with the gate spread along it: the gradual-channel approximation, exact for a thin
-film until it pinches off. (Its gate stack, across the channel, is the MOS capacitor above.)
+along its window, balanced by the region's: a gate along a channel, a porous electrode's double
+layer. Here x runs from source to drain with the gate spread along it: the gradual-channel
+approximation, exact for a thin film until it pinches off.
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
@@ -513,13 +493,11 @@ An organic electrochemical transistor is the same with a volumetric capacitance 
 
 ## Template: a cell membrane
 
-A lipid bilayer is a face: a capacitor (about 1 µF/cm², 0.01 F/m²) that ions cross through
-channels, each with a permeability (`{ type: 'permeability', P }`, m/s: electrodiffusion in a
-constant field, so Goldman–Hodgkin–Katz comes out of it), and that pumps cross as reactions with
-saturating kinetics (`vmax`, `K`). The solutions on either side can be strictly neutral.
-Physiology's membrane potential is φ_in − φ_out: read it from `sol.phi`, with the inside on the
-right. A bath with a reference species reads that ion's level instead (a Ag/AgCl electrode's),
-which differs from Δφ by its Nernst term; `bath(c, drive)` without one reads its φ.
+A lipid bilayer is a face: a capacitor (1 µF/cm², 0.01 F/m²) crossed by channels with a
+permeability (`{ type: 'permeability', P }`, m/s: Goldman–Hodgkin–Katz comes out of it) and by
+pumps, reactions with saturating kinetics (`vmax`, `K`). The membrane potential is φ_in − φ_out,
+read from `sol.phi`: a bath with a reference species (`bath(c, 'Cl-')`) reads that ion's level,
+which differs by its Nernst term, while `bath(c, drive)` without one reads its φ.
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -564,12 +542,10 @@ current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equili
 
 ## Template: a voltage clamp
 
-Voltage-gated channels: a face's `gates` (each a fraction open with Hodgkin–Huxley kinetics,
-dx/dt = α(V)(1 − x) − β(V)x, in V = φ_right − φ_left) scale its links (`gates: { m: 3, h: 1 }`).
-`hodgkinHuxley({ T, linear: true })` (kit) writes the squid axon's as Hodgkin and Huxley had
-them: gated conductances, each current g(V − E) with E its ion's Nernst level. Between two baths
-whose terminal voltage is their φ (`bath(c, drive)`, no reference species), V_right − V_left is
-V_m, so a held step is their voltage clamp, and a solve finds the rest the clamp holds.
+A face's `gates` (each a fraction open, dx/dt = α(V)(1 − x) − β(V)x with V = φ_right − φ_left)
+scale its links (`gates: { m: 3, h: 1 }`). `hodgkinHuxley({ T, linear: true })` (kit) writes the
+squid axon's as Hodgkin and Huxley had them, conductances g(V − E). Between two baths without a
+reference species, V_right − V_left is V_m, so a held step is their voltage clamp.
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -604,14 +580,11 @@ console.log(`I_Na peaks ${((run.trace.t[peak] - 1e-3) * 1e3).toFixed(2)} ms into
 console.log(`g_K after 10 ms: ${((k.at(-1) / (step - EK)) * 0.1).toFixed(2)} mS/cm²`); // 21.12: HH's 36 n∞⁴ is 21.5, which n nearly reaches by 10 ms
 ```
 
-Without `linear: true` (given `inside` and `outside`) the channels are GHK permeabilities matched
-to HH's conductances at −65 mV, which rectify: a g_K read as above then comes out 1.7 times HH's
-at −10 mV.
-
 ## Template: an action potential
 
-A pump-less cell has no steady rest (`solve()` finds Donnan), so start the transient from the
-concentrations given: the membrane settles within milliseconds.
+Without `linear: true` (given `inside` and `outside`), `hodgkinHuxley` writes GHK permeabilities
+matched to HH's conductances at −65 mV, which rectify as real channels do. A pump-less cell has no
+steady rest (`solve()` finds Donnan), so start the transient from the concentrations given.
 
 ```js
 import { Device } from 'driftlet';
@@ -649,14 +622,12 @@ console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // +12.6: GHK's Na⁺ current
 
 ## Template: an action potential travelling along an axon
 
-Here x runs along the axon. The axoplasm is one region, and the membrane is a port spanning all
-of it: a capacitance plus gated channels to an outside given as a `bath` (the port's V is then
-the outside's φ). `hodgkinHuxley({ T, area })` writes Hodgkin and Huxley's linear channels for
-it, with `area` the membrane per volume, 2/a for radius a. Cable theory isn't put in; it comes
-out of the ions' drift along the axoplasm. Each solution's `ports[k].Vm[j]` and
-`ports[k].gates[name][j]` give the membrane potential and gates at each node of the window. A
-myelinated axon is regions (nodes and internodes), each with a port of its own (an internode's
-is just a small capacitance: myelin).
+Here x runs along the axon: the axoplasm is one region, and the membrane a port spanning it, a
+capacitance and gated channels to an outside given as a `bath` (the port's V is then the
+outside's φ). `hodgkinHuxley({ T, area })` writes HH's channels for it, `area` being the membrane
+per volume, 2/a. Cable theory isn't put in; it comes out of the ions' drift. `ports[k].Vm[j]` and
+`ports[k].gates[name][j]` give the membrane at each node. A myelinated axon is regions, each with
+its own port (an internode's just a small capacitance).
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -691,20 +662,20 @@ console.log(`${(0.02 / (at(probes[1]) - at(probes[0]))).toFixed(1)} m/s`); // 18
 
 ## Transients
 
-`advance(t, opts)` steps from the device's present state (its `c0`, or a steady state if you
-called `solve()` first) to time t, adaptively, and returns the solution there with `done` and a
-`trace` of this call's accepted steps (`t`, `current`: the right contact's toward +x, `voltage`:
-V_right − V_left). It stops short when it runs out of `budgetMs` (an animation frame: call again)
-or, with a warning saying why, of `maxSteps` (100000) or of steps that converge. `probes` read
-the device at points inside it, at accepted steps, so give `dtMax` to resolve a signal in time:
-`{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face
-`{ interface: f, species }` (its flux) or `{ interface: f, gate }`. To stop at an event (a
-voltage cut-off, the end of a diode's storage time), advance in short calls and test after each;
-a driven current held past what the device can pass fails to converge. A device that only stores
-what comes in (a battery host filling at a current) has no steady state: don't `solve()` it,
-`advance()` from its `c0` (docs/statistics.md, insertion hosts). `dev.step(dt)` is one
-backward-Euler step, and `dev.impedance(frequencies, { terminal })` the small-signal Z(f) about
-the steady state (Ω·m²).
+`advance(t, opts)` steps adaptively from the device's present state (its `c0`, or the steady
+state if you called `solve()`) to time t. It returns the solution there, with `done` and a `trace`
+of this call's accepted steps (`t`, `current`, `voltage`: V_right − V_left). It stops short at
+`budgetMs` (an animation frame: call again) or, with a warning saying why, at `maxSteps` (100000)
+or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
+`{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face `{ interface: f,
+species }` (its flux) or `{ interface: f, gate }`.
+
+- **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
+  and test after each: a driven current held past what the device can pass fails to converge.
+- **Storage.** A device that only stores what comes in (a battery host filling at a current) has
+  no steady state: `advance()` it from its `c0`, don't `solve()` it (docs/statistics.md).
+- **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,
+  { terminal })` the small-signal Z(f) about the steady state, in Ω·m².
 
 ```js
 import { Device, units, FARADAY } from 'driftlet';
@@ -730,132 +701,80 @@ const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
 console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1950 for the 1900 put in: a spreading, decaying pulse peaks a little early
 ```
 
-To start from a state instead of simulating how it got there (a packet already injected, a
-salt gradient laid down), give a region's `c0` a profile against the device's x,
-`c0: { 'h+': { x: [...], values: [...] } }`, and `advance()` from the new `Device` without
-`solve()` (which would go straight to the steady state). A given `c0` is the starting state, even
-for a species a contact feeds; species without one start at their contact's level, and φ starts
-neutral at each node. When two regions start with different solutions, give each its own `c0`.
+To start from a state rather than simulate how it got there (a packet already injected, a salt
+gradient laid down), give a region's `c0` a profile, `{ 'h+': { x: [...], values: [...] } }`
+against the device's x, and `advance()` the new `Device` without `solve()`. A given `c0` is the
+starting state even for a species a contact feeds; the rest start at their contact's level.
 
-Transients cost more where a carrier's density spans many decades (minority holes in silicon
-ahead of the pulse) and at strong injection (Δp near n₀); budget for that, or coarsen the grid.
-
-`recorder(dev, { every, times, probes })` (kit) runs a transient in pieces: its `advance(tEnd,
-opts)` takes the same options, `rec.trace` is the whole run's trace from the start, and
-`rec.frames` are whole solutions (at the start, then at `times`, every `every` s, or the end of
-each call), with `rec.frame(t)` the one at or before t, for a time slider.
+Transients cost more where a carrier's density spans many decades (minority holes in silicon)
+and at strong injection; budget for that, or coarsen the grid. `recorder(dev, { every, times,
+probes })` (kit) runs one in pieces: `rec.trace` is the whole run's, and `rec.frame(t)` the
+whole solution at or before t, for a time slider.
 
 ## Reading level diagrams
 
-What `bandDiagram()` and `traces()` draw, and how to explain it to a reader (docs/visualization.md
-has the long form):
+What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualization.md has more):
 
-- **Which picture.** For a device of electrons and holes only, draw the familiar band diagram,
-  energy up: `bandDiagram(sol, { energy: true })` (E_c, E_v, E_Fn, E_Fp in eV; electron energies
-  are E = −V). The species voltages below are the same lines in volts, turned over; use them where
-  ions share the diagram, or for equilibrium between species, and don't present them in place of
-  the band diagram.
-- **Fermi level** V_e⁻ = −μ̄_e⁻/F: the circuit voltage, what a voltmeter reads. A cell's voltage is
-  the difference between its terminals' V_e⁻.
-- **Redox level** of Ox + z e⁻ ⇌ Red, `level(sol, half)` or `levels: [{ half }]` in the plotting
-  options: V_e⁻(Ox/Red) = (μ̄_Ox − μ̄_Red)/(zF), where an electrode exchanging electrons by that
-  couple would sit in equilibrium with the local composition. Drawn thick and dashed. At an
-  electrode face, the step from the metal's Fermi level to it is the surface overpotential;
-  through the solution it slopes with ohmic drop and concentration polarisation. Each couple has
-  its own; they agree only in redox equilibrium.
-- **Standard redox level** (`standard: true`), thin and dashed: every participant at reference
-  concentration. The redox level sits RT/(zF) ln(a_Ox/a_Red) from it (Nernst, locally).
-- **Electrode potentials** are gaps to the SHE's standard level V°_e⁻(SHE): E = V_e⁻(electrode) −
-  V°_e⁻(SHE), E° = V°_e⁻(Ox/Red) − V°_e⁻(SHE), η = E − E_eq. With the data library's μ°,
-  V°_e⁻(SHE) in water is φ, so `phi: true` draws it.
-- **Species voltage** V_i = μ̄_i/(z_iF) (thick, solid) for every charged species: the Fermi level
-  for e⁻, a quasi-Fermi level for e⁻ and h⁺ in a semiconductor, what a reversible electrode reads
-  for an ion. It's a display of μ̄_i (the physics, which also covers neutral species): each
-  species moves down its own μ̄_i, drift and diffusion together, so its current flows down slopes
-  in V_i (cations and holes move downhill, electrons and anions uphill), and it's in equilibrium
-  where V_i is flat. A step at a face means resistance there.
+- **Which picture.** For electrons and holes only, draw the familiar band diagram, energy up:
+  `bandDiagram(sol, { energy: true })` (E_c, E_v, E_Fn, E_Fp in eV, E = −V). The species voltages
+  below are the same lines in volts, turned over: use them where ions share the diagram, or for
+  equilibrium between species, never in place of the band diagram.
+- **Species voltage** V_i = μ̄_i/(z_iF) (thick, solid): the Fermi level for e⁻ (what a voltmeter
+  reads), a quasi-Fermi level in a semiconductor, what a reversible electrode reads for an ion.
+  Each species moves down its own μ̄_i, drift and diffusion together, so its current flows down
+  slopes in V_i (cations and holes downhill, electrons and anions uphill); flat is equilibrium,
+  and a step at a face is resistance there. Call it the species voltage and say what it is, since
+  it's new to most readers; credit Jamnik and Maier (Phys. Chem. Chem. Phys. 3, 1668 (2001))
+  where V_i rails explain impedance or linear response.
 - **Standard level** V°_i = φ + μ°_i/(z_iF) (thin, solid): a band edge for e⁻ and h⁺; V_i − V°_i =
-  (RT/z_iF) ln(c/c_ref) for ideal species. Steps in V°_i at faces (Donnan, junctions, dipoles) are
-  bookkeeping.
-- **What's left out.** φ isn't drawn: it's a per-material convention (meaningless in a metal), and
-  −eφ isn't any electron's energy; the V°_i ladder shows its variation within a material and means
-  something across faces too. The exceptions: across an insulator with no mobile species, a
-  plain sloped φ (`phi: ['SiO2']`) is the line to draw (its slope is the field), and in vacuum −eφ
-  really is an electron's energy.
-- **No fixed reference.** Shifting every line together changes nothing, and every gap is
-  physical. "vs SHE" and "from vacuum" each need a chosen point, because both levels vary in x.
-- **Gaps between species.** V_i − V_j is free of φ but carries a constant from the elements'
-  conventional zeros, so it's read through a reaction. `shifts` (marked ⌇) offsets one species'
-  lines to fit a shared axis without changing any gap within that species.
-- **Plotting in your own style.** `traces(sol, opts)` gives `{ x, series: [{ id, label, kind,
-  role, slot, y }], regions, faces, range }`: `kind` says how a line reads (`'level'` thick,
-  `'standard'` thin, `'redox'` and `'redox-standard'` dashed, `'phi'`), `role` and `slot` keep a
-  species' colour stable (`themeColor(role, slot)` in `driftlet/plot` gives ours), labels mark
-  subscripts TeX-style (`labelParts(label)` splits them), `NaN` breaks a line, and doubled
-  interface nodes share an x (draw them as vertical steps). Or read the solution directly:
-  `sol.x`, `sol.V[name]`, `sol.Vstd[name]`, `sol.c[name]`, `sol.phi`.
-- Call V_i the species voltage and say what it is; it's new to most readers. Credit Jamnik and
-  Maier (Phys. Chem. Chem. Phys. 3, 1668 (2001)) where V_i rails explain impedance or linear
-  response.
+  (RT/z_iF) ln(c/c_ref) for ideal species. Its steps at faces are bookkeeping.
+- **Redox level** of Ox + z e⁻ ⇌ Red (`level(sol, half)`, or `levels: [{ half }]` in the plot
+  options; thick, dashed): (μ̄_Ox − μ̄_Red)/(zF), where an electrode by that couple would sit in
+  equilibrium with the local solution. At an electrode its step from the metal's Fermi level is
+  the surface overpotential. `standard: true` gives its standard level (thin, dashed).
+- **Electrode potentials** are gaps to the SHE's standard level, which with the library's μ° is φ
+  in water (`phi: true` draws it): E = V_e⁻(electrode) − V°_e⁻(SHE).
+- **What's left out.** φ is a per-material convention, and −eφ isn't any electron's energy, so it
+  isn't drawn, except across an insulator with no mobile species (`phi: ['SiO2']`: its slope is
+  the field). No level is a fixed reference: shifting every line together changes nothing. A gap
+  between two species' levels carries the elements' conventional zeros, so read it through a
+  reaction; `shifts` (marked ⌇) moves one species' lines to fit a shared axis.
+- **Your own style.** `traces(sol, opts)` gives `{ x, series: [{ id, label, kind, role, slot, y }],
+  regions, faces, range }`: `kind` says how a line reads (`'level'`, `'standard'`, `'redox'`,
+  `'redox-standard'`, `'phi'`), `themeColor(role, slot)` (plot) gives our colours,
+  `labelParts(label)` splits TeX-style subscripts, `NaN` breaks a line, and a face's doubled nodes
+  share an x (a vertical step).
 
 ## Good habits
 
-- **Draw the closed-form answer alongside the simulation**, wherever a textbook limit exists
-  (Shockley's law, a Nernst potential, a Gaussian pulse, a Warburg arc), as the templates do. It
-  checks the setup: a solver's output looks authoritative even when an input is wrong, and a
-  mismatch is the cheapest way to catch it. Where the two should differ (high injection, a
-  finite pulse, the kinetics or IR drop of an electrode), say why.
-- **Stay honestly inside 1D.** driftlet models devices along one coordinate: planar, or with a
-  cross-section A(x) (`geometry`: spherical or cylindrical shells, or a profile). Where the real
-  device isn't one, say so and pick the slice that still tells the true story: a MOSFET as its
-  gate stack (the MOS capacitor) or its channel (the thin-film transistor), never both at once,
-  since pinch-off is 2D; a BJT along its emitter–base–collector axis; one particle of a porous
-  battery electrode, or a thin dense film, rather than the whole porous electrode with diffusion
-  inside its particles (that's a P2D model). A metal that reacts all along a film of electrolyte
-  is a port with `reactions`, not a face at each end.
+- **Draw the closed-form answer alongside the simulation** wherever a textbook limit exists, as
+  the templates do. A solver's output looks authoritative even when an input is wrong, and a
+  mismatch is the cheapest way to catch it. Where the two should differ, say why.
+- **Stay honestly inside 1D.** Where the real device isn't one-dimensional, say so and pick the
+  slice that tells the true story: a MOSFET as its gate stack or its channel, never both (pinch-off
+  is 2D); a BJT along its emitter–base–collector axis; one particle of a porous battery electrode
+  rather than the whole electrode (that's a P2D model).
 
 ## Common mistakes
 
-- **No alignment at a heterointerface.** `interfaces[0] (between … [Si] and … [GaAs]): an
-  interface between different materials needs an alignment`. Give the face `{ dipole }` or
-  `{ step: { species: 'e-', value } }` (the conduction-band offset, J/mol), or estimate one from
-  electron affinities with `vacuumDipole` (docs/alignment.md). `interfaces[f]` is the f-th face
-  of the stack, counting from the left.
-- **A metal face with no φ law.** `… .phi: a face between a conductor and a material with
-  ε > 0 needs an explicit φ law`. Give `{ phi: { type: 'capacitive', C }, zeroCharge }`, or
-  `phi: 'neutral'`, or make the electrolyte strictly neutral (`aqueous(names, { epsr: 0 })`)
-  when double layers don't matter.
-- **A gate as a contact on an oxide.** The carrier is blocked there (`… 'e-' is blocked at this
-  contact`). Make the gate a metal layer with a capacitive face, as in the MOS template.
-- **`ohmic()` on a metal.** Its default holds both e⁻ and h⁺, for semiconductors. On a metal
-  layer, write `ohmic(V, ['e-'])`.
-- **Ions on both sides of a reacting face.** Label them: `'Li+(left) = Li+(right)'`, and give
-  their link (`species: { 'Li+': 'blocked' }` if they cross only by the reaction).
-- **Unit slips.** D in cm²/s, μ° in eV, capacitance in µF/cm², conductance in mS/cm², T in °C.
-  `describe(def)` flags numbers that look like these.
-- **A closed system with no amount.** A species that doesn't reach a contact needs `c0`.
-- **An unbalanced `c0` in a closed neutral region.** With `epsr: 0` and no contact feeding a
-  charged species, Σ z·c0 must be zero (traces included): `… carries a net charge of … mol/m³`.
-  Add the counter-ion's share. (Where a contact feeds one, it makes up the difference.)
-- **A sharp junction between very different solutions** (3 M KCl against 1 µM traces) can't
-  start: grade it over a few thin layers mixing one solution into the other, as at a frit.
-- **A steady solve of a closed cell where every ion can cross.** Its steady state is complete
-  mixing. To watch a junction or a salt bridge, step in time from the unmixed `c0` (`advance`).
-- **Everything floating.** At least one terminal must be held at a voltage `V`.
+- **Errors that say what to give.** A missing alignment at a heterointerface (`vacuumDipole`
+  estimates one from electron affinities, docs/alignment.md), a metal face with no φ law,
+  everything floating (hold one terminal at a `V`), a species that reaches no contact without a
+  `c0`, an unbalanced `c0` in a closed neutral region (add the counter-ion's share), `'2e-'` for
+  `'2 e-'`, a current drive of the wrong sign. `interfaces[f]` is the stack's f-th face.
+- **A gate as a contact on an oxide.** It fails as `'e-' is blocked at this contact`: make the
+  gate a metal layer with a capacitive face, as in the MOS template.
+- **`ohmic()` on a metal.** Its default holds e⁻ and h⁺; on a metal write `ohmic(V, ['e-'])`.
+- **Ions on both sides of a reacting face.** Label them, `'Li+(left) = Li+(right)'`, and block
+  them (`species: { 'Li+': 'blocked' }`) if they cross only by the reaction.
+- **Unit slips.** D in cm²/s, μ° in eV, µF/cm², mS/cm², T in °C. `describe(def)` flags them.
 - **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`). At body
-  temperature, `T: 310.15` with the same μ° and D is a fair start; D rises about 2% per kelvin
-  in water.
-- **Sign of the current.** `sol.current` is toward +x: a forward-biased diode with its p side on
-  the right carries negative current. A terminal's current, and a current drive `{ I }`, are into
-  the device: that same diode is driven forward by a positive `I` at its right contact. A drive of
-  the wrong sign fails with `no steady state passes the driven current`, and says so.
-- **A membrane potential read from Cl⁻-referenced terminals.** They differ from Δφ by Cl⁻'s
-  Nernst term: read V_m from `sol.phi` (or a `{ x, quantity: 'phi' }` probe), or use baths
-  without a reference.
-- **A coefficient without its space.** `'2e- + …'` reads `2e-` as a species name; the error says
-  to write `2 e-`.
-- **Changing c0 with `set()`.** A carried state keeps what it holds; `c0` is only the starting
-  composition. Make a new `Device` to start over from it.
+  temperature the same μ° and D are a fair start; D rises about 2% per kelvin in water.
+- **A steady solve of a closed cell where every ion can cross**: its steady state is complete
+  mixing. To watch a junction or a salt bridge, `advance()` from the unmixed `c0`.
+- **A sharp junction between very different solutions** (3 M KCl against 1 µM) can't start:
+  grade it over a few thin layers, as at a frit.
+- **Changing `c0` with `set()`.** A carried state keeps what it holds: make a new `Device`.
 - **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
   Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).
 
