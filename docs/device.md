@@ -819,7 +819,9 @@ const now = dev.solution();                   // snapshot of the current state
   `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
   as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
   mol/m³) or species voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the
-  nodes around `x` (at an interface, `region` picks the side). That's what a detector at `x` sees. Probes read at accepted steps, which grow
+  nodes around `x` (at an interface, `region` picks the side). That's what a detector at `x` sees.
+  At a face, `{ interface: f, species }` reads a species' flux through it (mol/(m²·s), toward +x,
+  as `interfaces[f].N`), and `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
   as a transient slows, so give `dtMax` to resolve a signal in time.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the

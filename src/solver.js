@@ -3439,9 +3439,22 @@ export class Solver {
     const fail = (m) => {
       throw new DeviceError(m);
     };
-    if (!Array.isArray(probes)) fail('advance: probes must be an array of { x, species, quantity, region }');
+    if (!Array.isArray(probes)) fail('advance: probes must be an array of { x, species, quantity, region }, or { interface, species } / { interface, gate }');
     const plan = probes.map((p, k) => {
       const path = `advance: probes[${k}]`;
+      if (p?.interface !== undefined) {
+        // At a face: a species' flux through it (mol/(m²·s), toward +x), or a gate's fraction open.
+        const f = p.interface, itf = this.model.interfaces[f];
+        if (!(Number.isInteger(f) && itf)) fail(`${path}.interface: no interface ${JSON.stringify(f)} (they're numbered from 0, left to right)`);
+        if (p.gate !== undefined) {
+          const q = itf.gates.findIndex((gt) => gt.name === p.gate);
+          if (q < 0) fail(`${path}.gate: interfaces[${f}] has no gate ${JSON.stringify(p.gate)}${itf.gates.length ? ` (it has ${itf.gates.map((gt) => gt.name).join(', ')})` : ''}`);
+          return { o: this._gateSlot(f, q) };
+        }
+        const i = species.findIndex((sp) => sp.name === p.species);
+        if (i < 0) fail(`${path}.species: no species ${JSON.stringify(p.species)}`);
+        return { o: this.blockOfFace[f] * this.M + 1 + i };
+      }
       const quantity = p?.quantity ?? 'c';
       if (quantity !== 'c' && quantity !== 'V' && quantity !== 'phi') fail(`${path}.quantity must be 'c' (mol/m³), 'V' (the species voltage) or 'phi' (φ, V)`);
       const i = quantity === 'phi' ? -1 : species.findIndex((sp) => sp.name === p?.species);
@@ -3473,7 +3486,7 @@ export class Solver {
     };
     return {
       out,
-      read: () => plan.map((q) => (1 - q.w) * at(q, q.g) + q.w * at(q, q.g + 1)),
+      read: () => plan.map((q) => (q.o !== undefined ? (this.loc[q.o] < 0 ? 0 : this.u[q.o]) : (1 - q.w) * at(q, q.g) + q.w * at(q, q.g + 1))),
       push: (values) => values.forEach((v, k) => out[k].push(v)),
     };
   }

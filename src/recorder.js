@@ -15,7 +15,7 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
  * neither, at the end of each `advance()` call. The trace (`t`, `current`, `voltage`, and
  * `probes` if given) runs from the start through every accepted step of every call.
  * @param {import('./index.js').Device} device
- * @param {{ every?: number, times?: number[], probes?: { x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number }[] }} [opts]
+ * @param {{ every?: number, times?: number[], probes?: ({ x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number } | { interface: number, species?: string, gate?: string })[] }} [opts]
  */
 export function recorder(device, opts = {}) {
   const { every, times, probes } = opts;

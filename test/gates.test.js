@@ -118,8 +118,12 @@ test('an action potential: the electrodiffusion model against the space-clamped 
     ode[k + 1] = y[0];
   }
   let worst = 0, peak = -1, peakAt = 0, odePeak = -1, odePeakAt = 0;
+  const probes = [{ interface: 0, gate: 'm' }, { interface: 0, species: 'Na+' }];
   for (let k = 1; k <= 300; k++) {
-    const t = k * 1e-4, sol = d.advance(t, { tol: 1e-5 });
+    const t = k * 1e-4, sol = d.advance(t, { tol: 1e-5, probes });
+    // (the interface probes read what the solution reports, at each step)
+    const [m, N] = sol.trace.probes.map((v) => v.at(-1));
+    assert.ok(m === sol.interfaces[0].gates.m && N === sol.interfaces[0].N['Na+']);
     assert.ok(sol.converged, `at ${t} s`);
     const V = sol.interfaces[0].V, Vo = ode[Math.round(t / dt)];
     worst = Math.max(worst, Math.abs(V - Vo));
