@@ -509,6 +509,57 @@ const { solution, info } = await dev.set({ contacts: { right: { V: 0.5 } } });
 console.log(`I(0.5 V) = ${solution.current.toFixed(1)} A/m², in ${info.ms.toFixed(1)} ms`);
 ```
 
+## Particles
+
+`particles(sol, opts)` draws a solution as dots, each a fixed amount of one species (`weight`,
+mol/m²), hopping between the cells of a display lattice. The hops' one-way rates come from the
+solution, so on average the dots fill each cell as its concentration does and cross each
+boundary, net, at its flux: they're a sample of the solution, not a separate model. Dots are
+made and unmade where the flux diverges (reactions, generation, ports), and enter and leave
+through the contacts and any metal.
+
+- Across a boundary the one-way fluxes have the solution's flux as their difference and
+  Scharfetter–Gummel's exchange as their product, which gives a dot in a flat potential the
+  diffusivity D. A face crossed by permeability uses its own one-way fluxes (the solution's
+  `oneWay`), so the dots crossing each way are Ussing's unidirectional fluxes, as a tracer
+  experiment counts them.
+- Concentrations span decades, so one weight can't draw them all. A cell that would hold more
+  than `cap` dots is a **sea** instead: drawn as shading, holding no dots, exchanging them with
+  its neighbours as a contact's reservoir does. A junction then shows its majority carriers as
+  seas and its minority carriers as dots. Crossings between two seas through a membrane are
+  `events`.
+- `step(dt)` moves the dots on by dt of the device's time. `update(sol)` takes a new solution;
+  with `{ resample: true }` (a jump between steady states) each cell's dots are thinned or added
+  to by the change in what it should hold, which keeps them a Poisson sample while moving as few
+  as can be. Without it (a transient) they move on at the new rates.
+- The swarm has `dots` (`{ species, cell, x }`), `cells` (`{ x0, x1, region }`), `sea[name]`
+  (1 per sea cell), `expected(name)` (dots per cell on average), `events` from the last step
+  (`{ species, kind, x, dir }`: `'in'`, `'out'`, `'made'`, `'unmade'`, `'cross'`) and
+  `crossed[name]` (`{ up, down }` at each boundary, counts you zero when you like).
+
+```js
+import { Device, GAS_CONSTANT } from 'driftlet';
+import { particles } from 'driftlet/kit';
+
+// A species diffusing through a gel slab between two baths: c falls from 1 to 0.1 mol/m³.
+const RT = GAS_CONSTANT * 298.15;
+const sol = new Device({
+  species: [{ name: 'X', z: 0 }],
+  materials: { gel: { epsr: 0, species: { X: { D: 1e-9, mu0: 0, cRef: 1 } } } },
+  regions: [{ material: 'gel', length: 1e-4 }],
+  contacts: {
+    left: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } },
+    right: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: RT * Math.log(0.1) } } },
+  },
+}).solve();
+const swarm = particles(sol, { dots: 300, cells: 20 });
+for (let i = 0; i < 100; i++) swarm.step(0.01); // 1 s of the slab's time
+console.log(`${swarm.dots.length} dots, each ${swarm.weight.X.toExponential(1)} mol/m²`);
+```
+
+The [carriers demo](https://markblundeberg.github.io/driftlet/demos/carriers.html) draws a
+diode's this way, on its band diagram.
+
 ## Alignment from vacuum levels
 
 `vacuumLevel`, `vacuumDipole` and `vacuumZeroCharge` turn vacuum-level estimates (electron

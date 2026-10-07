@@ -4126,6 +4126,72 @@ export class Solver {
     return cuts;
   }
 
+  // Each species' flux toward +x across every segment, at the current state (concentrations
+  // computed): totals through the cross-section, mol/s (mol/(m²·s) for a planar device). A face's
+  // segment, between its pair of nodes, carries the face's flux; a conductor's, its carrier's.
+  // These are the fluxes the balances add up (displacement aside), from the same formulas.
+  segmentFluxes() {
+    const { model, n, M, u, uLo, c, z, ex } = this;
+    const { grid, materials, regions, interfaces } = model;
+    const out = Array.from({ length: n }, () => new Float64Array(grid.nNodes - 1));
+    for (let r = 0; r < regions.length; r++) {
+      const reg = regions[r], mat = materials[reg.material], vel = reg.velocity;
+      for (let s = grid.regionStart[r]; s < grid.regionEnd[r]; s++) {
+        const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s];
+        if (mat.conductor) {
+          out[mat.conductor.i][s] = u[bL * M];
+          continue;
+        }
+        for (let i = 0; i < n; i++) {
+          if (!mat.present[i] || mat.D[i] === 0) continue;
+          const pe = (vel * h) / mat.D[i];
+          const d = z[i] * (u[bR * M] - u[bL * M]) + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
+          const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]) - pe;
+          out[i][s] = -(mat.D[i] / h) * bernoulli(d) * c[s * n + i] * Math.expm1(deta);
+        }
+        if (reg.mixing > 0) {
+          // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic mean.
+          const on = [...Array(n).keys()].filter((i) => mat.present[i] && mat.D[i] > 0);
+          const cb = [], de = [];
+          let S = 0, Q = 0;
+          for (const k of on) {
+            const a = c[s * n + k], b = c[(s + 1) * n + k];
+            cb[k] = a === b ? a : (b - a) / Math.log(b / a);
+            de[k] = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]);
+            S += z[k] * z[k] * cb[k];
+            Q += z[k] * cb[k] * de[k];
+          }
+          const q = S > 0 ? Q / S : 0;
+          for (const i of on) out[i][s] -= (reg.mixing / h) * cb[i] * (de[i] - z[i] * q);
+        }
+      }
+    }
+    interfaces.forEach((itf, f) => {
+      const gL = grid.regionEnd[f], b = this.blockOfFace[f];
+      for (let i = 0; i < n; i++) if (itf.links[i].type !== 'blocked') out[i][gL] = grid.area[gL] * u[b * M + 1 + i];
+    });
+    return out;
+  }
+
+  // A face's one-way fluxes for each species crossing it by permeability, per area: toward +x
+  // and toward −x, whose difference is its net flux (Ussing's unidirectional fluxes; GHK's two
+  // terms between like solutions). null for a species crossing any other way.
+  faceOneWay(f) {
+    const { model, n, M, u, uLo, z } = this, itf = model.interfaces[f], grid = model.grid;
+    const bL = this.blockOfFace[f] - 1, bR = bL + 2, gl = grid.regionEnd[f], gr = gl + 1;
+    return itf.links.map((link, i) => {
+      if (link.type !== 'permeability') return null;
+      const kl = gl * n + i, kr = gr * n + i;
+      const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
+      const d = z[i] * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
+      const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]);
+      const gated = link.gates ?? [];
+      const P = link.P * (gated.length ? this._open(gated, (q) => u[this._gateSlot(f, q)]) : 1);
+      const right = P * bernoulli(d) * this.c[kl];
+      return [right, right * Math.exp(deta)];
+    });
+  }
+
   // Complex profiles of δφ (V), δμ̄ (J/mol) and δc (mol/m³) from a small-signal solution.
   _smallSignalProfiles(xr, xi) {
     const { n, M, z, VT, model } = this;

@@ -953,17 +953,19 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `phi` | bookkeeping $`\phi`$, V (`NaN` where undefined) |
 | `c[name]`, `mu[name]`, `muStd[name]` | concentration, $`\bar\mu`$, standard level $`\mu^\circ + zF\phi`$ (`NaN` where absent) |
 | `V[name]`, `Vstd[name]` | species voltage $`\bar\mu/(zF)`$ and standard level as a voltage (charged species) |
+| `flux[name]` | flux toward +x across each segment, between nodes `g` and `g + 1` (a face's across its pair of nodes), mol/(m²·s) (mol/s through a cross-section): the fluxes the balances add up |
+| `D[name]` | diffusivity at each node, m²/s (`NaN` where absent, or in a metal) |
 | `current`, `terminalVoltage` | current toward +x through the device (A/m², or A through a [cross-section](#geometry)) and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
-| `contacts.left/right` | `{ V, flux: {name}, D, current }` at each contact |
+| `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact; `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device; an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
-| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates }`: the names of the regions the face joins, what crosses it by its links, and each face reaction's rate (mol/(m²·s)) |
+| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, regions, total }`: each bulk reaction's forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section) |
 | `conservation` | per species stretch: amount, reference, intake through contacts, drift |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
-| `converged`, `iterations`, `steps`, `substeps`, `history`, `time` | solver bookkeeping |
+| `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |
 

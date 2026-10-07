@@ -26,6 +26,7 @@ export function makeSolution(solver, result = {}) {
     muStd: {},
     V: {},
     Vstd: {},
+    T: model.T,
     time: solver.time,
     steady: solver.atSteady,
     converged: result.converged ?? true,
@@ -73,6 +74,17 @@ export function makeSolution(solver, result = {}) {
   // Contacts: fluxes and displacement at the final state (re-evaluated from the balance rows of
   // the boxes they're read from).
   solver.computeConcentrations();
+  // Each species' flux toward +x across each segment (between nodes g and g + 1; a face's across
+  // its pair of nodes), and its diffusivity at each node (NaN where it's absent or in a metal).
+  sol.flux = {};
+  sol.D = {};
+  solver.segmentFluxes().forEach((J, i) => (sol.flux[species[i].name] = J));
+  for (let i = 0; i < n; i++) {
+    sol.D[species[i].name] = Float64Array.from(grid.nodeRegion, (r, g) => {
+      const mat = model.materials[model.regions[r].material];
+      return mat.conductor || !solver.present[g * n + i] ? NaN : mat.D[i];
+    });
+  }
   solver._assembleBookkeeping(solver.lastDt);
   sol.contacts = {};
   sol.gates = {};
@@ -90,6 +102,8 @@ export function makeSolution(solver, result = {}) {
     // Current toward +x through this contact; in steady state both contacts agree.
     const V = solver.termV[side === 'left' ? 0 : 1];
     sol.contacts[side] = { V, flux, D, current: conduction + displacement };
+    // How each species crosses it (a link type), for those that do.
+    sol.contacts[side].links = Object.fromEntries(ct.species.flatMap((l, i) => (l.type === 'blocked' ? [] : [[species[i].name, l.type]])));
     if (ct.phi.type === 'capacitive' || ct.phi.type === 'pinned') {
       // Charge on the gate (or metal) plate, per area if the device is planar: +D at the left, −D
       // at the right.
@@ -154,6 +168,11 @@ export function makeSolution(solver, result = {}) {
     for (let i = 0; i < n; i++) N[species[i].name] = u[b * M + 1 + i];
     const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), forward
     const out = { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
+    // How each species crosses it (a link type), for those that do; and for those crossing by
+    // permeability, the one-way fluxes [toward +x, toward −x], per area.
+    out.links = Object.fromEntries(itf.links.flatMap((l, i) => (l.type === 'blocked' ? [] : [[species[i].name, l.type]])));
+    const oneWay = solver.faceOneWay(f);
+    if (oneWay.some((w) => w)) out.oneWay = Object.fromEntries(oneWay.flatMap((w, i) => (w ? [[species[i].name, w]] : [])));
     if (itf.gates.length > 0) {
       // Each gate's fraction open, and the voltage across the face that drives them.
       out.gates = Object.fromEntries(itf.gates.map((gate, q) => [gate.name, u[solver._gateSlot(f, q)]]));
