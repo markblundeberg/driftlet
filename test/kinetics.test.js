@@ -258,3 +258,22 @@ test('with complexation too, the closed cell solves straight to its steady state
   const iron = (s) => s.conservation.filter((st) => /^Fe/.test(st.species)).reduce((a, st) => a + st.amount, 0);
   assert.ok(Math.abs(iron(cold) / (11 * 100e-6) - 1) < 1e-10, `iron ${iron(cold)}`);
 });
+
+test('open circuit with one partner of a couple at a trace: converged, at its Nernst level', async () => {
+  // Pt | Fe³⁺ with Fe²⁺ at 1e-5 of it, in KCl (ε = 0), against a bath. Held solves find the
+  // voltage where no current passes; at a target of 0 the search needs a current scale of its own.
+  const { build, layer, ohmic, bath, half, aqueous, metal } = await import('../src/kit.js');
+  const rest = (red) => {
+    const c = { 'K+': 100, 'Cl-': 103 + 2 * red, 'Fe3+': 1, 'Fe2+': red };
+    const sol = new Device(
+      build({
+        library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+        stack: [ohmic({ I: 0 }, ['e-']), layer('Pt', 1e-6), { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 10 }] }, layer('water', 1e-3), bath(c, 'Cl-')],
+        grid: { hmin: 20e-9, hmax: 20e-6, ratio: 1.15 },
+      }),
+    ).solve();
+    assert.ok(sol.converged && sol.warnings.length === 0, sol.warnings.join('\n'));
+    return sol.terminals.left.V;
+  };
+  assert.ok(Math.abs(rest(1e-5) - rest(1e-3) - VT * Math.log(100)) < 1e-6);
+});

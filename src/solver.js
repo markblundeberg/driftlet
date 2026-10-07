@@ -4418,13 +4418,15 @@ export class Solver {
     // Floated, the system can lose what held it doesn't (a closed redox cell driven near its
     // limit: its bordered row 33 digits short), but a current-driven steady state is the held
     // one at the voltage that passes the target: found by held solves, by regula falsi
-    // (Illinois) within the bracket, to 1e-10 of the target.
+    // (Illinois) within the bracket, to 1e-10 of the target, or at open circuit of the largest
+    // current the march saw (a target of 0 is never met exactly).
+    const scale = Math.max(Math.abs(target), ...seen.map(([, I]) => Math.abs(I)));
     try {
       let side = 0;
       for (let it = 0; it < 60; it++) {
         const Vm = Va - (fa * (Vb - Va)) / (fb - fa), fm = hold(Vm);
         if (!Number.isFinite(fm)) return fail();
-        if (Math.abs(fm) <= 1e-10 * Math.abs(target)) return { converged: true, steps, iterations, history, residual: Math.abs(fm) };
+        if (Math.abs(fm) <= 1e-10 * scale) return { converged: true, steps, iterations, history, residual: Math.abs(fm) };
         if (Math.sign(fm) === Math.sign(fb)) {
           [Vb, fb] = [Vm, fm];
           if (side === -1) fa /= 2;

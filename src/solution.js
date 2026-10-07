@@ -219,6 +219,12 @@ export function makeSolution(solver, result = {}) {
         'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).',
     );
   }
+  if (result.converged === false && !result.stopped && !un && !(cond && cond.digits > 12)) {
+    sol.warnings.push(
+      'the solve did not converge, and nothing specific showed why. ' +
+        'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',
+    );
+  }
   const debye = (g) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics
