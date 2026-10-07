@@ -3152,7 +3152,13 @@ export class Solver {
       const alpha = own > maxStep ? maxStep / own : 1;
       this._addToState(delta, -alpha);
       this.floating.forEach((k, a) => (this.termV[k] -= alpha * deltaV[a]));
-      if (alpha === 1 && step < tol) {
+      // A time step's Newton contracts fast from its predictor (1e-2, 1e-9, 1e-15 thermal
+      // units). The next update would be about θ = step/(the last one) times this one, so where
+      // θ/(1 − θ) of it (Hairer and Wanner's estimate) is under tol, this update converged it:
+      // the iteration that would only show that is skipped, a third of a typical step's work.
+      const last = history[history.length - 2], theta = step / last;
+      const contracted = dt !== Infinity && it >= 2 && step < 1e-6 && theta < 0.1 && (theta / (1 - theta)) * step < tol;
+      if (alpha === 1 && (step < tol || contracted)) {
         const done = { converged: true, iterations: it, history, residual: rmax };
         if (islandsOff(it, done)) continue;
         this.computeConcentrations();

@@ -9,6 +9,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   sampled at the nodes (a liquid junction's potential then seemed to grow as it formed).
 - `check()` in a transient says its grid isn't checked (`?`), rather than leaving the grid item
   out: a transient's answer depends on the whole run, so it's rerun on a finer grid by hand.
+- A time step's Newton iteration stops once its contraction shows the next update would be under
+  tolerance, rather than taking that update to show it: about a third fewer factorisations where
+  steps are capped by `dtMax` (the nerve demos: a bare axon's step 4.4 → 3.3 ms), 4–8% fewer in
+  the benchmarks' adaptive transients.
 - The agent guide is shorter (a map of the templates up top, tighter front matter, the
   level-diagram and mistakes sections halved), with notes from a third round of cold agents: a
   BJT's base contact, the semiconductor data, `vacuumDipole` with `build()`, a cyclic
