@@ -347,3 +347,27 @@ test('insertion statistics are checked', () => {
   def = host({ ...regular, species: ['Li+', 'Li+'] }, liIon(0), collector(0));
   throwsDevice(def, /already belongs/);
 });
+
+test('a particle filling at a constant current: solve() says it has no steady state and leaves it as it was; advance() fills it along its OCV', () => {
+  // A 5 µm sphere of an insertion host (ideal OCV about 4 V vs Li), Li⁺ held at its surface by a
+  // lithium reference, electrons fed at 1C through a collector port (into the device: I < 0).
+  const T = 298.15, VTs = (GAS_CONSTANT * T) / FARADAY, R = 5e-6, cMax = 30000, x0 = 1e-3;
+  const x = [1e-4, 1e-3, 0.01, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99, 0.999];
+  const ocv = (v) => 4 - VTs * Math.log(v / (1 - v));
+  const Q = FARADAY * cMax * (4 / 3) * Math.PI * R * R * R; // C
+  const dev = new Device({
+    T,
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x, E: x.map(ocv), muRef: 0 } }] } },
+    regions: [{ name: 'particle', material: 'host', length: R, c0: { 'Li+': x0 * cMax, 'e-': x0 * cMax } }],
+    geometry: { type: 'spherical', r0: 0 },
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' } },
+    ports: [{ name: 'collector', region: 'particle', from: R - R / 50, to: R, I: -Q / 3600, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    grid: { hmin: R / 400, hmax: R / 100 },
+  });
+  const steady = dev.solve();
+  assert.ok(!steady.converged && steady.warnings.some((w) => w.includes('may only store what comes in')), steady.warnings.join('\n'));
+  const half = dev.advance(1800 * (1 - 2 * x0)); // half full
+  assert.ok(half.converged && half.warnings.length === 0, half.warnings.join('\n'));
+  assert.ok(Math.abs(half.terminals.collector.V - ocv(0.5)) < 5e-3, `${half.terminals.collector.V} V at half full`);
+});

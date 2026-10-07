@@ -207,9 +207,17 @@ export function makeSolution(solver, result = {}) {
   const cond = solver.conditioning, un = solver.unreached;
   if (result.converged === false && un) {
     const [[V0, I0], [V1, I1]] = [un.low, un.high], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
+    // The opposite sign within reach: likely a sign slip (a drive is the current into the device).
+    const flipped = Math.min(I0, I1) <= -un.target && -un.target <= Math.max(I0, I1);
     sol.warnings.push(
       `${un.terminal}: no steady state passes the driven current ${g(un.target)} ${A}; held from ${g(V0)} V to ${g(V1)} V ` +
-        `it passed ${g(I0)} to ${g(I1)} ${A} (a limiting current, or kinetics too slow). Drive less, or hold a voltage.`,
+        `it passed ${g(I0)} to ${g(I1)} ${A} (a limiting current, or kinetics too slow). Drive less, or hold a voltage.` +
+        (flipped ? ` (It passes ${g(-un.target)} ${A}: if that was meant, a terminal's current is into the device.)` : '') +
+        // Nothing passed at any voltage: the device only stores what comes in (a host filling, a
+        // capacitor charging), so it has no steady state at a current.
+        (Math.max(Math.abs(I0), Math.abs(I1)) < 1e-6 * Math.abs(un.target)
+          ? ' It passes almost nothing steadily at any voltage, so it may only store what comes in (a host filling, a capacitor charging), which has no steady state at a current: advance() in time instead.'
+          : ''),
     );
   } else if (result.converged === false && cond && cond.digits > 12) {
     const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';

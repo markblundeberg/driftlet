@@ -85,7 +85,10 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **Drives.** A terminal is held at a voltage `V`, driven by a current `I` (open circuit is
   `I: 0`), or behind a resistance `{ V, R }`. A voltage or current can be a waveform: a table
   `{ t: [...], values: [...] }`, piecewise linear (a step is two points at one time), or the kit's
-  `pulse`, `square`, `triangle` (cyclic voltammetry), `ramp`. `dev.set({ contacts: { right: { V } } })`
+  `pulse({ start, width, amplitude, rise, base })`, `square({ high, low, period, duty })`,
+  `ramp({ from, to, duration, start })` and `triangle({ from, to, period })` (from `from` to `to`
+  and back each period from t = 0, repeating: a cyclic voltammogram, in terminal volts). A drive's
+  current is the conventional current into the device: electrons fed in are I < 0. `dev.set({ contacts: { right: { V } } })`
   changes a drive and keeps the state as a warm start; ports are patched by name,
   `{ ports: { gate: { V } } }`.
 - **Reactions** are equations: `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`. A coefficient is a
@@ -96,11 +99,15 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   recombination `e- + h+ = 0` gives a minority lifetime τ = 1/(kf·N), N the majority density in
   mol/m³: `kf: 1e8` is τ ≈ 0.6 µs at 1e16 cm⁻³. Trap-assisted (SRH) recombination is
   `{ equation: 'e- + h+ = 0', srh: { Si: { tauN, tauP } } }` (s), and at a face
-  `{ equation: 'e-(left) + h+(right) = 0', srh: { vn, vp } }` (m/s). Generation is a reaction from
+  `{ equation: 'e-(left) + h+(right) = 0', srh: { vn, vp } }` (m/s). Band-to-band and the kit's
+  `recombination()` are bimolecular, so their lifetime shortens at high injection; for a constant
+  minority lifetime τ_p at any injection, use SRH with τ_N ≪ τ_p. Generation is a reaction from
   a reservoir (`photon = e- + h+`), and light absorbed as it goes in is
   `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`. A face reaction's
   `k0` is in mol/(m²·s), the rate with every participant at its reference concentration (cRef):
-  i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s.
+  i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at cRef = 1000 mol/m³:
+  `k0: 10`). A couple the library lacks is two species pushed into it (`z: 0` for a neutral one),
+  with μ°_red − μ°_ox = −F·E°.
 
 `build()` writes a plain definition for `new Device()`, which can be written by hand too:
 
@@ -164,7 +171,8 @@ doesn't jump as the slider moves. Pass `worker: true` to `live()` to solve in a 
 works with the library loaded from a CDN). `onsolution` may call `set()`, e.g. to iterate toward
 a value the page finds itself: each call queues another solve, so make sure it converges rather
 than oscillates. A device of a few hundred nodes solves in milliseconds; thousands, or
-transients, want a worker and `advance(t, { budgetMs })` per frame.
+transients, want a worker and `advance(t, { budgetMs })` per frame. (A headless browser taking a
+screenshot of a page that loads the library from a CDN needs a long virtual-time budget, 30 s.)
 
 ```html
 <!doctype html>
@@ -690,7 +698,11 @@ V_right − V_left). It stops short when it runs out of `budgetMs` (an animation
 or, with a warning saying why, of `maxSteps` (100000) or of steps that converge. `probes` read
 the device at points inside it, at accepted steps, so give `dtMax` to resolve a signal in time:
 `{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face
-`{ interface: f, species }` (its flux) or `{ interface: f, gate }`. `dev.step(dt)` is one
+`{ interface: f, species }` (its flux) or `{ interface: f, gate }`. To stop at an event (a
+voltage cut-off, the end of a diode's storage time), advance in short calls and test after each;
+a driven current held past what the device can pass fails to converge. A device that only stores
+what comes in (a battery host filling at a current) has no steady state: don't `solve()` it,
+`advance()` from its `c0` (docs/statistics.md, insertion hosts). `dev.step(dt)` is one
 backward-Euler step, and `dev.impedance(frequencies, { terminal })` the small-signal Z(f) about
 the steady state (Ω·m²).
 
@@ -833,8 +845,10 @@ has the long form):
 - **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`). At body
   temperature, `T: 310.15` with the same μ° and D is a fair start; D rises about 2% per kelvin
   in water.
-- **Sign of the current.** Positive toward +x: a forward-biased diode with its p side on the right
-  carries negative current. A terminal's current is into the device.
+- **Sign of the current.** `sol.current` is toward +x: a forward-biased diode with its p side on
+  the right carries negative current. A terminal's current, and a current drive `{ I }`, are into
+  the device: that same diode is driven forward by a positive `I` at its right contact. A drive of
+  the wrong sign fails with `no steady state passes the driven current`, and says so.
 - **A membrane potential read from Cl⁻-referenced terminals.** They differ from Δφ by Cl⁻'s
   Nernst term: read V_m from `sol.phi` (or a `{ x, quantity: 'phi' }` probe), or use baths
   without a reference.

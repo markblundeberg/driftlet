@@ -3474,7 +3474,7 @@ export class Solver {
     // Stopped short, other than on the caller's wall-time budget: say where, and why.
     let stopped;
     const at = `advance stopped at t = ${this.time.toPrecision(6)} s of ${tEnd.toPrecision(6)}`;
-    if (failed) stopped = `${at}: a step didn't converge even when shortened to ${dt.toExponential(1)} s. A drive's jump too big for one step (ramp it), or a device the steady solves also find hard.`;
+    if (failed) stopped = `${at}: a step didn't converge even when shortened to ${dt.toExponential(1)} s. A drive's jump too big for one step (ramp it), a driven current the device can't keep passing (a diode's reverse recovery past its storage time: stop there), or a device the steady solves also find hard.`;
     else if (this.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
     return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
   }

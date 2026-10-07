@@ -25,6 +25,11 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   continuation (which ramped only the right contact, from where it was last solved) had nothing
   to ramp and returned the old state as converged. It ramps whichever contact moved now, and a
   ramp that runs no solve doesn't claim one.
+- A solve that fails leaves the device as it was before it (it used to leave the failed iterate,
+  from which nothing could go on: a battery host filling at a current, which has no steady
+  state, couldn't then be advanced). An unreachable driven current's warning says when the
+  opposite sign would have passed (a terminal's current is into the device), and when nothing
+  passes at any voltage (a device that only stores charge: advance it in time instead).
 - Fixed: a transient a second or more into a run, after a jump that a fine grid resolves in
   steps of 1e-13 s, stalled and stopped (a potential step at t = 1 s on a 5 nm grid): the error
   estimate was built from differences of absolute times, which keep only a few digits there.

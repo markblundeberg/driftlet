@@ -146,6 +146,16 @@ conducting when it's empty. With no fixed charge, the carriers are only those th
 the ions. The carrier's `cRef` plays no part (only the combination's $`\mu^\circ`$ and the ion's
 `cRef` enter), but it must still be given.
 
+The ion's `D` is its dilute-limit coefficient, as everywhere: the chemical diffusivity, $`D`$
+times the thermodynamic factor, follows from the OCV's slope. For an ideal-solution curve,
+$`E = E^\circ - (RT/F)\ln(x/(1-x))`$, it's $`D/(1-x)`$, so a host filling toward $`x = 1`$
+diffuses ever faster, and a $`D`$ measured mid-range isn't the one to give. (A constant chemical
+diffusivity isn't expressible.) A host that only stores what comes in, filling at a constant
+current through its collector, has no steady state: `advance()` it from its `c0`. In a sphere,
+`geometry: { type: 'spherical', r0: 0 }`, with the centre sealed (`{ phi: 'neutral' }`, every
+species blocked), the ion held at the surface by its reference and the electrons fed by a port
+there (a current into the device: negative, to fill a cathode).
+
 An insertion host belongs with [conductor regions](device.md#materials) more than with the other
 statistics here. Both are conductors with no $`\phi`$ of their own:
 - **A metal** is the one-carrier case: its Fermi level is its only unknown.

@@ -187,6 +187,8 @@ test('cold steady solves that need continuation: open circuit, a lit cell at for
   // the warning says so.
   const over = iron.set({ contacts: { right: { I: -20 } } }).solve();
   assert.ok(!over.converged && over.warnings.some((w) => w.startsWith('right: no steady state passes the driven current -20.0 A/m²')), over.warnings.join('\n'));
+  // (and as the opposite sign passes, it says how a terminal's current is signed)
+  assert.ok(over.warnings.some((w) => w.endsWith("(It passes 20.0 A/m²: if that was meant, a terminal's current is into the device.)")), over.warnings.join('\n'));
 });
 
 test('a closed Fe³⁺/Fe²⁺ cell driven by a current near its limit: the held voltage that passes it', () => {

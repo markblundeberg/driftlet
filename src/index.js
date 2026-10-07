@@ -166,7 +166,12 @@ export class Device {
    * @returns {Solution}
    */
   solve(opts) {
-    return makeSolution(this.solver, this.solver.solveSteady(opts));
+    // A solve that fails reports the state it failed in, and leaves the device as it was: a
+    // device with no steady state (a host filling at a current) can still advance() from there.
+    const snap = this.solver._snapshot();
+    const sol = makeSolution(this.solver, this.solver.solveSteady(opts));
+    if (!sol.converged) this.solver._restore(snap);
+    return sol;
   }
 
   /**
