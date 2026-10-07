@@ -218,6 +218,19 @@ slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider
 To draw in your own style, `traces(sol, opts)` (kit, the same options) gives the lines as data;
 see "Reading level diagrams" below.
 
+For an explainer, `particles(sol, { weight, cap })` (kit) draws a solution as dots, each `weight`
+mol/m² of a species, hopping at rates taken from the solution: on average their density is its
+concentration and their net crossing its flux. A friendly first figure for teaching, as long as
+the page says it samples the continuum solution and how much a dot is. Where a dot would be lost
+among millions (majority carriers, a bath), a cell over `cap` dots is a sea: shade it by
+`expected(name)`. Each frame: `swarm.step(dt)` in the device's time (about h²/D per hop, h a
+cell), then draw `swarm.dots` (`{ species, x }`) and `swarm.events` (`'unmade'` is a
+recombination; `'cross'` an ion through a membrane between two seas); on a new steady solution,
+`swarm.update(sol, { resample: true })`. A membrane's permeability (1e-8 m/s) is tiny beside
+D/h in the water (0.02 m/s for 100 nm cells), so an ion beside it hops ~1e6 times per crossing:
+a membrane page shows seas and crossing events, not walking ions.
+The pn demo's page script draws a diode's carriers on its band diagram this way.
+
 ## Template: a solar cell
 
 `photon = e- + h+`, with the photons' μ well above the gap, generates uniformly at the rate `kf`.
@@ -820,6 +833,6 @@ What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualizat
   - checking: `describe`, `check`, `polarization` (an electrode's reactions at hypothetical
     metal levels, with the solution held: an Evans diagram), `henderson` and `planck`
     (liquid-junction potentials);
-  - pages: `live`, `traces`, `recorder`;
+  - pages: `live`, `traces`, `recorder`, `particles`;
   - curated devices: `perovskiteCell`, `PEROVSKITE_SCANS`, `hysteresis`.
 - `driftlet/plot` (a quick look): `bandDiagram`, `levelChart`, `labelParts`, `themeColor`.

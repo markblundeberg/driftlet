@@ -8,15 +8,15 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   hopping between display cells at one-way rates taken from the solution, so their density is
   its concentration and their net crossing rate its flux (tested against Fick's slab, a decaying
   species and Ussing's flux ratio). Dense species are seas that hold no dots but exchange them,
-  so a junction shows its majority carriers as seas and its minority carriers one by one. A new
-  demo page draws a diode's carriers on its band diagram.
+  so a junction shows its majority carriers as seas and its minority carriers one by one. The
+  pn demo draws its carriers this way, at the bottom, on the band diagram.
 - Solutions carry each species' flux across every segment (`flux`), its diffusivity (`D`), the
   temperature (`T`), how each species crosses each contact and face (`links`), and a permeable
   face's one-way fluxes (`oneWay`).
 - A visual identity: the logo's wordmark redrawn in Recursive's casual sans (as outlines, so it
   looks the same everywhere), and the demo site in paper and ink with the logo's vermilion, a
-  gallery whose sections show each field's cast, charges drifting along a potential (cations
-  down it, anions up), and a stamp on each card naming what its page is checked against.
+  gallery whose sections show each field's cast, charges drifting along a potential at its foot
+  (cations down it, anions up), and a stamp on each card naming what its page is checked against.
 - A starting `c0` profile steeper than the grid's cells under it is warned of in every
   solution, with where and the cells that would resolve it: the start was silently the profile
   sampled at the nodes (a liquid junction's potential then seemed to grow as it formed).

@@ -56,7 +56,7 @@ export function fromQuery(input) {
 // ?shot: just the title and the figures (for the gallery's thumbnails and the README).
 if (new URLSearchParams(location.search).has('shot')) {
   const style = document.createElement('style');
-  style.textContent = 'nav.site, main > p, main > ul, main > h2, .controls, details.code { display: none !important; } h1 { margin-bottom: 10px; }';
+  style.textContent = 'nav.site, main > p, main > ul, main > h2, .controls, details.code, .illustration { display: none !important; } h1 { margin-bottom: 10px; }';
   document.head.append(style);
 }
 

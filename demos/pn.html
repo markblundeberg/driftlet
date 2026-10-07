@@ -6,6 +6,9 @@
 <title>pn junction</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<style>
+  #dots { height: auto; aspect-ratio: 720 / 300; }
+</style>
 </head>
 <body>
 <main>
@@ -45,10 +48,24 @@
     D<sub>p</sub>/(N<sub>D</sub>L<sub>p</sub>) coth(W<sub>n</sub>/L<sub>p</sub>)], plus the recombination in
     the depletion layer (dashed). It holds to a few percent until the current is large, where series
     resistance and rising injection bend the curve below it.</p>
+  <section class="illustration">
+    <h2>The carriers, drawn as dots</h2>
+    <p>An illustration of the solution above, not a separate simulation: driftlet solves for densities and
+      potentials, and <code>particles()</code> from the kit samples them as dots. Each dot is a fixed number of
+      carriers, hopping between cells at rates taken from the solution, so that on average the dots fill the
+      space as the densities do and cross each place at the currents. Where carriers are plentiful a dot would
+      be lost among millions, so they're a shaded sea, darker where denser; the dots are the minority carriers
+      the bias injects, diffusing until they reach a contact or recombine (a line across the gap). A short
+      lifetime makes recombination common; a long one sends them to the contacts. The majority carriers'
+      drift is there too, but at about 10⁻⁷ of their thermal motion, no sample of them would show it.</p>
+    <canvas id="dots"></canvas>
+    <p class="note"><label>speed <input id="speed" type="range" min="-1" max="1.5" step="0.1" value="0.7"></label>
+      <span id="dotsKey"></span></p>
+  </section>
 </main>
 <script type="module">
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, live, particles } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
@@ -104,7 +121,12 @@ function sweep() {
 sweep();
 
 // live() solves each change warm from the last, merging slider moves made during a solve.
-const dev = live(diode(kf()), { onsolution: draw });
+const dev = live(diode(kf()), {
+  onsolution(sol, info) {
+    draw(sol, info);
+    carriers(sol);
+  },
+});
 const update = () => dev.set({ contacts: { right: { V: +bias.value } }, bulkReactions: recombination(kf()) });
 bias.addEventListener('input', update);
 life.addEventListener('change', () => {
@@ -132,6 +154,103 @@ function draw(sol, info) {
   });
   levels(document.getElementById('levels'), sol, { energy: true, title: `bands and quasi-Fermi levels at V = ${V.toFixed(2)} V` });
   profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true });
+}
+// The carriers as dots (driftlet/kit's particles()), drawn on the band diagram: electrons a
+// kinetic energy above E_c, holes below E_v (Maxwell–Boltzmann: kT times a Γ(3/2) variate). A
+// dot is a decade of carriers per cm², chosen so the electrons injected at the p side's edge of
+// the depletion layer come between 0.4 and 4 to a cell; denser than 5 a cell is a sea.
+let swarm = null, perCm2 = 0, current = null;
+const flashes = [], kT = (GAS_CONSTANT * 300) / FARADAY;
+function carriers(sol) {
+  current = sol;
+  const c = sol.c['e-'], p = sol.c['h+'], h = (2 * W) / 100;
+  const edge = sol.x.findIndex((x, g) => sol.region[g] === 1 && p[g] > 0.9 * NA);
+  const decade = Math.max(0, Math.ceil(Math.log10((c[edge] * h * AVOGADRO * 1e-4) / 4)));
+  if (!swarm || 10 ** decade !== perCm2) {
+    perCm2 = 10 ** decade;
+    swarm = particles(sol, { species: ['e-', 'h+'], weight: (perCm2 * 1e4) / AVOGADRO, cap: 5, cells: 100 });
+  } else swarm.update(sol, { resample: true });
+  document.getElementById('dotsKey').textContent = `· one dot is 10${String(decade).replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d])} carriers per cm² of junction`;
+}
+const canvas = document.getElementById('dots'), ctx = canvas.getContext('2d'), speed = document.getElementById('speed');
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const gamma32 = () => -Math.log(1 - Math.random()) + 0.5 * (Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random())) ** 2;
+let last = performance.now();
+function frame(now) {
+  const secs = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  requestAnimationFrame(frame);
+  if (!swarm || canvas.clientWidth === 0) return;
+  // the device's time: about a hop a frame in a cell of electrons, times the speed
+  const h = swarm.cells[1].x1 - swarm.cells[1].x0;
+  swarm.step(((0.4 * h * h) / el.D) * 10 ** +speed.value * 60 * secs);
+  for (const ev of swarm.events) if (ev.kind === 'unmade') flashes.push({ x: ev.x, t: now });
+  paint(now);
+}
+requestAnimationFrame(frame);
+
+function paint(now) {
+  const sol = current, dpr = devicePixelRatio || 1, Wc = canvas.clientWidth, Hc = canvas.clientHeight;
+  if (canvas.width !== Math.round(Wc * dpr) || canvas.height !== Math.round(Hc * dpr)) [canvas.width, canvas.height] = [Math.round(Wc * dpr), Math.round(Hc * dpr)];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, Wc, Hc);
+  const x = sol.x, n = x.length;
+  const Ec = Array.from(sol.muStd['e-'], (m) => m / FARADAY), Ev = Array.from(sol.muStd['h+'], (m) => -m / FARADAY);
+  const lo = Math.min(...Ev) - 0.15, hi = Math.max(...Ec) + 0.15;
+  const pad = { l: (56 / 720) * Wc, r: (14 / 720) * Wc, t: 10, b: 10 }; // the diagrams' plot area, to line up with them
+  const px = (v) => pad.l + ((v - x[0]) / (x[n - 1] - x[0])) * (Wc - pad.l - pad.r);
+  const py = (e) => pad.t + ((hi - e) / (hi - lo)) * (Hc - pad.t - pad.b);
+  const at = (arr, xv) => {
+    let g = 1;
+    while (g < n - 1 && x[g] < xv) g++;
+    return arr[g - 1] + ((xv - x[g - 1]) / (x[g] - x[g - 1] || 1)) * (arr[g] - arr[g - 1]);
+  };
+  const blue = css('--c1'), red = css('--c8');
+  // seas, from the band edge a few kT into the band, darker by the decade
+  for (const [nm, edge, sign, color] of [['e-', Ec, 1, blue], ['h+', Ev, -1, red]]) {
+    const sea = swarm.sea[nm], m = swarm.expected(nm);
+    ctx.fillStyle = color;
+    swarm.cells.forEach((cl, K) => {
+      if (!sea[K]) return;
+      ctx.globalAlpha = 0.1 + 0.5 * Math.min(1, Math.log10(m[K] / 5) / 8);
+      const e = at(edge, (cl.x0 + cl.x1) / 2), y0 = py(e), y1 = py(e + sign * 4 * kT);
+      ctx.fillRect(px(cl.x0), Math.min(y0, y1), px(cl.x1) - px(cl.x0) + 0.5, Math.abs(y1 - y0));
+    });
+  }
+  ctx.globalAlpha = 1;
+  for (const edge of [Ec, Ev]) {
+    ctx.beginPath();
+    edge.forEach((v, g) => (g ? ctx.lineTo(px(x[g]), py(v)) : ctx.moveTo(px(x[g]), py(v))));
+    ctx.strokeStyle = css('--ink');
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  // recombinations: a line across the gap, fading over half a second
+  for (let k = flashes.length - 1; k >= 0; k--) {
+    const f = flashes[k], age = (now - f.t) / 500;
+    if (age > 1) {
+      flashes.splice(k, 1);
+      continue;
+    }
+    ctx.globalAlpha = 1 - age;
+    ctx.strokeStyle = css('--c4');
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px(f.x), py(at(Ec, f.x)));
+    ctx.lineTo(px(f.x), py(at(Ev, f.x)));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // the dots, eased toward their cells so that hops read as motion
+  for (const d of swarm.dots) {
+    d.e ??= gamma32();
+    d.px = d.px === undefined ? d.x : d.px + (d.x - d.px) * 0.35;
+    const e = d.species === 'e-', edge = at(e ? Ec : Ev, d.px);
+    ctx.fillStyle = e ? blue : red;
+    ctx.beginPath();
+    ctx.arc(px(d.px), py(edge + (e ? 1 : -1) * kT * (0.6 + d.e)), 2.6, 0, 2 * Math.PI);
+    ctx.fill();
+  }
 }
 showCode();
 </script>

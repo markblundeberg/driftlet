@@ -557,8 +557,9 @@ for (let i = 0; i < 100; i++) swarm.step(0.01); // 1 s of the slab's time
 console.log(`${swarm.dots.length} dots, each ${swarm.weight.X.toExponential(1)} mol/m²`);
 ```
 
-The [carriers demo](https://markblundeberg.github.io/driftlet/demos/carriers.html) draws a
-diode's this way, on its band diagram.
+The dots are a friendly first picture for teaching. Pages that explain driftlet itself lead with
+the fields, so the [pn demo](https://markblundeberg.github.io/driftlet/demos/pn.html) draws its
+carriers this way at the bottom, on the band diagram.
 
 ## Alignment from vacuum levels
 

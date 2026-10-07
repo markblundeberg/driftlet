@@ -13,12 +13,11 @@
 <nav class="site"><a href="https://github.com/markblundeberg/driftlet">source, docs and more on GitHub</a><a href="https://www.npmjs.com/package/driftlet">npm</a><a href="https://github.com/markblundeberg/driftlet/blob/master/llms.txt">guide for coding agents</a></nav>
   <header class="hero">
     <h1><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/logo-dark.svg"><img src="../docs/logo.svg" alt="driftlet" width="269" height="74"></picture></h1>
-    <p class="tagline">Charged species drifting through one-dimensional devices, solved live in your browser.</p>
+    <p class="tagline">Charged species drifting and diffusing through one-dimensional devices, solved as continuous fields, live in your browser.</p>
   </header>
-  <svg class="rails" id="rails" aria-hidden="true"></svg>
   <p>driftlet is a small JavaScript library with no dependencies. A pn junction, a battery and a nerve look like
     different subjects, but to driftlet they're one problem with a different cast: electrons and holes, or ions,
-    each drifting and diffusing down its own electrochemical potential, reacting, and crossing interfaces.</p>
+    each a continuous concentration drifting and diffusing down its own electrochemical potential, reacting, and crossing interfaces.</p>
   <p>Each page builds its device with <code>driftlet/kit</code>, solves it as you move the controls, and draws
     what you'd measure (an I–V curve, a voltammogram, a discharge), mostly against closed-form theory as a check.
     Beneath it are the level diagrams and profiles across the device, on one x axis. Every page shows its whole
@@ -56,7 +55,7 @@
     <a class="card" href="myelin.html"><em class="stamp tested" title="no check on the page; node-by-node arrival is validated against a compartmental cable in the test suite">tested: cable</em><img src="screenshots/myelin.png" alt="saltatory conduction in a myelinated axon"><div><b>Myelin</b><span>Two thin axons race: one bare, one myelinated, its spike jumping from node of Ranvier to node over ten times faster, against a compartmental cable; myelin thickness, node spacing and channel density.</span></div></a>
   </div>
 
-  <footer class="site">Every figure on these pages is computed in your browser as you watch; none of it is a recording.
+  <footer class="site"><svg class="rails" id="rails" aria-hidden="true"></svg>Every figure on these pages is computed in your browser as you watch; none of it is a recording.
     driftlet is free software (0BSD), on <a href="https://www.npmjs.com/package/driftlet">npm</a> and
     <a href="https://github.com/markblundeberg/driftlet">GitHub</a>.</footer>
 </main>
