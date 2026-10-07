@@ -1796,7 +1796,7 @@ export class Solver {
   // A start-of-step net charge (round-off in a solved state) isn't carried over: the neutrality
   // row holds the new state neutral.
   _chargeRows(dt) {
-    const { n, M, res, c, cOld, z, sys, loc, present, termB, termC } = this, R = this.rix, F = FARADAY;
+    const { n, M, res, c, cOld, z, sys, loc, present, termB, termC } = this, R = this.rix, F = FARADAY, live = this._liveTerms();
     const { A, B, C, sizes, offA, offB, offC } = sys, vol = this.model.grid.vol, last = this.nB - 1;
     for (const g of this.chargeNodes) {
       const b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < last ? sizes[b + 1] : 0;
@@ -1820,7 +1820,7 @@ export class Solver {
         for (let q = 0, o = offB[b] + lk * m, s = offB[b] + li * m; q < m; q++) B[o + q] += w * B[s + q];
         for (let q = 0, o = offC[b] + lk * mn, s = offC[b] + li * mn; q < mn; q++) C[o + q] += w * C[s + q];
         res[rk] += w * res[ri];
-        for (let t = 0; t < termB.length; t++) termB[t][rk] += w * termB[t][ri];
+        for (const t of live) termB[t][rk] += w * termB[t][ri];
         if (this.lin) this.lin.combine(rk, ri, w);
       }
       // Columns: φ̂' = φ̂ with η fixed becomes φ̂ with η_i shifted by z_i, wherever node g's
@@ -1831,7 +1831,7 @@ export class Solver {
         for (let r = 0, o = offB[b]; r < m; r++) B[o + r * m + p] += zi * B[o + r * m + li];
         if (b > 0) for (let r = 0, mr = mp, o = offC[b - 1]; r < mr; r++) C[o + r * m + p] += zi * C[o + r * m + li];
         if (b < last) for (let r = 0, mr = mn, o = offA[b + 1]; r < mr; r++) A[o + r * m + p] += zi * A[o + r * m + li];
-        for (let t = 0; t < termC.length; t++) termC[t][R[lb]] += zi * termC[t][R[lb + 1 + i]];
+        for (const t of live) termC[t][R[lb]] += zi * termC[t][R[lb + 1 + i]];
       }
       // Storage on the other charged balances, and neutrality: no φ̂' terms, exactly.
       const v = vol[g], oB = offB[b];
@@ -2442,16 +2442,26 @@ export class Solver {
     }
   }
 
+  // The terminals whose ∂res/∂V (termB) and ∂I/∂x (termC) are kept, exactly: the floating ones,
+  // which the Newton solve borders on, or all of them (allTerminals: for the impedance, which reads
+  // its terminal's). A held terminal's are otherwise left as they fall (written but not kept
+  // consistent), which spares a device with dozens of ports (an axon's nodes of Ranvier) the cost
+  // of carrying each one's two dense vectors through every assembly.
+  _liveTerms() {
+    if (this.allTerminals) return this._allTerms ?? (this._allTerms = this.terms.map((_, k) => k));
+    return this.floating;
+  }
+
   // Every terminal's terms: its voltage held or floating, how the residual depends on it
   // (termB), its current into the device (termI) and how that depends on the state (termC).
   _terminals(dt) {
     this._refreshSources();
-    for (let k = 0; k < this.terms.length; k++) {
+    for (const k of this._liveTerms()) {
       this.termB[k].fill(0);
       this.termC[k].fill(0);
-      this.termDI[k] = 0;
-      this.termI[k] = 0;
     }
+    this.termDI.fill(0);
+    this.termI.fill(0);
     this.qg.fill(0);
     this.qgSlope.fill(0);
     this.model.ports.forEach((port, k) => this._port(port, this.portFlux[k], 2 + k, dt, false));
@@ -2877,7 +2887,7 @@ export class Solver {
 
   // Scale every row by its largest Jacobian entry (in place, residual too).
   _equilibrate() {
-    const { nB, sys, res, termB } = this;
+    const { nB, sys, res, termB } = this, live = this._liveTerms();
     const { A, B, C, sizes, offA, offB, offC, offX } = sys;
     for (let b = 0; b < nB; b++) {
       const m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < nB - 1 ? sizes[b + 1] : 0;
@@ -2897,7 +2907,7 @@ export class Solver {
         for (let k = 0; k < m; k++) B[ob + k] *= s;
         for (let k = 0; k < mn; k++) C[oc + k] *= s;
         res[offX[b] + r] *= s;
-        for (let k = 0; k < termB.length; k++) termB[k][offX[b] + r] *= s; // (each terminal's ∂/∂V)
+        for (const k of live) termB[k][offX[b] + r] *= s; // (each terminal's ∂/∂V)
       }
     }
   }
@@ -3674,7 +3684,17 @@ export class Solver {
    * Z = δV/δI with I into the device (positive real part for a passive device).
    * @param {ArrayLike<number>} frequencies Hz
    */
-  impedance(frequencies, { profiles = false, terminal = 'right' } = {}) {
+  impedance(frequencies, opts) {
+    const was = this.allTerminals;
+    this.allTerminals = true; // (it reads its terminal's ∂res/∂V and ∂I/∂x)
+    try {
+      return this._impedance(frequencies, opts);
+    } finally {
+      this.allTerminals = was;
+    }
+  }
+
+  _impedance(frequencies, { profiles = false, terminal = 'right' } = {}) {
     const { M, nB, sys, VT } = this;
     const kT = this.terms.findIndex((t) => t.name === terminal);
     if (kT < 0) throw new SolverError(`impedance: no terminal named '${terminal}' (${this.terms.map((t) => t.name).join(', ')})`);

@@ -178,6 +178,7 @@ for (const [name, make] of Object.entries(devices)) {
     const s = dev.solver, N = s.sys.size;
     const blockOf = new Int32Array(N);
     for (let b = 0; b < s.nB; b++) blockOf.fill(b, s.sys.offX[b], s.sys.offX[b + 1]);
+    s.allTerminals = true; // (every terminal's ∂res/∂V and ∂I/∂x kept, to check them all)
     // Away from the solution, so that every term is exercised.
     for (let k = 0; k < N; k++) s.u[s.fullOf[k]] += 0.03 * Math.sin(1 + 7 * k);
     for (const dt of [Infinity, 1e-6]) {
@@ -250,6 +251,7 @@ test('J·v in difference form equals the assembled Jacobian, and a uniform shift
     const dev = new Device(make());
     assert.ok(dev.solve().converged);
     const s = dev.solver, N = s.sys.size;
+    s.allTerminals = true;
     for (let k = 0; k < N; k++) s.u[s.fullOf[k]] += 0.03 * Math.sin(1 + 7 * k);
     for (const [dt, combining] of [[Infinity, false], [1e-6, false], [1e-6, true]]) {
       s.computeConcentrations();
