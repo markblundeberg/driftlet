@@ -188,6 +188,18 @@ const devices = {
     }),
     ports: [{ name: 'inv', region: 'Si', from: 0, to: 3e-9, V: 0.01, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
   }),
+  // Surface velocities at a contact (a Schottky barrier's thermionic emission), floating at a
+  // current, the other contact pinned with its carriers held.
+  'surface velocities at a pinned contact, driven by a current': () => ({
+    species: carriers,
+    materials: { Si: silicon },
+    regions: [{ material: 'Si', length: 0.5e-6, fixedCharge: units.perCm3(1e16) * FARADAY }],
+    contacts: {
+      left: { I: 5, terminal: 'e-', species: { 'e-': { type: 'velocity', v: 1e4 }, 'h+': { type: 'velocity', v: 3e3, offset: 0 } }, phi: 'pinned', zeroCharge: 0.7 },
+      right: ohmic(0),
+    },
+    grid: coarse,
+  }),
   'floating terminal (a conductance link) in current mode': () => ({
     species: ions,
     materials: { water: water(78.5) },

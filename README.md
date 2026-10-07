@@ -210,7 +210,8 @@ current. Within that:
   conductivity: Schottky and MOS gates as regions, electrodes with reactions at their faces,
   bipolar electrodes;
 - contacts as outside phases with known levels, joined by the same laws as internal faces:
-  ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links, gates and
+  ohmic contacts, reversible electrodes, baths, pinned barriers, conductance links, surface
+  velocities (thermionic emission over a Schottky barrier, surface recombination), gates and
   Stern layers;
 - interfaces with explicit alignment, blocking, interface resistance, and Butler–Volmer
   reactions with participants on either side (electrode reactions, ion and electron transfer,

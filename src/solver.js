@@ -1220,7 +1220,7 @@ export class Solver {
   /** η_i/RT that a fixed contact link imposes (or NaN if the link isn't fixed). */
   contactEta(side, i) {
     const link = this.model.contacts[side].species[i];
-    if (link.type !== 'equilibrium') return NaN;
+    if (link.type !== 'equilibrium' && link.type !== 'velocity') return NaN;
     const z = this.z[i];
     return z === 0 ? link.mu / this.model.RT : (z * (this.termV[side === 'left' ? 0 : 1] + link.offset)) / this.VT;
   }
@@ -2753,7 +2753,7 @@ export class Solver {
     }
 
     // Conductance links: J (toward the device) = G (V_out − V_i), V_out = V_t + offset; exchange
-    // links (neutral species): N_in = k (μ_out − μ)/RT.
+    // links (neutral species): N_in = k (μ_out − μ)/RT; velocity links, v (c_eq − c).
     for (let i = 0; i < n; i++) {
       const link = ct.species[i];
       const o = b * M + 1 + i;
@@ -2765,6 +2765,16 @@ export class Solver {
         res[R[o]] -= (Ac * link.G * (Vt + link.offset - Vi)) / (z[i] * F);
         this._j(b, 1 + i, b, 1 + i, (Ac * link.G * VT) / (z[i] * z[i] * F));
         B[R[o]] += (-Ac * link.G) / (z[i] * F);
+      } else if (link.type === 'velocity') {
+        // N_in = v c (e^(η_out − η) − 1): v (c_eq − c), c_eq in equilibrium with the outside.
+        const ci = c[g * n + i], E = Math.exp(Math.min(this.contactEta(side, i) - (u[o] + uLo[o]), 700));
+        const N = Ac * link.v * ci * (E - 1), d = this.dA;
+        res[R[o]] -= N;
+        d.fill(0);
+        this._dlnc(g, i, 1, d);
+        for (let s = 0; s <= n; s++) if (d[s] !== 0) this._j(b, 1 + i, b, s, -N * d[s]);
+        this._j(b, 1 + i, b, 1 + i, Ac * link.v * ci * E);
+        if (z[i] !== 0) B[R[o]] += (-Ac * link.v * ci * E * z[i]) / VT;
       }
     }
 
@@ -4283,7 +4293,7 @@ export class Solver {
     // pseudo-transient ramp: one direct attempt first.
     const quick = (canContinue || this.hasGeneration) && direct && opts.continuation !== false;
     let r = this._solveSteady(quick ? { ...opts, maxSteps: 1 } : opts);
-    if (r.converged) this.solvedV = target;
+    if (r.converged) this.solvedV = [level, target];
     if (r.converged) return r;
     // Generation (e.g. light) holding the device far from equilibrium: ramp it up from nearly
     // nothing, each solve warm from the last.
@@ -4297,7 +4307,7 @@ export class Solver {
       const g = this._generationContinuation(opts, r);
       dimmer = this.dimmer;
       if (g.converged) {
-        this.solvedV = target;
+        this.solvedV = [level, target];
         return g;
       }
       r = g;
@@ -4338,17 +4348,23 @@ export class Solver {
       this.computeConcentrations();
     };
     restart();
-    // Ramp from the last converged voltage when the state is that solution (a warm start),
-    // otherwise from level terminals.
-    const from = this.solvedV !== undefined ? this.solvedV : level;
-    const c = this._continuation(opts, from, target, r, from !== level);
+    // Ramp from the contacts' voltages at the last converged solve when the state is that
+    // solution (a warm start): the left one first where it moved, the right held where it was,
+    // then the right. Otherwise from level terminals.
+    const solved = this.solvedV;
+    let c;
+    if (solved) {
+      c = solved[0] === level ? { ...r, converged: true, ramped: false } : this._continuation(opts, 0, solved[0], level, r, true, solved[1]);
+      // (Ramping the right from level terminals, solve there first: a sweep's start.)
+      if (c.converged) c = this._continuation(opts, 1, solved[1], target, c, c.ramped || solved[1] !== level);
+    } else c = this._continuation(opts, 1, level, target, r, false);
     if (c.converged) {
-      this.solvedV = target;
+      this.solvedV = [level, target];
       return c;
     }
     restart();
     r = this._solveSteady(opts); // the full pseudo-transient ramp
-    if (r.converged) this.solvedV = target;
+    if (r.converged) this.solvedV = [level, target];
     return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
   }
 
@@ -4495,12 +4511,18 @@ export class Solver {
     }
   }
 
-  _continuation(opts, level, target, r, warm) {
+  // Terminal k (a contact) ramped from `level` to `target` through steady solves, each warm from
+  // the last (`hold`: the other contact's voltage meanwhile, if not its own). A warm ramp that has
+  // nowhere to go converges only if what it started from did (`ramped`): the state it carries
+  // must be some ramp's solution, never just the one a failed solve left.
+  _continuation(opts, k, level, target, r, warm, hold) {
     const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
     let V = level, dV = (target - level) / 8, steps = r.steps, iterations = r.iterations;
     const history = r.history.slice();
+    if (warm && V === target) return { ...r, converged: r.ramped === true, steps, iterations, history, ramped: r.ramped };
     try {
-      this.sourceOverride.set(1, V);
+      this.sourceOverride.set(k, V);
+      if (hold !== undefined) this.sourceOverride.set(1 - k, hold);
       let q;
       if (!warm) {
         q = this._solveSteady(opts);
@@ -4522,7 +4544,7 @@ export class Solver {
       while (V !== target) {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
         const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
-        this.sourceOverride.set(1, next);
+        this.sourceOverride.set(k, next);
         q = this._solveSteady(sub);
         steps += q.steps;
         iterations += q.iterations;
@@ -4539,9 +4561,10 @@ export class Solver {
           if (Math.abs(dV) < 1e-6 * Math.abs(target - level)) return { converged: false, steps, iterations, history };
         }
       }
-      return { converged: true, steps, iterations, history };
+      return { converged: true, steps, iterations, history, ramped: true };
     } finally {
-      this.sourceOverride.delete(1);
+      this.sourceOverride.delete(k);
+      if (hold !== undefined) this.sourceOverride.delete(1 - k);
       this._refreshSources();
     }
   }

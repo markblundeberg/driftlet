@@ -454,6 +454,13 @@ contacts: {
   at $`V + \mathtt{offset}`$, $`J = G \cdot (V_{\mathrm{out}} - V_i)`$, G in S/m².
 - `{ type: 'exchange', k, mu }` (neutral species):
   $`N_{\mathrm{in}} = k \cdot (\mu_{\mathrm{out}} - \mu)/RT`$, k in mol/(m²·s).
+- `{ type: 'velocity', v, offset }` (or `mu`, for a neutral species): a surface velocity,
+  $`N_{\mathrm{in}} = v\,(c_{\mathrm{eq}} - c)`$ with v in m/s and $`c_{\mathrm{eq}}`$ the end node's
+  concentration in equilibrium with the outside level, i.e.
+  $`v\,c\,(e^{(\bar\mu_{\mathrm{out}} - \bar\mu)/RT} - 1)`$, which keeps the flux's sign that of the
+  level difference whatever the statistics. It lies between `'blocked'` (v → 0) and
+  `'equilibrium'` (v → ∞): a contact's surface recombination velocity, or thermionic emission
+  over a Schottky barrier (below).
 - `'blocked'`: no flux.
 
 **`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
@@ -479,6 +486,18 @@ Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a v
   $`\phi_{\mathrm{edge}} = V - \mathtt{zeroCharge}`$. This is what a "fixed $`\phi`$" boundary honestly
   means. For example, a Schottky barrier $`\phi_B`$ on n-type material with
   $`\mu^\circ_{\mathrm{e}^-} = 0`$ is `zeroCharge: φ_B`.
+
+A Schottky contact is that pinned barrier with its carriers passing at their emission velocities:
+`{ V, terminal: 'e-', species: { 'e-': { type: 'velocity', v }, 'h+': { type: 'velocity', v: vp, offset: 0 } }, phi: 'pinned', zeroCharge: φ_B }`,
+with Bethe's thermionic-emission velocity $`v = A^* T^2/(F N_c)`$ ($`N_c`$ in mol/m³, the data
+library's `cRef` for e⁻; about $`2 \times 10^4`$ m/s in n-Si with $`A^*`$ = 112 A/(cm²K²)). The
+forward current is then thermionic emission's, $`J = A^* T^2 e^{-\phi_B/V_T}(e^{V/V_T} - 1)`$,
+lowered where the drift–diffusion through the depletion region can't keep up (Crowell and Sze's
+combination): 4–6% short of it for a 0.85 eV barrier on 1e16 cm⁻³ n-Si from 0.1 to 0.4 V
+([`contacts`](../test/contacts.test.js) test). With `'equilibrium'` links instead (an infinite
+velocity) the barrier passes whatever the semiconductor brings to it, which is the diffusion
+theory of the Schottky diode: there, 17 to 27 times more current. Neither has image-force
+lowering or tunnelling.
 
 Like every alignment, `zeroCharge` is a property of that interface. To estimate it from vacuum
 levels, `vacuumZeroCharge(def, W, inside)` from `driftlet/kit` takes the work function W of the

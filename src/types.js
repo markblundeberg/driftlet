@@ -114,7 +114,8 @@
  * @typedef {'blocked' | 'equilibrium'
  *   | { type: 'equilibrium', offset?: number, mu?: number }
  *   | { type: 'conductance', G: number, offset?: number }
- *   | { type: 'exchange', k: number, mu: number }} ContactSpeciesLink
+ *   | { type: 'exchange', k: number, mu: number }
+ *   | { type: 'velocity', v: number, offset?: number, mu?: number }} ContactSpeciesLink
  */
 /**
  * 'bulk': the end node is plain bulk (locally neutral, no double layer); 'neutral': no charge at

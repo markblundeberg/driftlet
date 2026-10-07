@@ -201,3 +201,68 @@ test('a bath without a reference species: its terminal voltage is its φ', async
   assert.ok(Math.abs(s.phi[0] - 0.02) < 1e-12 && Math.abs(s.phi.at(-1) - s.terminals.right.V) < 1e-12);
   assert.throws(() => new Device(build({ library: [aqueous(['K+', 'Cl-'], { epsr: 0 })], stack: [{ V: 0, bath: { c: { 'K+': 1, 'Cl-': 1 }, offset: 0.1 } }, layer('water', 1e-6), bath({ 'K+': 1, 'Cl-': 1 })] })), /bath\.offset: an offset places the reference species, and this bath has none/);
 });
+
+test('a surface velocity at a contact: minority electrons through a base, n₀(e^(V/V_T) − 1)/(W/D + 1/S), and any S between blocked and held', async () => {
+  // A p-type base with no recombination: electrons injected at the left (their level raised by
+  // V above the holes'), collected at the right through a surface velocity S. In low injection
+  // the flux is the base's diffusion and the contact's velocity in series.
+  const { build, layer, semiconductor } = await import('../src/kit.js');
+  const Si = semiconductor('Si'), T = 300, VTs = (GAS_CONSTANT * T) / FARADAY, W = 2e-6, NA = units.perCm3(1e16);
+  const D = Si.materials.Si.species['e-'].D;
+  const run = (V, eLink) => {
+    const def = build({
+      T,
+      library: [Si],
+      stack: [
+        { V: 0, terminal: 'h+', species: { 'h+': 'equilibrium', 'e-': { type: 'equilibrium', offset: -V } }, phi: 'bulk' },
+        layer('Si', W, { acceptors: NA }),
+        { V: 0, terminal: 'h+', species: { 'h+': 'equilibrium', 'e-': eLink }, phi: 'bulk' },
+      ],
+      grid: { hmin: 5e-9, hmax: 50e-9 },
+    });
+    const sol = new Device(def).solve();
+    assert.ok(sol.converged, sol.warnings.join('\n'));
+    return sol;
+  };
+  const ref = run(0, { type: 'equilibrium', offset: 0 }).c['e-'], n0 = ref[ref.length >> 1];
+  for (const S of [10, 1e3, 1e5]) {
+    const sol = run(0.1, { type: 'velocity', v: S, offset: 0 });
+    const N = sol.contacts.right.flux['e-'], expect = (n0 * Math.expm1(0.1 / VTs)) / (W / D + 1 / S);
+    assert.ok(Math.abs(N / expect - 1) < 1e-5, `S = ${S} m/s: ${N} against ${expect} mol/(m²·s)`);
+  }
+  // At equilibrium nothing passes, and the levels are flat.
+  const eq = run(0, { type: 'velocity', v: 1e3, offset: 0 });
+  assert.ok(Math.abs(eq.contacts.right.flux['e-']) < 1e-12 * n0 * D / W);
+});
+
+test('a Schottky diode with emission velocities: thermionic emission, the same swept as built cold', async () => {
+  // Pt-like barrier of 0.85 eV on n-Si (1e16 cm⁻³), the electrons crossing at Bethe's
+  // v = A*T²/(F N_c). Forward, the current is thermionic emission's, short of it by the drift
+  // and diffusion through the depletion region in series (Crowell–Sze): a few percent here. A
+  // sweep by set() on the barrier's own (left) contact gives what each voltage gives cold: a
+  // continuation that ramps the right contact only once returned the old state, converged.
+  const { build, layer, ohmic, semiconductor } = await import('../src/kit.js');
+  const T = 300, VTs = (GAS_CONSTANT * T) / FARADAY, Si = semiconductor('Si'), A = 1.12e6, phiB = 0.85;
+  const v = (A * T * T) / (FARADAY * Si.materials.Si.species['e-'].cRef);
+  const def = (V) =>
+    build({
+      T,
+      library: [Si],
+      stack: [
+        { V, terminal: 'e-', species: { 'e-': { type: 'velocity', v }, 'h+': { type: 'velocity', v: 1e4, offset: 0 } }, phi: 'pinned', zeroCharge: phiB },
+        layer('Si', 2e-6, { donors: units.perCm3(1e16) }),
+        ohmic(0),
+      ],
+      grid: { hmin: 1e-9, hmax: 20e-9 },
+    });
+  const dev = new Device(def(0));
+  assert.ok(dev.solve().converged);
+  for (const V of [0.1, 0.2, 0.3, 0.4]) {
+    dev.set({ contacts: { left: { V } } });
+    const swept = dev.solve(), cold = new Device(def(V)).solve();
+    assert.ok(swept.converged && cold.converged);
+    assert.ok(Math.abs(swept.current / cold.current - 1) < 1e-6, `${V} V: swept ${swept.current}, cold ${cold.current}`);
+    const te = A * T * T * Math.exp(-phiB / VTs) * Math.expm1(V / VTs), ratio = swept.current / te;
+    assert.ok(ratio > 0.93 && ratio < 0.97, `${V} V: J/J_TE = ${ratio}`);
+  }
+});

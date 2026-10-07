@@ -17,6 +17,14 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   potential a voltage clamp sets. `hodgkinHuxley({ T, linear: true })` writes Hodgkin and
   Huxley's own linear channels for a face (gated conductance links); clamped, the K⁺ current
   is g_K n∞⁴ (V − E_K) to 2e-3.
+- A contact link for a surface velocity, `{ type: 'velocity', v }`: N_in = v (c_eq − c), between
+  blocked and held. Thermionic emission over a Schottky barrier (v = A*T²/(F N_c)), within a
+  few percent of J = A*T² e^(−φ_B/V_T)(e^(V/V_T) − 1), or a contact's surface recombination
+  velocity: minority electrons through a base reach it as n₀(e^(V/V_T) − 1)/(W/D + 1/S) to 1e-5.
+- Fixed: after a change of the left contact's voltage that the direct solve couldn't reach, the
+  continuation (which ramped only the right contact, from where it was last solved) had nothing
+  to ramp and returned the old state as converged. It ramps whichever contact moved now, and a
+  ramp that runs no solve doesn't claim one.
 - Fixed: a transient a second or more into a run, after a jump that a fine grid resolves in
   steps of 1e-13 s, stalled and stopped (a potential step at t = 1 s on a 5 nm grid): the error
   estimate was built from differences of absolute times, which keep only a few digits there.

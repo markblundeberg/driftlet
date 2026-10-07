@@ -15,7 +15,7 @@ import { stoichiometry as equationStoichiometry, faceSides, parseEquation } from
 export { DeviceError };
 
 // Contacts use the same laws as internal faces: the outside is a phase with known levels.
-const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange']);
+const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange', 'velocity']);
 const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance', 'permeability']);
 const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'pinned']);
 const GRID_FIELDS = ['hmin', 'hmax', 'ratio', 'minCells'];
@@ -25,6 +25,7 @@ const LINK_FIELDS = {
   equilibrium: ['type', 'offset', 'mu'],
   conductance: ['type', 'G', 'offset'],
   exchange: ['type', 'k', 'mu'],
+  velocity: ['type', 'v', 'offset', 'mu'],
 };
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -1170,6 +1171,22 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
         const offset = link.offset ?? (terminal === i ? 0 : undefined);
         need(offset !== undefined, `${lpath}.offset: give V_i − V_terminal (V) of the outside reservoir`);
         links[i] = { type: 'conductance', G: positive(link.G, `${lpath}.G`), offset: finite(offset, `${lpath}.offset`) };
+        continue;
+      }
+      if (link.type === 'velocity') {
+        // A surface velocity: N_in = v (c_eq − c), c_eq the edge's concentration in equilibrium
+        // with the outside level (thermionic emission over a barrier, a contact's surface
+        // recombination velocity), v c (e^((μ̄_out − μ̄)/RT) − 1) for any statistics.
+        const v = positive(link.v, `${lpath}.v (m/s)`);
+        if (species[i].z === 0) {
+          need(link.offset === undefined, `${lpath}: a neutral species' outside level is its mu (J/mol), not an offset`);
+          links[i] = { type: 'velocity', v, mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
+          continue;
+        }
+        need(link.mu === undefined, `${lpath}: a charged species' outside level is an offset from the terminal voltage, not a mu`);
+        const offset = link.offset ?? (terminal === i ? 0 : undefined);
+        need(offset !== undefined, `${lpath}.offset: give V_i − V_terminal (V) of the outside reservoir; only the terminal species defaults to 0`);
+        links[i] = { type: 'velocity', v, offset: finite(offset, `${lpath}.offset`) };
         continue;
       }
       if (link.type === 'exchange') {
