@@ -31,8 +31,10 @@ steady state, in time and as small-signal impedance, so a new field is mostly a 
 the work that makes it reliable in one field makes it reliable in the others.
 
 **Built to be relied on.** A drift–diffusion solver that handles a textbook pn junction is a
-weekend's work; one that keeps working on the devices people actually build is not. driftlet is
-tested two ways: every physics feature against an analytic result or an independent code, and
+weekend's work; one that keeps working on the devices people actually build is not. In real
+devices concentrations span 30 orders of magnitude and double layers are a millionth of the
+device's length, and there a plain Newton solver fails or, worse, quietly converges to a wrong
+answer. driftlet is tested two ways: every physics feature against an analytic result or an independent code, and
 thousands of randomly generated devices (junctions, MOS capacitors, solar cells, electrolyte
 cells, electrodes) put through cold solves, sweeps, transients and impedance, every result
 checked. A solve that fails reports it, with what went wrong where it can tell.
