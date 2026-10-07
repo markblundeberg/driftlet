@@ -8,13 +8,16 @@ electrochemical potential μ̄, coupled by Poisson's equation, reactions and int
 device in any field is built the same way, from the same pieces. It runs in a browser, a Web
 Worker or Node, from npm or a CDN.
 
-Every code block below runs in the test suite and prints its closed-form check. Read as far as
-the first template, then go to the one nearest your device:
+Every code block below runs in the test suite and prints its closed-form check. Skim the next
+two sections, then go to the template nearest your device:
 
-- semiconductors: a pn junction, a live page with a slider, a solar cell, a MOS capacitor, a
-  Schottky diode, a thin-film transistor, a pulse drifting along a bar (under Transients);
-- electrochemistry: a cell, an electrode in a stirred solution and a potential step, corrosion;
-- physiology: a cell membrane, a voltage clamp, an action potential, one travelling along an axon.
+- semiconductors: a pn junction (with an I–V sweep), a live page with a slider, a solar cell, a
+  MOS capacitor, a Schottky diode, a thin-film transistor, a pulse drifting along a bar (under
+  Transients);
+- electrochemistry: a cell, an electrode in a stirred solution (a potential step, and a cyclic
+  voltammogram), corrosion;
+- physiology: a cell membrane (a resting potential), a voltage clamp, an action potential, one
+  travelling along an axon.
 
 The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
 (signs and levels), visualization.md, alignment.md (band offsets), statistics.md (non-ideal
@@ -40,11 +43,11 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   (`units.toPerCm3`, `toEV`, `toMolar`, `toUm`, …). Physiology: 1 mS/cm² = 10 S/m², 1 µF/cm² =
   0.01 F/m², 1 µA/cm² = 0.01 A/m², mM = mol/m³.
 - **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one).
-  A terminal's `V` is its terminal species' level: for an electron contact V = −μ̄_e/F, what a
-  voltmeter reads. φ is bookkeeping, per material, and never a control.
+  A terminal's `V` is the level of its terminal species (`terminal`, which the kit's contacts
+  set): for an electron contact V = −μ̄_e/F, what a voltmeter reads. φ is bookkeeping, per material, and never a control.
 - **Solutions** are plain objects of `Float64Array`s: `x`, `phi`, and per species `c`, `mu` (μ̄),
   `V` (the species voltage μ̄/(zF): a quasi-Fermi level for e⁻ and h⁺) and `Vstd` (the standard
-  level: a band edge, the conduction band below the valence band in volts). `NaN` marks a value
+  level: a band edge; in volts, E = −V, so E_c is the lower line). `NaN` marks a value
   that doesn't exist (a species absent from a material, `V` of a neutral one, `c` in a metal).
 - **Currents.** `sol.terminals[name]` gives each terminal's `{ V, current }`, its current into
   the device; a current drive `{ I }` is the same way round (electrons fed in are I < 0).
@@ -68,19 +71,27 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs,
   at 300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water,
   at 25 °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu
-  Au Al Zn Li Pt). A species it lacks is pushed into both lists (`z: 0` for a neutral one):
+  Au Al Zn Li Pt). A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si` (`Eg` and `chi`
+  in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the material, e⁻'s and
+  h⁺'s `cRef` are N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i =
+  √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists (`z: 0` for a neutral one):
   `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`, `lib.materials.water.species['A-'] =
   { D, mu0 }`. Only μ° differences within a reaction matter: for a redox couple μ°_red − μ°_ox =
   −F·E° (against SHE, the library's μ°_H⁺ being 0). An insulator is a material with no species:
   `{ species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }`.
 - **Faces.** Between two different non-metals, give an alignment, `{ dipole }` or `{ step: {
-  species: 'e-', value } }` (J/mol), or `phi: 'neutral'`. Next to a metal, a face takes no
+  species: 'e-', value } }` (J/mol), or `phi: 'neutral'`. `vacuumDipole(def, { material, anchor:
+  'e-', offset: χ }, …)` estimates a dipole from electron affinities (Anderson's rule); it reads
+  only the materials, so build with `{ dipole: 0 }`, then put its value in (docs/alignment.md). Next to a metal, a face takes no
   alignment, but needs a φ law if the other side has ε > 0: `{ phi: { type: 'capacitive', C },
-  zeroCharge }` or `phi: 'neutral'`. A face's reactions label sides: `'Li+(left) = Li+(right)'`.
+  zeroCharge }` or `phi: 'neutral'`, where `zeroCharge` is the metal's V − φ at its edge when the
+  face holds no charge (a work-function difference, a potential of zero charge, a Schottky
+  barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`.
 - **Ports** are terminals attached sideways to a window inside a region (`from`, `to`, m from its
   left end): a source or drain, an injector, a reference electrode (`I: 0`), an electrode spread
   through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon
-  (`capacitance`, `gates`).
+  (`capacitance`, `gates`). A BJT's base contact is a port on a narrow window of the base,
+  `{ region: 'base', from, to, V, terminal: 'h+', species: { 'h+': 'equilibrium' } }`.
 - **Drives.** A terminal is held at a voltage `V`, driven by a current `I` (open circuit is
   `I: 0`), or behind a resistance `{ V, R }`. Either can be a waveform: a table `{ t, values }`
   (piecewise linear; a step is two points at one time), or the kit's `pulse({ start, width,
@@ -96,14 +107,19 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   1/(kf·N), N the majority density in mol/m³ (`kf: 1e8` is 0.6 µs at 1e16 cm⁻³); being
   bimolecular, as is the kit's `recombination()`, it shortens at high injection. SRH is `srh: { Si:
   { tauN, tauP } }` in place of `kf` (s), or at a face `{ equation: 'e-(left) + h+(right) = 0',
-  srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it's a constant minority lifetime τ_p. Light is a
-  reaction from a reservoir (`photon = e- + h+`), or absorbed as it goes in,
+  srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it gives n-type silicon's holes a lifetime τ_p at any
+  injection. Light is a reaction from a reservoir (`photon = e- + h+`, uniform), or absorbed as
+  it goes in,
   `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`.
 - **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant
   at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
   `k0: 10`).
+- **Grids** grade geometrically from `hmin` at each region's ends up to `hmax`, neighbouring cells
+  differing by at most `ratio` (1.2): put `hmin` below the shortest length that matters (a Debye
+  length, a depletion edge). `check()` says whether it's fine enough.
 
-`build()` writes a plain definition for `new Device()`, which can be written by hand too:
+`build()` is the usual way in. It writes a plain definition for `new Device()`, which some
+templates below write by hand (where a port spans a region, or no stack fits):
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -159,7 +175,8 @@ for (const V of [0, 0.2, 0.4, 0.6]) {
 ## Template: a live page with a slider
 
 `live()` warm-starts each solve, merges slider moves made during one, and keeps the last good
-solution (on a failure, `info.failed` and `info.error` are set). `bandDiagram()` returns an SVG
+solution (on a failure, `info.failed` and `info.error` are set). It returns `{ set, solution,
+ready, close }`; `set()` and `ready` (the first solve) are promises of `{ solution, info }`. `bandDiagram()` returns an SVG
 string; a fixed `range` keeps its axis still. `worker: true` solves in a Web Worker, from a CDN
 too. A few hundred nodes solve in milliseconds; thousands, or transients, want a worker and
 `advance(t, { budgetMs })` per frame. `onsolution` may call `set()`, if that converges rather than
@@ -312,6 +329,43 @@ for (const V of [0.1, 0.2, 0.3]) {
 
 The same `velocity` link at an ohmic contact is its surface recombination velocity.
 
+## Template: a thin-film transistor (a capacitance along a channel)
+
+A **port with a `capacitance`** holds charge σ = C (V − zeroCharge − φ) per area of electrode
+along its window, balanced by the region's: a gate along a channel, a porous electrode's double
+layer. Here x runs from source to drain with the gate spread along it: the gradual-channel
+approximation, exact for a thin film until it pinches off.
+
+```js
+import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
+
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY;
+const t = 20e-9, L = 10e-6, W = 100e-6, C = 1e-3, mu = 1e-3; // film, length, width (m); F/m² of gate; m²/(V·s)
+const tft = (Vg, Vd) =>
+  new Device({
+    T,
+    species: [{ name: 'e-', z: -1, cRef: 46 }], // an undoped film's electrons (N_c 2.8e19 cm⁻³)
+    materials: { film: { epsr: 0, species: { 'e-': { D: mu * VT, mu0: 0 } } } }, // ε = 0: F·n·t balances σ
+    regions: [{ name: 'channel', material: 'film', length: L }],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // source
+      right: { V: Vd, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // drain
+    },
+    ports: [{ name: 'gate', region: 'channel', V: Vg, area: 1 / t, capacitance: { C, zeroCharge: 0.3 } }],
+    grid: { hmin: L / 2000, hmax: L / 100, ratio: 1.05 }, // fine at the drain, where it pinches off
+  });
+// The output characteristic at V_G = 2 V: linear, then saturating past V_D ≈ V_G − 0.3 V.
+for (const Vd of [0.1, 0.5, 1, 1.5, 2, 3]) {
+  const sol = tft(2, Vd).solve();
+  const I = -sol.current * t * W; // sol.current is per m² of the film's section
+  console.log(`V_D ${Vd.toFixed(1)} V: I_D ${(I * 1e6).toFixed(2)} µA, σ at the drain ${(sol.ports[0].sigma.at(-1) * 1e3).toFixed(3)} mC/m²`);
+}
+```
+
+To sweep the gate on one device instead, patch the port: `dev.set({ ports: { gate: { V } } })`.
+An organic electrochemical transistor is the same with a volumetric capacitance C*:
+`area: 1 / t, capacitance: { C: Cstar * t }`.
+
 ## Template: an electrochemical cell
 
 An electrode is a metal layer with the reaction at its face, behind a contact holding the
@@ -393,6 +447,11 @@ for (const t of [3e-3, 1e-2, 3e-2]) {
 }
 ```
 
+A cyclic voltammogram is this electrode driven by `triangle({ from, to, period })`, the period
+being 2|to − from| over the scan rate: `solve()` it at `from` first, since the scan starts there
+at t = 0, then `advance()`. Its potential against the bath's terminal is −`trace.voltage` (that
+is V_right − V_left), and `trace.current` is anodic positive.
+
 ## Template: corrosion under a drop (an electrode spread through a film)
 
 A **port with reactions** is an electrode spread through a strictly neutral region: a metal under
@@ -454,50 +513,13 @@ Species can take an electrode's surface sites (`surface`, Langmuir coverages), a
 with `bare: true` runs only on bare metal: a passive film (docs/device.md). A battery's insertion
 electrode is a material described by its OCV curve (docs/statistics.md).
 
-## Template: a thin-film transistor (a capacitance along a channel)
-
-A **port with a `capacitance`** holds charge σ = C (V − zeroCharge − φ) per area of electrode
-along its window, balanced by the region's: a gate along a channel, a porous electrode's double
-layer. Here x runs from source to drain with the gate spread along it: the gradual-channel
-approximation, exact for a thin film until it pinches off.
-
-```js
-import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
-
-const T = 300, VT = (GAS_CONSTANT * T) / FARADAY;
-const t = 20e-9, L = 10e-6, W = 100e-6, C = 1e-3, mu = 1e-3; // film, length, width (m); F/m² of gate; m²/(V·s)
-const tft = (Vg, Vd) =>
-  new Device({
-    T,
-    species: [{ name: 'e-', z: -1, cRef: 46 }], // an undoped film's electrons (N_c 2.8e19 cm⁻³)
-    materials: { film: { epsr: 0, species: { 'e-': { D: mu * VT, mu0: 0 } } } }, // ε = 0: F·n·t balances σ
-    regions: [{ name: 'channel', material: 'film', length: L }],
-    contacts: {
-      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // source
-      right: { V: Vd, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, // drain
-    },
-    ports: [{ name: 'gate', region: 'channel', V: Vg, area: 1 / t, capacitance: { C, zeroCharge: 0.3 } }],
-    grid: { hmin: L / 2000, hmax: L / 100, ratio: 1.05 }, // fine at the drain, where it pinches off
-  });
-// The output characteristic at V_G = 2 V: linear, then saturating past V_D ≈ V_G − 0.3 V.
-for (const Vd of [0.1, 0.5, 1, 1.5, 2, 3]) {
-  const sol = tft(2, Vd).solve();
-  const I = -sol.current * t * W; // sol.current is per m² of the film's section
-  console.log(`V_D ${Vd.toFixed(1)} V: I_D ${(I * 1e6).toFixed(2)} µA, σ at the drain ${(sol.ports[0].sigma.at(-1) * 1e3).toFixed(3)} mC/m²`);
-}
-```
-
-To sweep the gate on one device instead, patch the port: `dev.set({ ports: { gate: { V } } })`.
-An organic electrochemical transistor is the same with a volumetric capacitance C*:
-`area: 1 / t, capacitance: { C: Cstar * t }`.
-
 ## Template: a cell membrane
 
 A lipid bilayer is a face: a capacitor (1 µF/cm², 0.01 F/m²) crossed by channels with a
 permeability (`{ type: 'permeability', P }`, m/s: Goldman–Hodgkin–Katz comes out of it) and by
 pumps, reactions with saturating kinetics (`vmax`, `K`). The membrane potential is φ_in − φ_out,
-read from `sol.phi`: a bath with a reference species (`bath(c, 'Cl-')`) reads that ion's level,
-which differs by its Nernst term, while `bath(c, drive)` without one reads its φ.
+read from `sol.phi` as below. (A bath's terminal V is its φ only without a reference species,
+`bath(c, drive)`; `bath(c, 'Cl-')`'s is Cl⁻'s level, which differs by Cl⁻'s Nernst term.)
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
