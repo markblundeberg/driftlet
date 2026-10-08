@@ -221,7 +221,8 @@ function paint(now) {
       if (!sea[K]) return;
       ctx.globalAlpha = 0.1 + 0.5 * Math.min(1, Math.log10(m[K] / 5) / 8);
       const e = at(edge, (cl.x0 + cl.x1) / 2), y0 = py(e), y1 = py(e + sign * 4 * kT);
-      ctx.fillRect(px(cl.x0), Math.min(y0, y1), px(cl.x1) - px(cl.x0) + 0.5, Math.abs(y1 - y0));
+      const snap = (v) => Math.round(v * dpr) / dpr; // (cells meet without seams)
+      ctx.fillRect(snap(px(cl.x0)), Math.min(y0, y1), snap(px(cl.x1)) - snap(px(cl.x0)), Math.abs(y1 - y0));
     });
   }
   ctx.globalAlpha = 1;
