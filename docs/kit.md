@@ -534,10 +534,18 @@ reactions), and enter and leave through the contacts and any metal.
   with `{ resample: true }` (a jump between steady states) each cell's dots are thinned or added
   to by the change in what it should hold, which keeps them a Poisson sample while moving as few
   as can be. Without it (a transient) they move on at the new rates.
-- The swarm has `dots` (`{ species, cell, x }`), `cells` (`{ x0, x1, region }`), `sea[name]`
-  (1 per sea cell), `expected(name)` (dots per cell on average), `events` from the last step
-  (`{ species, kind, x, dir }`: `'in'`, `'out'`, `'made'`, `'unmade'`, `'cross'`) and
-  `crossed[name]` (`{ up, down }` at each boundary, counts you zero when you like).
+- The swarm has `dots` (`{ species, cell, x }`; each keeps its object while it lives, so a page
+  can give it fields of its own, a height say), `cells` (`{ x0, x1, region }`: grid nodes in runs
+  about `L/cells` wide, never across a region boundary, so the count and widths come out a little
+  off what was asked), `weight[name]`, `sea[name]` (1 per sea cell), `expected(name)` (dots per
+  cell on average), `events` from the last step (`{ species, kind, x, dir }`: `'in'`, `'out'`,
+  `'made'`, `'unmade'`, `'cross'`) and `crossed[name]` (`{ up, down }`: dots across boundary k,
+  at `cells[k].x0`, toward +x and −x, k = 0 … cells.length, counted until you zero them).
+- It's a sample, so its averages are noisy in the usual ways. Successive steps are correlated
+  over a hop time, h²/D for a cell h wide, so a cell's count averages to its expectation only
+  over many of those. And where the two-way traffic dwarfs the net (a dense species beside a
+  sea, a majority carrier anywhere), the net crossing is the small difference of two large
+  Poisson counts: its noise is √(up + down), not √(net).
 
 ```js
 import { Device, GAS_CONSTANT } from 'driftlet';
