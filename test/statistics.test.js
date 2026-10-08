@@ -371,3 +371,33 @@ test('a particle filling at a constant current: solve() says it has no steady st
   assert.ok(half.converged && half.warnings.length === 0, half.warnings.join('\n'));
   assert.ok(Math.abs(half.terminals.collector.V - ocv(0.5)) < 5e-3, `${half.terminals.collector.V} V at half full`);
 });
+
+test('insertion host with a steep tabulated OCV (a step of 60 mV over Δx ≈ 0.1): its occupancy inverts exactly, and a potential step charges it', () => {
+  // Newton's inversion of ζ(x) zigzagged across the step's inflections, its bracket shrinking by
+  // a little each time, and ran out of iterations at points that weren't roots (x 0.66 → 0.94 for
+  // a change in ζ of 1e-4): time steps then failed down to 1e-14 s.
+  const T = 298.15, VTs = (GAS_CONSTANT * T) / FARADAY, cMax = 3e4, L = 2e-6;
+  const ocv = (x) => 3.9 - VTs * Math.log(x / (1 - x)) - 0.06 * Math.tanh((x - 0.6) / 0.08) - 0.05 * x;
+  const xs = Array.from({ length: 60 }, (_, i) => 0.02 + (0.96 * i) / 59);
+  const def = {
+    T,
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x: xs, E: xs.map(ocv), muRef: 0 } }] } },
+    regions: [{ name: 'host', material: 'host', length: L }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { V: ocv(0.53), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin: L / 100, hmax: L / 100 },
+  };
+  const dev = new Device(def);
+  for (const x of [0.53, 0.58, 0.6, 0.62, 0.66, 0.8]) {
+    dev.set({ contacts: { right: { V: ocv(x) } } });
+    const s = dev.solve();
+    assert.ok(s.converged && Math.abs(s.c['Li+'][50] / cMax - x) < 1e-4, `held at E(${x}): x = ${s.c['Li+'][50] / cMax}`);
+  }
+  dev.set({ contacts: { right: { V: ocv(0.53) } } });
+  dev.solve();
+  dev.set({ contacts: { right: { V: ocv(0.8) } } });
+  const run = dev.advance(60);
+  assert.ok(run.done && run.converged, `advance: ${run.warnings[0]}`);
+  const c = run.c['Li+'];
+  assert.ok(Math.abs(c[0] / cMax - 0.8) < 1e-4 && c.at(-1) / cMax > 0.75 && c.at(-1) < c[0], `filling from the Li⁺ side: x ${c[0] / cMax} … ${c.at(-1) / cMax}`);
+});

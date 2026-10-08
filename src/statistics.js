@@ -23,16 +23,20 @@ const MODEL_TYPES = ['ideal', 'fermi-dirac', 'lattice', 'redlich-kister', 'debye
 
 const logistic = (y) => (y >= 0 ? 1 / (1 + Math.exp(-y)) : Math.exp(y) / (1 + Math.exp(y)));
 
-// Safeguarded Newton for an increasing function: f(y) = target on [lo, hi].
+// Safeguarded Newton for an increasing function: f(y) = target on [lo, hi]. A Newton step that
+// leaves the bracket, or that wouldn't halve the last step (Newton zigzagging across an
+// inflection, its bracket shrinking by a little each time: a steep tabulated OCV's ran out of
+// iterations 0.2 thermal units from its root), bisects instead.
 function solveIncreasing(f, target, lo, hi, guess) {
-  let y = Math.min(hi, Math.max(lo, guess));
+  let y = Math.min(hi, Math.max(lo, guess)), last = Infinity;
   for (let it = 0; it < 200; it++) {
     const { v, d } = f(y);
     const r = v - target;
     if (r > 0) hi = y;
     else lo = y;
     let next = y - r / d;
-    if (!(next > lo && next < hi)) next = 0.5 * (lo + hi);
+    if (!(next > lo && next < hi) || Math.abs(next - y) > 0.5 * last) next = 0.5 * (lo + hi);
+    last = Math.abs(next - y);
     if (Math.abs(next - y) <= 1e-15 * Math.max(1, Math.abs(y)) || hi - lo <= 1e-15 * Math.max(1, Math.abs(y))) return next;
     y = next;
   }
