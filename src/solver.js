@@ -806,7 +806,7 @@ export class Solver {
         surface,
         terminals: [...new Set(parts.flatMap((p) => driven(this.stretches[p.stretch])))],
         key: parts.map((p) => `${p.stretch}:${p.w}`).join() + surface.map((p) => `|${p.col}:${p.w}`).join(),
-        circuit, // (the terminal whose circuit row it replaces, or −1: then a balance row's, row)
+        circuit, // (the terminal whose circuit row it stands in for, or −1 for a balance row's, `row`)
         row: circuit >= 0 ? -1 : this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
         idx: new Int32Array(nNodes * this.M),
         w: new Float64Array(nNodes * this.M),

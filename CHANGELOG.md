@@ -2,6 +2,36 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+The steady solve, reworked around one idea: every row it changes from a time step's is a sum of
+balance rows, written out exactly (a conserved amount, a level held flat, an island's balance),
+with its conservation laws now worked out under the terminals' drives. [Numerics](docs/numerics.md#steady-state)
+describes it that way now.
+
+Silent wrong answers, fixed:
+
+- A closed battery at open circuit keeps its state of charge: a cold `solve()` had converged to
+  another of its steady states (4.145 V where its `c0` said 3.958 V). What a terminal driven at no
+  current alone feeds is conserved, at what the state holds when the solve begins, so after a
+  transient the steady state is where that transient relaxes. An insertion host starts with its
+  ion level at the electrolyte's (its φ is a gauge), so the floating terminal of a closed cell
+  starts at its OCV, and transients from `c0` run at any current (the agent guide's workaround is
+  gone).
+- Adsorbates on an electrode that only turn into each other keep their total on every site; such
+  a device had failed to build.
+
+New:
+
+- A gate or a capacitance left floating (`I: 0`) keeps its charge in a steady solve, where it
+  threw. Driven at a current, a terminal that only stores what comes in (a gate, a host filling)
+  makes `solve()` fail at once with a warning saying so, rather than throwing or marching a held
+  voltage 20 V each way.
+- Steady solves go direct (rather than through huge time steps) for a floating metal (its amount
+  the charge on its faces), and for trap states holding a closed population's electrons.
+- A blocked ion's level is held flat across faces too: a closed zinc cell past its limiting
+  current, its electrolyte in two regions, failed at 0.9 V and now solves as one region does.
+
 ## 0.15.1 (2026-10-08)
 
 From a further round of cold agents (an ion-selective electrode, a diode's ideality, Hebb–Wagner
