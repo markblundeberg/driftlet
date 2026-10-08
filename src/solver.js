@@ -803,7 +803,7 @@ export class Solver {
     // the state holds when a solve begins (see _captureLaws), and has no steady state at any other
     // current.
     const driven = (st) => this.terms.flatMap((t, k) => (t.drive.kind === 'I' && this._feeds(k, st) ? [k] : []));
-    const add = (parts, rowStretch, surface = []) => {
+    const add = (parts, rowStretch, surface = [], circuit = -1) => {
       const st = this.stretches[rowStretch];
       let nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
       for (const p of surface) nNodes += model.ports[this.surfCols[p.col][0]].nodes.length * model.ports[this.surfCols[p.col][0]].surface.length;
@@ -813,7 +813,8 @@ export class Solver {
         surface,
         terminals: [...new Set(parts.flatMap((p) => driven(this.stretches[p.stretch])))],
         key: parts.map((p) => `${p.stretch}:${p.w}`).join() + surface.map((p) => `|${p.col}:${p.w}`).join(),
-        row: this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
+        circuit, // (the terminal whose circuit row it replaces, or −1: then a balance row's, row)
+        row: circuit >= 0 ? -1 : this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
         idx: new Int32Array(nNodes * this.M),
         w: new Float64Array(nNodes * this.M),
         len: 0,
@@ -839,7 +840,11 @@ export class Solver {
       const free = (k) => k < S && this._moves(this.stretches[k]) && !taken(k);
       const own = [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own, ...parts.map((p) => p.stretch)].find(free);
       if (own === undefined) continue;
-      add(parts, own, surface);
+      // At no current, the circuit row of a terminal that alone feeds it says nothing the
+      // combination's balance rows don't (their sum is that terminal's current): its amount
+      // stands in for that row instead, where no other combination's does already.
+      const circuit = [...new Set(parts.flatMap((p) => driven(this.stretches[p.stretch])))].find((k) => !this.constraints.some((cs) => cs.circuit === k)) ?? -1;
+      add(parts, own, surface, circuit);
     }
     // A combination that nothing carries anywhere is conserved node by node: of still stretches
     // (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻), or of an electrode's surface species (adsorbates
@@ -871,7 +876,7 @@ export class Solver {
     this.pinnedIslands = [];
     this.islandsOn = false; // (newton() turns them on, see there)
     this.pins = [];
-    const used = new Set(this.constraints.map((cs) => cs.row));
+    const used = new Set(this.constraints.map((cs) => cs.row).filter((o) => o >= 0));
     for (const st of this.stretches) {
       const i = st.species, [s0, s1] = st.regions;
       if (!st.mobile || conductor(st)) continue;
@@ -1189,6 +1194,15 @@ export class Solver {
       }
       cs.len = len;
       cs.res = amount - (cs.terminals.length > 0 ? (this.lawRefs.get(cs.key) ?? amount) : reference);
+      if (cs.circuit >= 0) {
+        // In place of the terminal's circuit row (its I = 0).
+        const C = this.termC[cs.circuit];
+        C.fill(0);
+        for (let j = 0; j < len; j++) C[cs.idx[j]] += cs.w[j];
+        this.termRes[cs.circuit] = cs.res;
+        this.termDI[cs.circuit] = 0;
+        continue;
+      }
       const b0 = Math.floor(cs.row / M), r0 = cs.row % M;
       this._replaceRow(b0, r0);
       this._j(b0, r0, b0, r0, 1);
@@ -1817,7 +1831,7 @@ export class Solver {
     if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
     // Rows kept aside for _solveBordered: the conserved amounts' and the islands'.
     this.pinnedIslands = this.constrained && dt === Infinity && this.islandsOn ? this._applyIslands() : [];
-    this.pins = this.constrained && dt === Infinity ? [...this.constraints, ...this.pinnedIslands] : [];
+    this.pins = this.constrained && dt === Infinity ? [...this.constraints.filter((cs) => cs.circuit < 0), ...this.pinnedIslands] : [];
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
   }

@@ -691,8 +691,10 @@ only resolved to ~1e-4 of $`|Z|`$.
   charge: so at I = 0 a combination that it alone feeds is conserved too, at what the state holds
   when the solve begins. A closed battery at open circuit has one steady state per state of
   charge, and a solve that kept only I = 0 had converged to another (4.145 V where its start said
-  3.958 V). At any other current such a terminal only stores what comes in, and the solve says so
-  at once.
+  3.958 V). Its amount stands in for the terminal's circuit row rather than a balance row: at no
+  current that row is the sum of the combination's balance rows, so it says nothing new. (Beside a
+  flat level, below, a pinned balance row had left it all zeros.) At any other current such a
+  terminal only stores what comes in, and the solve says so at once.
 
   Holding the amount through a storage term at huge $`dt`$ instead is badly conditioned: the
   stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances $`D \cdot c/h`$

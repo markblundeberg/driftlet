@@ -311,3 +311,23 @@ test('a closed population with immobile traps: their electrons conserved with it
   const run = new Device(def(0.05)).advance(1);
   for (const name of ['e-', 'X-']) assert.ok(Math.abs(amount(run, name) / amount(steady, name) - 1) < 1e-6, `${name}: ${amount(run, name)} vs ${amount(steady, name)}`);
 });
+
+test('electrons held flat behind an open circuit: their amount stands in for the circuit row, and the solve goes direct', () => {
+  // n-Si between a gate and a contact that passes only electrons, at I = 0: the electrons carry
+  // nothing at steady state (flat at the contact's level) and nothing but that contact feeds
+  // them, so their amount is what fixes the level. (Pinned as a balance row beside the flat rows,
+  // the circuit row was left all zeros, and the solve failed.)
+  const Si = semiconductor('Si');
+  const def = {
+    T: 300,
+    species: Si.species,
+    materials: { Si: Si.materials.Si },
+    regions: [{ material: 'Si', length: 1e-6, fixedCharge: units.perCm3(1e16) * FARADAY, c0: { 'h+': units.perCm3(1e4) } }],
+    contacts: { left: { V: 0, phi: { type: 'capacitive', C: 0.05 }, zeroCharge: 0 }, right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin: 1e-9, hmax: 2e-8 },
+  };
+  const steady = new Device(def).solve();
+  const run = new Device(def).advance(1);
+  assert.ok(steady.converged && steady.steps === 1, `steps ${steady.steps}`);
+  assert.ok(Math.abs(steady.terminals.right.V - run.terminals.right.V) < 1e-9, `${steady.terminals.right.V} vs ${run.terminals.right.V} V`);
+});
