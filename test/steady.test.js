@@ -465,3 +465,40 @@ test('a floating gate, its back contact jumped far: the holes held flat carry ex
   assert.ok(s.converged && Math.abs(s.interfaces[0].D / Q - 1) < 1e-12, `gate charge ${s.interfaces[0].D} vs ${Q}`);
   assert.ok(channel.current > 1e-8 && Math.abs(left.current + right.current + channel.current) < 1e-9 * channel.current, `currents ${left.current}, ${right.current}, ${channel.current}`);
 });
+
+// An electrode port at no current reducing M⁺ + e⁻ = M(s), M⁺ closed in a film whose K⁺ and X⁻
+// a bath holds. What the reactions take, the electrode's charge gives: M⁺ + Q/F is conserved
+// (with no capacitance, Q = 0, the M⁺ alone), which a steady solve keeps in place of the port's
+// circuit row. Steady, M⁺ is uniform and at Nernst with the electrode, X⁻ − K⁺ = c(M⁺) with
+// K⁺X⁻ = c_b²: V = (μ°(M⁺) + μ°(X⁻) + RT ln(c(M⁺) c(X⁻)/c_ref²))/F, the bath's X⁻ at 0 V.
+test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
+  const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
+  const def = (order, capacitance) => ({
+    species: order.map((name) => ({ name, z: name === 'K+' || name === 'M+' ? 1 : -1, cRef: 1000 })),
+    materials: { film: { epsr: 0, species: { 'K+': { D: 2e-9, mu0: -283e3 }, 'X-': { D: 2e-9, mu0: -131e3 }, 'M+': { D: 1e-9, mu0: 70e3 } } } },
+    regions: [{ name: 'film', material: 'film', length: L, c0: { 'K+': 60.4, 'X-': 70.4, 'M+': 10 } }],
+    contacts: { left: { bath: { c: { 'K+': cb, 'X-': cb }, reference: 'X-' }, V: 0 }, right: { phi: 'neutral' } },
+    ports: [{ name: 'el', region: 'film', terminal: 'e-', I: 0, area: 1e5, ...(capacitance ? { capacitance: { C: 0.2, zeroCharge: 0 } } : {}), reactions: [{ equation: 'M+ + e- = M(s)', fixed: { 'M(s)': 0 }, k0: 4e-7 }] }],
+    grid: { hmin: 1e-6, hmax: 6e-6 },
+  });
+  const nernst = (cM) => (70e3 - 131e3 + RT * Math.log((cM * (cM + Math.sqrt(cM * cM + 4 * cb * cb))) / 2 / 1e6)) / FARADAY;
+  const amount = (s) => s.conservation.find((c) => c.species === 'M+').amount;
+  for (const order of [['K+', 'X-', 'M+', 'e-'], ['M+', 'e-', 'K+', 'X-']]) {
+    const s = new Device(def(order, false)).solve();
+    assert.ok(s.converged && s.steps === 1, `${order}: steps ${s.steps}`);
+    for (const g of [0, s.x.length - 1]) assert.ok(Math.abs(s.c['M+'][g] / 10 - 1) < 1e-9, `${order}: c(M+) ${s.c['M+'][g]}`);
+    assert.ok(Math.abs(s.terminals.el.V - nernst(10)) < 1e-9, `${order}: V ${s.terminals.el.V} vs ${nernst(10)}`);
+  }
+  // With a capacitance, the reaction's charge is left on the electrode as it settles, from the
+  // start's V (level with the film's φ): as a long transient finds it.
+  const run = new Device(def(['K+', 'X-', 'M+', 'e-'], true));
+  const s0 = run.solution(), start = amount(s0) + s0.ports[0].charge / FARADAY;
+  for (const order of [['K+', 'X-', 'M+', 'e-'], ['M+', 'e-', 'K+', 'X-']]) {
+    const s = new Device(def(order, true)).solve(), cM = s.c['M+'][0];
+    assert.ok(s.converged && s.steps === 1, `${order}: steps ${s.steps}`);
+    assert.ok(Math.abs((amount(s) + s.ports[0].charge / FARADAY) / start - 1) < 1e-12 && Math.abs(cM / 10 - 1) > 1e-3, `${order}: M+ + Q/F ${amount(s) + s.ports[0].charge / FARADAY} vs ${start}`);
+    assert.ok(Math.abs(s.terminals.el.V - nernst(cM)) < 1e-9, `${order}: V ${s.terminals.el.V} vs ${nernst(cM)}`);
+  }
+  const a = run.advance(1e4);
+  assert.ok(Math.abs(a.terminals.el.V - new Device(def(['K+', 'X-', 'M+', 'e-'], true)).solve().terminals.el.V) < 1e-7, `transient V ${a.terminals.el.V}`);
+});
