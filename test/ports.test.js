@@ -420,3 +420,31 @@ test('a capacitance-only port given a terminal species that no material holds is
   };
   assert.throws(() => new Device(def), /terminal of port "mat".*only with reactions.*needs no terminal/);
 });
+
+test('a port holding a species at a device end node that the contact there blocks: a window of that node alone passes current', () => {
+  // A particle charged through its surface: Li⁺ from the electrolyte (the right contact), e⁻ from
+  // a wire (a port) on the surface node alone. Every charge driven in arrives as inserted Li.
+  const cMax = 30000, a = 5e-6, I = -1e-12; // A, a total in a sphere
+  const dev = new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: {
+      host: {
+        epsr: 0,
+        species: { 'Li+': { D: 1e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } },
+        statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x: [0.01, 0.5, 0.99], E: [4, 3.9, 3.8], muRef: 0 } }],
+      },
+    },
+    regions: [{ name: 'p', material: 'host', length: a, c0: { 'Li+': 0.4 * cMax, 'e-': 0.4 * cMax } }],
+    geometry: { type: 'spherical', r0: 0 },
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' } },
+    ports: [{ name: 'wire', region: 'p', from: a - 2e-9, to: a, V: 3.9, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    grid: { hmin: 1e-8, hmax: 1e-7 },
+  });
+  assert.equal(dev.model.ports[0].nodes.length, 1, 'the surface node alone');
+  const before = dev.solve().conservation.find((c) => c.species === 'Li+').amount;
+  dev.set({ ports: { wire: { I } } });
+  const run = dev.advance(1, { dtMax: 0.2 });
+  assert.ok(run.converged && run.done);
+  const inserted = run.conservation.find((c) => c.species === 'Li+').amount - before;
+  assert.ok(Math.abs(inserted / (-I / FARADAY) - 1) < 1e-6, `${inserted} mol inserted, ${-I / FARADAY} driven`);
+});

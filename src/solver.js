@@ -2536,7 +2536,8 @@ export class Solver {
         const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
         const deta = target - (u[o] + uLo[o]); // (μ̄_out − μ̄)/RT
         if (link.type === 'equilibrium') {
-          if (g === 0 || g === this.nNodes - 1) continue; // a device end node's level is its contact's business
+          // a device end node's level is its contact's business, where the contact links it
+          if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
           flux[i] += res[R[o]];
           this._captureRow(b, r, zF, C);
           this._replaceRow(b, r);
@@ -3381,6 +3382,11 @@ export class Solver {
    * animation can call it once per frame; the step size carries over between calls.
    */
   integrate(tEnd, opts = {}) {
+    // tEnd is an absolute time. Not a number at all is an error; a NaN (a first animation frame's
+    // clock, or a time read from a field that doesn't exist) does nothing, and says so.
+    const absolute = `tEnd is the time to reach in s, absolute (the device is at t = ${this.time}, which a solution gives as its time)`;
+    if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
+    if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [] }, stopped: `advance(NaN) did nothing: ${absolute}` };
     const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
     const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
     const start = clock();

@@ -218,6 +218,12 @@ test('advance() to where it already is changes nothing, and the next call still 
   assert.ok(still.converged && still.done && still.steps === 0);
   const moved = dev.advance(1e-4);
   assert.ok(moved.converged && moved.done && moved.steps > 0 && dev.solver.time === 1e-4);
+  // A time that isn't one (dev.time, which doesn't exist) is an error; a NaN (a first frame's
+  // clock, dev.time + 1) does nothing, and says so.
+  assert.throws(() => dev.advance(dev.time), /tEnd is the time to reach in s, absolute/);
+  const none = dev.advance(dev.time + 1);
+  assert.ok(none.converged && !none.done && none.steps === 0 && dev.solver.time === 1e-4);
+  assert.match(none.warnings.join(), /advance\(NaN\) did nothing/);
 });
 
 test('cyclic voltammetry in a strictly neutral cell runs through its turns (round-off at breakpoints)', async () => {
