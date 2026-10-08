@@ -83,7 +83,9 @@ def.interfaces = [{
 
 `vacuumDipole` gives $`\phi_R - \phi_L = (V_{\mathrm{vac}} - \phi)_L - (V_{\mathrm{vac}} - \phi)_R`$,
 each side's $`V_{\mathrm{vac}} - \phi`$ coming from its anchor and offset (`vacuumLevel` gives one
-side's).
+side's). Its two sides are the face's, left then right as the stack runs: given the other way
+round, the dipole changes sign, and nothing can tell (a photoanode's band edges came out 0.5 V
+off that way).
 
 Where a conductor meets a material, at a conductor region's face or at a contact's capacitive
 or pinned law, the conductor's side is its work function W from its Fermi level, and the
@@ -120,8 +122,9 @@ $`\mathrm{pzc} \approx W/e - 4.44\,\mathrm{V}`$ on the SHE scale (on the usual c
 
 **Semiconductor | electrolyte.** Electron affinity against the absolute SHE places the band edges on
 the SHE scale, $`E_c \approx -(\chi - 4.44)\,\mathrm{eV}`$ relative to SHE: the usual
-photoelectrochemistry estimate:
-`vacuumDipole(def, { material: 'TiO2', anchor: 'e-', offset: χ }, { material: 'water', anchor: 'H+', offset: 4.44 })`.
+photoelectrochemistry estimate, for TiO₂ on the left of the water:
+`vacuumDipole(def, { material: 'TiO2', anchor: 'e-', offset: χ }, { material: 'water', anchor: 'H+', offset: 4.44 })`
+(the anchor needs `H+` among the species).
 
 **Solvent | solvent.** Each solvent's own absolute-SHE-type value (its Trasatti-type offset)
 aligns them, exactly as Anderson's rule aligns two semiconductors.
