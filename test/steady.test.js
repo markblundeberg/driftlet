@@ -100,6 +100,11 @@ test('a cold start with slow ions and immobile traps: solve() and advance() both
   const s = new Device(def).solve();
   assert.ok(s.converged, 'cold steady solve');
   assert.equal(flat(s), '');
+  // Driven by a waveform, the steady state is at the waveform's value now: the pseudo-transient
+  // ramp's steps don't move the time it's read at (they had: the solve came out at 1 V).
+  const ramped = new Device({ ...def, contacts: { ...def.contacts, right: { ...def.contacts.right, V: { t: [0, 1], values: [0, 1] } } } }).solve();
+  assert.ok(ramped.converged && ramped.steps > 1 && ramped.terminals.right.V === 0, `ramped: V ${ramped.terminals.right.V}, ${ramped.steps} steps`);
+  assert.equal(flat(ramped), '');
   const dev = new Device(def);
   const r = dev.advance(1e5, { tol: 1e-4 }); // from the cold start, with the default first step
   assert.ok(r.done && r.converged, `advance: done ${r.done}, ${r.steps} steps`);

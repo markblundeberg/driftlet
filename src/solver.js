@@ -3520,7 +3520,7 @@ export class Solver {
     // Implicit: sources at the step's end, as seen from within the step (before any jump there).
     // A step landing on a breakpoint ends on it exactly.
     const tEnd = this.landing !== undefined && Math.abs(this.time + dt - this.landing) <= 1e-9 * dt ? this.landing : this.time + dt;
-    this.sourceTime = this.steady ? this.time : tEnd;
+    this.sourceTime = this.steady ? this.steadyAt : tEnd;
     this.sourceBefore = !this.steady;
     this.combining = true;
     let result;
@@ -3556,7 +3556,7 @@ export class Solver {
       this.u.set(this.uPrev);
       this.uLo.set(this.uPrevLo);
       this.termV.set(this.termVPrev);
-      this.sourceTime = this.time;
+      this.sourceTime = this.steady ? this.steadyAt : this.time;
       this.computeConcentrations();
     }
     this.sourceBefore = false;
@@ -4555,6 +4555,7 @@ export class Solver {
     this.charging = null; // (a driven current that only charges: see _solveSteadyAll)
     this._captureLaws();
     this.steady = true; // (the steady system's rows; sources at the present time)
+    this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
     try {
       return this._solveSteadyAll(opts);
     } finally {
