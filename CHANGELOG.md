@@ -50,6 +50,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - A port's window at a device end node holds its species there unless that contact links them:
   a wire on a particle's surface node alone now charges it (it passed nothing).
 - `advance(NaN)` does nothing and says so in its warnings; `advance()` of a non-number is an error.
+- A space charge that reaches a contact holding its end neutral (a double layer or depletion
+  longer than its region, cut off there: σ 58% low, silently) is warned of.
+- `describe()`'s k0 warning only at an electrode, where k0 is an exchange current.
+- The agent guide gains ion-exchange membranes, excitons in an organic cell, and how to start a
+  closed battery; the docs, cells in a layer depleted past a limiting current, an OCV curve far
+  flatter than ideal at an end, and the double layer's voltage limit (~350 V_T).
 - The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
   Donnan-excluded, against seas of Na⁺.
 
