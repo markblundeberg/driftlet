@@ -3585,9 +3585,18 @@ export class Solver {
         if (!(r >= 0 && r < regions.length)) fail(`${path}.region: no region ${JSON.stringify(p.region)}`);
         if (!inside(r)) fail(`${path}.x (${p.x} m) is outside region ${JSON.stringify(p.region)}`);
       } else {
-        r = regions.findIndex((_, rr) => inside(rr));
-        if (!(Number.isFinite(p.x) && r >= 0)) fail(`${path}.x must be a position in the device, in m (got ${p.x})`);
+        // At a face, the side where the probe has something to read; both, and it must be told.
+        const has = (rr) => {
+          const mat = this.model.materials[regions[rr].material];
+          return i < 0 ? !mat.conductor && !mat.phiFree : mat.present[i];
+        };
+        const sides = regions.flatMap((_, rr) => (inside(rr) ? [rr] : []));
+        if (!(Number.isFinite(p.x) && sides.length)) fail(`${path}.x must be a position in the device, in m (got ${p.x})`);
+        const able = sides.filter(has);
+        if (able.length > 1) fail(`${path}.x (${p.x} m) is on the face between ${able.map((rr) => JSON.stringify(regions[rr].name)).join(' and ')}: give region, the side to read`);
+        r = able[0] ?? sides[0];
       }
+      if (i >= 0 && !this.model.materials[regions[r].material].present[i]) fail(`${path}: '${p.species}' is absent from region ${JSON.stringify(regions[r].name)}, so there's nothing to read at x = ${p.x} m`);
       let g = grid.regionStart[r];
       while (g + 1 < grid.regionEnd[r] && x[g + 1] < p.x) g++;
       const w = x[g + 1] > x[g] ? (p.x - x[g]) / (x[g + 1] - x[g]) : 0;

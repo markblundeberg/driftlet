@@ -831,6 +831,12 @@ cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax:
 within 0.1% with as many nodes. Where a species carrying the current is steep across a region's
 end cells in this way, the solution's `warnings` say so, with a rough estimate of the excess.
 
+In a transient, a diffusion layer grows from the electrode as $`\sqrt{Dt}`$, through cells up to
+`hmax` wide, and nothing warns while they're coarse: give `hmax` a small fraction of
+$`\sqrt{Dt}`$ at the earliest time that matters. In a chronopotentiometry run, cells half
+$`\sqrt{D\tau}`$ wide put the surface concentration 0.5% off, a fifteenth 0.06% (the error goes
+as $`h^2`$).
+
 ## Geometry
 
 A device is planar unless it says otherwise: a slab whose cross-section $`A`$ is 1 m², so every
@@ -904,7 +910,8 @@ const now = dev.solution();                   // snapshot of the current state
   `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
   as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
   mol/m³) or species voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the
-  nodes around `x` (at an interface, `region` picks the side). That's what a detector at `x` sees.
+  nodes around `x` (at a face, the side where the species is; where both sides have it, `region`
+  says which). That's what a detector at `x` sees.
   At a face, `{ interface: f, species }` reads a species' flux through it (mol/(m²·s), toward +x,
   as `interfaces[f].N`), and `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
   as a transient slows, so give `dtMax` to resolve a signal in time.

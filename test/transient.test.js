@@ -275,3 +275,29 @@ test('a potential step a second into a run, on a 5 nm grid: Cottrell (step lengt
   const short = dev.advance(2, { maxSteps: 3 });
   assert.ok(!short.done && short.warnings.some((w) => /advance stopped at t = .*maxSteps \(3\)/.test(w)), short.warnings.join('\n'));
 });
+
+test('a probe at a face reads the side with the species; a species absent there, or both sides, is an error', async () => {
+  const { build, layer, ohmic, bath, half, aqueous, metal } = await import('../src/kit.js');
+  const bulk = { 'K+': 500, 'Cl-': 525, 'Fe3+': 5, 'Fe2+': 5 };
+  const dev = new Device(
+    build({
+      library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+      stack: [ohmic({ I: -10 }, ['e-']), layer('Pt', 1e-6), { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1, alpha: 0.5 }] }, layer('water', 1e-4), bath(bulk, 'Cl-')],
+      grid: { hmin: 1e-8, hmax: 2e-6 },
+    }),
+  );
+  // At the Pt | water face (x = 1 µm), Fe³⁺ is only in the water: read there, not NaN.
+  const run = dev.advance(1e-3, { probes: [{ x: 1e-6, species: 'Fe3+' }, { x: 1e-6, species: 'Fe3+', region: 1 }] });
+  const [face, told] = run.trace.probes;
+  assert.ok(face.every(Number.isFinite) && face.every((v, k) => v === told[k]), 'the water side');
+  assert.ok(face.at(-1) < 5, 'Fe³⁺ drawn down at the electrode');
+  assert.throws(() => dev.advance(2e-3, { probes: [{ x: 0.5e-6, species: 'Fe3+' }] }), /'Fe3\+' is absent from region/);
+  // Two layers of water: both sides have it, so say which.
+  const two = new Device(
+    build({
+      library: [aqueous(['K+', 'Cl-'], { epsr: 0 })],
+      stack: [bath({ 'K+': 100, 'Cl-': 100 }, 'Cl-'), layer('water', 1e-5, { name: 'a' }), layer('water', 1e-5, { name: 'b' }), bath({ 'K+': 10, 'Cl-': 10 }, 'Cl-')],
+    }),
+  );
+  assert.throws(() => two.advance(1e-3, { probes: [{ x: 1e-5, species: 'K+' }] }), /on the face between "a" and "b": give region/);
+});
