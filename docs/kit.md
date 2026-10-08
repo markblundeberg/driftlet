@@ -530,17 +530,30 @@ reactions), and enter and leave through the contacts and any metal.
   its neighbours as a contact's reservoir does. A junction then shows its majority carriers as
   seas and its minority carriers as dots. Crossings between two seas through a membrane are
   `events`.
-- `step(dt)` moves the dots on by dt of the device's time. `update(sol)` takes a new solution;
-  with `{ resample: true }` (a jump between steady states) each cell's dots are thinned or added
-  to by the change in what it should hold, which keeps them a Poisson sample while moving as few
-  as can be. Without it (a transient) they move on at the new rates.
-- The swarm has `dots` (`{ species, cell, x }`; each keeps its object while it lives, so a page
-  can give it fields of its own, a height say), `cells` (`{ x0, x1, region }`: grid nodes in runs
-  about `L/cells` wide, never across a region boundary, so the count and widths come out a little
-  off what was asked), `weight[name]`, `sea[name]` (1 per sea cell), `expected(name)` (dots per
-  cell on average), `events` from the last step (`{ species, kind, x, dir }`: `'in'`, `'out'`,
-  `'made'`, `'unmade'`, `'cross'`) and `crossed[name]` (`{ up, down }`: dots across boundary k,
-  at `cells[k].x0`, toward +x and −x, k = 0 … cells.length, counted until you zero them).
+- Options: `species` (which to draw; default every species with a concentration), `dots`
+  (about how many per species, for the default `weight`), or `weight` itself (mol/m² per dot,
+  one for all or `{ name: weight }`; fixed for the swarm's life), `cap` (default ∞: no seas),
+  `cells` (a target), `random`.
+- `step(dt)` moves the dots on by dt of the device's time, and returns the swarm. A cell a dot
+  would hop out of many times in one step (more than `maxHops`/4, default 200) is a sea for
+  that step and is then drawn afresh, so a step far longer than the hop time costs little and
+  is still a sample (only its dots' paths are lost). A NaN or negative dt (a first frame, a clock
+  that stepped back) moves nothing.
+- `update(sol)` takes a new solution. On a transient's frames, the dots move on at the new rates.
+  With `{ resample: true }`, for a jump between steady states only (never a transient's frames,
+  whose path it would lose), each cell's dots are thinned or added to by the change in what it
+  should hold, which keeps them a Poisson sample while moving as few as can be. A solution on
+  another grid (a resized device) redraws the lattice and places the dots afresh.
+- The swarm has `dots` (`{ species, cell, x }`, placed within a cell by its concentration; each
+  keeps its object while it lives, so a page can give it fields of its own, a height say),
+  `cells` (`{ x0, x1, region }`: grid nodes in runs about `L/cells` wide, never across a region
+  boundary or into a metal, so the count and widths come out a little off what was asked),
+  `weight[name]`, `sea[name]` (1 per sea cell), `expected(name)` (dots per cell on average),
+  `events` from the last step (`{ species, kind, x, dir }`: `'in'`, `'out'`, `'made'`,
+  `'unmade'`, `'cross'`) and `crossed[name]` (`{ up, down }`: dots across boundary k, at
+  `cells[k].x0`, toward +x and −x, k = 0 … cells.length, counted until you zero them). A sea
+  is a reservoir, not a sample: nothing is counted between two seas (except through a
+  permeable face) and nothing made or unmade in one is an event.
 - It's a sample, so its averages are noisy in the usual ways. Successive steps are correlated
   over a hop time, h²/D for a cell h wide, so a cell's count averages to its expectation only
   over many of those. And where the two-way traffic dwarfs the net (a dense species beside a

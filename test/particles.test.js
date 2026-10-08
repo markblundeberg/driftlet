@@ -135,3 +135,42 @@ test('particles: in equilibrium, a reaction still makes and unmakes dots, each a
   const want = k * (1e-4 / sw.weight.X) * dt * steps;
   for (const count of [made, unmade]) assert.ok(Math.abs(count - want) < 4 * Math.sqrt(want), `${count} made or unmade, expected ${want}`);
 });
+
+test('particles: a step far longer than the hop time is still a sample, density and net crossings, and costs little', () => {
+  const sol = slab();
+  const J = (1e-9 * 0.9) / 1e-4;
+  const sw = particles(sol, { dots: 500, cells: 20, random: seeded(5) });
+  const h = sw.cells[0].x1 - sw.cells[0].x0;
+  const t0 = performance.now();
+  const { mean, T } = run(sw, 'X', (500 * h * h) / 1e-9, 2000); // ~1000 hops a step
+  assert.ok((performance.now() - t0) / 2200 < 2, 'a step costs under 2 ms');
+  const ex = sw.expected('X');
+  mean.forEach((m, K) => assert.ok(Math.abs(m / ex[K] - 1) < 0.05, `cell ${K}: ${m} dots on average, expected ${ex[K]}`));
+  const k = sw.cells.length >> 1, { up, down } = sw.crossed.X;
+  const net = up[k] - down[k], want = (J * T) / sw.weight.X;
+  assert.ok(Math.abs(net - want) < 4 * Math.sqrt(up[k] + down[k]), `${net} dots across, net; expected ${want}`);
+});
+
+test('particles: a solution on another grid redraws the lattice; nonsense is an error', () => {
+  const a = slab(), sw = particles(a, { dots: 300, random: seeded(9) });
+  const b = new Device({
+    species: [{ name: 'X', z: 0 }],
+    materials: { gel: { epsr: 0, species: { X: { D: 1e-9, mu0: 0, cRef: 1 } } } },
+    regions: [{ material: 'gel', length: 2e-4 }],
+    contacts: { left: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } }, right: { phi: 'neutral' } },
+    grid: { hmax: 1e-6 },
+  }).solve();
+  sw.update(b);
+  assert.ok(Math.abs(sw.cells.at(-1).x1 - 2e-4) < 1e-12, 'the lattice spans the new device');
+  const n = sw.dots.length, want = sw.expected('X').reduce((s, v) => s + v, 0);
+  assert.ok(Math.abs(n - want) < 4 * Math.sqrt(want), `${n} dots, expected ${want}`);
+  const [t, dots] = [sw.time, sw.dots.length];
+  sw.step(NaN).step(-1); // (a first frame; a clock stepped back) nothing moves
+  assert.ok(sw.time === t && sw.dots.length === dots);
+  assert.throws(() => sw.step(Infinity), /step\(dt\)/);
+  assert.throws(() => sw.update(null), /update takes a solution/);
+  assert.throws(() => particles(a, { dots: 0 }), /dots must be/);
+  assert.throws(() => particles(a, { weight: -1 }), /weight of X/);
+  assert.throws(() => particles(a, { weight: 1e-15 }), /would draw/);
+  assert.throws(() => sw.expected('Y'), /no species "Y"/);
+});
