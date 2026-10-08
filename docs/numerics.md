@@ -644,15 +644,22 @@ only resolved to ~1e-4 of $`|Z|`$.
   never finish. An example is exponentially scarce minority carriers slowly filling an inversion
   layer behind a Schottky contact.
 - **A flat level,** where a stretch's steady state is known outright: a species that no reaction
-  or port touches, reached by one contact only (blocked at the other end), carries no flux in a
-  steady state, so its level is that contact's throughout. Steady solves (not the impedance,
-  where it carries a current) pin it there in place of its balances, rather than find it
-  through its own conduction, which can be all but nothing: a MOS capacitor's inversion
-  electrons reach the back contact only through a bulk with ~1e3 of them per cm³, and found that
-  way, the solve converged at some gate voltages and grids and not others. (Not through flow or
-  mixing, nor a concentrated material's cross-diffusion, where zero flux isn't a flat level.)
-  At a face inside such a stretch whose link holds the level continuous, the face's flux of the
-  species, which only the replaced edge balances set, is pinned to zero too.
+  or port touches, reached by one contact at most, carries no flux in a steady state, so its level
+  is flat: that contact's, or reaching none (a spectator, below), the level its amount fixes.
+  Steady solves (not the impedance, where it carries a current) hold it there in place of its
+  balances, rather than find it through its own conduction, which can be all but nothing. A level
+  found that way can't be moved: a MOS capacitor's inversion electrons reach the back contact only
+  through a bulk with ~1e3 of them per cm³, and with that contact moved, each solve failed through
+  ~90 pseudo-transient steps; past a closed zinc cell's limiting current, extended space charge at
+  the cathode excludes the blocked sulfate to ~1e-25 mol/m³, and the chain of conductances through
+  it had lost the steady system 14 digits (steady solves failed from 0.7 V, and took 37,000
+  iterations at 0.6 V). (A level that starts flat stays exactly so either way: carrying nothing,
+  the flux's expm1 form is exactly zero, whatever φ does.) A spectator's first node keeps its
+  amount's row, a pin whose response is the whole stretch's shift, so the stretch moves as a
+  whole. At a face inside such a stretch whose link holds the level continuous, the face's flux
+  of the species, which only the replaced edge balances set, is pinned to zero too. (Not through
+  flow or mixing, nor a concentrated material's cross-diffusion, where zero flux isn't a flat
+  level.)
 - **Continuation for a terminal driven by a current.** A cold steady solve at open circuit can
   fail where the same state is easy warm (a solar cell in dim light on a fine grid). The
   terminal is held at a voltage instead, its steady solves having their own continuation, and
@@ -672,14 +679,8 @@ only resolved to ~1e-4 of $`|Z|`$.
   bordered: the matrix is factorised with a pin (an identity row) in its place, which makes the
   stretch's level a well-conditioned unknown, and the response to a unit pin (one extra
   back-substitution per spectator) is added in the amount that satisfies the constraint, from
-  a $`k \times k`$ system for $`k`$ spectators. Within one ideal region (no flow or mixing), a
-  spectator's level is flat at steady state, at a value its amount fixes, so its other balance
-  rows are replaced by $`\eta_g - \eta_{g-1} = 0`$, rather than found through its own conduction.
-  Past a closed zinc cell's limiting current, extended space charge at the cathode excludes the
-  blocked sulfate to ~1e-25 mol/m³, and the chain of conductances through it had lost the steady
-  system 14 digits: steady solves failed from 0.7 V, and took 37,000 iterations at 0.6 V. (Not
-  across a face: the rows that would hold the level there and pin its flux leave a diagonal
-  block singular.)
+  a $`k \times k`$ system for $`k`$ spectators. (In an ideal region, with no flow or mixing, a
+  spectator's level is also held flat, above.)
 - **Conserved combinations** (moieties) of reacting stretches are solved the same way: the
   total iron of Fe³⁺, Fe²⁺ and FeCl²⁺ in a closed cell with a complexation reaction, say. The
   basis of combinations $`w`$ comes from the null space of the stoichiometry. In steady state the

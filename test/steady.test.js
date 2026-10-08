@@ -352,3 +352,19 @@ test('a MOS capacitor\'s back contact moved under an inverted gate: the electron
     assert.ok(Math.abs(Math.max(...mu) - Math.min(...mu)) < 1e-9 * GAS_CONSTANT * 300 && Math.abs(mu[0] + FARADAY * Vb) < 1e-6, `${Vb} V`);
   }
 });
+
+test('a level held flat across a face: the zinc cell past its limit with its electrolyte in two regions', () => {
+  // As above, but the sulfate crosses a face (a separator of the same water). Found through its
+  // own conduction there, it took twice the iterations short of the limit and failed past it.
+  const face = { phi: { type: 'capacitive', C: 0.26 }, zeroCharge: -0.12, reactions: [{ ...half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 }), k0: 4e-3, alpha: 0.5 }] };
+  const c = { 'Zn2+': 0.12, 'SO42-': 0.12 };
+  const cell = (split) =>
+    new Device(build({
+      T: 300,
+      library: [aqueous(['Zn2+', 'SO42-'], { epsr: 78.3 }), metal('Zn')],
+      stack: [ohmic(0, ['e-']), layer('Zn', 1e-6), face, ...(split ? [layer('water', 2.45e-5, { c0: c }), { dipole: 0 }, layer('water', 2.45e-5, { c0: c })] : [layer('water', 4.9e-5, { c0: c })]), face, layer('Zn', 1e-6), ohmic(0.9, ['e-'])],
+      grid: { hmin: 1.8e-9, hmax: 1.4e-6, ratio: 1.15 },
+    })).solve();
+  const one = cell(false), two = cell(true);
+  assert.ok(one.converged && two.converged && Math.abs(two.current / one.current - 1) < 1e-3, `${two.current} vs ${one.current} A/m²`);
+});

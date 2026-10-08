@@ -728,31 +728,23 @@ export class Solver {
       st.mobile = true;
       for (let q = st.regions[0]; q <= st.regions[1]; q++) if (!(materials[regions[q].material].D[st.species] > 0)) st.mobile = false;
     }
-    // Stretches whose steady state is known outright: a species that no reaction or port touches,
-    // reached by one contact only (the other end blocked), carries no flux at steady state, so its
-    // level is flat at that contact's. Steady solves pin it there (_flatRows) rather than find it
-    // through its own conduction, which can be all but nothing: a MOS capacitor's inversion
-    // electrons reach the back contact only through a bulk with ~1e3 of them per cm³. (Not
-    // through flow or mixing, nor a concentrated material's cross-diffusion, where zero flux
-    // isn't a flat level.)
+    // Stretches that carry nothing in a steady state, so whose level is flat there: a species that
+    // no reaction or port touches, reached by one contact at most, moving through ideal regions
+    // without flow or mixing (where carrying nothing is a level flat). Found through their own
+    // conduction, which can be all but nothing, such a level can't be moved (a MOS capacitor's
+    // inversion electrons, which reach the back contact only through a bulk with ~1e3 of them per
+    // cm³; blocked SO₄²⁻ driven from a zinc cathode's extended space charge, down to 1e-25 mol/m³
+    // there, whose chain of conductances lost the system 14 digits). So steady solves hold it
+    // flat (_flatRows): at its contact's level, or reaching none, at the level its amount fixes.
+    // (Not through flow or mixing, nor a concentrated material's cross-diffusion, where carrying
+    // nothing isn't a level flat.)
     this.flatStretches = this.stretches.filter((st) => {
-      if (st.reactive || st.ports.length > 0 || !st.mobile || st.leftOpen === st.rightOpen) return false;
+      if (st.reactive || st.ports.length > 0 || !st.mobile || (st.leftOpen && st.rightOpen)) return false;
       for (let q = st.regions[0]; q <= st.regions[1]; q++) {
         const reg = regions[q], mat = materials[reg.material];
         if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0) return false;
       }
       return true;
-    });
-    // Likewise a spectator that's mobile throughout: no flux at steady state, so its level is flat,
-    // at a value its amount fixes. Steady solves hold its levels equal (_levelRows) rather than
-    // find them through its own conduction: blocked SO₄²⁻ driven from a zinc cathode's extended
-    // space charge is down to 1e-25 mol/m³ there, and the chain of conductances through it lost
-    // the steady system 14 digits. (Within one region: across a face, the rows that would hold
-    // the level and pin the face's flux leave a diagonal block singular.)
-    this.levelStretches = this.stretches.filter((st) => {
-      if (!st.spectator || !st.mobile || st.ports.length > 0 || st.regions[0] !== st.regions[1]) return false;
-      const reg = regions[st.regions[0]], mat = materials[reg.material];
-      return !mat.conductor && mat.ideal && reg.velocity === 0 && !(reg.mixing > 0);
     });
     this.flattening = false;
     this._laws();
@@ -824,7 +816,11 @@ export class Solver {
       });
     };
     this.stretches.forEach((st, k) => {
-      if (st.spectator && this._moves(st)) add([{ stretch: k, w: 1 }], k);
+      if (!st.spectator || !this._moves(st)) return;
+      add([{ stretch: k, w: 1 }], k);
+      // Held flat (see _flatRows), it moves as a whole: the pin's response is the whole stretch's
+      // shift, its amount saying how far.
+      if (this.flatStretches.includes(st)) this.constraints.at(-1).col = Array.from({ length: st.nodes[1] - st.nodes[0] + 1 }, (_, j) => this.blockOfNode[st.nodes[0] + j] * this.M + 1 + st.species);
     });
     const S = this.stretches.length;
     for (const w of laws) {
@@ -1236,10 +1232,11 @@ export class Solver {
     for (let a = 0; a < S; a++) {
       if (!cols[a]) cols[a] = new Float64Array(N + 1);
       if (a < P) {
-        const row = this.rix[pins[a].row];
-        e[row] = 1;
+        // The response to a unit pin, or where the pin moves a flat stretch, to its shift.
+        const col = this.flattening && pins[a].col ? pins[a].col : [pins[a].row];
+        for (const o of col) e[this.rix[o]] = 1;
         this._solveLinear(e, cols[a]);
-        e[row] = 0;
+        for (const o of col) e[this.rix[o]] = 0;
       } else this._solveLinear(this.termB[fl[a - P]], cols[a]);
     }
     // Row a of the small system, as a dot product with a compact vector (sparse for pins).
@@ -1834,7 +1831,6 @@ export class Solver {
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
     if (this.flattening && dt === Infinity) this._flatRows();
-    if (this.flattening && this.constrained && dt === Infinity) this._levelRows();
     if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
     if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
     // Rows kept aside for _solveBordered: the conserved amounts' and the islands'.
@@ -3023,9 +3019,19 @@ export class Solver {
   _flatRows() {
     const { M, u, uLo, res, z, VT, model } = this, R = this.rix;
     for (const st of this.flatStretches) {
-      const i = st.species, side = st.leftOpen ? 'left' : 'right', k = side === 'left' ? 0 : 1;
-      const link = model.contacts[side].species[i];
-      const level = z[i] === 0 ? link.mu / model.RT : (z[i] * (this.termV[k] + link.offset)) / VT;
+      const i = st.species, open = st.leftOpen || st.rightOpen;
+      let level, k = -1;
+      if (open) {
+        const side = st.leftOpen ? 'left' : 'right', link = model.contacts[side].species[i];
+        k = side === 'left' ? 0 : 1;
+        level = z[i] === 0 ? link.mu / model.RT : (z[i] * (this.termV[k] + link.offset)) / VT;
+      } else {
+        // Its first node's level, which its amount fixes (that row is the amount's, a pin whose
+        // response moves the whole stretch: see _applyConstraints).
+        if (!this.constrained) continue;
+        const o = this.blockOfNode[st.nodes[0]] * M + 1 + i;
+        level = u[o] + uLo[o];
+      }
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
         const b = this.blockOfNode[g], o = b * M + 1 + i;
         if (this.loc[o] < 0) continue;
@@ -3033,7 +3039,7 @@ export class Solver {
         for (const B of this.termB) B[R[o]] = 0; // (the row's old terminal terms: the end node's own link)
         this._j(b, 1 + i, b, 1 + i, 1);
         res[R[o]] = u[o] + uLo[o] - level;
-        if (z[i] !== 0) this.termB[k][R[o]] += -z[i] / VT;
+        if (open && z[i] !== 0) this.termB[k][R[o]] += -z[i] / VT;
       }
       // A face inside the stretch whose link holds the level continuous carries the species' flux
       // as an unknown that only the edge balances, now replaced, determined: it's zero.
@@ -3050,23 +3056,6 @@ export class Solver {
   }
 
   // Zero one row of the Jacobian (all three blocks), ready to be replaced.
-  // Steady solves: each level stretch's levels held equal (see levelStretches), node to node in
-  // place of the balances. The first node's row is the amount's (see _applyConstraints).
-  _levelRows() {
-    const { M, u, uLo, res } = this, R = this.rix;
-    for (const st of this.levelStretches) {
-      const i = st.species;
-      for (let g = st.nodes[0] + 1; g <= st.nodes[1]; g++) {
-        const b = this.blockOfNode[g], o = b * M + 1 + i, p = o - M;
-        if (this.loc[o] < 0 || this.loc[p] < 0) continue;
-        this._replaceRow(b, 1 + i);
-        for (const B of this.termB) B[R[o]] = 0;
-        this._j(b, 1 + i, b, 1 + i, 1);
-        this._j(b, 1 + i, b - 1, 1 + i, -1);
-        res[R[o]] = u[o] + uLo[o] - (u[p] + uLo[p]);
-      }
-    }
-  }
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
     if (l < 0) return;
@@ -3154,6 +3143,11 @@ export class Solver {
       rest.multiply(v, jv);
       if (save.transformed) this._untransform(v); // (the dilute terms in the plain unknowns)
       lin.apply(v, jv, 1, 1 / dt);
+      // A flat stretch's rows hold each level to its first node's (see _flatRows).
+      for (const p of pins) {
+        if (!(this.flattening && p.col)) continue;
+        for (const o of p.col) if (o !== p.row && this.loc[o] >= 0) jv[R[o]] -= x[R[p.row]];
+      }
       const out = new Float64Array(N + K);
       for (let j = 0; j < N; j++) {
         let t = jv[j];
