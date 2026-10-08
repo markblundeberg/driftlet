@@ -331,3 +331,24 @@ test('electrons held flat behind an open circuit: their amount stands in for the
   assert.ok(steady.converged && steady.steps === 1, `steps ${steady.steps}`);
   assert.ok(Math.abs(steady.terminals.right.V - run.terminals.right.V) < 1e-9, `${steady.terminals.right.V} vs ${run.terminals.right.V} V`);
 });
+
+test('a MOS capacitor\'s back contact moved under an inverted gate: the electrons\' level follows it, flat', () => {
+  // Without recombination the inversion layer's electrons reach the back contact only through a
+  // bulk with ~1e3 of them per cm³, so found through their own conduction the level can't move
+  // (each solve failed through ~90 pseudo-transient steps); a steady state has them flat at the
+  // contact's level, and steady solves hold them there.
+  const Si = semiconductor('Si');
+  const dev = new Device(build({
+    T: 300,
+    library: [Si],
+    stack: [ohmic(0), layer('Si', 2e-6, { acceptors: units.perCm3(1e17) }), { V: 1.5, phi: { type: 'capacitive', C: 3.45e-3 }, zeroCharge: 0 }],
+    grid: { hmin: 1e-10, hmax: 5e-8 },
+  }));
+  assert.ok(dev.solve().converged);
+  for (const Vb of [0.1, -0.3]) {
+    const s = dev.set({ contacts: { left: { V: Vb } } }).solve();
+    assert.ok(s.converged && s.iterations < 20, `${Vb} V: ${s.iterations} iterations`);
+    const mu = Array.from(s.mu['e-']);
+    assert.ok(Math.abs(Math.max(...mu) - Math.min(...mu)) < 1e-9 * GAS_CONSTANT * 300 && Math.abs(mu[0] + FARADAY * Vb) < 1e-6, `${Vb} V`);
+  }
+});
