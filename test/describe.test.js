@@ -94,3 +94,19 @@ test('a bath read through a reference ion says where the SHE level sits against 
   const salt = cell(kcl);
   assert.doesNotMatch(describe({ ...salt, contacts: { ...salt.contacts, right: { V: 0, bath: { c: kcl } } } }), /SHE/, 'a bath read by its φ says nothing');
 });
+
+test('an outside out of equilibrium with a reaction at the contact is warned of; ohmic contacts with recombination are not', () => {
+  // H⁺ + OH⁻ ⇌ H₂O with the tables' μ°: a bath at 0.1 mM each is a little short of K_w.
+  const water = (c) =>
+    build({
+      library: [aqueous(['Na+', 'Cl-', 'H+', 'OH-'], { epsr: 0 })],
+      stack: [bath({ 'Na+': 100, 'Cl-': 100, 'H+': c, 'OH-': c }, 'Cl-'), layer('water', 1e-5), bath({ 'Na+': 100, 'Cl-': 100, 'H+': c, 'OH-': c }, 'Cl-')],
+      bulkReactions: [{ equation: 'H+ + OH- = H2O', fixed: { H2O: -237.1e3 }, kf: { water: 1.4e8 } }],
+    });
+  const off = describe(water(1e-4));
+  const a = +off.match(/contacts\.left: the outside isn't in equilibrium with bulkReactions\[0\] \(H\+ \+ OH- = H2O; A = (-?[\d.]+) RT/)[1];
+  assert.match(off, /contacts\.right: the outside isn't in equilibrium/);
+  // at c e^{−a/2}, each μ up by −a/2 RT, it's in equilibrium
+  assert.doesNotMatch(describe(water(1e-4 * Math.exp(-a / 2))), /isn't in equilibrium/);
+  assert.doesNotMatch(describe(pn(silicon())), /isn't in equilibrium/, 'ohmic contacts hold e⁻ and h⁺ at one level');
+});

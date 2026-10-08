@@ -231,6 +231,23 @@ export function describe(def) {
       she = ct.she.exact ? `; the bath's SHE level is at ${at}` : `; the bath's φ is at ${at} (on the usual tables' μ°, where μ°_H⁺ = 0, that's its SHE level)`;
     }
     lines.push(`  ${side}: ${drive(cdef, model.geometry.type === 'planar')}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}${she}`);
+    // An outside phase out of equilibrium with a reaction that runs at the contact: the reaction
+    // then runs there for ever, a current at zero bias (H⁺ and OH⁻ given off Kw in a bath, say).
+    const end = regions[side === 'left' ? 0 : regions.length - 1].material;
+    model.reactions.forEach((rx, k) => {
+      if (!(rx.kf[end] > 0) || rx.kfProfile[end]) return; // (light, a profile, is meant to drive)
+      const parts = [...rx.reactants.map(({ i, nu }) => [i, -nu]), ...rx.products.map(({ i, nu }) => [i, nu])];
+      const level = (i) => {
+        const l = ct.species[i];
+        return l.type !== 'equilibrium' ? NaN : species[i].z === 0 ? l.mu : l.offset === undefined ? NaN : species[i].z * FARADAY * l.offset;
+      };
+      // A/RT from the outside's levels (the terminal voltage cancels: Σ ν z = 0)
+      const a = rx.fixedA - parts.reduce((sum, [i, nu]) => sum + nu * level(i), 0) / RT;
+      if (Math.abs(a) > 1e-3) {
+        const rdef = def.bulkReactions[k];
+        warnings.push(`contacts.${side}: the outside isn't in equilibrium with bulkReactions[${k}] (${rdef.equation ?? equation(rdef.nu)}; A = ${num(a)} RT there), so it runs at the contact for ever, a current even at zero bias. Unless that's meant (a source), give the outside a composition in equilibrium with it (H⁺ and OH⁻ at √K_w, say)`);
+      }
+    });
   }
   (def.ports ?? []).forEach((p, k) => {
     const port = model.ports[k];

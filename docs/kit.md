@@ -390,7 +390,10 @@ warnings:
   (µF/cm²?), a concentration over 1000 M, lengths over a metre or under an atom, a T under
   200 K (°C?), and so on;
 - double layers the grid won't resolve: end cells coarser than the Debye length (the solution's
-  `warnings` check this again against the solved concentrations).
+  `warnings` check this again against the solved concentrations);
+- an outside (a bath, a contact's levels) out of equilibrium with a bulk reaction that runs at the
+  contact, which would run there for ever: H⁺ and OH⁻ in a bath a little off $`K_w`$ pass a current
+  at zero bias.
 
 They're heuristics, prompts to check, never errors.
 
