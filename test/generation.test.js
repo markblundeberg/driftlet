@@ -15,9 +15,12 @@ test('photogeneration(): a Beer–Lambert table that generates exactly what the 
     for (let k = 1; k < x.length; k++) total += ((values[k] + values[k - 1]) / 2) * (x[k] - x[k - 1]);
     const absorbed = 2e-4 * -Math.expm1(-alpha * to);
     assert.ok(Math.abs(total / absorbed - 1) < 1e-6, `α = ${alpha}: ${total / absorbed}`);
-    assert.equal(x[0], 1e-6);
-    assert.ok(Math.abs(x.at(-1) - (1e-6 + to)) < 1e-18);
+    assert.ok(x[0] < 1e-6 && x[1] === 1e-6 && values[0] === 0, 'nothing before from');
+    assert.ok(Math.abs(x.at(-2) - (1e-6 + to)) < 1e-18 && x.at(-1) > x.at(-2) && values.at(-1) === 0, 'nor after to');
   }
+  // αL of exactly 50: the last point isn't repeated by round-off (x stays increasing).
+  const { x } = photogeneration({ material: 'Si', flux: 1, alpha: 1e7, mu: 1e5, from: 0.5e-6, to: 5.5e-6 }).kf.Si;
+  assert.ok(x.every((v, k) => k === 0 || v > x[k - 1]));
   assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 1e5, to: 1e-6 }), /mu must be the photons' μ/);
   assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 0, mu: 1e5, to: 1e-6 }), /absorption coefficient/);
   assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 1e5, mu: 1e5, from: 2e-6, to: 1e-6 }), /to > from/);
@@ -66,5 +69,24 @@ test('Beer–Lambert in an n⁺p cell: J_sc is qΦ∫αe^{−αx}η(x)dx, from b
     }
     const ratio = s.current / (FARADAY * flux * collected);
     assert.ok(Math.abs(ratio - 1) < tol, `α = ${alpha}/m: J_sc ${ratio} of theory`);
+  }
+});
+
+test('photogeneration() in one layer of a material that runs through the device: nothing outside [from, to]', () => {
+  // A p⁺-i-n⁺ diode all of one silicon, light absorbed only in the i layer, under reverse bias:
+  // every pair is collected, J = qΦ(1 − e^{−αL}), none from the doped layers either side.
+  const Si = semiconductor('Si'), Wd = units.um(0.5), L = units.um(5), N = units.perCm3(1e19), flux = 1e-3;
+  for (const alpha of [1e5, 1e6]) {
+    const s = new Device(
+      build({
+        T: 300,
+        library: [Si],
+        stack: [ohmic(0), layer('Si', Wd, { acceptors: N }), layer('Si', L), layer('Si', Wd, { donors: N }), ohmic(5)],
+        bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e6 } }, photogeneration({ material: 'Si', flux, alpha, mu: units.eV(3), from: Wd, to: Wd + L })],
+        grid: { hmin: units.nm(1), hmax: units.nm(50) },
+      }),
+    ).solve();
+    const ratio = -s.current / (FARADAY * flux * -Math.expm1(-alpha * L));
+    assert.ok(Math.abs(ratio - 1) < 1e-3, `α = ${alpha}/m: J ${ratio} of theory`);
   }
 });

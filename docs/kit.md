@@ -187,7 +187,8 @@ Helpers that write sources as plain data:
 - **`photogeneration({ material, flux, alpha, mu, from, to, makes })`**: light absorbed as it goes in
   (Beer–Lambert). A photon flux (mol/(m²·s); a power P at photon energy E is
   $`P/(E N_A)`$) enters the material at x = `from` heading toward +x and generates pairs at
-  $`G(x) = \Phi\alpha e^{-\alpha(x - \mathrm{from})}`$ until `to`, the material's far end. It's
+  $`G(x) = \Phi\alpha e^{-\alpha(x - \mathrm{from})}`$ until `to`, and nothing outside (so `from` and
+  `to` can pick out one layer of a material that's also elsewhere). It's
   photon ⇌ e⁻ + h⁺ from a photon reservoir at $`\mu`$ = `mu` (J/mol, well above the gap, e.g.
   `units.eV(3)`), with `kf` a profile against x. `makes` replaces the right-hand side: in an
   organic semiconductor, light makes neutral excitons, `makes: 'X'`. The table generates exactly what the light

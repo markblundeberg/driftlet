@@ -127,13 +127,21 @@ export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes
   // nothing is left), then `to`.
   const depth = alpha * (to - from), reach = Math.min(depth, 50), n = Math.ceil(reach / 0.05), step = reach / n;
   const taus = Array.from({ length: n + 1 }, (_, k) => k * step);
-  if (depth > 50) taus.push(depth);
+  if (depth > 50 * (1 + 1e-9)) taus.push(depth); // (not a round-off's worth past the last point)
   // A straight line between two points of e^{−τ} encloses (Δτ/2)·coth(Δτ/2) times too much: each
   // value is scaled back by that, so the total is the exponential's own (to ~Δτ⁴).
   const fix = (step / 2) / Math.tanh(step / 2);
+  // Nothing outside [from, to]: a profile holds its end values beyond its table, so it drops to
+  // zero a hair beyond each end (the light enters a layer of a material that's also elsewhere).
+  const hair = 1e-10 * (to - from);
   return {
     equation: `photon = ${makes}`,
     fixed: { photon: mu },
-    kf: { [material]: { x: taus.map((t) => from + t / alpha), values: taus.map((t) => (flux * alpha * Math.exp(-t)) / fix) } },
+    kf: {
+      [material]: {
+        x: [from - hair, ...taus.map((t) => from + t / alpha), to + hair],
+        values: [0, ...taus.map((t) => (flux * alpha * Math.exp(-t)) / fix), 0],
+      },
+    },
   };
 }
