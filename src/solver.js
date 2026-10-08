@@ -4540,13 +4540,12 @@ export class Solver {
   }
 
   /**
-   * Steady state.
-   * - If every species stretch is fed by a contact, nothing is conserved on its own, so the
-   *   true steady equations (dt = ∞, no storage term) are solved directly: no slow modes to
-   *   wait out, however slow the physics (e.g. exponentially scarce minority carriers).
-   * - Otherwise backward-Euler steps at a huge dt, whose storage term pins each conserved
-   *   amount exactly; dt keeps growing ×10 while the state still moves.
-   * If Newton fails, dt ramps up from a small value (pseudo-transient continuation) instead.
+   * Steady state: where a transient from the present state ends, found as the solution of the
+   * steady equations (dt = ∞, no storage term), with no slow modes to wait out, however slow the
+   * physics (e.g. exponentially scarce minority carriers). What the storage term held is held by
+   * the steady system's own rows instead (see _laws): each conserved amount in place of a balance
+   * row that says nothing new, levels that carry nothing held flat, islands' summed balances.
+   * Where Newton from here fails: continuation along the drives, then the pseudo-transient ramp.
    * The clock is not advanced, and open-system conservation bookkeeping restarts here.
    */
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
@@ -4892,7 +4891,6 @@ export class Solver {
     const tau = this.slowestTime();
     const direct = this._directSteady();
     const giant = direct ? Infinity : 1e6 * tau;
-    if (direct) this._renormalizeSpectators(); // a starting point with the right amounts
     let dt = giant, grow = 10; // (after a failure, dt grows by less, then back up to ×10)
     let triedDirect = 0;
     let totalIter = 0, steps = 0, converged = false;
