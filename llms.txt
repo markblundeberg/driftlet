@@ -145,6 +145,11 @@ const tK = D['K+'] / (D['K+'] + D['Cl-']), VT = (GAS_CONSTANT * 298.15) / FARADA
 console.log(`EMF ${(sol.terminals.right.V * 1e3).toFixed(3)} mV, 2t₊V_T ln 10 = ${(2 * tK * VT * Math.log(10) * 1e3).toFixed(3)} mV`); // 58.048, 58.047
 ```
 
+An ion-exchange membrane is a layer whose material has its ions slower, with a `fixedCharge` (−X·F
+for X mol/m³ of fixed anions), between layers of water. A bath against the membrane itself names
+its own material, `bath(c, 'Cl-', 0, { material: 'water' })`, and meets it through a Donnan step.
+The membrane demo's page script is a worked example.
+
 ## Template: a semiconductor junction
 
 ```js

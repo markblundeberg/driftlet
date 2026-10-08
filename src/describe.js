@@ -92,7 +92,10 @@ export function unitWarnings(def) {
   };
   const kinetics = (path, reactions) => {
     (reactions ?? []).forEach((rx, k) => {
-      if (rx?.k0 > 10) warn(`${path}.reactions[${k}].k0`, `${num(rx.k0)} mol/(m²·s) is an exchange current of ${num(rx.k0 * FARADAY)} A/m² per electron; k0 is mol/(m²·s)`);
+      // (an exchange current only where electrons take part: an ion transfer's k0 can be large)
+      const said = rx?.equation ?? (rx?.left || rx?.right ? JSON.stringify([rx.left, rx.right]) : null);
+      const electrons = said === null || /(^|[^\w])e-($|[^\w])/.test(said);
+      if (rx?.k0 > 10 && electrons) warn(`${path}.reactions[${k}].k0`, `${num(rx.k0)} mol/(m²·s) is an exchange current of ${num(rx.k0 * FARADAY)} A/m² per electron; k0 is mol/(m²·s)`);
     });
   };
   (def.interfaces ?? []).forEach((f, k) => {

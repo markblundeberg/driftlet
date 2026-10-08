@@ -73,6 +73,9 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   }
   assert.ok(!ionSlips.some((w) => w.startsWith('materials.water.species.Cl-')));
   assert.deepEqual(unitWarnings({ T: 77 }), [], 'liquid nitrogen is a real temperature');
+  // A large k0 is an exchange current only where electrons take part.
+  assert.deepEqual(unitWarnings({ interfaces: [{ reactions: [{ equation: 'H+(right) + OH-(left) = H2O', k0: 1000 }] }] }), []);
+  assert.equal(unitWarnings({ interfaces: [{ reactions: [{ equation: 'Ag+ + e- = Ag(s)', k0: 1000 }] }] }).length, 1);
   const coarse = describe(pn(silicon(), { hmin: 30e-9, hmax: 50e-9 }));
   assert.match(coarse, /warnings:\n {2}n: end cells of [\d.]+ nm are coarser than the Debye length, 12.9 nm/);
   assert.throws(() => describe({ species: [] }), DeviceError);
