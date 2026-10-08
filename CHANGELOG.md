@@ -37,6 +37,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   floating region.
 - `particles()` draws as many cells as asked, as nearly as the nodes allow (it drew 52 of 80 on
   a 1 µm grid), and `cap` is a density, so a wider cell among the rest isn't a sea alone.
+- A probe at a face reads the side where its species is (it read an electrode's metal side,
+  NaN, silently), and asks for `region` where both sides have it.
+- The docs say how fine `hmax` must be for a transient's diffusion layer, and for a spike's
+  front along an axon: neither is warned of.
 - The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
   Donnan-excluded, against seas of Na⁺.
 
