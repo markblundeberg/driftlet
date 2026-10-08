@@ -76,6 +76,10 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   // A large k0 is an exchange current only where electrons take part.
   assert.deepEqual(unitWarnings({ interfaces: [{ reactions: [{ equation: 'H+(right) + OH-(left) = H2O', k0: 1000 }] }] }), []);
   assert.equal(unitWarnings({ interfaces: [{ reactions: [{ equation: 'Ag+ + e- = Ag(s)', k0: 1000 }] }] }).length, 1);
+  // and at an electrode: an exciton splitting between two semiconductors has a k0 of a velocity times cRef
+  const organic = { materials: { donor: { epsr: 3, species: {} }, acceptor: { epsr: 3, species: {} }, Ag: { conductor: { species: 'e-', conductivity: 6e7 } } }, regions: [{ material: 'donor', length: 4e-8 }, { material: 'acceptor', length: 4e-8 }] };
+  assert.deepEqual(unitWarnings({ ...organic, interfaces: [{ reactions: [{ equation: 'X = e-(right) + h+(left)', k0: 1e4 }] }] }), []);
+  assert.equal(unitWarnings({ ...organic, regions: [{ material: 'Ag', length: 1e-6 }, organic.regions[0]], interfaces: [{ reactions: [{ equation: 'Ag+ + e- = Ag(s)', k0: 1000 }] }] }).length, 1);
   const coarse = describe(pn(silicon(), { hmin: 30e-9, hmax: 50e-9 }));
   assert.match(coarse, /warnings:\n {2}n: end cells of [\d.]+ nm are coarser than the Debye length, 12.9 nm/);
   assert.throws(() => describe({ species: [] }), DeviceError);

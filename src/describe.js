@@ -101,7 +101,10 @@ export function unitWarnings(def) {
   (def.interfaces ?? []).forEach((f, k) => {
     if (!isObject(f)) return;
     capacitance(`interfaces[${k}].phi.C`, f.phi?.C);
-    kinetics(`interfaces[${k}]`, f.reactions);
+    // (an exchange current is an electrode's: a metal on one side, or sides not yet known; a
+    // splitting exciton's k0, between two semiconductors, is a velocity times cRef)
+    const sides = [def.regions?.[k], def.regions?.[k + 1]].map((r) => (isObject(r) ? def.materials?.[r.material] : undefined));
+    if (sides.some((m) => m === undefined || isObject(m?.conductor))) kinetics(`interfaces[${k}]`, f.reactions);
   });
   (def.ports ?? []).forEach((p, k) => {
     if (!isObject(p)) return;

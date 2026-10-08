@@ -266,6 +266,15 @@ const oc = new Device(cell({ I: 0 })).solve(); // open circuit
 console.log(`J_sc = ${sc.current.toFixed(1)} A/m², V_oc = ${oc.terminals.right.V.toFixed(3)} V`);
 ```
 
+In an organic cell, light makes excitons: a neutral species `X` in the donor, made by
+`photogeneration({ ..., makes: 'X' })` and decaying by `{ equation: 'X = 0', kf: { donor: 1 / tau } }`.
+They split at the donor/acceptor face by a reaction there, `X = h+(left) + e-(right)` with e⁻ and
+h⁺ blocked at the face (the reaction moves them), and its reverse is charge-transfer
+recombination; the face's `step` sets E_CT. With `alpha: 0` the splitting is a velocity
+k0/cRef, a Robin condition on the exciton profile; with α > 0 it's k0/cRef · e^(α(E_X − E_CT)/RT).
+The organic demo's page script is a worked example (J_sc against exciton diffusion theory, V_oc
+against detailed balance).
+
 For a perovskite cell, prefer the curated `perovskiteCell({ V, light, bulkSRH })`: IonMonger's
 default cell (mobile iodide vacancies), with its J–V scans at seven rates in `PEROVSKITE_SCANS`
 and `hysteresis(trace, turn)` to read the same figures from yours.
@@ -816,6 +825,10 @@ What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualizat
 - **A gate as a contact on an oxide.** It fails as `'e-' is absent from the end material 'SiO2'`: make the
   gate a metal layer with a capacitive face, as in the MOS template.
 - **`ohmic()` on a metal.** Its default holds e⁻ and h⁺; on a metal write `ohmic(V, ['e-'])`.
+- **A closed battery started at a current.** Two insertion hosts with an electrolyte between,
+  the cell driven from `c0` (even `I: 0`), can fail to start: its terminal starts at 0 V, volts
+  from where the hosts put it. Hold it at its open-circuit voltage first (the OCV curves'
+  difference at the starting fills), `solve()`, then `set()` the current and `advance()`.
 - **Ions on both sides of a reacting face.** Label them, `'Li+(left) = Li+(right)'`, and block
   them (`species: { 'Li+': 'blocked' }`) if they cross only by the reaction.
 - **Unit slips.** D in cm²/s, μ° in eV, µF/cm², mS/cm², T in °C. `describe(def)` flags them.

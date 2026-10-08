@@ -140,6 +140,11 @@ for live demos.
      back-substitution, no factorisation) would keep it exact, but saves little: assembly costs
      about twice a factorisation here (~100 µs against ~55 µs for the pn diode's 265 blocks of 3,
      and for n-Si | KCl's 315 of up to 5), so ~10% of a transient. Assembly is the larger cost.
+   - A closed cell of two insertion hosts started at a current (open circuit too) starts its
+     floating terminal at 0 V, where the hosts' electrons' starting levels put it, volts from its
+     open-circuit voltage, and fails (a full-cell agent's; the workaround is to hold it at its
+     OCV, solve, then switch). The start should set each host's electron level from its OCV curve
+     against the electrolyte's Li⁺ level.
    - A port's window reaching an end node whose φ its contact sets leaves that node's half box
      out (its capacitance and exchange), so a porous electrode against a bath has h/2 less
      electrode than drawn: an O(h/L) shortfall in its capacitance and impedance (1.25e-3 at 400
