@@ -17,7 +17,9 @@ for `build()`: each ion a species with $`c_{\mathrm{ref}}`$ = 1000 mol/m³ (1 M)
 `water` with its D and $`\mu^\circ`$. `epsr` defaults to water's 78.30 at 25 °C (Malmberg and
 Maryott 1956); `epsr: 0` makes the solution strictly neutral, for macroscopic models without
 double layers. The data are in `IONS`, and $`\mu^\circ`$ of liquid water is `H2O`
-(−237.129 kJ/mol), for reactions such as H₂O ⇌ H⁺ + OH⁻.
+(−237.129 kJ/mol), for reactions such as H₂O ⇌ H⁺ + OH⁻. Together they give $`K_w`$ =
+1.011e-14 at 25 °C (pK_w 13.995): neutral water holds 1.0055e-4 mol/m³ of each, which a bath
+with that reaction should hold too.
 
 | Ion | z | D (10⁻⁹ m²/s) | $`\mu^\circ`$ (kJ/mol) |
 |---|---|---|---|

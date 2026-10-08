@@ -922,8 +922,12 @@ const now = dev.solution();                   // snapshot of the current state
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
   device. A held terminal's voltage is perturbed, or a driven one's current; the other terminals
-  keep their drives (held ones at AC ground, driven ones open). A terminal behind a resistance can't
-  be the one measured: the resistance belongs to the external circuit. With `profiles: true`, each
+  keep their drives (held ones at AC ground, driven ones open), so at least one other must be held
+  for the current to return (with every other one driven, the impedance is infinite, and an error
+  says to measure at a driven one). A terminal behind a resistance can't be the one measured: the
+  resistance belongs to the external circuit. The grid must resolve how far the signal reaches,
+  and nothing warns of it: in a porous electrode, $`\sqrt{\kappa/(\omega C a)}`$ (cells of 2 µm
+  against a 3.4 µm depth put Z 7% off, falling as the cells do). With `profiles: true`, each
   frequency also returns complex profiles of $`\delta\phi`$, $`\delta\bar\mu`$ and $`\delta c`$ per unit
   excitation.
 - `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
