@@ -149,7 +149,12 @@ export function describe(def) {
       return;
     }
     const parts = [mat.epsr > 0 ? `εr ${mat.epsr}` : 'strictly neutral (ε = 0)'];
-    if (reg.fixedCharge !== 0) parts.push(`fixed charge ${reg.fixedCharge > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(Math.abs(reg.fixedCharge) / FARADAY)}`);
+    // (donors and acceptors where there are electrons; an ion exchanger's charge in mol/m³)
+    const doped = species.some((sp, i) => mat.present[i] && (sp.name === 'e-' || sp.name === 'h+'));
+    if (reg.fixedCharge !== 0) {
+      const X = Math.abs(reg.fixedCharge) / FARADAY;
+      parts.push(doped ? `fixed charge ${reg.fixedCharge > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(X)}` : `fixed charge ${reg.fixedCharge > 0 ? '+' : '−'}${num(X)} mol/m³`);
+    }
     // The screening concentration: Σ z²c from the initial composition, plus the carriers that
     // balance the fixed charge (doping), which c0 doesn't list.
     let zzc = 0, q = reg.fixedCharge / FARADAY; // q: the charge c0 leaves unbalanced

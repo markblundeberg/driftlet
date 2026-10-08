@@ -73,14 +73,15 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
   300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water, at 25
   °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
-  Li Pt). A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si` (`Eg` and `chi` in eV, `Nc`
-  and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the material, e⁻'s and h⁺'s `cRef` are
-  N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT),
-  6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists (`z: 0` for a neutral one):
-  `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`, `lib.materials.water.species['A-'] = { D,
-  mu0 }`. Only μ° differences within a reaction matter: for a redox couple μ°_red − μ°_ox = −F·E°
-  (against SHE, the library's μ°_H⁺ being 0). An insulator is a material with no species: `{
-  species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }`.
+  Li Pt), all from `driftlet/kit`. A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si`
+  (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the
+  material, e⁻'s and h⁺'s `cRef` are N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0),
+  so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists
+  (`z: 0` for a neutral one): `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`,
+  `lib.materials.water.species['A-'] = { D, mu0 }`. Only μ° differences within a reaction matter:
+  for a redox couple μ°_red − μ°_ox = −F·E° (against SHE, the library's μ°_H⁺ being 0). An
+  insulator is a material with no species: `{ species: [], materials: { SiO2: { epsr: 3.9, species:
+  {} } } }`.
 - **Faces.** Between two different non-metals, give an alignment, `{ dipole }` or `{ step: {
   species: 'e-', value } }` (J/mol), or `phi: 'neutral'`. `vacuumDipole(def, { material, anchor:
   'e-', offset: χ }, …)` estimates a dipole from electron affinities (Anderson's rule); it reads
