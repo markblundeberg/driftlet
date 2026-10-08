@@ -47,7 +47,8 @@ const NONE = 0, DOT = 1, OUTSIDE = 2; // nothing (closed); a cell of dots; a sea
  * @param {number} [opts.dots] about how many dots per species (default 200), for the default weight
  * @param {number|object} [opts.weight] amount per dot, mol/m²: one number for every species (so
  *   their dots compare), or { name: weight }; default, each species' total over `dots`
- * @param {number} [opts.cap] the most dots a cell holds on average before it's a sea (default ∞)
+ * @param {number} [opts.cap] the most dots a cell of the asked-for width holds on average before
+ *   it's a sea (a density: a wider cell holds more; default ∞)
  * @param {number} [opts.cells] about how many cells across the device (default 120)
  * @param {() => number} [opts.random] a uniform random source in [0, 1) (default Math.random)
  */
@@ -62,12 +63,12 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
   // The lattice: each region's nodes grouped into runs of node boxes about L/cells wide, so a
   // cell boundary is a segment, where the solution's flux is. (A metal's nodes, with no
   // concentration, are left out.) Drawn again for a solution on another grid.
-  let x, nn, box, lattice, nc, at;
+  let x, nn, box, lattice, nc, at, target;
   function draw(sol) {
     x = Float64Array.from(sol.x);
     nn = x.length;
     box = Float64Array.from(x, (_, g) => ((g > 0 && sol.region[g - 1] === sol.region[g] ? x[g] - x[g - 1] : 0) + (g < nn - 1 && sol.region[g + 1] === sol.region[g] ? x[g + 1] - x[g] : 0)) / 2);
-    const target = (x[nn - 1] - x[0]) / cells;
+    target = (x[nn - 1] - x[0]) / cells;
     lattice = [];
     sol.regions.forEach((_, r) => {
       const g0 = sol.region.indexOf(r), g1 = sol.region.lastIndexOf(r);
@@ -76,7 +77,8 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
       let a = g0, w = 0;
       for (let g = g0; g <= g1; g++) {
         w += box[g];
-        if (w >= target || g === g1) {
+        // a run ends where one more node's box would take it farther from the target width
+        if (g === g1 || w + box[g + 1] - target > target - w) {
           lattice.push({ a, b: g, region: r, h: w });
           [a, w] = [g + 1, 0];
         }
@@ -104,6 +106,9 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
     for (const nm of names) swarm.crossed[nm] = { up: new Float64Array(nc + 1), down: new Float64Array(nc + 1) };
     for (const nm of names) delete S[nm];
   }
+  // A sea where a cell would hold more than cap dots for each target width it spans: a density,
+  // so a wider cell among the rest doesn't become a sea alone.
+  const dense = (m, K) => m > (cap * lattice[K].h) / target;
   const sameGrid = (s) => s.x.length === nn && s.x.every((v, g) => v === x[g]);
 
   const swarm = {
@@ -137,7 +142,7 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
     const c = sol.c[nm], mu = sol.mu[nm], D = sol.D[nm], J = sol.flux[nm], RT = GAS_CONSTANT * sol.T;
     const N = amounts(sol, nm), w = swarm.weight[nm];
     const on = Uint8Array.from(lattice, (cl) => (c[cl.mid] >= 0 ? 1 : 0));
-    const sea = Uint8Array.from(N, (n, K) => (on[K] && n / w > cap ? 1 : 0));
+    const sea = Uint8Array.from(N, (n, K) => (on[K] && dense(n / w, K) ? 1 : 0));
     const psi = Float64Array.from(lattice, (cl, K) => mu[cl.mid] / RT - Math.log(N[K] / cl.h));
     // Boundary k: what lies to each side, its one-way fluxes (mol/(m²·s)), and whether it's a face
     // with one-way fluxes of its own (a membrane), whose crossings between seas are events.
@@ -227,7 +232,7 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
     sol = next;
     if (!sameGrid(sol)) draw(sol); // (a resized device: the dots placed afresh)
     let total = 0;
-    for (const nm of names) total += amounts(sol, nm).reduce((a, n, K) => a + (n / swarm.weight[nm] > cap ? 0 : n), 0) / swarm.weight[nm];
+    for (const nm of names) total += amounts(sol, nm).reduce((a, n, K) => a + (dense(n / swarm.weight[nm], K) ? 0 : n), 0) / swarm.weight[nm];
     if (total > MAX) throw new RangeError(`particles: this would draw ${total.toPrecision(2)} dots; give a larger weight, or a cap (dense cells as seas)`);
     for (const nm of names) {
       const was = S[nm];

@@ -528,7 +528,7 @@ reactions), and enter and leave through the contacts and any metal.
   `oneWay`), so the dots crossing each way are Ussing's unidirectional fluxes, as a tracer
   experiment counts them.
 - Concentrations span decades, so one weight can't draw them all. A cell that would hold more
-  than `cap` dots is a **sea** instead: drawn as shading, holding no dots, exchanging them with
+  than `cap` dots (for each width asked for that it spans: a density) is a **sea** instead: drawn as shading, holding no dots, exchanging them with
   its neighbours as a contact's reservoir does. A junction then shows its majority carriers as
   seas and its minority carriers as dots. Crossings between two seas through a membrane are
   `events`.
@@ -548,8 +548,9 @@ reactions), and enter and leave through the contacts and any metal.
   another grid (a resized device) redraws the lattice and places the dots afresh.
 - The swarm has `dots` (`{ species, cell, x }`, placed within a cell by its concentration; each
   keeps its object while it lives, so a page can give it fields of its own, a height say),
-  `cells` (`{ x0, x1, region }`: grid nodes in runs about `L/cells` wide, never across a region
-  boundary or into a metal, so the count and widths come out a little off what was asked),
+  `cells` (`{ x0, x1, region }`: grid nodes in runs as near `L/cells` wide as the nodes allow,
+  never across a region boundary or into a metal, so the count and widths come out a little off
+  what was asked),
   `weight[name]`, `sea[name]` (1 per sea cell), `expected(name)` (dots per cell on average),
   `events` from the last step (`{ species, kind, x, dir }`: `'in'`, `'out'`, `'made'`,
   `'unmade'`, `'cross'`) and `crossed[name]` (`{ up, down }`: dots across boundary k, at

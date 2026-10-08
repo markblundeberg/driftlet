@@ -174,3 +174,26 @@ test('particles: a solution on another grid redraws the lattice; nonsense is an 
   assert.throws(() => particles(a, { weight: 1e-15 }), /would draw/);
   assert.throws(() => sw.expected('Y'), /no species "Y"/);
 });
+
+test('particles: about as many cells as asked, and seas by density, so a wider cell among the rest is no sea', () => {
+  // Nodes 1 µm apart: cells 1.25 µm wide are drawn one node each, not two (the nearer width).
+  const a = slab();
+  for (const cells of [80, 120]) {
+    const n = particles(a, { cells, dots: 300 }).cells.length;
+    assert.ok(n > cells / 1.3 && n < cells * 1.3, `${n} cells for ${cells} asked`);
+  }
+  // A uniform concentration is one density everywhere: no seas at a cap just above it, though
+  // each cell (one node, 1 µm, where 0.75 µm was asked) holds more than cap dots.
+  const flat = new Device({
+    species: [{ name: 'X', z: 0 }],
+    materials: { gel: { epsr: 0, species: { X: { D: 1e-9, mu0: 0, cRef: 1 } } } },
+    regions: [{ material: 'gel', length: 1e-4 }],
+    contacts: { left: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } }, right: { phi: 'neutral' } },
+    grid: { hmax: 1e-6 },
+  }).solve();
+  const weight = 1e-8, perTarget = (1 * (1e-4 / 133)) / weight; // dots in a cell of the asked width
+  const sw = particles(flat, { cells: 133, weight, cap: 1.2 * perTarget });
+  assert.ok(sw.cells.length < 110, 'cells a node wide, wider than asked');
+  assert.equal(Array.from(sw.sea.X).reduce((a, b) => a + b), 0, 'no seas');
+  assert.ok(Math.abs(sw.dots.length / (1e-4 / weight) - 1) < 0.05, 'all of it in dots');
+});
