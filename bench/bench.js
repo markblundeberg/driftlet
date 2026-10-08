@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { BlockTridiagonal, Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { ComplexBlockTridiagonal } from '../src/blockTridiagonal.js';
+import { hodgkinHuxley, injector } from '../src/kit.js';
 
 const args = new Set(process.argv.slice(2));
 const baselineUrl = new URL('./baseline.json', import.meta.url);
@@ -157,6 +158,25 @@ const pulse = (injection) => {
     grid: { hmin: 10e-6, hmax: 10e-6 },
   });
 };
+// A squid axon, 2 cm of it, in the four-ion cable of the propagation demo: Hodgkin and Huxley's
+// channels on a membrane port (three gates per node, so blocks of 8), stimulated at one end.
+const axon = (I = 0) => {
+  const IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 }, OUT = { 'Na+': 437, 'K+': 20, 'Cl-': 556 };
+  const z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 }, a = 238e-6, hh = hodgkinHuxley({ T: 291.65, area: 2 / a });
+  const sealed = { species: Object.fromEntries(Object.keys(z).map((s) => [s, 'blocked'])), phi: 'neutral' };
+  return {
+    T: 291.65,
+    species: Object.entries(z).map(([name, zz]) => ({ name, z: zz })),
+    materials: { axoplasm: { epsr: 0, species: Object.fromEntries(Object.keys(z).map((s) => [s, { D: s === 'A-' ? 1e-11 : 1.5e-9, mu0: 0, cRef: 1000 }])) } },
+    regions: [{ name: 'axon', material: 'axoplasm', length: 0.02, c0: IN }],
+    contacts: { left: sealed, right: sealed },
+    ports: [
+      { name: 'membrane', region: 'axon', V: 0, area: 2 / a, capacitance: { C: 0.01, zeroCharge: 0 }, bath: { c: OUT }, gates: hh.gates, species: hh.species },
+      injector({ name: 'stim', region: 'axon', from: 0, to: 1e-3, species: 'K+', I: { t: [0.02, 0.02 + 1e-6, 0.0202, 0.0202 + 1e-6], values: [0, I, I, 0] } }),
+    ],
+    grid: { hmin: 2e-4, hmax: 2e-4 },
+  };
+};
 const sweep = (dev, side, Vs) => {
   for (const V of Vs) {
     dev.set({ contacts: { [side]: { V } } });
@@ -261,6 +281,17 @@ const cases = [
     name: 'bipolar Ag electrode: sweep 0 → 1 V, 11 points',
     runs: 3,
     run: () => sweep(bipolar(), 'right', range(0, 1, 11)),
+  },
+  {
+    name: 'squid axon (HH, 100 nodes): a spike, advance 3 ms',
+    runs: 3,
+    setup: () => {
+      const d = new Device(axon());
+      d.advance(0.02, { tol: 1e-4 });
+      d.set(axon(30));
+      return d;
+    },
+    run: (d) => d.advance(0.023, { tol: 1e-4, dtMax: 1e-5 }),
   },
   {
     name: 'insertion host: OCV sweep 0.55 → 0.25 V, 31 points',

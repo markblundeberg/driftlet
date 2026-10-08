@@ -110,12 +110,17 @@ export class BlockTridiagonal {
       if (i === 0 || sizes[i - 1] === 0) {
         for (let k = 0; k < m * m; k++) lu[o + k] = B[o + k];
       } else {
+        // Row by row, skipping A's zeros (a gate or a local unknown has none to its neighbours):
+        // the same sums, subtracted in the same order.
         const mp = sizes[i - 1], oa = offA[i], op = offC[i - 1]; // C'_{i−1}: mp × m
         for (let r = 0; r < m; r++) {
-          for (let c = 0; c < m; c++) {
-            let s = B[o + r * m + c];
-            for (let k = 0; k < mp; k++) s -= A[oa + r * mp + k] * cp[op + k * m + c];
-            lu[o + r * m + c] = s;
+          const or = o + r * m;
+          for (let c = 0; c < m; c++) lu[or + c] = B[or + c];
+          for (let k = 0; k < mp; k++) {
+            const a = A[oa + r * mp + k];
+            if (a === 0) continue;
+            const ok = op + k * m;
+            for (let c = 0; c < m; c++) lu[or + c] -= a * cp[ok + c];
           }
         }
       }
@@ -130,8 +135,9 @@ export class BlockTridiagonal {
       if (i < n - 1) {
         const mn = sizes[i + 1], oc = offC[i];
         for (let c = 0; c < mn; c++) {
-          for (let r = 0; r < m; r++) tmp[r] = C[oc + r * mn + c];
-          luSolve(lu, o, piv, offX[i], m, tmp);
+          let any = false;
+          for (let r = 0; r < m; r++) if ((tmp[r] = C[oc + r * mn + c]) !== 0) any = true;
+          if (any) luSolve(lu, o, piv, offX[i], m, tmp); // (a zero column stays zero)
           for (let r = 0; r < m; r++) cp[oc + r * mn + c] = tmp[r];
         }
       }
