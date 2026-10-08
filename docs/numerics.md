@@ -686,7 +686,13 @@ only resolved to ~1e-4 of $`|Z|`$.
   $`w`$-weighted sum of their balance rows is zero identically (the reactions cancel by
   $`w \cdot \nu = 0`$, and nothing crosses the stretches' ends), so one of them is replaced by
   $`\sum_k w_k \sum v c_k =`$ the combination's amount, bordered like a spectator's. (Spectators
-  are the one-stretch case.)
+  are the one-stretch case.) A terminal held at a voltage feeds what it links freely, but one
+  driven by a current only as that current allows, its charged species in proportion to their
+  charge: so at I = 0 a combination that it alone feeds is conserved too, at what the state holds
+  when the solve begins. A closed battery at open circuit has one steady state per state of
+  charge, and a solve that kept only I = 0 had converged to another (4.145 V where its start said
+  3.958 V). At any other current such a terminal only stores what comes in, and the solve says so
+  at once.
 
   Holding the amount through a storage term at huge $`dt`$ instead is badly conditioned: the
   stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances $`D \cdot c/h`$

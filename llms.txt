@@ -739,7 +739,9 @@ species }` (its flux) or `{ interface: f, gate }`.
   at once (a spike of ~1e4 A/m² for ~1e-10 s across a cell's Stern layers): leave it out of
   integrals of I²R.
 - **Storage.** A device that only stores what comes in (a battery host filling at a current) has
-  no steady state: `advance()` it from its `c0`, don't `solve()` it (docs/statistics.md).
+  no steady state: `advance()` it from its `c0`, don't `solve()` it (docs/statistics.md). At no
+  current (`I: 0`), `solve()` keeps the charge it holds: a closed battery sits at the OCV of its
+  state of charge.
 - **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,
   { terminal })` the small-signal Z(f) about the steady state, in Ω·m².
 
@@ -834,10 +836,6 @@ What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualizat
 - **A gate as a contact on an oxide.** It fails as `'e-' is absent from the end material 'SiO2'`: make the
   gate a metal layer with a capacitive face, as in the MOS template.
 - **`ohmic()` on a metal.** Its default holds e⁻ and h⁺; on a metal write `ohmic(V, ['e-'])`.
-- **A closed battery started at a current.** Two insertion hosts with an electrolyte between,
-  the cell driven from `c0` (even `I: 0`), can fail to start: its terminal starts at 0 V, volts
-  from where the hosts put it. Hold it at its open-circuit voltage first (the OCV curves'
-  difference at the starting fills), `solve()`, then `set()` the current and `advance()`.
 - **Ions on both sides of a reacting face.** Label them, `'Li+(left) = Li+(right)'`, and block
   them (`species: { 'Li+': 'blocked' }`) if they cross only by the reaction.
 - **Unit slips.** D in cm²/s, μ° in eV, µF/cm², mS/cm², T in °C. `describe(def)` flags them.

@@ -366,7 +366,7 @@ test('a particle filling at a constant current: solve() says it has no steady st
     grid: { hmin: R / 400, hmax: R / 100 },
   });
   const steady = dev.solve();
-  assert.ok(!steady.converged && steady.warnings.some((w) => w.includes('may only store what comes in')), steady.warnings.join('\n'));
+  assert.ok(!steady.converged && steady.warnings.some((w) => w.startsWith('collector: driven at') && w.includes('(e- in particle) is closed but for it')), steady.warnings.join('\n'));
   const half = dev.advance(1800 * (1 - 2 * x0)); // half full
   assert.ok(half.converged && half.warnings.length === 0, half.warnings.join('\n'));
   assert.ok(Math.abs(half.terminals.collector.V - ocv(0.5)) < 5e-3, `${half.terminals.collector.V} V at half full`);

@@ -244,3 +244,50 @@ test('past the limiting current: a closed zinc cell, its blocked sulfate held fl
   assert.ok(cold.converged && t.done && Math.abs(cold.current / t.current - 1) < 1e-9, `${cold.current} vs ${t.current} A/m²`);
   assert.ok(Math.abs(cold.current) > 1.08 * iLim, `${cold.current} vs i_lim ${iLim}`);
 });
+
+test('a closed battery at open circuit keeps its charge: a cold solve at the OCV of its c0, and after a charge, where the transient relaxes', () => {
+  // Two insertion hosts and an electrolyte, the right collector at I = 0: its electrons change
+  // only through that terminal, so their amount is conserved, and a steady solve keeps it (one
+  // steady state per state of charge). The start puts each host's Li⁺ level with the
+  // electrolyte's (its φ is a gauge), so the terminal starts at the OCV too.
+  const Ea = (x) => 0.09 + 0.55 * Math.exp(-x / 0.12) + 0.12 * (1 - x) - 0.012 * Math.log(x / (1 - x));
+  const Ec = (x) => 4.25 - 0.55 * x - 0.06 * Math.log(x / (1 - x));
+  const xs = Array.from({ length: 201 }, (_, i) => 0.005 + (0.99 * i) / 200);
+  const host = (cMax, E) => ({
+    epsr: 0,
+    species: { 'Li+': { D: 5e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } },
+    statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x: xs, E: xs.map(E), muRef: 0 } }],
+  });
+  const face = { species: { 'Li+': 'blocked' }, reactions: [{ equation: 'Li+(left) = Li+(right)', k0: 1e-4 }] };
+  const collector = (drive) => ({ ...drive, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
+  const cell = (right) =>
+    new Device({
+      species: [{ name: 'Li+', z: 1, cRef: 1000 }, { name: 'e-', z: -1, cRef: 1000 }, { name: 'A-', z: -1, cRef: 1000 }],
+      materials: { anode: host(30000, Ea), cathode: host(25000, Ec), elyte: { epsr: 0, species: { 'Li+': { D: 1.5e-10, mu0: 0 }, 'A-': { D: 2.5e-10, mu0: 0 } } } },
+      regions: [
+        { name: 'anode', material: 'anode', length: 1.5e-6, c0: { 'Li+': 0.6 * 30000 } },
+        { name: 'sep', material: 'elyte', length: 40e-6, c0: { 'Li+': 1000, 'A-': 1000 } },
+        { name: 'cathode', material: 'cathode', length: 2e-6, c0: { 'Li+': 0.35 * 25000 } },
+      ],
+      interfaces: [face, face],
+      contacts: { left: collector({ V: 0 }), right: collector(right) },
+      grid: { hmin: 5e-9, hmax: 50e-9 },
+    });
+  const ocv = Ec(0.35) - Ea(0.6);
+  const dev = cell({ I: 0 });
+  assert.ok(Math.abs(dev.solver.termV[1] - ocv) < 1e-7, `starts at ${dev.solver.termV[1]} V, OCV ${ocv} V`);
+  const cold = dev.solve();
+  assert.ok(cold.converged && Math.abs(cold.terminals.right.V - ocv) < 1e-7, `${cold.terminals.right.V} V, OCV ${ocv} V`);
+  // Charged at a current for a minute, then left open: the transient relaxes to where the steady
+  // solve goes.
+  dev.set({ contacts: { right: { I: 5 } } });
+  assert.ok(dev.advance(60).converged);
+  dev.set({ contacts: { right: { I: 0 } } });
+  const relaxed = dev.advance(3600);
+  const steady = dev.solve();
+  assert.ok(steady.converged && Math.abs(steady.terminals.right.V - relaxed.terminals.right.V) < 1e-6, `${steady.terminals.right.V} vs ${relaxed.terminals.right.V} V`);
+  assert.ok(steady.terminals.right.V > ocv + 0.05, 'charged');
+  // Driven at a current, it only stores what comes in: no steady state, and the solve says so.
+  const driven = cell({ I: 2 }).solve();
+  assert.ok(!driven.converged && driven.warnings.some((w) => w.startsWith('right: driven at 2.00 A/m², it has no steady state: what it feeds (e- in cathode)')), driven.warnings.join('\n'));
+});

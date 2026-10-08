@@ -228,8 +228,14 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
-  const cond = solver.conditioning, un = solver.unreached;
-  if (result.converged === false && un) {
+  const cond = solver.conditioning, un = solver.unreached, ch = solver.charging;
+  if (result.converged === false && ch) {
+    const A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
+    sol.warnings.push(
+      `${ch.terminal}: driven at ${ch.current.toPrecision(3)} ${A}, it has no steady state: what it feeds (${ch.what.join(', ')}) is closed but for it, ` +
+        'so it only stores what comes in (a host filling, a capacitor charging). advance() in time instead; at no current, a steady solve keeps the charge it holds.',
+    );
+  } else if (result.converged === false && un) {
     const [[V0, I0], [V1, I1]] = [un.low, un.high], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     // The opposite sign within reach: likely a sign slip (a drive is the current into the device).
     const flipped = Math.min(I0, I1) <= -un.target && -un.target <= Math.max(I0, I1);
@@ -269,7 +275,7 @@ export function makeSolution(solver, result = {}) {
               : '')),
     );
   }
-  if (result.converged === false && !result.stopped && !un && !(cond && cond.digits > 12)) {
+  if (result.converged === false && !result.stopped && !un && !ch && !(cond && cond.digits > 12)) {
     sol.warnings.push(
       'the solve did not converge, and nothing specific showed why. ' +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',

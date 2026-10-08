@@ -908,15 +908,18 @@ const now = dev.solution();                   // snapshot of the current state
 
 - `solve()` finds the steady state from the current state without advancing time. If every
   species is fed by a contact, it solves the steady equations directly. Otherwise conserved
-  amounts (blocked species, reactive moieties) are kept exactly. If a direct solve fails at a
+  amounts are kept exactly: blocked species, reactive moieties, and whatever a terminal driven
+  at no current is the only way into (a closed battery at open circuit keeps its charge, the
+  state of charge it holds when the solve begins). Driven at any other current, such a terminal
+  only stores what comes in (a host filling, a capacitor charging), which has no steady state,
+  and the solve says so at once. If a direct solve fails at a
   bias, it ramps the contacts' voltages from where they were last solved (the left one first,
   where it moved), or from level terminals on a cold start; with generation reactions (below),
   it ramps their rates up from nearly nothing. A terminal driven by a current (open circuit,
   say) is held at a voltage instead, the voltage marched until the current crosses its target,
   and floated from there. If 20 V either way brings no crossing (a current beyond the limiting
-  one, or a device that only stores what comes in, which has no steady state at a current), the
-  solve fails with a warning giving the range of currents the held voltages passed. A solve that
-  fails reports the state it failed in, then leaves the device as it was before it.
+  one), the solve fails with a warning giving the range of currents the held voltages passed. A
+  solve that fails reports the state it failed in, then leaves the device as it was before it.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
