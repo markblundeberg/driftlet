@@ -923,7 +923,8 @@ const now = dev.solution();                   // snapshot of the current state
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
   from `c0`, make a new `Device`. Either way the time stepping restarts its
-  order, as after any discontinuity.
+  order, as after any discontinuity, but a carried state goes on at the step size an adaptive
+  transient had reached, so a page may change a rate constant or a diffusivity every frame.
 
 For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
 current transient after a voltage step.

@@ -115,6 +115,11 @@ export class Device {
       for (let g = 0; g < solver.nNodes; g++) if (solver.surfPort[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
       solver.computeConcentrations();
       solver.time = old.time;
+      // Held sources read at the same time as before, and an adaptive transient goes on at the
+      // step size it had reached (its order restarts, as at any change of the equations).
+      solver.sourceTime = old.sourceTime;
+      solver._refreshSources();
+      solver.dtNext = old.dtNext;
       solver.contactDEnd = old.contactDEnd;
       if (old.portQEnd?.length === solver.portQ.length) solver.portQEnd = old.portQEnd;
       solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)

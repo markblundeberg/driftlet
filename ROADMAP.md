@@ -84,6 +84,9 @@ for live demos.
   frames at set times for scrubbing), both asked for by the perovskite agent.
 - Screenshots retaken by script (`npm run shots`): each demo held at a set state (`?t=…`,
   `?phase=…`) on virtual time, so an unchanged page comes out byte-identical.
+- Particle cartoons consistent with the model (`particles()` in the kit): dots drawn as a
+  sample of a solution's concentrations, hopping at its one-way rates, so their density and net
+  crossings agree with the fields at any step.
 
 ## Next
 
@@ -183,8 +186,9 @@ for live demos.
      - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
        it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
        anodic, and lost time finding out why.
-     - **Cheap mid-run parameter changes**: `set()` of a reaction's k0 between steps restarts the
-       stepper (a page updating it every frame ran 30× slower). Drive changes already have a fast path.
+     - Done: cheap mid-run parameter changes. `set()` of a reaction's k0 rebuilds the device
+       (about 0.4 ms) but now goes on at the step size it had reached, where it used to restart
+       from a tiny step (7× the steps in a cyclic voltammogram changing k0 every frame).
    - Done: sources as data (`pulse`, `square`, `triangle`, `ramp`, an `injector` port,
      `recombination` from a lifetime), probes in a transient's trace, `units` back out of SI.
    - Done: an initial profile as plain data, `c0` tabulated against x, so a transient starts
@@ -244,8 +248,6 @@ for live demos.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
-- **Demo extras.** Concentration/flux sampling to drive particle animations consistently with
-  the model.
 - **Graded materials.** $`\mu^\circ(x)`$, $`c_{\mathrm{ref}}(x)`$, $`\varepsilon(x)`$, $`D(x)`$ varying
   within a region, with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change across
   each segment. $`\phi`$'s gauge freedom then becomes a continuous function.

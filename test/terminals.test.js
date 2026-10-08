@@ -149,3 +149,27 @@ test('set() with only new sources keeps the solver, and gives what a rebuild wou
   dev.set({ regions: [{ name: 'cell', material: 'water', length: 2 * L, c0: { 'NO3-': c0 } }] });
   assert.notEqual(dev.solver, solver, 'a structural change rebuilds');
 });
+
+test('set() of a parameter mid-run goes on from where the run was: its sources and its step size', () => {
+  // A page that changes a rate or a diffusivity every frame rebuilds the device each time; the
+  // rebuilt one must read its waveforms at the same time, and not restart from a tiny step.
+  const wave = { t: [0, 1, 2], values: [0, 0.05, 0], repeat: true };
+  const run = (change) => {
+    const dev = new Device(silverNitrate({ contacts: { left: { V: 0, ...links }, right: { V: wave, ...links } } }));
+    dev.solve();
+    dev.advance(0.5, { tol: 1e-3 });
+    let steps = 0;
+    for (let f = 0; f < 30; f++) {
+      const solver = dev.solver, V = solver.termV[1];
+      if (change) {
+        dev.set({ materials: { water: { species: { 'Ag+': { D: Dp * (1 + 1e-3 * (1 + (f % 2))) } } } } });
+        assert.notEqual(dev.solver, solver, 'a material change rebuilds');
+        assert.equal(dev.solver.termV[1], V, 'the held source is read where it was');
+      }
+      steps += dev.advance(0.5 + (f + 1) / 60, { tol: 1e-3 }).steps;
+    }
+    return steps;
+  };
+  const still = run(false), changing = run(true);
+  assert.ok(changing <= 1.5 * still, `${changing} steps with a change every frame, ${still} without`);
+});

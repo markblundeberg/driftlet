@@ -21,6 +21,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - Block elimination skips the coupling blocks' zeros (bit-identical results): the nerve demos'
   factorisations are ~15% faster. The benchmarks gain a squid-axon spike.
 - `describe()` gives an ion exchanger's fixed charge in mol/m³.
+- `set()` of a parameter mid-run (a rate constant, a diffusivity) goes on at the step size an
+  adaptive transient had reached, rather than restarting from a tiny one (7× the steps for a
+  page changing k0 every frame), and reads held waveforms at the run's time straight away.
 
 ## 0.14.0
 
