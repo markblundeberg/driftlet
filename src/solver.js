@@ -783,9 +783,7 @@ export class Solver {
       if (!rxns.every(([rk, A]) => !rk.some((k) => ks.includes(k)) || Math.abs(A(side)) < 1e-9)) continue;
       this.flatStretches.push(...sts);
     }
-    this.flattening = false;
     this._laws();
-    this.constrained = false;
   }
 
   // Whether a stretch's species moves through it (mobile in every region, or a metal's carrier),
@@ -1000,7 +998,7 @@ export class Solver {
   _applyIslands() {
     const { u, res } = this, R = this.rix, out = [];
     for (const isl of this.islands) {
-      if (this.flattening && this.flatStretches.includes(isl.stretch)) continue;
+      if (this.flatStretches.includes(isl.stretch)) continue;
       const b0 = Math.floor(isl.row / this.M), r0 = isl.row % this.M;
       if (this.loc[isl.row] < 0) continue;
       // Gathered by column (the faces' u, then each outside row's entries, which cancel those u
@@ -1270,7 +1268,7 @@ export class Solver {
       if (!cols[a]) cols[a] = new Float64Array(N + 1);
       if (a < P) {
         // The response to a unit pin, or where the pin moves a flat stretch, to its shift.
-        const col = this.flattening && pins[a].col ? pins[a].col : [pins[a].row];
+        const col = pins[a].col ?? [pins[a].row];
         for (const o of col) e[this.rix[o]] = 1;
         this._solveLinear(e, cols[a]);
         for (const o of col) e[this.rix[o]] = 0;
@@ -1867,12 +1865,14 @@ export class Solver {
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
-    if (this.flattening && dt === Infinity) this._flatRows();
-    if (this.constrained && dt === Infinity && this.constraints.length > 0) this._applyConstraints();
-    if (this.constrained && dt === Infinity && this.localConstraints.length > 0) this._applyLocalConstraints();
-    // Rows kept aside for _solveBordered: the conserved amounts' and the islands'.
-    this.pinnedIslands = this.constrained && dt === Infinity && this.islandsOn ? this._applyIslands() : [];
-    this.pins = this.constrained && dt === Infinity ? [...this.constraints.filter((cs) => cs.circuit < 0), ...this.pinnedIslands] : [];
+    // The steady system's own rows (see _laws): levels held flat, conserved amounts, islands'
+    // balances, the last two kept aside for _solveBordered.
+    const steady = this.steady && dt === Infinity;
+    if (steady) this._flatRows();
+    if (steady && this.constraints.length > 0) this._applyConstraints();
+    if (steady && this.localConstraints.length > 0) this._applyLocalConstraints();
+    this.pinnedIslands = steady && this.islandsOn ? this._applyIslands() : [];
+    this.pins = steady ? [...this.constraints.filter((cs) => cs.circuit < 0), ...this.pinnedIslands] : [];
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
   }
@@ -2864,7 +2864,7 @@ export class Solver {
     const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
     // Its current, the charging (Q − Q at the step's start)/dt; or, steady at no current, the
     // charge it keeps in place of that (see _captureLaws).
-    const rate = Number.isFinite(dt) ? 1 / dt : this.constrained && this.chargeRefs.has(k) ? 1 : 0;
+    const rate = Number.isFinite(dt) ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
     let Q = 0, dQdV = 0;
     port.nodes.forEach((g, w) => {
       if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
@@ -3005,7 +3005,7 @@ export class Solver {
       this.contactD[side] = sgn * Din;
       // Its current, the charging (D_in − D_in at the step's start)/dt; or, steady at no current,
       // the charge it keeps in place of that (see _captureLaws).
-      const rate = dyn ? 1 / dt : this.constrained && this.chargeRefs.has(k) ? 1 : 0;
+      const rate = dyn ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
       if (rate > 0) {
         I += (Din - (dyn ? Dstart : this.chargeRefs.get(k))) * rate;
         C[R[b * M]] += -Ac * link.C * VT * rate;
@@ -3018,7 +3018,7 @@ export class Solver {
       if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
         this._captureRow(b, 0, 1 / dt, C);
-      } else if (!dyn && this.constrained && this.chargeRefs.has(k)) {
+      } else if (!dyn && this.steady && this.chargeRefs.has(k)) {
         I += Din - this.chargeRefs.get(k);
         this._captureRow(b, 0, 1, C);
       }
@@ -3065,7 +3065,6 @@ export class Solver {
       } else {
         // Its first node's level, which its amount fixes (that row is the amount's, a pin whose
         // response moves the whole stretch: see _applyConstraints).
-        if (!this.constrained) continue;
         const o = this.blockOfNode[st.nodes[0]] * M + 1 + i;
         level = u[o] + uLo[o];
       }
@@ -3182,7 +3181,7 @@ export class Solver {
       lin.apply(v, jv, 1, 1 / dt);
       // A flat stretch's rows hold each level to its first node's (see _flatRows).
       for (const p of pins) {
-        if (!(this.flattening && p.col)) continue;
+        if (!p.col) continue;
         for (const o of p.col) if (o !== p.row && this.loc[o] >= 0) jv[R[o]] -= x[R[p.row]];
       }
       const out = new Float64Array(N + K);
@@ -3284,7 +3283,7 @@ export class Solver {
     this.islandsOn = islands;
     let rounds = 0, kept = null;
     const islandsOff = (it, result) => {
-      if (dt !== Infinity || !this.constrained || this.islands.length === 0 || rounds >= 2 || !(this._kirchhoff() > 1e-9)) return false;
+      if (dt !== Infinity || !this.steady || this.islands.length === 0 || rounds >= 2 || !(this._kirchhoff() > 1e-9)) return false;
       this.islandsOn = true;
       rounds++;
       kept = { it, result, u: Float64Array.from(this.u), uLo: Float64Array.from(this.uLo), termV: Float64Array.from(this.termV) };
@@ -3527,7 +3526,7 @@ export class Solver {
     let result;
     try {
       result = this.newton(dtEff, opts);
-      if (!result.converged && dtEff === Infinity && this.constrained && this.islands.length > 0) {
+      if (!result.converged && dtEff === Infinity && this.steady && this.islands.length > 0) {
         // Plain solves that don't converge may be lost along an island's level (two regions
         // conducting 1e20 times less hold it): once more from the start, with the islands'
         // summed rows in throughout (see newton).
@@ -4553,14 +4552,14 @@ export class Solver {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
-    this.flattening = true;
     this.unreached = null; // (a driven current no held voltage reaches: see _floatingContinuation)
     this.charging = null; // (a driven current that only charges: see _solveSteadyAll)
     this._captureLaws();
+    this.steady = true; // (the steady system's rows; sources at the present time)
     try {
       return this._solveSteadyAll(opts);
     } finally {
-      this.flattening = false;
+      this.steady = false;
     }
   }
 
@@ -4618,7 +4617,7 @@ export class Solver {
     // 1. Newton from here. Where a continuation could follow, one direct attempt only, rather
     // than the pseudo-transient ramp straight away.
     const quick = (canContinue || this.hasGeneration) && direct && allowed;
-    let r = this._solveSteady(quick ? { ...opts, maxSteps: 1 } : opts);
+    let r = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
     if (r.converged) return solved(r);
 
     // 2. Continuation. Generation (e.g. light) holding the device far from equilibrium: ramp it up
@@ -4656,7 +4655,7 @@ export class Solver {
       if (c.converged) return solved(c);
       // 3. The pseudo-transient ramp, from the start.
       restart();
-      return solved(after(this._solveSteady(opts), c));
+      return solved(after(this._steadySteps(opts), c));
     }
     // 3. The pseudo-transient ramp (where the first attempt wasn't it already): from the dimmer
     // light's solution where the light's continuation got anywhere (a lit floating base charges
@@ -4664,7 +4663,7 @@ export class Solver {
     if (!quick) return r;
     if (!dimmer) restart();
     else this.computeConcentrations();
-    return after(this._solveSteady(opts), r);
+    return after(this._steadySteps(opts), r);
   }
 
   // Whether terminal k, driven by a current, feeds a combination that it alone can change, or
@@ -4756,7 +4755,7 @@ export class Solver {
       this.terms[k].drive = drive;
       this.redrive();
     }
-    const q = this._solveSteady(opts);
+    const q = this._steadySteps(opts);
     steps += q.steps ?? 0;
     iterations += q.iterations ?? 0;
     history.push(...(q.history ?? []));
@@ -4799,7 +4798,7 @@ export class Solver {
     try {
       this.generationScale = s;
       // (nearly dark: a cold start can need the full ramp, as a dark device's does)
-      let q = this._solveSteady(sub);
+      let q = this._steadySteps(sub);
       steps += q.steps;
       iterations += q.iterations;
       if (!q.converged) return { converged: false, steps, iterations, history };
@@ -4808,7 +4807,7 @@ export class Solver {
         const next = Math.min(1, s * factor);
         const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
         this.generationScale = next;
-        q = this._solveSteady(sub);
+        q = this._steadySteps(sub);
         steps += q.steps;
         iterations += q.iterations;
         history.push({ generation: next, converged: q.converged });
@@ -4844,7 +4843,7 @@ export class Solver {
       if (hold !== undefined) this.sourceOverride.set(1 - k, hold);
       let q;
       if (!warm) {
-        q = this._solveSteady(opts);
+        q = this._steadySteps(opts);
         if (!q.converged) {
           // A cold device's start was laid out for the target (a set() before the first solve
           // builds it there): lay it out again, level.
@@ -4852,7 +4851,7 @@ export class Solver {
           iterations += q.iterations;
           this._refreshSources();
           this.initFromComposition();
-          q = this._solveSteady(opts);
+          q = this._steadySteps(opts);
         }
         // (lit, the level start may need the light ramped up too)
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
@@ -4864,7 +4863,7 @@ export class Solver {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
         const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
         this.sourceOverride.set(k, next);
-        q = this._solveSteady(sub);
+        q = this._steadySteps(sub);
         steps += q.steps;
         iterations += q.iterations;
         history.push({ continuation: next, converged: q.converged });
@@ -4885,17 +4884,6 @@ export class Solver {
       this.sourceOverride.delete(k);
       if (hold !== undefined) this.sourceOverride.delete(1 - k);
       this._refreshSources();
-    }
-  }
-
-  _solveSteady(opts = {}) {
-    this.constrained = true; // spectators' amounts as constraints in the dt = ∞ solves
-    this.steady = true;
-    try {
-      return this._steadySteps(opts);
-    } finally {
-      this.constrained = false;
-      this.steady = false;
     }
   }
 
