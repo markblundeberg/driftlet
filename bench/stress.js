@@ -109,7 +109,7 @@ const families = {
       bulkReactions: tau ? [{ equation: 'e- + h+ = 0', srh: { [mat]: { tauN: tau, tauP: tau } } }] : [],
       grid: { hmin: r.log(-10, -9.3), hmax: L / r.u(20, 60), ratio: r.u(1.08, 1.15) },
     });
-    return { def, params: { mat, gateMetal, doping, p, L, tox, tau }, plan: { side: 'right', V: r.u(-3, 3), equilibrium: true, step: r.u(0.01, 0.2), t: r.log(-6, 1), cap: (3.9 * EPS0) / tox } };
+    return { def, params: { mat, gateMetal, doping, p, L, tox, tau }, plan: { side: 'right', V: r.u(-3, 3), equilibrium: true, step: r.u(0.01, 0.2), t: r.log(-6, 1), cap: (3.9 * EPS0) / tox, back: r.u(-0.5, 0.5) } };
   },
 
   // An electrolyte cell: one to three salts (any of the data library's ions, balanced), strictly
@@ -370,6 +370,23 @@ function runCase(family, k) {
       if (bad) return bad;
       const I = s1.terminals[plan.side].current;
       return Math.abs(I - target) <= 1e-6 * Math.abs(target) + 1e-12 ? '' : `drove ${target}, got ${I} A/m²`;
+    });
+  }
+  // 3d. The back contact moved under a biased gate (a MOS capacitor's body bias), warm: where
+  // nothing recombines, the carriers' levels must follow it through a bulk with ~1e3 minority
+  // carriers per cm³. The same gate charge as the gate moved the other way, from cold.
+  if (plan.back !== undefined) {
+    attempt('back contact', () => {
+      const d = new Device(def);
+      d.set(drive(plan.side, plan.V));
+      if (!d.solve().converged) return 'no steady state at the gate bias';
+      const s = d.set({ contacts: { left: { V: plan.back } } }).solve();
+      const bad = judged(d, s);
+      if (bad) return bad;
+      const c = new Device(def).set(drive(plan.side, plan.V - plan.back)).solve();
+      if (!c.converged) return 'not converged cold at the gate bias less the back contact\'s';
+      const D = (x) => x.interfaces.at(-1).D;
+      return Math.abs(D(s) - D(c)) <= 1e-6 * plan.cap ? '' : `gate charge ${D(s)} with the back contact moved, ${D(c)} with the gate`;
     });
   }
   // 4. A step, then time.

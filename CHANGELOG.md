@@ -20,6 +20,12 @@ Silent wrong answers, fixed:
   gone).
 - Adsorbates on an electrode that only turn into each other keep their total on every site; such
   a device had failed to build.
+- A MOS capacitor's back contact moved under its biased gate: where its carriers recombine (so
+  weren't held flat), its inversion layer couldn't follow through a scarce-minority bulk, and of
+  500 random MOS capacitors 38 failed and 5 converged to a gate charge up to 2× off. Species that
+  react only among themselves, each reaching the same one contact and nothing else, are now held
+  flat at its levels: in a steady state they're at equilibrium. The stress test moves the back
+  contact now too.
 
 New:
 

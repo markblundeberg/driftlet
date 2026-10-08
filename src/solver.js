@@ -738,14 +738,51 @@ export class Solver {
     // flat (_flatRows): at its contact's level, or reaching none, at the level its amount fixes.
     // (Not through flow or mixing, nor a concentrated material's cross-diffusion, where carrying
     // nothing isn't a level flat.)
-    this.flatStretches = this.stretches.filter((st) => {
-      if (st.reactive || st.ports.length > 0 || !st.mobile || (st.leftOpen && st.rightOpen)) return false;
+    const plain = (st) => {
+      if (st.ports.length > 0 || !st.mobile || (st.leftOpen && st.rightOpen)) return false;
       for (let q = st.regions[0]; q <= st.regions[1]; q++) {
         const reg = regions[q], mat = materials[reg.material];
         if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0) return false;
       }
       return true;
+    };
+    this.flatStretches = this.stretches.filter((st) => !st.reactive && plain(st));
+    // Likewise a group of stretches that react only among themselves, each reaching the same one
+    // contact and nothing else, their reactions balanced at that contact's levels (no light, no
+    // other reservoir): in a steady state, one reservoir drives nothing, so the group is at
+    // equilibrium, each level flat at the contact's. A MOS capacitor's electrons and the holes
+    // they recombine with reach only its back contact: moved, slow generation through a bulk of
+    // GaAs with ~1e-4 electrons per cm³ couldn't carry the inversion layer's level with it.
+    const group = this.stretches.map((_, k) => k), root = (k) => (group[k] === k ? k : (group[k] = root(group[k])));
+    const join = (ks) => ks.forEach((k) => (group[root(k)] = root(ks[0])));
+    const rxns = []; // [stretches, A/RT at the contact's levels, as a function of the side]
+    regions.forEach((reg, q) => {
+      for (const rx of this.rxsIn[reg.material]) {
+        const ks = rx.sp.map((i) => this.stretchOf[q * n + i]);
+        join(ks);
+        rxns.push([ks, (side) => rx.sp.reduce((a, i, p) => a + rx.nu[p] * this.contactEta(side, i), rx.fixedA)]);
+      }
     });
+    model.interfaces.forEach((itf, f) => {
+      for (const rx of itf.reactions) {
+        const ks = rx.part.map((p) => this.stretchOf[(f + p.side) * n + p.i]);
+        if (ks.some((k) => k < 0)) continue;
+        join(ks);
+        rxns.push([ks, (side) => rx.part.reduce((a, p) => a + p.nu * this.contactEta(side, p.i), rx.fixedA)]);
+      }
+    });
+    const groups = new Map();
+    this.stretches.forEach((st, k) => {
+      if (!st.reactive) return;
+      if (!groups.has(root(k))) groups.set(root(k), []);
+      groups.get(root(k)).push(k);
+    });
+    for (const ks of groups.values()) {
+      const sts = ks.map((k) => this.stretches[k]), side = sts[0].leftOpen ? 'left' : 'right';
+      if (!sts.every((st) => plain(st) && st.leftOpen !== st.rightOpen && (side === 'left' ? st.leftOpen : st.rightOpen))) continue;
+      if (!rxns.every(([rk, A]) => !rk.some((k) => ks.includes(k)) || Math.abs(A(side)) < 1e-9)) continue;
+      this.flatStretches.push(...sts);
+    }
     this.flattening = false;
     this._laws();
     this.constrained = false;

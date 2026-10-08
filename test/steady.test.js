@@ -368,3 +368,39 @@ test('a level held flat across a face: the zinc cell past its limit with its ele
   const one = cell(false), two = cell(true);
   assert.ok(one.converged && two.converged && Math.abs(two.current / one.current - 1) < 1e-3, `${two.current} vs ${one.current} A/m²`);
 });
+
+test('a MOS capacitor whose carriers recombine, its back contact moved: still at equilibrium, its gate charge the gate\'s moved the other way', () => {
+  // GaAs (~1e-4 minority electrons per cm³ in the bulk) with slow SRH recombination, under a gate
+  // in inversion. The electrons and holes react only with each other and reach only the back
+  // contact, so a steady state is equilibrium: both flat at its levels. Found through generation
+  // and their own conduction, moving that contact by 70 mV failed to converge, or converged to
+  // a gate charge 2× off.
+  const def = (Vb, Vg) => build({
+    T: 300,
+    library: [semiconductor('GaAs'), metal('Pt')],
+    materials: { SiO2: { epsr: 3.9, species: {} } },
+    stack: [
+      ohmic(Vb),
+      layer('GaAs', 9.4e-7, { name: 'bulk', acceptors: units.perCm3(2.4e16) }),
+      { dipole: 0 },
+      layer('SiO2', 1e-9, { grid: { hmin: 1e-10, hmax: 2.5e-10 } }),
+      { phi: { type: 'capacitive', C: 100 }, zeroCharge: -0.51 },
+      layer('Pt', 5e-8),
+      ohmic(Vg, ['e-']),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', srh: { GaAs: { tauN: 8e-9, tauP: 8e-9 } } }],
+    grid: { hmin: 2.8e-10, hmax: 1.7e-8, ratio: 1.1 },
+  });
+  const dev = new Device(def(0, 1.19));
+  assert.ok(dev.solve().converged);
+  const moved = dev.set({ contacts: { left: { V: 0.07 } } }).solve();
+  const cold = new Device(def(0, 1.12)).solve();
+  assert.ok(moved.converged && cold.converged, `${moved.converged}, ${cold.converged}`);
+  const D = (s) => s.interfaces.at(-1).D;
+  assert.ok(Math.abs(D(moved) / D(cold) - 1) < 1e-6, `${D(moved)} vs ${D(cold)} C/m²`);
+  const bulk = (s, name) => Array.from(s.mu[name]).slice(0, dev.grid.regionEnd[0] + 1);
+  for (const name of ['e-', 'h+']) {
+    const mu = bulk(moved, name);
+    assert.ok(Math.max(...mu) - Math.min(...mu) < 1e-9 * GAS_CONSTANT * 300, `${name} flat`);
+  }
+});

@@ -108,26 +108,29 @@ devices in five families:
 
 Each device goes through what a user would do with it: a cold solve at no bias, and one at a
 bias; a warm sweep to that bias; open circuit, where it's lit; a current drive (a fraction of
-what passes at 1 V); a transient after a voltage step; and the impedance about equilibrium,
-from far below its slowest relaxation to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
+what passes at 1 V); a MOS capacitor's back contact moved under its biased gate; a transient
+after a voltage step; and the impedance about equilibrium, from far below its slowest relaxation
+to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
 levels flat at equilibrium with no current, warm and cold solves agreeing, the current driven
 being the one passed, the impedance passive (to 1e-3 of |Z|) and, at low frequency, equal to
-the steady dI/dV,
-and a MOS capacitance never above its oxide's. Each case is seeded from its family and index, so
+the steady dI/dV, a MOS capacitance never above its oxide's, and its gate charge with the back
+contact moved what it is with the gate moved the other way. Each case is seeded from its family and index, so
 any failure reruns alone (`npm run stress -- semi 79`).
 
-At 500 devices per family (about three minutes on a desktop), 11,380 of 11,381 scenarios pass:
+At 500 devices per family (about three minutes on a desktop), 11,880 of 11,881 scenarios pass:
 
-| Family | Cold at 0 V | Cold at bias | Warm sweep | Open circuit or current | Transient | Impedance |
+| Family | Cold at 0 V | Cold at bias | Warm sweep | Open circuit, current or back contact | Transient | Impedance |
 |---|---|---|---|---|---|---|
 | Semiconductor stacks | 500/500 | 500/500 | 500/500 | 105/105 | 500/500 | 395/395 |
-| MOS capacitors | 500/500 | 500/500 | 500/500 | | 500/500 | 500/500 |
+| MOS capacitors | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
 | Electrolyte cells | 500/500 | 500/500 | 500/500 | | 500/500 | 381/381 |
 | Electrodes | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
 | Liquid junctions | | | | 500/500 | 499/500 | |
 
 (Impedance only where the device has an equilibrium to linearise about; open circuit only for
-lit cells.) The one that fails is among the known limits below: a junction on a grid far too
+lit cells.) The MOS back contact came last: before steady solves held a group of reacting
+carriers flat where it reaches one contact alone, 43 of the 500 failed it, 5 of them silently
+(a gate charge up to 2× off). The one that fails is among the known limits below: a junction on a grid far too
 coarse for its double layers.
 `bench/stress.json` keeps the summary.
 

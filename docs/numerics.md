@@ -718,7 +718,13 @@ leaves is exact, however small beside the terms that cancel:
   whose response is the whole stretch's shift, so the stretch moves as a whole. At a face inside
   the stretch whose link holds the level continuous, the face's flux, which only the replaced edge
   balances set, is pinned to zero too. (Not through flow or mixing, nor a concentrated material's
-  cross-diffusion, where zero flux isn't a flat level.)
+  cross-diffusion, where zero flux isn't a flat level.) Species that react only among themselves
+  are held flat the same way where each reaches the same one contact and nothing else, their
+  reactions balanced at its levels: one reservoir drives nothing, so in a steady state they're at
+  equilibrium. A MOS capacitor's electrons and the holes they recombine with reach only its back
+  contact; moved, slow generation through a bulk of GaAs with ~1e-4 electrons per cm³ couldn't
+  carry the inversion layer's level with it (of 500 random MOS capacitors, 38 failed and 5
+  converged to a gate charge up to 2× off).
 - **An island's balance.** A piece of a stretch between its faces that nothing else feeds (no
   contact, port or reaction) holds its level only through its faces' fluxes, which can be far
   weaker than its own conduction: a face conductance of 1e-15 S/m² against a region conducting
