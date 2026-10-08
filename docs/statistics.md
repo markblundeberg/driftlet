@@ -135,7 +135,10 @@ A flat plateau means phase separation, which isn't supported yet. The table is r
 $`\zeta = \ln(x/(1-x)) + r(x)`$: the residual $`r`$, the host's non-ideality, is a shape-preserving
 cubic between points and continues linearly beyond them. Ideal and regular-solution curves are
 therefore reproduced exactly, and $`x`$ stays within $`(0, 1)`$ at any potential. The interpolated
-curve is checked for monotonicity at construction.
+curve is checked for monotonicity at construction. A curve far flatter than the ideal term near
+an end (E falling by millivolts over the last few percent of x) can fail that check however
+many points it has, since r then changes as steeply as the logarithm: give the ends some of the
+ideal slope (adding −0.5 (RT/F) ln(x/(1−x)) there passes).
 
 Because every charged species sits in a neutral combination, **$`\phi`$ is undefined** in such a
 host and is reported as `NaN`. Its faces must be `neutral` (the default next to such a host),
