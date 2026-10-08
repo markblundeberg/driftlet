@@ -6,6 +6,9 @@
 <title>Ion-exchange membrane</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<style>
+  #dots { height: auto; aspect-ratio: 720 / 250; }
+</style>
 </head>
 <body>
 <main>
@@ -46,10 +49,25 @@
     its standard level V°<sub>i</sub> (thin, where V<sub>i</sub> would sit at the reference concentration)
     steps there, following φ. Those steps are the Donnan potentials, bookkeeping that cancels from anything
     measured. Na⁺ is drawn 4.4 V higher (⌇) to share the plot.</p>
+  <section class="illustration">
+    <h2>The ions, drawn as dots</h2>
+    <p>An illustration of the solution above, not a separate simulation: <code>particles()</code> from the kit
+      samples its concentrations as dots, each a fixed amount of ions, hopping between cells at rates taken
+      from the solution, so that on average they fill the space as the concentrations do and cross each place
+      at the fluxes. Where ions are too plentiful to draw they're a shaded sea, darker where denser: the
+      0.1 M solution, and the Na⁺ that balances the membrane's fixed charge. Chloride is the one to watch.
+      A strongly charged membrane keeps it out, far thinner inside than in either solution and thinnest
+      at the dilute side, and the few that wander across limit the salt leaking through. Na⁺, plentiful
+      inside, comes and goes across the dilute face in near balance.</p>
+    <canvas id="dots"></canvas>
+    <p class="note"><label>speed <input id="speed" type="range" min="-1" max="1.5" step="0.1" value="0"></label>
+      <span id="dotsKey"></span></p>
+  </section>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, bath, aqueous, live, IONS } from '../src/kit.js';
+import { build, layer, bath, aqueous, live, speciesRole, particles, IONS } from '../src/kit.js';
+import { themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery } from './common.js';
 
@@ -138,6 +156,91 @@ function draw(sol) {
     ylabel: 'voltage (V)',
   });
   profiles(document.getElementById('conc'), sol, { species: ['Na+', 'Cl-'], title: 'concentrations', ylabel: 'concentration (M)', scale: 1e-3, log: true });
+  ions(sol);
+}
+
+// The ions as dots (driftlet/kit's particles()), in a lane each, lined up with the plots above.
+// A dot is a decade of mol/m², chosen so that Cl⁻ just inside the membrane's 0.1 M face comes 2 to
+// 20 to a cell; denser than 20 a cell is a sea.
+const CELLS = 90, CAP = 20, LANES = ['Na+', 'Cl-'];
+let swarm = null, weight = 0, current = null;
+function ions(sol) {
+  current = sol;
+  const h = (sol.x.at(-1) - sol.x[0]) / CELLS, inside = sol.region.indexOf(1);
+  const w = 10 ** Math.floor(Math.log10((sol.c['Cl-'][inside] * h) / 2));
+  if (!swarm || w !== weight) {
+    weight = w;
+    swarm = particles(sol, { species: LANES, weight, cap: CAP, cells: CELLS });
+  } else swarm.update(sol, { resample: true });
+  const perUm2 = (weight * 6.02214076e23) / 1e12;
+  document.getElementById('dotsKey').textContent = `· one dot is ${perUm2.toPrecision(1).replace(/e\+(\d+)/, (m, e) => ` × 10${e.replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d])}`)} ions per µm² of membrane`;
+}
+const canvas = document.getElementById('dots'), ctx = canvas.getContext('2d'), speed = document.getElementById('speed');
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let last = performance.now();
+function frame(now) {
+  const secs = Math.max(0, Math.min(0.05, (now - last) / 1000)) || 0;
+  last = now;
+  requestAnimationFrame(frame);
+  if (!swarm || canvas.clientWidth === 0) return;
+  // the device's time: about a hop every few frames in a cell of the membrane, times the speed
+  const h = swarm.cells[1].x1 - swarm.cells[1].x0;
+  swarm.step(((0.4 * h * h) / (Dm / 10)) * 10 ** +speed.value * 60 * secs);
+  paint();
+}
+requestAnimationFrame(frame);
+
+function paint() {
+  const sol = current, dpr = devicePixelRatio || 1, Wc = canvas.clientWidth, Hc = canvas.clientHeight;
+  if (canvas.width !== Math.round(Wc * dpr) || canvas.height !== Math.round(Hc * dpr)) [canvas.width, canvas.height] = [Math.round(Wc * dpr), Math.round(Hc * dpr)];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, Wc, Hc);
+  const x0 = sol.x[0], x1 = sol.x.at(-1);
+  const pad = { l: (56 / 720) * Wc, r: (14 / 720) * Wc }; // the plots' area, to line up with them
+  const px = (v) => pad.l + ((v - x0) / (x1 - x0)) * (Wc - pad.l - pad.r);
+  const top = 10, laneH = (Hc - top - 30) / 2, dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  // the membrane, its fixed anions a pattern of −
+  const m = sol.regions[1];
+  ctx.fillStyle = css('--grid');
+  ctx.fillRect(px(m.x0), top, px(m.x1) - px(m.x0), 2 * laneH);
+  ctx.fillStyle = css('--muted');
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.55;
+  for (let j = 0, yy = top + 14; yy < top + 2 * laneH - 6; j++, yy += 26)
+    for (let xx = px(m.x0) + (j % 2 ? 26 : 13); xx < px(m.x1) - 6; xx += 26) ctx.fillText('−', xx, yy + 4);
+  ctx.globalAlpha = 1;
+  ctx.font = '12px system-ui, sans-serif';
+  const where = ['unstirred water, 0.1 M side', 'membrane (fixed anions −)', 'unstirred water, dilute side'];
+  sol.regions.forEach((r, k) => ctx.fillText(where[k], (px(r.x0) + px(r.x1)) / 2, Hc - 9));
+  const meanW = (x1 - x0) / CELLS, snap = (v) => Math.round(v * dpr) / dpr; // (seas meet without seams)
+  LANES.forEach((nm, k) => {
+    const y0 = top + k * laneH, color = themeColor(speciesRole(sol, nm).role, speciesRole(sol, nm).slot, { dark });
+    ctx.fillStyle = color;
+    ctx.textAlign = 'right';
+    ctx.fillText(nm.replace('+', '⁺').replace('-', '⁻'), pad.l - 8, y0 + laneH / 2 + 4);
+    // seas, darker by the decade
+    const sea = swarm.sea[nm], mExp = swarm.expected(nm);
+    swarm.cells.forEach((cl, K) => {
+      if (!sea[K]) return;
+      const per = (mExp[K] * meanW) / (cl.x1 - cl.x0) / CAP;
+      ctx.globalAlpha = 0.12 + 0.4 * Math.min(1, Math.log10(per) / 2.5);
+      ctx.fillRect(snap(px(cl.x0)), y0 + 3, snap(px(cl.x1)) - snap(px(cl.x0)), laneH - 6);
+    });
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = css('--line');
+    ctx.strokeRect(pad.l, y0, Wc - pad.l - pad.r, laneH);
+  });
+  // the dots, each at a height of its own in its lane, eased toward their cells so hops read as motion
+  for (const d of swarm.dots) {
+    const k = LANES.indexOf(d.species);
+    d.y ??= 6 + Math.random() * (laneH - 12);
+    d.px = d.px === undefined ? d.x : d.px + (d.x - d.px) * 0.35;
+    ctx.fillStyle = themeColor(speciesRole(sol, d.species).role, speciesRole(sol, d.species).slot, { dark });
+    ctx.beginPath();
+    ctx.arc(px(d.px), top + k * laneH + d.y, 2.3, 0, 2 * Math.PI);
+    ctx.fill();
+  }
 }
 showCode();
 </script>
