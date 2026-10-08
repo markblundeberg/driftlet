@@ -646,7 +646,9 @@ minority carriers slowly filling an inversion layer behind a Schottky contact), 
 would never finish. Three things make that more than one Newton solve: without the storage term,
 the steady equations say nothing of what the transient conserved; some levels are held so weakly
 that a factorisation loses them; and Newton needs a start near enough. `solve()` does not advance
-the clock.
+the clock. Nor does it ask whether the steady state is stable: an axon held at a current that
+makes it fire over and over has a resting point all the same, which `solve()` returns, and only
+a transient leaves it.
 
 ### The steady system
 
@@ -672,7 +674,9 @@ leaves is exact, however small beside the terms that cancel:
     has one steady state per state of charge, and a solve that imposed only I = 0 had converged
     to another (4.145 V where its start said 3.958 V). A terminal that passes current only by
     charging a capacitance (a gate, a port's capacitance) is the same, its charge in place of an
-    amount. At any other current such a terminal only stores what comes in, which has no steady
+    amount; and an electrode port's reactions draw on what the electrode holds, its charge
+    $`Q/(zF)`$ a column of its own under a current, so a port at no current reducing a closed
+    M⁺ (M⁺ + e⁻ = M(s)) keeps M⁺ + Q/F, or with no capacitance, M⁺ alone. At any other current such a terminal only stores what comes in, which has no steady
     state, and the solve says so at once.
   - an **immobile** combination (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) keeps it
     node by node, since nothing carries it anywhere, as do an electrode's surface species
@@ -690,7 +694,13 @@ leaves is exact, however small beside the terms that cancel:
   stretch's level a well-conditioned unknown, and the response to a unit pin (one more
   back-substitution) goes in at whatever weight satisfies the amount. Behind a terminal at no
   current, the amount stands in for the terminal's circuit row instead: at no current that row is
-  the sum of the combination's balance rows, so it says nothing new.
+  the sum of the combination's balance rows, so it says nothing new. (An electrode's charge, which
+  moves with the terminal's voltage, goes only there.) The rows replaced must be independent:
+  each combination's weights over them a nonsingular matrix, or one balance is said twice and
+  another not at all. Picked one combination at a time, two complexations sharing A
+  (A + B = AB, A + C = AC) had −A + B + C in place of B's row, B + AB of AB's and A − B + AC of
+  A's, and the solve converged to a state that wasn't steady, depending on the order the species
+  were listed in. So they're chosen by elimination.
 
   Holding an amount through a storage term at a huge $`dt`$ instead is badly conditioned: the
   stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances

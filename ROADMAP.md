@@ -119,6 +119,18 @@ for live demos.
      (results right; held, it takes 14). The steady solve already reads such a terminal by the
      charge it keeps; time steps could read its current as that charge's change, where the
      current is displacement alone.
+   - Long transients at no current. A terminal at `I: 0` holds what it alone feeds only to the
+     step's tolerance, and over very long times that adds up: a lithium half cell relaxed past
+     1e6 s drifts from the charge it holds (4e-5 V by 7e10 s, 3 mV by 5e11 s, a failed step by
+     4e12 s), seen only in `conservation`. The steady solve is right there; time steps could hold
+     the amount the way it does.
+   - Steady solves from a lit MOS capacitor's transient. Cold, it solves in 14 iterations; after
+     any `advance()` from 1 ns to 1 s, `solve()` fails (loudly), and succeeds again after 100 s.
+     Not without light.
+   - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
+     and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
+     open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18
+     it fails. Silent at the bottom.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux

@@ -22,6 +22,18 @@ battery's rested voltage to 1e-11 V:
   Δx ≈ 0.1): the root solver zigzagged across the step's inflections, ran out of iterations at
   points that weren't roots, and time steps failed down to 1e-14 s.
 
+A second agent compared steady solves with long transients across random devices, and found two
+more, both silent, both now matching to round-off in every species order:
+
+- Conserved amounts overlapping (two complexations sharing a species, A + B = AB and
+  A + C = AC) could stand in for rows that weren't independent, one balance said twice and
+  another not at all, depending on the order the species were listed in: c_A 7% off, a phantom
+  flux through a contact that blocks it, an I = 0 terminal passing 20 A/m². It hit 8–13% of
+  random reacting multi-region devices. The rows are chosen by elimination now.
+- An electrode port at no current whose reactions use up a closed ion (M⁺ + e⁻ = M(s)) keeps
+  that ion together with the charge on its capacitance (or alone, with none). Unseen, the steady
+  solve had no law for it and landed anywhere: c(M⁺) 2.2e8 mol/m³ where it's 10.
+
 ## 0.16.0 (2026-10-08)
 
 The steady solve, reworked around one idea: every row it changes from a time step's is a sum of
