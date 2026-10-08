@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.16.1 (2026-10-08)
 
 Found by a round of agents trying the new steady solves cold (GITT on an insertion host,
 floating gates, closed thin-layer cells), whose results otherwise matched theory, a closed
