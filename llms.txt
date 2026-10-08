@@ -734,7 +734,9 @@ species }` (its flux) or `{ interface: f, gate }`.
   and test after each: a driven current held past what the device can pass fails to converge.
 - **The first instants.** The first step is sized by error control (from 1e-4 of the interval),
   so a fast start (an initial plateau, a charging spike) can fall inside it: give `dt0` (and
-  `dtMax`) to see it.
+  `dtMax`) to see it. A voltage step's first point carries the displacement that charges the bulk
+  at once (a spike of ~1e4 A/m² for ~1e-10 s across a cell's Stern layers): leave it out of
+  integrals of I²R.
 - **Storage.** A device that only stores what comes in (a battery host filling at a current) has
   no steady state: `advance()` it from its `c0`, don't `solve()` it (docs/statistics.md).
 - **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,

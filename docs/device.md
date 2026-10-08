@@ -497,7 +497,9 @@ levels are that material's, and the end node takes them through a Donnan step.
   $`C \cdot ((V - \mathtt{zeroCharge}) - \phi_{\mathrm{edge}})`$, so `zeroCharge` is the value of
   $`V - \phi_{\mathrm{edge}}`$ at which the interface carries no charge: the potential of zero charge
   (pzc) of an electrode, or for a gate the flat-band voltage less the semiconductor's bulk $`\phi`$
-  ($`V_{\mathrm{FB}} = \mathtt{zeroCharge} + \phi_{\mathrm{bulk}}`$).
+  ($`V_{\mathrm{FB}} = \mathtt{zeroCharge} + \phi_{\mathrm{bulk}}`$). So to start uncharged at
+  V = 0, give `zeroCharge` = −φ_bulk, which the material's composition sets (`sol.phi` far from
+  the face, after a solve).
 - `'pinned'` with `zeroCharge`: the $`C \to \infty`$ limit,
   $`\phi_{\mathrm{edge}} = V - \mathtt{zeroCharge}`$. This is what a "fixed $`\phi`$" boundary honestly
   means. For example, a Schottky barrier $`\phi_B`$ on n-type material with
@@ -832,7 +834,10 @@ options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of i
 geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly. Each
 region boundary becomes a pair of nodes at the same x, one per side. The grid is never refined
 automatically. If a double layer that the model resolves is coarser than the local Debye
-length, the solution's `warnings` say so.
+length, the solution's `warnings` say so. That's a floor, not an accuracy: a strongly polarised
+layer screens over its local length (counter-ions piled up at the wall: 0.5 nm at 1 V on
+0.1 mM, where λ_D is 30 nm), and σ to ~1% wants cells a few times finer than that (0.3 nm cells
+there left σ 0.7% high, without a warning). Halve `hmin` and compare.
 
 Grade the grid toward wherever a profile is steep: double layers, and electrodes where a species
 is depleted. Near a limiting current the depleted species' profile is steep in a thin layer at
@@ -840,6 +845,10 @@ the electrode, and a uniform grid there overshoots: a 100 µm silver nitrate cel
 cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax: 2e-6 }` stays
 within 0.1% with as many nodes. Where a species carrying the current is steep across a region's
 end cells in this way, the solution's `warnings` say so, with a rough estimate of the excess.
+
+A homogeneous reaction feeding an electrode (a CE mechanism) works within its reaction layer,
+$`\sqrt{D/k}`$, which wants cells of a third of it for ~0.5% and a tenth for ~0.1% (20% off at
+ten times that, unwarned).
 
 Past a limiting current, the depleted layer at a membrane or an electrode is nanometres thick,
 and anything that happens in it (water splitting, say) needs cells a fraction of that: a bulk
