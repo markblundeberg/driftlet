@@ -111,6 +111,14 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
+   - A floating gate's current in time steps. A gate floated at no current reads its circuit row
+     as the flux into its metal, and its response to the gate's voltage (the charging current,
+     ~C/dt) falls below the round-off of the metal's $`\eta`$ differences once steps reach ~0.03 s
+     (a MOS capacitor's aluminium gate): the bordered system comes out exactly singular, the step
+     is rejected, and a quiescent floating gate takes ~800 steps per 10 s, half of them rejected
+     (results right; held, it takes 14). The steady solve already reads such a terminal by the
+     charge it keeps; time steps could read its current as that charge's change, where the
+     current is displacement alone.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux

@@ -2,6 +2,26 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+Found by a round of agents trying the new steady solves cold (GITT on an insertion host,
+floating gates, closed thin-layer cells), whose results otherwise matched theory, a closed
+battery's rested voltage to 1e-11 V:
+
+- A steady solve of a device driven by a waveform read it at its pseudo-transient steps' clock,
+  where that ramp ran: a triangle wave's steady state came out at its value seconds later (1 V
+  instead of 0), silently. It's read at the present time now.
+- A level held flat (a species reaching one contact alone) is flat exactly, every node at its
+  first's. Flat only to round-off after a jump, a MOS capacitor's bulk holes, behind a floated
+  gate with the back contact jumped to −6 V, had read as a current 1000 times the true leakage,
+  silently: the terminal currents didn't add up.
+- A film whose ions are all given by `c0` starts its electrostatic potential balanced against
+  its electrode's surface species too. An adsorbed couple had started 1.4 V off: cold solves
+  failed or took the pseudo-transient ramp, and `advance()` from the start stalled.
+- An insertion host's occupancy is inverted exactly on a steep tabulated OCV (a 60 mV step over
+  Δx ≈ 0.1): the root solver zigzagged across the step's inflections, ran out of iterations at
+  points that weren't roots, and time steps failed down to 1e-14 s.
+
 ## 0.16.0 (2026-10-08)
 
 The steady solve, reworked around one idea: every row it changes from a time step's is a sum of
