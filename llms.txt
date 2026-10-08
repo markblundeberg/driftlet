@@ -668,7 +668,9 @@ capacitance and gated channels to an outside given as a `bath` (the port's V is 
 outside's φ). `hodgkinHuxley({ T, area })` writes HH's channels for it, `area` being the membrane
 per volume, 2/a. Cable theory isn't put in; it comes out of the ions' drift. `ports[k].Vm[j]` and
 `ports[k].gates[name][j]` give the membrane at each node. A myelinated axon is regions, each with
-its own port (an internode's just a small capacitance).
+its own port (an internode's just a small capacitance). Nothing warns of a grid too coarse for
+the spike's front: the speed comes out 3% low on 2 mm cells, 0.2% on 0.5 mm, for a = 238 µm
+(scale h with √a). The stimulus is a current per volume, so a thinner axon needs it as 1/a.
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
