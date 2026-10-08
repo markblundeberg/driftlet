@@ -27,6 +27,18 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `describe()` says where a bath's SHE level sits against its terminal when the bath is read
   through a reference ion (1.37 V below a 0.5 M Cl⁻ terminal on table μ°), so an electrode held
   at 0 V beside it isn't a surprise.
+- `photogeneration()` generates nothing outside `[from, to]`: light given to one layer of a
+  material that's also elsewhere (a p⁺-i-n⁺ diode of one silicon) used to generate in the layers
+  beside it too, 10–25% too much photocurrent, silently. And an αL of exactly 50 no longer fails.
+- `describe()` warns of a bath out of equilibrium with a bulk reaction at its contact (H⁺ and
+  OH⁻ a little off K_w), which passes a current at zero bias.
+- A steady solve that fails because an ion is too scarce for double precision (a minority swept
+  out of a junction, past ~1e-24 of the ions around it) says so, instead of suggesting a
+  floating region.
+- `particles()` draws as many cells as asked, as nearly as the nodes allow (it drew 52 of 80 on
+  a 1 µm grid), and `cap` is a density, so a wider cell among the rest isn't a sea alone.
+- The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
+  Donnan-excluded, against seas of Na⁺.
 
 ## 0.14.0
 
