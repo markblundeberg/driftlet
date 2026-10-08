@@ -2,62 +2,76 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.15.0 (2026-10-08)
+
+Mostly from four more rounds of cold agents (fresh tasks, from the agent guide alone): sixteen
+of them, every device matching its theory once set up, and the places where it silently didn't.
+
+Silent wrong answers, fixed:
+
+- `photogeneration()` generates nothing outside `[from, to]`: light given to one layer of a
+  material that's also elsewhere (a p⁺-i-n⁺ diode of one silicon) generated in the layers beside
+  it too, 10–25% too much photocurrent. And an αL of exactly 50 no longer fails.
+- A probe at a face reads the side where its species is (it read an electrode's metal side,
+  NaN), and asks for `region` where both sides have it.
+- `impedance()` at a held terminal with every other one driven by a current (no way back for the
+  signal) is an error saying to measure at a driven one; it returned round-off.
+- A port's window at a device end node holds its species there unless that contact links them:
+  a wire on a particle's surface node alone now charges it (it passed nothing).
+- `set()` of a parameter mid-run reads held waveforms at the run's time at once (they read t = 0
+  until the next step).
+
+New:
 
 - A bath can name its own material (`bath: { c, material }`, or the kit's `bath(c, ref, drive,
   { material })`): a solution straight against an ion exchanger or a gel, whose levels the end
   node takes through a Donnan step (tested against Donnan exclusion and the Teorell–Meyer–Sievers
   salt flux, to 1e-8). Without it, a bath is the end material at that composition, fixed charge
   and all, and the error now says so and what to do.
-- Beside a strictly neutral material, a capacitive face's charge sits in the cell next to it,
-  which acts as a diffuse layer that wide in series with C, so a fine grid there lowered the
-  double-layer capacitance silently (to 0.036 F/m² from 0.2 with 0.1 nm cells). It's now
-  warned of where it costs over 2%, with the cell that's enough, and documented.
+- `set()` of a parameter mid-run (a rate constant, a diffusivity) goes on at the step size an
+  adaptive transient had reached, rather than restarting from a tiny one: 7× fewer steps for a
+  page changing k0 every frame.
 - `particles()` stays a sample at any step: a cell a dot would hop out of many times in one step
   is a sea for that step and then drawn afresh, so a long step no longer over-fills cells (a
-  checkerboard) or costs in proportion. Dots sit within a cell by its concentration; a solution
-  on another grid redraws the lattice; bad options are errors, and a NaN or negative step (a
-  first frame) moves nothing.
-- Block elimination skips the coupling blocks' zeros (bit-identical results): the nerve demos'
-  factorisations are ~15% faster. The benchmarks gain a squid-axon spike.
-- `describe()` gives an ion exchanger's fixed charge in mol/m³.
-- `set()` of a parameter mid-run (a rate constant, a diffusivity) goes on at the step size an
-  adaptive transient had reached, rather than restarting from a tiny one (7× the steps for a
-  page changing k0 every frame), and reads held waveforms at the run's time straight away.
-- `describe()` says where a bath's SHE level sits against its terminal when the bath is read
-  through a reference ion (1.37 V below a 0.5 M Cl⁻ terminal on table μ°), so an electrode held
-  at 0 V beside it isn't a surprise.
-- `photogeneration()` generates nothing outside `[from, to]`: light given to one layer of a
-  material that's also elsewhere (a p⁺-i-n⁺ diode of one silicon) used to generate in the layers
-  beside it too, 10–25% too much photocurrent, silently. And an αL of exactly 50 no longer fails.
-- `describe()` warns of a bath out of equilibrium with a bulk reaction at its contact (H⁺ and
-  OH⁻ a little off K_w), which passes a current at zero bias.
-- A steady solve that fails because an ion is too scarce for double precision (a minority swept
-  out of a junction, past ~1e-24 of the ions around it) says so, instead of suggesting a
-  floating region.
-- `particles()` draws as many cells as asked, as nearly as the nodes allow (it drew 52 of 80 on
-  a 1 µm grid), and `cap` is a density, so a wider cell among the rest isn't a sea alone.
-- A probe at a face reads the side where its species is (it read an electrode's metal side,
-  NaN, silently), and asks for `region` where both sides have it.
-- The docs say how fine `hmax` must be for a transient's diffusion layer, and for a spike's
-  front along an axon: neither is warned of.
-- `impedance()` at a held terminal with every other one driven by a current (no way back for the
-  signal) is an error saying to measure at a driven one; it returned round-off.
-- A capacitance-only port given a terminal species that no material holds is told it needs none.
-- The docs: a MOS capacitor without a port solves, and its impedance shows the high-frequency
-  C–V above the minority supply's knee; impedance needs a grid that resolves how far the signal
-  reaches; the library's K_w.
-- A port's window at a device end node holds its species there unless that contact links them:
-  a wire on a particle's surface node alone now charges it (it passed nothing).
-- `advance(NaN)` does nothing and says so in its warnings; `advance()` of a non-number is an error.
-- A space charge that reaches a contact holding its end neutral (a double layer or depletion
-  longer than its region, cut off there: σ 58% low, silently) is warned of.
-- `describe()`'s k0 warning only at an electrode, where k0 is an exchange current.
-- The agent guide gains ion-exchange membranes, excitons in an organic cell, and how to start a
-  closed battery; the docs, cells in a layer depleted past a limiting current, an OCV curve far
-  flatter than ideal at an end, and the double layer's voltage limit (~350 V_T).
+  checkerboard) or costs in proportion. It draws as many cells as asked, as nearly as the nodes
+  allow (it drew 52 of 80 on a 1 µm grid); `cap` is a density; dots sit within a cell by its
+  concentration; a solution on another grid redraws the lattice; bad options are errors, and a
+  NaN or negative step (a first frame) moves nothing.
 - The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
   Donnan-excluded, against seas of Na⁺.
+
+Warnings and errors that say what happened:
+
+- A space charge that reaches a contact holding its end neutral (a double layer or depletion
+  longer than its region, cut off there: σ 58% low, silently) is warned of.
+- Beside a strictly neutral material, a capacitive face's charge sits in the cell next to it,
+  a diffuse layer that wide in series with C, so a fine grid lowered the double-layer
+  capacitance silently (to 0.036 F/m² from 0.2 with 0.1 nm cells): warned of past 2%.
+- `describe()` says where a bath's SHE level sits against its terminal when the bath is read
+  through a reference ion (1.37 V below a 0.5 M Cl⁻ terminal on table μ°); warns of a bath out
+  of equilibrium with a bulk reaction at its contact (H⁺ and OH⁻ a little off K_w, a current at
+  zero bias); gives an ion exchanger's fixed charge in mol/m³; and flags a large k0 as an
+  exchange current only at an electrode.
+- A steady solve that fails where an ion is too scarce for double precision (a minority swept
+  out of a junction) says so, instead of suggesting a floating region.
+- `advance(NaN)` does nothing and says so in its warnings; `advance()` of a non-number is an
+  error. A capacitance-only port given a terminal species that no material holds is told it
+  needs none.
+
+Faster:
+
+- Block elimination skips the coupling blocks' zeros (bit-identical results): the nerve demos'
+  factorisations are ~15% faster. The benchmarks gain a squid-axon spike.
+
+Docs:
+
+- The agent guide gains ion-exchange membranes, excitons in an organic cell, and how to start a
+  closed battery (hold it at its OCV, then drive it).
+- How fine a grid must be where nothing warns: a transient's diffusion layer, a spike's front, an
+  impedance's reach into a porous electrode, a layer depleted past a limiting current.
+- A MOS capacitor without a port solves, and its impedance shows the high-frequency C–V above the
+  minority supply's knee; the library's K_w; an OCV curve far flatter than ideal at an end; the
+  double layer's voltage limit (~350 V_T); conservation's drift is relative.
 
 ## 0.14.0
 
