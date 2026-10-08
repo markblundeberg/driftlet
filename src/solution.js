@@ -271,15 +271,50 @@ export function makeSolution(solver, result = {}) {
       );
     }
   };
+  // Beside a strictly neutral (ε = 0) material, a face's charge is held in the edge node's box,
+  // which then acts as a diffuse layer as wide as the box: a capacitance F²Σz²c·w/RT in series
+  // with the face's (a Helmholtz C, or for a pinned face whatever holds the charge on the other
+  // side: a conductor's sheet, or a resolved diffuse layer, ε/λ_D), which shrinks as the grid is
+  // refined. Flag it where it lowers that capacitance by over 2%. (Where the box is the smaller
+  // part, as an ε = 0 metal's against a semiconductor's depletion, it's a fine stand-in for the
+  // metal's own screening.)
+  const boxed = (g, h, phi, other, where) => {
+    const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
+    if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined?.[g]) return;
+    const s2 = solver.screening(g), Cbox = (F * F * s2 * h) / (2 * RT);
+    if (!(s2 > 0)) return;
+    let C = phi.C;
+    if (phi.type === 'pinned') {
+      const om = other < 0 ? null : model.materials[model.regions[grid.nodeRegion[other]].material];
+      C = !om || om.conductor ? Infinity : (om.epsr * EPS0) / debye(other);
+    }
+    if (!(C / (C + Cbox) > 0.02)) return;
+    const lowers = Number.isFinite(C) ? `lowering the double-layer capacitance by ${((100 * C) / (C + Cbox)).toFixed(0)}%` : 'which alone sets its charge';
+    sol.warnings.push(
+      `${where}: the face's charge sits in the strictly neutral cell beside it (${h.toExponential(2)} m), which acts as a diffuse layer that wide ` +
+        `(${Cbox.toPrecision(2)} F/m² in series), ${lowers}, so it depends on the mesh. ` +
+        (Number.isFinite(C)
+          ? `Coarsen the grid there: a cell of ${((2 * 49 * C * RT) / (F * F * s2)).toExponential(1)} m or more keeps it within 2%.`
+          : "Give the face a Helmholtz capacitance (phi: { type: 'capacitive', C }), or make it neutral."),
+    );
+  };
   interfaces.forEach((itf, f) => {
     if (itf.phi.type === 'neutral') return;
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
+    boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`);
+    boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`);
   });
   const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
-  if (resolves(contacts.left)) check(0, grid.segLength[0], 'contacts.left');
-  if (resolves(contacts.right)) check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
+  if (resolves(contacts.left)) {
+    check(0, grid.segLength[0], 'contacts.left');
+    boxed(0, grid.segLength[0], contacts.left.phi, -1, 'contacts.left');
+  }
+  if (resolves(contacts.right)) {
+    check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
+    boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
+  }
 
   // Steep profiles carrying current: Scharfetter–Gummel takes the field as uniform across each
   // cell, which fails where it isn't, as at an electrode where a species is nearly depleted (there

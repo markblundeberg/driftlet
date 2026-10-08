@@ -238,3 +238,29 @@ test('ε = 0: an initial composition that carries net charge, with nothing to ne
   assert.throws(() => new Device(def(90)).solve(), /net charge of 10\.0 mol\/m³.*strictly neutral/);
   assert.ok(new Device(def(100)).solve().converged);
 });
+
+test('ε = 0 beside a capacitive face: the edge cell holding its charge acts as a diffuse layer that wide, and is flagged where it lowers C', async () => {
+  // At the point of zero charge, the cell beside the face is a diffuse layer of width h/2 (its
+  // box): F²Σz²c·h/(2RT) in series with C. Fine cells make it small, so the measured capacitance
+  // is the series pair, and a warning says so; cells of ~100 C·RT/(F²Σz²c) keep it within 2%.
+  const { build, layer, ohmic, bath, aqueous, metal } = await import('../src/kit.js');
+  const RT = GAS_CONSTANT * 298.15, C = 0.2, f = 1e3;
+  for (const hmin of [1e-10, 3e-8]) {
+    const dev = new Device(
+      build({
+        library: [aqueous(['K+', 'Cl-'], { epsr: 0 }), metal('Pt')],
+        stack: [ohmic(0.2, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C }, zeroCharge: 0.2 }, layer('water', 50e-6), bath({ 'K+': 100, 'Cl-': 100 }, 'Cl-')],
+        grid: { hmin, hmax: 0.5e-6, ratio: 1.2 },
+      }),
+    );
+    const sol = dev.solve();
+    const g = dev.grid.regionStart[1], h = dev.grid.segLength[g];
+    const Cbox = (FARADAY * FARADAY * (sol.c['K+'][g] + sol.c['Cl-'][g]) * h) / (2 * RT);
+    const { Z } = dev.impedance([f], { terminal: 'left' });
+    const Cdl = -1 / (2 * Math.PI * f * Z.im[0]);
+    assert.ok(Math.abs(Cdl / (1 / (1 / C + 1 / Cbox)) - 1) < 2e-3, `hmin ${hmin}: C ${Cdl} against the series pair ${1 / (1 / C + 1 / Cbox)}`);
+    const flagged = sol.warnings.some((w) => /interfaces\[0\] \(right side\).*acts as a diffuse layer/.test(w));
+    assert.equal(flagged, C / (C + Cbox) > 0.02, `hmin ${hmin}: ${sol.warnings.join('\n')}`);
+    assert.equal(flagged, hmin < 1e-8);
+  }
+});

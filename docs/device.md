@@ -170,7 +170,10 @@ defaults to no dipole.
   The alignment drops out and must not be given. This is the default between two $`\varepsilon = 0`$
   materials, and next to an insertion host (where $`\phi`$ is undefined).
 - `{ type: 'capacitive', C }`: a Helmholtz layer, $`D = -C \cdot (\Delta\phi - \mathtt{dipole})`$, C
-  in F/m².
+  in F/m². Beside a strictly neutral ($`\varepsilon = 0`$) material, the face's charge is held in
+  the cell next to it, which acts as a diffuse layer half that cell wide, $`F^2 \sum_i z_i^2 c_i \, h/2RT`$
+  in series with C. So keep that cell coarse rather than fine (a warning says when it costs C more
+  than 2%, and how coarse is enough).
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
