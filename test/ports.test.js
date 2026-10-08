@@ -409,3 +409,14 @@ test('a port driven by a current pulse: it delivers I·t_p, and switching off is
   // Everything injected is still in the bar (the pulse is far from the right contact).
   assert.ok(Math.abs(holes(off) / ((I * tp) / FARADAY) - 1) < 1e-3, `${holes(off)} mol/m² of holes`);
 });
+
+test('a capacitance-only port given a terminal species that no material holds is told it needs none', () => {
+  const def = {
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }],
+    materials: { water: { epsr: 0, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    regions: [{ name: 'pore', material: 'water', length: 1e-4, c0: { 'K+': 100, 'Cl-': 100 } }],
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, bath: { c: { 'K+': 100, 'Cl-': 100 } } } },
+    ports: [{ name: 'mat', region: 'pore', V: 0, terminal: 'e-', area: 1e6, capacitance: { C: 0.2, zeroCharge: 0 } }],
+  };
+  assert.throws(() => new Device(def), /terminal of port "mat".*only with reactions.*needs no terminal/);
+});

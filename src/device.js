@@ -219,9 +219,12 @@ export function normalizeDevice(def) {
   const outside = (sp) => (def.ports ?? []).some((p) => p?.terminal === sp.name && Array.isArray(p.reactions) && p.reactions.length > 0);
   species.forEach((sp, i) => {
     const reacting = (def.ports ?? []).some((p) => Array.isArray(p?.reactions) && p.reactions.length > 0);
+    // (a port naming it as its terminal without reactions: a capacitance alone needs none)
+    const named = (def.ports ?? []).find((p) => p?.terminal === sp.name);
     need(
       materials.some((m) => m.present[i]) || outside(sp),
-      `species '${sp.name}' is not present in any material` + (reacting ? " (an electrode's carrier can instead be a reacting port's terminal)" : ''),
+      `species '${sp.name}' is not present in any material` +
+        (named ? `: it is the terminal of port ${JSON.stringify(named.name ?? '')}, which can hold a carrier from outside the device only with reactions. A port with only a capacitance needs no terminal: drop it (and the species)` : reacting ? " (an electrode's carrier can instead be a reacting port's terminal)" : ''),
     );
   });
 
