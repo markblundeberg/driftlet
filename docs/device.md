@@ -581,11 +581,15 @@ that, use a [bulk reaction](#bulk-reactions) with the outside phase as a fixed p
 $`k_f (1 - c/c_{sat})`$; a profile gives $`k_f`$ its spatial variation ($`D c_{sat}/h^2`$ under a film
 of thickness $`h(x)`$).
 
-A held level can also anchor what nothing else holds. In a 1D MOS capacitor without generation,
-inversion electrons can only arrive by minority-carrier diffusion from the back contact (weeks),
-so the inversion layer's Fermi level is undetermined to within round-off and no steady state can
-be computed. A port holding the electrons beside the oxide, as source and drain would, anchors it,
-and the device shows the low-frequency C–V.
+A held level can also stand in for a supply. In a 1D MOS capacitor without a port, inversion
+electrons arrive only by generation or by diffusion from the back contact. The steady state
+still solves (to equilibrium), but they can't follow a signal faster than that supply: the
+impedance gives the low-frequency C–V only below a knee at about 1/(2πτ_c), τ_c the time the
+inversion charge takes to refill (10 s with a 1 µs lifetime; hours by diffusion alone through a
+wafer), and the high-frequency curve above it. A port holding
+the electrons beside the oxide, as source and drain would, supplies them at once, and the device
+shows the low-frequency C–V at any frequency (a conductance link instead puts the knee where you
+choose).
 
 ### Electrodes spread through a window
 

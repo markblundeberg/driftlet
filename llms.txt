@@ -313,7 +313,10 @@ const LD = Math.sqrt((11.7 * EPS0 * GAS_CONSTANT * 300) / (FARADAY * FARADAY * N
 console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.7 * EPS0))).toFixed(3)}`); // 0.699
 ```
 
-`dev.impedance([f], { terminal: 'left' })` gives the same C at low frequency. Draw it with
+`dev.impedance([f], { terminal: 'left' })` (C = Im(1/Z)/ω, from `{ f, Z: { re, im } }`) gives
+the same C at any frequency with the port; without it, only below the minority supply's knee
+(generation, or diffusion from the back contact: 0.01 Hz and below), and the high-frequency C–V
+above. Draw it with
 `bandDiagram(sol, { energy: true, phi: ['SiO2'] })`: across an insulator φ is the line to draw.
 
 ## Template: a Schottky diode
@@ -808,7 +811,7 @@ What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualizat
   everything floating (hold one terminal at a `V`), a species that reaches no contact without a
   `c0`, an unbalanced `c0` in a closed neutral region (add the counter-ion's share), `'2e-'` for
   `'2 e-'`, a current drive of the wrong sign. `interfaces[f]` is the stack's f-th face.
-- **A gate as a contact on an oxide.** It fails as `'e-' is blocked at this contact`: make the
+- **A gate as a contact on an oxide.** It fails as `'e-' is absent from the end material 'SiO2'`: make the
   gate a metal layer with a capacitive face, as in the MOS template.
 - **`ohmic()` on a metal.** Its default holds e⁻ and h⁺; on a metal write `ohmic(V, ['e-'])`.
 - **Ions on both sides of a reacting face.** Label them, `'Li+(left) = Li+(right)'`, and block
