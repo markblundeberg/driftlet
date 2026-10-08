@@ -24,6 +24,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - `set()` of a parameter mid-run (a rate constant, a diffusivity) goes on at the step size an
   adaptive transient had reached, rather than restarting from a tiny one (7× the steps for a
   page changing k0 every frame), and reads held waveforms at the run's time straight away.
+- `describe()` says where a bath's SHE level sits against its terminal when the bath is read
+  through a reference ion (1.37 V below a 0.5 M Cl⁻ terminal on table μ°), so an electrode held
+  at 0 V beside it isn't a surprise.
 
 ## 0.14.0
 

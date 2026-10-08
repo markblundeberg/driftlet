@@ -379,8 +379,10 @@ console.log(svg.length); // in a page: element.innerHTML = svg
 
 `describe(def)` validates a definition and returns a readable summary: each region with its
 doping, Debye length and the grid at its ends, each face's law, alignment, blocked species and
-reactions, the contacts, bulk reactions, and characteristic times (dielectric relaxation,
-diffusion across each region). It ends with warnings:
+reactions, the contacts (a bath read through a reference ion says where its SHE level sits
+against the terminal voltage: 1.37 V below for 0.5 M Cl⁻ on table $`\mu^\circ`$), bulk reactions, and
+characteristic times (dielectric relaxation, diffusion across each region). It ends with
+warnings:
 
 - numbers that look like unit slips (`unitWarnings(def)` gives these alone): a D beyond 1 m²/s
   (cm²/s?), a nonzero $`\mu^\circ`$ under 100 J/mol (eV or volts?), a capacitance over 10 F/m²

@@ -420,10 +420,12 @@ console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]);
 
 A working electrode, a stagnant layer, and the stirred bulk as a bath whose terminal is its
 reference species (Cl⁻: an Ag/AgCl reference). An electrode's potential against SHE is its
-electrons' V minus φ in the bulk (with the library's μ°). The working electrode's current is
-positive when oxidising. The layer's resistance is in series (uncompensated IR: keep it thin, or
-the supporting salt strong); a 100:1 excess of salt still leaves the limiting current about 1%
-off pure diffusion.
+electrons' V minus φ in the bulk (with the library's μ°), and a Cl⁻ terminal sits ~1.36 V above
+that, so an electrode held at 0 V beside it is strongly anodic: `describe(def)` says where SHE
+sits, and an offset of that much (`bath(c, 'Cl-', 0, { offset })`) makes the terminal read SHE.
+The working electrode's current is positive when oxidising. The layer's resistance is in series
+(uncompensated IR: keep it thin, or the supporting salt strong); a 100:1 excess of salt still
+leaves the limiting current about 1% off pure diffusion.
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';

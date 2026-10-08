@@ -222,7 +222,15 @@ export function describe(def) {
     const ct = model.contacts[side];
     const linked = species.filter((sp, i) => ct.species[i].type !== 'blocked').map((sp) => sp.name);
     const term = ct.terminal === null ? '' : ` (terminal ${species[ct.terminal].name})`;
-    lines.push(`  ${side}: ${drive(cdef, model.geometry.type === 'planar')}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}`);
+    // A bath read through a reference species: where the SHE level sits against its terminal,
+    // so a held electrode's V reads on the familiar scale (a Cl⁻ reference on table μ° puts it
+    // 1.37 V below, a surprise to anyone expecting 0 V to mean SHE).
+    let she = '';
+    if (ct.she?.reference) {
+      const d = ct.she.shift, at = Math.abs(d) < 5e-4 ? 'V' : `V ${d < 0 ? '−' : '+'} ${Math.abs(d).toFixed(3)} V`;
+      she = ct.she.exact ? `; the bath's SHE level is at ${at}` : `; the bath's φ is at ${at} (on the usual tables' μ°, where μ°_H⁺ = 0, that's its SHE level)`;
+    }
+    lines.push(`  ${side}: ${drive(cdef, model.geometry.type === 'planar')}${term}; ${linked.length ? `exchanges ${linked.join(', ')}` : 'exchanges nothing'}; φ ${ct.phi.type}${she}`);
   }
   (def.ports ?? []).forEach((p, k) => {
     const port = model.ports[k];

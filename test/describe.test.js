@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DeviceError, units } from '../src/index.js';
-import { build, layer, ohmic, describe, unitWarnings } from '../src/kit.js';
+import { DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, bath, aqueous, metal, IONS, describe, unitWarnings } from '../src/kit.js';
 
 // describe(): a readable summary, with warnings for likely unit slips and unresolved double layers.
 
@@ -76,4 +76,21 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   const coarse = describe(pn(silicon(), { hmin: 30e-9, hmax: 50e-9 }));
   assert.match(coarse, /warnings:\n {2}n: end cells of [\d.]+ nm are coarser than the Debye length, 12.9 nm/);
   assert.throws(() => describe({ species: [] }), DeviceError);
+});
+
+test('a bath read through a reference ion says where the SHE level sits against its terminal', () => {
+  // On the usual tables' μ°, SHE is φ in a solution, and a Cl⁻ terminal reads φ − (μ°_Cl⁻ + RT ln a)/(−F).
+  const cell = (c, offset) =>
+    build({
+      library: [aqueous(Object.keys(c), { epsr: 0 }), metal('Pt')],
+      stack: [ohmic(0, ['e-']), layer('Pt', 1e-6), {}, layer('water', 1e-4), bath(c, 'Cl-', 0, offset === undefined ? {} : { offset })],
+    });
+  const RT = GAS_CONSTANT * 298.15, gap = (c) => -(IONS['Cl-'].mu0 + RT * Math.log(c / 1000)) / FARADAY;
+  const kcl = { 'K+': 500, 'Cl-': 500 };
+  assert.match(describe(cell(kcl)), new RegExp(`right: .*the bath's φ is at V − ${gap(500).toFixed(3)} V \\(on the usual tables' μ°`));
+  assert.match(describe(cell(kcl, gap(500))), /the bath's φ is at V \(/, 'an offset of that much reads SHE');
+  // With H⁺ in the bath, its own μ° says where SHE is.
+  assert.match(describe(cell({ 'H+': 100, 'Cl-': 100 })), new RegExp(`the bath's SHE level is at V − ${(gap(100) - IONS['H+'].mu0 / FARADAY).toFixed(3)} V`));
+  const salt = cell(kcl);
+  assert.doesNotMatch(describe({ ...salt, contacts: { ...salt.contacts, right: { V: 0, bath: { c: kcl } } } }), /SHE/, 'a bath read by its φ says nothing');
 });

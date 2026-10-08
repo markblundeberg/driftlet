@@ -1197,6 +1197,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   const links = species.map(() => ({ type: 'blocked' }));
   let phi = { type: 'neutral' };
   let terminal = null;
+  let she = null; // a bath's SHE level against V
   if (cdef === undefined || cdef === null) return { drive: normalizeDrive({}, path), species: links, phi, terminal };
   need(isObject(cdef), `${path} must be an object`);
   fields(cdef, path, ['V', 'I', 'R', 'terminal', 'species', 'bath', 'phi', 'zeroCharge']);
@@ -1317,6 +1318,10 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const level = (i) => bm.mu0[i] + RT * zb[i]; // μ̄ − zFφ_bath
     const refOffset = bath.offset === undefined ? 0 : finite(bath.offset, `${path}.bath.offset`);
     const beta = byPhi ? 0 : refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
+    // Where the bath's SHE level sits against V (for describe()): φ + μ°_H⁺/F with H⁺ in the
+    // bath, else φ on the usual tables' convention (μ°_H⁺ = 0), which then is only a reading.
+    const h = speciesIndex.get('H+');
+    she = { shift: beta + (h !== undefined && bm.present[h] ? bm.mu0[h] / FARADAY : 0), exact: h !== undefined && bm.present[h], reference: !byPhi };
     for (let i = 0; i < species.length; i++) {
       if (!(cb[i] > 0) || !mat.present[i]) continue; // (a bath of its own may hold species the end lacks)
       links[i] =
@@ -1356,5 +1361,5 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (terminal !== null) {
     need(links[terminal].type !== 'blocked', `${path}.terminal: '${species[terminal].name}' is blocked at this contact`);
   }
-  return { drive, species: links, phi, terminal };
+  return { drive, species: links, phi, terminal, ...(she ? { she } : {}) };
 }

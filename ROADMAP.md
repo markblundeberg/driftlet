@@ -183,9 +183,10 @@ for live demos.
        films, and a capacitance through a port's window (a double layer, a gate along a channel),
        which carries a transient through a film's passivation, and a thin-film transistor in the
        saturation demo.
-     - **Each terminal against SHE** in `describe()` and in failure messages, in the solution beside
-       it. An agent held the iron at V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V
-       anodic, and lost time finding out why.
+     - Done: a bath's SHE level against its terminal in `describe()`. An agent held the iron at
+       V = 0 beside a bath referenced on Cl⁻ (NBS data), 1.37 V anodic, and lost time finding out
+       why. Still to come: the same in failure messages, and each terminal against SHE in a
+       solution.
      - Done: cheap mid-run parameter changes. `set()` of a reaction's k0 rebuilds the device
        (about 0.4 ms) but now goes on at the step size it had reached, where it used to restart
        from a tiny step (7× the steps in a cyclic voltammogram changing k0 every frame).
