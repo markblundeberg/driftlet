@@ -1838,6 +1838,7 @@ export class Solver {
     res.fill(0);
     this.dtNow = dt;
     if (this.lin) this.lin.reset(1 / dt);
+    if (this.steady && dt === Infinity) this._snapFlat();
     this.computeConcentrations();
 
     // Regions, each assembled by the kernel for its kind: a conductor (its carrier only), a
@@ -3057,21 +3058,42 @@ export class Solver {
 
   // Steady solves: each flat stretch's level held at its contact's throughout (see
   // flatStretches), in place of its balances, as an equilibrium link holds it at the end node.
+  // A flat stretch's level: its contact's, through the terminal k that holds it, or (reaching
+  // none) its first node's, which its amount fixes (that row is the amount's, a pin whose
+  // response moves the whole stretch: see _applyConstraints).
+  _flatLevel(st) {
+    const { M, u, uLo, z, VT, model } = this, i = st.species;
+    if (st.leftOpen || st.rightOpen) {
+      const side = st.leftOpen ? 'left' : 'right', link = model.contacts[side].species[i], k = side === 'left' ? 0 : 1;
+      return { k, hi: z[i] === 0 ? link.mu / model.RT : (z[i] * (this.termV[k] + link.offset)) / VT, lo: 0 };
+    }
+    const o = this.blockOfNode[st.nodes[0]] * M + 1 + i;
+    return { k: -1, hi: u[o], lo: uLo[o] };
+  }
+
+  // Each flat stretch's nodes set to its first node's level exactly (where Newton's damped
+  // updates have taken it, on the way to its contact's), so that it carries exactly no flux (the
+  // expm1 form of a zero difference). Flat only to round-off, a level moved by its contact had
+  // read as a current: a MOS capacitor's holes, their contact jumped to −6 V, as
+  // 3e-4 A/m² through a bulk that conducts ~1e10 S/m² (the true current was 3.5e-7).
+  _snapFlat() {
+    const { M, u, uLo } = this;
+    for (const st of this.flatStretches) {
+      const f = this.blockOfNode[st.nodes[0]] * M + 1 + st.species, hi = u[f], lo = uLo[f];
+      for (let g = st.nodes[0] + 1; g <= st.nodes[1]; g++) {
+        const o = this.blockOfNode[g] * M + 1 + st.species;
+        if (this.loc[o] < 0) continue;
+        u[o] = hi;
+        uLo[o] = lo;
+      }
+    }
+  }
+
   _flatRows() {
     const { M, u, uLo, res, z, VT, model } = this, R = this.rix;
     for (const st of this.flatStretches) {
       const i = st.species, open = st.leftOpen || st.rightOpen;
-      let level, k = -1;
-      if (open) {
-        const side = st.leftOpen ? 'left' : 'right', link = model.contacts[side].species[i];
-        k = side === 'left' ? 0 : 1;
-        level = z[i] === 0 ? link.mu / model.RT : (z[i] * (this.termV[k] + link.offset)) / VT;
-      } else {
-        // Its first node's level, which its amount fixes (that row is the amount's, a pin whose
-        // response moves the whole stretch: see _applyConstraints).
-        const o = this.blockOfNode[st.nodes[0]] * M + 1 + i;
-        level = u[o] + uLo[o];
-      }
+      const { k, hi, lo } = this._flatLevel(st), level = hi + lo;
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
         const b = this.blockOfNode[g], o = b * M + 1 + i;
         if (this.loc[o] < 0) continue;

@@ -409,3 +409,25 @@ test('a MOS capacitor whose carriers recombine, its back contact moved: still at
     assert.ok(Math.max(...mu) - Math.min(...mu) < 1e-9 * GAS_CONSTANT * 300, `${name} flat`);
   }
 });
+
+test('a floating gate, its back contact jumped far: the holes held flat carry exactly nothing, and the terminal currents add up', () => {
+  // The p bulk's holes reach the back contact alone, so a steady solve holds their level flat at
+  // it; flat only to round-off after a jump to −6 V, they had read as 3e-4 A/m² at that contact,
+  // through a bulk conducting ~1e10 S/m², against the 3.5e-7 A/m² the inversion layer leaks.
+  const oxide = { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } };
+  const dev = new Device(build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Al'), oxide],
+    stack: [ohmic(1, ['e-']), layer('Al', 20e-9), { phi: { type: 'capacitive', C: 10 }, zeroCharge: -0.95 }, layer('SiO2', 10e-9), { dipole: 0 },
+      layer('Si', 1e-6, { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+    ports: [{ name: 'channel', region: 'Si', from: 0, to: 1e-9, V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    grid: { hmin: 0.25e-9, hmax: 50e-9, ratio: 1.15 },
+  }));
+  dev.solve();
+  dev.set({ contacts: { left: { I: 0 } } });
+  const Q = dev.solve().interfaces[0].D;
+  dev.set({ contacts: { right: { V: -6 } } });
+  const s = dev.solve(), { left, right, channel } = s.terminals;
+  assert.ok(s.converged && Math.abs(s.interfaces[0].D / Q - 1) < 1e-12, `gate charge ${s.interfaces[0].D} vs ${Q}`);
+  assert.ok(channel.current > 1e-8 && Math.abs(left.current + right.current + channel.current) < 1e-9 * channel.current, `currents ${left.current}, ${right.current}, ${channel.current}`);
+});
