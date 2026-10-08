@@ -469,6 +469,10 @@ contacts: {
   over a Schottky barrier (below).
 - `'blocked'`: no flux.
 
+A contact holding several species in equilibrium fixes the composition at its end: with Ag⁺ and
+e⁻ both held in a silver halide, its electron and hole densities follow from their levels and
+neutrality, not from `c0` (so a different fixed charge changes them). Read them from the solution.
+
 **`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
 held in place by a charged `reference` species (as for a reversible reference electrode, e.g.
 Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
