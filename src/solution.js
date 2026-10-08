@@ -245,10 +245,25 @@ export function makeSolution(solver, result = {}) {
     );
   } else if (result.converged === false && cond && cond.digits > 12) {
     const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';
+    // An ion there so scarce beside the others (a minority swept out of a junction by a large
+    // bias, excluded at a sharp neutral face) that its level can't be held in double precision.
+    let scarce = null;
+    for (const g of cond.nodes ?? []) {
+      let all = 0;
+      for (let i = 0; i < model.species.length; i++) if (model.species[i].z !== 0 && solver.c[g * model.species.length + i] > 0) all += Math.abs(model.species[i].z) * solver.c[g * model.species.length + i];
+      for (let i = 0; i < model.species.length; i++) {
+        const c = solver.c[g * model.species.length + i], r = c / all;
+        if (model.species[i].z !== 0 && c > 0 && r < 1e-24 && !(r >= scarce?.r)) scarce = { r, name: model.species[i].name };
+      }
+    }
     sol.warnings.push(
-      `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): part of the device is held ` +
-        'only weakly, e.g. a floating region coupled to the rest through tiny conductances or rates, or a stiff ' +
-        'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).',
+      `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): ` +
+        (scarce
+          ? `there ${scarce.name} is ${scarce.r.toExponential(0)} of the ions around it, too scarce for its level to be held in double precision ` +
+            '(a minority swept out of a junction by a large bias, or excluded at a sharp neutral face). Drive less; or, at a face, ' +
+            'resolve its double layer (ε > 0) rather than make it a sharp neutral step.'
+          : 'part of the device is held only weakly, e.g. a floating region coupled to the rest through tiny conductances or rates, or a stiff ' +
+            'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).'),
     );
   }
   if (result.converged === false && !result.stopped && !un && !(cond && cond.digits > 12)) {

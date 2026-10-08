@@ -3227,18 +3227,20 @@ export class Solver {
     }
     if (!(c.digits > (this.conditioning?.digits ?? -1))) return;
     const { grid } = this.model;
-    let x = NaN, where = '';
+    let x = NaN, where = '', nodes = [];
     for (let g = 0; g < this.nNodes; g++) {
       if (this.blockOfNode[g] !== c.block) continue;
       x = grid.x[g];
       where = this.model.regions[grid.nodeRegion[g]].name;
+      nodes = [g];
     }
     for (let f = 0; f < this.nFaces; f++) {
       if (this.blockOfFace[f] !== c.block) continue;
       x = grid.x[grid.regionEnd[f]];
       where = `interfaces[${f}]`;
+      nodes = [grid.regionEnd[f], grid.regionEnd[f] + 1];
     }
-    this.conditioning = { digits: c.digits, x, where };
+    this.conditioning = { digits: c.digits, x, where, nodes };
   }
 
   /**

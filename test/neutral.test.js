@@ -264,3 +264,32 @@ test('ε = 0 beside a capacitive face: the edge cell holding its charge acts as 
     assert.equal(flagged, hmin < 1e-8);
   }
 });
+
+test('a sharp neutral face that sweeps an ion out below double precision says so when the solve fails', async () => {
+  const { build, layer, bath, aqueous } = await import('../src/kit.js');
+  // A strictly neutral bipolar membrane (cation | anion exchanger, 1 M each, between 0.1 M NaCl)
+  // in reverse bias: H⁺ and OH⁻ fall at the junction as e^{−V/V_T}, and past ~1.2 V the face's
+  // minority is ~1e-30 of the ions around it.
+  const names = ['Na+', 'Cl-', 'H+', 'OH-'];
+  const cH = 1000 * Math.sqrt(Math.exp(-(-157.244e3 + 237.129e3) / RT));
+  const c = { 'Na+': 100, 'Cl-': 100, 'H+': cH, 'OH-': cH };
+  const dev = new Device(
+    build({
+      library: [aqueous(names, { epsr: 0 }), aqueous(names, { epsr: 0, material: 'cem' }), aqueous(names, { epsr: 0, material: 'aem' })],
+      stack: [
+        bath(c, 'Cl-', 0, { material: 'water' }),
+        layer('cem', 30e-6, { fixedCharge: -1000 * FARADAY }),
+        { phi: 'neutral' },
+        layer('aem', 30e-6, { fixedCharge: 1000 * FARADAY }),
+        bath(c, 'Cl-', 0, { material: 'water' }),
+      ],
+      bulkReactions: [{ equation: 'H+ + OH- = H2O', fixed: { H2O: -237.129e3 }, kf: { cem: 1.4e8, aem: 1.4e8, water: 1.4e8 } }],
+      grid: { hmin: 1e-10, hmax: 5e-7 },
+    }),
+  );
+  dev.solve();
+  for (const V of [0.5, 1, 1.3]) dev.set({ contacts: { right: { V } } }).solve();
+  const sol = dev.solve();
+  if (sol.converged) return; // (should a later solver reach it, nothing to say)
+  assert.ok(sol.warnings.some((w) => /there (H\+|OH-) is \de-\d+ of the ions around it, too scarce/.test(w)), sol.warnings.join('\n'));
+});
