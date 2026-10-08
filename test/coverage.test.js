@@ -169,3 +169,20 @@ test('surfaces are checked', () => {
   assert.throws(() => cell(0, { surface: { OHads: { mu0: 0, capacity: G, theta0: 0.6 }, X: { mu0: 0, capacity: G, theta0: 0.6 } }, reactions: r({}) }), /sum to less than 1/);
   assert.throws(() => cell(0, { surface: { OHads: { mu0: 0, capacity: G } }, reactions: r({ bare: 'yes' }) }), /bare must be true or false/);
 });
+
+test('adsorbates that only turn into each other keep their total on every site: θ_A + θ_B as it started, their ratio at equilibrium', () => {
+  // A(ads) + OH⁻ = B(ads) + e⁻, both partners fed (the bath, the electrode): nothing changes how
+  // many sites A and B hold together, node by node, so a steady solve keeps that (directly).
+  const surface = { Aads: { mu0: 0, capacity: G, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: G, theta0: 0.1 } };
+  const reactions = [{ equation: 'Aads + OH- = Bads + e-', k0: 1e-4, alpha: 0.5 }];
+  for (const V of [-0.05, 0.02]) {
+    const sol = cell(V, { surface, reactions }).solve();
+    assert.ok(sol.converged && sol.steps === 1);
+    const p = sol.ports[0];
+    for (let j = 0; j < p.x.length; j++) {
+      const A = p.coverage.Aads[j], B = p.coverage.Bads[j], g = sol.x.indexOf(p.x[j]);
+      const r = Math.exp((0 - 3e3 + sol.mu['OH-'][g] + FARADAY * V) / RT);
+      assert.ok(Math.abs(A + B - 0.3) < 1e-12 && Math.abs(B / A / r - 1) < 1e-9, `V = ${V}, node ${j}: θ_A ${A}, θ_B ${B}, ratio ${B / A} vs ${r}`);
+    }
+  }
+});

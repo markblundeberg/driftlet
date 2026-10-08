@@ -291,3 +291,23 @@ test('a closed battery at open circuit keeps its charge: a cold solve at the OCV
   const driven = cell({ I: 2 }).solve();
   assert.ok(!driven.converged && driven.warnings.some((w) => w.startsWith('right: driven at 2.00 A/m², it has no steady state: what it feeds (e- in cathode)')), driven.warnings.join('\n'));
 });
+
+test('a closed population with immobile traps: their electrons conserved with it, each node\'s traps on their own, solved directly as a transient ends', () => {
+  // An insulating film between gates, its electrons mobile and closed, trap states X⁰/X⁻ fixed in
+  // place (e⁻ + X⁰ = X⁻): e⁻ + X⁻ is conserved over the film, X⁰ + X⁻ at every node.
+  const def = (V) => ({
+    species: [{ name: 'e-', z: -1 }, { name: 'X0', z: 0 }, { name: 'X-', z: -1 }],
+    materials: { film: { epsr: 4, species: { 'e-': { D: 1e-6, mu0: 0, cRef: 1 }, X0: { D: 0, mu0: 0, cRef: 1 }, 'X-': { D: 0, mu0: -3000, cRef: 1 } } } },
+    regions: [{ name: 'film', material: 'film', length: 50e-9, fixedCharge: 2 * FARADAY, c0: { 'e-': 1, X0: 1, 'X-': 1 } }],
+    bulkReactions: [{ equation: 'e- + X0 = X-', kf: { film: 1e3 } }],
+    contacts: { left: { V: 0, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 }, right: { V, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 } },
+    grid: { minCells: 60 },
+  });
+  const steady = new Device(def(0.05)).solve();
+  assert.ok(steady.converged && steady.steps === 1, `steps ${steady.steps}`);
+  const amount = (s, name) => s.conservation.find((c) => c.species === name).amount;
+  assert.ok(Math.abs((amount(steady, 'e-') + amount(steady, 'X-')) / 1e-7 - 1) < 1e-12);
+  for (let g = 0; g < steady.x.length; g++) assert.ok(Math.abs(steady.c.X0[g] + steady.c['X-'][g] - 2) < 1e-12, `node ${g}`);
+  const run = new Device(def(0.05)).advance(1);
+  for (const name of ['e-', 'X-']) assert.ok(Math.abs(amount(run, name) / amount(steady, name) - 1) < 1e-6, `${name}: ${amount(run, name)} vs ${amount(steady, name)}`);
+});

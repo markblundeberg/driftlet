@@ -280,6 +280,7 @@ test('a floating gate (a metal with no reactions between two oxides) stays neutr
     const VF = (V) => {
       const dev = gate(V, grid), sol = dev.solve();
       assert.ok(sol.converged, `${JSON.stringify(grid)}, V = ${V}`);
+      assert.equal(sol.steps, 1, 'solved directly, the charge on its faces a conserved amount');
       const [a, b] = sol.interfaces.map((f) => f.D);
       assert.ok(Math.abs(a - b) < 1e-12 * Math.abs(a), 'the metal carries no net charge');
       return sol.V['e-'][dev.grid.regionStart[1]];

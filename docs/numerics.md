@@ -732,15 +732,20 @@ only resolved to ~1e-4 of $`|Z|`$.
 - **Immobile combinations** (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) conserve
   node by node, since nothing carries them anywhere. At each node the combination's weighted sum
   replaces one of its balance rows, kept at what it was when the solve began. The row is local
-  to that node's block, so nothing is bordered, and the solve goes direct.
-- **Otherwise** (an immobile spectator on its own, or a combination that includes a floating
-  conductor or mixes mobile and immobile stretches), backward-Euler steps at a huge $`dt`$ (10⁶ × the slowest
-  diffusion time) keep the storage term, which pins each conserved amount exactly: sum a
-  species' rows and the fluxes cancel. $`dt`$ grows ×10 (capped) while the state still moves.
-  Before each huge step, each spectator's level is shifted uniformly to restore its amount
-  exactly (in one step for ideal statistics, by Newton on the shift otherwise). It guards
-  against round-off creeping through the vanishing storage term. The solve finishes with one
-  step at the base giant $`dt`$, where pinning is tight.
+  to that node's block, so nothing is bordered, and the solve goes direct. An electrode's surface
+  species are the same: adsorbates that only turn into each other keep their total on every
+  site. (The null space is taken with the immobile stretches' columns first, so that their own
+  combinations come out apart from any that moves.) A combination of immobile stretches with a
+  moving one (the electrons the traps hold, $`e^- - X^0`$, in a closed film) is an amount like any
+  other, its immobile parts summed over their nodes, bordered in place of the moving stretch's
+  row; and a floating metal's amount is the charge on its faces, its sheets' displacement.
+- **Otherwise** (a species still in one region and moving in the next), backward-Euler steps at a
+  huge $`dt`$ (10⁶ × the slowest diffusion time) keep the storage term, which pins each conserved
+  amount exactly: sum a species' rows and the fluxes cancel. $`dt`$ grows ×10 (capped) while the
+  state still moves. Before each huge step, each spectator's level is shifted uniformly to
+  restore its amount exactly (in one step for ideal statistics, by Newton on the shift
+  otherwise). It guards against round-off creeping through the vanishing storage term. The solve
+  finishes with one step at the base giant $`dt`$, where pinning is tight.
 - **If a direct solve diverges,** it's retried once with tighter damping (3 thermal units per
   iteration). That's enough for most large jumps, such as a cold start at forward bias.
 - **Generation continuation.** A device with generation reactions (species made only from, or

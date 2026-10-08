@@ -758,6 +758,26 @@ export class Solver {
     this.constrained = false;
   }
 
+  // Whether a stretch's species moves through it (mobile in every region, or a metal's carrier),
+  // or stays still in every region (D = 0: trap states, conserved node by node).
+  _moves(st) {
+    const { regions, materials } = this.model;
+    for (let q = st.regions[0]; q <= st.regions[1]; q++) {
+      const mat = materials[regions[q].material];
+      if (!(mat.conductor || mat.D[st.species] > 0)) return false;
+    }
+    return true;
+  }
+
+  _still(st) {
+    const { regions, materials } = this.model;
+    for (let q = st.regions[0]; q <= st.regions[1]; q++) {
+      const mat = materials[regions[q].material];
+      if (mat.conductor || mat.D[st.species] > 0) return false;
+    }
+    return true;
+  }
+
   // Whether terminal k (a contact, or port k − 2) feeds stretch st: links its species there.
   _feeds(k, st) {
     return k === 0 ? st.leftOpen : k === 1 ? st.rightOpen : st.linked.includes(k - 2);
@@ -771,11 +791,12 @@ export class Solver {
     const laws = this._conservedMoieties(true);
     for (const st of this.stretches) st.conserved = false;
     // Conserved amounts solved directly, each in place of one (redundant) balance row: a
-    // spectator's own amount, each conserved combination of reacting stretches (the total iron of
-    // Fe³⁺, Fe²⁺ and FeCl²⁺, say), whose weighted balances sum to zero at steady state, and what a
-    // terminal driven at no current keeps behind it. Immobile stretches conserve node by node
-    // instead, and a floating conductor holds charge on its faces; both are left to giant time
-    // steps.
+    // spectator's own amount (a floating metal's: the charge on its faces), each conserved
+    // combination of reacting stretches (the total iron of Fe³⁺, Fe²⁺ and FeCl²⁺, say), whose
+    // weighted balances sum to zero at steady state, and what a terminal driven at no current
+    // keeps behind it. A combination may take in still stretches (the electrons trap states hold),
+    // their amounts summed like any other; one of still stretches alone conserves node by node
+    // instead (below), and one of a stretch still in part only is left to giant time steps.
     this.constraints = [];
     const conductor = (st) => materials[regions[st.regions[0]].material].conductor;
     // The terminals driven by a current that feed a stretch: a combination through one keeps what
@@ -801,38 +822,42 @@ export class Solver {
       });
     };
     this.stretches.forEach((st, k) => {
-      if (st.spectator && st.mobile) add([{ stretch: k, w: 1 }], k);
+      if (st.spectator && this._moves(st)) add([{ stretch: k, w: 1 }], k);
     });
     const S = this.stretches.length;
     for (const w of laws) {
       const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
       const surface = [...w.keys()].filter((k) => k >= S && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
-      if (parts.length === 0) continue; // (a surface's own: left to giant time steps)
+      if (parts.length === 0) continue; // (a surface's own: node by node, below)
       if (parts.length === 1 && surface.length === 0 && this.stretches[parts[0].stretch].spectator) continue; // (above)
-      if (parts.some((p) => !this.stretches[p.stretch].mobile || conductor(this.stretches[p.stretch]))) continue;
-      // The row replaced: the basis vector's own stretch (its weight is 1, and no other vector has one).
-      add(parts, parts.find((p) => w[p.stretch] === 1)?.stretch ?? parts[0].stretch, surface);
+      if (parts.some((p) => !this._moves(this.stretches[p.stretch]) && !this._still(this.stretches[p.stretch]))) continue;
+      // The row replaced: a moving stretch's (one of still stretches alone is kept node by node,
+      // below), the first with weight 1; where another combination took that, the basis vector's
+      // own (its weight is 1 there, and no other vector's is), so that no two share one; else
+      // any part's.
+      const taken = (k) => this.constraints.some((cs) => cs.row === this.blockOfNode[this.stretches[k].nodes[0]] * this.M + 1 + this.stretches[k].species);
+      const free = (k) => k < S && this._moves(this.stretches[k]) && !taken(k);
+      const own = [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own, ...parts.map((p) => p.stretch)].find(free);
+      if (own === undefined) continue;
+      add(parts, own, surface);
     }
-    // A combination of immobile stretches (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻) is conserved
-    // node by node, since nothing carries it anywhere: at each node its weighted sum stays what
-    // it was, a row local to that node's block, in place of the balance row of one of them.
+    // A combination that nothing carries anywhere is conserved node by node: of still stretches
+    // (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻), or of an electrode's surface species (adsorbates
+    // that only turn into each other). At each node its weighted sum stays what it was, a row local
+    // to that node's block, in place of one of their balances.
     this.localConstraints = [];
-    const immobile = (st) => {
-      for (let q = st.regions[0]; q <= st.regions[1]; q++) if (materials[regions[q].material].D[st.species] > 0) return false;
-      return true;
-    };
+    const span = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
     for (const w of laws) {
-      const parts = [...w.keys()].filter((k) => w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
-      const sts = parts.map((p) => this.stretches[p.stretch]);
-      if (sts.some((st) => st.conserved || !immobile(st) || conductor(st))) continue;
-      if (sts.some((st) => st.nodes[0] !== sts[0].nodes[0] || st.nodes[1] !== sts[0].nodes[1])) continue; // (side by side only)
-      for (const st of sts) st.conserved = true;
-      const row = parts.find((p) => p.w === 1) ?? parts[0];
+      const parts = [...w.keys()].filter((k) => w[k] !== 0);
+      const sets = parts.map((k) => (k >= S ? model.ports[this.surfCols[k - S][0]].nodes : this._still(this.stretches[k]) ? span(this.stretches[k].nodes) : null));
+      if (sets.some((set) => set === null || set.length !== sets[0].length || set.some((g, j) => g !== sets[0][j]))) continue; // (side by side only)
+      for (const k of parts) if (k < S) this.stretches[k].conserved = true;
+      const slot = (k) => (k < S ? 1 + this.stretches[k].species : 1 + this.n + this.surfCols[k - S][1]);
       this.localConstraints.push({
-        parts: parts.map((p) => ({ i: this.stretches[p.stretch].species, w: p.w })),
-        row: 1 + this.stretches[row.stretch].species,
-        nodes: sts[0].nodes,
-        reference: new Float64Array(sts[0].nodes[1] - sts[0].nodes[0] + 1),
+        parts: parts.map((k) => (k < S ? { i: this.stretches[k].species, w: w[k] } : { q: this.surfCols[k - S][1], w: w[k] })),
+        row: slot(parts.includes(w.own) ? w.own : parts[0]),
+        nodes: sets[0],
+        reference: new Float64Array(sets[0].length),
       });
     }
     // Islands: the pieces of a stretch between its faces. One that nothing else feeds (no
@@ -913,13 +938,13 @@ export class Solver {
   // Each local constraint's weighted sum at each node, as the state holds it now: what a steady
   // solve keeps.
   _captureLocal() {
-    const { n, c } = this;
+    const { n, c, th, nSurf } = this;
     for (const lc of this.localConstraints) {
-      for (let g = lc.nodes[0]; g <= lc.nodes[1]; g++) {
+      lc.nodes.forEach((g, j) => {
         let t = 0;
-        for (const { i, w } of lc.parts) t += w * c[g * n + i];
-        lc.reference[g - lc.nodes[0]] = t;
-      }
+        for (const { i, q, w } of lc.parts) t += w * (i !== undefined ? c[g * n + i] : th[g * nSurf + q]);
+        lc.reference[j] = t;
+      });
     }
   }
 
@@ -990,20 +1015,27 @@ export class Solver {
 
   // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.
   _applyLocalConstraints() {
-    const { n, M, c, res, dA: d } = this;
+    const { n, M, c, th, nSurf, res, dA: d } = this;
     for (const lc of this.localConstraints) {
-      for (let g = lc.nodes[0]; g <= lc.nodes[1]; g++) {
+      lc.nodes.forEach((g, j) => {
         const b = this.blockOfNode[g];
-        if (this.loc[b * M + lc.row] < 0) continue;
+        if (this.loc[b * M + lc.row] < 0) return;
         this._replaceRow(b, lc.row);
         let t = 0;
-        for (const { i, w } of lc.parts) {
-          t += w * c[g * n + i];
-          this._dc(g, i, d);
-          for (let s = 0; s < M; s++) if (d[s] !== 0) this._j(b, lc.row, b, s, w * d[s]);
+        for (const { i, q, w } of lc.parts) {
+          if (i !== undefined) {
+            t += w * c[g * n + i];
+            this._dc(g, i, d);
+            for (let s = 0; s < M; s++) if (d[s] !== 0) this._j(b, lc.row, b, s, w * d[s]);
+            continue;
+          }
+          // A coverage, with ∂θ_q/∂η_x = θ_q (δ_qx − θ_x) over its surface's species.
+          const tq = th[g * nSurf + q], ns = this.model.ports[this.surfPort[g]].surface.length;
+          t += w * tq;
+          for (let x = 0; x < ns; x++) this._j(b, lc.row, b, 1 + n + x, w * tq * ((q === x ? 1 : 0) - th[g * nSurf + x]));
         }
-        res[this.rix[b * M + lc.row]] = t - lc.reference[g - lc.nodes[0]];
-      }
+        res[this.rix[b * M + lc.row]] = t - lc.reference[j];
+      });
     }
   }
 
@@ -1064,10 +1096,14 @@ export class Solver {
         rows.push(row);
       }
     });
-    // Reduced row echelon form; the free columns give the null space.
+    // Reduced row echelon form; the free columns give the null space. Immobile stretches' columns
+    // go first, so that a combination of them alone (trap states, X⁰ + X⁻) comes out on its own,
+    // to be kept node by node, apart from any that moves (e⁻ − X⁰, the electrons the traps hold).
+    const order = [...Array(C).keys()].sort((a, b) => (b < S && this._still(this.stretches[b])) - (a < S && this._still(this.stretches[a])));
     const pivots = [];
     let r = 0;
-    for (let col = 0; col < C && r < rows.length; col++) {
+    for (const col of order) {
+      if (r >= rows.length) break;
       let best = r;
       for (let i = r + 1; i < rows.length; i++) if (Math.abs(rows[i][col]) > Math.abs(rows[best][col])) best = i;
       if (Math.abs(rows[best][col]) < 1e-9) continue;
@@ -1093,6 +1129,7 @@ export class Solver {
         const v = -rows[i][free];
         w[col] = Math.abs(v) < 1e-9 ? 0 : v;
       });
+      w.own = free; // (its weight is 1 there, and no other vector's is: the row it replaces)
       basis.push(w);
     }
     return basis;
@@ -1118,6 +1155,16 @@ export class Solver {
         if (cs.terminals.length === 0) reference += w * this.referenceAmounts[stretch];
         for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
           amount += w * vol[g] * c[g * n + i];
+          if (this.nodeConductor[g] >= 0) {
+            // A metal's carriers: the sheet at a charged face, vol·c = ±D_f·A/(zF), held by the
+            // face's displacement.
+            const f = this.sheetFace[g];
+            if (f >= 0 && this.loc[this.blockOfFace[f] * M] >= 0) {
+              cs.idx[len] = this.rix[this.blockOfFace[f] * M];
+              cs.w[len++] = (w * this.sheetSign[g] * this.model.grid.area[g]) / (this.z[i] * FARADAY);
+            }
+            continue;
+          }
           this._dc(g, i, d);
           const b = this.blockOfNode[g];
           for (let r = 0; r < M; r++) {
