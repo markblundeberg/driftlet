@@ -186,3 +186,32 @@ test('adsorbates that only turn into each other keep their total on every site: 
     }
   }
 });
+
+test('an adsorbed couple, O + e⁻ = R + Cl⁻, in a film given its composition: cold, it starts at the bath\'s levels and solves directly to θ_O/θ_R = e^((E − E°)/V_T)', () => {
+  // Every ion's amount given (c0), nothing fixes the film's φ but the electrode's reaction: the
+  // start balances it against the surface's starting coverages, where it had left them out and
+  // started 1.4 V off, so a cold solve took the pseudo-transient ramp or failed, and advance()
+  // stalled at its first step.
+  const E0 = 0.3, Lf = 5e-6;
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const def = (E) => build({
+    T,
+    library: [lib],
+    stack: [{ species: { 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' }, layer('water', Lf, { name: 'film', c0: { 'K+': 500, 'Cl-': 500 } }), bath({ 'K+': 500, 'Cl-': 500 }, 'Cl-', 0)],
+    ports: [{
+      name: 'we', region: 'film', terminal: 'e-', V: E, area: 1 / Lf,
+      surface: { Oads: { mu0: 0, capacity: G, theta0: 0.4 }, Rads: { mu0: -FARADAY * E0, capacity: G, theta0: 0.4 } },
+      reactions: [{ equation: 'Oads + e- = Rads + Cl-', k0: 1e-2, alpha: 0.5 }],
+    }],
+    grid: { hmin: 0.1e-6, hmax: 0.5e-6 },
+  });
+  for (const E of [0.3, 0.17, 0, -0.2]) {
+    const sol = new Device(def(E)).solve();
+    assert.ok(sol.converged && sol.steps === 1, `E = ${E}: ${sol.steps} steps`);
+    const O = sol.ports[0].coverage.Oads[2], R = sol.ports[0].coverage.Rads[2];
+    assert.ok(Math.abs(O + R - 0.8) < 1e-12 && Math.abs(O / R / Math.exp((E - E0) / VT) - 1) < 1e-9, `E = ${E}: θ_O ${O}, θ_R ${R}`);
+  }
+  const r = new Device(def(E0)).advance(10);
+  assert.ok(r.done && r.converged && r.rejected === 0, `advance: ${r.steps} steps, ${r.rejected} rejected`);
+});

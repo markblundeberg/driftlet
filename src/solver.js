@@ -1512,11 +1512,15 @@ export class Solver {
       if (!mat.phiFree && !responds && mat.ideal && electrode) {
         // Nor here, but an electrode spread through it does: start with the port's first reaction
         // that can be balanced at equilibrium with the port's level (the electrode at open circuit).
+        const bare = 1 - electrode.surface.reduce((t, sp) => t + sp.theta0, 0);
         for (const rx of electrode.reactions) {
           let a = rx.fixedA, s = 0;
           for (const p of rx.part) {
             if (p.side === 1) a -= p.nu * this.portEta(electrode, p.i);
-            else if (mode[p.i] === 2) {
+            else if (p.side === 2) {
+              const sp = electrode.surface[p.s]; // (at its starting coverage)
+              a -= p.nu * (sp.mu0 / model.RT + Math.log(sp.theta0 / bare));
+            } else if (mode[p.i] === 2) {
               a -= p.nu * (Math.log(cFix[p.i] / mat.cRef[p.i]) + mat.mu0[p.i] / model.RT);
               s += p.nu * z[p.i];
             } else s = NaN;
