@@ -2,6 +2,26 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A bath can name its own material (`bath: { c, material }`, or the kit's `bath(c, ref, drive,
+  { material })`): a solution straight against an ion exchanger or a gel, whose levels the end
+  node takes through a Donnan step (tested against Donnan exclusion and the Teorell–Meyer–Sievers
+  salt flux, to 1e-8). Without it, a bath is the end material at that composition, fixed charge
+  and all, and the error now says so and what to do.
+- Beside a strictly neutral material, a capacitive face's charge sits in the cell next to it,
+  which acts as a diffuse layer that wide in series with C, so a fine grid there lowered the
+  double-layer capacitance silently (to 0.036 F/m² from 0.2 with 0.1 nm cells). It's now
+  warned of where it costs over 2%, with the cell that's enough, and documented.
+- `particles()` stays a sample at any step: a cell a dot would hop out of many times in one step
+  is a sea for that step and then drawn afresh, so a long step no longer over-fills cells (a
+  checkerboard) or costs in proportion. Dots sit within a cell by its concentration; a solution
+  on another grid redraws the lattice; bad options are errors, and a NaN or negative step (a
+  first frame) moves nothing.
+- Block elimination skips the coupling blocks' zeros (bit-identical results): the nerve demos'
+  factorisations are ~15% faster. The benchmarks gain a squid-axon spike.
+- `describe()` gives an ion exchanger's fixed charge in mol/m³.
+
 ## 0.14.0
 
 - `particles()` in the kit (experimental): a solution drawn as dots of a fixed amount each,
