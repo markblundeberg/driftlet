@@ -693,8 +693,11 @@ only resolved to ~1e-4 of $`|Z|`$.
   charge, and a solve that kept only I = 0 had converged to another (4.145 V where its start said
   3.958 V). Its amount stands in for the terminal's circuit row rather than a balance row: at no
   current that row is the sum of the combination's balance rows, so it says nothing new. (Beside a
-  flat level, below, a pinned balance row had left it all zeros.) At any other current such a
-  terminal only stores what comes in, and the solve says so at once.
+  flat level, below, a pinned balance row had left it all zeros.) A terminal that passes current
+  only by charging a capacitance (a gate, a port's capacitance, with no charged species through
+  it) is the same, its charge in place of an amount: steady at no current, its circuit row
+  becomes that charge as the solve found it. At any other current such a terminal only stores
+  what comes in, and the solve says so at once.
 
   Holding the amount through a storage term at huge $`dt`$ instead is badly conditioned: the
   stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances $`D \cdot c/h`$

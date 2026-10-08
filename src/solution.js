@@ -232,8 +232,9 @@ export function makeSolution(solver, result = {}) {
   if (result.converged === false && ch) {
     const A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     sol.warnings.push(
-      `${ch.terminal}: driven at ${ch.current.toPrecision(3)} ${A}, it has no steady state: what it feeds (${ch.what.join(', ')}) is closed but for it, ` +
-        'so it only stores what comes in (a host filling, a capacitor charging). advance() in time instead; at no current, a steady solve keeps the charge it holds.',
+      `${ch.terminal}: driven at ${ch.current.toPrecision(3)} ${A}, it has no steady state: ` +
+        (ch.what.length > 0 ? `what it feeds (${ch.what.join(', ')}) is closed but for it, so it only stores what comes in (a host filling)` : 'it passes current only by charging its capacitance') +
+        '. advance() in time instead; at no current, a steady solve keeps the charge it holds.',
     );
   } else if (result.converged === false && un) {
     const [[V0, I0], [V1, I1]] = [un.low, un.high], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';

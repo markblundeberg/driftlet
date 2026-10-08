@@ -910,9 +910,9 @@ const now = dev.solution();                   // snapshot of the current state
   species is fed by a contact, it solves the steady equations directly. Otherwise conserved
   amounts are kept exactly: blocked species, reactive moieties, and whatever a terminal driven
   at no current is the only way into (a closed battery at open circuit keeps its charge, the
-  state of charge it holds when the solve begins). Driven at any other current, such a terminal
-  only stores what comes in (a host filling, a capacitor charging), which has no steady state,
-  and the solve says so at once. If a direct solve fails at a
+  state of charge it holds when the solve begins; a gate left floating keeps the charge on its
+  capacitance). Driven at any other current, such a terminal only stores what comes in (a host
+  filling, a capacitor charging), which has no steady state, and the solve says so at once. If a direct solve fails at a
   bias, it ramps the contacts' voltages from where they were last solved (the left one first,
   where it moved), or from level terminals on a cold start; with generation reactions (below),
   it ramps their rates up from nearly nothing. A terminal driven by a current (open circuit,

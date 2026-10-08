@@ -492,6 +492,7 @@ export class Solver {
     this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
     this.drivenKey = this.terms.map((t) => t.drive.kind).join();
     this.lawRefs = new Map(); // what a steady solve keeps behind a terminal at no current (_captureLaws)
+    this.chargeRefs = new Map(); // …and the charge a terminal at no current that only charges keeps
     // Per terminal: B = ∂res/∂V (compact column), C = ∂I/∂x (compact row), ∂I/∂V, and for a
     // floating one its circuit residual (I − I_set, or I − (V_src − V)/R).
     this.termB = this.terms.map(() => new Float64Array(this.sys.size + 1));
@@ -930,6 +931,13 @@ export class Solver {
   // What each combination fed by a terminal driven at no current holds now, which a steady solve
   // keeps: a closed battery at open circuit stays at the charge it had.
   _captureLaws() {
+    // A terminal at no current that passes current only by charging a capacitance keeps its charge.
+    this.chargeRefs.clear();
+    const charged = this.floating.filter((k) => this.terms[k].drive.kind === 'I' && this._chargeOnly(k));
+    if (charged.length > 0) {
+      this._assembleBookkeeping(Infinity);
+      for (const k of charged) this.chargeRefs.set(k, k >= 2 ? this.portQ[k - 2] : k === 0 ? this.contactD.left : -this.contactD.right);
+    }
     this.lawRefs.clear();
     for (const cs of this.constraints) {
       if (cs.terminals.length === 0) continue;
@@ -2821,6 +2829,9 @@ export class Solver {
     const { M, u, uLo, res, VT } = this, R = this.rix, vol = this.model.grid.vol, area = this.portArea[k - 2];
     const { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k], B = this.termB[k], Ct = this.termC[k];
     const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
+    // Its current, the charging (Q − Q at the step's start)/dt; or, steady at no current, the
+    // charge it keeps in place of that (see _captureLaws).
+    const rate = Number.isFinite(dt) ? 1 / dt : this.constrained && this.chargeRefs.has(k) ? 1 : 0;
     let Q = 0, dQdV = 0;
     port.nodes.forEach((g, w) => {
       if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
@@ -2833,12 +2844,12 @@ export class Solver {
       res[R[b * M]] -= q;
       this._j(b, 0, b, 0, s * VT);
       B[R[b * M]] -= s;
-      if (Number.isFinite(dt)) Ct[R[b * M]] += (-s * VT) / dt;
+      if (rate > 0) Ct[R[b * M]] += -s * VT * rate;
     });
     this.portQ[k - 2] = Q;
-    if (Number.isFinite(dt)) {
-      this.termI[k] += (Q - this.portQStart[k - 2]) / dt;
-      this.termDI[k] += dQdV / dt;
+    if (rate > 0) {
+      this.termI[k] += (Q - (dt < Infinity ? this.portQStart[k - 2] : this.chargeRefs.get(k))) * rate;
+      this.termDI[k] += dQdV * rate;
     }
   }
 
@@ -2959,10 +2970,13 @@ export class Solver {
       this._j(b, 0, b, 0, Ac * link.C * VT);
       B[R[b * M]] += -Ac * link.C;
       this.contactD[side] = sgn * Din;
-      if (dyn) {
-        I += (Din - Dstart) / dt;
-        C[R[b * M]] += (-Ac * link.C * VT) / dt;
-        this.termDI[k] += (Ac * link.C) / dt;
+      // Its current, the charging (D_in − D_in at the step's start)/dt; or, steady at no current,
+      // the charge it keeps in place of that (see _captureLaws).
+      const rate = dyn ? 1 / dt : this.constrained && this.chargeRefs.has(k) ? 1 : 0;
+      if (rate > 0) {
+        I += (Din - (dyn ? Dstart : this.chargeRefs.get(k))) * rate;
+        C[R[b * M]] += -Ac * link.C * VT * rate;
+        this.termDI[k] += Ac * link.C * rate;
       }
     } else if (link.type === 'pinned' || link.type === 'bulk') {
       // The Poisson residual is the outside's charge, D_in.
@@ -2971,6 +2985,9 @@ export class Solver {
       if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
         this._captureRow(b, 0, 1 / dt, C);
+      } else if (!dyn && this.constrained && this.chargeRefs.has(k)) {
+        I += Din - this.chargeRefs.get(k);
+        this._captureRow(b, 0, 1, C);
       }
       this._replaceRow(b, 0);
       if (link.type === 'pinned') {
@@ -4517,33 +4534,21 @@ export class Solver {
   }
 
   _solveSteadyAll(opts) {
-    // A terminal that passes current only by charging (a gate, a capacitance with no species
-    // through it) has no steady state under a current drive: it charges for ever, or at I = 0
-    // keeps whatever charge it started with, which a steady solve doesn't know.
-    const { species } = this.model, ions = (links) => links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
-    for (const k of this.floating) {
-      const t = this.terms[k];
-      if (t.drive.kind !== 'I') continue;
-      const only = t.kind === 'port' ? (p) => p.reactions.length === 0 && !ions(p.species) : (c) => !ions(c.species);
-      if (only(t.kind === 'port' ? this.model.ports[t.index] : this.model.contacts[t.side])) {
-        throw new DeviceError(`${t.kind === 'port' ? `ports[${t.index}]` : `contacts.${t.side}`} passes current only by charging, so driven by a current it has no steady state; hold it at V (or a source behind R), or advance() in time`);
-      }
-    }
     // A terminal driven by a current that can only store what comes in (a battery's cathode
-    // behind it, closed but for that terminal) has no steady state but at no current.
-    for (const cs of this.constraints) {
-      for (const k of cs.terminals) {
-        const I = sourceAt(this.terms[k].drive.src, this.time);
-        if (I !== 0) {
-          const { species, regions } = this.model;
-          const what = cs.parts.map(({ stretch }) => {
-            const st = this.stretches[stretch], [r0, r1] = st.regions;
-            return `${species[st.species].name} in ${regions[r0].name}${r1 > r0 ? `…${regions[r1].name}` : ''}`;
-          });
-          this.charging = { terminal: this.terms[k].name, current: I, what };
-          return { converged: false, steps: 0, iterations: 0, history: [] };
-        }
-      }
+    // behind it, closed but for that terminal; a gate, or a capacitance with no species through
+    // it) has no steady state but at no current, where it keeps what it holds.
+    const { species, regions } = this.model;
+    for (const k of this.floating) {
+      const I = sourceAt(this.terms[k].drive.src, this.time);
+      if (this.terms[k].drive.kind !== 'I' || I === 0) continue;
+      const laws = this.constraints.filter((cs) => cs.terminals.includes(k));
+      if (laws.length === 0 && !this._chargeOnly(k)) continue;
+      const what = laws.flatMap((cs) => cs.parts.map(({ stretch }) => {
+        const st = this.stretches[stretch], [r0, r1] = st.regions;
+        return `${species[st.species].name} in ${regions[r0].name}${r1 > r0 ? `…${regions[r1].name}` : ''}`;
+      }));
+      this.charging = { terminal: this.terms[k].name, current: I, what };
+      return { converged: false, steps: 0, iterations: 0, history: [] };
     }
     const r = this._steadyFromHere(opts);
     this.atSteady = r.converged;
@@ -4646,10 +4651,24 @@ export class Solver {
   // voltage instead, whose steady solves have their own continuation, the voltage marched from
   // the start's until the current crosses its target, the crossing narrowed by bisection, and
   // the terminal floated again from beside it.
-  // Whether terminal k, driven by a current, feeds a combination that it alone can change (so
-  // that its steady states are one per amount, not one per voltage).
+  // Whether terminal k, driven by a current, feeds a combination that it alone can change, or
+  // only charges a capacitance (so that its steady states are one per amount or charge, not one
+  // per voltage).
   _bound(k) {
-    return this.constraints.some((cs) => cs.terminals.includes(k));
+    return this.constraints.some((cs) => cs.terminals.includes(k)) || this._chargeOnly(k);
+  }
+
+  // Whether terminal k passes current only by charging a capacitance: no charged species through
+  // it (nor, a port, reactions), and a capacitance to charge (a gate's φ law, a port's own).
+  _chargeOnly(k) {
+    const t = this.terms[k], { species } = this.model;
+    const ions = (links) => links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
+    if (t.kind === 'port') {
+      const p = this.model.ports[t.index];
+      return p.reactions.length === 0 && !ions(p.species) && !!p.capacitance;
+    }
+    const c = this.model.contacts[t.side];
+    return !ions(c.species) && (c.phi.type === 'capacitive' || c.phi.type === 'pinned');
   }
 
   _floatingContinuation(opts, r) {

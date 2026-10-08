@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor } from '../src/kit.js';
 
 // A capacitance spread through a port's window: σ = C (V − zeroCharge − φ) per area of electrode
 // on the port's side, and the window's charge balance gains aσ (a the electrode's area per
@@ -210,7 +211,7 @@ test('a floating electrode with a double layer starts uncharged and charges to i
   assert.throws(() => new Device(closed), (e) => e instanceof DeviceError && /no terminal held at a voltage passes any/.test(e.message));
 });
 
-test('a capacitance driven by a current only charges: no steady state, but a transient at I·t', () => {
+test('a capacitance driven by a current only charges: no steady state, but a transient at I·t, and at no current it keeps its charge', () => {
   // A double layer in NaCl, fed 1 mA/m² from an uncharged start, the current returning through
   // an electrode that exchanges Cl⁻ (which also sets the potentials' level).
   const dev = () =>
@@ -223,11 +224,35 @@ test('a capacitance driven by a current only charges: no steady state, but a tra
       ports: [{ name: 'dl', region: 0, from: 0.5e-3, I: 1e-3, area: 1e4, capacitance: { C: 0.2 } }],
       grid: { hmin: 10e-6, hmax: 50e-6 },
     });
-  assert.throws(() => dev().solve(), (e) => e instanceof DeviceError && /passes current only by charging/.test(e.message));
+  const none = dev().solve();
+  assert.ok(!none.converged && none.warnings.some((w) => w.startsWith('dl: driven at 0.00100 A/m², it has no steady state: it passes current only by charging its capacitance')), none.warnings.join('\n'));
   const d = dev();
   assert.ok(Math.abs(d.solution().ports[0].charge) < 1e-12, 'starts uncharged');
   for (const t of [1e-3, 1]) {
     const s = d.advance(t);
     assert.ok(s.converged && Math.abs(s.ports[0].charge / (1e-3 * t) - 1) < 1e-6, `at ${t} s: ${s.ports[0].charge} C/m²`);
   }
+  // At no current it keeps the charge it holds: its steady state.
+  const kept = d.set({ ports: { dl: { I: 0 } } }).solve();
+  assert.ok(kept.converged && Math.abs(kept.ports[0].charge / 1e-3 - 1) < 1e-9, `${kept.ports[0].charge} C/m²`);
+});
+
+test('a gate left floating (I = 0) keeps its charge: moving the back contact moves it alike', () => {
+  // p-Si under a gate's capacitance, held at 0.5 V and solved, then opened: its charge stays, so
+  // where the back contact goes, the whole device and the gate go too.
+  const Si = semiconductor('Si');
+  const dev = new Device(build({
+    T: 300,
+    library: [Si],
+    stack: [ohmic(0), layer('Si', 1e-6, { acceptors: units.perCm3(1e17) }), { V: 0.5, phi: { type: 'capacitive', C: 3.45e-3 }, zeroCharge: 0 }],
+    grid: { hmin: 1e-9, hmax: 2e-8 },
+  }));
+  const held = dev.solve();
+  const Q = held.terminals.right.charge ?? held.contacts.right.D;
+  dev.set({ contacts: { right: { I: 0 } } });
+  const open = dev.solve();
+  assert.ok(open.converged && Math.abs(open.terminals.right.V - 0.5) < 1e-9, `${open.terminals.right.V} V`);
+  const moved = dev.set({ contacts: { left: { V: 0.1 } } }).solve();
+  assert.ok(moved.converged && Math.abs(moved.terminals.right.V - 0.6) < 1e-9, `${moved.terminals.right.V} V`);
+  assert.ok(Math.abs((moved.terminals.right.charge ?? moved.contacts.right.D) / Q - 1) < 1e-9);
 });
