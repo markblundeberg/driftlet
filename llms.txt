@@ -112,7 +112,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   { tauN, tauP } }` in place of `kf` (s), or at a face `{ equation: 'e-(left) + h+(right) = 0',
   srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it gives n-type silicon's holes a lifetime τ_p at any
   injection. Light is a reaction from a reservoir (`photon = e- + h+`, uniform), or absorbed as
-  it goes in, `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`.
+  it goes in, `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`. To switch
+  it during a run, `set()` the device's `bulkReactions` (the state and the step size carry over).
 - **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant
   at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
   `k0: 10`).
