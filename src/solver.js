@@ -4555,6 +4555,10 @@ export class Solver {
     return r;
   }
 
+  // Steady state from the present one, in three stages: Newton from here; failing that, from a
+  // solved state along the drives (the light ramped up, a current's terminal held at the voltages
+  // that pass it, the voltages ramped from where they were last solved); failing that, the
+  // pseudo-transient ramp, through time.
   _steadyFromHere(opts) {
     this.conditioning = null;
     this.computeConcentrations();
@@ -4564,93 +4568,74 @@ export class Solver {
     const [dl, dr] = [this.terms[0].drive, this.terms[1].drive];
     const held = (d) => d.kind === 'V' && !(d.R > 0);
     const target = sourceAt(dr.src, this.time), level = sourceAt(dl.src, this.time);
-    const canContinue = opts.continuation !== false && held(dl) && held(dr) && target !== level;
+    const allowed = opts.continuation !== false;
+    const canContinue = allowed && held(dl) && held(dr) && target !== level;
     const direct = this._directSteady();
     const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), v0 = Float64Array.from(this.termV);
-    // Where a direct solve applies and continuation is possible, don't spend long on the
-    // pseudo-transient ramp: one direct attempt first.
-    const quick = (canContinue || this.hasGeneration) && direct && opts.continuation !== false;
-    let r = this._solveSteady(quick ? { ...opts, maxSteps: 1 } : opts);
-    if (r.converged) this.solvedV = [level, target];
-    if (r.converged) return r;
-    // Generation (e.g. light) holding the device far from equilibrium: ramp it up from nearly
-    // nothing, each solve warm from the last.
-    let dimmer = false;
-    if (this.hasGeneration && opts.continuation !== false) {
-      this.u.set(u0);
-      this.uLo.set(u0Lo);
-      this.termV.set(v0);
-      this.computeConcentrations();
-      this.dimmer = false;
-      const g = this._generationContinuation(opts, r);
-      dimmer = this.dimmer;
-      if (g.converged) {
-        this.solvedV = [level, target];
-        return g;
-      }
-      r = g;
-    }
-    // A terminal driven by a current (open circuit, say): hold it at a voltage instead, march the
-    // voltage until the current crosses its target, and float it from there.
-    if (opts.continuation !== false && this.floating.some((k) => this.terms[k].drive.kind === 'I' && !this._bound(k))) {
-      this.u.set(u0);
-      this.uLo.set(u0Lo);
-      this.termV.set(v0);
-      this.computeConcentrations();
-      const q = this._floatingContinuation(opts, r);
-      if (q.converged) return q;
-      r = q;
-    }
-    if (!canContinue) {
-      if (quick) {
-        // The full pseudo-transient ramp: from the dimmer light's solution where the light's
-        // continuation got anywhere (a lit floating base charges from there as it would in
-        // time), else from the start.
-        if (!dimmer) {
-          this.u.set(u0);
-          this.uLo.set(u0Lo);
-          this.termV.set(v0);
-        }
-        this.computeConcentrations();
-        const full = this._solveSteady(opts);
-        return { ...full, steps: full.steps + r.steps, iterations: full.iterations + r.iterations };
-      }
-      return r;
-    }
-    // Source continuation: solve with both terminals level (consistent with a cold start), then
-    // ramp the right terminal's voltage to its target in adaptive steps.
     const restart = () => {
       this.u.set(u0);
       this.uLo.set(u0Lo);
       this.termV.set(v0);
       this.computeConcentrations();
     };
-    restart();
-    // Ramp from the contacts' voltages at the last converged solve when the state is that
-    // solution (a warm start): the left one first where it moved, the right held where it was,
-    // then the right. Otherwise from level terminals.
-    const solved = this.solvedV;
-    let c;
-    if (solved) {
-      c = solved[0] === level ? { ...r, converged: true, ramped: false } : this._continuation(opts, 0, solved[0], level, r, true, solved[1]);
-      // (Ramping the right from level terminals, solve there first: a sweep's start.)
-      if (c.converged) c = this._continuation(opts, 1, solved[1], target, c, c.ramped || solved[1] !== level);
-    } else c = this._continuation(opts, 1, level, target, r, false);
-    if (c.converged) {
-      this.solvedV = [level, target];
-      return c;
+    const solved = (q) => {
+      if (q.converged) this.solvedV = [level, target];
+      return q;
+    };
+    const after = (q, r) => ({ ...q, steps: q.steps + r.steps, iterations: q.iterations + r.iterations });
+
+    // 1. Newton from here. Where a continuation could follow, one direct attempt only, rather
+    // than the pseudo-transient ramp straight away.
+    const quick = (canContinue || this.hasGeneration) && direct && allowed;
+    let r = this._solveSteady(quick ? { ...opts, maxSteps: 1 } : opts);
+    if (r.converged) return solved(r);
+
+    // 2. Continuation. Generation (e.g. light) holding the device far from equilibrium: ramp it up
+    // from nearly nothing, each solve warm from the last.
+    let dimmer = false;
+    if (this.hasGeneration && allowed) {
+      restart();
+      this.dimmer = false;
+      const g = this._generationContinuation(opts, r);
+      dimmer = this.dimmer;
+      if (g.converged) return solved(g);
+      r = g;
     }
-    restart();
-    r = this._solveSteady(opts); // the full pseudo-transient ramp
-    if (r.converged) this.solvedV = [level, target];
-    return { ...r, steps: r.steps + c.steps, iterations: r.iterations + c.iterations };
+    // A terminal driven by a current (open circuit, say): hold it at a voltage instead, march the
+    // voltage until the current crosses its target, and float it from there.
+    if (allowed && this.floating.some((k) => this.terms[k].drive.kind === 'I' && !this._bound(k))) {
+      restart();
+      const q = this._floatingContinuation(opts, r);
+      if (q.converged) return q;
+      r = q;
+    }
+    if (canContinue) {
+      // The right terminal's voltage ramped to its target: from the contacts' voltages at the last
+      // converged solve when the state is that solution (a warm start), the left one first where
+      // it moved, the right held where it was; otherwise from level terminals, consistent with a
+      // cold start.
+      restart();
+      const was = this.solvedV;
+      let c;
+      if (was) {
+        c = was[0] === level ? { ...r, converged: true, ramped: false } : this._continuation(opts, 0, was[0], level, r, true, was[1]);
+        // (Ramping the right from level terminals, solve there first: a sweep's start.)
+        if (c.converged) c = this._continuation(opts, 1, was[1], target, c, c.ramped || was[1] !== level);
+      } else c = this._continuation(opts, 1, level, target, r, false);
+      if (c.converged) return solved(c);
+      // 3. The pseudo-transient ramp, from the start.
+      restart();
+      return solved(after(this._solveSteady(opts), c));
+    }
+    // 3. The pseudo-transient ramp (where the first attempt wasn't it already): from the dimmer
+    // light's solution where the light's continuation got anywhere (a lit floating base charges
+    // from there as it would in time), else from the start.
+    if (!quick) return r;
+    if (!dimmer) restart();
+    else this.computeConcentrations();
+    return after(this._solveSteady(opts), r);
   }
 
-  // A cold steady solve with a terminal driven by a current, which can fail where the same state
-  // is easy warm (a solar cell's open circuit, from cold on a fine grid): the terminal held at a
-  // voltage instead, whose steady solves have their own continuation, the voltage marched from
-  // the start's until the current crosses its target, the crossing narrowed by bisection, and
-  // the terminal floated again from beside it.
   // Whether terminal k, driven by a current, feeds a combination that it alone can change, or
   // only charges a capacitance (so that its steady states are one per amount or charge, not one
   // per voltage).
@@ -4671,6 +4656,11 @@ export class Solver {
     return !ions(c.species) && (c.phi.type === 'capacitive' || c.phi.type === 'pinned');
   }
 
+  // A cold steady solve with a terminal driven by a current, which can fail where the same state
+  // is easy warm (a solar cell's open circuit, from cold on a fine grid): the terminal held at a
+  // voltage instead, whose steady solves have their own continuation, the voltage marched from
+  // the start's until the current crosses its target, the crossing narrowed by bisection, and
+  // the terminal floated again from beside it.
   _floatingContinuation(opts, r) {
     const k = this.floating.find((j) => this.terms[j].drive.kind === 'I' && !this._bound(j));
     const drive = this.terms[k].drive, target = sourceAt(drive.src, this.time);
