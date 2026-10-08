@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.16.0 (2026-10-08)
 
 The steady solve, reworked around one idea: every row it changes from a time step's is a sum of
 balance rows, written out exactly (a conserved amount, a level held flat, an island's balance),
