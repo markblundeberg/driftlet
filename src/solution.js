@@ -253,17 +253,20 @@ export function makeSolution(solver, result = {}) {
       for (let i = 0; i < model.species.length; i++) if (model.species[i].z !== 0 && solver.c[g * model.species.length + i] > 0) all += Math.abs(model.species[i].z) * solver.c[g * model.species.length + i];
       for (let i = 0; i < model.species.length; i++) {
         const c = solver.c[g * model.species.length + i], r = c / all;
-        if (model.species[i].z !== 0 && c > 0 && r < 1e-24 && !(r >= scarce?.r)) scarce = { r, name: model.species[i].name };
+        if (model.species[i].z !== 0 && c > 0 && r < 1e-10 && !(r >= scarce?.r)) scarce = { r, name: model.species[i].name };
       }
     }
     sol.warnings.push(
       `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): ` +
-        (scarce
+        (scarce?.r < 1e-24
           ? `there ${scarce.name} is ${scarce.r.toExponential(0)} of the ions around it, too scarce for its level to be held in double precision ` +
             '(a minority swept out of a junction by a large bias, or excluded at a sharp neutral face). Drive less; or, at a face, ' +
             'resolve its double layer (ε > 0) rather than make it a sharp neutral step.'
           : 'part of the device is held only weakly, e.g. a floating region coupled to the rest through tiny conductances or rates, or a stiff ' +
-            'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).'),
+            'chain whose level nothing pins. Strengthen that coupling, or anchor the region (a port, a contact).' +
+            (scarce
+              ? ` Or a species there too scarce to hold: ${scarce.name} is ${scarce.r.toExponential(0)} of the ions around it (a layer depleted past a limiting current, say), which a smaller drive avoids.`
+              : '')),
     );
   }
   if (result.converged === false && !result.stopped && !un && !(cond && cond.digits > 12)) {
@@ -329,6 +332,33 @@ export function makeSolution(solver, result = {}) {
   if (resolves(contacts.right)) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
+  }
+  // A contact that holds its end neutral ('bulk': a bath, an ohmic contact) cuts off any space
+  // charge reaching it: a double layer longer than its region. The charge it cuts off is about
+  // ρ λ_D at the node beside it; against the region's own space charge (half Σ|ρ| over it, the
+  // two signs of a double layer), warn past 1e-3.
+  for (const side of ['left', 'right']) {
+    if (contacts[side].phi.type !== 'bulk') continue;
+    const r = side === 'left' ? 0 : model.regions.length - 1, a = grid.regionStart[r], b = grid.regionEnd[r];
+    const mat = model.materials[model.regions[r].material];
+    if (!(mat.epsr > 0) || mat.conductor || b - a < 3) continue;
+    const n = model.species.length, fixed = model.regions[r].fixedCharge ?? 0;
+    const rho = (g) => {
+      let q = fixed;
+      for (let i = 0; i < n; i++) if (solver.c[g * n + i] > 0) q += F * model.species[i].z * solver.c[g * n + i];
+      return q;
+    };
+    let total = 0;
+    for (let g = a; g <= b; g++) total += (Math.abs(rho(g)) * grid.vol[g]) / 2;
+    const g1 = side === 'left' ? a + 1 : b - 1, lam = debye(g1), w = (grid.x[g1 + 1] - grid.x[g1 - 1]) / 2;
+    const cut = (Math.abs(rho(g1)) * lam * grid.vol[g1]) / w;
+    if (Number.isFinite(cut) && total > 0 && cut > 1e-3 * total) {
+      sol.warnings.push(
+        `contacts.${side}: the space charge in ${model.regions[r].name} reaches the contact, which holds its end neutral and so cuts it off (a double layer or depletion longer than the region): ` +
+          `the charge beside the contact is ${(cut / total).toPrecision(2)} of the space charge in the region, and the error in that charge can be several times more. ` +
+          'Lengthen the region (a crowded double layer grows as the root of the voltage).',
+      );
+    }
   }
 
   // Steep profiles carrying current: Scharfetter–Gummel takes the field as uniform across each

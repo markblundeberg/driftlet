@@ -484,7 +484,9 @@ levels are that material's, and the end node takes them through a Donnan step.
 **`phi`**, required whenever any species or reaction connects at the contact (default
 `'neutral'`):
 - `'bulk'`: the end node is plain bulk, locally neutral, with no double layer at the contact
-  (ohmic contacts, baths). The outside takes whatever surface charge that needs.
+  (ohmic contacts, baths). The outside takes whatever surface charge that needs. A double layer
+  or depletion region that reaches it is cut off there (σ 58% low for a crowded layer 5 Debye
+  lengths from the contact), which the solution's `warnings` say: lengthen the region.
 - `'neutral'`: no charge at the face ($`D = 0`$), as for an internal `'neutral'` face.
 - `{ type: 'capacitive', C }` with the contact's `zeroCharge`: a gate or Stern layer to a conductor
   at the terminal voltage V. The displacement into the device is
@@ -834,6 +836,11 @@ the electrode, and a uniform grid there overshoots: a 100 µm silver nitrate cel
 cells exceeds the limiting current by 1.4% at 0.5 V, while `{ hmin: 10e-9, hmax: 2e-6 }` stays
 within 0.1% with as many nodes. Where a species carrying the current is steep across a region's
 end cells in this way, the solution's `warnings` say so, with a rough estimate of the excess.
+
+Past a limiting current, the depleted layer at a membrane or an electrode is nanometres thick,
+and anything that happens in it (water splitting, say) needs cells a fraction of that: a bulk
+water-splitting reaction at an ion-exchange membrane gave 2.7 times the limiting current on
+50 nm cells and 1.03 times on 0.2 nm ones. Only `check()` catches it.
 
 In a transient, a diffusion layer grows from the electrode as $`\sqrt{Dt}`$, through cells up to
 `hmax` wide, and nothing warns while they're coarse: give `hmax` a small fraction of

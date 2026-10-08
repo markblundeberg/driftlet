@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { henderson, planck } from '../src/kit.js';
 
 // Liquid-junction potentials, φ_R − φ_L between two neutral solutions, three ways: Henderson's
@@ -108,4 +108,18 @@ test('junction formulas check their inputs', () => {
   const ions = ionsAt(298.15);
   assert.throws(() => henderson({ Na: 1, Cl: 2 }, { Na: 1, Cl: 1 }, ions), (e) => e instanceof DeviceError && /left solution carries a net charge/.test(e.message));
   assert.throws(() => planck({ Na: 1, Cl: 1 }, { Rb: 1, Cl: 1 }, ions), /no \{ z, D \} for 'Rb'/);
+});
+
+test('a depletion layer longer than its region, cut off by a contact that holds its end neutral, is warned of', async () => {
+  const { build, layer, ohmic, semiconductor } = await import('../src/kit.js');
+  const pn = (L) =>
+    build({
+      T: 300,
+      library: [semiconductor('Si')],
+      stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(L), { acceptors: units.perCm3(1e16) }), ohmic(0)],
+      grid: { hmin: units.nm(1), hmax: units.nm(20) },
+    });
+  const reaches = (L) => new Device(pn(L)).solve().warnings.some((w) => /contacts\.right: the space charge in .* reaches the contact/.test(w));
+  assert.ok(reaches(0.1), 'a 0.3 µm depletion layer in 0.1 µm of p');
+  assert.ok(!reaches(1), 'in 1 µm it fits');
 });
