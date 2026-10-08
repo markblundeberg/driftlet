@@ -148,7 +148,10 @@ console.log(`EMF ${(sol.terminals.right.V * 1e3).toFixed(3)} mV, 2t₊V_T ln 10 
 An ion-exchange membrane is a layer whose material has its ions slower, with a `fixedCharge` (−X·F
 for X mol/m³ of fixed anions), between layers of water. A bath against the membrane itself names
 its own material, `bath(c, 'Cl-', 0, { material: 'water' })`, and meets it through a Donnan step.
-The membrane demo's page script is a worked example.
+An exchange or partition constant between the membrane and the water is a difference of μ°:
+give the membrane's ions μ° shifted from the water's by s_i, and K = e^(−(s_Na − s_H)/RT) for
+Na⁺ against H⁺ (a large K draws in salt too, unless the co-ion's s is raised). The membrane
+demo's page script is a worked example.
 
 ## Template: a semiconductor junction
 

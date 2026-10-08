@@ -227,7 +227,8 @@ export function describe(def) {
     const cdef = def.contacts?.[side];
     const ct = model.contacts[side];
     const linked = species.filter((sp, i) => ct.species[i].type !== 'blocked').map((sp) => sp.name);
-    const term = ct.terminal === null ? '' : ` (terminal ${species[ct.terminal].name})`;
+    // (a bath without a reference species: its V is its φ)
+    const term = ct.she && !ct.she.reference ? ' (terminal: the bath φ)' : ct.terminal === null ? '' : ` (terminal ${species[ct.terminal].name})`;
     // A bath read through a reference species: where the SHE level sits against its terminal,
     // so a held electrode's V reads on the familiar scale (a Cl⁻ reference on table μ° puts it
     // 1.37 V below, a surprise to anyone expecting 0 V to mean SHE).

@@ -946,7 +946,8 @@ const now = dev.solution();                   // snapshot of the current state
   are unchanged, or restarts from the regions' `c0`. A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
-  from `c0`, make a new `Device`. Either way the time stepping restarts its
+  from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it
+  mid-run, `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.) Either way the time stepping restarts its
   order, as after any discontinuity, but a carried state goes on at the step size an adaptive
   transient had reached, so a page may change a rate constant or a diffusivity every frame.
 
