@@ -195,7 +195,9 @@ Helpers that write sources as plain data:
   loses, $`\Phi(1 - e^{-\alpha(\mathrm{to} - \mathrm{from})})`$, and the solver averages it
   over each node's box, so the total stays right on a grid coarser than $`1/\alpha`$ (where
   carriers start within a cell still needs the grid). Light through several materials is one
-  call per material, each with the flux that reaches it.
+  call per material, each with the flux that reaches it. To switch the light during a run (a
+  pulse, a slider), `set()` the device's `bulkReactions` with a new flux: the state carries over,
+  and so does an adaptive transient's step size.
 
 Read a transient at points inside the device with `advance(t, { probes })` (see the
 [device reference](device.md#using-a-device)). And `units` converts back out of SI for display:
