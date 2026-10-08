@@ -169,6 +169,9 @@ so a change that makes one worse shows.
 - **A surface covered to a bare fraction below ~1e-10** barely affects anything any more, and
   the solver struggles with it (the hard corpus's passivating drop without a double layer stops
   partway through its hour); the solution warns, and suggests a less stable film.
+- **A double layer across more than ~350 thermal voltages** (between 9 and 9.25 V at 25 °C, in a
+  crowded lattice-gas electrolyte) doesn't solve, from a cold start or warm, and its warning
+  doesn't say why. Ionic-liquid windows (a few volts) are well inside it.
 - **Currents below ~0.1 nA/m²** (a GaAs junction's leakage without recombination) aren't resolved
   between solves; such a current is zero for any practical purpose.
 - **A failed solve says so:** `converged: false`, with a warning naming where the system lost
