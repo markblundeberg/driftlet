@@ -147,7 +147,8 @@ the ions. The carrier's `cRef` plays no part (only the combination's $`\mu^\circ
 `cRef` enter), but it must still be given.
 
 The ion's `D` is its dilute-limit coefficient, as everywhere: the chemical diffusivity, $`D`$
-times the thermodynamic factor, follows from the OCV's slope. For an ideal-solution curve,
+times the thermodynamic factor, follows from the OCV's slope (with the carrier far faster than
+the ion, as usual; else the two combine as $`D_i D_e/(D_i + D_e)`$, ambipolar diffusion). For an ideal-solution curve,
 $`E = E^\circ - (RT/F)\ln(x/(1-x))`$, it's $`D/(1-x)`$, so a host filling toward $`x = 1`$
 diffuses ever faster, and a $`D`$ measured mid-range isn't the one to give. (A constant chemical
 diffusivity isn't expressible.) A host that only stores what comes in, filling at a constant

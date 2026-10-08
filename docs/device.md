@@ -903,7 +903,9 @@ const now = dev.solution();                   // snapshot of the current state
   the local error per step to `tol` (default 1e-3) in thermal units of every potential ($`\phi`$ and
   each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step. That's local: over a long decay
   the errors add up, and a small current at the end of one can be tens of percent off, so tighten
-  `tol` (1e-5, say) before fitting a time constant to a tail. It lands exactly on `tEnd`. Options: `tol`,
+  `tol` (1e-5, say) before fitting a time constant to a tail. It lands exactly on `tEnd`, an
+  absolute time (a solution's `time` is where the device is); a NaN does nothing, and its
+  `warnings` say so. Options: `tol`,
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
   animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
@@ -986,7 +988,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section) |
-| `conservation` | per species stretch: amount, reference, intake through contacts, drift |
+| `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |

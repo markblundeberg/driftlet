@@ -47,6 +47,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - The docs: a MOS capacitor without a port solves, and its impedance shows the high-frequency
   C–V above the minority supply's knee; impedance needs a grid that resolves how far the signal
   reaches; the library's K_w.
+- A port's window at a device end node holds its species there unless that contact links them:
+  a wire on a particle's surface node alone now charges it (it passed nothing).
+- `advance(NaN)` does nothing and says so in its warnings; `advance()` of a non-number is an error.
 - The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
   Donnan-excluded, against seas of Na⁺.
 
