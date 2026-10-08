@@ -373,7 +373,11 @@ The conductor's carrier can continue across as a species (e⁻ into a semiconduc
 `'equilibrium'` by default). An electrode is a conductor region with `reactions` at its face,
 the metal's electrons taking part on its side at its Fermi level, behind a contact that holds
 the electrons (`{ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }`). A
-floating conductor region with reactions on both faces is a bipolar electrode.
+floating conductor region with reactions on both faces is a bipolar electrode; between two
+capacitive faces and nothing else, a floating gate, which keeps its charge
+$`D_{\mathrm{right}} - D_{\mathrm{left}}`$ (its faces' `interfaces[f].D`) through any steady solve. A
+port on it (a wire to the whole conductor, with a `conductance`) charges it, held at a voltage,
+and leaves it charged, set to `I: 0`.
 
 ## Bulk reactions
 
@@ -650,7 +654,10 @@ Langmuir statistics, $`\mu = \mu^\circ + RT\ln(\theta/\theta_0)`$ with $`\theta_
 bare fraction, and `capacity` $`\Gamma`$, mol of sites per m² of electrode. Reactions name them like
 species, and a reaction with `bare: true` runs only on bare metal: its rate is multiplied by
 $`\theta_0`$, both ways, so equilibrium stays exact. Written for adsorption itself, that's Langmuir
-kinetics (on at a rate ∝ $`\theta_0`$, off ∝ $`\theta`$).
+kinetics (on at a rate ∝ $`\theta_0`$, off ∝ $`\theta`$). A species' `theta0` is its starting
+coverage (not the bare fraction). Surface species carry no charge, so an adsorbed redox couple
+balances its electrons through the solution: `'Oads + e- = Rads + Cl-'`, its coverages at
+$`\theta_O/\theta_R = e^{(E - E^\circ)/V_T}`$ against the chloride's level.
 
 ```js nocheck
 ports: [{
@@ -685,8 +692,9 @@ Cautions:
 
 Validated in test/coverage.test.js: the Langmuir isotherm against the electrode's potential (to
 1e-9), filling against its exponential and its charge $`F\,\Gamma\,\Delta\theta`$ per area of electrode,
-the active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer, and a steady state
-through a surface intermediate where the transient ends.
+the active–passive curve with blocking exactly $`(1-\theta)`$ times Butler–Volmer, a steady state
+through a surface intermediate where the transient ends, and an adsorbed couple at Nernst from a
+cold start.
 
 ### A capacitance through a window
 

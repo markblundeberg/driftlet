@@ -324,8 +324,8 @@ for (const Vg of [-2, -0.95, 0, 0.4, 2]) {
   console.log(`V_G ${Vg} V: C/C_ox ${(C / Cox).toFixed(3)}`); // 0.949, 0.701 (flat band), 0.267, 0.375, 0.973
 }
 // At flat band the silicon is a capacitor of ε/L_D, its Debye length's.
-const LD = Math.sqrt((11.7 * EPS0 * GAS_CONSTANT * 300) / (FARADAY * FARADAY * NA));
-console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.7 * EPS0))).toFixed(3)}`); // 0.699
+const LD = Math.sqrt((11.9 * EPS0 * GAS_CONSTANT * 300) / (FARADAY * FARADAY * NA)); // (the kit's Si: ε 11.9)
+console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.9 * EPS0))).toFixed(3)}`); // 0.701
 ```
 
 `dev.impedance([f], { terminal: 'left' })` (C = Im(1/Z)/ω, from `{ f, Z: { re, im } }`) gives
