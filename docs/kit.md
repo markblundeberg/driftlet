@@ -57,13 +57,14 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 - **Contacts** are the first and last items. `ohmic(drive, carriers)` holds each carrier in
   equilibrium with a metal at the terminal voltage (default `['e-', 'h+']`, an
   infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
-  a metal region). `bath(c, reference, drive, { offset })` is a bath whose terminal voltage is
+  a metal region). `bath(c, reference, drive, { offset, material })` is a bath whose terminal voltage is
   the level of its `reference` species, as an electrode reversible to it would read (`offset`
   places that species relative to the terminal voltage, e.g. to read a solution's potentials
   against SHE). `bath(c, drive)`, without a reference, is a bath whose terminal voltage is its
   φ: an ideal salt bridge, the convention of membrane potentials, so that between two such baths
   V_right − V_left is the φ difference a voltage clamp sets. A drive is a voltage, a waveform, or
-  `{ V }`, `{ I }`, `{ V, R }`.
+  `{ V }`, `{ I }`, `{ V, R }`. A bath against a charged layer (an ion exchanger) gives its own
+  `material`, as `bath(c, 0, { material: 'water' })`: a Donnan step then joins them at the contact.
 - **`library`** takes pieces with `species` and `materials`, merged with any given directly
   (`combine()` does the merging on its own). A species or material given twice must be given
   identically.

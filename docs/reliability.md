@@ -84,7 +84,7 @@ recipes.
 | Electrodes spread through a port | transmission line with the reaction's linear kinetics as the conductance (O(h²)), rates along it; Wagner–Traud mixed potential of two Butler–Volmer couples, floating | 1e-4, 2e-3; 1e-6 V |
 | Impedance | Macdonald blocking-electrode spectrum, 100 Hz–1 GHz; finite-length Warburg (Ag \| AgNO₃ \| Ag); DC limit = differential resistance; a p⁺n⁺ junction without recombination, Re Y → dI/dV and C = dQ/dV; a redox electrode against a bath at its open circuit, Re Y → dI/dV; a MOS capacitor with a metal gate and a channel port, C = dQ/dV at the gate, passive at the back | 3e-4; 3e-5; 1e-6; 1e-4, 1e-6; 1e-4; 1e-3 |
 | Conservation | per step, and against time-integrated contact fluxes | 1e-11 relative |
-| Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces | 1e-5; 1e-4; 1e-9 |
+| Strictly neutral limit (ε = 0) | Planck EMF; polarization with no overlimiting; Donnan at neutral faces; an ion exchanger between baths (Donnan at the contacts, Teorell–Meyer–Sievers salt flux); a capacitive face's edge cell as a diffuse layer in series | 1e-5; 1e-4; 1e-9; 1e-9, 1e-6; 2e-3 |
 | Fermi–Dirac statistics | `𝓕_{±1/2}` vs quadrature; degenerate bulk; accumulation charge via `𝓕_{3/2}` | 1e-13; 1e-12; 1e-3 |
 | Crowded double layer (lattice gas) | Kilic–Bazant–Ajdari charge, up to `ψ = 40 V_T`; custom function reproduces it | 5e-4; 1e-10 |
 | Non-ideal transport | steady flux −(D/L)ΔP of the grand potential (lattice exact, Redlich–Kister O(h²)) | 1e-12; 1e-4 |

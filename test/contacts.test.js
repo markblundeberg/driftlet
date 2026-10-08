@@ -266,3 +266,38 @@ test('a Schottky diode with emission velocities: thermionic emission, the same s
     assert.ok(ratio > 0.93 && ratio < 0.97, `${V} V: J/J_TE = ${ratio}`);
   }
 });
+
+test('a bath of its own material against an ion exchanger: a Donnan step at the contact, and the salt flux of Teorell–Meyer–Sievers', async () => {
+  // A strictly neutral cation exchanger (fixed charge −X, Na⁺ partitioning by k) straight between
+  // two NaCl baths. At each edge, c₋(c₋ + X) = k c² (the co-ion excluded); through it, at zero
+  // current, J·L = ∫ (2c + X)/(c/D₊ + (c + X)/D₋) dc over the co-ion's edge values.
+  const { build, layer, bath } = await import('../src/kit.js');
+  const X = 1000, k = Math.exp(-0.5), Dp = 1e-10, Dm = 2e-10, L = 100e-6;
+  const def = build({
+    species: salt,
+    materials: {
+      water: { epsr: 0, species: water.species },
+      ix: { epsr: 0, species: { 'Na+': { D: Dp, mu0: water.species['Na+'].mu0 + 0.5 * RT }, 'Cl-': { D: Dm, mu0: water.species['Cl-'].mu0 } } },
+    },
+    stack: [
+      bath({ 'Na+': 100, 'Cl-': 100 }, 0, { material: 'water' }),
+      layer('ix', L, { fixedCharge: -X * FARADAY }),
+      bath({ 'Na+': 10, 'Cl-': 10 }, { I: 0 }, { material: 'water' }),
+    ],
+  });
+  const sol = new Device(def).solve();
+  assert.ok(sol.converged);
+  const co = (c) => -X / 2 + Math.sqrt((X * X) / 4 + k * c * c);
+  const [cL, cR] = [sol.c['Cl-'][0], sol.c['Cl-'].at(-1)];
+  assert.ok(Math.abs(cL / co(100) - 1) < 1e-9 && Math.abs(cR / co(10) - 1) < 1e-9, `co-ion at the edges ${cL}, ${cR}`);
+  assert.ok(Math.abs(sol.c['Na+'][0] - cL - X) < 1e-9 * X);
+  const f = (c) => (2 * c + X) / (c / Dp + (c + X) / Dm);
+  let I = 0;
+  const n = 2000, h = (cL - cR) / n;
+  for (let j = 0; j <= n; j++) I += (j === 0 || j === n ? 1 : j % 2 ? 4 : 2) * f(cR + j * h);
+  const J = (I * h) / 3 / L;
+  assert.ok(Math.abs(sol.flux['Cl-'][50] / J - 1) < 1e-6, `salt flux ${sol.flux['Cl-'][50]} against ${J}`);
+  // Without its material, the bath would be the exchanger at that composition: not neutral, and said so.
+  def.contacts.left.bath = { c: { 'Na+': 100, 'Cl-': 100 } };
+  assert.throws(() => new Device(def), /fixed charge.*bath\.material/);
+});

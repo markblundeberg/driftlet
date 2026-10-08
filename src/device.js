@@ -1274,7 +1274,13 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(cdef.species === undefined, `${path}: give either bath or species links, not both`);
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
-    fields(bath, `${path}.bath`, ['c', 'reference', 'offset']);
+    fields(bath, `${path}.bath`, ['c', 'reference', 'offset', 'material']);
+    // The bath is the end material at that composition (balancing any fixed charge there), unless
+    // it names a material of its own: a solution outside an ion exchanger, a doped or host region,
+    // whose levels it sets there through a Donnan step at the end node.
+    const own = bath.material !== undefined;
+    const bm = own ? materials.find((m) => m.name === bath.material) : mat;
+    need(bm && !bm.conductor && !bm.phiFree, `${path}.bath.material: ${JSON.stringify(bath.material)} is not a material with ions in it (one of ${materials.filter((m) => !m.conductor).map((m) => m.name).join(', ')})`);
     // Without a reference, V is the bath's φ (an ideal salt bridge: the membrane potential's
     // convention), and the terminal is the first charged species in it.
     const byPhi = bath.reference === undefined;
@@ -1288,24 +1294,31 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(bath.c[species[r].name] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
     need(byPhi || cdef.terminal === undefined || terminal === r, `${path}.terminal must be the bath's reference species`);
     terminal = byPhi && terminal !== null ? terminal : r;
-    let charge = region.fixedCharge / FARADAY, scale = Math.abs(charge);
+    const fixed = own ? 0 : region.fixedCharge / FARADAY;
+    let charge = fixed, scale = Math.abs(charge);
     const cb = new Float64Array(species.length);
     for (const [sname, v] of Object.entries(bath.c)) {
       need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
-      need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from the end material '${mat.name}'`);
+      need(bm.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${own ? 'the bath' : 'the end'} material '${bm.name}'`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
       charge += species[i].z * cb[i];
       scale += Math.abs(species[i].z) * cb[i];
     }
-    need(Math.abs(charge) <= 1e-9 * scale, `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge)`);
+    need(
+      Math.abs(charge) <= 1e-9 * scale,
+      fixed !== 0
+        ? `${path}.bath: the bath is the end material '${mat.name}' at this composition, and with its fixed charge (${fixed} mol/m³ of charge) it is not neutral (net ${charge}). ` +
+            `For a solution outside a charged region, give the solution's material (bath.material), whose composition is then neutral on its own`
+        : `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge)`,
+    );
     // The reference species pins the bath's φ; every other species follows from composition.
-    const zb = bathZeta(mat, cb, region.background);
-    const level = (i) => mat.mu0[i] + RT * zb[i]; // μ̄ − zFφ_bath
+    const zb = bathZeta(bm, cb, own ? 0 : region.background);
+    const level = (i) => bm.mu0[i] + RT * zb[i]; // μ̄ − zFφ_bath
     const refOffset = bath.offset === undefined ? 0 : finite(bath.offset, `${path}.bath.offset`);
     const beta = byPhi ? 0 : refOffset - level(r) / (species[r].z * FARADAY); // φ_bath − V
     for (let i = 0; i < species.length; i++) {
-      if (!(cb[i] > 0)) continue;
+      if (!(cb[i] > 0) || !mat.present[i]) continue; // (a bath of its own may hold species the end lacks)
       links[i] =
         species[i].z === 0
           ? { type: 'equilibrium', mu: level(i) }

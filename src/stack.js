@@ -89,17 +89,27 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
 /**
  * A bath: a neutral composition `c` (mol/m³) held at the contact. With a `reference`, the charged
  * species a reference electrode would sense (Cl⁻ for Ag/AgCl), its levels are referred to that
- * species, which is the terminal. Without one, `bath(c, drive)`, the terminal voltage is the
+ * species, which is the terminal. Without one, `bath(c, drive, opts)`, the terminal voltage is the
  * bath's φ: an ideal salt bridge, the convention of membrane potentials.
  * @param {Record<string, number>} c
  * @param {string | number | object} [reference] the reference species, or the drive
  * @param {number | object} [drive]
- * @param {{ offset?: number }} [opts] where the reference species sits relative to the terminal
- *   voltage, V_ref = V + offset (V)
+ * @param {{ offset?: number, material?: string }} [opts] `offset`: where the reference species
+ *   sits relative to the terminal voltage, V_ref = V + offset (V). `material`: the bath's own
+ *   material (a solution against an ion exchanger), if not the end layer's
  */
-export function bath(c, reference, d = 0, { offset } = {}) {
-  if (typeof reference !== 'string') return { ...drive(reference ?? 0, 'bath'), bath: { c: { ...c } } };
-  return { ...drive(d, 'bath'), bath: { c: { ...c }, reference, ...(offset === undefined ? {} : { offset }) } };
+export function bath(c, reference, d = 0, opts = {}) {
+  if (typeof reference !== 'string') [d, opts] = [reference ?? 0, isObject(d) ? d : {}];
+  const { offset, material } = opts;
+  return {
+    ...drive(d, 'bath'),
+    bath: {
+      c: { ...c },
+      ...(typeof reference === 'string' ? { reference } : {}),
+      ...(offset === undefined ? {} : { offset }),
+      ...(material === undefined ? {} : { material }),
+    },
+  };
 }
 
 const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid', 'geometry'];

@@ -475,7 +475,11 @@ Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium 
 composition implies, and the $`\phi`$ law is `'bulk'`. An optional `offset` places the reference
 species relative to V. Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
 (no junction potential), the convention by which membrane potentials are $`\phi`$ differences.
-Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a voltage clamp.
+Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a voltage clamp. The bath is the end
+material at that composition (which then balances any fixed charge there, as an insertion host's
+background carriers do). A solution against a charged end region (an ion exchanger, a gel) names
+its own material, `bath: { c, material: 'water' }`: its composition is then neutral by itself, its
+levels are that material's, and the end node takes them through a Donnan step.
 
 **`phi`**, required whenever any species or reaction connects at the contact (default
 `'neutral'`):
