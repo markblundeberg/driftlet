@@ -73,6 +73,7 @@ test('unit slips are flagged where they are, and a coarse grid against the Debye
   }
   assert.ok(!ionSlips.some((w) => w.startsWith('materials.water.species.Cl-')));
   assert.deepEqual(unitWarnings({ T: 77 }), [], 'liquid nitrogen is a real temperature');
+  assert.equal(unitWarnings({ bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6, n1: 6.7e9 } } }] }).length, 1, 'n₁ per cm³');
   // A large k0 is an exchange current only where electrons take part.
   assert.deepEqual(unitWarnings({ interfaces: [{ reactions: [{ equation: 'H+(right) + OH-(left) = H2O', k0: 1000 }] }] }), []);
   assert.equal(unitWarnings({ interfaces: [{ reactions: [{ equation: 'Ag+ + e- = Ag(s)', k0: 1000 }] }] }).length, 1);

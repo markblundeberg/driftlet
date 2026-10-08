@@ -333,6 +333,27 @@ export function makeSolution(solver, result = {}) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
   }
+  // Electrons or holes above their band's effective density of states (the material's cRef)
+  // under Boltzmann statistics: degenerate, where those statistics no longer hold (a surface
+  // driven past what a reaction can take away piles holes up to 1e9 mol/m³ and still converges).
+  model.regions.forEach((reg, r) => {
+    const mat = model.materials[reg.material];
+    if (mat.conductor) return;
+    model.species.forEach((sp, i) => {
+      if ((sp.name !== 'e-' && sp.name !== 'h+') || !mat.present[i] || mat.modelOf?.[i] >= 0) return;
+      let top = 0, at = NaN;
+      for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
+        const c = solver.c[g * model.species.length + i];
+        if (c > top) [top, at] = [c, grid.x[g]];
+      }
+      if (top > mat.cRef[i]) {
+        sol.warnings.push(
+          `${reg.name}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, above its cRef (${mat.cRef[i].toExponential(2)}, the band's effective density of states), where Boltzmann statistics no longer hold: ` +
+            'give the material Fermi–Dirac statistics (docs/statistics.md), or ask whether this state is physical (a surface driven past what can carry its carriers away).',
+        );
+      }
+    });
+  });
   // A contact that holds its end neutral ('bulk': a bath, an ohmic contact) cuts off any space
   // charge reaching it: a double layer longer than its region. The charge it cuts off is about
   // ρ λ_D at the node beside it; against the region's own space charge (half Σ|ρ| over it, the
@@ -348,11 +369,19 @@ export function makeSolution(solver, result = {}) {
       for (let i = 0; i < n; i++) if (solver.c[g * n + i] > 0) q += F * model.species[i].z * solver.c[g * n + i];
       return q;
     };
+    // (and beside the contact the material is itself out of neutrality, by more than round-off:
+    // a quasi-neutral layer split off a junction's holds almost no space charge, so the ratio
+    // below alone would read its round-off as a cut-off layer)
+    const gross = (g) => {
+      let q = Math.abs(fixed);
+      for (let i = 0; i < n; i++) if (solver.c[g * n + i] > 0) q += F * Math.abs(model.species[i].z) * solver.c[g * n + i];
+      return q;
+    };
     let total = 0;
     for (let g = a; g <= b; g++) total += (Math.abs(rho(g)) * grid.vol[g]) / 2;
     const g1 = side === 'left' ? a + 1 : b - 1, lam = debye(g1), w = (grid.x[g1 + 1] - grid.x[g1 - 1]) / 2;
     const cut = (Math.abs(rho(g1)) * lam * grid.vol[g1]) / w;
-    if (Number.isFinite(cut) && total > 0 && cut > 1e-3 * total) {
+    if (Number.isFinite(cut) && total > 0 && cut > 1e-3 * total && Math.abs(rho(g1)) > 1e-3 * gross(g1)) {
       sol.warnings.push(
         `contacts.${side}: the space charge in ${model.regions[r].name} reaches the contact, which holds its end neutral and so cuts it off (a double layer or depletion longer than the region): ` +
           `the charge beside the contact is ${(cut / total).toPrecision(2)} of the space charge in the region, and the error in that charge can be several times more. ` +

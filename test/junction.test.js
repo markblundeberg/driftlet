@@ -122,4 +122,27 @@ test('a depletion layer longer than its region, cut off by a contact that holds 
   const reaches = (L) => new Device(pn(L)).solve().warnings.some((w) => /contacts\.right: the space charge in .* reaches the contact/.test(w));
   assert.ok(reaches(0.1), 'a 0.3 µm depletion layer in 0.1 µm of p');
   assert.ok(!reaches(1), 'in 1 µm it fits');
+  // A quasi-neutral layer split off the junction's holds almost no space charge: its round-off
+  // beside the contact is no cut-off layer.
+  const split = build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e18) }), layer('Si', units.um(1.5), { acceptors: units.perCm3(1e16) }), layer('Si', units.um(18.5), { acceptors: units.perCm3(1e16) }), ohmic(0)],
+    grid: { hmin: units.nm(1), hmax: units.nm(100) },
+  });
+  assert.ok(!new Device(split).solve().warnings.some((w) => /reaches the contact/.test(w)));
+});
+
+test('electrons or holes above their band density of states under Boltzmann statistics are warned of (degenerate)', async () => {
+  const { build, layer, ohmic, semiconductor } = await import('../src/kit.js');
+  const diode = (name, ND) =>
+    build({
+      T: 300,
+      library: [semiconductor(name)],
+      stack: [ohmic(0), layer(name, units.um(0.5), { donors: units.perCm3(ND) }), layer(name, units.um(0.5), { acceptors: units.perCm3(1e16) }), ohmic(0)],
+      grid: { hmin: units.nm(1), hmax: units.nm(20) },
+    });
+  const degenerate = (name, ND) => new Device(diode(name, ND)).solve().warnings.some((w) => /e- reaches .* above its cRef .* Boltzmann statistics no longer hold/.test(w));
+  assert.ok(degenerate('GaAs', 1e19), "GaAs's N_c is 4.7e17 cm⁻³");
+  assert.ok(!degenerate('Si', 1e17));
 });

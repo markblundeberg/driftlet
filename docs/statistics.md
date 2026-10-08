@@ -53,6 +53,8 @@ most one model.
 
 ### Fermi–Dirac
 
+Where electrons or holes under ideal (Boltzmann) statistics exceed $`c_{\mathrm{ref}}`$, the effective
+density of states, the solution warns: they're degenerate, and this is the statistics to give.
 For electrons and holes, $`c_{\mathrm{ref}}`$ is the effective density of states and $`\mu^\circ`$ the
 band edge, as for ideal statistics, and $`c = N_c \mathcal{F}_{1/2}(\zeta)`$ with the normalised
 Fermi–Dirac integral ($`\mathcal{F}_j \to e^\zeta`$ for $`\zeta \to -\infty`$). driftlet evaluates

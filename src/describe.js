@@ -49,6 +49,10 @@ export function unitWarnings(def) {
     if (c > 1e6) warn(path, `${num(c)} mol/m³ is over 1000 M; concentrations are mol/m³ (units.molar, and units.perCm3 for carriers)`);
   };
   (def.species ?? []).forEach((sp, i) => sp?.cRef !== undefined && conc(`species[${i}].cRef`, sp.cRef));
+  // SRH's n₁ is a concentration too (a value per cm³ typed in is 6e5 times too large)
+  (def.bulkReactions ?? []).forEach((rx, k) => {
+    for (const [m, law] of Object.entries(isObject(rx?.srh) ? rx.srh : {})) if (isObject(law) && law.n1 !== undefined) conc(`bulkReactions[${k}].srh.${m}.n1`, law.n1);
+  });
   for (const [mname, mat] of Object.entries(def.materials ?? {})) {
     if (!isObject(mat)) continue;
     const path = `materials.${mname}`;

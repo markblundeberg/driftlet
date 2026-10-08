@@ -259,8 +259,12 @@ function gridCheck(device, sol, tol, gross) {
   const diffs = [];
   // The current, against the largest current any species carries (so at open circuit, or in
   // equilibrium, round-off isn't read as a change).
-  const scaleI = Math.max(Math.abs(sol.current), Math.abs(other.current), gross);
-  if (gross > 0) diffs.push({ what: 'current', a: sol.current, b: other.current, rel: Math.abs(other.current - sol.current) / scaleI, unit: unitsOf(model).current });
+  // A current too small for the ledgers to call moving (a diode at low bias: 1e-4 A/m² against
+  // majority carriers that could carry 6e8) is compared still, above a floor at 1e-16 of what the
+  // species could carry, above what solves resolve (~1e-19 of it in a GaAs junction).
+  const natural = naturalScales(device, sol), floorI = 1e-16 * FARADAY * Math.max(0, ...model.species.map((sp, i) => Math.abs(sp.z) * natural[i]).filter(Number.isFinite));
+  const scaleI = Math.max(Math.abs(sol.current), Math.abs(other.current), gross, floorI);
+  if (gross > 0 || Math.max(Math.abs(sol.current), Math.abs(other.current)) > floorI) diffs.push({ what: 'current', a: sol.current, b: other.current, rel: Math.abs(other.current - sol.current) / scaleI, unit: unitsOf(model).current });
   // Floating terminals (driven by a current): their voltages, against the larger and the thermal voltage.
   const VT = model.RT / FARADAY;
   model.terminals.forEach((t, k) => {
