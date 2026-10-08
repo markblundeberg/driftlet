@@ -857,26 +857,42 @@ export class Solver {
       // shift, its amount saying how far.
       if (this.flatStretches.includes(st)) this.constraints.at(-1).col = Array.from({ length: st.nodes[1] - st.nodes[0] + 1 }, (_, j) => this.blockOfNode[st.nodes[0] + j] * this.M + 1 + st.species);
     });
-    const S = this.stretches.length;
+    const S = this.stretches.length, T = this.terms.length;
+    // The rows replaced: a moving stretch's balance (one of still stretches alone is kept node by
+    // node, below), or the circuit row of a terminal driven at no current, which says nothing the
+    // combination's balance rows don't (their weighted sum is that terminal's current, weighted
+    // by w/z). Together they must be independent, each combination's weights over the rows
+    // replaced a nonsingular matrix, or one balance is lost and another said twice (A + B = AB and
+    // A + C = AC: −A + B + C in place of B's row, B + AB of AB's and A − B + AC of A's said B and
+    // A twice and C not at all, and the solve converged to a state that wasn't steady). So they're
+    // chosen by elimination, each combination's weights reduced by the rows already chosen: a
+    // circuit row where one is left, else the first stretch with weight 1, else the basis
+    // vector's own (its weight is 1 there, and no other vector's is), else the largest.
+    const rowOf = (k) => this.blockOfNode[this.stretches[k].nodes[0]] * this.M + 1 + this.stretches[k].species;
+    const chosen = []; // (a column and the reduced weights, per row replaced: S + t for terminal t's)
+    const spectators = new Set(this.constraints.map((cs) => cs.row));
     for (const w of laws) {
       const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
       const surface = [...w.keys()].filter((k) => k >= S && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
       if (parts.length === 0) continue; // (a surface's own: node by node, below)
       if (parts.length === 1 && surface.length === 0 && this.stretches[parts[0].stretch].spectator) continue; // (above)
       if (parts.some((p) => !this._moves(this.stretches[p.stretch]) && !this._still(this.stretches[p.stretch]))) continue;
-      // The row replaced: a moving stretch's (one of still stretches alone is kept node by node,
-      // below), the first with weight 1; where another combination took that, the basis vector's
-      // own (its weight is 1 there, and no other vector's is), so that no two share one; else
-      // any part's.
-      const taken = (k) => this.constraints.some((cs) => cs.row === this.blockOfNode[this.stretches[k].nodes[0]] * this.M + 1 + this.stretches[k].species);
-      const free = (k) => k < S && this._moves(this.stretches[k]) && !taken(k);
-      const own = [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own, ...parts.map((p) => p.stretch)].find(free);
-      if (own === undefined) continue;
-      // At no current, the circuit row of a terminal that alone feeds it says nothing the
-      // combination's balance rows don't (their sum is that terminal's current): its amount
-      // stands in for that row instead, where no other combination's does already.
-      const circuit = [...new Set(parts.flatMap((p) => driven(this.stretches[p.stretch])))].find((k) => !this.constraints.some((cs) => cs.circuit === k)) ?? -1;
-      add(parts, own, surface, circuit);
+      const v = new Float64Array(S + T);
+      for (const { stretch: k, w: wk } of parts) {
+        const st = this.stretches[k];
+        if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = wk;
+        if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = wk / this.z[st.species];
+      }
+      for (const [col, row] of chosen) {
+        const f = v[col];
+        if (f !== 0) for (let j = 0; j < S + T; j++) v[j] -= f * row[j];
+      }
+      const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+      if (!(scale > 1e-9)) continue;
+      const ok = (j) => j !== undefined && Math.abs(v[j]) > 1e-9 * scale;
+      const col = [...Array(T).keys()].map((t) => S + t).find(ok) ?? [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own].find(ok) ?? v.findIndex((x) => Math.abs(x) === scale);
+      chosen.push([col, v.map((x) => x / v[col])]);
+      add(parts, col < S ? col : parts[0].stretch, surface, col < S ? -1 : col - S);
     }
     // A combination that nothing carries anywhere is conserved node by node: of still stretches
     // (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻), or of an electrode's surface species (adsorbates

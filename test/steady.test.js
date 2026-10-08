@@ -317,6 +317,40 @@ test('a closed population with immobile traps: their electrons conserved with it
   for (const name of ['e-', 'X-']) assert.ok(Math.abs(amount(run, name) / amount(steady, name) - 1) < 1e-6, `${name}: ${amount(run, name)} vs ${amount(steady, name)}`);
 });
 
+// A closed solution with two complexations sharing A (A + B = AB, A + C = AC): three amounts
+// conserved together (B + AB, C + AC, A + AB + AC), each in place of one balance row, the three
+// independent rows whatever order the species are listed in. At steady state it's homogeneous
+// chemical equilibrium: c_AB = K₁ c_A c_B / c_ref, c_AC = K₂ c_A c_C / c_ref.
+test('two complexations sharing a species: the amounts in place of independent rows, in any species order', () => {
+  const D = { A: 1e-9, B: 1.3e-9, C: 0.9e-9, AB: 0.8e-9, AC: 0.7e-9, 'Na+': 1.3e-9, 'Cl-': 2e-9 };
+  const mu0 = { A: 0, B: 0, C: 0, AB: -5e3, AC: -4e3, 'Na+': -262e3, 'Cl-': -131e3 };
+  const c0 = { A: 20, B: 5, C: 7, AB: 30, AC: 12, 'Na+': 30, 'Cl-': 30 };
+  const solve = (order) =>
+    new Device({
+      species: order.map((name) => ({ name, z: name === 'Na+' ? 1 : name === 'Cl-' ? -1 : 0, cRef: 1000 })),
+      materials: { w: { epsr: 0, species: Object.fromEntries(order.map((n) => [n, { D: D[n], mu0: mu0[n] }])) } },
+      regions: [{ material: 'w', length: 40e-6, c0 }],
+      bulkReactions: [{ equation: 'A + B = AB', kf: { w: 1e-5 } }, { equation: 'A + C = AC', kf: { w: 1e-5 } }],
+      contacts: { left: { bath: { c: { 'Na+': 30, 'Cl-': 30 }, reference: 'Cl-' }, V: 0 }, right: { phi: 'neutral' } },
+      grid: { hmin: 0.5e-6, hmax: 3e-6 },
+    }).solve();
+  const RT = GAS_CONSTANT * 298.15, K1 = Math.exp(5e3 / RT), K2 = Math.exp(4e3 / RT);
+  const [B, C, A] = [c0.B + c0.AB, c0.C + c0.AC, c0.A + c0.AB + c0.AC];
+  let lo = 0, hi = A;
+  for (let k = 0; k < 200; k++) {
+    const a = 0.5 * (lo + hi);
+    if (a + (B * K1 * a) / (1000 + K1 * a) + (C * K2 * a) / (1000 + K2 * a) > A) hi = a;
+    else lo = a;
+  }
+  const cA = 0.5 * (lo + hi);
+  const permutations = (a) => (a.length <= 1 ? [a] : a.flatMap((x, j) => permutations([...a.slice(0, j), ...a.slice(j + 1)]).map((p) => [x, ...p])));
+  for (const order of permutations(['A', 'B', 'C', 'AB', 'AC'])) {
+    const sol = solve([...order, 'Na+', 'Cl-']);
+    assert.ok(sol.converged && sol.steps === 1, order.join());
+    for (const g of [0, sol.x.length - 1]) assert.ok(Math.abs(sol.c.A[g] / cA - 1) < 1e-9, `${order}: c_A ${sol.c.A[g]} vs ${cA}`);
+  }
+});
+
 test('electrons held flat behind an open circuit: their amount stands in for the circuit row, and the solve goes direct', () => {
   // n-Si between a gate and a contact that passes only electrons, at I = 0: the electrons carry
   // nothing at steady state (flat at the contact's level) and nothing but that contact feeds
