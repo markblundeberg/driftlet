@@ -2,6 +2,23 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## 0.15.1 (2026-10-08)
+
+From a further round of cold agents (an ion-selective electrode, a diode's ideality, Hebb–Wagner
+polarisation, a Gärtner photoanode), all matching their theory:
+
+- The new warning of a space charge reaching a contact no longer fires on a quasi-neutral layer
+  split off a junction's (it read round-off as a cut-off layer).
+- `check()` compares a current too small for its ledgers to call moving (a diode at low bias,
+  1e-4 A/m², changed 3.6% on a finer grid while `check()` said ok).
+- Electrons or holes above their band's density of states under Boltzmann statistics are warned
+  of (degenerate; a photoanode driven past its couple's diffusion limit converged that way).
+- `describe()` names a bath without a reference species as read through its φ, and flags an SRH
+  n₁ given per cm³.
+- Docs: an exchange or partition constant as a μ° difference; `dt0` for a transient's first
+  instants; a contact holding several species fixes its end's composition; a bath's composition
+  `set()` mid-run.
+
 ## 0.15.0 (2026-10-08)
 
 Mostly from four more rounds of cold agents (fresh tasks, from the agent guide alone): sixteen
