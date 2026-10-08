@@ -41,6 +41,12 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   NaN, silently), and asks for `region` where both sides have it.
 - The docs say how fine `hmax` must be for a transient's diffusion layer, and for a spike's
   front along an axon: neither is warned of.
+- `impedance()` at a held terminal with every other one driven by a current (no way back for the
+  signal) is an error saying to measure at a driven one; it returned round-off.
+- A capacitance-only port given a terminal species that no material holds is told it needs none.
+- The docs: a MOS capacitor without a port solves, and its impedance shows the high-frequency
+  C–V above the minority supply's knee; impedance needs a grid that resolves how far the signal
+  reaches; the library's K_w.
 - The membrane page draws its ions as dots at its foot: chloride thinning across the membrane,
   Donnan-excluded, against seas of Na⁺.
 
