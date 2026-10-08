@@ -173,3 +173,11 @@ test('set() of a parameter mid-run goes on from where the run was: its sources a
   const still = run(false), changing = run(true);
   assert.ok(changing <= 1.5 * still, `${changing} steps with a change every frame, ${still} without`);
 });
+
+test('impedance at a held terminal with every other one driven by a current is refused (no return path), and works at the driven one', () => {
+  const dev = new Device(silverNitrate({ contacts: { left: { I: 0, ...links }, right: { V: 0, ...links } } }));
+  dev.solve();
+  assert.throws(() => dev.impedance([1]), /every other terminal \(left\) is driven by a current.*infinite/);
+  const { Z } = dev.impedance([1, 1e3], { terminal: 'left' });
+  assert.ok(Z.re.every((r) => r > 0), 'measured where the current is driven, it is finite');
+});

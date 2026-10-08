@@ -3750,6 +3750,15 @@ export class Solver {
     if (kT < 0) throw new SolverError(`impedance: no terminal named '${terminal}' (${this.terms.map((t) => t.name).join(', ')})`);
     const dT = this.terms[kT].drive;
     if (dT.R > 0) throw new SolverError(`impedance: terminal '${terminal}' has a series resistance; that belongs to the external circuit`);
+    // A small signal returns through the terminals held at a voltage: with every other one driven
+    // by a current (held open), none comes back, and the impedance is infinite (else round-off).
+    const others = this.terms.filter((t, k) => k !== kT);
+    if (others.length && others.every((t) => t.drive.kind === 'I')) {
+      throw new SolverError(
+        `impedance: every other terminal (${others.map((t) => t.name).join(', ')}) is driven by a current, so it is open to a small signal and no current returns through '${terminal}': ` +
+          `its impedance is infinite. Measure at one of those instead (impedance(f, { terminal: '${others[0].name}' }), its voltage against '${terminal}'), or hold one of them at a voltage`,
+      );
+    }
     const N = nB * M, fl = this.floating, K = fl.length;
     this.sourceTime = this.time;
     this.computeConcentrations();
