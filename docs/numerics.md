@@ -275,9 +275,10 @@ current into the device, $`I`$. Assembly records, for each:
 A floating terminal's voltage is an extra unknown, with its circuit law as an extra row:
 $`I - I_{\mathrm{set}} = 0`$ (driven by a current) or $`I - (V_{\mathrm{src}} - V)/R = 0`$ (behind a
 resistance). These don't fit the block-tridiagonal matrix $`T`$ (a port couples to its whole
-window), so they're solved by bordering, together with the spectators' conservation rows (see
-[steady state](#steady-state)): with $`y = T^{-1}\,\mathrm{rhs}`$, $`X_k = T^{-1} B_k`$ and
-$`Q_q = T^{-1} e_q`$ (the response to a unit pin), the update is
+window), so they're solved by bordering, together with a steady solve's dense rows, the
+conserved amounts' and islands' (see [the steady system](#the-steady-system)): with
+$`y = T^{-1}\,\mathrm{rhs}`$, $`X_k = T^{-1} B_k`$ and $`Q_q = T^{-1} e_q`$ (the response to a unit
+pin; for a flat stretch's amount, to its shift), the update is
 $`\delta = y + \sum Q_q \mu_q - \sum X_k\, \delta V_k`$, and the $`\mu`$ (pins) and $`\delta V`$ (terminals)
 come from a small dense system of the extra rows. Each costs one more back-substitution per
 Newton iteration.
@@ -638,90 +639,102 @@ only resolved to ~1e-4 of $`|Z|`$.
 
 ## Steady state
 
-- **If every species stretch is fed by a contact,** nothing is conserved on its own, and the
-  true steady equations are solved directly ($`dt = \infty`$, no storage term). This matters
-  because slow physics can take seconds, far beyond any $`L^2/D`$ estimate, and stepping would
-  never finish. An example is exponentially scarce minority carriers slowly filling an inversion
-  layer behind a Schottky contact.
-- **A flat level,** where a stretch's steady state is known outright: a species that no reaction
-  or port touches, reached by one contact at most, carries no flux in a steady state, so its level
-  is flat: that contact's, or reaching none (a spectator, below), the level its amount fixes.
-  Steady solves (not the impedance, where it carries a current) hold it there in place of its
-  balances, rather than find it through its own conduction, which can be all but nothing. A level
-  found that way can't be moved: a MOS capacitor's inversion electrons reach the back contact only
-  through a bulk with ~1e3 of them per cm³, and with that contact moved, each solve failed through
-  ~90 pseudo-transient steps; past a closed zinc cell's limiting current, extended space charge at
-  the cathode excludes the blocked sulfate to ~1e-25 mol/m³, and the chain of conductances through
-  it had lost the steady system 14 digits (steady solves failed from 0.7 V, and took 37,000
-  iterations at 0.6 V). (A level that starts flat stays exactly so either way: carrying nothing,
-  the flux's expm1 form is exactly zero, whatever φ does.) A spectator's first node keeps its
-  amount's row, a pin whose response is the whole stretch's shift, so the stretch moves as a
-  whole. At a face inside such a stretch whose link holds the level continuous, the face's flux
-  of the species, which only the replaced edge balances set, is pinned to zero too. (Not through
-  flow or mixing, nor a concentrated material's cross-diffusion, where zero flux isn't a flat
-  level.)
-- **Continuation for a terminal driven by a current.** A cold steady solve at open circuit can
-  fail where the same state is easy warm (a solar cell in dim light on a fine grid). The
-  terminal is held at a voltage instead, its steady solves having their own continuation, and
-  the voltage marched from the start's, the step growing, until the current crosses its target:
-  up where the current is below it, since raising a terminal's voltage raises the current into
-  a passive device (the other way if 20 V brings no crossing). Bisection narrows the crossing
-  to 0.1 mV, and the terminal is floated from beside it. Floated, the system can lose what held
-  it doesn't (a closed Fe³⁺/Fe²⁺ cell driven near its limit, Fe³⁺ 20 orders below Fe²⁺: 33 digits
-  short), but the current-driven steady state is the held one at the voltage that passes the
-  target, so where the floated solve fails, held solves find that voltage instead, by regula
-  falsi within the bracket, to 1e-10 of the current. The voltage continuation's own start,
-  with the terminals level, ramps the light up when there is some.
-- **Spectators** (a species blocked all round, mobile throughout its stretch) are solved
-  directly too. In steady state the sum of a spectator's balance rows over its stretch is zero
-  identically, so one of them (the first node's) is redundant, and it's replaced by the
-  conservation of the amount, $`\sum v c = \mathtt{amount}`$. That row is dense, so the solve is
-  bordered: the matrix is factorised with a pin (an identity row) in its place, which makes the
-  stretch's level a well-conditioned unknown, and the response to a unit pin (one extra
-  back-substitution per spectator) is added in the amount that satisfies the constraint, from
-  a $`k \times k`$ system for $`k`$ spectators. (In an ideal region, with no flow or mixing, a
-  spectator's level is also held flat, above.)
-- **Conserved combinations** (moieties) of reacting stretches are solved the same way: the
-  total iron of Fe³⁺, Fe²⁺ and FeCl²⁺ in a closed cell with a complexation reaction, say. The
-  basis of combinations $`w`$ comes from the null space of the stoichiometry. In steady state the
-  $`w`$-weighted sum of their balance rows is zero identically (the reactions cancel by
-  $`w \cdot \nu = 0`$, and nothing crosses the stretches' ends), so one of them is replaced by
-  $`\sum_k w_k \sum v c_k =`$ the combination's amount, bordered like a spectator's. (Spectators
-  are the one-stretch case.) A terminal held at a voltage feeds what it links freely, but one
-  driven by a current only as that current allows, its charged species in proportion to their
-  charge: so at I = 0 a combination that it alone feeds is conserved too, at what the state holds
-  when the solve begins. A closed battery at open circuit has one steady state per state of
-  charge, and a solve that kept only I = 0 had converged to another (4.145 V where its start said
-  3.958 V). Its amount stands in for the terminal's circuit row rather than a balance row: at no
-  current that row is the sum of the combination's balance rows, so it says nothing new. (Beside a
-  flat level, below, a pinned balance row had left it all zeros.) A terminal that passes current
-  only by charging a capacitance (a gate, a port's capacitance, with no charged species through
-  it) is the same, its charge in place of an amount: steady at no current, its circuit row
-  becomes that charge as the solve found it. At any other current such a terminal only stores
-  what comes in, and the solve says so at once.
+A steady state is where a transient from the present state ends. `solve()` finds it without
+stepping there, as the solution of the steady equations ($`dt = \infty`$, no storage term): slow
+physics can take seconds or hours, far beyond any $`L^2/D`$ estimate (exponentially scarce
+minority carriers slowly filling an inversion layer behind a Schottky contact), and stepping
+would never finish. Three things make that more than one Newton solve: without the storage term,
+the steady equations say nothing of what the transient conserved; some levels are held so weakly
+that a factorisation loses them; and Newton needs a start near enough. `solve()` does not advance
+the clock.
 
-  Holding the amount through a storage term at huge $`dt`$ instead is badly conditioned: the
-  stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances $`D \cdot c/h`$
-  larger by $`D \cdot dt/(hL)`$, around 1e12 for a micron-scale cell (see
+### The steady system
+
+Every row of a steady solve that differs from a time step's is a sum of balance rows. It's
+written out in its telescoped form, never added up from the rows themselves, so what the sum
+leaves is exact, however small beside the terms that cancel:
+
+- **A conserved amount.** A combination of stretches (weights $`w`$) that no reaction changes and
+  nothing outside feeds has balance rows that sum to zero identically in a steady state: the
+  fluxes cancel across its stretches, and the reactions by $`w \cdot \nu = 0`$. One of those rows
+  is redundant, and the combination's amount, $`\sum_k w_k \sum v c_k`$, stands in for it. That's
+  what a time step's own sum, $`w \cdot (S - S_0)/dt = 0`$, says at any $`dt`$.
+
+  The combinations are the null space of the stoichiometry (a row per reaction, over the
+  stretches it touches) together with what the terminals feed, worked out once and again after a
+  change of drive. A terminal held at a voltage (or behind a resistance, which holds it at steady
+  state) feeds each stretch it links freely. One driven by a current feeds its charged species
+  only as that current allows, in proportion to their charges. So:
+  - a **spectator** (a species blocked all round) keeps its amount;
+  - so does each **moiety**: the total iron of Fe³⁺, Fe²⁺ and FeCl²⁺ in a closed cell with a
+    complexation reaction;
+  - so does what a **terminal at no current** alone feeds. A closed battery at open circuit
+    has one steady state per state of charge, and a solve that imposed only I = 0 had converged
+    to another (4.145 V where its start said 3.958 V). A terminal that passes current only by
+    charging a capacitance (a gate, a port's capacitance) is the same, its charge in place of an
+    amount. At any other current such a terminal only stores what comes in, which has no steady
+    state, and the solve says so at once.
+  - an **immobile** combination (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) keeps it
+    node by node, since nothing carries it anywhere, as do an electrode's surface species
+    (adsorbates that only turn into each other keep their total on every site), its row local,
+    one per node in its own block. (The null space is taken with the immobile columns first, so
+    that these come out apart from the combinations that move.) A combination of immobile
+    stretches with a moving one (the electrons the traps hold, $`e^- - X^0`$, in a closed film) is
+    an amount like any other, its immobile parts summed over their nodes;
+  - a **floating metal** keeps the charge on its faces, its sheets' displacement.
+
+  A closed stretch keeps the amount it was given (its `c0`, or what it held when `set()`
+  closed it); a combination behind a terminal at no current keeps what the state holds when the
+  solve begins. The amount's row is dense, so it's bordered (see [terminals](#terminals)): the
+  factorised matrix gets a pin, an identity row, in place of the balance row, which makes the
+  stretch's level a well-conditioned unknown, and the response to a unit pin (one more
+  back-substitution) goes in at whatever weight satisfies the amount. Behind a terminal at no
+  current, the amount stands in for the terminal's circuit row instead: at no current that row is
+  the sum of the combination's balance rows, so it says nothing new.
+
+  Holding an amount through a storage term at a huge $`dt`$ instead is badly conditioned: the
+  stretch's level is then held only by $`v \cdot c/dt`$, against internal conductances
+  $`D \cdot c/h`$ larger by $`D \cdot dt/(hL)`$, around 1e12 for a micron-scale cell (see
   [metal regions](#metal-regions) for the same cancellation). Newton then needs dozens of
-  iterations, or fails.
-- **Islands**: the pieces of a stretch between its faces, where nothing else feeds a piece (no
-  contact, port or reaction). In steady state such a piece's level is held only through its
-  faces' fluxes, which can be far weaker than its own conduction: a face conductance of
-  1e-15 S/m² against a region conducting ~4e2 S/m, or neighbours that conduct 1e20 times less
-  than it. Eliminated, the level was lost to round-off below anything Newton could see (the
-  plain solves gave no update along it, so nothing stalled), and solves converged to a wrong one
-  silently: currents 2× or 16× off. Summed over the piece's nodes, its balance rows are its
-  faces' flux unknowns alone, $`A_R u_R - A_L u_L`$: the internal fluxes cancel exactly, by
-  construction rather than in round-off. Across a face that holds $`\bar\mu`$ level, $`u`$ is
-  set only by the edge balances, and eliminated it can come out of the piece's own, as
-  $`G\,\Delta\eta`$ with its two $`\eta`$ all but equal; so there the outside edge node's
-  balance is added too, $`u`$ cancels, and the outside's first segment carries the flux. (Seen
-  through one face of two, a level behind neighbours 1e20 times less conductive was overshot
-  twofold, and Newton swung it from one contact's level to the other's.) That sum can replace
-  the first node's row, bordered like a spectator's amount. The response to the unit pin is the island's uniform shift, with whatever
-  $`\hat\phi`$ and the other species do along with it, so no mode needs guessing; refined solves
-  carry the pinned rows too.
+  iterations, or fails. It's left only where a species is still in one region and moves in the
+  next: there, backward-Euler steps at a huge $`dt`$ (10⁶ × the slowest diffusion time) keep
+  the storage term, growing ×10 (capped) while the state still moves, each spectator's level
+  first shifted uniformly to restore its amount exactly (round-off creeps through the vanishing
+  storage term), and one last step at the base huge $`dt`$, where pinning is tight.
+- **A flat level.** A species that no reaction or port touches, reached by one contact at most,
+  carries no flux in a steady state: every sum of its balance rows from its closed end is the
+  flux through one segment, zero. In an ideal region without flow or mixing that's a level flat
+  across the segment, so its level is flat throughout: its contact's, or reaching none (a
+  spectator), the level its amount fixes. Steady solves (not the impedance, where it carries a
+  current) hold it there in place of its balances, rather than find it through its own
+  conduction, which can be all but nothing. A level found that way can't be moved: a MOS
+  capacitor's inversion electrons reach the back contact only through a bulk with ~1e3 of them
+  per cm³, and with that contact moved, each solve failed through ~90 pseudo-transient steps;
+  past a closed zinc cell's limiting current, extended space charge at the cathode excludes the
+  blocked sulfate to ~1e-25 mol/m³, and the chain of conductances through it had lost the steady
+  system 14 digits (steady solves failed from 0.7 V, and took 37,000 iterations at 0.6 V). (A
+  level that starts flat stays exactly so either way: carrying nothing, the flux's expm1 form is
+  exactly zero, whatever $`\phi`$ does.) A spectator's first node keeps its amount's row, a pin
+  whose response is the whole stretch's shift, so the stretch moves as a whole. At a face inside
+  the stretch whose link holds the level continuous, the face's flux, which only the replaced edge
+  balances set, is pinned to zero too. (Not through flow or mixing, nor a concentrated material's
+  cross-diffusion, where zero flux isn't a flat level.)
+- **An island's balance.** A piece of a stretch between its faces that nothing else feeds (no
+  contact, port or reaction) holds its level only through its faces' fluxes, which can be far
+  weaker than its own conduction: a face conductance of 1e-15 S/m² against a region conducting
+  ~4e2 S/m, or neighbours that conduct 1e20 times less than it. Eliminated, the level was lost to
+  round-off below anything Newton could see (the plain solves gave no update along it, so nothing
+  stalled), and solves converged to a wrong one silently: currents 2× or 16× off. Summed over the
+  piece's nodes, its balance rows are its faces' flux unknowns alone, $`A_R u_R - A_L u_L`$: the
+  internal fluxes cancel exactly, by construction rather than in round-off. Across a face that
+  holds $`\bar\mu`$ level, $`u`$ is set only by the edge balances, and eliminated it can come out
+  of the piece's own, as $`G\,\Delta\eta`$ with its two $`\eta`$ all but equal; so there the
+  outside edge node's balance is added too, $`u`$ cancels, and the outside's first segment
+  carries the flux. (Seen through one face of two, a level behind neighbours 1e20 times less
+  conductive was overshot twofold, and Newton swung it from one contact's level to the other's.)
+  That sum replaces the first node's row, bordered like an amount. The response to the unit pin
+  is the island's uniform shift, with whatever $`\hat\phi`$ and the other species do along with
+  it, so no mode needs guessing; refined solves carry the pinned rows too.
 
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so
@@ -735,50 +748,60 @@ only resolved to ~1e-4 of $`|Z|`$.
   minority carriers, whose own rows rest on static pivots, at 1e-17 A/m² of noise), the plain
   solution stands; and a steady solve that fails outright is tried once more with the summed rows
   in from the start. Such devices now solve directly, their currents right to ~1e-15.
-- **Immobile combinations** (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) conserve
-  node by node, since nothing carries them anywhere. At each node the combination's weighted sum
-  replaces one of its balance rows, kept at what it was when the solve began. The row is local
-  to that node's block, so nothing is bordered, and the solve goes direct. An electrode's surface
-  species are the same: adsorbates that only turn into each other keep their total on every
-  site. (The null space is taken with the immobile stretches' columns first, so that their own
-  combinations come out apart from any that moves.) A combination of immobile stretches with a
-  moving one (the electrons the traps hold, $`e^- - X^0`$, in a closed film) is an amount like any
-  other, its immobile parts summed over their nodes, bordered in place of the moving stretch's
-  row; and a floating metal's amount is the charge on its faces, its sheets' displacement.
-- **Otherwise** (a species still in one region and moving in the next), backward-Euler steps at a
-  huge $`dt`$ (10⁶ × the slowest diffusion time) keep the storage term, which pins each conserved
-  amount exactly: sum a species' rows and the fluxes cancel. $`dt`$ grows ×10 (capped) while the
-  state still moves. Before each huge step, each spectator's level is shifted uniformly to
-  restore its amount exactly (in one step for ideal statistics, by Newton on the shift
-  otherwise). It guards against round-off creeping through the vanishing storage term. The solve
-  finishes with one step at the base giant $`dt`$, where pinning is tight.
-- **If a direct solve diverges,** it's retried once with tighter damping (3 thermal units per
-  iteration). That's enough for most large jumps, such as a cold start at forward bias.
-- **Generation continuation.** A device with generation reactions (species made only from, or
-  turned only into, fixed reservoirs, such as photogeneration from a photon reservoir) can be
-  held far from equilibrium even with its terminals level, where bias continuation can't help.
-  If a direct solve fails there, the generation rates are scaled down to 10⁻³⁰ and ramped back
-  up, ×100 a step while each solve converges (warm from the last) and by the square root of the
-  factor when one doesn't, giving up when that factor falls below 1.5 (crawling, which time
-  steps do better); the pseudo-transient ramp then starts from the dimmer light's solution
-  rather than cold. (At 10⁻¹², a GaAs layer's generation still exceeded its equilibrium
-  recombination, ~3e-24 mol/m³ of minority electrons, a billionfold: the first step was the
-  whole jump.) An illuminated 80 µm silicon diode solves cold this way in about 80
-  iterations. (A lit n⁺pn stack with a floating base crawled for 20,000 iterations: at a
-  trillionth of the light, the base's level is held by couplings of ~1e-17.)
-- **If that fails too,** source continuation ramps the right terminal's voltage to its target.
-  It ramps from the voltage of the last converged solve when the state is that solution, and
-  otherwise from level terminals, where a cold start is consistent. (A device first solved
-  after a `set()` was laid out for its new voltages; if the level start fails from there, it's
-  laid out again, level, and retried.) The ramp step starts at
-  1/8 of the way, grows ×1.5 on success and shrinks ×4 on failure.
-- **If Newton still fails,** $`dt`$ ramps up from a small value (pseudo-transient continuation),
-  ending in the direct solve where applicable. After a failed step it grows ×2, then ×1.5 more
-  each success, back to ×10. Once steps reach the slowest diffusion time, the direct solve is
-  tried from there, once a decade of $`dt`$ (the state kept if it fails): with immobile traps and
-  ions of D = 1e-17 m²/s, steps from 1e8 to 1e9 s kept failing on the way to the giant step.
 
-`solve()` does not advance the clock.
+All three move a weakly held level as a whole, where a factorisation can't: an amount's or an
+island's pin by a shift it solves for, a flat level by holding every node to one. What the
+factorisation still loses elsewhere, Newton's refined solves recover ([Newton](#newton)).
+
+### Reaching it
+
+A solve that fails falls back stage by stage:
+
+1. **Newton from here.** If it diverges, it's retried once with tighter damping (3 thermal units
+   per iteration), enough for most large jumps, such as a cold start at forward bias. Where no
+   continuation applies, the first stage goes straight on into the pseudo-transient ramp (3).
+2. **Continuation from a solved state, along the drives,** each step a steady solve warm from
+   the last:
+   - **The light.** A device with generation reactions (species made only from, or turned only
+     into, fixed reservoirs, such as photogeneration from a photon reservoir) can be held far
+     from equilibrium even with its terminals level, where a voltage ramp can't help; nor can a
+     time step, since light flooding minority carriers 20 orders below their lit level makes even
+     a step of 1e-16 s a jump Newton can't take. The generation rates are scaled down to 10⁻³⁰ and
+     ramped back up, ×100 a step while each solve converges and by the square root of the factor
+     when one doesn't, giving up when that factor falls below 1.5 (crawling, which time steps do
+     better); the pseudo-transient ramp then starts from the dimmer light's solution rather than
+     cold. (At 10⁻¹², a GaAs layer's generation still exceeded its equilibrium recombination,
+     ~3e-24 mol/m³ of minority electrons, a billionfold: the first step was the whole jump.) An
+     illuminated 80 µm silicon diode solves cold this way in about 80 iterations. (A lit n⁺pn
+     stack with a floating base crawled for 20,000 iterations: at a trillionth of the light, the
+     base's level is held by couplings of ~1e-17.)
+   - **A current.** A cold steady solve at open circuit can fail where the same state is easy
+     warm (a solar cell in dim light on a fine grid). The terminal is held at a voltage instead,
+     its steady solves having their own continuation, and the voltage marched from the start's,
+     the step growing, until the current crosses its target: up where the current is below it,
+     since raising a terminal's voltage raises the current into a passive device (the other way
+     if 20 V brings no crossing). Bisection narrows the crossing to 0.1 mV, and the terminal is
+     floated from beside it. Floated, the system can lose what held it doesn't (a closed
+     Fe³⁺/Fe²⁺ cell driven near its limit, Fe³⁺ 20 orders below Fe²⁺: 33 digits short), but the
+     current-driven steady state is the held one at the voltage that passes the target, so where
+     the floated solve fails, held solves find that voltage instead, by regula falsi within the
+     bracket, to 1e-10 of the current. (Not a terminal at no current that keeps an amount or a
+     charge: every voltage passes nothing there.)
+   - **The voltages.** The right terminal's voltage ramped to its target: from the contacts'
+     voltages at the last converged solve when the state is that solution (the left one first,
+     where it moved), and otherwise from level terminals, where a cold start is consistent. (A
+     device first solved after a `set()` was laid out for its new voltages; if the level start
+     fails from there, it's laid out again, level, and retried.) The step starts at 1/8 of the
+     way, grows ×1.5 on success and shrinks ×4 on failure. The ramp's own start, with the
+     terminals level, ramps the light up when there is some.
+3. **The pseudo-transient ramp.** $`dt`$ ramps up from a small value, through time, ending in
+   the direct solve. After a failed step it grows ×2, then ×1.5 more each success, back to ×10.
+   Once steps reach the slowest diffusion time, the direct solve is tried from there, once a
+   decade of $`dt`$ (the state kept if it fails): with immobile traps and ions of D = 1e-17 m²/s,
+   steps from 1e8 to 1e9 s kept failing on the way to the end.
+
+Each of these carries cases that nothing else does (switched off one at a time, each fails
+tests or stress cases the others pass).
 
 ## Conservation
 
