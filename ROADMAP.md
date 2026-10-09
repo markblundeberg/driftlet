@@ -120,11 +120,14 @@ for live demos.
      reading of the terminal's current does it. Not only conditioning, though: accepting a stall
      that's led by the terminal's voltage once every row holds to tol (equilibrated) carries it
      only from 5.6e5 to 1.1e6 s. Past that, the residual that won't fall sits in the hosts' Li⁺
-     rows (alternating between two cathode nodes), scales as 1/dt (2e-7 at 29 s, 4e-6 at 1 s),
-     and Newton's update along the terminal's mode doesn't touch it: the Jacobian along that
-     weak mode looks wrong, and the refined solves (exact J·v) don't cover the non-ideal
-     segments an insertion host goes through. Next: a finite-difference check of the host's
-     Li⁺ rows along the mode, or those segments in the exact J·v.
+     rows (alternating between two cathode nodes) and scales as 1/dt (2e-7 at 29 s, 4e-6 at 1 s),
+     but only after equilibration, which divides those rows by their tiny entries (D = 1e-14).
+     A finite-difference check along Newton's update agrees with J·v, both at round-off
+     (~1e-13): the Jacobian is right, and the update lies in a near-null direction of the
+     device's rows, set only by the circuit row. So it's conditioning: a floor read against the
+     rows' own round-off (their terms' magnitudes, not their largest Jacobian entry) is the
+     likelier fix. (The refined solves' exact J·v doesn't cover the non-ideal segments an
+     insertion host goes through either.)
    - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
      and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
      open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18
