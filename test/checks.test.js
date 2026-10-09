@@ -111,3 +111,17 @@ test('check(): a transient checks conservation; a failed solve and warnings are 
   assert.ok(w.ok, 'a warning asks you to look; it is not a failure');
   assert.match(w.text, /^\? {4}warnings: 1: materials\.Si\.species\.e-\.D/m);
 });
+
+// A contact holding one ion at a level far from its neighbours' (Na⁺ at −0.04 V beside a KCl
+// bath) holds it at 1e37 mol/m³: denser than any material, and said so. (Its currents in a
+// transient had read 1e28 A/m², with no warning.)
+test('a species denser than any material is warned of', () => {
+  const sol = new Device({
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'Na+', z: 1, cRef: 1000 }],
+    materials: { w: { epsr: 0, species: { 'K+': { D: 1.96e-9, mu0: -283e3 }, 'Cl-': { D: 2.03e-9, mu0: -131e3 }, 'Na+': { D: 1.33e-9, mu0: -262e3 } } } },
+    regions: [{ material: 'w', length: 50e-6, c0: { 'K+': 60, 'Cl-': 80, 'Na+': 20 } }],
+    contacts: { left: { bath: { c: { 'K+': 80, 'Cl-': 80 }, reference: 'Cl-' }, V: 0 }, right: { terminal: 'Na+', species: { 'Na+': 'equilibrium' }, phi: 'bulk', V: -0.04 } },
+    grid: { hmin: 0.3e-6, hmax: 3e-6 },
+  }).solve();
+  assert.ok(sol.warnings.some((w) => /Na\+ reaches .* denser than any material/.test(w)), sol.warnings.join('\n'));
+});

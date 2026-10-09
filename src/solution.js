@@ -361,6 +361,27 @@ export function makeSolution(solver, result = {}) {
       }
     });
   });
+  // Any other species denser than any material can be (1e6 mol/m³: water is 5.5e4, a metal's
+  // atoms ~1.5e5): a level set where the device can't follow it, such as a contact's for one ion
+  // far from its neighbours' (Na⁺ held at 1.2e37 mol/m³, whose currents then read 1e28 A/m²).
+  model.regions.forEach((reg, r) => {
+    const mat = model.materials[reg.material];
+    if (mat.conductor) return;
+    model.species.forEach((sp, i) => {
+      if (sp.name === 'e-' || sp.name === 'h+' || !mat.present[i]) return;
+      let top = 0, at = NaN;
+      for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
+        const c = solver.c[g * model.species.length + i];
+        if (c > top) [top, at] = [c, grid.x[g]];
+      }
+      if (top > 1e6) {
+        sol.warnings.push(
+          `${reg.name}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, denser than any material: ` +
+            'a level set where the device cannot follow it. Check what holds it there (the V or bath of a contact, its mu0 and cRef) with describe() from driftlet/kit.',
+        );
+      }
+    });
+  });
   // A contact that holds its end neutral ('bulk': a bath, an ohmic contact) cuts off any space
   // charge reaching it: a double layer longer than its region. The charge it cuts off is about
   // ρ λ_D at the node beside it; against the region's own space charge (half Σ|ρ| over it, the

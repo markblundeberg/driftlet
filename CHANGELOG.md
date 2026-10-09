@@ -18,6 +18,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   the last steady solve's voltages once a transient has moved the state.
 - `set({ grid })` carries the state over, interpolated onto the new nodes, where the regions
   and terminals are the same: a floating gate kept nothing of its charge through a regrid.
+- A solution warns of a species denser than any material (1e6 mol/m³): a contact holding one
+  ion at a level far from its neighbours' held it at 1e37 mol/m³, its currents then reading
+  1e28 A/m², with no warning.
 - `check()` leaves a contact that blocks a species out of that species' ledger: the flux it read
   there was the end box's own imbalance, and counted as a source it had balanced the books of a
   state that wasn't steady.
