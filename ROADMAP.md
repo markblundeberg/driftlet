@@ -111,6 +111,14 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
+   - A battery at rest, its open-circuit terminal held only weakly. Two insertion hosts with
+     Li⁺ transfer at both faces, the cathode's collector at `I: 0`: past ~1e5 s at tol 1e-6 (or
+     5e5 s at 1e-4), steps fail down to 1e-14 s. Newton's updates stall at ~7.6e-6 thermal units
+     along the terminal's mode (its voltage and the cathode's electron level together), whose
+     residual is linear along the update and costs only ~2e-5 A/m² per thermal unit: residuals
+     at round-off (3e-13) move it further than Newton's round-off floor (1e-6) accepts. Either
+     reading of the terminal's current does it. A floor read against the mode's own conditioning,
+     rather than a fixed one, might do; a fixed higher floor lets weakly held populations drift.
    - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
      and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
      open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18
