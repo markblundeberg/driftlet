@@ -2,7 +2,7 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
-## Unreleased
+## 0.16.2 (2026-10-09)
 
 - A terminal driven by a current that alone feeds what it keeps (a floating gate's metal, a
   host's electrons behind an open circuit) reads its current in a time step as that amount's
