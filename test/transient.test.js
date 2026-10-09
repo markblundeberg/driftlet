@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -306,4 +307,58 @@ test('a probe at a face reads the side with the species; a species absent there,
     }),
   );
   assert.throws(() => two.advance(1e-3, { probes: [{ x: 1e-5, species: 'K+' }] }), /on the face between "a" and "b": give region/);
+});
+
+// A terminal at no current that alone feeds what it holds (a host's electrons, a floating gate's)
+// keeps it exactly however long the steps. A host filled linearly from x = 0.1 to 0.9 relaxes to
+// x̄ = 0.5, where its OCV table (symmetric about it) gives 0.4 V; read by the flux through its
+// contact, it had drifted to 0.3995 V by 1e10 s and failed by 1e14 s.
+test('a closed host at open circuit keeps its charge through any step: its OCV at the mean filling, to 1e14 s', () => {
+  const x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95], E = x.map((v) => 0.4 - (RT / FARADAY) * Math.log(v / (1 - v)));
+  const d = new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 30000 }, 'e-': { D: 1e-4, mu0: 0, cRef: 30000 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 30000, ocv: { x, E, muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6, c0: { 'Li+': { x: [0, 1e-6], values: [3000, 27000] } } }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin: 2e-8, hmax: 5e-8 },
+  });
+  d.advance(1e6, { tol: 1e-4 });
+  for (const t of [1e10, 1e14]) {
+    const s = d.advance(t, { tol: 1e-4 });
+    assert.ok(s.done && s.steps < 30, `t ${t}: ${s.steps} steps`);
+    assert.ok(Math.abs(s.terminals.right.V - 0.4) < 1e-12, `t ${t}: V ${s.terminals.right.V}`);
+    assert.ok(Math.abs(s.conservation.find((c) => c.species === 'e-').drift) < 1e-12);
+  }
+});
+
+// A MOS capacitor's gate, settled at 1 V and floated: nothing moves, and its charge stays put.
+// Read by the flux into its metal, the charging current fell below that flux's round-off at
+// steps of ~0.03 s, every longer step came out singular, and 100 s took 5000 steps.
+test('a floating gate at rest steps as a held one does, its charge kept', () => {
+  const lib = { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } };
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Al'), lib],
+    stack: [ohmic(0, ['e-']), layer('Al', units.nm(20)), { phi: { type: 'capacitive', C: 10 }, zeroCharge: -0.95 }, layer('SiO2', units.nm(10)), { dipole: 0 }, layer('Si', units.um(1), { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    ports: [{ name: 'channel', region: 'Si', from: 0, to: units.nm(1), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
+    grid: { hmin: units.nm(0.25), hmax: units.nm(50), ratio: 1.15 },
+  });
+  const run = (float) => {
+    const d = new Device(def);
+    d.set({ contacts: { left: { V: 1 } } });
+    const s0 = d.solve();
+    if (float) d.set({ contacts: { left: { I: 0 } } });
+    let steps = 0, rejected = 0, s;
+    for (const t of [1e-6, 1e-3, 1, 10, 100]) {
+      s = d.advance(t);
+      steps += s.steps;
+      rejected += s.rejected;
+    }
+    return { steps, rejected, s, s0 };
+  };
+  const held = run(false), floating = run(true);
+  assert.ok(floating.steps <= held.steps && floating.rejected === 0, `floating ${floating.steps} steps (${floating.rejected} rejected), held ${held.steps}`);
+  const D = (s) => s.interfaces[0].D;
+  assert.ok(Math.abs(D(floating.s) / D(floating.s0) - 1) < 1e-9 && Math.abs(floating.s.terminals.left.V - 1) < 1e-9, `D ${D(floating.s)} vs ${D(floating.s0)}, V ${floating.s.terminals.left.V}`);
 });

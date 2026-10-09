@@ -478,6 +478,7 @@ export class Solver {
     model.ports.forEach((port, k) => port.capacitance && port.nodes.forEach((g, w) => this.qgTerms[g].push([2 + k, w])));
     this.contactDOld = { left: 0, right: 0 };
     this.contactDStart = { left: 0, right: 0 };
+    this.lawForm = new Map(); // (each circuit law: read as its change this step, see _circuitLaws)
     // Terminals (the two contacts, then the ports): each one's voltage (V), held by its source or
     // floating (driven by a current, or behind a resistance), and its current into the device.
     // Sources are read at sourceTime: a step's end, or now for a steady solve.
@@ -844,6 +845,8 @@ export class Solver {
         terminals: [...new Set([...parts.flatMap((p) => driven(this.stretches[p.stretch])), ...carriers.map((p) => p.k)])],
         key: parts.map((p) => `${p.stretch}:${p.w}`).join() + surface.map((p) => `|${p.col}:${p.w}`).join() + carriers.map((p) => `|T${p.k}:${p.w}`).join(),
         circuit, // (the terminal whose circuit row it stands in for, or −1 for a balance row's, `row`)
+        // (and the terminal's weight in it, w/z on what that feeds: the amount changes by λ I/F)
+        lambda: circuit < 0 ? 0 : (carriers.find((p) => p.k === circuit)?.w / this.z[model.ports[circuit - 2]?.terminal] || parts.map((p) => (driven(this.stretches[p.stretch]).includes(circuit) ? p.w / this.z[this.stretches[p.stretch].species] : 0)).find((x) => x !== 0)),
         row: circuit >= 0 ? -1 : this.blockOfNode[st.nodes[0]] * this.M + 1 + st.species,
         idx: new Int32Array(nNodes * this.M),
         w: new Float64Array(nNodes * this.M),
@@ -1236,71 +1239,15 @@ export class Solver {
   // sum of the others. That row is dense, so it's kept aside: the factorised matrix gets a pin
   // (identity row) there instead, and _solveBordered restores the constraint.
   _applyConstraints() {
-    const { n, M, res, c, dA: d } = this;
-    const vol = this.model.grid.vol;
+    const { M, res } = this;
     for (const cs of this.constraints) {
-      let amount = 0, reference = 0, len = 0;
-      for (const { stretch, w } of cs.parts) {
-        const st = this.stretches[stretch], i = st.species;
-        if (cs.terminals.length === 0) reference += w * this.referenceAmounts[stretch];
-        for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
-          amount += w * vol[g] * c[g * n + i];
-          if (this.nodeConductor[g] >= 0) {
-            // A metal's carriers: the sheet at a charged face, vol·c = ±D_f·A/(zF), held by the
-            // face's displacement.
-            const f = this.sheetFace[g];
-            if (f >= 0 && this.loc[this.blockOfFace[f] * M] >= 0) {
-              cs.idx[len] = this.rix[this.blockOfFace[f] * M];
-              cs.w[len++] = (w * this.sheetSign[g] * this.model.grid.area[g]) / (this.z[i] * FARADAY);
-            }
-            continue;
-          }
-          this._dc(g, i, d);
-          const b = this.blockOfNode[g];
-          for (let r = 0; r < M; r++) {
-            if (d[r] === 0 || this.loc[b * M + r] < 0) continue;
-            cs.idx[len] = this.rix[b * M + r];
-            cs.w[len++] = w * vol[g] * d[r];
-          }
-        }
-      }
-      // What the electrodes' surfaces hold of it: Γ Σ v·a·θ, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
-      for (const { col, w } of cs.surface) {
-        const [k, q] = this.surfCols[col], port = this.model.ports[k], G = port.surface[0].capacity, ns = port.surface.length;
-        if (cs.terminals.length === 0) reference += w * this.surfaceRef[col];
-        port.nodes.forEach((g, j) => {
-          const f = w * G * vol[g] * this.portArea[k][j], b = this.blockOfNode[g], tq = this.th[g * this.nSurf + q];
-          amount += f * tq;
-          for (let x = 0; x < ns; x++) {
-            cs.idx[len] = this.rix[b * M + 1 + n + x];
-            cs.w[len++] = f * tq * ((q === x ? 1 : 0) - this.th[g * this.nSurf + x]);
-          }
-        });
-      }
-      // What an electrode holds, its charge Q/(zF) on the port's capacitance (none without one),
-      // Q = Σ vol·a·C (V − zeroCharge − φ) over its nodes (as _portCapacitance has it).
-      let dV = 0;
-      for (const { k, w } of cs.carriers) {
-        const port = this.model.ports[k - 2];
-        if (!port.capacitance) continue;
-        const f = w / (this.z[port.terminal] * FARADAY), { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k];
-        const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
-        port.nodes.forEach((g, j) => {
-          if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
-          const b = this.blockOfNode[g], s = vol[g] * this.portArea[k - 2][j] * Cs;
-          amount += f * s * (V - zeroCharge - this.VT * (this.u[b * M] + this.uLo[b * M]));
-          dV += f * s;
-          cs.idx[len] = this.rix[b * M];
-          cs.w[len++] = -f * s * this.VT;
-        });
-      }
-      cs.len = len;
+      const { amount, reference, dV } = this._lawAmount(cs);
       cs.res = amount - (cs.terminals.length > 0 ? (this.lawRefs.get(cs.key) ?? amount) : reference);
       if (cs.circuit >= 0) {
         // In place of the terminal's circuit row (its I = 0).
         const C = this.termC[cs.circuit];
         C.fill(0);
-        for (let j = 0; j < len; j++) C[cs.idx[j]] += cs.w[j];
+        for (let j = 0; j < cs.len; j++) C[cs.idx[j]] += cs.w[j];
         this.termRes[cs.circuit] = cs.res;
         this.termDI[cs.circuit] = dV;
         continue;
@@ -1309,6 +1256,121 @@ export class Solver {
       this._replaceRow(b0, r0);
       this._j(b0, r0, b0, r0, 1);
       res[this.rix[cs.row]] = 0;
+    }
+  }
+
+  // A conserved combination's amount as the state holds it (and its reference, closed), with its
+  // derivatives in cs.idx/w (and dV, by the voltage of a terminal whose electrode's charge it
+  // counts).
+  _lawAmount(cs) {
+    const { n, M, c, dA: d } = this;
+    const vol = this.model.grid.vol;
+    let amount = 0, reference = 0, len = 0, gross = 0;
+    for (const { stretch, w } of cs.parts) {
+      const st = this.stretches[stretch], i = st.species;
+      if (cs.terminals.length === 0) reference += w * this.referenceAmounts[stretch];
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+        amount += w * vol[g] * c[g * n + i];
+        gross += Math.abs(w * vol[g] * c[g * n + i]);
+        if (this.nodeConductor[g] >= 0) {
+          // A metal's carriers: the sheet at a charged face, vol·c = ±D_f·A/(zF), held by the
+          // face's displacement.
+          const f = this.sheetFace[g];
+          if (f >= 0 && this.loc[this.blockOfFace[f] * M] >= 0) {
+            cs.idx[len] = this.rix[this.blockOfFace[f] * M];
+            cs.w[len++] = (w * this.sheetSign[g] * this.model.grid.area[g]) / (this.z[i] * FARADAY);
+          }
+          continue;
+        }
+        this._dc(g, i, d);
+        const b = this.blockOfNode[g];
+        for (let r = 0; r < M; r++) {
+          if (d[r] === 0 || this.loc[b * M + r] < 0) continue;
+          cs.idx[len] = this.rix[b * M + r];
+          cs.w[len++] = w * vol[g] * d[r];
+        }
+      }
+    }
+    // What the electrodes' surfaces hold of it: Γ Σ v·a·θ, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
+    for (const { col, w } of cs.surface) {
+      const [k, q] = this.surfCols[col], port = this.model.ports[k], G = port.surface[0].capacity, ns = port.surface.length;
+      if (cs.terminals.length === 0) reference += w * this.surfaceRef[col];
+      port.nodes.forEach((g, j) => {
+        const f = w * G * vol[g] * this.portArea[k][j], b = this.blockOfNode[g], tq = this.th[g * this.nSurf + q];
+        amount += f * tq;
+        gross += Math.abs(f * tq);
+        for (let x = 0; x < ns; x++) {
+          cs.idx[len] = this.rix[b * M + 1 + n + x];
+          cs.w[len++] = f * tq * ((q === x ? 1 : 0) - this.th[g * this.nSurf + x]);
+        }
+      });
+    }
+    // What an electrode holds, its charge Q/(zF) on the port's capacitance (none without one),
+    // Q = Σ vol·a·C (V − zeroCharge − φ) over its nodes (as _portCapacitance has it).
+    let dV = 0;
+    for (const { k, w } of cs.carriers) {
+      const port = this.model.ports[k - 2];
+      if (!port.capacitance) continue;
+      const f = w / (this.z[port.terminal] * FARADAY), { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k];
+      const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
+      port.nodes.forEach((g, j) => {
+        if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
+        const b = this.blockOfNode[g], s = vol[g] * this.portArea[k - 2][j] * Cs;
+        amount += f * s * (V - zeroCharge - this.VT * (this.u[b * M] + this.uLo[b * M]));
+        gross += Math.abs(f * s * (V - zeroCharge - this.VT * (this.u[b * M] + this.uLo[b * M])));
+        dV += f * s;
+        cs.idx[len] = this.rix[b * M];
+        cs.w[len++] = -f * s * this.VT;
+      });
+    }
+    cs.len = len;
+    return { amount, reference, dV, gross };
+  }
+
+  // The same amount at the step's start, as the storage terms have it (BDF2's c* included).
+  _lawStart(cs) {
+    const { n, nSurf } = this, vol = this.model.grid.vol;
+    let a = 0;
+    for (const { stretch, w } of cs.parts) {
+      const st = this.stretches[stretch], i = st.species;
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) a += w * vol[g] * this.cOld[g * n + i];
+    }
+    for (const { col, w } of cs.surface) {
+      const [k, q] = this.surfCols[col], port = this.model.ports[k], G = port.surface[0].capacity;
+      port.nodes.forEach((g, j) => (a += w * G * vol[g] * this.portArea[k][j] * this.thOld[g * nSurf + q]));
+    }
+    for (const { k, w } of cs.carriers) if (this.model.ports[k - 2].capacitance) a += (w * this.portQStart[k - 2]) / (this.z[this.model.ports[k - 2].terminal] * FARADAY);
+    return a;
+  }
+
+  // Time steps: a terminal driven by a current that alone feeds a conserved combination can read
+  // its current as the combination's change, F (S − S*)/(λ dt), which the step's balance rows sum
+  // to exactly, rather than as the flux through it. Both are exact; they differ in round-off and
+  // in what Newton can see. Through a metal, the flux is G Δη, its two η all but equal: a floating
+  // gate's charging current fell below that at steps of ~0.03 s, and the step came out singular.
+  // Over long steps the change is the better kept (a closed host at open circuit, read by its
+  // flux, drifted from its charge by 3 mV over 5e11 s, and its steps failed by 4e12 s). Over
+  // short ones it's the amount's round-off over dt (a battery's cathode holds 0.04 mol/m² of
+  // electrons: 1e-6 A/m² at steps of 1e-6 s, enough to reject steps at tol 1e-8), where the flux,
+  // its levels carried in two words (u + uLo), is far cleaner than ε G. So a step reads the change
+  // where that's ε·F·S/(λ dt) below 1e-6 of the flux's ε G, as its start has them, keeps to it
+  // throughout, and where a step read by the flux fails, it's tried once more read by the change
+  // (see step).
+  _circuitLaws(dt) {
+    for (const cs of this.constraints) {
+      const k = cs.circuit;
+      if (k < 0 || this.terms[k].drive.kind !== 'I') continue;
+      const { amount, dV, gross } = this._lawAmount(cs), f = FARADAY / (cs.lambda * dt), C = this.termC[k];
+      if (!this.lawForm.has(cs)) {
+        let G = 0;
+        for (let j = 0; j < C.length; j++) G = Math.max(G, Math.abs(C[j]));
+        this.lawForm.set(cs, Math.abs(f) * gross < 1e-6 * G);
+      }
+      if (!this.lawForm.get(cs)) continue;
+      C.fill(0);
+      for (let j = 0; j < cs.len; j++) C[cs.idx[j]] += f * cs.w[j];
+      this.termRes[k] = f * (amount - this._lawStart(cs)) - sourceAt(this.terms[k].drive.src, this.sourceTime, this.sourceBefore);
+      this.termDI[k] = f * dV;
     }
   }
 
@@ -1933,6 +1995,7 @@ export class Solver {
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
+    if (Number.isFinite(dt) && this.constraints.length > 0) this._circuitLaws(dt);
     // The steady system's own rows (see _laws): levels held flat, conserved amounts, islands'
     // balances, the last two kept aside for _solveBordered.
     const steady = this.steady && dt === Infinity;
@@ -3612,6 +3675,7 @@ export class Solver {
     this.sourceTime = this.steady ? this.steadyAt : tEnd;
     this.sourceBefore = !this.steady;
     this.combining = true;
+    this.lawForm = new Map(); // (see _circuitLaws)
     let result;
     try {
       result = this.newton(dtEff, opts);
@@ -3627,6 +3691,20 @@ export class Solver {
           this.uLo.fill(0);
         }
         const again = this.newton(dtEff, { ...opts, islands: true });
+        result = { ...again, iterations: result.iterations + again.iterations };
+      }
+      if (!result.converged && Number.isFinite(dtEff) && [...this.lawForm.values()].some((v) => !v)) {
+        // A terminal read by its flux whose response is lost to round-off (a floating gate's
+        // charging, below its metal's G Δη): once more, read by the change (see _circuitLaws).
+        this.u.set(this.uPrev);
+        this.uLo.set(this.uPrevLo);
+        this.termV.set(this.termVPrev);
+        if (opts.guess) {
+          this.u.set(opts.guess);
+          this.uLo.fill(0);
+        }
+        for (const cs of this.lawForm.keys()) this.lawForm.set(cs, true);
+        const again = this.newton(dtEff, opts);
         result = { ...again, iterations: result.iterations + again.iterations };
       }
     } finally {
@@ -4594,12 +4672,20 @@ export class Solver {
     if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;
     const { n, cOld } = this, vol = this.model.grid.vol;
+    // A stretch alone in what a terminal driven by a current feeds takes in what that current
+    // says, which the step kept exactly (see _circuitLaws); the flux through a metal is round-off.
+    const driven = new Map();
+    for (const cs of this.constraints) {
+      if (cs.circuit < 0 || this.terms[cs.circuit].drive.kind !== 'I' || cs.parts.length !== 1 || cs.surface.length || cs.carriers.length) continue;
+      driven.set(cs.parts[0].stretch, (cs.lambda * sourceAt(this.terms[cs.circuit].drive.src, this.sourceTime, this.sourceBefore)) / (cs.parts[0].w * FARADAY));
+    }
     this.stretches.forEach((st, k) => {
       if (!st.connected) return;
       let q = 0;
       if (st.regions[0] === 0) q += this.contactFlux.left[st.species];
       if (st.regions[1] === last) q -= this.contactFlux.right[st.species];
       for (const p of st.ports) q += this.portFlux[p][st.species];
+      if (driven.has(k)) q = driven.get(k);
       let hist = 0;
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) hist += vol[g] * (cOld[g * n + st.species] - cN[g * n + st.species]);
       this.boundaryIntake[k] += q * dt + hist;
