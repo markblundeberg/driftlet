@@ -198,6 +198,56 @@ const families = {
     };
   },
 
+  // Solutions with complexations (K⁺ + A⁻ = KA, Na⁺ + A⁻ = NaA, B = C, B + A⁻ = BA⁻, …), in 2–3
+  // regions whose faces block some species, so that conserved combinations overlap; against a
+  // bath, the far side another bath, closed, or a K⁺ electrode; sometimes an electrode in the
+  // solution at no current reducing a closed M⁺ (M⁺ + e⁻ = M(s)), with or without a capacitance.
+  react(r) {
+    const mu0 = { 'K+': -283e3, 'Na+': -262e3, 'A-': -50e3, 'L-': -80e3, 'Cl-': -131e3, KA: 0, NaA: 0, KL: 0, B: -5e3, C: 0, 'BA-': 0, 'M+': 70e3 };
+    const zs = { 'K+': 1, 'Na+': 1, 'A-': -1, 'L-': -1, 'Cl-': -1, KA: 0, NaA: 0, KL: 0, B: 0, C: 0, 'BA-': -1, 'M+': 1 };
+    const D = { 'K+': 1.96e-9, 'Na+': 1.33e-9, 'A-': 0.7e-9, 'L-': 1e-9, 'Cl-': 2.03e-9, KA: 0.9e-9, NaA: 0.8e-9, KL: 0.9e-9, B: 1e-9, C: 0.8e-9, 'BA-': 0.6e-9, 'M+': 1e-9 };
+    const all = [['K+ + A- = KA', 'K+', 'A-', 'KA'], ['Na+ + A- = NaA', 'Na+', 'A-', 'NaA'], ['K+ + L- = KL', 'K+', 'L-', 'KL'], ['B = C', 'B', 'C'], ['B + A- = BA-', 'B', 'A-', 'BA-']];
+    const rxs = all.filter(() => r.chance(0.5));
+    if (rxs.length === 0) rxs.push(all[0]);
+    const port = r.chance(0.4);
+    const names = [...new Set(['K+', 'Na+', 'Cl-', 'A-', ...rxs.flatMap(([, ...sp]) => sp), ...(port ? ['M+'] : [])])];
+    for (const [, a, b, p] of rxs) mu0[p ?? b] = p ? mu0[a] + mu0[b] - RT * Math.log(r.log(-0.3, 2.5)) : mu0[a] - RT * Math.log(r.log(-1, 1));
+    const n = r.pick([2, 3]), regions = [], interfaces = [];
+    for (let q = 0; q < n; q++) {
+      const c0 = {};
+      for (const s of names) if (s !== 'Cl-') c0[s] = r.log(0.5, 1.9);
+      const q0 = names.reduce((t, s) => t + (s === 'Cl-' ? 0 : zs[s] * c0[s]), 0);
+      if (q0 < 4) c0['K+'] += 4 - q0;
+      c0['Cl-'] = Math.max(q0, 4);
+      regions.push({ name: `r${q}`, material: 'water', length: r.log(-5, -4.2), c0 });
+      if (q > 0) interfaces.push({ phi: 'neutral', species: Object.fromEntries(names.filter((s) => r.chance(0.35) && s !== 'Cl-').map((s) => [s, 'blocked'])) });
+    }
+    const salt = () => ({ 'K+': r.log(0.7, 1.9), 'Na+': r.log(0.7, 1.9) }), withCl = (c) => ({ ...c, 'Cl-': c['K+'] + c['Na+'] });
+    const far = r.pick(['bath', 'closed', 'K+']);
+    const contacts = {
+      left: { bath: { c: withCl(salt()), reference: 'Cl-' }, V: 0 },
+      right: far === 'bath' ? { bath: { c: withCl(salt()), reference: 'Cl-' }, V: 0 } : far === 'closed' ? { phi: 'neutral' } : { terminal: 'K+', species: { 'K+': 'equilibrium' }, phi: 'bulk', V: 0 },
+    };
+    const ports = port ? [{ name: 'el', region: `r${Math.floor(r.u(0, n))}`, terminal: 'e-', I: 0, area: r.log(4, 6), ...(r.chance(0.5) ? { capacitance: { C: r.u(0.1, 0.4), zeroCharge: 0 } } : {}), reactions: [{ equation: 'M+ + e- = M(s)', fixed: { 'M(s)': 0 }, k0: r.log(-8, -5), alpha: 0.5 }] }] : [];
+    const def = {
+      T,
+      species: [...names.map((name) => ({ name, z: zs[name], cRef: 1000 })), ...(port ? [{ name: 'e-', z: -1 }] : [])],
+      materials: { water: { epsr: 0, species: Object.fromEntries(names.map((s) => [s, { D: D[s], mu0: mu0[s] }])) } },
+      regions,
+      interfaces,
+      bulkReactions: rxs.map(([equation]) => ({ equation, kf: { water: r.log(-6, -3) } })),
+      contacts,
+      ports,
+      grid: { hmin: 0.4e-6, hmax: 3e-6 },
+    };
+    const side = far === 'closed' ? 'left' : 'right';
+    return {
+      def,
+      params: { names, reactions: rxs.map(([e]) => e), far, port: port && (ports[0].capacitance ? 'capacitance' : 'bare'), blocked: interfaces.map((f) => Object.keys(f.species)) },
+      plan: { side, V: far === 'closed' ? 0 : r.u(-0.05, 0.05), equilibrium: false, step: r.u(0.005, 0.03), t: r.log(-2, 1), relative: far === 'K+' },
+    };
+  },
+
   // Liquid junctions: two baths of the same salts in different proportions, the far one floating
   // (the junction's potential), strictly neutral or not; steady, and grown from a sharp boundary.
   junction(r) {

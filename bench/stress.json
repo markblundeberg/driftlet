@@ -9,6 +9,10 @@
       "ok": 500,
       "of": 500
     },
+    "semi: species order": {
+      "ok": 500,
+      "of": 500
+    },
     "semi: warm sweep": {
       "ok": 500,
       "of": 500
@@ -30,6 +34,10 @@
       "of": 500
     },
     "mos: cold at bias": {
+      "ok": 500,
+      "of": 500
+    },
+    "mos: species order": {
       "ok": 500,
       "of": 500
     },
@@ -57,6 +65,10 @@
       "ok": 500,
       "of": 500
     },
+    "cell: species order": {
+      "ok": 500,
+      "of": 500
+    },
     "cell: warm sweep": {
       "ok": 500,
       "of": 500
@@ -77,6 +89,10 @@
       "ok": 500,
       "of": 500
     },
+    "echem: species order": {
+      "ok": 500,
+      "of": 500
+    },
     "echem: warm sweep": {
       "ok": 500,
       "of": 500
@@ -90,6 +106,26 @@
       "of": 500
     },
     "echem: impedance": {
+      "ok": 500,
+      "of": 500
+    },
+    "react: cold at 0 V": {
+      "ok": 500,
+      "of": 500
+    },
+    "react: cold at bias": {
+      "ok": 500,
+      "of": 500
+    },
+    "react: species order": {
+      "ok": 500,
+      "of": 500
+    },
+    "react: warm sweep": {
+      "ok": 500,
+      "of": 500
+    },
+    "react: transient": {
       "ok": 500,
       "of": 500
     },
