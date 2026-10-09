@@ -3719,6 +3719,11 @@ export class Solver {
       this.contactDOld = this.contactDStart;
       this.portQOld = this.portQStart;
       this._accumulateBoundaryIntake(dtEff, cN);
+      // (In time, the state is no longer the steady solve's that a continuation would start from.)
+      if (!this.steady) {
+        this.solvedV = undefined;
+        this.stepped = true;
+      }
     } else {
       this.u.set(this.uPrev);
       this.uLo.set(this.uPrevLo);
@@ -4784,7 +4789,10 @@ export class Solver {
       this.computeConcentrations();
     };
     const solved = (q) => {
-      if (q.converged) this.solvedV = [level, target];
+      if (q.converged) {
+        this.solvedV = [level, target];
+        this.stepped = false;
+      }
       return q;
     };
     const after = (q, r) => ({ ...q, steps: q.steps + r.steps, iterations: q.iterations + r.iterations });
@@ -4794,6 +4802,21 @@ export class Solver {
     const quick = (canContinue || this.hasGeneration) && direct && allowed;
     let r = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
     if (r.converged) return solved(r);
+    // A transient's state can be a worse start than a cold one: 1 ns after a lit MOS capacitor's
+    // gate jumps, its surface is in deep depletion, minority carriers ten orders below where they
+    // end, and Newton fails from there where it converges from the layout for the drives (and
+    // the stages below took 9000 iterations from there, 2000 from the layout). What a steady
+    // solve keeps it took from the state already, so from here on it goes as a cold device would.
+    if (this.stepped && direct && allowed) {
+      this._refreshSources();
+      this.initFromComposition();
+      u0.set(this.u);
+      u0Lo.set(this.uLo);
+      const q = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
+      if (q.converged) return solved(after(q, r));
+      restart();
+      r = after(q, r);
+    }
 
     // 2. Continuation. Generation (e.g. light) holding the device far from equilibrium: ramp it up
     // from nearly nothing, each solve warm from the last.

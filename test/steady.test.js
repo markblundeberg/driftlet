@@ -502,3 +502,33 @@ test('an electrode at no current that reduces a closed ion: its charge and the i
   const a = run.advance(1e4);
   assert.ok(Math.abs(a.terminals.el.V - new Device(def(['K+', 'X-', 'M+', 'e-'], true)).solve().terminals.el.V) < 1e-7, `transient V ${a.terminals.el.V}`);
 });
+
+// A lit MOS capacitor, its gate jumped to 1.5 V: a nanosecond on, its surface is in deep
+// depletion, minority electrons ten orders below where they end, and Newton from there fails
+// where it converges from a cold layout for the drives. (A continuation from the last steady
+// solve's voltages no longer applies once a transient has moved the state.)
+test('a lit MOS capacitor solved a moment into a transient: the steady state its warm solve finds', () => {
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }],
+    stack: [ohmic(0, ['e-']), layer('Al', units.nm(20)), { phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.05 }, layer('SiO2', units.nm(10)), { dipole: 0 }, layer('Si', units.um(1), { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }, { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 1e-3 } }],
+    grid: { hmin: units.nm(0.25), hmax: units.nm(50), ratio: 1.15 },
+  });
+  const start = () => {
+    const d = new Device(def);
+    d.solve();
+    d.set({ contacts: { left: { V: 1.5 } } });
+    return d;
+  };
+  const warm = start().solve();
+  assert.ok(warm.converged);
+  for (const t of [1e-9, 1e-3]) {
+    const d = start();
+    d.advance(t, { tol: 1e-4 });
+    const s = d.solve();
+    assert.ok(s.converged && s.iterations < 100, `after ${t} s: ${s.iterations} iterations`);
+    const n = s.c['e-'], n0 = warm.c['e-'];
+    for (let g = 0; g < n.length; g++) if (Number.isFinite(n0[g])) assert.ok(Math.abs(n[g] / n0[g] - 1) < 1e-9, `after ${t} s, node ${g}: ${n[g]} vs ${n0[g]}`);
+  }
+});
