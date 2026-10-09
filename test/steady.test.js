@@ -532,3 +532,22 @@ test('a lit MOS capacitor solved a moment into a transient: the steady state its
     for (let g = 0; g < n.length; g++) if (Number.isFinite(n0[g])) assert.ok(Math.abs(n[g] / n0[g] - 1) < 1e-9, `after ${t} s, node ${g}: ${n[g]} vs ${n0[g]}`);
   }
 });
+
+// A floated gate keeps its charge through a regrid: set({ grid }) carries the state over,
+// interpolated onto the new nodes. (It had started cold, and the gate fell to flat band, its
+// charge lost.)
+test('a floating gate keeps its charge through a change of grid', () => {
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si'), metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }],
+    stack: [ohmic(1, ['e-']), layer('Al', units.nm(20)), { phi: { type: 'capacitive', C: 10 }, zeroCharge: -0.95 }, layer('SiO2', units.nm(10)), { dipole: 0 }, layer('Si', units.um(1), { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: units.nm(0.25), hmax: units.nm(50), ratio: 1.15 },
+  });
+  const d = new Device(def), Q = d.solve().interfaces[0].D;
+  d.set({ contacts: { left: { I: 0 } } });
+  d.set({ grid: { hmin: units.nm(0.125), hmax: units.nm(25), ratio: 1.07 } });
+  const s = d.solve();
+  assert.ok(s.converged && Math.abs(s.interfaces[0].D / Q - 1) < 1e-12, `gate charge ${s.interfaces[0].D} vs ${Q}`);
+  assert.ok(Math.abs(s.terminals.left.V - 1) < 2e-3, `V ${s.terminals.left.V}`);
+});

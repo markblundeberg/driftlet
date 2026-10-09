@@ -106,13 +106,20 @@ export class Device {
     this.def = def;
     this.model = model;
     this._solver = solver;
-    if (old && old.u.length === solver.u.length && old.n === solver.n) {
-      solver.u.set(old.u);
-      solver.uLo.set(old.uLo);
-      // A node newly on an electrode's surface (a window moved, a surface added) starts at its
-      // starting coverages, not at whatever its slots held.
-      const surfaceAt = (sv, g) => (sv.surfPort[g] < 0 ? '' : sv.model.ports[sv.surfPort[g]].surface.map((sp) => sp.name).join());
-      for (let g = 0; g < solver.nNodes; g++) if (solver.surfPort[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
+    // The state carries over where the unknowns line up; on a new grid (the same regions, faces
+    // and terminals), interpolated onto it. (Started cold instead, a floating gate lost its
+    // charge to a refined grid.)
+    const sameUnknowns = old && old.u.length === solver.u.length && old.n === solver.n;
+    const regridded = old && !sameUnknowns && old.M === solver.M && old.n === solver.n && old.nFaces === solver.nFaces && old.terms.length === solver.terms.length && old.model.grid.regionStart.length === model.grid.regionStart.length;
+    if (sameUnknowns || regridded) {
+      if (sameUnknowns) {
+        solver.u.set(old.u);
+        solver.uLo.set(old.uLo);
+        // A node newly on an electrode's surface (a window moved, a surface added) starts at its
+        // starting coverages, not at whatever its slots held.
+        const surfaceAt = (sv, g) => (sv.surfPort[g] < 0 ? '' : sv.model.ports[sv.surfPort[g]].surface.map((sp) => sp.name).join());
+        for (let g = 0; g < solver.nNodes; g++) if (solver.surfPort[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
+      } else solver._warmFrom(old);
       solver.computeConcentrations();
       solver.time = old.time;
       // Held sources read at the same time as before, and an adaptive transient goes on at the

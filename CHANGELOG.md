@@ -14,6 +14,8 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   from the layout for its drives: a lit MOS capacitor a nanosecond after its gate jumped failed
   where a cold solve takes 27 iterations; it now takes 32. A continuation no longer starts from
   the last steady solve's voltages once a transient has moved the state.
+- `set({ grid })` carries the state over, interpolated onto the new nodes, where the regions
+  and terminals are the same: a floating gate kept nothing of its charge through a regrid.
 - `check()` leaves a contact that blocks a species out of that species' ledger: the flux it read
   there was the end box's own imbalance, and counted as a source it had balanced the books of a
   state that wasn't steady.

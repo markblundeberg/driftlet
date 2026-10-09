@@ -966,8 +966,9 @@ const now = dev.solution();                   // snapshot of the current state
 - `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
   or `I` drops the other: `{ contacts: { right: { I: 0 } } }` switches it to open circuit. A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
-  Otherwise the device is rebuilt: the current state carries over while the grid and species
-  are unchanged, or restarts from the regions' `c0`. A carried state keeps what it holds: a
+  Otherwise the device is rebuilt: the current state carries over while the species, regions
+  and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate
+  keeps its charge), or restarts from the regions' `c0`. A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
   from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it
