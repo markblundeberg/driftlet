@@ -447,7 +447,7 @@ test checks the compact Jacobian column by column on devices that cover every as
 ### Exact J·v
 
 The assembled matrix loses what a flux's two entries share. A Scharfetter–Gummel flux depends on
-$`\eta`$ at its two ends through $`G`$ and $`-G(1 + E)`$, with $`E = \operatorname{expm1}(\Delta\eta)`$;
+$`\eta`$ at its two ends through $`G`$ and $`-G(1 + E)`$, with $`E = \mathrm{expm1}(\Delta\eta)`$;
 for a nearly uniform $`v`$ they cancel, and $`J \cdot v`$ keeps only round-off of $`G|v|`$, which in
 an inversion layer's 0.1 nm cells ($`G`$ ~ 1e11) dwarfs the flux. Where a solve needs
 $`J \cdot v`$ itself (GMRES, in the impedance and in Newton's refined solves), the dilute kernels'
