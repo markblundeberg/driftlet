@@ -362,3 +362,29 @@ test('a floating gate at rest steps as a held one does, its charge kept', () => 
   const D = (s) => s.interfaces[0].D;
   assert.ok(Math.abs(D(floating.s) / D(floating.s0) - 1) < 1e-9 && Math.abs(floating.s.terminals.left.V - 1) < 1e-9, `D ${D(floating.s)} vs ${D(floating.s0)}, V ${floating.s.terminals.left.V}`);
 });
+
+// A metal gate behind a resistance R, across an oxide from a held plate: an RC circuit,
+// C = 1/(2/C_face + t_ox/ε). Backward Euler's response to a 1 V step is exactly
+// Q_n = Q_∞ (1 − (1 + dt/τ)^−n), τ = RC. Read by the flux into its metal, the charging current
+// was lost below that flux's round-off: fixed steps were 0.9% off, silently, and advance() took
+// 3280 steps for 5τ, half rejected.
+test('a gate behind a resistance charges as RC: exactly backward Euler on steps of τ/20', () => {
+  const tox = units.nm(10), Cf = 10, C = 1 / (2 / Cf + tox / (3.9 * EPS0)), R = 10 / C, tau = R * C;
+  const face = { phi: { type: 'capacitive', C: Cf }, zeroCharge: 0 };
+  const def = (V) => build({ T: 300, library: [metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }], stack: [ohmic(V, ['e-']), layer('Al', units.nm(20)), face, layer('SiO2', tox), face, layer('Al', units.nm(20)), ohmic(0, ['e-'])] });
+  const qInf = new Device(def(1)).solve().interfaces[0].D;
+  assert.ok(Math.abs(qInf / C - 1) < 1e-12, `Q∞ ${qInf} vs C ${C}`);
+  const start = () => {
+    const d = new Device(def(0));
+    d.solve();
+    return d.set({ contacts: { left: { V: 1, R } } });
+  };
+  const d = start(), dt = tau / 20;
+  for (let n = 1; n <= 40; n++) {
+    const s = d.step(dt);
+    assert.ok(s.converged && Math.abs(s.interfaces[0].D / qInf - beStep(n, dt, tau)) < 1e-12, `n=${n}: ${s.interfaces[0].D / qInf} vs ${beStep(n, dt, tau)}`);
+  }
+  const r = start().advance(5 * tau);
+  assert.ok(r.steps < 100 && r.rejected === 0, `${r.steps} steps, ${r.rejected} rejected`);
+  assert.ok(Math.abs(r.interfaces[0].D / qInf - (1 - Math.exp(-5))) < 1e-3);
+});

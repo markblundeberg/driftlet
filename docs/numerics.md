@@ -283,9 +283,9 @@ $`\delta = y + \sum Q_q \mu_q - \sum X_k\, \delta V_k`$, and the $`\mu`$ (pins) 
 come from a small dense system of the extra rows. Each costs one more back-substitution per
 Newton iteration.
 
-A terminal driven by a current that alone feeds a conserved combination (a host's electrons
-behind an open circuit, a floating gate's metal) can read its current another way in a time
-step: as the combination's change, $`F\,(S - S^*)/(\lambda\, dt)`$, which the step's balance rows
+A floating terminal (driven by a current, or behind a resistance) that alone feeds a conserved
+combination (a host's electrons behind an open circuit, a gate's metal) can read its current
+another way in a time step: as the combination's change, $`F\,(S - S^*)/(\lambda\, dt)`$, which the step's balance rows
 sum to exactly (λ is its weight over the terminal's charge, $`w/z`$). Both readings are exact;
 they differ in round-off, and in what Newton can see. Through a metal, the flux is $`G\,\Delta\eta`$
 with its two $`\eta`$ all but equal: a floating gate's charging current fell below that at steps
@@ -296,7 +296,8 @@ it. Over short ones the change is the amount's round-off over $`dt`$ (a cathode'
 electrons, 1e-6 A/m² at 1 µs), and the flux, its levels carried in two words, is far cleaner. So
 a step reads the change where its round-off, $`\varepsilon F S/(\lambda\, dt)`$, is below 1e-6 of
 the flux's estimate, $`\varepsilon\,\max|C|`$, and a step read by the flux that fails is tried once
-more read by the change.
+more read by the change. (A gate charged through a resistance, read by its flux, was 0.9% off
+backward Euler's exact RC response, silently; read by its change, it's exact to round-off.)
 
 Sources are read at the end of a step (implicit), or at the present time in a steady solve.
 `advance()` lands on every waveform breakpoint and restarts its order there.

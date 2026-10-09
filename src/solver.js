@@ -491,7 +491,7 @@ export class Solver {
     this.steady = false; // inside a steady solve: sources at the present time, not a step's end
     // The floating ones are extra unknowns, solved with the grid's by bordering (_solveBordered).
     this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
-    this.drivenKey = this.terms.map((t) => t.drive.kind).join();
+    this.drivenKey = this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}`).join();
     this.lawRefs = new Map(); // what a steady solve keeps behind a terminal at no current (_captureLaws)
     this.chargeRefs = new Map(); // …and the charge a terminal at no current that only charges keeps
     // Per terminal: B = ∂res/∂V (compact column), C = ∂I/∂x (compact row), ∂I/∂V, and for a
@@ -996,6 +996,34 @@ export class Solver {
       }
     }
     for (const isl of this.islands) isl.outside = isl.outside.filter((o) => !used.has(o));
+
+    // Time steps only: a terminal behind a resistance that alone feeds a combination reads its
+    // current by that combination's change too (see _circuitLaws), its combinations found with it
+    // counted as driven by a current. (Not in the steady system, where it holds its level.)
+    this.timeLaws = [];
+    const behind = this.floating.filter((k) => this.terms[k].drive.kind !== 'I');
+    if (behind.length > 0) {
+      const steadyCarriers = this.carriers, more = this._conservedMoieties(true, behind), X2 = S + this.surfCols.length;
+      for (const w of more) {
+        const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
+        if (parts.length === 0 || parts.some((p) => !this._moves(this.stretches[p.stretch]) && !this._still(this.stretches[p.stretch]))) continue;
+        const surface = [...w.keys()].filter((k) => k >= S && k < X2 && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
+        const carriers = this.carriers.flatMap((k, j) => (w[X2 + j] !== 0 ? [{ k, w: w[X2 + j] }] : []));
+        // Fed by one terminal behind a resistance and nothing else that passes current.
+        const fedBy = new Set([...carriers.map((p) => p.k), ...parts.flatMap((p) => this.floating.filter((k) => this._feeds(k, this.stretches[p.stretch])))]);
+        if (fedBy.size !== 1) continue;
+        const [k] = fedBy;
+        if (!behind.includes(k) || this.timeLaws.some((cs) => cs.circuit === k)) continue;
+        const zc = k >= 2 ? this.z[model.ports[k - 2].terminal] : 0;
+        const lambda = carriers.find((p) => p.k === k)?.w / zc || parts.map((p) => (this._feeds(k, this.stretches[p.stretch]) && this.z[this.stretches[p.stretch].species] !== 0 ? p.w / this.z[this.stretches[p.stretch].species] : 0)).find((x) => x !== 0);
+        if (!lambda) continue;
+        let nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
+        for (const p of surface) nNodes += model.ports[this.surfCols[p.col][0]].nodes.length * model.ports[this.surfCols[p.col][0]].surface.length;
+        for (const p of carriers) nNodes += model.ports[p.k - 2].nodes.length;
+        this.timeLaws.push({ parts, surface, carriers, terminals: [k], circuit: k, lambda, idx: new Int32Array(nNodes * this.M), w: new Float64Array(nNodes * this.M), len: 0 });
+      }
+      this.carriers = steadyCarriers;
+    }
   }
 
   // What each combination fed by a terminal driven at no current holds now, which a steady solve
@@ -1132,13 +1160,14 @@ export class Solver {
   // charges, so a combination weighted by z there is conserved while it passes none: a battery's
   // cathode, its electrons behind an open circuit, keeps its charge. Exact integer data, so plain
   // elimination will do.
-  _conservedMoieties(drives = false) {
+  _conservedMoieties(drives = false, alsoCurrent = []) {
     const { model, n, z } = this, S = this.stretches.length;
     // With `drives`, an electrode port driven by a current whose reactions take its carrier from
     // the electrode has a column of its own, last: what the electrode holds, its charge Q/(zF),
     // which the current feeds and the reactions draw on (a port at no current with M⁺ + e⁻ = M(s)
     // keeps M⁺ + Q/F, or with no capacitance, Q = 0, the M⁺ alone).
-    this.carriers = drives ? this.terms.flatMap((t, k) => (t.drive.kind === 'I' && k >= 2 && model.ports[k - 2].reactions.length > 0 ? [k] : [])) : [];
+    const byCurrent = (t, k) => t.drive.kind === 'I' || alsoCurrent.includes(k); // (with `alsoCurrent`, terminals counted as such)
+    this.carriers = drives ? this.terms.flatMap((t, k) => (byCurrent(t, k) && k >= 2 && model.ports[k - 2].reactions.length > 0 ? [k] : [])) : [];
     const X = S + this.surfCols.length, C = X + this.carriers.length;
     const rows = [];
     model.interfaces.forEach((itf, f) => {
@@ -1178,7 +1207,7 @@ export class Solver {
     };
     this.terms.forEach((t, k) => {
       const fed = this.stretches.flatMap((st, j) => (this._feeds(k, st) ? [j] : []));
-      if (!(drives && t.drive.kind === 'I')) return fed.forEach(unit);
+      if (!(drives && byCurrent(t, k))) return fed.forEach(unit);
       const charged = fed.filter((j) => z[this.stretches[j].species] !== 0).map((j) => [j, z[this.stretches[j].species]]);
       if (this.carriers.includes(k)) charged.push([X + this.carriers.indexOf(k), z[model.ports[k - 2].terminal]]);
       fed.filter((j) => z[this.stretches[j].species] === 0).forEach(unit);
@@ -1357,9 +1386,9 @@ export class Solver {
   // throughout, and where a step read by the flux fails, it's tried once more read by the change
   // (see step).
   _circuitLaws(dt) {
-    for (const cs of this.constraints) {
+    for (const cs of [...this.constraints, ...this.timeLaws]) {
       const k = cs.circuit;
-      if (k < 0 || this.terms[k].drive.kind !== 'I') continue;
+      if (k < 0 || !this.floating.includes(k)) continue;
       const { amount, dV, gross } = this._lawAmount(cs), f = FARADAY / (cs.lambda * dt), C = this.termC[k];
       if (!this.lawForm.has(cs)) {
         let G = 0;
@@ -1369,8 +1398,9 @@ export class Solver {
       if (!this.lawForm.get(cs)) continue;
       C.fill(0);
       for (let j = 0; j < cs.len; j++) C[cs.idx[j]] += f * cs.w[j];
-      this.termRes[k] = f * (amount - this._lawStart(cs)) - sourceAt(this.terms[k].drive.src, this.sourceTime, this.sourceBefore);
-      this.termDI[k] = f * dV;
+      const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime, this.sourceBefore);
+      this.termRes[k] = f * (amount - this._lawStart(cs)) - (d.kind === 'I' ? src : (src - this.termV[k]) / d.R);
+      this.termDI[k] = f * dV + (d.kind === 'I' ? 0 : 1 / d.R);
     }
   }
 
@@ -1477,7 +1507,8 @@ export class Solver {
     this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
     if (this.floating.length !== before.length) this.deltaV = null;
     // A terminal newly driven by a current (or no longer) can close a combination behind it.
-    this.drivenKey = this.terms.map((t) => t.drive.kind).join();
+    // (and one put behind a resistance, or taken from it, its time steps' reading: see _laws)
+    this.drivenKey = this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}`).join();
     if (this.drivenKey !== driven) this._laws();
     this._refreshSources();
     this.history = [];
@@ -1995,7 +2026,7 @@ export class Solver {
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
     this._terminals(dt);
-    if (Number.isFinite(dt) && this.constraints.length > 0) this._circuitLaws(dt);
+    if (Number.isFinite(dt) && (this.constraints.length > 0 || this.timeLaws.length > 0)) this._circuitLaws(dt);
     // The steady system's own rows (see _laws): levels held flat, conserved amounts, islands'
     // balances, the last two kept aside for _solveBordered.
     const steady = this.steady && dt === Infinity;

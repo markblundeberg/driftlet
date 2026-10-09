@@ -9,7 +9,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   change, where that's the quieter reading. A floating gate at rest took 5000 steps per 100 s,
   half rejected, its charging current lost below its metal's round-off (it now takes the 44 a
   held gate does); a closed host at open circuit drifted from its charge (to 0.3995 V from
-  0.4 V by 1e10 s), and its steps failed by 1e14 s.
+  0.4 V by 1e10 s), and its steps failed by 1e14 s. A terminal behind a resistance reads its
+  current the same way: a gate charged through one was 0.9% off its RC response, silently, and
+  took 3280 steps for 5τ, half rejected; it now follows backward Euler's exactly, in 60.
 - A steady solve from a transient's state that Newton can't take goes on as a cold device would,
   from the layout for its drives: a lit MOS capacitor a nanosecond after its gate jumped failed
   where a cold solve takes 27 iterations; it now takes 32. A continuation no longer starts from
