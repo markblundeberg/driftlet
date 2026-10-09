@@ -320,6 +320,22 @@ function runCase(family, k) {
     cold = d.solve();
     return judged(d, cold);
   });
+  // 2b. The same, its species listed in reverse: nothing may depend on the order (two
+  // overlapping conserved combinations once replaced dependent rows for some orders, silently).
+  attempt('species order', () => {
+    if (!cold?.converged) return '';
+    const d = new Device({ ...def, species: [...def.species].reverse() });
+    d.set(drive(plan.side, V0 + plan.V));
+    const s = d.solve();
+    if (!s.converged) return 'not converged, where the species in order did';
+    const gross = Math.max(...Object.values(cold.terminals).map((t) => Math.abs(t.current)));
+    for (const [name, t] of Object.entries(cold.terminals)) {
+      const u = s.terminals[name];
+      if (!sameCurrent(u.current, t.current, gross * 1e-3)) return `${name}: ${u.current} reversed, ${t.current} in order (A/m²)`;
+      if (Math.abs(u.V - t.V) > 1e-6) return `${name}: ${u.V} V reversed, ${t.V} V in order`;
+    }
+    return '';
+  });
   // 3. Warm, swept there in steps, and the same answer.
   attempt('warm sweep', () => {
     const d = new Device(def);
