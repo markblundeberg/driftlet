@@ -142,6 +142,16 @@ an end (E falling by millivolts over the last few percent of x) can fail that ch
 many points it has, since r then changes as steeply as the logarithm: give the ends some of the
 ideal slope (adding −0.5 (RT/F) ln(x/(1−x)) there passes).
 
+With `A` instead, the curve is the isotherm's, against a reference where the combination's
+chemical potential is 0, with $`g`$ the excess chemical potential ($`\Omega(1-2x)`$ for `A: [Ω]`):
+
+```math
+E(x) = -\frac{\mu^\circ_{\mathrm{ion}} + \nu\mu^\circ_{\mathrm{carrier}} + RT\ln\frac{x}{1-x} + RT\ln\frac{c_{\mathrm{max}}}{c_{\mathrm{ref}}} + g(x) - g(0)}{zF}
+```
+
+So an ideal host given `cRef` = `cMax`, the ion's `mu0` $`= -zFE^\circ`$ and the carrier's 0 sits at
+$`E^\circ`$ half full.
+
 Because every charged species sits in a neutral combination, **$`\phi`$ is undefined** in such a
 host and is reported as `NaN`. Its faces must be `neutral` (the default next to such a host),
 and its contacts `bulk` or `neutral`. The host's `fixedCharge` is balanced by background
@@ -157,10 +167,18 @@ the ion, as usual; else the two combine as $`D_i D_e/(D_i + D_e)`$, ambipolar di
 $`E = E^\circ - (RT/F)\ln(x/(1-x))`$, it's $`D/(1-x)`$, so a host filling toward $`x = 1`$
 diffuses ever faster, and a $`D`$ measured mid-range isn't the one to give. (A constant chemical
 diffusivity isn't expressible.) A host that only stores what comes in, filling at a constant
-current through its collector, has no steady state: `advance()` it from its `c0`. In a sphere,
+current through its collector, has no steady state: `advance()` it from its `c0`. At no
+current it has one per state of charge, and a steady solve keeps the charge it holds, so in a
+titration (GITT) each rest's OCV is a `solve()` at `I: 0` after the pulse's `advance()`, with no
+need to wait out the relaxation. What a pulse measures is the chemical diffusivity, and the
+textbook estimate from it assumes a small pulse: over $`\Delta x \approx 0.1`$ it's off by up to
+×7 near an end of the curve, against a host that has exactly the diffusivity it's given. In a sphere,
 `geometry: { type: 'spherical', r0: 0 }`, with the centre sealed (`{ phi: 'neutral' }`, every
 species blocked), the ion held at the surface by its reference and the electrons fed by a port
-there (a current into the device: negative, to fill a cathode).
+there (a current into the device: negative, to fill a cathode). A port's `conductance` link
+adds its ohmic drop, about $`I/(G w)`$, to the voltage read, which is no part of the host: give it
+a large $`G`$ (1e15 S/m³ over a window of 2% of the radius), and see that the voltage doesn't move
+with it.
 
 An insertion host belongs with [conductor regions](device.md#materials) more than with the other
 statistics here. Both are conductors with no $`\phi`$ of their own:
