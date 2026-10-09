@@ -110,9 +110,12 @@ function balance(device, sol) {
     else ledgers[l].terms.push({ what, rate });
   };
   const last = regions.length - 1;
+  // (A contact that blocks a species is no source of it: what its flux reads there is the end
+  // box's own imbalance, which the ledger must show, not balance.)
+  const through = (side, i) => model.contacts[side].species[i].type !== 'blocked';
   species.forEach((sp, i) => {
-    add(i, 0, 'left contact', sol.contacts.left.flux[sp.name]);
-    add(i, last, 'right contact', -sol.contacts.right.flux[sp.name]);
+    if (through('left', i)) add(i, 0, 'left contact', sol.contacts.left.flux[sp.name]);
+    if (through('right', i)) add(i, last, 'right contact', -sol.contacts.right.flux[sp.name]);
     model.ports.forEach((port, k) => add(i, port.region, `port ${sol.ports[k].name}`, sol.ports[k].flux[sp.name]));
   });
   model.reactions.forEach((rx, k) => {
