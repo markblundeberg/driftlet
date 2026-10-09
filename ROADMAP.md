@@ -117,8 +117,14 @@ for live demos.
      along the terminal's mode (its voltage and the cathode's electron level together), whose
      residual is linear along the update and costs only ~2e-5 A/m² per thermal unit: residuals
      at round-off (3e-13) move it further than Newton's round-off floor (1e-6) accepts. Either
-     reading of the terminal's current does it. A floor read against the mode's own conditioning,
-     rather than a fixed one, might do; a fixed higher floor lets weakly held populations drift.
+     reading of the terminal's current does it. Not only conditioning, though: accepting a stall
+     that's led by the terminal's voltage once every row holds to tol (equilibrated) carries it
+     only from 5.6e5 to 1.1e6 s. Past that, the residual that won't fall sits in the hosts' Li⁺
+     rows (alternating between two cathode nodes), scales as 1/dt (2e-7 at 29 s, 4e-6 at 1 s),
+     and Newton's update along the terminal's mode doesn't touch it: the Jacobian along that
+     weak mode looks wrong, and the refined solves (exact J·v) don't cover the non-ideal
+     segments an insertion host goes through. Next: a finite-difference check of the host's
+     Li⁺ rows along the mode, or those segments in the exact J·v.
    - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
      and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
      open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18
