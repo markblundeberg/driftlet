@@ -1161,8 +1161,10 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
   return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i } };
 }
 
+// A species present on both sides crosses freely; one that can't move on either (D = 0, trap
+// states, say) is blocked: held level, its two edge boxes would pass whatever flux that takes.
 function defaultInterfaceLinks(matL, matR, species) {
-  return species.map((_, i) => ({ type: matL.present[i] && matR.present[i] ? 'equilibrium' : 'blocked' }));
+  return species.map((_, i) => ({ type: matL.present[i] && matR.present[i] && (matL.D[i] > 0 || matR.D[i] > 0) ? 'equilibrium' : 'blocked' }));
 }
 
 function transferCoefficient(v, path) {

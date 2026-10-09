@@ -551,3 +551,25 @@ test('a floating gate keeps its charge through a change of grid', () => {
   assert.ok(s.converged && Math.abs(s.interfaces[0].D / Q - 1) < 1e-12, `gate charge ${s.interfaces[0].D} vs ${Q}`);
   assert.ok(Math.abs(s.terminals.left.V - 1) < 2e-3, `V ${s.terminals.left.V}`);
 });
+
+// Trap states (D = 0) in two regions of different density: nothing carries them across the
+// face, so by default they're blocked there, and each node keeps its own total. (Crossing freely
+// by default, the two edge boxes' levels were held together, whatever flux that took: the steady
+// solve failed, and a transient mixed the regions' traps, totals off by 1.8 at the face.)
+test('immobile trap states in two regions keep their own densities across the face', () => {
+  const def = {
+    species: [{ name: 'e-', z: -1 }, { name: 'X0', z: 0 }, { name: 'X-', z: -1 }],
+    materials: { film: { epsr: 4, species: { 'e-': { D: 1e-6, mu0: 0, cRef: 1 }, X0: { D: 0, mu0: 0, cRef: 1 }, 'X-': { D: 0, mu0: -3000, cRef: 1 } } } },
+    regions: [
+      { name: 'a', material: 'film', length: 30e-9, fixedCharge: 2 * FARADAY, c0: { 'e-': 1, X0: 1, 'X-': 1 } },
+      { name: 'b', material: 'film', length: 20e-9, fixedCharge: 4 * FARADAY, c0: { 'e-': 1, X0: 2, 'X-': 3 } },
+    ],
+    bulkReactions: [{ equation: 'e- + X0 = X-', kf: { film: 1e3 } }],
+    contacts: { left: { V: 0, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 }, right: { V: 0.05, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 } },
+    grid: { minCells: 30 },
+  };
+  for (const s of [new Device(def).solve(), new Device(def).advance(1)]) {
+    assert.ok(s.converged);
+    s.x.forEach((_, g) => assert.ok(Math.abs(s.c.X0[g] + s.c['X-'][g] - (s.region[g] === 0 ? 2 : 5)) < 1e-12, `node ${g}`));
+  }
+});

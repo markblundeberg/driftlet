@@ -176,7 +176,8 @@ defaults to no dipole.
   than 2%, and how coarse is enough).
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
-present on both sides; blocked otherwise): `'equilibrium'`, `'blocked'`, or
+present on both sides and can move on one at least; blocked otherwise, so trap states with
+$`D = 0`$ stay in their regions): `'equilibrium'`, `'blocked'`, or
 `{ type: 'conductance', G }` ($`J = G \cdot (V_L - V_R)`$, G in S/m², charged species), or
 `{ type: 'permeability', P }` (P in m/s; see [membranes](#membranes)). A species that
 takes part in a reaction at the face and exists on both sides has no default: give its link
