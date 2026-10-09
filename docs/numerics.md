@@ -470,9 +470,14 @@ which cost four assemblies per product.
 ## Newton
 
 - The update of the device's potentials ($`\hat\phi`$, $`\eta`$) is limited to 10 thermal units per
-  iteration by uniform scaling, which scales a floating terminal voltage's update too. That
-  voltage doesn't count toward the limit: it enters only linearly (conductance links, held
-  levels, a capacitive face), so a large swing in it is safe. When it did count, a port driven by
+  iteration by uniform scaling: one factor for the whole update, concentrations' $`\eta`$ with
+  their $`\hat\phi`$, gates, coverages and floating terminal voltages alike, so the damped update
+  keeps Newton's direction. Clipping each unknown at its own limit would not: where it bit,
+  $`\eta - z\hat\phi`$ (a concentration) would move by up to a factor $`e^{10}`$ that Newton never
+  asked for. Either way damping shapes only the path, since convergence needs a full, undamped
+  update. A floating terminal voltage's update doesn't count toward the limit, though: it enters
+  only linearly (conductance links, held levels, a capacitive face), so a large swing in it is
+  safe. When it did count, a port driven by
   a current pulse, its voltage collapsing by hundreds of volts as the current switched off,
   dragged every unknown along 10 thermal units at a time (and a swing past 1e4 tripped the
   divergence check): the strong-injection Haynes–Shockley benchmark took 55% more
