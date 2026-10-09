@@ -111,22 +111,6 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
-   - A floating gate's current in time steps. A gate floated at no current reads its circuit row
-     as the flux into its metal, and its response to the gate's voltage (the charging current,
-     ~C/dt) falls below the round-off of the metal's $`\eta`$ differences once steps reach ~0.03 s
-     (a MOS capacitor's aluminium gate): the bordered system comes out exactly singular, the step
-     is rejected, and a quiescent floating gate takes ~800 steps per 10 s, half of them rejected
-     (results right; held, it takes 14). The steady solve already reads such a terminal by the
-     charge it keeps; time steps could read its current as that charge's change, where the
-     current is displacement alone.
-   - Long transients at no current. A terminal at `I: 0` holds what it alone feeds only to the
-     step's tolerance, and over very long times that adds up: a lithium half cell relaxed past
-     1e6 s drifts from the charge it holds (4e-5 V by 7e10 s, 3 mV by 5e11 s, a failed step by
-     4e12 s), seen only in `conservation`. The steady solve is right there; time steps could hold
-     the amount the way it does.
-   - Steady solves from a lit MOS capacitor's transient. Cold, it solves in 14 iterations; after
-     any `advance()` from 1 ns to 1 s, `solve()` fails (loudly), and succeeds again after 100 s.
-     Not without light.
    - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
      and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
      open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18

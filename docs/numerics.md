@@ -283,6 +283,21 @@ $`\delta = y + \sum Q_q \mu_q - \sum X_k\, \delta V_k`$, and the $`\mu`$ (pins) 
 come from a small dense system of the extra rows. Each costs one more back-substitution per
 Newton iteration.
 
+A terminal driven by a current that alone feeds a conserved combination (a host's electrons
+behind an open circuit, a floating gate's metal) can read its current another way in a time
+step: as the combination's change, $`F\,(S - S^*)/(\lambda\, dt)`$, which the step's balance rows
+sum to exactly (λ is its weight over the terminal's charge, $`w/z`$). Both readings are exact;
+they differ in round-off, and in what Newton can see. Through a metal, the flux is $`G\,\Delta\eta`$
+with its two $`\eta`$ all but equal: a floating gate's charging current fell below that at steps
+of ~0.03 s, and the bordered system came out exactly singular (a gate at rest took 5000 steps
+per 100 s, half rejected, where a held one takes 44). Over long steps the flux lets a closed host
+drift from its charge (3 mV over 5e11 s, and steps failed by 4e12 s), where the change keeps
+it. Over short ones the change is the amount's round-off over $`dt`$ (a cathode's 0.04 mol/m² of
+electrons, 1e-6 A/m² at 1 µs), and the flux, its levels carried in two words, is far cleaner. So
+a step reads the change where its round-off, $`\varepsilon F S/(\lambda\, dt)`$, is below 1e-6 of
+the flux's estimate, $`\varepsilon\,\max|C|`$, and a step read by the flux that fails is tried once
+more read by the change.
+
 Sources are read at the end of a step (implicit), or at the present time in a steady solve.
 `advance()` lands on every waveform breakpoint and restarts its order there.
 
@@ -776,6 +791,12 @@ A solve that fails falls back stage by stage:
 1. **Newton from here.** If it diverges, it's retried once with tighter damping (3 thermal units
    per iteration), enough for most large jumps, such as a cold start at forward bias. Where no
    continuation applies, the first stage goes straight on into the pseudo-transient ramp (3).
+   Where the state is a transient's, it can be a worse start than a cold one (a nanosecond after
+   a lit MOS capacitor's gate jumps, its surface is in deep depletion, minority carriers ten
+   orders below where they end): if Newton fails from there, the solve goes on as a cold device
+   would, from the layout for the drives, keeping what it took from the state (its amounts and
+   charges). Nor does a continuation start from the last steady solve's voltages once a
+   transient has moved the state.
 2. **Continuation from a solved state, along the drives,** each step a steady solve warm from
    the last:
    - **The light.** A device with generation reactions (species made only from, or turned only
@@ -827,7 +848,8 @@ tests or stress cases the others pass).
   charge to round-off.
 - **The iterate conserves to Newton's tolerance.** Storage is nonlinear in $`\eta`$, so each step's
   drift is its summed residual. Converging to 1e-10 in $`\eta`$ makes that ~1e-15 per step in
-  practice.
+  practice; but over steps of 1e10 s, the residual times $`dt`$ adds up, which is why a terminal
+  at no current reads its current there by what it keeps ([terminals](#terminals)).
 - **Reported.** Every solution's `conservation` lists each species stretch: its amount, its
   reference, the time-integrated flux through its contacts, and the resulting drift.
 

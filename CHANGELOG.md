@@ -2,6 +2,25 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- A terminal driven by a current that alone feeds what it keeps (a floating gate's metal, a
+  host's electrons behind an open circuit) reads its current in a time step as that amount's
+  change, where that's the quieter reading. A floating gate at rest took 5000 steps per 100 s,
+  half rejected, its charging current lost below its metal's round-off (it now takes the 44 a
+  held gate does); a closed host at open circuit drifted from its charge (to 0.3995 V from
+  0.4 V by 1e10 s), and its steps failed by 1e14 s.
+- A steady solve from a transient's state that Newton can't take goes on as a cold device would,
+  from the layout for its drives: a lit MOS capacitor a nanosecond after its gate jumped failed
+  where a cold solve takes 27 iterations; it now takes 32. A continuation no longer starts from
+  the last steady solve's voltages once a transient has moved the state.
+- `check()` leaves a contact that blocks a species out of that species' ledger: the flux it read
+  there was the end box's own imbalance, and counted as a source it had balanced the books of a
+  state that wasn't steady.
+- The stress test solves each case again with its species listed in reverse, and has a family of
+  reacting solutions in several regions, with an electrode at no current: before 0.16.1's fixes
+  it failed 237 of 1496 checks.
+
 ## 0.16.1 (2026-10-08)
 
 Found by a round of agents trying the new steady solves cold (GITT on an insertion host,
