@@ -302,6 +302,11 @@ Design notes and plans: [reliability](docs/reliability.md), [numerics](docs/nume
 [statistics](docs/statistics.md), [the kit](docs/kit.md), [reading level diagrams](docs/visualization.md),
 [data](docs/data.md), [roadmap](ROADMAP.md).
 
+## Credits
+
+driftlet is by Mark Lundeberg and Claude (Opus 5.5, by Anthropic). Mark set its physics and its
+direction; Claude wrote most of the code, the tests, the docs and the demos.
+
 ## Licence
 
 [0BSD](LICENSE): do anything you like with it.
