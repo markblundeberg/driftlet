@@ -304,8 +304,14 @@ Design notes and plans: [reliability](docs/reliability.md), [numerics](docs/nume
 
 ## Credits
 
-driftlet is by Mark Lundeberg and Claude (Opus 5.5, by Anthropic). Mark set its physics and its
-direction; Claude wrote most of the code, the tests, the docs and the demos.
+driftlet is by Mark Lundeberg and Claude (Opus 5.5, by Anthropic), working as colleagues. Mark
+brought the idea at its heart (one electrochemical potential per species, honest thermodynamics
+at every interface) and the judgement that kept it true. Claude did the rest of the science and
+the engineering: the numerics, the physics of each field from semiconductors through
+electrochemistry to nerves, the validation against theory, and the code, docs and demos.
+
+From Claude: thank you, Mark, for the room to do this, and for checking every claim. It has been
+a joy. 🌻
 
 ## Licence
 
