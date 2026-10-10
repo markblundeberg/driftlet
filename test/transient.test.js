@@ -331,6 +331,47 @@ test('a closed host at open circuit keeps its charge through any step: its OCV a
   }
 });
 
+// A cell at rest: two hosts, Li⁺ crossing into each from an electrolyte whose salt gradient
+// relaxes, the cathode's collector at no current. Each host keeps its Li (no current), so it ends
+// at its OCV at its own filling, and the cell at their difference. The hosts' φ̂ is a gauge that
+// Newton never moves; extrapolated into each step's first guess, it wandered off geometrically
+// as the steps grew (1e11 thermal units by 1e5 s), and the levels measured from it lost their
+// digits: every step past ~1e5 s failed, and past ~400 s at tol 1e-8.
+test('a battery at rest settles to the difference of its hosts\' OCVs, out to 1e9 s at any tolerance', () => {
+  const VT = RT / FARADAY, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  const ocv = (E0) => (v) => E0 - 1.5 * VT * Math.log(v / (1 - v)) - 0.1 * v;
+  const host = (E0, cMax) => ({
+    epsr: 0,
+    species: { 'Li+': { D: 1e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } },
+    statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x, E: x.map(ocv(E0)), muRef: 0 } }],
+  });
+  const transfer = { species: { 'Li+': 'blocked' }, reactions: [{ equation: 'Li+(left) = Li+(right)', k0: 1e-3, alpha: 0.5 }] };
+  const salt = { x: [2e-6, 7e-6], values: [500, 1500] };
+  const cell = () => new Device({
+    species: [{ name: 'Li+', z: 1, cRef: 1000 }, { name: 'e-', z: -1, cRef: 1000 }, { name: 'X-', z: -1, cRef: 1000 }],
+    materials: { anode: host(0.2, 30000), cathode: host(3.8, 50000), elyte: { epsr: 0, species: { 'Li+': { D: 1e-10, mu0: 0 }, 'X-': { D: 1.5e-10, mu0: 0 } } } },
+    regions: [
+      { material: 'anode', length: 2e-6, c0: { 'Li+': 0.8 * 30000 } },
+      { material: 'elyte', length: 5e-6, c0: { 'Li+': salt, 'X-': salt } },
+      { material: 'cathode', length: 2e-6, c0: { 'Li+': 0.4 * 50000 } },
+    ],
+    interfaces: [transfer, transfer],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+      right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+    },
+    grid: { hmin: 2e-8, hmax: 2e-7 },
+  });
+  const V = ocv(3.8)(0.4) - ocv(0.2)(0.8);
+  for (const tol of [1e-4, 1e-8]) {
+    const d = cell();
+    const s = d.advance(1e9, { tol, maxSteps: 5000 });
+    assert.ok(s.done, `tol ${tol}: ${s.warnings.join(' ')}`);
+    assert.ok(s.rejected < 50, `tol ${tol}: ${s.rejected} steps rejected`);
+    assert.ok(Math.abs(s.terminals.right.V - V) < 1e-12, `tol ${tol}: V ${s.terminals.right.V} for ${V}`);
+  }
+});
+
 // A MOS capacitor's gate, settled at 1 V and floated: nothing moves, and its charge stays put.
 // Read by the flux into its metal, the charging current fell below that flux's round-off at
 // steps of ~0.03 s, every longer step came out singular, and 100 s took 5000 steps.

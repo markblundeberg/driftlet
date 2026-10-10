@@ -591,8 +591,11 @@ which cost four assemblies per product.
   - A target within round-off of the present time (1e-10 relative), such as an animation
     frame's that lands a hair past a breakpoint just reached, is snapped to rather than
     stepped to: a step of 1e-13 s can't be resolved.
-  - Newton starts each step from the state extrapolated through the last three, which saves
-    about a third of the iterations.
+  - Newton starts each step from its unknowns extrapolated through the last three states, which
+    saves about a third of the iterations. Only its unknowns: the slots it never solves for
+    include a gauge, an insertion host's $`\hat\phi`$, which extrapolated through steps that grow
+    wandered off geometrically (to 1e11 thermal units by 1e5 s), until the levels measured from
+    it lost their digits and every step failed.
   - The wall-clock budget is checked between steps.
 
 ## Small-signal impedance

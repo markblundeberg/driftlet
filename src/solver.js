@@ -3676,11 +3676,7 @@ export class Solver {
       this.portQEnd = Float64Array.from(this.portQ);
     }
     const DN = { ...this.contactDEnd }, QN = Float64Array.from(this.portQEnd);
-    if (opts.guess) {
-      // Start Newton from a predicted state (e.g. extrapolated from the history).
-      this.u.set(opts.guess);
-      this.uLo.fill(0);
-    }
+    if (opts.guess) this._guess(opts.guess); // start Newton from a predicted state
     let dtEff = dt;
     if (bdf) {
       const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
@@ -3717,10 +3713,7 @@ export class Solver {
         this.u.set(this.uPrev);
         this.uLo.set(this.uPrevLo);
         this.termV.set(this.termVPrev);
-        if (opts.guess) {
-          this.u.set(opts.guess);
-          this.uLo.fill(0);
-        }
+        if (opts.guess) this._guess(opts.guess);
         const again = this.newton(dtEff, { ...opts, islands: true });
         result = { ...again, iterations: result.iterations + again.iterations };
       }
@@ -3730,10 +3723,7 @@ export class Solver {
         this.u.set(this.uPrev);
         this.uLo.set(this.uPrevLo);
         this.termV.set(this.termVPrev);
-        if (opts.guess) {
-          this.u.set(opts.guess);
-          this.uLo.fill(0);
-        }
+        if (opts.guess) this._guess(opts.guess);
         for (const cs of this.lawForm.keys()) this.lawForm.set(cs, true);
         const again = this.newton(dtEff, opts);
         result = { ...again, iterations: result.iterations + again.iterations };
@@ -3764,6 +3754,19 @@ export class Solver {
     }
     this.sourceBefore = false;
     return result;
+  }
+
+  // Newton's unknowns set to a guess (e.g. extrapolated from the history). Only its unknowns: the
+  // other slots never change (see _activeSlots), and among them is a gauge, an insertion host's
+  // φ̂, that nothing pulls back. Extrapolated through steps that grow, it wandered off
+  // geometrically, 147 to 8000 thermal units in a battery's first 100 s and 1e11 by 1e5 s, where
+  // its species' levels (η − zφ̂, summed back by the host's statistics) lost their digits to it.
+  _guess(guess) {
+    const { u, uLo } = this;
+    for (const k of this.fullOf) {
+      u[k] = guess[k];
+      uLo[k] = 0;
+    }
   }
 
   /**
