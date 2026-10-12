@@ -2,6 +2,41 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## 0.16.3 (2026-10-12)
+
+Mostly found by round 11 of agents trying what's new cold (batteries at rest, slow couples and
+mixed potentials, floating and resistive gates, an invariant fuzzer), whose results otherwise
+matched theory: relaxed GITT voltages to 1e-9 V, Wagner–Traud mixed potentials to 1e-5 mV.
+
+- A battery at rest steps out to any time. Each step's first guess extrapolated an insertion
+  host's φ̂ too, a gauge that nothing pulls back, and through steps that double it ran off
+  geometrically (1e11 thermal units by 1e5 s), until the levels measured from it lost their digits
+  and every step failed (from 1e5 s at tol 1e-6, 400 s at 1e-8). It now reaches 1e9 s at any
+  tolerance, the voltage at its hosts' OCV difference to 1e-12 V.
+- A face reaction that alone changes what nothing else feeds (Ag⁺ in a closed solution, beside a
+  faster couple on the same electrode) is held at equilibrium in steady solves by its affinity,
+  not its rate, so it's right at any k0. At k0 1e-20 the rate was lost to diffusion's round-off:
+  the solve settled where silver wasn't (−0.4661 V for −0.5004), silently, and 1e-15 to 1e-18
+  failed. That covers an electrode at open circuit feeding a closed pool too (78 mV off before),
+  and a couple whose species also complexes.
+- A bulk or electrode-port reaction a steady state needs at equilibrium, too slow to see, is
+  warned of rather than passed off as steady (a slow complexation had kept its starting
+  composition, K = 0.1 for 7.5).
+- A steady solve converges only where its residual is small, not just its update. A pivot that
+  cancelled exactly, or a factorisation that lost a reaction's row, left a rate row unsolved
+  under a small update: one couple written twice on an electrode at open circuit sat at 0.7293 V
+  for 0.6906, silently, and in one species order only.
+- `advance()` integrates short calls late in a run. It skipped any remainder under 1e-10 of the
+  absolute time as round-off: a 0.01 s GITT pulse at 1e9 s was skipped whole (the time moved,
+  nothing else did), and from 1e10 s a pulse train lost 17% of its charge.
+- A floating terminal reports what its circuit passes, exactly: a gate behind R read its current
+  as the flux into its metal, 1.5e-4 off wherever Newton stopped an update early.
+- `set({ contacts: { left: { I: 0 } } })` on a contact `{ V, R }` drops the resistance too (it
+  threw).
+- A time step that fails says what usually does it, most likely first: a host or surface at its
+  limit; an electrode at open circuit with no double layer, held only by a slow reaction (give
+  its face a capacitance).
+
 ## 0.16.2 (2026-10-09)
 
 - A terminal driven by a current that alone feeds what it keeps (a floating gate's metal, a
