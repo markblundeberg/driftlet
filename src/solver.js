@@ -4045,7 +4045,10 @@ export class Solver {
     // Stopped short, other than on the caller's wall-time budget: say where, and why.
     let stopped;
     const at = `advance stopped at t = ${this.time.toPrecision(6)} s of ${tEnd.toPrecision(6)}`;
-    if (failed) stopped = `${at}: a step didn't converge even when shortened to ${dt.toExponential(1)} s. A drive's jump too big for one step (ramp it), a driven current the device can't keep passing (a diode's reverse recovery past its storage time: stop there), or a device the steady solves also find hard.`;
+    // (What usually does it, most likely first. Round 11's agents read the old list, which led
+    // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
+    // an electrode at open circuit with no double layer, held only by a slow reaction.)
+    if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
     else if (this.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
     return { converged: !failed, done: this.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
   }
