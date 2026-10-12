@@ -63,8 +63,8 @@ export class Device {
   }
 
   /**
-   * Change part of the definition (deep-merged). A contact given V or I drops the other, so
-   * `{ contacts: { right: { I: 0 } } }` switches it to open circuit. Ports are patched by name,
+   * Change part of the definition (deep-merged). A contact given V or I drops the other (and
+   * given I, any series R), so `{ contacts: { right: { I: 0 } } }` switches it to open circuit. Ports are patched by name,
    * `{ ports: { gate: { V: 0.2 } } }` (an array replaces them all). A change to the terminals'
    * drives alone (V, I, R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
    * the warm start when the grid and species are unchanged (else restarting from the regions' c0).
@@ -73,7 +73,8 @@ export class Device {
    */
   set(patch) {
     // A terminal given a new kind of drive drops the old one: { I: 0 } replaces a held V.
-    const redrive = (c) => (c && typeof c === 'object' && !Array.isArray(c) ? ('I' in c && !('V' in c) ? { ...c, V: undefined } : 'V' in c && !('I' in c) ? { ...c, I: undefined } : c) : c);
+    // (A current drives a terminal alone: given I, a contact drops V and any series R too.)
+    const redrive = (c) => (c && typeof c === 'object' && !Array.isArray(c) ? ('I' in c && !('V' in c) ? { ...c, V: undefined, ...('R' in c ? {} : { R: undefined }) } : 'V' in c && !('I' in c) ? { ...c, I: undefined } : c) : c);
     for (const side of ['left', 'right']) {
       const c = patch?.contacts?.[side];
       if (c && typeof c === 'object') patch = { ...patch, contacts: { ...patch.contacts, [side]: redrive(c) } };

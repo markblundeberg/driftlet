@@ -965,7 +965,8 @@ const now = dev.solution();                   // snapshot of the current state
   frequency also returns complex profiles of $`\delta\phi`$, $`\delta\bar\mu`$ and $`\delta c`$ per unit
   excitation.
 - `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
-  or `I` drops the other: `{ contacts: { right: { I: 0 } } }` switches it to open circuit. A patch that changes only the
+  or `I` drops the other (and given `I`, any series `R`): `{ contacts: { right: { I: 0 } } }`
+  switches it to open circuit, whether it was held or behind a resistance. A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
   Otherwise the device is rebuilt: the current state carries over while the species, regions
   and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate

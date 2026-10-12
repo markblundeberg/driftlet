@@ -111,6 +111,19 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
+   - A level the plain solves barely see, in time steps. A floating gate on a MOS capacitor
+     without a channel port, at rest in inversion (its electrons reach the back contact only by
+     minority diffusion), wanders as t²: 8e-5 V by 1e7 s at 1.2 V, 8e-4 V at 2 V, with half the
+     steps rejected, silently. Each step starts from the state extrapolated through the last
+     three; Newton corrects the inversion layer's level only ~1% an iteration (the factorised
+     solves lose it to cancellation), and accepts on its other potentials, so the guess's error
+     there stays, and through steps that double, the extrapolation grows it. Fixed `step()`s
+     (no guess) hold it to 1e-15 V. Tried: extrapolating no further than the last step's length
+     (1e-11 V, but the same layer filling after a gate step came out 0.27% off at 1000 s, where
+     the extrapolation had carried it); each potential's own contraction ratio turning on the
+     refined solves (2e-11 V, but 20% more factorisations in Haynes–Shockley, whose legitimate
+     ratios overlap the gate's); only on steps that grow (not enough). A cheap way to tell a
+     crawling mode from a contracting one would settle it.
    - Bulk reactions too slow to see. A face reaction that alone changes a combination now stands
      on its affinity in steady solves, at any k0; a bulk reaction can't, since a zero integral
      of its rate doesn't make it zero at every node. K⁺ + A⁻ = KA in a cell whose only reservoir

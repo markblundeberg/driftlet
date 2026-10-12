@@ -445,10 +445,19 @@ test('a gate behind a resistance charges as RC: exactly backward Euler on steps 
     return d.set({ contacts: { left: { V: 1, R } } });
   };
   const d = start(), dt = tau / 20;
+  let D = 0;
   for (let n = 1; n <= 40; n++) {
     const s = d.step(dt);
     assert.ok(s.converged && Math.abs(s.interfaces[0].D / qInf - beStep(n, dt, tau)) < 1e-12, `n=${n}: ${s.interfaces[0].D / qInf} vs ${beStep(n, dt, tau)}`);
+    // Its current, (1 V − V)/R, is the charging of each step exactly, however few iterations
+    // Newton took (read as the flux into its metal, 1.5e-4 off where it stopped early).
+    const I = s.terminals.left.current, dD = (s.interfaces[0].D - D) / dt;
+    D = s.interfaces[0].D;
+    assert.ok(Math.abs(I / dD - 1) < 1e-9 && Math.abs(I + s.terminals.right.current) < 1e-12 * I, `n=${n}: I ${I}, dD/dt ${dD}, right ${s.terminals.right.current}`);
   }
+  // Then let go: { I: 0 } drops the resistance with the voltage source.
+  d.set({ contacts: { left: { I: 0 } } });
+  assert.ok(Math.abs(d.advance(d.solution().time + 100 * tau).interfaces[0].D - D) < 1e-12 * D);
   const r = start().advance(5 * tau);
   assert.ok(r.steps < 100 && r.rejected === 0, `${r.steps} steps, ${r.rejected} rejected`);
   assert.ok(Math.abs(r.interfaces[0].D / qInf - (1 - Math.exp(-5))) < 1e-3);

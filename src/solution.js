@@ -152,6 +152,16 @@ export function makeSolution(solver, result = {}) {
     }
     return out;
   });
+  // A floating terminal passes what its circuit says, exactly (see passedCurrent).
+  if (sol.converged) {
+    for (const k of solver.floating) {
+      const I = solver.passedCurrent(k);
+      if (k === 0) sol.contacts.left.current = I;
+      else if (k === 1) sol.contacts.right.current = -I;
+      else sol.ports[k - 2].current = I;
+    }
+  }
+  sol.current = sol.contacts.right.current;
   sol.terminalVoltage = sol.contacts.right.V - sol.contacts.left.V;
   // Every terminal (the contacts, then the ports by name): its voltage and its current into the
   // device, conduction plus displacement. They sum to zero in steady state.

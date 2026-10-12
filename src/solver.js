@@ -4263,8 +4263,19 @@ export class Solver {
     this.computeConcentrations();
   }
 
+  // What a floating terminal k passes into the device, which its circuit row holds exactly once
+  // converged: the current it's driven by, or (V_source − V)/R behind a resistance (the source
+  // as the last step saw it, before any jump at its end). Read as a flux through a metal instead,
+  // it carried that flux's round-off, G Δη with G huge: a gate behind R read 1.5e-4 off wherever
+  // Newton stopped an update early, and below ~1e-16 A/m², nothing but noise.
+  passedCurrent(k) {
+    const d = this.terms[k].drive, src = sourceAt(d.src, this.time, !this.atSteady);
+    return d.kind === 'I' ? src : (src - this.termV[k]) / d.R;
+  }
+
   // Terminal current toward +x at the right contact, from the last assembly at this state.
   _terminalCurrent() {
+    if (this.floating.includes(1)) return -this.passedCurrent(1);
     let I = 0;
     for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * this.contactFlux.right[i];
     const dt = this.lastDt;
