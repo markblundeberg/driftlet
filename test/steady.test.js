@@ -471,6 +471,70 @@ test('a floating gate, its back contact jumped far: the holes held flat carry ex
 // (with no capacitance, Q = 0, the M⁺ alone), which a steady solve keeps in place of the port's
 // circuit row. Steady, M⁺ is uniform and at Nernst with the electrode, X⁻ − K⁺ = c(M⁺) with
 // K⁺X⁻ = c_b²: V = (μ°(M⁺) + μ°(X⁻) + RT ln(c(M⁺) c(X⁻)/c_ref²))/F, the bath's X⁻ at 0 V.
+// Silver and iron couples on one platinum electrode at open circuit, in a closed solution: at
+// steady state both are at equilibrium with the metal's electrons, so with each other,
+// Fe³⁺ + Ag(s) = Fe²⁺ + Ag⁺ at K = exp(−ΔG°/RT), however slow either is. The silver couple's rate
+// was the only row holding Ag⁺'s level, and at k0 = 1e-20 it was lost to diffusion's round-off:
+// the solve settled where silver wasn't (−0.4661 V), and 1e-15 to 1e-18 failed.
+test('a reaction 1e27 times slower than the rest still reaches its equilibrium in a steady solve: Ag⁺/Ag beside Fe³⁺/Fe²⁺ at open circuit', () => {
+  const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }), iron = half('Fe3+ + e- = Fe2+');
+  const ions = ['K+', 'NO3-', 'Ag+', 'Fe3+', 'Fe2+'], L = 50e-6;
+  const cell = (kAg, order) => new Device(build({
+    library: [aqueous(order, { epsr: 0 }), metal('Pt')],
+    stack: [
+      bath({ 'K+': 200, 'NO3-': 200 }, 'NO3-', 0),
+      layer('water', L, { c0: { 'K+': 200, 'NO3-': 285, 'Ag+': 10, 'Fe3+': 5, 'Fe2+': 30 } }),
+      { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [{ ...silver, k0: kAg }, { ...iron, k0: 1e-3 }] },
+      layer('Pt', 1e-6),
+      ohmic({ I: 0 }, ['e-']),
+    ],
+    grid: { hmin: 0.5e-9, hmax: 3e-6, ratio: 1.2 },
+  }));
+  const K = Math.exp(-(-78.9e3 + 77.107e3 + 4.7e3) / (VT * FARADAY)); // (μ° of Fe²⁺ and Ag⁺ less Fe³⁺'s; Ag(s) at 0)
+  let V0;
+  for (const kAg of [1e-3, 1e-15, 1e-30]) {
+    for (const order of [ions, [...ions].reverse()]) {
+      const s = cell(kAg, order).solve(), at = `k0 ${kAg}, ${order}`;
+      assert.ok(s.converged, at);
+      const g = s.x.findIndex((x) => x > L / 2), c = (sp) => s.c[sp][g];
+      assert.ok(Math.abs((c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000) / K - 1) < 1e-9, `${at}: K ${(c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000)} for ${K}`);
+      const fe = s.conservation.filter((x) => x.species === 'Fe3+' || x.species === 'Fe2+').reduce((t, x) => t + x.amount, 0);
+      assert.ok(Math.abs(fe / (35 * L) - 1) < 1e-9, `${at}: iron ${fe}`);
+      V0 ??= s.terminals.right.V;
+      assert.ok(Math.abs(s.terminals.right.V - V0) < 1e-9, `${at}: V ${s.terminals.right.V} for ${V0}`);
+    }
+  }
+  // Ag⁺ complexed too (Ag⁺ + NO₃⁻ = AgNO₃, fast): Ag⁺ is then in two reactions, and it's the
+  // silver, Ag⁺ + AgNO₃, that the couple alone changes.
+  const K2 = Math.exp(3e3 / (VT * FARADAY));
+  let V1;
+  for (const kAg of [1e-3, 1e-25]) {
+    const d = build({
+      library: [aqueous(ions, { epsr: 0 }), metal('Pt')],
+      stack: [
+        bath({ 'K+': 200, 'NO3-': 200 }, 'NO3-', 0),
+        layer('water', L, { c0: { 'K+': 200, 'NO3-': 285, 'Ag+': 10, 'Fe3+': 5, 'Fe2+': 30 } }),
+        { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [{ ...silver, k0: kAg }, { ...iron, k0: 1e-3 }] },
+        layer('Pt', 1e-6),
+        ohmic({ I: 0 }, ['e-']),
+      ],
+      grid: { hmin: 0.5e-9, hmax: 3e-6, ratio: 1.2 },
+    });
+    const water = d.materials.water.species;
+    d.species.push({ name: 'AgNO3', z: 0, cRef: 1000 });
+    water.AgNO3 = { D: 1e-9, mu0: water['Ag+'].mu0 + water['NO3-'].mu0 - 3e3 };
+    d.regions.find((r) => r.c0?.['Ag+']).c0.AgNO3 = 1;
+    d.bulkReactions = [{ equation: 'Ag+ + NO3- = AgNO3', kf: { water: 1e3 } }];
+    const s = new Device(d).solve();
+    assert.ok(s.converged, `complexed, k0 ${kAg}`);
+    const g = s.x.findIndex((x) => x > L / 2), c = (sp) => s.c[sp][g];
+    assert.ok(Math.abs((c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000) / K - 1) < 1e-9, `complexed, k0 ${kAg}: K ${(c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000)}`);
+    assert.ok(Math.abs((c('AgNO3') * 1000) / (c('Ag+') * c('NO3-')) / K2 - 1) < 1e-9, `complexed, k0 ${kAg}: K2`);
+    V1 ??= s.terminals.right.V;
+    assert.ok(Math.abs(s.terminals.right.V - V1) < 1e-9, `complexed, k0 ${kAg}: V ${s.terminals.right.V} for ${V1}`);
+  }
+});
+
 test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
   const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
   const def = (order, capacitance) => ({

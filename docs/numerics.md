@@ -676,9 +676,10 @@ a transient leaves it.
 
 ### The steady system
 
-Every row of a steady solve that differs from a time step's is a sum of balance rows. It's
-written out in its telescoped form, never added up from the rows themselves, so what the sum
-leaves is exact, however small beside the terms that cancel:
+Every row of a steady solve that differs from a time step's is a sum of balance rows, or (a
+reaction's affinity) a condition equivalent to one. It's written out in its telescoped form,
+never added up from the rows themselves, so what the sum leaves is exact, however small beside
+the terms that cancel:
 
 - **A conserved amount.** A combination of stretches (weights $`w`$) that no reaction changes and
   nothing outside feeds has balance rows that sum to zero identically in a steady state: the
@@ -759,6 +760,19 @@ leaves is exact, however small beside the terms that cancel:
   contact; moved, slow generation through a bulk of GaAs with ~1e-4 electrons per cm³ couldn't
   carry the inversion layer's level with it (of 500 random MOS capacitors, 38 failed and 5
   converged to a gate charge up to 2× off).
+- **A reaction's equilibrium.** A face reaction that alone changes some combination (left out,
+  the combination would be conserved: Ag⁺ closed in a cell where Ag⁺ + e⁻ = Ag(s) is its one
+  source, or Ag⁺ + AgNO₃ where it also complexes) makes that combination's summed balance its
+  rate, which a steady state sets to zero. The rate is a poor row, though: $`k_0`$ times a
+  function of the levels, beside the round-off of diffusion's terms in the same balances. An
+  Ag⁺/Ag couple 1e-20 as fast as Fe³⁺/Fe²⁺ on the same platinum at open circuit was lost to it,
+  the solve settling where silver wasn't (−0.4661 V, against the joint equilibrium's −0.5004 V),
+  and 1e-15 to 1e-18 failed. The reaction's affinity, $`a = A_\text{fixed} - \sum \nu \eta = 0`$,
+  says the same at any $`k_0`$ (each kinetic form vanishes only there), so it stands in for one
+  of the combination's balance rows, a pin like an amount's, chosen by the same elimination and
+  ahead of the amounts. The combinations come from the null space with that reaction's row left
+  out. Not where a terminal driven by a current feeds the combination: the sum is then the rate
+  plus what that terminal passes.
 - **An island's balance.** A piece of a stretch between its faces that nothing else feeds (no
   contact, port or reaction) holds its level only through its faces' fluxes, which can be far
   weaker than its own conduction: a face conductance of 1e-15 S/m² against a region conducting
@@ -789,8 +803,8 @@ leaves is exact, however small beside the terms that cancel:
   solution stands; and a steady solve that fails outright is tried once more with the summed rows
   in from the start. Such devices now solve directly, their currents right to ~1e-15.
 
-All three move a weakly held level as a whole, where a factorisation can't: an amount's or an
-island's pin by a shift it solves for, a flat level by holding every node to one. What the
+All four move a weakly held level as a whole, where a factorisation can't: an amount's, an
+affinity's or an island's pin by a shift it solves for, a flat level by holding every node to one. What the
 factorisation still loses elsewhere, Newton's refined solves recover ([Newton](#newton)).
 
 ### Reaching it

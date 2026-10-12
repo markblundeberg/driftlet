@@ -882,6 +882,51 @@ export class Solver {
     // first, so that the first takes that row, and the rest have its multiple taken off.
     const through = (w) => this.carriers.some((k, j) => w[X + j] !== 0);
     const held = new Map(); // (terminal → the combination in place of its circuit row)
+    // Reactions' equilibria first. A face reaction that alone changes some combination (without
+    // it, w would be conserved: Ag⁺ closed in a cell where Ag⁺ + e⁻ = Ag(s) is its one source, or
+    // Ag⁺ + AgNO₃ where it also complexes) has that combination's summed balance rows equal to its
+    // rate, w·ν times it, which a steady state sets to zero. The rate is a poor row: k₀ times a
+    // function of the levels, beside diffusion's terms in the same balances. An Ag⁺/Ag couple
+    // 1e-20 as fast as Fe³⁺/Fe²⁺ on the same platinum was lost to their round-off, the
+    // open-circuit potential settling where silver wasn't (−0.4661 V, the joint equilibrium
+    // −0.5004 V), and 1e-15 to 1e-18 failed. Its affinity says the same at any k₀ (each kinetic
+    // form vanishes only there), so it stands in for one of those rows (see _applyAffinities),
+    // chosen by the same elimination, and a stretch's: never a circuit row.
+    this.affinities = [];
+    model.interfaces.forEach((itf, f) => {
+      for (const rx of itf.reactions) {
+        const nu = new Float64Array(S);
+        let inFlat = false;
+        for (const p of rx.part) {
+          const k = this.stretchOf[(f + p.side) * this.n + p.i];
+          if (k < 0 || this.flatStretches.includes(this.stretches[k])) inFlat = true;
+          else nu[k] += p.nu;
+        }
+        if (inFlat) continue; // (held flat at a contact's levels, in equilibrium already)
+        // (Not one fed by a terminal driven by a current: its sum is the rate plus what that
+        // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.)
+        const fed = (w) => w.some((x, k) => x !== 0 && (k >= X || (k < S && driven(this.stretches[k]).length > 0)));
+        const w = this._conservedMoieties(true, [], rx).find((w) => Math.abs(nu.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9 && !fed(w));
+        if (!w) continue;
+        const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0);
+        const v = new Float64Array(S + T);
+        for (const k of parts) {
+          const st = this.stretches[k];
+          if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = w[k];
+          if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / this.z[st.species];
+        }
+        for (const [col, row] of chosen) {
+          const fc = v[col];
+          if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
+        }
+        const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+        const ok = (j) => j !== undefined && j < S && Math.abs(v[j]) > 1e-9 * scale;
+        const col = [parts.find((k) => w[k] === 1), w.own].find(ok) ?? parts.reduce((b, k) => (ok(k) && (b < 0 || Math.abs(v[k]) > Math.abs(v[b])) ? k : b), -1);
+        if (!(scale > 1e-9) || col < 0) continue;
+        chosen.push([col, v.map((x) => x / v[col])]);
+        this.affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
+      }
+    });
     for (let w of [...laws.filter(through), ...laws.filter((w) => !through(w))]) {
       for (const [j, k] of this.carriers.entries()) {
         const c = held.get(k);
@@ -947,7 +992,7 @@ export class Solver {
     this.pinnedIslands = [];
     this.islandsOn = false; // (newton() turns them on, see there)
     this.pins = [];
-    const used = new Set(this.constraints.map((cs) => cs.row).filter((o) => o >= 0));
+    const used = new Set([...this.constraints.map((cs) => cs.row).filter((o) => o >= 0), ...this.affinities.map((af) => af.row)]);
     for (const st of this.stretches) {
       const i = st.species, [s0, s1] = st.regions;
       if (!st.mobile || conductor(st)) continue;
@@ -1160,7 +1205,7 @@ export class Solver {
   // charges, so a combination weighted by z there is conserved while it passes none: a battery's
   // cathode, its electrons behind an open circuit, keeps its charge. Exact integer data, so plain
   // elimination will do.
-  _conservedMoieties(drives = false, alsoCurrent = []) {
+  _conservedMoieties(drives = false, alsoCurrent = [], skip = null) {
     const { model, n, z } = this, S = this.stretches.length;
     // With `drives`, an electrode port driven by a current whose reactions take its carrier from
     // the electrode has a column of its own, last: what the electrode holds, its charge Q/(zF),
@@ -1172,6 +1217,7 @@ export class Solver {
     const rows = [];
     model.interfaces.forEach((itf, f) => {
       for (const rx of itf.reactions) {
+        if (rx === skip) continue; // (with `skip`, the combinations that reaction alone changes come out too)
         const row = new Float64Array(C);
         for (const p of rx.part) row[this.stretchOf[(f + p.side) * n + p.i]] += p.nu;
         rows.push(row);
@@ -2031,10 +2077,11 @@ export class Solver {
     // balances, the last two kept aside for _solveBordered.
     const steady = this.steady && dt === Infinity;
     if (steady) this._flatRows();
+    if (steady && this.affinities.length > 0) this._applyAffinities();
     if (steady && this.constraints.length > 0) this._applyConstraints();
     if (steady && this.localConstraints.length > 0) this._applyLocalConstraints();
     this.pinnedIslands = steady && this.islandsOn ? this._applyIslands() : [];
-    this.pins = steady ? [...this.constraints.filter((cs) => cs.circuit < 0), ...this.pinnedIslands] : [];
+    this.pins = steady ? [...this.constraints.filter((cs) => cs.circuit < 0), ...this.affinities, ...this.pinnedIslands] : [];
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
   }
@@ -3271,6 +3318,31 @@ export class Solver {
         this._j(b, 1 + i, b, 1 + i, 1);
         res[R[o]] = u[o] + uLo[o];
       }
+    }
+  }
+
+  // Steady solves: each reaction that alone changes a combination (see _laws) held at its
+  // equilibrium, a = fixedA − Σ ν η = 0, in place of one of that combination's balance rows (a pin,
+  // like an amount's).
+  _applyAffinities() {
+    const { M, u, uLo, res } = this, grid = this.model.grid;
+    for (const af of this.affinities) {
+      const b0 = Math.floor(af.row / M), r0 = af.row % M;
+      this._replaceRow(b0, r0);
+      this._j(b0, r0, b0, r0, 1);
+      res[this.rix[af.row]] = 0;
+      const gL = grid.regionEnd[af.f], gR = grid.regionStart[af.f + 1];
+      let hi = af.rx.fixedA, lo = 0, len = 0;
+      for (const p of af.rx.part) {
+        const o = this.blockOfNode[p.side ? gR : gL] * M + 1 + p.i;
+        hi -= p.nu * u[o];
+        lo -= p.nu * uLo[o];
+        if (this.loc[o] < 0) continue;
+        af.idx[len] = this.rix[o];
+        af.w[len++] = -p.nu;
+      }
+      af.len = len;
+      af.res = hi + lo;
     }
   }
 

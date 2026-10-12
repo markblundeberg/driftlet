@@ -111,10 +111,14 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
-   - Reactions too slow to see. A face reaction 1e-20 as fast as the rest is lost to round-off
-     and the steady solve lands where it's absent (an Ag⁺/Ag couple beside Fe³⁺/Fe²⁺ on Pt at
-     open circuit: −0.4661 V where the joint equilibrium is −0.5004 V); between 1e-15 and 1e-18
-     it fails. Silent at the bottom.
+   - Bulk reactions too slow to see. A face reaction that alone changes a combination now stands
+     on its affinity in steady solves, at any k0; a bulk reaction can't, since a zero integral
+     of its rate doesn't make it zero at every node. K⁺ + A⁻ = KA in a cell whose only reservoir
+     is a K⁺ contact solves at kf = 1e-12 but fails at 1e-20 and at 1e-30 silently keeps the
+     starting composition (K = 0.1 for 7.5). Such a device is at equilibrium throughout (one
+     reservoir drives nothing), which a steady solve could recognise and hold, every affinity
+     zero node by node. Port reactions likewise, and a face reaction whose combination a
+     terminal driven by a current feeds.
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
