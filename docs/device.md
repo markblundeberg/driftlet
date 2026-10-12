@@ -215,11 +215,17 @@ r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|(1-\alpha)} \prod_{\nu>0} (c/c_
 
 with $`k_0`$ in mol/(m²·s) and $`\alpha`$ (default 0.5) from 0 to 1 inclusive ($`\alpha = 0`$ makes the
 forward rate plain mass action, independent of the energetics). A conductor's carrier has
-activity 1 and no factor. That's mass action with rate constants that depend on the electrical part
+activity 1 and no factor, and so has a fixed-activity neutral (H₂, Ag(s), H₂O): the products run
+over the species present. That's mass action with rate constants that depend on the electrical part
 of the affinity: exactly zero at $`A = 0`$, whatever $`k_0`$ and $`\alpha`$. Each participant is made or
 consumed at its side's edge node, just behind any Stern layer, so Frumkin effects arise by
 themselves. A face can carry several reactions; a conductor coupled to two couples settles at their
-mixed potential. Each solution reports the rates as `interfaces[f].rates`.
+mixed potential. Each solution reports the rates as `interfaces[f].rates`. A steady state
+doesn't depend on `k0` where the reaction alone changes what nothing else feeds (a closed pool),
+since it must then be at equilibrium; steady solves hold it there at any `k0`. In time, an
+electrode at open circuit with no double-layer capacitance at its face has nothing to keep its
+level but its reactions, and below an exchange current of ~1e-5 A/m² it can't take a step: give
+the face a capacitance (`phi: { type: 'capacitive', C }`), as a real electrode has.
 
 **Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
 `srh: { vn, vp, n1 }`, on a reaction consuming one negative and one positive species and making
@@ -970,7 +976,8 @@ const now = dev.solution();                   // snapshot of the current state
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
   Otherwise the device is rebuilt: the current state carries over while the species, regions
   and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate
-  keeps its charge), or restarts from the regions' `c0`. A carried state keeps what it holds: a
+  keeps its charge; `solution()` then shows that interpolation, unsolved, until the next
+  `solve()` or step), or restarts from the regions' `c0`. A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
   from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it

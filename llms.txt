@@ -96,7 +96,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   (`capacitance`, `gates`). A BJT's base contact is a port on a narrow window of the base,
   `{ region: 'base', from, to, V, terminal: 'h+', species: { 'h+': 'equilibrium' } }`.
 - **Drives.** A terminal is held at a voltage `V`, driven by a current `I` (open circuit is
-  `I: 0`), or behind a resistance `{ V, R }`. Either can be a waveform: a table `{ t, values }`
+  `I: 0`), or behind a resistance `{ V, R }`; in `build()`, the same object goes where the
+  voltage would (`ohmic({ I: 0 }, ['e-'])`, `ohmic({ V: 1, R: 1e3 }, ['e-'])`). Either can be a waveform: a table `{ t, values }`
   (piecewise linear; a step is two points at one time), or the kit's `pulse({ start, width,
   amplitude, rise, base })`, `square({ high, low, period, duty })`, `ramp({ from, to, duration,
   start })` or `triangle({ from, to, period })` (out and back each period from t = 0: a cyclic
