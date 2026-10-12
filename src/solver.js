@@ -491,7 +491,7 @@ export class Solver {
     this.steady = false; // inside a steady solve: sources at the present time, not a step's end
     // The floating ones are extra unknowns, solved with the grid's by bordering (_solveBordered).
     this.floating = this.terms.flatMap((t, k) => (t.drive.kind === 'I' || t.drive.R > 0 ? [k] : []));
-    this.drivenKey = this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}`).join();
+    this.drivenKey = this._drivenKey();
     this.lawRefs = new Map(); // what a steady solve keeps behind a terminal at no current (_captureLaws)
     this.chargeRefs = new Map(); // …and the charge a terminal at no current that only charges keeps
     // Per terminal: B = ∂res/∂V (compact column), C = ∂I/∂x (compact row), ∂I/∂V, and for a
@@ -904,27 +904,41 @@ export class Solver {
         }
         if (inFlat) continue; // (held flat at a contact's levels, in equilibrium already)
         // (Not one fed by a terminal driven by a current: its sum is the rate plus what that
-        // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.)
-        const fed = (w) => w.some((x, k) => x !== 0 && (k >= X || (k < S && driven(this.stretches[k]).length > 0)));
-        const w = this._conservedMoieties(true, [], rx).find((w) => Math.abs(nu.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9 && !fed(w));
-        if (!w) continue;
-        const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0);
-        const v = new Float64Array(S + T);
-        for (const k of parts) {
-          const st = this.stretches[k];
-          if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = w[k];
-          if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / this.z[st.species];
+        // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.
+        // A current held at zero passes nothing: an electrode at open circuit feeding a closed
+        // pool of Ag⁺ beside a slow Fe³⁺/Fe²⁺ couple settled 78 mV off, its iron not stationary.)
+        const passes = (k) => !this._noCurrent(this.terms[k]);
+        const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && driven(this.stretches[k]).some(passes))));
+        // Any of the combinations it alone changes will do, with any conserved amount added (whose
+        // summed balance is zero too): one of them needs a row of its own left to take. (Silver's,
+        // e⁻ − Fe³⁺ beside a closed iron couple that had Fe³⁺'s, is e⁻ + Fe²⁺ with the iron added.)
+        const news = this._conservedMoieties(true, [], rx).filter((w) => Math.abs(nu.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9 && !fed(w));
+        const kept = laws.filter((l) => !fed(l));
+        const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
+        for (const w of tries) {
+          const v = new Float64Array(S + T);
+          for (let k = 0; k < S; k++) {
+            if (w[k] === 0) continue;
+            const st = this.stretches[k];
+            if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = w[k];
+            if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / this.z[st.species];
+          }
+          for (const [col, row] of chosen) {
+            const fc = v[col];
+            if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
+          }
+          const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+          if (!(scale > 1e-9)) continue;
+          // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
+          // carry the terminal's current, and Pt's electrons standing for an iron couple's balance
+          // put the electrode at 602 V.)
+          const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(this.stretches[j]) && this.terms.every((_, t) => !this._feeds(t, this.stretches[j]));
+          const col = [...Array(S).keys()].find((k) => ok(k) && Math.abs(v[k]) === 1) ?? [...Array(S).keys()].reduce((b, k) => (ok(k) && (b < 0 || Math.abs(v[k]) > Math.abs(v[b])) ? k : b), -1);
+          if (col < 0) continue;
+          chosen.push([col, v.map((x) => x / v[col])]);
+          this.affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
+          break;
         }
-        for (const [col, row] of chosen) {
-          const fc = v[col];
-          if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
-        }
-        const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
-        const ok = (j) => j !== undefined && j < S && Math.abs(v[j]) > 1e-9 * scale;
-        const col = [parts.find((k) => w[k] === 1), w.own].find(ok) ?? parts.reduce((b, k) => (ok(k) && (b < 0 || Math.abs(v[k]) > Math.abs(v[b])) ? k : b), -1);
-        if (!(scale > 1e-9) || col < 0) continue;
-        chosen.push([col, v.map((x) => x / v[col])]);
-        this.affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
       }
     });
     for (let w of [...laws.filter(through), ...laws.filter((w) => !through(w))]) {
@@ -1214,13 +1228,14 @@ export class Solver {
     const byCurrent = (t, k) => t.drive.kind === 'I' || alsoCurrent.includes(k); // (with `alsoCurrent`, terminals counted as such)
     this.carriers = drives ? this.terms.flatMap((t, k) => (byCurrent(t, k) && k >= 2 && model.ports[k - 2].reactions.length > 0 ? [k] : [])) : [];
     const X = S + this.surfCols.length, C = X + this.carriers.length;
-    const rows = [];
+    // (With `skip`, a reaction left out: the combinations that it alone changes come out too, and
+    // its own rows, over the columns, are handed back as `basis.skipped`.)
+    const rows = [], skipped = [];
     model.interfaces.forEach((itf, f) => {
       for (const rx of itf.reactions) {
-        if (rx === skip) continue; // (with `skip`, the combinations that reaction alone changes come out too)
         const row = new Float64Array(C);
         for (const p of rx.part) row[this.stretchOf[(f + p.side) * n + p.i]] += p.nu;
-        rows.push(row);
+        (rx === skip ? skipped : rows).push(row);
       }
     });
     // An electrode surface's species are columns too, after the stretches (S + j for surface
@@ -1229,12 +1244,13 @@ export class Solver {
     model.ports.forEach((port, k) => {
       for (const rx of port.reactions) {
         const row = new Float64Array(C); // (the electrode's carrier is outside the device)
+        if (rx === skip) skipped.push(row);
         for (const p of rx.part) {
           if (p.side === 0) row[this.stretchOf[port.region * n + p.i]] += p.nu;
           else if (p.side === 2) row[S + this.surfColOf[k] + p.s] += p.nu;
           else if (this.carriers.includes(k + 2)) row[X + this.carriers.indexOf(k + 2)] += p.nu;
         }
-        rows.push(row);
+        if (rx !== skip) rows.push(row);
       }
     });
     model.regions.forEach((reg, q) => {
@@ -1243,7 +1259,7 @@ export class Solver {
         const row = new Float64Array(C);
         for (const p of rx.reactants) row[this.stretchOf[q * n + p.i]] -= p.nu;
         for (const p of rx.products) row[this.stretchOf[q * n + p.i]] += p.nu;
-        rows.push(row);
+        (rx === skip ? skipped : rows).push(row);
       }
     });
     const unit = (k) => {
@@ -1300,6 +1316,7 @@ export class Solver {
       w.own = free; // (its weight is 1 there, and no other vector's is: the row it replaces)
       basis.push(w);
     }
+    basis.skipped = skipped;
     return basis;
   }
 
@@ -1554,10 +1571,65 @@ export class Solver {
     if (this.floating.length !== before.length) this.deltaV = null;
     // A terminal newly driven by a current (or no longer) can close a combination behind it.
     // (and one put behind a resistance, or taken from it, its time steps' reading: see _laws)
-    this.drivenKey = this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}`).join();
+    this.drivenKey = this._drivenKey();
     if (this.drivenKey !== driven) this._laws();
     this._refreshSources();
     this.history = [];
+  }
+
+  // After a steady solve: each reaction that alone changes some combination nothing else feeds
+  // (see _laws), whose total rate a steady state therefore sets to zero, but whose affinity has one
+  // sign wherever it acts, so that its total can't be zero. Too slow to show, its rate lost to
+  // round-off, it was left where the solve began: a slow complexation 43 mV off, an electrode
+  // port's slow couple at its starting composition, each converged without a word. (A face
+  // reaction stands on its affinity, so it's only caught here if that couldn't be arranged.)
+  stuckReactions() {
+    const { n, M, u, uLo, model } = this, grid = model.grid, S = this.stretches.length, X = S + this.surfCols.length, out = [];
+    const passes = (k) => !this._noCurrent(this.terms[k]);
+    const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && this.terms.some((t, j) => t.drive.kind === 'I' && passes(j) && this._feeds(j, this.stretches[k])))));
+    const needed = (rx) => {
+      const basis = this._conservedMoieties(true, [], rx);
+      return basis.some((w) => !fed(w) && basis.skipped.some((row) => Math.abs(row.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9));
+    };
+    const eta = (g, slot) => u[this.blockOfNode[g] * M + slot] + uLo[this.blockOfNode[g] * M + slot];
+    const report = (where, as) => {
+      if (as.length === 0 || !(as.every((a) => a > 1e-6) || as.every((a) => a < -1e-6))) return;
+      out.push({ where, affinity: as.reduce((m, a) => (Math.abs(a) < Math.abs(m) ? a : m)) });
+    };
+    model.interfaces.forEach((itf, f) => {
+      const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
+      itf.reactions.forEach((rx, q) => {
+        if (this.affinities.some((af) => af.rx === rx) || !needed(rx)) return;
+        report(`interfaces[${f}].reactions[${q}]`, [rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA)]);
+      });
+    });
+    model.reactions.forEach((mrx, x) => {
+      const rx = this.rxs[x];
+      if (rx.generation || !needed(mrx)) return;
+      const as = [];
+      for (let g = 0; g < this.nNodes; g++) if (rx.kfNode[g] > 0 || rx.srh?.[this.nodeMaterial[g]]) as.push(rx.sp.reduce((a, i, p) => a + rx.nu[p] * eta(g, 1 + i), rx.fixedA));
+      report(`bulkReactions[${x}]`, as);
+    });
+    model.ports.forEach((port, k) => {
+      port.reactions.forEach((rx, q) => {
+        if (!needed(rx)) return;
+        let aV = rx.fixedA;
+        for (const p of rx.part) if (p.side === 1) aV -= p.nu * this.portEta(port, p.i);
+        report(`ports[${k}].reactions[${q}]`, port.nodes.map((g) => rx.part.reduce((a, p) => (p.side === 1 ? a : a - p.nu * eta(g, p.side === 2 ? 1 + n + p.s : 1 + p.i)), aV)));
+      });
+    });
+    return out;
+  }
+
+  // How each terminal is driven, as far as the laws care (see _laws): by a voltage or a current,
+  // behind a resistance or not, and a current that's held at zero throughout (which feeds a
+  // combination nothing, so a reaction's affinity may stand in for its summed balance).
+  _drivenKey() {
+    return this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}${this._noCurrent(t) ? '0' : ''}`).join();
+  }
+
+  _noCurrent(t) {
+    return t.drive.kind === 'I' && !(t.drive.R > 0) && t.drive.src.value === 0;
   }
 
   // Held terminals take their sources' values at sourceTime (a floating one keeps its voltage,
@@ -3863,6 +3935,7 @@ export class Solver {
     // Already there (an animation frame with no time to add): nothing to do, and the step size
     // carried to the next call stays as it was.
     if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace };
+    const t0 = this.time;
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;
     // The shortest step worth trying: round-off relative to the time, or the device's fastest
@@ -3875,8 +3948,10 @@ export class Solver {
       if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
       // Within round-off of the end (a target a hair past a breakpoint just landed on, say):
       // snap to it rather than attempt a step of ~1e-13 s, which can't be resolved and, in a
-      // strictly neutral device, fails outright.
-      if (tEnd - this.time <= 1e-10 * Math.abs(tEnd)) {
+      // strictly neutral device, fails outright. Round-off of the time and negligible beside the
+      // interval asked for: by the time alone, a GITT pulse of 0.01 s at t = 1e9 s was skipped
+      // whole (the time moved, nothing else did), and from 1e10 s 17% of a pulse train's charge.
+      if (tEnd - this.time <= 1e-10 * Math.abs(tEnd) && tEnd - this.time <= 1e-9 * (tEnd - t0)) {
         this.time = tEnd;
         break;
       }

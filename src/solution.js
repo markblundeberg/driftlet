@@ -361,6 +361,15 @@ export function makeSolution(solver, result = {}) {
       }
     });
   });
+  // A reaction a steady state needs at equilibrium, left out of it (see stuckReactions).
+  if (sol.steady) {
+    for (const { where, affinity } of solver.stuckReactions()) {
+      sol.warnings.push(
+        `${where}: out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity wherever it acts, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium. ` +
+          'Its rate is too small for the solve to resolve, and it was left where the solve began: this is not a steady state. Raise its rate constant (the steady state does not depend on it), or advance() in time to see how slowly it gets there.',
+      );
+    }
+  }
   // Any other species denser than any material can be (1e6 mol/m³: water is 5.5e4, a metal's
   // atoms ~1.5e5): a level set where the device can't follow it, such as a contact's for one ion
   // far from its neighbours' (Na⁺ held at 1.2e37 mol/m³, whose currents then read 1e28 A/m²).

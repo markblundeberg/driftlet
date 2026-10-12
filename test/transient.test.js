@@ -372,6 +372,30 @@ test('a battery at rest settles to the difference of its hosts\' OCVs, out to 1e
   }
 });
 
+// Short calls late in a run: a GITT pulse of 0.01 s at t = 1e9 s. advance() snapped any remainder
+// under 1e-10 of the absolute time, as if it were round-off, so the whole pulse was skipped (the
+// time moved, the state didn't), and from 1e10 s a pulse train lost 17% of its charge.
+test('advance() integrates short calls late in a run: the charge of every pulse, from t = 1e10 s', () => {
+  const cMax = 2e4, L = 5e-6, x = [0.05, 0.3, 0.7, 0.95];
+  const d = new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: cMax }, 'e-': { D: 1e-4, mu0: 0, cRef: cMax } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, ocv: { x, E: [0.6, 0.2, 0.15, 0.1], muRef: 0 } }] } },
+    regions: [{ material: 'host', length: L, c0: { 'Li+': 0.3 * cMax } }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+  });
+  d.advance(1e10, { tol: 1e-3 });
+  d.set({ contacts: { right: { I: -1 } } });
+  const li = (s) => s.conservation.find((c) => c.species === 'Li+').amount, a0 = li(d.solution());
+  let total = 0;
+  for (const dt of [0.01, 0.1, 0.3, 1, 3, 10]) {
+    const s = d.advance(d.solution().time + dt, { tol: 1e-3 });
+    assert.ok(s.done, `dt ${dt}`);
+    total += dt;
+  }
+  const gained = li(d.solution()) - a0;
+  assert.ok(Math.abs(gained / (total / FARADAY) - 1) < 1e-6, `gained ${gained} of ${total / FARADAY} mol/m²`);
+});
+
 // A MOS capacitor's gate, settled at 1 V and floated: nothing moves, and its charge stays put.
 // Read by the flux into its metal, the charging current fell below that flux's round-off at
 // steps of ~0.03 s, every longer step came out singular, and 100 s took 5000 steps.

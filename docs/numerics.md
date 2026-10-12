@@ -771,8 +771,21 @@ the terms that cancel:
   says the same at any $`k_0`$ (each kinetic form vanishes only there), so it stands in for one
   of the combination's balance rows, a pin like an amount's, chosen by the same elimination and
   ahead of the amounts. The combinations come from the null space with that reaction's row left
-  out. Not where a terminal driven by a current feeds the combination: the sum is then the rate
-  plus what that terminal passes.
+  out, any conserved amount added to one being as good (its summed balance vanishes too), so
+  that one can be found with a row left to take: silver's e⁻ − Fe³⁺ beside a closed iron couple
+  whose affinity had Fe³⁺'s row is e⁻ + Fe²⁺ with the iron added. Never a metal's carriers' row
+  or a row a terminal feeds, which carry its current (the platinum's electrons standing for an
+  iron couple put the electrode at 602 V). And not where a terminal driven by a current feeds
+  the combination, since the sum is then the rate plus what that terminal passes; a current
+  held at zero passes nothing, so an open-circuit electrode feeding a closed pool of Ag⁺ is
+  covered (from an iron k₀ of 1e-15 beside it, that settled 78 mV off).
+
+  Where a reaction can't stand on its affinity (a bulk reaction, whose rate summed over the
+  region vanishing needn't make it vanish everywhere, or an electrode port's), a steady solve
+  that leaves it with one sign of affinity wherever it acts, though nothing else changes what
+  it does, can't be a steady state: its rate is merely too small to see. The solution warns of
+  it, rather than pass the start's composition off as steady (a slow complexation had kept its
+  starting composition, K = 0.1 for 7.5, without a word).
 - **An island's balance.** A piece of a stretch between its faces that nothing else feeds (no
   contact, port or reaction) holds its level only through its faces' fluxes, which can be far
   weaker than its own conduction: a face conductance of 1e-15 S/m² against a region conducting

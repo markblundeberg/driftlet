@@ -535,6 +535,58 @@ test('a reaction 1e27 times slower than the rest still reaches its equilibrium i
   }
 });
 
+// An electrode at open circuit between a bath's Fe³⁺/Fe²⁺ and a closed pool of Ag⁺ (in a film the
+// bath doesn't reach for silver): the pool has no sink but the electrode, so the silver couple
+// settles at equilibrium, and with no current, the iron one too, at the bath's level, however
+// slow it is. The current-driven electrode kept the silver couple off its affinity, and from an
+// iron k0 of 1e-15 the solve converged 78 mV off, its iron not stationary.
+test('an open-circuit electrode feeding a closed pool: both couples at equilibrium, however slow the other', () => {
+  const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }), iron = half('Fe3+ + e- = Fe2+');
+  const bathC = { 'K+': 5000, 'Fe3+': 10, 'Fe2+': 10, 'NO3-': 5050 };
+  const cell = (kFe, order) => new Device(build({
+    library: [aqueous(order, { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic({ I: 0 }, ['e-']),
+      layer('Pt', 1e-6),
+      { reactions: [{ ...iron, k0: kFe }, { ...silver, k0: 1e-3 }] },
+      layer('water', 20e-6, { c0: { ...bathC, 'Ag+': 1, 'NO3-': 5051 } }),
+      bath(bathC, 'NO3-'),
+    ],
+    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+  }));
+  const K = Math.exp(-(-78.9e3 + 77.107e3 + 4.7e3) / (VT * FARADAY)); // Fe³⁺ + Ag(s) = Fe²⁺ + Ag⁺
+  const ions = ['K+', 'NO3-', 'Fe3+', 'Fe2+', 'Ag+'];
+  let V0;
+  for (const kFe of [1e-3, 1e-20]) {
+    for (const order of [ions, [...ions].reverse()]) {
+      const s = cell(kFe, order).solve(), at = `k0 ${kFe}, ${order[0]} first`;
+      assert.ok(s.converged && s.warnings.length === 0, `${at}: ${s.warnings.join(' ')}`);
+      const g = s.c['Ag+'].findIndex((x) => x > 0), c = (sp) => s.c[sp][g]; // (the water's first node, at the face)
+      assert.ok(Math.abs((c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000) / K - 1) < 1e-9, `${at}: K ${(c('Fe2+') * c('Ag+')) / (c('Fe3+') * 1000)} for ${K}`);
+      V0 ??= s.terminals.left.V;
+      assert.ok(Math.abs(s.terminals.left.V - V0) < 1e-9, `${at}: V ${s.terminals.left.V} for ${V0}`);
+    }
+  }
+});
+
+// A reaction a steady state needs at equilibrium, too slow for the solve to see, said so: a slow
+// complexation in a cell whose only reservoir is a K⁺ contact kept its starting composition
+// (K = 0.1 where it's 7.5) and converged without a word.
+test('a reaction too slow for a steady solve to resolve is warned of, not passed off as steady', () => {
+  const cell = (kf) => new Device({
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'A-', z: -1, cRef: 1000 }, { name: 'KA', z: 0, cRef: 1000 }],
+    materials: { w: { epsr: 0, species: { 'K+': { D: 1e-9, mu0: 0 }, 'A-': { D: 1e-9, mu0: 0 }, KA: { D: 1e-9, mu0: -5e3 } } } },
+    regions: [{ material: 'w', length: 1e-4, c0: { 'K+': 100, 'A-': 100, KA: 1 } }],
+    bulkReactions: [{ equation: 'K+ + A- = KA', kf: { w: kf } }],
+    contacts: { left: { V: 0, terminal: 'K+', species: { 'K+': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, species: {}, phi: 'neutral' } },
+  });
+  const fast = cell(1).solve(), K = Math.exp(5e3 / (VT * FARADAY));
+  assert.ok(fast.converged && fast.warnings.length === 0, fast.warnings.join(' '));
+  assert.ok(Math.abs((fast.c.KA[5] * 1000) / (fast.c['K+'][5] * fast.c['A-'][5]) / K - 1) < 1e-9);
+  const slow = cell(1e-30).solve();
+  assert.ok(slow.warnings.some((w) => /bulkReactions\[0\]: out of equilibrium/.test(w)), slow.warnings.join(' '));
+});
+
 test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
   const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
   const def = (order, capacitance) => ({

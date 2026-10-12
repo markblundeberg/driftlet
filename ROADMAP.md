@@ -115,10 +115,11 @@ for live demos.
      on its affinity in steady solves, at any k0; a bulk reaction can't, since a zero integral
      of its rate doesn't make it zero at every node. K⁺ + A⁻ = KA in a cell whose only reservoir
      is a K⁺ contact solves at kf = 1e-12 but fails at 1e-20 and at 1e-30 silently keeps the
-     starting composition (K = 0.1 for 7.5). Such a device is at equilibrium throughout (one
-     reservoir drives nothing), which a steady solve could recognise and hold, every affinity
-     zero node by node. Port reactions likewise, and a face reaction whose combination a
-     terminal driven by a current feeds.
+     starting composition (K = 0.1 for 7.5), now with a warning that it isn't a steady state.
+     Such a device is at equilibrium throughout (one reservoir drives nothing), which a steady
+     solve could recognise and hold, every affinity zero node by node; but a field set up by
+     other species' currents could drive a closed charged species round a reaction cycle, so
+     the rule needs care. Electrode ports' reactions likewise (spread over a window).
    - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
