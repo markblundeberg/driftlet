@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js';
-import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor, photogeneration } from '../src/kit.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor, photogeneration, check } from '../src/kit.js';
 
 const VT = (GAS_CONSTANT * 298.15) / FARADAY;
 
@@ -583,8 +583,11 @@ test('a reaction too slow for a steady solve to resolve is warned of, not passed
   const fast = cell(1).solve(), K = Math.exp(5e3 / (VT * FARADAY));
   assert.ok(fast.converged && fast.warnings.length === 0, fast.warnings.join(' '));
   assert.ok(Math.abs((fast.c.KA[5] * 1000) / (fast.c['K+'][5] * fast.c['A-'][5]) / K - 1) < 1e-9);
-  const slow = cell(1e-30).solve();
+  const d = cell(1e-30), slow = d.solve();
   assert.ok(slow.warnings.some((w) => /bulkReactions\[0\]: out of equilibrium/.test(w)), slow.warnings.join(' '));
+  // and check() doesn't call it equilibrium
+  const bal = check(d, slow, { refine: false }).items.find((it) => it.name === 'balance');
+  assert.ok(bal.ok === false && /not a steady state/.test(bal.summary), bal.summary);
 });
 
 // Found by round 11's fuzzer. Two metals about a closed film, the right one at open circuit with
