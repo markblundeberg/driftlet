@@ -587,6 +587,36 @@ test('a reaction too slow for a steady solve to resolve is warned of, not passed
   assert.ok(slow.warnings.some((w) => /bulkReactions\[0\]: out of equilibrium/.test(w)), slow.warnings.join(' '));
 });
 
+// Found by round 11's fuzzer. Two metals about a closed film, the right one at open circuit with
+// one couple written twice (once each way, k0 8.8e-5 and 504). A pivot cancelled to exactly
+// nothing, the perturbed solve left one spelling's rate row 41.7 mol/(m²·s) off, and the small
+// update passed for convergence: V 0.7293, where the couple's equilibrium is 0.6906 V.
+test('a pivot perturbed in a steady solve: the residual is checked, not the update alone', () => {
+  const water = { epsr: 0, species: { 'A+': { D: 1e-9, mu0: -20000 }, 'B-': { D: 1e-9, mu0: -12000 }, 'D2-': { D: 1e-9, mu0: 14000 }, 'F-': { D: 1e-9, mu0: 1000 } } };
+  const cell = (couple, order) => {
+    const species = [{ name: 'A+', z: 1, cRef: 1000 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'D2-', z: -2, cRef: 1000 }, { name: 'F-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }];
+    return new Device({
+      T: 298.15,
+      species: order === 'reversed' ? species.reverse() : species,
+      materials: { water, M: { conductor: { species: 'e-', conductivity: 47994048.15234138 } } },
+      regions: [
+        { name: 'M1', material: 'M', length: 1e-6 },
+        { name: 'water', material: 'water', length: 4.811448493222383e-6, c0: { 'A+': 298.8472666344369, 'B-': 93.32160813739429, 'D2-': 88.61516488336346, 'F-': 28.295328730315656 } },
+        { name: 'M2', material: 'M', length: 1e-6 },
+      ],
+      interfaces: [{ reactions: [{ equation: 'B- = A+ + 2 e-', k0: 360.6517926504172 }] }, { reactions: couple }],
+      contacts: { left: { V: 0.8281985982321203, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+      grid: { hmin: 4.8114484932223834e-8, hmax: 3.207632328814922e-7 }, // (the fuzzer's own numbers: the pivot cancels exactly only at them)
+    }).solve();
+  };
+  const slow = { equation: 'F- + e- = D2-', k0: 8.82494895894919e-5 }, fast = { equation: 'D2- = F- + e-', k0: 504.44001895513924 };
+  const V = cell([fast]).terminals.right.V;
+  for (const [couple, order] of [[[slow], 'as written'], [[slow, fast], 'as written'], [[slow, fast], 'reversed'], [[fast, slow], 'as written']]) {
+    const s = cell(couple, order);
+    assert.ok(s.converged && Math.abs(s.terminals.right.V - V) < 1e-9, `${couple.length} spellings, ${order}: ${s.converged}, V ${s.terminals.right.V} for ${V}`);
+  }
+});
+
 test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
   const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
   const def = (order, capacitance) => ({

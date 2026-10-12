@@ -3555,8 +3555,13 @@ export class Solver {
       // stops refining.
       const x0 = Float64Array.from(x);
       const ok = gmresReal(op, pb, x, { m: 8, restarts: 1, tol: 1e-8 });
-      let c = 0;
-      for (let j = 0; j < N + K; j++) c = Math.max(c, Math.abs(x[j] - x0[j]));
+      // (Measured on the potentials, as Newton's own step is: a rate the plain solve left
+      // unsolved, at a perturbed pivot, can need a correction of 41.7 mol/(m²·s).)
+      const dx = new Float64Array(N + 1), dV = new Float64Array(K);
+      for (let j = 0; j < N; j++) dx[j] = x[j] - x0[j];
+      for (let a = 0; a < K; a++) dV[a] = x[N + a] - x0[N + a];
+      if (this.transformed) this._untransform(dx);
+      const c = this._maxPotentialStep(dx, dV);
       if (!ok || !(c < 1)) return false;
       for (let j = 0; j < N; j++) delta[j] = x[j];
       for (let a = 0; a < K; a++) deltaV[a] = x[N + a];
@@ -3608,7 +3613,19 @@ export class Solver {
     // A/m² of noise), their rows can throw Newton off instead: if it doesn't converge again
     // within a dozen iterations, the plain solution stands.
     this.islandsOn = islands;
-    let rounds = 0, kept = null;
+    let rounds = 0, kept = null, perturbed = false;
+    // Converged by a small update, but solved at a perturbed pivot, or in a steady solve (where a
+    // factorisation that lost a row's digits left a reaction's rate 3.6e7 off it, the update
+    // small, an I = 0 electrode at a voltage 0.4 V from its steady one): the residual itself,
+    // assembled at the state, must be small too (each row scaled by its largest Jacobian entry).
+    const unsolved = () => {
+      if (!perturbed && dt !== Infinity) return false;
+      this.assemble(dt);
+      this._equilibrate();
+      let r = 0;
+      for (let k = 0; k < this.SINK; k++) r = Math.max(r, Math.abs(this.res[k]));
+      return !(r < 1e-6);
+    };
     const islandsOff = (it, result) => {
       if (dt !== Infinity || !this.steady || this.islands.length === 0 || rounds >= 2 || !(this._kirchhoff() > 1e-9)) return false;
       this.islandsOn = true;
@@ -3653,6 +3670,13 @@ export class Solver {
       } catch (err) {
         return fail({ converged: false, iterations: it, history, error: err.message });
       }
+      // A pivot perturbed (one that cancelled to exactly nothing) can leave a row unsolved, its
+      // update small while its residual isn't: the same couple written twice on an electrode at
+      // open circuit converged with one spelling's rate row 41.7 mol/(m²·s) off, the couple
+      // 1.5 RT from equilibrium. Refine the solves (exact J·v) wherever one was, and before
+      // taking a small update for convergence there, look at the residual itself (see unsolved).
+      perturbed = this.sys.perturbedPivots > 0;
+      if (perturbed && !noRefine) refine = true;
       try {
         const pins = this.pins;
         deltaV.fill(0);
@@ -3691,6 +3715,7 @@ export class Solver {
       const last = history[history.length - 2], theta = step / last;
       const contracted = dt !== Infinity && it >= 2 && step < 1e-6 && theta < 0.1 && (theta / (1 - theta)) * step < tol;
       if (alpha === 1 && (step < tol || contracted)) {
+        if (unsolved()) return fail({ converged: false, iterations: it, history, error: 'a row left unsolved at a pivot that cancelled exactly' });
         const done = { converged: true, iterations: it, history, residual: rmax };
         if (islandsOff(it, done)) continue;
         this.computeConcentrations();
@@ -3711,6 +3736,7 @@ export class Solver {
       if (refine) refined++;
       else if (!noRefine && alpha === 1 && it >= 3 && step > 0.25 * p1 && (step < 1e-4 || (step > p1 && p1 > p2))) refine = true;
       if (alpha === 1 && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
+        if (unsolved()) return fail({ converged: false, iterations: it, history, error: 'a row left unsolved at a pivot that cancelled exactly' });
         const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
         if (islandsOff(it, done)) continue;
         this.computeConcentrations();

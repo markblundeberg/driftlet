@@ -111,6 +111,20 @@ for live demos.
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it.
+   - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
+     with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
+     settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20
+     of its gross. Steady solves converge silently to states 20–80 mV off (and different in
+     each listing of the species), their terminal currents not adding up by ~3e-13 A/m², which
+     is about the fast couple's round-off. Found by round 11's fuzzer (its F5).
+   - Steady solves that depend on the order species are listed in, in whether they converge.
+     Of random reacting devices (round 11's fuzzer: ions, complexations, couples on metals,
+     I = 0 and resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.6% converge in one listing
+     and not another, and ~1% have a steady state (a long advance() settles to it) that solve()
+     doesn't find, some even when started there. Silent disagreements between listings are now
+     caught where a row was left unsolved (a perturbed pivot, or a factorisation that lost a
+     reaction's row: the residual is checked before a steady solve converges), but the failures
+     remain. A species-order re-solve in check() would be a cheap, strong oracle for users.
    - A level the plain solves barely see, in time steps. A floating gate on a MOS capacitor
      without a channel port, at rest in inversion (its electrons reach the back contact only by
      minority diffusion), wanders as t²: 8e-5 V by 1e7 s at 1.2 V, 8e-4 V at 2 V, with half the

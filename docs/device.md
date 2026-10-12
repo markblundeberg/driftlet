@@ -222,7 +222,9 @@ consumed at its side's edge node, just behind any Stern layer, so Frumkin effect
 themselves. A face can carry several reactions; a conductor coupled to two couples settles at their
 mixed potential. Each solution reports the rates as `interfaces[f].rates`. A steady state
 doesn't depend on `k0` where the reaction alone changes what nothing else feeds (a closed pool),
-since it must then be at equilibrium; steady solves hold it there at any `k0`. In time, an
+since it must then be at equilibrium; steady solves hold it there at any `k0`. (Not where a
+terminal driven by a nonzero current feeds that pool, nor for a bulk or port reaction; a steady
+solve that leaves one of those far off its equilibrium says so.) In time, an
 electrode at open circuit with no double-layer capacitance at its face has nothing to keep its
 level but its reactions, and below an exchange current of ~1e-5 A/m² it can't take a step: give
 the face a capacitance (`phi: { type: 'capacitive', C }`), as a real electrode has.
@@ -1024,9 +1026,9 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `D[name]` | diffusivity at each node, m²/s (`NaN` where absent, or in a metal) |
 | `current`, `terminalVoltage` | current toward +x through the device (A/m², or A through a [cross-section](#geometry)) and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
-| `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact; `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
+| `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact, flux and current toward +x (out of the device at the right contact; `terminals` give it into the device); `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
 | `gates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
-| `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device; an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
+| `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device (an electrode's `flux` is of what its reactions make and use in the solution, its carrier's being outside); an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section) |
