@@ -148,7 +148,10 @@ for live demos.
      solve could recognise and hold, every affinity zero node by node; but a field set up by
      other species' currents could drive a closed charged species round a reaction cycle, so
      the rule needs care. Electrode ports' reactions likewise (spread over a window).
-   - Strictly neutral regions on very short steps, where storage dwarfs fluxes. Interior nodes and
+   - Strictly neutral regions on very short steps, where storage dwarfs fluxes. (Round 11's GITT
+     agent met it from the other side: two insertion hosts with a background charge, a current
+     switched on, at tol ≤ 1e-7 the first step's error control shortens it below ~1e-7 s, where
+     Newton no longer converges, and the run stops at t = 0; tol 3e-7 runs.) Interior nodes and
      the edges of neutral faces are solved in better-conditioned unknowns ($`\hat\phi'`$,
      $`\eta - z\hat\phi`$), but at a neutral face the two edge nodes still pass every species' flux
      through its own unknown, which carries storage-sized values, so round-off returns at ~1e-5
