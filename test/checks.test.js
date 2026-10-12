@@ -125,3 +125,30 @@ test('a species denser than any material is warned of', () => {
   }).solve();
   assert.ok(sol.warnings.some((w) => /Na\+ reaches .* denser than any material/.test(w)), sol.warnings.join('\n'));
 });
+
+// A steady solve that depends on the order the species are listed in has converged somewhere
+// that isn't steady. Round 11's fuzzer found it by exactly this test (its F5: an electrode at open
+// circuit with a fast couple and a slow one, fed through a slow transfer at a face, settling
+// 20–80 mV apart by the listing, each converged without a warning); check() now makes it too.
+test('check() solves the device again with its species listed in reverse, and fails where that differs', () => {
+  const water = { epsr: 0, species: { 'B-': { D: 1e-9, mu0: 0 }, 'C2+': { D: 1e-9, mu0: 0 } } };
+  const c0 = { 'B-': 474.7252163975241, 'C2+': 237.36260819876205 };
+  const d = new Device({
+    T: 298.15,
+    species: [{ name: 'e-', z: -1 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'C2+', z: 2, cRef: 1000 }],
+    materials: { water, water2: water, M: { conductor: { species: 'e-', conductivity: 1523338.8768275294 } } },
+    regions: [{ name: 'M1', material: 'M', length: 1e-6 }, { name: 'water', material: 'water', length: 1e-6, c0 }, { name: 'water2', material: 'water2', length: 1e-6, c0 }],
+    interfaces: [
+      { reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1, fixed: { 'S00B(s)': 0 } }, { equation: 'B- = e- + S00B(s)', k0: 1e-20, fixed: { 'S00B(s)': -4108 } }] },
+      { species: { 'B-': 'blocked' }, reactions: [{ equation: 'B-(left) = B-(right)', k0: 1e-17 }] },
+    ],
+    contacts: { left: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.3, bath: { c: { 'B-': 21.62350860406672, 'C2+': 10.81175430203336 }, reference: 'B-' } } },
+    grid: { hmin: 1e-7, hmax: 3e-7 },
+  });
+  const report = check(d, d.solve()), item = report.items.find((it) => it.name === 'order');
+  assert.ok(item && item.ok === false && !report.ok, report.text);
+  // A device that solves the same either way passes it.
+  const fine = new Device(solar(0.5));
+  const ok = check(fine, fine.solve(), { tol: 1 }).items.find((it) => it.name === 'order');
+  assert.ok(ok?.ok === true, ok?.summary);
+});

@@ -124,7 +124,8 @@ for live demos.
      doesn't find, some even when started there. Silent disagreements between listings are now
      caught where a row was left unsolved (a perturbed pivot, or a factorisation that lost a
      reaction's row: the residual is checked before a steady solve converges), but the failures
-     remain. A species-order re-solve in check() would be a cheap, strong oracle for users.
+     remain. check() now solves the device again with its species reversed, and fails where
+     the two differ (on 2600 of the fuzzer's devices: every real disagreement, no false alarm).
    - A level the plain solves barely see, in time steps. A floating gate on a MOS capacitor
      without a channel port, at rest in inversion (its electrons reach the back contact only by
      minority diffusion), wanders as t²: 8e-5 V by 1e7 s at 1.2 V, 8e-4 V at 2 V, with half the

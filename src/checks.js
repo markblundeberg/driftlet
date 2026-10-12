@@ -29,6 +29,11 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  *   zero; under light it's J = F(G − R), and it says where every carrier went.
  * - **conservation** (a transient): every closed, unreacting stretch keeps what it held plus
  *   what came in.
+ * - **order** (a steady state, with `refine` and `order`, the defaults): the device solved from
+ *   its definition twice, its species listed as given and in reverse, which must give the same
+ *   steady state (each terminal's voltage and current, each species' amount). A solve that
+ *   depends on the listing has converged somewhere that isn't steady without noticing (round 11's
+ *   fuzzer found it in ~1% of random reacting devices, by exactly this test).
  * - **grid** (with `refine`, the default; in a transient, `ok: null` and a reminder, since the
  *   answer depends on the whole run): in a steady state, the device solved again on a grid
  *   twice as fine everywhere, from this solution interpolated onto it. The current, each floating terminal's voltage and each
@@ -37,12 +42,12 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  *   (about 3/4 of it).
  * @param {import('./index.js').Device} device
  * @param {object} [sol] the solution to check (default: the device's present state)
- * @param {{ refine?: boolean, tol?: number }} [opts]
+ * @param {{ refine?: boolean, tol?: number, order?: boolean }} [opts]
  * Every check passed when `ok`; an item with `ok: null` (a warning, or a check that couldn't be
  * made) asks you to look, and doesn't fail it. `text` is a line per check, marked ok, FAIL or ?.
  * @returns {{ ok: boolean, items: CheckItem[], text: string }}
  */
-export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
+export function check(device, sol, { refine = true, tol = 1e-2, order = true } = {}) {
   sol ??= device.solution();
   const { model, solver, def } = device;
   const steady = sol.steady ?? solver.atSteady;
@@ -68,6 +73,7 @@ export function check(device, sol, { refine = true, tol = 1e-2 } = {}) {
     const ledger = steady ? balance(device, sol) : null;
     items.push(ledger ?? conservation(sol, Math.max(...device.model.grid.area)));
     if (steady && refine) items.push(gridCheck(device, sol, tol, ledger.details.gross));
+    if (steady && refine && order && model.species.length > 1) items.push(orderCheck(device, sol, ledger.details.gross));
     // A transient's answer depends on its whole history (and on drives set along the way), so
     // only a run of its own on a finer grid can check it.
     else if (refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved) and compare' });
@@ -311,6 +317,62 @@ function gridCheck(device, sol, tol, gross) {
       `on a grid twice as fine (${sol.x.length} → ${other.x.length} nodes), the largest change is ${worst.what}, ${sig(worst.a, 5)} → ${sig(worst.b, 5)} ${worst.unit} ` +
       `(${sig(worst.rel, 2)}${ok ? '' : `, over ${sig(tol, 1)}: refine the grid (hmin, hmax), most likely where profiles are steepest`})`,
     details: { diffs, nodes: [sol.x.length, other.x.length] },
+  };
+}
+
+// The device solved from its definition with its species listed as given and in reverse: the
+// same steady state either way, or one of them isn't steady. (Both from the definition, not this
+// state, whose closed amounts a transient or set() may have moved from c0.)
+function orderCheck(device, sol, gross) {
+  const { def, model } = device;
+  const solveAt = (d) => {
+    const dev = new Device(d);
+    if (sol.time > 0) dev.solver.time = sol.time; // waveforms at the same time
+    return dev.solve();
+  };
+  let a, b;
+  try {
+    a = solveAt(def);
+    b = solveAt({ ...def, species: [...def.species].reverse() });
+  } catch (e) {
+    return { name: 'order', ok: null, summary: `could not solve the device with its species reversed (${e.message})` };
+  }
+  if (!a.converged || !b.converged) {
+    const which = a.converged ? 'listed in reverse' : b.converged ? 'listed as given' : 'listed either way';
+    return { name: 'order', ok: null, summary: `the device solved from its definition did not converge with its species ${which}: compare with a long advance() by hand` };
+  }
+  const VT = model.RT / FARADAY, diffs = [];
+  // (Currents only where the ledgers see something move: in equilibrium they're round-off of
+  // whatever exchanges fastest, an electrode's couple, and a wrong state shows in the voltages
+  // and amounts instead.)
+  // (and above 1e-16 of what the species could carry, as the grid check's floor: a drift at
+  // 1e-16 A/m², still moving at 1e12 s, isn't worth reporting)
+  const natural = naturalScales(device, sol), floorI = 1e-16 * FARADAY * Math.max(0, ...model.species.map((sp, i) => Math.abs(sp.z) * natural[i]).filter(Number.isFinite));
+  for (const [name, t] of Object.entries(a.terminals)) {
+    const u = b.terminals[name];
+    diffs.push({ what: `${name} voltage`, a: t.V, b: u.V, rel: Math.abs(u.V - t.V) / (1e-6 * Math.max(VT, Math.abs(t.V))), unit: 'V' });
+    if (gross > 0 && Math.max(Math.abs(t.current), Math.abs(u.current), gross) > floorI) diffs.push({ what: `${name} current`, a: t.current, b: u.current, rel: Math.abs(u.current - t.current) / (1e-3 * Math.max(Math.abs(t.current), Math.abs(u.current), gross)), unit: unitsOf(model).current });
+  }
+  const vol = model.grid.vol, amount = (s, name) => s.x.reduce((m, _, g) => m + (Number.isFinite(s.c[name][g]) ? vol[g] * s.c[name][g] : 0), 0);
+  const amounts = model.species.map((sp) => [sp.name, amount(a, sp.name), amount(b, sp.name)]);
+  const most = Math.max(0, ...amounts.map(([, x, y]) => Math.max(Math.abs(x), Math.abs(y))));
+  for (const [name, x, y] of amounts) diffs.push({ what: `${name} amount`, a: x, b: y, rel: Math.abs(y - x) / (1e-6 * Math.max(Math.abs(x), Math.abs(y)) + 1e-12 * most), unit: 'mol/m²' });
+  // Agreeing to near round-off (a µV, a millionth of an amount): ok. Within a thousand times that
+  // (a mV, a thousandth), enough for any plot, but a weakly held part of one solve not quite
+  // steady: look. Beyond: one of them isn't a steady state.
+  const worst = diffs.reduce((w, d) => (d.rel > (w?.rel ?? -1) ? d : w), null);
+  const ok = !(worst.rel > 1) ? true : worst.rel > 1e3 ? false : null;
+  const what = `${worst.what} ${sig(worst.a, 6)} → ${sig(worst.b, 6)} ${worst.unit}`;
+  return {
+    name: 'order',
+    ok,
+    summary:
+      ok === true
+        ? 'the same steady state with the species listed in reverse'
+        : ok === null
+          ? `listed in reverse, the species give nearly the same steady state (${what}): not to round-off, so some weakly held part is not quite steady in one of them`
+          : `listed in reverse, the species give a different steady state: ${what}. One of them is not steady, though its solve converged: compare with a long advance(), and please report the device.`,
+    details: { diffs },
   };
 }
 

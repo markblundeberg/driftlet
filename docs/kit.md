@@ -419,7 +419,7 @@ console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s
 
 ## Checking a result
 
-`check(device, sol, { refine, tol })` checks a solved device, and says what it compared, so a
+`check(device, sol, { refine, tol, order })` checks a solved device, and says what it compared, so a
 page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned.
 
 - **converged**: the solve converged.
@@ -435,6 +435,13 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   (in equilibrium, flows only of round-off against what it could carry) isn't listed.
 - **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
   what came in.
+- **order**, in a steady state (unless `refine: false` or `order: false`): the device solved from
+  its definition twice, its species listed as given and in reverse. The same physics must give
+  the same steady state, each terminal's voltage and current and each species' amount; where it
+  doesn't, one of the two solves converged somewhere that isn't steady, without noticing.
+  That's rare (round 11's fuzzer found it in ~1% of random reacting devices, by this same test),
+  but it's the cheapest check there is on a state the other items can't see past. Both solves
+  start from the definition, not this state, so it costs two solves.
 - **grid**, in a steady state (unless `refine: false`): the device solved again on a grid twice
   as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
   from this solution interpolated onto it. The current, each floating terminal's voltage (an open-circuit voltage) and each

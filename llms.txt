@@ -61,8 +61,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **Check before trusting.** `sol.converged` must be true; read `sol.warnings`, where a failed
   solve always says why. `describe(def)` (kit) summarises a definition and flags likely unit
   slips. Once a device works, log `check(dev, sol).text` (kit) once: each species' ledger,
-  conservation in transients, and a steady state on a grid twice as fine (a FAIL means refine;
-  a transient you rerun on a finer grid yourself).
+  conservation in transients, a steady state on a grid twice as fine (a FAIL means refine;
+  a transient you rerun on a finer grid yourself) and with its species listed in reverse (a
+  FAIL there means a solve converged somewhere that isn't steady: compare a long advance()).
 
 ## How a device is written
 
