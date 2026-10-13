@@ -6,6 +6,10 @@ for live demos.
 
 ## Done
 
+- **1.0** (2026-10-13), agent-first: the API audited and frozen (every option name checked, with
+  the one meant suggested), llms.txt complete and within one read, warnings that say what to do,
+  `check()` covering what an agent can't judge, and two rounds of cold agents building demos that
+  agree with theory. From here, work follows users' reports.
 - Solver core: graded grid with doubled interface nodes, block Thomas, Scharfetter–Gummel in
   quasi-Fermi (expm1) form, compensated double-double $`\bar\mu`$, damped Newton.
 - Equilibrium and steady transport: direct steady solves when nothing is conserved, and
@@ -87,25 +91,6 @@ for live demos.
 - Particle cartoons consistent with the model (`particles()` in the kit): dots drawn as a
   sample of a solution's concentrations, hopping at its one-way rates, so their density and net
   crossings agree with the fields at any step.
-
-## 1.0
-
-driftlet's users will mostly be coding agents, asked to simulate something or build a demo where
-JavaScript is the right tool. So 1.0 is about an agent getting a correct result on its first
-try, and noticing when it hasn't. Lean: anything that doesn't serve that waits for real reports.
-
-1. **API audit and freeze.** Every name and option said once, the same way everywhere; nothing an
-   agent would guess wrong. After 1.0, breaking changes need a major version.
-2. **llms.txt complete and tight.** An agent with only llms.txt can build any of the demos.
-3. **Every warning and error says what to do next.**
-4. **check() covers what an agent can't judge for itself**, such as whether a state is steady,
-   whether currents balance, whether the grid resolves the device.
-5. **A last cold-agent round on realistic requests** ("make a demo of a pn junction", "simulate
-   a battery discharging"). It passes when the agents reach correct, checked results, and
-   nothing goes silently wrong.
-6. **npm description and keywords**, so an agent searching for a tool finds it.
-
-The hardening below then goes on where users' reports point.
 
 ## Next
 

@@ -1,8 +1,16 @@
 # Changelog
 
-driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
+driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
+major version.
 
-## Unreleased
+## 1.0.0 (2026-10-13)
+
+The API is stable from here. 1.0 was aimed at its likely users, coding agents asked to simulate
+something or build a demo: getting a correct result on the first try, and noticing when they
+haven't. Two rounds of agents built demos cold from llms.txt alone (a pn diode, a battery, an
+impedance page, a solar cell, a cyclic voltammogram), each checked against theory (to 1% or
+better, the impedance to 0.4–5%, where circuit theory leaves out migration), and what they tripped
+on is fixed below.
 
 - Every option name is checked. `solve()`, `step()`, `advance()`, `impedance()` and every kit and
   plot helper refuse an option they don't take and suggest the one meant (`advance(t, { dtmax })`

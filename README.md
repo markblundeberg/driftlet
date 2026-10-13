@@ -40,8 +40,8 @@ cells, electrodes) put through cold solves, sweeps, transients and impedance, ev
 checked. A solve that fails reports it, with what went wrong where it can tell.
 [How far to trust it](docs/reliability.md) has the details, the numbers and the known limits.
 
-**Status: 0.x.** Released on npm and used by the demos, but the API may still change between
-minor versions.
+**Status: 1.0.** The API is stable: a change that breaks working code comes only with a major
+version.
 
 ## Install
 
@@ -56,7 +56,7 @@ import { bandDiagram } from 'driftlet/plot';    // a level diagram as an SVG str
 ```
 
 Or straight from a CDN in a page, pinned to a version:
-`https://cdn.jsdelivr.net/npm/driftlet@0.16.4/src/index.js` (and `src/kit.js`, `src/plot.js`).
+`https://cdn.jsdelivr.net/npm/driftlet@1.0.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
 TypeScript declarations ship in the package. Writing a demo with an LLM agent? Point it at
 [`llms.txt`](llms.txt).
 
