@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, trap } from '../src/kit.js';
 
 // SRH (trap-assisted) kinetics as a rate law: r = n p (1 − e^{−A/RT}) / (τ_p (n + n₁) + τ_n (p + p₁)),
 // with p₁ = n p e^{−A/RT}/n₁ from the state, so equilibrium (A = 0) stays exact.
@@ -140,4 +140,40 @@ test('explicit immobile traps in steady state recombine exactly at the SRH rate,
   const R = (n * p - ni2) / (tauP * (n + n1) + tauN * (p + ni2 / n1));
   assert.ok(Math.abs(R / G - 1) < 1e-6, `R_SRH ${R} against G ${G}`);
   s.c.X0.forEach((x, g) => assert.ok(Math.abs((x + s.c['X-'][g]) / Nt - 1) < 1e-12, `trap total at node ${g}`));
+});
+
+test('trap(): the same trap written for you recombines at the srh law\'s rate, and its charge compensates the doping, n = N_D − N_t n/(n + n₁)', () => {
+  // Lit, as above: in steady state the explicit trap recombines at R_SRH(n, p) exactly.
+  const ND = units.perCm3(1e15), Nt = units.perCm3(1e12), tauN = 2e-6, tauP = 1e-6, G = units.perCm3(1e20), n1 = units.perCm3(1e12);
+  const lit = trap(Si, { density: Nt, tauN, tauP, n1 });
+  const s = new Device(build({
+    T,
+    library: [lit.library],
+    stack: [ohmic(0, ['e-']), layer('Si', 10e-6, { donors: ND, c0: { 'h+': 1e-12, ...lit.c0 } }), ohmic(0, ['e-'])],
+    bulkReactions: [...lit.bulkReactions, { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G } }],
+  })).solve();
+  assert.ok(s.converged);
+  const mid = s.x.length >> 1, n = s.c['e-'][mid], p = s.c['h+'][mid];
+  const R = (n * p - ni2) / (tauP * (n + n1) + tauN * (p + ni2 / n1));
+  assert.ok(Math.abs(R / G - 1) < 1e-6, `R_SRH ${R} against G ${G}`);
+  // In the dark, deep traps as dense as the donors take a share of their electrons: neutrality
+  // n + X⁻ = N_D (holes negligible), with the trap filled as f = n/(n + n₁). Acceptor-like
+  // traps on n-type, donor-like on p-type (p + X⁺ = N_A, X⁺ the empty share).
+  for (const charge of ['acceptor', 'donor']) {
+    const N = units.perCm3(1e16), Ntd = units.perCm3(5e15), n1d = units.perCm3(1e15);
+    const t = trap(Si, { density: Ntd, tauN: 1e-6, tauP: 1e-6, n1: n1d, charge });
+    const dop = charge === 'acceptor' ? { donors: N } : { acceptors: N };
+    const hold = charge === 'acceptor' ? ['e-'] : ['h+'];
+    const sol = new Device(build({ T, library: [t.library], stack: [ohmic(0, hold), layer('Si', 2e-6, { ...dop, c0: { ...t.c0, [charge === 'acceptor' ? 'h+' : 'e-']: 1e-12 } }), ohmic(0, hold)], bulkReactions: t.bulkReactions })).solve();
+    assert.ok(sol.converged, charge);
+    const g = sol.x.length >> 1, ne = sol.c['e-'][g], ph = sol.c['h+'][g];
+    if (charge === 'acceptor') {
+      const want = root((x) => x + (Ntd * x) / (x + n1d) - N, 0, N);
+      assert.ok(Math.abs(ne / want - 1) < 1e-6 && Math.abs(sol.c['X-'][g] / (Ntd * ne / (ne + n1d)) - 1) < 1e-6, `acceptor: n ${ne} vs ${want}`);
+    } else {
+      // p + X⁺ = N_A, with X⁺ = N_t (1 − f) and f = n/(n + n₁), n = n_i²/p
+      const want = root((x) => x + Ntd * (1 - ni2 / x / (ni2 / x + n1d)) - N, 1e-30, N);
+      assert.ok(Math.abs(ph / want - 1) < 1e-6, `donor: p ${ph} vs ${want}`);
+    }
+  }
 });

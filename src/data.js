@@ -118,6 +118,62 @@ export function semiconductor(name, { material = name } = {}) {
 }
 
 /**
+ * A trap level in a semiconductor that holds charge: its two charge states as immobile species
+ * (D = 0), filled and emptied by capturing carriers, e⁻ + X⁰ = X⁻ and X⁻ + h⁺ = X⁰ (acceptor-like)
+ * or X⁺ + e⁻ = X⁰ and X⁰ + h⁺ = X⁺ (donor-like). In steady state it recombines at exactly the
+ * `srh` law's rate with the same τ_n, τ_p and n₁, and its charge is in Poisson's equation, which
+ * the `srh` law (the trap's occupancy eliminated) leaves out. Each node keeps its own total.
+ * @param {{ species: object[], materials: Record<string, object> }} lib a library entry with e⁻
+ *   and h⁺ (semiconductor()), returned with the trap's states added
+ * @param {{ density: number, tauN: number, tauP: number, n1?: number, charge?: 'acceptor' | 'donor',
+ *   name?: string, material?: string, T?: number }} opts density N_t (mol/m³); τ_n = 1/(c_n N_t)
+ *   and τ_p = 1/(c_p N_t) (s) at that density; n₁, the electron density that half-fills it
+ *   (mol/m³; default n_i, midgap); T (K, default 300, the library's)
+ * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number> }} the library
+ *   for build(), the capture reactions, and c0 for each layer holding the trap (its total N_t)
+ */
+export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name = 'X', material, T = 300 } = {}) {
+  checkOptions('trap', arguments[1], ['density', 'tauN', 'tauP', 'n1', 'charge', 'name', 'material', 'T']);
+  if (!lib || typeof lib !== 'object' || typeof lib.materials !== 'object') fail('trap: give the library entry first, semiconductor(\'Si\') say, then { density, tauN, tauP }');
+  const names = Object.keys(lib.materials);
+  const m = material ?? (names.length === 1 ? names[0] : fail(`trap: the library has materials ${names.join(', ')}: say which, with material`));
+  const mat = lib.materials[m];
+  if (!mat) fail(`trap: no material '${m}' in the library (it has ${names.join(', ')})`);
+  const el = mat.species?.['e-'], ho = mat.species?.['h+'];
+  if (!el || !ho) fail(`trap: material '${m}' needs e- and h+ (a semiconductor)`);
+  const pos = (v, what) => (Number.isFinite(v) && v > 0 ? v : fail(`trap: ${what}, got ${v}`));
+  pos(density, 'density must be the trap density N_t > 0 (mol/m³; units.perCm3(1e15), say)');
+  pos(tauN, 'tauN must be the electron lifetime τ_n = 1/(c_n N_t) > 0 (s)');
+  pos(tauP, 'tauP must be the hole lifetime τ_p = 1/(c_p N_t) > 0 (s)');
+  pos(T, 'T must be the temperature in K');
+  if (charge !== 'acceptor' && charge !== 'donor') fail(`trap: charge must be 'acceptor' (0/−) or 'donor' (+/0), got ${JSON.stringify(charge)}`);
+  if (typeof name !== 'string' || !/^[A-Za-z][\w()]*$/.test(name)) fail(`trap: name must be a plain name for the trap (its states are name0 and name- or name+), got ${JSON.stringify(name)}`);
+  const RT = GAS_CONSTANT * T, cRefE = el.cRef ?? lib.species.find((sp) => sp.name === 'e-')?.cRef;
+  const cRefH = ho.cRef ?? lib.species.find((sp) => sp.name === 'h+')?.cRef;
+  const ni = Math.sqrt(cRefE * cRefH * Math.exp(-(ho.mu0 - el.mu0) / RT));
+  const half = n1 === undefined ? ni : pos(n1, 'n1 must be the electron density that half-fills the trap > 0 (mol/m³)');
+  // The filled state's μ° sits an electron's μ at n₁ above the empty one's: half full at n = n₁.
+  const [empty, full] = charge === 'acceptor' ? [`${name}0`, `${name}-`] : [`${name}+`, `${name}0`];
+  const zEmpty = charge === 'acceptor' ? 0 : 1;
+  const states = {
+    [empty]: { D: 0, mu0: 0, cRef: density },
+    [full]: { D: 0, mu0: el.mu0 + RT * Math.log(half / cRefE), cRef: density },
+  };
+  return {
+    library: {
+      species: [...lib.species, { name: empty, z: zEmpty }, { name: full, z: zEmpty - 1 }],
+      materials: { ...lib.materials, [m]: { ...mat, species: { ...mat.species, ...states } } },
+    },
+    bulkReactions: [
+      { equation: `e- + ${empty} = ${full}`, kf: { [m]: 1 / (tauN * density) } },
+      { equation: `${full} + h+ = ${empty}`, kf: { [m]: 1 / (tauP * density) } },
+    ],
+    // (each node keeps the total, X⁰ + X⁻ say; the split is the solve's to find)
+    c0: { [empty]: density / 2, [full]: density / 2 },
+  };
+}
+
+/**
  * A metal from `METALS` as a conductor material, its carrier `e-`.
  * @param {string} name
  * @param {{ material?: string }} [opts]

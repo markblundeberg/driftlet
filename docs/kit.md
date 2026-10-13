@@ -68,6 +68,15 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 - **`library`** takes pieces with `species` and `materials`, merged with any given directly
   (`combine()` does the merging on its own). A species or material given twice must be given
   identically.
+- **`trap(lib, { density, tauN, tauP, n1, charge, name, material, T })`** adds a trap level that
+  holds charge to a semiconductor's library piece: its two states as immobile species
+  (`X0`/`X-` for `charge: 'acceptor'`, the default; `X+`/`X0` for `'donor'`), filled and emptied
+  by capturing electrons and holes. It returns `{ library, bulkReactions, c0 }`: the library to
+  give `build()` in place of `lib`, the two capture reactions, and the trap's total for each
+  layer that has it (`layer('Si', L, { donors, c0: t.c0 })`). In steady state it recombines at the
+  `srh` law's rate with the same `tauN`, `tauP` (s, at that density) and `n1` (mol/m³, default
+  n_i); unlike `srh`, its charge is in Poisson's equation
+  ([device](device.md#bulk-reactions)).
 - Nested lists in the stack are flattened, so a helper can return several items.
 - Reactions pass through as written (see below), and so do `T`, `grid`, `ports` and `geometry`.
 

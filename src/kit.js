@@ -18,7 +18,7 @@ export { check } from './checks.js';
 export { particles } from './particles.js';
 export { polarization } from './polarization.js';
 export { perovskiteCell, PEROVSKITE_SCANS, hysteresis } from './devices.js';
-export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal } from './data.js';
+export { IONS, H2O, WATER_EPSR, SEMICONDUCTORS, METALS, aqueous, semiconductor, metal, trap } from './data.js';
 
 const fail = (message) => {
   throw new DeviceError(message);

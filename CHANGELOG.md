@@ -3,6 +3,17 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- The kit's `trap()` writes a trap level that holds charge: its two states as immobile species,
+  filled and emptied by capture, from the `srh` law's `{ tauN, tauP, n1 }` and a density. In
+  steady state it recombines at the same rate, and its charge is in Poisson's equation, which
+  `srh` leaves out (checked against n = N_D − N_t n/(n + n₁) for acceptor-like traps
+  compensating donors, and the donor-like mirror). Explicit traps always worked; nothing in
+  llms.txt said how.
+- llms.txt: the junction template is a short diode (its Shockley check takes the quasi-neutral
+  widths, not L), and the plot module draws profiles in x, not I–V curves.
+
 ## 1.0.1 (2026-10-13)
 
 Fixes from an outside review of the physics and numerics by another model family (Gemini 4

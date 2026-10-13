@@ -418,7 +418,13 @@ those materials.
 none (`'e- + h+ = 0'`):
 $`r = n p (1 - e^{-A/RT}) / (\tau_p (n + n_1) + \tau_n (p + p_1))`$, with lifetimes in s and $`n_1`$ as
 for [interface SRH](#interfaces) (default midgap). It's what explicit trap species reduce to when
-the traps are few and fast, without them.
+the traps are few and fast, without them. Where their charge matters, write them out: two
+immobile species (D = 0) for the trap's charge states, filled and emptied by
+`'e- + X0 = X-'` and `'X- + h+ = X0'` (acceptor-like) at rates $`k_n = 1/(\tau_n N_t)`$ and
+$`k_p = 1/(\tau_p N_t)`$, the filled state's $`\mu^\circ`$ an electron's $`\mu`$ at $`n_1`$ above the
+empty one's. In steady state they recombine at the rate above exactly, each node keeps its
+own trap total, and the trapped charge is in Poisson's equation. The kit's
+[`trap()`](kit.md#a-device-as-a-stack) writes them from the same `{ tauN, tauP, n1 }` and a density.
 
 ```js nocheck
 bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }]
