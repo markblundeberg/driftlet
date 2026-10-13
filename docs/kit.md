@@ -438,7 +438,9 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
 - **order**, in a steady state (unless `refine: false` or `order: false`): the device solved from
   its definition twice, its species listed as given and in reverse. The same physics must give
   the same steady state, each terminal's voltage and current and each species' amount; where it
-  doesn't, one of the two solves converged somewhere that isn't steady, without noticing.
+  doesn't, one of the two solves converged somewhere that isn't steady, without noticing, or the
+  device has more than one steady state, which Newton picks by its path (an unstable one too:
+  see [numerics](numerics.md#steady-state) for kicking a state to test it).
   That's rare (round 11's fuzzer found it in ~1% of random reacting devices, by this same test),
   but it's the cheapest check there is on a state the other items can't see past. Both solves
   start from the definition, not this state, so it costs two solves.

@@ -681,6 +681,18 @@ the clock. Nor does it ask whether the steady state is stable: an axon held at a
 makes it fire over and over has a resting point all the same, which `solve()` returns, and only
 a transient leaves it.
 
+Reactions far from equilibrium can have more than one steady state, and Newton finds whichever
+its path leads to, unstable ones included. Two couples on electrode ports (round 11's fuzzer)
+had a state near the fast couple's equilibrium and one with its reactant at 1e-18 mol/m³; the
+second passed every check, and two listings of three solved to it, yet a 10 mV kick took it to
+the first within 2e5 s (where a long `advance()` from the start goes too). A transient from the
+unstable state doesn't show this either: its steps soon outgrow the growth time (~3000 s here),
+and an implicit step that long damps a growing mode as it damps a decaying one, so it sits there
+to 1e12 s. To test a steady state, kick it (a drive moved for a moment and put back) and
+advance with `dtMax` held below the times you care about, a tenth of each interval as it
+grows: a stable state comes back. (At equilibrium, nothing flowing, a state minimises a convex
+free energy and is stable.)
+
 ### The steady system
 
 Every row of a steady solve that differs from a time step's is a sum of balance rows, or (a

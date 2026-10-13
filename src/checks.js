@@ -379,7 +379,7 @@ function orderCheck(device, sol, gross) {
         ? 'the same steady state with the species listed in reverse'
         : ok === null
           ? `listed in reverse, the species give nearly the same steady state (${what}): not to round-off, so some weakly held part is not quite steady in one of them`
-          : `listed in reverse, the species give a different steady state: ${what}. One of them is not steady, though its solve converged: compare with a long advance(), and please report the device.`,
+          : `listed in reverse, the species give a different steady state: ${what}. One of them is not steady, though its solve converged, or the device has more than one steady state (one of them perhaps unstable): compare with a long advance() from the start, kick each and watch it with dtMax (see numerics.md, Steady state), and please report the device.`,
     details: { diffs },
   };
 }

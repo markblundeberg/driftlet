@@ -129,10 +129,22 @@ for live demos.
      and devices with more than one steady state. A pair of port couples settled either near the
      fast one's equilibrium or far from it, its reactant at 1e-18 mol/m³, both passing every
      check; which state a solve finds then depends on its path, and advance() from the start
-     finds one of them. Telling a second steady state from a wrong one needs a stability test (a
-     perturbed advance() from it), not an ordering. check() solves the device again with its
+     finds one of them. In that pair, the second state is unstable: kicked by 10 mV and advanced
+     with dtMax capped, it left for the first within 2e5 s. check() solves the device again with its
      species reversed, and fails where the two differ (on 2600 of the fuzzer's devices: every
      real disagreement, no false alarm).
+   - A stability check after a steady solve. Tried: the sign of the time step's Jacobian
+     determinant, J + σM, along σ = 1/dt from 1e12 to 1e-12 per s (it changes at each real growth
+     rate), from the block factorisation's pivots and the bordered rows' small system, with each
+     conserved amount in place of one of its rows to remove its zero root. It found the unstable
+     port state (between 10 and 1e7 s; ~3000 s by a kick), but 3 of its 4 flags on 600 fuzzer
+     devices were stable by a kick, and 9–40% of devices came out undecided: the bordered rows
+     (a floating terminal's current response) lose their sign to cancellation at long steps.
+     Also tried: power iteration on kicked backward-Euler steps at fixed h (a growing mode
+     multiplies by 1/(1 − gh)), right for that state (1.032 per step at h = 100 s, 1.031
+     predicted) but with spurious growth of 10–1e4 per step on many port devices, unexplained.
+     Either needs its noise understood before it can fail a check; meanwhile numerics.md says
+     how to kick a state by hand.
    - A level the plain solves barely see, in time steps. A floating gate on a MOS capacitor
      without a channel port, at rest in inversion (its electrons reach the back contact only by
      minority diffusion), wanders as t²: 8e-5 V by 1e7 s at 1.2 V, 8e-4 V at 2 V, with half the
