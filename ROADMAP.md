@@ -117,15 +117,22 @@ for live demos.
      of its gross. Steady solves converge silently to states 20–80 mV off (and different in
      each listing of the species), their terminal currents not adding up by ~3e-13 A/m², which
      is about the fast couple's round-off. Found by round 11's fuzzer (its F5).
-   - Steady solves that depend on the order species are listed in, in whether they converge.
-     Of random reacting devices (round 11's fuzzer: ions, complexations, couples on metals,
-     I = 0 and resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.6% converge in one listing
-     and not another, and ~1% have a steady state (a long advance() settles to it) that solve()
-     doesn't find, some even when started there. Silent disagreements between listings are now
-     caught where a row was left unsolved (a perturbed pivot, or a factorisation that lost a
-     reaction's row: the residual is checked before a steady solve converges), but the failures
-     remain. check() now solves the device again with its species reversed, and fails where
-     the two differ (on 2600 of the fuzzer's devices: every real disagreement, no false alarm).
+   - Steady solves that depend on the order species and reactions are listed in. Of random
+     reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
+     resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with
+     electrode ports converge in one listing and not another, or to different states, and ~1%
+     have a steady state (a long advance() settles to it) that solve() doesn't find. Two causes
+     are gone: a pivot left at round-off without being exactly zero, and affinity rows picked by
+     listing (cells 1.8% before). What's left: Newton paths that differ with the order of a
+     block's unknowns (one path crawls or lands on a dead state, which the stuck-reaction warning
+     flags); slow port reactions (warned, below); weakly held regions that lose all their digits;
+     and devices with more than one steady state. A pair of port couples settled either near the
+     fast one's equilibrium or far from it, its reactant at 1e-18 mol/m³, both passing every
+     check; which state a solve finds then depends on its path, and advance() from the start
+     finds one of them. Telling a second steady state from a wrong one needs a stability test (a
+     perturbed advance() from it), not an ordering. check() solves the device again with its
+     species reversed, and fails where the two differ (on 2600 of the fuzzer's devices: every
+     real disagreement, no false alarm).
    - A level the plain solves barely see, in time steps. A floating gate on a MOS capacitor
      without a channel port, at rest in inversion (its electrons reach the back contact only by
      minority diffusion), wanders as t²: 8e-5 V by 1e7 s at 1.2 V, 8e-4 V at 2 V, with half the

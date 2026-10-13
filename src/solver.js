@@ -892,55 +892,63 @@ export class Solver {
     // −0.5004 V), and 1e-15 to 1e-18 failed. Its affinity says the same at any k₀ (each kinetic
     // form vanishes only there), so it stands in for one of those rows (see _applyAffinities),
     // chosen by the same elimination, and a stretch's: never a circuit row.
+    // The slowest first, whose rate rows are the poorest, and each row picked by the reaction's
+    // own terms, never by where its species are listed: the same rows in any listing. (Picked by
+    // listing, an electrode's two couples took different rows with the species reversed, and
+    // Newton converged in one listing and crawled in the other.)
     this.affinities = [];
-    model.interfaces.forEach((itf, f) => {
-      for (const rx of itf.reactions) {
-        const nu = new Float64Array(S);
-        let inFlat = false;
-        for (const p of rx.part) {
-          const k = this.stretchOf[(f + p.side) * this.n + p.i];
-          if (k < 0 || this.flatStretches.includes(this.stretches[k])) inFlat = true;
-          else nu[k] += p.nu;
-        }
-        if (inFlat) continue; // (held flat at a contact's levels, in equilibrium already)
-        // (Not one fed by a terminal driven by a current: its sum is the rate plus what that
-        // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.
-        // A current held at zero passes nothing: an electrode at open circuit feeding a closed
-        // pool of Ag⁺ beside a slow Fe³⁺/Fe²⁺ couple settled 78 mV off, its iron not stationary.)
-        const passes = (k) => !this._noCurrent(this.terms[k]);
-        const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && driven(this.stretches[k]).some(passes))));
-        // Any of the combinations it alone changes will do, with any conserved amount added (whose
-        // summed balance is zero too): one of them needs a row of its own left to take. (Silver's,
-        // e⁻ − Fe³⁺ beside a closed iron couple that had Fe³⁺'s, is e⁻ + Fe²⁺ with the iron added.)
-        const news = this._conservedMoieties(true, [], rx).filter((w) => Math.abs(nu.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9 && !fed(w));
-        const kept = laws.filter((l) => !fed(l));
-        const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
-        for (const w of tries) {
-          const v = new Float64Array(S + T);
-          for (let k = 0; k < S; k++) {
-            if (w[k] === 0) continue;
-            const st = this.stretches[k];
-            if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = w[k];
-            if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / this.z[st.species];
-          }
-          for (const [col, row] of chosen) {
-            const fc = v[col];
-            if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
-          }
-          const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
-          if (!(scale > 1e-9)) continue;
-          // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
-          // carry the terminal's current, and Pt's electrons standing for an iron couple's balance
-          // put the electrode at 602 V.)
-          const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(this.stretches[j]) && this.terms.every((_, t) => !this._feeds(t, this.stretches[j]));
-          const col = [...Array(S).keys()].find((k) => ok(k) && Math.abs(v[k]) === 1) ?? [...Array(S).keys()].reduce((b, k) => (ok(k) && (b < 0 || Math.abs(v[k]) > Math.abs(v[b])) ? k : b), -1);
-          if (col < 0) continue;
-          chosen.push([col, v.map((x) => x / v[col])]);
-          this.affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
-          break;
-        }
+    const faceRx = model.interfaces.flatMap((itf, f) => itf.reactions.map((rx) => ({ f, rx, key: rx.part.map((p) => `${model.species[p.i].name}:${p.side}:${p.nu}`).sort().join() })));
+    faceRx.sort((a, b) => a.rx.k0 - b.rx.k0 || (a.key < b.key ? -1 : a.key > b.key ? 1 : a.f - b.f));
+    for (const { f, rx } of faceRx) {
+      const nu = new Float64Array(S);
+      let inFlat = false;
+      for (const p of rx.part) {
+        const k = this.stretchOf[(f + p.side) * this.n + p.i];
+        if (k < 0 || this.flatStretches.includes(this.stretches[k])) inFlat = true;
+        else nu[k] += p.nu;
       }
-    });
+      if (inFlat) continue; // (held flat at a contact's levels, in equilibrium already)
+      // (Not one fed by a terminal driven by a current: its sum is the rate plus what that
+      // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.
+      // A current held at zero passes nothing: an electrode at open circuit feeding a closed
+      // pool of Ag⁺ beside a slow Fe³⁺/Fe²⁺ couple settled 78 mV off, its iron not stationary.)
+      const passes = (k) => !this._noCurrent(this.terms[k]);
+      const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && driven(this.stretches[k]).some(passes))));
+      // Any of the combinations it alone changes will do, with any conserved amount added (whose
+      // summed balance is zero too): one of them needs a row of its own left to take. (Silver's,
+      // e⁻ − Fe³⁺ beside a closed iron couple that had Fe³⁺'s, is e⁻ + Fe²⁺ with the iron added.)
+      const news = this._conservedMoieties(true, [], rx).filter((w) => Math.abs(nu.reduce((t, x, k) => t + x * w[k], 0)) > 1e-9 && !fed(w));
+      const kept = laws.filter((l) => !fed(l));
+      const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
+      for (const w of tries) {
+        const v = new Float64Array(S + T);
+        for (let k = 0; k < S; k++) {
+          if (w[k] === 0) continue;
+          const st = this.stretches[k];
+          if (this._moves(st) && !spectators.has(rowOf(k))) v[k] = w[k];
+          if (this.z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / this.z[st.species];
+        }
+        for (const [col, row] of chosen) {
+          const fc = v[col];
+          if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
+        }
+        const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+        if (!(scale > 1e-9)) continue;
+        // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
+        // carry the terminal's current, and Pt's electrons standing for an iron couple's balance
+        // put the electrode at 602 V.)
+        const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(this.stretches[j]) && this.terms.every((_, t) => !this._feeds(t, this.stretches[j]));
+        // (One of its own species first, then weight 1, the largest, and by name.)
+        const own = (k) => rx.part.some((p) => p.i === this.stretches[k].species && this.stretchOf[(f + p.side) * this.n + p.i] === k);
+        const key = (k) => [own(k) ? 0 : 1, Math.abs(v[k]) === 1 ? 0 : 1, -Math.abs(v[k]), model.species[this.stretches[k].species].name, this.stretches[k].regions[0]];
+        const less = (a, b) => { const ka = key(a), kb = key(b); for (let j = 0; j < ka.length; j++) if (ka[j] !== kb[j]) return ka[j] < kb[j]; return false; };
+        const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
+        if (col < 0) continue;
+        chosen.push([col, v.map((x) => x / v[col])]);
+        this.affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
+        break;
+      }
+    }
     for (let w of [...laws.filter(through), ...laws.filter((w) => !through(w))]) {
       for (const [j, k] of this.carriers.entries()) {
         const c = held.get(k);

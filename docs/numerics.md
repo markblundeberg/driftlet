@@ -767,25 +767,27 @@ the terms that cancel:
   contact; moved, slow generation through a bulk of GaAs with ~1e-4 electrons per cm³ couldn't
   carry the inversion layer's level with it (of 500 random MOS capacitors, 38 failed and 5
   converged to a gate charge up to 2× off).
-- **A reaction's equilibrium.** A face reaction that alone changes some combination (left out,
-  the combination would be conserved: Ag⁺ closed in a cell where Ag⁺ + e⁻ = Ag(s) is its one
-  source, or Ag⁺ + AgNO₃ where it also complexes) makes that combination's summed balance its
-  rate, which a steady state sets to zero. The rate is a poor row, though: $`k_0`$ times a
-  function of the levels, beside the round-off of diffusion's terms in the same balances. An
-  Ag⁺/Ag couple 1e-20 as fast as Fe³⁺/Fe²⁺ on the same platinum at open circuit was lost to it,
-  the solve settling where silver wasn't (−0.4661 V, against the joint equilibrium's −0.5004 V),
-  and 1e-15 to 1e-18 failed. The reaction's affinity, $`a = A_\text{fixed} - \sum \nu \eta = 0`$,
-  says the same at any $`k_0`$ (each kinetic form vanishes only there), so it stands in for one
-  of the combination's balance rows, a pin like an amount's, chosen by the same elimination and
-  ahead of the amounts. The combinations come from the null space with that reaction's row left
-  out, any conserved amount added to one being as good (its summed balance vanishes too), so
-  that one can be found with a row left to take: silver's e⁻ − Fe³⁺ beside a closed iron couple
-  whose affinity had Fe³⁺'s row is e⁻ + Fe²⁺ with the iron added. Never a metal's carriers' row
-  or a row a terminal feeds, which carry its current (the platinum's electrons standing for an
-  iron couple put the electrode at 602 V). And not where a terminal driven by a current feeds
-  the combination, since the sum is then the rate plus what that terminal passes; a current
-  held at zero passes nothing, so an open-circuit electrode feeding a closed pool of Ag⁺ is
-  covered (from an iron k₀ of 1e-15 beside it, that settled 78 mV off).
+- **A reaction's equilibrium.** A face reaction that alone changes some combination (left out, the
+  combination would be conserved: Ag⁺ closed in a cell where Ag⁺ + e⁻ = Ag(s) is its one source, or
+  Ag⁺ + AgNO₃ where it also complexes) makes that combination's summed balance its rate, which a
+  steady state sets to zero. The rate is a poor row, though: $`k_0`$ times a function of the levels,
+  beside the round-off of diffusion's terms in the same balances. An Ag⁺/Ag couple 1e-20 as fast as
+  Fe³⁺/Fe²⁺ on the same platinum at open circuit was lost to it, the solve settling where silver
+  wasn't (−0.4661 V, against the joint equilibrium's −0.5004 V), and 1e-15 to 1e-18 failed. The
+  reaction's affinity, $`a = A_\text{fixed} - \sum \nu \eta = 0`$, says the same at any $`k_0`$
+  (each kinetic form vanishes only there), so it stands in for one of the combination's balance
+  rows, a pin like an amount's, chosen by the same elimination and ahead of the amounts: the slowest
+  reaction first, and a row of one of its own species where one is left, never one picked by where
+  the species are listed (the rows had differed with the species reversed, and an electrode's
+  equilibrium solved in one listing and failed in the other). The combinations come from the null
+  space with that reaction's row left out, any conserved amount added to one being as good (its
+  summed balance vanishes too), so that one can be found with a row left to take: silver's e⁻ − Fe³⁺
+  beside a closed iron couple whose affinity had Fe³⁺'s row is e⁻ + Fe²⁺ with the iron added. Never
+  a metal's carriers' row or a row a terminal feeds, which carry its current (the platinum's
+  electrons standing for an iron couple put the electrode at 602 V). And not where a terminal driven
+  by a current feeds the combination, since the sum is then the rate plus what that terminal passes;
+  a current held at zero passes nothing, so an open-circuit electrode feeding a closed pool of Ag⁺
+  is covered (from an iron k₀ of 1e-15 beside it, that settled 78 mV off).
 
   Where a reaction can't stand on its affinity (a bulk reaction, whose rate summed over the
   region vanishing needn't make it vanish everywhere, or an electrode port's), a steady solve

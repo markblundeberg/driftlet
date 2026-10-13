@@ -647,6 +647,76 @@ test('a level only the face after it holds: the same steady state in any listing
   }
 });
 
+test('the equilibria of reactions take the same rows in any listing: two electrodes with solid couples, at equilibrium', () => {
+  // Each couple with a fixed solid sets its ion's level against its electrode's, so at
+  // equilibrium the voltages follow from the solids alone. Picked by where the species were
+  // listed, the rows that the couples' affinities stand in for differed, and the solve converged
+  // in one listing and failed in another.
+  const solve = (def, order) => {
+    if (order === 'species reversed') def.species.reverse();
+    if (order === 'reactions reversed') for (const itf of def.interfaces) itf.reactions.reverse();
+    return new Device(def).solve();
+  };
+  const metal = { conductor: { species: 'e-', conductivity: 1085645.496591289 } };
+  const silver = (order) =>
+    solve(
+      {
+        species: [['A+', 1], ['F-', -1], ['G3+', 3], ['N', 0], ['AG4+', 4], ['e-', -1]].map(([name, z]) => (name === 'e-' ? { name, z } : { name, z, cRef: 1000 })),
+        materials: {
+          water: { epsr: 0, species: { 'A+': { D: 2.3243172943985234e-10, mu0: -21607 }, 'F-': { D: 1.6362096300932947e-9, mu0: 12229 }, 'G3+': { D: 3.0234488685206066e-10, mu0: 3130 }, N: { D: 7.592792804803207e-11, mu0: 22977 }, 'AG4+': { D: 1.4210738829864827e-10, mu0: -42893 } } },
+          M: metal,
+        },
+        regions: [
+          { name: 'M1', material: 'M', length: 1e-6 },
+          { name: 'water', material: 'water', length: 1.9969045428519623e-6, c0: { 'A+': 14.458449156935107, 'F-': 469.4061672549616, 'G3+': 151.1841389745432, N: 0.13570880266728685, 'AG4+': 0.3488252935992165 } },
+          { name: 'M2', material: 'M', length: 1e-6 },
+        ],
+        interfaces: [
+          { reactions: [{ equation: 'S00A(s) = A+ + e-', k0: 32.947969652281095, alpha: 0.5, fixed: { 'S00A(s)': 25802 } }, { equation: 'AG4+ + 3 e- = A+', k0: 3.973379615067484e-15, alpha: 0 }] },
+          { reactions: [{ equation: 'AG4+ + 4 e- = N', k0: 0.013451793412656647, alpha: 0.7 }, { equation: 'S11A(s) = A+ + e-', k0: 2.2354030130687728e-6, alpha: 0, fixed: { 'S11A(s)': 22363 } }] },
+        ],
+        bulkReactions: [{ equation: 'A+ + G3+ = AG4+', kf: { water: 0.29414660725796493 } }],
+        contacts: { left: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+        grid: { hmin: 1.9969045428519622e-8, hmax: 1.3312696952346416e-7 }, // (the fuzzer's own numbers)
+      },
+      order,
+    );
+  // A⁺ level with both solids: μ̄ = μ(S00A) + F V_L = μ(S11A) + F V_R.
+  for (const order of ['as written', 'species reversed', 'reactions reversed']) {
+    const s = silver(order), VL = (22363 - 25802) / FARADAY;
+    assert.ok(s.converged && Math.abs(s.terminals.left.V - VL) < 1e-9, `${order}: ${s.converged}, V ${s.terminals.left.V} for ${VL}`);
+  }
+  const complexed = (order) =>
+    solve(
+      {
+        species: [['C2+', 2], ['F-', -1], ['E+', 1], ['CF+', 1], ['e-', -1]].map(([name, z]) => (name === 'e-' ? { name, z } : { name, z, cRef: 1000 })),
+        materials: {
+          water: { epsr: 0, species: { 'C2+': { D: 5.183246578681108e-10, mu0: -22707 }, 'F-': { D: 1.7039236094838368e-9, mu0: -2371 }, 'E+': { D: 7.345979739182845e-10, mu0: 16778 }, 'CF+': { D: 4.0102842475617254e-11, mu0: -61263 } } },
+          M: { conductor: { species: 'e-', conductivity: 13503964.589985639 } },
+        },
+        regions: [
+          { name: 'M1', material: 'M', length: 1e-6 },
+          { name: 'water', material: 'water', length: 4.5574857648705386e-6, c0: { 'C2+': 295.6958039221225, 'F-': 797.4761452984887, 'E+': 206.0481658485044, 'CF+': 0.03637160573936982 } },
+          { name: 'M2', material: 'M', length: 1e-6 },
+        ],
+        interfaces: [
+          { reactions: [{ equation: 'C2+ + 2 e- = S00C(s)', k0: 295.1343507546302, alpha: 0.7, fixed: { 'S00C(s)': -14333 } }, { equation: 'CF+ + e- = S01CF(s)', k0: 0.6036981923097351, alpha: 1, fixed: { 'S01CF(s)': -27421 } }] },
+          { reactions: [{ equation: 'C2+ + 3 e- = F-', k0: 0.20554335828811326, alpha: 0 }] },
+        ],
+        bulkReactions: [{ equation: 'C2+ + F- = CF+', kf: { water: 0.006209375707347837 } }],
+        contacts: { left: { V: -0.11393122468143702, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+        grid: { hmin: 4.5574857648705384e-8, hmax: 3.0383238432470257e-7 },
+      },
+      order,
+    );
+  // F⁻ is CF⁺ less C²⁺, each level with its solid, and the right electrode level with all three:
+  // V_R = V_L + (2μ(S00C) − μ(S01CF))/3F.
+  for (const order of ['as written', 'species reversed']) {
+    const s = complexed(order), VR = -0.11393122468143702 + (2 * -14333 + 27421) / (3 * FARADAY);
+    assert.ok(s.converged && Math.abs(s.terminals.right.V - VR) < 1e-9, `${order}: ${s.converged}, V ${s.terminals.right.V} for ${VR}`);
+  }
+});
+
 test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
   const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
   const def = (order, capacitance) => ({
