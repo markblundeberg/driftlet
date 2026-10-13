@@ -401,3 +401,18 @@ test('insertion host with a steep tabulated OCV (a step of 60 mV over Δx ≈ 0.
   const c = run.c['Li+'];
   assert.ok(Math.abs(c[0] / cMax - 0.8) < 1e-4 && c.at(-1) / cMax > 0.75 && c.at(-1) < c[0], `filling from the Li⁺ side: x ${c[0] / cMax} … ${c.at(-1) / cMax}`);
 });
+
+test('an OCV with a flat plateau is refused with the fix that works, and accepted with a little ideal slope', () => {
+  const RT = GAS_CONSTANT * 298.15;
+  const xs = Array.from({ length: 99 }, (_, k) => (k + 1) / 100);
+  const plateau = (x) => 0.2 - 0.1 * Math.tanh(15 * (x - 0.5)); // falling, but far flatter than the ideal slope near both ends
+  const host = (E) => new Device({
+    T: 298.15,
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 3e4 }, 'e-': { D: 1e-4, mu0: 0, cRef: 3e4 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 3e4, ocv: { x: xs, E: xs.map(E), muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6, c0: { 'Li+': 1.5e4, 'e-': 1.5e4 } }],
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' } },
+  });
+  assert.throws(() => host(plateau), /flat or rising against the ideal-solution slope.*more points alone won't help.*adding −a \(RT\/F\) ln\(x\/\(1−x\)\)/);
+  assert.doesNotThrow(() => host((x) => plateau(x) - 0.1 * (RT / FARADAY) * Math.log(x / (1 - x)))); // as the message says
+});

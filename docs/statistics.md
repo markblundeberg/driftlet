@@ -140,7 +140,8 @@ therefore reproduced exactly, and $`x`$ stays within $`(0, 1)`$ at any potential
 curve is checked for monotonicity at construction. A curve far flatter than the ideal term near
 an end (E falling by millivolts over the last few percent of x) can fail that check however
 many points it has, since r then changes as steeply as the logarithm: give the ends some of the
-ideal slope (adding −0.5 (RT/F) ln(x/(1−x)) there passes).
+ideal slope: adding −a (RT/F) ln(x/(1−x)) to E, with a = 0.1 at points 0.01 apart (less with points
+closer together near the ends), passes.
 
 With `A` instead, the curve is the isotherm's, against a reference where the combination's
 chemical potential is 0, with $`g`$ the excess chemical potential ($`\Omega(1-2x)`$ for `A: [Ω]`):

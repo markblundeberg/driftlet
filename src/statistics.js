@@ -157,7 +157,7 @@ function tableOccupancy(xs, zs, fail) {
     const x = k / 4000;
     const q = r(x);
     if (x > 0 && x < 1 && !(1 + x * (1 - x) * q.d > 1e-9)) {
-      fail(`ocv: the interpolated curve isn't monotone near x = ${x.toFixed(3)} (E must fall steadily with x; add points or smooth the data)`);
+      fail(`ocv: near x = ${x.toFixed(3)} the curve is flat or rising against the ideal-solution slope, (RT/F) ln(x/(1−x)), as on a two-phase plateau (not supported): more points alone won't help; give it some of that slope, adding −a (RT/F) ln(x/(1−x)) to E (a = 0.1 passes at points 0.01 apart, less with points closer near the ends; docs/statistics.md)`);
     }
     rmin = Math.min(rmin, q.v);
     rmax = Math.max(rmax, q.v);
