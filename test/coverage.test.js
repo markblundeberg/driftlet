@@ -215,3 +215,34 @@ test('an adsorbed couple, O + e⁻ = R + Cl⁻, in a film given its composition:
   const r = new Device(def(E0)).advance(10);
   assert.ok(r.done && r.converged && r.rejected === 0, `advance: ${r.steps} steps, ${r.rejected} rejected`);
 });
+
+test('surface kinetics are Langmuir on their own: an adsorbed couple converts at a rate ∝ θ (not θ/θ₀), and adsorption needs no `bare`', () => {
+  // The prefactor took each surface species at its activity θ/θ₀, so converting O_ads to R_ads,
+  // which needs no free site, sped up as the surface filled: ninefold coverages gave 76× the rate.
+  const E0 = 0.3, Lf = 5e-6, lib = aqueous(['K+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const rate = (theta, E) => {
+    const dev = new Device(build({
+      T,
+      library: [lib],
+      stack: [{ species: { 'K+': 'blocked', 'Cl-': 'blocked' }, phi: 'neutral' }, layer('water', Lf, { name: 'film', c0: { 'K+': 500, 'Cl-': 500 } }), bath({ 'K+': 500, 'Cl-': 500 }, 'Cl-', 0)],
+      ports: [{
+        name: 'we', region: 'film', terminal: 'e-', V: E, area: 1 / Lf,
+        surface: { Oads: { mu0: 0, capacity: G, theta0: theta }, Rads: { mu0: -FARADAY * E0, capacity: G, theta0: theta } },
+        reactions: [{ equation: 'Oads + e- = Rads + Cl-', k0: 1e-2, alpha: 0.5 }],
+      }],
+      grid: { hmin: 0.1e-6, hmax: 0.5e-6 },
+    }));
+    return dev.step(1e-15).ports[0].rates[0][2];
+  };
+  for (const E of [E0 - 0.05, E0 + 0.05]) {
+    const ratio = rate(0.45, E) / rate(0.05, E);
+    // (within 1%: the cold start sets the film's chloride level from the starting coverages, so
+    // the two sit some 20 J/mol apart)
+    assert.ok(Math.abs(ratio / 9 - 1) < 0.01, `E − E° = ${(E - E0).toFixed(2)}: ×${ratio}`);
+  }
+  // Adsorption fills a site, so its forward rate already goes as θ₀: bare: true changes nothing.
+  const surface = { OHads: { mu0: 0, capacity: G, theta0: 0.3 } };
+  const [r1, r2] = [adsorb, { ...adsorb, bare: false }].map((rx) => cell(0.05, { surface, reactions: [rx] }).step(1e-12).ports[0].rates[0]);
+  assert.ok(r1.every((r, j) => Math.abs(r - r2[j]) <= 1e-12 * Math.abs(r)), `${r1[2]} vs ${r2[2]}`);
+});

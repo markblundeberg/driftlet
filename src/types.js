@@ -163,7 +163,8 @@
  *   species and the terminal species at the port's level
  * @property {Record<string, { mu0: number, capacity: number, theta0?: number }>} [surface] with reactions: species
  *   on the electrode's sites, Langmuir (μ = μ° + RT ln(θ/θ₀)), capacity in mol of sites per m² of electrode,
- *   shared; a reaction with `bare: true` runs only on the bare fraction θ₀ = 1 − Σθ
+ *   shared; reactions run on Langmuir sites (what fills sites needs bare ones), and one with `bare: true`
+ *   needs a bare site even if it fills none (θ₀ = 1 − Σθ)
  * @property {{ C: number, zeroCharge?: number }} [capacitance] a capacitance spread through the window (F/m² of
  *   electrode): σ = C (V − zeroCharge − φ) on the port's side, aσ in each node's charge balance; a gate
  *   along a channel, a double layer

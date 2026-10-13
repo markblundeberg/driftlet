@@ -666,10 +666,16 @@ An electrode port can carry species on its surface, sharing its sites: an adsorb
 or a passive film taken as a coverage. Each has a coverage $`\theta`$ at every node of the window,
 Langmuir statistics, $`\mu = \mu^\circ + RT\ln(\theta/\theta_0)`$ with $`\theta_0 = 1 - \sum\theta`$ the
 bare fraction, and `capacity` $`\Gamma`$, mol of sites per m² of electrode. Reactions name them like
-species, and a reaction with `bare: true` runs only on bare metal: its rate is multiplied by
-$`\theta_0`$, both ways, so equilibrium stays exact. Written for adsorption itself, that's Langmuir
-kinetics (on at a rate ∝ $`\theta_0`$, off ∝ $`\theta`$). A species' `theta0` is its starting
-coverage (not the bare fraction). Surface species carry no charge, so an adsorbed redox couple
+species, and their kinetics are Langmuir: in the Butler–Volmer prefactor each surface species
+counts at its coverage $`\theta`$ (as a solution species does at $`c/c_{\mathrm{ref}}`$), and a reaction
+that fills $`\Delta`$ sites going forward holds $`m = \max(\Delta, 0)`$ bare ones in its transition
+state, so its forward rate goes as $`\theta_0^{\,m}`$ and its backward as $`\theta_0^{\,m-\Delta}`$.
+Adsorption goes on at a rate ∝ $`\theta_0`$ and off ∝ $`\theta`$, an adsorbed couple converts at a
+rate ∝ its coverage, and $`2\mathrm{H_{ads}} \to \mathrm{H_2}`$ goes as $`\theta_H^2`$ and back as
+$`\theta_0^2`$. A reaction with `bare: true` runs only on bare metal, needing a bare site even
+where it fills none ($`m \ge 1`$): a metal dissolving, blocked by a film. Equilibrium is exact
+throughout, from the affinity. A species' `theta0` is its starting coverage (not the bare
+fraction). Surface species carry no charge, so an adsorbed redox couple
 balances its electrons through the solution: `'Oads + e- = Rads + Cl-'`, its coverages at
 $`\theta_O/\theta_R = e^{(E - E^\circ)/V_T}`$ against the chloride's level.
 
@@ -679,7 +685,7 @@ ports: [{
   surface: { 'Fe(OH)2': { mu0: -490e3, capacity: 2e-5, theta0: 1e-6 } }, // theta0: the start
   reactions: [
     { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5, bare: true },  // dissolves where bare
-    { equation: 'Fe(s) + 2 OH- = Fe(OH)2 + 2 e-', fixed: { 'Fe(s)': 0 }, k0: 1e-4, alpha: 0.5, bare: true }, // the film forms (in minutes)
+    { equation: 'Fe(s) + 2 OH- = Fe(OH)2 + 2 e-', fixed: { 'Fe(s)': 0 }, k0: 1e-4, alpha: 0.5 }, // the film forms (in minutes), on bare sites
     { equation: 'O2 + 2 H2O + 4 e- = 4 OH-', fixed: { H2O: -237.13e3 }, k0: 3e-9, alpha: 0.125 }, // on film or not
   ],
 }]

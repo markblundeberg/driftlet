@@ -115,10 +115,10 @@ export function polarization(device, sol, where, V, opts = {}) {
   const out = parts.map(({ rx, k, base, s, q, pref, surf }) => {
     const rate = Float64Array.from(Vs, (v, j) => {
       const { lnA, bare } = at[j];
-      let a = base + s * v, p = pref * (rx.bare ? bare : 1);
+      let a = base + s * v, p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
       for (const u of surf) {
         a -= u.nu * lnA[u.s];
-        p *= Math.exp(u.e * lnA[u.s]);
+        p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
       }
       return rx.vmax ? p * -Math.expm1(-a) : p * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));
     });

@@ -1980,9 +1980,9 @@ export class Solver {
       }
       const o = b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i), e = p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha;
       a -= p.nu * (u[o] + uLo[o]);
-      pref *= p.side === 2 ? Math.exp(e * (u[o] + uLo[o] - port.surface[p.s].mu0 / RT)) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+      pref *= p.side === 2 ? powr(th[g * nSurf + p.s], e) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
     }
-    if (rx.bare) pref *= this.th0[g];
+    if (rx.sites) pref *= powr(this.th0[g], rx.sites);
     return pref * bvFactor(a, rx.alpha).g;
   }
 
@@ -3105,18 +3105,19 @@ export class Solver {
         aLo -= p.nu * uLo[o];
         const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
         if (p.side === 2) {
-          // a surface species at activity θ/θ₀ = e^ζ
-          pref *= Math.exp(e * (u[o] + uLo[o] - surf[p.s].mu0 / RT));
+          // a surface species at its coverage θ = θ₀e^ζ, with ∂ln θ_s/∂η_x = δ_sx − θ_x
+          pref *= powr(th[g * nSurf + p.s], e);
           d[1 + n + p.s] += e;
+          for (let x = 0; x < surf.length; x++) d[1 + n + x] -= e * th[g * nSurf + x];
         } else {
           pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
           this._dlnc(g, p.i, e, d);
         }
       }
-      if (rx.bare) {
-        // on bare metal only: the free fraction θ₀ = 1 − Σθ, with ∂ln θ₀/∂η_s = −θ_s
-        for (let x = 0; x < surf.length; x++) d[1 + n + x] -= th[g * nSurf + x];
-        pref *= this.th0[g];
+      if (rx.sites) {
+        // the bare sites its transition state holds: θ₀ = 1 − Σθ, with ∂ln θ₀/∂η_s = −θ_s
+        for (let x = 0; x < surf.length; x++) d[1 + n + x] -= rx.sites * th[g * nSurf + x];
+        pref *= powr(this.th0[g], rx.sites);
       }
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
       const rate = pref * bv;

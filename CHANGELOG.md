@@ -18,6 +18,14 @@ each finding checked by a script before it was taken:
   zero-charge level, so `solve()` kept the charge of that difference: C·1 V on a gate beside p-Si,
   the silicon inverted at open circuit. It starts uncharged now, as a floating port's capacitance
   did.
+- Surface species' kinetics are Langmuir throughout. The Butler–Volmer prefactor took each at its
+  activity θ/θ₀, so a reaction that needs no free site sped up as the surface filled: an adsorbed
+  couple `'Oads + e- = Rads + Cl-'` converted 76× faster for ninefold coverages, where Langmuir
+  gives 9×. Each now counts at its coverage θ, and a reaction's transition state holds the bare
+  sites it fills (θ₀^m forward, θ₀^(m−Δ) back). `bare: true` keeps its meaning, a reaction that
+  needs bare metal, and the passive film behaves as before; on an adsorption reaction it's no
+  longer needed. A reaction with surface species and no `bare` runs at a different rate than in
+  1.0.0. Equilibria are unchanged.
 - docs: a velocity link's flux is v c (e^(Δμ̄/RT) − 1), which is v (c_eq − c) only for dilute
   species.
 

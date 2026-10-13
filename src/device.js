@@ -889,7 +889,13 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
     need(part.some((p) => p.side === 0 || p.side === 2), `${rpath}: no species of the port's region or its surface takes part`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
     need(rdef.bare === undefined || typeof rdef.bare === 'boolean', `${rpath}.bare must be true or false`);
-    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`), bare: rdef.bare === true };
+    const alpha = transferCoefficient(rdef.alpha, `${rpath}.alpha`), bare = rdef.bare === true;
+    // Langmuir sites: the reaction fills Δ of them going forward, and its transition state holds
+    // m bare ones (those it fills, or one if it runs only on bare metal), so the forward rate
+    // goes as θ₀^m and the backward as θ₀^(m−Δ): the prefactor's θ₀^(m(1−α)+(m−Δ)α), with each
+    // surface species at its coverage θ.
+    const fills = part.reduce((t, p) => t + (p.side === 2 ? p.nu : 0), 0), m = Math.max(fills, 0, bare ? 1 : 0);
+    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha, bare, sites: m * (1 - alpha) + (m - fills) * alpha };
   });
 }
 
