@@ -249,6 +249,7 @@
  * @property {{ re: Float64Array, im: Float64Array }} Z impedance −δV/δI, Ω·m²
  * @property {{ phi: ComplexProfile, mu: Record<string, ComplexProfile>, c: Record<string, ComplexProfile> }[]} [profiles]
  *   per frequency, per unit excitation (volt, or A/m² in current mode)
+ * @property {string[]} warnings the steady state's warnings, which hold for its impedance too
  */
 
 /** @typedef {{ re: Float64Array, im: Float64Array }} ComplexProfile */

@@ -43,6 +43,7 @@ test('blocking electrodes: the Macdonald impedance of a symmetric electrolyte, 1
   });
   const fs = [1e2, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9];
   const Z = dev.impedance(fs);
+  assert.deepEqual(Z.warnings, dev.solve().warnings); // the steady state's, which hold for Z too
   fs.forEach((f, q) => {
     const w = 2 * Math.PI * f;
     const k = div(sqrt([1, (w * lam * lam) / D]), [lam, 0]);

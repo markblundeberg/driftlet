@@ -969,9 +969,12 @@ const now = dev.solution();                   // snapshot of the current state
   says to measure at a driven one). A terminal behind a resistance can't be the one measured: the
   resistance belongs to the external circuit. The grid must resolve how far the signal reaches,
   and nothing warns of it: in a porous electrode, $`\sqrt{\kappa/(\omega C a)}`$ (cells of 2 µm
-  against a 3.4 µm depth put Z 7% off, falling as the cells do). With `profiles: true`, each
-  frequency also returns complex profiles of $`\delta\phi`$, $`\delta\bar\mu`$ and $`\delta c`$ per unit
-  excitation.
+  against a 3.4 µm depth put Z 7% off, falling as the cells do; at an electrode, the diffusion
+  length $`\sqrt{2D/\omega}`$ at the highest frequency). The result is `{ f, Z: { re, im },
+  warnings }`, the warnings being the steady state's. With `profiles: true`, `profiles[k]` holds
+  frequency k's complex profiles, `{ phi, mu: {name}, c: {name} }`, each `{ re, im }` at the
+  nodes (`NaN` where a quantity doesn't exist), per unit excitation: a volt, or an A/m² where the
+  terminal is driven by a current.
 - `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
   or `I` drops the other (and given `I`, any series `R`): `{ contacts: { right: { I: 0 } } }`
   switches it to open circuit, whether it was held or behind a resistance. A patch that changes only the

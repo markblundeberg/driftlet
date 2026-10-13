@@ -224,7 +224,7 @@ export class Device {
   /**
    * Small-signal impedance Z(f) about the steady state (solved first), at one terminal: its
    * held voltage is perturbed (or its driven current), the others keep their drives.
-   * Z = δV/δI with I into the device (Ω·m²).
+   * Z = δV/δI with I into the device (Ω·m²), with the steady state's `warnings`.
    * @param {ArrayLike<number>} frequencies Hz
    * @param {{ terminal?: string, profiles?: boolean }} [opts] the terminal (default 'right'), and
    *   whether to return complex profiles per frequency
@@ -234,7 +234,9 @@ export class Device {
     options(opts, 'impedance', ['terminal', 'profiles']);
     const steady = this.solver.solveSteady();
     if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
-    return this.solver.impedance(frequencies, opts);
+    // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
+    const { warnings } = makeSolution(this.solver, steady);
+    return { ...this.solver.impedance(frequencies, opts), warnings };
   }
 
   /**

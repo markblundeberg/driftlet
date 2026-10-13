@@ -1905,6 +1905,22 @@ export class Solver {
       });
       if (w > 0) this.termV[k] = port.capacitance.zeroCharge + sum / w;
     }
+    // A floating port linked to its carrier (no reactions, no double layer: a wire into an
+    // insertion host) starts at that carrier's level across its window, not at 0 V.
+    for (const k of this.floating) {
+      const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
+      const i = port?.terminal, link = i === null || i === undefined ? null : port.species[i];
+      if (!port || port.reactions.length > 0 || port.capacitance || !link || link.type === 'blocked' || z[i] === 0) continue;
+      let w = 0, sum = 0;
+      port.nodes.forEach((g, j) => {
+        const a = this.model.grid.vol[g] * (this.portArea[t.index]?.[j] ?? 1); // (a window with no area: by volume)
+        w += a;
+        sum += (a * this.VT * u[this.blockOfNode[g] * M + 1 + i]) / z[i];
+      });
+      // (Levels at the start mean something only against a held terminal's, as for a contact.)
+      const held = [0, 1].find((h) => !this.floating.includes(h) && Number.isFinite(level(this.terms[h].side)));
+      if (w > 0 && held !== undefined) this.termV[k] = this.termV[held] + sum / w - (link.offset ?? 0) - level(this.terms[held].side);
+    }
     // Gates start open as far as the starting voltage across their face holds them, α/(α + β).
     for (const gt of this.gateList) {
       const { gate, o } = gt, V = this._gateVoltage(gt), a = gateRate(gate.alpha, V)[0], b = gateRate(gate.beta, V)[0];

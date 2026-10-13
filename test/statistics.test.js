@@ -416,3 +416,20 @@ test('an OCV with a flat plateau is refused with the fix that works, and accepte
   assert.throws(() => host(plateau), /flat or rising against the ideal-solution slope.*more points alone won't help.*adding −a \(RT\/F\) ln\(x\/\(1−x\)\)/);
   assert.doesNotThrow(() => host((x) => plateau(x) - 0.1 * (RT / FARADAY) * Math.log(x / (1 - x)))); // as the message says
 });
+
+test('a host fed by a wire port starts at its own OCV, read before any step (not at 0 V)', () => {
+  const xs = Array.from({ length: 99 }, (_, k) => (k + 1) / 100), RT = GAS_CONSTANT * 298.15;
+  const host = (I) => new Device({
+    T: 298.15,
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 3e4 }, 'e-': { D: 1e-4, mu0: 0, cRef: 3e4 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 3e4, ocv: { x: xs, E: xs.map((x) => 4 - (RT / FARADAY) * Math.log(x / (1 - x))), muRef: 0 } }] } },
+    geometry: { type: 'spherical', r0: 0 },
+    regions: [{ name: 'p', material: 'host', length: 5e-6, c0: { 'Li+': 9e3, 'e-': 9e3 } }],
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' } },
+    ports: [{ name: 'wire', region: 'p', from: 4.9e-6, to: 5e-6, I, terminal: 'e-', species: { 'e-': { type: 'conductance', G: 1e15 } } }],
+    grid: { hmin: 1e-8, hmax: 1e-7 },
+  });
+  const ocv = 4 - (RT / FARADAY) * Math.log(0.3 / 0.7);
+  assert.ok(Math.abs(host(-1e-10).solution().terminals.wire.V - ocv) < 1e-9);
+  assert.ok(Math.abs(host(0).solve().terminals.wire.V - ocv) < 1e-9);
+});
