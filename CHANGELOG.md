@@ -2,6 +2,23 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## 0.16.4 (2026-10-12)
+
+- Steady solves depend less on the order species and reactions are listed in. A pivot that was
+  round-off alone without being exactly zero (strictly neutral water whose level only the fast
+  couple at its far face held: 7e-32 in one listing, 3e-16 in the other) scaled all that followed
+  by 1e31, and the solve failed in that listing only; such pivots are now perturbed and refined
+  like exact zeros. Which balance row a reaction's equilibrium stands in for was picked by where
+  its species were listed, and an electrode's two couples solved in one listing and failed in
+  another; the rows are now the same in any listing, the slowest reaction first. Of 600 random
+  reacting cells, those that converged in only some listings or to different states fell from
+  11 to 8. Devices with electrode ports remain at ~10%, much of it a second steady state (see the
+  roadmap).
+- `check()` solves the device again with its species listed in reverse, and fails where the two
+  differ: one of them isn't steady, though its solve converged.
+- `check()`'s balance fails where the solve left a reaction stuck (one sign of affinity wherever
+  it acts) rather than call it equilibrium.
+
 ## 0.16.3 (2026-10-12)
 
 Mostly found by round 11 of agents trying what's new cold (batteries at rest, slow couples and
