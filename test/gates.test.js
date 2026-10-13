@@ -159,8 +159,9 @@ test('gates: what the definition must say', () => {
 });
 
 test("the kit's hodgkinHuxley(): their gates, Q₁₀ = 3, and GHK permeabilities with their chord conductances at rest", () => {
-  const hh = hodgkinHuxley({ inside: IN, outside: OUT });
+  const hh = hodgkinHuxley({ inside: IN, outside: OUT, T });
   assert.deepEqual(hh.gates, HH);
+  assert.throws(() => hodgkinHuxley({ inside: IN, outside: OUT }), /T must be the device's temperature/);
   for (const [sp, p] of [['Na+', P.Na], ['K+', P.K], ['Cl-', P.Cl]]) assert.ok(Math.abs(hh.species[sp].P / p - 1) < 1e-12, `${sp}: ${hh.species[sp].P} vs ${p}`);
   assert.deepEqual([hh.species['Na+'].gates, hh.species['K+'].gates, hh.species['Cl-'].gates], [{ m: 3, h: 1 }, { n: 4 }, undefined]);
   // Each one's GHK current at −65 mV is g (V − E) for its g.
@@ -172,7 +173,7 @@ test("the kit's hodgkinHuxley(): their gates, Q₁₀ = 3, and GHK permeabilitie
   // Ten degrees warmer, three times as fast.
   const warm = hodgkinHuxley({ inside: IN, outside: OUT, T: T + 10 });
   for (const k of ['m', 'h', 'n']) for (const ab of ['alpha', 'beta']) assert.ok(Math.abs(warm.gates[k][ab].rate / HH[k][ab].rate - 3) < 1e-12);
-  assert.throws(() => hodgkinHuxley({ inside: { 'Na+': 50 }, outside: OUT }), /give K\+'s concentration inside and outside/);
+  assert.throws(() => hodgkinHuxley({ inside: { 'Na+': 50 }, outside: OUT, T }), /give K\+'s concentration inside and outside/);
 });
 
 test("an excitable membrane's impedance: Hodgkin–Huxley gating, linearised, inductive and resonant, as Cole measured", () => {

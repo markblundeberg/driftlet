@@ -1316,7 +1316,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       fixed !== 0
         ? `${path}.bath: the bath is the end material '${mat.name}' at this composition, and with its fixed charge (${fixed} mol/m³ of charge) it is not neutral (net ${charge}). ` +
             `For a solution outside a charged region, give the solution's material (bath.material), whose composition is then neutral on its own`
-        : `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge)`,
+        : `${path}.bath: composition is not neutral (net ${charge} mol/m³ of charge): add the counter-ions' share`,
     );
     // The reference species pins the bath's φ; every other species follows from composition.
     const zb = bathZeta(bm, cb, own ? 0 : region.background);

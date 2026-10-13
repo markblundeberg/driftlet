@@ -5,6 +5,7 @@
 import { Device } from './index.js';
 import { FARADAY } from './constants.js';
 import { unitWarnings } from './describe.js';
+import { checkOptions } from './errors.js';
 
 const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs(v) >= 1e4 || Math.abs(v) < 1e-2 ? v.toExponential(p - 1) : String(+v.toPrecision(p)));
 
@@ -48,6 +49,7 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  * @returns {{ ok: boolean, items: CheckItem[], text: string }}
  */
 export function check(device, sol, { refine = true, tol = 1e-2, order = true } = {}) {
+  checkOptions('check', arguments[2], ['refine', 'tol', 'order']);
   sol ??= device.solution();
   const { model, solver, def } = device;
   const steady = sol.steady ?? solver.atSteady;

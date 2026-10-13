@@ -4,7 +4,7 @@
 // that you didn't write: it only moves things to where the definition keeps them, and converts
 // the kit's doping shorthand (donors and acceptors).
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
 
 const fail = (message) => {
@@ -172,6 +172,7 @@ export function build(def) {
   }
 
   function region(item, path) {
+    checkOptions(path, item, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'donors', 'acceptors']);
     const { donors, acceptors, ...r } = item;
     if (donors !== undefined || acceptors !== undefined) {
       if (r.fixedCharge !== undefined) fail(`${path}: give doping as donors and acceptors, or fixedCharge, not both`);

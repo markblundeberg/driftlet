@@ -1,7 +1,7 @@
 // driftlet/kit: voltage-gated channels as plain definition data. Hodgkin and Huxley's squid axon:
 // its gates, and permeabilities for its Na⁺, K⁺ and leak channels, for a membrane face.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 
 const fail = (message) => {
@@ -49,13 +49,15 @@ export function ghkCurrent(z, inside, outside, V, T) {
  * port along a region: links that are their linear conductances, G = g × area per volume, gated the
  * same, each ion's reversal potential following from the port's bath and the concentrations inside
  * (so `inside`, `outside` and `at` aren't needed).
- * @param {{ inside: object, outside: object, T?: number, g?: { Na?: number, K?: number, leak?: number },
+ * @param {{ inside: object, outside: object, T: number, g?: { Na?: number, K?: number, leak?: number },
  *   leak?: string, leakZ?: number, at?: number, names?: { Na?: string, K?: string }, linear?: boolean, area?: number }} opts concentrations in
  *   mol/m³ by species name, K, S/m², V
  * @returns {{ gates: object, species: object }}
  */
-export function hodgkinHuxley({ inside, outside, T = HH_T, g = {}, leak = 'Cl-', leakZ = -1, at = -65 * mV, names = {}, linear = false, area } = {}) {
-  need(num(T) && T > 0, `hodgkinHuxley: T must be a temperature in K, got ${T}`);
+export function hodgkinHuxley({ inside, outside, T, g = {}, leak = 'Cl-', leakZ = -1, at = -65 * mV, names = {}, linear = false, area } = {}) {
+  checkOptions('hodgkinHuxley', arguments[0], ['inside', 'outside', 'T', 'g', 'leak', 'leakZ', 'at', 'names', 'linear', 'area']);
+  // T sets the gates' rates, so it must be the device's: never defaulted (their 6.3 °C, under a body-temperature device, doubled a spike's peak, silently).
+  need(num(T) && T > 0, `hodgkinHuxley: T must be the device's temperature in K (their own experiments were at 279.45 K, 6.3 °C), got ${T}`);
   need(num(at), `hodgkinHuxley: at must be a voltage (V), got ${at}`);
   const G = { Na: 1200, K: 360, leak: 3, ...g };
   const Na = names.Na ?? 'Na+', K = names.K ?? 'K+';

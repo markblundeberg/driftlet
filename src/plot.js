@@ -14,6 +14,7 @@
 
 import { traces } from './traces.js';
 import { powi } from './pow.js';
+import { checkOptions } from './errors.js';
 
 // Colours by role, light and dark (validated together for colour-vision deficiency; line weight,
 // dash and the legend carry identity too). A role with more members than colours cycles.
@@ -31,6 +32,7 @@ const ROLES = ['electron', 'cation', 'anion', 'redox'];
  * @param {{ dark?: boolean }} [opts]
  */
 export function themeColor(role, slot, { dark = false } = {}) {
+  checkOptions('themeColor', arguments[2], ['dark']);
   const list = THEME[dark ? 'dark' : 'light'][role];
   return list[slot % list.length];
 }
@@ -140,6 +142,7 @@ const instance = Math.random().toString(36).slice(2, 8);
  * @returns {string}
  */
 export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title, ytick = fmt } = {}) {
+  checkOptions('levelChart', arguments[1], ['width', 'height', 'ylabel', 'range', 'xlim', 'title', 'ytick']);
   const id = `driftlet-plot-${instance}-${++counter}`;
   const { x, series, regions } = tr;
   const xs = xlim ? xlim[0] : x[0], xe = xlim ? xlim[1] : x[x.length - 1];
@@ -264,6 +267,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
  * @returns {string}
  */
 export function bandDiagram(sol, opts = {}) {
+  checkOptions('bandDiagram', arguments[1], ['width', 'height', 'ylabel', 'range', 'xlim', 'title', 'ytick', 'species', 'standard', 'phi', 'energy', 'levels', 'labels', 'shifts']);
   const { width, height, ylabel = opts.energy ? 'electron energy (eV)' : undefined, range, xlim, title, ytick, ...pick } = opts;
   return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title, ytick });
 }

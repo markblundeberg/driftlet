@@ -2,7 +2,7 @@
 // each animation frame), with the trace joined up across calls and whole solutions kept as
 // frames, for scrubbing back through a run or plotting snapshots side by side.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -18,6 +18,7 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
  * @param {{ every?: number, times?: number[], probes?: ({ x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number } | { interface: number, species?: string, gate?: string })[] }} [opts]
  */
 export function recorder(device, opts = {}) {
+  checkOptions('recorder', arguments[1], ['every', 'times', 'probes']);
   const { every, times, probes } = opts;
   if (every !== undefined && times !== undefined) fail('recorder: give every or times, not both');
   if (every !== undefined && !(every > 0 && Number.isFinite(every))) fail('recorder: every must be a time > 0 (s)');

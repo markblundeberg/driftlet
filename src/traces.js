@@ -3,6 +3,7 @@
 // range. Plain data, for any plotting toolkit (driftlet/plot draws it as SVG).
 
 import { level } from './equation.js';
+import { DeviceError, checkOptions } from './errors.js';
 
 const finite = (a) => {
   for (let k = 0; k < a.length; k++) if (Number.isFinite(a[k])) return true;
@@ -78,6 +79,8 @@ export function typeset(name, z) {
  *   faces: number[], range: [number, number] }}
  */
 export function traces(sol, { species, standard = true, phi = false, energy = false, levels = [], labels = {}, shifts = {} } = {}) {
+  checkOptions('traces', arguments[1], ['species', 'standard', 'phi', 'energy', 'levels', 'labels', 'shifts']);
+  if (!Array.isArray(levels)) throw new DeviceError("traces: levels must be a list, [{ half }, …], of the half-reactions whose levels to draw");
   const names = Object.keys(sol.V);
   const role = (name) => speciesRole(sol, name).role;
   const slotOf = (name) => speciesRole(sol, name).slot;

@@ -6,6 +6,7 @@
 
 import { Device } from './index.js';
 import { merge } from './merge.js';
+import { checkOptions } from './errors.js';
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -118,6 +119,7 @@ export class Session {
  * @returns {Live}
  */
 export function live(def, { worker = false, onsolution, maxRamp = 32 } = {}) {
+  checkOptions('live', arguments[1], ['worker', 'onsolution', 'maxRamp']);
   const engine = worker ? workerEngine(def, worker, maxRamp) : localEngine(def, maxRamp);
   let pending = [], busy = false;
   const api = {

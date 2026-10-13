@@ -23,6 +23,7 @@
 // and its minority carriers as dots, each one injected, drifting, diffusing and recombining.
 
 import { GAS_CONSTANT } from './constants.js';
+import { checkOptions } from './errors.js';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -53,6 +54,7 @@ const NONE = 0, DOT = 1, OUTSIDE = 2; // nothing (closed); a cell of dots; a sea
  * @param {() => number} [opts.random] a uniform random source in [0, 1) (default Math.random)
  */
 export function particles(sol, { species, dots = 200, weight, cap = Infinity, cells = 120, random = Math.random } = {}) {
+  checkOptions('particles', arguments[1], ['species', 'dots', 'weight', 'cap', 'cells', 'random']);
   const names = species ?? sol.species.map((s) => s.name).filter((nm) => sol.c[nm].some((v) => v > 0));
   for (const nm of names) if (!sol.c[nm]) throw new RangeError(`particles: no species ${JSON.stringify(nm)} in the solution`);
   if (!(dots > 0 && Number.isFinite(dots))) throw new RangeError(`particles: dots must be a positive number, got ${dots}`);

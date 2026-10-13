@@ -1,7 +1,7 @@
 // driftlet/kit: sources as plain definition data. Waveforms for a terminal's V or I, an injector
 // port, and band-to-band recombination from a lifetime. Each returns an ordinary spec value.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -19,6 +19,7 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
  * @returns {{ t: number[], values: number[] }}
  */
 export function pulse({ start = 0, width, amplitude, rise = 0, base = 0 } = {}) {
+  checkOptions('pulse', arguments[0], ['start', 'width', 'amplitude', 'rise', 'base']);
   need(num(width) && width > 0, `pulse: width must be > 0 (s), got ${width}`);
   need(num(amplitude), `pulse: amplitude must be a finite number (V or A/m²), got ${amplitude}`);
   need(num(start) && start >= 0, `pulse: start must be ≥ 0 (s), got ${start}`);
@@ -35,6 +36,7 @@ export function pulse({ start = 0, width, amplitude, rise = 0, base = 0 } = {}) 
  * @returns {{ t: number[], values: number[], repeat: true }}
  */
 export function square({ high, low, period, duty = 0.5 } = {}) {
+  checkOptions('square', arguments[0], ['high', 'low', 'period', 'duty']);
   need(num(high) && num(low), `square: high and low must be finite numbers, got ${high} and ${low}`);
   need(num(period) && period > 0, `square: period must be > 0 (s), got ${period}`);
   need(num(duty) && duty > 0 && duty < 1, `square: duty must be between 0 and 1, got ${duty}`);
@@ -49,6 +51,7 @@ export function square({ high, low, period, duty = 0.5 } = {}) {
  * @returns {{ t: number[], values: number[], repeat: true }}
  */
 export function triangle({ from, to, period } = {}) {
+  checkOptions('triangle', arguments[0], ['from', 'to', 'period']);
   need(num(from) && num(to), `triangle: from and to must be finite numbers, got ${from} and ${to}`);
   need(num(period) && period > 0, `triangle: period must be > 0 (s), got ${period}`);
   return { t: [0, period / 2, period], values: [from, to, from], repeat: true };
@@ -60,6 +63,7 @@ export function triangle({ from, to, period } = {}) {
  * @returns {{ t: number[], values: number[] }}
  */
 export function ramp({ from, to, duration, start = 0 } = {}) {
+  checkOptions('ramp', arguments[0], ['from', 'to', 'duration', 'start']);
   need(num(from) && num(to), `ramp: from and to must be finite numbers, got ${from} and ${to}`);
   need(num(duration) && duration > 0, `ramp: duration must be > 0 (s), got ${duration}`);
   need(num(start) && start >= 0, `ramp: start must be ≥ 0 (s), got ${start}`);
@@ -78,6 +82,7 @@ export function ramp({ from, to, duration, start = 0 } = {}) {
  * @returns {object} a port, for the definition's `ports`
  */
 export function injector({ name = 'injector', region, from, to, species, I, headroom = 2.5 } = {}) {
+  checkOptions('injector', arguments[0], ['name', 'region', 'from', 'to', 'species', 'I', 'headroom']);
   need(region !== undefined, 'injector: give the region (its name or index)');
   need(num(from) && num(to) && to > from, `injector: from and to must bound the window, in m from the region's left end (got ${from}, ${to})`);
   need(typeof species === 'string', 'injector: give the species it injects, e.g. species: \'h+\'');
@@ -96,6 +101,7 @@ export function injector({ name = 'injector', region, from, to, species, I, head
  * @returns {{ equation: string, kf: Record<string, number> }} a bulk reaction
  */
 export function recombination({ material, tau, majority } = {}) {
+  checkOptions('recombination', arguments[0], ['material', 'tau', 'majority']);
   need(typeof material === 'string', 'recombination: give the material, by name');
   need(num(tau) && tau > 0, `recombination: tau must be > 0 (s), got ${tau}`);
   need(num(majority) && majority > 0, `recombination: majority must be the majority carrier density > 0 (mol/m³; units.perCm3 converts), got ${majority}`);
@@ -117,6 +123,7 @@ export function recombination({ material, tau, majority } = {}) {
  * @returns {{ equation: string, fixed: Record<string, number>, kf: Record<string, { x: number[], values: number[] }> }} a bulk reaction
  */
 export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes = 'e- + h+' } = {}) {
+  checkOptions('photogeneration', arguments[0], ['material', 'flux', 'alpha', 'mu', 'from', 'to', 'makes']);
   need(typeof material === 'string', 'photogeneration: give the material, by name');
   need(num(flux) && flux >= 0, `photogeneration: flux must be the photon flux ≥ 0 entering the material (mol/(m²·s)), got ${flux}`);
   need(num(alpha) && alpha > 0, `photogeneration: alpha must be the absorption coefficient > 0 (1/m; 1/cm × 100), got ${alpha}`);

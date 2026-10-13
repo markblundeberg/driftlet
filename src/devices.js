@@ -5,6 +5,7 @@
 import { AVOGADRO, FARADAY, GAS_CONSTANT, units } from './constants.js';
 import { photogeneration } from './sources.js';
 import { drive } from './stack.js';
+import { checkOptions } from './errors.js';
 
 const m3 = (x) => x / AVOGADRO, eV = units.eV;
 
@@ -33,6 +34,7 @@ const P = {
  * @returns {import('./types.js').DeviceDefinition}
  */
 export function perovskiteCell({ V = 1.2, light = 1, bulkSRH = true } = {}) {
+  checkOptions('perovskiteCell', arguments[0], ['V', 'light', 'bulkSRH']);
   const { T } = P, VT = (GAS_CONSTANT * T) / FARADAY;
   const ni = Math.sqrt(P.gc * P.gv) * Math.exp(-(P.Ec - P.Ev) / (2 * VT));
   const n0 = P.gc * Math.exp((P.EcE + VT * Math.log(P.dE / P.gcE) - P.Ec) / VT); // the perovskite's n at the TiO₂'s Fermi level

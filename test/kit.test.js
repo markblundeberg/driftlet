@@ -70,3 +70,16 @@ test('vacuum helpers check their inputs', () => {
   def.materials.Au = { conductor: { species: 'e-', conductivity: 4e7 } };
   throwsDevice(() => vacuumLevel(def, { material: 'Au', anchor: 'e-', offset: 5 }), /conductor, with no φ/);
 });
+
+test('the kit and plots refuse an option they do not take, and suggest the one meant', async () => {
+  const { bandDiagram } = await import('../src/plot.js');
+  const { pulse, photogeneration, semiconductor, build, layer, ohmic } = await import('../src/kit.js');
+  const sol = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: 16.6 }), ohmic(0)], grid: { hmin: 1e-8, hmax: 1e-7 } })).solve();
+  assert.throws(() => bandDiagram(sol, { engery: true }), /bandDiagram: no option 'engery' \(did you mean 'energy'\?\)/);
+  assert.throws(() => bandDiagram(sol, { Range: [0, 1] }), /did you mean 'range'/);
+  assert.throws(() => bandDiagram(sol, { levels: 'x' }), /levels must be a list/);
+  assert.throws(() => pulse({ start: 0, width: 1, amplitude: 1, rise_time: 1 }), /pulse: no option 'rise_time'/);
+  assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 1, mu: 1, form: 0 }), /did you mean 'from'/);
+  assert.throws(() => semiconductor('Si', { T: 350 }), /data are for 300 K/);
+  assert.throws(() => build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donor: 16.6 }), ohmic(0)] }), /stack\[1\]: no option 'donor' \(did you mean 'donors'\?\)/);
+});

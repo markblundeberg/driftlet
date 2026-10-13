@@ -2,7 +2,7 @@
 // definition's reactions can be written this way; they compile to signed stoichiometry (ν < 0
 // consumed by the forward reaction, left to right as written).
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
 
 const fail = (message) => {
@@ -163,6 +163,7 @@ export const SHE = Object.freeze(half('2 H+ + 2 e- = H2', { H2: 0 }));
  * @returns {Float64Array}
  */
 export function level(sol, halfReaction, { standard = false } = {}) {
+  checkOptions('level', arguments[2], ['standard']);
   if (!isObject(halfReaction)) fail('level: give a half-reaction from half()');
   const { equation, fixed = {} } = halfReaction;
   const terms = parseEquation(equation, 'level');

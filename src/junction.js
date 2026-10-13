@@ -3,7 +3,7 @@
 // junction (steady between two baths, it is Planck's; stepping from a sharp boundary, a free
 // diffusion junction); these are for comparison, and for quick estimates.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 
 const fail = (message) => {
@@ -40,6 +40,7 @@ function neutral(list, side, what) {
  * @param {{ T?: number }} [opts] K (default 298.15)
  */
 export function henderson(left, right, ions, { T = 298.15 } = {}) {
+  checkOptions('henderson', arguments[3], ['T']);
   const list = prepare(left, right, ions, 'henderson');
   neutral(list, 'cL', 'henderson');
   neutral(list, 'cR', 'henderson');
@@ -66,6 +67,7 @@ export function henderson(left, right, ions, { T = 298.15 } = {}) {
  * @param {{ T?: number, steps?: number }} [opts] K (default 298.15); RK4 steps across (default 4000)
  */
 export function planck(left, right, ions, { T = 298.15, steps = 4000 } = {}) {
+  checkOptions('planck', arguments[3], ['T', 'steps']);
   const list = prepare(left, right, ions, 'planck');
   neutral(list, 'cL', 'planck');
   neutral(list, 'cR', 'planck');

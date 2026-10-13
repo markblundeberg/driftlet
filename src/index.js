@@ -4,6 +4,7 @@ import { normalizeDevice, DeviceError } from './device.js';
 import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 import { merge } from './merge.js';
+import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
 import { normalizeDrives } from './device.js';
@@ -42,15 +43,7 @@ function sameExceptDrives(a, b) {
 }
 
 // A method's options: a name it doesn't take (a typo, dtmax for dtMax) is an error, not ignored.
-function options(opts, method, allowed) {
-  if (opts === undefined || opts === null) return;
-  if (typeof opts !== 'object' || Array.isArray(opts)) throw new SolverError(`${method}: options must be an object (${allowed.join(', ')})`);
-  for (const k of Object.keys(opts)) {
-    if (opts[k] === undefined || allowed.includes(k)) continue;
-    const near = allowed.find((a) => a.toLowerCase() === k.toLowerCase().replace(/_/g, ''));
-    throw new SolverError(`${method}: no option '${k}'${near ? ` (did you mean '${near}'?)` : ''}; the options are ${allowed.join(', ')}`);
-  }
-}
+const options = (opts, method, allowed) => checkOptions(method, opts, allowed, SolverError);
 
 /** @typedef {import('./types.js').DeviceDefinition} DeviceDefinition */
 /** @typedef {import('./types.js').Solution} Solution */

@@ -3,7 +3,7 @@
 // only. How levels line up at an interface, and a surface's work function, belong to that
 // interface or surface and are never in here.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
 
 const fail = (message) => {
@@ -72,6 +72,7 @@ export const METALS = freeze(
  * @returns {{ species: object[], materials: Record<string, object> }}
  */
 export function aqueous(names, { epsr = WATER_EPSR, material = 'water' } = {}) {
+  checkOptions('aqueous', arguments[1], ['epsr', 'material']);
   if (!Array.isArray(names) || names.length === 0) fail('aqueous: give a list of ions, e.g. aqueous([\'Na+\', \'Cl-\'])');
   const species = [], entries = {};
   for (const name of names) {
@@ -93,6 +94,8 @@ export function aqueous(names, { epsr = WATER_EPSR, material = 'water' } = {}) {
  * @returns {{ species: object[], materials: Record<string, object> }}
  */
 export function semiconductor(name, { material = name } = {}) {
+  if (arguments[1]?.T !== undefined) fail('semiconductor: the data are for 300 K and take no T: give the device T: 300, or write your own material for another temperature (SEMICONDUCTORS has the numbers)');
+  checkOptions('semiconductor', arguments[1], ['material']);
   const sc = SEMICONDUCTORS[name];
   if (!sc) fail(`semiconductor: no data for '${name}' (the library has ${Object.keys(SEMICONDUCTORS).join(', ')})`);
   const VT = (GAS_CONSTANT * 300) / FARADAY;
@@ -121,6 +124,7 @@ export function semiconductor(name, { material = name } = {}) {
  * @returns {{ species: object[], materials: Record<string, object> }}
  */
 export function metal(name, { material = name } = {}) {
+  checkOptions('metal', arguments[1], ['material']);
   const m = METALS[name];
   if (!m) fail(`metal: no data for '${name}' (the library has ${Object.keys(METALS).join(', ')})`);
   return { species: [{ name: 'e-', z: -1 }], materials: { [material]: { conductor: { species: 'e-', conductivity: m.conductivity } } } };

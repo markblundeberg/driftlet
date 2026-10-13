@@ -2,7 +2,7 @@
 // beside the electrode held as it is and the metal's level moved, which is what an Evans diagram
 // plots. Where the net current crosses zero is the spot's open-circuit (mixed) potential.
 
-import { DeviceError } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
 import { powi, powr } from './pow.js';
 
@@ -30,6 +30,7 @@ const fail = (message) => {
  *   positive: into the solution); and their sum
  */
 export function polarization(device, sol, where, V, opts = {}) {
+  checkOptions('polarization', arguments[4], ['surface']);
   const model = device.model, { species, grid, RT } = model, solver = device.solver;
   const Vs = Float64Array.from(typeof V === 'number' ? [V] : V);
   let reactions, nodeOf, carrier, names, surface = null; // (an electrode port's coverages at the spot)
