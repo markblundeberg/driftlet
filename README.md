@@ -10,7 +10,7 @@
 
 **driftlet simulates charged species moving through one-dimensional devices**: semiconductor
 junctions and solar cells, electrochemical cells and batteries, double layers, membranes and
-nerves. It's a small JavaScript library with no dependencies, fast enough to solve live in a
+nerves. It's a JavaScript library with no dependencies, fast enough to solve live in a
 web page as you drag a slider.
 
 [Live demos](https://markblundeberg.github.io/driftlet/demos/) · [npm](https://www.npmjs.com/package/driftlet) ·
