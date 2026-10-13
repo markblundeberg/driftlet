@@ -479,10 +479,10 @@ contacts: {
 - `{ type: 'exchange', k, mu }` (neutral species):
   $`N_{\mathrm{in}} = k \cdot (\mu_{\mathrm{out}} - \mu)/RT`$, k in mol/(m²·s).
 - `{ type: 'velocity', v, offset }` (or `mu`, for a neutral species): a surface velocity,
-  $`N_{\mathrm{in}} = v\,(c_{\mathrm{eq}} - c)`$ with v in m/s and $`c_{\mathrm{eq}}`$ the end node's
-  concentration in equilibrium with the outside level, i.e.
-  $`v\,c\,(e^{(\bar\mu_{\mathrm{out}} - \bar\mu)/RT} - 1)`$, which keeps the flux's sign that of the
-  level difference whatever the statistics. It lies between `'blocked'` (v → 0) and
+  $`N_{\mathrm{in}} = v\,c\,(e^{(\bar\mu_{\mathrm{out}} - \bar\mu)/RT} - 1)`$ with v in m/s: for dilute
+  species that's $`v\,(c_{\mathrm{eq}} - c)`$, $`c_{\mathrm{eq}}`$ the end node's concentration in
+  equilibrium with the outside level, and with any statistics it keeps the flux's sign that of
+  the level difference (though it isn't then $`v\,(c_{\mathrm{eq}} - c)`$, which saturates). It lies between `'blocked'` (v → 0) and
   `'equilibrium'` (v → ∞): a contact's surface recombination velocity, or thermionic emission
   over a Schottky barrier (below).
 - `'blocked'`: no flux.

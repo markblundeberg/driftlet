@@ -256,3 +256,17 @@ test('a gate left floating (I = 0) keeps its charge: moving the back contact mov
   assert.ok(moved.converged && Math.abs(moved.terminals.right.V - 0.6) < 1e-9, `${moved.terminals.right.V} V`);
   assert.ok(Math.abs((moved.terminals.right.charge ?? moved.contacts.right.D) / Q - 1) < 1e-9);
 });
+
+test('a gate contact at open circuit, never charged, starts and stays uncharged: flat bands, the gate at the bulk\'s level', () => {
+  // It started at 0 V beside p-Si whose φ starts near −1 V, so solve() kept C·1 V on it (and
+  // the silicon inverted); a floating port's capacitance already started at its zero-charge level.
+  for (const side of ['left', 'right']) {
+    const gate = { I: 0, phi: { type: 'capacitive', C: 0.01 }, zeroCharge: 0 };
+    const si = layer('Si', units.um(1), { name: 'p', acceptors: units.perCm3(1e17) });
+    const sol = new Device(build({ T: 300, library: [semiconductor('Si')], stack: side === 'left' ? [gate, si, ohmic(0)] : [ohmic(0), si, gate] })).solve();
+    assert.ok(sol.converged, side);
+    assert.ok(Math.abs(sol.plates[side].charge) < 1e-12, `${side}: ${sol.plates[side].charge} C/m²`);
+    const g = side === 'left' ? 0 : sol.x.length - 1;
+    assert.ok(Math.abs(sol.contacts[side].V - sol.phi[g]) < 1e-9, `${side}: V ${sol.contacts[side].V} vs φ ${sol.phi[g]}`);
+  }
+});

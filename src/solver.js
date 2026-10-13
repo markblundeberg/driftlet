@@ -1899,6 +1899,14 @@ export class Solver {
     // toward their mixed potential.
     for (const k of this.floating) {
       const t = this.terms[k], port = t.kind === 'port' ? model.ports[t.index] : null;
+      const gate = t.kind === 'contact' ? model.contacts[t.side].phi : null;
+      if (gate?.type === 'capacitive') {
+        // A gate contact likewise: at its zero-charge level from the φ beside it (a pinned
+        // one's charge is the field's, already zero against a neutral start).
+        const g = t.side === 'left' ? 0 : this.nNodes - 1;
+        if (!this.phiUndefined[g]) this.termV[k] = gate.zeroCharge + this.VT * u[this.blockOfNode[g] * M];
+        continue;
+      }
       if (!port?.capacitance) continue;
       let w = 0, sum = 0;
       port.nodes.forEach((g, j) => {

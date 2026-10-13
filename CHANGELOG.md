@@ -14,6 +14,12 @@ each finding checked by a script before it was taken:
 - A contact exchanging only a neutral species counted as passing current, so it could be the
   voltage another terminal's current drive was read against, and the solve then failed without
   saying why. It's refused at construction now.
+- A gate contact at open circuit (`I: 0`, capacitive) started at 0 V rather than at its
+  zero-charge level, so `solve()` kept the charge of that difference: C·1 V on a gate beside p-Si,
+  the silicon inverted at open circuit. It starts uncharged now, as a floating port's capacitance
+  did.
+- docs: a velocity link's flux is v c (e^(Δμ̄/RT) − 1), which is v (c_eq − c) only for dilute
+  species.
 
 ## 1.0.0 (2026-10-13)
 
