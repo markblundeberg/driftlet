@@ -3,10 +3,12 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.0.1 (2026-10-13)
 
-From an outside review of the physics and numerics by another model family (Gemini 4 Argon),
-each finding checked by a script before it was taken:
+Fixes from an outside review of the physics and numerics by another model family (Gemini 4
+Argon), each finding checked by a script before it was taken. Nothing in the API changes; the
+surface-kinetics fix changes the rates of reactions with surface species that don't run only on
+bare metal, which were wrong.
 
 - A charge-free dielectric between strictly neutral (ε = 0) electrolytes, a film between two
   baths, had φ undefined: no solve, and φ NaN in the film. An ε = 0 region with ions now fixes φ
