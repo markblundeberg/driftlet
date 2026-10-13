@@ -2,6 +2,21 @@
 
 driftlet follows semantic versioning; while it's 0.x, a minor version may change the API.
 
+## Unreleased
+
+- Toward 1.0, the exports are only what's documented. `driftlet` no longer exports
+  `BlockTridiagonal`, `bernoulli`, `bernoulliDerivative`, `buildGrid`, `gradedCells` or
+  `normalizeDevice`, and `driftlet/kit` no longer exports `parseEquation` or `stoichiometry`.
+- A solution's `gates.left/right` (the charge on a gate or Stern plate at a capacitive contact)
+  is now `plates.left/right`: `gates` are a membrane's channel gates everywhere else.
+- `advance(t)` read as a duration says so: called with a time already passed (or reached, outside
+  an animation's `budgetMs`), it warns that t is absolute, rather than silently doing nothing.
+- A grid of more than a million cells is refused at once, with the region and its length. A
+  length in µm given as metres (`layer('Si', 1)`) used to build a grid of 1e8 cells, silently,
+  until memory ran out.
+- `build()` says what to write when a contact holds a carrier its layer lacks: `ohmic()` on a
+  metal, whose default holds h⁺ too, now asks for `ohmic(V, ['e-'])`.
+
 ## 0.16.4 (2026-10-12)
 
 - Steady solves depend less on the order species and reactions are listed in. A pivot that was

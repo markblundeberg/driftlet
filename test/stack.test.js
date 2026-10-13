@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, units } from '../src/index.js';
-import { build, combine, layer, ohmic, bath, parseEquation, stoichiometry, half, SHE, level } from '../src/kit.js';
+import { build, combine, layer, ohmic, bath, half, SHE, level } from '../src/kit.js';
+import { parseEquation, stoichiometry } from '../src/equation.js';
 
 // The kit's stack: a device written left to right as it's drawn, built into the plain
 // definition. It must give exactly the definition one would write by hand.
@@ -186,6 +187,9 @@ test('stack and library mistakes say where', () => {
   assert.throws(() => build({ library: [Si], stack: ok, interfaces: [] }), /build\.interfaces: unknown field/);
   const other = { species: [{ name: 'e-', z: 1 }] };
   assert.throws(() => combine(Si, other), /species 'e-' is given twice, differently/);
+  // ohmic() on a metal holds h+ too, by default: the error says what to write.
+  const Al = { species: [{ name: 'e-', z: -1 }], materials: { Al: { conductor: { species: 'e-', conductivity: 3.8e7 } } } };
+  assert.throws(() => build({ library: [Si, Al], stack: [ohmic(0), layer('Al', 1e-8), layer('Si', 1e-6), ohmic(0)] }), /stack\[0\]: the contact holds 'h\+', which its layer's material 'Al' doesn't have: write ohmic\(V, \['e-'\]\)/);
   assert.deepEqual(combine(Si, Si), { species: Si.species, materials: Si.materials });
   // Nested lists flatten, so a helper can return several stack items.
   assert.deepEqual(build({ library: [Si], stack: [[ohmic(0), layer('Si', 1e-6)], ohmic(0)] }), build({ library: [Si], stack: ok }));

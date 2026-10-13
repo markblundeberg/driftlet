@@ -195,7 +195,7 @@ test('MOS: a port grounding the channel gives the low-frequency C–V, inversion
   for (const V of [-3, -1.5, -1, 0, 1]) {
     grounded.set({ contacts: { right: { V } } });
     const C = C1k(grounded);
-    const q = (v) => (grounded.set({ contacts: { right: { V: v } } }), grounded.solve().gates.right.charge);
+    const q = (v) => (grounded.set({ contacts: { right: { V: v } } }), grounded.solve().plates.right.charge);
     const Cqs = Math.abs(q(V + 1e-4) - q(V - 1e-4)) / 2e-4;
     grounded.set({ contacts: { right: { V } } });
     assert.ok(Math.abs(C / Cqs - 1) < 2e-3, `V=${V}: ${C / Cg} vs quasi-static ${Cqs / Cg} (× C_ox)`);

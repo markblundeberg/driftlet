@@ -5,12 +5,9 @@ import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 import { merge } from './merge.js';
 
-export { DeviceError, normalizeDevice } from './device.js';
+export { DeviceError } from './device.js';
 import { normalizeDrives } from './device.js';
 export { SolverError } from './solver.js';
-export { buildGrid, gradedCells } from './grid.js';
-export { BlockTridiagonal } from './blockTridiagonal.js';
-export { bernoulli, bernoulliDerivative } from './bernoulli.js';
 export * from './constants.js';
 
 // Whether two definitions differ only in their terminals' drives (V, I, R on the contacts and

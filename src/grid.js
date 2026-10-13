@@ -10,6 +10,7 @@
 // cell widths outright (`cells`), as a metal region does: one cell, exact for Ohm's law.
 
 const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
+const MAX_CELLS = 1e6; // a live demo's grid has hundreds to thousands
 
 /**
  * Cell widths for one region: fine at both ends, growing toward the middle.
@@ -52,6 +53,17 @@ export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCel
  */
 export function buildGrid(regions, opts = {}) {
   if (!Array.isArray(regions) || regions.length === 0) throw new Error('grid needs at least one region');
+  // A grid far past any demo's (most often a length given in µm as if in m) would only exhaust
+  // memory: refuse it before building it. Each region needs at least length/hmax cells.
+  const least = regions.map((reg) => {
+    const g = { ...DEFAULTS, ...opts, ...(reg.grid ?? {}) };
+    return reg.cells ? reg.cells.length : reg.length / Math.min(g.hmax ?? Infinity, reg.length / g.minCells);
+  });
+  const total = least.reduce((s, n) => s + n, 0);
+  if (!(total <= MAX_CELLS)) {
+    const r = least.indexOf(Math.max(...least)), g = { ...opts, ...(regions[r].grid ?? {}) };
+    throw new RangeError(`at least ${total.toExponential(1)} cells, past the ${MAX_CELLS.toExponential(0)} a device may have: ${regions[r].name ?? `region ${r}`} is ${regions[r].length} m long at hmax ${g.hmax ?? '(none)'} m. Lengths are in metres (units.um(1) is 1e-6): check them, or raise hmax`);
+  }
 
   const perRegion = regions.map((reg) => reg.cells ?? gradedCells(reg.length, { ...opts, ...(reg.grid ?? {}) }));
   const nNodes = perRegion.reduce((s, cells) => s + cells.length + 1, 0);

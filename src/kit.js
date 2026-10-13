@@ -6,7 +6,7 @@ import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
 
 export { build, combine, layer, ohmic, bath } from './stack.js';
-export { parseEquation, stoichiometry, half, SHE, level } from './equation.js';
+export { half, SHE, level } from './equation.js';
 export { traces, speciesRole, typeset } from './traces.js';
 export { live } from './live.js';
 export { pulse, square, triangle, ramp, injector, recombination, photogeneration } from './sources.js';

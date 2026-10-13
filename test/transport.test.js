@@ -83,7 +83,7 @@ test('eddy mixing leaves equilibrium double layers alone', () => {
     }).solve();
   const a = island(0), b = island(1e-6);
   assert.ok(b.converged);
-  assert.ok(Math.abs(b.gates.left.charge / a.gates.left.charge - 1) < 1e-10);
+  assert.ok(Math.abs(b.plates.left.charge / a.plates.left.charge - 1) < 1e-10);
   for (const mu of Object.values(b.mu)) assert.ok((Math.max(...mu) - Math.min(...mu)) / RT < 1e-9);
 });
 

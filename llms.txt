@@ -726,7 +726,7 @@ console.log(`${(0.02 / (at(probes[1]) - at(probes[0]))).toFixed(1)} m/s`); // 18
 ## Transients
 
 `advance(t, opts)` steps adaptively from the device's present state (its `c0`, or the steady
-state if you called `solve()`) to time t. It returns the solution there, with `done` and a `trace`
+state if you called `solve()`) to time t, absolute (for a further dt, `advance(sol.time + dt)`). It returns the solution there, with `done` and a `trace`
 of this call's accepted steps (`t`, `current`, `voltage`: V_right − V_left). It stops short at
 `budgetMs` (an animation frame: call again) or, with a warning saying why, at `maxSteps` (100000)
 or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
@@ -863,9 +863,11 @@ What `bandDiagram()` and `traces()` draw, and how to explain it (docs/visualizat
   - sources: `pulse`, `square`, `triangle`, `ramp`, `injector`, `recombination`,
     `photogeneration`;
   - channels: `hodgkinHuxley`, `ghkCurrent`;
-  - checking: `describe`, `check`, `polarization` (an electrode's reactions at hypothetical
+  - checking: `describe`, `unitWarnings` (describe's unit slips alone), `check`, `polarization` (an electrode's reactions at hypothetical
     metal levels, with the solution held: an Evans diagram), `henderson` and `planck`
     (liquid-junction potentials);
-  - pages: `live`, `traces`, `recorder`, `particles`;
+  - pages: `live`, `traces` (with `speciesRole` and `typeset` for its labels), `recorder`,
+    `particles`;
   - curated devices: `perovskiteCell`, `PEROVSKITE_SCANS`, `hysteresis`.
-- `driftlet/plot` (a quick look): `bandDiagram`, `levelChart`, `labelParts`, `themeColor`.
+- `driftlet/plot` (a quick look): `bandDiagram`, `levelChart`, `labelParts`, `themeColor`,
+  `THEME`.

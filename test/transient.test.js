@@ -28,7 +28,7 @@ test('floating island charging after a gate step: RC time constant, Gauss, conse
   // C_s = C_g ∥series∥ ε/λ_D and R_bulk = L/σ, so τ = R_bulk·C_s/2.
   const dV = 1e-3;
   dev.set({ contacts: { left: { V: dV } } });
-  const qInf = new Device(dev.def).solve().gates.left.charge;
+  const qInf = new Device(dev.def).solve().plates.left.charge;
   const lam = Math.sqrt((epsr * EPS0 * RT) / (2 * FARADAY * FARADAY * c));
   const Cs = 1 / (1 / Cg + lam / (epsr * EPS0));
   const sigma = (FARADAY * FARADAY * c * (Dp + Dm)) / RT;
@@ -39,11 +39,11 @@ test('floating island charging after a gate step: RC time constant, Gauss, conse
   for (let n = 1; n <= 80; n++) {
     const sol = dev.step(dt);
     assert.ok(sol.converged);
-    const q = sol.gates.left.charge / qInf;
+    const q = sol.plates.left.charge / qInf;
     // Distributed double-layer charging adds a small correction (~λ_D/L and ~τ_D/τ).
     assert.ok(Math.abs(q - beStep(n, dt, tau)) < 1e-2, `n=${n}: ${q} vs ${beStep(n, dt, tau)}`);
     const gross = FARADAY * 2 * c * L;
-    assert.ok(Math.abs(sol.charge + sol.gates.left.charge + sol.gates.right.charge) < 1e-12 * gross);
+    assert.ok(Math.abs(sol.charge + sol.plates.left.charge + sol.plates.right.charge) < 1e-12 * gross);
     for (const st of sol.conservation) assert.ok(Math.abs(st.drift) < 1e-12, `${st.species} drift ${st.drift}`);
     // Gate current is displacement current, equal at both ends. (Newton stops at δφ̂ ~ 1e-10,
     // which bounds the displacement difference quotient to ~1e-7 relative.)
@@ -142,7 +142,7 @@ const referenceCharge = () => {
     const dev = chargingIsland();
     let sol;
     for (let k = 0; k < 800; k++) sol = dev.step(T / 800, { method: 'bdf2' });
-    reference = sol.gates.left.charge;
+    reference = sol.plates.left.charge;
   }
   return reference;
 };
@@ -153,7 +153,7 @@ test('BDF2 is second order in time, backward Euler first order', () => {
     let sol;
     for (let k = 0; k < n; k++) sol = dev.step(T / n, { method });
     for (const st of sol.conservation) assert.ok(Math.abs(st.drift) < 1e-12, `${method}: ${st.species} drift ${st.drift}`);
-    return sol.gates.left.charge;
+    return sol.plates.left.charge;
   };
   const ref = referenceCharge();
   const err = (n, method) => Math.abs(run(n, method) / ref - 1);
@@ -170,7 +170,7 @@ test('adaptive advance: error control, exact landing, traces, and frame budgets'
     assert.ok(sol.trace.t.every((t, k) => k === 0 || t > sol.trace.t[k - 1]) && sol.trace.t.at(-1) === T);
     assert.ok(Math.abs(sol.trace.current.at(-1) - sol.current) < 1e-12 * Math.abs(sol.current));
     for (const st of sol.conservation) assert.ok(Math.abs(st.drift) < 1e-12);
-    return Math.abs(sol.gates.left.charge / ref - 1);
+    return Math.abs(sol.plates.left.charge / ref - 1);
   });
   assert.ok(errs[0] < 2e-2 && errs[1] < 1e-3 && errs[1] < errs[0] / 5, `errors ${errs}`);
 
@@ -184,7 +184,7 @@ test('adaptive advance: error control, exact landing, traces, and frame budgets'
     frames++;
   }
   assert.ok(sol.done && sol.time === T && frames > 1);
-  assert.ok(Math.abs(sol.gates.left.charge / ref - 1) < 2e-2);
+  assert.ok(Math.abs(sol.plates.left.charge / ref - 1) < 2e-2);
 });
 
 test('a jump in a strictly neutral cell: advance() finds its first step (longer, not shorter, steps help there)', async () => {
@@ -225,6 +225,11 @@ test('advance() to where it already is changes nothing, and the next call still 
   const none = dev.advance(dev.time + 1);
   assert.ok(none.converged && !none.done && none.steps === 0 && dev.solver.time === 1e-4);
   assert.match(none.warnings.join(), /advance\(NaN\) did nothing/);
+  assert.deepEqual(still.warnings, []);
+  // advance(dt) read as a duration: called again, it would silently do nothing, so it says so.
+  assert.match(dev.advance(1e-4).warnings.join(), /advance\(0\.0001\) did nothing.*advance\(sol\.time \+ dt\)/);
+  assert.match(dev.advance(5e-5).warnings.join(), /did nothing/);
+  assert.deepEqual(dev.advance(1e-4, { budgetMs: 10 }).warnings, []); // an animation frame with no time to add
 });
 
 test('cyclic voltammetry in a strictly neutral cell runs through its turns (round-off at breakpoints)', async () => {

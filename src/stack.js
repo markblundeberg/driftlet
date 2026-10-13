@@ -158,6 +158,18 @@ export function build(def) {
   }
   if (pendingFace) fail(`${at(pendingFace.k)}: a face after the last layer (the contact is the boundary there)`);
   if (regions.length === 0) fail('build.stack has no layers');
+  // A contact holding a carrier its layer lacks: most often ohmic()'s default on a metal.
+  for (const [k, end] of [[0, regions[0]], [stack.length - 1, regions[regions.length - 1]]]) {
+    const held = isObject(stack[k].species) ? Object.keys(stack[k].species).filter((s) => stack[k].species[s] !== 'blocked') : [];
+    const mat = materials[end.material];
+    if (!isObject(mat)) continue;
+    const has = (s) => (isObject(mat.conductor) ? mat.conductor.species === s : isObject(mat.species) && mat.species[s] !== undefined);
+    const lacks = held.filter((s) => !has(s));
+    if (lacks.length === 0) continue;
+    const kept = held.filter(has);
+    const hint = stack[k].phi === 'bulk' && kept.length > 0 ? `: write ohmic(V, [${kept.map((s) => `'${s}'`).join(', ')}]) (ohmic() holds e- and h+ unless told${isObject(mat.conductor) ? '; a metal has only its carrier' : ''})` : '';
+    fail(`${at(k)}: the contact holds ${lacks.map((s) => `'${s}'`).join(' and ')}, which its layer's material '${end.material}' doesn't have${hint}`);
+  }
 
   function region(item, path) {
     const { donors, acceptors, ...r } = item;

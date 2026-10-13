@@ -189,7 +189,7 @@ test('pinned (dipole) contact: a Schottky barrier directly on n-Si', () => {
     // Gauss: device charge = D_right − D_left. The metal plate holds −D_left; under bias, the ohmic
     // field at the far (bulk) contact holds the rest.
     assert.ok(Math.abs(Q - (sol.contacts.right.D - sol.contacts.left.D)) < 1e-9 * Q, 'Gauss');
-    assert.ok(Math.abs(sol.gates.left.charge - sol.contacts.left.D) < 1e-15, 'plate charge is the contact displacement');
+    assert.ok(Math.abs(sol.plates.left.charge - sol.contacts.left.D) < 1e-15, 'plate charge is the contact displacement');
   }
 });
 

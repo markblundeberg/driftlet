@@ -80,3 +80,11 @@ test('per-region grid options override device defaults', () => {
   assert.equal(g.regionEnd[0] - g.regionStart[0], 4);
   assert.equal(g.regionEnd[1] - g.regionStart[1], 20);
 });
+
+test('a grid far past any demo is refused before it is built: a length in µm given as m', () => {
+  // 1 m at hmax 20 nm would be 5e7 cells, and exhaust memory long before the solver said a word.
+  const t0 = Date.now();
+  assert.throws(() => buildGrid([{ name: 'n', length: 1 }, { name: 'p', length: 1 }], { hmin: 1e-9, hmax: 2e-8 }), /at least 1\.0e\+8 cells.*n is 1 m long at hmax 2e-8 m\. Lengths are in metres/);
+  assert.ok(Date.now() - t0 < 100);
+  assert.equal(buildGrid([{ length: 1e-3 }], { hmax: 2e-8 }).nNodes, 50001); // 5e4 cells is fine
+});

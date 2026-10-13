@@ -13,8 +13,8 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
-import { BlockTridiagonal, Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { ComplexBlockTridiagonal } from '../src/blockTridiagonal.js';
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { BlockTridiagonal, ComplexBlockTridiagonal } from '../src/blockTridiagonal.js';
 import { hodgkinHuxley, injector } from '../src/kit.js';
 
 const args = new Set(process.argv.slice(2));

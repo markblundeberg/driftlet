@@ -8,7 +8,8 @@
 //   node bench/hard.js name…      run only the cases whose names include one of these
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { BlockTridiagonal, Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { BlockTridiagonal } from '../src/blockTridiagonal.js';
+import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, bath, aqueous, metal, half, semiconductor, photogeneration } from '../src/kit.js';
 
 const argv = process.argv.slice(2);

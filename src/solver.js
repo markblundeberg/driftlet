@@ -3967,8 +3967,12 @@ export class Solver {
     const trace = { t: [], current: [], voltage: [], ...(sample ? { probes: sample.out } : {}) };
     let steps = 0, rejected = 0, iterations = 0, failed = false;
     // Already there (an animation frame with no time to add): nothing to do, and the step size
-    // carried to the next call stays as it was.
-    if (!(tEnd > this.time)) return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace };
+    // carried to the next call stays as it was. A time already passed, or reached again outside
+    // an animation, is most likely advance(dt) read as a duration: say so.
+    if (!(tEnd > this.time)) {
+      const relative = tEnd < this.time || (this.time > 0 && opts.budgetMs === undefined);
+      return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace, ...(relative ? { stopped: `advance(${tEnd}) did nothing: ${absolute}. To run for a further dt, advance(sol.time + dt)` } : {}) };
+    }
     const t0 = this.time;
     let dt = this.dtNext ?? opts.dt0 ?? (tEnd - this.time) * 1e-4;
     if (!(dt > 0)) dt = (tEnd - this.time) * 1e-4;

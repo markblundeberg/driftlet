@@ -38,7 +38,7 @@ function assertEquilibrium(sol, tolRT = 1e-9) {
 
 // Total charge (device + gates) vanishes, relative to the gross ionic charge present.
 function assertGauss(sol) {
-  const gates = (sol.gates.left?.charge ?? 0) + (sol.gates.right?.charge ?? 0);
+  const gates = (sol.plates.left?.charge ?? 0) + (sol.plates.right?.charge ?? 0);
   const gross = FARADAY * sol.conservation.reduce((s, st) => s + st.amount, 0);
   assert.ok(Math.abs(sol.charge + gates) < 1e-12 * gross, `Gauss: device ${sol.charge}, gates ${gates}`);
 }
@@ -73,7 +73,7 @@ test('floating island, linear limit: gate charge matches series C_gate + C_Debye
   const Cd = (78.5 * EPS0) / debyeLength(78.5, c);
   const Cs = 1 / (1 / C + 1 / Cd);
   const expected = (Cs * dV) / 2;
-  const got = sol.gates.left.charge;
+  const got = sol.plates.left.charge;
   assert.ok(Math.abs(got / expected - 1) < 1e-3, `gate charge ${got} vs ${expected}`);
   assert.ok(Math.abs(mid(sol.phi) - dV / 2) < 1e-3 * dV);
 });
@@ -91,7 +91,7 @@ test('floating island, nonlinear: Gouy–Chapman charge and profile', () => {
 
   // Diffuse-layer charge: σ = −√(8εRTc) sinh(ζ/2), balanced by the left gate's charge.
   const sigma = -Math.sqrt(8 * eps * RT * cb) * Math.sinh(zs / 2);
-  assert.ok(Math.abs(-sol.gates.left.charge / sigma - 1) < 2e-3, `σ ${-sol.gates.left.charge} vs ${sigma}`);
+  assert.ok(Math.abs(-sol.plates.left.charge / sigma - 1) < 2e-3, `σ ${-sol.plates.left.charge} vs ${sigma}`);
 
   // Profile: tanh(ζ(x)/4) = tanh(ζs/4)·exp(−x/λ).
   let worst = 0;

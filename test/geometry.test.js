@@ -106,7 +106,7 @@ test('Debye–Hückel around a charged sphere: ψ = ψ₀ (a/r) e^(−κ(r−a))
     assert.ok(Math.abs(psi(g) / want - 1) < 1e-3, `r − a = ${(rr - a) * kappa} Debye lengths: ${psi(g)} vs ${want} V`);
   }
   const Q = 4 * Math.PI * eps * a * (1 + kappa * a) * psi0;
-  assert.ok(Math.abs(sol.gates.left.charge / Q - 1) < 3e-4, `${sol.gates.left.charge} vs ${Q} C`);
+  assert.ok(Math.abs(sol.plates.left.charge / Q - 1) < 3e-4, `${sol.plates.left.charge} vs ${Q} C`);
 });
 
 test('build() passes geometry through', () => {

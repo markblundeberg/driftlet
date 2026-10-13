@@ -87,7 +87,7 @@ export function makeSolution(solver, result = {}) {
   }
   solver._assembleBookkeeping(solver.lastDt);
   sol.contacts = {};
-  sol.gates = {};
+  sol.plates = {};
   for (const side of ['left', 'right']) {
     const ct = contacts[side];
     const flux = {};
@@ -107,7 +107,7 @@ export function makeSolution(solver, result = {}) {
     if (ct.phi.type === 'capacitive' || ct.phi.type === 'pinned') {
       // Charge on the gate (or metal) plate, per area if the device is planar: +D at the left, −D
       // at the right.
-      sol.gates[side] = { V, D, charge: side === 'left' ? D : -D };
+      sol.plates[side] = { V, D, charge: side === 'left' ? D : -D };
     }
   }
   sol.current = sol.contacts.right.current;

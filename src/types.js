@@ -218,7 +218,8 @@
  * @property {Record<string, { V: number, current: number }>} terminals each terminal (left, right,
  *   then the ports by name): its voltage, and its current into the device (A/m²)
  * @property {{ left: ContactResult, right: ContactResult }} contacts
- * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} gates
+ * @property {{ left?: { V: number, D: number, charge: number }, right?: { V: number, D: number, charge: number } }} plates the charge on a gate or
+ *   Stern plate at a capacitive contact
  * @property {{ name: string, V: number, flux: Record<string, number>, current: number, x?: Float64Array,
  *   area?: Float64Array, rates?: Float64Array[], coverage?: Record<string, Float64Array>, bare?: Float64Array,
  *   sigma?: Float64Array, charge?: number }[]} ports what each internal port brings into the device;

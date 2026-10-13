@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, FARADAY, GAS_CONSTANT, bernoulli, units } from '../src/index.js';
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { bernoulli } from '../src/bernoulli.js';
 
 // The second law, end to end. In a steady state, the free energy brought in through the terminals,
 // Σ N_in μ̄_out over every species at every terminal, equals the total dissipation inside: each
