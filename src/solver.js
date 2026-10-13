@@ -589,6 +589,16 @@ export class Solver {
       const mat = materials[regions[grid.nodeRegion[g]].material], law = contacts[k === 0 ? 'left' : 'right'].phi.type;
       if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
     });
+    // An end node's species held by a port (its contact blocks it, so the level is the port's):
+    // its row is the port's, storage and all, and the contact passes none of it.
+    this.portHeldEnd = new Uint8Array(2 * n);
+    model.ports.forEach((port) => {
+      [0, nNodes - 1].forEach((g, k) => {
+        if (!port.nodes.includes(g)) return;
+        const ct = contacts[k === 0 ? 'left' : 'right'];
+        for (let i = 0; i < n; i++) if (port.species[i].type === 'equilibrium' && ct.species[i].type === 'blocked') this.portHeldEnd[k * n + i] = 1;
+      });
+    });
     this.combining = false;
     this.bookkeeping = regions.map((_, r) => {
       const g0 = grid.regionStart[r], g1 = grid.regionEnd[r], nodes = [], segs = [];
@@ -2205,6 +2215,11 @@ export class Solver {
     if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, (this.sheetSign[g] * this.model.grid.area[g]) / (z[im] * FARADAY * dt));
   }
 
+  // Whether a port holds species i at node g, a device end node (see portHeldEnd).
+  _portHeldAt(g, i) {
+    return g === 0 ? this.portHeldEnd[i] === 1 : g === this.nNodes - 1 && this.portHeldEnd[this.n + i] === 1;
+  }
+
   // Dilute nodes g0…g1 (ideal statistics, c = c_ref e^ζ): storage of each species and the space
   // charge in the Gauss row, written straight into the diagonal blocks by local index. A
   // dielectric is the case with no species.
@@ -2224,7 +2239,7 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
-        const ck = c[k], l = loc[lb + 1 + i], stores = !(late && z[i] !== 0);
+        const ck = c[k], l = loc[lb + 1 + i], stores = !(late && z[i] !== 0 && !this._portHeldAt(g, i));
         if (stores) res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
         q += F * z[i] * ck;
         dq += F * z[i] * z[i] * ck;
@@ -3249,8 +3264,9 @@ export class Solver {
     // passes, so their flux is zero.)
     const closedIons = this.combining && dyn && this.chargeNode[g] === 1;
     let I = 0;
+    const held = this.portHeldEnd.subarray(k * n, (k + 1) * n);
     for (let i = 0; i < n; i++) {
-      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0);
+      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0) && !held[i];
       const nIn = active ? res[R[b * M + 1 + i]] : 0;
       flux[i] = sgn * nIn; // (toward +x)
       if (active && z[i] !== 0) {
@@ -3263,7 +3279,7 @@ export class Solver {
     if (this.combining && dyn && this.lateStorage[g] === 1) {
       const v = model.grid.vol[g], { cOld } = this;
       for (let i = 0; i < n; i++) {
-        if (z[i] === 0 || this.loc[b * M + 1 + i] < 0) continue;
+        if (z[i] === 0 || this.loc[b * M + 1 + i] < 0 || held[i]) continue;
         const ci = c[g * n + i], st = (v * (ci - cOld[g * n + i])) / dt;
         res[R[b * M + 1 + i]] += st;
         flux[i] += sgn * st;
@@ -4879,6 +4895,11 @@ export class Solver {
         }
         mu[name].re[g] = RT * xr[b * M + 1 + i];
         mu[name].im[g] = RT * xi[b * M + 1 + i];
+        if (this.nodeConductor[g] >= 0) {
+          // a metal has a Fermi level but no concentration (as a solution reports it)
+          c[name].re[g] = c[name].im[g] = NaN;
+          continue;
+        }
         // δc_i = Σ_j K_ij (δη_j − z_j δφ̂)
         let sr = 0, si = 0;
         for (let j = 0; j < n; j++) {

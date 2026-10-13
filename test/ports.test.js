@@ -448,3 +448,27 @@ test('a port holding a species at a device end node that the contact there block
   const inserted = run.conservation.find((c) => c.species === 'Li+').amount - before;
   assert.ok(Math.abs(inserted / (-I / FARADAY) - 1) < 1e-6, `${inserted} mol inserted, ${-I / FARADAY} driven`);
 });
+
+test('a port holding an ion over a window that ends at a contact blocking it: the end node is the port\'s, and the contact passes none', () => {
+  // The contact added the end node's deferred ion storage to the port's held-level row, pulling
+  // the level off (16 mV for 50) and reporting a flux through the blocked contact.
+  const ct = { V: 0, terminal: 'Na+', species: { 'Na+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'blocked' }, phi: 'bulk' };
+  const dev = new Device({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1.33e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+    regions: [{ name: 'r', material: 'water', length: 10e-6, c0: { 'Na+': 10, 'Cl-': 10 } }],
+    contacts: { left: ct, right: ct },
+    ports: [{ name: 'cl', region: 'r', V: 0, terminal: 'Cl-', species: { 'Cl-': { type: 'equilibrium', offset: 0 } } }],
+  });
+  dev.solve();
+  dev.set({ ports: { cl: { V: 0.05 } } });
+  for (const dt of [1e-6, 1e-3]) {
+    const sol = dev.step(dt);
+    assert.ok(sol.converged);
+    assert.ok(sol.V['Cl-'].every((v) => Math.abs(v - 0.05) < 1e-12), `V_Cl⁻ ${sol.V['Cl-'][0]} at the end`);
+    assert.ok(sol.contacts.left.flux['Cl-'] === 0);
+    assert.ok(sol.contacts.right.flux['Cl-'] === 0);
+    const cl = sol.conservation.find((st) => st.species === 'Cl-');
+    assert.ok(Math.abs(cl.drift) < 1e-9 * Math.abs(cl.amount), `Cl⁻ drift ${cl.drift} of ${cl.amount}`);
+  }
+});

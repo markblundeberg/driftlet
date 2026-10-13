@@ -223,3 +223,17 @@ test('a MOS capacitor with a metal gate and its channel held by a port: the gate
     });
   }
 });
+
+test('profiles are NaN where a solution\'s are: no concentration inside a metal', () => {
+  const dev = new Device(build({
+    T: 300,
+    library: [metal('Au'), semiconductor('Si')],
+    stack: [ohmic(0.5, ['e-']), layer('Au', 100e-9, { name: 'gate' }), { phi: { type: 'capacitive', C: 0.01 }, zeroCharge: 0 }, layer('Si', 1e-6, { name: 'n', donors: 1e22 }), ohmic(0)],
+  }));
+  const sol = dev.solve();
+  const pr = dev.impedance([1000], { profiles: true }).profiles[0];
+  for (const name of ['e-', 'h+']) {
+    sol.c[name].forEach((v, g) => assert.equal(Number.isNaN(pr.c[name].re[g]), Number.isNaN(v), `${name} at node ${g}: ${pr.c[name].re[g]} vs ${v}`));
+  }
+  sol.phi.forEach((v, g) => assert.equal(Number.isNaN(pr.phi.re[g]), Number.isNaN(v), `φ at node ${g}`));
+});

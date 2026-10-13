@@ -26,6 +26,12 @@ each finding checked by a script before it was taken:
   needs bare metal, and the passive film behaves as before; on an adsorption reaction it's no
   longer needed. A reaction with surface species and no `bare` runs at a different rate than in
   1.0.0. Equilibria are unchanged.
+- A port holding an ion over a window that ends at a contact blocking it: the contact put the
+  end node's deferred ion storage into the port's held-level row, pulling the level off (16 mV
+  for 50 on a 1 µs step) and reporting a flux through the blocked contact. That ion's row is the
+  port's now, storage and all.
+- `impedance(f, { profiles: true })` gave numbers for concentrations inside a metal, where a
+  solution has NaN.
 - docs: a velocity link's flux is v c (e^(Δμ̄/RT) − 1), which is v (c_eq − c) only for dilute
   species.
 
