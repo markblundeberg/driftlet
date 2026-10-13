@@ -3,6 +3,18 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+From an outside review of the physics and numerics by another model family (Gemini 4 Argon),
+each finding checked by a script before it was taken:
+
+- A charge-free dielectric between strictly neutral (ε = 0) electrolytes, a film between two
+  baths, had φ undefined: no solve, and φ NaN in the film. An ε = 0 region with ions now fixes φ
+  across a face that isn't neutral, as a conductor does, and the film charges as a capacitor.
+- A contact exchanging only a neutral species counted as passing current, so it could be the
+  voltage another terminal's current drive was read against, and the solve then failed without
+  saying why. It's refused at construction now.
+
 ## 1.0.0 (2026-10-13)
 
 The API is stable from here. 1.0 was aimed at its likely users, coding agents asked to simulate

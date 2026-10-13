@@ -373,7 +373,8 @@ export class Solver {
     // φ is undefined in a conductor or an insertion host, and in a charge-free region (no
     // charged species) unless its electrostatic cluster, the regions joined to it by faces that
     // aren't neutral, reaches something that fixes φ: a region with charged species, a gate or
-    // pinned contact, or a capacitive face to a conductor. (Else φ there is a free constant.)
+    // pinned contact, or a face that isn't neutral to a conductor or to a strictly neutral region
+    // with ions. (Else φ there is a free constant.)
     this.phiUndefined = new Uint8Array(nNodes);
     const charged = (mat) => species.some((sp, i) => mat.present[i] && sp.z !== 0);
     const pins = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
@@ -385,8 +386,11 @@ export class Solver {
       while (r1 + 1 < regions.length && model.interfaces[r1].phi.type !== 'neutral' && !free(r1 + 1)) r1++;
       let anchor = (r0 === 0 && pins(contacts.left)) || (r1 === regions.length - 1 && pins(contacts.right));
       for (let r = r0; r <= r1; r++) if (charged(materials[regions[r].material])) anchor = true;
-      if (r0 > 0 && model.interfaces[r0 - 1].phi.type !== 'neutral' && materials[regions[r0 - 1].material].conductor) anchor = true;
-      if (r1 < regions.length - 1 && model.interfaces[r1].phi.type !== 'neutral' && materials[regions[r1 + 1].material].conductor) anchor = true;
+      // A neighbour across a face that isn't neutral: a conductor (a gate), or a strictly neutral
+      // region whose ions fix its φ.
+      const fixes = (r) => materials[regions[r].material].conductor || (!materials[regions[r].material].phiFree && charged(materials[regions[r].material]));
+      if (r0 > 0 && model.interfaces[r0 - 1].phi.type !== 'neutral' && fixes(r0 - 1)) anchor = true;
+      if (r1 < regions.length - 1 && model.interfaces[r1].phi.type !== 'neutral' && fixes(r1 + 1)) anchor = true;
       for (let r = r0; r <= r1; r++) anchored[r] = anchor ? 1 : 2;
       r0 = r1;
     }

@@ -293,3 +293,26 @@ test('a sharp neutral face that sweeps an ion out below double precision says so
   if (sol.converged) return; // (should a later solver reach it, nothing to say)
   assert.ok(sol.warnings.some((w) => /there (H\+|OH-) is \de-\d+ of the ions around it, too scarce/.test(w)), sol.warnings.join('\n'));
 });
+
+test('ε = 0 on both sides of a charge-free dielectric: the baths fix its φ, and it charges as a capacitor ε₀ε_r V/d', () => {
+  // The film's φ was left undefined (NaN, and no solve) when only ε = 0 regions touched it: they
+  // weren't counted as fixing φ across a pinned face, the way a conductor is.
+  const d = 10e-9, V = 1;
+  const sol = new Device({
+    species: salt,
+    materials: { water: water(0), oxide: { epsr: 3.9, species: {} } },
+    regions: [
+      { material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } },
+      { name: 'film', material: 'oxide', length: d },
+      { material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } },
+    ],
+    interfaces: [{ dipole: 0 }, { dipole: 0 }],
+    contacts: { left: { V: 0, ...bath(100) }, right: { V, ...bath(100) } },
+  }).solve();
+  assert.ok(sol.converged);
+  const want = (-3.9 * EPS0 * V) / d;
+  // The baths' edge cells hold the charge, each a diffuse layer one cell wide in series with the
+  // film: about 1.8% of V here (C_cell = F²Σz²c h/2RT ≈ 0.4 F/m² against ε₀ε_r/d = 3.5 mF/m²).
+  assert.ok(Math.abs(sol.interfaces[0].D / want - 1) < 0.03 && Math.abs(sol.interfaces[1].D / want - 1) < 0.03, `D ${sol.interfaces[0].D}, ${sol.interfaces[1].D} vs ${want}`);
+  assert.ok(sol.phi.every(Number.isFinite));
+});

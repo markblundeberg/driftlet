@@ -355,8 +355,8 @@ export function normalizeDevice(def) {
   // A contact that passes nothing can't be driven by a current.
   for (const side of ['left', 'right']) {
     const ct = contacts[side];
-    const passes = ct.species.some((l) => l.type !== 'blocked') || ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
-    need(passes || ct.drive.kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
+    const passes = ct.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0) || ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
+    need(passes || ct.drive.kind === 'V', `contacts.${side}.I: this contact passes no current (no linked charged species, no gate)`);
     ct.passes = passes;
   }
   checkLevel(terminals.map((t) => t.drive), terminals.map((t) => (t.kind === 'port' ? ports[t.index] : contacts[t.side])));

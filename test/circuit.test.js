@@ -99,4 +99,18 @@ test('terminal drives are checked', () => {
   const def = cell({ ...links, I: 0 });
   def.contacts.left = { ...links, I: 0 };
   throwsDevice(def, /hold at least one at a voltage/);
+  // A contact that exchanges only a neutral species passes no current, so it can't be the
+  // voltage a current-driven terminal is read against.
+  throwsDevice(
+    {
+      species: [{ name: 'O2', z: 0, cRef: 1 }, { name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 78.5, species: { O2: { D: 2e-9, mu0: 0 }, 'Na+': { D: 1.33e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+      regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100, O2: 1 } }],
+      contacts: {
+        left: { V: 0, species: { O2: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' },
+        right: { I: 0, terminal: 'Na+', species: { 'Na+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' },
+      },
+    },
+    /contacts\.right is driven by a current, but no terminal held at a voltage passes any/,
+  );
 });
