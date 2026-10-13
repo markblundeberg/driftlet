@@ -88,6 +88,25 @@ for live demos.
   sample of a solution's concentrations, hopping at its one-way rates, so their density and net
   crossings agree with the fields at any step.
 
+## 1.0
+
+driftlet's users will mostly be coding agents, asked to simulate something or build a demo where
+JavaScript is the right tool. So 1.0 is about an agent getting a correct result on its first
+try, and noticing when it hasn't. Lean: anything that doesn't serve that waits for real reports.
+
+1. **API audit and freeze.** Every name and option said once, the same way everywhere; nothing an
+   agent would guess wrong. After 1.0, breaking changes need a major version.
+2. **llms.txt complete and tight.** An agent with only llms.txt can build any of the demos.
+3. **Every warning and error says what to do next.**
+4. **check() covers what an agent can't judge for itself**, such as whether a state is steady,
+   whether currents balance, whether the grid resolves the device.
+5. **A last cold-agent round on realistic requests** ("make a demo of a pn junction", "simulate
+   a battery discharging"). It passes when the agents reach correct, checked results, and
+   nothing goes silently wrong.
+6. **npm description and keywords**, so an agent searching for a tool finds it.
+
+The hardening below then goes on where users' reports point.
+
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
