@@ -335,9 +335,19 @@ The hardening below then goes on where users' reports point.
 - **Graded materials.** $`\mu^\circ(x)`$, $`c_{\mathrm{ref}}(x)`$, $`\varepsilon(x)`$, $`D(x)`$ varying
   within a region, with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change across
   each segment. $`\phi`$'s gauge freedom then becomes a continuous function.
-- **A sub-grid Gouy–Chapman interface law.** Diffuse layers treated analytically where
-  $`\lambda_D \ll h`$, for macroscopic devices with real double-layer charge on any grid. It tends to
-  `neutral` as $`\varepsilon \to 0`$.
+- **A sub-grid Gouy–Chapman interface law** (first after 1.0, agreed 2026-10-13). Diffuse
+  layers treated analytically where $`\lambda_D \ll h`$, for macroscopic devices with real
+  double-layer charge on any grid. It tends to `neutral` as $`\varepsilon \to 0`$. Beside a strictly
+  neutral solution today, a capacitive face's charge sits in the edge cell, and a reaction there
+  sees that cell's composition: a Frumkin effect set by the mesh, with no limit as $`h \to 0`$ (an
+  electrode in ferri/ferrocyanide with 1 M KCl: R_dc 56.6, 55.8, 50.9, 47.5 Ω·cm² at h = 300, 30,
+  3, 1 nm against 56.7, and 56.7 throughout with `zeroCharge` at rest). The law: one unknown per
+  face, the diffuse drop $`\phi_d`$, giving the diffuse charge (equal to the Stern layer's), each
+  ion's surface excess $`\Gamma_i`$ (quadrature over $`\phi`$ for a general mixture) and the
+  reaction plane's $`c_i e^{-z_i F \phi_d/RT}`$. Opt-in, since it needs the diffuse layer's
+  permittivity (`diffuse: { epsr }`). The cost is in the bookkeeping: $`\Gamma_i`$ is a new store of
+  ions, which every conserved amount, ledger, the transient balances and the impedance's storage
+  must include. Validate against a resolved $`\varepsilon > 0`$ double layer.
 - **Driven species fluxes.** A terminal driving one species' molar flux instead of the charge
   current (a gas feed at a fixed rate, a neutral species injected), the flux-side twin of a held
   $`\mu`$ for neutral species.

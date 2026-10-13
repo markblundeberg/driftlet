@@ -4,6 +4,23 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 
 ## Unreleased
 
+- Every option name is checked. `solve()`, `step()`, `advance()`, `impedance()` and every kit and
+  plot helper refuse an option they don't take and suggest the one meant (`advance(t, { dtmax })`
+  ran at the default step size; `bandDiagram(sol, { engery: true })` drew the other picture). A
+  misspelt contact in `set()` after a solve was accepted, ignored and kept; it's refused now.
+- `check()`'s balance called a diode passing 0.1 A/m² "equilibrium": flows below 1e-8 of D·c/L of
+  the majority carriers were taken for round-off. Flows that balance, as real ones do and
+  round-off doesn't, now count down to 1e-20 of it.
+- `hodgkinHuxley()` requires `T`: its rates scale with it, so it must be the device's (their
+  6.3 °C under a body-temperature device doubled a spike's peak, silently).
+  `semiconductor(name, { T })` is refused (the data are for 300 K).
+- `impedance()` returns the steady state's `warnings` too.
+- A floating port wired to an insertion host's carrier starts at the host's OCV, so a reading
+  before the first step (or after a failed solve) means something; it read 0 V.
+- An OCV curve too flat for its interpolation (a plateau) says what passes instead of "add
+  points".
+- llms.txt: a battery-particle template (a sphere discharged at two rates, against the quasi-steady
+  profile), and notes found missing by agents building demos cold; repeats cut.
 - Toward 1.0, the exports are only what's documented. `driftlet` no longer exports
   `BlockTridiagonal`, `bernoulli`, `bernoulliDerivative`, `buildGrid`, `gradedCells` or
   `normalizeDevice`, and `driftlet/kit` no longer exports `parseEquation` or `stoichiometry`.
