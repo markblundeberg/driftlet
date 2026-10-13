@@ -176,7 +176,9 @@ const def = build({
     layer('Si', units.um(1), { name: 'p', acceptors: units.perCm3(1e16) }),
     ohmic(0.5), // the p side at +0.5 V: forward bias
   ],
-  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], // recombination: τ = 1/(kf·N) ≈ 0.6 µs at N = 1e16 cm⁻³
+  // recombination: τ = 1/(kf·N) ≈ 0.6 µs at N = 1e16 cm⁻³, so L = √(Dτ) ≈ 50 µm ≫ 1 µm: a short
+  // diode, whose Shockley J₀ takes each side's quasi-neutral width (W − x_d) in place of L
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
   grid: { hmin: units.nm(1), hmax: units.nm(20) },
 });
 console.log(describe(def));
@@ -674,4 +676,4 @@ those:
     `particles`;
   - curated devices: `perovskiteCell`, `PEROVSKITE_SCANS`, `hysteresis`.
 - `driftlet/plot` (a quick look): `bandDiagram`, `levelChart`, `labelParts`, `themeColor`,
-  `THEME`.
+  `THEME`. These draw profiles in x; an I–V curve or a transient you draw yourself.
