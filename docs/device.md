@@ -173,7 +173,12 @@ defaults to no dipole.
   in F/m². Beside a strictly neutral ($`\varepsilon = 0`$) material, the face's charge is held in
   the cell next to it, which acts as a diffuse layer half that cell wide, $`F^2 \sum_i z_i^2 c_i \, h/2RT`$
   in series with C. So keep that cell coarse rather than fine (a warning says when it costs C more
-  than 2%, and how coarse is enough).
+  than 2%, and how coarse is enough). A face reaction there sees that cell's composition, which
+  holding the charge shifts by about $`z\sigma F/(C_{\mathrm{cell}} RT)`$ for an ion of charge $`z`$: a
+  Frumkin effect set by the mesh, growing without limit as the cell shrinks (an electrode's DC
+  resistance in ferri/ferrocyanide fell from 56.6 to 47.5 Ω·cm² between 300 nm and 1 nm). A
+  warning says past 1%; a `zeroCharge` near the face's rest potential, so it holds little charge,
+  avoids it on any grid. A sub-grid Gouy–Chapman law is on the [roadmap](../ROADMAP.md).
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides and can move on one at least; blocked otherwise, so trap states with

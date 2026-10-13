@@ -15,6 +15,9 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
   6.3 °C under a body-temperature device doubled a spike's peak, silently).
   `semiconductor(name, { T })` is refused (the data are for 300 K).
 - `impedance()` returns the steady state's `warnings` too.
+- A face reaction beside a strictly neutral edge cell that holds the face's charge is warned of
+  past a 1% shift: a Frumkin effect set by the mesh, which refining makes worse (an electrode's
+  R_dc fell 16% from h = 300 nm to 1 nm, silently until ~3 nm).
 - A floating port wired to an insertion host's carrier starts at the host's OCV, so a reading
   before the first step (or after a failed solve) means something; it read 0 V.
 - An OCV curve too flat for its interpolation (a plateau) says what passes instead of "add

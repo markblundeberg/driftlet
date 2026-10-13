@@ -891,6 +891,10 @@ those:
 - **A sharp junction between very different solutions** (3 M KCl against 1 µM) can't start:
   grade it over a few thin layers, as at a frit.
 - **Changing `c0` with `set()`.** A carried state keeps what it holds: make a new `Device`.
+- **A charged electrode face beside a strictly neutral solution** (`epsr: 0`, a capacitive face
+  with reactions): refining the grid there makes the kinetics worse, not better, since the edge
+  cell holds the double layer's charge. Read `sol.warnings`; a `zeroCharge` near the rest
+  potential avoids it.
 - **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
   Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).
 

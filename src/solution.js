@@ -313,11 +313,24 @@ export function makeSolution(solver, result = {}) {
   // refined. Flag it where it lowers that capacitance by over 2%. (Where the box is the smaller
   // part, as an ε = 0 metal's against a semiconductor's depletion, it's a fine stand-in for the
   // metal's own screening.)
-  const boxed = (g, h, phi, other, where) => {
+  // And a reaction at the face sees that box's composition, which holding the charge σ shifts
+  // by about z·σ/(Cbox·V_T) for an ion of charge z: a Frumkin effect set by the mesh, which grows
+  // without limit as the box shrinks. Flag it past 1%.
+  const boxed = (g, h, phi, other, where, sigma = 0, reacting = []) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined?.[g]) return;
     const s2 = solver.screening(g), Cbox = (F * F * s2 * h) / (2 * RT);
     if (!(s2 > 0)) return;
+    const ion = reacting.filter((i) => species[i].z !== 0).reduce((a, i) => (a < 0 || Math.abs(species[i].z) > Math.abs(species[a].z) ? i : a), -1);
+    const shift = ion < 0 ? 0 : (Math.abs(species[ion].z * sigma) / Cbox) * (F / RT);
+    if (shift > 0.01) {
+      sol.warnings.push(
+        `${where}: the reaction here sees the strictly neutral cell beside the face (${h.toExponential(2)} m), which holds the face's charge as a diffuse layer that wide: ` +
+          `${species[ion].name} there is shifted by about ${(100 * shift).toPrecision(2)}%, a Frumkin effect set by the mesh that grows as the cell shrinks. ` +
+          `Set the face's zeroCharge near its rest potential (so it holds little charge), coarsen that cell to ${((200 * Math.abs(species[ion].z * sigma)) / (F * s2)).toExponential(1)} m or more, ` +
+          'or resolve the double layer (epsr > 0, hmin below the Debye length).',
+      );
+    }
     let C = phi.C;
     if (phi.type === 'pinned') {
       const om = other < 0 ? null : model.materials[model.regions[grid.nodeRegion[other]].material];
@@ -338,8 +351,10 @@ export function makeSolution(solver, result = {}) {
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
-    boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`);
-    boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`);
+    const reacting = (side) => itf.reactions.flatMap((rx) => rx.part.filter((p) => p.side === side).map((p) => p.i));
+    const sigma = sol.interfaces[f].D;
+    boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0));
+    boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1));
   });
   const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
   if (resolves(contacts.left)) {

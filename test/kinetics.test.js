@@ -277,3 +277,25 @@ test('open circuit with one partner of a couple at a trace: converged, at its Ne
   };
   assert.ok(Math.abs(rest(1e-5) - rest(1e-3) - VT * Math.log(100)) < 1e-6);
 });
+
+test('a reaction beside a strictly neutral edge cell that holds the face charge is warned of: a Frumkin effect set by the mesh', async () => {
+  // Pt | ferri/ferrocyanide (z −3, −4) in 1 M KCl, ε = 0, with a Stern layer charged at rest
+  // (zeroCharge 0, the couple at +0.36 V): the edge cell holds σ ≈ 0.07 C/m² as a diffuse layer
+  // as wide as itself, and the reaction sees its composition. Measured, R_dc drifts 56.6 → 47.5
+  // Ω·cm² from h = 300 nm to 1 nm (56.7 in theory); the shift z·σ/(C_box·V_T) is 0.9% and 280%.
+  const { build, layer, ohmic, bath, half, metal } = await import('../src/kit.js');
+  const c = { FeIII: 5, FeII: 5, 'Cl-': 1000, 'K+': 1035 };
+  const def = (hmin, zeroCharge = 0) => build({
+    library: [{ species: [{ name: 'FeIII', z: -3, cRef: 1000 }, { name: 'FeII', z: -4, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 0, species: { FeIII: { D: 0.72e-9, mu0: 0 }, FeII: { D: 0.67e-9, mu0: -FARADAY * 0.36 }, 'K+': { D: 1.957e-9, mu0: 0 }, 'Cl-': { D: 2.032e-9, mu0: 0 } } } } }, metal('Pt')],
+    stack: [ohmic({ I: 0 }, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge, reactions: [{ ...half('FeIII + e- = FeII'), k0: 5e-2, alpha: 0.5 }] }, layer('water', 30e-6, { c0: c }), bath(c, 'Cl-')],
+    grid: { hmin, hmax: 2e-6, ratio: 1.2 },
+  });
+  const frumkin = (d) => new Device(d).solve().warnings.filter((w) => /a Frumkin effect set by the mesh/.test(w));
+  assert.deepEqual(frumkin(def(1e-6)), []);
+  const [w] = frumkin(def(30e-9));
+  assert.match(w, /interfaces\[0\] \(right side\).*FeII there is shifted by about 9\.\d%.*coarsen that cell to 2\.\de-7 m or more/);
+  // Uncharged at rest, the face holds next to nothing, and the mesh doesn't matter.
+  const rest = new Device(def(30e-9)).solve(), g = rest.region.indexOf(1); // the water's first node
+  assert.deepEqual(frumkin(def(30e-9, rest.V['e-'][g - 1] - rest.phi[g])), []);
+});
