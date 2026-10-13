@@ -620,6 +620,33 @@ test('a pivot perturbed in a steady solve: the residual is checked, not the upda
   }
 });
 
+test('a level only the face after it holds: the same steady state in any listing of the species', () => {
+  // Strictly neutral water between two electrodes: its level is set only by the fast couple at its
+  // right face (C²⁺ + 2e⁻ = S₂(s), the right electrode held), so eliminated from the left, its
+  // last node's pivot is round-off alone, 7e-32 or 3e-16 as the species happen to be listed. At
+  // 7e-32 it scaled the face's block by 1e31, which then lost its pivot outright, and the solve
+  // failed. The left electrode, at no current, then sits where its own couple is in equilibrium.
+  const water = { epsr: 0, species: { 'F-': { D: 1e-9, mu0: -18755 }, 'C2+': { D: 1e-9, mu0: -12698 } } };
+  const species = [{ name: 'F-', z: -1, cRef: 1000 }, { name: 'C2+', z: 2, cRef: 1000 }, { name: 'e-', z: -1 }];
+  const VR = 0.48157, RT = GAS_CONSTANT * 298.15;
+  const phi = (-23475 + 12698 - RT * Math.log(100 / 1000) + 2 * FARADAY * VR) / (2 * FARADAY);
+  const VL = (18230 + 18755 - RT * Math.log(200 / 1000) + FARADAY * phi) / FARADAY;
+  for (const order of ['as written', 'reversed']) {
+    const s = new Device({
+      species: order === 'reversed' ? [...species].reverse() : species,
+      materials: { water, M: { conductor: { species: 'e-', conductivity: 4e5 } } },
+      regions: [{ name: 'M1', material: 'M', length: 1e-6 }, { name: 'water', material: 'water', length: 6.4e-6, c0: { 'F-': 200, 'C2+': 100 } }, { name: 'M2', material: 'M', length: 1e-6 }],
+      interfaces: [
+        { reactions: [{ equation: 'F- = e- + S(s)', k0: 2.3e-15, alpha: 0.7, fixed: { 'S(s)': 18230 } }] },
+        { reactions: [{ equation: 'C2+ + 2 e- = S1(s)', k0: 6.1e-16, alpha: 1, fixed: { 'S1(s)': 355 } }, { equation: 'C2+ + 2 e- = S2(s)', k0: 59, alpha: 0.5, fixed: { 'S2(s)': -23475 } }] },
+      ],
+      contacts: { left: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: VR, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+      grid: { hmin: 6.4e-8, hmax: 4.3e-7 }, // (the fuzzer's own numbers)
+    }).solve();
+    assert.ok(s.converged && Math.abs(s.terminals.left.V - VL) < 1e-8, `${order}: ${s.converged}, V ${s.terminals.left.V} for ${VL}`);
+  }
+});
+
 test('an electrode at no current that reduces a closed ion: its charge and the ion conserved together, in any species order', () => {
   const RT = GAS_CONSTANT * 298.15, cb = 60.42185, L = 36e-6;
   const def = (order, capacitance) => ({

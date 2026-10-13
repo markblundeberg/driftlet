@@ -521,7 +521,14 @@ which cost four assemblies per product.
   ~1 per m³ beside a face, are held through conductances 1e-16 of the face flux's coefficient in
   their row, and the elimination cancels them exactly: such devices now solve, even at
   equilibrium. Newton's updates stay meaningful (the factorisation only amplifies the residual,
-  so a small update still means a small residual), and its refined solves correct the rest.
+  so a small update still means a small residual), and its refined solves correct the rest. So
+  is a pivot that's round-off alone without being exactly zero, below 1e-18 of the magnitudes it
+  was formed from (the running bound below, carried only for a block whose pivots look small):
+  otherwise its value, whatever the round-off happened to leave, scales all that follows. Strictly
+  neutral water whose level only the fast couple at its far face held had its last node's pivot
+  at 7e-32 with the species listed one way and 3e-16 the other; at 7e-32 the face's block was
+  scaled by 1e31, lost its own pivot outright, and the solve failed in that listing alone. (At
+  1e-15 a pivot can still hold a digit Newton needs: a port's steady solve then wandered.)
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
   and where. A running error bound through the factorisation compares each pivot with the
   magnitudes it was formed from, $`\log_{10}(\sum|\mathrm{terms}| / |\mathrm{pivot}|)`$: the digits

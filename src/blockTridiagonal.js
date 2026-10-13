@@ -124,7 +124,15 @@ export class BlockTridiagonal {
           }
         }
       }
-      const ratio = luFactor(lu, o, piv, offX[i], m, this);
+      let ratio = luFactor(lu, o, piv, offX[i], m, this);
+      // A pivot far below the entries it's formed from may be round-off alone (the level of a
+      // region that only the blocks after it hold): its value, 7e-32 or 3e-16 or 0 as the
+      // unknowns happen to be listed, then scales all that follows (by 1e31, and the next block
+      // lost its own pivot outright). Redone with each entry's magnitudes carried (see
+      // cancellation), a pivot 1e-18 of them, all its digits lost, is perturbed like one that
+      // cancelled to exactly nothing. (At 1e-15 it can still hold a digit Newton needs: a port's
+      // steady solve wandered instead of converging.)
+      if (this.staticPivots && ratio < 1e-12) ratio = this._noisyPivots(i);
       if (!(ratio > 0)) {
         this.factored = false;
         this.singularBlock = i;
@@ -144,6 +152,70 @@ export class BlockTridiagonal {
     }
     this.minPivotRatio = minRatio;
     this.factored = true;
+  }
+
+  // Block i again, its W and LU with the magnitudes each entry is formed from (as cancellation()
+  // does), perturbing pivots 1e-18 of theirs. Returns the block's pivot ratio.
+  _noisyPivots(i) {
+    const { A, B, sizes, offA, offB, offC, offX } = this, cp = this._cp, lu = this._lu, piv = this._piv;
+    const m = sizes[i], mp = i > 0 ? sizes[i - 1] : 0, oa = offA[i], o = offB[i], oc = i > 0 ? offC[i - 1] : 0;
+    const S = (this._mag ??= new Float64Array(this._tmp.length * this._tmp.length));
+    for (let r = 0; r < m; r++) {
+      for (let c = 0; c < m; c++) {
+        let v = B[o + r * m + c], sum = Math.abs(v);
+        for (let k = 0; k < mp; k++) {
+          const a = A[oa + r * mp + k];
+          if (a === 0) continue;
+          const t = a * cp[oc + k * m + c];
+          v -= t;
+          sum += Math.abs(t);
+        }
+        lu[o + r * m + c] = v;
+        S[r * m + c] = sum;
+      }
+    }
+    let maxEntry = 0;
+    for (let k = 0; k < m * m; k++) maxEntry = Math.max(maxEntry, Math.abs(lu[o + k]));
+    if (maxEntry === 0) return 0;
+    let minPivot = Infinity;
+    for (let k = 0; k < m; k++) {
+      let best = k, bestVal = Math.abs(lu[o + k * m + k]);
+      for (let r = k + 1; r < m; r++) {
+        const v = Math.abs(lu[o + r * m + k]);
+        if (v > bestVal) { best = r; bestVal = v; }
+      }
+      piv[offX[i] + k] = best;
+      if (best !== k) {
+        for (let c = 0; c < m; c++) {
+          let t = lu[o + k * m + c];
+          lu[o + k * m + c] = lu[o + best * m + c];
+          lu[o + best * m + c] = t;
+          t = S[k * m + c];
+          S[k * m + c] = S[best * m + c];
+          S[best * m + c] = t;
+        }
+      }
+      const sum = S[k * m + k];
+      if (bestVal <= 1e-18 * sum || bestVal === 0) {
+        const size = sum > 0 ? 1e-15 * sum : 1e-15 * maxEntry;
+        bestVal = size;
+        lu[o + k * m + k] = lu[o + k * m + k] < 0 ? -size : size;
+        this.perturbedPivots++;
+      }
+      if (bestVal < minPivot) minPivot = bestVal;
+      const inv = 1 / lu[o + k * m + k];
+      for (let r = k + 1; r < m; r++) {
+        const f = (lu[o + r * m + k] *= inv);
+        if (f !== 0) {
+          const af = Math.abs(f);
+          for (let c = k + 1; c < m; c++) {
+            lu[o + r * m + c] -= f * lu[o + k * m + c];
+            S[r * m + c] += af * S[k * m + c];
+          }
+        }
+      }
+    }
+    return minPivot / maxEntry;
   }
 
   /**
