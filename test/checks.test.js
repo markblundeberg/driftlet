@@ -152,3 +152,18 @@ test('check() solves the device again with its species listed in reverse, and fa
   const ok = check(fine, fine.solve(), { tol: 1 }).items.find((it) => it.name === 'order');
   assert.ok(ok?.ok === true, ok?.summary);
 });
+
+test('check(): a diode passing a small current has ledgers, not equilibrium (balanced flows count however small)', () => {
+  // A pn diode's flows are tiny against D·c/L of its majority carriers (1e-19 of it at 1 µV), yet
+  // real: linear in the bias, and balanced to round-off. Only 0 V is equilibrium.
+  const dev = new Device(build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1.5e-6, { donors: units.perCm3(1e17) }), layer('Si', 3e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)], bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], grid: { hmin: 1e-9, hmax: 2e-8 } }));
+  const balance = (V) => {
+    dev.set({ contacts: { right: { V } } });
+    return check(dev, dev.solve()).items.find((i) => i.name === 'balance');
+  };
+  assert.match(balance(0).summary, /equilibrium/);
+  for (const V of [1e-6, 0.3, -1.5]) {
+    const b = balance(V);
+    assert.ok(b.ok && /(one ledger sums|2 ledgers sum) to zero/.test(b.summary), `${V} V: ${b.summary}`);
+  }
+});

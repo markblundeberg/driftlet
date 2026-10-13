@@ -29,13 +29,27 @@ function sameExceptDrives(a, b) {
   for (const k of keys) {
     if (k === 'contacts') {
       const ca = a.contacts ?? {}, cb = b.contacts ?? {};
-      for (const side of new Set([...Object.keys(ca), ...Object.keys(cb)])) if (!eq(ca[side] ?? {}, cb[side] ?? {}, true)) return false;
+      for (const side of new Set([...Object.keys(ca), ...Object.keys(cb)])) {
+        if (side !== 'left' && side !== 'right') return false; // a misspelt side: rebuild, which says so
+        if (!eq(ca[side] ?? {}, cb[side] ?? {}, true)) return false;
+      }
     } else if (k === 'ports') {
       const pa = a.ports ?? [], pb = b.ports ?? [];
       if (pa.length !== pb.length || pa.some((p, i) => !eq(p, pb[i], true))) return false;
     } else if (!eq(a[k], b[k], false)) return false;
   }
   return true;
+}
+
+// A method's options: a name it doesn't take (a typo, dtmax for dtMax) is an error, not ignored.
+function options(opts, method, allowed) {
+  if (opts === undefined || opts === null) return;
+  if (typeof opts !== 'object' || Array.isArray(opts)) throw new SolverError(`${method}: options must be an object (${allowed.join(', ')})`);
+  for (const k of Object.keys(opts)) {
+    if (opts[k] === undefined || allowed.includes(k)) continue;
+    const near = allowed.find((a) => a.toLowerCase() === k.toLowerCase().replace(/_/g, ''));
+    throw new SolverError(`${method}: no option '${k}'${near ? ` (did you mean '${near}'?)` : ''}; the options are ${allowed.join(', ')}`);
+  }
 }
 
 /** @typedef {import('./types.js').DeviceDefinition} DeviceDefinition */
@@ -176,6 +190,7 @@ export class Device {
    * @returns {Solution}
    */
   solve(opts) {
+    options(opts, 'solve', ['maxSteps', 'tol', 'continuation']);
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
     const snap = this.solver._snapshot();
@@ -193,6 +208,7 @@ export class Device {
    * @returns {Solution}
    */
   step(dt, opts) {
+    options(opts, 'step', ['method']);
     return makeSolution(this.solver, this.solver.advance(dt, opts));
   }
 
@@ -208,6 +224,7 @@ export class Device {
    * @returns {Solution}
    */
   advance(tEnd, opts) {
+    options(opts, 'advance', ['tol', 'dt0', 'dtMax', 'budgetMs', 'maxSteps', 'method', 'probes']);
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
   }
 
@@ -221,6 +238,7 @@ export class Device {
    * @returns {import('./types.js').ImpedanceResult}
    */
   impedance(frequencies, opts) {
+    options(opts, 'impedance', ['terminal', 'profiles']);
     const steady = this.solver.solveSteady();
     if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
     return this.solver.impedance(frequencies, opts);

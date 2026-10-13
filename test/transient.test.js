@@ -467,3 +467,18 @@ test('a gate behind a resistance charges as RC: exactly backward Euler on steps 
   assert.ok(r.steps < 100 && r.rejected === 0, `${r.steps} steps, ${r.rejected} rejected`);
   assert.ok(Math.abs(r.interfaces[0].D / qInf - (1 - Math.exp(-5))) < 1e-3);
 });
+
+test('a mistyped option or contact is an error, never ignored', async () => {
+  const { build, layer, ohmic, semiconductor } = await import('../src/kit.js');
+  const dev = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: 16.6 }), layer('Si', 1e-6, { acceptors: 1.66 }), ohmic(0.5)], grid: { hmin: 1e-9, hmax: 2e-8 } }));
+  const I = dev.solve().current;
+  assert.throws(() => dev.advance(1e-6, { dtmax: 1e-9 }), /advance: no option 'dtmax' \(did you mean 'dtMax'\?\)/);
+  assert.throws(() => dev.solve({ tolerance: 1 }), /solve: no option 'tolerance'; the options are maxSteps, tol, continuation/);
+  assert.throws(() => dev.impedance([1], { termnal: 'left' }), /impedance: no option 'termnal'/);
+  // After a solve a drive changes in place; a misspelt contact must still be refused, and leave
+  // the device as it was (the next, valid change works).
+  assert.throws(() => dev.set({ contacts: { rigth: { V: 0.6 } } }), /contacts\.rigth/);
+  assert.ok(Math.abs(dev.solve().current / I - 1) < 1e-12);
+  dev.set({ contacts: { right: { V: 0.6 } } });
+  assert.ok(Math.abs(dev.solve().current) > 10 * Math.abs(I));
+});
