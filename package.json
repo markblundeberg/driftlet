@@ -1,7 +1,7 @@
 {
   "name": "driftlet",
   "version": "0.16.4",
-  "description": "Small, dependency-free 1D drift–diffusion–reaction (Poisson–Nernst–Planck) solver for interactive web demos",
+  "description": "Dependency-free 1D drift–diffusion–reaction (Poisson–Nernst–Planck) solver for semiconductors, electrochemistry and nerves, fast enough for live web demos",
   "type": "module",
   "exports": {
     ".": {
@@ -42,8 +42,20 @@
   "keywords": [
     "drift-diffusion",
     "poisson-nernst-planck",
-    "electrochemistry",
+    "nernst-planck",
     "semiconductor",
+    "pn-junction",
+    "band-diagram",
+    "solar-cell",
+    "device-simulation",
+    "electrochemistry",
+    "battery",
+    "impedance-spectroscopy",
+    "cyclic-voltammetry",
+    "ion-transport",
+    "membrane-potential",
+    "hodgkin-huxley",
+    "physics",
     "simulation"
   ],
   "homepage": "https://markblundeberg.github.io/driftlet/demos/",
