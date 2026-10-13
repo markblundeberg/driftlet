@@ -23,7 +23,10 @@ driftlet follows semantic versioning; while it's 0.x, a minor version may change
 - An OCV curve too flat for its interpolation (a plateau) says what passes instead of "add
   points".
 - llms.txt: a battery-particle template (a sphere discharged at two rates, against the quasi-steady
-  profile), and notes found missing by agents building demos cold; repeats cut.
+  profile), and notes found missing by agents building demos cold; repeats cut. Its six
+  specialised templates (Schottky, thin-film transistor, corrosion, voltage clamp, action
+  potential, axon) move to docs/templates.md, so llms.txt (~20k tokens) fits an agent's
+  single read.
 - Toward 1.0, the exports are only what's documented. `driftlet` no longer exports
   `BlockTridiagonal`, `bernoulli`, `bernoulliDerivative`, `buildGrid`, `gradedCells` or
   `normalizeDevice`, and `driftlet/kit` no longer exports `parseEquation` or `stoichiometry`.
