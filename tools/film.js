@@ -1,12 +1,13 @@
 // The films (films/*.html), rendered to video: each page in headless Chrome at 1080 × 1350,
 // drawn one frame at a time on request (window.reel.frame(k)), so a film comes out the same
-// every time, however long a frame takes to compute. Frames go straight into ffmpeg.
+// every time, however long a frame takes to compute. Frames go straight into ffmpeg. A page may
+// also set its frame size (reel.width, reel.height) and give a soundtrack (reel.audio()).
 //
 //   node tools/film.js battery [--from k] [--to k] [--png dir [--every n]]    (into films/out/)
 //   node tools/film.js --root ~/site films/x.html       (a page in another folder; into its films/out/)
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { root, serve, launch, connect } from './serve.js';
@@ -50,9 +51,9 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false }, sessionId);
   }
   const from = +opt('--from', 0), to = Math.min(+opt('--to', info.frames - 1), info.frames - 1), pngs = opt('--png');
-  const mp4 = join(outDir, `${name}.mp4`);
+  const mp4 = join(outDir, `${name}.mp4`), silent = join(outDir, `${name}.video.mp4`);
   const ff = pngs ? null : spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(info.fps), '-i', '-',
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', mp4], { stdio: ['pipe', 'inherit', 'inherit'] });
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', silent], { stdio: ['pipe', 'inherit', 'inherit'] });
   if (pngs) await mkdir(pngs, { recursive: true });
   const t0 = Date.now();
   const every = +opt('--every', 1); // stills only: every nth frame
@@ -69,6 +70,19 @@ try {
   if (ff) {
     ff.stdin.end();
     await new Promise((ok, fail) => ff.on('exit', (c) => (c === 0 ? ok() : fail(new Error(`ffmpeg exited ${c}`)))));
+    // A page with a soundtrack (reel.audio(): a promise of a WAV, as base64, made from what the
+    // frames did) gets it muxed in, taken across in slices; it needs the whole film rendered.
+    if (from === 0 && to === info.frames - 1 && (await run('typeof reel.audio === "function"'))) {
+      const n = await run('reel.audio().then((b) => ((window.__wav = b), b.length))');
+      let b64 = '';
+      for (let i = 0; i < n; i += 1 << 20) b64 += await run(`__wav.slice(${i}, ${i + (1 << 20)})`);
+      const wav = join(outDir, `${name}.wav`);
+      await writeFile(wav, Buffer.from(b64, 'base64'));
+      await new Promise((ok, fail) => spawn('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wav, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', '+faststart', mp4], { stdio: 'inherit' }).on('exit', (c) => (c === 0 ? ok() : fail(new Error(`ffmpeg (mux) exited ${c}`)))));
+      await rm(silent);
+      console.error(`sound: ${wav}`);
+    } else await rename(silent, mp4);
     console.log(mp4);
   } else console.log(pngs);
 } finally {
