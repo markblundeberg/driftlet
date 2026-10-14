@@ -15,7 +15,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const dir = resolve(opt('--root', root)), first = args.find((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWith('--')) ?? 'battery';
 const page = first.endsWith('.html') ? first : `films/${first}.html`, name = basename(page, '.html');
-const W = 1080, H = 1350;
+let W = 1080, H = 1350; // or the page's own, from reel.width and reel.height
 
 const server = await serve(dir);
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -42,9 +42,13 @@ try {
     return r.result.value;
   };
   let info;
-  for (let k = 0; k < 600 && !(info = await run('window.reel && { frames: reel.frames, fps: reel.fps }')); k++) await new Promise((r) => setTimeout(r, 100));
+  for (let k = 0; k < 600 && !(info = await run('window.reel && { frames: reel.frames, fps: reel.fps, width: reel.width, height: reel.height }')); k++) await new Promise((r) => setTimeout(r, 100));
   if (!info) throw new Error('the page never set window.reel');
   console.error('film:', JSON.stringify(info));
+  if (info.width && info.height && (info.width !== W || info.height !== H)) {
+    [W, H] = [info.width, info.height];
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false }, sessionId);
+  }
   const from = +opt('--from', 0), to = Math.min(+opt('--to', info.frames - 1), info.frames - 1), pngs = opt('--png');
   const mp4 = join(outDir, `${name}.mp4`);
   const ff = pngs ? null : spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(info.fps), '-i', '-',
