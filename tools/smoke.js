@@ -6,61 +6,14 @@
 //
 //   npm run smoke [-- pages…]       (CHROME=/path/to/chrome to choose the browser)
 
-import { spawn } from 'node:child_process';
 import { readdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findChrome, root, serve } from './serve.js';
+import { root, serve, launch, connect } from './serve.js';
 
 const settle = 2500; // ms a page runs after loading, and after each control is moved
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// Chrome with a debugging port; resolves to its browser-wide WebSocket URL.
-async function launch(profile) {
-  const chrome = spawn(findChrome(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
-    '--no-default-browser-check', '--disable-gpu', '--disable-extensions', '--no-sandbox', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-  const url = await new Promise((ok, fail) => {
-    let err = '';
-    chrome.stderr.on('data', (d) => {
-      err += d;
-      const m = err.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (m) ok(m[1]);
-    });
-    chrome.on('exit', (code) => fail(new Error(`Chrome exited (${code}) before listening:\n${err}`)));
-  });
-  return { chrome, url };
-}
-
-// A minimal DevTools-protocol client: send(method, params, sessionId), and events by session.
-async function connect(url) {
-  const ws = new WebSocket(url);
-  await new Promise((ok, fail) => {
-    ws.onopen = ok;
-    ws.onerror = () => fail(new Error(`can't connect to ${url}`));
-  });
-  let id = 0;
-  const pending = new Map(), listeners = new Set();
-  ws.onmessage = ({ data }) => {
-    const msg = JSON.parse(data);
-    if (msg.id !== undefined) {
-      const p = pending.get(msg.id);
-      pending.delete(msg.id);
-      if (msg.error) p.fail(new Error(`${p.method}: ${msg.error.message}`));
-      else p.ok(msg.result);
-    } else for (const f of listeners) f(msg);
-  };
-  return {
-    send: (method, params = {}, sessionId) =>
-      new Promise((ok, fail) => {
-        pending.set(++id, { ok, fail, method });
-        ws.send(JSON.stringify({ id, method, params, sessionId }));
-      }),
-    on: (f) => listeners.add(f),
-    off: (f) => listeners.delete(f),
-    close: () => ws.close(),
-  };
-}
 
 // In the page: every control's extremes, as a list of moves to make one at a time.
 const controlsScript = `(() => {

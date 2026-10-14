@@ -1,6 +1,7 @@
-// Shared by the browser tools: the repo over HTTP (module scripts don't load from file://), and
-// a Chrome to point at it.
+// Shared by the browser tools: the repo over HTTP (module scripts don't load from file://), a
+// Chrome to point at it, and a minimal client for its DevTools protocol.
 
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -33,3 +34,48 @@ export function serve() {
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok(server)));
 }
 
+// Chrome with a debugging port; resolves to its browser-wide WebSocket URL.
+export async function launch(profile) {
+  const chrome = spawn(findChrome(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
+    '--no-default-browser-check', '--disable-gpu', '--disable-extensions', '--no-sandbox', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const url = await new Promise((ok, fail) => {
+    let err = '';
+    chrome.stderr.on('data', (d) => {
+      err += d;
+      const m = err.match(/DevTools listening on (ws:\/\/\S+)/);
+      if (m) ok(m[1]);
+    });
+    chrome.on('exit', (code) => fail(new Error(`Chrome exited (${code}) before listening:\n${err}`)));
+  });
+  return { chrome, url };
+}
+
+// A minimal DevTools-protocol client: send(method, params, sessionId), and events by session.
+export async function connect(url) {
+  const ws = new WebSocket(url);
+  await new Promise((ok, fail) => {
+    ws.onopen = ok;
+    ws.onerror = () => fail(new Error(`can't connect to ${url}`));
+  });
+  let id = 0;
+  const pending = new Map(), listeners = new Set();
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
+    if (msg.id !== undefined) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.fail(new Error(`${p.method}: ${msg.error.message}`));
+      else p.ok(msg.result);
+    } else for (const f of listeners) f(msg);
+  };
+  return {
+    send: (method, params = {}, sessionId) =>
+      new Promise((ok, fail) => {
+        pending.set(++id, { ok, fail, method });
+        ws.send(JSON.stringify({ id, method, params, sessionId }));
+      }),
+    on: (f) => listeners.add(f),
+    off: (f) => listeners.delete(f),
+    close: () => ws.close(),
+  };
+}

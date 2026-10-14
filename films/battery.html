@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside a charging battery</title>
+<style>
+@font-face { font-family: Recursive; src: url(../demos/fonts/recursive.woff2) format('woff2'); font-weight: 300 1000; }
+html, body { margin: 0; background: #f6f2ea; }
+canvas { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="film"></canvas>
+<script type="module">
+import { PHASES, Q, L, La, Ls, Lc, GR, LFP, SALT, makeRun, sol, inventory, advance, setI, enter, rng } from './battery-sim.js';
+
+const CAPTIONS = {
+  intro: ['Inside a lithium-ion battery', 'A simulation: every dot is a crowd of lithium.'],
+  slow: ['Charging, gently', 'The charger pulls lithium out of the iron phosphate. It crosses the liquid and slips in between the graphite’s layers.'],
+  use: ['Using it', 'The same lithium flows back. Nothing is used up: it sloshes from one side to the other.'],
+  fast: ['Charging 8× faster', 'Lithium arrives faster than it can soak into the graphite, and piles up at its surface…'],
+  ease: ['…so fast chargers ease off', 'Pile up enough, and lithium plates out as metal, which wears a battery out. So the charger slows down, holding it just short of that.'],
+  end: ['Simulated, not drawn', 'Every frame is solved from the physics, live in a browser. Play with it: link below.'],
+};
+
+// ---------------------------------------------------------------------------------------------
+// The picture. Everything is laid out on a 1080 × 1350 page (a 4:5 video frame), scaled to fit.
+const W = 1080, H = 1350;
+const canvas = document.getElementById('film'), ctx = canvas.getContext('2d');
+const COL = {
+  bg: '#f6f2ea', ink: '#1d2330', muted: '#6b655c', faint: '#d9d1c2',
+  li: '#d1362f', liDark: '#8a1d18', e: '#2a78d6', anion: '#9a9184',
+  graphite: '#dcdad6', graphiteLine: '#c2bfba', electrolyte: '#e3eef4', lfp: '#f3dcd3', lfpLine: '#e6c7bb',
+  copper: '#c27a45', aluminium: '#b9bec4', warn: '#d1362f',
+};
+const FONT = (w, px) => `${w} ${px}px Recursive, system-ui, sans-serif`;
+const X0 = 150, X1 = 930; // the device's span on the page
+const px = (x) => X0 + ((X1 - X0) * x) / L;
+const CELL = { top: 420, bottom: 760 }; // the cross-section
+const LV = { top: 850, bottom: 1170 }; // the level diagram
+
+function setup() {
+  const dpr = window.devicePixelRatio || 1, fit = FILM ? 1 : Math.min(1, innerWidth / W, innerHeight / H);
+  canvas.style.width = `${W * fit}px`;
+  canvas.style.height = `${H * fit}px`;
+  canvas.width = Math.round(W * fit * dpr);
+  canvas.height = Math.round(H * fit * dpr);
+  ctx.setTransform(fit * dpr, 0, 0, fit * dpr, 0, 0);
+}
+
+function wrap(text, width) {
+  const words = text.split(' '), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? `${line} ${w}` : w;
+    if (ctx.measureText(t).width > width && line) {
+      lines.push(line);
+      line = w;
+    } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// The lithium, as sites that fill: each host a lattice of them (rows between the graphite's sheets,
+// a grid in the phosphate), each site a fixed amount of lithium, filled column by column as the
+// solution says. The electrolyte's ions are a fast-mixing crowd. Lithium leaving a host flies out
+// to the crowd, and lithium entering one comes from it, so the dots are conserved: they slosh.
+const PAD = 9, FLY = 12; // frames a dot takes to fly between a site and the crowd
+const HOSTS = [
+  { region: 0, x0: 0, x1: La, cMax: GR.cMax, cols: 24, rows: 15, y: (j) => CELL.top + 25 + 22 * j, side: 0 },
+  { region: 2, x0: La + Ls, x1: L, cMax: LFP.cMax, cols: 15, rows: 21, y: (j) => CELL.top + PAD + 4 + ((j + 0.5) * (CELL.bottom - CELL.top - 2 * PAD - 8)) / 21, side: 1 },
+];
+const WEIGHT = (GR.cMax * La) / (24 * 15); // mol/m² of lithium per dot, the same everywhere
+const lith = { sites: [], crowd: [], anions: [], flyers: [] };
+const crowdXY = (p) => [px(La) + PAD + p.x * (px(La + Ls) - px(La) - 2 * PAD), CELL.top + PAD + p.y * (CELL.bottom - CELL.top - 2 * PAD)];
+
+// Each column's filling, the mean of c/cMax over the nodes in it.
+function fillings(S, host) {
+  const f = new Float64Array(host.cols), n = new Float64Array(host.cols);
+  for (let k = 0; k < S.x.length; k++) {
+    if (S.region[k] !== host.region) continue;
+    const K = Math.min(host.cols - 1, Math.floor(((S.x[k] - host.x0) / (host.x1 - host.x0)) * host.cols));
+    f[K] += S.c['Li+'][k] / host.cMax;
+    n[K]++;
+  }
+  return f.map((v, K) => v / n[K]);
+}
+// Sites to fill in each column: the host's total, shared out by largest remainders.
+function targets(S, host) {
+  const per = (host.cMax * (host.x1 - host.x0)) / WEIGHT / host.cols; // a full column's dots
+  const want = fillings(S, host).map((f) => Math.min(host.rows, f * per)), base = want.map(Math.floor);
+  let spare = Math.round(want.reduce((a, b) => a + b)) - base.reduce((a, b) => a + b);
+  const order = [...want.keys()].sort((i, j) => want[j] - base[j] - (want[i] - base[i]));
+  for (const K of order) if (spare-- > 0) base[K]++;
+  return base;
+}
+function lithReset(S) {
+  lith.sites = [];
+  lith.flyers = [];
+  HOSTS.forEach((host, h) => {
+    const t = targets(S, host);
+    for (let K = 0; K < host.cols; K++) {
+      const col = [];
+      for (let j = 0; j < host.rows; j++) {
+        const x = host.x0 + ((K + 0.5) / host.cols) * (host.x1 - host.x0);
+        col.push({ h, K, X: px(x) + (h === 1 ? 0 : (j % 2) * 3), Y: host.y(j), state: 0 });
+      }
+      for (const site of pick(col, t[K])) site.state = 1;
+      lith.sites.push(...col);
+    }
+  });
+  const n = Math.round((SALT * Ls) / WEIGHT);
+  lith.crowd = Array.from({ length: n }, () => ({ x: random(), y: random(), vx: 0, vy: 0 }));
+  lith.anions = Array.from({ length: n }, () => ({ x: random(), y: random(), vx: 0, vy: 0 }));
+}
+function pick(list, n) {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, Math.max(0, n));
+}
+// One frame: each column's sites brought to its target, dots flown to and from the crowd, and the
+// crowd jostled.
+function lithStep(S) {
+  HOSTS.forEach((host, h) => {
+    const t = targets(S, host);
+    for (let K = 0; K < host.cols; K++) {
+      const col = lith.sites.filter((s) => s.h === h && s.K === K), held = col.filter((s) => s.state > 0).length;
+      if (t[K] > held) {
+        for (const site of pick(col.filter((s) => s.state === 0), t[K] - held)) {
+          // from the crowd's dot nearest this host, or (none left) the electrolyte's edge
+          let from;
+          if (lith.crowd.length) {
+            const k = lith.crowd.reduce((b, p, i) => ((host.side ? p.x > lith.crowd[b].x : p.x < lith.crowd[b].x) ? i : b), 0);
+            from = crowdXY(lith.crowd.splice(k, 1)[0]);
+          } else from = crowdXY({ x: host.side, y: random() });
+          site.state = 2;
+          lith.flyers.push({ from, to: [site.X, site.Y], age: 0, site });
+        }
+      } else if (t[K] < held) {
+        for (const site of pick(col.filter((s) => s.state === 1), held - t[K])) {
+          site.state = 0;
+          const p = { x: host.side ? 0.97 : 0.03, y: (site.Y - CELL.top - PAD) / (CELL.bottom - CELL.top - 2 * PAD), vx: 0, vy: 0 };
+          lith.flyers.push({ from: [site.X, site.Y], to: crowdXY(p), age: 0, join: p });
+        }
+      }
+    }
+  });
+  for (const f of lith.flyers) if (++f.age >= FLY) f.site ? (f.site.state = 1) : lith.crowd.push(f.join);
+  lith.flyers = lith.flyers.filter((f) => f.age < FLY);
+  // The crowd swims: each dot keeps its heading for a while (it crosses in about two seconds).
+  for (const list of [lith.crowd, lith.anions]) for (const p of list) {
+    p.vx = 0.93 * p.vx + 0.03 * (random() - 0.5);
+    p.vy = 0.93 * p.vy + 0.03 * (random() - 0.5);
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > 1) { p.x = Math.min(1, Math.max(0, p.x)); p.vx = -p.vx; }
+    if (p.y < 0 || p.y > 1) { p.y = Math.min(1, Math.max(0, p.y)); p.vy = -p.vy; }
+  }
+}
+const dot = (x, y, r, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+function drawLith() {
+  for (const s of lith.sites) {
+    if (s.state === 1) dot(s.X, s.Y, s.h ? 6 : 5.5, COL.li);
+    else if (s.h === 1) { ctx.strokeStyle = COL.lfpLine; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(s.X, s.Y, 4, 0, 7); ctx.stroke(); }
+  }
+  for (const p of lith.anions) dot(...crowdXY(p), 4.5, COL.anion);
+  for (const p of lith.crowd) dot(...crowdXY(p), 6, COL.li);
+  for (const f of lith.flyers) {
+    const u = f.age / FLY, e = u * u * (3 - 2 * u);
+    dot(f.from[0] + e * (f.to[0] - f.from[0]), f.from[1] + e * (f.to[1] - f.from[1]), 6, COL.li);
+  }
+}
+
+let random = rng(7), clock = 0;
+function drawCell(run) {
+  // Regions
+  const top = CELL.top, bot = CELL.bottom, h = bot - top;
+  const region = (x0, x1, fill) => { ctx.fillStyle = fill; ctx.fillRect(px(x0), top, px(x1) - px(x0), h); };
+  region(0, La, COL.graphite);
+  region(La, La + Ls, COL.electrolyte);
+  region(La + Ls, L, COL.lfp);
+  // graphite's sheets, the phosphate's lattice
+  ctx.strokeStyle = COL.graphiteLine;
+  ctx.lineWidth = 1.5;
+  for (let y = top + 14; y < bot; y += 22) { ctx.beginPath(); ctx.moveTo(px(0), y); ctx.lineTo(px(La), y); ctx.stroke(); }
+  // current collectors and the wire round to the charger
+  ctx.fillStyle = COL.copper;
+  ctx.fillRect(px(0) - 26, top - 10, 26, h + 20);
+  ctx.fillStyle = COL.aluminium;
+  ctx.fillRect(px(L), top - 10, 26, h + 20);
+  const wireY = top - 110, xl = px(0) - 13, xr = px(L) + 13;
+  ctx.strokeStyle = COL.ink;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(xl, top - 10); ctx.lineTo(xl, wireY + 20); ctx.arcTo(xl, wireY, xl + 20, wireY, 20);
+  ctx.lineTo(xr - 20, wireY); ctx.arcTo(xr, wireY, xr, wireY + 20, 20); ctx.lineTo(xr, top - 10);
+  ctx.stroke();
+  // the box on the wire: charger or phone
+  const charging = run.I > 1e-9, using = run.I < -1e-9, bw = 190, bh = 58, bx = (xl + xr) / 2 - bw / 2;
+  ctx.fillStyle = COL.bg;
+  ctx.strokeStyle = COL.ink;
+  ctx.beginPath(); ctx.roundRect(bx, wireY - bh / 2, bw, bh, 12); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = COL.ink;
+  ctx.font = FONT(700, 26);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(charging ? 'charger' : using ? 'phone' : 'unplugged', bx + bw / 2, wireY + 1);
+  // electrons round the wire: from the phosphate to the graphite while charging
+  if (charging || using) {
+    const path = [[xr, top - 10], [xr, wireY], [xl, wireY], [xl, top - 10]];
+    const seg = path.slice(1).map((p, k) => Math.hypot(p[0] - path[k][0], p[1] - path[k][1])), total = seg.reduce((a, b) => a + b);
+    const at = (s) => {
+      for (let k = 0; k < seg.length; k++) {
+        if (s <= seg[k]) { const f = s / seg[k]; return [path[k][0] + f * (path[k + 1][0] - path[k][0]), path[k][1] + f * (path[k + 1][1] - path[k][1])]; }
+        s -= seg[k];
+      }
+      return path.at(-1);
+    };
+    const gap = 34;
+    for (let s = ((run.wire ?? 0) % gap + gap) % gap; s < total; s += gap) {
+      const [x, y] = at(s);
+      if (Math.abs(x - (bx + bw / 2)) < bw / 2 + 4 && Math.abs(y - wireY) < bh / 2 + 4) continue;
+      ctx.fillStyle = COL.e;
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
+    }
+  }
+  // labels
+  ctx.font = FONT(600, 24);
+  ctx.fillStyle = COL.muted;
+  ctx.textBaseline = 'top';
+  ctx.fillText('graphite', (px(0) + px(La)) / 2, bot + 14);
+  ctx.fillText('electrolyte', (px(La) + px(La + Ls)) / 2, bot + 14);
+  ctx.fillText('iron phosphate', (px(La + Ls) + px(L)) / 2, bot + 14);
+
+  drawLith();
+}
+
+// The level diagram: V_e⁻ (blue) and V_Li⁺ (red) across the cell, on two windows of one scale:
+// near the graphite's electrons, and near the phosphate's, 3.3 V above.
+const LOW = [-0.32, 0.12], HIGH = [3.17, 3.69];
+function drawLevels(run) {
+  const S = sol(run), lowH = 190, gapH = 34, highH = LV.bottom - LV.top - lowH - gapH;
+  const yLow = (v) => LV.bottom - ((v - LOW[0]) / (LOW[1] - LOW[0])) * lowH;
+  const yHigh = (v) => LV.top + highH - ((v - HIGH[0]) / (HIGH[1] - HIGH[0])) * highH;
+  // region backdrops, faint
+  const band = (y0, y1) => {
+    for (const [x0, x1, f] of [[0, La, COL.graphite], [La, La + Ls, COL.electrolyte], [La + Ls, L, COL.lfp]]) {
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = f;
+      ctx.fillRect(px(x0), y0, px(x1) - px(x0), y1 - y0);
+    }
+    ctx.globalAlpha = 1;
+  };
+  band(LV.top, LV.top + highH);
+  band(LV.bottom - lowH, LV.bottom);
+  // the break between the windows
+  ctx.strokeStyle = COL.muted;
+  ctx.lineWidth = 1.5;
+  for (const y of [LV.top + highH + 8, LV.bottom - lowH - 8]) {
+    ctx.beginPath();
+    for (let x = px(0); x <= px(L); x += 6) ctx.lineTo(x, y + 3 * Math.sin(x / 6));
+    ctx.stroke();
+  }
+  const line = (key, region, y, color, width) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let on = false;
+    for (let k = 0; k < S.x.length; k++) {
+      const v = S.V[key][k];
+      if (!region(S.region[k]) || !Number.isFinite(v)) { on = false; continue; }
+      if (on) ctx.lineTo(px(S.x[k]), y(v)); else ctx.moveTo(px(S.x[k]), y(v));
+      on = true;
+    }
+    ctx.stroke();
+  };
+  // V_Li⁺ through the whole cell, V_e⁻ in each host, each in its window
+  line('Li+', () => true, yLow, COL.li, 5);
+  line('e-', (r) => r === 0, yLow, COL.e, 5);
+  line('e-', (r) => r === 2, yHigh, COL.e, 5);
+  // labels
+  ctx.font = FONT(700, 24);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const ia = S.region.lastIndexOf(0), ic = S.region.indexOf(2), g = S.x.length - 1;
+  ctx.fillStyle = COL.li;
+  ctx.fillText('Li⁺', px(L) + 14, yLow(S.V['Li+'][g]));
+  ctx.fillStyle = COL.e;
+  ctx.fillText('e⁻', px(L) + 14, yHigh(S.V['e-'][g]));
+  ctx.textAlign = 'right';
+  ctx.fillText('e⁻', px(0) - 14, yLow(S.V['e-'][0]));
+  ctx.fillStyle = COL.muted;
+  ctx.font = FONT(500, 21);
+  ctx.textAlign = 'left';
+  ctx.fillText(`cell voltage ${S.terminalVoltage.toFixed(2)} V`, px(La + Ls) + 10, LV.top - 20);
+  // a key, in the space over the graphite and the electrolyte
+  ctx.textAlign = 'left';
+  ctx.font = FONT(600, 22);
+  ctx.fillStyle = COL.e;
+  ctx.fillText('electrons', px(0) + 16, LV.top + 26);
+  ctx.fillStyle = COL.li;
+  ctx.fillText('lithium ions', px(0) + 16, LV.top + 56);
+  ctx.fillStyle = COL.muted;
+  ctx.font = FONT(400, 20);
+  ctx.fillText('each line’s slope drives its current', px(0) + 16, LV.top + 86);
+  // the plating margin at the graphite's surface
+  const m = run.margin;
+  if (m < 0.03) {
+    const x = px(La), y0 = yLow(S.V['e-'][ia]), y1 = yLow(S.V['Li+'][ia + 1]);
+    ctx.strokeStyle = COL.warn;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.arc(x, (y0 + y1) / 2, 34, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = COL.warn;
+    ctx.font = FONT(600, 20);
+    ctx.textAlign = 'left';
+    ctx.fillText('red above blue here: lithium metal forms', x + 44, (y0 + y1) / 2 - 40);
+  }
+  ctx.textAlign = 'center';
+  ctx.font = FONT(600, 22);
+  ctx.fillStyle = COL.muted;
+  ctx.fillText('the same cell as energy levels (species voltages)', (px(0) + px(L)) / 2, LV.bottom + 30);
+}
+
+function drawText(run, alpha) {
+  const ph = PHASES[run.phase], [head, sub] = CAPTIONS[ph.key], inv = inventory(sol(run));
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = COL.ink;
+  ctx.font = FONT(800, 60);
+  ctx.fillText(head, 70, 120);
+  ctx.font = FONT(400, 31);
+  ctx.fillStyle = COL.muted;
+  wrap(sub, 940).forEach((t, k) => ctx.fillText(t, 70, 172 + 42 * k));
+  ctx.globalAlpha = 1;
+  // the battery gauge
+  const gx = 830, gy = 1235, gw = 150, gh = 62, soc = Math.max(0, Math.min(1, inv.soc));
+  ctx.strokeStyle = COL.ink;
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(gx, gy, gw, gh, 10); ctx.stroke();
+  ctx.fillStyle = COL.ink;
+  ctx.fillRect(gx + gw + 2, gy + gh / 2 - 12, 8, 24);
+  ctx.fillStyle = soc < 0.15 ? COL.warn : '#2e9e5b';
+  ctx.fillRect(gx + 7, gy + 7, (gw - 14) * soc, gh - 14);
+  ctx.fillStyle = COL.ink;
+  ctx.font = FONT(700, 30);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.round(100 * soc)}%`, gx - 18, gy + gh / 2);
+  const C = run.I / (Q / 3600);
+  ctx.textAlign = 'left';
+  ctx.font = FONT(500, 26);
+  ctx.fillStyle = COL.muted;
+  const rate = Math.abs(C) < 1e-3 ? 'at rest' : C > 0 ? `charging at ${C.toFixed(1)} C: a full charge in ${fmtTime(60 / C)}` : `discharging at ${(-C).toFixed(1)} C`;
+  ctx.fillText(rate, 70, gy + gh / 2);
+}
+const fmtTime = (min) => (min >= 90 ? `${(min / 60).toFixed(min >= 600 ? 0 : 1)} h` : `${Math.round(min)} min`);
+
+function draw(run, alpha = 1) {
+  ctx.fillStyle = COL.bg;
+  ctx.fillRect(0, 0, W, H);
+  drawCell(run);
+  drawLevels(run);
+  drawText(run, alpha);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Playing it. In a film (?film), frames are drawn on request, one per call of window.frame(k), at
+// 30 per second; otherwise it plays live and loops.
+const params = new URLSearchParams(location.search), FILM = params.has('film'), FPS = 30;
+setup();
+if (!FILM) addEventListener('resize', setup);
+await document.fonts.load(FONT(800, 60));
+
+// A dry run first, to time each phase in simulated seconds.
+const plan = (() => {
+  const run = makeRun(), sims = [];
+  for (let k = 0; k < PHASES.length; k++) {
+    enter(run, k);
+    const t0 = run.dev.solver.time, ph = PHASES[k];
+    const horizon = ph.sim ?? 20 * 3600;
+    while (!advance(run, Math.min(t0 + horizon, run.dev.solver.time + 600)) && run.dev.solver.time < t0 + horizon);
+    sims.push(run.dev.solver.time - t0);
+  }
+  return sims;
+})();
+
+let run, frames = [], last = -1;
+function reset() {
+  run = makeRun();
+  random = rng(7);
+  clock = 0;
+  lithReset(sol(run));
+  enter(run, 0);
+  frames = [];
+  let f = 0;
+  PHASES.forEach((ph, k) => { const n = Math.round(ph.secs * FPS); for (let j = 1; j <= n; j++) frames.push({ k, t: (j / n) * plan[k], f: f++ }); });
+  last = -1;
+}
+reset();
+
+// Frame k: the run moves on to it, the dots step by as long, and the picture is drawn.
+function frame(k) {
+  if (k < last) reset();
+  for (let j = last + 1; j <= k; j++) {
+    const fr = frames[j];
+    if (fr.k !== run.phase) {
+      enter(run, fr.k);
+      run.ended = false;
+    }
+    const t0 = run.dev.solver.time, I = run.I;
+    if (!run.ended) run.ended = advance(run, run.phaseT + fr.t);
+    if (run.ended && run.I !== 0) setI(run, 0); // a phase ended early: the current off till the next
+    lithStep(sol(run));
+    clock += 1 / FPS;
+    // electrons round the wire, as fast as the charge they carry
+    run.wire = (run.wire ?? 0) + (2000 * I * (run.dev.solver.time - t0)) / Q;
+  }
+  last = k;
+  const fr = frames[k], n = Math.round(PHASES[fr.k].secs * FPS), into = frames.indexOf(fr) - frames.findIndex((x) => x.k === fr.k);
+  draw(run, Math.min(1, into / 8, (n - into) / 4));
+}
+window.reel = { frames: frames.length, frame, fps: FPS };
+if (!FILM) {
+  let start = performance.now();
+  const tick = (now) => {
+    let k = Math.floor(((now - start) / 1000) * FPS);
+    if (k >= frames.length) { start = now; k = 0; }
+    frame(k);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+} else frame(0);
+</script>
+</body>
+</html>
