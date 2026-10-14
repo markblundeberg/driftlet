@@ -87,7 +87,7 @@ const IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 };
 const E0 = { 'Na+': 50 * mV, 'K+': -77 * mV, 'Cl-': -54.387 * mV };
 const OUT = Object.fromEntries(['Na+', 'K+', 'Cl-'].map((s) => [s, IN[s] * Math.exp((z[s] * E0[s]) / VT)]));
 const G = { 'Na+': 1200, 'K+': 360, 'Cl-': 3 };
-const DA = 1e-11, D = (1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T)) - DA * IN['A-']) / (IN['Na+'] + IN['K+'] + IN['Cl-']);
+const RA = 0.5, D = 1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T)) / (IN['Na+'] + IN['K+'] + IN['Cl-'] + RA * IN['A-']), DA = RA * D;
 // Hodgkin and Huxley's channels, g times their density for Na⁺ and K⁺ (the leak as theirs).
 const channels = (g) => hodgkinHuxley({ T, area: am, g: { Na: g * G['Na+'], K: g * G['K+'], leak: G['Cl-'] } });
 const gates = channels(1).gates;
@@ -215,7 +215,7 @@ function draw() {
       const h = s.x[g + 1] - s.x[g];
       if (!(h > 0)) continue;
       let tot = 0;
-      for (const sp of ['K+', 'Na+', 'Cl-']) tot += (-(FARADAY * FARADAY) * D * 0.5 * (s.c[sp][g] + s.c[sp][g + 1]) * (s.V[sp][g + 1] - s.V[sp][g])) / (RT * h);
+      for (const sp of ['K+', 'Na+', 'Cl-', 'A-']) tot += (-(FARADAY * FARADAY) * (sp === 'A-' ? DA : D) * 0.5 * (s.c[sp][g] + s.c[sp][g + 1]) * (s.V[sp][g + 1] - s.V[sp][g])) / (RT * h);
       xm.push(50 * (s.x[g] + s.x[g + 1]));
       j.push(tot * Math.PI * a * a * 1e6);
     }

@@ -53,8 +53,8 @@
     conductance gated by m³h, n⁴ or nothing, from the voltage across the membrane at that point to the sea water
     outside. A cylinder of radius a has 2/a of membrane per volume of axoplasm. The sea water is held at its
     composition and at φ = 0: it's big enough that its resistance doesn't matter (Hodgkin and Huxley's assumption
-    too). The axoplasm is strictly neutral, its ions (K⁺ 400, Na⁺ 50, Cl⁻ 52 mM, and impermeant anions) diffusing
-    and drifting along x, with diffusivities that give Hodgkin and Huxley's resistivity, 35.4 Ω·cm. The
+    too). The axoplasm is strictly neutral, its ions (K⁺ 400, Na⁺ 50, Cl⁻ 52 mM, and large impermeant anions, at
+    about half the small ions' mobility, as isethionate and aspartate have) diffusing and drifting along x, with diffusivities that give Hodgkin and Huxley's resistivity, 35.4 Ω·cm. The
     concentrations put each ion's Nernst potential at their reversal potentials (Na⁺ +50, K⁺ −77, leak −54 mV)
     at 18.5 °C, their axon's temperature. The stimulus is K⁺ injected into the first millimetre for 0.2 ms.</p>
   <p>Nothing here is the cable equation, but it comes out. Where the membrane is depolarised, current flows on
@@ -67,8 +67,9 @@
     at 34.5 °C it still travels, peaking at −20 mV, and at 35 °C it dies out within a few centimetres: heat
     block. With 60% of the Na⁺ channels it slows to 15 m/s; with 40% it can't propagate at all.</p>
   <p>What the cable equation can't say is which ions carry the current. Along the axoplasm it's carried by every
-    ion in proportion to its conductivity: about 80% by K⁺, the most abundant, whatever crosses the membrane
-    (Na⁺ and Cl⁻, with one diffusivity and nearly one concentration here, carry equal shares). The Na⁺ that
+    ion in proportion to its conductivity: more than half (57%) by K⁺, the most abundant, and 28% by the large
+    anions, whatever crosses the membrane (Na⁺ and Cl⁻, with one diffusivity and nearly one concentration here,
+    carry 7% each). The Na⁺ that
     enters at the front mostly stays near where it came in, and the concentrations hardly change: by a few parts
     per million per spike in the giant axon, and about two in ten thousand in one of 10 µm, whose membrane
     is 24 times larger for its volume. The level diagram draws each ion's
@@ -94,8 +95,9 @@ const IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 };
 const E0 = { 'Na+': 50 * mV, 'K+': -77 * mV, 'Cl-': -54.387 * mV };
 const OUT = Object.fromEntries(['Na+', 'K+', 'Cl-'].map((s) => [s, IN[s] * Math.exp((z[s] * E0[s]) / VT0)]));
 const G = { 'Na+': 1200, 'K+': 360, 'Cl-': 3 }; // S/m² of membrane
-// The small ions' diffusivity, for a resistivity of 35.4 Ω·cm; the impermeant anions barely move.
-const DA = 1e-11, D = (1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T0)) - DA * IN['A-']) / (IN['Na+'] + IN['K+'] + IN['Cl-']);
+// The small ions' diffusivity, for a resistivity of 35.4 Ω·cm; the impermeant anions (isethionate,
+// aspartate) move at about half their mobility.
+const RA = 0.5, D = 1 / 0.354 / ((FARADAY * FARADAY) / (GAS_CONSTANT * T0)) / (IN['Na+'] + IN['K+'] + IN['Cl-'] + RA * IN['A-']), DA = RA * D;
 const Dof = { 'Na+': D, 'K+': D, 'Cl-': D, 'A-': DA };
 
 const axon = (p) => {
@@ -195,8 +197,8 @@ function draw() {
   // Along the axoplasm, each ion's current, −(z²F²Dc/RT) ∂V_i/∂x, between the nodes.
   const RT = GAS_CONSTANT * p.T, xm = xcm.slice(1).map((x, g) => (x + xcm[g]) / 2);
   const axial = (s) => xm.map((_, g) => (-(FARADAY * FARADAY) * Dof[s] * 0.5 * (sol.c[s][g] + sol.c[s][g + 1]) * (sol.V[s][g + 1] - sol.V[s][g])) / (RT * (sol.x[g + 1] - sol.x[g])));
-  const J = Object.fromEntries(['K+', 'Na+', 'Cl-'].map((s) => [s, axial(s)]));
-  const total = xm.map((_, g) => J['K+'][g] + J['Na+'][g] + J['Cl-'][g]);
+  const J = Object.fromEntries(['K+', 'Na+', 'Cl-', 'A-'].map((s) => [s, axial(s)]));
+  const total = xm.map((_, g) => J['K+'][g] + J['Na+'][g] + J['Cl-'][g] + J['A-'][g]);
   const IC = Vm.map((_, g) => {
     if (g === 0 || g === Vm.length - 1) return NaN;
     const div = (total[g] - total[g - 1]) / (sol.x[g + 1] - sol.x[g - 1]) * 2;
@@ -224,7 +226,7 @@ function draw() {
     xlabel: 'x along the axon (cm)', ylabel: 'current along the axon (µA)', xlim: [0, 100 * L],
     series: [
       { x: xm, y: total.map((v) => v * area), color: colors[6], width: 1.2, label: 'total' },
-      ...['K+', 'Cl-', 'Na+'].map((s) => ({ x: xm, y: J[s].map((v) => v * area), color: col(s), label: `carried by ${{ 'Na+': 'Na⁺', 'K+': 'K⁺', 'Cl-': 'Cl⁻' }[s]}` })),
+      ...['K+', 'A-', 'Cl-', 'Na+'].map((s) => ({ x: xm, y: J[s].map((v) => v * area), color: col(s), label: { 'Na+': 'by Na⁺', 'K+': 'by K⁺', 'Cl-': 'by Cl⁻', 'A-': 'large anions' }[s] })),
     ],
   });
   const ms = rec.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE);
