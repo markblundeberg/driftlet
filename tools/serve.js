@@ -19,11 +19,11 @@ export function findChrome() {
   return found;
 }
 
-// The repo on a free local port; resolves to the server.
-export function serve() {
+// The repo (or another folder) on a free local port; resolves to the server.
+export function serve(dir = root) {
   const server = createServer(async (req, res) => {
-    const path = join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname));
-    if (!path.startsWith(root)) return res.writeHead(403).end();
+    const path = join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (!path.startsWith(dir)) return res.writeHead(403).end();
     try {
       const body = await readFile(path);
       res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream' }).end(body);

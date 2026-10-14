@@ -3,24 +3,26 @@
 // every time, however long a frame takes to compute. Frames go straight into ffmpeg.
 //
 //   node tools/film.js battery [--from k] [--to k] [--png dir [--every n]]    (into films/out/)
+//   node tools/film.js --root ~/site films/x.html       (a page in another folder; into its films/out/)
 
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, basename } from 'node:path';
 import { root, serve, launch, connect } from './serve.js';
 
 const args = process.argv.slice(2);
-const name = (args[0] ?? 'battery').replace(/\.html$/, '');
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
+const dir = resolve(opt('--root', root)), first = args.find((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWith('--')) ?? 'battery';
+const page = first.endsWith('.html') ? first : `films/${first}.html`, name = basename(page, '.html');
 const W = 1080, H = 1350;
 
-const server = await serve();
+const server = await serve(dir);
 const base = `http://127.0.0.1:${server.address().port}`;
 const profile = await mkdtemp(join(tmpdir(), 'driftlet-film-'));
 const { chrome, url } = await launch(profile);
 const cdp = await connect(url);
-const outDir = join(root, 'films', 'out');
+const outDir = join(dir, 'films', 'out');
 await mkdir(outDir, { recursive: true });
 try {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
@@ -33,7 +35,7 @@ try {
   await cdp.send('Runtime.enable', {}, sessionId);
   await cdp.send('Page.enable', {}, sessionId);
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false }, sessionId);
-  await cdp.send('Page.navigate', { url: `${base}/films/${name}.html?film` }, sessionId);
+  await cdp.send('Page.navigate', { url: `${base}/${page}?film` }, sessionId);
   const run = async (expression) => {
     const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
