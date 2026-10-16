@@ -661,7 +661,7 @@ export class Solver {
     }
     this.res = new Float64Array(N + 1);
     this.delta = new Float64Array(N + 1);
-    this.rowScale = new Float64Array(N + 1).fill(1); // each row's scaling in the factorised system
+    this.rowDiv = new Float64Array(N + 1).fill(1); // what each row is divided by in the factorised system
   }
 
   _factor() {
@@ -3482,7 +3482,8 @@ export class Solver {
     if (b < nB - 1) sys.C.fill(0, sys.offC[b] + l * sz[b + 1], sys.offC[b] + (l + 1) * sz[b + 1]);
   }
 
-  // Scale every row by its largest Jacobian entry (in place, residual too).
+  // Scale every row by its largest Jacobian entry (in place, residual too), dividing by it: its
+  // reciprocal overflows where it's subnormal (a co-ion crowded out of a double layer, ~1e-310).
   _equilibrate() {
     const { nB, sys, res, termB } = this, live = this._liveTerms();
     const { A, B, C, sizes, offA, offB, offC, offX } = sys;
@@ -3495,16 +3496,16 @@ export class Solver {
         for (let k = 0; k < m; k++) mx = Math.max(mx, Math.abs(B[ob + k]));
         for (let k = 0; k < mn; k++) mx = Math.max(mx, Math.abs(C[oc + k]));
         if (mx === 0) {
-          this.rowScale[offX[b] + r] = 1;
+          this.rowDiv[offX[b] + r] = 1;
           continue;
         }
-        const s = 1 / mx;
-        this.rowScale[offX[b] + r] = s;
-        for (let k = 0; k < mp; k++) A[oa + k] *= s;
-        for (let k = 0; k < m; k++) B[ob + k] *= s;
-        for (let k = 0; k < mn; k++) C[oc + k] *= s;
-        res[offX[b] + r] *= s;
-        for (const k of live) termB[k][offX[b] + r] *= s; // (each terminal's ∂/∂V)
+        const d = mx;
+        this.rowDiv[offX[b] + r] = d;
+        for (let k = 0; k < mp; k++) A[oa + k] /= d;
+        for (let k = 0; k < m; k++) B[ob + k] /= d;
+        for (let k = 0; k < mn; k++) C[oc + k] /= d;
+        res[offX[b] + r] /= d;
+        for (const k of live) termB[k][offX[b] + r] /= d; // (each terminal's ∂/∂V)
       }
     }
   }
@@ -3536,7 +3537,7 @@ export class Solver {
   // solve's and leave refined (in the transformed unknowns, as _solveBordered gives them); false
   // if refining didn't help, leaving them as they came.
   _refine(dt, delta, deltaV) {
-    const { res, termRes, termB, termC, termDI, rowScale, floating: fl } = this;
+    const { res, termRes, termB, termC, termDI, rowDiv, floating: fl } = this;
     const N = this.sys.size, K = fl.length, pins = this.pins, R = this.rix;
     const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), transformed: this.transformed, pinRes: this.pins.map((p) => p.res) };
     const restoreArrays = () => {
@@ -3568,7 +3569,7 @@ export class Solver {
       for (let j = 0; j < N; j++) {
         let t = jv[j];
         for (let a = 0; a < K; a++) t += Bk[a][j] * x[N + a];
-        out[j] = t * rowScale[j];
+        out[j] = t / rowDiv[j];
       }
       for (let a = 0; a < K; a++) {
         let t = Dk[a] * x[N + a];

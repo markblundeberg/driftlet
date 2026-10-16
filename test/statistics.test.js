@@ -433,3 +433,31 @@ test('a host fed by a wire port starts at its own OCV, read before any step (not
   assert.ok(Math.abs(host(-1e-10).solution().terminals.wire.V - ocv) < 1e-9);
   assert.ok(Math.abs(host(0).solve().terminals.wire.V - ocv) < 1e-9);
 });
+
+test('a crowded double layer across ~370 thermal voltages solves: its co-ion, ~1e-315 mol/m³ and subnormal, scales its rows without overflow', () => {
+  const dev = new Device({
+    species: [{ name: '+', z: 1 }, { name: '-', z: -1 }],
+    materials: {
+      el: {
+        epsr: 78.3,
+        species: { '+': { D: 1e-9, cRef: 1000, mu0: 0 }, '-': { D: 1e-9, cRef: 1000, mu0: 0 } },
+        statistics: [{ type: 'lattice', species: ['+', '-'], cMax: 5000 }],
+      },
+    },
+    regions: [{ name: 'bath', material: 'el', length: 2e-8, c0: { '+': 100, '-': 100 }, grid: { hmin: 5e-11, hmax: 1e-9, ratio: 1.05 } }],
+    contacts: {
+      left: { V: 0, phi: 'pinned', zeroCharge: 0 },
+      right: { V: 0, phi: 'neutral', terminal: '+', species: { '+': 'equilibrium', '-': { type: 'equilibrium', offset: 0 } } },
+    },
+  });
+  let sol;
+  for (const V of [2, 4, 6, 8, 9, 9.2, 9.3, 9.4, 9.5]) {
+    dev.set({ contacts: { left: { V } } });
+    sol = dev.solve();
+    assert.ok(sol.converged, `${V} V: ${sol.warnings.join('; ')}`);
+  }
+  // (1/max for a row's largest entry overflowed below 5.6e-309: the solve failed past 9.25 V)
+  assert.ok(Math.min(...sol.c['+']) < 1e-310);
+  // The anions crowd to the lattice's capacity at the electrode.
+  assert.ok(Math.abs(sol.c['-'][0] / 5000 - 1) < 1e-6);
+});

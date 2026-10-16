@@ -3,6 +3,17 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+Fixes from a second outside review by Gemini 4 Argon (in Antigravity, running its own scripts),
+each finding rerun and checked before it was taken.
+
+- A double layer across more than ~360 thermal voltages (9.25 V at 25 °C, in a crowded
+  lattice-gas electrolyte) didn't solve, and its warning didn't say why: its co-ion, crowded out
+  to ~1e-310 mol/m³, made a row whose largest entry was subnormal, and scaling the row by that
+  entry's reciprocal overflowed to Infinity. Rows are divided by it now. The same layer solves to
+  12 V and beyond, past where the co-ion underflows to zero.
+
 ## 1.1.0 (2026-10-16)
 
 - `semiconductor(name, { T })` takes a temperature, 150 to 500 K, where it was refused: the gap
