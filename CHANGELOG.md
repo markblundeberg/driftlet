@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.1.0 (2026-10-16)
 
 - `semiconductor(name, { T })` takes a temperature, 150 to 500 K, where it was refused: the gap
   moves by Varshni's shift from 300 K, N_c and N_v as T^1.5, and the mobilities by
