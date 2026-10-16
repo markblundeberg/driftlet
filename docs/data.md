@@ -53,14 +53,16 @@ with that reaction should hold too.
   Fe³⁺ and Fe²⁺ gives $`E^\circ(\mathrm{Fe}^{3+}/\mathrm{Fe}^{2+})`$ = 0.769 V, against the
   tabulated 0.771 V, which is what a Fe³⁺/Fe²⁺ redox demo needs.
 
-## Semiconductors, 300 K
+## Semiconductors, 300 K and other temperatures
 
-`semiconductor(name, { material })` returns electrons `e-` and holes `h+` and the material:
-$`c_{\mathrm{ref}} = N_c`$ and $`N_v`$, D from the mobilities by the Einstein relation at 300 K,
+`semiconductor(name, { material, T })` returns electrons `e-` and holes `h+` and the material:
+$`c_{\mathrm{ref}} = N_c`$ and $`N_v`$, D from the mobilities by the Einstein relation at T,
 $`\mu^\circ_{\mathrm{e}^-} = 0`$ (so $`\phi`$ sits at the conduction band) and
-$`\mu^\circ_{\mathrm{h}^+} = E_g \cdot F`$. The data are for 300 K, so give the device `T: 300`.
-Statistics are ideal (Boltzmann); add Fermi–Dirac statistics to the material for degenerate
-doping. The data are in `SEMICONDUCTORS`, in the source's units (cm⁻³, cm²/(V·s), eV).
+$`\mu^\circ_{\mathrm{h}^+} = E_g \cdot F`$. The table is for 300 K, the default; `T` (150 to 500 K)
+moves it as [below](#at-other-temperatures). Give the device the same `T`: the material's D and
+$`E_g`$ are for the T it was made at, and the device can't tell. Statistics are ideal
+(Boltzmann); add Fermi–Dirac statistics to the material for degenerate doping. The data are in
+`SEMICONDUCTORS`, in the source's units (cm⁻³, cm²/(V·s), eV).
 
 | | $`\varepsilon_r`$ | $`E_g`$ (eV) | $`\chi`$ (V) | $`N_c`$ (cm⁻³) | $`N_v`$ (cm⁻³) | $`\mu_n`$ (cm²/(V·s)) | $`\mu_p`$ (cm²/(V·s)) |
 |---|---|---|---|---|---|---|---|
@@ -77,6 +79,36 @@ doping. The data are in `SEMICONDUCTORS`, in the source's units (cm⁻³, cm²/(
   Sze quotes 1.45 × 10¹⁰ (an older measurement), and the accepted value is 9.65 × 10⁹. The
   library keeps the band data self-consistent rather than matching a quoted $`n_i`$. For Ge and
   GaAs, the data reproduce the quoted $`n_i`$ (2.4 × 10¹³ and 1.79 × 10⁶) to within 10–15%.
+
+### At other temperatures
+
+With `T`, each 300 K number moves by a standard temperature law:
+
+- **Band gap**, by Varshni's form $`E_g(T) = E_{g0} - \alpha T^2/(T + \beta)`$ (Varshni, Physica 34,
+  149, 1967), with Thurmond's parameters as tabulated by Sze (Thurmond, J. Electrochem. Soc. 122,
+  1133, 1975). Only the shift from 300 K is used, on the table's gap,
+  $`E_g(T) = E_g^{\text{table}} + [E_g^{\text{V}}(T) - E_g^{\text{V}}(300\ \mathrm{K})]`$, so that 300 K is the
+  table exactly. Varshni's own value at 300 K differs from the table by a few meV.
+- **$`N_c`$ and $`N_v`$** $`\propto T^{3/2}`$, from parabolic bands with fixed effective masses.
+- **Mobilities**, by the power laws for scattering by lattice vibrations,
+  $`\mu \propto T^{-\gamma}`$ (Sze, ch. 1). They are approximate and hold for lightly doped material.
+  Where scattering by ionized impurities matters (heavy doping, or the cold end of the range), the real
+  mobility is lower and rises less on cooling. D is then $`\mu kT/q`$ at T, so it falls more slowly
+  than μ.
+- **Electron affinity** $`\chi`$ and **$`\varepsilon_r`$** stay at their 300 K values.
+
+| | $`E_{g0}`$ (eV) | $`\alpha`$ (10⁻⁴ eV/K) | $`\beta`$ (K) | Varshni at 300 K (eV) | $`\gamma_n`$ | $`\gamma_p`$ |
+|---|---|---|---|---|---|---|
+| Si | 1.170 | 4.73 | 636 | 1.1245 | 2.42 | 2.20 |
+| Ge | 0.7437 | 4.774 | 235 | 0.6634 | 1.66 | 2.33 |
+| GaAs | 1.519 | 5.405 | 204 | 1.4225 | 1.0 | 2.1 |
+
+Outside 150–500 K the call is refused: Varshni's fits and the lattice-limited mobilities are
+not meant for the cold, where impurities and freeze-out take over. With these laws, silicon's
+$`n_i`$ grows 8.3% per kelvin near room temperature. In the tests, a silicon cell's
+open-circuit voltage falls 2.14 mV/K at 300 K. That lies within Green's
+$`\mathrm{d}V_{oc}/\mathrm{d}T = -(E_{g0}/q - V_{oc} + \gamma kT/q)/T`$ for the 1.5 ≤ γ ≤ 3 that
+its transport allows, and the γ = 1.67 it implies matches its two parts of $`J_0`$.
 
 ## Metals, 20 °C
 

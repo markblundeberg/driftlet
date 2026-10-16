@@ -5,6 +5,12 @@ major version.
 
 ## Unreleased
 
+- `semiconductor(name, { T })` takes a temperature, 150 to 500 K, where it was refused: the gap
+  moves by Varshni's shift from 300 K, N_c and N_v as T^1.5, and the mobilities by
+  lattice-limited power laws (light doping), with D = μkT/q at T. At 300 K, or with no T, it
+  returns the table exactly, as before. Checked against a silicon cell's open-circuit voltage,
+  which falls 2.14 mV/K at 300 K, within Green's dV_oc/dT = −(E_g0/q − V_oc + γkT/q)/T for its
+  transport's γ (it implies γ = 1.67, against 1.66 from its two parts of J_0).
 - The kit's `trap()` writes a trap level that holds charge: its two states as immobile species,
   filled and emptied by capture, from the `srh` law's `{ tauN, tauP, n1 }` and a density. In
   steady state it recombines at the same rate, and its charge is in Poisson's equation, which

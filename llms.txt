@@ -73,7 +73,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   are regions (give one a `name` to refer to it), and any other object between two layers is
   the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works.
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
-  300 K), `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water, at 25
+  300 K; `semiconductor('Si', { T: 350 })` moves them, 150–500 K, for a device at that `T`),
+  `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water, at 25
   °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
   Li Pt), all from `driftlet/kit`. A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si`
   (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the
@@ -172,7 +173,7 @@ import { Device, units } from 'driftlet';
 import { build, layer, ohmic, semiconductor, describe } from 'driftlet/kit';
 
 const def = build({
-  T: 300, // the library's semiconductor data are for 300 K
+  T: 300, // the library's semiconductor data are for 300 K, unless semiconductor('Si', { T })
   library: [semiconductor('Si')],
   stack: [
     ohmic(0), // e⁻ and h⁺ in equilibrium with a metal at 0 V
@@ -647,7 +648,8 @@ those:
 - **Unit slips.** D in cm²/s, μ° in eV, µF/cm², mS/cm², T in °C. `describe(def)` flags them.
 - **A couple's μ° with the wrong sign** solves happily at −E° for +E°: μ°_red − μ°_ox = −F·E°.
   Check the rest potential against E°, as the stirred-solution template does.
-- **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`). At body
+- **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`, or the
+  same `T` to `semiconductor(name, { T })`, which moves the gap, N_c, N_v and the mobilities). At body
   temperature the same μ° and D are a fair start; D rises about 2% per kelvin in water.
 - **A steady solve of a closed cell where every ion can cross**: its steady state is complete
   mixing. To watch a junction or a salt bridge, `advance()` from the unmixed `c0`.
