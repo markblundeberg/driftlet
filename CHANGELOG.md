@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.1.1 (2026-10-16)
 
 Fixes from a second outside review by Gemini 4 Argon (in Antigravity, running its own scripts),
 each finding rerun and checked before it was taken.
