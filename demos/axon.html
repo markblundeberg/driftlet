@@ -59,17 +59,21 @@
     beyond that, the membrane, and 20 µm of axoplasm, closed at its far end. Both solutions are strictly
     neutral; the membrane is a capacitor (1 µF/cm²) whose charge sits in the solutions beside it. The
     concentrations are a squid axon's (mM, outside / inside: Na⁺ 440 / 50, K⁺ 20 / 400, Cl⁻ 450 / 52, with
-    anions that don't cross making up the rest). The stimulus is K⁺ injected into the axoplasm from 15 µm in,
+    anions that don't cross making up the rest; sea water's Mg²⁺ and Ca²⁺ are left out, so there's less Cl⁻
+    than its 560 mM or so). The stimulus is K⁺ injected into the axoplasm from 15 µm in,
     as from a micropipette, for 1 ms each time.</p>
   <p>The channels are Hodgkin and Huxley's (1952), from their voltage-clamp measurements at 6.3 °C: the Na⁺
     channel open with probability m³h and the K⁺ channel with n⁴, each gate relaxing toward its own
     voltage-dependent level at its own rate. They're gates on the membrane's permeabilities, so each ion still
     crosses by electrodiffusion in the field across the membrane (Goldman–Hodgkin–Katz), down its own
     electrochemical potential, rather than through Hodgkin and Huxley's linear conductances. Those differ, so
-    the permeabilities are the ones that give their conductances (Na⁺ 120, K⁺ 36 mS/cm², and their leak,
-    0.3 mS/cm², carried here by Cl⁻) at rest, −65 mV. GHK's currents rectify: the Na⁺ current at positive
-    voltages is limited by the 50 mM of Na⁺ inside, so the spike peaks near +12 mV rather than the +40 mV
-    of Hodgkin and Huxley's linear version. Matched instead where each channel opens, the rest destabilizes
+    the permeabilities are the ones that, fully open at rest (−65 mV), give their maximum conductances
+    (Na⁺ 120, K⁺ 36 mS/cm², and their leak, 0.3 mS/cm², carried here by Cl⁻). GHK's currents rectify, each
+    ion conducting more easily from the side where it's plentiful: at +12 mV, Na⁺'s conductance is two thirds
+    of its value at rest and K⁺'s is double, so the spike peaks near +12 mV rather than the +40 mV of
+    Hodgkin and Huxley's linear version. A real squid spike overshoots to about +40 mV, and Hodgkin and
+    Huxley found their open channels' instantaneous currents nearly linear in the voltage, so the smaller spike here is a
+    cost of treating the channels by electrodiffusion. Matched instead where each channel opens, the rest destabilizes
     and the axon fires on its own: the two models can't agree at every voltage. Warmer, every gate runs
     faster (three times for each 10 °C, as they measured), and the spike gets briefer and smaller, as K⁺
     channels and Na⁺ inactivation catch up with Na⁺ activation: a 1 ms stimulus must be stronger to fire it,
@@ -91,7 +95,7 @@
     each spike adds about 3.5 mM (some 13 pmol/cm² of K⁺ leaves per spike in this model; they put it at
     about 1.6 mM a spike), and K⁺ just outside the membrane sits at 24 mM even at rest, where it leaks out
     steadily. E<sub>K</sub>, which counts only the concentrations either side of the membrane, follows it:
-    the rest depolarises by a few millivolts, and each spike's undershoot is shallower than the last, as
+    the rest depolarizes by a few millivolts, and each spike's undershoot is shallower than the last, as
     they saw. In the level diagram, zoomed onto the space, K⁺'s line steps up across the barrier: the
     driving force that clears it. Nothing in Hodgkin and Huxley's equations, which take E<sub>K</sub> as
     fixed, can do this.</p>

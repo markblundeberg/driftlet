@@ -214,7 +214,7 @@ for (let k = 1; k <= 300; k++) {
   const sol = axon.advance(k * 1e-4); // 0.1 ms at a time
   peak = Math.max(peak, sol.interfaces[0].V); // V_m, and sol.interfaces[0].gates = { m, h, n }
 }
-console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // +12.6: GHK's Na⁺ current is limited by the 50 mM inside (linear: true gives +37.9, HH's own)
+console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // +12.6: GHK's currents rectify; matched at rest, at positive V Na⁺'s conductance is lower and K⁺'s higher (linear: true gives +37.9, HH's own)
 ```
 
 ## an action potential travelling along an axon
