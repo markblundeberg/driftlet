@@ -144,6 +144,31 @@ test('a species denser than any material is warned of', () => {
 // circuit with a fast couple and a slow one, fed through a slow transfer at a face, settling
 // 20–80 mV apart by the listing, each converged without a warning); check() now makes it too.
 test('check() solves the device again with its species listed in reverse, and fails where that differs', () => {
+  // A solve made to land 1 mV off when the species come reversed stands in for one that isn't
+  // steady (the fuzzer's devices that did it are fixed).
+  const dev = new Device(solar(0.5)), first = dev.def.species[0].name, solve = Device.prototype.solve;
+  Device.prototype.solve = function (...args) {
+    const sol = solve.apply(this, args);
+    if (this.def.species[0].name !== first) for (const t of Object.values(sol.terminals)) t.V += 1e-3;
+    return sol;
+  };
+  let item;
+  try {
+    item = check(dev, dev.solve(), { tol: 1 }).items.find((it) => it.name === 'order');
+  } finally {
+    Device.prototype.solve = solve;
+  }
+  assert.ok(item && item.ok === false && /different steady state/.test(item.summary), item?.summary);
+  // A device that solves the same either way passes it.
+  const fine = new Device(solar(0.5));
+  const ok = check(fine, fine.solve(), { tol: 1 }).items.find((it) => it.name === 'order');
+  assert.ok(ok?.ok === true, ok?.summary);
+});
+
+// The fuzzer's F5 itself: 4 mV apart by the listing (0.274922 and 0.271016 V) while the contact
+// and flat-stretch rows added a level's low part to its high part before subtracting the target,
+// which rounds the low part away. They subtract first now, and it's the same either way.
+test('an electrode at open circuit with a fast couple and a slow one, fed through a slow face: the same steady state in either listing', () => {
   const water = { epsr: 0, species: { 'B-': { D: 1e-9, mu0: 0 }, 'C2+': { D: 1e-9, mu0: 0 } } };
   const c0 = { 'B-': 474.7252163975241, 'C2+': 237.36260819876205 };
   const d = new Device({
@@ -159,11 +184,7 @@ test('check() solves the device again with its species listed in reverse, and fa
     grid: { hmin: 1e-7, hmax: 3e-7 },
   });
   const report = check(d, d.solve()), item = report.items.find((it) => it.name === 'order');
-  assert.ok(item && item.ok === false && !report.ok, report.text);
-  // A device that solves the same either way passes it.
-  const fine = new Device(solar(0.5));
-  const ok = check(fine, fine.solve(), { tol: 1 }).items.find((it) => it.name === 'order');
-  assert.ok(ok?.ok === true, ok?.summary);
+  assert.ok(item?.ok === true, item?.summary);
 });
 
 test('check(): a diode passing a small current has ledgers, not equilibrium (balanced flows count however small)', () => {

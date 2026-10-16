@@ -16,6 +16,11 @@ each finding rerun and checked before it was taken.
   +2870, and its low-frequency step two decades off; it matches to 0.2% now. A blocking
   electrode in a crowded electrolyte had a negative real part at 1 mHz; it's positive, and a
   lattice gas with a vast site density matches ideal ions to six digits in Im Z.
+- The extra precision kept for each level (its low part, `uLo`) never reached a contact's row
+  or a flat stretch's: they computed u + uLo − target, and u + uLo rounds to u. They subtract
+  first now. An electrode at open circuit with a fast couple and a slow one (round 11's F5),
+  whose steady states were 4 mV apart by the species' listing, now gives the same in both,
+  its ledger closing to 4e-16. check()'s order test is now tested on a solve made to differ.
 - A double layer across more than ~360 thermal voltages (9.25 V at 25 °C, in a crowded
   lattice-gas electrolyte) didn't solve, and its warning didn't say why: its co-ion, crowded out
   to ~1e-310 mol/m³, made a row whose largest entry was subnormal, and scaling the row by that

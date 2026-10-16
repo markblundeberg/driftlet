@@ -118,9 +118,13 @@ for live demos.
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20
-     of its gross. Steady solves converge silently to states 20–80 mV off (and different in
+     of its gross. Steady solves converged silently to states 20–80 mV off (and different in
      each listing of the species), their terminal currents not adding up by ~3e-13 A/m², which
-     is about the fast couple's round-off. Found by round 11's fuzzer (its F5).
+     is about the fast couple's round-off. Found by round 11's fuzzer (its F5). Since 1.1.1 (the
+     contact and flat-stretch rows keep a level's low part) its two listings agree to round-off
+     and its ledger closes to 4e-16, where they were 4 mV apart; with rates down to k0 1e-20,
+     whether that's the steady state can't be checked by advance(), which drifts ~20 mV a
+     decade out to 1e14 s.
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

@@ -3085,7 +3085,7 @@ export class Solver {
       const r = 1 + i, target = this.portEta(port, i), zF = z[i] * F;
       for (const g of port.nodes) {
         const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
-        const deta = target - (u[o] + uLo[o]); // (μ̄_out − μ̄)/RT
+        const deta = target - u[o] - uLo[o]; // (μ̄_out − μ̄)/RT
         if (link.type === 'equilibrium') {
           // a device end node's level is its contact's business, where the contact links it
           if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
@@ -3330,7 +3330,7 @@ export class Solver {
       const link = ct.species[i];
       const o = b * M + 1 + i;
       if (link.type === 'exchange') {
-        res[R[o]] -= Ac * link.k * (link.mu / model.RT - (u[o] + uLo[o]));
+        res[R[o]] -= Ac * link.k * (link.mu / model.RT - u[o] - uLo[o]);
         this._j(b, 1 + i, b, 1 + i, Ac * link.k);
       } else if (link.type === 'conductance') {
         const Vi = (VT * (u[o] + uLo[o])) / z[i];
@@ -3339,7 +3339,7 @@ export class Solver {
         B[R[o]] += (-Ac * link.G) / (z[i] * F);
       } else if (link.type === 'velocity') {
         // N_in = v c (e^(η_out − η) − 1): v (c_eq − c), c_eq in equilibrium with the outside.
-        const ci = c[g * n + i], E = Math.exp(Math.min(this.contactEta(side, i) - (u[o] + uLo[o]), 700));
+        const ci = c[g * n + i], E = Math.exp(Math.min(this.contactEta(side, i) - u[o] - uLo[o], 700));
         const N = Ac * link.v * ci * (E - 1), d = this.dA;
         res[R[o]] -= N;
         d.fill(0);
@@ -3357,7 +3357,7 @@ export class Solver {
       const o = b * M + 1 + i;
       this._replaceRow(b, 1 + i);
       this._j(b, 1 + i, b, 1 + i, 1);
-      res[R[o]] = u[o] + uLo[o] - this.contactEta(side, i);
+      res[R[o]] = u[o] - this.contactEta(side, i) + uLo[o]; // (the big terms first: u + uLo rounds to u)
       if (z[i] !== 0) B[R[o]] += -z[i] / VT;
     }
 
@@ -3396,7 +3396,7 @@ export class Solver {
       if (link.type === 'pinned') {
         // φ_edge = V_t − zeroCharge (the C → ∞ limit).
         this._j(b, 0, b, 0, 1);
-        res[R[b * M]] = u[b * M] + uLo[b * M] - (Vt - link.zeroCharge) / VT;
+        res[R[b * M]] = u[b * M] - (Vt - link.zeroCharge) / VT + uLo[b * M];
         B[R[b * M]] += -1 / VT;
       } else {
         // Plain bulk: local neutrality.
@@ -3458,14 +3458,14 @@ export class Solver {
     const { M, u, uLo, res, z, VT, model } = this, R = this.rix;
     for (const st of this.flatStretches) {
       const i = st.species, open = st.leftOpen || st.rightOpen;
-      const { k, hi, lo } = this._flatLevel(st), level = hi + lo;
+      const { k, hi, lo } = this._flatLevel(st);
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
         const b = this.blockOfNode[g], o = b * M + 1 + i;
         if (this.loc[o] < 0) continue;
         this._replaceRow(b, 1 + i);
         for (const B of this.termB) B[R[o]] = 0; // (the row's old terminal terms: the end node's own link)
         this._j(b, 1 + i, b, 1 + i, 1);
-        res[R[o]] = u[o] + uLo[o] - level;
+        res[R[o]] = u[o] - hi + (uLo[o] - lo); // (the big terms first: hi + lo rounds to hi)
         if (open && z[i] !== 0) this.termB[k][R[o]] += -z[i] / VT;
       }
       // A face inside the stretch whose link holds the level continuous carries the species' flux
