@@ -8,6 +8,14 @@ major version.
 Fixes from a second outside review by Gemini 4 Argon (in Antigravity, running its own scripts),
 each finding rerun and checked before it was taken.
 
+- The impedance with non-ideal statistics (Fermi–Dirac, lattice, Debye–Hückel, regular
+  solutions) lost its small currents to round-off: those regions' storage and fluxes were
+  assembled directly, where ideal ones are kept in difference form for an exact J·v, and their
+  segments weren't cuts where the current could be read. A Fermi–Dirac MOS capacitor in
+  inversion, its surface only 0.03 N_C, had Re Z = −10.8 Ω·m² against its Boltzmann twin's
+  +2870, and its low-frequency step two decades off; it matches to 0.2% now. A blocking
+  electrode in a crowded electrolyte had a negative real part at 1 mHz; it's positive, and a
+  lattice gas with a vast site density matches ideal ions to six digits in Im Z.
 - A double layer across more than ~360 thermal voltages (9.25 V at 25 °C, in a crowded
   lattice-gas electrolyte) didn't solve, and its warning didn't say why: its co-ion, crowded out
   to ~1e-310 mol/m³, made a row whose largest entry was subnormal, and scaling the row by that

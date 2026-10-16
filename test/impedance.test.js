@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError, units } from '../src/index.js';
-import { build, layer, ohmic, bath, aqueous, metal, half, semiconductor } from '../src/kit.js';
+import { build, layer, ohmic, bath, aqueous, metal, half, semiconductor, H2O } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 const VT = RT / FARADAY;
@@ -236,4 +236,69 @@ test('profiles are NaN where a solution\'s are: no concentration inside a metal'
     sol.c[name].forEach((v, g) => assert.equal(Number.isNaN(pr.c[name].re[g]), Number.isNaN(v), `${name} at node ${g}: ${pr.c[name].re[g]} vs ${v}`));
   }
   sol.phi.forEach((v, g) => assert.equal(Number.isNaN(pr.phi.re[g]), Number.isNaN(v), `φ at node ${g}`));
+});
+
+test('a MOS capacitor in inversion with Fermi–Dirac statistics has the impedance of its Boltzmann twin where it isn\'t degenerate (non-ideal kernels in difference form)', () => {
+  const tox = units.nm(20), Cox = (3.9 * EPS0) / tox;
+  const mos = (fd) => {
+    const si = semiconductor('Si');
+    si.materials.Si.species['e-'].mu0 -= FARADAY * 0.3;
+    si.materials.Si.species['h+'].mu0 += FARADAY * 0.3;
+    if (fd) si.materials.Si.statistics = [{ type: 'fermi-dirac', species: ['e-'] }, { type: 'fermi-dirac', species: ['h+'] }];
+    const dev = new Device(build({
+      T: 300,
+      library: [si, metal('Au')],
+      materials: { SiO2: { epsr: 3.9, species: {} } },
+      stack: [
+        ohmic(0),
+        layer('Si', units.um(15), { acceptors: units.perCm3(1e16) }),
+        { dipole: -0.3 },
+        layer('SiO2', tox, { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }),
+        { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.7 },
+        layer('Au', units.nm(50)),
+        ohmic(0, ['e-']),
+      ],
+      bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }],
+      grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+    }));
+    dev.set({ contacts: { right: { V: 0.6 } } });
+    dev.solve();
+    return dev;
+  };
+  // Its surface holds 0.03 N_C, so the two agree to ~1%; the minority carriers' response sets
+  // the step from C_ox-like to depletion near 0.1 Hz.
+  const f = [1e-3, 0.1, 10];
+  const zb = mos(false).impedance(f), zf = mos(true).impedance(f);
+  for (let k = 0; k < f.length; k++) {
+    const cb = -1 / (2 * Math.PI * f[k] * zb.Z.im[k]) / Cox, cf = -1 / (2 * Math.PI * f[k] * zf.Z.im[k]) / Cox;
+    assert.ok(Math.abs(cf / cb - 1) < 0.01, `${f[k]} Hz: C/C_ox ${cf} against ${cb}`);
+    assert.ok(zf.Z.re[k] > 0 && Math.abs(zf.Z.re[k] / zb.Z.re[k] - 1) < 0.01, `${f[k]} Hz: Re Z ${zf.Z.re[k]} against ${zb.Z.re[k]}`);
+  }
+});
+
+test('a blocking electrode in a crowded or Debye–Hückel electrolyte: the real part stays positive at 1 mHz, read across interior cuts as for ideal ions', () => {
+  const run = (statistics) => {
+    const aq = aqueous(['Na+', 'Cl-', 'H+', 'OH-']);
+    if (statistics) aq.materials.water.statistics = [statistics];
+    const dev = new Device(build({
+      T: 298.15,
+      library: [aq],
+      stack: [
+        { V: 0.5, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 },
+        layer('water', 1e-5, { c0: { 'Na+': 10, 'Cl-': 10, 'H+': 1e-4, 'OH-': 1e-4 } }),
+        bath({ 'Na+': 10, 'Cl-': 10, 'H+': 1e-4, 'OH-': 1e-4 }),
+      ],
+      bulkReactions: [{ equation: 'H2O = H+ + OH-', fixed: { H2O }, kf: { water: 1e-2 } }],
+      grid: { hmin: 1e-10, hmax: 1e-7, ratio: 1.1 },
+    }));
+    dev.solve();
+    return dev.impedance([1e-3, 1e3]);
+  };
+  const ideal = run(null);
+  for (const st of [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: 5000 }, { type: 'debye-huckel', species: ['Na+', 'Cl-', 'H+', 'OH-'] }]) {
+    const z = run(st);
+    // (|Z| is ~900 Ω·m² at 1 mHz: its real part, ~1e-4, was −0.13, ~1e-4 of |Z| and negative)
+    assert.ok(z.Z.re[0] > 0 && z.Z.re[0] < 3 * ideal.Z.re[0], `${st.type}: Re Z ${z.Z.re[0]} at 1 mHz`);
+    assert.ok(z.Z.im[0] < 0); // (a capacitor; crowding changes how much)
+  }
 });

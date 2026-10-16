@@ -450,8 +450,8 @@ The assembled matrix loses what a flux's two entries share. A Scharfetter–Gumm
 $`\eta`$ at its two ends through $`G`$ and $`-G(1 + E)`$, with $`E = \mathrm{expm1}(\Delta\eta)`$;
 for a nearly uniform $`v`$ they cancel, and $`J \cdot v`$ keeps only round-off of $`G|v|`$, which in
 an inversion layer's 0.1 nm cells ($`G`$ ~ 1e11) dwarfs the flux. Where a solve needs
-$`J \cdot v`$ itself (GMRES, in the impedance and in Newton's refined solves), the dilute kernels'
-terms are kept aside instead, each evaluated on differences first:
+$`J \cdot v`$ itself (GMRES, in the impedance and in Newton's refined solves), the kernels' terms
+are kept aside instead, each evaluated on differences first:
 
 ```math
 \delta N = a\,(\delta\eta_L - z\,\delta\hat\phi_L) + b\,(\delta\eta_R - \delta\eta_L) + d\,(\delta\hat\phi_R - \delta\hat\phi_L),
@@ -459,8 +459,13 @@ terms are kept aside instead, each evaluated on differences first:
 
 with $`a = -GE`$ (through $`c_L`$), $`b = -G(1 + E)`$ and $`d`$ the drift's. A node's storage and space
 charge depend on $`\delta\eta_i - z_i\,\delta\hat\phi`$ alone, the displacement on
-$`\delta\hat\phi_R - \delta\hat\phi_L`$. Everything else (faces, contacts, ports, reactions,
-concentrated and metal regions) is assembled into a matrix of its own. Rows that a contact or a
+$`\delta\hat\phi_R - \delta\hat\phi_L`$. Non-ideal statistics couple the species ($`c_i`$
+depends on every $`\zeta_j`$), so there a node's storage of $`i`$ has a term in each
+$`\delta\eta_j - z_j\,\delta\hat\phi`$, through $`K_{ij}`$, and a flux has side terms in those at
+either end (through $`c_L`$ and the excess potentials in its drift); each is in the same
+differences. (Until 1.1.1 they were assembled directly, and a Fermi–Dirac MOS capacitor in
+inversion, barely degenerate, came out with a negative resistance.) Everything else (faces,
+contacts, ports, reactions, metal regions) is assembled into a matrix of its own. Rows that a contact or a
 steady solve replaces drop the kept terms; the transformed rows of strictly neutral nodes combine
 them as they combine the matrix's. A region's uniform shift ($`z_i s`$ on each $`\eta_i`$, $`s`$ on
 $`\hat\phi`$) then gives exactly zero inside it, as it must. It replaced a central difference of
@@ -649,7 +654,7 @@ majority conductances times a $`\delta\eta`$ cancelling its neighbours' to 1e-17
 round-off reads as a constant conductance of order 1 S/m², a silicon p⁺n⁺ junction's capacitance
 9× off at 100 Hz. Between the two contacts of a device without ports, the total current
 (conduction plus displacement, $`i\omega\,\delta D`$) is the same through every cut, so it is also
-read across each segment of an ideal region, linearised as the Scharfetter–Gummel flux is, and
+read across each segment of a region (with any statistics), linearised as its flux is, and
 the reading with the least estimated error is taken: in that junction, the depletion region's;
 in a MOS capacitor, the oxide's displacement. A reading's error is its terms' round-off, and the
 solves' error in $`\delta x`$ (their residual, relative to its largest entry) through its

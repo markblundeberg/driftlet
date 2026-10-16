@@ -2270,10 +2270,23 @@ export class Solver {
       return;
     }
     let q = this.rhoFixed[g], dq = 0;
+    const lin = this.lin;
     for (let i = 0; i < n; i++) {
       const k = g * n + i, r = 1 + i;
       if (!this.present[k]) continue;
       const Kz = this._Kz(g, i);
+      if (lin) {
+        // In difference form (see DifferenceTerms): storage of i and its charge, in each
+        // δη_j − z_j δφ̂ through K_ij.
+        res[R[b * M + r]] += (v * (c[k] - this.cOld[k])) / dt;
+        q += F * z[i] * c[k];
+        const Kg = g * n * n + i * n;
+        for (let j = 0; j < n; j++) {
+          const Kij = this.nodeIdeal[g] ? (i === j ? c[k] : 0) : this.K[Kg + j];
+          if (Kij !== 0) lin.node(R[b * M + 1 + j], R[b * M], z[j], v * Kij, -v * F * z[i] * Kij, R[b * M + r]);
+        }
+        continue;
+      }
       this._storage(g, i, dt, Kz);
       q += F * z[i] * c[k];
       dq += F * z[i] * Kz;
@@ -2282,7 +2295,7 @@ export class Solver {
     // (where no charge responds and no field reaches, φ isn't defined, nor an unknown)
     if (!this.phiUndefined[g]) {
       res[R[b * M]] -= v * q;
-      this._j(b, 0, b, 0, v * dq);
+      if (!lin) this._j(b, 0, b, 0, v * dq);
     }
   }
 
@@ -2690,39 +2703,28 @@ export class Solver {
   // still exactly zero at equilibrium. c_L and ex depend on every ζ at their node through K.
   _segmentConcentrated(s, bL, bR, mat, h, vel) {
     const R = this.rix;
-    const { n, M, u, uLo, res, c, z, K, ex, jL, jR } = this;
-    const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n;
+    const { n, M, res, z, K } = this;
+    const KL = s * n * n, KR = (s + 1) * n * n;
     for (let i = 0; i < n; i++) {
       if (!mat.present[i] || mat.D[i] === 0) continue;
       const r = 1 + i, zi = z[i];
-      const cL = c[gL * n + i], cR = c[gR * n + i];
-      const g = mat.D[i] / h;
-      const pe = (vel * h) / mat.D[i];
-      const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i] - pe;
-      const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-      const E = Math.expm1(deta);
-      const B = bernoulli(d), Bp = bernoulliDerivative(d);
-      const gBc = g * B * cL;
-      const N = -gBc * E;
-      const dNdd = -g * Bp * cL * E;
-      // Left node: ∂N/∂ζ_Lj = −gE(B + B′)K_L,ij − dNdd·δ_ij, plus the direct η_L,i term.
-      const fL = -g * E * (B + Bp);
-      jL[0] = -fL * this._Kz(gL, i);
-      for (let j = 0; j < n; j++) jL[1 + j] = fL * K[KL + i * n + j];
-      jL[r] += -dNdd + gBc * (E + 1);
-      // Right node: ∂N/∂ζ_Rj = dNdd·(δ_ij − K_R,ij/c_R), plus the direct η_R,i term.
-      jR.fill(0);
-      if (cR > 0) {
-        const fR = -dNdd / cR;
-        jR[0] = -fR * this._Kz(gR, i);
-        for (let j = 0; j < n; j++) jR[1 + j] = fR * K[KR + i * n + j];
-      } else {
-        jR[0] = dNdd * zi; // K/c → δ as c → 0
-        jR[r] -= dNdd;
-      }
-      jR[r] += dNdd - gBc * (E + 1);
+      const { N, E, gBc, dNdd, fL, cR } = this._fluxConcentrated(s, bL, bR, mat, h, vel, i);
       res[R[bL * M + r]] += N;
       res[R[bR * M + r]] -= N;
+      if (this.lin) {
+        // In difference form (see DifferenceTerms): b on Δη_i and z_i·∂N/∂d on Δφ̂, and the rest
+        // as side terms in each δη_j − z_j δφ̂ at either end (c_L and the excess potentials).
+        const rL = R[bL * M + r], rR = R[bR * M + r], pL = R[bL * M], pR = R[bR * M];
+        this.lin.segment(rL, rR, pL, pR, zi, 0, -gBc * (E + 1), zi * dNdd);
+        for (let j = 0; j < n; j++) {
+          const wL = fL * K[KL + i * n + j] - (j === i ? dNdd : 0);
+          const wR = cR > 0 ? dNdd * ((j === i ? 1 : 0) - K[KR + i * n + j] / cR) : 0;
+          if (wL !== 0) this.lin.side(rL, rR, R[bL * M + 1 + j], pL, z[j], wL);
+          if (wR !== 0) this.lin.side(rL, rR, R[bR * M + 1 + j], pR, z[j], wR);
+        }
+        continue;
+      }
+      const { jL, jR } = this;
       for (let k = 0; k < M; k++) {
         if (jL[k] !== 0) {
           this._j(bL, r, bL, k, jL[k]);
@@ -2734,6 +2736,40 @@ export class Solver {
         }
       }
     }
+  }
+
+  // Species i's flux across segment s of a non-ideal region, toward +x, and its derivatives in
+  // this.jL and this.jR (over the unknowns of the blocks bL and bR).
+  _fluxConcentrated(s, bL, bR, mat, h, vel, i) {
+    const { n, M, u, uLo, c, z, K, ex, jL, jR } = this;
+    const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n, r = 1 + i, zi = z[i];
+    const cL = c[gL * n + i], cR = c[gR * n + i];
+    const g = mat.D[i] / h;
+    const pe = (vel * h) / mat.D[i];
+    const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i] - pe;
+    const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
+    const E = Math.expm1(deta);
+    const B = bernoulli(d), Bp = bernoulliDerivative(d);
+    const gBc = g * B * cL;
+    const N = -gBc * E;
+    const dNdd = -g * Bp * cL * E;
+    // Left node: ∂N/∂ζ_Lj = −gE(B + B′)K_L,ij − dNdd·δ_ij, plus the direct η_L,i term.
+    const fL = -g * E * (B + Bp);
+    jL[0] = -fL * this._Kz(gL, i);
+    for (let j = 0; j < n; j++) jL[1 + j] = fL * K[KL + i * n + j];
+    jL[r] += -dNdd + gBc * (E + 1);
+    // Right node: ∂N/∂ζ_Rj = dNdd·(δ_ij − K_R,ij/c_R), plus the direct η_R,i term.
+    jR.fill(0);
+    if (cR > 0) {
+      const fR = -dNdd / cR;
+      jR[0] = -fR * this._Kz(gR, i);
+      for (let j = 0; j < n; j++) jR[1 + j] = fR * K[KR + i * n + j];
+    } else {
+      jR[0] = dNdd * zi; // K/c → δ as c → 0
+      jR[r] -= dNdd;
+    }
+    jR[r] += dNdd - gBc * (E + 1);
+    return { N, E, gBc, dNdd, fL, cR };
   }
 
   // Ohmic conduction in a metal, in mixed form. The flux J (slot 0 of the left node) obeys
@@ -3516,7 +3552,8 @@ export class Solver {
   _assembleDifference(dt) {
     const keep = this.sys;
     const rest = this.sysRest ?? (this.sysRest = new BlockTridiagonal(keep.n, keep.sizes));
-    const lin = this.diffTerms ?? (this.diffTerms = new DifferenceTerms(keep.size, this.nNodes * this.n, this.nNodes * this.n));
+    const n = this.n, nN = this.nNodes;
+    const lin = this.diffTerms ?? (this.diffTerms = new DifferenceTerms(keep.size, nN * n * n, nN * n, 2 * nN * n * n));
     this.sys = rest;
     this.lin = lin;
     try {
@@ -4756,9 +4793,9 @@ export class Solver {
   }
 
   // The cuts where the impedance may read a small-signal current. Each is the linearised total
-  // current toward +x through one segment s of an ideal region, Σ (g + iω d)·δu over the
-  // unknowns idx: the Scharfetter–Gummel fluxes' derivatives (as in _segmentsDilute) and the
-  // displacement's. Without ports it's the same through every cut; with them, only between a
+  // current toward +x through one segment s of a region, Σ (g + iω d)·δu over the unknowns idx:
+  // the Scharfetter–Gummel fluxes' derivatives (as in _segmentsDilute, or _segmentConcentrated
+  // for non-ideal statistics) and the displacement's. Without ports it's the same through every cut; with them, only between a
   // contact and the nearest port's window (see _impedance).
   _currentCuts() {
     const { model, n, M, u, uLo, c, z } = this, F = FARADAY;
@@ -4766,7 +4803,7 @@ export class Solver {
     const cuts = [];
     for (let r = 0; r < regions.length; r++) {
       const reg = regions[r], mat = materials[reg.material];
-      if (mat.conductor || !mat.ideal || reg.mixing > 0) continue;
+      if (mat.conductor || reg.mixing > 0) continue;
       const vel = reg.velocity;
       for (let s = grid.regionStart[r]; s < grid.regionEnd[r]; s++) {
         const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s];
@@ -4780,6 +4817,15 @@ export class Solver {
         const phiL = u[bL * M], phiR = u[bR * M], hasPhi = !this.phiUndefined[s];
         for (let i = 0; i < n; i++) {
           if (z[i] === 0 || !mat.present[i] || mat.D[i] === 0) continue;
+          if (!mat.ideal) {
+            this._fluxConcentrated(s, bL, bR, mat, h, vel, i);
+            for (let k = 0; k < M; k++) {
+              if (k === 0 && !hasPhi) continue;
+              if (this.jL[k] !== 0) add(bL * M + k, z[i] * F * this.jL[k], 0);
+              if (this.jR[k] !== 0) add(bR * M + k, z[i] * F * this.jR[k], 0);
+            }
+            continue;
+          }
           const zi = z[i], r1 = 1 + i, cL = c[s * n + i], g = mat.D[i] / h;
           const pe = (vel * h) / mat.D[i];
           const d = zi * (phiR - phiL) - pe;
