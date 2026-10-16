@@ -292,6 +292,13 @@ export function makeSolution(solver, result = {}) {
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',
     );
   }
+  // The warnings below judge a solution's accuracy (its grid, its double layers). Of the state a
+  // steady solve gave up in, which isn't a solution, they say nothing useful (a driven current
+  // it couldn't pass leaves the device at ±26 V, where depletion reaches the contacts), so they're
+  // left out there; the two about the state itself (degenerate carriers, a species denser than
+  // any material) stay, as possible causes, and say they're of that state. (A failed time step
+  // restores the last good state, which is a solution: its warnings all stand.)
+  const solved = !result.unsolved, stopped = solved ? '' : ' (in the state the unconverged solve stopped in)';
   const debye = (g) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics
@@ -347,7 +354,7 @@ export function makeSolution(solver, result = {}) {
     );
   };
   interfaces.forEach((itf, f) => {
-    if (itf.phi.type === 'neutral') return;
+    if (itf.phi.type === 'neutral' || !solved) return;
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
@@ -357,11 +364,11 @@ export function makeSolution(solver, result = {}) {
     boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1));
   });
   const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
-  if (resolves(contacts.left)) {
+  if (solved && resolves(contacts.left)) {
     check(0, grid.segLength[0], 'contacts.left');
     boxed(0, grid.segLength[0], contacts.left.phi, -1, 'contacts.left');
   }
-  if (resolves(contacts.right)) {
+  if (solved && resolves(contacts.right)) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
   }
@@ -380,7 +387,7 @@ export function makeSolution(solver, result = {}) {
       }
       if (top > mat.cRef[i]) {
         sol.warnings.push(
-          `${reg.name}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, above its cRef (${mat.cRef[i].toExponential(2)}, the band's effective density of states), where Boltzmann statistics no longer hold: ` +
+          `${reg.name}${stopped}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, above its cRef (${mat.cRef[i].toExponential(2)}, the band's effective density of states), where Boltzmann statistics no longer hold: ` +
             'give the material Fermi–Dirac statistics (docs/statistics.md), or ask whether this state is physical (a surface driven past what can carry its carriers away).',
         );
       }
@@ -410,7 +417,7 @@ export function makeSolution(solver, result = {}) {
       }
       if (top > 1e6) {
         sol.warnings.push(
-          `${reg.name}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, denser than any material: ` +
+          `${reg.name}${stopped}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, denser than any material: ` +
             'a level set where the device cannot follow it. Check what holds it there (the V or bath of a contact, its mu0 and cRef) with describe() from driftlet/kit.',
         );
       }
@@ -421,7 +428,7 @@ export function makeSolution(solver, result = {}) {
   // ρ λ_D at the node beside it; against the region's own space charge (half Σ|ρ| over it, the
   // two signs of a double layer), warn past 1e-3.
   for (const side of ['left', 'right']) {
-    if (contacts[side].phi.type !== 'bulk') continue;
+    if (contacts[side].phi.type !== 'bulk' || !solved) continue;
     const r = side === 'left' ? 0 : model.regions.length - 1, a = grid.regionStart[r], b = grid.regionEnd[r];
     const mat = model.materials[model.regions[r].material];
     if (!(mat.epsr > 0) || mat.conductor || b - a < 3) continue;
@@ -458,7 +465,7 @@ export function makeSolution(solver, result = {}) {
   // a concentration ratio r across it). Flag a region's end cell whose field is well above its
   // neighbour's while its concentration changes steeply, for species carrying the current. (A
   // pn depletion region's field changes smoothly from cell to cell, which SG handles.)
-  if (Number.isFinite(sol.current)) {
+  if (solved && Number.isFinite(sol.current)) {
     const share = species.map((sp, i) =>
       Math.max(Math.abs(sp.z * (sol.contacts.left.flux[sp.name] ?? 0)), Math.abs(sp.z * (sol.contacts.right.flux[sp.name] ?? 0))),
     );

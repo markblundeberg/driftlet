@@ -187,7 +187,9 @@ export class Device {
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
     const snap = this.solver._snapshot();
-    const sol = makeSolution(this.solver, this.solver.solveSteady(opts));
+    const result = this.solver.solveSteady(opts);
+    // (a failed solve's state isn't a solution: its accuracy warnings are left out)
+    const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
     return sol;
   }

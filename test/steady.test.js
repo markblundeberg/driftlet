@@ -819,3 +819,20 @@ test('immobile trap states in two regions keep their own densities across the fa
     s.x.forEach((_, g) => assert.ok(Math.abs(s.c.X0[g] + s.c['X-'][g] - (s.region[g] === 0 ? 2 : 5)) < 1e-12, `node ${g}`));
   }
 });
+
+// A diode driven at a current of the wrong sign (into reverse, past what it can pass): the solve
+// fails at ±26 V, where depletion reaches both contacts. That state isn't a solution, so its
+// accuracy warnings (the space charge cut off at the contacts) are left out: only the reason it
+// failed is said, which names the sign slip.
+test('a failed steady solve says why it failed, without accuracy warnings about the state it stopped in', () => {
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [ohmic(0), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), ohmic({ I: 100 })],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  });
+  const sol = new Device(def).solve();
+  assert.ok(!sol.converged);
+  assert.equal(sol.warnings.length, 1, sol.warnings.join('\n'));
+  assert.match(sol.warnings[0], /^right: no steady state passes the driven current 100 A\/m².*a terminal's current is into the device/);
+});
