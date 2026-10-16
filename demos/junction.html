@@ -22,7 +22,7 @@
   <h1>Liquid junctions: the voltage where two solutions meet</h1>
   <p>Wherever two different solutions touch (the tip of a patch pipette, a salt bridge, the frit of a
     reference electrode), their ions diffuse into each other at different speeds, and the faster ones pull ahead
-    until the field they leave behind holds them back: a junction potential, often 10–20 mV, inside every such
+    until the field they leave behind holds them back: a junction potential, from a few millivolts to more than 15, inside every such
     measurement. It's usually estimated with Henderson's formula; Planck's is exact for a junction held in a
     steady state; a junction growing freely from first contact is neither. Here it's simulated ion by ion, and
     the formulas sit alongside it. (More about the model below; the <a href="daniell.html">Daniell cell</a> has a
@@ -65,7 +65,7 @@
       its potential, stays the same: here it's the simulation, grown from a sharp boundary, and for these
       mixtures it lies between the other two.</li>
   </ul>
-  <p>For one salt they all agree, (t<sub>+</sub> − t<sub>−</sub>)V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>). For
+  <p>For a single salt they all agree (for a 1:1 salt, (t<sub>+</sub> − t<sub>−</sub>)V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>)). For
     mixtures they differ by tenths of a millivolt to a millivolt: about what the corrections claim to be good
     to. For the patch pipette the published values are 15.6 mV (JPCalc, Henderson) and 16.05 mV (LJPcalc,
     Planck), for Figl et al.'s solutions at 20 °C; driftlet gets 15.61 and 16.05, and 15.74 for the free junction.
@@ -81,19 +81,21 @@
     both. With gluconate as fast as Cl⁻, the overshoot all but vanishes, and so does most of the gap between the
     three junctions.</p>
   <p>The minority ions show the junction's field best, since they hardly shape it and only feel it. In the patch
-    junction, Mg²⁺ (1 mM in the pipette, 2 in the bath) is pushed back toward the pipette by the field across
-    the junction's core, doubly so for its double charge, against its own rise toward the bath: there drift
-    nearly balances diffusion, and its mixing fraction holds a plateau between two steps, which unwinds as the
-    junction becomes Planck's and the field spreads out. In ZnCl₂ | KCl, the Cl⁻ runs ahead of the slow Zn²⁺, and
+    junction, Mg²⁺ (1 mM in the pipette, 2 in the bath) diffuses toward the pipette, and the field across the
+    junction's core (the bath 16 mV above the pipette) drives it the same way, doubly so for its double
+    charge: there drift carries up to five times what diffusion does, taking Mg²⁺ from the bath side of the
+    core to the pipette side, so its rise through the core flattens, and its mixing fraction holds a plateau
+    between two steps, which unwinds as the junction becomes Planck's and the field spreads out. In ZnCl₂ | KCl, the Cl⁻ runs ahead of the slow Zn²⁺, and
     at the leading edge only K⁺ from the KCl side can keep it neutral: the field draws K⁺ in, and a bulge of it,
     above its own 3 mM, rides the front (the stacking isotachophoresis puts to use).</p>
   <p><b>Why patch-clampers correct for it.</b> The amplifier is zeroed with the pipette in the bath, where the
-    junction between pipette solution and bath adds its potential, and zeroing absorbs it. Once the membrane is
-    broken into, the pipette solution faces the cytoplasm, which it resembles, and that junction is gone; but
+    junction between pipette solution and bath adds its potential, and zeroing absorbs it. In whole-cell
+    recording, once the membrane under the tip is broken through, the pipette solution faces the cytoplasm, which it resembles, and that junction is gone; but
     the offset that cancelled it stays. So every reading is off by the junction potential: the true membrane
-    potential is the recorded one minus it (here about 16 mV more negative). It can't be measured directly (a
-    φ difference between two different solutions never can); it has to be computed, which is why the choice of
-    theory matters.</p>
+    potential is the recorded one minus it (here about 16 mV more negative). Strictly it can't be measured at
+    all (a φ difference between two different solutions never can be); in practice it's computed, or measured
+    against a 3 M KCl bridge whose own junctions are taken to be small. Either way it's an estimate, which is
+    why the choice of theory matters.</p>
   <p><b>Salt bridges and frits.</b> A salt bridge of 3 M KCl keeps its own junctions small, because K⁺ and Cl⁻
     move almost equally fast and the bridge's salt dominates both junctions. That works until the sample is
     very dilute, and less well if the bridge's frit carries a surface charge: against a dilute sample the
