@@ -5,6 +5,7 @@
 
 import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
+import { powr } from './pow.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -84,21 +85,47 @@ export function aqueous(names, { epsr = WATER_EPSR, material = 'water' } = {}) {
   return { species, materials: { [material]: { epsr, species: entries } } };
 }
 
+// How the semiconductors' data move with temperature, for semiconductor(name, { T }):
+// - the gap by Varshni's form, Eg(T) = Eg0 − αT²/(T + β) (Y. P. Varshni, Physica 34, 149, 1967),
+//   with Thurmond's parameters (C. D. Thurmond, J. Electrochem. Soc. 122, 1133, 1975, as
+//   tabulated in Sze, 2nd ed.): Eg0 (eV), alpha (eV/K), beta (K). Only the shift from 300 K is
+//   used, on the table's Eg, so T = 300 K is the table: Varshni's own Eg(300) differs from it by
+//   4.5 meV (Si, 1.1245), 3.4 meV (Ge, 0.6634) and 1.5 meV (GaAs, 1.4225).
+// - Nc and Nv ∝ T^1.5 (parabolic bands, effective masses held fixed).
+// - mobilities ∝ T^−gn and T^−gp, the lattice-limited power laws for lightly doped material
+//   (Sze, 2nd ed., ch. 1): approximate, and wrong where impurity scattering matters (heavy
+//   doping, or cold). D follows from μ and T by Einstein's relation, D = μkT/q.
+// - the electron affinity chi isn't moved.
+const WITH_T = {
+  Si: { Eg0: 1.17, alpha: 4.73e-4, beta: 636, gn: 2.42, gp: 2.2 },
+  Ge: { Eg0: 0.7437, alpha: 4.774e-4, beta: 235, gn: 1.66, gp: 2.33 },
+  GaAs: { Eg0: 1.519, alpha: 5.405e-4, beta: 204, gn: 1.0, gp: 2.1 },
+};
+const T_RANGE = [150, 500];
+
 /**
  * A semiconductor from `SEMICONDUCTORS`, as a library piece: electrons `e-` and holes `h+`, with
- * c_ref = Nc and Nv, D from the mobilities by the Einstein relation at 300 K, and μ°_e⁻ = 0 (φ
- * anchored at the conduction band) and μ°_h⁺ = Eg·F. The data are for 300 K, so use `T: 300`.
+ * c_ref = Nc and Nv, D from the mobilities by the Einstein relation at T, and μ°_e⁻ = 0 (φ
+ * anchored at the conduction band) and μ°_h⁺ = Eg·F. The data are for 300 K; another T (150 to
+ * 500 K) moves them: the gap by Varshni's shift from 300 K, Nc and Nv as T^1.5, the mobilities by
+ * lattice-limited power laws (light doping). Give the device the same T.
  * Statistics are ideal (Boltzmann); add Fermi–Dirac to the material for degenerate doping.
  * @param {string} name 'Si', 'Ge' or 'GaAs'
- * @param {{ material?: string }} [opts]
+ * @param {{ material?: string, T?: number }} [opts] the material's name, and the temperature
+ *   (K, default 300, the table's)
  * @returns {{ species: object[], materials: Record<string, object> }}
  */
-export function semiconductor(name, { material = name } = {}) {
-  if (arguments[1]?.T !== undefined) fail('semiconductor: the data are for 300 K and take no T: give the device T: 300, or write your own material for another temperature (SEMICONDUCTORS has the numbers)');
-  checkOptions('semiconductor', arguments[1], ['material']);
+export function semiconductor(name, { material = name, T = 300 } = {}) {
+  checkOptions('semiconductor', arguments[1], ['material', 'T']);
   const sc = SEMICONDUCTORS[name];
   if (!sc) fail(`semiconductor: no data for '${name}' (the library has ${Object.keys(SEMICONDUCTORS).join(', ')})`);
-  const VT = (GAS_CONSTANT * 300) / FARADAY;
+  if (!(Number.isFinite(T) && T >= T_RANGE[0] && T <= T_RANGE[1])) {
+    fail(`semiconductor: T must be the temperature in K, from ${T_RANGE[0]} to ${T_RANGE[1]} (the range its temperature laws are good for), got ${T}`);
+  }
+  const { alpha, beta, gn, gp } = WITH_T[name];
+  const t = T / 300, varshni = (T) => (alpha * T * T) / (T + beta);
+  const Eg = sc.Eg - (varshni(T) - varshni(300));
+  const VT = (GAS_CONSTANT * T) / FARADAY;
   const perCm3 = (n) => (n * 1e6) / AVOGADRO;
   return {
     species: [
@@ -109,8 +136,8 @@ export function semiconductor(name, { material = name } = {}) {
       [material]: {
         epsr: sc.epsr,
         species: {
-          'e-': { D: sc.mun * 1e-4 * VT, mu0: 0, cRef: perCm3(sc.Nc) },
-          'h+': { D: sc.mup * 1e-4 * VT, mu0: sc.Eg * FARADAY, cRef: perCm3(sc.Nv) },
+          'e-': { D: sc.mun * powr(t, -gn) * 1e-4 * VT, mu0: 0, cRef: perCm3(sc.Nc * powr(t, 1.5)) },
+          'h+': { D: sc.mup * powr(t, -gp) * 1e-4 * VT, mu0: Eg * FARADAY, cRef: perCm3(sc.Nv * powr(t, 1.5)) },
         },
       },
     },

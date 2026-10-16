@@ -80,6 +80,7 @@ test('the kit and plots refuse an option they do not take, and suggest the one m
   assert.throws(() => bandDiagram(sol, { levels: 'x' }), /levels must be a list/);
   assert.throws(() => pulse({ start: 0, width: 1, amplitude: 1, rise_time: 1 }), /pulse: no option 'rise_time'/);
   assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 1, mu: 1, form: 0 }), /did you mean 'from'/);
-  assert.throws(() => semiconductor('Si', { T: 350 }), /data are for 300 K/);
+  assert.throws(() => semiconductor('Si', { T: 600 }), /from 150 to 500/);
+  assert.throws(() => semiconductor('Si', { t: 350 }), /semiconductor: no option 't' \(did you mean 'T'\?\)/);
   assert.throws(() => build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donor: 16.6 }), ohmic(0)] }), /stack\[1\]: no option 'donor' \(did you mean 'donors'\?\)/);
 });
