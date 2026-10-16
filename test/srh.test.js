@@ -177,3 +177,35 @@ test('trap(): the same trap written for you recombines at the srh law\'s rate, a
     }
   }
 });
+
+// Gemini 4 Argon's review (its finding 4a). Under degeneracy, detailed balance scales each
+// carrier's emission by its own γ = F₁/₂(ζ)/e^ζ = e^{−ex}: n₁ = γ_n n₁₀, p₁ = γ_p p₁₀. The product
+// was always right (n₁p₁ = n p e^{−a}); the split put a degenerate n⁺ region's γ_n on its holes.
+// In a device it hardly shows (where a carrier is degenerate, n ≫ n₁), so the rate is checked
+// against the formula directly.
+test('SRH under degeneracy: each carrier\'s trap density scales by its own γ, and the rate\'s derivatives match differences', () => {
+  const dev = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), ohmic(0)], bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 2e-6 } } }] }));
+  const S = dev.solver, tn = 1e-6, tp = 2e-6, ni0 = 1e-8, gn = 0.0349, gp = 1; // (mol/m³)
+  const xn = -Math.log(gn), xp = -Math.log(gp);
+  const cn = 5000, cp = 3e-15, a = 2.3; // so n p e^{−a} = γ_n γ_p n_i0²
+  const shifted = (cn * cp * Math.exp(-a)) / (gn * gp);
+  const rate = (law, nOk) => {
+    const r = S._srhRate({ tn, tp, n1: law }, cn, cp, a, xn, xp, 1, 1).rate;
+    const nPair = Math.sqrt(shifted), n1 = nOk ? gn * law : gn * nPair, p1 = nOk ? (gp * shifted) / law : gp * nPair;
+    const want = (cn * cp * -Math.expm1(-a)) / (tp * (cn + n1) + tn * (cp + p1));
+    return r / want - 1;
+  };
+  assert.ok(Math.abs(rate(NaN, false)) < 1e-12); // midgap: n₁ = γ_n n_i, p₁ = γ_p n_i
+  assert.ok(Math.abs(rate(ni0 * 30, true)) < 1e-12); // a given n1: γ_n n1, and p₁ = γ_p n_i²/n1
+  // Derivatives (Boltzmann carriers, s = 1): ∂/∂ln n, ∂/∂ln p, ∂/∂a against central differences.
+  for (const n1 of [NaN, 1e-7]) {
+    const law = { tn, tp, n1 }, at = (ln, lp, aa) => S._srhRate(law, Math.exp(ln), Math.exp(lp), aa).rate;
+    const r0 = S._srhRate(law, 2e-3, 4e-6, -0.7), ln = Math.log(2e-3), lp = Math.log(4e-6), h = 1e-5;
+    assert.ok(Math.abs((at(ln + h, lp, -0.7) - at(ln - h, lp, -0.7)) / (2 * h) / r0.Cn - 1) < 1e-5);
+    assert.ok(Math.abs((at(ln, lp + h, -0.7) - at(ln, lp - h, -0.7)) / (2 * h) / r0.Cp - 1) < 1e-5);
+    assert.ok(Math.abs((at(ln, lp, -0.7 + h) - at(ln, lp, -0.7 - h)) / (2 * h) / r0.Ca - 1) < 1e-5);
+  }
+  // Extraction far past e^709 (a quasi-Fermi split of −20 V): finite, the generation limit.
+  const g = S._srhRate({ tn, tp, n1: NaN }, 1e-300, 1e-300, -800);
+  assert.ok(Number.isFinite(g.rate) && Number.isFinite(g.Ca) && g.rate < 0);
+});

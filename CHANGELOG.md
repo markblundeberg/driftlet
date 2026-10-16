@@ -16,6 +16,13 @@ each finding rerun and checked before it was taken.
   +2870, and its low-frequency step two decades off; it matches to 0.2% now. A blocking
   electrode in a crowded electrolyte had a negative real part at 1 mHz; it's positive, and a
   lattice gas with a vast site density matches ideal ions to six digits in Im Z.
+- SRH with Fermi–Dirac carriers split their degeneracy evenly between n₁ and p₁ (or, with a
+  given n1, put it all on p₁): a degenerate n⁺ region's γ_n reduced its holes' emission too.
+  Detailed balance scales each carrier's by its own γ = 𝓕₁/₂(ζ)/e^ζ, and now so does the rate;
+  the product n₁p₁ = n p e^{−a} was always right. It hardly changes a device (where a carrier is
+  degenerate, it outnumbers n₁ by far). The rate also stays finite for a quasi-Fermi split past
+  ~709 kT (e^{−a} overflowed), though no device we tried gets near one: a diode reverse-biased
+  to 25 V keeps its split under 30 kT, generation refilling it.
 - Conserved combinations came from eliminating the stretches in listing order, so a trace
   species could come out added to an abundant one: A + B ⇌ C with B at 1 M and A and C at
   1e-14 mol/m³, listed B first, gave B + C and A − B, where A + C was lost to round-off, and the

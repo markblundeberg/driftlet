@@ -250,7 +250,9 @@ r = \frac{n\,p\,(1 - e^{-A/RT})}{(n + n_1)/v_p + (p + p_1)/v_n}, \qquad p_1 = \f
 with n and p each at its own side's edge node, the capture velocities $`v_n`$ and $`v_p`$ in m/s,
 and $`n_1`$ (mol/m³) the negative species' concentration with its level at the trap (default:
 $`n_1 = p_1 = n_i`$, a midgap trap). Taking $`p_1`$ from the state keeps equilibrium exact whatever
-lies between the two sides (a band offset, a $`\phi`$ jump). Where one carrier is plentiful the
+lies between the two sides (a band offset, a $`\phi`$ jump). With Fermi–Dirac carriers, each
+one's emission scales by its own $`\gamma = \mathcal{F}_{1/2}(\zeta)/e^\zeta`$, by detailed balance:
+$`n_1`$ becomes $`\gamma_n n_1`$, and $`p_1`$ keeps the product. Where one carrier is plentiful the
 rate saturates at the other's capture, $`r \to v_p\,p`$: holes reaching an electron-rich layer
 recombine at $`v_p`$ however many electrons wait there, which plain mass action can't do.
 

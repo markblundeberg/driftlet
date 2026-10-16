@@ -2457,7 +2457,7 @@ export class Solver {
           aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
           aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
         }
-        const { rate, Cn, Cp, Ca } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo);
+        const { rate, Cn, Cp, Ca } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
         dr.fill(0);
         this._dlnc(g, law.n.i, Cn, dr);
         this._dlnc(g, law.p.i, Cp, dr);
@@ -2916,7 +2916,7 @@ export class Solver {
       aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
     }
     const law = rx.srh?.[this.nodeMaterial[g]];
-    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo).rate;
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law)).rate;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
     return P * -Math.expm1(-(aHi + aLo));
@@ -2930,7 +2930,7 @@ export class Solver {
     if (law) {
       let a = rx.fixedA;
       for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
-      return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a).forward;
+      return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).forward;
     }
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
@@ -2944,7 +2944,7 @@ export class Solver {
     let a = rx.fixedA;
     for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
     const law = rx.srh?.[this.nodeMaterial[g]];
-    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a).oneWay;
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).oneWay;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
     return P * Math.max(1, Math.exp(-a));
@@ -2952,21 +2952,46 @@ export class Solver {
 
   // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and
   // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}).
-  _srhRate(law, cn, cp, a) {
+  // SRH at electron and hole concentrations cn, cp and affinity a. n₁p₁ = n p e^{−a} (n_i² for
+  // Boltzmann carriers), and under degeneracy each carrier's emission scales with its own
+  // γ = e^{−ex} (its excess chemical potential ex, c/K = ∂ln c/∂ζ its slope): n₁ = γ_n n₁₀ and
+  // p₁ = γ_p p₁₀, n₁₀ the law's n1, or n_i at midgap. (γ_n γ_p split evenly onto both, as it was,
+  // put a degenerate n⁺ region's γ_n on its holes' emission too.) The rate's derivatives in ln n,
+  // ln p and a. For large negative a (strong extraction), np·(1 − e^{−a}) as −n p e^{−a}.
+  _srhRate(law, cn, cp, a, xn = 0, xp = 0, sn = 1, sp = 1) {
     const { tn, tp } = law, lnnp = Math.log(cn) + Math.log(cp);
-    let n1, kN = 0, kP = 0, kA = 0; // ln n₁ = kN ln n + kP ln p + kA a + const
+    let lnn1, kN = 0, kP = 0, kA = 0; // ln n₁ = kN ln n + kP ln p + kA a + const
     if (Number.isNaN(law.n1)) {
-      n1 = Math.exp((lnnp - a) / 2);
-      kN = kP = 0.5;
+      lnn1 = (lnnp - a - xn + xp) / 2; // γ_n n_i, with n_i² = n p e^{−a}/(γ_n γ_p)
+      kN = (2 - sn) / 2;
+      kP = sp / 2;
       kA = -0.5;
-    } else n1 = law.n1;
-    const p1 = Math.exp(lnnp - a - Math.log(n1)), np = cn * cp;
-    const den = tp * (cn + n1) + tn * (cp + p1), f = -Math.expm1(-a);
-    const rate = (np * f) / den;
+    } else {
+      lnn1 = Math.log(law.n1) - xn;
+      kN = 1 - sn;
+    }
+    const n1 = Math.exp(lnn1), p1 = Math.exp(lnnp - a - lnn1), np = cn * cp;
+    const den = tp * (cn + n1) + tn * (cp + p1);
+    // np(1 − e^{−a}), with e^{−a} folded into np where it would overflow
+    const f = -Math.expm1(-a), num = a > -700 ? np * f : np - Math.exp(lnnp - a);
+    const rate = num / den;
     const dDn = tp * cn + tp * n1 * kN + tn * p1 * (1 - kN);
     const dDp = tp * n1 * kP + tn * cp + tn * p1 * (1 - kP);
     const dDa = tp * n1 * kA + tn * p1 * (-1 - kA);
-    return { rate, forward: np / den, oneWay: (np / den) * Math.max(1, Math.exp(-a)), Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (np / den) * (1 - f) - (rate * dDa) / den };
+    return { rate, forward: np / den, oneWay: a > -700 ? (np / den) * Math.max(1, Math.exp(-a)) : Math.exp(lnnp - a) / den, Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (a > -700 ? (np / den) * (1 - f) : Math.exp(lnnp - a) / den) - (rate * dDa) / den };
+  }
+
+  // _srhRate's degeneracy arguments: the electrons' at node gn, the holes' at gq.
+  _srhDegen(gn, gq, law) {
+    const [xn, sn] = this._degen(gn, law.n.i), [xp, sp] = this._degen(gq, law.p.i);
+    return [xn, xp, sn, sp];
+  }
+
+  // A carrier's excess chemical potential at node g and ∂ln c/∂ζ there (0 and 1 if ideal).
+  _degen(g, i) {
+    if (this.nodeIdeal[g]) return [0, 1];
+    const n = this.n, c = this.c[g * n + i], K = this.K[g * n * n + i * n + i];
+    return [this.ex[g * n + i], c > 0 && K > 0 ? c / K : 1];
   }
 
   // A face reaction (see normalizeFaceReactions). Its rate r_k is an unknown of the face block,
@@ -3009,7 +3034,7 @@ export class Solver {
     } else if (rx.srh) {
       // SRH, with n and p each at its own side's edge node.
       const { n: pn, p: pp } = rx.srh, gn = pn.side ? gR : gL, gq = pp.side ? gR : gL;
-      const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo);
+      const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo, ...this._srhDegen(gn, gq, { n: pn, p: pp }));
       rate = s.rate;
       this._dlnc(gn, pn.i, s.Cn, pn.side ? dR : dL);
       this._dlnc(gq, pp.i, s.Cp, pp.side ? dR : dL);
