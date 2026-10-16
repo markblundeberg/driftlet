@@ -22,8 +22,9 @@
   <h1>A charged nanochannel: selectivity, saturation and rectification</h1>
   <p>A pore ten nanometres across through a membrane, between two KCl solutions, its walls charged negative
     (silica or a polymer in water usually is). The charge draws K⁺ in and keeps Cl⁻ out, so the channel
-    conducts almost only K⁺, and goes on conducting when the salt is diluted a thousandfold. Both happen in
-    layers of space charge at each mouth, and in dilute salt those layers are as long as the channel: the
+    conducts almost only K⁺, and goes on conducting when the salt is diluted a thousandfold. Both come from the
+    K⁺ the wall's charge holds inside; the potential steps that keep it there, and Cl⁻ out, sit in layers of
+    space charge at each mouth, and in dilute salt those layers are as long as the channel: the
     two mouths' layers overlap, and there's no neutral inside. Put the charge on one half, or make the channel
     bipolar, and it conducts better one way than the other, like a pn junction. Vary the salt on each side,
     the charge and its pattern, the length and the voltage; long channels are checked against the
@@ -55,9 +56,10 @@
     so the charge at each mouth, where the wall's fixed charge meets the solution, comes out of Poisson's
     equation together with every ion's drift and diffusion. The wall's charge is spread through the channel
     as a density X: a surface charge σ on the walls of a channel of diameter d is X = 4σ/(Fd), so 30 mM is
-    about 7 mC/m² in a 10 nm channel. Spreading it evenly across the channel is fair when the Debye length is
-    comparable to the radius, as it is here (10 nm in 1 mM KCl), so the screening clouds from opposite walls
-    overlap and the channel is nearly uniform across.</p>
+    about 7 mC/m² in a 10 nm channel. Spreading it evenly across the channel is fair when the screening length
+    inside the channel is comparable to its radius: with the wall's charge drawing in K⁺, that's the Donnan
+    length below (2.5 nm at 30 mM, against a 5 nm radius), so the screening clouds from opposite walls
+    overlap and the channel is fairly uniform across.</p>
   <p>Inside a long channel the bulk is neutral, the wall's charge balanced by excess K⁺:
     K⁺ = (X + √(X² + 4c²))/2 and Cl⁻ = K⁺ − X, a Donnan equilibrium with the solution at each mouth. With much
     more wall charge than salt, K⁺ inside is pinned at X and Cl⁻ is shut out, so the conductance stops
@@ -67,7 +69,9 @@
     steps, the physics of an ion-exchange membrane. The dotted line is the same channel uncharged,
     conducting like the salt. Across a salt gradient at zero current, K⁺'s level is flat through a strongly
     charged channel, in equilibrium between the two sides, and the voltage between Ag/AgCl electrodes
-    approaches 2V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>), as for a perfectly selective membrane.</p>
+    approaches 2V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>), as for a perfectly selective membrane:
+    V<sub>T</sub> ln(c<sub>1</sub>/c<sub>2</sub>) across the channel, and as much again from the two
+    electrodes, which follow Cl⁻ in solutions of different strength.</p>
   <p>A channel not much longer than its layers is all mouth. What sets the scale is the channel's length
     against the Donnan length √(εRT/F²X) inside (2.5 nm at 30 mM of wall charge) and the Debye length outside.
     The net charge plot shows each mouth's pair of layers, the wall's charge against its screening cloud, and
@@ -84,7 +88,8 @@
     widens it and leaves only the minority ions to carry a small, saturating current; forward bias floods it
     with salt.</p>
   <p>The level diagram draws each ion's species voltage V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), with
-    K⁺'s drawn 4.35 V higher to share the plot (⌇), and their standard levels V°<sub>i</sub> (thin), which
+    K⁺'s drawn 4.35 V higher to share the plot (⌇: they're that far apart only because each ion's μ° is
+    counted from its elements, and no ion here answers to another's level), and their standard levels V°<sub>i</sub> (thin), which
     follow φ. The steps in V°<sub>i</sub> at the mouths are the Donnan potentials; each ion's own level is
     continuous through them, and an ion flows only where its level slopes.</p>
   <p>What a 1D slice leaves out: the reservoirs widen away from the mouth in 3D and add little resistance,
