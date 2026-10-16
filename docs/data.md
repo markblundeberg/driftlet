@@ -21,6 +21,12 @@ double layers. The data are in `IONS`, and $`\mu^\circ`$ of liquid water is `H2O
 1.011e-14 at 25 °C (pK_w 13.995): neutral water holds 1.0055e-4 mol/m³ of each, which a bath
 with that reaction should hold too.
 
+The data are 25 °C's, and the material says so (`T: 298.15`): a device at another temperature
+warns that they don't hold there. Its μ° (so equilibrium constants and electrode potentials),
+permittivity and diffusivities would all move: $`K_w`$ by ~6× between 6 and 25 °C. Scaling them
+(μ° by the standard entropies, ε, D by water's viscosity) is planned, not done. Where only
+transport between solutions of the same ions matters (a membrane's channels), μ° cancels.
+
 | Ion | z | D (10⁻⁹ m²/s) | $`\mu^\circ`$ (kJ/mol) |
 |---|---|---|---|
 | H+ | +1 | 9.311 | 0 |

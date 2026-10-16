@@ -16,6 +16,10 @@ each finding rerun and checked before it was taken.
   +2870, and its low-frequency step two decades off; it matches to 0.2% now. A blocking
   electrode in a crowded electrolyte had a negative real part at 1 mHz; it's positive, and a
   lattice gas with a vast site density matches ideal ions to six digits in Im Z.
+- `aqueous()`'s water says its data are 25 °C's (`T: 298.15`), so a device at another
+  temperature warns, as one with 300 K silicon does: its μ° (so K_w, ~6× off at 6.3 °C, and
+  electrode potentials), permittivity and diffusivities don't hold there. Scaling them is on the
+  roadmap.
 - SRH with Fermi–Dirac carriers split their degeneracy evenly between n₁ and p₁ (or, with a
   given n1, put it all on p₁): a degenerate n⁺ region's γ_n reduced its holes' emission too.
   Detailed balance scales each carrier's by its own γ = 𝓕₁/₂(ζ)/e^ζ, and now so does the rate;

@@ -237,3 +237,11 @@ test('a silicon cell under light: dV_oc/dT ≈ −2.1 mV/K, as Green\'s −(E_g0
   assert.ok(Math.abs(gamma - 1.66) < 0.1, `γ = ${gamma.toFixed(3)}`);
   assert.ok(Math.abs(V - 0.598) < 0.01, `V_oc = ${V}`);
 });
+
+test('aqueous() water is 25 °C data: a device at 6.3 °C warns that its μ°, permittivity and diffusivities don\'t hold, one at 25 °C doesn\'t', () => {
+  const mk = (T) => (build({ T, library: [aqueous(['Na+', 'Cl-'])], stack: [bath({ 'Na+': 100, 'Cl-': 100 }), layer('water', 1e-6, { c0: { 'Na+': 100, 'Cl-': 100 } }), bath({ 'Na+': 100, 'Cl-': 100 })] }));
+  const cold = describe(mk(279.45));
+  assert.match(cold, /data are for 298\.15 K, but the device is at 279\.45 K/);
+  assert.match(cold, /μ° \(so equilibrium constants/);
+  assert.doesNotMatch(describe(mk(298.15)), /data are for/);
+});

@@ -299,6 +299,12 @@ for live demos.
 
 ## Later
 
+- **Water at other temperatures.** `aqueous(list, { T })`: μ°ᵢ(T) from the standard entropies
+  (and heat capacities where tabulated; NBS/CODATA, conventional for single ions, which cancel in
+  any neutral combination), ε_r(T) (Malmberg–Maryott) and D ∝ T/η_water(T); checked against
+  K_w(T) and an E°(T) from the tables. The axon demos (6.3 °C) would then want recalibrating.
+  Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
+
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
   overpotential); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
   such as hydrogen evolution emerge from elementary steps; and a custom forward rate

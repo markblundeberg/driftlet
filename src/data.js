@@ -66,7 +66,8 @@ export const METALS = freeze(
 
 /**
  * Water with the named ions, as a library piece for `build()`: each ion as a species
- * (c_ref = 1 M) and the material `water` holding them, with D and μ° from `IONS`.
+ * (c_ref = 1 M) and the material `water` holding them, with D and μ° from `IONS`. The data are
+ * 25 °C's, and the material says so (T: 298.15): a device at another temperature warns.
  * @param {string[]} names ions from `IONS`
  * @param {{ epsr?: number, material?: string }} [opts] permittivity (default that of water;
  *   0 makes the solution strictly neutral, without double layers), and the material's name
@@ -82,7 +83,8 @@ export function aqueous(names, { epsr = WATER_EPSR, material = 'water' } = {}) {
     species.push({ name, z: ion.z, cRef: 1000 });
     entries[name] = { D: ion.D, mu0: ion.mu0 };
   }
-  return { species, materials: { [material]: { epsr, species: entries } } };
+  // (25 °C data: a device at another temperature warns)
+  return { species, materials: { [material]: { epsr, species: entries, T: 298.15 } } };
 }
 
 // How the semiconductors' data move with temperature, for semiconductor(name, { T }):

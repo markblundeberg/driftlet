@@ -308,14 +308,20 @@ export function normalizeDevice(def) {
     };
   });
 
-  // A material whose data are for another temperature than the device's gives the wrong n_i, gap
-  // and mobilities, silently: say so (for each material a region uses).
+  // A material whose data are for another temperature than the device's is silently wrong there
+  // (a semiconductor's n_i, gap and mobilities; water's μ°, ε and D): say so (for each material a
+  // region uses).
   materials.forEach((m, k) => {
     if (m.dataT === undefined || Math.abs(m.dataT - T) <= 0.01 || !regions.some((reg) => reg.material === k)) return;
+    const own = Object.keys(def.materials[m.name].species ?? {}), semi = own.includes('e-') && own.includes('h+');
     warnings.push(
       `materials.${m.name}: its data are for ${m.dataT} K, but the device is at ${T} K${def.T === undefined ? ' (the default, as it gives no T)' : ''}, ` +
-        `so they don't hold there (a semiconductor's n_i, gap and mobilities are ${m.dataT} K's): give the device T: ${m.dataT}, ` +
-        `or remake the material for ${T} K (semiconductor(name, { T: ${T} }))`,
+        (semi
+          ? `so they don't hold there (a semiconductor's n_i, gap and mobilities are ${m.dataT} K's): give the device T: ${m.dataT}, ` +
+            `or remake the material for ${T} K (semiconductor(name, { T: ${T} }))`
+          : `so they don't hold there: its μ° (so equilibrium constants and electrode potentials, Kw's by ~6× between 6 and 25 °C), ` +
+            `permittivity and diffusivities are ${m.dataT} K's. Give the device T: ${m.dataT}, or give the material data for ${T} K ` +
+            `and its T (aqueous() has none at other temperatures yet)`),
     );
   });
 
