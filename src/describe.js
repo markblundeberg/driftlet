@@ -138,7 +138,7 @@ export function describe(def) {
   const { species, materials, regions, grid } = model;
   const RT = GAS_CONSTANT * model.T;
   const lines = [];
-  const warnings = unitWarnings(def);
+  const warnings = [...model.warnings, ...unitWarnings(def)]; // (the definition's own: a material's data at another T, …)
   const total = grid.x[grid.x.length - 1] - grid.x[0];
   lines.push(`${regions.length} region${regions.length > 1 ? 's' : ''}, ${si(total, 'm')}, ${grid.x.length} nodes, T = ${model.T} K`);
   const geo = model.geometry;

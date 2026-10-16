@@ -3,7 +3,7 @@
 // only. How levels line up at an interface, and a surface's work function, belong to that
 // interface or surface and are never in here.
 
-import { DeviceError, checkOptions } from './errors.js';
+import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
 import { powr } from './pow.js';
 
@@ -44,7 +44,7 @@ export const WATER_EPSR = 78.3;
 
 /**
  * Semiconductors at 300 K (Sze, Physics of Semiconductor Devices, 2nd ed., 1981, appendix):
- * relative permittivity, band gap Eg (eV), electron affinity chi (V), effective densities of
+ * relative permittivity, band gap Eg (eV), electron affinity chi (eV), effective densities of
  * states Nc and Nv (cm⁻³), and drift mobilities of lightly doped material mun and mup
  * (cm²/(V·s)).
  */
@@ -108,7 +108,8 @@ const T_RANGE = [150, 500];
  * c_ref = Nc and Nv, D from the mobilities by the Einstein relation at T, and μ°_e⁻ = 0 (φ
  * anchored at the conduction band) and μ°_h⁺ = Eg·F. The data are for 300 K; another T (150 to
  * 500 K) moves them: the gap by Varshni's shift from 300 K, Nc and Nv as T^1.5, the mobilities by
- * lattice-limited power laws (light doping). Give the device the same T.
+ * lattice-limited power laws (light doping). The material carries its `T`, and a device at
+ * another temperature warns: give the device the same T.
  * Statistics are ideal (Boltzmann); add Fermi–Dirac to the material for degenerate doping.
  * @param {string} name 'Si', 'Ge' or 'GaAs'
  * @param {{ material?: string, T?: number }} [opts] the material's name, and the temperature
@@ -119,6 +120,7 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
   checkOptions('semiconductor', arguments[1], ['material', 'T']);
   const sc = SEMICONDUCTORS[name];
   if (!sc) fail(`semiconductor: no data for '${name}' (the library has ${Object.keys(SEMICONDUCTORS).join(', ')})`);
+  if (typeof T !== 'number') fail(`semiconductor: T must be a number, the temperature in K, got ${shown(T)}`);
   if (!(Number.isFinite(T) && T >= T_RANGE[0] && T <= T_RANGE[1])) {
     fail(`semiconductor: T must be the temperature in K, from ${T_RANGE[0]} to ${T_RANGE[1]} (the range its temperature laws are good for), got ${T}`);
   }
@@ -134,6 +136,7 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
     ],
     materials: {
       [material]: {
+        T, // the temperature the data are for: a device at another warns
         epsr: sc.epsr,
         species: {
           'e-': { D: sc.mun * powr(t, -gn) * 1e-4 * VT, mu0: 0, cRef: perCm3(sc.Nc * powr(t, 1.5)) },
@@ -155,11 +158,11 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
  * @param {{ density: number, tauN: number, tauP: number, n1?: number, charge?: 'acceptor' | 'donor',
  *   name?: string, material?: string, T?: number }} opts density N_t (mol/m³); τ_n = 1/(c_n N_t)
  *   and τ_p = 1/(c_p N_t) (s) at that density; n₁, the electron density that half-fills it
- *   (mol/m³; default n_i, midgap); T (K, default 300, the library's)
+ *   (mol/m³; default n_i, midgap); T (K, default the material's T, else 300)
  * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number> }} the library
  *   for build(), the capture reactions, and c0 for each layer holding the trap (its total N_t)
  */
-export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name = 'X', material, T = 300 } = {}) {
+export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name = 'X', material, T } = {}) {
   checkOptions('trap', arguments[1], ['density', 'tauN', 'tauP', 'n1', 'charge', 'name', 'material', 'T']);
   if (!lib || typeof lib !== 'object' || typeof lib.materials !== 'object') fail('trap: give the library entry first, semiconductor(\'Si\') say, then { density, tauN, tauP }');
   const names = Object.keys(lib.materials);
@@ -168,11 +171,14 @@ export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name =
   if (!mat) fail(`trap: no material '${m}' in the library (it has ${names.join(', ')})`);
   const el = mat.species?.['e-'], ho = mat.species?.['h+'];
   if (!el || !ho) fail(`trap: material '${m}' needs e- and h+ (a semiconductor)`);
-  const pos = (v, what) => (Number.isFinite(v) && v > 0 ? v : fail(`trap: ${what}, got ${v}`));
+  const pos = (v, what) => (Number.isFinite(v) && v > 0 ? v : fail(`trap: ${what}, got ${shown(v)}`));
   pos(density, 'density must be the trap density N_t > 0 (mol/m³; units.perCm3(1e15), say)');
   pos(tauN, 'tauN must be the electron lifetime τ_n = 1/(c_n N_t) > 0 (s)');
   pos(tauP, 'tauP must be the hole lifetime τ_p = 1/(c_p N_t) > 0 (s)');
+  // (the material's own temperature, where it gives one: semiconductor()'s does)
+  if (T === undefined) T = mat.T ?? 300;
   pos(T, 'T must be the temperature in K');
+  if (mat.T !== undefined && Math.abs(T - mat.T) > 0.01) fail(`trap: T is ${T} K, but material '${m}' is for ${mat.T} K; leave T out (the trap takes the material's), or remake the material for ${T} K`);
   if (charge !== 'acceptor' && charge !== 'donor') fail(`trap: charge must be 'acceptor' (0/−) or 'donor' (+/0), got ${JSON.stringify(charge)}`);
   if (typeof name !== 'string' || !/^[A-Za-z][\w()]*$/.test(name)) fail(`trap: name must be a plain name for the trap (its states are name0 and name- or name+), got ${JSON.stringify(name)}`);
   const RT = GAS_CONSTANT * T, cRefE = el.cRef ?? lib.species.find((sp) => sp.name === 'e-')?.cRef;

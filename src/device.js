@@ -9,7 +9,7 @@
 import { buildGrid, applyGeometry } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
-import { DeviceError } from './errors.js';
+import { DeviceError, shown } from './errors.js';
 import { stoichiometry as equationStoichiometry, faceSides, parseEquation } from './equation.js';
 
 export { DeviceError };
@@ -47,12 +47,12 @@ function fields(obj, path, allowed) {
 }
 
 function finite(v, path) {
-  need(isFiniteNumber(v), `${path} must be a finite number, got ${JSON.stringify(v)}`);
+  need(isFiniteNumber(v), `${path} must be a finite number, got ${shown(v)}`);
   return v;
 }
 
 function positive(v, path) {
-  need(isFiniteNumber(v) && v > 0, `${path} must be a positive number, got ${JSON.stringify(v)}`);
+  need(isFiniteNumber(v) && v > 0, `${path} must be a positive number, got ${shown(v)}`);
   return v;
 }
 
@@ -108,9 +108,9 @@ function profile(v, path, what, ok, okText) {
     `${path} must be a profile { x, values }: two arrays of the same length, positions (m, the device's x) and ${what}`,
   );
   v.x.forEach((xk, k) => {
-    need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${path}.x must be finite and strictly increasing, but x[${k}] is ${JSON.stringify(xk)}`);
+    need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${path}.x must be finite and strictly increasing, but x[${k}] is ${shown(xk)}`);
   });
-  v.values.forEach((y, k) => need(isFiniteNumber(y) && ok(y), `${path}.values[${k}] must be ${okText}, got ${JSON.stringify(y)}`));
+  v.values.forEach((y, k) => need(isFiniteNumber(y) && ok(y), `${path}.values[${k}] must be ${okText}, got ${shown(y)}`));
   return { x: Float64Array.from(v.x), values: Float64Array.from(v.values) };
 }
 
@@ -138,7 +138,7 @@ function srhLaw(sdef, path, list, species, timeKeys) {
 }
 
 function nonNegative(v, path) {
-  need(isFiniteNumber(v) && v >= 0, `${path} must be a non-negative number, got ${JSON.stringify(v)}`);
+  need(isFiniteNumber(v) && v >= 0, `${path} must be a non-negative number, got ${shown(v)}`);
   return v;
 }
 
@@ -151,7 +151,7 @@ export function normalizeDevice(def) {
   need(isObject(def), 'device definition must be an object');
   fields(def, 'device', ['T', 'species', 'materials', 'regions', 'interfaces', 'bulkReactions', 'contacts', 'ports', 'grid', 'geometry']);
 
-  const T = def.T === undefined ? 298.15 : positive(def.T, 'T');
+  const T = def.T === undefined ? 298.15 : positive(def.T, 'T (the temperature, K)');
   const RT = GAS_CONSTANT * T;
 
   // --- species
@@ -164,7 +164,7 @@ export function normalizeDevice(def) {
     fields(sp, path, ['name', 'z', 'cRef']);
     need(typeof sp.name === 'string' && sp.name.length > 0, `${path}.name must be a non-empty string`);
     need(!speciesIndex.has(sp.name), `${path}.name: duplicate species '${sp.name}'`);
-    need(Number.isInteger(sp.z), `${path}.z (charge number) must be an integer, got ${JSON.stringify(sp.z)}`);
+    need(Number.isInteger(sp.z), `${path}.z (charge number) must be an integer, got ${shown(sp.z)}`);
     const cRef = sp.cRef === undefined ? undefined : positive(sp.cRef, `${path}.cRef`);
     speciesIndex.set(sp.name, i);
     species.push({ name: sp.name, z: sp.z, cRef });
@@ -179,13 +179,15 @@ export function normalizeDevice(def) {
   for (const [mname, mat] of Object.entries(def.materials)) {
     const path = `materials.${mname}`;
     need(isObject(mat), `${path} must be an object`);
+    // The temperature a material's data are for, where it says (semiconductor()'s do).
+    const dataT = mat.T === undefined ? undefined : positive(mat.T, `${path}.T (the temperature its data are for, K)`);
     if (mat.conductor !== undefined) {
       materialIndex.set(mname, materials.length);
-      materials.push(normalizeConductor(mat, mname, path, species, speciesIndex));
+      materials.push({ ...normalizeConductor(mat, mname, path, species, speciesIndex), dataT });
       continue;
     }
     // ε = 0 makes the material strictly neutral: Poisson becomes local neutrality there.
-    fields(mat, path, ['epsr', 'species', 'statistics']);
+    fields(mat, path, ['epsr', 'species', 'statistics', 'T']);
     const epsr = nonNegative(mat.epsr, `${path}.epsr`);
     need(isObject(mat.species), `${path}.species must be an object mapping species names to parameters`);
     const present = new Uint8Array(nSpecies);
@@ -205,7 +207,7 @@ export function normalizeDevice(def) {
       need(c !== undefined, `${spath}.cRef: no reference concentration (give it here or on the species)`);
       cRef[i] = positive(c, `${spath}.cRef`);
     }
-    const m = { name: mname, epsr, present, D, mu0, cRef };
+    const m = { name: mname, epsr, present, D, mu0, cRef, dataT };
     const st = normalizeStatistics({ ...m, statistics: mat.statistics }, path, species, speciesIndex, RT, { need, finite, positive });
     m.models = st.models;
     m.modelOf = st.modelOf;
@@ -285,7 +287,7 @@ export function normalizeDevice(def) {
           c0Profile[i] = profile(v, at, 'concentrations (mol/m³)', (ck) => ck > 0, `a concentration > 0 (mol/m³)${none}`);
           continue;
         }
-        need(isFiniteNumber(v) && v > 0, `${at} must be a concentration > 0 (mol/m³) or a profile { x, values }, got ${JSON.stringify(v)}${none}`);
+        need(isFiniteNumber(v) && v > 0, `${at} must be a concentration > 0 (mol/m³) or a profile { x, values }, got ${shown(v)}${none}`);
         c0[i] = v;
       }
     }
@@ -304,6 +306,17 @@ export function normalizeDevice(def) {
       grid: reg.grid ?? (def.grid === undefined ? { hmin: length / 1000, hmax: length / 20 } : undefined),
       cells: mat.conductor ? [length] : undefined,
     };
+  });
+
+  // A material whose data are for another temperature than the device's gives the wrong n_i, gap
+  // and mobilities, silently: say so (for each material a region uses).
+  materials.forEach((m, k) => {
+    if (m.dataT === undefined || Math.abs(m.dataT - T) <= 0.01 || !regions.some((reg) => reg.material === k)) return;
+    warnings.push(
+      `materials.${m.name}: its data are for ${m.dataT} K, but the device is at ${T} K${def.T === undefined ? ' (the default, as it gives no T)' : ''}, ` +
+        `so they don't hold there (a semiconductor's n_i, gap and mobilities are ${m.dataT} K's): give the device T: ${m.dataT}, ` +
+        `or remake the material for ${T} K (semiconductor(name, { T: ${T} }))`,
+    );
   });
 
   // --- interfaces (one per face between consecutive regions)
@@ -490,7 +503,7 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
   const list = [];
   let fixedA = 0, charge = 0, nFixed = 0;
   for (const [name, nu] of Object.entries(map)) {
-    need(Number.isInteger(nu) && nu !== 0, `${path}.${name} must be a non-zero integer, got ${JSON.stringify(nu)}`);
+    need(Number.isInteger(nu) && nu !== 0, `${path}.${name} must be a non-zero integer, got ${shown(nu)}`);
     if (speciesIndex.has(name)) {
       const i = speciesIndex.get(name);
       list.push({ i, nu });
@@ -1048,7 +1061,7 @@ function gatedBy(raw, gates, lpath, where) {
   return Object.entries(raw).map(([gname, p]) => {
     const q = gates.findIndex((gt) => gt.name === gname);
     need(q >= 0, `${lpath}.gates.${gname}: no such gate${gates.length ? ` (there are ${gates.map((gt) => gt.name).join(', ')})` : ` (define it in ${where}.gates)`}`);
-    need(Number.isInteger(p) && p >= 1 && p <= 8, `${lpath}.gates.${gname}: the exponent must be a whole number from 1 to 8, got ${JSON.stringify(p)}`);
+    need(Number.isInteger(p) && p >= 1 && p <= 8, `${lpath}.gates.${gname}: the exponent must be a whole number from 1 to 8, got ${shown(p)}`);
     return [q, p];
   });
 }
@@ -1081,6 +1094,8 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
   for (const k of ['epsr', 'species', 'statistics']) {
     need(mat[k] === undefined, `${path}.${k}: a conductor takes only { conductor: { species, conductivity } }`);
   }
+  fields(mat, path, ['conductor', 'T']);
+  fields(mdef, `${path}.conductor`, ['species', 'conductivity']);
   need(speciesIndex.has(mdef.species), `${path}.conductor.species: unknown species ${JSON.stringify(mdef.species)}${known(speciesIndex)}`);
   const i = speciesIndex.get(mdef.species);
   need(species[i].z !== 0, `${path}.conductor.species: the conductor's carrier must be charged`);
@@ -1175,7 +1190,7 @@ function defaultInterfaceLinks(matL, matR, species) {
 
 function transferCoefficient(v, path) {
   if (v === undefined) return 0.5;
-  need(isFiniteNumber(v) && v >= 0 && v <= 1, `${path} must be between 0 and 1, got ${JSON.stringify(v)}`);
+  need(isFiniteNumber(v) && v >= 0 && v <= 1, `${path} must be between 0 and 1, got ${shown(v)}`);
   return v;
 }
 

@@ -4,7 +4,7 @@
 // that you didn't write: it only moves things to where the definition keeps them, and converts
 // the kit's doping shorthand (donors and acceptors).
 
-import { DeviceError, checkOptions } from './errors.js';
+import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
 
 const fail = (message) => {
@@ -131,6 +131,7 @@ const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReac
 export function build(def) {
   if (!isObject(def)) fail('build: give { library, stack, … }');
   fields(def, 'build', STACK_FIELDS);
+  if (def.T !== undefined && !(typeof def.T === 'number' && Number.isFinite(def.T) && def.T > 0)) fail(`build.T must be the temperature in K, a positive number, got ${shown(def.T)}`);
   if (def.library !== undefined && !Array.isArray(def.library)) fail('build.library must be a list of { species, materials }');
   const { species, materials } = combine(...(def.library ?? []), { species: def.species ?? [], materials: def.materials ?? {} });
 

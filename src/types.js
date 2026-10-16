@@ -39,6 +39,8 @@
  * @property {{ species: string, conductivity: number }} [conductor] a metal or fast ion
  *   conductor: its one carrier and conductivity (S/m); its only level is the carrier's (a metal's
  *   Fermi level), and φ is undefined inside
+ * @property {number} [T] the temperature its data are for (K): a device at another temperature
+ *   warns (semiconductor() sets it)
  */
 
 /**

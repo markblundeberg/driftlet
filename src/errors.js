@@ -39,3 +39,21 @@ export function checkOptions(where, opts, allowed, Kind = DeviceError) {
     throw new Kind(`${where}: no option '${k}'${near ? ` (did you mean '${near}'?)` : ''}; the options are ${allowed.join(', ')}`);
   }
 }
+
+/**
+ * A value as an error message shows it: a number as itself (NaN and Infinity too, which JSON
+ * would print as null), a string quoted and called one ("350", a string, where a number was
+ * wanted).
+ * @param {unknown} v
+ * @returns {string}
+ */
+export function shown(v) {
+  if (typeof v === 'number' || typeof v === 'bigint' || v === undefined) return String(v);
+  if (typeof v === 'string') return `${JSON.stringify(v)} (a string)`;
+  if (typeof v === 'function') return 'a function';
+  try {
+    return JSON.stringify(v, (k, x) => (typeof x === 'number' && !Number.isFinite(x) ? String(x) : x)) ?? String(v);
+  } catch {
+    return String(v);
+  }
+}
