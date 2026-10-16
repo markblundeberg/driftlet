@@ -15,7 +15,7 @@ too (`FARADAY`, `GAS_CONSTANT`, `EPS0`, …).
 
 | Key | Meaning |
 |---|---|
-| `T` | temperature, K (default 298.15) |
+| `T` | temperature, K (default 298.15, 25 °C; the library's semiconductors are for 300 K, so give them `T: 300`) |
 | `species` | list of mobile species |
 | `materials` | named materials: bulk properties |
 | `regions` | the device, left to right: each a material plus length, fixed charge, composition |
@@ -54,6 +54,11 @@ materials: {
 Per species present: `D` (m²/s, the coefficient in the flux $`N = -(D c/RT)\nabla\bar\mu`$), `mu0`
 (standard chemical potential, J/mol) and `cRef` (the concentration that `mu0` refers to; falls back
 to the species' `cRef`, and must exist one way or the other). Species not listed are absent.
+
+A material may say what temperature its numbers are for, `T` (K). `semiconductor()` sets it.
+The device then warns, in its solutions' `warnings`, if that isn't its own `T` (to 0.01 K), since
+the material's gap, densities of states and D are then another temperature's. A material without
+`T` is taken as written.
 
 In a material, only *neutral combinations* of standard potentials mean anything physically.
 Shifting every `mu0` by $`z_i F s`$ just moves the material's $`\phi`$, its bookkeeping anchor. See
@@ -1006,6 +1011,9 @@ const now = dev.solution();                   // snapshot of the current state
   mid-run, `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.) Either way the time stepping restarts its
   order, as after any discontinuity, but a carried state goes on at the step size an adaptive
   transient had reached, so a page may change a rate constant or a diffusivity every frame.
+  To change the temperature, give the materials for it in the same patch,
+  `dev.set({ T: 350, materials: semiconductor('Si', { T: 350 }).materials })`: a `T` alone
+  changes kT but not the materials' data (a material that carries its `T` then warns).
 
 For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
 current transient after a voltage step.
@@ -1053,7 +1061,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section) |
 | `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |
-| `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, and for a failed solve, where the system is nearly singular |
+| `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, a material's data for another temperature, and for a failed solve, why (a driven current it can't pass, where the system is nearly singular). A failed steady solve's state isn't a solution, so the warnings about a solution's accuracy (the grid, double layers, space charge reaching a contact) are left out of it |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |

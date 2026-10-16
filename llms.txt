@@ -78,8 +78,11 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
   Li Pt), all from `driftlet/kit`. A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si`
   (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the
-  material, e⁻'s and h⁺'s `cRef` are N_c and N_v in mol/m³ and h⁺'s `mu0` is the gap (e⁻'s is 0),
-  so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. A species it lacks is pushed into both lists
+  material, `materials.Si.species['e-'].cRef` and `['h+'].cRef` are N_c and N_v in mol/m³ and
+  h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. The
+  material carries the T its data are for (`materials.Si.T`), and a device at another T warns
+  (its default is 298.15 K, so say `T: 300`). An alloy starts from a relative's entry with your
+  numbers put in (docs/data.md has AlGaAs from GaAs). A species it lacks is pushed into both lists
   (`z: 0` for a neutral one): `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`,
   `lib.materials.water.species['A-'] = { D, mu0 }`. Only μ° differences within a reaction matter:
   for a redox couple μ°_red − μ°_ox = −F·E° (against SHE, the library's μ°_H⁺ being 0). An
@@ -649,8 +652,12 @@ those:
 - **A couple's μ° with the wrong sign** solves happily at −E° for +E°: μ°_red − μ°_ox = −F·E°.
   Check the rest potential against E°, as the stirred-solution template does.
 - **The library's data are for 25 °C** (its semiconductors for 300 K: give `T: 300`, or the
-  same `T` to `semiconductor(name, { T })`, which moves the gap, N_c, N_v and the mobilities). At body
-  temperature the same μ° and D are a fair start; D rises about 2% per kelvin in water.
+  same `T` to `semiconductor(name, { T })`, which moves the gap, N_c, N_v and the mobilities; a
+  mismatch warns). On a live device change both at once, `dev.set({ T, materials:
+  semiconductor('Si', { T }).materials })`. A diode's J₀ ∝ T^(4−γ) e^(−E_g/kT), so its Arrhenius
+  slope is E_g − T dE_g/dT + (4−γ)kT (≈ 1.24 eV for Si), not E_g. Hot and lightly doped, n_i
+  passes the doping (Ge 6e15 cm⁻³ at 450 K) and the junction fades: compare before fitting V(T).
+  At body temperature the same μ° and D are a fair start; D rises about 2% per kelvin in water.
 - **A steady solve of a closed cell where every ion can cross**: its steady state is complete
   mixing. To watch a junction or a salt bridge, `advance()` from the unmixed `c0`.
 - **A sharp junction between very different solutions** (3 M KCl against 1 µM) can't start:

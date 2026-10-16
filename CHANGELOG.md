@@ -17,6 +17,27 @@ major version.
   `srh` leaves out (checked against n = N_D − N_t n/(n + n₁) for acceptor-like traps
   compensating donors, and the donor-like mirror). Explicit traps always worked; nothing in
   llms.txt said how.
+- A material may carry the temperature its data are for, `T` (K), and `semiconductor()` always
+  sets it (300 K by default). A device at another temperature now warns, in its solutions'
+  warnings (so `check()`) and in `describe()`, naming both temperatures and the cure. Before,
+  a device at 350 K on 300 K silicon had an intrinsic density 36% low with no word, and one left
+  at the default 298.15 K, 13% low; `set({ T })` changed kT but not the data. To change T on a
+  live device, `set({ T, materials: semiconductor('Si', { T }).materials })`. `trap()` takes its
+  material's T. Hand-written materials without `T` are taken as written, as before.
+- `describe()` lists the definition's own warnings too (the temperature one, an unresolved
+  starting profile, a statistics model's conventions), as every solution already did.
+- Error messages show the value given: a T of NaN or Infinity said "got null", and a string
+  where a number belongs is named as one (`got "350" (a string)`). `build()` checks its `T`.
+  A conductor material now refuses fields it doesn't take, as other materials do.
+- A failed steady solve's warnings say why it failed, and leave out those judging a solution's
+  accuracy (the grid, double layers, space charge at a contact): the state it stopped in isn't a
+  solution, and a diode driven at a current of the wrong sign, stopped at 26 V, came with two
+  spurious "space charge reaches the contact" warnings.
+- `check()`: two bulk reactions with the same equation (radiative and SRH recombination, both
+  `e- + h+ = 0`) were merged into one ledger term; each now has its own, named by its place.
+- Docs: where N_c and N_v live in a material, χ in eV throughout, the device's 298.15 K default
+  against the table's 300 K, a diode's J₀ ∝ T^(4−γ) e^(−E_g/kT) and its Arrhenius slope, junctions
+  that fade when n_i passes the doping, and a recipe for an alloy (AlGaAs from GaAs).
 - llms.txt: the junction template is a short diode (its Shockley check takes the quasi-neutral
   widths, not L), and the plot module draws profiles in x, not I–V curves.
 

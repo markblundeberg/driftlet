@@ -59,12 +59,31 @@ with that reaction should hold too.
 $`c_{\mathrm{ref}} = N_c`$ and $`N_v`$, D from the mobilities by the Einstein relation at T,
 $`\mu^\circ_{\mathrm{e}^-} = 0`$ (so $`\phi`$ sits at the conduction band) and
 $`\mu^\circ_{\mathrm{h}^+} = E_g \cdot F`$. The table is for 300 K, the default; `T` (150 to 500 K)
-moves it as [below](#at-other-temperatures). Give the device the same `T`: the material's D and
-$`E_g`$ are for the T it was made at, and the device can't tell. Statistics are ideal
-(Boltzmann); add Fermi–Dirac statistics to the material for degenerate doping. The data are in
-`SEMICONDUCTORS`, in the source's units (cm⁻³, cm²/(V·s), eV).
+moves it as [below](#at-other-temperatures). Statistics are ideal (Boltzmann); add Fermi–Dirac
+statistics to the material for degenerate doping. The data are in `SEMICONDUCTORS`, in the
+source's units (cm⁻³, cm²/(V·s), eV). In the material they're in SI: $`N_c`$ and $`N_v`$ are the
+`cRef` of e⁻ and h⁺ in mol/m³, at `materials.Si.species['e-'].cRef` and `['h+'].cRef` (the
+`species` list carries only names and charges).
 
-| | $`\varepsilon_r`$ | $`E_g`$ (eV) | $`\chi`$ (V) | $`N_c`$ (cm⁻³) | $`N_v`$ (cm⁻³) | $`\mu_n`$ (cm²/(V·s)) | $`\mu_p`$ (cm²/(V·s)) |
+**Give the device the same `T`.** The material's gap, $`N_c`$, $`N_v`$ and D are for the
+temperature it was made at, and it carries that temperature as `materials.Si.T`. A device at
+another temperature warns, in `sol.warnings` (so `check()`) and `describe()`, naming both
+temperatures. The device's own default is 298.15 K (25 °C, the ions' temperature), not the
+table's 300 K, so a semiconductor device says `T: 300`: at 298.15 K the 300 K data's
+intrinsic density is 13% low. A material written by hand has no `T` and is never warned about.
+
+To change the temperature of a live device, give it the material for the new T in the same
+`set()`. The state carries over as a warm start:
+
+```js nocheck
+dev.set({ T: 350, materials: semiconductor('Si', { T: 350 }).materials });
+```
+
+A `set({ T })` alone changes kT but not the material's data, and warns. (A material with a
+`trap()` in it: remake it with `trap(semiconductor('Si', { T }), …)` the same way. The trap
+takes its material's T.)
+
+| | $`\varepsilon_r`$ | $`E_g`$ (eV) | $`\chi`$ (eV) | $`N_c`$ (cm⁻³) | $`N_v`$ (cm⁻³) | $`\mu_n`$ (cm²/(V·s)) | $`\mu_p`$ (cm²/(V·s)) |
 |---|---|---|---|---|---|---|---|
 | Si | 11.9 | 1.12 | 4.05 | 2.8 × 10¹⁹ | 1.04 × 10¹⁹ | 1500 | 450 |
 | Ge | 16.0 | 0.66 | 4.0 | 1.04 × 10¹⁹ | 6.0 × 10¹⁸ | 3900 | 1900 |
@@ -72,9 +91,9 @@ $`E_g`$ are for the T it was made at, and the device can't tell. Statistics are 
 
 - Source: Sze, *Physics of Semiconductor Devices*, 2nd ed. (1981), appendix "Properties of Ge,
   Si and GaAs at 300 K". The mobilities are for lightly doped material.
-- The electron affinity $`\chi`$ is for vacuum-level estimates with `vacuumDipole` (anchor `'e-'`,
-  see the [alignment guide](alignment.md)). It isn't used otherwise, since an alignment is never
-  implied.
+- The electron affinity $`\chi`$ (an energy, in eV) is for vacuum-level estimates with
+  `vacuumDipole` (anchor `'e-'`, `offset: chi`, the same number in volts; see the
+  [alignment guide](alignment.md)). It isn't used otherwise, since an alignment is never implied.
 - **Silicon's intrinsic concentration**: these $`N_c`$, $`N_v`$ and $`E_g`$ give $`n_i`$ = 6.7 × 10⁹ cm⁻³.
   Sze quotes 1.45 × 10¹⁰ (an older measurement), and the accepted value is 9.65 × 10⁹. The
   library keeps the band data self-consistent rather than matching a quoted $`n_i`$. For Ge and
@@ -109,6 +128,70 @@ $`n_i`$ grows 8.3% per kelvin near room temperature. In the tests, a silicon cel
 open-circuit voltage falls 2.14 mV/K at 300 K. That lies within Green's
 $`\mathrm{d}V_{oc}/\mathrm{d}T = -(E_{g0}/q - V_{oc} + \gamma kT/q)/T`$ for the 1.5 ≤ γ ≤ 3 that
 its transport allows, and the γ = 1.67 it implies matches its two parts of $`J_0`$.
+
+**A diode's saturation current** follows from these laws. With $`n_i^2 \propto T^3 e^{-E_g/kT}`$
+and $`D = \mu kT/q \propto T^{1-\gamma}`$ ($`\gamma`$ of the minority carrier that dominates),
+a short base, $`J_0 \propto n_i^2 D/W`$, gives
+
+```math
+J_0 \propto T^{3 + 1 - \gamma}\, e^{-E_g(T)/kT}, \qquad E_a = -k\,\frac{\mathrm{d}\ln J_0}{\mathrm{d}(1/T)} = E_g - T\frac{\mathrm{d}E_g}{\mathrm{d}T} + (4 - \gamma)\,kT .
+```
+
+So an Arrhenius plot of $`J_0`$ doesn't read the gap. $`E_g - T\,\mathrm{d}E_g/\mathrm{d}T`$ is
+the gap extrapolated linearly to 0 K, 1.196 eV for silicon at 300 K, and the prefactor adds
+$`(4-\gamma)kT`$, 0.041 eV for its electrons, about 1.24 eV in all. A long base,
+$`J_0 \propto n_i^2\sqrt{D/\tau}`$, has $`(1-\gamma)/2`$ in place of $`1-\gamma`$, with τ as you
+give it (the library doesn't move it with T).
+
+**Hot, lightly doped junctions disappear.** $`n_i`$ grows fast: silicon's is 3 × 10¹³ cm⁻³ at
+450 K and 1.6 × 10¹⁴ at 500 K, germanium's 6 × 10¹⁵ at 450 K and 2 × 10¹⁶ at 500 K. Where $`n_i`$
+approaches the doping, both sides go intrinsic and the junction (its built-in voltage, its
+rectification) fades away. Compare $`n_i(T)`$ with the doping before reading a trend in V(T)
+across that range.
+
+### Alloys and other materials from these
+
+A material the library lacks can start from a near relative's entry, with its own numbers put
+in. For example, Al₀.₃Ga₀.₇As from GaAs: give the holes' `mu0` the alloy's gap ($`E_g F`$), and set
+whatever else differs, such as the mobilities and $`N_c`$, $`N_v`$. A field you don't set keeps
+GaAs's value, its electron mobility of 8500 cm²/(V·s) included. Then give each face between the
+two its band offset as a `step` on e⁻, $`\Delta E_c`$ right minus left (the valence-band offset
+follows from the two gaps). `semiconductor(name, { T })` moves only the named material's own data,
+by its laws: numbers you put in stay as given, so at another temperature move them yourself. The
+material still carries the `T` it was made at, for the warning.
+
+```js
+import { Device, units, GAS_CONSTANT, FARADAY } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+
+// The usual estimates for x = 0.3 (E_g = 1.424 + 1.247x eV, ΔE_c ≈ 0.62 ΔE_g,
+// m_e = 0.067 + 0.083x); check them against your source.
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, x = 0.3;
+const gap = 1.424 + 1.247 * x, dEc = 0.62 * (gap - 1.424);
+const alloy = semiconductor('GaAs', { material: 'AlGaAs', T }), m = alloy.materials.AlGaAs;
+m.species['h+'] = { ...m.species['h+'], mu0: units.eV(gap) };
+m.species['e-'] = {
+  ...m.species['e-'],
+  D: 1000e-4 * VT, // μ_n = 1000 cm²/(V·s), a rough figure
+  cRef: m.species['e-'].cRef * ((0.067 + 0.083 * x) / 0.067) ** 1.5, // N_c ∝ m_e^1.5
+};
+// A heterojunction diode, n-AlGaAs | p-GaAs, forward biased.
+const dev = new Device(build({
+  T,
+  library: [semiconductor('GaAs', { T }), alloy],
+  stack: [
+    ohmic(0), layer('AlGaAs', 1e-6, { donors: units.perCm3(1e17) }),
+    { step: { species: 'e-', value: units.eV(-dEc) } }, // GaAs's conduction band is lower
+    layer('GaAs', 1e-6, { acceptors: units.perCm3(1e17) }), ohmic(1.0),
+  ],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { GaAs: 1e8, AlGaAs: 1e8 } }],
+}));
+const sol = dev.solve();
+// The wider gap keeps holes out of the n side: nearly all the current is electrons injected
+// into the GaAs.
+const { 'e-': e, 'h+': h } = sol.contacts.left.flux;
+console.log(sol.warnings.length, (e / -h).toExponential(1)); // 0, 2.5e+7
+```
 
 ## Metals, 20 °C
 

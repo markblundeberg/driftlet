@@ -404,7 +404,11 @@ warnings:
   `warnings` check this again against the solved concentrations);
 - an outside (a bath, a contact's levels) out of equilibrium with a bulk reaction that runs at the
   contact, which would run there for ever: H⁺ and OH⁻ in a bath a little off $`K_w`$ pass a current
-  at zero bias.
+  at zero bias;
+- the definition's own warnings, which every solution repeats: a material whose data are for
+  another temperature than the device's (`semiconductor('Si')` is 300 K's; the device's default
+  is 298.15 K), a starting profile the grid doesn't resolve, conventions a statistics model
+  relies on.
 
 They're heuristics, prompts to check, never errors.
 
@@ -433,14 +437,17 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
 
 - **converged**: the solve converged.
 - **warnings**: the solution's warnings (unresolved double layers, steep profiles, a weakly held
-  part) and the definition's likely unit slips. They're heuristics, so they're marked `?`, a
+  part, a material's data for another temperature) and the definition's likely unit slips. They're heuristics, so they're marked `?`, a
   prompt to look, and don't fail the check.
 - **balance**, in a steady state: each species' ledger, what comes in through each terminal and
   what each reaction (bulk, or at a face) makes or uses, in mol/(m²·s) and for a charged species
   as a current. The terms must sum to zero. A species that a face lets through only by a law (a
   membrane's permeability, a conductance) or by a reaction has a ledger on each side, with what
   crosses as a term: in a cell, Na⁺ leaks into the cytoplasm as fast as the pump puts it out. Under light it's J = F(G − R), and it says where
-  every carrier went: collected, or recombined in the bulk or at which face. A species at rest
+  every carrier went: collected, or recombined in the bulk or at which face. Each reaction is a
+  term named by its equation; two with the same equation (radiative and SRH recombination, both
+  `e- + h+ = 0`) are told apart by their place, `e- + h+ = 0 (bulkReactions[1])`, and
+  `sol.bulkReactions[k]` has each one's rates. A species at rest
   (in equilibrium, flows only of round-off against what it could carry) isn't listed.
 - **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
   what came in.
