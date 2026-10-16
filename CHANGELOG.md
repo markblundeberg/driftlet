@@ -16,6 +16,11 @@ each finding rerun and checked before it was taken.
   +2870, and its low-frequency step two decades off; it matches to 0.2% now. A blocking
   electrode in a crowded electrolyte had a negative real part at 1 mHz; it's positive, and a
   lattice gas with a vast site density matches ideal ions to six digits in Im Z.
+- Conserved combinations came from eliminating the stretches in listing order, so a trace
+  species could come out added to an abundant one: A + B ⇌ C with B at 1 M and A and C at
+  1e-14 mol/m³, listed B first, gave B + C and A − B, where A + C was lost to round-off, and the
+  solve didn't converge or converged with A + C 65% off. They're eliminated by starting amount,
+  least first, then by name, and give the same combinations in any listing.
 - The extra precision kept for each level (its low part, `uLo`) never reached a contact's row
   or a flat stretch's: they computed u + uLo − target, and u + uLo rounds to u. They subtract
   first now. An electrode at open circuit with a fast couple and a slow one (round 11's F5),

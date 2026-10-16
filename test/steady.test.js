@@ -836,3 +836,33 @@ test('a failed steady solve says why it failed, without accuracy warnings about 
   assert.equal(sol.warnings.length, 1, sol.warnings.join('\n'));
   assert.match(sol.warnings[0], /^right: no steady state passes the driven current 100 A\/m².*a terminal's current is into the device/);
 });
+
+// Gemini 4 Argon's review (its finding 3): the conserved combinations came from eliminating the
+// stretches in listing order, so B listed first gave B + C and A − B, with A + C (1e-14 beside
+// B's 1000) lost to round-off: no convergence, or converged with A + C 65% off.
+test('A + B ⇌ C with B at 1 M and A, C in trace: the same conserved amounts, kept exactly, in either listing', () => {
+  for (const trace of [1e-11, 1e-14]) {
+    for (const order of [['A', 'B', 'C'], ['B', 'A', 'C'], ['C', 'B', 'A']]) {
+      const dev = new Device({
+        species: [...order.map((name) => ({ name, z: 0 })), { name: 'Na+', z: 1 }, { name: 'Cl-', z: -1 }],
+        materials: {
+          water: {
+            epsr: 78.3,
+            species: { A: { D: 1e-9, cRef: 1000, mu0: 0 }, B: { D: 1e-9, cRef: 1000, mu0: 0 }, C: { D: 1e-9, cRef: 1000, mu0: -15e3 }, 'Na+': { D: 1e-9, cRef: 1000, mu0: 0 }, 'Cl-': { D: 1e-9, cRef: 1000, mu0: 0 } },
+          },
+        },
+        regions: [{ name: 'bath', material: 'water', length: 1e-4, c0: { A: trace, B: 1000, C: trace, 'Na+': 1000, 'Cl-': 1000 } }],
+        bulkReactions: [{ equation: 'A + B = C', kf: { water: 1e2 } }],
+        contacts: {
+          left: { V: 0, phi: 'neutral', terminal: 'Na+', species: { 'Na+': 'equilibrium' } },
+          right: { V: 0, phi: 'neutral', terminal: 'Na+', species: { 'Na+': 'equilibrium' } },
+        },
+      });
+      const sol = dev.solve(), ac = sol.c.A[0] + sol.c.C[0];
+      assert.ok(sol.converged, `${trace}, [${order}]: ${sol.warnings.join('; ')}`);
+      assert.ok(Math.abs(ac / (2 * trace) - 1) < 1e-9, `${trace}, [${order}]: A + C = ${ac}`);
+      // At equilibrium C/A = (c_B/c_ref) e^(15 kJ/mol / RT) = 425.
+      assert.ok(Math.abs(sol.c.C[0] / sol.c.A[0] / Math.exp(15e3 / (8.314462618 * dev.model.T)) - 1) < 1e-6);
+    }
+  }
+});

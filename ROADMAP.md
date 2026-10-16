@@ -129,9 +129,11 @@ for live demos.
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with
      electrode ports converge in one listing and not another, or to different states, and ~1%
-     have a steady state (a long advance() settles to it) that solve() doesn't find. Two causes
-     are gone: a pivot left at round-off without being exactly zero, and affinity rows picked by
-     listing (cells 1.8% before). What's left: Newton paths that differ with the order of a
+     have a steady state (a long advance() settles to it) that solve() doesn't find. Four causes
+     are gone: a pivot left at round-off without being exactly zero, affinity rows picked by
+     listing (cells 1.8% before), conserved combinations eliminated in listing order (a trace
+     species added to an abundant one, its amount lost to round-off; 1.1.1, from Argon's
+     review), and a level's low part dropped at contacts and flat stretches (F5 above, 1.1.1). What's left: Newton paths that differ with the order of a
      block's unknowns (one path crawls or lands on a dead state, which the stuck-reaction warning
      flags); slow port reactions (warned, below); weakly held regions that lose all their digits;
      and devices with more than one steady state. A pair of port couples settled either near the

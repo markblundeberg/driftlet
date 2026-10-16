@@ -801,6 +801,19 @@ export class Solver {
     this._laws();
   }
 
+  // A stretch's amount from its regions' starting concentrations (c0), per unit area, before
+  // any state exists: Infinity where one isn't given (set by a level, or doping), to order it last.
+  _roughAmount(st) {
+    const { regions, grid } = this.model;
+    let t = 0;
+    for (let q = st.regions[0]; q <= st.regions[1]; q++) {
+      const reg = regions[q], c0 = reg.c0Profile[st.species] ? profileAt(reg.c0Profile[st.species], grid.x[grid.regionStart[q]]) : reg.c0[st.species];
+      if (!(c0 >= 0)) return Infinity;
+      t += c0 * (grid.x[grid.regionEnd[q]] - grid.x[grid.regionStart[q]]);
+    }
+    return t;
+  }
+
   // Whether a stretch's species moves through it (mobile in every region, or a metal's carrier),
   // or stays still in every region (D = 0: trap states, conserved node by node).
   _moves(st) {
@@ -1305,7 +1318,18 @@ export class Solver {
     // Reduced row echelon form; the free columns give the null space. Immobile stretches' columns
     // go first, so that a combination of them alone (trap states, X⁰ + X⁻) comes out on its own,
     // to be kept node by node, apart from any that moves (e⁻ − X⁰, the electrons the traps hold).
-    const order = [...Array(C).keys()].sort((a, b) => (b < S && this._still(this.stretches[b])) - (a < S && this._still(this.stretches[a])));
+    // Then the stretches by their starting amounts, least first, and by name: a trace species
+    // pivoted after an abundant one comes out added to it (A + B ⇌ C with B at 1 M and A at 1e-14
+    // gave B + C and A − B, where A + C was lost to round-off), and the basis followed the listing.
+    const still = (k) => (k < S && this._still(this.stretches[k]) ? 1 : 0);
+    const rough = this.stretches.map((st) => this._roughAmount(st)), name = (k) => model.species[this.stretches[k].species].name;
+    const order = [...Array(C).keys()].sort((a, b) => {
+      if (still(a) !== still(b)) return still(b) - still(a);
+      if (a >= S || b >= S) return a - b;
+      if (rough[a] !== rough[b]) return rough[a] - rough[b];
+      const na = name(a), nb = name(b);
+      return na < nb ? -1 : na > nb ? 1 : a - b;
+    });
     const pivots = [];
     let r = 0;
     for (const col of order) {
