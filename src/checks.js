@@ -134,8 +134,12 @@ function balance(device, sol) {
     if (through('right', i)) add(i, last, 'right contact', -sol.contacts.right.flux[sp.name]);
     model.ports.forEach((port, k) => add(i, port.region, `port ${sol.ports[k].name}`, sol.ports[k].flux[sp.name]));
   });
+  // (two reactions with one equation, radiative and SRH recombination say, keep a line each,
+  // named by their place in the list)
+  const unique = (labels, where) => labels.map((w, k) => (labels.indexOf(w) === labels.lastIndexOf(w) ? w : `${w} (${where}[${k}])`));
+  const bulkWhat = unique(model.reactions.map((_, k) => label(def.bulkReactions?.[k])), 'bulkReactions');
   model.reactions.forEach((rx, k) => {
-    const what = label(def.bulkReactions?.[k]);
+    const what = bulkWhat[k];
     sol.bulkReactions[k].regions.forEach((total, r) => {
       const all = [...rx.reactants, ...rx.products].map((p) => p.i);
       for (const { i, nu } of rx.reactants) add(i, r, what, -nu * total, all);
@@ -153,8 +157,9 @@ function balance(device, sol) {
       add(i, f, `across face ${f} (${type})`, -N);
       add(i, f + 1, `across face ${f} (${type})`, N);
     });
+    const faceWhat = unique(itf.reactions.map((_, k) => label(def.interfaces?.[f]?.reactions?.[k])), 'reactions');
     itf.reactions.forEach((rx, k) => {
-      const rate = Af * sol.interfaces[f].rates[k], what = `${label(def.interfaces?.[f]?.reactions?.[k])} at face ${f}`;
+      const rate = Af * sol.interfaces[f].rates[k], what = `${faceWhat[k]} at face ${f}`;
       const all = rx.part.map((p) => p.i);
       for (const { i, nu, side } of rx.part) add(i, f + side, what, nu * rate, all);
     });

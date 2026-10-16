@@ -37,6 +37,19 @@ test('check(): the ledger of a lit cell is J = F(G − R), term by term, and an 
   assert.ok(item(eq, 'grid').ok, 'round-off currents are not compared');
 });
 
+test('check(): two reactions with one equation (radiative and SRH recombination) keep a ledger line each', () => {
+  const def = solar(0.5);
+  def.bulkReactions = [def.bulkReactions[0], { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }, def.bulkReactions[1]];
+  const dev = new Device(def), sol = dev.solve(), report = check(dev, sol, { refine: false });
+  const e = item(report, 'balance').details.ledgers.find((l) => l.species === 'e-');
+  const term = (what) => e.terms.find((t) => t.what === what)?.rate;
+  const total = (k) => sol.bulkReactions[k].regions.reduce((a, r) => a + r, 0);
+  assert.ok(Math.abs(term('e- + h+ = 0 (bulkReactions[0])') / -total(0) - 1) < 1e-12);
+  assert.ok(Math.abs(term('e- + h+ = 0 (bulkReactions[1])') / -total(1) - 1) < 1e-12);
+  assert.equal(term('e- + h+ = 0'), undefined);
+  assert.equal(term('photon = e- + h+') > 0, true, 'a reaction with its own equation keeps its plain name');
+});
+
 test('check(): the grid check finds a coarse grid, and its change estimates the error (second order: ¾ of it)', () => {
   const dev = new Device(solar(0.5)), report = check(dev, dev.solve());
   const grid = item(report, 'grid');
