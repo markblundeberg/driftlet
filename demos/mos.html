@@ -23,7 +23,7 @@
   <p>p-type silicon under 5 nm of oxide and a metal gate: its capacitance at the frequency you choose, against
     the ideal low- and high-frequency C–V curves, and the bands bending at the surface, from accumulation
     through depletion to inversion. Slow enough, the inversion layer's electrons follow the gate and the
-    capacitance climbs back to C<sub>ox</sub>; faster, they can't arrive in time, and it stays low. How
+    capacitance climbs back toward C<sub>ox</sub>; faster, they can't arrive in time, and it stays low. How
     fast they arrive is set by generation in the silicon (its minority lifetime). (More about the model
     below.)</p>
   <div class="controls" id="controls">
@@ -61,20 +61,22 @@
     what it is and what it isn't. In the oxide, which holds no mobile charge, it's the only line there is,
     and its slope is the oxide field. In the silicon the band edges ride on it, E<sub>c</sub> = −qφ + const,
     so it bends with them. But where it sits is a convention. This page anchors it 0.3 eV above the
-    silicon's conduction band edge and steps it up 0.3 eV into the oxide; the library's own data would put
-    it on the band edge, with no step. Any choice gives the same physics, once the gate's zeroCharge (the gate's Fermi level
+    silicon's conduction band edge and steps it up 0.3 eV into the oxide, numbers picked arbitrarily to show
+    that they change nothing (they're no claim about real Si/SiO₂); the library's own data would put it on
+    the band edge, with no step, and textbooks tie it to the intrinsic level or the vacuum level, choices of
+    the same kind. Any choice gives the same physics, once the gate's zeroCharge (the gate's Fermi level
     minus φ beside it, when the gate is uncharged) changes to match: the capacitance comes out the same to
     every digit. And φ doesn't meet the gate's Fermi level: a metal has no φ worth comparing, so the line
     just stops.</p>
   <p>The capacitance is the small-signal response to a sinusoid on the gate at the chosen frequency
     (driftlet's impedance, C = −1/(ωZ″)), at each gate voltage, solved for every half decade and interpolated
     between. Slow enough, it follows the ideal low-frequency C–V curve (dashed: the oxide in series with the
-    silicon's dQ/dψ, from the closed-form surface charge), to 5e-4 of C<sub>ox</sub> at the slowest: accumulation near C<sub>ox</sub>, a
+    silicon's dQ/dψ, from the closed-form surface charge), to 5 × 10⁻⁴ of C<sub>ox</sub> at the slowest: accumulation near C<sub>ox</sub>, a
     depletion dip, and inversion back up, as the inversion layer's electrons come and go with the gate. Fast,
     only the holes and the depletion edge respond, and in inversion the capacitance stays at its minimum:
     the high-frequency curve. Its ideal form (dotted) freezes the minority charge in place; here the
-    electrons can't be replaced at that speed but can still shift within the layer, which holds a few percent
-    more (Brews's correction). The lower chart is the capacitance against frequency at the gate voltage
+    electrons can't be replaced at that speed but can still shift within the layer, which raises the
+    capacitance a few percent above that ideal (a correction Brews worked out). The lower chart is the capacitance against frequency at the gate voltage
     you're at: in inversion, a step from one curve to the other, at the frequency where generation can just
     keep the layer filled. Shorter lifetimes move it up, about tenfold per decade of τ; with no generation at
     all (the slider's top end), the electrons can only diffuse in from the back contact, and it falls to a
@@ -90,10 +92,16 @@
     so generation keeps it filled at a few tenths of a hertz (τ = 1 µs), ten times faster than in strong
     inversion. That's why, around 0.05 Hz, the C–V curve rises a little just past threshold before
     settling to the high-frequency one.</p>
-  <p>Flat band is at V<sub>FB</sub> = zeroCharge + dipole + φ<sub>bulk</sub>: each term depends on the
-    anchoring, but their sum doesn't, and it's set by the gate interface (a work-function difference).
+  <p>Flat band is at the work-function difference between gate and silicon, V<sub>FB</sub> = −0.90 V at
+    10¹⁷ cm⁻³ (with silicon's electron affinity, 4.05 eV, a gate of work function near 4.15 eV, about
+    aluminium's), whatever the anchoring of φ: the gate's zeroCharge, the step into the oxide and φ in the
+    bulk each depend on it, but their sum, V<sub>FB</sub>, doesn't.
     Threshold is where the surface has inverted as strongly as the bulk is doped, ψ<sub>s</sub> =
     2φ<sub>F</sub>. More doping widens the window between them and deepens the dip.</p>
+  <p>It's an ideal capacitor, and classical: no fixed charge in the oxide and no traps at its interface
+    (which shift and stretch real C–V curves), no quantum confinement of the carriers at the surface (at an
+    oxide this thin, it takes several percent off the capacitance in accumulation and strong inversion), and
+    no inversion layer beyond the gate's edge to feed it electrons from the side.</p>
 </main>
 <script type="module">
 import { Device, EPS0, AVOGADRO, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
