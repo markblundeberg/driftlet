@@ -202,8 +202,8 @@ function start() {
   rec = { t: [], V: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1 };
 }
 function keep(sol) {
-  const { t, probes: pr } = sol.trace;
-  for (let k = 1; k < t.length; k++) {
+  const { t, probes: pr } = sol.trace; // (this call's steps, every one)
+  for (let k = 0; k < t.length; k++) {
     rec.t.push(t[k]);
     const V = pr[1][k] - pr[0][k];
     rec.V.push(V);

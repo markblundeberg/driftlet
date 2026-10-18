@@ -143,22 +143,24 @@ function start() {
   d = new Device(axon(p));
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (no pump: no steady state)
   d.set(axon({ ...p, started: true }));
-  rec = { t: [], V: SITES.map(() => []) };
+  // (ups: when the spikes crossed −30 mV going up at each site; last: the step before this call's)
+  rec = { t: [], V: SITES.map(() => []), ups: SITES.map(() => []), last: null };
 }
 // The latest spike's speed, from when it crossed −30 mV going up at the first and last sites (a warm
 // axon's spike can peak below 0 mV and still travel).
-const ups = SITES.map(() => []);
 function keep(sol) {
-  const { t, probes: pr } = sol.trace;
-  for (let k = 1; k < t.length; k++) {
+  const { t, probes: pr } = sol.trace; // (this call's steps, every one: the one before is rec.last)
+  for (let k = 0; k < t.length; k++) {
+    const t0 = k > 0 ? t[k - 1] : rec.last?.t;
     rec.t.push(t[k]);
     SITES.forEach((_, j) => {
-      const v0 = pr[j][k - 1], v1 = pr[j][k];
+      const v0 = k > 0 ? pr[j][k - 1] : rec.last?.V[j], v1 = pr[j][k];
       rec.V[j].push(v1);
-      if (v0 < -0.03 && v1 >= -0.03) ups[j].push(t[k - 1] + ((t[k] - t[k - 1]) * (-0.03 - v0)) / (v1 - v0));
+      if (v0 < -0.03 && v1 >= -0.03) rec.ups[j].push(t0 + ((t[k] - t0) * (-0.03 - v0)) / (v1 - v0));
     });
   }
-  const last = ups[2].at(-1), first = ups[0].filter((x) => x < last).at(-1);
+  if (t.length) rec.last = { t: t.at(-1), V: SITES.map((_, j) => pr[j].at(-1)) };
+  const last = rec.ups[2].at(-1), first = rec.ups[0].filter((x) => x < last).at(-1);
   if (last !== undefined && first !== undefined && last - first < 0.2) speed = (SITES[2] - SITES[0]) / (last - first);
   const cut = rec.t.findIndex((x) => x >= t.at(-1) - 1.2 * WINDOW);
   if (cut > 0) {
@@ -176,7 +178,7 @@ function draw() {
   };
   const mem = sol.ports[0], xcm = Array.from(sol.x, (x) => 100 * x), Vm = Array.from(mem.Vm);
   const E = (s, g) => (VT / z[s]) * Math.log(OUT[s] / sol.c[s][g]);
-  const fresh = Number.isFinite(speed) && ups[2].at(-1) > t - 3 * p.period;
+  const fresh = Number.isFinite(speed) && rec.ups[2].at(-1) > t - 3 * p.period;
   document.getElementById('status').textContent =
     `t ${(1000 * (t - SETTLE)).toFixed(2)} ms · speed ${fresh ? `${speed.toFixed(2)} m/s` : '— (no spike reaching 5 cm)'} · cable theory's √a scaling from Hodgkin and Huxley's axon: ${(18.73 * Math.sqrt(p.a / 238e-6)).toFixed(2)} m/s at 18.5 °C`;
   const sites = SITES.map((x) => ({ x: [100 * x, 100 * x], y: [-100, 60], color: 'var(--muted)', width: 0.8, dash: [2, 4] }));

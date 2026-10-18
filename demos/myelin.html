@@ -142,7 +142,7 @@ function start() {
     const d = new Device(def(false));
     d.advance(SETTLE, { tol: 1e-4 });
     d.set(def(true));
-    return { d, t: [], V: [], ups: [] };
+    return { d, t: [], V: [], ups: [], last: null }; // (last: the step before the latest call's)
   };
   // (the myelinated site is the middle of the node nearest 1 cm)
   const k = Math.round(SITE / (Ln + p.Lint)), step = Ln + p.Lint;
@@ -159,20 +159,22 @@ function start() {
   }
 }
 function keep(ax, sol) {
-  const { t, probes: pr } = sol.trace;
-  const up = (v, i) => (v[i - 1] < -0.03 && v[i] >= -0.03 ? t[i - 1] + ((t[i] - t[i - 1]) * (-0.03 - v[i - 1])) / (v[i] - v[i - 1]) : NaN);
-  for (let i = 1; i < t.length; i++) {
+  const { t, probes: pr } = sol.trace; // (this call's steps, every one: the one before is ax.last)
+  for (let i = 0; i < t.length; i++) {
+    const t0 = i > 0 ? t[i - 1] : ax.last?.t, v0 = (q) => (i > 0 ? pr[q][i - 1] : ax.last?.v[q]);
+    const up = (q) => (v0(q) < -0.03 && pr[q][i] >= -0.03 ? t0 + ((t[i] - t0) * (-0.03 - v0(q))) / (pr[q][i] - v0(q)) : NaN);
     ax.t.push(t[i]);
     ax.V.push(pr[0][i]);
-    const u = up(pr[0], i);
+    const u = up(0);
     if (!Number.isNaN(u)) ax.ups.push(u);
     // A new stimulus clears the arrivals; each point keeps the latest spike's.
-    if (Math.floor(t[i] / PERIOD) > Math.floor(t[i - 1] / PERIOD)) ax.arrived.fill(NaN);
+    if (Math.floor(t[i] / PERIOD) > Math.floor(t0 / PERIOD)) ax.arrived.fill(NaN);
     for (let j = 0; j < ax.points.length; j++) {
-      const a = up(pr[1 + j], i);
+      const a = up(1 + j);
       if (!Number.isNaN(a)) ax.arrived[j] = a - Math.floor(a / PERIOD) * PERIOD;
     }
   }
+  if (t.length) ax.last = { t: t.at(-1), v: pr.map((v) => v.at(-1)) };
   const cut = ax.t.findIndex((x) => x >= t.at(-1) - 1.2 * Math.max(WINDOW, 4 * +els.pace.value));
   if (cut > 0) (ax.t.splice(0, cut), ax.V.splice(0, cut));
 }
