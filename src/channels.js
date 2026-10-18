@@ -3,6 +3,7 @@
 
 import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
+import { bernoulli } from './bernoulli.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -22,9 +23,10 @@ const HH_T = 273.15 + 6.3;
 
 // The GHK current (outward, A/m²) of an ion at unit permeability, at voltage V (inside − outside).
 export function ghkCurrent(z, inside, outside, V, T) {
+  // zF u (c_in − c_out e^−u)/(1 − e^−u) = zF (c_in B(−u) − c_out B(u)), B(x) = x/(eˣ − 1): finite
+  // at any u (the plain form was ∞/∞ past u = −710)
   const u = (z * V * FARADAY) / (GAS_CONSTANT * T);
-  if (Math.abs(u) < 1e-9) return z * FARADAY * (inside - outside);
-  return (z * FARADAY * u * (inside - outside * Math.exp(-u))) / -Math.expm1(-u);
+  return z * FARADAY * (inside * bernoulli(-u) - outside * bernoulli(u));
 }
 
 /**
@@ -59,6 +61,8 @@ export function hodgkinHuxley({ inside, outside, T, g = {}, leak = 'Cl-', leakZ 
   // T sets the gates' rates, so it must be the device's: never defaulted (their 6.3 °C, under a body-temperature device, doubled a spike's peak, silently).
   need(num(T) && T > 0, `hodgkinHuxley: T must be the device's temperature in K (their own experiments were at 279.45 K, 6.3 °C), got ${T}`);
   need(num(at), `hodgkinHuxley: at must be a voltage (V), got ${at}`);
+  checkOptions('hodgkinHuxley: g', g, ['Na', 'K', 'leak']);
+  checkOptions('hodgkinHuxley: names', names, ['Na', 'K']);
   const G = { Na: 1200, K: 360, leak: 3, ...g };
   const Na = names.Na ?? 'Na+', K = names.K ?? 'K+';
   const q10 = Math.exp(Math.log(3) * ((T - HH_T) / 10)); // Q₁₀ = 3
@@ -79,9 +83,10 @@ export function hodgkinHuxley({ inside, outside, T, g = {}, leak = 'Cl-', leakZ 
     };
   }
   need(inside && outside && typeof inside === 'object' && typeof outside === 'object', 'hodgkinHuxley: give inside and outside concentrations (mol/m³) by species name (or, for a membrane port, its area)');
-  const P = (name, z, gval, what) => {
+  const P = (name, z, key, what) => {
+    const gval = G[key];
     need(num(inside[name]) && inside[name] > 0 && num(outside[name]) && outside[name] > 0, `hodgkinHuxley: give ${name}'s concentration inside and outside (mol/m³), for its ${what}`);
-    need(num(gval) && gval > 0, `hodgkinHuxley: g.${what} must be a conductance > 0 (S/m²), got ${gval}`);
+    need(num(gval) && gval > 0, `hodgkinHuxley: g.${key} must be a conductance > 0 (S/m²), got ${gval}`);
     const E = ((GAS_CONSTANT * T) / (z * FARADAY)) * Math.log(outside[name] / inside[name]);
     need(Math.abs(at - E) > 1e-4, `hodgkinHuxley: ${name}'s Nernst level, ${(E * 1e3).toFixed(1)} mV, is at the calibration voltage; choose another 'at'`);
     return (gval * (at - E)) / ghkCurrent(z, inside[name], outside[name], at, T);
@@ -90,9 +95,9 @@ export function hodgkinHuxley({ inside, outside, T, g = {}, leak = 'Cl-', leakZ 
   return {
     gates,
     species: {
-      [Na]: { type: 'permeability', P: P(Na, 1, G.Na, 'Na channels'), gates: { m: 3, h: 1 } },
-      [K]: { type: 'permeability', P: P(K, 1, G.K, 'K channels'), gates: { n: 4 } },
-      [leak]: { type: 'permeability', P: P(leak, leakZ, G.leak, 'leak') },
+      [Na]: { type: 'permeability', P: P(Na, 1, 'Na', 'Na channels'), gates: { m: 3, h: 1 } },
+      [K]: { type: 'permeability', P: P(K, 1, 'K', 'K channels'), gates: { n: 4 } },
+      [leak]: { type: 'permeability', P: P(leak, leakZ, 'leak', 'leak') },
     },
   };
 }

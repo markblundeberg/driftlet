@@ -174,6 +174,22 @@ test("the kit's hodgkinHuxley(): their gates, Q₁₀ = 3, and GHK permeabilitie
   const warm = hodgkinHuxley({ inside: IN, outside: OUT, T: T + 10 });
   for (const k of ['m', 'h', 'n']) for (const ab of ['alpha', 'beta']) assert.ok(Math.abs(warm.gates[k][ab].rate / HH[k][ab].rate - 3) < 1e-12);
   assert.throws(() => hodgkinHuxley({ inside: { 'Na+': 50 }, outside: OUT, T }), /give K\+'s concentration inside and outside/);
+  // Its options' own options are checked, in every branch, and a bad g names its key.
+  for (const extra of [{}, { linear: true }, { area: 1e4 }]) {
+    assert.throws(() => hodgkinHuxley({ inside: IN, outside: OUT, T, ...extra, g: { na: 1 } }), /hodgkinHuxley: g: no option 'na' \(did you mean 'Na'\?\)/);
+    assert.throws(() => hodgkinHuxley({ inside: IN, outside: OUT, T, ...extra, names: { leak: 'Cl-' } }), /hodgkinHuxley: names: no option 'leak'/);
+  }
+  assert.throws(() => hodgkinHuxley({ inside: IN, outside: OUT, T, g: { Na: -1 } }), /hodgkinHuxley: g\.Na must be a conductance > 0 \(S\/m²\), got -1/);
+});
+
+test('ghkCurrent: finite at any voltage, the drift limits z F u c on either side, and the plain formula where it holds', () => {
+  const VT = RT / FARADAY;
+  for (const V of [-20, -1, -0.1, -1e-9, 0, 1e-9, 0.1, 1, 20]) {
+    const u = V / VT, I = ghkCurrent(1, 10, 100, V, T);
+    const plain = Math.abs(u) < 1e-6 ? FARADAY * (10 - 100 + (u * (10 + 100)) / 2) : (FARADAY * u * (10 - 100 * Math.exp(-u))) / -Math.expm1(-u);
+    const drift = u > 0 ? FARADAY * u * 10 : FARADAY * u * 100;
+    assert.ok(Number.isFinite(I) && Math.abs(I / (Math.abs(u) > 700 ? drift : plain) - 1) < 1e-9, `V ${V}: ${I} vs ${plain}`);
+  }
 });
 
 test("an excitable membrane's impedance: Hodgkin–Huxley gating, linearised, inductive and resonant, as Cole measured", () => {
