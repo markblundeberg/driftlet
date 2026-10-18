@@ -6,6 +6,7 @@ import { build, layer, bath, aqueous, check } from '../src/kit.js';
 // What a steady solve keeps, at the edges of the law finder: devices from Gemini 4 Argon's review
 // (round 2 of its breadth-first pass), each a combination the steady system once dropped or
 // weighed wrongly, so that solve() converged where a long advance() from the same start doesn't go.
+// The last five came from a cold review of src/laws.js against its contract alone.
 
 const lib = (ions, more = []) => {
   const l = aqueous(ions, { epsr: 0 });
@@ -204,4 +205,99 @@ test('a charged immobile species beside the face that makes it: where nothing to
   near(s.terminals.metal.V - V0, 0.2, 1e-6, 'V moved with the bath');
   const g = s.x.length - 3; // (far from the face)
   near(s.c['S+'][g], 1, 1e-9, 'S⁺ away from the face');
+});
+
+test('an immobile species linked across a face: carried between the face\'s two nodes, so not kept node by node', () => {
+  // D = 0 on both sides, the face passing S⁺ by a conductance: the pair evens out. Kept node by
+  // node, solve() left them at 1 and 0.1.
+  const l = aqueous(['Na+', 'Cl-'], { epsr: 0 });
+  l.species.push({ name: 'S+', z: 1 });
+  l.materials.water.species['S+'] = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 2e-6, { name: 'left', c0: { 'Na+': 100, 'Cl-': 101, 'S+': 1 } }), { species: { 'Na+': 'equilibrium', 'Cl-': 'equilibrium', 'S+': { type: 'conductance', G: 1e-6 } } },
+      layer('water', 4e-6, { name: 'right', c0: { 'Na+': 100, 'Cl-': 100.1, 'S+': 0.1 } }), bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const d = new Device(def), g = d.model.grid, s = d.solve(), late = new Device(def).advance(1e8, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  for (const at of [g.regionEnd[0], g.regionStart[1]]) near(s.c['S+'][at], late.c['S+'][at], 1e-6, `S⁺ at node ${at}`);
+  near(s.c['S+'][g.regionEnd[0]], 0.4, 1e-6, 'S⁺ evened out');
+});
+
+test('an immobile species and two adsorbates on one electrode: each node-by-node law gets a row of its own', () => {
+  // S⁺ + A(ads) + e⁻ = B(ads), the electrode held: A − S⁺ and B + S⁺ are kept at each node. Both
+  // took S⁺'s row, one was lost, and θ_A went to 1 for the transient's 0.3.
+  const l = lib(['Na+', 'OH-'], [{ name: 'S+', z: 1 }]);
+  l.materials.water.species['S+'] = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'OH-': 101, 'S+': 1 } }), bath({ 'Na+': 100, 'OH-': 100 }, 'OH-')],
+    ports: [{
+      name: 'metal', region: 'film', V: 0.05, terminal: 'e-', area: 1e4,
+      surface: { Aads: { mu0: 0, capacity: 1e-5, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: 1e-5, theta0: 0.1 } },
+      reactions: [{ equation: 'S+ + Aads + e- = Bads', k0: 1e-4, alpha: 0.5 }],
+    }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e5, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  s.ports[0].x.forEach((_, j) => near(s.ports[0].coverage.Aads[j], late.ports[0].coverage.Aads[j], 1e-6, `θ_A at node ${j}`));
+});
+
+test('an immobile ion that a port at no current links: kept in the port\'s circuit row, not node by node too', () => {
+  // S⁺ immobile, its only charged species through a port at I = 0: kept both ways, the port's
+  // I = 0 was lost, and solve() settled at 0 V for the transient's −1.42 V.
+  const l = aqueous(['Na+', 'Cl-'], { epsr: 0 });
+  l.species.push({ name: 'S+', z: 1 });
+  l.materials.water.species['S+'] = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'Cl-': 101, 'S+': 1 } }), bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')],
+    ports: [{ name: 'p', region: 'film', from: 0, to: 6e-6, I: 0, species: { 'S+': { type: 'conductance', G: 1e3, offset: 0 } } }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e5, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  near(s.terminals.p.V, late.terminals.p.V, 1e-6, 'V');
+  assert.ok(Math.abs(s.ports[0].flux['S+']) < 1e-15, `the port passes ${s.ports[0].flux['S+']} mol/(m²·s) of S⁺ at I = 0`);
+});
+
+test('two laws through what a capacitive contact at no current passes: the contact\'s charge kept once, in its circuit row', () => {
+  // K⁺ through a capacitor at I = 0, K⁺ + L⁻ = KL with L⁻ and KL closed: K⁺ − L⁻ and K⁺ + KL both
+  // pass K⁺. The second took a balance row without the contact's charge, and solve() failed.
+  const l = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 });
+  l.species.push({ name: 'L-', z: -1 }, { name: 'KL', z: 0 });
+  l.materials.water.species['L-'] = { D: 1e-9, mu0: 0, cRef: 1 };
+  l.materials.water.species.KL = { D: 1e-9, mu0: l.materials.water.species['K+'].mu0 - 3e3, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{ I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: { 'K+': { type: 'conductance', G: 1e6, offset: 0 } } },
+      layer('water', 1e-6, { name: 'film', c0: { 'Na+': 100, 'K+': 0.5, 'Cl-': 90.5, 'L-': 10, KL: 1 } }), bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')],
+    bulkReactions: [{ equation: 'K+ + L- = KL', kf: { water: 1e3 } }],
+    grid: { hmin: 5e-8, hmax: 5e-8 },
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  near(s.terminals.left.V, late.terminals.left.V, 1e-6, 'V');
+  assert.equal(d.solver.constraints.filter((cs) => cs.circuit < 0 && cs.parts.some((p) => d.solver.stretches[p.stretch].species === 1)).length, 0, 'no balance-row law through K⁺');
+});
+
+test('a capacitive contact behind a resistance passing a trace of an ion: its current read by the flux, as its charge has no place in the change', () => {
+  // Read by the change in K⁺ (a trace, so the change looked the cleaner), its current left out
+  // dD/dt, and every step failed.
+  const def = build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+    stack: [{ V: 0.1, R: 1e-3, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: { 'K+': { type: 'conductance', G: 1e6, offset: 0 } } },
+      layer('water', 1e-6, { name: 'film', c0: { 'Na+': 100, 'K+': 1e-6, 'Cl-': 100 } }), bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')],
+    grid: { hmin: 5e-8, hmax: 5e-8 },
+  });
+  const d = new Device(def), s = d.advance(1e-2, { tol: 1e-7 });
+  assert.equal(d.solver.timeLaws.length, 0);
+  assert.ok(s.converged && s.terminals.left.V < -1, `V = ${s.terminals.left.V}`);
 });

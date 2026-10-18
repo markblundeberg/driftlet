@@ -3,6 +3,28 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+The steady system's conservation laws now live in `src/laws.js`, found from the device's structure
+alone, with a contract at its head (what it reads, what it returns, what must hold;
+[internals](docs/internals.md)). A cold review of that module against its contract found five
+more laws kept wrongly, each now fixed and in `test/laws.test.js`:
+- An immobile species linked across a face was kept node by node, though the face carries it
+  between its two nodes (solve() left them at 1 and 0.1 for the transient's 0.4 and 0.4).
+- Two node-by-node laws could take the same row, and one was lost (an immobile S⁺ with
+  S⁺ + A(ads) + e⁻ = B(ads): θ_A settled at 1 for 0.3). Their rows are chosen by elimination,
+  node by node.
+- An immobile ion that a port at no current links was kept both node by node and in the port's
+  circuit row, and the port's I = 0 was lost (0 V for −1.42 V).
+- Two laws through what a capacitive contact at no current passes: the second left out the
+  contact's charge, and the solve failed. The charge is kept once, in a circuit row, as an
+  electrode's is.
+- A capacitive contact behind a resistance: time steps reading its current by the change of
+  what it passes left out its charging current, and failed. It's read by the flux.
+
+A law that no row of the steady system can keep is set aside, and the steady solve goes by time
+steps instead, where before it was dropped.
+
 ## 1.2.1 (2026-10-18)
 
 Three more conservation laws a steady solve kept wrongly, found the same day (two by Gemini 4

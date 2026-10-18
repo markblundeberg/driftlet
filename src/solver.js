@@ -831,6 +831,7 @@ export class Solver {
     this.timeLaws = found.timeLaws;
     this.contactLaw = found.contactLaw;
     this.carriers = found.carriers;
+    this.unkept = found.unkept; // (laws no row here can keep: see _directSteady)
     this.contactQ = [null, null]; // (each contact's charge as _contact captures it, for contactLaw)
     this.pinnedIslands = [];
     this.islandsOn = false; // (newton() turns them on, see there)
@@ -983,10 +984,11 @@ export class Solver {
     }
   }
 
-  // Every stretch either reaches a contact or is a mobile spectator: the steady equations can
-  // be solved directly (dt = ∞), with the spectators' amounts as constraints.
+  // Every stretch either reaches a contact or is kept by a law, and no law is left unkept: the
+  // steady equations can be solved directly (dt = ∞), with the laws in place of their rows. Else
+  // the steady solve goes by time steps, which keep every amount themselves.
   _directSteady() {
-    return this.stretches.every((st) => st.connected || st.conserved);
+    return this.unkept.length === 0 && this.stretches.every((st) => st.connected || st.conserved);
   }
 
   // Conservation rows for the spectators (steady solves only): Σ v c_i = amount over the

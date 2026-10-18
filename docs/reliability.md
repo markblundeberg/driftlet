@@ -161,7 +161,10 @@ is the one that's off: it loses a conserved K⁺ total in proportion to its tole
 at tol 1e-9) when a capacitive contact, a membrane capacitor and a held electrode share the
 device, where the steady solve keeps it to round-off. The sweep found its first law the day it
 was written (an immobile species adsorbing on an electrode over part of its region); Gemini 4
-Argon's review found nine more by hand (one through a device it suggested), each now in
+Argon's review found nine more by hand (one through a device it suggested), and a cold review
+of `src/laws.js` against its contract alone five more (an immobile species linked across a face,
+or by a port; two node-by-node laws sharing a row; a capacitive contact's charge in a second law,
+and in a time step's reading of its current), none of them in the sweep's devices. Each is now in
 `test/laws.test.js`.
 
 ## Hard cases

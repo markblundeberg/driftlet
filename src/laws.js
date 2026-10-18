@@ -41,7 +41,7 @@
 // circuit row, S + t.
 //
 // Output of findLaws(s): { constraints, affinities, localConstraints, islands, timeLaws,
-// contactLaw, carriers, conserved }:
+// contactLaw, carriers, conserved, unkept }:
 //   constraints[]  a kept amount, Σ w·n_stretch + Σ w·(surface's Γ a θ) + Σ w·Q_k/(z_k F) (ports
 //                  with a capacitance) + Σ λ·D_t/F (contacts' charges), from
 //                  { parts: [{stretch, w}], surface: [{col, w}], carriers: [{k, w}],
@@ -56,7 +56,9 @@
 //                  of balance row `row`; idx, w, len, res: workspace.
 //   localConstraints[]  { parts: [{i, w}] or [{q, k, w}], row, nodes, reference }: at each node
 //                  g of `nodes`, Σ w c_i + Σ w Γ a θ_q (a surface's only where port k is), as it
-//                  was, in place of slot `row` of g's block.
+//                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
+//                  one region: nothing carries them between nodes) that no terminal feeds, and
+//                  surfaces. One law can have several entries, a row per set of nodes.
 //   islands[]      { stretch, row, flux, weight, outside }: a piece of a stretch between faces fed
 //                  by nothing else, its balance summed over its nodes (Σ weight·u over the `flux`
 //                  rows, plus the `outside` rows' balances) in place of balance row `row`.
@@ -65,29 +67,43 @@
 //   contactLaw[t]  whether some constraint keeps contact t's charge.
 //   carriers       the terminals with an electrode's-charge column, in column order.
 //   conserved      the stretches some constraint or local constraint keeps (indices).
+//   unkept         the conserved combinations (basis vectors) that no row here can keep. With
+//                  any, or any stretch neither reached by a contact nor conserved, the solver
+//                  doesn't solve the steady system directly but by time steps, which keep every
+//                  amount themselves (Solver._directSteady).
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. conservedMoieties' basis spans the null space of its rows: every reaction's stoichiometry,
 //      and what each terminal feeds (freely, held at a voltage; in proportion to charge, driven
 //      by a current, with `drives`). Every basis vector w has w·row = 0 for every row.
 //   2. No equation is replaced twice and none is lost: the rows the constraints and affinities
-//      take are chosen by elimination over v, each law's v reduced by those already chosen, so
-//      their v are independent. Local constraints and islands each take a row no other law has.
-//   3. A balance row taken is a moving stretch's, never a metal's carriers' (conductor) nor, for
-//      an affinity, a stretch a terminal feeds; never a circuit row for an affinity.
-//   4. A law through an electrode's charge takes a circuit row: that terminal's, if no earlier
-//      law did.
+//      take are chosen by elimination over v (one map from w, rowsOf), each law's v reduced by
+//      those already chosen, so their v are independent. The local constraints' rows are chosen
+//      the same way node by node, over the slots there. Islands take rows no other law has.
+//   3. A balance row taken is a moving stretch's (a floating metal's own amount takes its
+//      carriers'). An affinity's is never a metal's carriers', nor a stretch's that a terminal
+//      feeds, nor a circuit row.
+//   4. A charge is kept only in a circuit row (its pin there carries the voltage it depends on):
+//      an electrode's, at weight w/z on its carrier column, and a contact's (D_in, no column), at
+//      λ = w/z on what it passes. The first law through each takes a circuit row (the first
+//      terminal's in order whose v is left), and the laws after it have its multiple taken off.
+//      One with a charge left and no circuit row is unkept.
 //   5. Every basis vector of conservedMoieties(s, { drives: true }) is accounted for: a
-//      spectator's own amount, a constraint, local constraints node by node, or dropped for one
-//      of the reasons marked DROP in findLaws. Each DROP states why nothing is lost.
-//   6. The result doesn't depend on the order species, reactions or ports are listed in: the
-//      pivots and the affinities' rows are chosen by the reactions' own terms and by name.
+//      spectator's own amount, a constraint, local constraints node by node, unkept, or dropped
+//      for one of the reasons marked DROP in findLaws. Each DROP states why nothing is lost.
+//   6. The pivots and the affinities' rows don't depend on the order species, reactions or ports
+//      are listed in: they're chosen by the reactions' own terms and by name. A constraint's row
+//      can (the total iron in Fe²⁺'s row or Fe³⁺'s): the same law in another of its rows, with
+//      the same solution.
 //   7. Nothing in `s` is written.
 // Tests: test/laws.test.js (one device per law once dropped); tools/lawsweep.js (810 devices,
 // solve() against a settled advance()).
 
 // Whether a stretch's species moves through it (mobile in every region, or a metal's carrier),
-// or stays still in every region (D = 0: trap states, conserved node by node).
+// or stays still: D = 0 in its one region, so nothing carries it between nodes (trap states,
+// conserved node by node). A stretch over two regions is joined by a face that passes it, which
+// carries it between the face's nodes: still in neither sense. (Kept node by node, S⁺ linked
+// across a face stayed at 1 and 0.1 on its two nodes, where the transient evens them to 0.4.)
 export function moves({ model }, st) {
   const { regions, materials } = model;
   for (let q = st.regions[0]; q <= st.regions[1]; q++) {
@@ -99,6 +115,7 @@ export function moves({ model }, st) {
 
 export function still({ model }, st) {
   const { regions, materials } = model;
+  if (st.regions[0] !== st.regions[1]) return false;
   for (let q = st.regions[0]; q <= st.regions[1]; q++) {
     const mat = materials[regions[q].material];
     if (mat.conductor || mat.D[st.species] > 0) return false;
@@ -354,6 +371,21 @@ export function findLaws(s) {
   const rowOf = (k) => blockOfNode[stretches[k].nodes[0]] * M + 1 + stretches[k].species;
   const chosen = []; // (a column and the reduced weights, per row replaced: S + t for terminal t's)
   const spectators = new Set(constraints.map((cs) => cs.row));
+  // A law's weights over the rows it can take: a moving stretch's balance row (not a spectator's,
+  // taken above), and the circuit row of each terminal driven by a current that feeds it, at w/z
+  // (w/z of an electrode's charge too). The same map for every law, affinities and constraints
+  // alike, so that the elimination compares like with like.
+  const rowsOf = (w) => {
+    const v = new Float64Array(S + T);
+    for (let k = 0; k < S; k++) {
+      if (w[k] === 0) continue;
+      const st = stretches[k];
+      if (moves(s, st) && !spectators.has(rowOf(k))) v[k] = w[k];
+      if (z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / z[st.species];
+    }
+    carriersOf.forEach((k, j) => w[X + j] !== 0 && (v[S + k] = w[X + j] / zc(k)));
+    return v;
+  };
   // What an electrode holds goes only in its terminal's circuit row (its charge depends on the
   // terminal's voltage, which a balance row's pin can't carry): the combinations through it come
   // first, so that the first takes that row, and the rest have its multiple taken off.
@@ -403,13 +435,7 @@ export function findLaws(s) {
     const kept = laws.filter((l) => !fed(l));
     const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
     for (const w of tries) {
-      const v = new Float64Array(S + T);
-      for (let k = 0; k < S; k++) {
-        if (w[k] === 0) continue;
-        const st = stretches[k];
-        if (moves(s, st) && !spectators.has(rowOf(k))) v[k] = w[k];
-        if (z[st.species] !== 0) for (const t of driven(st)) v[S + t] = w[k] / z[st.species];
-      }
+      const v = rowsOf(w);
       for (const [col, row] of chosen) {
         const fc = v[col];
         if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
@@ -431,14 +457,27 @@ export function findLaws(s) {
       break;
     }
   }
+  // A contact's charge has no column: a law through what a contact driven by a current passes,
+  // where it holds a charge, counts λ D_in/F of it at λ = w/z on what it passes (see add). Kept
+  // once, in a circuit row, like an electrode's: the first law through it takes one, and the rest
+  // have its multiple taken off. (Two laws through K⁺ at a capacitor at I = 0, K⁺ − L⁻ and K⁺ + KL
+  // under K⁺ + L⁻ = KL: the second took KL's balance row without the charge, keeping n_K + n_KL,
+  // which the transient moves 15×, and the solve failed.)
+  const lamOf = (w, t) => (contactCharges(s, t) ? (stretches.map((st, k) => (w[k] !== 0 && z[st.species] !== 0 && driven(st).includes(t) ? w[k] / z[st.species] : 0)).find((x) => x !== 0) ?? 0) : 0);
+  const heldContact = new Map(); // (contact → the law that keeps its charge)
+  const unkept = [];
+  const reduce = (w, c, f) => {
+    const r = w.map((x, m) => (Math.abs(x - f * c[m]) < 1e-9 ? 0 : x - f * c[m]));
+    r.own = w.own;
+    return r;
+  };
   for (let w of [...laws.filter(through), ...laws.filter((w) => !through(w))]) {
     for (const [j, k] of carriersOf.entries()) {
       const c = held.get(k);
       if (w[X + j] === 0 || !c) continue;
-      const f = w[X + j] / c[X + j], own = w.own;
-      w = w.map((x, m) => (Math.abs(x - f * c[m]) < 1e-9 ? 0 : x - f * c[m]));
-      w.own = own;
+      w = reduce(w, c, w[X + j] / c[X + j]);
     }
+    for (const [t, c] of heldContact) if (lamOf(w, t) !== 0) w = reduce(w, c, lamOf(w, t) / lamOf(c, t));
     const parts = [...w.keys()].filter((k) => isStretch(k) && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
     const surface = [...w.keys()].filter((k) => isSurface(k) && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
     const carriers = carriersOf.flatMap((k, j) => (w[X + j] !== 0 ? [{ k, w: w[X + j] }] : []));
@@ -446,18 +485,15 @@ export function findLaws(s) {
     // too is the circuit's, here: below skips it, and a floating electrode whose adsorbates gave
     // it electrons settled 15 mV from where the transient ends.)
     if (parts.length === 0 && carriers.length === 0) continue;
-    // DROP: a spectator's own amount, added above.
-    if (parts.length === 1 && surface.length === 0 && stretches[parts[0].stretch].spectator) continue;
-    // DROP: through a stretch still in part only, which no row here can carry: left to giant
-    // time steps (a known gap).
-    if (parts.some((p) => !moves(s, stretches[p.stretch]) && !still(s, stretches[p.stretch]))) continue;
-    const v = new Float64Array(S + T);
-    for (const { stretch: k, w: wk } of parts) {
-      const st = stretches[k];
-      if (moves(s, st) && !spectators.has(rowOf(k))) v[k] = wk;
-      if (z[st.species] !== 0) for (const t of driven(st)) v[S + t] = wk / z[st.species];
+    // UNKEPT: through a stretch still in part only, which no row here can carry (a known gap).
+    if (parts.some((p) => !moves(s, stretches[p.stretch]) && !still(s, stretches[p.stretch]))) {
+      unkept.push(w);
+      continue;
     }
-    for (const { k, w: wk } of carriers) v[S + k] = wk / zc(k);
+    // DROP: a spectator's own amount: added above where it moves, node by node below where it's
+    // still.
+    if (parts.length === 1 && surface.length === 0 && stretches[parts[0].stretch].spectator) continue;
+    const v = rowsOf(w);
     for (const [col, row] of chosen) {
       const f = v[col];
       if (f !== 0) for (let j = 0; j < S + T; j++) v[j] -= f * row[j];
@@ -468,11 +504,19 @@ export function findLaws(s) {
     if (!(scale > 1e-9)) continue;
     const ok = (j) => j !== undefined && Math.abs(v[j]) > 1e-9 * scale;
     const col = [...Array(T).keys()].map((t) => S + t).find(ok) ?? [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own].find(ok) ?? v.findIndex((x) => Math.abs(x) === scale);
+    // UNKEPT: a charge (an electrode's on its capacitance, or a contact's) in a balance row,
+    // whose pin can't carry the terminal's voltage it depends on, nor (a contact's) hold it at
+    // all: none left to take off, no circuit row left to take.
+    if (circuitOf(col) < 0 && (carriers.some(({ k }) => model.ports[k - 2].capacitance) || [0, 1].some((t) => lamOf(w, t) !== 0))) {
+      unkept.push(w);
+      continue;
+    }
     // (Other electrodes' charges in a circuit row not their own: their voltages enter it through
     // termDX. Two floating electrodes sharing a closed Fe³⁺, their law dropped, settled at 1.3 V
     // for −0.65.)
     chosen.push([col, v.map((x) => x / v[col])]);
     if (circuitOf(col) >= 0) held.set(circuitOf(col), w);
+    for (const t of [0, 1]) if (circuitOf(col) >= 0 && lamOf(w, t) !== 0 && !heldContact.has(t)) heldContact.set(t, w);
     add(parts, circuitOf(col) < 0 ? col : parts[0]?.stretch, surface, circuitOf(col), carriers);
   }
   const contactLaw = [0, 1].map((k) => constraints.some((cs) => cs.contacts.some((c) => c.t === k)));
@@ -482,9 +526,14 @@ export function findLaws(s) {
   // to that node's block, in place of one of their balances.
   const localConstraints = [];
   const span = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
+  const picked = new Map(); // (node → the rows chosen there: [slot, the reduced weights by slot])
   for (const w of laws) {
     const parts = [...w.keys()].filter((k) => w[k] !== 0);
     if (parts.some(isCarrier)) continue; // (through an electrode: above)
+    // (Fed by a terminal driven by a current: in its circuit row, above. A port spread over
+    // several nodes carries it between them too. Kept here as well, S⁺ that a port at I = 0
+    // links was held twice, and the port's I = 0 lost: the solve settled at 0 V for −1.42 V.)
+    if (parts.some((k) => isStretch(k) && terms.some((_, t) => feeds(t, stretches[k])))) continue;
     const sets = parts.map((k) => (isSurface(k) ? model.ports[surfCols[k - S][0]].nodes : still(s, stretches[k]) ? span(stretches[k].nodes) : null));
     if (sets.includes(null)) continue; // (through a moving stretch: above)
     // Its nodes: the immobile stretches', side by side, with any surface's window among them (a
@@ -493,19 +542,45 @@ export function findLaws(s) {
     // was lost, and a floating electrode's coverage drifted). Or a surface's alone.
     const own = parts.filter(isStretch), base = own.length > 0 ? sets[parts.indexOf(own[0])] : sets[0];
     const same = (set) => set.length === base.length && set.every((g, j) => g === base[j]);
-    // DROP: immobile stretches over different nodes, or a surface outside them (assumed not to
-    // arise: nothing carries any of them, so no reaction joins two that don't share nodes).
-    if (!parts.every((k, j) => (isStretch(k) ? same(sets[j]) : sets[j].every((g) => base.includes(g))))) continue;
+    // UNKEPT: immobile stretches over different nodes, or a surface outside them: a face
+    // reaction joining the two nodes of a face, whose sum it keeps and neither alone.
+    if (!parts.every((k, j) => (isStretch(k) ? same(sets[j]) : sets[j].every((g) => base.includes(g))))) {
+      unkept.push(w);
+      continue;
+    }
     for (const k of own) conserved.add(k);
     const slot = (k) => (isStretch(k) ? 1 + stretches[k].species : 1 + n + surfCols[k - S][1]);
-    // (its row a stretch's where it has one, present at every node; else the surface's)
+    // Its row at each node, chosen by elimination as the constraints' are: its weights over the
+    // slots there (a surface's only where it is) reduced by the rows already chosen there, then
+    // the slot it prefers (a stretch's where it has one, present at every node, its own column's
+    // first; else the surface's) where that's left, else the first that is. One said already
+    // there, by those before it, is left out there. (Both given the same row, immobile S⁺ with
+    // S⁺ + A(ads) + e⁻ = B(ads): A − S⁺ and B + S⁺ took S⁺'s, one was lost, and θ_A settled at 1
+    // for the transient's 0.3.)
     const rowPart = own.length > 0 ? (own.includes(w.own) ? w.own : own[0]) : parts.includes(w.own) ? w.own : parts[0];
-    localConstraints.push({
-      parts: parts.map((k) => (isStretch(k) ? { i: stretches[k].species, w: w[k] } : { q: surfCols[k - S][1], k: surfCols[k - S][0], w: w[k] })),
-      row: slot(rowPart),
-      nodes: base,
-      reference: new Float64Array(sets[0].length),
-    });
+    const rowsAt = new Map(); // (slot → its nodes)
+    for (const g of base) {
+      const v = new Map();
+      parts.forEach((k, j) => sets[j].includes(g) && v.set(slot(k), w[k]));
+      for (const [sl, row] of picked.get(g) ?? []) {
+        const f = v.get(sl);
+        if (f) for (const [sx, x] of row) v.set(sx, (v.get(sx) ?? 0) - f * x);
+      }
+      const scale = [...v.values()].reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+      if (!(scale > 1e-9)) continue;
+      const ok = (sl) => Math.abs(v.get(sl) ?? 0) > 1e-9 * scale;
+      const sl = ok(slot(rowPart)) ? slot(rowPart) : [...v.keys()].sort((a, b) => a - b).find(ok);
+      picked.set(g, [...(picked.get(g) ?? []), [sl, new Map([...v].map(([sx, x]) => [sx, x / v.get(sl)]))]]);
+      rowsAt.set(sl, [...(rowsAt.get(sl) ?? []), g]);
+    }
+    for (const [row, nodes] of rowsAt) {
+      localConstraints.push({
+        parts: parts.map((k) => (isStretch(k) ? { i: stretches[k].species, w: w[k] } : { q: surfCols[k - S][1], k: surfCols[k - S][0], w: w[k] })),
+        row,
+        nodes,
+        reference: new Float64Array(nodes.length),
+      });
+    }
   }
   // An immobile stretch at a node where nothing touches it (no reaction there, no port or contact
   // linking it) keeps its concentration: its balance there is 0 = 0 in a steady state, which
@@ -602,6 +677,10 @@ export function findLaws(s) {
       if (fedBy.size !== 1) continue;
       const [k] = fedBy;
       if (!behind.includes(k) || timeLaws.some((cs) => cs.circuit === k)) continue;
+      // (Nor a contact that holds a charge: its current is what it passes and dD_in/dt, which the
+      // change leaves out. Read by it, a capacitive contact behind a resistance passing a trace
+      // of K⁺ failed every step.)
+      if (k < 2 && contactCharges(s, k)) continue;
       const zk = k >= 2 ? carrierZ(s, k) : 0;
       const lambda = carriers.find((p) => p.k === k)?.w / zk || parts.map((p) => (feeds(k, stretches[p.stretch]) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
       if (!lambda) continue;
@@ -611,5 +690,5 @@ export function findLaws(s) {
       timeLaws.push({ parts, surface, carriers, terminals: [k], circuit: k, lambda, idx: new Int32Array(nn * M), w: new Float64Array(nn * M), len: 0 });
     }
   }
-  return { constraints, affinities, localConstraints, islands, timeLaws, contactLaw, carriers: carriersOf, conserved };
+  return { constraints, affinities, localConstraints, islands, timeLaws, contactLaw, carriers: carriersOf, conserved, unkept };
 }

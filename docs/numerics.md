@@ -730,17 +730,28 @@ the terms that cancel:
     port or contact at no current that passes K⁺ keeps $`n_K + Q/F`$ (a contact's Q its
     displacement $`D_\text{in}`$), and two floating electrodes sharing a closed Fe³⁺ keep the iron
     with both their charges, the law in one's circuit row moving with the other's voltage too.
+    A charge is kept only in a circuit row, once: the first combination through it takes one,
+    and the rest have its multiple taken off (a capacitor passing K⁺ under K⁺ + L⁻ = KL keeps
+    $`n_K - n_L + D/F`$ there, and $`n_L + n_{KL}`$ in a balance row).
     At any other current such a terminal only stores what comes in, which has no steady state,
     and the solve says so at once.
   - an **immobile** combination (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) keeps it
     node by node, since nothing carries it anywhere, as do an electrode's surface species
     (adsorbates that only turn into each other keep their total on every site), its row local,
     one per node in its own block, a coverage counted as the sites it fills per volume,
-    $`\Gamma a \theta`$, beside the concentrations. (The null space is taken with the immobile and
+    $`\Gamma a \theta`$, beside the concentrations. Each node's rows are chosen by elimination
+    over the slots there, as below. Immobile means D = 0 in one region with no terminal feeding
+    it: a species linked across a face is carried between the face's two nodes, and one a
+    port links is carried between the port's nodes, kept with the port's charge in its circuit
+    row. (The null space is taken with the immobile and
     surface columns first, so that these come out apart from the combinations that move.) A combination of immobile
     stretches with a moving one (the electrons the traps hold, $`e^- - X^0`$, in a closed film) is
     an amount like any other, its immobile parts summed over their nodes;
   - a **floating metal** keeps the charge on its faces, its sheets' displacement.
+
+  A combination that none of these rows can keep (through a stretch immobile in part only, a
+  face reaction joining two immobile stretches at a face, a charge with no circuit row left) is
+  set aside, and the steady solve then goes by time steps, which keep every amount themselves.
 
   A closed stretch keeps the amount it was given (its `c0`, or what it held when `set()`
   closed it); a combination behind a terminal at no current keeps what the state holds when the
