@@ -131,3 +131,26 @@ test('a face reaction that makes an immobile species, beside a floating electrod
   near(s.terminals.metal.V, late.terminals.metal.V, 1e-6, 'V');
   near(s.c['Ag+'].at(-1), late.c['Ag+'].at(-1), 1e-6, 'Ag⁺');
 });
+
+test('an immobile species adsorbing on a floating electrode over part of its region: S + Γaθ kept where the electrode is, S alone elsewhere, and the electrons summed', () => {
+  // S0 + OH⁻ = C(ads) + e⁻ at I = 0, the electrode over 4 of the film's 10 µm. Required to share
+  // the stretch's nodes, the local law was lost, and the mean coverage drifted from 0.2 to 0.70.
+  const G = 1e-5, area = 1e4;
+  const l = lib(['Na+', 'OH-', 'Cl-'], [{ name: 'S0', z: 0 }]);
+  l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'OH-': 1, 'Cl-': 99, S0: 1 } }), bath({ 'Na+': 100, 'OH-': 1, 'Cl-': 99 }, 'Cl-')],
+    ports: [{ name: 'metal', region: 'film', from: 0, to: 4e-6, I: 0, terminal: 'e-', area, surface: { Cads: { mu0: 0, capacity: G, theta0: 0.2 } }, reactions: [{ equation: 'S0 + OH- = Cads + e-', k0: 1e-4, alpha: 0.5 }] }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const s = new Device(def).solve(), late = new Device(def).advance(1e6, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  for (const sol of [s, late]) {
+    const p = sol.ports[0];
+    near(p.coverage.Cads.reduce((t, x) => t + x, 0) / p.x.length, 0.2, 1e-9, 'the mean coverage');
+    p.x.forEach((x, j) => near(sol.c.S0[sol.x.indexOf(x)] + G * area * p.coverage.Cads[j], 1 + G * area * 0.2, 1e-9, `S0 + Γaθ at node ${j}`));
+  }
+  near(s.terminals.metal.V, late.terminals.metal.V, 1e-6, 'V');
+});

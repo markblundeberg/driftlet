@@ -1058,13 +1058,22 @@ export class Solver {
       const parts = [...w.keys()].filter((k) => w[k] !== 0);
       if (parts.some((k) => k >= X)) continue; // (through an electrode: above)
       const sets = parts.map((k) => (k >= S ? model.ports[this.surfCols[k - S][0]].nodes : this._still(this.stretches[k]) ? span(this.stretches[k].nodes) : null));
-      if (sets.some((set) => set === null || set.length !== sets[0].length || set.some((g, j) => g !== sets[0][j]))) continue; // (side by side only)
-      for (const k of parts) if (k < S) this.stretches[k].conserved = true;
+      if (sets.includes(null)) continue;
+      // Its nodes: the immobile stretches', side by side, with any surface's window among them (a
+      // surface's term only where it is: an immobile S that adsorbs on an electrode spread over
+      // part of its region keeps S + Γaθ there and S alone elsewhere; required to match, that law
+      // was lost, and a floating electrode's coverage drifted). Or a surface's alone.
+      const own = parts.filter((k) => k < S), base = own.length > 0 ? sets[parts.indexOf(own[0])] : sets[0];
+      const same = (set) => set.length === base.length && set.every((g, j) => g === base[j]);
+      if (!parts.every((k, j) => (k < S ? same(sets[j]) : sets[j].every((g) => base.includes(g))))) continue;
+      for (const k of own) this.stretches[k].conserved = true;
       const slot = (k) => (k < S ? 1 + this.stretches[k].species : 1 + this.n + this.surfCols[k - S][1]);
+      // (its row a stretch's where it has one, present at every node; else the surface's)
+      const rowPart = own.length > 0 ? (own.includes(w.own) ? w.own : own[0]) : parts.includes(w.own) ? w.own : parts[0];
       this.localConstraints.push({
-        parts: parts.map((k) => (k < S ? { i: this.stretches[k].species, w: w[k] } : { q: this.surfCols[k - S][1], w: w[k] })),
-        row: slot(parts.includes(w.own) ? w.own : parts[0]),
-        nodes: sets[0],
+        parts: parts.map((k) => (k < S ? { i: this.stretches[k].species, w: w[k] } : { q: this.surfCols[k - S][1], k: this.surfCols[k - S][0], w: w[k] })),
+        row: slot(rowPart),
+        nodes: base,
         reference: new Float64Array(sets[0].length),
       });
     }
@@ -1188,7 +1197,10 @@ export class Solver {
     for (const lc of this.localConstraints) {
       lc.nodes.forEach((g, j) => {
         let t = 0;
-        for (const { i, q, w } of lc.parts) t += w * (i !== undefined ? c[g * n + i] : this._sites(g) * th[g * nSurf + q]);
+        for (const { i, q, k, w } of lc.parts) {
+          if (i !== undefined) t += w * c[g * n + i];
+          else if (this.surfPort[g] === k) t += w * this._sites(g) * th[g * nSurf + q];
+        }
         lc.reference[j] = t;
       });
     }
@@ -1276,14 +1288,15 @@ export class Solver {
         if (this.loc[b * M + lc.row] < 0) return;
         this._replaceRow(b, lc.row);
         let t = 0;
-        for (const { i, q, w } of lc.parts) {
+        for (const { i, q, k, w } of lc.parts) {
           if (i !== undefined) {
             t += w * c[g * n + i];
             this._dc(g, i, d);
             for (let s = 0; s < M; s++) if (d[s] !== 0) this._j(b, lc.row, b, s, w * d[s]);
             continue;
           }
-          // A coverage, with ∂θ_q/∂η_x = θ_q (δ_qx − θ_x) over its surface's species.
+          // A coverage, with ∂θ_q/∂η_x = θ_q (δ_qx − θ_x) over its surface's species (where it is).
+          if (this.surfPort[g] !== k) continue;
           const tq = th[g * nSurf + q], ns = this.model.ports[this.surfPort[g]].surface.length, ws = w * this._sites(g);
           t += ws * tq;
           for (let x = 0; x < ns; x++) this._j(b, lc.row, b, 1 + n + x, ws * tq * ((q === x ? 1 : 0) - th[g * nSurf + x]));
