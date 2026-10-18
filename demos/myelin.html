@@ -82,6 +82,10 @@ import { showCode, fromQuery, pauser } from './common.js';
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const T = 273.15 + 18.5, VT = (GAS_CONSTANT * T) / FARADAY, a = 5e-6, am = 2 / a, L = 0.02, Ln = 1e-6;
 const PERIOD = 10e-3, SETTLE = 30e-3, WINDOW = 1.5e-3, SITE = 0.01;
+// The time shown: the window, or four seconds of playback at the rate it's reaching ("as fast as it
+// solves" asks for 1 s a second and reaches far less: taken as asked, it showed 4 s).
+let rate = 0;
+const span = () => Math.max(WINDOW, 4 * Math.min(+els.pace.value, rate));
 // The propagation demo's axoplasm and sea water: Nernst potentials at Hodgkin and Huxley's.
 const IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52.5, 'A-': 397.5 };
 const E0 = { 'Na+': 50 * mV, 'K+': -77 * mV, 'Cl-': -54.387 * mV };
@@ -175,7 +179,7 @@ function keep(ax, sol) {
     }
   }
   if (t.length) ax.last = { t: t.at(-1), v: pr.map((v) => v.at(-1)) };
-  const cut = ax.t.findIndex((x) => x >= t.at(-1) - 1.2 * Math.max(WINDOW, 4 * +els.pace.value));
+  const cut = ax.t.findIndex((x) => x >= t.at(-1) - 1.2 * span());
   if (cut > 0) (ax.t.splice(0, cut), ax.V.splice(0, cut));
 }
 // The latest spike's speed: from its stimulus (the start of the pulse) to the site, less a node's delay ~ nothing.
@@ -205,9 +209,9 @@ function draw() {
     xlabel: 'x along the axon (cm)', ylabel: 'V_m (mV)', xlim: [0, 100 * L], ylim: [-100, 60],
     series: [...ticks, { x: cm(sb), y: Vm(sb), color: colors[6], width: 2, label: 'bare' }, { x: cm(sm), y: Vm(sm), color: colors[1], width: 2, label: 'myelinated (ticks: nodes)' }],
   });
-  const ms = (ax) => ax.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE), span = 1000 * Math.max(WINDOW, 4 * +els.pace.value);
+  const ms = (ax) => ax.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE), shown = 1000 * span();
   chart(document.getElementById('vt'), {
-    xlabel: 'time (ms)', ylabel: 'V_m at 1 cm (mV)', xlim: [x1 - span, x1], ylim: [-100, 60],
+    xlabel: 'time (ms)', ylabel: 'V_m at 1 cm (mV)', xlim: [x1 - shown, x1], ylim: [-100, 60],
     series: [{ x: ms(axons.bare), y: axons.bare.V.map((v) => 1000 * v), color: colors[6], label: 'bare' }, { x: ms(axons.myelinated), y: axons.myelinated.V.map((v) => 1000 * v), color: colors[1], label: 'myelinated' }],
   });
   // The current along each axon (µA through the whole axon): in the myelinated one it runs far ahead.
@@ -243,13 +247,14 @@ let last, looping = false;
 function frame(now = performance.now()) {
   const wall = Math.min(0.1, (now - (last ?? now)) / 1000);
   last = now;
-  const t = axons.myelinated.d.solver.time + wall * +els.pace.value;
+  const t0 = axons.myelinated.d.solver.time, t = t0 + wall * +els.pace.value;
   let ok = true;
   for (const ax of Object.values(axons)) {
     const sol = ax.d.advance(t, { budgetMs: 6, tol: 1e-4, dtMax: 5e-6, probes: ax.probes });
     keep(ax, sol);
     ok &&= sol.converged;
   }
+  if (wall > 0) rate = 0.9 * rate + (0.1 * (axons.myelinated.d.solver.time - t0)) / wall;
   draw();
   if (ok && !pause.paused) requestAnimationFrame(frame);
   else looping = false;

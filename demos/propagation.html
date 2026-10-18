@@ -160,8 +160,11 @@ function keep(sol) {
     });
   }
   if (t.length) rec.last = { t: t.at(-1), V: SITES.map((_, j) => pr[j].at(-1)) };
-  const last = rec.ups[2].at(-1), first = rec.ups[0].filter((x) => x < last).at(-1);
-  if (last !== undefined && first !== undefined && last - first < 0.2) speed = (SITES[2] - SITES[0]) / (last - first);
+  // The n-th spike to reach the last site is the n-th past the first (spikes don't overtake, and
+  // every crossing is kept from a quiet start): the latest crossing before it there was another
+  // spike's whenever two were in flight between the sites.
+  const n = rec.ups[2].length, last = rec.ups[2][n - 1], first = rec.ups[0][n - 1];
+  if (n > 0 && first !== undefined && first < last) speed = (SITES[2] - SITES[0]) / (last - first);
   const cut = rec.t.findIndex((x) => x >= t.at(-1) - 1.2 * WINDOW);
   if (cut > 0) {
     rec.t.splice(0, cut);
