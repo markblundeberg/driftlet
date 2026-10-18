@@ -916,6 +916,11 @@ export class Solver {
       if (this.flatStretches.includes(st)) this.constraints.at(-1).col = Array.from({ length: st.nodes[1] - st.nodes[0] + 1 }, (_, j) => this.blockOfNode[st.nodes[0] + j] * this.M + 1 + st.species);
     });
     const S = this.stretches.length, T = this.terms.length, X = S + this.surfCols.length;
+    // Two column spaces. A law's weights w: stretches [0, S), electrode surfaces' species [S, X)
+    // (surface column k − S), electrodes' charges [X, …) (carrier k − X). The rows a law can take,
+    // v: stretches' balance rows [0, S), then terminals' circuit rows (terminal j − S).
+    const isStretch = (k) => k < S, isSurface = (k) => k >= S && k < X, isCarrier = (k) => k >= X;
+    const circuitOf = (j) => (j >= S ? j - S : -1);
     const zc = (k) => this._carrierZ(k);
     // The rows replaced: a moving stretch's balance (one of still stretches alone is kept node by
     // node, below), or the circuit row of a terminal driven at no current, which says nothing the
@@ -966,7 +971,7 @@ export class Solver {
       // A current held at zero passes nothing: an electrode at open circuit feeding a closed
       // pool of Ag⁺ beside a slow Fe³⁺/Fe²⁺ couple settled 78 mV off, its iron not stationary.)
       const passes = (k) => !this._noCurrent(this.terms[k]);
-      const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && driven(this.stretches[k]).some(passes))));
+      const fed = (w) => w.some((x, k) => x !== 0 && ((isCarrier(k) && passes(this.carriers[k - X])) || (isStretch(k) && driven(this.stretches[k]).some(passes))));
       // Any of the combinations it alone changes will do, with any conserved amount added (whose
       // summed balance is zero too): one of them needs a row of its own left to take. (Silver's,
       // e⁻ − Fe³⁺ beside a closed iron couple that had Fe³⁺'s, is e⁻ + Fe²⁺ with the iron added.)
@@ -975,7 +980,7 @@ export class Solver {
       // face's node already, a row with no diffusion beside it to lose it to: left as it is. Stood
       // in for by a mobile partner, Ag⁺ + Cl⁻ = S(immobile) beside a floating Ag electrode said its
       // rate twice and lost the electrode's I = 0.)
-      if (news.some((w) => [...w.keys()].every((k) => k >= S || w[k] === 0 || this._still(this.stretches[k])))) continue;
+      if (news.some((w) => [...w.keys()].every((k) => !isStretch(k) || w[k] === 0 || this._still(this.stretches[k])))) continue;
       const kept = laws.filter((l) => !fed(l));
       const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
       for (const w of tries) {
@@ -1016,8 +1021,8 @@ export class Solver {
         w = w.map((x, m) => (Math.abs(x - f * c[m]) < 1e-9 ? 0 : x - f * c[m]));
         w.own = own;
       }
-      const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
-      const surface = [...w.keys()].filter((k) => k >= S && k < X && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
+      const parts = [...w.keys()].filter((k) => isStretch(k) && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
+      const surface = [...w.keys()].filter((k) => isSurface(k) && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
       const carriers = this.carriers.flatMap((k, j) => (w[X + j] !== 0 ? [{ k, w: w[X + j] }] : []));
       // (A surface's own is kept node by node, below; one with an electrode's charge in it too is
       // the circuit's, here: below skips it, and a floating electrode whose adsorbates gave it
@@ -1044,8 +1049,8 @@ export class Solver {
       // termDX. Two floating electrodes sharing a closed Fe³⁺, their law dropped, settled at 1.3 V
       // for −0.65.)
       chosen.push([col, v.map((x) => x / v[col])]);
-      if (col >= S) held.set(col - S, w);
-      add(parts, col < S ? col : parts[0]?.stretch, surface, col < S ? -1 : col - S, carriers);
+      if (circuitOf(col) >= 0) held.set(circuitOf(col), w);
+      add(parts, circuitOf(col) < 0 ? col : parts[0]?.stretch, surface, circuitOf(col), carriers);
     }
     this.contactLaw = [0, 1].map((k) => this.constraints.some((cs) => cs.contactCharge && cs.circuit === k));
     // A combination that nothing carries anywhere is conserved node by node: of still stretches
@@ -1056,22 +1061,22 @@ export class Solver {
     const span = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
     for (const w of laws) {
       const parts = [...w.keys()].filter((k) => w[k] !== 0);
-      if (parts.some((k) => k >= X)) continue; // (through an electrode: above)
-      const sets = parts.map((k) => (k >= S ? model.ports[this.surfCols[k - S][0]].nodes : this._still(this.stretches[k]) ? span(this.stretches[k].nodes) : null));
+      if (parts.some(isCarrier)) continue; // (through an electrode: above)
+      const sets = parts.map((k) => (isSurface(k) ? model.ports[this.surfCols[k - S][0]].nodes : this._still(this.stretches[k]) ? span(this.stretches[k].nodes) : null));
       if (sets.includes(null)) continue;
       // Its nodes: the immobile stretches', side by side, with any surface's window among them (a
       // surface's term only where it is: an immobile S that adsorbs on an electrode spread over
       // part of its region keeps S + Γaθ there and S alone elsewhere; required to match, that law
       // was lost, and a floating electrode's coverage drifted). Or a surface's alone.
-      const own = parts.filter((k) => k < S), base = own.length > 0 ? sets[parts.indexOf(own[0])] : sets[0];
+      const own = parts.filter(isStretch), base = own.length > 0 ? sets[parts.indexOf(own[0])] : sets[0];
       const same = (set) => set.length === base.length && set.every((g, j) => g === base[j]);
-      if (!parts.every((k, j) => (k < S ? same(sets[j]) : sets[j].every((g) => base.includes(g))))) continue;
+      if (!parts.every((k, j) => (isStretch(k) ? same(sets[j]) : sets[j].every((g) => base.includes(g))))) continue;
       for (const k of own) this.stretches[k].conserved = true;
-      const slot = (k) => (k < S ? 1 + this.stretches[k].species : 1 + this.n + this.surfCols[k - S][1]);
+      const slot = (k) => (isStretch(k) ? 1 + this.stretches[k].species : 1 + this.n + this.surfCols[k - S][1]);
       // (its row a stretch's where it has one, present at every node; else the surface's)
       const rowPart = own.length > 0 ? (own.includes(w.own) ? w.own : own[0]) : parts.includes(w.own) ? w.own : parts[0];
       this.localConstraints.push({
-        parts: parts.map((k) => (k < S ? { i: this.stretches[k].species, w: w[k] } : { q: this.surfCols[k - S][1], k: this.surfCols[k - S][0], w: w[k] })),
+        parts: parts.map((k) => (isStretch(k) ? { i: this.stretches[k].species, w: w[k] } : { q: this.surfCols[k - S][1], k: this.surfCols[k - S][0], w: w[k] })),
         row: slot(rowPart),
         nodes: base,
         reference: new Float64Array(sets[0].length),
@@ -1325,6 +1330,8 @@ export class Solver {
     // only charges keeps its charge alone, see _captureLaws.)
     this.carriers = drives ? this.terms.flatMap((t, k) => (byCurrent(t, k) && k >= 2 && (model.ports[k - 2].reactions.length > 0 || (model.ports[k - 2].capacitance && !this._chargeOnly(k))) ? [k] : [])) : [];
     const X = S + this.surfCols.length, C = X + this.carriers.length;
+    // (columns: stretches [0, S), surfaces' species [S, X), electrodes' charges [X, C), as in _laws)
+    const isStretch = (k) => k < S, isSurface = (k) => k >= S && k < X;
     // (With `skip`, a reaction left out: the combinations that it alone changes come out too, and
     // its own rows, over the columns, are handed back as `basis.skipped`.)
     const rows = [], skipped = [];
@@ -1385,11 +1392,11 @@ export class Solver {
     // Then the stretches by their starting amounts, least first, and by name: a trace species
     // pivoted after an abundant one comes out added to it (A + B ⇌ C with B at 1 M and A at 1e-14
     // gave B + C and A − B, where A + C was lost to round-off), and the basis followed the listing.
-    const still = (k) => ((k < S && this._still(this.stretches[k])) || (k >= S && k < X) ? 1 : 0);
+    const still = (k) => ((isStretch(k) && this._still(this.stretches[k])) || isSurface(k) ? 1 : 0);
     const rough = this.stretches.map((st) => this._roughAmount(st)), name = (k) => model.species[this.stretches[k].species].name;
     const order = [...Array(C).keys()].sort((a, b) => {
       if (still(a) !== still(b)) return still(b) - still(a);
-      if (a >= S || b >= S) return a - b;
+      if (!isStretch(a) || !isStretch(b)) return a - b;
       if (rough[a] !== rough[b]) return rough[a] - rough[b];
       const na = name(a), nb = name(b);
       return na < nb ? -1 : na > nb ? 1 : a - b;
