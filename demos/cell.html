@@ -87,6 +87,10 @@ const outside = (Ko) => ({ 'Na+': 145, 'K+': Ko, 'Cl-': 145 + Ko - A_OUT, 'A-': 
 const water = aqueous(IONS, { epsr: 0 });
 water.species.push({ name: 'A-', z: -1, cRef: 1000 });
 water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+// Its data are 25 °C's, taken as 37 °C's: only the D count here (no reactions, and each ion's μ°
+// the same on both sides of the membrane), and scaled to 37 °C (D ∝ T/η, 1.34×) they move
+// nothing shown by a digit, the pump's steady state or the run-down after it stops.
+water.materials.water.T = T;
 
 const pump = (dG) => ({ equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: dG, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } });
 const cell = ({ Ko, rNa, dG, pumping = true, inside = START }) =>

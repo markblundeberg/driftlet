@@ -302,7 +302,7 @@ for live demos.
 - **Water at other temperatures.** `aqueous(list, { T })`: μ°ᵢ(T) from the standard entropies
   (and heat capacities where tabulated; NBS/CODATA, conventional for single ions, which cancel in
   any neutral combination), ε_r(T) (Malmberg–Maryott) and D ∝ T/η_water(T); checked against
-  K_w(T) and an E°(T) from the tables. The axon demos (6.3 °C) would then want recalibrating.
+  K_w(T) and an E°(T) from the tables. The cell and axon demos take the 25 °C data as their temperature's, fairly: only D counts there, and scaled it moves nothing they show.
   Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
 
 - **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large

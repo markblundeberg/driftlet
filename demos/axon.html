@@ -153,7 +153,9 @@ const axon = (p) => {
       : [layer('water', 5e-6, { name: 'outside', c0: OUT })];
   return build({
     T: p.T,
-    library: [water],
+    // (the water's 25 °C data taken as this temperature's: only the D count, and scaled to 6.3 °C,
+    // D ∝ T/η, 0.57×, they move the spike by 0.01 mV and the K⁺ outside by 0.02 mM)
+    library: [{ ...water, materials: { water: { ...water.materials.water, T: p.T } } }],
     stack: [
       bath(OUT, 'Cl-'),
       ...outside,

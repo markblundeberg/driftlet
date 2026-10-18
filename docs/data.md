@@ -25,7 +25,10 @@ The data are 25 °C's, and the material says so (`T: 298.15`): a device at anoth
 warns that they don't hold there. Its μ° (so equilibrium constants and electrode potentials),
 permittivity and diffusivities would all move: $`K_w`$ by ~6× between 6 and 25 °C. Scaling them
 (μ° by the standard entropies, ε, D by water's viscosity) is planned, not done. Where only
-transport between solutions of the same ions matters (a membrane's channels), μ° cancels.
+transport between solutions of the same ions matters (a membrane's channels), μ° cancels; if the
+D don't matter either, taking the data as another temperature's is a fair approximation, made
+by setting the material's `T` (the cell and axon demos do, having checked that D scaled by
+T/η moves nothing they show).
 
 | Ion | z | D (10⁻⁹ m²/s) | $`\mu^\circ`$ (kJ/mol) |
 |---|---|---|---|
