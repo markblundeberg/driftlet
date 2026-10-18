@@ -85,5 +85,6 @@ contract points there. Each claim cites `file:line` with the line quoted, so it 
 mechanically, and a finding comes with the device or script that shows it. A claim about code
 not in view is a question, not a finding. Two instruments check a change to the core beyond the tests'
 answers: `test/jacobian.test.js` (every row's derivatives against finite differences of its
-residual) and, for a move or refactor meant to change nothing, a hash of the solver's state after
-every solve in the suite, before and after.
+residual) and, for a move or refactor meant to change nothing, `tools/fingerprint.js`: a hash of
+the solver's state after every solve in the suite (on a fixed clock, so runs stopped by a time
+budget repeat), recorded before and after and compared.
