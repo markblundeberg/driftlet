@@ -461,3 +461,23 @@ test('a crowded double layer across ~370 thermal voltages solves: its co-ion, ~1
   // The anions crowd to the lattice's capacity at the electrode.
   assert.ok(Math.abs(sol.c['-'][0] / 5000 - 1) < 1e-6);
 });
+
+test('Debye–Hückel: a composition given in part inverts to its levels up to the convexity limit, exactly as evaluate() maps them back', () => {
+  // The limiting law (a → 0) with Na⁺ held at a concentration and Cl⁻ at a level: ζ_Na from
+  // invert(), then c from evaluate(), back to the Na⁺ given, as near the limit as 0.01 in ζ.
+  const def = {
+    species: salt,
+    materials: { water: brine([{ type: 'debye-huckel', species: ['Na+', 'Cl-'], epsr: 78.5, a: 1e-30 }]) },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 1, 'Cl-': 1 } }],
+    contacts: { left: bath(1), right: {} },
+  };
+  const md = new Device(def).model.materials[0].models[0], K = new Float64Array(4);
+  for (const zt of [-6, -3, -1.5, -1, -0.97, -0.94]) {
+    const c = new Float64Array(2);
+    md.evaluate(Float64Array.of(zt, zt), c, K);
+    const z = Float64Array.of(0, zt);
+    md.invert(z, [1, 0], Float64Array.of(c[0], 0));
+    assert.ok(Math.abs(z[0] - zt) < 1e-13, `ζ ${zt} (c ${c[0]}): back as ${z[0]}`);
+  }
+  assert.throws(() => md.evaluate(Float64Array.of(-0.9, -0.9), new Float64Array(2), K), /not convex/);
+});

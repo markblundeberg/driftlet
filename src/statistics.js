@@ -286,7 +286,7 @@ function debyeHuckelModel(idx, cRef, z, epsr, a, RT) {
     idx,
     evaluate(zeta, c, K) {
       for (let b = 0; b < k; b++) y[b] = zeta[b] + Math.log(cRef[b]);
-      let st;
+      let st, mx = Infinity;
       for (let it = 0; it < 100; it++) {
         for (let b = 0; b < k; b++) cc[b] = Math.exp(y[b]);
         st = state(cc);
@@ -297,7 +297,7 @@ function debyeHuckelModel(idx, cRef, z, epsr, a, RT) {
           R[b] = y[b] + lng[b] - zeta[b] - Math.log(cRef[b]);
           dot += s[b] * cc[b] * R[b];
         }
-        let mx = 0;
+        mx = 0;
         for (let b = 0; b < k; b++) {
           let dy = R[b] + (st.A * s[b] * dot) / st.denom;
           if (dy > 1) dy = 1;
@@ -307,6 +307,8 @@ function debyeHuckelModel(idx, cRef, z, epsr, a, RT) {
         }
         if (mx < 1e-14) break;
       }
+      // (a stall at round-off, near the convexity limit, is converged; anything more isn't)
+      if (!(mx < 1e-10)) throw new SolverError(`debye-huckel: the concentrations at these levels did not converge (a step of ${mx.toExponential(2)} in ln c after 100 iterations)`);
       for (let b = 0; b < k; b++) c[b] = Math.exp(y[b]);
       st = state(c);
       const f = st.A / st.denom;
@@ -315,18 +317,37 @@ function debyeHuckelModel(idx, cRef, z, epsr, a, RT) {
       }
     },
     invert(zeta, fixed, target) {
-      for (let b = 0; b < k; b++) cc[b] = fixed[b] ? target[b] : cRef[b] * Math.exp(zeta[b]);
-      for (let it = 0; it < 500; it++) {
-        state(cc);
-        let change = 0;
+      // The free species by Newton in y = ln c, as evaluate() does, the fixed held at their targets:
+      // J = I − A s_F (s∘c)_Fᵀ over the free ones alone. (A fixed-point iteration contracted by
+      // 1 − denom, and near the convexity limit stopped short without a word.)
+      for (let b = 0; b < k; b++) {
+        y[b] = fixed[b] ? Math.log(target[b]) : zeta[b] + Math.log(cRef[b]);
+        cc[b] = Math.exp(y[b]);
+      }
+      let mx = 0;
+      for (let it = 0; it < 100; it++) {
+        const st = state(cc);
+        let dot = 0, s2cF = 0;
         for (let b = 0; b < k; b++) {
           if (fixed[b]) continue;
-          const next = cRef[b] * Math.exp(zeta[b] - lng[b]);
-          if (cc[b] > 0) change = Math.max(change, Math.abs(next / cc[b] - 1));
-          cc[b] = next;
+          lng[b] = y[b] + lng[b] - zeta[b] - Math.log(cRef[b]); // (the residual, in lng's place)
+          dot += s[b] * cc[b] * lng[b];
+          s2cF += s[b] * s[b] * cc[b];
         }
-        if (!(change > 1e-15)) break;
+        const dF = 1 - st.A * s2cF; // (≥ denom > 0)
+        mx = 0;
+        for (let b = 0; b < k; b++) {
+          if (fixed[b]) continue;
+          let dy = lng[b] + (st.A * s[b] * dot) / dF;
+          if (dy > 1) dy = 1;
+          else if (dy < -1) dy = -1;
+          y[b] -= dy;
+          cc[b] = Math.exp(y[b]);
+          mx = Math.max(mx, Math.abs(dy));
+        }
+        if (mx < 1e-14) break;
       }
+      if (!(mx < 1e-10)) throw new SolverError(`debye-huckel: the composition given did not converge to its levels (a step of ${mx.toExponential(2)} in ln c after 100 iterations)`);
       state(cc);
       for (let b = 0; b < k; b++) if (fixed[b]) zeta[b] = Math.log(target[b] / cRef[b]) + lng[b];
     },
