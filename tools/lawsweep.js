@@ -19,7 +19,7 @@ const AXES = {
   drive: ['V', 'I0', 'R'], // its drive
   cap: [false, true], // and a capacitance on it
   second: ['none', 'redoxI0', 'membrane'], // a second port: another floating electrode, or a membrane capacitor passing K⁺
-  face: ['none', 'open', 'makesS0'], // a face splitting the film: Fe³⁺ blocked there, or a reaction making S0 at it
+  face: ['none', 'open', 'makesP0'], // a face splitting the film: Fe³⁺ blocked there, or a reaction making an immobile P0 at it
 };
 const keys = Object.keys(AXES);
 const total = keys.reduce((n, k) => n * AXES[k].length, 1);
@@ -39,39 +39,50 @@ const G = 1e-5, L = 10e-6, Lp = 1e-6;
 function device(c) {
   const polar = c.left === 'capK' || c.second === 'membrane';
   const lib = aqueous(['Na+', 'K+', 'Cl-', 'OH-', 'Fe2+', 'Fe3+'], { epsr: 0 });
-  lib.species.push({ name: 'S0', z: 0 });
+  lib.species.push({ name: 'S0', z: 0 }, { name: 'P0', z: 0 });
   if (c.port !== 'none' || c.second === 'redoxI0') lib.species.push({ name: 'e-', z: -1 }); // (an electrode's carrier, with one)
   lib.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
+  // Every reaction starts at its equilibrium (far from one, a first step is violent and the
+  // transient fails, leaving nothing to compare): P0, the face's immobile product, and the
+  // adsorbates' μ° from the film's levels with the electrode at the iron couple's.
+  const RT0 = 8.314462618 * 298.15, w0 = lib.materials.water.species, a = { 'Fe3+': 1e-3, 'Cl-': 0.112, 'OH-': 1e-3 };
+  lib.materials.water.species.P0 = { D: 0, mu0: w0['Fe3+'].mu0 + 3 * w0['Cl-'].mu0 + RT0 * Math.log(a['Fe3+'] * a['Cl-'] ** 3), cRef: 1 };
+  const eMu = w0['Fe2+'].mu0 - w0['Fe3+'].mu0; // (μ̄_e at a 1:1 couple, less −Fφ, which cancels below)
+  const mu0B = (x) => w0[x].mu0 + RT0 * Math.log(a[x]) - eMu - RT0 * Math.log(0.1 / 0.2); // A(ads) + X = B(ads) + e⁻, θ_A 0.2, θ_B 0.1
+  const mu0C = w0['OH-'].mu0 + RT0 * Math.log(a['OH-']) - eMu - RT0 * Math.log(0.2 / 0.8); // S0 + OH⁻ = C(ads) + e⁻, θ_C 0.2 of 1
   lib.materials.polar = { ...lib.materials.water, epsr: 80 };
-  const film = { 'Na+': 100, 'K+': 10, 'OH-': 1, 'Fe2+': 1, 'Fe3+': 1, S0: 1 };
+  const film = { 'Na+': 100, 'K+': 10, 'OH-': 1, 'Fe2+': 1, 'Fe3+': 1, S0: 1, P0: 1 };
   film['Cl-'] = film['Na+'] + film['K+'] + 2 * film['Fe2+'] + 3 * film['Fe3+'] - film['OH-'];
   // (K⁺ passed at the film's own level, 10 mM: what a start near its steady state wants)
   // (its species voltage there: μ/F plus φ, which the bath's Cl⁻ at V = 0 sets, (μ°_Cl + RT ln a)/F)
   const RT = 8.314462618 * 298.15, sp = lib.materials.water.species;
   const VK = (sp['K+'].mu0 + RT * Math.log(film['K+'] / 1000) + sp['Cl-'].mu0 + RT * Math.log(101 / 1000)) / 96485.33212;
   const K = { 'K+': { type: 'conductance', G: 1e6, offset: VK } };
-  const left = { closed: {}, capK: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K }, heldK: { V: 0, phi: polar ? 'pinned' : 'neutral', species: K } }[c.left];
+  const left = { closed: {}, capK: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K }, heldK: { V: 0, phi: 'bulk', species: K } }[c.left];
   const all = (law) => Object.fromEntries(['Na+', 'K+', 'Cl-', 'OH-', 'Fe2+'].map((s) => [s, law]));
   const stack = [left];
-  if (polar) stack.push(layer('polar', Lp, { name: 'skin', c0: film, grid: { hmin: 2e-10, hmax: 5e-8, ratio: 1.25 } }), { phi: 'neutral', species: { ...all('equilibrium'), 'Fe3+': 'equilibrium', S0: 'blocked' } });
+  if (polar) stack.push(layer('polar', Lp, { name: 'skin', c0: film, grid: { hmin: 2e-10, hmax: 5e-8, ratio: 1.25 } }), { phi: 'neutral', species: { ...all('equilibrium'), 'Fe3+': 'equilibrium', S0: 'blocked', P0: 'blocked' } });
   if (c.face === 'none') stack.push(layer('water', L, { name: 'film', c0: film }));
   else stack.push(
     layer('water', L / 2, { name: 'film', c0: film }),
-    { species: { ...all('equilibrium'), 'Fe3+': 'blocked', S0: 'blocked' }, ...(c.face === 'makesS0' ? { reactions: [{ equation: 'Fe3+(right) + Cl-(right) = S0(right)', k0: 1e-3, alpha: 0.5 }] } : {}) },
+    { species: { ...all('equilibrium'), 'Fe3+': 'blocked', S0: 'blocked', P0: 'blocked' }, ...(c.face === 'makesP0' ? { reactions: [{ equation: 'Fe3+(right) + 3 Cl-(right) = P0(right)', k0: 1e-3, alpha: 0.5 }] } : {}) },
     layer('water', L / 2, { name: 'far', c0: film }),
   );
   stack.push(bath({ 'Na+': 100, 'Cl-': 101, 'OH-': 1, 'Fe2+': 1 }, 'Cl-'));
   const ports = [];
   const w = c.face === 'none' ? L : L / 2;
   if (c.port !== 'none') {
-    const surface = c.port === 'redoxSurf' || c.port === 'surfOnly' ? { Aads: { mu0: 0, capacity: G, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: G, theta0: 0.1 } } : c.port === 'S0surf' ? { Cads: { mu0: 0, capacity: G, theta0: 0.2 } } : undefined;
+    const surface = c.port === 'redoxSurf' || c.port === 'surfOnly' ? { Aads: { mu0: 0, capacity: G, theta0: 0.2 }, Bads: { mu0: mu0B(c.port === 'redoxSurf' ? 'Cl-' : 'OH-'), capacity: G, theta0: 0.1 } } : c.port === 'S0surf' ? { Cads: { mu0: mu0C, capacity: G, theta0: 0.2 } } : undefined;
     const reactions = [
       ...(c.port.startsWith('redox') ? [{ equation: 'Fe2+ = Fe3+ + e-', k0: 1e-4, alpha: 0.5 }] : []),
       ...(c.port === 'redoxSurf' ? [{ equation: 'Aads + Cl- = Bads + e-', k0: 1e-4, alpha: 0.5 }] : []),
       ...(c.port === 'surfOnly' ? [{ equation: 'Aads + OH- = Bads + e-', k0: 1e-4, alpha: 0.5 }] : []),
       ...(c.port === 'S0surf' ? [{ equation: 'S0 + OH- = Cads + e-', k0: 1e-4, alpha: 0.5 }] : []),
     ];
-    const drive = { V: { V: 0.02 }, I0: { I: 0 }, R: { V: 0.02, R: 10 } }[c.drive];
+    // (held near the iron couple's level, where the film's 1:1 iron sits: E° = (μ°_Fe³⁺ − μ°_Fe²⁺)/F,
+    // on the bath's φ scale; far from it, all the iron goes one way and the steady state is extreme)
+    const E = (sp['Fe3+'].mu0 - sp['Fe2+'].mu0 + sp['Cl-'].mu0 + RT * Math.log(101 / 1000)) / 96485.33212;
+    const drive = { V: { V: E + 0.02 }, I0: { I: 0 }, R: { V: E + 0.02, R: 10 } }[c.drive];
     ports.push({ name: 'p1', region: 'film', from: 0, to: 0.4 * w, ...drive, terminal: 'e-', area: 1e4, ...(c.cap ? { capacitance: { C: 0.2, zeroCharge: 0 } } : {}), ...(surface ? { surface } : {}), reactions });
   } else if (c.drive !== 'V' || c.cap) return null; // (drives and capacitances of no port: the same device again)
   if (c.second === 'redoxI0') ports.push({ name: 'p2', region: 'film', from: 0.6 * w, to: w, I: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'Fe2+ = Fe3+ + e-', k0: 1e-4, alpha: 0.5 }] });
@@ -132,7 +143,7 @@ for (let idx = show !== undefined ? +show : from; idx < (show !== undefined ? +s
     const e = new Device(def), late = e.advance(1e6, { tol: 1e-9 });
     const ms = measures(d, s), ml = measures(e, late);
     if (show !== undefined) console.log(JSON.stringify(def, null, 1), '\nsolve', ms, '\nadvance', ml);
-    if (!late.converged) {
+    if (!late.converged || !late.done) {
       tally.transientFailed++; // (nothing to compare with)
       continue;
     }
@@ -150,7 +161,7 @@ for (let idx = show !== undefined ? +show : from; idx < (show !== undefined ? +s
     // Settled? 100× as long again moves it no further.
     const last = e.advance(1e8, { tol: 1e-9 }), later = measures(e, last), drift = differ(ml, later);
     if (show !== undefined) console.log('transient from 1e6 to 1e8 s:', last.converged, drift);
-    if (!last.converged || drift.rel > 1e-6) {
+    if (!last.converged || !last.done || drift.rel > 1e-6) {
       tally.unsettled++;
       continue;
     }

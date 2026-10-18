@@ -176,3 +176,32 @@ test('two contacts at no current passing K⁺, one or both capacitors: the ion k
     near(s.terminals.right.V, late.terminals.right.V, 1e-6, 'V');
   }
 });
+
+test('a charged immobile species beside the face that makes it: where nothing touches it, its concentration stays put when φ moves', () => {
+  // (From Gemini 4 Argon's third round.) Ag⁺(right) = S⁺(right) at a face, S⁺ immobile, a floating
+  // Ag electrode: at the nodes away from the face, S⁺'s steady balance is 0 = 0, and its level
+  // stayed where it was while φ moved with the bath, so S⁺ fell to e^{−0.2/V_T} there (and the face
+  // node took the rest of its total). The electrode settled 19 mV off.
+  const l = lib(['Na+', 'Cl-', 'Ag+'], [{ name: 'S+', z: 1 }]);
+  l.materials.water.species['S+'] = { D: 0, mu0: 0, cRef: 1 };
+  const def = (V) => build({
+    T: 298.15,
+    library: [l],
+    stack: [
+      {},
+      layer('water', 2e-6, { name: 'leftFilm', c0: { 'Na+': 100, 'Cl-': 102, 'Ag+': 1, 'S+': 1 } }),
+      { species: { 'Na+': 'equilibrium', 'Cl-': 'equilibrium', 'Ag+': 'blocked', 'S+': 'blocked' }, reactions: [{ equation: 'Ag+(right) = S+(right)', k0: 1e-3, alpha: 0.5 }] },
+      layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'Cl-': 102, 'Ag+': 1, 'S+': 1 } }),
+      bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-', V),
+    ],
+    ports: [{ name: 'metal', region: 'film', I: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'Ag+ + e- = Ag', fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 }] }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const V0 = new Device(def(0)).solve().terminals.metal.V;
+  const s = new Device(def(0.2)).solve(), late = new Device(def(0.2)).advance(1e6, { tol: 1e-9 });
+  assert.ok(s.converged && late.converged);
+  near(s.terminals.metal.V, late.terminals.metal.V, 1e-6, 'V');
+  near(s.terminals.metal.V - V0, 0.2, 1e-6, 'V moved with the bath');
+  const g = s.x.length - 3; // (far from the face)
+  near(s.c['S+'][g], 1, 1e-9, 'S⁺ away from the face');
+});

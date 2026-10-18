@@ -1086,6 +1086,26 @@ export class Solver {
         reference: new Float64Array(sets[0].length),
       });
     }
+    // An immobile stretch at a node where nothing touches it (no reaction there, no port or contact
+    // linking it) keeps its concentration: its balance there is 0 = 0 in a steady state, which
+    // holds nothing, and a charged one's level stayed where it was while φ moved (S⁺ beside a face
+    // that makes it, the bath moved 0.2 V: S⁺ fell to e^{−0.2/V_T} of itself away from the face).
+    for (const st of this.stretches) {
+      if (!this._still(st)) continue;
+      const i = st.species, touched = new Set();
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (this.rxsIn[this.nodeMaterial[g]].some((rx) => rx.sp.includes(i))) touched.add(g);
+      model.interfaces.forEach((itf, f) => {
+        for (const rx of itf.reactions) for (const p of rx.part) if (p.i === i) touched.add(p.side === 0 ? grid.regionEnd[f] : grid.regionStart[f + 1]);
+      });
+      for (const port of model.ports) {
+        if (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))) for (const g of port.nodes) touched.add(g);
+      }
+      if (st.leftOpen) touched.add(0);
+      if (st.rightOpen) touched.add(this.nNodes - 1);
+      for (const lc of this.localConstraints) if (lc.row === 1 + i) for (const g of lc.nodes) touched.add(g);
+      const free = span(st.nodes).filter((g) => !touched.has(g));
+      if (free.length > 0) this.localConstraints.push({ parts: [{ i, w: 1 }], row: 1 + i, nodes: free, reference: new Float64Array(free.length) });
+    }
     // Islands: the pieces of a stretch between its faces. One that nothing else feeds (no
     // contact, port or reaction) holds its level only through its faces' fluxes, which can be
     // ~1e-24 of its own conduction (a tiny conductance at the face, or a neighbour that barely
