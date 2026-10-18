@@ -725,13 +725,19 @@ the terms that cancel:
     charging a capacitance (a gate, a port's capacitance) is the same, its charge in place of an
     amount; and an electrode port's reactions draw on what the electrode holds, its charge
     $`Q/(zF)`$ a column of its own under a current, so a port at no current reducing a closed
-    M⁺ (M⁺ + e⁻ = M(s)) keeps M⁺ + Q/F, or with no capacitance, M⁺ alone. At any other current such a terminal only stores what comes in, which has no steady
-    state, and the solve says so at once.
+    M⁺ (M⁺ + e⁻ = M(s)) keeps M⁺ + Q/F, or with no capacitance, M⁺ alone. Whatever such a
+    terminal both passes and stores is kept together, as its current counts both: a capacitive
+    port or contact at no current that passes K⁺ keeps $`n_K + Q/F`$ (a contact's Q its
+    displacement $`D_\text{in}`$), and two floating electrodes sharing a closed Fe³⁺ keep the iron
+    with both their charges, the law in one's circuit row moving with the other's voltage too.
+    At any other current such a terminal only stores what comes in, which has no steady state,
+    and the solve says so at once.
   - an **immobile** combination (trap states X⁰ and X⁻ under e⁻ + X⁰ = X⁻, with D = 0) keeps it
     node by node, since nothing carries it anywhere, as do an electrode's surface species
     (adsorbates that only turn into each other keep their total on every site), its row local,
-    one per node in its own block. (The null space is taken with the immobile columns first, so
-    that these come out apart from the combinations that move.) A combination of immobile
+    one per node in its own block, a coverage counted as the sites it fills per volume,
+    $`\Gamma a \theta`$, beside the concentrations. (The null space is taken with the immobile and
+    surface columns first, so that these come out apart from the combinations that move.) A combination of immobile
     stretches with a moving one (the electrons the traps hold, $`e^- - X^0`$, in a closed film) is
     an amount like any other, its immobile parts summed over their nodes;
   - a **floating metal** keeps the charge on its faces, its sheets' displacement.
@@ -796,7 +802,9 @@ the terms that cancel:
   rows, a pin like an amount's, chosen by the same elimination and ahead of the amounts: the slowest
   reaction first, and a row of one of its own species where one is left, never one picked by where
   the species are listed (the rows had differed with the species reversed, and an electrode's
-  equilibrium solved in one listing and failed in the other). The combinations come from the null
+  equilibrium solved in one listing and failed in the other). A reaction that changes its
+  combination only through immobile species needs none: its rate already stands alone in their
+  balance at the face's node. The combinations come from the null
   space with that reaction's row left out, any conserved amount added to one being as good (its
   summed balance vanishes too), so that one can be found with a row left to take: silver's e⁻ − Fe³⁺
   beside a closed iron couple whose affinity had Fe³⁺'s row is e⁻ + Fe²⁺ with the iron added. Never

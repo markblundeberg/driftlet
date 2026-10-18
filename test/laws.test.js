@@ -1,0 +1,133 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Device, FARADAY } from '../src/index.js';
+import { build, layer, bath, aqueous, check } from '../src/kit.js';
+
+// What a steady solve keeps, at the edges of the law finder: devices from Gemini 4 Argon's review
+// (round 2 of its breadth-first pass), each a combination the steady system once dropped or
+// weighed wrongly, so that solve() converged where a long advance() from the same start doesn't go.
+
+const lib = (ions, more = []) => {
+  const l = aqueous(ions, { epsr: 0 });
+  l.species.push({ name: 'e-', z: -1 }, ...more);
+  return l;
+};
+const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol * Math.max(1, Math.abs(b)), `${what}: ${a} vs ${b}`);
+
+test('two floating electrodes sharing a closed ion: the ion is kept, each electrode passing nothing', () => {
+  // Fe²⁺ = Fe³⁺ + e⁻ on two electrodes at I = 0, Fe²⁺ from a bath, Fe³⁺ closed in the film: the
+  // law, Fe³⁺ with both electrodes' charges, was dropped for having two. (With capacitances, it
+  // moves with both voltages, in one's circuit row.)
+  for (const cap of [{}, { capacitance: { C: 0.2, zeroCharge: 0 } }]) {
+  const def = build({
+    T: 298.15,
+    library: [lib(['Na+', 'Cl-', 'Fe2+', 'Fe3+'])],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'Cl-': 105, 'Fe2+': 1, 'Fe3+': 1 } }), bath({ 'Na+': 100, 'Cl-': 102, 'Fe2+': 1 }, 'Cl-')],
+    ports: ['p1', 'p2'].map((name, k) => ({ name, region: 'film', from: 6e-6 * k, to: 4e-6 + 6e-6 * k, I: 0, terminal: 'e-', area: 1e4, ...cap, reactions: [{ equation: 'Fe2+ = Fe3+ + e-', k0: 1e-3, alpha: 0.5 }] })),
+    grid: { hmin: 5e-7, hmax: 5e-7 },
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e5, { tol: 1e-8 });
+  assert.ok(s.converged && (cap.capacitance || check(d, s).ok), check(d, s).text); // (with capacitances, its charge wants a finer grid)
+  for (const p of ['p1', 'p2']) near(s.terminals[p].V, late.terminals[p].V, 1e-6, `${p}${cap.capacitance ? ', with capacitance' : ''}`);
+  }
+});
+
+test('adsorbates turning into each other through a closed ion: their sites\' total is kept node by node, and the ion\'s with them', () => {
+  // A(ads) + Cl⁻ = B(ads) + e⁻, Cl⁻ closed in the film: θ_A + θ_B stays what it was at each node,
+  // and Cl⁻ + θ_B summed. Pivoted on Cl⁻ first, the surface's own law was mixed with it and lost.
+  for (const [drive, extra, c0, out] of [
+    [{ V: 0.05 }, [], { 'Na+': 100, 'OH-': 99, 'Cl-': 1 }, { 'Na+': 100, 'OH-': 100 }],
+    [{ I: 0 }, ['Fe2+', 'Fe3+'], { 'Na+': 100, 'OH-': 104, 'Cl-': 1, 'Fe2+': 1, 'Fe3+': 1 }, { 'Na+': 100, 'OH-': 102, 'Fe2+': 1 }],
+  ]) {
+    const def = build({
+      T: 298.15,
+      library: [lib(['Na+', 'OH-', 'Cl-', ...extra])],
+      stack: [{}, layer('water', 10e-6, { name: 'film', c0 }), bath(out, 'OH-')],
+      ports: [{
+        name: 'metal', region: 'film', ...drive, terminal: 'e-', area: 1e4,
+        surface: { Aads: { mu0: 0, capacity: 1e-5, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: 1e-5, theta0: 0.1 } },
+        reactions: [{ equation: 'Aads + Cl- = Bads + e-', k0: 1e-4, alpha: 0.5 }, ...(extra.length ? [{ equation: 'Fe2+ = Fe3+ + e-', k0: 1e-4, alpha: 0.5 }] : [])],
+      }],
+      grid: { hmin: 5e-7, hmax: 5e-7 },
+    });
+    const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e6, { tol: 1e-9 }), p = s.ports[0];
+    assert.ok(s.converged);
+    p.x.forEach((_, j) => near(p.coverage.Aads[j] + p.coverage.Bads[j], 0.3, 1e-9, `${JSON.stringify(drive)}: θ_A + θ_B at node ${j}`));
+    near(s.terminals.metal.V, late.terminals.metal.V, 1e-5, `${JSON.stringify(drive)}: V`);
+    near(s.c['Cl-'][0], late.c['Cl-'][0], 1e-5, `${JSON.stringify(drive)}: Cl⁻`);
+  }
+});
+
+// K⁺ between a held bath of Na⁺Cl⁻ and something at I = 0 that passes K⁺ and has a capacitance:
+// what's kept is the K⁺ with that charge, n_K + Q/F, not the K⁺ alone.
+const film = { 'Na+': 100, 'K+': 10, 'Cl-': 110 };
+const capCell = (end) => build({
+  T: 298.15,
+  library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+  stack: [end.contact ?? {}, layer('water', 1e-6, { name: 'film', c0: film }), bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')],
+  ...(end.port ? { ports: [end.port] } : {}),
+  grid: { hmin: 5e-8, hmax: 5e-8 },
+});
+const kept = (d, s, charge) => {
+  const v = d.model.grid.vol;
+  return s.c['K+'].reduce((t, c, g) => t + (Number.isFinite(c) ? v[g] * c : 0), 0) + charge(s) / FARADAY;
+};
+
+test('a capacitive port at no current that passes an ion: the ion and the port\'s charge are kept together', () => {
+  const def = capCell({ port: { name: 'mem', region: 'film', I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 }, species: { 'K+': { type: 'conductance', G: 1e12, offset: 0 } } } });
+  const Q = (s) => s.ports[0].charge;
+  const d0 = new Device(def), start = kept(d0, d0.solution(), Q);
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-9 });
+  assert.ok(s.converged);
+  near(kept(d, s, Q), start, 1e-9, 'n_K + Q/F');
+  near(s.terminals.mem.V, late.terminals.mem.V, 1e-6, 'V');
+});
+
+test('a capacitive contact at no current that passes an ion: the ion and the contact\'s charge are kept together', () => {
+  const def = capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: { 'K+': { type: 'conductance', G: 1e6, offset: 0 } } } });
+  const D = (s) => s.contacts.left.D;
+  const d0 = new Device(def), start = kept(d0, d0.solution(), D);
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-9 });
+  assert.ok(s.converged);
+  near(kept(d, s, D), start, 1e-9, 'n_K + D/F');
+  near(s.terminals.left.V, late.terminals.left.V, 1e-6, 'V');
+});
+
+test('an immobile species that adsorbs: kept node by node with what the surface holds, Γ a θ (mol/m³), not θ', () => {
+  const G = 1e-5, area = 1e4;
+  const l = lib(['Na+', 'OH-'], [{ name: 'S0', z: 0 }]);
+  l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'OH-': 100, S0: 1 } }), bath({ 'Na+': 100, 'OH-': 100 }, 'OH-')],
+    ports: [{ name: 'metal', region: 'film', V: 0.1, terminal: 'e-', area, surface: { Aads: { mu0: 0, capacity: G, theta0: 0.2 } }, reactions: [{ equation: 'S0 + OH- = Aads + e-', k0: 1e-3, alpha: 0.5 }] }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const s = new Device(def).solve(), late = new Device(def).advance(1e4, { tol: 1e-9 });
+  assert.ok(s.converged);
+  for (const sol of [s, late]) sol.ports[0].x.forEach((x, j) => near(sol.c.S0[sol.x.indexOf(x)] + G * area * sol.ports[0].coverage.Aads[j], 1 + G * area * 0.2, 1e-9, `c + Γaθ at node ${j}`));
+  near(s.c.S0[0], late.c.S0[0], 1e-5, 'S0');
+});
+
+test('a face reaction that makes an immobile species, beside a floating electrode: every balance said once, and the electrode passes nothing', () => {
+  const l = lib(['Na+', 'Cl-', 'Ag+'], [{ name: 'S0', z: 0 }]);
+  l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
+  const def = build({
+    T: 298.15,
+    library: [l],
+    stack: [
+      {},
+      layer('water', 2e-6, { name: 'leftFilm', c0: { 'Na+': 100, 'Cl-': 101, 'Ag+': 1, S0: 1 } }),
+      { species: { 'Na+': 'equilibrium', 'Cl-': 'equilibrium', 'Ag+': 'blocked', S0: 'blocked' }, reactions: [{ equation: 'Ag+(right) + Cl-(right) = S0(right)', k0: 1e-3, alpha: 0.5 }] },
+      layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'Cl-': 101, 'Ag+': 1, S0: 0.1 } }),
+      bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-'),
+    ],
+    ports: [{ name: 'metal', region: 'film', I: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'Ag+ + e- = Ag', fixed: { Ag: 0 }, k0: 1e-3, alpha: 0.5 }] }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e4, { tol: 1e-9 });
+  assert.ok(s.converged && check(d, s).ok, check(d, s).text);
+  near(s.terminals.metal.V, late.terminals.metal.V, 1e-6, 'V');
+  near(s.c['Ag+'].at(-1), late.c['Ag+'].at(-1), 1e-6, 'Ag⁺');
+});
