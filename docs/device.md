@@ -516,8 +516,8 @@ background carriers do). A solution against a charged end region (an ion exchang
 its own material, `bath: { c, material: 'water' }`: its composition is then neutral by itself, its
 levels are that material's, and the end node takes them through a Donnan step.
 
-**`phi`**, required whenever any species or reaction connects at the contact (default
-`'neutral'`):
+**`phi`**, required whenever any species connects at the contact (default `'neutral'`, or
+`'bulk'` with a bath):
 - `'bulk'`: the end node is plain bulk, locally neutral, with no double layer at the contact
   (ohmic contacts, baths). The outside takes whatever surface charge that needs. A double layer
   or depletion region that reaches it is cut off there (σ 58% low for a crowded layer 5 Debye
@@ -1062,12 +1062,12 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device (an electrode's `flux` is of what its reactions make and use in the solution, its carrier's being outside); an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
-| `charge` | total charge in the device, C/m² (C through a cross-section) |
+| `charge` | total charge in the device, C/m² (C through a cross-section): its regions' space charge and its faces' sheet charges, not the charge on a capacitive contact's or port's plates, so under a gate's bias it's the gate's opposite |
 | `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, a material's data for another temperature, and for a failed solve, why (a driven current it can't pass, where the system is nearly singular). A failed steady solve's state isn't a solution, so the warnings about a solution's accuracy (the grid, double layers, space charge reaching a contact) are left out of it |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
-| `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step |
+| `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step, and `probes` if asked |
 
 A stretch is a run of regions in which a species is present and connected. Its `drift`
 compares its amount with the reference amount plus everything that came in through the

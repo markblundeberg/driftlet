@@ -44,6 +44,7 @@ most one model.
 
 | Model | Species | $`c(\zeta)`$ | Parameters |
 |---|---|---|---|
+| `ideal` | any | $`c_{\mathrm{ref}} e^\zeta`$, the default, named only to say so | none |
 | `fermi-dirac` | any, each independently | $`c_{\mathrm{ref}} \mathcal{F}_{1/2}(\zeta)`$ (3D band); $`c_{\mathrm{ref}} \ln(1 + e^\zeta)`$ with `order: 0` (2D) | `order`: 1/2 (default) or 0 |
 | `lattice` | any, sharing sites | $`c_a = c_{\mathrm{max}} w_a / (1 + \sum w)`$, $`w_a = (c_{\mathrm{ref},a}/c_{\mathrm{max}}) e^{\zeta_a}`$ | `cMax`, site density, mol/m³ |
 | `redlich-kister` | one | on its own sites: $`\zeta = \ln(x/(1-x)) + \ln(c_{\mathrm{max}}/c_{\mathrm{ref}}) + (g(x) - g(0))/RT`$, $`x = c/c_{\mathrm{max}}`$ | `cMax`; `A`, J/mol |
