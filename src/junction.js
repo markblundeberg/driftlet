@@ -29,6 +29,9 @@ function neutral(list, side, what) {
   }
   if (Math.abs(q) > 1e-9 * s) fail(`${what}: the ${side === 'cL' ? 'left' : 'right'} solution carries a net charge (Σ z·c = ${q.toPrecision(3)} mol/m³)`);
 }
+function holds(list, what) {
+  for (const side of ['cL', 'cR']) if (!list.some((p) => p[side] > 0)) fail(`${what}: the ${side === 'cL' ? 'left' : 'right'} solution holds no ions`);
+}
 
 /**
  * Henderson's liquid-junction potential, φ_R − φ_L (V): the junction taken to be the two solutions
@@ -44,6 +47,7 @@ export function henderson(left, right, ions, { T = 298.15 } = {}) {
   const list = prepare(left, right, ions, 'henderson');
   neutral(list, 'cL', 'henderson');
   neutral(list, 'cR', 'henderson');
+  holds(list, 'henderson');
   let a = 0, b = 0, gL = 0, gR = 0;
   for (const { z, D, cL, cR } of list) {
     a += z * D * (cR - cL);
@@ -51,9 +55,10 @@ export function henderson(left, right, ions, { T = 298.15 } = {}) {
     gL += z * z * D * cL;
     gR += z * z * D * cR;
   }
-  const VT = (GAS_CONSTANT * T) / FARADAY;
-  if (b === 0) return 0;
-  return (-VT * a * Math.log(gR / gL)) / b;
+  // ln(g_R/g_L)/(g_R − g_L) = ln(1 + r)/(r g_L), r = b/g_L: 1/g_L at equal conductivities, where the
+  // plain form is 0/0.
+  const VT = (GAS_CONSTANT * T) / FARADAY, r = b / gL;
+  return (-VT * a * (Math.abs(r) < 1e-8 ? 1 - r / 2 : Math.log1p(r) / r)) / gL;
 }
 
 /**
@@ -71,6 +76,7 @@ export function planck(left, right, ions, { T = 298.15, steps = 4000 } = {}) {
   const list = prepare(left, right, ions, 'planck');
   neutral(list, 'cL', 'planck');
   neutral(list, 'cR', 'planck');
+  holds(list, 'planck');
   const n = list.length, z = list.map((p) => p.z), D = list.map((p) => p.D), Dmax = Math.max(...D);
   const scale = Math.max(...list.map((p) => Math.max(p.cL, p.cR)));
   const cL = list.map((p) => p.cL / scale), cR = list.map((p) => p.cR / scale);

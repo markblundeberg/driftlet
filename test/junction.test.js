@@ -104,10 +104,26 @@ test('a free-diffusion junction grown from a sharp boundary holds a constant pot
   }
 });
 
+test('Henderson at equal conductivities on the two sides: its limit, −V_T Σ z D Δc / g, continuous with the formula beside it', () => {
+  // M⁺X⁻ (D_M = 2D) against N⁺X⁻ at 1.5× the concentration: Σ z² D c is the same on both sides,
+  // and the formula's ln(g_R/g_L)/(g_R − g_L) is 0/0, which once returned 0.
+  const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY, D = 1e-9;
+  const ions = { M: { z: 1, D: 2 * D }, N: { z: 1, D }, X: { z: -1, D } };
+  const limit = (-VT * (-2 * D * 100 + D * 150 - D * 50)) / (3 * D * 100); // V_T/3
+  assert.ok(Math.abs(henderson({ M: 100, X: 100 }, { N: 150, X: 150 }, ions) / limit - 1) < 1e-12);
+  for (const c of [150 * (1 + 1e-9), 150 * (1 - 1e-6), 150.0001]) {
+    const g = (x) => Math.log(x) / (x - 1), r = (2 * c) / 300; // g_R/g_L, the formula worked by hand
+    const a = -2 * D * 100 + D * c - D * (c - 100), expected = (-VT * a * g(r)) / (3 * D * 100);
+    assert.ok(Math.abs(henderson({ M: 100, X: 100 }, { N: c, X: c }, ions) / expected - 1) < 1e-9, `c = ${c}`);
+  }
+});
+
 test('junction formulas check their inputs', () => {
   const ions = ionsAt(298.15);
   assert.throws(() => henderson({ Na: 1, Cl: 2 }, { Na: 1, Cl: 1 }, ions), (e) => e instanceof DeviceError && /left solution carries a net charge/.test(e.message));
   assert.throws(() => planck({ Na: 1, Cl: 1 }, { Rb: 1, Cl: 1 }, ions), /no \{ z, D \} for 'Rb'/);
+  assert.throws(() => henderson({}, { Na: 1, Cl: 1 }, ions), (e) => e instanceof DeviceError && /left solution holds no ions/.test(e.message));
+  assert.throws(() => planck({ Na: 1, Cl: 1 }, {}, ions), (e) => e instanceof DeviceError && /right solution holds no ions/.test(e.message));
 });
 
 test('a depletion layer longer than its region, cut off by a contact that holds its end neutral, is warned of', async () => {
