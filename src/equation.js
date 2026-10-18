@@ -79,14 +79,21 @@ export function stoichiometry(text, path = 'equation') {
  */
 export function faceSides(terms, left, right, fixed, path) {
   const sides = { left: {}, right: {} };
-  const put = (side, name, nu) => (sides[side][name] = (sides[side][name] ?? 0) + nu);
   const fixedSide = right.conductor && !left.conductor ? 'right' : 'left';
+  const signs = {};
+  const put = (side, name, nu) => {
+    const key = `${side}:${name}`;
+    if (signs[key] !== undefined && signs[key] !== Math.sign(nu)) fail(`${path}: '${name}' (${side}) appears on both sides of the equation; give the net reaction`);
+    signs[key] = Math.sign(nu);
+    sides[side][name] = (sides[side][name] ?? 0) + nu;
+  };
   for (const t of terms) {
-    if (fixed?.[t.name] !== undefined) {
+    // (a species the side holds is that species, given in fixed or not, as for bulk reactions)
+    const inL = left.holds(t.name), inR = right.holds(t.name);
+    if (!inL && !inR && fixed?.[t.name] !== undefined) {
       put(fixedSide, t.name, t.nu);
       continue;
     }
-    const inL = left.holds(t.name), inR = right.holds(t.name);
     if (inL && inR) {
       fail(
         `${path}: '${t.name}' is in both '${left.name}' and '${right.name}', so say which side: ` +
@@ -177,6 +184,10 @@ export function level(sol, halfReaction, { standard = false } = {}) {
     else fail(`level: '${t.name}' is neither a species of the solution nor in the half-reaction's fixed`);
   }
   if (nuE === 0) fail(`level: ${JSON.stringify(equation)} has no net electrons`);
+  // (unbalanced, its level wouldn't move with φ as a level must)
+  const z = Object.fromEntries((sol.species ?? []).map((sp) => [sp.name, sp.z]));
+  const charge = terms.reduce((q, t) => q + t.nu * (t.name === 'e-' ? -1 : fixed[t.name] !== undefined ? 0 : (z[t.name] ?? NaN)), 0); // (fixed: neutral)
+  if (sol.species && !(Math.abs(charge) < 1e-12)) fail(`level: ${JSON.stringify(equation)} isn't charge-balanced (Σ ν z = ${charge} across it)`);
   const n = sol.mu[Object.keys(sol.mu)[0]].length;
   const V = new Float64Array(n);
   for (let g = 0; g < n; g++) {

@@ -194,3 +194,23 @@ test('stack and library mistakes say where', () => {
   // Nested lists flatten, so a helper can return several stack items.
   assert.deepEqual(build({ library: [Si], stack: [[ohmic(0), layer('Si', 1e-6)], ohmic(0)] }), build({ library: [Si], stack: ok }));
 });
+
+test('library pieces, baths, contacts, face equations and half-reaction levels are checked where they once passed silently', async () => {
+  const { trap, aqueous, semiconductor } = await import('../src/kit.js');
+  const { faceSides } = await import('../src/equation.js');
+  const Si = semiconductor('Si'), t = trap(Si, { density: 1, tauN: 1e-6, tauP: 1e-6 });
+  // trap()'s whole result, for its library: the traps were dropped
+  assert.throws(() => combine(Si, t), (e) => e instanceof DeviceError && /trap\(…\)\.library/.test(e.message));
+  assert.throws(() => combine(Si, { species: [], materal: {} }), (e) => e instanceof DeviceError && /materal/.test(e.message));
+  assert.throws(() => bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-', 0, { ofset: 0.1 }), (e) => e instanceof DeviceError && /did you mean 'offset'/.test(e.message));
+  // A contact blocking a species its layer lacks, written { type: 'blocked' }, as 'blocked' is
+  const lib = combine(Si, aqueous(['Na+']));
+  assert.doesNotThrow(() => build({ T: 300, library: [lib], stack: [{ V: 0, species: { 'e-': 'equilibrium', 'h+': 'equilibrium', 'Na+': { type: 'blocked' } } }, layer('Si', 1e-6), ohmic(0)] }));
+  // the same species on both sides of a face equation, on the same side of the face
+  const side = (name) => ({ name, holds: (s) => ['A', 'B'].includes(s) });
+  assert.throws(() => faceSides(parseEquation('A(left) + B(right) = A(left)', 'eq'), side('w'), side('w'), {}, 'eq'), (e) => e instanceof DeviceError && /'A' \(left\) appears on both sides/.test(e.message));
+  // a half-reaction that isn't charge-balanced has no level
+  const sol = { species: [{ name: 'Fe3+', z: 3 }, { name: 'Fe2+', z: 2 }], mu: { 'Fe3+': new Float64Array(2), 'Fe2+': new Float64Array(2) }, muStd: {} };
+  assert.throws(() => level(sol, half('Fe3+ + 2 e- = Fe2+')), (e) => e instanceof DeviceError && /isn't charge-balanced/.test(e.message));
+  assert.equal(level(sol, half('Fe3+ + e- = Fe2+')).length, 2);
+});

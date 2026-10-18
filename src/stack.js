@@ -33,6 +33,9 @@ export function combine(...parts) {
   const species = [], materials = {};
   parts.forEach((part, k) => {
     if (!isObject(part)) fail(`combine: part ${k} must be { species, materials }`);
+    // (trap()'s whole result, given for its library, dropped the traps without a word)
+    if (part.library !== undefined) fail(`combine: part ${k} is { library, … }, as trap() returns: give its library here (trap(…).library), and its bulkReactions and c0 to the device`);
+    fields(part, `combine: part ${k}`, ['species', 'materials']);
     for (const sp of part.species ?? []) {
       const prev = species.find((s) => s.name === sp.name);
       if (!prev) species.push({ ...sp });
@@ -100,6 +103,7 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
  */
 export function bath(c, reference, d = 0, opts = {}) {
   if (typeof reference !== 'string') [d, opts] = [reference ?? 0, isObject(d) ? d : {}];
+  checkOptions('bath', opts, ['offset', 'material']);
   const { offset, material } = opts;
   return {
     ...drive(d, 'bath'),
@@ -161,7 +165,7 @@ export function build(def) {
   if (regions.length === 0) fail('build.stack has no layers');
   // A contact holding a carrier its layer lacks: most often ohmic()'s default on a metal.
   for (const [k, end] of [[0, regions[0]], [stack.length - 1, regions[regions.length - 1]]]) {
-    const held = isObject(stack[k].species) ? Object.keys(stack[k].species).filter((s) => stack[k].species[s] !== 'blocked') : [];
+    const held = isObject(stack[k].species) ? Object.keys(stack[k].species).filter((s) => stack[k].species[s] !== 'blocked' && stack[k].species[s]?.type !== 'blocked') : [];
     const mat = materials[end.material];
     if (!isObject(mat)) continue;
     const has = (s) => (isObject(mat.conductor) ? mat.conductor.species === s : isObject(mat.species) && mat.species[s] !== undefined);
