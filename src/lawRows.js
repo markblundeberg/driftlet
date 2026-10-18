@@ -30,9 +30,10 @@
 // The functions, and when each runs:
 //   captureLaws(s)   when a steady solve begins (Solver.solveSteady): s.lawRefs, the amount each
 //                    constraint fed by a terminal driven by a current holds now (by its key);
-//                    s.chargeRefs, the charge (portQ, or the contact's ±D) of each terminal at
-//                    I = 0 that passes current only by charging. Calls _assembleBookkeeping where
-//                    it needs the charges.
+//                    s.chargeRefs, the charge (portQ, or the contact's ±D) of each terminal
+//                    driven by a current that passes current only by charging. (A steady solve
+//                    has such a terminal only at I = 0: Solver._solveSteadyAll stops at any
+//                    other.) Calls _assembleBookkeeping where it needs the charges.
 //   captureLocal(s)  when a steady solve's steady system begins (Solver._steadyFromHere): each
 //                    local constraint's reference[j], its sum at node nodes[j] now.
 //   snapFlat(s)      in a steady assembly (dt = ∞), before the concentrations: each flat
@@ -57,7 +58,8 @@
 //                    unknown = 0.
 //   affinity         pin: fixedA − Σ ν η at the face's two nodes = 0, ∂ = −ν.
 //   constraint       in a balance row, a pin: amount − ref = 0 (ref: its reference without
-//                    terminals, else lawRefs), its ∂ from lawAmount. In terminal k's circuit row
+//                    terminals, else lawRefs; with no reference captured there, none, the amount
+//                    held where it is), its ∂ from lawAmount. In terminal k's circuit row
 //                    (in place of what Solver._terminals wrote): the same, its contacts' charges
 //                    λ·D_in/F added from s.contactQ[t] (as Solver._contact captured them in this
 //                    assembly), termDI and termDX from the electrodes' charges' ∂/∂V.
@@ -74,19 +76,21 @@
 // Invariants (each says what a reviewer should be able to check here):
 //   1. A row is replaced only where its slot is active (loc ≥ 0), and every entry a row held
 //      before is gone: _replaceRow clears the three blocks and s.lin's; a row that isn't a pin
-//      also has its termB entries cleared where a terminal's ∂/∂V was in it.
+//      (a flat stretch's, a local constraint's) also has its termB entries cleared, where a
+//      terminal's ∂/∂V was in it (a port reaction's, in the slots it touches).
 //   2. Each law's residual and its derivatives are of the same function of the state: every
 //      term in amount (lawAmount, and the rows above) has its ∂ in idx/w, dV or the block row,
 //      and none is counted twice (a metal's carriers by its charged face's D, not its η).
 //   3. lawAmount at a stretch, surface or electrode sums the same quantity lawStart sums at the
 //      step's start, and captureLaws at a solve's start: what a step's balance rows change is
 //      what a circuit law reads.
-//   4. solveBordered solves the full system exactly (up to round-off): the block rows, each
-//      pin's law, and each floating terminal's circuit row, with δV, by the Woodbury identity
-//      written at it.
+//   4. solveBordered solves the full system: the block rows, each pin's law, and each floating
+//      terminal's circuit row, with δV, by the Woodbury identity written at it, exact given the
+//      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs.
 //   5. Nothing here writes the laws' structure (their parts, rows, nodes): only the workspace
-//      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference) and the
-//      solver's maps lawRefs, chargeRefs, lawForm.
+//      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference), the solver's
+//      maps lawRefs, chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s
+//      (islandRow, linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
 // Tests: test/laws.test.js, test/steady.test.js and every test that solves a steady state;
 // tools/lawsweep.js (solve() against a settled advance()).
 
@@ -148,7 +152,7 @@ export function captureLocal(s) {
 
 // The islands' summed balances (steady solves only): Σ A_f u over the faces into each, its
 // first node's row pinned in the factorised matrix and the sum bordered (solveBordered) like a
-// conserved amount's. The pieces of a stretch held flat by its contact are left as they are.
+// conserved amount's. The pieces of a flat stretch are left as they are (its rows are flatRows').
 function applyIslands(s) {
   const { u, res } = s, R = s.rix, out = [];
   for (const isl of s.islands) {
@@ -227,6 +231,7 @@ function applyLocalConstraints(s) {
       const b = s.blockOfNode[g];
       if (s.loc[b * M + lc.row] < 0) return;
       s._replaceRow(b, lc.row);
+      for (const B of s.termB) B[s.rix[b * M + lc.row]] = 0; // (a port reaction's ∂/∂V, where one touched this slot)
       let t = 0;
       for (const { i, q, k, w } of lc.parts) {
         if (i !== undefined) {

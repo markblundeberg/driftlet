@@ -133,9 +133,7 @@ test('a face reaction that makes an immobile species, beside a floating electrod
   near(s.c['Ag+'].at(-1), late.c['Ag+'].at(-1), 1e-6, 'Ag⁺');
 });
 
-test('an immobile species adsorbing on a floating electrode over part of its region: S + Γaθ kept where the electrode is, S alone elsewhere, and the electrons summed', () => {
-  // S0 + OH⁻ = C(ads) + e⁻ at I = 0, the electrode over 4 of the film's 10 µm. Required to share
-  // the stretch's nodes, the local law was lost, and the mean coverage drifted from 0.2 to 0.70.
+const adsorbingOnFloating = () => {
   const G = 1e-5, area = 1e4;
   const l = lib(['Na+', 'OH-', 'Cl-'], [{ name: 'S0', z: 0 }]);
   l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
@@ -146,6 +144,13 @@ test('an immobile species adsorbing on a floating electrode over part of its reg
     ports: [{ name: 'metal', region: 'film', from: 0, to: 4e-6, I: 0, terminal: 'e-', area, surface: { Cads: { mu0: 0, capacity: G, theta0: 0.2 } }, reactions: [{ equation: 'S0 + OH- = Cads + e-', k0: 1e-4, alpha: 0.5 }] }],
     grid: { hmin: 1e-6, hmax: 1e-6 },
   });
+  return { def, G, area };
+};
+
+test('an immobile species adsorbing on a floating electrode over part of its region: S + Γaθ kept where the electrode is, S alone elsewhere, and the electrons summed', () => {
+  // S0 + OH⁻ = C(ads) + e⁻ at I = 0, the electrode over 4 of the film's 10 µm. Required to share
+  // the stretch's nodes, the local law was lost, and the mean coverage drifted from 0.2 to 0.70.
+  const { def, G, area } = adsorbingOnFloating();
   const s = new Device(def).solve(), late = new Device(def).advance(1e6, { tol: 1e-9 });
   assert.ok(s.converged && late.converged);
   for (const sol of [s, late]) {
@@ -300,4 +305,25 @@ test('a capacitive contact behind a resistance passing a trace of an ion: its cu
   const d = new Device(def), s = d.advance(1e-2, { tol: 1e-7 });
   assert.equal(d.solver.timeLaws.length, 0);
   assert.ok(s.converged && s.terminals.left.V < -1, `V = ${s.terminals.left.V}`);
+});
+
+test('a node-by-node law in the window of a floating electrode: its row says nothing of the electrode\'s voltage', () => {
+  // (From a cold review of src/lawRows.js.) The row S0 + Γaθ takes held the port reaction's
+  // ∂/∂V from before, where the law has none: Newton took an extra iteration to its answer.
+  const d = new Device(adsorbingOnFloating().def), sv = d.solver, assemble = sv.assemble;
+  let checked = 0;
+  sv.assemble = function (dt) {
+    assemble.call(this, dt);
+    if (!(this.steady && dt === Infinity)) return;
+    for (const lc of this.localConstraints) {
+      for (const g of lc.nodes) {
+        const o = this.blockOfNode[g] * this.M + lc.row;
+        if (this.loc[o] < 0) continue;
+        for (const k of this.floating) assert.equal(this.termB[k][this.rix[o]], 0, `node ${g}: ∂/∂V of terminal ${k}`);
+        checked++;
+      }
+    }
+  };
+  assert.ok(d.solve().converged);
+  assert.ok(checked > 0);
 });

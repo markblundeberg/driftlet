@@ -28,7 +28,9 @@ steps instead, where before it was dropped.
 How the laws enter the Newton system (each evaluated on the state and written in place of the row
 it takes, and the bordered solve that holds the dense ones aside) moves from the solver to
 `src/lawRows.js`, with a contract of its own; every solve in the test suite comes out bit for bit
-as before.
+as before. A cold review of it against that contract found one slip: a node-by-node law's row, in
+the window of an electrode at no current, kept the port reaction's ∂/∂V from the row it replaced.
+The answer was right (the residual was), but Newton took an extra iteration to it.
 
 ## 1.2.1 (2026-10-18)
 
