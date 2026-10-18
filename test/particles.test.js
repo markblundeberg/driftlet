@@ -197,3 +197,15 @@ test('particles: about as many cells as asked, and seas by density, so a wider c
   assert.equal(Array.from(sw.sea.X).reduce((a, b) => a + b), 0, 'no seas');
   assert.ok(Math.abs(sw.dots.length / (1e-4 / weight) - 1) < 0.05, 'all of it in dots');
 });
+
+test('particles: a solution off a plane is refused (its fluxes are per device, the amounts per area)', () => {
+  const sphere = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1000 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'm', length: 1e-4, c0: { X: 1 } }],
+    contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { species: { X: 'blocked' }, phi: 'neutral' } },
+    geometry: { type: 'spherical', r0: 1e-6 },
+  }).solve();
+  assert.equal(sphere.geometry, 'spherical');
+  assert.throws(() => particles(sphere), /planar device's solution, not a spherical one/);
+});

@@ -265,6 +265,7 @@
  *   nodes g and g + 1 (a face's across its pair of nodes), mol/(m²·s): the fluxes the balances add up
  * @property {Record<string, Float64Array>} D diffusivity at each node, m²/s (NaN where absent, or in a conductor)
  * @property {number} T temperature, K
+ * @property {'planar' | 'cylindrical' | 'spherical' | 'profile'} geometry the device's (amounts and rates per area only if planar)
  * @property {number} current current toward +x through the device, A/m²
  * @property {number} terminalVoltage V_right − V_left, V
  * @property {Record<string, { V: number, current: number }>} terminals each terminal (left, right,

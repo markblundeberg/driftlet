@@ -27,6 +27,7 @@ export function makeSolution(solver, result = {}) {
     V: {},
     Vstd: {},
     T: model.T,
+    geometry: model.geometry.type, // (planar, or amounts per device rather than per area)
     time: solver.time,
     steady: solver.atSteady,
     converged: result.converged ?? true,

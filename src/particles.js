@@ -55,6 +55,8 @@ const NONE = 0, DOT = 1, OUTSIDE = 2; // nothing (closed); a cell of dots; a sea
  */
 export function particles(sol, { species, dots = 200, weight, cap = Infinity, cells = 120, random = Math.random } = {}) {
   checkOptions('particles', arguments[1], ['species', 'dots', 'weight', 'cap', 'cells', 'random']);
+  // (amounts per area, against fluxes that off a plane are per device: planar only)
+  if (sol.geometry !== undefined && sol.geometry !== 'planar') throw new RangeError(`particles: a planar device's solution, not a ${sol.geometry} one`);
   const names = species ?? sol.species.map((s) => s.name).filter((nm) => sol.c[nm].some((v) => v > 0));
   for (const nm of names) if (!sol.c[nm]) throw new RangeError(`particles: no species ${JSON.stringify(nm)} in the solution`);
   if (!(dots > 0 && Number.isFinite(dots))) throw new RangeError(`particles: dots must be a positive number, got ${dots}`);
@@ -172,7 +174,8 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
         }
         [left[k], right[k]] = [side(k - 1), side(k)];
         const hD = A.h / 2 / D[A.mid] + B.h / 2 / D[B.mid];
-        pair(k, J[A.b], (Math.sqrt((N[k - 1] / A.h) * (N[k] / B.h)) * shape(psi[k] - psi[k - 1])) / hD);
+        // (none of it where either cell is empty: an underflow to 0 makes both ψ infinite)
+        pair(k, J[A.b], N[k - 1] > 0 && N[k] > 0 ? (Math.sqrt((N[k - 1] / A.h) * (N[k] / B.h)) * shape(psi[k] - psi[k - 1])) / hD : 0);
       } else if (A || B) {
         // out of the cells: through a contact, or a face to a metal
         const cl = A ?? B, g = A ? A.b : B.a;
