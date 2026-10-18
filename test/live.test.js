@@ -147,3 +147,36 @@ test("an invalid change made with valid ones is refused alone, and a throwing on
     globalThis.reportError = saved;
   }
 });
+
+test('a ramp whose in-between states are invalid gives way to a fresh solve of the target', async () => {
+  // A bath going from { Na⁺, Cl⁻ } to { Na⁺, K⁺, Cl⁻ at twice } is neutral at both ends but not
+  // between, so every ramp step throws: the update once failed there without trying the target cold.
+  const { bath, aqueous } = await import('../src/kit.js');
+  const lib = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+  const def = (b) => build({ T: 298.15, library: [lib], stack: [bath({ 'Na+': 100, 'K+': 1, 'Cl-': 101 }, 'Cl-'), layer('water', 20e-6, { name: 'film' }), b] });
+  const target = def(bath({ 'Na+': 100, 'K+': 100, 'Cl-': 200 }, 'Cl-'));
+  const s = new Session(def(bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-')));
+  assert.ok(!s.update([{}]).info.failed);
+  // (the warm solve made to fail, so the ramp runs)
+  const dev = s.device, solve = dev.solve.bind(dev);
+  let first = true;
+  dev.solve = (...a) => { const r = solve(...a); if (!first) return r; first = false; return { ...r, converged: false }; };
+  const r = s.update([{ contacts: { right: target.contacts.right } }]);
+  assert.ok(!r.info.failed && r.solution.converged, JSON.stringify(r.info));
+  const direct = new Device(target).solve();
+  assert.ok(Math.abs(r.solution.c['K+'][5] / direct.c['K+'][5] - 1) < 1e-9);
+  // Stuck a step short (set() refusing the ramp's last step), with the fresh solve failing too:
+  // a failure and the last good solution, never the converged step before.
+  const t = new Session(def(bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-'))), good = t.update([{}]).solution;
+  const solveT = t.device.solve.bind(t.device), setT = t.device.set.bind(t.device), real = Device.prototype.solve;
+  let sets = 0;
+  t.device.set = (p) => { if (++sets === 3) throw new Error('refused'); return setT(p); };
+  t.device.solve = (...a) => { const x = solveT(...a); return sets === 1 ? { ...x, converged: false } : x; };
+  Device.prototype.solve = function (...a) { return { ...real.apply(this, a), converged: false }; };
+  try {
+    const u = t.update([{ contacts: { right: def(bath({ 'Na+': 200, 'Cl-': 200 }, 'Cl-')).contacts.right } }]);
+    assert.ok(sets === 3 && u.info.failed && u.solution === good, `${sets} sets, ${JSON.stringify(u.info)}`);
+  } finally {
+    Device.prototype.solve = real;
+  }
+});

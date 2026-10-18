@@ -57,26 +57,31 @@ export class Session {
     if (this.good && errors.every(Boolean)) return done(this.good.sol, { failed: true }); // nothing changed
     const target = this.device.def;
     try {
-      let sol = this.device.solve();
-      // Ramp from the last good state in more and more steps.
-      for (let n = 2; !sol.converged && this.good && n <= this.maxRamp; n *= 2) {
+      let sol = this.device.solve(), stuck = false;
+      // Ramp from the last good state in more and more steps. (Its in-between states can be
+      // invalid where the two ends aren't, a bath neutral at both but not between: then on to the
+      // fresh solve.)
+      ramping: for (let n = 2; !sol.converged && this.good && n <= this.maxRamp; n *= 2) {
         ramp = n;
         this.device._rollback(this.good.cp);
         const from = this.good.cp.def;
         for (let k = 1; k <= n; k++) {
-          this.device.set(between(from, target, k / n));
+          try {
+            this.device.set(between(from, target, k / n));
+          } catch {
+            stuck = true; // (and sol, a converged step short of the target, isn't the answer)
+            break ramping;
+          }
           sol = this.device.solve();
           if (!sol.converged) break;
         }
       }
-      if (!sol.converged) {
+      if (stuck || !sol.converged) {
         // Last, from scratch (with the solver's own continuations).
         const fresh = new Device(target);
         const cold = fresh.solve();
-        if (cold.converged) {
-          this.device = fresh;
-          sol = cold;
-        }
+        if (cold.converged) this.device = fresh;
+        if (cold.converged || stuck) sol = cold;
       }
       if (sol.converged) {
         this.good = { cp: this.device._checkpoint(), sol };
