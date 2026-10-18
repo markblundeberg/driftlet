@@ -211,11 +211,14 @@ export class Device {
    * Adaptive transient to time tEnd (s): variable-step BDF2 with local error control. With
    * `budgetMs`, it returns after that much wall time even if tEnd isn't reached (`done` says
    * which), so an animation can call it once per frame; the step size carries over. `probes`
-   * read a species at points inside the device after every accepted step, into `trace.probes`
-   * (one array per probe, alongside `trace.t`): what a detector at x sees.
+   * read a species (or φ) at points inside the device after every accepted step, into
+   * `trace.probes` (one array per probe, alongside `trace.t`): what a detector at x sees. At a
+   * face, `{ interface, species }` reads a species' flux through it (mol/(m²·s), toward +x), and
+   * `{ interface, gate }` a gate's fraction open.
    * @param {number} tEnd s
    * @param {{ tol?: number, dt0?: number, dtMax?: number, budgetMs?: number, maxSteps?: number, method?: 'bdf2' | 'be',
-   *   probes?: { x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number }[] }} [opts]
+   *   probes?: ({ x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number }
+   *     | { interface: number, species: string } | { interface: number, gate: string })[] }} [opts]
    * @returns {Solution}
    */
   advance(tEnd, opts) {
