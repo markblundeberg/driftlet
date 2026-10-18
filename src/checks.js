@@ -86,7 +86,7 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     if (steady && refine && order && model.species.length > 1) items.push(orderCheck(device, sol, ledger.details.gross));
     // A transient's answer depends on its whole history (and on drives set along the way), so
     // only a run of its own on a finer grid can check it.
-    else if (refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved) and compare' });
+    if (!steady && refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved) and compare' });
   }
 
   const ok = sol.converged && items.every((it) => it.ok !== false);
@@ -96,7 +96,7 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
 }
 
 // The units of totals through the cross-section: per m² of a planar device, or whole.
-const unitsOf = (model) => (model.geometry.type === 'planar' ? { rate: 'mol/(m²·s)', current: 'A/m²', charge: 'C/m²' } : { rate: 'mol/s', current: 'A', charge: 'C' });
+const unitsOf = (model) => (model.geometry.type === 'planar' ? { rate: 'mol/(m²·s)', current: 'A/m²', charge: 'C/m²', amount: 'mol/m²' } : { rate: 'mol/s', current: 'A', charge: 'C', amount: 'mol' });
 
 // Each species' steady ledger: in through the terminals, made by the reactions. Rates in
 // mol/(m²·s) (mol/s if not planar), positive into the device or made.
@@ -262,6 +262,8 @@ function gridCheck(device, sol, tol, gross) {
       const out = { ratio: Math.sqrt(g.ratio ?? 1.2), minCells: 2 * (g.minCells ?? 8) };
       if (g.hmin !== undefined) out.hmin = g.hmin / 2;
       if (g.hmax !== undefined) out.hmax = g.hmax / 2;
+      if (g.hLeft !== undefined) out.hLeft = g.hLeft / 2;
+      if (g.hRight !== undefined) out.hRight = g.hRight / 2;
       return { ...reg, grid: out };
     }),
   };
@@ -334,7 +336,7 @@ function gridCheck(device, sol, tol, gross) {
     summary:
       `on a grid twice as fine (${sol.x.length} → ${other.x.length} nodes), the largest change is ${worst.what}, ${sig(worst.a, 5)} → ${sig(worst.b, 5)} ${worst.unit} ` +
       `(${sig(worst.rel, 2)}${ok ? '' : `, over ${sig(tol, 1)}: refine the grid (hmin, hmax), most likely where profiles are steepest`})`,
-    details: { diffs, nodes: [sol.x.length, other.x.length] },
+    details: { diffs, nodes: [sol.x.length, other.x.length], grids: fine.regions.map((reg) => reg.grid) }, // (grids: the finer one's, by region)
   };
 }
 
@@ -374,7 +376,7 @@ function orderCheck(device, sol, gross) {
   const vol = model.grid.vol, amount = (s, name) => s.x.reduce((m, _, g) => m + (Number.isFinite(s.c[name][g]) ? vol[g] * s.c[name][g] : 0), 0);
   const amounts = model.species.map((sp) => [sp.name, amount(a, sp.name), amount(b, sp.name)]);
   const most = Math.max(0, ...amounts.map(([, x, y]) => Math.max(Math.abs(x), Math.abs(y))));
-  for (const [name, x, y] of amounts) diffs.push({ what: `${name} amount`, a: x, b: y, rel: Math.abs(y - x) / (1e-6 * Math.max(Math.abs(x), Math.abs(y)) + 1e-12 * most), unit: 'mol/m²' });
+  for (const [name, x, y] of amounts) diffs.push({ what: `${name} amount`, a: x, b: y, rel: Math.abs(y - x) / (1e-6 * Math.max(Math.abs(x), Math.abs(y)) + 1e-12 * most), unit: unitsOf(model).amount });
   // Agreeing to near round-off (a µV, a millionth of an amount): ok. Within a thousand times that
   // (a mV, a thousandth), enough for any plot, but a weakly held part of one solve not quite
   // steady: look. Beyond: one of them isn't a steady state.

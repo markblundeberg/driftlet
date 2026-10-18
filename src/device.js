@@ -18,7 +18,7 @@ export { DeviceError };
 const SPECIES_LINK_TYPES = new Set(['blocked', 'equilibrium', 'conductance', 'exchange', 'velocity']);
 const INTERFACE_LINK_TYPES = new Set(['equilibrium', 'blocked', 'conductance', 'permeability']);
 const PHI_LINK_TYPES = new Set(['bulk', 'neutral', 'capacitive', 'pinned']);
-const GRID_FIELDS = ['hmin', 'hmax', 'ratio', 'minCells'];
+const GRID_FIELDS = ['hmin', 'hmax', 'ratio', 'minCells', 'hLeft', 'hRight'];
 // The fields of each kind of species link (to an outside phase, or across a face).
 const LINK_FIELDS = {
   blocked: ['type'],

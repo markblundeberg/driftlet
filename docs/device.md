@@ -872,7 +872,8 @@ advance it, `advance()` and `step()` do.
 
 `{ hmin, hmax, ratio = 1.2, minCells = 8 }`, per device, overridable per region. With no grid
 options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length. Cells grow
-geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly. Each
+geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly
+(`hLeft` and `hRight` set one end's size instead, for a region fine at one end only). Each
 region boundary becomes a pair of nodes at the same x, one per side. The grid is never refined
 automatically. If a double layer that the model resolves is coarser than the local Debye
 length, the solution's `warnings` say so. That's a floor, not an accuracy: a strongly polarised

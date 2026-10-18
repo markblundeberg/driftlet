@@ -201,3 +201,15 @@ test('check(): a diode passing a small current has ledgers, not equilibrium (bal
     assert.ok(b.ok && /(one ledger sums|2 ledgers sum) to zero/.test(b.summary), `${V} V: ${b.summary}`);
   }
 });
+
+test('check(): one grid item, whatever the order check does; and a grid given hLeft and hRight is checked on one with them halved', () => {
+  const def = build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e16) }), ohmic(0.1)], grid: { hLeft: 1e-9, hRight: 4e-9, hmax: 50e-9 } });
+  const d = new Device(def), s = d.solve(), w = d.model.grid.x;
+  // (within 2%: the cells are scaled to fit the length exactly)
+  assert.ok(Math.abs((w[1] - w[0]) / 1e-9 - 1) < 0.02 && Math.abs((w.at(-1) - w.at(-2)) / 4e-9 - 1) < 0.02, `end cells ${w[1] - w[0]}, ${w.at(-1) - w.at(-2)}`);
+  for (const order of [true, false]) {
+    const grids = check(d, s, { order }).items.filter((i) => i.name === 'grid');
+    assert.ok(grids.length === 1 && grids[0].ok === true, `order ${order}: ${grids.map((g) => g.summary).join(' | ')}`);
+    assert.ok(Math.abs(grids[0].details.grids[0].hLeft - 0.5e-9) < 1e-18 && Math.abs(grids[0].details.grids[0].hRight - 2e-9) < 1e-18);
+  }
+});
