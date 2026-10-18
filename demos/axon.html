@@ -134,6 +134,9 @@ const water = aqueous(IONS, { epsr: 0 });
 water.species.push({ name: 'A-', z: -1, cRef: 1000 });
 water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
 
+// the micropipette's port, its conductance sized once for the slider's largest current (1 A/m²) so
+// that set() changes only its I (sized from I = 0 it put the port at 20 kV)
+const stim = (I) => ({ ...injector({ name: 'stim', region: 'axoplasm', from: 15e-6, to: 20e-6, species: 'K+', I: 1 }), I });
 const stimulus = ({ I, period }) => (I > 0 ? square({ high: I, low: 0, period, duty: WIDTH / period }) : 0);
 const axon = (p) => {
   const hh = hodgkinHuxley({ inside: IN, outside: OUT, T: p.T }); // (outside on the left)
@@ -164,7 +167,7 @@ const axon = (p) => {
       { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' },
     ],
     // the micropipette: K⁺ into the axoplasm, 15–20 µm in
-    ports: [injector({ name: 'stim', region: 'axoplasm', from: 15e-6, to: 20e-6, species: 'K+', I: p.started ? stimulus(p) : 0 })],
+    ports: [stim(p.started ? stimulus(p) : 0)],
     grid: { hmin: p.space === 'fh' ? THETA / 4 : 50e-9, hmax: 1e-6 },
   });
 };
