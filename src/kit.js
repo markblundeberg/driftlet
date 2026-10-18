@@ -71,7 +71,7 @@ export function vacuumDipole(def, left, right) {
 
 /**
  * The vacuum-level (Schottky–Mott-type) estimate of a `zeroCharge` where a conductor meets a
- * material: at a conductor region's face, or a contact's capacitive or dipole law. The conductor's
+ * material: at a conductor region's face, or a contact's capacitive or pinned law. The conductor's
  * vacuum level sits its work function W beyond its Fermi level, so
  * zeroCharge = V_F − φ_edge at zero charge = W + (V_vac − φ)_inside.
  * @param {object} def device definition

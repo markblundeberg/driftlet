@@ -5,7 +5,11 @@
 import { AVOGADRO, FARADAY, GAS_CONSTANT, units } from './constants.js';
 import { photogeneration } from './sources.js';
 import { drive } from './stack.js';
-import { checkOptions } from './errors.js';
+import { DeviceError, checkOptions, shown } from './errors.js';
+
+const need = (ok, message) => {
+  if (!ok) throw new DeviceError(message);
+};
 
 const m3 = (x) => x / AVOGADRO, eV = units.eV;
 
@@ -35,6 +39,8 @@ const P = {
  */
 export function perovskiteCell({ V = 1.2, light = 1, bulkSRH = true } = {}) {
   checkOptions('perovskiteCell', arguments[0], ['V', 'light', 'bulkSRH']);
+  need(Number.isFinite(light) && light >= 0, `perovskiteCell: light must be the illumination in suns, ≥ 0, got ${shown(light)}`);
+  need(typeof bulkSRH === 'boolean', `perovskiteCell: bulkSRH must be true or false, got ${shown(bulkSRH)}`);
   const { T } = P, VT = (GAS_CONSTANT * T) / FARADAY;
   const ni = Math.sqrt(P.gc * P.gv) * Math.exp(-(P.Ec - P.Ev) / (2 * VT));
   const n0 = P.gc * Math.exp((P.EcE + VT * Math.log(P.dE / P.gcE) - P.Ec) / VT); // the perovskite's n at the TiO₂'s Fermi level
@@ -124,6 +130,8 @@ export const PEROVSKITE_SCANS = Object.freeze({
  * @param {number} turn s
  */
 export function hysteresis(trace, turn) {
+  need(trace && trace.t?.length > 0 && trace.voltage?.length === trace.t.length && trace.current?.length === trace.t.length, 'hysteresis: give a trace { t, voltage, current } (an advance()\'s, say)');
+  need(Number.isFinite(turn) && turn > trace.t[0] && turn < trace.t[trace.t.length - 1], `hysteresis: turn must be the time the scan turns, inside the trace (${shown(trace.t[0])} to ${shown(trace.t[trace.t.length - 1])} s), got ${shown(turn)}`);
   const out = {};
   for (const [name, on] of [['rev', (t) => t <= turn], ['fwd', (t) => t >= turn]]) {
     const pts = [];

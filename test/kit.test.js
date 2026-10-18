@@ -84,3 +84,16 @@ test('the kit and plots refuse an option they do not take, and suggest the one m
   assert.throws(() => semiconductor('Si', { t: 350 }), /semiconductor: no option 't' \(did you mean 'T'\?\)/);
   assert.throws(() => build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donor: 16.6 }), ohmic(0)] }), /stack\[1\]: no option 'donor' \(did you mean 'donors'\?\)/);
 });
+
+test('perovskiteCell() and hysteresis() check their inputs; a breakpoint at a negative time is passed, not returned again', async () => {
+  const { perovskiteCell, hysteresis } = await import('../src/kit.js');
+  const { nextBreakpoint } = await import('../src/device.js');
+  const { DeviceError } = await import('../src/index.js');
+  assert.throws(() => perovskiteCell({ light: -1 }), (e) => e instanceof DeviceError && /light must be the illumination in suns/.test(e.message));
+  assert.throws(() => perovskiteCell({ bulkSRH: 'no' }), (e) => e instanceof DeviceError && /bulkSRH/.test(e.message));
+  const trace = { t: [0, 1, 2], voltage: [1, 0, 1], current: [-1, 2, -1] };
+  assert.throws(() => hysteresis(trace, 5), (e) => e instanceof DeviceError && /inside the trace/.test(e.message));
+  assert.ok(Number.isFinite(hysteresis(trace, 1).rev.Pmax));
+  assert.equal(nextBreakpoint({ t: [-1, 0, 1], values: [0, 1, 0], repeat: false }, -1), 0);
+  assert.equal(nextBreakpoint({ t: [-2, -1, 1], values: [0, 1, 0], repeat: false }, -2 * (1 + 1e-9)), -2); // (just before it, past the 1e-12 tolerance)
+});

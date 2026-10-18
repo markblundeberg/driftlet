@@ -133,8 +133,8 @@ A contact is an interface with an **outside phase** whose levels are known, like
 with a fully known node. The outside phase's charged levels form a rigid ladder,
 $`V_i = V + \mathtt{offset}_i`$, which the external circuit slides by the **terminal voltage** $`V`$
 (the voltage of a named terminal species). The laws joining it to the device (equilibrium,
-blocked, conductance; and for $`\phi`$, bulk, neutral, capacitive, dipole) are the same as at
-internal faces. Reactions sit at faces between regions: an electrode is a conductor region with
+blocked, conductance, exchange, velocity; and for $`\phi`$, bulk, neutral, capacitive, pinned)
+are those of internal faces, with the outside phase as the other side. Reactions sit at faces between regions: an electrode is a conductor region with
 reactions at its face.
 
 - **Species in equilibrium** with the outside phase sit at $`V_i = V + \mathtt{offset}_i`$. The

@@ -704,7 +704,7 @@ export function nextBreakpoint(src, t) {
   if (src.value !== undefined) return Infinity;
   const { t: ts, repeat } = src, n = ts.length;
   if (!repeat) {
-    for (let k = 0; k < n; k++) if (ts[k] > t * (1 + 1e-12) + 1e-300) return ts[k];
+    for (let k = 0; k < n; k++) if (ts[k] > t + 1e-12 * Math.abs(t) + 1e-300) return ts[k]; // (t·(1 + ε) is below t for t < 0)
     return Infinity;
   }
   const T = ts[n - 1] - ts[0], cycle = Math.floor((t - ts[0]) / T);
@@ -1255,7 +1255,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       }
       if (link.type === 'conductance') {
         // Ohmic exchange with an outside reservoir at V_i = V + offset: J = G·(V_out − V_i).
-        need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species`);
+        need(species[i].z !== 0, `${lpath}: a conductance link needs a charged species (a neutral one exchanges by { type: 'exchange', k, mu })`);
         const offset = link.offset ?? (terminal === i ? 0 : undefined);
         need(offset !== undefined, `${lpath}.offset: give V_i − V_terminal (V) of the outside reservoir`);
         links[i] = { type: 'conductance', G: positive(link.G, `${lpath}.G`), offset: finite(offset, `${lpath}.offset`) };
@@ -1283,7 +1283,6 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
         links[i] = { type: 'exchange', k: positive(link.k, `${lpath}.k (mol/(m²·s))`), mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
         continue;
       }
-      if (link.type === 'conductance') need(species[i].z !== 0, `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
       if (link.type === 'equilibrium') {
         // In equilibrium with the outside phase, whose levels are known: a Dirichlet condition.
         if (species[i].z === 0) {
