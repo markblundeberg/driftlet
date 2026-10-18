@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.2 (2026-10-18)
 
 The steady system's conservation laws now live in `src/laws.js`, found from the device's structure
 alone, with a contract at its head (what it reads, what it returns, what must hold;
