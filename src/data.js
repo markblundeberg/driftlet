@@ -185,7 +185,7 @@ export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name =
   if (typeof name !== 'string' || !/^[A-Za-z][\w()]*$/.test(name)) fail(`trap: name must be a plain name for the trap (its states are name0 and name- or name+), got ${JSON.stringify(name)}`);
   const RT = GAS_CONSTANT * T, cRefE = el.cRef ?? lib.species.find((sp) => sp.name === 'e-')?.cRef;
   const cRefH = ho.cRef ?? lib.species.find((sp) => sp.name === 'h+')?.cRef;
-  const ni = Math.sqrt(cRefE * cRefH * Math.exp(-(ho.mu0 - el.mu0) / RT));
+  const ni = Math.sqrt(cRefE * cRefH * Math.exp(-(ho.mu0 + el.mu0) / RT));
   const half = n1 === undefined ? ni : pos(n1, 'n1 must be the electron density that half-fills the trap > 0 (mol/m³)');
   // The filled state's μ° sits an electron's μ at n₁ above the empty one's: half full at n = n₁.
   const [empty, full] = charge === 'acceptor' ? [`${name}0`, `${name}-`] : [`${name}+`, `${name}0`];

@@ -9,7 +9,7 @@ import { build, layer, ohmic, semiconductor, trap } from '../src/kit.js';
 const T = 300, RT = GAS_CONSTANT * T;
 const Si = semiconductor('Si');
 const { 'e-': el, 'h+': ho } = Si.materials.Si.species;
-const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 - el.mu0) / RT);
+const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 + el.mu0) / RT);
 
 // The root of f on [lo, hi] by bisection (f changes sign there).
 const root = (f, lo, hi) => {
@@ -208,4 +208,20 @@ test('SRH under degeneracy: each carrier\'s trap density scales by its own γ, a
   // Extraction far past e^709 (a quasi-Fermi split of −20 V): finite, the generation limit.
   const g = S._srhRate({ tn, tp, n1: NaN }, 1e-300, 1e-300, -800);
   assert.ok(Number.isFinite(g.rate) && Number.isFinite(g.Ca) && g.rate < 0);
+});
+
+test('trap()\'s midgap default is the material\'s n_i whatever its φ reference: moving μ°(e⁻) by −F and μ°(h⁺) by +F changes no current', () => {
+  // n_i² = N_c N_v e^{−(μ°_e + μ°_h)/RT}, a sum that a shift of the φ reference leaves alone. With
+  // the difference, a diode's SRH current moved 1.1% under a 1 V shift.
+  const diode = (shift) => {
+    const S = semiconductor('Si'), m = S.materials.Si.species;
+    m['e-'] = { ...m['e-'], mu0: m['e-'].mu0 - shift * FARADAY };
+    m['h+'] = { ...m['h+'], mu0: m['h+'].mu0 + shift * FARADAY };
+    const t = trap(S, { density: units.perCm3(1e15), tauN: 1e-6, tauP: 1e-6 });
+    const s = new Device(build({ T, library: [t.library], stack: [ohmic(0), layer('Si', 2e-6, { donors: units.perCm3(1e17), name: 'n', c0: t.c0 }), layer('Si', 2e-6, { acceptors: units.perCm3(1e17), name: 'p', c0: t.c0 }), ohmic(0.5)], bulkReactions: t.bulkReactions })).solve();
+    assert.ok(s.converged);
+    return s.current;
+  };
+  const [I0, I1] = [diode(0), diode(1)];
+  assert.ok(Math.abs(I1 / I0 - 1) < 1e-6, `${I0} vs ${I1} A/m²`);
 });

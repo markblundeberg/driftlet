@@ -100,7 +100,7 @@ function at300(name) {
 // n_i from a library piece: n_i² = N_c N_v e^(−E_g/kT), in the material's own terms (mol/m³).
 const niOf = (lib, T) => {
   const { 'e-': e, 'h+': h } = Object.values(lib.materials)[0].species;
-  return Math.sqrt(e.cRef * h.cRef * Math.exp(-(h.mu0 - e.mu0) / (GAS_CONSTANT * T)));
+  return Math.sqrt(e.cRef * h.cRef * Math.exp(-(h.mu0 + e.mu0) / (GAS_CONSTANT * T)));
 };
 
 test('semiconductors at T: 300 K (or no T) is the table, exactly; outside 150–500 K is refused', () => {

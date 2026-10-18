@@ -44,7 +44,7 @@ test('Beer–Lambert in an n⁺p cell: J_sc is qΦ∫αe^{−αx}η(x)dx, from b
   const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), W = We + Wb;
   const ND = units.perCm3(1e19), NA = units.perCm3(1e16), kf = 1 / (2e-6 * NA), flux = 1e-4;
   const { 'e-': el, 'h+': ho } = Si.materials.Si.species, VT = (GAS_CONSTANT * 300) / FARADAY;
-  const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 - el.mu0) / (GAS_CONSTANT * 300));
+  const ni2 = el.cRef * ho.cRef * Math.exp(-(ho.mu0 + el.mu0) / (GAS_CONSTANT * 300));
   const Wd = Math.sqrt(((2 * Si.materials.Si.epsr * EPS0 * VT * Math.log((ND * NA) / ni2)) / FARADAY) * (1 / NA + 1 / ND));
   const xe = We - (Wd * NA) / (NA + ND), xb = We + (Wd * ND) / (NA + ND);
   const Ln = Math.sqrt(el.D / (kf * NA)), Lp = Math.sqrt(ho.D / (kf * ND));
