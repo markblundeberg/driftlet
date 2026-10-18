@@ -300,7 +300,7 @@ npm run shots    # retake the demos' screenshots, each caught at a set state (to
 
 Design notes and plans: [reliability](docs/reliability.md), [numerics](docs/numerics.md), [conventions](docs/conventions.md),
 [statistics](docs/statistics.md), [the kit](docs/kit.md), [reading level diagrams](docs/visualization.md),
-[data](docs/data.md), [roadmap](ROADMAP.md).
+[data](docs/data.md), [internals](docs/internals.md) (the source, module by module), [roadmap](ROADMAP.md).
 
 ## Credits
 
