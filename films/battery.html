@@ -76,14 +76,17 @@ const WEIGHT = (GR.cMax * La) / (24 * 15); // mol/m² of lithium per dot, the sa
 const lith = { sites: [], crowd: [], anions: [], flyers: [] };
 const crowdXY = (p) => [px(La) + PAD + p.x * (px(La + Ls) - px(La) - 2 * PAD), CELL.top + PAD + p.y * (CELL.bottom - CELL.top - 2 * PAD)];
 
-// Each column's filling, the mean of c/cMax over the nodes in it.
+// Each column's filling, the mean of c/cMax over the nodes in it, each weighed by its box (the
+// grid is graded: counted alike, the fine nodes at the separator stood for more than they hold).
 function fillings(S, host) {
   const f = new Float64Array(host.cols), n = new Float64Array(host.cols);
+  const inside = (k) => k >= 0 && k < S.x.length && S.region[k] === host.region;
   for (let k = 0; k < S.x.length; k++) {
-    if (S.region[k] !== host.region) continue;
+    if (!inside(k)) continue;
+    const box = ((inside(k + 1) ? S.x[k + 1] : S.x[k]) - (inside(k - 1) ? S.x[k - 1] : S.x[k])) / 2;
     const K = Math.min(host.cols - 1, Math.floor(((S.x[k] - host.x0) / (host.x1 - host.x0)) * host.cols));
-    f[K] += S.c['Li+'][k] / host.cMax;
-    n[K]++;
+    f[K] += (box * S.c['Li+'][k]) / host.cMax;
+    n[K] += box;
   }
   return f.map((v, K) => v / n[K]);
 }
@@ -312,7 +315,7 @@ function drawLevels(run) {
     ctx.strokeStyle = COL.warn;
     ctx.lineWidth = 2.5;
     ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.arc(x, (y0 + y1) / 2, 34, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, (y0 + y1) / 2, 34, 0, 2 * Math.PI); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = COL.warn;
     ctx.font = FONT(600, 20);
