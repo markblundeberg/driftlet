@@ -987,7 +987,10 @@ export class Solver {
       const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
       const surface = [...w.keys()].filter((k) => k >= S && k < X && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
       const carriers = this.carriers.flatMap((k, j) => (w[X + j] !== 0 ? [{ k, w: w[X + j] }] : []));
-      if (parts.length === 0) continue; // (a surface's own: node by node, below)
+      // (A surface's own is kept node by node, below; one with an electrode's charge in it too is
+      // the circuit's, here: below skips it, and a floating electrode whose adsorbates gave it
+      // electrons settled 15 mV from where the transient ends.)
+      if (parts.length === 0 && carriers.length === 0) continue;
       if (parts.length === 1 && surface.length === 0 && this.stretches[parts[0].stretch].spectator) continue; // (above)
       if (parts.some((p) => !this._moves(this.stretches[p.stretch]) && !this._still(this.stretches[p.stretch]))) continue;
       const v = new Float64Array(S + T);
@@ -1008,7 +1011,7 @@ export class Solver {
       if (carriers.some((p) => p.k !== col - S)) continue; // (an electrode's charge in a circuit row not its own: never, as they're chosen)
       chosen.push([col, v.map((x) => x / v[col])]);
       if (col >= S) held.set(col - S, w);
-      add(parts, col < S ? col : parts[0].stretch, surface, col < S ? -1 : col - S, carriers);
+      add(parts, col < S ? col : parts[0]?.stretch, surface, col < S ? -1 : col - S, carriers);
     }
     // A combination that nothing carries anywhere is conserved node by node: of still stretches
     // (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻), or of an electrode's surface species (adsorbates

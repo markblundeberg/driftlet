@@ -187,6 +187,25 @@ test('adsorbates that only turn into each other keep their total on every site: 
   }
 });
 
+test('a floating electrode whose surface trades electrons with it: the electrons it gives the metal sum to zero, and the steady state is where the transient ends, in either listing', () => {
+  // A(ads) + OH⁻ = B(ads) + e⁻ and OH⁻ = OH(ads) + e⁻ at I = 0: each B or OH(ads) made gave the
+  // metal one e⁻, which nothing else takes. That law is the surface's and the electrode's, with no
+  // dissolved species in it, and once it was dropped: the steady solve settled at −53 mV, the
+  // transient at −37.8.
+  const surface = { Aads: { mu0: 0, capacity: G, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: G, theta0: 0.1 }, OHads: { mu0: 0, capacity: G, theta0: 0.05 } };
+  const reactions = [{ equation: 'Aads + OH- = Bads + e-', k0: 1e-4, alpha: 0.5 }, adsorb];
+  const given = (d, sol) => {
+    const p = sol.ports[0];
+    return p.x.reduce((q, x, j) => q + d.model.grid.vol[sol.x.indexOf(x)] * area * G * (p.coverage.Bads[j] - 0.1 + p.coverage.OHads[j] - 0.05), 0);
+  };
+  const late = cell(0, { surface, reactions, I: 0 }), Vt = late.advance(1e6, { tol: 1e-9 }).terminals.metal.V;
+  const forward = cell(0, { surface, reactions, I: 0 }).def;
+  for (const def of [forward, { ...forward, species: [...forward.species].reverse() }]) {
+    const d = new Device(def), sol = d.solve();
+    assert.ok(sol.converged && Math.abs(sol.terminals.metal.V - Vt) < 1e-6 && Math.abs(given(d, sol)) < 1e-15, `V ${sol.terminals.metal.V} vs the transient's ${Vt}, electrons given ${given(d, sol)} mol/m²`);
+  }
+});
+
 test('an adsorbed couple, O + e⁻ = R + Cl⁻, in a film given its composition: cold, it starts at the bath\'s levels and solves directly to θ_O/θ_R = e^((E − E°)/V_T)', () => {
   // Every ion's amount given (c0), nothing fixes the film's φ but the electrode's reaction: the
   // start balances it against the surface's starting coverages, where it had left them out and
