@@ -783,7 +783,7 @@ export class Solver {
         const ks = rx.part.map((p) => this.stretchOf[(f + p.side) * n + p.i]);
         if (ks.some((k) => k < 0)) continue;
         join(ks);
-        rxns.push([ks, (side) => rx.part.reduce((a, p) => a + p.nu * this.contactEta(side, p.i), rx.fixedA)]);
+        rxns.push([ks, (side) => rx.part.reduce((a, p) => a - p.nu * this.contactEta(side, p.i), rx.fixedA)]); // (a face's ν: products +, so − Σ ν η)
       }
     });
     const groups = new Map();

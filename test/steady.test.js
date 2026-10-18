@@ -866,3 +866,21 @@ test('A + B ⇌ C with B at 1 M and A, C in trace: the same conserved amounts, k
     }
   }
 });
+
+test('a face reaction with a fixed participant, between a level a contact holds flat and one it doesn\'t: the steady state is where the transient ends', () => {
+  // A(left) + C = B(left), C fixed at −1000 J/mol, the left contact holding μ_A = 0 and μ_B = 1000:
+  // the face reaction's affinity, A/RT = fixed − Σ ν η, decides whether A and B are flat to the
+  // contact. With + ν it held A at the contact's level and ran the face 3× too fast.
+  const def = {
+    T: 298.15,
+    species: [{ name: 'A', z: 0 }, { name: 'B', z: 0 }, { name: 'S', z: 0 }],
+    materials: { w: { epsr: 0, species: { A: { D: 1e-12, mu0: 0, cRef: 1000 }, B: { D: 1e-12, mu0: 0, cRef: 1000 }, S: { D: 1e-9, mu0: 0, cRef: 1000 } } } },
+    regions: [{ material: 'w', length: 1e-6, c0: { S: 1 } }, { material: 'w', length: 1e-6, c0: { S: 1, A: 1, B: 1 } }],
+    interfaces: [{ species: { A: 'blocked', B: 'blocked', S: 'equilibrium' }, reactions: [{ equation: 'A(left) + C = B(left)', fixed: { C: -1000 }, k0: 1e-3 }] }],
+    contacts: { left: { V: 0, phi: 'neutral', species: { A: { type: 'equilibrium', mu: 0 }, B: { type: 'equilibrium', mu: 1000 }, S: 'blocked' } }, right: { V: 0, species: { A: 'blocked', B: 'blocked', S: 'blocked' } } },
+  };
+  const d = new Device(def), steady = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-8 });
+  const r = (s) => s.interfaces[0].rates[0];
+  assert.ok(steady.converged && late.converged && Math.abs(r(steady) / r(late) - 1) < 1e-6, `face rate ${r(steady)} vs the transient's ${r(late)}`);
+  assert.ok(check(d, steady).ok, check(d, steady).text);
+});
