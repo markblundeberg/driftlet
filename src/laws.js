@@ -7,9 +7,8 @@
 // its place. Likewise a reaction whose rate a steady state sets to zero is better said by its
 // affinity, a species nothing carries by its amount node by node, and a piece of a stretch fed
 // only through its faces by its summed balance. This module finds them all, from the device's
-// structure alone; the solver evaluates and applies them (solver.js: _captureLaws,
-// _captureLocal, _applyConstraints, _applyLocalConstraints, _applyAffinities, _applyIslands,
-// _lawAmount, _lawStart, _circuitLaws).
+// structure alone; src/lawRows.js evaluates them on the state and writes them into the Newton
+// system.
 //
 // CONTRACT
 //
@@ -177,7 +176,7 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
   // keeps M⁺ + Q/F, or with no capacitance, Q = 0, the M⁺ alone).
   const byCurrent = (t, k) => t.drive.kind === 'I' || alsoCurrent.includes(k); // (with `alsoCurrent`, terminals counted as such)
   // (Or a port with a capacitance that passes ions, a membrane's: what it holds is Q/F. One that
-  // only charges keeps its charge alone, see Solver._captureLaws.)
+  // only charges keeps its charge alone, see lawRows.js, captureLaws.)
   const carriers = drives ? terms.flatMap((t, k) => (byCurrent(t, k) && k >= 2 && (model.ports[k - 2].reactions.length > 0 || (model.ports[k - 2].capacitance && !chargeOnly(s, k))) ? [k] : [])) : [];
   const X = S + surfCols.length, C = X + carriers.length;
   // (columns: stretches [0, S), surfaces' species [S, X), electrodes' charges [X, C), as in findLaws)
@@ -306,8 +305,8 @@ export function findLaws(s) {
   const constraints = [];
   const conductor = (st) => materials[regions[st.regions[0]].material].conductor;
   // The terminals driven by a current that feed a stretch: a combination through one keeps what
-  // the state holds when a solve begins (see Solver._captureLaws), and has no steady state at any
-  // other current.
+  // the state holds when a solve begins (see lawRows.js, captureLaws), and has no steady state at
+  // any other current.
   const driven = (st) => terms.flatMap((t, k) => (t.drive.kind === 'I' && feeds(k, st) ? [k] : []));
   const add = (parts, rowStretch, surface = [], circuit = -1, carriers = []) => {
     const st = stretches[rowStretch];
@@ -347,7 +346,7 @@ export function findLaws(s) {
   stretches.forEach((st, k) => {
     if (!st.spectator || !moves(s, st)) return;
     add([{ stretch: k, w: 1 }], k);
-    // Held flat (see Solver._flatRows), it moves as a whole: the pin's response is the whole
+    // Held flat (see lawRows.js, flatRows), it moves as a whole: the pin's response is the whole
     // stretch's shift, its amount saying how far.
     if (flatStretches.includes(st)) constraints.at(-1).col = Array.from({ length: st.nodes[1] - st.nodes[0] + 1 }, (_, j) => blockOfNode[st.nodes[0] + j] * M + 1 + st.species);
   });
@@ -399,8 +398,8 @@ export function findLaws(s) {
   // 1e-20 as fast as Fe³⁺/Fe²⁺ on the same platinum was lost to their round-off, the
   // open-circuit potential settling where silver wasn't (−0.4661 V, the joint equilibrium
   // −0.5004 V), and 1e-15 to 1e-18 failed. Its affinity says the same at any k₀ (each kinetic
-  // form vanishes only there), so it stands in for one of those rows (see Solver._applyAffinities),
-  // chosen by the same elimination, and a stretch's: never a circuit row.
+  // form vanishes only there), so it stands in for one of those rows (see lawRows.js,
+  // applyAffinities), chosen by the same elimination, and a stretch's: never a circuit row.
   // The slowest first, whose rate rows are the poorest, and each row picked by the reaction's
   // own terms, never by where its species are listed: the same rows in any listing. (Picked by
   // listing, an electrode's two couples took different rows with the species reversed, and
@@ -608,7 +607,7 @@ export function findLaws(s) {
   // conducts): eliminated, the level is lost to round-off, and Newton settles at a wrong one with
   // nothing to show for it. In steady solves the piece's balance summed over its nodes, where
   // the internal fluxes cancel exactly and the faces' alone are left, replaces its first node's
-  // (see Solver._applyIslands), once the plain solves converge (see Solver.newton).
+  // (see lawRows.js, applyIslands), once the plain solves converge (see Solver.newton).
   const islands = [];
   const used = new Set([...constraints.map((cs) => cs.row).filter((o) => o >= 0), ...affinities.map((af) => af.row)]);
   for (const st of stretches) {
@@ -661,7 +660,7 @@ export function findLaws(s) {
   for (const isl of islands) isl.outside = isl.outside.filter((o) => !used.has(o));
 
   // Time steps only: a terminal behind a resistance that alone feeds a combination reads its
-  // current by that combination's change too (see Solver._circuitLaws), its combinations found
+  // current by that combination's change too (see lawRows.js, circuitLaws), its combinations found
   // with it counted as driven by a current. (Not in the steady system, where it holds its level.)
   const timeLaws = [];
   const behind = floating.filter((k) => terms[k].drive.kind !== 'I');

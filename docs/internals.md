@@ -14,6 +14,7 @@ them is wrong: fix both, with a test, in the same commit.
 | Module | Contract |
 | --- | --- |
 | `src/laws.js` | yes: the steady system's conservation laws |
+| `src/lawRows.js` | yes: the laws written into the Newton system, and the bordered solve |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
@@ -48,8 +49,8 @@ them is wrong: fix both, with a test, in the same commit.
   `th[g·nSurf + q]` follow from `u` (`computeConcentrations`).
 - **Terminals:** 0 the left contact, 1 the right, `2 + k` port k. A floating terminal (driven by
   a current, or behind a resistance) has its voltage as an extra unknown and its circuit row
-  beside the block system, solved by bordering (`_solveBordered`: `termB` its column, `termC`
-  its row, `termDI` and `termDX` its own and other terminals' ∂/∂V).
+  beside the block system, solved by bordering (`solveBordered` in `src/lawRows.js`: `termB`
+  its column, `termC` its row, `termDI` and `termDX` its own and other terminals' ∂/∂V).
 - **Stretches:** each connected run of regions where a species is present
   (`_findStretches`), the unit that conservation counts in.
 
@@ -59,11 +60,10 @@ By method, in file order:
 
 - **Setup:** the constructor (layout, per-node data, φ-undefined regions, terminals),
   `_activeSlots`, `_findStretches` (stretches, flat stretches), `_laws` and `_structure` (the
-  laws, from `src/laws.js`).
-- **Applying the laws:** `_captureLaws`, `_captureLocal`, `_applyIslands`,
-  `_applyLocalConstraints`, `_applyConstraints`, `_lawAmount`, `_lawStart`, `_circuitLaws`,
-  `_solveBordered`; later `_flatRows`, `_applyAffinities`, `_replaceRow`. What each law means
-  is in the contract of `src/laws.js`.
+  laws, from `src/laws.js`), `_directSteady`.
+- **Applying the laws** is `src/lawRows.js` (`captureLaws`, `captureLocal`, `snapFlat`,
+  `applyLaws`, `solveBordered`), called from `assemble`, `newton`, `_refine` and the steady
+  solves; `_replaceRow` and `_j`, which it uses, stay in the solver.
 - **Starting state:** `initFromComposition`, `_surfaceStart`.
 - **Statistics and assembly:** `computeConcentrations`, `_nodeStatistics`, `assemble` and the
   kernels it calls (nodes, segments, faces, bulk reactions, ports, contacts, charge rows),
@@ -76,7 +76,7 @@ By method, in file order:
 - **Steady solves:** `solveSteady`, `_steadyFromHere`, the continuations (floating, generation,
   a terminal's level), `_steadySteps`.
 
-`src/solver.js` is the next to be split along these lines, each piece with its contract.
+The rest of `src/solver.js` is to be split along these lines, each piece with its contract.
 
 ## Reviewing one module
 

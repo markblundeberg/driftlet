@@ -25,6 +25,11 @@ more laws kept wrongly, each now fixed and in `test/laws.test.js`:
 A law that no row of the steady system can keep is set aside, and the steady solve goes by time
 steps instead, where before it was dropped.
 
+How the laws enter the Newton system (each evaluated on the state and written in place of the row
+it takes, and the bordered solve that holds the dense ones aside) moves from the solver to
+`src/lawRows.js`, with a contract of its own; every solve in the test suite comes out bit for bit
+as before.
+
 ## 1.2.1 (2026-10-18)
 
 Three more conservation laws a steady solve kept wrongly, found the same day (two by Gemini 4
