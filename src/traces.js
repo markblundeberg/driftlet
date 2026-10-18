@@ -37,6 +37,8 @@ const finite = (a) => {
  */
 export function speciesRole(sol, name) {
   const z = Object.fromEntries(sol.species.map((sp) => [sp.name, sp.z]));
+  if (!(name in z)) throw new DeviceError(`speciesRole: no species '${name}' in the solution`);
+  if (z[name] === 0) throw new DeviceError(`speciesRole: '${name}' is neutral, with no role in level diagrams (draw it muted, or in a colour of your own)`);
   const role = (n) => (n === 'e-' ? 'electron' : z[n] > 0 ? 'cation' : 'anion');
   const charged = sol.species.filter((sp) => sp.z !== 0).map((sp) => sp.name);
   return { role: role(name), slot: charged.filter((n) => role(n) === role(name)).indexOf(name) };
@@ -88,7 +90,7 @@ export function traces(sol, { species, standard = true, phi = false, energy = fa
   const shown = species ?? names.filter((name) => finite(sol.V[name]) && (!energy || carriers.includes(name)));
   if (energy) {
     for (const name of shown) {
-      if (!carriers.includes(name)) throw new Error(`traces: '${name}' has no band to draw as an energy; draw it as a species voltage (energy: false)`);
+      if (!carriers.includes(name)) throw new DeviceError(`traces: '${name}' has no band to draw as an energy; draw it as a species voltage (energy: false)`);
     }
   }
   const sign = energy ? -1 : 1, unit = energy ? 'eV' : 'V';
@@ -98,22 +100,23 @@ export function traces(sol, { species, standard = true, phi = false, energy = fa
   const pretty = (name) => (name in zOf ? typeset(name, zOf[name]) : name);
   const series = [];
   for (const name of shown) {
-    if (!names.includes(name)) throw new Error(`traces: no charged species '${name}' in the solution`);
+    if (!names.includes(name)) throw new DeviceError(`traces: no charged species '${name}' in the solution`);
     const shift = shifts[name] ?? 0;
-    const at = (y) => (shift || energy ? Array.from(y, (v) => sign * v + shift) : y);
+    const at = (y) => (shift || energy ? Float64Array.from(y, (v) => sign * v + shift) : y);
     const common = { species: name, role: role(name), slot: slotOf(name), ...(shift ? { shift } : {}) };
     if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: energy ? energyLabels[`V:${name}`] : `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
     if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: energy ? energyLabels[`Vstd:${name}`] : `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
   }
   if (Array.isArray(phi)) {
     const known = sol.regions.flatMap((r) => [r.name, r.material]);
-    for (const name of phi) if (!known.includes(name)) throw new Error(`traces: no region or material '${name}' to draw φ in (${[...new Set(known)].join(', ')})`);
+    for (const name of phi) if (!known.includes(name)) throw new DeviceError(`traces: no region or material '${name}' to draw φ in (${[...new Set(known)].join(', ')})`);
     const inside = sol.regions.map((r) => phi.includes(r.name) || phi.includes(r.material));
-    series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? sign * v : NaN)) });
-  } else if (phi) series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: energy ? Array.from(sol.phi, (v) => -v) : sol.phi });
+    series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: Float64Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? sign * v : NaN)) });
+  } else if (phi) series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: energy ? Float64Array.from(sol.phi, (v) => -v) : sol.phi });
+  for (const lv of levels) if (typeof lv?.half?.equation !== 'string') throw new DeviceError('traces: each of levels is { half, label, standard }, its half a half() (as { half: half(\'Fe3+ + e- = Fe2+\') })');
   const couples = [...new Set(levels.map((lv) => lv.half.equation))];
   levels.forEach((lv, k) => {
-    const y = energy ? Array.from(level(sol, lv.half, { standard: lv.standard }), (v) => -v) : level(sol, lv.half, { standard: lv.standard });
+    const y = energy ? Float64Array.from(level(sol, lv.half, { standard: lv.standard }), (v) => -v) : level(sol, lv.half, { standard: lv.standard });
     series.push({
       id: `level:${k}`,
       label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation.split(' ').map(pretty).join(' ')}`,

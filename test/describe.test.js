@@ -119,3 +119,15 @@ test('an outside out of equilibrium with a reaction at the contact is warned of;
   assert.doesNotMatch(describe(water(1e-4 * Math.exp(-a / 2))), /isn't in equilibrium/);
   assert.doesNotMatch(describe(pn(silicon())), /isn't in equilibrium/, 'ohmic contacts hold e⁻ and h⁺ at one level');
 });
+
+test('describe(): a port reaction without alpha says the 0.5 it takes', () => {
+  const lib = aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const def = build({
+    T: 298.15,
+    library: [lib],
+    stack: [{}, layer('water', 1e-6, { name: 'film', c0: { 'Fe3+': 1, 'Fe2+': 1, 'Cl-': 5 } }), {}],
+    ports: [{ name: 'el', region: 'film', V: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-2 }] }],
+  });
+  assert.match(describe(def), /Fe3\+ \+ e- = Fe2\+: k0 0\.01 mol\/\(m²·s\), α 0\.5\n/);
+});

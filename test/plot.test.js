@@ -169,3 +169,21 @@ test('energy: true draws the familiar band diagram, energy up: E_c, E_v and the 
   assert.deepEqual(traces(ions, { energy: true }).series.map((s) => s.label), ['E_F']);
   assert.throws(() => traces(ions, { energy: true, species: ['Ag+'] }), /no band to draw as an energy/);
 });
+
+test('themeColor() covers every role traces() gives, φ too, and refuses others; every trace\'s y is a Float64Array; speciesRole() refuses what has no role', async () => {
+  const { themeColor } = await import('../src/plot.js');
+  const { speciesRole } = await import('../src/kit.js');
+  const { DeviceError } = await import('../src/index.js');
+  const sol = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e16) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0.2)] })).solve();
+  for (const opts of [{ phi: true }, { phi: true, energy: true }, { phi: ['Si'] }, { shifts: { 'h+': 0.1 } }]) {
+    for (const s of traces(sol, opts).series) {
+      assert.ok(s.y instanceof Float64Array, `${JSON.stringify(opts)}: ${s.id}`);
+      for (const dark of [false, true]) assert.match(themeColor(s.role, s.slot, { dark }), /^#[0-9a-f]{6}$/, `${s.id}: ${s.role} ${s.slot}`);
+    }
+  }
+  assert.throws(() => themeColor('neutral', 0), (e) => e instanceof DeviceError && /no role 'neutral'/.test(e.message));
+  assert.throws(() => themeColor('anion', -1), (e) => e instanceof DeviceError && /slot/.test(e.message));
+  assert.throws(() => speciesRole(sol, 'Na+'), (e) => e instanceof DeviceError && /no species 'Na\+'/.test(e.message));
+  assert.throws(() => traces(sol, { species: ['Na+'] }), (e) => e instanceof DeviceError);
+  assert.throws(() => traces(sol, { levels: [half('Fe3+ + e- = Fe2+')] }), (e) => e instanceof DeviceError && /its half a half\(\)/.test(e.message));
+});

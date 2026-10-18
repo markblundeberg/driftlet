@@ -14,7 +14,7 @@
 
 import { traces } from './traces.js';
 import { powi } from './pow.js';
-import { checkOptions } from './errors.js';
+import { DeviceError, checkOptions } from './errors.js';
 
 // Colours by role, light and dark (validated together for colour-vision deficiency; line weight,
 // dash and the legend carry identity too). A role with more members than colours cycles.
@@ -23,16 +23,20 @@ export const THEME = Object.freeze({
   dark: { electron: ['#5b95d6'], cation: ['#e8584f', '#d0772a', '#d65d95', '#b88a3e'], anion: ['#219c8f', '#2aa5bb', '#3aa874'], redox: ['#8b7ff0', '#a86bc9', '#7a9ae0'] },
 });
 const ROLES = ['electron', 'cation', 'anion', 'redox'];
+const MUTED = { light: '#52514e', dark: '#c3c2b7' }; // (φ's, and lines of no species)
 
 /**
  * The colour of a trace's role and slot (a CSS colour), for drawing other charts in the same
  * colours as the level diagrams.
- * @param {'electron' | 'cation' | 'anion' | 'redox'} role
+ * @param {'electron' | 'cation' | 'anion' | 'redox' | 'phi'} role
  * @param {number} slot
  * @param {{ dark?: boolean }} [opts]
  */
 export function themeColor(role, slot, { dark = false } = {}) {
   checkOptions('themeColor', arguments[2], ['dark']);
+  if (role === 'phi') return MUTED[dark ? 'dark' : 'light'];
+  if (!ROLES.includes(role)) throw new DeviceError(`themeColor: no role '${role}' (${[...ROLES, 'phi'].join(', ')})`);
+  if (!(Number.isInteger(slot) && slot >= 0)) throw new DeviceError(`themeColor: slot must be a whole number ≥ 0, got ${slot}`);
   const list = THEME[dark ? 'dark' : 'light'][role];
   return list[slot % list.length];
 }
@@ -118,8 +122,8 @@ function lengthUnit(L) {
 
 const style = (id) => {
   const vars = (mode) => ROLES.flatMap((role) => THEME[mode][role].map((c, k) => `--driftlet-${role}${role === 'electron' ? '' : `-${k + 1}`}:${c};`)).join('');
-  const light = `${vars('light')}--driftlet-ink:#0b0b0b;--driftlet-muted:#52514e;--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1`;
-  const dark = `${vars('dark')}--driftlet-ink:#ffffff;--driftlet-muted:#c3c2b7;--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64`;
+  const light = `${vars('light')}--driftlet-ink:#0b0b0b;--driftlet-muted:${MUTED.light};--driftlet-grid:#e4e3df;--driftlet-band:#f1f0ec;--driftlet-face:#a8a7a1`;
+  const dark = `${vars('dark')}--driftlet-ink:#ffffff;--driftlet-muted:${MUTED.dark};--driftlet-grid:#3a3a37;--driftlet-band:#262624;--driftlet-face:#6b6a64`;
   return (
     `<style>` +
     `:where(#${id}){${light}}` +
