@@ -142,7 +142,7 @@ function update() {
       { x: [v, v], y: [charge(si), charge(sc)], color: colors[3], width: 0, marker: true, label: 'now' },
     ],
   });
-  // The crowded layer's ionic view, Na⁺ drawn with its voltage 0.3 V above Cl⁻'s. The window: a few
+  // The crowded layer's ionic view, Na⁺ drawn 0.3 V above the bulk and Cl⁻ 0.3 V below, so apart. The window: a few
   // Debye lengths, plus the width of the saturated layer, which holds the charge at c_max.
   const xlim = [0, Math.min(30 * lam, 6 * lam + (2 * Math.abs(charge(sc))) / (FARADAY * cMax))];
   levels(document.getElementById('levels'), sc, {

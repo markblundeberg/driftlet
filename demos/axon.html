@@ -117,10 +117,10 @@
 </main>
 <script type="module">
 import { Device } from '../src/index.js';
-import { build, layer, bath, aqueous, injector, square, hodgkinHuxley, traces, speciesRole, particles } from '../src/kit.js';
+import { build, layer, bath, aqueous, injector, hodgkinHuxley, traces, speciesRole, particles } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser } from './common.js';
+import { showCode, fromQuery, pauser, onScreen } from './common.js';
 
 const IONS = ['Na+', 'K+', 'Cl-'];
 const OUT = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
@@ -137,7 +137,17 @@ water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
 // the micropipette's port, its conductance sized once for the slider's largest current (1 A/m²) so
 // that set() changes only its I (sized from I = 0 it put the port at 20 kV)
 const stim = (I) => ({ ...injector({ name: 'stim', region: 'axoplasm', from: 15e-6, to: 20e-6, species: 'K+', I: 1 }), I });
-const stimulus = ({ I, period }) => (I > 0 ? square({ high: I, low: 0, period, duty: WIDTH / period }) : 0);
+// Pulses of WIDTH every period from the end of the settling (SETTLE), each period's start shifted
+// to land on it: the pulse at o = SETTLE mod period, wrapping round the period's end if it must.
+const stimulus = ({ I, period }) => {
+  if (!(I > 0)) return 0;
+  const o = SETTLE % period, e = o + WIDTH;
+  return e <= period
+    ? { t: [0, o, o, e, e, period], values: [0, 0, I, I, 0, 0], repeat: true }
+    : { t: [0, e - period, e - period, o, o, period], values: [I, I, 0, 0, I, I], repeat: true };
+};
+// Whether the stimulus is on at time t (as it's set now).
+const stimOn = (t, { I, period }) => I > 0 && ((((t - SETTLE) % period) + period) % period) < WIDTH;
 const axon = (p) => {
   const hh = hodgkinHuxley({ inside: IN, outside: OUT, T: p.T }); // (outside on the left)
   // Tetrodotoxin blocks Na⁺ channels, tetraethylammonium K⁺. (Fully blocked, a millionth stay
@@ -204,12 +214,14 @@ function start() {
   swarm = null;
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (the space fills, too)
   d.set({ ports: { stim: { I: stimulus(p) } } });
-  rec = { t: [], V: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1 };
+  rec = { t: [], V: [], stim: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1 };
 }
 function keep(sol) {
   const { t, probes: pr } = sol.trace; // (this call's steps, every one)
+  const p = params();
   for (let k = 0; k < t.length; k++) {
     rec.t.push(t[k]);
+    rec.stim.push(stimOn(t[k], p)); // (as it was then: a change of period moves only what follows)
     const V = pr[1][k] - pr[0][k];
     rec.V.push(V);
     // Each ion's current outward (as electrophysiologists draw it), µA/cm²: flux toward +x is inward.
@@ -225,6 +237,7 @@ function keep(sol) {
   if (cut > 0) {
     rec.t.splice(0, cut);
     rec.V.splice(0, cut);
+    rec.stim.splice(0, cut);
     rec.K.splice(0, cut);
     for (const a of [...Object.values(rec.I), ...Object.values(rec.g)]) a.splice(0, cut);
   }
@@ -248,7 +261,7 @@ function draw() {
   };
   const ms = rec.t.map((x) => 1000 * (x - SETTLE)), x1 = 1000 * (t - SETTLE), xlim = [x1 - 1000 * WINDOW, x1];
   // the stimulus, drawn along the bottom
-  const stim = ms.map((x) => (p.I > 0 && ((x / 1000 + SETTLE) % p.period) < WIDTH ? -95 + 8 : -95));
+  const stim = rec.stim.map((on) => (on ? -95 + 8 : -95));
   chart(document.getElementById('vt'), {
     xlabel: 'time (ms)', ylabel: 'mV', xlim, ylim: [-100, 60],
     series: [
@@ -317,11 +330,11 @@ function ions(sol) {
   document.getElementById('tally').textContent =
     `One dot is ${PER_DOT} ions per µm² of membrane. In the last 10 ms: ` + IONS.map((s) => `${s} ${count(s, 1)} in, ${count(s, -1)} out`).join(' · ');
 }
-const canvas = document.getElementById('ions'), ctx = canvas.getContext('2d');
+const canvas = document.getElementById('ions'), ctx = canvas.getContext('2d'), shown = onScreen(canvas);
 function paintIons(now) {
   requestAnimationFrame(paintIons);
   const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
-  if (W === 0) return;
+  if (W === 0 || !shown()) return;
   if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) [canvas.width, canvas.height] = [Math.round(W * dpr), Math.round(H * dpr)];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);

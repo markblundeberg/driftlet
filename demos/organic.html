@@ -151,10 +151,12 @@ function sweep() {
   };
   const oc = new Device(cell({ V: { I: 0 }, ...p })).solve();
   const lit = curve(p.light), Voc = oc.terminals.left.V - oc.terminals.right.V;
-  const Jph = FARADAY * oc.interfaces[0].rates[0];
+  // (J_ph from the exciton theory, not the splitting rate the solve gives at open circuit: that
+  // inverts the interface's own rate law and checks nothing else)
+  const Jph = FARADAY * PHI1 * p.light * collected(p.d, p.LX);
   jv = {
     V: lit.map((_, k) => 0.02 * k), lit, dark: curve(0), Jsc: lit[0],
-    stats: `J_sc = ${lit[0].toFixed(3)} mA/cm² (exciton theory ${((FARADAY * PHI1 * p.light * collected(p.d, p.LX)) / 10).toFixed(3)}) · V_oc = ${Voc.toFixed(4)} V (detailed balance ${(VT * Math.log(Jph / J0 + 1)).toFixed(4)})`,
+    stats: `J_sc = ${lit[0].toFixed(3)} mA/cm² (exciton theory ${(Jph / 10).toFixed(3)}) · V_oc = ${Voc.toFixed(4)} V (detailed balance ${(VT * Math.log(Jph / J0 + 1)).toFixed(4)})`,
   };
 }
 function thickness() {
@@ -186,13 +188,17 @@ light.addEventListener('change', () => {
   sweep();
   update();
 });
+for (const el of [dIn, LXin, light]) el.addEventListener('input', labels); // (readouts while dragging; the solves on release)
+function labels() {
+  document.getElementById('dOut').textContent = `${dIn.value} nm`;
+  document.getElementById('LXout').textContent = `${LXin.value} nm`;
+  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+}
 
 function draw(sol) {
   const p = params(), bias = sol.terminals.left.V - sol.terminals.right.V;
   document.getElementById('Vout').textContent = `${bias.toFixed(3)} V`;
-  document.getElementById('dOut').textContent = `${dIn.value} nm`;
-  document.getElementById('LXout').textContent = `${LXin.value} nm`;
-  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  labels();
   document.getElementById('stats').textContent = jv.stats;
   chart(document.getElementById('jv'), {
     xlabel: 'V (V), anode above cathode', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.4 * jv.Jsc, 1.2 * jv.Jsc],

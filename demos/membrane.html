@@ -78,7 +78,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, speciesRole, particles, IONS } from '../src/kit.js';
 import { themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, onScreen } from './common.js';
 
 // Solution and membrane, both strictly neutral (macroscopic). The membrane is the same water,
 // with its ions ten times slower and a fixed charge.
@@ -184,14 +184,14 @@ function ions(sol) {
   const perUm2 = (weight * 6.02214076e23) / 1e12;
   document.getElementById('dotsKey').textContent = `· one dot is ${perUm2.toPrecision(1).replace(/e\+(\d+)/, (m, e) => ` × 10${e.replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d])}`)} ions per µm² of membrane`;
 }
-const canvas = document.getElementById('dots'), ctx = canvas.getContext('2d'), speed = document.getElementById('speed');
+const canvas = document.getElementById('dots'), ctx = canvas.getContext('2d'), speed = document.getElementById('speed'), shown = onScreen(canvas);
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 let last = performance.now();
 function frame(now) {
   const secs = Math.max(0, Math.min(0.05, (now - last) / 1000)) || 0;
   last = now;
   requestAnimationFrame(frame);
-  if (!swarm || canvas.clientWidth === 0) return;
+  if (!swarm || canvas.clientWidth === 0 || !shown()) return;
   // the device's time: about a hop every few frames in a cell of the membrane, times the speed
   const h = swarm.cells[1].x1 - swarm.cells[1].x0;
   swarm.step(((0.4 * h * h) / (Dm / 10)) * 10 ** +speed.value * 60 * secs);

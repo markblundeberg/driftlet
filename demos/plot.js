@@ -177,9 +177,3 @@ function fmt(v) {
   if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
   return String(+v.toPrecision(4));
 }
-
-// Initial control values from the URL (?V=0.4), for sharing a state or taking a screenshot.
-export function fromQuery(input) {
-  const v = new URLSearchParams(location.search).get(input.id);
-  if (v !== null) input.value = v;
-}

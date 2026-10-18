@@ -75,7 +75,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, traces, recorder, check, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser } from './common.js';
+import { showCode, fromQuery, pauser, jumpTo, jumpPending } from './common.js';
 
 const T = 310.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 const IONS = ['Na+', 'K+', 'Cl-'];
@@ -140,7 +140,6 @@ function drawLevels(sol, title) {
   document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 360, title, ylabel: 'against outside (mV)', range: [-150, 90] });
 }
 
-const pct = (x) => `${(100 * x).toFixed(0)}%`;
 const mV = (v) => `${(1000 * v).toFixed(1)} mV`;
 function showControls() {
   const p = params();
@@ -182,8 +181,8 @@ audit();
 
 // Pump stopped: from the steady state, a transient over hours, recorded.
 const HOURS = 8, end = HOURS * 3600;
-const stopAt = +new URLSearchParams(location.search).get('t') * 60 || 0; // ?t=… minutes: straight there
 function startRun() {
+  const stopAt = jumpTo() * 60; // ?t=… minutes: straight there
   const p = params(), d = new Device(cell(p)), steady = d.solve();
   d.set(cell({ ...p, pumping: false })); // the pump stops (the cell keeps what it holds)
   const g = steady.x.length - 1;
@@ -268,7 +267,7 @@ function drawTime() {
   });
 }
 
-if (stopAt) dev.ready.then(startRun);
+if (jumpPending()) dev.ready.then(startRun);
 showCode();
 </script>
 </body>

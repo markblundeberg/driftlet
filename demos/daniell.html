@@ -93,7 +93,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, half, level, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, pauser } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
 
 const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
 const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
@@ -180,7 +180,7 @@ function start() {
   dev = new Device(cell(emf0, sep.value));
   dev.step(1e-6);
   dev.set({ contacts: { right: { V: 0, R: R() } } });
-  run = { t: [], V: [], q: [0], energy: 0, I: 0, plated: 0, copper: copperLeft(dev.solution()), stop: +new URLSearchParams(location.search).get('t') || Infinity };
+  run = { t0: dev.solver.time, t: [], V: [], q: [0], energy: 0, I: 0, plated: 0, copper: copperLeft(dev.solution()), stop: jumpTo() || Infinity };
   // ?t=… runs ahead to that time (for sharing a state, or a screenshot).
   if (run.stop < Infinity) record(dev.advance(run.stop, { budgetMs: 60000 }));
   lastFrame = undefined;
@@ -203,6 +203,8 @@ const copperLeft = (sol) => {
 function record(sol) {
   sol.trace.t.forEach((t, k) => {
     const I = sol.trace.current[k], V = sol.trace.voltage[k]; // through the load, and across it
+    // (from when the load went on, at the first step's current: its charge and energy counted too)
+    if (!run.t.length) [run.t, run.V, run.I] = [[run.t0], [V], I];
     if (run.t.length) {
       const dt = t - run.t.at(-1);
       run.q.push(run.q.at(-1) + (dt * (run.I + I)) / 2);
@@ -219,7 +221,7 @@ function record(sol) {
 // Playback in cell-hours per wall-clock second, or as far as 12 ms of computing reaches.
 let lastFrame;
 function frame(now = performance.now()) {
-  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  const wall = lastFrame === undefined ? 1 / 60 : Math.min(0.1, (now - lastFrame) / 1000); // (a first frame moves too)
   lastFrame = now;
   const hoursPerSecond = +pace.value, t = dev.solver.time;
   const target = run.stop < Infinity ? t : hoursPerSecond > 0 ? t + wall * hoursPerSecond * 3600 : t + 86400;

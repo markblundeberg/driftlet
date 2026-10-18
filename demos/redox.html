@@ -69,7 +69,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, pauser } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
 
 const iron = half('Fe3+ + e- = Fe2+');
 // The bulk's composition, and a reference that reads the SHE scale: the bath's terminal voltage
@@ -109,10 +109,8 @@ function start() {
   dev.solve();
   dev.set({ contacts: { left: { V: wave } } });
   // It runs on, cycle after cycle (?t=… stops it there, for a screenshot), keeping the last three.
-  cv = { t: [], E: [], I: [], period, stop: +new URLSearchParams(location.search).get('t') || Infinity };
-  document.getElementById('rateOut').textContent = `${scan() < 0.1 ? scan().toFixed(3) : scan().toFixed(2)} V/s`;
-  document.getElementById('k0Out').textContent = `${k().toExponential(0)} mol/(m²·s)`;
-  document.getElementById('LOut').textContent = L() >= 1e-3 ? '1 mm (still)' : `${(L() * 1e6).toPrecision(2)} µm`;
+  cv = { t: [], E: [], I: [], period, stop: jumpTo() || Infinity };
+  labels();
   lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
@@ -188,6 +186,12 @@ const pause = pauser(document.getElementById('controls'), () => {
   requestAnimationFrame(frame);
 });
 for (const el of [rate, k0, Ls]) el.addEventListener('change', start);
+for (const el of [rate, k0, Ls]) el.addEventListener('input', labels); // (readouts while dragging; the run on release)
+function labels() {
+  document.getElementById('rateOut').textContent = `${scan() < 0.1 ? scan().toFixed(3) : scan().toFixed(2)} V/s`;
+  document.getElementById('k0Out').textContent = `${k().toExponential(0)} mol/(m²·s)`;
+  document.getElementById('LOut').textContent = L() >= 1e-3 ? '1 mm (still)' : `${(L() * 1e6).toPrecision(2)} µm`;
+}
 document.getElementById('run').addEventListener('click', start);
 start();
 showCode();

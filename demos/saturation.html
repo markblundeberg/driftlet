@@ -90,7 +90,8 @@
     in the cell above. The current flows down the electrons' quasi-Fermi level E<sub>Fn</sub>, which
     the drain pulls down. Where E<sub>Fn</sub> falls away below E<sub>c</sub>, the electrons thin out,
     until at the drain they all but vanish: the channel pinches off. There E<sub>c</sub> flattens onto
-    a ceiling set by the gate's level, the gate rather than the electrons now holding it, and any more
+    a ceiling set by the gate's level, 0.3 eV above it (the flat-band voltage, the offset between the
+    two materials), the gate rather than the electrons now holding it, and any more
     drain voltage drops across that sliver while the current hardly changes. The dashed curve is the charge-sheet model's current,
     I/W = (μ/L)[(σ<sub>s</sub>² − σ<sub>d</sub>²)/(2C) + V<sub>T</sub>(σ<sub>s</sub> − σ<sub>d</sub>)], with σ
     the gate charge at each end; it's exact for this model, from below threshold to saturation.</p>
@@ -106,7 +107,7 @@ import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser } from './common.js';
+import { profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
@@ -137,9 +138,8 @@ function start() {
   dev.solve();
   dev.set({ contacts: { right: { V: { t: [0, h, h, 2 * h], values: [V, V, -V, -V], repeat: true } } } });
   // It runs on, cycle after cycle (?t=… stops it there, for a screenshot), keeping the last three.
-  trace = { t: [], I: [], range: [Infinity, -Infinity], shift: Math.round((-0.35 + 1.5 * V) * 20) / 20, period: 2 * h, stop: +new URLSearchParams(location.search).get('t') || Infinity };
-  document.getElementById('Vout').textContent = `${V.toFixed(2)} V`;
-  document.getElementById('halfOut').textContent = h < 0.1 ? `${(h * 1000).toPrecision(2)} ms` : `${h.toPrecision(2)} s`;
+  trace = { t: [], I: [], range: [Infinity, -Infinity], shift: Math.round((-0.35 + 1.5 * V) * 20) / 20, period: 2 * h, stop: jumpTo() || Infinity };
+  labels();
   lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
   running = true;
@@ -201,6 +201,12 @@ const pause = pauser(document.getElementById('cellControls'), () => {
   requestAnimationFrame(frame);
 });
 for (const el of [amp, halfS]) el.addEventListener('change', start);
+for (const el of [amp, halfS]) el.addEventListener('input', labels); // (readouts while dragging; the run on release)
+function labels() {
+  const h = half();
+  document.getElementById('Vout').textContent = `${(+amp.value).toFixed(2)} V`;
+  document.getElementById('halfOut').textContent = h < 0.1 ? `${(h * 1000).toPrecision(2)} ms` : `${h.toPrecision(2)} s`;
+}
 document.getElementById('run').addEventListener('click', start);
 start();
 

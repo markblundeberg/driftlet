@@ -196,20 +196,25 @@ life.addEventListener('change', () => {
   update();
 });
 zoom.addEventListener('change', () => draw(last));
+for (const el of [lambda, light, life]) el.addEventListener('input', labels); // (readouts while dragging; the solves on release)
 
+// The sliders' readouts.
+function labels() {
+  const tau = 1 / (kf() * NA), nm = +lambda.value, depth = 1 / alphaAt(nm), { Ln } = collection(kf());
+  document.getElementById('lambdaOut').innerHTML =
+    `<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;vertical-align:-0.05em;background:${nm > 700 ? '#555' : `hsl(${hue(nm)} 90% 50%)`}"></span> ${nm} nm, 1/α = ${depth < 1e-6 ? `${(depth * 1e9).toFixed(0)} nm` : depth < 1e-3 ? `${+(depth * 1e6).toPrecision(2)} µm` : `${+(depth * 1e3).toPrecision(2)} mm`}`;
+  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
+}
 // A wavelength's colour, roughly, for the readout.
 const hue = (nm) => (nm < 440 ? 270 : nm < 490 ? 270 - ((nm - 440) * 90) / 50 : nm < 580 ? 180 - ((nm - 490) * 120) / 90 : nm < 645 ? 60 - ((nm - 580) * 60) / 65 : 0);
 let last;
 function draw(sol) {
   last = sol;
-  const v = sol.terminals.right.V, tau = 1 / (kf() * NA), nm = +lambda.value, alpha = alphaAt(nm);
-  const { Ln, eta } = collection(kf());
+  const v = sol.terminals.right.V, nm = +lambda.value, alpha = alphaAt(nm);
+  const { eta } = collection(kf());
   document.getElementById('Vout').textContent = `${v.toFixed(3)} V`;
-  const depth = 1 / alpha;
-  document.getElementById('lambdaOut').innerHTML =
-    `<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;vertical-align:-0.05em;background:${nm > 700 ? '#555' : `hsl(${hue(nm)} 90% 50%)`}"></span> ${nm} nm, 1/α = ${depth < 1e-6 ? `${(depth * 1e9).toFixed(0)} nm` : depth < 1e-3 ? `${+(depth * 1e6).toPrecision(2)} µm` : `${+(depth * 1e3).toPrecision(2)} mm`}`;
-  document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
-  document.getElementById('tauOut').textContent = `τₙ ${tau < 1e-6 ? `${+(tau * 1e9).toPrecision(2)} ns` : `${+(tau * 1e6).toPrecision(2)} µs`}, Lₙ ${+(Ln * 1e6).toPrecision(2)} µm`;
+  labels();
   document.getElementById('stats').textContent = jv.stats;
   chart(document.getElementById('jv'), {
     xlabel: 'V (V)', ylabel: 'J (mA/cm²), photocurrent +', ylim: [-0.3 * jv.Jsc, 1.15 * jv.Jsc],
@@ -220,7 +225,6 @@ function draw(sol) {
       { x: [v], y: [sol.current / 10], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
-  const at = spectrum.nm.indexOf(nm);
   chart(document.getElementById('eqe'), {
     xlabel: 'wavelength (nm)', ylabel: 'EQE at short circuit, J_sc/qΦ', xlim: [400, 1100], ylim: [0, 1.05],
     series: [

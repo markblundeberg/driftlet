@@ -39,7 +39,9 @@ export function profiles(el, sol, { species, title, ylabel = 'concentration (mol
     const [xs, xe] = xlim ?? [sol.x[0], sol.x.at(-1)];
     const shown = series.flatMap((s) => s.y.filter((v, g) => Number.isFinite(v) && sol.x[g] >= xs && sol.x[g] <= xe));
     const lo = Math.min(...shown), hi = Math.max(...shown);
-    range = log ? [Math.floor(lo - 0.2), Math.ceil(hi + 0.2)] : [Math.min(0, lo), 1.08 * hi || 1];
+    // (from 0, padded on the far side: below for data all negative, where 1.08 × hi clipped its top)
+    const a = Math.min(0, lo), b = Math.max(0, hi), pad = 0.08 * (b - a);
+    range = log ? [Math.floor(lo - 0.2), Math.ceil(hi + 0.2)] : b > a ? [b > 0 ? a : a - pad, b > 0 ? b + pad : b] : [0, 1];
   }
   const tr = { x: sol.x, series, regions: sol.regions, faces: sol.regions.slice(1).map((r) => r.x0), range };
   el.innerHTML = levelChart(tr, { width, height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
@@ -48,6 +50,24 @@ const superscript = (n) => String(n).replace(/[-0-9]/g, (d) => '⁻⁰¹²³⁴�
 const powerOfTen = (v) => (Number.isInteger(v) ? `10${superscript(v)}` : '');
 
 // A slider's value from the URL (?V=0.4), for sharing a state or taking a screenshot.
+// Whether an element is on screen, for a drawing loop that runs on by itself (the particles):
+// it skips its work while scrolled away or hidden.
+export function onScreen(el) {
+  let seen = true;
+  if (typeof IntersectionObserver === 'function') new IntersectionObserver(([e]) => (seen = e.isIntersecting)).observe(el);
+  return () => seen && !document.hidden;
+}
+
+// ?t=… runs a transient straight to that time (a state to share, or a screenshot's): for the
+// first run only. A restart plays from the start (it had jumped back there and stopped again).
+let jumped = false;
+export function jumpTo() {
+  const t = jumped ? 0 : +new URLSearchParams(location.search).get('t') || 0;
+  jumped = true;
+  return t;
+}
+export const jumpPending = () => !jumped && +new URLSearchParams(location.search).get('t') > 0;
+
 export function fromQuery(input) {
   const v = new URLSearchParams(location.search).get(input.id);
   if (v !== null) input.value = v;

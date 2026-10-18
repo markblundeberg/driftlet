@@ -116,7 +116,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { recorder, henderson, planck, check, typeset } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser } from './common.js';
+import { profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
 
 // Charge, equivalent conductivity (10⁻⁴ m² S/mol), as LJPcalc tabulates them; D = λRT/(|z|F²).
 const LAMBDA = { 'K+': [1, 73.5], 'Na+': [1, 50.11], 'Mg2+': [2, 53.06], 'Ca2+': [2, 59.5], 'Zn2+': [2, 52.8], 'Cl-': [-1, 76.31], 'gluconate-': [-1, 0.33 * 73.5], 'HEPES-': [-1, 0.3 * 73.5] };
@@ -213,7 +213,7 @@ function start() {
     set, dev, rec: recorder(dev, { probes: [{ x: 0, quantity: 'phi' }, { x: L, quantity: 'phi' }] }), last: undefined, wall: 0,
     H: henderson(set.left, set.right, ions, { T: set.T }), P: planck(set.left, set.right, ions, { T: set.T }),
   };
-  const stopAt = +new URLSearchParams(location.search).get('t') || 0;
+  const stopAt = jumpTo();
   if (stopAt) {
     run.rec.advance(stopAt, { tol: 1e-4 });
     return drawFree();
@@ -286,24 +286,29 @@ function bridge() {
   const c = 10 ** +cs.value, X = 10 ** +Xf.value - 1; // mM, 0 … 99 mM of charge
   el('csOut').textContent = c >= 1 ? `${c.toPrecision(2)} mM` : `${(1000 * c).toPrecision(2)} µM`;
   el('XfOut').textContent = X < 0.05 ? 'none' : `${X.toPrecision(2)} mM`;
-  const s = bridgeE(c, X), ions = ionsAt(T0);
+  const d = bridgeCell(c, X), solved = d.solve(), s = solved.converged ? solved : null, ions = ionsAt(T0);
   if (!s) return (el('status').textContent = 'no steady state at these settings');
   const E = s.phi.at(-1) - s.phi[0], H = henderson({ 'K+': BRIDGE, 'Cl-': BRIDGE }, { 'Na+': c, 'Cl-': c }, ions);
-  el('status').textContent = `junction potential ${mV(E)} · Henderson (a free liquid junction) ${mV(H)} · sample ${c.toPrecision(2)} mM NaCl against 3 M KCl`;
+  el('status').textContent = `junction potential ${mV(E)} · Henderson's formula ${mV(H)} · sample ${c.toPrecision(2)} mM NaCl against 3 M KCl`;
   const xlim = [0, s.x.at(-1)];
   profiles(el('conc'), s, { species: ['K+', 'Na+', 'Cl-'], title: 'concentrations: bridge | frit | sample', ylabel: 'concentration (mM)', log: true, range: [-3, 4], xlim });
   profiles(el('phi'), s, { species: [{ c: s.phi.map((v) => 1000 * (v - s.phi[0])), label: 'φ − φ_bridge (mV)', kind: 'level' }], title: 'potential through the bridge', ylabel: 'mV', xlim });
-  const key = `${Xf.value}`;
-  if (sweep.key !== key) {
-    sweep = { key, c: [], free: [], frit: [], H: [] };
+  // (Henderson's and the uncharged frit's curves once; this frit's again only when it changes)
+  if (!sweep.c) {
+    sweep = { key: null, c: [], free: [], frit: [], H: [] };
     for (let e = -1; e <= 2.501; e += 0.25) {
-      const cc = 10 ** e;
+      const cc = 10 ** e, f = bridgeE(cc, 0);
       sweep.c.push(e);
       sweep.H.push(1000 * henderson({ 'K+': BRIDGE, 'Cl-': BRIDGE }, { 'Na+': cc, 'Cl-': cc }, ions));
-      const f = bridgeE(cc, 0), g = X > 0.05 ? bridgeE(cc, X) : null;
       sweep.free.push(f ? 1000 * (f.phi.at(-1) - f.phi[0]) : NaN);
-      sweep.frit.push(g ? 1000 * (g.phi.at(-1) - g.phi[0]) : NaN);
     }
+  }
+  if (sweep.key !== Xf.value) {
+    sweep.key = Xf.value;
+    sweep.frit = sweep.c.map((e) => {
+      const g = X > 0.05 ? bridgeE(10 ** e, X) : null;
+      return g ? 1000 * (g.phi.at(-1) - g.phi[0]) : NaN;
+    });
   }
   chart(el('chart'), {
     xlabel: 'sample NaCl (mM), log₁₀', ylabel: 'junction potential (mV)', xlim: [-1, 2.5],
@@ -314,12 +319,12 @@ function bridge() {
       { x: [+cs.value], y: [1000 * E], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
-  audit();
+  audit(d, s);
 }
 
 // The kit's checks on the bridge's steady state.
-function audit() {
-  const d = bridgeCell(10 ** +cs.value, 10 ** +Xf.value - 1), report = check(d, d.solve(), { refine: false }), box = el('checks');
+function audit(d, s) {
+  const report = check(d, s, { refine: false }), box = el('checks');
   box.querySelector('summary').textContent = `checks on the bridge's steady state: ${report.ok ? 'all pass' : 'something to look at'}`;
   box.querySelector('pre').textContent = report.text;
 }
