@@ -141,6 +141,29 @@ its true residual, blocked species held flat in steady solves, continuations for
 and for light, and Newton refining its solves where a factorisation loses a mode, with an exact
 $`J \cdot v`$.
 
+## Conserved: the law sweep
+
+A steady solve replaces one redundant equation per conserved combination with the combination's
+amount (see [numerics](numerics.md#the-steady-system)). A combination left out, or weighed wrongly,
+gives a state that converges and is steady but holds the wrong amounts, which only a transient
+from the same start shows. `npm run lawsweep` builds 810 small devices from the features at the
+edges of that bookkeeping: a floating, resistive or held electrode, with or without a
+capacitance, with adsorbates or an immobile species that adsorbs; a second floating electrode
+or a membrane capacitor; a capacitive or ion-passing contact at no current; a face that blocks
+an ion or makes an immobile species. Each is solved directly and run as a transient for 1e6 s,
+and where the transient converged, finished and moves no further over 100× as long, the two
+must agree on every species' amount, every surface's sites and every floating terminal's
+voltage.
+
+Every reaction starts at its equilibrium. On 1.2.1, 675 devices are built (135 combinations
+repeat others); 579 agree, and 83 transients fail to converge. In the other 13 the transient
+is the one that's off: it loses a conserved K⁺ total in proportion to its tolerance (3e-5 of it
+at tol 1e-9) when a capacitive contact, a membrane capacitor and a held electrode share the
+device, where the steady solve keeps it to round-off. The sweep found its first law the day it
+was written (an immobile species adsorbing on an electrode over part of its region); Gemini 4
+Argon's review found nine more by hand (one through a device it suggested), each now in
+`test/laws.test.js`.
+
 ## Hard cases
 
 `npm run hard` keeps a corpus of named cases that were hard once (sharp 3 M | 1 µM junctions on

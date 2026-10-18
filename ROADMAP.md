@@ -95,6 +95,13 @@ for live demos.
 ## Next
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
+   - Transients with a capacitive contact beside a held electrode (found by `npm run lawsweep`):
+     with a membrane capacitor too, the conserved K⁺ total drifts in proportion to the tolerance
+     (2e-3 of it at tol 1e-7, 3e-5 at 1e-9; each capacitor alone conserves to 1e-12), and some
+     such devices fail their first step at one tolerance and not another. 83 of the sweep's 675
+     transients fail; most are these.
+   - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
+     where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same
      cancellation awaits a floating mixed conductor or semiconductor region held only by face
      reactions or recombination, in steady state (in transients, storage anchors it): a fast

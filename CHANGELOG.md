@@ -3,6 +3,24 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.2.1 (2026-10-18)
+
+Three more conservation laws a steady solve kept wrongly, found the same day (two by Gemini 4
+Argon's third round, one by a new sweep), each converging where a long `advance()` doesn't go:
+- Two contacts at no current passing an ion, one a capacitor: the law kept only the charge of
+  the contact whose circuit row it took. It keeps every feeding contact's now.
+- A charged immobile species: at the nodes where nothing touches it, its steady balance is
+  0 = 0, and its level stayed put while φ moved, so its concentration didn't (S⁺ fell to
+  e^{−0.2/V_T} of itself with the bath moved 0.2 V, and an electrode settled 19 mV off). Those
+  nodes now hold their concentrations.
+- An immobile species adsorbing on an electrode spread over part of its region: its local law
+  (S + Γaθ where the electrode is, S alone elsewhere) needed the two to cover the same nodes,
+  and was dropped.
+
+`npm run lawsweep` (tools/lawsweep.js) builds 810 small devices from these edges and compares
+each steady solve with a settled transient; see docs/reliability.md. The law code names its
+column spaces rather than doing arithmetic on raw indices.
+
 ## 1.2.0 (2026-10-18)
 
 Fixes from a third outside review by Gemini 4 Argon: a breadth-first pass that flagged 35
