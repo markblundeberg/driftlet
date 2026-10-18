@@ -3,6 +3,53 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.2.0 (2026-10-18)
+
+Fixes from a third outside review by Gemini 4 Argon: a breadth-first pass that flagged 35
+things, each checked here, then a pointed hunt for steady states that drop a conservation law.
+
+Wrong answers, fixed:
+- **Steady states that kept the wrong amounts.** A steady solve replaces one redundant row per
+  conserved combination with the combination's amount; seven combinations at the edges of that
+  bookkeeping were dropped or weighed wrongly, each converging where a long `advance()` doesn't
+  go: a floating electrode whose adsorbates gave it electrons (−53 mV for −37.8); two floating
+  electrodes sharing a closed ion (1.3 V for −0.65); adsorbates reacting with a closed ion (the
+  sites' total 0.125 for 0.3); a capacitive port or contact at no current passing an ion (the ion
+  kept without the capacitor's charge, Q/F); an immobile species that adsorbs (a coverage added to
+  a concentration without the sites per volume, Γa); and a face reaction making an immobile
+  species beside a floating electrode (its rate said twice, the electrode's I = 0 lost). Each
+  device is now a test against the transient.
+- A face reaction's affinity at a contact took +Σνη where every other one takes −Σνη, so a
+  reaction with a fixed participant could be held at equilibrium when it isn't: a face ran 3×
+  too fast.
+- `henderson()` returned 0 when the two solutions conduct equally; it's the limit, −V_T Σ z D Δc
+  / g (8.56 mV in the example, beside Planck's 8.66). An empty solution is refused by both
+  formulas.
+- `trap()`'s midgap n₁ used √(N_c N_v e^{−(μ°_h − μ°_e)/RT}), not the sum: invisible with the
+  library's materials (μ°_e = 0), 1.1% in a diode's current with φ's reference moved 1 V.
+- `live()`: a change whose ramp passes through an invalid state (a bath neutral at both ends but
+  not between) failed without trying the fresh solve that works.
+- `ghkCurrent()` was NaN past u = −710; it's finite everywhere.
+- The nerve demos dropped each call's first step (the trace is that call's own steps, all of
+  them): myelin.html kept one in eight. And propagation.html paired the wrong spikes when two were in flight (17.7 m/s for 3.90).
+
+Additions: grids take `hLeft` and `hRight`, as the types said; a solution says its `geometry`;
+`themeColor()` takes φ's role. The types (`types.js`) now cover gates, permeability, SRH and
+saturating face kinetics, baths on contacts and ports, and the solution's flux, D, T and rates.
+
+Sharper errors: `combine()` given trap()'s whole result, a `bath()` option typo, a species on
+both sides of a face equation, an unbalanced half-reaction's level, `hodgkinHuxley()`'s `g` and
+`names` typos, `perovskiteCell({ light: -1 })`, `hysteresis()` with a turn outside the trace,
+`themeColor()` with no such role, `speciesRole()` of a neutral or absent species, and
+`particles()` off a plane (its fluxes per device, its amounts per area). A Debye–Hückel
+composition that doesn't converge says so, and a partly given one inverts by Newton.
+
+Smaller: `check()` gave two grid items with `order: false`; `describe()` printed α undefined;
+a negative-time breakpoint stalled; the demos' readouts follow a slider while it's dragged, a
+`?t=` link plays live after a restart, the particle loops rest offscreen, and cell.html and
+axon.html take water's 25 °C data as their own temperature's, having checked that only D counts
+there and moves nothing shown.
+
 ## 1.1.1 (2026-10-16)
 
 Fixes from a second outside review by Gemini 4 Argon (in Antigravity, running its own scripts),
