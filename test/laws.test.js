@@ -154,3 +154,25 @@ test('an immobile species adsorbing on a floating electrode over part of its reg
   }
   near(s.terminals.metal.V, late.terminals.metal.V, 1e-6, 'V');
 });
+
+test('two contacts at no current passing K⁺, one or both capacitors: the ion kept with both their charges', () => {
+  // (From Gemini 4 Argon's third round.) The law takes one contact's circuit row; the other's
+  // charge was left out, and with the row's own contact plain, every capacitor's was.
+  const K = { 'K+': { type: 'conductance', G: 1e6, offset: 0 } };
+  const cap = { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K };
+  for (const left of [{ I: 0, phi: 'neutral', species: K }, cap]) {
+    const def = build({
+      T: 298.15,
+      library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+      stack: [left, layer('water', 1e-6, { name: 'film', c0: film }), cap],
+      ports: [{ name: 'ref', region: 'film', V: 0, species: { 'Cl-': { type: 'equilibrium', offset: 0 } } }],
+      grid: { hmin: 5e-8, hmax: 5e-8 },
+    });
+    const D = (s) => s.contacts.left.D - s.contacts.right.D;
+    const d0 = new Device(def), start = kept(d0, d0.solution(), D);
+    const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-9 });
+    assert.ok(s.converged && late.converged);
+    near(kept(d, s, D), start, 1e-9, `n_K + Σ D/F, left ${left.phi.type ?? left.phi}`);
+    near(s.terminals.right.V, late.terminals.right.V, 1e-6, 'V');
+  }
+});

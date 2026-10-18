@@ -886,7 +886,11 @@ export class Solver {
       // n_K + Q/F. (Its K⁺ alone held, a membrane port's voltage settled 7 mV from the transient's.)
       // A port's charge, as an electrode's carrier; a contact's, its displacement D_in, below.
       if (circuit >= 2 && model.ports[circuit - 2].capacitance && !carriers.some((p) => p.k === circuit)) carriers = [...carriers, { k: circuit, w: lambda * this._carrierZ(circuit) }];
-      const contactCharge = circuit === 0 || circuit === 1 ? this._contactCharges(circuit) : false;
+      // Every contact driven by a current that feeds it and holds a charge, D_in, kept beside the
+      // ions it passes at its own λ (two contacts at no current passing K⁺, one a capacitor: its
+      // charge was left out where the law took the other's row).
+      const lam = (t) => parts.map((p) => (driven(this.stretches[p.stretch]).includes(t) && this.z[this.stretches[p.stretch].species] !== 0 ? p.w / this.z[this.stretches[p.stretch].species] : 0)).find((x) => x !== 0);
+      const contacts = circuit < 0 ? [] : [0, 1].filter((t) => lam(t) && this._contactCharges(t)).map((t) => ({ t, lambda: lam(t) }));
       let nNodes = parts.reduce((m, p) => m + this.stretches[p.stretch].nodes[1] - this.stretches[p.stretch].nodes[0] + 1, 0);
       for (const p of surface) nNodes += model.ports[this.surfCols[p.col][0]].nodes.length * model.ports[this.surfCols[p.col][0]].surface.length;
       for (const p of carriers) nNodes += model.ports[p.k - 2].nodes.length;
@@ -895,7 +899,7 @@ export class Solver {
         parts,
         surface,
         carriers, // (what a port's electrode holds, Q/(zF) at weight w: see _conservedMoieties)
-        contactCharge, // (a contact whose circuit row it takes, and that holds a charge: λ D_in/F too)
+        contacts, // (contacts whose charges it keeps, λ D_in/F each)
         terminals: [...new Set([...parts.flatMap((p) => driven(this.stretches[p.stretch])), ...carriers.map((p) => p.k)])],
         key: parts.map((p) => `${p.stretch}:${p.w}`).join() + surface.map((p) => `|${p.col}:${p.w}`).join() + carriers.map((p) => `|T${p.k}:${p.w}`).join(),
         circuit, // (the terminal whose circuit row it stands in for, or −1 for a balance row's, `row`)
@@ -1052,7 +1056,7 @@ export class Solver {
       if (circuitOf(col) >= 0) held.set(circuitOf(col), w);
       add(parts, circuitOf(col) < 0 ? col : parts[0]?.stretch, surface, circuitOf(col), carriers);
     }
-    this.contactLaw = [0, 1].map((k) => this.constraints.some((cs) => cs.contactCharge && cs.circuit === k));
+    this.contactLaw = [0, 1].map((k) => this.constraints.some((cs) => cs.contacts.some((c) => c.t === k)));
     // A combination that nothing carries anywhere is conserved node by node: of still stretches
     // (trap states: X⁰ + X⁻ under e⁻ + X⁰ = X⁻), or of an electrode's surface species (adsorbates
     // that only turn into each other). At each node its weighted sum stays what it was, a row local
@@ -1183,14 +1187,14 @@ export class Solver {
       for (const k of charged) this.chargeRefs.set(k, k >= 2 ? this.portQ[k - 2] : k === 0 ? this.contactD.left : -this.contactD.right);
     }
     this.lawRefs.clear();
-    if (this.constraints.some((cs) => cs.contactCharge || cs.carriers.some(({ k }) => this.model.ports[k - 2].capacitance)) && charged.length === 0) this._assembleBookkeeping(Infinity);
+    if (this.constraints.some((cs) => cs.contacts.length > 0 || cs.carriers.some(({ k }) => this.model.ports[k - 2].capacitance)) && charged.length === 0) this._assembleBookkeeping(Infinity);
     for (const cs of this.constraints) {
       if (cs.terminals.length === 0) continue;
       let a = 0;
       for (const { stretch, w } of cs.parts) a += w * this.amount(this.stretches[stretch]);
       for (const { col, w } of cs.surface) a += w * this.surfaceAmount(col);
       for (const { k, w } of cs.carriers) if (this.model.ports[k - 2].capacitance) a += (w * this.portQ[k - 2]) / (this._carrierZ(k) * FARADAY);
-      if (cs.contactCharge) a += (cs.lambda * (cs.circuit === 0 ? this.contactD.left : -this.contactD.right)) / FARADAY;
+      for (const { t, lambda } of cs.contacts) a += (lambda * (t === 0 ? this.contactD.left : -this.contactD.right)) / FARADAY;
       this.lawRefs.set(cs.key, a);
     }
   }
@@ -1457,12 +1461,12 @@ export class Solver {
         const C = this.termC[cs.circuit];
         C.fill(0);
         for (let j = 0; j < cs.len; j++) C[cs.idx[j]] += cs.w[j];
-        if (cs.contactCharge) {
+        for (const { t, lambda } of cs.contacts) {
           // A contact's charge, D_in, as _contact had it, with its derivatives.
-          const q = this.contactQ[cs.circuit], f = cs.lambda / FARADAY;
+          const q = this.contactQ[t], f = lambda / FARADAY;
           cs.res += f * q.D;
           for (let j = 0; j < C.length; j++) C[j] += f * q.row[j];
-          dV[cs.circuit] += f * q.dV;
+          dV[t] += f * q.dV;
         }
         this.termRes[cs.circuit] = cs.res;
         this.termDI[cs.circuit] = dV[cs.circuit];
@@ -1577,7 +1581,7 @@ export class Solver {
   _circuitLaws(dt) {
     for (const cs of [...this.constraints, ...this.timeLaws]) {
       const k = cs.circuit;
-      if (k < 0 || !this.floating.includes(k) || cs.contactCharge) continue; // (a contact's charge: its own row)
+      if (k < 0 || !this.floating.includes(k) || cs.contacts?.length > 0) continue; // (a contact's charge: its own rows)
       const { amount, dV, gross } = this._lawAmount(cs), f = FARADAY / (cs.lambda * dt), C = this.termC[k];
       if (!this.lawForm.has(cs)) {
         let G = 0;
