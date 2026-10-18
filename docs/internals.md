@@ -83,4 +83,7 @@ The rest of `src/solver.js` is to be split along these lines, each piece with it
 A review of one module reads its contract, its code and its tests, and nothing else unless the
 contract points there. Each claim cites `file:line` with the line quoted, so it can be checked
 mechanically, and a finding comes with the device or script that shows it. A claim about code
-not in view is a question, not a finding.
+not in view is a question, not a finding. Two instruments check a change to the core beyond the tests'
+answers: `test/jacobian.test.js` (every row's derivatives against finite differences of its
+residual) and, for a move or refactor meant to change nothing, a hash of the solver's state after
+every solve in the suite, before and after.

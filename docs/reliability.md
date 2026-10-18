@@ -171,9 +171,23 @@ and in a time step's reading of its current), none of them in the sweep's device
 `test/laws.test.js`. On the code before those fixes the second family has 14 devices that
 disagree (a port's voltage at 0 for −1.42 V, θ 0.05 for 0.015, a contact 24 mV off); after, none,
 26 agree and 34 transients fail (see the roadmap). The first family's laws come out unchanged by
-the fixes, device by device, so its results above stand. On 1.2.2 the whole sweep, 870 devices, gives the
-same: 605 agree, 117 transients fail, and 13 differ, each a capacitive contact beside a membrane
-capacitor where the transient loses K⁺.
+the fixes, device by device, so its results above stand. On 1.2.2 the whole sweep, 870 devices,
+gives the same: 605 agree, 117 transients fail, and 13 differ, each a capacitive contact beside a
+membrane capacitor where the transient loses K⁺.
+
+## Consistent: the derivatives
+
+A Jacobian entry that's wrong still converges to the right answer, its residual being right, so
+no test of answers sees it: it shows only as Newton taking longer, or failing on a harder device.
+`test/jacobian.test.js` compares the whole Newton system, column by column, with central
+differences of its own residual, on ten devices that between them write every law's row (flat
+stretches, affinities, amounts kept in balance rows and in circuit rows with an electrode's or a
+contact's charge, node-by-node laws with a surface, metals' charges), crowded statistics, face
+and port reactions and floating terminals. It checks inside a real `solve()` and a real
+`advance()`, at their second assembly, each in the unknowns Newton solves for there (a time step's
+charge rows included). It came from a cold review of `src/lawRows.js`, which found a node-by-node
+law's row keeping a port reaction's ∂/∂V (an extra Newton iteration, the answer the same); broken
+once each way (that entry back, a storage term 0.1% off in either time-step path), it fails.
 
 ## Hard cases
 
