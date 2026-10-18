@@ -146,14 +146,17 @@ $`J \cdot v`$.
 A steady solve replaces one redundant equation per conserved combination with the combination's
 amount (see [numerics](numerics.md#the-steady-system)). A combination left out, or weighed wrongly,
 gives a state that converges and is steady but holds the wrong amounts, which only a transient
-from the same start shows. `npm run lawsweep` builds 810 small devices from the features at the
+from the same start shows. `npm run lawsweep` builds 870 small devices in two families. The first, 810, combine the features at the
 edges of that bookkeeping: a floating, resistive or held electrode, with or without a
 capacitance, with adsorbates or an immobile species that adsorbs; a second floating electrode
 or a membrane capacitor; a capacitive or ion-passing contact at no current; a face that blocks
 an ion or makes an immobile species. Each is solved directly and run as a transient for 1e6 s,
 and where the transient converged, finished and moves no further over 100× as long, the two
 must agree on every species' amount, every surface's sites and every floating terminal's
-voltage.
+voltage. The second, 60, put an immobile S⁺ beside what carries it (a face that passes it, a port
+at I = 0 that links it, an electrode it adsorbs on) with a capacitive contact passing K⁺ (at
+I = 0 or behind a resistance) and K⁺'s complex with a closed L⁻, each where a cold review of
+`src/laws.js` found a law kept wrongly.
 
 Every reaction starts at its equilibrium. On 1.2.1, 675 devices are built (135 combinations
 repeat others); 579 agree, and 83 transients fail to converge. In the other 13 the transient
@@ -165,7 +168,10 @@ Argon's review found nine more by hand (one through a device it suggested), and 
 of `src/laws.js` against its contract alone five more (an immobile species linked across a face,
 or by a port; two node-by-node laws sharing a row; a capacitive contact's charge in a second law,
 and in a time step's reading of its current), none of them in the sweep's devices. Each is now in
-`test/laws.test.js`.
+`test/laws.test.js`. On the code before those fixes the second family has 14 devices that
+disagree (a port's voltage at 0 for −1.42 V, θ 0.05 for 0.015, a contact 24 mV off); after, none,
+26 agree and 34 transients fail (see the roadmap). The first family's laws come out unchanged by
+the fixes, device by device, so its results above stand.
 
 ## Hard cases
 

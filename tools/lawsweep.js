@@ -21,13 +21,25 @@ const AXES = {
   second: ['none', 'redoxI0', 'membrane'], // a second port: another floating electrode, or a membrane capacitor passing K⁺
   face: ['none', 'open', 'makesP0'], // a face splitting the film: Fe³⁺ blocked there, or a reaction making an immobile P0 at it
 };
-const keys = Object.keys(AXES);
-const total = keys.reduce((n, k) => n * AXES[k].length, 1);
+// A second family, after the first's devices: an immobile ion and what carries it (a face that
+// passes it, a port at I = 0 that links it, an electrode's surface it adsorbs on), beside a
+// capacitive contact passing K⁺ (at I = 0, or behind a resistance) and K⁺'s complex, each where
+// a cold review of src/laws.js found a law kept wrongly.
+const AXES2 = {
+  left: ['closed', 'capK', 'RcapK'], // the left end: blocked, a capacitor passing K⁺ at I = 0, or behind a resistance
+  immobile: ['none', 'plain', 'faceLinked', 'portLinked', 'adsorbs'], // an immobile S⁺, and what carries it
+  complex: [false, true], // K⁺ + L⁻ = KL, L⁻ and KL closed
+  K: ['trace', 'some'], // K⁺ in the film: 1e-6 or 1 mol/m³ (which law comes first, and how a step reads a current)
+};
+const families = [AXES, AXES2].map((axes) => ({ axes, keys: Object.keys(axes), size: Object.values(axes).reduce((n, a) => n * a.length, 1) }));
+const total = families.reduce((n, f) => n + f.size, 0);
 const choice = (idx) => {
-  const c = {};
+  let fam = 0;
+  while (idx >= families[fam].size) idx -= families[fam++].size;
+  const { axes, keys } = families[fam], c = { family: fam };
   for (const k of keys) {
-    c[k] = AXES[k][idx % AXES[k].length];
-    idx = Math.floor(idx / AXES[k].length);
+    c[k] = axes[k][idx % axes[k].length];
+    idx = Math.floor(idx / axes[k].length);
   }
   return c;
 };
@@ -36,7 +48,7 @@ const choice = (idx) => {
 // capacitor (the left one, or the membrane) sits in a thin layer of polar water (ε = 80) at the
 // left, on a grid fine enough for its double layer.
 const G = 1e-5, L = 10e-6, Lp = 1e-6;
-function device(c) {
+function deviceA(c) {
   const polar = c.left === 'capK' || c.second === 'membrane';
   const lib = aqueous(['Na+', 'K+', 'Cl-', 'OH-', 'Fe2+', 'Fe3+'], { epsr: 0 });
   lib.species.push({ name: 'S0', z: 0 }, { name: 'P0', z: 0 });
@@ -90,6 +102,57 @@ function device(c) {
   return build({ T: 298.15, library: [lib], stack, ports, grid: { hmin: 1e-6, hmax: 1e-6 } });
 }
 
+// The second family's: a film of strictly neutral water (ε = 0) cut by a face at its middle,
+// with an immobile S⁺ (D = 0) where it has one, after a thin polar skin where the left end is a
+// capacitor.
+function device2(c) {
+  const ions = ['Na+', 'K+', 'Cl-'], lib = aqueous(ions, { epsr: 0 });
+  const RT = 8.314462618 * 298.15, w = lib.materials.water.species;
+  const cK = c.K === 'trace' ? 1e-6 : 1, cL = 10, cKL = 1;
+  if (c.immobile !== 'none') {
+    lib.species.push({ name: 'S+', z: 1 });
+    w['S+'] = { D: 0, mu0: 0, cRef: 1 };
+  }
+  if (c.immobile === 'adsorbs') lib.species.push({ name: 'e-', z: -1 }); // (the electrode's carrier)
+  if (c.complex) {
+    lib.species.push({ name: 'L-', z: -1 }, { name: 'KL', z: 0 });
+    w['L-'] = { D: 1e-9, mu0: 0, cRef: 1 };
+    // (KL at its equilibrium with the film's K⁺ and L⁻)
+    w.KL = { D: 1e-9, mu0: w['K+'].mu0 + w['L-'].mu0 + RT * Math.log((cK / lib.species.find((sp) => sp.name === 'K+').cRef) * cL / cKL), cRef: 1 };
+  }
+  const has = (name) => lib.species.some((sp) => sp.name === name), only = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => has(k)));
+  lib.materials.polar = { ...lib.materials.water, epsr: 80 };
+  const film = (S) => {
+    const f = { 'Na+': 100, 'K+': cK, ...(c.complex ? { 'L-': cL, KL: cKL } : {}), ...(c.immobile !== 'none' ? { 'S+': S } : {}) };
+    f['Cl-'] = f['Na+'] + f['K+'] + (f['S+'] ?? 0) - (f['L-'] ?? 0);
+    return f;
+  };
+  // (K⁺ passed at the film's own level, as in the first family: far from it, the contact pumps K⁺
+  // to an extreme state that the steady solve can't reach)
+  const VK = (w['K+'].mu0 + RT * Math.log(cK / 1000) + w['Cl-'].mu0 + RT * Math.log(100 / 1000)) / 96485.33212;
+  const K = { 'K+': { type: 'conductance', G: 1e6, offset: VK } };
+  const cap = { zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K };
+  const left = { closed: {}, capK: { I: 0, ...cap }, RcapK: { V: 0, R: 1e-3, ...cap } }[c.left];
+  const pass = only({ 'Na+': 'equilibrium', 'K+': 'equilibrium', 'Cl-': 'equilibrium', 'L-': 'blocked', KL: 'blocked', 'S+': 'blocked' });
+  const stack = [left];
+  if (c.left !== 'closed') stack.push(layer('polar', 1e-6, { name: 'skin', c0: film(1), grid: { hmin: 2e-10, hmax: 5e-8, ratio: 1.25 } }), { phi: 'neutral', species: pass });
+  stack.push(
+    layer('water', 5e-6, { name: 'film', c0: film(1) }),
+    { species: { ...pass, ...(c.immobile === 'faceLinked' ? { 'S+': { type: 'conductance', G: 1e-6 } } : {}) } },
+    layer('water', 5e-6, { name: 'far', c0: film(0.1) }),
+    bath({ 'Na+': 100, 'Cl-': 100 }, 'Cl-'),
+  );
+  const ports = [];
+  if (c.immobile === 'portLinked') ports.push({ name: 'p', region: 'film', from: 0, to: 3e-6, I: 0, species: { 'S+': { type: 'conductance', G: 1e3, offset: 0 } } });
+  if (c.immobile === 'adsorbs') {
+    ports.push({ name: 'metal', region: 'film', V: 0.05, terminal: 'e-', area: 1e4,
+      surface: { Aads: { mu0: 0, capacity: 1e-5, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: 1e-5, theta0: 0.1 } },
+      reactions: [{ equation: 'S+ + Aads + e- = Bads', k0: 1e-4, alpha: 0.5 }] });
+  }
+  return build({ T: 298.15, library: [lib], stack, ports, ...(c.complex ? { bulkReactions: [{ equation: 'K+ + L- = KL', kf: { water: 1e3, polar: 1e3 } }] } : {}), grid: { hmin: 1e-6, hmax: 1e-6 } });
+}
+const device = (c) => (c.family === 0 ? deviceA(c) : device2(c));
+
 // What a device keeps: each species' amount, each surface species' sites, and each floating
 // terminal's voltage.
 function measures(d, s) {
@@ -130,7 +193,7 @@ for (let idx = show !== undefined ? +show : from; idx < (show !== undefined ? +s
     tally.skipped++;
     continue;
   }
-  const tag = `${idx} ${keys.map((k) => c[k]).join(' ')}`;
+  const tag = `${idx} ${families[c.family].keys.map((k) => c[k]).join(' ')}`;
   try {
     new Device(def);
   } catch (e) {
