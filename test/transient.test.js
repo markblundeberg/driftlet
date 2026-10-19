@@ -575,3 +575,62 @@ test('a floating capacitive electrode whose starting coverages balance its react
   const f = d.solve();
   assert.ok(f.converged && Math.abs(f.terminals.metal.V + 0.1) < 1e-6, `${f.terminals.metal.V}`);
 });
+
+// From a cold review of src/start.js: what a start must be.
+test('the start: a floating electrode behind a resistance starts where its reactions pass what the circuit says', () => {
+  // Started at no reaction current, both solves failed for R ≤ 10 Ω·m².
+  const lib = aqueous(['Fe2+', 'H+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const c = { 'Fe2+': 10, 'H+': 10, 'Cl-': 30 };
+  const def = build({
+    T: 298.15, library: [lib], stack: [bath(c, 'Cl-'), layer('water', 10e-6, { name: 'film' }), {}],
+    ports: [{ name: 'iron', region: 'film', V: 0, R: 1, terminal: 'e-', area: 1e3, reactions: [
+      { equation: 'Fe2+ + 2 e- = Fe(s)', fixed: { 'Fe(s)': 0 }, k0: 1e-7, alpha: 0.5 },
+      { equation: '2 H+ + 2 e- = H2', fixed: { H2: 0 }, k0: 1e-9, alpha: 0.5 },
+    ] }],
+    grid: { hmin: 0.5e-6, hmax: 0.5e-6 },
+  });
+  const s = new Device(def).solve(), a = new Device(def).advance(10);
+  assert.ok(s.converged && a.converged);
+  for (const x of [s, a]) assert.ok(Math.abs(x.terminals.iron.current + x.terminals.iron.V / 1) < 1e-6 * Math.abs(x.terminals.iron.V), 'I = (0 − V)/R');
+});
+
+test('the start: a strictly neutral region whose c0 no held level can balance can\'t start a transient, and says so', () => {
+  const salt = [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }];
+  const sp = { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } };
+  const def = {
+    species: salt, materials: { w: { epsr: 0, species: sp }, sol: { epsr: 0, species: sp } },
+    regions: [{ name: 'gel', material: 'w', length: 10e-6, fixedCharge: -100 * FARADAY, c0: { 'Na+': 50 } }],
+    contacts: { left: { V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-', material: 'sol' } }, right: { phi: 'neutral' } },
+    grid: { hmin: 0.5e-6, hmax: 0.5e-6 },
+  };
+  const a = new Device(def).advance(1);
+  assert.ok(!a.converged);
+  assert.match(a.warnings.join(' '), /the start can't be neutral in gel/);
+  assert.ok(new Device(def).solve().converged); // (the steady state takes Na⁺ from its bath)
+});
+
+test('the start: a species fed by a contact\'s conductance or exchange link starts at its outside level, no c0 asked for', () => {
+  const d = new Device({
+    species: [{ name: 'Li+', z: 1, cRef: 1000 }],
+    materials: { solid: { epsr: 0, species: { 'Li+': { D: 1e-11, mu0: 0 } } } },
+    regions: [{ material: 'solid', length: 1e-6, fixedCharge: -100 * FARADAY }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': { type: 'conductance', G: 1e3, offset: 0 } }, phi: 'bulk' }, right: { phi: 'neutral' } },
+  });
+  assert.ok(Math.abs(d.solution().c['Li+'][0] / 100 - 1) < 1e-6);
+});
+
+test('the start: a metal beside a semiconductor isn\'t shifted as if it were an insertion host', () => {
+  // It started 0.5 V from the contact holding it, reading −1.9e6 A/m² through a gate that passes none.
+  const Nc = units.perCm3(2.8e19), Nv = units.perCm3(1.04e19), ND = units.perCm3(1e16);
+  const st = new Device({
+    species: [{ name: 'e-', z: -1 }, { name: 'h+', z: 1 }],
+    materials: { Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: Nc }, 'h+': { D: 12e-4, mu0: units.eV(1.12), cRef: Nv } } }, Au: { conductor: { species: 'e-', conductivity: 4e7 } } },
+    regions: [{ material: 'Au', length: 50e-9 }, { material: 'Si', length: 1e-6, fixedCharge: ND * FARADAY }],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.01 }, zeroCharge: 0, species: { 'e-': 'blocked' } }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.5, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' } },
+    grid: { hmin: 0.5e-9, hmax: 20e-9, ratio: 1.1 },
+  }).solution();
+  assert.equal(st.contacts.left.current, 0);
+  assert.ok(Math.abs(st.V['e-'][0]) < 1e-12, `${st.V['e-'][0]}`);
+});

@@ -390,7 +390,10 @@ export function integrate(s, tEnd, opts = {}) {
   // (What usually does it, most likely first. Round 11's agents read the old list, which led
   // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
   // an electrode at open circuit with no double layer, held only by a slow reaction.)
-  if (failed && violent.length > 0)
+  const unbalanced = s.history.length === 0 && s.time === t0 ? (s.unbalanced ?? []).map((r) => s.model.regions[r].name ?? `regions[${r}]`) : [];
+  if (failed && unbalanced.length > 0 && s.time === t0)
+    stopped = `${at}: the start can't be neutral in ${unbalanced.join(', ')}, strictly neutral (ε = 0): the amounts its c0 gives leave a net charge that no species held at a contact's level can balance, and a step can't move a stored amount at once. Give c0 that balances (with any fixed charge), or leave out of c0 the species a contact feeds, so that they start at its level.`;
+  else if (failed && violent.length > 0)
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
   else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;

@@ -3,6 +3,21 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+The cold start moves to `src/start.js`, with a contract (every solve bit for bit as before). A
+cold review of it found:
+- A floating electrode behind a resistance started where its reactions pass no current, not
+  what the circuit says, and both solves failed for R ≤ 10 Ω·m² (iron in acid). It starts there.
+- A strictly neutral region whose c0 leaves a charge no held level can balance started absurd
+  (Cl⁻ at 1e26 mol/m³), and the transient failed saying something else. It says so, and what to
+  change.
+- A species fed by a contact's conductance or exchange link asked for c0, as if fed only by
+  reactions. It starts at the link's outside level.
+- A metal beside a semiconductor was shifted as if it were an insertion host: its start read
+  −1.9e6 A/m² through a gate that passes none.
+Six more starts, needlessly far off but absorbed by the first step, are in the roadmap.
+
 ## 1.2.4 (2026-10-19)
 
 The time stepper moves to `src/timeSteps.js`, with a contract of its own (every solve in the suite
