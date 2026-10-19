@@ -189,6 +189,29 @@ charge rows included). It came from a cold review of `src/lawRows.js`, which fou
 law's row keeping a port reaction's ∂/∂V (an extra Newton iteration, the answer the same); broken
 once each way (that entry back, a storage term 0.1% off in either time-step path), it fails.
 
+## Measured: how much the tests see
+
+A mutation run makes one small slip at a time in a module (an operator flipped, a comparison
+loosened, a statement dropped, a 0 for a 1), runs the tests on it, and counts the slips no test
+fails. On 18 Oct 2026, 120 of them, sampled from `src/laws.js` and `src/lawRows.js`'s 1420: 69
+failed a test, and 51 got through. Each of the 51 was then looked at:
+- In `src/laws.js` (29): 20 change no law on any of the law sweep's 735 devices, 2 only a
+  workspace's size, and 6 change laws on 12 to 635 of them while every answer stays right (the
+  islands', which Newton seldom needs; a λ read only by long steps). One changed the answers: it
+  held a capacitive contact's charge in the wrong law, and 85 of the sweep's devices came out
+  wrong, with all 470 tests passing. Its device is now in `test/laws.test.js`.
+- In `src/lawRows.js` (22): the Jacobian test had never seen islands' rows, a long step that
+  reads a law by its change, or a law with a surface or a capacitive electrode in a time step.
+  With them in (a charged pore, three of the sweep's devices), 6 more fail. Of the 16 left, 6
+  change nothing (a bound the loop never reaches), 1 only a heuristic's estimate, 2 the pivoting
+  of the small dense solve (robustness only), and 7 are narrow paths no device here takes: two
+  floating electrodes whose law counts the other's charge, an equilibrium face inside a flat
+  stretch, a contact's law read by its change.
+
+A slip that gives the right answer by another route isn't a gap; what the run found that was,
+was one wrong answer the sweep sees and the suite didn't, and a test that had never looked at
+two of the paths it claimed.
+
 ## Hard cases
 
 `npm run hard` keeps a corpus of named cases that were hard once (sharp 3 M | 1 µM junctions on
