@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.6 (2026-10-19)
 
 Newton's iteration moves to `src/newton.js`, with a contract at its head (every solve in the
 suite bit for bit as before). A cold review of it found:
