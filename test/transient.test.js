@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, metal, square } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, metal, square, bath, aqueous } from '../src/kit.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
 
 const RT = GAS_CONSTANT * 298.15;
@@ -544,4 +544,34 @@ test('a capacitive contact that starts uncharged far from the equilibrium of the
   assert.ok(d.solve().converged);
   const late = d.advance(1e3, { tol: 1e-9 });
   assert.ok(late.converged && late.time === 1e3);
+});
+
+test('a floating capacitive electrode whose starting coverages balance its reactions far from where it starts: both solves fail, saying so and what to do, which works', () => {
+  // (Gemini 4 Argon's law8.) Uncharged at −1.69 V, its surface balances 1.6–1.7 V away.
+  const lib = aqueous(['Na+', 'OH-', 'Fe2+'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  const G = 1e-5, L = 10e-6;
+  const def = (drive) =>
+    build({
+      T: 298.15,
+      library: [lib],
+      stack: [{}, layer('water', L, { name: 'film' }), bath({ 'Na+': 100, 'OH-': 102, 'Fe2+': 1 }, 'OH-')],
+      ports: [{
+        name: 'metal', region: 'film', ...drive, terminal: 'e-', area: 1e4, capacitance: { C: 0.2, zeroCharge: 0 },
+        surface: { Aads: { mu0: 0, capacity: G, theta0: 0.2 }, Bads: { mu0: 3e3, capacity: G, theta0: 0.1 }, OHads: { mu0: 0, capacity: G, theta0: 0.05 } },
+        reactions: [{ equation: 'Aads + OH- = Bads + e-', k0: 1e-4, alpha: 0.5 }, { equation: 'OH- = OHads + e-', k0: 1e-4, alpha: 0.5, bare: true }],
+      }],
+      grid: { hmin: L / 20, hmax: L / 20 },
+    });
+  const s = new Device(def({ I: 0 })).solve();
+  assert.ok(!s.converged);
+  assert.match(s.warnings.join(' '), /port metal's reactions\[0\] is 1\.\d\d V from equilibrium.*Hold that terminal at a voltage first/);
+  const a = new Device(def({ I: 0 })).advance(10, { tol: 1e-6 });
+  assert.ok(!a.converged);
+  assert.match(a.warnings.join(' '), /The start is violent: port metal's reactions/);
+  const d = new Device(def({ V: -0.1 }));
+  assert.ok(d.solve().converged);
+  d.set({ ports: { metal: { I: 0 } } });
+  const f = d.solve();
+  assert.ok(f.converged && Math.abs(f.terminals.metal.V + 0.1) < 1e-6, `${f.terminals.metal.V}`);
 });

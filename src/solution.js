@@ -287,7 +287,14 @@ export function makeSolution(solver, result = {}) {
               : '')),
     );
   }
-  if (result.converged === false && !result.stopped && !un && !ch && !(cond && cond.digits > 12)) {
+  if (result.converged === false && !result.stopped && !un && !ch && solver.violent?.length > 0) {
+    // A cold start far from where a floating double layer's neighbours balance (an electrode's
+    // reactions with its starting coverages, an ion link): Newton has to cross that gap at once.
+    sol.warnings.push(
+      `the solve did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
+        'Hold that terminal at a voltage first, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.',
+    );
+  } else if (result.converged === false && !result.stopped && !un && !ch && !(cond && cond.digits > 12)) {
     sol.warnings.push(
       'the solve did not converge, and nothing specific showed why. ' +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',

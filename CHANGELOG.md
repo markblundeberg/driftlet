@@ -14,9 +14,11 @@ bit for bit as before). A cold review of it against that contract found:
   0.7000000000000001) took `advance(0.7)` to it, and the next frame's `advance(0.7)` said it did
   nothing. It stops at the time asked for.
 
-A transient whose floating double layer starts uncharged far from the equilibrium of the ion link
-beside it (0.1 V or more), and fails for it, says so, and how to start in equilibrium instead:
-`solve()` first, then change what the experiment changes, then `advance()`.
+A transient or a steady solve that fails from a violent start says so, and how to start in
+equilibrium instead: a floating double layer, uncharged, 0.1 V or more from the equilibrium of an
+ion link or an electrode's reaction beside it (an electrode whose starting coverages balance its
+reactions 1.7 V from where it starts, say). For a transient, `solve()` first, then `advance()`;
+where the solve fails too, hold that terminal at a voltage, `solve()`, then let it float.
 
 ## 1.2.3 (2026-10-18)
 

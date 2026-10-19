@@ -222,7 +222,7 @@ import { DifferenceTerms } from './difference.js';
 import { DeviceError } from './errors.js';
 import { chargeOnly, conservedMoieties, feeds, findLaws, noCurrent } from './laws.js';
 import { applyLaws, captureLaws, captureLocal, snapFlat, solveBordered } from './lawRows.js';
-import { advance as advanceFn, integrate as integrateFn, step as stepFn } from './timeSteps.js';
+import { advance as advanceFn, integrate as integrateFn, step as stepFn, violentStart } from './timeSteps.js';
 import { powi, powr } from './pow.js';
 
 // A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
@@ -4019,6 +4019,7 @@ export class Solver {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
+    this.violent = this.history.length === 0 && !this.stepped ? violentStart(this) : []; // (for a failure to say: see src/timeSteps.js)
     this.unreached = null; // (a driven current no held voltage reaches: see _floatingContinuation)
     this.charging = null; // (a driven current that only charges: see _solveSteadyAll)
     captureLaws(this);

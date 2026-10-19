@@ -120,8 +120,8 @@ for live demos.
      free) showed it isn't an inconsistent start but a real transient: the link closes 1.47 V
      within ~1e-13 s, below any step. Settled with the owner: a start asked for that violently is
      right to fail on, if it says why and what to do. It does (f1fcc37), and `solve()` first
-     then `advance()` runs all 16 tried. Not yet in that message: a floating double layer beside
-     a fast reaction rather than an ion link (Argon's law8, below).
+     then `advance()` runs all 16 tried. A floating electrode's reactions likewise (Argon's
+     law8, below).
    - The time stepper's error control (a cold review of `src/timeSteps.js`): its estimate is
      Milne's device as if past states were exact, and reads low through the integrator's own
      (backward Euler by 1 + 1/(2ω), BDF2 by ~1.2), so accepted steps err up to ~1.3 tol. The
@@ -133,7 +133,8 @@ for live demos.
      true error, and the end-of-call snap (1e-10 of tEnd) is wider than round-off. The consistent
      start would take the first of these with it.
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
-     where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
+     where its surface balances (Argon's law8): steady solve and transient both fail, and now
+     say why and what to do (hold it at a voltage, solve, then let it float), which works.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same
      cancellation awaits a floating mixed conductor or semiconductor region held only by face
      reactions or recombination, in steady state (in transients, storage anchors it): a fast

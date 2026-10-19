@@ -391,7 +391,7 @@ export function integrate(s, tEnd, opts = {}) {
   // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
   // an electrode at open circuit with no double layer, held only by a slow reaction.)
   if (failed && violent.length > 0)
-    stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and its link closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(); or set the link's offset so that it starts there.`;
+    stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
   else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
@@ -459,11 +459,11 @@ function errorNorm(s, ref) {
   return mx;
 }
 
-// The floating double layers a cold start leaves far (0.1 V or more) from the equilibrium of an
-// ion link beside them: a contact with a capacitive φ, or a port with a capacitance, at I = 0
-// or behind a resistance, whose link holds a charged species at an outside level V + offset.
-// Each as words for a message.
-function violentStart(s) {
+// The floating double layers a cold start leaves far (0.1 V or more) from the equilibrium of a
+// path beside them: a contact with a capacitive φ, or a port with a capacitance, at I = 0 or
+// behind a resistance, with a link holding a charged species at an outside level V + offset,
+// or (a port) a reaction that takes its carrier. Each as words for a message.
+export function violentStart(s) {
   const out = [], { M, n, z, VT, model } = s;
   const check = (what, k, links, g) => {
     for (let i = 0; i < n; i++) {
@@ -478,10 +478,25 @@ function violentStart(s) {
     if (t.kind === 'contact') {
       const ct = model.contacts[t.side];
       if (ct.phi.type === 'capacitive') check(`contact ${t.side}`, k, ct.species, t.side === 'left' ? 0 : s.nNodes - 1);
-    } else {
-      const port = model.ports[t.index];
-      if (port.capacitance) check(`port ${port.name}`, k, port.species, port.nodes[0]);
+      continue;
     }
+    const port = model.ports[t.index];
+    if (!port.capacitance) continue;
+    check(`port ${port.name}`, k, port.species, port.nodes[0]);
+    // Its reactions at its first node: the affinity a = fixedA − Σ ν η, in volts by how it moves
+    // with the port's voltage (−Σ ν z/V_T over the carrier's part).
+    const b = s.blockOfNode[port.nodes[0]];
+    port.reactions.forEach((rx, j) => {
+      let a = rx.fixedA, slope = 0;
+      for (const p of rx.part) {
+        if (p.side === 1) {
+          a -= p.nu * s.portEta(port, p.i);
+          slope -= (p.nu * z[p.i]) / VT;
+        } else a -= p.nu * s.u[b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i)];
+      }
+      const gap = slope !== 0 ? Math.abs(a / slope) : 0;
+      if (gap >= 0.1) out.push(`port ${port.name}'s reactions[${j}] is ${gap.toFixed(2)} V from equilibrium`);
+    });
   }
   return out;
 }
