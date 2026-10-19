@@ -116,8 +116,12 @@ for live demos.
      started with the link at equilibrium instead (and the bath's gauge), its capacitor starts
      charged against a skin whose double layer doesn't exist yet, and the failures moved (817
      fixed, 869 broken, those behind a resistance now failing at t = 0). Either start breaks
-     Poisson's equation or the link: the fix is the skin's double layer solved consistently at
-     t = 0 (the steady equations with every amount held), a consistent start proper.
+     Poisson's equation or the link. A projection at t = 0 (every amount held, the potentials
+     free) showed it isn't an inconsistent start but a real transient: the link closes 1.47 V
+     within ~1e-13 s, below any step. Settled with the owner: a start asked for that violently is
+     right to fail on, if it says why and what to do. It does (f1fcc37), and `solve()` first
+     then `advance()` runs all 16 tried. Not yet in that message: a floating double layer beside
+     a fast reaction rather than an ion link (Argon's law8, below).
    - The time stepper's error control (a cold review of `src/timeSteps.js`): its estimate is
      Milne's device as if past states were exact, and reads low through the integrator's own
      (backward Euler by 1 + 1/(2ω), BDF2 by ~1.2), so accepted steps err up to ~1.3 tol. The
