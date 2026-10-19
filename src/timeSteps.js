@@ -30,7 +30,8 @@
 //   throughout (a steady solve's dt = ∞ only), and once more with every circuit law read by its
 //   change (see src/lawRows.js), each from the step's start. Accepted: the history gains the
 //   step, s.time = tEnd, s.lastDt the effective dt, the boundary intake accumulates. Failed:
-//   u, uLo, termV, the sources' time and the concentrations are as before the step.
+//   all as before the step (u, uLo, termV, the start-of-step values, atSteady, the sources'
+//   time, the concentrations).
 //
 // advance(s, dt, opts, depth) → { converged, iterations, history, substeps }
 //   step(dt); failing, two halves (each by advance), to a depth of 30.
@@ -114,6 +115,10 @@ export function advance(s, dt, opts, depth = 0) {
  * the start-of-step values, and dt/a0 replaces dt.
  */
 export function step(s, dt, opts = {}) {
+  // What the step overwrites before Newton runs, for a failed one to put back: the Solution read
+  // after it takes its contacts' fluxes against the start-of-step values (a host emptied by its
+  // current read its contact's Li⁺ flux 8× off at the same state).
+  const was = { cOld: Float64Array.from(s.cOld), thOld: Float64Array.from(s.thOld), th0Old: Float64Array.from(s.th0Old), gateOld: Float64Array.from(s.gateOld), contactDStart: s.contactDStart, portQStart: s.portQStart, atSteady: s.atSteady };
   s.atSteady = false;
   const prev = s.history[0];
   const w = prev ? dt / prev.dt : 0;
@@ -206,6 +211,13 @@ export function step(s, dt, opts = {}) {
     s.u.set(s.uPrev);
     s.uLo.set(s.uPrevLo);
     s.termV.set(s.termVPrev);
+    s.cOld.set(was.cOld);
+    s.thOld.set(was.thOld);
+    s.th0Old.set(was.th0Old);
+    s.gateOld.set(was.gateOld);
+    s.contactDStart = was.contactDStart;
+    s.portQStart = was.portQStart;
+    s.atSteady = was.atSteady;
     s.sourceTime = s.steady ? s.steadyAt : s.time;
     s.computeConcentrations();
   }
@@ -278,7 +290,7 @@ export function integrate(s, tEnd, opts = {}) {
     if (clamped) h = remaining;
     // Land on the waveforms' breakpoints, where a source's slope jumps.
     const tb = s.terms.reduce((m, t) => Math.min(m, nextBreakpoint(t.drive.src, s.time)), Infinity);
-    const atBreak = tb - s.time <= h * (1 + 1e-9);
+    const atBreak = tb - s.time <= h * (1 + 1e-9) && tb <= tEnd; // (one just past tEnd is the next call's)
     if (atBreak) {
       h = tb - s.time;
       clamped = true;
@@ -316,6 +328,7 @@ export function integrate(s, tEnd, opts = {}) {
       const r = s.step(h, { method: s.history.length >= 2 ? method : 'be', guess: extrapolate(s, guess, h) });
       iterations += r.iterations;
       if (!r.converged) {
+        s._restore(snap);
         rejected++;
         dt = h / 4;
         if (dt < floor) { failed = true; break; }
@@ -411,7 +424,7 @@ function predict(s, pred, bdf) {
   const l0 = (h + hp) / hp, l1 = 1 - l0;
   for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
   // Backward Euler's error against a linear predictor; after a BDF2 step without enough
-  // history s overestimates, which is safe.
+  // history this overestimates, which is safe.
   return { scale: bdf ? 1 : h / (2 * h + hp), order: 1 };
 }
 

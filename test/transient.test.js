@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, metal, square } from '../src/kit.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
 
 const RT = GAS_CONSTANT * 298.15;
@@ -497,4 +497,37 @@ test('two strictly neutral regions out of equilibrium at their face: it reaches 
   assert.equal(s0.c['S+'][gL], 1);
   const s = d.advance(100, { tol: 1e-9 });
   assert.ok(s.converged && s.time === 100, s.warnings?.join('; '));
+});
+
+test('a step that fails leaves the state as it was: the start-of-step values too, which a solution reads its contacts\' fluxes against', () => {
+  // (From a cold review of src/timeSteps.js.) A failed step left its start-of-step values (c*)
+  // behind, and the solution read after it gave a host's contact flux 8× off at the same state.
+  const def = {
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'm', length: 1e-6, c0: { X: 1 } }],
+    contacts: { left: { species: { X: { type: 'exchange', k: 1e-3, mu: 3000 } }, phi: 'neutral' } },
+    grid: { minCells: 20 },
+  };
+  for (const method of ['be', 'bdf2']) {
+    const d = new Device(def);
+    for (let k = 0; k < 5; k++) d.step(2e-5, { method });
+    const before = d.solution().contacts.left.flux.X;
+    assert.equal(d.solver.step(1e3, { method, maxIter: 1 }).converged, false); // (made to fail: one Newton iteration)
+    assert.equal(d.solution().contacts.left.flux.X, before, method);
+  }
+});
+
+test('a breakpoint just past the time asked for: advance stops at that time, not at the breakpoint', () => {
+  // (From a cold review of src/timeSteps.js.) A square wave's edge at 0.7000000000000001 took
+  // advance(0.7) to it, and the next frame's advance(0.7) said it did nothing.
+  // An MOS-like stack, its left contact behind R driven by the wave.
+  const tox = units.nm(10), Cf = 10, C = 1 / (2 / Cf + tox / (3.9 * EPS0)), face = { phi: { type: 'capacitive', C: Cf }, zeroCharge: 0 };
+  const dev = new Device(build({ T: 300, library: [metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }], stack: [ohmic(0, ['e-']), layer('Al', units.nm(20)), face, layer('SiO2', tox), face, layer('Al', units.nm(20)), ohmic(0, ['e-'])] }));
+  dev.solve();
+  dev.set({ contacts: { left: { V: square({ high: 1, low: 0, period: 0.1 }), R: 0.05 / C } } });
+  for (let k = 1; k <= 10; k++) {
+    const t = k / 10, s = dev.advance(t);
+    assert.ok(s.converged && s.time === t, `advance(${t}) ended at ${s.time}`);
+  }
 });

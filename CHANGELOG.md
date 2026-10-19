@@ -3,6 +3,17 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+The time stepper moves to `src/timeSteps.js`, with a contract of its own (every solve in the suite
+bit for bit as before). A cold review of it against that contract found:
+- A step that failed left its start-of-step values changed, and a solution read after it gave
+  a contact's flux wrong at the same state (a host emptied by its current: 8× off). It now leaves
+  the state as it found it.
+- A source's breakpoint just past the time asked for (a square wave's edge at
+  0.7000000000000001) took `advance(0.7)` to it, and the next frame's `advance(0.7)` said it did
+  nothing. It stops at the time asked for.
+
 ## 1.2.3 (2026-10-18)
 
 Two strictly neutral regions whose `c0` leaves the face between them out of equilibrium (a
