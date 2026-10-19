@@ -35,6 +35,32 @@ test('advection: exact convection–diffusion profile and flux on a coarse grid,
   }
 });
 
+test('advection far past a cell Péclet number of 700, either direction: every flux v·c upstream', () => {
+  // The flux's weights B(Δ) and expm1(Δη) underflow and overflow past Δ ≈ 710 (flow toward −x):
+  // the product was 0·∞, every flux NaN, and the solve failed (found by a cold review of
+  // src/regions.js). Toward +x it was exact. With lattice statistics too (the concentrated kernel).
+  const lattice = { type: 'lattice', species: ['X'], cMax: 3000 };
+  const mu = (c, stats) => RT * Math.log(c / 1000) + (stats ? RT * Math.log(3000 / (3000 - c)) : 0);
+  for (const stats of [null, lattice]) {
+    for (const v of [1, -1, 0.72, -0.72, -50]) {
+      const def = {
+        species: [{ name: 'X', z: 0, cRef: 1000 }],
+        materials: { m: { epsr: 10, species: { X: { D, mu0: 0 } }, ...(stats ? { statistics: [stats] } : {}) } },
+        regions: [{ material: 'm', length: L, velocity: v }],
+        contacts: {
+          left: { species: { X: { type: 'equilibrium', mu: mu(cL, stats) } }, phi: 'neutral' },
+          right: { species: { X: { type: 'equilibrium', mu: mu(cR, stats) } }, phi: 'neutral' },
+        },
+        grid: { hmin: L / 10, hmax: L / 10 },
+      };
+      const sol = new Device(def).solve(), want = v * (v > 0 ? cL : cR), tag = `${stats ? 'lattice' : 'ideal'}, v = ${v}`;
+      assert.ok(sol.converged, tag);
+      assert.ok(Math.abs(sol.contacts.left.flux.X / want - 1) < 1e-12, `${tag}: ${sol.contacts.left.flux.X}`);
+      assert.ok(sol.flux.X.every((N) => Math.abs(N / want - 1) < 1e-12), `${tag}: ${sol.flux.X}`);
+    }
+  }
+});
+
 test('eddy mixing: a neutral species diffuses with D + D_mix, exactly', () => {
   for (const mixing of [1e-9, 1e-7]) {
     const sol = bar({ mixing }).solve();

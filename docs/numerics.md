@@ -171,11 +171,15 @@ potential and the quasi-Fermi difference are both shifted by the cell Péclet nu
 $`\mathrm{Pe} = v h/D`$, $`\Delta \to \Delta - \mathrm{Pe}`$, $`\Delta\eta \to \Delta\eta - \mathrm{Pe}`$.
 That's the exact constant-flux solution of $`N = v c - D(c' + c \psi')`$ across the cell, so pure
 convection–diffusion is exact on any grid, upwinding itself automatically at large $`\mathrm{Pe}`$.
+Past a drift of 300 thermal units across a cell (flow toward −x past a cell Péclet number of 300),
+the flux is taken from its downstream end, $`g B(-\Delta) c_R \operatorname{expm1}(-\Delta\eta)`$, the
+same flux, since there $`B(\Delta)`$ underflows and $`\operatorname{expm1}(\Delta\eta)`$ overflows.
 
 **Eddy mixing** is discretised on each segment as
 $`N_i = -(D_{\mathrm{mix}}/h) \sum_j \bar P_{ij} \Delta\eta_j`$, where $`\bar P`$ is built from the
-logarithmic mean of each concentration across the segment. The logarithmic mean makes a neutral
-species' mixing flux exactly $`-D_{\mathrm{mix}} \Delta c/h`$. The flux is exactly zero at
+logarithmic mean of each concentration across the segment. The logarithmic mean makes a dilute
+neutral species' mixing flux exactly $`-D_{\mathrm{mix}} \Delta c/h`$ (a crowded one's carries its
+thermodynamic factor). The flux is exactly zero at
 equilibrium, and exactly current-free ($`z^\mathsf{T}\bar P = 0`$ for any $`\bar P`$ built this way). Its
 full Jacobian, including the dependence of $`\bar P`$ on both ends, keeps Newton quadratic.
 

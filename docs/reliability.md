@@ -174,7 +174,11 @@ disagree (a port's voltage at 0 for −1.42 V, θ 0.05 for 0.015, a contact 24 m
 the fixes, device by device, so its results above stand. On 1.2.2 the whole sweep, 870 devices,
 gives the same: 605 agree, 117 transients fail, and 13 differ, each a capacitive contact beside a
 membrane capacitor where the transient loses K⁺. Since a face out of equilibrium in `c0` starts
-in it (1.2.3), 607 agree and 115 fail, the same 13 differing.
+in it (1.2.3), 607 agree and 115 fail, the same 13 differing. Those 13 were a missing derivative:
+a contact's current, read from its end box, didn't take the membrane port's voltage that reaches
+it (a cold review of `src/boundaries.js`), so Newton stopped short in a way the tolerance set. With
+it in (1.2.7), the transient settles on the steady state to 1e-14 V, in a third of the steps, and
+648 agree, 87 transients fail, none differ.
 
 ## Consistent: the derivatives
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bernoulli, bernoulliDerivative } from '../src/bernoulli.js';
+import { bernoulli, bernoulliDerivative, SG_FAR, sgFlux } from '../src/bernoulli.js';
 
 const relErr = (a, b) => Math.abs(a - b) / Math.max(Math.abs(b), 1e-300);
 
@@ -72,4 +72,26 @@ test('no NaN or infinity for any argument; correct large-|x| limits', () => {
   assert.ok(bernoulli(800) < 1e-300);
   assert.ok(Math.abs(bernoulliDerivative(-800) + 1) < 1e-15);
   assert.ok(Math.abs(bernoulliDerivative(800)) < 1e-300);
+});
+
+test('sgFlux: past SG_FAR, the flux from its downstream end is the same flux and derivatives, and finite where the plain product is 0·∞', () => {
+  // (Its first use: flow toward −x past a cell Péclet number of ~710 gave NaN; test/transport.test.js.)
+  const plain = (g, d, deta, cL) => {
+    const E = Math.expm1(deta), B = bernoulli(d), Bp = bernoulliDerivative(d), gBc = g * B * cL;
+    return [-gBc * E, -g * Bp * cL * E, gBc, gBc * (E + 1), -g * E * (B + Bp)];
+  };
+  const out = new Float64Array(5);
+  for (const d of [SG_FAR + 1e-9, 400, 700]) {
+    for (const lr of [-3, 0.2, 5]) {
+      // c_R = c_L e^{Δη − d}
+      const g = 2e-3, cL = 1.5, deta = d + lr, cR = cL * Math.exp(lr);
+      const want = plain(g, d, deta, cL), got = sgFlux(g, d, deta, cL, cR, out);
+      for (let k = 0; k < 5; k++) assert.ok(Math.abs(got[k] - want[k]) <= 1e-12 * Math.abs(want[k]) + 1e-300, `d ${d}, ln(cR/cL) ${lr}, out[${k}]: ${got[k]} vs ${want[k]}`);
+    }
+  }
+  for (const d of [800, 5e4]) {
+    const got = sgFlux(1, d, d + 0.5, 1, Math.exp(0.5), out);
+    assert.ok(got.every(Number.isFinite), `${got}`);
+    assert.ok(Math.abs(got[0] / (-d * Math.exp(0.5) * -Math.expm1(-d - 0.5)) - 1) < 1e-12); // N → −d·c_R
+  }
 });

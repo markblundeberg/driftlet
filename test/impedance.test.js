@@ -224,6 +224,38 @@ test('a MOS capacitor with a metal gate and its channel held by a port: the gate
   }
 });
 
+test('a port whose window reaches a contact\'s end box: the DC limit is the steady dV/dI, either contact', () => {
+  // The contact's current is read from its end box, where the port's K⁺ supply is: it depends
+  // on the port's voltage too. Neither the assembly (termDX) nor the impedance's circuit rows
+  // carried that (Z 23% low at a floating contact), and a bath's held K⁺ row kept the port's
+  // ∂/∂V after replacing it (Z 3e-5 off at the bath). Found by a cold review of src/boundaries.js.
+  const film = { 'Na+': 100, 'K+': 10, 'Cl-': 110 };
+  const port = { name: 'mem', region: 'film', from: 0, to: 0.2e-6, I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 }, species: { 'K+': { type: 'conductance', G: 1e12, offset: 0 } } };
+  const def = (left, right) => build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+    stack: [left, layer('water', 1e-6, { name: 'film', c0: film }), right],
+    ports: [port],
+    grid: { hmin: 5e-8, hmax: 5e-8 },
+  });
+  const capacitive = (I) => ({ I, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: { 'K+': { type: 'conductance', G: 1e6, offset: 0 } } });
+  const cases = [
+    // a floating contact, measured there: dV/dI from steady solves at I = ±h
+    { make: (x) => def(capacitive(x), bath(film, 'Cl-', 0)), at: 'left', h: 1e-2, read: (s) => s.terminals.left.V, dc: (dV, dI) => dV / dI },
+    // a bath at each end, measured at the right one: dV/dI from steady solves at V = 0.01 ± h
+    { make: (x) => def(bath(film, 'Cl-'), bath(film, 'Cl-', 0.01 + x)), at: 'right', h: 1e-6, read: (s) => s.terminals.right.current, dc: (dI, dV) => dV / dI },
+  ];
+  for (const { make, at, h, read, dc } of cases) {
+    const sp = new Device(make(h)).solve(), sm = new Device(make(-h)).solve();
+    assert.ok(sp.converged && sm.converged);
+    const R = dc(read(sp) - read(sm), 2 * h);
+    const d = new Device(make(0));
+    d.solve();
+    const { Z } = d.impedance([1e-3], { terminal: at });
+    assert.ok(Math.abs(Z.re[0] / R - 1) < 1e-5, `${at}: Z ${Z.re[0]}, dV/dI ${R}`);
+  }
+});
+
 test('profiles are NaN where a solution\'s are: no concentration inside a metal', () => {
   const dev = new Device(build({
     T: 300,

@@ -96,10 +96,10 @@ for live demos.
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
    - Transients with a capacitive contact beside a held electrode (found by `npm run lawsweep`):
-     with a membrane capacitor too, the conserved K⁺ total drifts in proportion to the tolerance
-     (2e-3 of it at tol 1e-7, 3e-5 at 1e-9; each capacitor alone conserves to 1e-12), and some
-     such devices fail their first step at one tolerance and not another. 83 of the sweep's 675
-     transients fail; most are these. The sweep's second family shows it plainer: 34 of its 60
+     with a membrane capacitor too, the conserved K⁺ total drifted in proportion to the tolerance
+     (fixed in 1.2.7: a contact's current lacked the membrane port's ∂/∂V, found by a cold review
+     of `src/boundaries.js`; 28 of the failing transients pass with it too, 87 of 870 fail now),
+     and some such devices fail their first step at one tolerance and not another. The sweep's second family shows it plainer: 34 of its 60
      transients fail, nearly all with a capacitive contact passing K⁺ (at I = 0 or behind a
      resistance) on a thin polar skin, most within 1e-7 s of the start, before and after the
      fixes of the cold review alike. Two mechanisms found (18 Oct 2026), neither fixed yet: the start's φ̂ runs
@@ -122,6 +122,13 @@ for live demos.
      right to fail on, if it says why and what to do. It does (f1fcc37), and `solve()` first
      then `advance()` runs all 16 tried. A floating electrode's reactions likewise (Argon's
      law8, below).
+   - A port's window counts each of its nodes' whole box (a cold review of `src/boundaries.js`):
+     a window [from, to] inside a region holds (to − from) + h of electrode, capacitance or
+     exchange, a half cell past each end, so a 0.2 µm capacitance on 0.05 µm cells is 0.025 F/m²,
+     not 0.020 (O(h/w), first order in the grid). At a device end whose contact sets φ, the end
+     node's share of a capacitance is dropped instead (0.0200 of 0.0225 there). The likely fix
+     weights each edge node by the part of its box inside the window, everywhere a port's terms
+     take vol; it moves every partial window's numbers (the axon's nodes of Ranvier) by O(h/w).
    - The time stepper's error control (a cold review of `src/timeSteps.js`): its estimate is
      Milne's device as if past states were exact, and reads low through the integrator's own
      (backward Euler by 1 + 1/(2ω), BDF2 by ~1.2), so accepted steps err up to ~1.3 tol. The

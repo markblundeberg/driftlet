@@ -3,6 +3,33 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+The equations' assembly moves out of `src/solver.js` into `src/assemble.js` (the rows'
+conventions), `src/regions.js` and `src/boundaries.js`, each with a contract at its head (every
+solve bit for bit as before). Two cold reviews of them found:
+- Flow toward −x past a cell Péclet number of ~710 gave NaN fluxes and failed to solve (the
+  Scharfetter–Gummel weights underflowed and overflowed, 0·∞); toward +x it was exact. Past a
+  drift of 300 thermal units the flux is now taken from its downstream end, the same flux: exact
+  either way, ideal or crowded, and in a face's permeability and the one-way fluxes too.
+- A terminal's current read from rows another terminal's voltage reaches (a contact's from its
+  end box, with a port's window in it; a held level's from the rows it replaces) carried no
+  ∂/∂V of the other: Newton took up to 2.3× the iterations, and the impedance, which didn't
+  read those terms either, came out 23% below the steady dV/dI at such a contact (now equal to
+  7 digits). And a bath's held level kept a port's ∂/∂V in the row it replaced (the impedance
+  3e-5 off; Newton 1.4–1.6× the iterations). This was also the law sweep's last open
+  disagreement: a capacitive contact beside a membrane capacitor lost K⁺ in transients in
+  proportion to the tolerance; now its transients settle on the steady state to 1e-14 V in a
+  third of the steps, and the sweep's 870 devices give 648 agreeing (607 before), 87 transients
+  failing (115), none differing (13). With them right, a floating electrode started 1.7 V
+  from its surface's balance (Argon's law8) now solves steady from its start, keeping its sites
+  and charge; advance() still refuses that start, saying why.
+- SRH whose carriers share a statistics model (lattice, Debye–Hückel) had its derivatives off
+  by 8–20% (each carrier's excess potential taken as depending on its own concentration
+  alone): 20 Newton iterations for 12. They're exact now, for any statistics.
+- Contract and doc wording: eddy mixing gives −D_mix ∇c for a dilute neutral species (a
+  crowded one's carries its thermodynamic factor); a few comments had ∂ζ/∂ln c backwards.
+
 ## 1.2.6 (2026-10-19)
 
 Newton's iteration moves to `src/newton.js`, with a contract at its head (every solve in the

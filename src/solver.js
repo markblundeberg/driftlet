@@ -133,7 +133,7 @@ function gmres(op, b, x, { m = 12, restarts = 8, tol = 1e-8 } = {}) {
 
 import { Assembly } from './assemble.js';
 import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js';
-import { bernoulli, bernoulliDerivative } from './bernoulli.js';
+import { bernoulli, SG_FAR, sgFlux } from './bernoulli.js';
 import { BoundaryTerms } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
@@ -356,6 +356,7 @@ export class Solver {
     this.dB = new Float64Array(M);
     this.jL = new Float64Array(M);
     this.jR = new Float64Array(M);
+    this.sg = new Float64Array(5); // a Scharfetter–Gummel flux and its derivatives (sgFlux)
     this.time = 0;
     this.lastDt = Infinity;
     this.atSteady = false; // whether the state is a converged steady solve
@@ -1113,13 +1114,14 @@ export class Solver {
     this.assemble(Infinity);
     // The steady parts, then the storage parts from an assembly at a tiny dt.
     const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
-    const Bt = this.termB.map((v) => v.slice()), Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI);
+    const Bt = this.termB.map((v) => v.slice()), Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI), DX = this.termDX.map((v) => v.slice());
     const dts = 1e-30;
     this.assemble(dts);
     const S = {};
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
     const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
+    const DXs = this.termDX.map((v, k) => v.map((x, j) => (x - DX[k][j]) * dts));
     // Where the measured contact's current may be read across a segment: anywhere without
     // ports; with them, only between it and the nearest window (a port's exchange takes current
     // in or out along it). Never for a port's own terminal.
@@ -1260,9 +1262,16 @@ export class Solver {
         }
         Ar[a][a] += DI[k];
         Ai[a][a] += w * DIs[k];
+        // (another terminal's voltage, where k's current reads rows it reaches: a port's window
+        // in a contact's end box)
+        fl.forEach((k2, b) => {
+          if (b === a) return;
+          Ar[a][b] += DX[k][k2];
+          Ai[a][b] += w * DXs[k][k2];
+        });
         const [yre, yim] = dot(k, w, yr, yi);
-        Ar[a][K] = (k === kT ? 1 : 0) - yre;
-        Ai[a][K] = -yim;
+        Ar[a][K] = (k === kT ? 1 : 0) - yre - (heldT ? DX[k][kT] : 0);
+        Ai[a][K] = -yim - (heldT ? w * DXs[k][kT] : 0);
       });
       const dV = complexSolve(Ar, Ai, K);
       // δx = y − Σ X_k δV_k
@@ -1291,6 +1300,12 @@ export class Solver {
       const read = (parts) => {
         const eps = 1.1e-16, c = Ct[kT], cs = Cs[kT];
         let Ir = DI[kT], Ii = w * DIs[kT], err = eps * (Math.abs(DI[kT]) + w * Math.abs(DIs[kT]));
+        // (the floating terminals' voltages, where kT's current reads rows they reach)
+        fl.forEach((k2, b) => {
+          const xr = DX[kT][k2], xi = w * DXs[kT][k2];
+          Ir += xr * dV.re[b] - xi * dV.im[b];
+          Ii += xr * dV.im[b] + xi * dV.re[b];
+        });
         for (const p of parts) {
           const [re, im] = dot(kT, w, p.r, p.i);
           Ir += re;
@@ -1487,13 +1502,12 @@ export class Solver {
           const zi = z[i], r1 = 1 + i, cL = c[s * n + i], g = mat.D[i] / h;
           const pe = (vel * h) / mat.D[i];
           const d = zi * (phiR - phiL) - pe;
-          const E = Math.expm1(u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe);
-          const gBc = g * bernoulli(d) * cL;
-          const dNdd = -g * bernoulliDerivative(d) * cL * E;
-          add(bL * M + r1, zi * F * gBc, 0);
-          add(bR * M + r1, -zi * F * gBc * (E + 1), 0);
+          const sg = sgFlux(g, d, u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe, cL, c[(s + 1) * n + i], this.sg);
+          const dNdd = sg[1];
+          add(bL * M + r1, zi * F * sg[2], 0);
+          add(bR * M + r1, -zi * F * sg[3], 0);
           if (hasPhi) {
-            add(bL * M, zi * F * (-zi * dNdd + zi * gBc * E), 0);
+            add(bL * M, zi * F * (-zi * dNdd - zi * sg[0]), 0);
             add(bR * M, zi * F * zi * dNdd, 0);
           }
         }
@@ -1532,7 +1546,7 @@ export class Solver {
           const pe = (vel * h) / mat.D[i];
           const d = z[i] * (u[bR * M] - u[bL * M]) + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
           const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]) - pe;
-          out[i][s] = -(mat.D[i] / h) * bernoulli(d) * c[s * n + i] * Math.expm1(deta);
+          out[i][s] = sgFlux(mat.D[i] / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
         }
         if (reg.mixing > 0) {
           // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic mean.
@@ -1573,7 +1587,8 @@ export class Solver {
       const gated = link.gates ?? [];
       const P = link.P * (gated.length ? this._open(gated, (q) => u[this._gateSlot(f, q)]) : 1);
       const right = P * bernoulli(d) * this.c[kl];
-      return [right, right * Math.exp(deta)];
+      // (far up a drift, right × e^Δη is 0·∞: the backward one is then sgFlux's, whole)
+      return [right, d < SG_FAR ? right * Math.exp(deta) : sgFlux(P, d, deta, this.c[kl], this.c[kr], this.sg)[3]];
     });
   }
 

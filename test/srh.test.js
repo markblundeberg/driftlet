@@ -190,7 +190,7 @@ test('SRH under degeneracy: each carrier\'s trap density scales by its own γ, a
   const cn = 5000, cp = 3e-15, a = 2.3; // so n p e^{−a} = γ_n γ_p n_i0²
   const shifted = (cn * cp * Math.exp(-a)) / (gn * gp);
   const rate = (law, nOk) => {
-    const r = S._srhRate({ tn, tp, n1: law }, cn, cp, a, xn, xp, 1, 1).rate;
+    const r = S._srhRate({ tn, tp, n1: law }, cn, cp, a, xn, xp).rate;
     const nPair = Math.sqrt(shifted), n1 = nOk ? gn * law : gn * nPair, p1 = nOk ? (gp * shifted) / law : gp * nPair;
     const want = (cn * cp * -Math.expm1(-a)) / (tp * (cn + n1) + tn * (cp + p1));
     return r / want - 1;
@@ -208,6 +208,55 @@ test('SRH under degeneracy: each carrier\'s trap density scales by its own γ, a
   // Extraction far past e^709 (a quasi-Fermi split of −20 V): finite, the generation limit.
   const g = S._srhRate({ tn, tp, n1: NaN }, 1e-300, 1e-300, -800);
   assert.ok(Number.isFinite(g.rate) && Number.isFinite(g.Ca) && g.rate < 0);
+});
+
+test('SRH whose carriers share a statistics model (lattice, Debye–Hückel): its rows\' derivatives match differences, given n1 or midgap', () => {
+  // Each carrier's excess potential depends on the other's concentration there: taken as a
+  // function of its own alone (through c/K_nn), the e⁻ row's ∂/∂η_h was 8% off on a lattice and
+  // 20% under Debye–Hückel, and a cold solve took 20 Newton iterations, not 12 (found by a cold
+  // review of src/regions.js). Checked on the SRH term alone: in the full rows the fluxes dwarf it.
+  for (const stats of [{ type: 'lattice', species: ['e-', 'h+'], cMax: 200 }, { type: 'debye-huckel', species: ['e-', 'h+'], epsr: 11.7, a: 1e-9 }]) {
+    for (const n1 of [units.perCm3(3e19), undefined]) {
+      const Si = semiconductor('Si');
+      Si.materials.Si.statistics = [stats];
+      const d = new Device(build({
+        T: 300,
+        library: [Si],
+        stack: [ohmic(0, ['e-']), layer('Si', units.um(1), { donors: units.perCm3(1e19), c0: { 'h+': 1 } }), ohmic(0, ['e-'])],
+        bulkReactions: [
+          { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-7, tauP: 2e-7, ...(n1 ? { n1 } : {}) } } },
+          { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: units.perCm3(1e26) } },
+        ],
+        grid: { hmin: units.nm(20), hmax: units.nm(50), ratio: 1.3 },
+      }));
+      const sol = d.solve(), s = d.solver;
+      assert.ok(sol.converged && sol.iterations <= 14, `${stats.type}, n1 ${n1}: ${sol.iterations} iterations`);
+      const g = s.nNodes >> 1, b = s.blockOfNode[g], M = s.M, rxs = s.rxsIn[0].filter((rx) => rx.srh);
+      const kernel = () => {
+        s.sys.clear();
+        s.res.fill(0);
+        s.computeConcentrations();
+        s._bulkReactions(g, rxs);
+      };
+      kernel();
+      const m = s.sys.sizes[b], oB = s.sys.offB[b];
+      const J = [1, 2].map((r) => [0, 1, 2].map((col) => s.sys.B[oB + s.loc[b * M + r] * m + s.loc[b * M + col]]));
+      for (let col = 0; col < 3; col++) {
+        const o = b * M + col, u0 = s.u[o], h = 1e-6;
+        s.u[o] = u0 + h;
+        kernel();
+        const fp = [1, 2].map((r) => s.res[s.rix[b * M + r]]);
+        s.u[o] = u0 - h;
+        kernel();
+        const fm = [1, 2].map((r) => s.res[s.rix[b * M + r]]);
+        s.u[o] = u0;
+        for (let r = 0; r < 2; r++) {
+          const fd = (fp[r] - fm[r]) / (2 * h);
+          assert.ok(Math.abs(J[r][col] - fd) <= 1e-6 * Math.abs(fd), `${stats.type}, n1 ${n1}, row ${r + 1}, column ${col}: ${J[r][col]} vs ${fd}`);
+        }
+      }
+    }
+  }
 });
 
 test('trap()\'s midgap default is the material\'s n_i whatever its φ reference: moving μ°(e⁻) by −F and μ°(h⁺) by +F changes no current', () => {

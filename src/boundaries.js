@@ -16,8 +16,9 @@
 // A face f (_face; its flux block bf between edge nodes bL, bR):
 //   φ law: pinned, φ̂_R − φ̂_L − dipole/V_T = 0; capacitive, D + C V_T (φ̂_R − φ̂_L − dipole/V_T)
 //     = 0; neutral, no D. Against a metal (itf.conductor, not neutral), the other side's edge φ
-//     is tied to the metal's Fermi level V_F = V_T η/z instead: pinned, V_F − zeroCharge − φ = 0;
-//     capacitive, D toward the other side = C (V_F − zeroCharge − φ). D enters the left Gauss row
+//     is tied to the metal's Fermi level V_F = V_T η/z instead: capacitive, D toward the other
+//     side = C (V_F − zeroCharge − φ) (pinned, V_F − zeroCharge − φ = 0, is written too, but
+//     normalizeDevice refuses it: a metal holds its surface charge in a finite capacitance). D enters the left Gauss row
 //     as +Af·D, the right one's as −Af·(D + sheetCharge); a metal side's charge is its carriers'
 //     (src/regions.js).
 //   links, per species: blocked, no flux; equilibrium, η_L = η_R (the flux whatever the
@@ -52,18 +53,24 @@
 //     other terms) is the flux the contact passes in: contactFlux (toward +x), and the current
 //     Σ z F × that; then, at a lateStorage node on a time step, the ions' storage (in the rows
 //     and contactFlux, not the current); then its links: exchange, A k (μ_out/RT − η); conductance,
-//     A G (V + offset − V_i)/(zF), V_i = V_T η/z; velocity, A v c (e^{η_out − η} − 1);
-//     equilibrium, the row replaced by η = η_out (contactEta). Its φ law: capacitive, D_in = A C
-//     (V − zeroCharge − V_T φ̂) out of the Gauss row; pinned or bulk, D_in = the Gauss row's
-//     residual so far, the row replaced by φ̂ = (V − zeroCharge)/V_T or by neutrality (F Σ z c +
-//     ρ_fixed = 0); the current gains (D_in − D_in at the step's start)/dt (not at a lateStorage
+//     A G (V + offset − V_i)/(zF), V_i = V_T η/z; velocity, A v c (e^{η_out − η} − 1) (dilute,
+//     A v (c_eq − c)); equilibrium, the row replaced by η = η_out (contactEta), any other
+//     terminal's ∂/∂V in it cleared. Its φ law: capacitive, D_in = A C (V − zeroCharge − V_T φ̂)
+//     (φ̂ as u alone, as the displacement reads it) out of the Gauss row; pinned or bulk, D_in =
+//     the Gauss row's residual so far, the row replaced by φ̂ = (V − zeroCharge)/V_T or by
+//     neutrality (F Σ z c + ρ_fixed = 0, its ∂/∂η_i = F (Kz)_i, K being symmetric); the current gains (D_in − D_in at the step's start)/dt (not at a lateStorage
 //     node on a time step; steady at no current: D_in − its captured charge); contactD = ±D_in
 //     toward +x. termI: that current.
+//   A terminal whose current is read from rows (a contact's from its end box, a port's held
+//     level from the rows it replaces) takes their ∂/∂V's with it (_captureRow): another live
+//     terminal j's termB entries there into termDX[k][j] (a port's window in a contact's end
+//     box), its own into termDI[k].
 //   circuit (_circuit), floating k: termRes = I − I_set, or I − (V_src − V)/R.
 //
 // Invariants (each says what a reviewer should be able to check here):
-//   1. Every Jacobian entry is its residual's derivative; termB[k] is ∂res/∂V_k and termC[k]
-//      ∂termI_k/∂(unknowns), for the live terminals (_liveTerms).
+//   1. Every Jacobian entry is its residual's derivative; termB[k] is ∂res/∂V_k, termC[k]
+//      ∂termI_k/∂(unknowns), and termDI[k], termDX[k][j] ∂termI_k/∂V_k and /∂V_j (with a circuit
+//      row's own), for the live terminals (_liveTerms).
 //   2. termI[k] is the current into the device through terminal k: what its links and reactions
 //      pass, times z F, and its displacement current; a contact's equals what the end box needs
 //      from outside, read from its residual (so the current is conserved through the device).
@@ -75,7 +82,7 @@
 // test/gates.test.js, test/membrane.test.js, test/kinetics.test.js, test/coverage.test.js,
 // test/capacitance.test.js, test/metal.test.js, test/jacobian.test.js.
 
-import { bernoulli, bernoulliDerivative } from './bernoulli.js';
+import { sgFlux } from './bernoulli.js';
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { powi, powr } from './pow.js';
@@ -202,22 +209,22 @@ export class BoundaryTerms {
         const gl = grid.regionEnd[f], gr = gl + 1, kl = gl * n + i, kr = gr * n + i, zi = z[i], link = itf.links[i];
         const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
         const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
-        const E = Math.expm1(-deta); // η_R − η_L
         // Gated: P × Π x^p, each x taken in [0, 1] (Newton's iterates can stray past its ends).
         const gated = link.gates ?? [], gx = (q) => u[this._gateSlot(f, q)];
+        const N1 = gated.length ? sgFlux(link.P, d, -deta, this.c[kl], this.c[kr], this.sg)[0] : 0; // (fully open)
         const P = link.P * (gated.length ? this._open(gated, gx) : 1);
-        const gBc = P * bernoulli(d) * this.c[kl];
-        const dNdd = -P * bernoulliDerivative(d) * this.c[kl] * E;
-        res[R[o]] = u[o] + gBc * E;
+        const sg = sgFlux(P, d, -deta, this.c[kl], this.c[kr], this.sg); // (−deta = η_R − η_L)
+        const N = sg[0], dNdd = sg[1];
+        res[R[o]] = u[o] - N;
         this._j(bf, r, bf, r, 1);
         for (const [q, p] of gated) {
           const dO = this._dOpen(gated, q, p, gx);
-          if (dO !== 0) this._j(bf, r, bf, 1 + n + itf.reactions.length + q, link.P * bernoulli(d) * this.c[kl] * E * dO);
+          if (dO !== 0) this._j(bf, r, bf, 1 + n + itf.reactions.length + q, -N1 * dO);
         }
-        this._j(bf, r, bL, r, -gBc);
-        this._j(bf, r, bR, r, gBc * (E + 1));
+        this._j(bf, r, bL, r, -sg[2]);
+        this._j(bf, r, bR, r, sg[3]);
         if (zi !== 0) {
-          this._j(bf, r, bL, 0, zi * dNdd - zi * gBc * E);
+          this._j(bf, r, bL, 0, zi * dNdd + zi * N);
           this._j(bf, r, bR, 0, -zi * dNdd);
         }
       } else {
@@ -324,8 +331,8 @@ export class BoundaryTerms {
       const { n: pn, p: pp } = rx.srh, gn = pn.side ? gR : gL, gq = pp.side ? gR : gL;
       const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo, ...this._srhDegen(gn, gq, { n: pn, p: pp }));
       rate = s.rate;
-      this._dlnc(gn, pn.i, s.Cn, pn.side ? dR : dL);
-      this._dlnc(gq, pp.i, s.Cp, pp.side ? dR : dL);
+      this._srhInto(gn, pn.i, s.Cn, s.Cxn, pn.side ? dR : dL);
+      this._srhInto(gq, pp.i, s.Cp, s.Cxp, pp.side ? dR : dL);
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= s.Ca * p.nu;
     } else {
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
@@ -392,10 +399,21 @@ export class BoundaryTerms {
     }
   }
 
-  // into += w × (the Jacobian row of block b, slot s), over compact columns.
-  _captureRow(b, s, w, into) {
+  // into += w × (the Jacobian row of block b, slot s), over compact columns; and where a terminal
+  // k reads that row as its current, its ∂/∂V's too: w × each live terminal's termB entry in it,
+  // into termDI[k] (its own) or termDX[k][j].
+  _captureRow(b, s, w, into, k = -1) {
     const l = this.loc[b * this.M + s];
     if (l < 0 || w === 0) return;
+    if (k >= 0) {
+      const o = this.rix[b * this.M + s];
+      for (const j of this._liveTerms()) {
+        const v = this.termB[j][o];
+        if (v === 0) continue;
+        if (j === k) this.termDI[k] += w * v;
+        else this.termDX[k][j] += w * v;
+      }
+    }
     if (this.lin) this.lin.capture(this.rix[b * this.M + s], w, this.lin.rate, into);
     const { sys, nB } = this, { sizes, offA, offB, offC, offX } = sys, m = sizes[b];
     for (const [X, nb, off] of [['A', b - 1, offA], ['B', b, offB], ['C', b + 1, offC]]) {
@@ -428,7 +446,7 @@ export class BoundaryTerms {
           // a device end node's level is its contact's business, where the contact links it
           if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
           flux[i] += res[R[o]];
-          this._captureRow(b, r, zF, C);
+          this._captureRow(b, r, zF, C, k);
           this._replaceRow(b, r);
           for (const Bk of this.termB) Bk[R[o]] = 0; // (other ports' terms in the row replaced)
           this._j(b, r, b, r, 1);
@@ -646,7 +664,7 @@ export class BoundaryTerms {
       flux[i] = sgn * nIn; // (toward +x)
       if (active && z[i] !== 0) {
         I += z[i] * F * nIn;
-        this._captureRow(b, 1 + i, z[i] * F, C);
+        this._captureRow(b, 1 + i, z[i] * F, C, k);
       }
     }
     // The ions' storage, left out until now (see lateStorage): in each balance, and in what
@@ -695,6 +713,7 @@ export class BoundaryTerms {
       if (link.type !== 'equilibrium') continue;
       const o = b * M + 1 + i;
       this._replaceRow(b, 1 + i);
+      for (const Bk of this.termB) Bk[R[o]] = 0; // (a port's terms in the row replaced)
       this._j(b, 1 + i, b, 1 + i, 1);
       res[R[o]] = u[o] - this.contactEta(side, i) + uLo[o]; // (the big terms first: u + uLo rounds to u)
       if (z[i] !== 0) B[R[o]] += -z[i] / VT;
@@ -739,12 +758,13 @@ export class BoundaryTerms {
       }
       if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
-        this._captureRow(b, 0, 1 / dt, C);
+        this._captureRow(b, 0, 1 / dt, C, k);
       } else if (!dyn && this.steady && this.chargeRefs.has(k)) {
         I += Din - this.chargeRefs.get(k);
-        this._captureRow(b, 0, 1, C);
+        this._captureRow(b, 0, 1, C, k);
       }
       this._replaceRow(b, 0);
+      for (const Bk of this.termB) Bk[R[b * M]] = 0;
       if (link.type === 'pinned') {
         // φ_edge = V_t − zeroCharge (the C → ∞ limit).
         this._j(b, 0, b, 0, 1);

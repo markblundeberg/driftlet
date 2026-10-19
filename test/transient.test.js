@@ -546,8 +546,11 @@ test('a capacitive contact that starts uncharged far from the equilibrium of the
   assert.ok(late.converged && late.time === 1e3);
 });
 
-test('a floating capacitive electrode whose starting coverages balance its reactions far from where it starts: both solves fail, saying so and what to do, which works', () => {
-  // (Gemini 4 Argon's law8.) Uncharged at −1.69 V, its surface balances 1.6–1.7 V away.
+test('a floating capacitive electrode whose starting coverages balance its reactions far from where it starts: solve() finds it, keeping its sites and charge; advance() fails, saying so and what to do, which works', () => {
+  // (Gemini 4 Argon's law8.) Uncharged at −1.69 V, its surface balances 1.6–1.7 V away. The steady
+  // solve failed too, until the contact's current took the port's ∂/∂V (termDX): its Newton
+  // never found the state, which keeps the sites (Aads + Bads) and the charge the surface gave
+  // back (F × the Bads and OHads it reduced).
   const lib = aqueous(['Na+', 'OH-', 'Fe2+'], { epsr: 0 });
   lib.species.push({ name: 'e-', z: -1 });
   const G = 1e-5, L = 10e-6;
@@ -563,9 +566,11 @@ test('a floating capacitive electrode whose starting coverages balance its react
       }],
       grid: { hmin: L / 20, hmax: L / 20 },
     });
-  const s = new Device(def({ I: 0 })).solve();
-  assert.ok(!s.converged);
-  assert.match(s.warnings.join(' '), /port metal's reactions\[0\] is 1\.\d\d V from equilibrium.*Hold that terminal at a voltage first/);
+  const cold = new Device(def({ I: 0 })), s = cold.solve(), sv = cold.solver;
+  assert.ok(s.converged);
+  const [A, B, OH] = [0, 1, 2].map((j) => sv.surfaceAmount(j));
+  assert.ok(Math.abs((A + B) / (G * L * 1e4 * 0.3) - 1) < 1e-9, `${A + B}`);
+  assert.ok(Math.abs(sv.portQ[0] / (FARADAY * (G * L * 1e4 * 0.15 - B - OH)) - 1) < 1e-6, `${sv.portQ[0]}`);
   const a = new Device(def({ I: 0 })).advance(10, { tol: 1e-6 });
   assert.ok(!a.converged);
   assert.match(a.warnings.join(' '), /The start is violent: port metal's reactions/);

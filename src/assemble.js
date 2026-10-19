@@ -68,8 +68,9 @@
 //      matrix plus its difference terms is assemble(dt)'s Jacobian (J·v equal to round-off);
 //      this.sys and this.lin as they were.
 //   5. _assembleBookkeeping(dt): contactFlux, contactD, portFlux, portQ and termI bit for bit
-//      as assemble(dt) would set them at the same state, with sys and res elsewhere left
-//      partial; it doesn't recompute concentrations (they must be current).
+//      as assemble(dt) would set them at the same state (one a steady assembly has already
+//      snapped flat: it doesn't snap), with sys, res, termB, termC and termDI elsewhere left
+//      partial, not to be read; it doesn't recompute concentrations (they must be current).
 // Tests: every test (every solve assembles); test/jacobian.test.js (invariant 1), test/layout.test.js
 // (difference form, the bookkeeping's readouts).
 

@@ -51,7 +51,9 @@ them is wrong: fix both, with a test, in the same commit.
   its block (−1: inactive), `rix[o]` its index in compact vectors, with `rix = N` (the sink) for
   inactive ones. `res`, `delta` and the Jacobian (`sys`, a `BlockTridiagonal`) are compact.
 - **Unknowns** are `u + uLo`, a double-double, so that differences of η keep their digits; the
-  Jacobian and solves are plain doubles. Concentrations `c[g·n + i]` and coverages
+  Jacobian and solves are plain doubles. (η is read as `u + uLo` wherever a difference of levels
+  is taken; φ̂ in the statistics and the displacement, a face's own slots and the gates as `u`
+  alone.) Concentrations `c[g·n + i]` and coverages
   `th[g·nSurf + q]` follow from `u` (`computeConcentrations`).
 - **Terminals:** 0 the left contact, 1 the right, `2 + k` port k. A floating terminal (driven by
   a current, or behind a resistance) has its voltage as an extra unknown and its circuit row

@@ -157,6 +157,7 @@ const capCell = (end) =>
     grid: { hmin: 5e-8, hmax: 5e-8 },
   });
 const Kc = { 'K+': { type: 'conductance', G: 1e6, offset: 0 } };
+const endPort = { name: 'mem', region: 'film', from: 0, to: 0.2e-6, I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 }, species: { 'K+': { type: 'conductance', G: 1e12, offset: 0 } } };
 const lattice = (def, species, cMax) => {
   for (const m of Object.values(def.materials)) if (m.species && !m.conductor) m.statistics = [{ type: 'lattice', species: species.filter((x) => m.species[x]), cMax }];
   return def;
@@ -173,6 +174,13 @@ const adsorbing = () => {
     grid: { hmin: 1e-6, hmax: 1e-6 },
   });
 };
+const flowing = (v) =>
+  build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+    stack: [bath(film, 'Cl-'), layer('water', 20e-6, { name: 'film', velocity: v, c0: film }), bath({ 'Na+': 50, 'K+': 1, 'Cl-': 51 }, 'Cl-')],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -211,6 +219,15 @@ const devices = {
       bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
       grid: { hmin: units.nm(0.5), hmax: units.nm(100), ratio: 1.3 },
     }),
+  // A salt flowing toward −x at a cell Péclet number of ~800: each flux from its downstream end
+  // (sgFlux past SG_FAR; test/transport.test.js), ideal and crowded.
+  'a salt flowing against x': () => flowing(-1),
+  'a salt flowing against x, crowded': () => lattice(flowing(-1), ['Na+', 'K+', 'Cl-'], 3000),
+  // A port whose window reaches a contact's end box: the contact's current, read from that box,
+  // depends on the port's voltage (termDX), and a bath's held level replaces a row the port
+  // wrote its ∂/∂V into (both found by a cold review of src/boundaries.js).
+  'a floating port in a floating contact\'s end box': () => capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: Kc }, port: endPort }),
+  'a floating port in a bath\'s end box': () => capCell({ contact: bath(film, 'Cl-'), port: endPort }),
   // A bipolar silver plate between two plating faces, held at a bias.
   'a bipolar plate': () => {
     const water = { epsr: 78.5, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } };

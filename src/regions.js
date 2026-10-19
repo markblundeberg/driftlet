@@ -21,7 +21,7 @@
 //   a conductor's node: no bulk concentration; its carrier's c is the excess charge of a charged
 //     face's sheet, sheetSign·D·A/(zF·vol);
 //   absent species: c = 0; then the coverages (_coverages: Langmuir, θ_s = e^{ζ_s}/(1 + Σe^ζ)).
-//   ∂c_i/∂η_j = K_ij, ∂c_i/∂φ̂ = −(Kz)_i (_Kz; _dlnc and _dc add these, as ∂ln c and ∂c).
+//   ∂c_i/∂η_j = K_ij, ∂c_i/∂φ̂ = −(Kz)_i (_Kz; _dlnc adds these as ∂ln c, _dc sets them as ∂c).
 //
 // The terms:
 //   node (dilute, concentrated): storage vol·(c − c_old)/dt in each present species' row, and
@@ -33,16 +33,22 @@
 //   displacement: D = −ε V_T (φ̂_R − φ̂_L)/h toward +x, out of the left box and into the right;
 //     none where ε = 0 or φ is undefined at the segment's left node.
 //   Scharfetter–Gummel (dilute): N = −(D_i/h) B(Δ) c_L expm1(Δη), Δ = z Δφ̂ − Pe, Δη the
-//     compensated η_R − η_L − Pe, Pe = v h/D_i (advection at the region's velocity): exactly zero
-//     where μ̄ is level and v = 0, and exact in the cancellation of drift against diffusion.
+//     compensated η_R − η_L − Pe, Pe = v h/D_i (advection at the region's velocity; flow is
+//     planar only, so h is the segment's length): exactly zero where μ̄ is level and v = 0, and
+//     exact in the cancellation of drift against diffusion. Past a drift Δ of SG_FAR (300), the
+//     same flux from the downstream end, g B(−Δ) c_R expm1(−Δη) (sgFlux in src/bernoulli.js):
+//     B(Δ) and expm1(Δη) underflow and overflow there, toward −x at a large Péclet number.
 //   concentrated: the same with Δ = zΔφ̂ + Δex − Pe, and c_L, ex through K at both ends.
 //   conductor: the flux J in slot 0 of the segment's left node, its row η_R − η_L + J/g = 0,
 //     g = σRT/(z²F²h) (Ohm's law), and J out of the left node's carrier balance, into the right's.
 //   eddy mixing: N = −(D_mix/h) P̄ Δη, P̄ = C̄ − (C̄z)(C̄z)ᵀ/(zᵀC̄z), C̄ the logarithmic means of
-//     the two ends' c (mobile species only): no current, and zero where μ̄ is level.
+//     the two ends' c (mobile species only): no current, and zero where μ̄ is level; a dilute
+//     neutral species' is −D_mix Δc/h (a crowded one's, D_mix Δc/h times its thermodynamic factor).
 //   bulk reaction at a node: rate r = P(1 − e^{−a}), a = fixedA + Σ ν η (reactants ν > 0,
 //     products ν < 0; compensated), P = k_f Π c^ν over reactants (times generationScale for a
-//     generation); or SRH (_srhRate) where the material has an SRH law. vol·ν·r in each
+//     generation); or SRH (_srhRate) where the material has an SRH law, its derivatives through
+//     ln c and the excess potentials ex = ζ − ln c (_srhInto: exact for any statistics, the
+//     carriers' coupled or not). vol·ν·r in each
 //     participant's row. bulkRate, bulkForward and bulkOneWay read the same rate, its forward
 //     one-way part, and the larger one-way part, at the present state.
 //   charge rows (_chargeRows, after the laws, on a time step where combining): at each
@@ -59,16 +65,17 @@
 //   2. A segment's flux goes into its two nodes' rows with opposite signs, the same number.
 //   3. At a level μ̄ along a segment (Δη = 0, no velocity), its flux and mixing are exactly 0;
 //      at a = 0 a bulk reaction's rate is exactly 0.
-//   4. computeConcentrations writes c, K, ex, th, th0 and nothing else; the kernels write res,
+//   4. computeConcentrations writes c, K, ex, th, th0 (and scratch: zeta, the statistics
+//      models' work arrays) and nothing else; the kernels write res,
 //      sys (or lin), termB/termC (the charge rows), and scratch kept on the Solver (dA, dB, jL,
-//      jR, zeta, the statistics models' work arrays, mixWork) or cached on a material (mobile).
+//      jR, sg, mixWork) or cached on a material (mobile).
 //   5. The charge rows are an invertible transformation of the equations at the node (the same
 //      solution), and _untransform inverts the column change exactly.
 // Tests: test/jacobian.test.js (1), test/layout.test.js (difference form), test/srh.test.js,
 // test/statistics.test.js, the validation suite (analytic profiles: test/equilibrium.test.js,
 // test/junction.test.js, test/neutral.test.js and others).
 
-import { bernoulli, bernoulliDerivative } from './bernoulli.js';
+import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { powi } from './pow.js';
 
@@ -412,16 +419,16 @@ export class RegionTerms {
       const rx = rxs[x];
       const law = rx.srh?.[this.nodeMaterial[g]];
       if (law) {
-        // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p and a.
+        // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p, a and the excesses.
         let aHi = rx.fixedA, aLo = 0;
         for (let p = 0; p < rx.sp.length; p++) {
           aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
           aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
         }
-        const { rate, Cn, Cp, Ca } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
+        const { rate, Cn, Cp, Ca, Cxn, Cxp } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
         dr.fill(0);
-        this._dlnc(g, law.n.i, Cn, dr);
-        this._dlnc(g, law.p.i, Cp, dr);
+        this._srhInto(g, law.n.i, Cn, Cxn, dr);
+        this._srhInto(g, law.p.i, Cp, Cxp, dr);
         for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Ca * rx.nu[p];
         for (let p = 0; p < rx.sp.length; p++) {
           const row = 1 + rx.sp[p], w = v * rx.nu[p];
@@ -481,7 +488,7 @@ export class RegionTerms {
   // fluxes (e.g. majority carriers carrying a small current) don't vanish in the cancellation of
   // two huge drift and diffusion terms.
   _segmentsDilute(g0, g1, region, mat, vel) {
-    const { n, M, u, uLo, res, c, z, sys, loc, lin } = this, R = this.rix;
+    const { n, M, u, uLo, res, c, z, sys, loc, lin } = this, R = this.rix, sg = this.sg;
     const { A: JA, B: JB, C: JC, sizes, offA, offB, offC } = sys;
     const { segLength, segArea } = this.model.grid;
     for (let s = g0; s < g1; s++) {
@@ -496,18 +503,16 @@ export class RegionTerms {
         const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
         const d = zi * (phiR - phiL) - pe;
         const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-        const E = Math.expm1(deta);
-        const gBc = g * bernoulli(d) * cL;
-        const N = -gBc * E;
-        const dNdd = -g * bernoulliDerivative(d) * cL * E;
-        const dNdEtaL = gBc;
-        const dNdEtaR = -gBc * (E + 1);
-        const dNdPhiL = -zi * dNdd + zi * gBc * E; // via Δ, and via c_L ∝ e^{−zφ̂_L}
+        sgFlux(g, d, deta, cL, c[(s + 1) * n + i], sg);
+        const N = sg[0], dNdd = sg[1];
+        const dNdEtaL = sg[2];
+        const dNdEtaR = -sg[3];
+        const dNdPhiL = -zi * dNdd - zi * N; // via Δ, and via c_L ∝ e^{−zφ̂_L}
         const dNdPhiR = zi * dNdd;
         res[R[bL * M + r]] += N;
         res[R[bR * M + r]] -= N;
         if (lin) {
-          lin.segment(R[bL * M + r], R[bR * M + r], R[bL * M], R[bR * M], zi, -gBc * E, dNdEtaR, zi * dNdd);
+          lin.segment(R[bL * M + r], R[bR * M + r], R[bL * M], R[bR * M], zi, N, dNdEtaR, zi * dNdd);
           continue;
         }
         // Row r of block bL (couplings to itself in B, to bR in C) and of bR (to bL in A).
@@ -538,14 +543,14 @@ export class RegionTerms {
     for (let i = 0; i < n; i++) {
       if (!mat.present[i] || mat.D[i] === 0) continue;
       const r = 1 + i, zi = z[i];
-      const { N, E, gBc, dNdd, fL, cR } = this._fluxConcentrated(s, bL, bR, mat, h, vel, i);
+      const { N, gBcE1, dNdd, fL, cR } = this._fluxConcentrated(s, bL, bR, mat, h, vel, i);
       res[R[bL * M + r]] += N;
       res[R[bR * M + r]] -= N;
       if (this.lin) {
         // In difference form (see DifferenceTerms): b on Δη_i and z_i·∂N/∂d on Δφ̂, and the rest
         // as side terms in each δη_j − z_j δφ̂ at either end (c_L and the excess potentials).
         const rL = R[bL * M + r], rR = R[bR * M + r], pL = R[bL * M], pR = R[bR * M];
-        this.lin.segment(rL, rR, pL, pR, zi, 0, -gBc * (E + 1), zi * dNdd);
+        this.lin.segment(rL, rR, pL, pR, zi, 0, -gBcE1, zi * dNdd);
         for (let j = 0; j < n; j++) {
           const wL = fL * K[KL + i * n + j] - (j === i ? dNdd : 0);
           const wR = cR > 0 ? dNdd * ((j === i ? 1 : 0) - K[KR + i * n + j] / cR) : 0;
@@ -578,16 +583,13 @@ export class RegionTerms {
     const pe = (vel * h) / mat.D[i];
     const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i] - pe;
     const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-    const E = Math.expm1(deta);
-    const B = bernoulli(d), Bp = bernoulliDerivative(d);
-    const gBc = g * B * cL;
-    const N = -gBc * E;
-    const dNdd = -g * Bp * cL * E;
+    const sg = sgFlux(g, d, deta, cL, cR, this.sg);
+    const N = sg[0], dNdd = sg[1], gBcE1 = sg[3]; // (gBcE1 = g·B·c_L·e^{Δη})
     // Left node: ∂N/∂ζ_Lj = −gE(B + B′)K_L,ij − dNdd·δ_ij, plus the direct η_L,i term.
-    const fL = -g * E * (B + Bp);
+    const fL = sg[4];
     jL[0] = -fL * this._Kz(gL, i);
     for (let j = 0; j < n; j++) jL[1 + j] = fL * K[KL + i * n + j];
-    jL[r] += -dNdd + gBc * (E + 1);
+    jL[r] += -dNdd + gBcE1;
     // Right node: ∂N/∂ζ_Rj = dNdd·(δ_ij − K_R,ij/c_R), plus the direct η_R,i term.
     jR.fill(0);
     if (cR > 0) {
@@ -598,8 +600,8 @@ export class RegionTerms {
       jR[0] = dNdd * zi; // K/c → δ as c → 0
       jR[r] -= dNdd;
     }
-    jR[r] += dNdd - gBc * (E + 1);
-    return { N, E, gBc, dNdd, fL, cR };
+    jR[r] += dNdd - gBcE1;
+    return { N, gBcE1, dNdd, fL, cR };
   }
 
   // Ohmic conduction in a metal, in mixed form. The flux J (slot 0 of the left node) obeys
@@ -624,7 +626,7 @@ export class RegionTerms {
   // Eddy mixing: N = −(D_mix/RT) P ∇μ̄ with P = C − (Cz)(Cz)ᵀ/(zᵀCz), C = diag(c). It mixes
   // composition without carrying current (zᵀP = 0) and vanishes exactly at equilibrium. On a
   // segment, N_i = −(D_mix/h) Σ_j P̄_ij Δη_j, with P̄ from the logarithmic mean of each c, so a
-  // neutral species gets exactly −D_mix Δc/h. Only mobile species (D > 0) take part.
+  // dilute neutral species gets exactly −D_mix Δc/h. Only mobile species (D > 0) take part.
   _segmentMixing(s, bL, bR, Dm, h, mat) {
     const R = this.rix;
     const { n, M, u, uLo, res, c, z } = this;
@@ -757,24 +759,26 @@ export class RegionTerms {
   }
 
   // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and
-  // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}).
-  // SRH at electron and hole concentrations cn, cp and affinity a. n₁p₁ = n p e^{−a} (n_i² for
-  // Boltzmann carriers), and under degeneracy each carrier's emission scales with its own
-  // γ = e^{−ex} (its excess chemical potential ex, c/K = ∂ln c/∂ζ its slope): n₁ = γ_n n₁₀ and
-  // p₁ = γ_p p₁₀, n₁₀ the law's n1, or n_i at midgap. (γ_n γ_p split evenly onto both, as it was,
-  // put a degenerate n⁺ region's γ_n on its holes' emission too.) The rate's derivatives in ln n,
-  // ln p and a. For large negative a (strong extraction), np·(1 − e^{−a}) as −n p e^{−a}.
-  _srhRate(law, cn, cp, a, xn = 0, xp = 0, sn = 1, sp = 1) {
+  // SRH kinetics (see srhLaw in device.js) at electron and hole concentrations cn, cp and affinity
+  // a = A/RT. With no n₁ given, the trap is midgap: n₁ = p₁ = n_i = √(n p e^{−a}). n₁p₁ = n p e^{−a}
+  // (n_i² for Boltzmann carriers), and under degeneracy each carrier's emission scales with its own
+  // γ = e^{−ex} (xn, xp: the carriers' excess chemical potentials): n₁ = γ_n n₁₀ and p₁ = γ_p p₁₀,
+  // n₁₀ the law's n1, or n_i at midgap. (γ_n γ_p split evenly onto both, as it was, put a degenerate
+  // n⁺ region's γ_n on its holes' emission too.) The rate's partial derivatives in ln n, ln p, a,
+  // xn and xp, each with the others held (_srhInto takes them to the unknowns). For large negative
+  // a (strong extraction), np·(1 − e^{−a}) as −n p e^{−a}.
+  _srhRate(law, cn, cp, a, xn = 0, xp = 0) {
     const { tn, tp } = law, lnnp = Math.log(cn) + Math.log(cp);
-    let lnn1, kN = 0, kP = 0, kA = 0; // ln n₁ = kN ln n + kP ln p + kA a + const
+    let lnn1, kN = 0, kP = 0, kA = 0, kX = 0; // ln n₁ = kN ln n + kP ln p + kA a + kX (xn − xp) + const
     if (Number.isNaN(law.n1)) {
       lnn1 = (lnnp - a - xn + xp) / 2; // γ_n n_i, with n_i² = n p e^{−a}/(γ_n γ_p)
-      kN = (2 - sn) / 2;
-      kP = sp / 2;
+      kN = 0.5;
+      kP = 0.5;
       kA = -0.5;
+      kX = -0.5;
     } else {
       lnn1 = Math.log(law.n1) - xn;
-      kN = 1 - sn;
+      kX = -1; // (and nothing in xp)
     }
     const n1 = Math.exp(lnn1), p1 = Math.exp(lnnp - a - lnn1), np = cn * cp;
     const den = tp * (cn + n1) + tn * (cp + p1);
@@ -784,19 +788,31 @@ export class RegionTerms {
     const dDn = tp * cn + tp * n1 * kN + tn * p1 * (1 - kN);
     const dDp = tp * n1 * kP + tn * cp + tn * p1 * (1 - kP);
     const dDa = tp * n1 * kA + tn * p1 * (-1 - kA);
-    return { rate, forward: np / den, oneWay: a > -700 ? (np / den) * Math.max(1, Math.exp(-a)) : Math.exp(lnnp - a) / den, Cn: rate * (1 - dDn / den), Cp: rate * (1 - dDp / den), Ca: (a > -700 ? (np / den) * (1 - f) : Math.exp(lnnp - a) / den) - (rate * dDa) / den };
+    const dDxn = (tp * n1 - tn * p1) * kX, dDxp = Number.isNaN(law.n1) ? -dDxn : 0;
+    return {
+      rate,
+      forward: np / den,
+      oneWay: a > -700 ? (np / den) * Math.max(1, Math.exp(-a)) : Math.exp(lnnp - a) / den,
+      Cn: rate * (1 - dDn / den),
+      Cp: rate * (1 - dDp / den),
+      Ca: (a > -700 ? (np / den) * (1 - f) : Math.exp(lnnp - a) / den) - (rate * dDa) / den,
+      Cxn: (-rate * dDxn) / den,
+      Cxp: (-rate * dDxp) / den,
+    };
   }
 
-  // _srhRate's degeneracy arguments: the electrons' at node gn, the holes' at gq.
+  // _srhRate's excess chemical potentials: the electrons' at node gn, the holes' at gq.
   _srhDegen(gn, gq, law) {
-    const [xn, sn] = this._degen(gn, law.n.i), [xp, sp] = this._degen(gq, law.p.i);
-    return [xn, xp, sn, sp];
+    return [this.nodeIdeal[gn] ? 0 : this.ex[gn * this.n + law.n.i], this.nodeIdeal[gq] ? 0 : this.ex[gq * this.n + law.p.i]];
   }
 
-  // A carrier's excess chemical potential at node g and ∂ln c/∂ζ there (0 and 1 if ideal).
-  _degen(g, i) {
-    if (this.nodeIdeal[g]) return [0, 1];
-    const n = this.n, c = this.c[g * n + i], K = this.K[g * n * n + i * n + i];
-    return [this.ex[g * n + i], c > 0 && K > 0 ? c / K : 1];
+  // Add C·∂(ln c_i) + Cx·∂(ex_i) at node g into d, over its slots: ex_i = ζ_i − ln c_i (0 where
+  // the statistics are ideal), ζ_i = η_i − μ°_i/RT − z_i φ̂.
+  _srhInto(g, i, C, Cx, d) {
+    if (this.nodeIdeal[g] || Cx === 0) return this._dlnc(g, i, C, d);
+    this._dlnc(g, i, C - Cx, d);
+    d[1 + i] += Cx;
+    d[0] -= this.z[i] * Cx;
   }
+
 }
