@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.5 (2026-10-19)
 
 The cold start moves to `src/start.js`, with a contract (every solve bit for bit as before). A
 cold review of it found:
