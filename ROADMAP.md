@@ -111,7 +111,13 @@ for live demos.
      second, so it was reverted. The face start (the two nodes at such a face start in its
      equilibrium, each ion's amount kept) fixes both, the gauge offset being a bystander: 32 of
      the 60 fail now, every one with the capacitive contact on its polar skin, where starting at
-     the bath's gauge made it worse (36), so that's a mechanism still to find.
+     the bath's gauge made it worse (36). Its mechanism: the contact starts uncharged, 57 RT
+     from the K⁺ level its link holds, and drives it across the skin in the first instant;
+     started with the link at equilibrium instead (and the bath's gauge), its capacitor starts
+     charged against a skin whose double layer doesn't exist yet, and the failures moved (817
+     fixed, 869 broken, those behind a resistance now failing at t = 0). Either start breaks
+     Poisson's equation or the link: the fix is the skin's double layer solved consistently at
+     t = 0 (the steady equations with every amount held), a consistent start proper.
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
      where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same
