@@ -15,6 +15,7 @@ them is wrong: fix both, with a test, in the same commit.
 | --- | --- |
 | `src/laws.js` | yes: the steady system's conservation laws |
 | `src/lawRows.js` | yes: the laws written into the Newton system, and the bordered solve |
+| `src/timeSteps.js` | yes: one step (backward Euler, BDF2), advance's halving, integrate's error control |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
@@ -69,8 +70,9 @@ By method, in file order:
   kernels it calls (nodes, segments, faces, bulk reactions, ports, contacts, charge rows),
   `_assembleDifference` (with `src/difference.js`).
 - **Newton:** `newton`, `_refine`, `_equilibrate`, `_kirchhoff`, `_noteConditioning`.
-- **Time steps:** `advance`, `step`, `integrate` (BDF with error control, breakpoints from the
-  sources), `_predict`, `_errorNorm`, `_snapshot` / `_restore`.
+- **Time steps** are `src/timeSteps.js` (`step`, `advance`, `integrate`, the predictor and the
+  error norm), which the Solver's own `step`, `advance` and `integrate` call; `_snapshot` /
+  `_restore`, `_warmFrom` and `_probes`, which the API uses too, stay in the solver.
 - **Small signal:** `impedance` and the helpers after it.
 - **Bookkeeping:** `segmentFluxes`, `faceOneWay`, `_assembleBookkeeping`, the contacts' intake.
 - **Steady solves:** `solveSteady`, `_steadyFromHere`, the continuations (floating, generation,
