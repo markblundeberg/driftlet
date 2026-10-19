@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.7 (2026-10-19)
 
 The equations' assembly moves out of `src/solver.js` into `src/assemble.js` (the rows'
 conventions), `src/regions.js` and `src/boundaries.js`, each with a contract at its head (every
