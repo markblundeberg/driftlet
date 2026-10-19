@@ -16,6 +16,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/laws.js` | yes: the steady system's conservation laws |
 | `src/lawRows.js` | yes: the laws written into the Newton system, and the bordered solve |
 | `src/timeSteps.js` | yes: one step (backward Euler, BDF2), advance's halving, integrate's error control |
+| `src/start.js` | yes: the cold start, from each region's c0 and the contacts' and ports' levels |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
@@ -65,7 +66,8 @@ By method, in file order:
 - **Applying the laws** is `src/lawRows.js` (`captureLaws`, `captureLocal`, `snapFlat`,
   `applyLaws`, `solveBordered`), called from `assemble`, `newton`, `_refine` and the steady
   solves; `_replaceRow` and `_j`, which it uses, stay in the solver.
-- **Starting state:** `initFromComposition`, `_surfaceStart`.
+- **Starting state** is `src/start.js` (`initFromComposition`, which the Solver's own calls);
+  `_surfaceStart`, which the API uses too, stays in the solver.
 - **Statistics and assembly:** `computeConcentrations`, `_nodeStatistics`, `assemble` and the
   kernels it calls (nodes, segments, faces, bulk reactions, ports, contacts, charge rows),
   `_assembleDifference` (with `src/difference.js`).
