@@ -102,7 +102,15 @@ for live demos.
      transients fail; most are these. The sweep's second family shows it plainer: 34 of its 60
      transients fail, nearly all with a capacitive contact passing K⁺ (at I = 0 or behind a
      resistance) on a thin polar skin, most within 1e-7 s of the start, before and after the
-     fixes of the cold review alike.
+     fixes of the cold review alike. Two mechanisms found (18 Oct 2026), neither fixed yet: the start's φ̂ runs
+     from the left, so behind a closed or floating left end it sits 55 RT from the gauge a bath
+     on the right holds (device 846's first step, carrying the whole film there by damped
+     updates across a face, fails); and where c0 leaves a face out of equilibrium (S⁺ 1 and 0.1
+     either side, so c_Na·c_Cl differs), a first step from the right gauge meets an exactly
+     singular pivot (device 843). Starting at the bath's gauge fixed the first and broke the
+     second, so it was reverted. Both are a start that breaks the algebraic constraints (neutrality,
+     equilibrium links), which a DAE solver would meet with a consistent initialisation before
+     the first step; that's the likely shape of the fix.
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
      where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same
