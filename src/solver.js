@@ -7,62 +7,6 @@ function bvFactor(a, alpha) {
   return { g, gp: alpha * Math.exp(alpha * a) + (1 - alpha) * e };
 }
 
-// GMRES(m), restarted, for a real system op(x) = b, op already preconditioned; x holds the
-// starting guess and receives the answer. Returns whether it converged.
-function gmresReal(op, b, x, { m = 10, restarts = 3, tol = 1e-12 } = {}) {
-  const N = b.length;
-  const dot = (a, c) => {
-    let t = 0;
-    for (let j = 0; j < N; j++) t += a[j] * c[j];
-    return t;
-  };
-  const bn = Math.sqrt(dot(b, b)) || 1;
-  for (let cycle = 0; cycle < restarts; cycle++) {
-    const ax = op(x), r = Float64Array.from(b, (v, j) => v - ax[j]);
-    const beta = Math.sqrt(dot(r, r));
-    if (!(beta > tol * bn)) return true;
-    const V = [r.map((v) => v / beta)], H = Array.from({ length: m + 1 }, () => new Float64Array(m));
-    const cs = [], sn = [], g = new Float64Array(m + 1);
-    g[0] = beta;
-    let k = 0, converged = false;
-    for (; k < m; k++) {
-      const w = op(V[k]);
-      for (let i = 0; i <= k; i++) {
-        const h = dot(V[i], w);
-        H[i][k] = h;
-        for (let j = 0; j < N; j++) w[j] -= h * V[i][j];
-      }
-      const hn = Math.sqrt(dot(w, w));
-      V.push(w.map((v) => v / (hn || 1)));
-      for (let i = 0; i < k; i++) {
-        const a = H[i][k], c = H[i + 1][k];
-        H[i][k] = cs[i] * a + sn[i] * c;
-        H[i + 1][k] = -sn[i] * a + cs[i] * c;
-      }
-      const t = Math.hypot(H[k][k], hn), c = t > 0 ? H[k][k] / t : 1, sv = t > 0 ? hn / t : 0;
-      cs.push(c);
-      sn.push(sv);
-      H[k][k] = t;
-      g[k + 1] = -sv * g[k];
-      g[k] *= c;
-      if (!(Math.abs(g[k + 1]) > tol * bn) || !(hn > 0)) {
-        k++;
-        converged = true;
-        break;
-      }
-    }
-    const y = new Float64Array(k);
-    for (let i = k - 1; i >= 0; i--) {
-      let v = g[i];
-      for (let j = i + 1; j < k; j++) v -= H[i][j] * y[j];
-      y[i] = v / H[i][i];
-    }
-    for (let i = 0; i < k; i++) for (let j = 0; j < N; j++) x[j] += y[i] * V[i][j];
-    if (converged) return true;
-  }
-  return false;
-}
-
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
 function complexSolve(Ar, Ai, K) {
   for (let col = 0; col < K; col++) {
@@ -221,7 +165,8 @@ import { sourceAt } from './device.js';
 import { DifferenceTerms } from './difference.js';
 import { DeviceError } from './errors.js';
 import { chargeOnly, conservedMoieties, feeds, findLaws, noCurrent } from './laws.js';
-import { applyLaws, captureLaws, captureLocal, snapFlat, solveBordered } from './lawRows.js';
+import { applyLaws, captureLaws, captureLocal, snapFlat } from './lawRows.js';
+import { maxPotentialStep, newton as newtonFn } from './newton.js';
 import { advance as advanceFn, integrate as integrateFn, step as stepFn, violentStart } from './timeSteps.js';
 import { initFromComposition as initFromCompositionFn } from './start.js';
 import { powi, powr } from './pow.js';
@@ -2430,34 +2375,6 @@ export class Solver {
     if (b < nB - 1) sys.C.fill(0, sys.offC[b] + l * sz[b + 1], sys.offC[b] + (l + 1) * sz[b + 1]);
   }
 
-  // Scale every row by its largest Jacobian entry (in place, residual too), dividing by it: its
-  // reciprocal overflows where it's subnormal (a co-ion crowded out of a double layer, ~1e-310).
-  _equilibrate() {
-    const { nB, sys, res, termB } = this, live = this._liveTerms();
-    const { A, B, C, sizes, offA, offB, offC, offX } = sys;
-    for (let b = 0; b < nB; b++) {
-      const m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < nB - 1 ? sizes[b + 1] : 0;
-      for (let r = 0; r < m; r++) {
-        const oa = offA[b] + r * mp, ob = offB[b] + r * m, oc = offC[b] + r * mn;
-        let mx = 0;
-        for (let k = 0; k < mp; k++) mx = Math.max(mx, Math.abs(A[oa + k]));
-        for (let k = 0; k < m; k++) mx = Math.max(mx, Math.abs(B[ob + k]));
-        for (let k = 0; k < mn; k++) mx = Math.max(mx, Math.abs(C[oc + k]));
-        if (mx === 0) {
-          this.rowDiv[offX[b] + r] = 1;
-          continue;
-        }
-        const d = mx;
-        this.rowDiv[offX[b] + r] = d;
-        for (let k = 0; k < mp; k++) A[oa + k] /= d;
-        for (let k = 0; k < m; k++) B[ob + k] /= d;
-        for (let k = 0; k < mn; k++) C[oc + k] /= d;
-        res[offX[b] + r] /= d;
-        for (const k of live) termB[k][offX[b] + r] /= d; // (each terminal's ∂/∂V)
-      }
-    }
-  }
-
   // The Jacobian at dt with the dilute kernels' terms kept aside in difference form (see
   // DifferenceTerms), the rest assembled into a matrix of its own. The residual and terminal terms
   // come out as from assemble(dt); the Newton matrix is left as it was.
@@ -2477,319 +2394,9 @@ export class Solver {
     return { rest, lin };
   }
 
-  // A Newton solve refined by GMRES: the factorised Jacobian as the preconditioner, and J·x
-  // exact, with the dilute kernels' terms in difference form (see DifferenceTerms), as the
-  // impedance does. The assembled J holds a flux's dependence on η at its two ends as two
-  // entries; where they're huge (an inversion layer's 0.1 nm cells, a conductance ~1e11 against
-  // the layer's own storage and the trickle from the bulk), eliminating them loses the layer's
-  // overall level to round-off, and Newton rattles there. delta and deltaV come in as the plain
-  // solve's and leave refined (in the transformed unknowns, as solveBordered gives them); false
-  // if refining didn't help, leaving them as they came.
-  _refine(dt, delta, deltaV) {
-    const { res, termRes, termB, termC, termDI, rowDiv, floating: fl } = this;
-    const N = this.sys.size, K = fl.length, pins = this.pins, R = this.rix;
-    const save = { res: Float64Array.from(res), termRes: Float64Array.from(termRes), termB: termB.map((b) => Float64Array.from(b)), termC: termC.map((c) => Float64Array.from(c)), termDI: Float64Array.from(termDI), termDX: this.termDX.map((x) => Float64Array.from(x)), transformed: this.transformed, pinRes: this.pins.map((p) => p.res) };
-    const restoreArrays = () => {
-      res.set(save.res);
-      termRes.set(save.termRes);
-      save.termB.forEach((b, k) => termB[k].set(b));
-      save.termC.forEach((c, k) => termC[k].set(c));
-      termDI.set(save.termDI);
-      save.termDX.forEach((x, k) => this.termDX[k].set(x));
-      this.transformed = save.transformed;
-      this.pins.forEach((p, a) => (p.res = save.pinRes[a]));
-    };
-    // The same system, its terms kept apart: the rest, and each floating terminal's (unscaled).
-    const { rest, lin } = this._assembleDifference(dt);
-    const Bk = fl.map((k) => Float64Array.from(termB[k])), Ck = fl.map((k) => Float64Array.from(termC[k])), Dk = fl.map((k) => termDI[k]);
-    restoreArrays();
-    const v = new Float64Array(N + 1), jv = new Float64Array(N);
-    const op = (x) => {
-      for (let j = 0; j < N; j++) v[j] = x[j];
-      v[N] = 0;
-      rest.multiply(v, jv);
-      if (save.transformed) this._untransform(v); // (the dilute terms in the plain unknowns)
-      lin.apply(v, jv, 1, 1 / dt);
-      // A flat stretch's rows hold each level to its first node's (see flatRows in src/lawRows.js).
-      for (const p of pins) {
-        if (!p.col) continue;
-        for (const o of p.col) if (o !== p.row && this.loc[o] >= 0) jv[R[o]] -= x[R[p.row]];
-      }
-      const out = new Float64Array(N + K);
-      for (let j = 0; j < N; j++) {
-        let t = jv[j];
-        for (let a = 0; a < K; a++) t += Bk[a][j] * x[N + a];
-        out[j] = t / rowDiv[j];
-      }
-      for (let a = 0; a < K; a++) {
-        let t = Dk[a] * x[N + a];
-        for (let b = 0; b < K; b++) if (b !== a) t += this.termDX[fl[a]][fl[b]] * x[N + b];
-        for (let j = 0; j < N; j++) t += Ck[a][j] * x[j];
-        out[N + a] = t;
-      }
-      // A pinned row is its constraint's (a conserved amount, an island's summed balance).
-      for (const p of pins) {
-        let t = 0;
-        for (let j = 0; j < p.len; j++) t += p.w[j] * x[p.idx[j]];
-        out[R[p.row]] = t;
-      }
-      return precondition(out);
-    };
-    const rhs = new Float64Array(N + 1), out = new Float64Array(N + 1), outV = new Float64Array(K);
-    const precondition = (r) => {
-      for (let j = 0; j < N; j++) rhs[j] = r[j];
-      fl.forEach((k, a) => (termRes[k] = r[N + a]));
-      for (const p of pins) {
-        p.res = rhs[R[p.row]];
-        rhs[R[p.row]] = 0;
-      }
-      solveBordered(this, rhs, out, outV, pins);
-      const z = new Float64Array(N + K);
-      for (let j = 0; j < N; j++) z[j] = out[j];
-      for (let a = 0; a < K; a++) z[N + a] = outV[a];
-      return z;
-    };
-    try {
-      const b = new Float64Array(N + K);
-      for (let j = 0; j < N; j++) b[j] = save.res[j];
-      fl.forEach((k, a) => (b[N + a] = save.termRes[k]));
-      pins.forEach((p, a) => (b[R[p.row]] = save.pinRes[a]));
-      const pb = precondition(b), x = Float64Array.from(pb);
-      // A lost mode or two, GMRES finds in a couple of iterations. The refined update is kept
-      // where GMRES converged and its correction is under a thermal unit; otherwise newton()
-      // stops refining.
-      const x0 = Float64Array.from(x);
-      const ok = gmresReal(op, pb, x, { m: 8, restarts: 1, tol: 1e-8 });
-      // (Measured on the potentials, as Newton's own step is: a rate the plain solve left
-      // unsolved, at a perturbed pivot, can need a correction of 41.7 mol/(m²·s).)
-      const dx = new Float64Array(N + 1), dV = new Float64Array(K);
-      for (let j = 0; j < N; j++) dx[j] = x[j] - x0[j];
-      for (let a = 0; a < K; a++) dV[a] = x[N + a] - x0[N + a];
-      if (this.transformed) this._untransform(dx);
-      const c = this._maxPotentialStep(dx, dV);
-      if (!ok || !(c < 1)) return false;
-      for (let j = 0; j < N; j++) delta[j] = x[j];
-      for (let a = 0; a < K; a++) deltaV[a] = x[N + a];
-      return true;
-    } finally {
-      restoreArrays();
-    }
-  }
-
-  // Largest update among the potential-like unknowns (φ̂ and η at grid nodes).
-  _maxPotentialStep(delta, deltaV = this.deltaV) { // (deltaV null: the device's potentials only)
-    const { n, M } = this;
-    const R = this.rix; // (the sink entry of delta is 0)
-    let mx = 0;
-    if (deltaV) for (let a = 0; a < this.floating.length; a++) mx = Math.max(mx, Math.abs(deltaV[a]) / this.VT);
-    for (let g = 0; g < this.nNodes; g++) {
-      const b = this.blockOfNode[g];
-      if (this.nodeConductor[g] < 0) mx = Math.max(mx, Math.abs(delta[R[b * M]])); // (a metal's slot 0 is a flux)
-      for (let i = 0; i < n; i++) {
-        if (this.present[g * n + i]) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + i]]));
-      }
-      const k = this.surfPort[g]; // an electrode surface's coverages, as η
-      if (k >= 0) for (let q = 0; q < this.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
-    }
-    for (const gt of this.gateList) mx = Math.max(mx, Math.abs(delta[R[gt.o]])); // a gate's fraction open
-    return mx;
-  }
-
-  /**
-   * Newton iteration for one backward-Euler step from the current cOld.
-   * @returns {{converged: boolean, iterations: number, history: number[]}}
-   */
-  newton(dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands = false } = {}) {
-    const { delta, res } = this;
-    const deltaV = this.deltaV ?? (this.deltaV = new Float64Array(this.floating.length));
-    const history = [], ownHistory = [];
-    // Refined solves (see _refine), once the plain ones stall.
-    let refine = false, refined = 0, noRefine = false;
-    // Islands (see applyIslands in src/lawRows.js): their summed rows go in only once the plain
-    // solves converge.
-    // Far from the solution, Newton exact along a weakly held level takes it by 1e5 thermal
-    // units (a floating base, cold at bias), where the plain solves, which barely see that level,
-    // converge. Converged, an island at the wrong level shows: it takes in a different current
-    // than it passes on, so the terminal currents don't add up to zero. Then the summed rows go
-    // in and Newton carries on from there. Converged again, a current that tiny against the
-    // conduction around it rides on differences (~1e-28 thermal units for 5 fA/m² through a bulk
-    // of 1e4 mol/m³ at 1e-4 m²/s) that the last update leaves known only to its own round-off:
-    // where the currents still don't add up, one more update polishes them. Where the islands'
-    // own system is held by static pivots elsewhere (a GaAs stack's minority carriers, at 1e-17
-    // A/m² of noise), their rows can throw Newton off instead: if it doesn't converge again
-    // within a dozen iterations, the plain solution stands.
-    this.islandsOn = islands;
-    let rounds = 0, kept = null, perturbed = false;
-    // Converged by a small update, but solved at a perturbed pivot, or in a steady solve (where a
-    // factorisation that lost a row's digits left a reaction's rate 3.6e7 off it, the update
-    // small, an I = 0 electrode at a voltage 0.4 V from its steady one): the residual itself,
-    // assembled at the state, must be small too (each row scaled by its largest Jacobian entry).
-    const unsolved = () => {
-      if (!perturbed && dt !== Infinity) return false;
-      this.assemble(dt);
-      this._equilibrate();
-      let r = 0;
-      for (let k = 0; k < this.SINK; k++) r = Math.max(r, Math.abs(this.res[k]));
-      return !(r < 1e-6);
-    };
-    const islandsOff = (it, result) => {
-      if (dt !== Infinity || !this.steady || this.islands.length === 0 || rounds >= 2 || !(this._kirchhoff() > 1e-9)) return false;
-      this.islandsOn = true;
-      rounds++;
-      kept = { it, result, u: Float64Array.from(this.u), uLo: Float64Array.from(this.uLo), termV: Float64Array.from(this.termV) };
-      return true;
-    };
-    // A steady solve that fails: record how nearly singular the system was, and where; or, failing
-    // with the islands' rows in, go back to the solution without them.
-    const fail = (r) => {
-      if (kept) {
-        this.u.set(kept.u);
-        this.uLo.set(kept.uLo);
-        this.termV.set(kept.termV);
-        this.islandsOn = false;
-        this.computeConcentrations();
-        return { ...kept.result, iterations: r.iterations, history };
-      }
-      if (dt === Infinity) this._noteConditioning();
-      return r;
-    };
-    for (let it = 1; it <= maxIter; it++) {
-      if (kept && it - kept.it > 12) return fail({ converged: false, iterations: it - 1, history });
-      if (kept && it === kept.it + 2) {
-        // Refined from the islands' second update (their first moves the level, perhaps by
-        // more than a refinement may), since the plain solves have shown a mode they lose.
-        refine = true;
-        noRefine = false;
-      }
-      try {
-        this.assemble(dt);
-      } catch (err) {
-        // A statistics model can fail far from the solution (e.g. Debye–Hückel beyond its range).
-        if (!(err instanceof SolverError)) throw err;
-        return fail({ converged: false, iterations: it, history, error: err.message });
-      }
-      this._equilibrate();
-      let rmax = 0;
-      for (let k = 0; k < this.SINK; k++) rmax = Math.max(rmax, Math.abs(res[k]));
-      try {
-        this._factor();
-      } catch (err) {
-        return fail({ converged: false, iterations: it, history, error: err.message });
-      }
-      // A pivot perturbed (one that cancelled to exactly nothing) can leave a row unsolved, its
-      // update small while its residual isn't: the same couple written twice on an electrode at
-      // open circuit converged with one spelling's rate row 41.7 mol/(m²·s) off, the couple
-      // 1.5 RT from equilibrium. Refine the solves (exact J·v) wherever one was, and before
-      // taking a small update for convergence there, look at the residual itself (see unsolved).
-      perturbed = this.sys.perturbedPivots > 0;
-      if (perturbed && !noRefine) refine = true;
-      try {
-        const pins = this.pins;
-        deltaV.fill(0);
-        solveBordered(this, res, delta, deltaV, pins);
-        if (refine && !this._refine(dt, delta, deltaV)) {
-          refine = false; // (GMRES didn't converge, or strayed: the plain solves it is)
-          noRefine = true;
-        }
-        if (this.transformed) this._untransform(delta);
-      } catch (err) {
-        if (!(err instanceof SolverError)) throw err;
-        return fail({ converged: false, iterations: it, history, error: err.message });
-      }
-      // Convergence counts every unknown, floating terminal voltages too. Damping and the
-      // divergence check count only the device's own potentials: a terminal voltage enters
-      // linearly (conductance links, held levels, a capacitive face), so a large swing in one is
-      // safe, and damping it would throttle the whole update (a current-driven port switching
-      // off, its voltage collapsing by hundreds of volts, crawled 10 thermal units at a time).
-      const step = this._maxPotentialStep(delta, deltaV);
-      const own = this._maxPotentialStep(delta, null);
-      history.push(step);
-      ownHistory.push(own);
-      if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
-      // Give up early on clear divergence; the caller will take a smaller step instead.
-      if ((it > 1 && own > 1e4) || (it > 6 && own > 10 * ownHistory[0])) {
-        this.computeConcentrations();
-        return fail({ converged: false, iterations: it, history, error: 'diverging' });
-      }
-      const alpha = own > maxStep ? maxStep / own : 1;
-      this._addToState(delta, -alpha);
-      this.floating.forEach((k, a) => (this.termV[k] -= alpha * deltaV[a]));
-      // A time step's Newton contracts fast from its predictor (1e-2, 1e-9, 1e-15 thermal
-      // units). The next update would be about θ = step/(the last one) times this one, so where
-      // θ/(1 − θ) of it (Hairer and Wanner's estimate) is under tol, this update converged it:
-      // the iteration that would only show that is skipped, a third of a typical step's work.
-      const last = history[history.length - 2], theta = step / last;
-      const contracted = dt !== Infinity && it >= 2 && step < 1e-6 && theta < 0.1 && (theta / (1 - theta)) * step < tol;
-      if (alpha === 1 && (step < tol || contracted)) {
-        if (unsolved()) return fail({ converged: false, iterations: it, history, error: 'a row left unsolved at a pivot that cancelled exactly' });
-        const done = { converged: true, iterations: it, history, residual: rmax };
-        if (islandsOff(it, done)) continue;
-        this.computeConcentrations();
-        return done;
-      }
-      // Converged as far as round-off allows: the updates are already tiny (below 1e-6 thermal
-      // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
-      // above tol: a strictly neutral material on a short step, where φ is fixed only through
-      // fluxes that the storage term dwarfs, rattles at ~1e-9 after converging quadratically.
-      // (Raising this floor lets a weakly held population drift: a MOS capacitor without a
-      // channel port then showed a DC leak through its oxide.)
-      const [p1, p2] = [history[history.length - 2], history[history.length - 3]], floor = 1e-6;
-      // Stalled near the solution (not shrinking quadratically), or growing undamped twice
-      // running: the factorised Jacobian may have lost a slow mode to cancellation, and
-      // round-off's floor would accept it wrong, or its noise keep Newton from the solution (a
-      // bipolar stack's floating base, its holes held ~1e14 more weakly than they move within
-      // it). Refine the solves from here.
-      if (refine) refined++;
-      else if (!noRefine && alpha === 1 && it >= 3 && step > 0.25 * p1 && (step < 1e-4 || (step > p1 && p1 > p2))) refine = true;
-      if (alpha === 1 && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
-        if (unsolved()) return fail({ converged: false, iterations: it, history, error: 'a row left unsolved at a pivot that cancelled exactly' });
-        const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
-        if (islandsOff(it, done)) continue;
-        this.computeConcentrations();
-        return done;
-      }
-    }
-    this.computeConcentrations();
-    return fail({ converged: false, iterations: maxIter, history });
-  }
-
-  // How far the terminal currents (as last assembled) are from adding up to zero, relative to the
-  // largest of them: Kirchhoff's law, which a steady state keeps.
-  _kirchhoff() {
-    let sum = 0, mx = 0;
-    for (const I of this.termI) {
-      sum += I;
-      mx = Math.max(mx, Math.abs(I));
-    }
-    return mx > 0 ? Math.abs(sum) / mx : 0;
-  }
-
-  // How many digits the last factorisation lost to cancellation, and where (the worst seen since
-  // the steady solve began). Only for diagnosing failures: a saturated species, for instance,
-  // can lose digits harmlessly.
-  _noteConditioning() {
-    let c;
-    try {
-      c = this.sys.cancellation();
-    } catch {
-      return;
-    }
-    if (!(c.digits > (this.conditioning?.digits ?? -1))) return;
-    const { grid } = this.model;
-    let x = NaN, where = '', nodes = [];
-    for (let g = 0; g < this.nNodes; g++) {
-      if (this.blockOfNode[g] !== c.block) continue;
-      x = grid.x[g];
-      where = this.model.regions[grid.nodeRegion[g]].name;
-      nodes = [g];
-    }
-    for (let f = 0; f < this.nFaces; f++) {
-      if (this.blockOfFace[f] !== c.block) continue;
-      x = grid.x[grid.regionEnd[f]];
-      where = `interfaces[${f}]`;
-      nodes = [grid.regionEnd[f], grid.regionEnd[f] + 1];
-    }
-    this.conditioning = { digits: c.digits, x, where, nodes };
+  // Newton's iteration on the equations at dt (src/newton.js).
+  newton(dt, opts) {
+    return newtonFn(this, dt, opts);
   }
 
   /**
@@ -2799,20 +2406,6 @@ export class Solver {
   // A time step, halved until it converges (src/timeSteps.js).
   advance(dt, opts, depth = 0) {
     return advanceFn(this, dt, opts, depth);
-  }
-
-  // u += scale·d in compensated arithmetic (Knuth two-sum, then renormalise hi/lo).
-  _addToState(d, scale) {
-    const { u, uLo, fullOf } = this;
-    for (let j = 0; j < fullOf.length; j++) {
-      const k = fullOf[j], a = u[k], b = scale * d[j];
-      const s = a + b, bb = s - a;
-      const err = a - (s - bb) + (b - bb);
-      const lo = uLo[k] + err;
-      const hi = s + lo;
-      u[k] = hi;
-      uLo[k] = lo - (hi - s);
-    }
   }
 
   // One time step (src/timeSteps.js).
@@ -4043,7 +3636,7 @@ export class Solver {
         }
         this._restore(snap);
       }
-      if (dt >= giant && this._maxPotentialStep(this._diff()) < tol) {
+      if (dt >= giant && maxPotentialStep(this, this._diff()) < tol) {
         converged = true;
         if (dt > giant) {
           // Finish at the base giant step, where the storage term pins amounts tightly.
