@@ -118,6 +118,16 @@ for live demos.
      fixed, 869 broken, those behind a resistance now failing at t = 0). Either start breaks
      Poisson's equation or the link: the fix is the skin's double layer solved consistently at
      t = 0 (the steady equations with every amount held), a consistent start proper.
+   - The time stepper's error control (a cold review of `src/timeSteps.js`): its estimate is
+     Milne's device as if past states were exact, and reads low through the integrator's own
+     (backward Euler by 1 + 1/(2ω), BDF2 by ~1.2), so accepted steps err up to ~1.3 tol. The
+     right scales (1/2; (h + hp)/(3h + 4hp + 2hpp)) were tried: backward Euler's at 1/2 stalls
+     runs whose state a start leaves off its algebraic equations (it's the low reading at short
+     steps that lets them through), and BDF2's alone moved two MOS tests' trajectories. Also from
+     the review: each call boundary costs a rejected step (a clamped last step carries a size
+     whose ratio refuses BDF2), the backward-Euler estimate just after a jump runs 170–430× its
+     true error, and the end-of-call snap (1e-10 of tEnd) is wider than round-off. The consistent
+     start would take the first of these with it.
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
      where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same

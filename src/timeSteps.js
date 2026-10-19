@@ -67,10 +67,14 @@
 //   3. BDF2's coefficients are those of variable-step BDF2 with ratio ω (exact for quadratics
 //      in t), applied to every stored quantity alike (c, coverages, gates, contacts' D, ports'
 //      charges), and only with ω ≤ 2 and a history entry of the previous step.
-//   4. The error estimate is the step's local truncation error to leading order: for BDF2,
-//      Milne's device, |u − pred|·Cc/(Cc + Cp) with Cc and Cp the corrector's and the
-//      predictor's error constants at these step sizes; for backward Euler against the linear
-//      predictor, h/(2h + h_prev). The controller's exponent is 1/(p + 1) for order p.
+//   4. The error estimate is Milne's device as if the predictor's past states were exact: for
+//      BDF2, |u − pred|·Cc/(Cc + Cp) (Cc, Cp the corrector's and predictor's error constants at
+//      these step sizes); for backward Euler, h/(2h + h_prev). Through the integrator's own
+//      states (which satisfy the method) the true local error is larger: 1 + 1/(2ω) times
+//      backward Euler's estimate, and (2/9)/(2/11) ≈ 1.2 times BDF2's at equal steps, so a step
+//      accepted at tol errs up to ~1.3 tol (a cold review, on an RC circuit). Known, and left so
+//      far: backward Euler's low reading at short steps is what lets the controller step through
+//      a state left off its algebraic equations (see ROADMAP). The exponent is 1/(p + 1).
 //   5. The history holds only accepted steps of the same trajectory: newest first, at most 3,
 //      cleared at a breakpoint, cut to the half step after a first step.
 //   6. errorNorm counts every potential that carries state (φ̂ where it's defined, every
@@ -89,7 +93,8 @@ function lagrange3(x, s0, s1, s2) {
 
 /**
  * Advance by dt, splitting the interval into halves (recursively) wherever Newton fails.
- * The end time is always t + dt; the result reports the substeps taken.
+ * Converged, the end time is t + dt; failed, wherever the halves that converged got to (the
+ * substeps counted are those of the last attempt's halves).
  */
 export function advance(s, dt, opts, depth = 0) {
   const r = s.step(dt, opts);
@@ -342,7 +347,9 @@ export function integrate(s, tEnd, opts = {}) {
     // (a bath's, after a voltage step) starts a profile self-similar in x/√t, so a first step
     // of any length errs alike, down to the grid's own diffusion time, below Newton's reach.
     // Three tries in a row, each within a factor 2 of the last, say so: the error is the
-    // jump's, not the step's. Take the step (backward Euler damps it as it should) and grow.
+    // jump's, not the step's. Take the step (backward Euler damps it as it should); the next is
+    // sized from its error as any other. (Counted within one call: under a frame's budget, a
+    // first step cut across calls isn't seen to stall.)
     if (half && err > tol) firstErrs.push(err);
     const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e > 0.5 * a[j - 1] && e < 2 * a[j - 1]));
     if (err > tol && !jump) {
@@ -413,7 +420,7 @@ function predict(s, pred, bdf) {
   const hp = e1.dt;
   if (bdf && e2) {
     const hpp = e2.dt;
-    // Lagrange through the three states before at the new time (offsets as in _extrapolate).
+    // Lagrange through the three states before at the new time (offsets as in extrapolate).
     const [l0, l1, l2] = lagrange3(0, -h, -(h + hp), -(h + hp + hpp));
     for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
     const w = h / hp;
