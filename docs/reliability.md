@@ -174,7 +174,7 @@ disagree (a port's voltage at 0 for −1.42 V, θ 0.05 for 0.015, a contact 24 m
 the fixes, device by device, so its results above stand. On 1.2.2 the whole sweep, 870 devices,
 gives the same: 605 agree, 117 transients fail, and 13 differ, each a capacitive contact beside a
 membrane capacitor where the transient loses K⁺. Since a face out of equilibrium in `c0` starts
-in it (unreleased), 607 agree and 115 fail, the same 13 differing.
+in it (1.2.3), 607 agree and 115 fail, the same 13 differing.
 
 ## Consistent: the derivatives
 

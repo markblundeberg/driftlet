@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.3 (2026-10-18)
 
 Two strictly neutral regions whose `c0` leaves the face between them out of equilibrium (a
 different fixed charge or immobile ion on each side) start with that face in equilibrium, as it
