@@ -508,8 +508,9 @@ which cost four assemblies per product.
   GMRES on $`J\delta = r`$, the factorised system as the preconditioner and $`J \cdot v`$ exact, each
   flux on its $`\eta`$ difference (see [exact J·v](#exact-jv)), as the impedance does. A lost mode
   takes GMRES a couple of iterations. The refined update is kept where GMRES converged and it
-  moves no level by a thermal unit or more; otherwise refining stops for the rest of the solve.
-  A MOS capacitor's gate step now reaches the low-frequency charge in ~70 steps (it took 80,000,
+  moves no level by a thermal unit or more; otherwise refining stops for the rest of the solve
+  (on a device marked as below, for two iterations, three times at most).
+  A MOS capacitor's gate step now reaches the low-frequency charge in ~30 steps (it took 80,000,
   and ended 1.5% off). Once refined, a solve stays refined: a GaAs junction without
   recombination, whose minority carriers reach it only from the contacts, passes ~1.5e-7 A/m²,
   which plain solves past the first refinement left to round-off (cold and warm solves 1e-3
@@ -541,9 +542,32 @@ which cost four assemblies per product.
   conductances, loses about $`\log_{10}(g/G)`$ and fails near 15. It's not reported for solves that
   converge, since digits can be lost harmlessly too (a saturated species whose $`\eta`$ nothing
   depends on).
-- The last iteration usually only confirms convergence (updates go like 4e-3, 7e-6, 3e-11).
-  Stopping one iteration early on a convergence-rate estimate would save a third of the work,
-  but leave ~1e-11 in $`\eta`$ per step, which shows up as conservation drift, so it isn't done.
+- The last iteration usually only confirms convergence (updates go like 1e-2, 1e-9, 1e-15). A
+  time step stops one iteration early where the convergence rate says the next update would be
+  under the tolerance: with $`\theta`$ the last update over the one before (under 0.1, the update
+  under 1e-6), $`\theta/(1-\theta)`$ of the update (Hairer and Wanner's estimate of the error
+  left) under 1e-10. That saves a third of a typical step's work. Steady solves don't, since
+  their acceptance is checked against the residual anyway.
+- **A mode the plain solves never see, in time steps.** Neither a plain update nor the residual
+  shows a lost mode. Newton accepted a MOS capacitor's gate step at updates of 1e-10 while the
+  inversion layer's level sat 2.4e-4 thermal units off, the residual 7e-15 there and at the
+  solution alike, and the gate's charge ended 3.4e-5 off the steady one (a cold review of
+  `src/newton.js` found it: a tight re-solve from each accepted state was the instrument). So a
+  refinement that corrects a time step's nearly converged plain update (under 1e-4) by more than
+  its own size and 1e-6, by a correction the next update keeps, marks the device: from then on
+  its time steps are refined throughout, converge only on a refined update, and don't stop
+  early on the rate. The gate step then ends 4e-10 off, in fewer factorisations (121 against
+  222; 2 steps rejected, not 5). A correction the next update undoes is $`J \cdot v`$'s own
+  round-off in a row of huge entries (one ulp's worth, $`2^{-13}`$ or $`2^{-19}`$ exactly, on
+  healthy devices), and marks nothing. A lost mode can also never stall Newton at all: a floating
+  gate at rest in inversion converged quadratically at every step while the extrapolated guess's
+  error in the layer's level grew, 8.5e-5 V by 1e5 s, and by 1e7 s took 63,000 steps. So a time
+  step's 1st, 2nd, 4th, 8th… and every 32nd convergence on a device not yet marked is probed
+  with one refined update at the accepted state; one over 1e-8 thermal units (about a dozen over
+  the suite, which the next update undid on healthy devices) sends Newton on, refining, and the
+  next update decides as above. The gate then stays within 1e-14 V, in 7 steps to 1e7 s. The
+  probes and the refining cost the suite 2.5% more assemblies and 1.3% more factorisations;
+  strictly neutral transients, marked, came out up to 1.7e-5 off and now 1.9e-6.
 - Tried and rejected for large jumps (the retry at 3 thermal units per iteration takes 30–50
   iterations for a 1.4 V jump on a pn diode): per-component logarithmic damping, as in
   SPICE junction limiting, and an adaptive limit that grows while updates shrink. Both

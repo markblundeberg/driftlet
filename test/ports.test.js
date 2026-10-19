@@ -283,7 +283,8 @@ test('MOS without a port: after a gate step, the inversion layer fills over minu
   const s = dev.advance(1e5);
   assert.ok(s.converged && s.done && s.steps < 1000, `${s.steps} steps`);
   const C = (s.interfaces.at(-1).D - D0) / 0.01;
-  assert.ok(Math.abs(C / low - 1) < 1e-3 && low / -Cox > 0.85, `${C / -Cox} vs ${low / -Cox} × C_ox`);
+  // (to 1e-6: time steps accepted on solves that lost the layer's level left it 3.4e-5 off)
+  assert.ok(Math.abs(C / low - 1) < 1e-6 && low / -Cox > 0.85, `${C / low - 1}: ${C / -Cox} vs ${low / -Cox} × C_ox`);
   assert.ok(Math.abs(s.current) < 1e-12, `still ${s.current} A/m² through the oxide`);
 });
 

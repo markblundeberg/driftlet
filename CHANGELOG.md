@@ -6,7 +6,20 @@ major version.
 ## Unreleased
 
 Newton's iteration moves to `src/newton.js`, with a contract at its head (every solve in the
-suite bit for bit as before).
+suite bit for bit as before). A cold review of it found:
+- Time steps accepted on solves that had lost a mode. Where the factorised solves can't see a
+  level (a MOS capacitor's inversion layer, its electrons reaching the back contact only by
+  minority diffusion), Newton took the plain updates' convergence for the step's, and neither
+  they nor the residual showed the level off: a gate step's charge ended 3.4e-5 off the steady
+  one (now 4e-10), and a floating gate at rest drifted 8.5e-5 V by 1e5 s and took 63,000 steps
+  to 1e7 s (now 1e-14 V, in 7). A device whose refined solves show such a mode is refined from
+  then on; a few scheduled probes look for one that never stalls Newton. Strictly neutral
+  transients, which have one too, come out closer (accepted steps up to 1.7e-5 thermal units
+  off, now 1.9e-6). The open roadmap item on that drift is closed.
+- The islands' second round ran at equilibrium on round-off currents (two iterations of six for
+  nothing), and on a solve that began with the islands' rows in, it ended with them marked out.
+- A steady solve failing its residual check recorded no conditioning for its message, and
+  blamed a perturbed pivot that wasn't there.
 
 ## 1.2.5 (2026-10-19)
 
