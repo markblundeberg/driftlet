@@ -76,9 +76,10 @@
 // over a reaction with a neutral level-held participant. Each the first step absorbs.
 // Tests: every test (each device starts here); test/transient.test.js on what a start must be.
 
+import { gateRate } from './boundaries.js';
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
-import { gateRate, profileAt, SolverError } from './solver.js';
+import { profileAt, SolverError } from './solver.js';
 
 /**
  * Cold start. Each species takes its region's c0 where one is given (for a spectator, it fixes
