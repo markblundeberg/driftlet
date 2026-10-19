@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.4 (2026-10-19)
 
 The time stepper moves to `src/timeSteps.js`, with a contract of its own (every solve in the suite
 bit for bit as before). A cold review of it against that contract found:

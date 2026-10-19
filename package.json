@@ -1,6 +1,6 @@
 {
   "name": "driftlet",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Dependency-free 1D drift–diffusion–reaction (Poisson–Nernst–Planck) solver for semiconductors, electrochemistry and nerves, fast enough for live web demos",
   "type": "module",
   "exports": {
