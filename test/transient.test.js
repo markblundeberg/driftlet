@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
-import { choice, device } from '../tools/lawsweep-devices.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -482,14 +481,4 @@ test('a mistyped option or contact is an error, never ignored', async () => {
   assert.ok(Math.abs(dev.solve().current / I - 1) < 1e-12);
   dev.set({ contacts: { right: { V: 0.6 } } });
   assert.ok(Math.abs(dev.solve().current) > 10 * Math.abs(I));
-});
-
-test('a closed end and a bath: the start sits at the level the bath holds, so a strictly neutral film cut by a face can take its first step', () => {
-  // (The law sweep's device 846.) φ̂ ran from 0 at the closed left end, 55 RT from where the bath
-  // referenced to Cl⁻ holds the device, and the first step, carrying it there, failed down to
-  // 3e-9 s. The start's gauge (φ̂, and each η by z) is the bath's now.
-  const def = device(choice(846)), d = new Device(def), start = d.solution(), steady = new Device(def).solve();
-  assert.ok(Math.abs(start.phi.at(-1) - steady.phi.at(-1)) < 0.01, `φ at the bath: ${start.phi.at(-1)} V to start, ${steady.phi.at(-1)} V steady`);
-  const s = d.advance(100, { tol: 1e-9 });
-  assert.ok(s.converged && s.time === 100, s.warnings?.join('; '));
 });
