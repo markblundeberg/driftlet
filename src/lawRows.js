@@ -349,6 +349,8 @@ function lawAmount(s, cs) {
       cs.w[len++] = -f * cap * s.VT;
     });
   }
+  // (A typed array drops writes past its end without a word: the law's derivative would lose them.)
+  if (len > cs.idx.length) throw new Error(`internal: a law's derivative needs ${len} entries, its workspace holds ${cs.idx.length}`);
   cs.len = len;
   return { amount, reference, dV, gross }; // (dV by terminal)
 }

@@ -91,6 +91,7 @@ test('a capacitive contact at no current that passes an ion: the ion and the con
   const d = new Device(def), s = d.solve(), late = new Device(def).advance(1e3, { tol: 1e-9 });
   assert.ok(s.converged);
   near(kept(d, s, D), start, 1e-9, 'n_K + D/F');
+  near(kept(d, late, D), start, 1e-9, 'n_K + D/F, the transient'); // (its long steps read the contact's current by its flux)
   near(s.terminals.left.V, late.terminals.left.V, 1e-6, 'V');
 });
 

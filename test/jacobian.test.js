@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, units } from '../src/index.js';
+import { Device, FARADAY, units } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor } from '../src/kit.js';
+import { choice, device } from '../tools/lawsweep-devices.js';
 
 // The Newton system against finite differences of its own residual: every row the solver writes
 // (the kernels', the laws' in place of the rows they take, the pins held aside, the floating
@@ -119,17 +120,24 @@ function differences(s, dt) {
   return bad;
 }
 
-// Run `go` on the device, checking the system at the nth assembly `when` picks.
-function checkInside(def, go, when, nth = 2) {
+// Run `go` on the device, checking the system at the nth assembly `when` picks (with the islands'
+// rows in, where `islands`: Newton puts them in only once the plain solves converge).
+function checkInside(def, go, when, { nth = 2, islands = false } = {}) {
   const d = new Device(def), s = d.solver, assemble = s.assemble;
   let seen = 0, bad = null, busy = false;
   s.assemble = function (dt) {
     assemble.call(this, dt);
-    if (busy || bad || !when(this, dt) || ++seen < nth) return;
+    if (busy || bad || this.lin || !when(this, dt) || ++seen < nth) return; // (not _refine's, its terms held aside in s.lin)
     busy = true;
+    const on = this.islandsOn;
+    if (islands) this.islandsOn = true;
     try {
       bad = differences(this, dt);
+      if (islands) bad.islands = this.pinnedIslands.length;
+      bad.byChange = [...this.lawForm.values()].filter(Boolean).length;
     } finally {
+      this.islandsOn = on;
+      assemble.call(this, dt);
       busy = false;
     }
   };
@@ -231,3 +239,41 @@ for (const [name, def] of Object.entries(devices)) {
     assert.deepEqual(step.slice(0, 5), [], 'a time step');
   });
 }
+
+// Devices of the law sweep (tools/lawsweep-devices.js) with what the ones above lack: a law with
+// an electrode's surface or its capacitance read by a time step, two floating electrodes. Checked
+// at a short step, and at a long one (100 s, from a state 10 ms on), where a circuit law reads its
+// current by its amount's change. (Not where two ions are within a nudge of each other at a
+// strictly neutral node: a step's charge rows pivot on the larger, and a central difference
+// across the swap sees half of each.)
+for (const idx of [426, 156, 66]) {
+  test(`the Newton system's derivatives are its residual's: law-sweep device ${idx}, steady, and at short and long steps`, () => {
+    const def = () => device(choice(idx));
+    const steady = checkInside(def(), (d) => d.solve(), steadyAt);
+    assert.deepEqual(steady.slice(0, 5), [], 'steady');
+    const short = checkInside(def(), (d) => d.advance(1e-3, { tol: 1e-6 }), (s, dt) => Number.isFinite(dt));
+    assert.deepEqual(short.slice(0, 5), [], 'a short step');
+    const long = checkInside(def(), (d) => (d.advance(1e-2, { tol: 1e-6 }), d.solver.step(100)), (s, dt) => dt === 100, { nth: 1 });
+    assert.ok(long?.byChange > 0, 'no circuit law read by its change at the long step');
+    assert.deepEqual(long.slice(0, 5), [], 'a long step');
+  });
+}
+
+// The islands' summed balances (src/lawRows.js, applyIslands), which Newton puts in only once the
+// plain solves converge, and only where the currents don't add up: a charged pore between two
+// baths, in four pieces between its faces, with them in.
+test("the Newton system's derivatives are its residual's: a charged pore's islands", () => {
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 78.5 });
+  lib.materials.pore = { epsr: 78.5, species: Object.fromEntries(['K+', 'Cl-'].map((x) => [x, { D: 2e-10, mu0: lib.materials.water.species[x].mu0 }])) };
+  const salt = (c) => ({ 'K+': c, 'Cl-': c }), wall = { fixedCharge: -100 * FARADAY };
+  for (const V of [{ I: 0 }, 1e-2]) {
+    const def = build({
+      library: [lib],
+      stack: [bath(salt(100), 'Cl-'), layer('water', 10e-9), { dipole: 0 }, layer('pore', 10e-9, wall), layer('pore', 10e-9, wall), { dipole: 0 }, layer('water', 10e-9), bath(salt(10), 'Cl-', V)],
+      grid: { hmin: 0.2e-9, hmax: 2e-9, ratio: 1.3 },
+    });
+    const steady = checkInside(def, (d) => d.solve(), steadyAt, { islands: true });
+    assert.ok(steady?.islands > 0, 'no island rows in');
+    assert.deepEqual(steady.slice(0, 5), [], `steady at ${JSON.stringify(V)}`);
+  }
+});
