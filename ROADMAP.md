@@ -108,9 +108,10 @@ for live demos.
      updates across a face, fails); and where c0 leaves a face out of equilibrium (S⁺ 1 and 0.1
      either side, so c_Na·c_Cl differs), a first step from the right gauge meets an exactly
      singular pivot (device 843). Starting at the bath's gauge fixed the first and broke the
-     second, so it was reverted. Both are a start that breaks the algebraic constraints (neutrality,
-     equilibrium links), which a DAE solver would meet with a consistent initialisation before
-     the first step; that's the likely shape of the fix.
+     second, so it was reverted. The face start (the two nodes at such a face start in its
+     equilibrium, each ion's amount kept) fixes both, the gauge offset being a bystander: 32 of
+     the 60 fail now, every one with the capacitive contact on its polar skin, where starting at
+     the bath's gauge made it worse (36), so that's a mechanism still to find.
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
      where its surface balances (Argon's law8): steady solve and transient both fail, loudly.
    - Floating conductors in $`\eta`$ form. A floating metal is fixed by the mixed form, but the same

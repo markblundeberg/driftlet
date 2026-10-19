@@ -110,6 +110,11 @@ regions: [
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's
   material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero.
+  Where two strictly neutral regions meet at a face that holds ions in equilibrium and their
+  `c0` leaves it out of equilibrium (a different fixed charge or immobile ion on each side), the
+  two nodes at the face start in it, as the face reaches it at $`t = 0^+`$: the ions it passes
+  shared between them so their $`\bar\mu`$ is equal across it and each side neutral, each
+  one's amount over the two nodes kept, everything else as `c0` has it.
   An entry can instead be a profile, `{ x: [...], values: [...] }`, against the device's x (m, not
   the region's own), piecewise linear between its points and constant beyond its ends, so a
   transient can start from a state it didn't simulate reaching: a packet already injected, a

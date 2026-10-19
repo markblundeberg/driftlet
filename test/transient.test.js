@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
+import { choice, device } from '../tools/lawsweep-devices.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
@@ -481,4 +482,19 @@ test('a mistyped option or contact is an error, never ignored', async () => {
   assert.ok(Math.abs(dev.solve().current / I - 1) < 1e-12);
   dev.set({ contacts: { right: { V: 0.6 } } });
   assert.ok(Math.abs(dev.solve().current) > 10 * Math.abs(I));
+});
+
+test('two strictly neutral regions out of equilibrium at their face: it reaches it at t = 0⁺, each ion\'s amount kept, and the transient runs', () => {
+  // (The law sweep's device 843: an immobile S⁺ at 1 and 0.1 mol/m³ either side, so c0's
+  // c_Na·c_Cl differs across a face that holds both in equilibrium.) The first step, made to
+  // take that jump, met an exactly singular pivot.
+  const def = device(choice(843)), d = new Device(def), s0 = d.solution(), v = d.model.grid.vol;
+  const gL = d.model.grid.regionEnd[0], gR = gL + 1, total = (name, c) => c.reduce((t, x, g) => t + v[g] * x, 0);
+  const given = (name) => def.regions.reduce((t, reg, r) => t + (reg.c0[name] ?? 0) * d.model.grid.vol.slice(d.model.grid.regionStart[r], d.model.grid.regionEnd[r] + 1).reduce((a, b) => a + b, 0), 0);
+  for (const name of ['Na+', 'K+', 'Cl-', 'S+']) assert.ok(Math.abs(total(name, s0.c[name]) / given(name) - 1) < 1e-12, `${name}: ${total(name, s0.c[name])} for ${given(name)}`);
+  const level = (name, g) => s0.mu[name][g];
+  for (const name of ['Na+', 'K+', 'Cl-']) assert.ok(Math.abs(level(name, gL) - level(name, gR)) < 1e-6 * 8.314 * 298, `${name}'s μ̄ across the face`);
+  assert.equal(s0.c['S+'][gL], 1);
+  const s = d.advance(100, { tol: 1e-9 });
+  assert.ok(s.converged && s.time === 100, s.warnings?.join('; '));
 });

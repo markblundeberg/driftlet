@@ -1152,6 +1152,53 @@ export class Solver {
         }
       }
     }
+    // Two strictly neutral regions meeting at a face whose links hold ions in equilibrium: where
+    // c0 leaves the two sides out of it (a different fixed charge or immobile ion on each, so
+    // c₊c₋ differs across it), the face reaches it at t = 0⁺, before anything diffuses, and a
+    // first step made to take that jump met an exactly singular pivot. Start there: the ions the
+    // face passes shared between its two nodes in equilibrium (μ̄ equal across it), each one's
+    // amount over the two nodes kept, everything else as c0 has it. The one unknown is the jump
+    // in φ̂ across it (a Donnan potential), set by neutrality on one side; the other's follows,
+    // the two nodes' charge summing to what it was, zero.
+    for (let f = 0; f < interfaces.length; f++) {
+      const itf = interfaces[f], mL = materials[regions[f].material], mR = materials[regions[f + 1].material];
+      const strict = (m) => m.epsr === 0 && !m.conductor && !m.phiFree && m.ideal;
+      if (itf.phi.type !== 'neutral' || !strict(mL) || !strict(mR)) continue;
+      const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1], bL = this.blockOfNode[gL] * M, bR = this.blockOfNode[gR] * M;
+      const pass = [];
+      for (let i = 0; i < n; i++) if (itf.links[i].type === 'equilibrium' && mL.present[i] && mR.present[i]) pass.push(i);
+      if (!pass.some((i) => z[i] !== 0)) continue;
+      const RT = model.RT, vL = grid.vol[gL], vR = grid.vol[gR];
+      const conc = (m, b, i) => m.cRef[i] * Math.exp(u[b + 1 + i] - m.mu0[i] / RT - z[i] * u[b]);
+      const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
+      let qOther = regions[f].fixedCharge / FARADAY; // (the left node's charge from all it doesn't share)
+      for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
+      // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
+      const split = (D) =>
+        pass.map((i, j) => {
+          const K = (mL.cRef[i] / mR.cRef[i]) * Math.exp((mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D), cR = amount[j] / (vL * K + vR);
+          return [K * cR, cR];
+        });
+      const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther); // (increasing in D)
+      const D0 = u[bR] - u[bL];
+      let lo = D0 - 1, hi = D0 + 1;
+      while (qL(lo) > 0 && lo > D0 - 1e3) lo -= 2 * (hi - lo);
+      while (qL(hi) < 0 && hi < D0 + 1e3) hi += 2 * (hi - lo);
+      if (!(qL(lo) <= 0 && qL(hi) >= 0)) continue; // (nothing the face shares can balance it: leave c0)
+      for (let it = 0; it < 200 && hi - lo > 1e-13 * Math.max(1, Math.abs(D0)); it++) {
+        const m = 0.5 * (lo + hi);
+        if (qL(m) < 0) lo = m;
+        else hi = m;
+      }
+      const D = 0.5 * (lo + hi), cs = split(D);
+      const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
+      u[bR] = u[bL] + D;
+      for (let i = 0; i < n; i++) if (mR.present[i] && !pass.includes(i)) u[bR + 1 + i] = Math.log(keep[i] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
+      pass.forEach((i, j) => {
+        u[bL + 1 + i] = Math.log(cs[j][0] / mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
+        u[bR + 1 + i] = Math.log(cs[j][1] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
+      });
+    }
     // An insertion host's φ is a gauge: c0 sets only its neutral combination's level, not how that
     // splits between its ion and its electrons. Start its ion level with the same ion's beside it
     // across a face (the equilibrium a link or a transfer reaction heads for), so its electrons,

@@ -3,6 +3,19 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+Two strictly neutral regions whose `c0` leaves the face between them out of equilibrium (a
+different fixed charge or immobile ion on each side) start with that face in equilibrium, as it
+reaches it at t = 0⁺: its two nodes share the ions it passes, each one's amount kept. The first
+step, made to take that jump, had met an exactly singular pivot, and the transient failed at
+t = 0 (two of the law sweep's devices).
+
+The Jacobian test now covers islands, long steps that read a law by its change, and electrodes'
+surfaces and capacitances in time steps; tools for checking the core: `npm run fingerprint`
+(every solve's state, before and after a refactor) and `tools/check-hook.js` (the laws' cheap
+invariants, in any run).
+
 ## 1.2.2 (2026-10-18)
 
 The steady system's conservation laws now live in `src/laws.js`, found from the device's structure
