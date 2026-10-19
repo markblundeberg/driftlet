@@ -1152,6 +1152,28 @@ export class Solver {
         }
       }
     }
+    // Nothing on the left holding φ or a charged species' level (a closed end), φ̂ runs from 0, which
+    // can sit far from the level the right contact holds (a bath referenced to Cl⁻: 55 RT away).
+    // A first step then carried the whole device there by damped updates, and where a face cut a
+    // strictly neutral film it failed from 1e-10 s on. Start at that level instead: the gauge, φ̂
+    // and each η shifted by z·Δ, which no concentration sees.
+    const holds = (side) => {
+      const ct = model.contacts[side];
+      return ct.phi.type === 'pinned' || ct.phi.type === 'capacitive' || ct.species.some((l, i) => z[i] !== 0 && l.type !== 'blocked');
+    };
+    if (!holds('left') && holds('right')) {
+      const ct = model.contacts.right, gR = grid.nNodes - 1, bR = this.blockOfNode[gR];
+      const by = (i) => i !== null && i >= 0 && z[i] !== 0 && this.present[gR * n + i] && Number.isFinite(this.contactEta('right', i));
+      const i = by(ct.terminal) ? ct.terminal : z.findIndex((_, j) => by(j));
+      const d = i >= 0 ? (this.contactEta('right', i) - u[bR * M + 1 + i]) / z[i] : 0;
+      if (Number.isFinite(d) && d !== 0) {
+        for (let g = 0; g < grid.nNodes; g++) {
+          const b = this.blockOfNode[g];
+          if (this.nodeConductor[g] < 0) u[b * M] += d;
+          for (let j = 0; j < n; j++) if (this.present[g * n + j]) u[b * M + 1 + j] += z[j] * d;
+        }
+      }
+    }
     // An insertion host's φ is a gauge: c0 sets only its neutral combination's level, not how that
     // splits between its ion and its electrons. Start its ion level with the same ion's beside it
     // across a face (the equilibrium a link or a transfer reaction heads for), so its electrons,
