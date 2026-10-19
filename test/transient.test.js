@@ -531,3 +531,17 @@ test('a breakpoint just past the time asked for: advance stops at that time, not
     assert.ok(s.converged && s.time === t, `advance(${t}) ended at ${s.time}`);
   }
 });
+
+test('a capacitive contact that starts uncharged far from the equilibrium of the ion it passes: the transient fails, saying why and what to do', () => {
+  // (The law sweep's device 841: a contact at I = 0 with a double layer and a K⁺ link whose
+  // outside level suits the charged steady state, 1.47 V from where the uncharged start is.) The
+  // link closes the gap within ~1e-13 s, below any step. Asked for, that's right to fail on; the
+  // message says how to start in equilibrium instead, and that works.
+  const def = device(choice(841)), s = new Device(def).advance(1e3, { tol: 1e-9 });
+  assert.ok(!s.converged);
+  assert.match(s.warnings.join(' '), /contact left's K\+ link is 1\.\d\d V from equilibrium.*solve\(\) first/);
+  const d = new Device(def);
+  assert.ok(d.solve().converged);
+  const late = d.advance(1e3, { tol: 1e-9 });
+  assert.ok(late.converged && late.time === 1e3);
+});

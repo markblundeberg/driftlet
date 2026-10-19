@@ -14,6 +14,10 @@ bit for bit as before). A cold review of it against that contract found:
   0.7000000000000001) took `advance(0.7)` to it, and the next frame's `advance(0.7)` said it did
   nothing. It stops at the time asked for.
 
+A transient whose floating double layer starts uncharged far from the equilibrium of the ion link
+beside it (0.1 V or more), and fails for it, says so, and how to start in equilibrium instead:
+`solve()` first, then change what the experiment changes, then `advance()`.
+
 ## 1.2.3 (2026-10-18)
 
 Two strictly neutral regions whose `c0` leaves the face between them out of equilibrium (a

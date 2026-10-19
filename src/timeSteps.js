@@ -270,6 +270,11 @@ export function integrate(s, tEnd, opts = {}) {
     return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace, ...(relative ? { stopped: `advance(${tEnd}) did nothing: ${absolute}. To run for a further dt, advance(sol.time + dt)` } : {}) };
   }
   const t0 = s.time;
+  // A cold start whose floating double layers start uncharged far from the equilibrium of an ion
+  // link beside them (a capacitive contact or port passing K⁺, its outside level set for the
+  // charged steady state): the link closes the gap in the first instant, which can be far below
+  // any step's reach. Noted here, for a failure to say what to do instead.
+  const violent = s.history.length === 0 && !s.stepped ? violentStart(s) : [];
   let dt = s.dtNext ?? opts.dt0 ?? (tEnd - s.time) * 1e-4;
   if (!(dt > 0)) dt = (tEnd - s.time) * 1e-4;
   // The shortest step worth trying: round-off relative to the time, or the device's fastest
@@ -385,7 +390,9 @@ export function integrate(s, tEnd, opts = {}) {
   // (What usually does it, most likely first. Round 11's agents read the old list, which led
   // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
   // an electrode at open circuit with no double layer, held only by a slow reaction.)
-  if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
+  if (failed && violent.length > 0)
+    stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and its link closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(); or set the link's offset so that it starts there.`;
+  else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
 }
@@ -450,4 +457,31 @@ function errorNorm(s, ref) {
   }
   for (const { o } of s.gateList) mx = Math.max(mx, Math.abs(u[o] - ref[o])); // (a fraction: 1e-3 of m³ is 0.3% of P)
   return mx;
+}
+
+// The floating double layers a cold start leaves far (0.1 V or more) from the equilibrium of an
+// ion link beside them: a contact with a capacitive φ, or a port with a capacitance, at I = 0
+// or behind a resistance, whose link holds a charged species at an outside level V + offset.
+// Each as words for a message.
+function violentStart(s) {
+  const out = [], { M, n, z, VT, model } = s;
+  const check = (what, k, links, g) => {
+    for (let i = 0; i < n; i++) {
+      const l = links[i];
+      if (z[i] === 0 || !['conductance', 'equilibrium'].includes(l.type) || !s.present[g * n + i]) continue;
+      const gap = (VT * s.u[s.blockOfNode[g] * M + 1 + i]) / z[i] - (s.termV[k] + (l.offset ?? 0));
+      if (Math.abs(gap) >= 0.1) out.push(`${what}'s ${model.species[i].name} link is ${Math.abs(gap).toFixed(2)} V from equilibrium`);
+    }
+  };
+  for (const k of s.floating) {
+    const t = s.terms[k];
+    if (t.kind === 'contact') {
+      const ct = model.contacts[t.side];
+      if (ct.phi.type === 'capacitive') check(`contact ${t.side}`, k, ct.species, t.side === 'left' ? 0 : s.nNodes - 1);
+    } else {
+      const port = model.ports[t.index];
+      if (port.capacitance) check(`port ${port.name}`, k, port.species, port.nodes[0]);
+    }
+  }
+  return out;
 }
