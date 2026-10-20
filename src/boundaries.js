@@ -8,8 +8,9 @@
 // conventions) and its bookkeeping, after the regions' terms (src/regions.js), whose
 // concentrations and derivatives (_dlnc, _Kz) they use. Units: a face's slots are per area (its
 // flux N_i toward +x, its D, its reactions' rates), and enter the edge nodes' rows times the
-// face's area Af; a port's terms are per volume of its window (times vol), its reactions' per
-// area of electrode (times the electrode's area per volume at each node, portArea); a contact's
+// face's area Af; a port's terms are per volume of its window (times vol·fill, the part of each
+// node's box inside the window: port.fill, src/device.js), its reactions' per area of electrode
+// (times vol and the electrode's area per volume of each node's box, portArea, fill in it); a contact's
 // links are per area, times the area at the end node. V_T = RT/F; a terminal's voltage V (termV)
 // is the outside's level per charge.
 //
@@ -38,9 +39,10 @@
 // its held levels, then each port's held levels; the left contact, the right; each floating
 // terminal's circuit row.
 //   port k (terminal 2 + k, _port), at each node of its window: an equilibrium link holds η at
-//     the port's level (portEta), replacing the balance row, whose residual just before is the
-//     flux it passes (not at a device end node whose contact links that species); conductance
-//     and exchange links supply vol·k(η_out − η), k = G V_T/(z² F) or the link's k (gated as at
+//     the port's level (portEta) at the nodes inside the window (port.inside), replacing the
+//     balance row, whose residual just before is the flux it passes (not at a device end node
+//     whose contact links that species); conductance
+//     and exchange links supply vol·fill·k(η_out − η), k = G V_T/(z² F) or the link's k (gated as at
 //     a face); reactions (_portReaction) as at a face against the electrode's carrier at the
 //     port's level, explicit (no unknown), −vol·area·ν·rate into the region's species' rows,
 //     −ν·rate into a surface species' (its rows are per area of electrode); a capacitance (_portCapacitance), σ =
@@ -439,10 +441,11 @@ export class BoundaryTerms {
       const link = port.species[i];
       if (link.type === 'blocked' || (link.type === 'equilibrium') !== holds) continue;
       const r = 1 + i, target = this.portEta(port, i), zF = z[i] * F;
-      for (const g of port.nodes) {
-        const b = this.blockOfNode[g], o = b * M + r, v = vol[g];
+      for (let w = 0; w < port.nodes.length; w++) {
+        const g = port.nodes[w], b = this.blockOfNode[g], o = b * M + r, v = vol[g] * port.fill[w];
         const deta = target - u[o] - uLo[o]; // (μ̄_out − μ̄)/RT
         if (link.type === 'equilibrium') {
+          if (!port.inside[w]) continue; // (a held level holds the nodes inside the window)
           // a device end node's level is its contact's business, where the contact links it
           if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
           flux[i] += res[R[o]];

@@ -12,6 +12,13 @@ major version.
   place of diag(c), still current-free and exactly zero at equilibrium; second order on the
   grid between crowded nodes, and unchanged (exact) where statistics are ideal. Its Jacobian
   needs K's slope, taken by central differences of the statistics model.
+- A port's window holds exactly `to − from` of exchange, electrode and capacitance on any grid:
+  each node whose box reaches into it takes the part of its box inside. Each node inside took its
+  whole box before, a half cell past each end (25% too much for a 0.2 µm window on 0.05 µm cells;
+  up to 27% in the tests; a cold review of `src/boundaries.js`). Windows covering a whole region
+  are unchanged. A window between two nodes is now allowed (it was refused), except for a held
+  level, which holds the nodes inside.
+
 ## 1.2.7 (2026-10-19)
 
 The equations' assembly moves out of `src/solver.js` into `src/assemble.js` (the rows'

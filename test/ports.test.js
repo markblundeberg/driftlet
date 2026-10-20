@@ -61,6 +61,35 @@ test('a held port level: a neutral species pinned in a window, fed by diffusion 
   assert.ok(Math.abs(sol.ports[0].flux.X / -N - 1) < 1e-9, 'the port absorbs what enters');
 });
 
+test('a window holds to − from of exchange and electrode, however the grid falls', () => {
+  // Fast diffusion keeps X level with the left contact, so the port passes k·(to − from)·Δη. Each
+  // node whose box reaches into the window takes the part inside; before 1.2.8 each node inside
+  // took its whole box, a half cell past each end (up to 27% here; a cold review of
+  // src/boundaries.js). A whole region's window was right already, its end boxes half cells.
+  const Lx = 1e-6, k = 1, dEta = 0.01;
+  for (const [from, to] of [[0.3e-6, 0.5e-6], [0.31e-6, 0.49e-6], [0.33e-6, 0.37e-6], [0, 0.2e-6], [0, Lx]]) {
+    for (const h of [0.05e-6, 0.03e-6, 0.011e-6]) {
+      const tag = `[${from}, ${to}] on ${h}`;
+      const dev = new Device({
+        species: [{ name: 'X', z: 0, cRef: 1000 }],
+        materials: { m: { epsr: 10, species: { X: { D: 1, mu0: 0 } } } },
+        regions: [{ name: 'm', material: 'm', length: Lx }],
+        contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { phi: 'neutral' } },
+        ports: [{ region: 'm', from, to, V: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: 0 }, species: { X: { type: 'exchange', k, mu: RT * dEta } } }],
+        grid: { hmin: h, hmax: h },
+      });
+      const sol = dev.solve();
+      assert.ok(sol.converged, tag);
+      assert.ok(Math.abs(sol.ports[0].flux.X / (k * (to - from) * dEta) - 1) < 1e-9, `${tag}: ${sol.ports[0].flux.X}`);
+      // and the electrode: Σ vol·area over the window, area·(to − from)
+      const s = dev.solver, port = s.model.ports[0];
+      let A = 0;
+      port.nodes.forEach((g, w) => (A += s.model.grid.vol[g] * s.portArea[0][w]));
+      assert.ok(Math.abs(A / (1e6 * (to - from)) - 1) < 1e-12, `${tag}: area ${A}`);
+    }
+  }
+});
+
 // An electrode spread through a window: a port with reactions, its carrier at the port's level.
 // In linear response each node's reaction is a conductance to the port, so the single-ion bar
 // with lithium plating along it is the transmission line above, G = F² a k₀ (c/c_ref)^(1−α)/RT.
@@ -368,8 +397,11 @@ test('ports are checked', () => {
   assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /region's name or index/.test(e.message));
   def.ports[0].region = 0;
   def.ports[0].from = 2.5e-6;
-  def.ports[0].to = 2.6e-6; // between nodes (1 µm cells)
-  assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /holds no grid node/.test(e.message));
+  def.ports[0].to = 2.6e-6; // between nodes (1 µm cells): a tenth of the box there
+  assert.ok(Math.abs(new Device(def).solver.model.ports[0].fill[0] - 0.1) < 1e-12);
+  def.ports[0].species['Li+'] = { type: 'equilibrium' }; // but a held level has no node to hold
+  assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /holds no grid node for its held level/.test(e.message));
+  def.ports[0].species['Li+'] = { type: 'conductance', G: 1 };
   // An electrode port: its reactions need its carrier and its area per volume.
   const el = line(1e6, 10).def;
   el.species.push({ name: 'e-', z: -1 });

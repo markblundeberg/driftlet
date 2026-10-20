@@ -330,7 +330,10 @@ export function initFromComposition(s) {
   // splits between its ion and its electrons. Start its ion level with the same ion's beside it
   // across a face (the equilibrium a link or a transfer reaction heads for), so its electrons,
   // and a floating contact on them, start where the cell's open-circuit voltage puts them, not
-  // volts away. (A shift of φ̂ and each η by z·Δ: the concentrations don't change.)
+  // volts away. (A shift of φ̂ and each η by z·Δ: the concentrations don't change.) Not through
+  // a metal collector between the host and the contact: the contact then starts at 0 V, and the
+  // first step or the steady solve brings it to the open circuit (a cold review's p9: 4.09 V
+  // either way, in the same 14 steps).
   regions.forEach((reg, r) => {
     const mat = materials[reg.material];
     if (!mat.phiFree || mat.conductor) return; // (a metal is φ-free too, but no host: its level is its contact's or its faces')
@@ -400,7 +403,7 @@ export function initFromComposition(s) {
     if (!port || port.reactions.length > 0 || port.capacitance || !link || link.type === 'blocked' || z[i] === 0) continue;
     let w = 0, sum = 0;
     port.nodes.forEach((g, j) => {
-      const a = s.model.grid.vol[g] * (s.portArea[t.index]?.[j] ?? 1); // (a window with no area: by volume)
+      const a = s.model.grid.vol[g] * (s.portArea[t.index]?.[j] ?? port.fill[j]); // (a window with no area: by volume)
       w += a;
       sum += (a * s.VT * u[s.blockOfNode[g] * M + 1 + i]) / z[i];
     });

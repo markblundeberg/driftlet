@@ -441,10 +441,12 @@ export class Solver {
       nu: Float64Array.from([...rx.reactants.map((p) => p.nu), ...rx.products.map((p) => -p.nu)]),
     }));
 
-    // Each reacting port's electrode area per volume at its window's nodes (a profile's mean over
-    // each node's box, as for a rate constant), and its reactions' rates there, mol/(m²·s).
+    // Each reacting port's electrode area per volume at its window's nodes: a profile's mean over
+    // each node's box, as for a rate constant, with no electrode outside the window (the profile's
+    // mean over the part inside, times that part's share of the box, port.fill). And its
+    // reactions' rates there, mol/(m²·s).
     this.portArea = model.ports.map((port) =>
-      port.area === null ? null : Float64Array.from(port.nodes, (g) => port.area.value ?? profileMean(port.area, gx[g] - (g > 0 ? segLength[g - 1] : 0) / 2, gx[g] + (g < segLength.length ? segLength[g] : 0) / 2)),
+      port.area === null ? null : Float64Array.from(port.nodes, (g, w) => (port.area.value ?? profileMean(port.area, port.lo[w], port.hi[w])) * port.fill[w]),
     );
     this.portRates = model.ports.map((port) => port.reactions.map(() => new Float64Array(port.nodes.length)));
 
@@ -474,7 +476,7 @@ export class Solver {
     this.closedEnd = { left: closed('left'), right: closed('right') };
     held[0] = this.closedEnd.left ? 0 : 1;
     held[nNodes - 1] = this.closedEnd.right ? 0 : 1;
-    for (const port of model.ports) if (port.species.some((l) => l.type === 'equilibrium')) for (const g of port.nodes) held[g] = 1;
+    for (const port of model.ports) if (port.species.some((l) => l.type === 'equilibrium')) port.nodes.forEach((g, w) => port.inside[w] && (held[g] = 1));
     this.chargeNode = new Uint8Array(nNodes);
     const neutralFace = (f) => (f === -1 ? this.closedEnd.left : f === model.interfaces.length ? this.closedEnd.right : model.interfaces[f].phi.type === 'neutral');
     regions.forEach((reg, r) => {
@@ -504,7 +506,8 @@ export class Solver {
     this.portHeldEnd = new Uint8Array(2 * n);
     model.ports.forEach((port) => {
       [0, nNodes - 1].forEach((g, k) => {
-        if (!port.nodes.includes(g)) return;
+        const w = port.nodes.indexOf(g);
+        if (w < 0 || !port.inside[w]) return;
         const ct = contacts[k === 0 ? 'left' : 'right'];
         for (let i = 0; i < n; i++) if (port.species[i].type === 'equilibrium' && ct.species[i].type === 'blocked') this.portHeldEnd[k * n + i] = 1;
       });

@@ -16,6 +16,14 @@ import { bernoulli } from '../src/bernoulli.js';
 
 const RT = GAS_CONSTANT * 298.15;
 
+
+// The part of node g's box inside a port's window (a planar region): what the port reaches there.
+function share(grid, port, g) {
+  const r0 = grid.regionStart[port.region], r1 = grid.regionEnd[port.region], x0 = grid.x[r0];
+  const lo = g > r0 ? grid.x[g] - grid.segLength[g - 1] / 2 : grid.x[g], hi = g < r1 ? grid.x[g] + grid.segLength[g] / 2 : grid.x[g];
+  return (Math.min(hi, x0 + port.to) - Math.max(lo, x0 + port.from)) / (hi - lo);
+}
+
 function freeEnergyBalance(dev, sol) {
   const { model } = dev, { grid, species } = model, n = species.length;
   const mu = species.map((sp) => sol.mu[sp.name]);
@@ -101,7 +109,7 @@ function freeEnergyBalance(dev, sol) {
       const muOut = outside(link, V, i);
       for (const g of port.nodes) {
         const k = link.type === 'conductance' ? (link.G * VT) / (sp.z * sp.z * FARADAY) : link.k;
-        const nIn = grid.vol[g] * k * ((muOut - mu[i][g]) / RT);
+        const nIn = grid.vol[g] * share(grid, port, g) * k * ((muOut - mu[i][g]) / RT);
         add('links', nIn * (muOut - mu[i][g]));
       }
     });

@@ -589,6 +589,11 @@ ports: [{
 }]
 ```
 
+The window holds exactly `to − from` of exchange, electrode and capacitance however the grid
+falls: each node whose box reaches into it takes the part of its box inside. A held level
+(`'equilibrium'`) holds the nodes inside the window, so it needs one there. A window of no width
+is the node at that point, its whole box.
+
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance
 $`R \cdot A`$ to the port's voltage as $`G = 1/(R \cdot A)`$). That's how a floating electrode is tied

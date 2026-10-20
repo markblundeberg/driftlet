@@ -122,13 +122,12 @@ for live demos.
      right to fail on, if it says why and what to do. It does (f1fcc37), and `solve()` first
      then `advance()` runs all 16 tried. A floating electrode's reactions likewise (Argon's
      law8, below).
-   - A port's window counts each of its nodes' whole box (a cold review of `src/boundaries.js`):
-     a window [from, to] inside a region holds (to − from) + h of electrode, capacitance or
-     exchange, a half cell past each end, so a 0.2 µm capacitance on 0.05 µm cells is 0.025 F/m²,
-     not 0.020 (O(h/w), first order in the grid). At a device end whose contact sets φ, the end
-     node's share of a capacitance is dropped instead (0.0200 of 0.0225 there). The likely fix
-     weights each edge node by the part of its box inside the window, everywhere a port's terms
-     take vol; it moves every partial window's numbers (the axon's nodes of Ranvier) by O(h/w).
+   - A port's window counted each of its nodes' whole box (a cold review of `src/boundaries.js`),
+     a half cell past each end: up to 27% off on a coarse grid. Fixed in 1.2.8: each node whose box
+     reaches into the window takes the part inside, so a window holds `to − from` on any grid
+     (whole-region windows were right already). Still open: at a device end whose contact sets φ,
+     the end node's share of a capacitance goes to the contact (0.0175 of 0.0200 F/m² for a
+     0.2 µm window on 0.05 µm cells), O(h) there.
    - The time stepper's error control (a cold review of `src/timeSteps.js`): its estimate is
      Milne's device as if past states were exact, and reads low through the integrator's own
      (backward Euler by 1 + 1/(2ω), BDF2 by ~1.2), so accepted steps err up to ~1.3 tol. The

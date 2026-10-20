@@ -415,16 +415,42 @@ export function normalizeDevice(def) {
     'geometry: the cross-section vanishes inside the device; only an end may have A = 0',
   );
 
-  // Port windows: the nodes of the port's region within [from, to] of its left end.
+  // Port windows, [from, to] of the region's left end: the nodes of the port's region whose boxes
+  // reach into it, each with the part of its box inside (fill, by length) and that part's ends
+  // (lo, hi), so a window holds to − from of electrode, capacitance or exchange however the grid
+  // falls. A held level holds the nodes inside the window (inside). A window of no width is the
+  // node there, its whole box.
   ports.forEach((port, k) => {
-    const nodes = [];
-    const x0 = grid.x[grid.regionStart[port.region]];
-    for (let g = grid.regionStart[port.region]; g <= grid.regionEnd[port.region]; g++) {
-      const d = grid.x[g] - x0;
-      if (d >= port.from - 1e-15 * port.span && d <= port.to + 1e-15 * port.span) nodes.push(g);
+    const nodes = [], fill = [], lo = [], hi = [], inside = [];
+    const r0 = grid.regionStart[port.region], r1 = grid.regionEnd[port.region], x0 = grid.x[r0];
+    const tol = 1e-15 * port.span, a = x0 + port.from, b = x0 + port.to;
+    for (let g = r0; g <= r1; g++) {
+      const x = grid.x[g], bl = g > r0 ? x - grid.segLength[g - 1] / 2 : x, br = g < r1 ? x + grid.segLength[g] / 2 : x;
+      const isIn = x >= a - tol && x <= b + tol;
+      const l = Math.max(bl, a), h = Math.min(br, b);
+      if (b - a <= tol ? !isIn : !(h - l > tol)) continue;
+      nodes.push(g);
+      inside.push(isIn ? 1 : 0);
+      if (b - a <= tol) {
+        fill.push(1);
+        lo.push(bl);
+        hi.push(br);
+      } else {
+        fill.push(br > bl ? (h - l) / (br - bl) : 1);
+        lo.push(l);
+        hi.push(h);
+      }
     }
     need(nodes.length > 0, `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node; widen it or refine the grid`);
     port.nodes = Int32Array.from(nodes);
+    port.fill = Float64Array.from(fill);
+    port.lo = Float64Array.from(lo);
+    port.hi = Float64Array.from(hi);
+    port.inside = Uint8Array.from(inside);
+    need(
+      !port.species.some((l) => l.type === 'equilibrium') || inside.some((v) => v),
+      `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node for its held level; widen it or refine the grid`,
+    );
   });
   // A node's surface belongs to one electrode, and its gates to one membrane.
   const surfaced = new Int32Array(grid.nNodes).fill(-1);
