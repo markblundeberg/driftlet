@@ -3,6 +3,20 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.3.0 (2026-10-20)
+
+- The impedance at a floating terminal that alone feeds what it charges (a MOS gate at open
+  circuit, driven by a current) counted its current twice: its capacitance came out exactly 2×
+  dQ/dV. It's now read by the change of that charge at every frequency, as time steps read it.
+- A terminal behind a series resistance, measured at another, reads the current the others pass
+  by Kirchhoff from their voltages: through a metal gate behind 1 kΩ·m², the back contact's Z
+  was the round-off of the metal's huge conductance (Re Z −2.7 Ω·m² for 1000; 0.37% off behind
+  0.01). Exact now to the solves' accuracy.
+- `impedance()` returns `relError`, each Z's estimated error relative to |Z|, and warns where a Z
+  isn't resolved (over 1%) or Re Z is under a tenth of its error: far below a capacitive
+  device's relaxation almost no current flows, and blocking electrodes at 1e-4 Hz read Re Z 1e4
+  times too large without a word. A frequency of Infinity is refused, where it returned NaN.
+
 ## 1.2.9 (2026-10-20)
 
 - A steady solve on a device that goes by time steps (an amount no steady row can keep: a species
