@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AVOGADRO, Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { fermiHalf, fermiMinusHalf } from '../src/fermi.js';
 import { readFileSync } from 'node:fs';
+import { aqueous, bath as kitBath, build, layer } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
 const VT = RT / FARADAY;
@@ -496,4 +497,16 @@ test('a Debye–Hückel solution driven past its range: solve() and advance() fa
   assert.equal(a.converged, false);
   assert.ok(a.warnings.some((w) => /refused by a statistics model: debye-huckel/.test(w)), a.warnings.join('\n'));
   assert.equal(d.solve().converged, false);
+});
+
+// From round 15's fuzzer: Debye–Hückel's limiting law (a = 0, the default) between two 10 mM KCl
+// baths, with no c0: the cold start's search for a neutral φ̂ probed levels the model refuses (the
+// ions 1e20 times denser), and the refusal was thrown out of the constructor, as "ionic strength
+// too high". The search now goes on by the ideal charge where the model refuses a trial.
+test('Debye–Hückel\'s limiting law starts from the contacts\' levels, no c0 needed', () => {
+  const l = aqueous(['K+', 'Cl-'], { epsr: 0 });
+  l.materials.water.statistics = [{ type: 'debye-huckel', species: ['K+', 'Cl-'], epsr: 78.5 }];
+  const sol = new Device(build({ library: [l], stack: [kitBath({ 'K+': 10, 'Cl-': 10 }, 'Cl-'), layer('water', 2e-6), kitBath({ 'K+': 10, 'Cl-': 10 }, 'Cl-')], grid: { hmin: 1e-9, hmax: 50e-9 } })).solve();
+  assert.ok(sol.converged);
+  for (const c of [...sol.c['K+'], ...sol.c['Cl-']]) assert.ok(Math.abs(c / 10 - 1) < 1e-9, `${c}`);
 });

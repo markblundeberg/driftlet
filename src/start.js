@@ -27,7 +27,8 @@
 //      plus each face's dipole. In a region where a level-fixed charged species responds to φ̂,
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
-//      through the region has a reaction that can balance, the φ̂ that balances it. Where
+//      through the region has a reaction that can balance, the φ̂ that balances it (by bisection;
+//      a trial a non-ideal model refuses counts its ideal charge, which has the sign there). Where
 //      neutrality is out of reach (c0's amounts leave a charge no held level balances), the
 //      running φ̂, and a strictly neutral region is noted in s.unbalanced (for a transient that
 //      fails from it to say why). A strictly
@@ -166,10 +167,22 @@ export function initFromComposition(s) {
     const zeta = new Float64Array(n), cc = new Float64Array(n);
     const charge = (ph) => {
       if (!mat.ideal) {
-        materialAt(s, mat, reg.background, eta, mode, cFix, ph, zeta, cc);
-        let q = reg.fixedCharge / FARADAY;
-        for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * cc[i];
-        return q;
+        // A model can refuse a trial φ̂ far out, where one ion is many orders denser than the rest
+        // (Debye–Hückel's limiting law threw out of the start, for KCl at 10 mM, its neutral φ̂
+        // 57 units from where the search began): there the ideal charge has the sign, and the
+        // search goes on by it.
+        let refused = false;
+        try {
+          materialAt(s, mat, reg.background, eta, mode, cFix, ph, zeta, cc);
+        } catch (err) {
+          if (!(err instanceof SolverError)) throw err;
+          refused = true;
+        }
+        if (!refused) {
+          let q = reg.fixedCharge / FARADAY;
+          for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * cc[i];
+          return q;
+        }
       }
       let q = reg.fixedCharge / FARADAY;
       for (let i = 0; i < n; i++) {
