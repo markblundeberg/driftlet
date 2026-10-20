@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Device, EPS0 } from '../src/index.js';
-import { aqueous, metal } from '../src/kit.js';
+import { aqueous, build, half, layer, metal, ohmic } from '../src/kit.js';
 
 // Terminals: the two contacts and every port, each held at a voltage (behind a resistance, if
 // given) or driven by a current, with V and I as numbers or waveforms. Currents are into the
@@ -218,4 +218,27 @@ test('a terminal behind a resistance, solved cold, reaches the state the held on
     assert.ok(s.converged, side);
     assert.ok(Math.abs(s.terminals[side].V - base.terminals[side].V) < 1e-9, `${side}: ${s.terminals[side].V} for ${base.terminals[side].V}`);
   }
+});
+
+// From round 15's fuzzer: a silver cell passing 36 A/m² at 50 mV, one end behind a resistance
+// that drops volts. Held at 0 V on one side, 16 V behind R on the other: holding it at its source
+// put 16 V across the cell, and the solve failed (now: the load line's crossing, found by held
+// solves). Behind R beside a current: held at V_src − I R, Kirchhoff's I. And a terminal behind R
+// started at 0 V, so a −30 V source beside a current began a transient with 30 V across it.
+test('a terminal behind a resistance dropping volts solves cold, and starts level', () => {
+  const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }), L = 50e-6;
+  const make = (dL, dR) => build({
+    library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 }), metal('Ag')],
+    stack: [ohmic(dL, ['e-']), layer('Ag', 1e-6), { reactions: [{ ...silver, k0: 1e-2 }] }, layer('water', L, { c0: { 'Ag+': 10, 'NO3-': 10 } }), { reactions: [{ ...silver, k0: 1e-2 }] }, layer('Ag', 1e-6), ohmic(dR, ['e-'])],
+    grid: { hmin: L / 1000, hmax: L / 20 },
+  });
+  const held = new Device(make(0, 0.05)).solve(), I = held.terminals.right.current;
+  const R = 16 / Math.abs(I);
+  const a = new Device(make({ V: 0 }, { V: 0.05 + I * R, R })).solve();
+  assert.ok(a.converged && Math.abs(a.terminals.right.V - 0.05) < 1e-7, `held + R: ${a.converged} ${a.terminals.right.V}`);
+  const R8 = 8 / Math.abs(I), b = new Device(make({ V: held.terminals.left.current * R8, R: R8 }, { I })).solve();
+  assert.ok(b.converged && Math.abs(b.terminals.right.V - b.terminals.left.V - 0.05) < 1e-7, `R + I: ${b.converged}`);
+  const c = new Device(make({ V: -30, R: 0.1 }, { I: 36.3 }));
+  assert.equal(c.solver.termV[0], c.solver.termV[1]); // (level at the start)
+  assert.ok(c.advance(1e-6).converged);
 });

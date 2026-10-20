@@ -50,9 +50,10 @@
 //      start (initFromComposition), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
 //   2. Continuation: generation ramped up (_generationContinuation); a terminal driven by a
-//      current, not bound (_bound), held at voltages instead (_floatingContinuation); terminals
-//      behind a resistance held at their source voltages, then the resistances put back and the
-//      steady system solved from there (_resistanceContinuation); with
+//      terminals behind a resistance held (at their source voltages, or where every other
+//      terminal is driven by a current at V_src − I R, Kirchhoff's I), then the resistances put
+//      back and the steady system solved from there (_resistanceContinuation); a terminal
+//      driven by a current, not bound (_bound), held at voltages instead (_floatingContinuation); with
 //      canContinue, the right contact's voltage ramped to its target (_continuation): from the
 //      voltages of the last converged solve (this.solvedV), the left contact's first where it
 //      moved, else from level contacts, a cold start.
@@ -293,14 +294,6 @@ export class SteadySolves {
       if (g.converged) return solved(g);
       r = g;
     }
-    // A terminal driven by a current (open circuit, say): hold it at a voltage instead, march the
-    // voltage until the current crosses its target, and float it from there.
-    if (allowed && this.floating.some((k) => this.terms[k].drive.kind === 'I' && !this._bound(k))) {
-      restart();
-      const q = this._floatingContinuation(opts, r);
-      if (q.converged) return q;
-      r = q;
-    }
     // A terminal behind a resistance, cold: held at its source voltage first (with that its own
     // continuations), then the resistance put back and solved from there (a diode behind 7 Ω·m²
     // failed cold, and converged so; round 14's fuzzer, 4 of 9 such re-solves).
@@ -308,6 +301,14 @@ export class SteadySolves {
       restart();
       const q = this._resistanceContinuation(opts, r);
       if (q.converged) return solved(q);
+      r = q;
+    }
+    // A terminal driven by a current (open circuit, say): hold it at a voltage instead, march the
+    // voltage until the current crosses its target, and float it from there.
+    if (allowed && this.floating.some((k) => this.terms[k].drive.kind === 'I' && !this._bound(k))) {
+      restart();
+      const q = this._floatingContinuation(opts, r);
+      if (q.converged) return q;
       r = q;
     }
     if (canContinue) {
@@ -355,9 +356,10 @@ export class SteadySolves {
   // voltage instead, whose steady solves have their own continuation, the voltage marched from
   // the start's until the current crosses its target, the crossing narrowed by bisection, and
   // the terminal floated again from beside it.
-  _floatingContinuation(opts, r) {
-    const k = this.floating.find((j) => this.terms[j].drive.kind === 'I' && !this._bound(j));
-    const drive = this.terms[k].drive, target = sourceAt(drive.src, this.time);
+  // (With `line`, terminal k behind a resistance: the current its load line passes at V,
+  // (V_src − V)/R, the target, the march from the first held terminal's level.)
+  _floatingContinuation(opts, r, k = this.floating.find((j) => this.terms[j].drive.kind === 'I' && !this._bound(j)), line = null) {
+    const drive = this.terms[k].drive, target = line ? NaN : sourceAt(drive.src, this.time), want = (V) => (line ? line(V) : target);
     // Its drive put back: redrive() finds the laws again for it, with the local constraints'
     // references at zero, so they're taken from the state again (an immobile species held at 0
     // at every node: the floated solve failed, 80 steps, and the regula falsi rescued it at 6×).
@@ -376,11 +378,12 @@ export class SteadySolves {
       iterations += q.iterations ?? 0;
       history.push({ held: V, converged: q.converged });
       if (q.converged) seen.push([V, this.termI[k]]);
-      return q.converged ? this.termI[k] - target : NaN;
+      return q.converged ? this.termI[k] - want(V) : NaN;
     };
     const fail = () => ({ converged: false, steps, iterations, history });
     const seen = []; // [V, I] of each held solve that converged
-    let Va = this.termV[k], fa, Vb, fb;
+    const heldK = this.terms.findIndex((t) => t.drive.kind === 'V' && !(t.drive.R > 0));
+    let Va = line ? (heldK >= 0 ? this.termV[heldK] : 0) : this.termV[k], fa, Vb, fb;
     try {
       fa = hold(Va);
       if (!Number.isFinite(fa)) {
@@ -409,7 +412,7 @@ export class SteadySolves {
       }
       if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) {
         // What the held voltages passed, at the two extremes reached.
-        if (seen.length > 1) {
+        if (seen.length > 1 && !line) {
           seen.sort((a, b) => a[0] - b[0]);
           this.unreached = { terminal: this.terms[k].name, target, low: seen[0], high: seen.at(-1) };
         }
@@ -436,7 +439,7 @@ export class SteadySolves {
     // one at the voltage that passes the target: found by held solves, by regula falsi
     // (Illinois) within the bracket, to 1e-10 of the target, or at open circuit of the largest
     // current the march saw (a target of 0 is never met exactly).
-    const scale = Math.max(Math.abs(target), ...seen.map(([, I]) => Math.abs(I)));
+    const scale = Math.max(line ? 0 : Math.abs(target), ...seen.map(([, I]) => Math.abs(I)));
     try {
       let side = 0;
       for (let it = 0; it < 60; it++) {
@@ -466,21 +469,44 @@ export class SteadySolves {
     const drives = ks.map((k) => this.terms[k].drive);
     let steps = r.steps ?? 0, iterations = r.iterations ?? 0;
     const history = (r.history ?? []).slice();
+    // Where every other terminal is driven by a current, Kirchhoff gives the one behind R its
+    // current, and so the voltage it ends at, V_src − I R: held there, putting R back moves
+    // nothing (held at V_src, it had to slide the whole device by IR, and failed past volts).
+    const others = this.terms.every((t, j) => ks.includes(j) || t.drive.kind === 'I');
+    const at = (k) => {
+      const d = this.terms[k].drive, V = sourceAt(d.src, this.time);
+      if (!(others && ks.length === 1)) return V;
+      const I = -this.terms.reduce((t, tm, j) => (j === k ? t : t + sourceAt(tm.drive.src, this.time)), 0);
+      return V - I * d.R;
+    };
+    let heldOk = false;
+    const start = [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
     try {
-      ks.forEach((k) => (this.terms[k].drive = { ...this.terms[k].drive, R: 0 }));
+      const held = ks.map(at);
+      ks.forEach((k, j) => (this.terms[k].drive = { ...this.terms[k].drive, src: { value: held[j] }, R: 0 }));
       this.redrive();
       const q = this._steadyFromHere(opts);
       steps += q.steps ?? 0;
       iterations += q.iterations ?? 0;
       history.push({ resistancesOff: true, converged: q.converged });
-      if (!q.converged) return { converged: false, steps, iterations, history };
+      heldOk = q.converged;
     } finally {
       ks.forEach((k, j) => (this.terms[k].drive = drives[j]));
       this.redrive();
       captureLocal(this);
     }
-    const q = this._steadySteps(opts);
-    return { ...q, steps: steps + q.steps, iterations: iterations + q.iterations, history: [...history, ...q.history] };
+    const q = heldOk ? this._steadySteps(opts) : { converged: false, steps: 0, iterations: 0, history: [] };
+    const done = { ...q, steps: steps + q.steps, iterations: iterations + q.iterations, history: [...history, ...q.history] };
+    if (q.converged || ks.length !== 1) return done;
+    // One terminal behind R, the rest not all driven by currents (so its current isn't known):
+    // its crossing with the load line, (V_src − V)/R, by held solves, as an open circuit's is
+    // with its target (a silver cell held at 0 V on one side, 16 V behind R on the other, failed).
+    const d = drives[0], Vs = sourceAt(d.src, this.time);
+    this.u.set(start[0]);
+    this.uLo.set(start[1]);
+    this.termV.set(start[2]);
+    this.computeConcentrations(); // (from where this stage began, not where the failed one left it)
+    return this._floatingContinuation(opts, done, ks[0], (V) => (Vs - V) / d.R);
   }
 
   // Steady solves with the generation reactions' rates scaled from 1e-30 up to 1, ×100 a step

@@ -296,7 +296,10 @@ export class Solver {
     // carrier, its level from that V, asked for a c0 a conductor can't be given), else 0.
     const heldK = this.terms.findIndex((_, k) => !this.floating.includes(k)), behindR = this.terms.find((t) => t.drive.R > 0);
     const level = heldK >= 0 ? this.termV[heldK] : behindR ? sourceAt(behindR.drive.src, this.time) : 0;
-    for (const k of this.floating) this.termV[k] = this.terms[k].drive.kind === 'V' ? this.termV[k] : level;
+    // (One behind a resistance too: at its own source, a silver cell held at 0 V and 16 V behind R
+    // began with 16 V across it; left at 0 V, one behind a −30 V source beside a current began
+    // with 30 V across it. Level, the circuit rows move them from a device at rest.)
+    for (const k of this.floating) this.termV[k] = level;
     // Accepted steps, most recent first: start time, size, start state (for BDF2 and the
     // error estimate of adaptive stepping).
     this.history = [];
