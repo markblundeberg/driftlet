@@ -3,6 +3,27 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.3.1 (2026-10-20)
+
+- The impedance at a terminal driven by a current is now measured as its input impedance read
+  the held way (δV = 1, Z = 1/δI): read through its own circuit row it was a barrier's or a
+  metal's round-off, silently (a reverse-biased diode's contact 4.3% off dV/dI, a Schottky
+  contact's Re Z −32 for 1282, a GaAs junction not passive). Held and driven now agree.
+- An electrode on a metal of many cells, its current read at the contact: that reading's error
+  estimate now counts the metal's current unknown's own round-off (G Δη to a huge G), so a cut
+  through the solution reads it instead (a platinum electrode behind a Stern layer gave Z at 1
+  nHz 8–20% off dV/dI, the same value on every grid); and the regions' uniform shift no longer
+  moves a metal's current unknown as if it were φ.
+- A steady solve from a cold start no longer starts from the faces between strictly neutral
+  regions set to their t = 0⁺ equilibrium (since 1.2.3: it left a region 2 V off its face and
+  some solves failed); a transient's first step still does.
+- With no terminal held (one driven by a current, the other behind a resistance), the driven
+  one starts level with the resistance's source; it started at NaN, and a metal contact's
+  electrons asked for a c0 a conductor can't be given.
+- A port's area under 1 cm²/cm³ is flagged as a likely unit slip; and the docs gain a blocking
+  electrode's recipe, a port's zeroCharge frame, cMax from an ion's size, and the grids an
+  impedance needs.
+
 ## 1.3.0 (2026-10-20)
 
 - The impedance at a floating terminal that alone feeds what it charges (a MOS gate at open
