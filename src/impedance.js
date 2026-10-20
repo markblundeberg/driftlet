@@ -22,8 +22,8 @@
 //   → { f, Z: { re, im }, relError, profiles? }, Z in Ω·m² (Ω for a non-planar device) at each
 //   frequency.
 //   Throws a SolverError where the terminal doesn't exist, has a series resistance, or every
-//   other terminal is driven by a current (no return path: Z infinite), or where a frequency
-//   isn't positive and finite.
+//   other terminal is driven by a current (no return path: Z infinite), where a frequency
+//   isn't positive and finite, or where the linearised system is singular at one.
 //   Linearised about the present state: (J + iωS)·δx + Σ_k B_k δV_k = 0 for the grid's rows and,
 //   for each floating terminal k (driven by a current), (C_k + iωC′_k)·δx + (DI_k + iωDI′_k) δV_k
 //   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J the steady Jacobian (dt = ∞) and S, C′, DI′,
@@ -34,12 +34,17 @@
 //   unit current. A floating terminal that alone feeds
 //   a conserved combination (a circuit law: a constraint or time law with its circuit row) has
 //   its current read by that combination's change at every frequency, iω F δS/λ plus what a
-//   resistance passes: at dt = 1e-30 every circuit law reads by the change (this.lawForm), and
+//   resistance passes: at dt = 1e-30 every circuit law with a current to count (λ set) reads by
+//   the change (this.lawForm), and
 //   its steady parts are C = 0, DI = 1/R (0 driven by a current), DX = 0. δI is the measured
 //   terminal's current into the device. Every other terminal keeps its drive: held, δV = 0 (AC
 //   ground); driven, δI = 0 (AC open).
 //   Each frequency: J + iωS with each row divided by its largest entry, factorised, preconditions
 //   GMRES (m 12, 8 restarts, tol 1e-8; its best iterate kept) on the exact J·v (difference form).
+//   A floating contact otherwise reads its current, in its circuit row, at the reading of least
+//   error by the solved responses (its own, or any cut between it and a port's window: the same
+//   current); and where every other terminal floats, a reading with no direct V dependence (a
+//   cut's, a law's change) reads y as Σ X_b, every terminal's uniform shift passing nothing.
 //   Solved: y, the response with the floating terminals held (to the measured one's δV = 1),
 //   and X_k, to each floating terminal's unit δV_k; then the floating terminals' rows, a small
 //   complex system, for their δV; δx = y − Σ X_k δV_k.
@@ -282,11 +287,14 @@ export class SmallSignal {
     // flux at dt = ∞ and by the change at dt = 1e-30, a floating gate's current was counted
     // twice (its capacitance 2× dQ/dV); read by the flux throughout, through a metal it is the
     // round-off of G Δη (a gate behind 1 kΩ·m², measured at the back contact: Re Z = −2.7).
-    this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, true]));
+    // (A law that counts no current, λ unset, as for a terminal at no current that feeds
+    // nothing, can't be read by its change: forced to, a closed Fe³⁺/Fe²⁺ cell's Z was NaN.)
+    const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0;
+    this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, byChange(cs)]));
     this.assemble(dts);
     for (const cs of [...this.constraints, ...this.timeLaws]) {
       const k = cs.circuit;
-      if (k < 0 || !(fl.includes(k) || (k === kT && dT.kind === 'I')) || cs.contacts?.length > 0) continue;
+      if (!byChange(cs) || !(fl.includes(k) || (k === kT && dT.kind === 'I'))) continue;
       Ct[k].fill(0);
       DI[k] = this.terms[k].drive.R > 0 ? 1 / this.terms[k].drive.R : 0;
       DX[k].fill(0);
@@ -299,11 +307,31 @@ export class SmallSignal {
     // Where the measured contact's current may be read across a segment: anywhere without
     // ports; with them, only between it and the nearest window (a port's exchange takes current
     // in or out along it). Never for a port's own terminal.
-    let cuts = kT < 2 ? this._currentCuts() : null;
-    if (cuts && this.model.ports.length > 0) {
-      const windows = this.model.ports.flatMap((p) => Array.from(p.nodes));
-      const lo = Math.min(...windows), hi = Math.max(...windows);
-      cuts = cuts.filter((cut) => (kT === 0 ? cut.s + 1 <= lo : cut.s >= hi));
+    const allCuts = this._currentCuts(), windows = this.model.ports.flatMap((p) => Array.from(p.nodes));
+    const lo = windows.length ? Math.min(...windows) : Infinity, hi = windows.length ? Math.max(...windows) : -Infinity;
+    const cutsOf = (k) => allCuts.filter((cut) => (k === 0 ? cut.s + 1 <= lo : cut.s >= hi));
+    const cuts = kT < 2 ? cutsOf(kT) : null;
+    // A floating contact on a metal: its circuit row's current through the metal is the current
+    // unknown G Δη, round-off to a huge G (a Pt electrode behind 3000 Ω·m², read at the bath: Z −
+    // R came out 70.5 for 3070.5). Any cut between it and a port's window carries the same current
+    // (a metal stores none; the total current is continuous through its face), so each frequency
+    // reads it where its error, by the solved responses, is least (see readings, below).
+    const lawRead = new Set([...this.constraints, ...this.timeLaws].filter(byChange).map((cs) => cs.circuit));
+    const choices = new Map(); // k → [{ c, cs, di, dis, dx, dxs }]: its own reading, then each cut's
+    for (const k of fl) {
+      if (k > 1 || lawRead.has(k)) continue;
+      const own = { c: Ct[k].slice(), cs: Cs[k].slice(), di: DI[k], dis: DIs[k], dx: DX[k].slice(), dxs: DXs[k].slice() }, list = [own];
+      const sgn = k === 0 ? 1 : -1, R = this.terms[k].drive.R;
+      for (const cut of cutsOf(k)) {
+        const c = new Float64Array(own.c.length), cs = new Float64Array(own.c.length);
+        cut.idx.forEach((x, a) => {
+          if (this.rix[x] >= this.sys.size) return;
+          c[this.rix[x]] += sgn * cut.g[a];
+          cs[this.rix[x]] += sgn * cut.d[a];
+        });
+        list.push({ c, cs, di: R > 0 ? 1 / R : 0, dis: 0, dx: new Float64Array(own.dx.length), dxs: new Float64Array(own.dx.length) });
+      }
+      if (list.length > 1) choices.set(k, list);
     }
     // J·v for GMRES, exact: the assembled J holds a flux's dependence on η_L and η_R as two
     // entries, and where both are huge (an inversion layer) and v nearly uniform, J·v loses the
@@ -359,7 +387,12 @@ export class SmallSignal {
           }
         }
       }
-      csys.factor();
+      try {
+        csys.factor();
+      } catch (err) {
+        // (it threw a bare Error, its block number all it said: a cell 2.8 V off its pzc)
+        throw new SolverError(`impedance: the linearised equations are singular at ${f} Hz (${err.message}): some part of the device is held by nothing at that frequency, as a double layer far from where it balances can leave it. See the steady state's warnings (solve()).`);
+      }
       const sx = (X, vr, out) => {
         for (let blk = 0; blk < nB; blk++) {
           const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
@@ -425,13 +458,67 @@ export class SmallSignal {
         ri.fill(0);
         solve(rr, ri, Xr[a], Xi[a], k, -1);
       });
+      // Each unknown's round-off in its own row: |x_j| to ε Σ_k |A_jk x_k| / |A_jj|, A = J + iωS. A
+      // metal's current unknown, G Δη to a huge G, is known only to ε G |δη| this way, which the
+      // terms' round-off alone never saw (a platinum electrode's current read 20% off at 1 nHz,
+      // its estimate 1e-8).
+      const rowFloor = (xr0, xi0) => {
+        const out = new Float64Array(Nc);
+        for (let blk = 0; blk < nB; blk++) {
+          const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
+          for (let r = 0; r < m; r++) {
+            let acc = 0;
+            const row = (X, o, len, x0) => {
+              for (let cc = 0; cc < len; cc++) acc += (Math.abs(J[X][o + cc]) + w * Math.abs(S[X][o + cc])) * Math.hypot(xr0[x0 + cc], xi0[x0 + cc]);
+            };
+            if (mp) row('A', offA[blk] + r * mp, mp, offX[blk - 1]);
+            row('B', offB[blk] + r * m, m, offX[blk]);
+            if (mn) row('C', offC[blk] + r * mn, mn, offX[blk + 1]);
+            const dIdx = offB[blk] + r * m + r, diag = Math.hypot(J.B[dIdx], w * S.B[dIdx]);
+            out[offX[blk] + r] = diag > 0 ? (1.1e-16 * acc) / diag : 0;
+          }
+        }
+        return out;
+      };
+      // Each floating metal contact's reading, of those it can take, with the least error by the
+      // solved responses (their terms' round-off and each unknown's in its own row).
+      const gaugeRead = new Set(lawRead); // (readings with no direct dependence on any V: see y below)
+      if (choices.size) {
+        const eps = 1.1e-16, parts = [[yr, yi], ...fl.map((_, b) => [Xr[b], Xi[b]])];
+        const mag = new Float64Array(Nc), floor = new Float64Array(Nc);
+        for (const [pr, pi] of parts) {
+          const rf = rowFloor(pr, pi);
+          for (let j = 0; j < Nc; j++) {
+            mag[j] += Math.hypot(pr[j], pi[j]);
+            floor[j] += rf[j];
+          }
+        }
+        for (const [k, list] of choices) {
+          let best = null, least = Infinity;
+          for (const r of list) {
+            let e = eps * (Math.abs(r.di) + w * Math.abs(r.dis));
+            for (let j = 0; j < Nc; j++) e += (Math.abs(r.c[j]) + w * Math.abs(r.cs[j])) * (eps * mag[j] + floor[j]);
+            if (e < least) [best, least] = [r, e];
+          }
+          if (best !== list[0]) gaugeRead.add(k);
+          Ct[k].set(best.c);
+          Cs[k].set(best.cs);
+          DI[k] = best.di;
+          DIs[k] = best.dis;
+          DX[k].set(best.dx);
+          DXs[k].set(best.dxs);
+        }
+      }
       // The floating terminals' circuit rows, a small complex system for their δV.
       const Ar = Array.from({ length: K }, () => new Float64Array(K + 1)), Ai = Array.from({ length: K }, () => new Float64Array(K + 1));
       fl.forEach((k, a) => {
+        let sre = 0, sim = 0;
         for (let b = 0; b < K; b++) {
           const [re, im] = dot(k, w, Xr[b], Xi[b]);
           Ar[a][b] = -re;
           Ai[a][b] = -im;
+          sre += re;
+          sim += im;
         }
         Ar[a][a] += DI[k];
         Ai[a][a] += w * DIs[k];
@@ -442,7 +529,12 @@ export class SmallSignal {
           Ar[a][b] += DX[k][k2];
           Ai[a][b] += w * DXs[k][k2];
         });
-        const [yre, yim] = dot(k, w, yr, yi);
+        // Every terminal shifted alike moves nothing and passes no current, and y + Σ (−X_b) is
+        // that shift where kT and the floating terminals are all there are: so a reading with
+        // no direct dependence on a V reads y as Σ X_b, exactly, from responses it resolves, where
+        // y itself is nearly that shift and its current a difference of them (a Pt electrode
+        // behind 3000 Ω·m², at 1 nHz: its cuts read y 10% apart).
+        const [yre, yim] = kirchhoff && gaugeRead.has(k) ? [sre, sim] : dot(k, w, yr, yi);
         Ar[a][K] = -yre - DX[k][kT];
         Ai[a][K] = -yim - w * DXs[k][kT];
       });
@@ -470,28 +562,6 @@ export class SmallSignal {
       // levels that the solved rows don't pin.
       // `parts`: the response as a sum, each part compact (r, i) and full-index (fr, fi), with the
       // absolute error of its entries.
-      // Each unknown's round-off in its own row: |x_j| to ε Σ_k |A_jk x_k| / |A_jj|, A = J + iωS. A
-      // metal's current unknown, G Δη to a huge G, is known only to ε G |δη| this way, which the
-      // terms' round-off alone never saw (a platinum electrode's current read 20% off at 1 nHz,
-      // its estimate 1e-8).
-      const rowFloor = (xr0, xi0) => {
-        const out = new Float64Array(Nc);
-        for (let blk = 0; blk < nB; blk++) {
-          const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
-          for (let r = 0; r < m; r++) {
-            let acc = 0;
-            const row = (X, o, len, x0) => {
-              for (let cc = 0; cc < len; cc++) acc += (Math.abs(J[X][o + cc]) + w * Math.abs(S[X][o + cc])) * Math.hypot(xr0[x0 + cc], xi0[x0 + cc]);
-            };
-            if (mp) row('A', offA[blk] + r * mp, mp, offX[blk - 1]);
-            row('B', offB[blk] + r * m, m, offX[blk]);
-            if (mn) row('C', offC[blk] + r * mn, mn, offX[blk + 1]);
-            const dIdx = offB[blk] + r * m + r, diag = Math.hypot(J.B[dIdx], w * S.B[dIdx]);
-            out[offX[blk] + r] = diag > 0 ? (1.1e-16 * acc) / diag : 0;
-          }
-        }
-        return out;
-      };
       // `own`: the measured terminal's δV (1 held; driven, its solved one).
       const read = (parts, own = [1, 0]) => {
         const eps = 1.1e-16, c = Ct[kT], cs = Cs[kT], dr = DI[kT], di = w * DIs[kT];

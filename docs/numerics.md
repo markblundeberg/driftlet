@@ -661,10 +661,16 @@ About a steady state, a small sinusoidal excitation at one terminal gives, to fi
   $`v \cdot K`$, displacement), and likewise $`C`$ and $`C'`$ for the terminal currents. The
   time-derivative parts are read off two assemblies, $`J(dt) = J + M/dt`$, with a tiny $`dt`$ so that
   the subtraction loses nothing.
-- **At the measured terminal $`T`$,** a held voltage is perturbed ($`\delta V_T = 1`$, and $`\delta I_T`$
-  read from its $`C`$ row), or a driven current ($`\delta I_T = 1`$, and $`\delta V_T`$ solved for).
-  $`Z = \delta V_T/\delta I_T`$, with $`I`$ into the device. The other terminals keep their drives:
-  held ones at AC ground, driven ones open.
+- **At the measured terminal $`T`$,** its voltage is perturbed ($`\delta V_T = 1`$) and
+  $`\delta I_T`$ read, held or driven by a current alike: $`Z = \delta V_T/\delta I_T`$ is its input
+  impedance either way, with $`I`$ into the device. (Solving a driven one's $`\delta V_T`$ for a unit
+  current instead read its current through its own circuit row, at the contact alone: a reverse
+  diode's 4.3% off $`dV/dI`$.) The other terminals keep their drives: held ones at AC ground,
+  driven ones open. A floating one's circuit row reads its current where that reading's error is
+  least: at its contact, or at any cut between it and a port's window, the same current (through a
+  metal it's the round-off of $`G\,\Delta\eta`$); and where every terminal but $`T`$ floats, the
+  response to $`T`$ with them held (nearly every level shifted alike, its current a difference of
+  large terms) is read through the identity that shifting every terminal alike passes nothing.
 
 Each frequency costs one complex block-Thomas factorisation (rows scaled by their largest
 entry), plus one back-substitution per floating terminal for the bordering. Conserved (blocked)

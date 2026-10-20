@@ -1016,7 +1016,8 @@ const now = dev.solution();                   // snapshot of the current state
   as a transient slows, so give `dtMax` to resolve a signal in time.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
-  device. A held terminal's voltage is perturbed, or a driven one's current; the other terminals
+  device, its input impedance whether it's held or driven by a current (for a driven one, about
+  the state its drive holds: solve() it held, then set its I, solve(), then impedance()); the other terminals
   keep their drives (held ones at AC ground, driven ones open), so at least one other must be held
   for the current to return (with every other one driven, the impedance is infinite, and an error
   says to measure at a driven one). A terminal behind a resistance can't be the one measured: the

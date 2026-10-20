@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError, units } from '../src/index.js';
 import { build, layer, ohmic, bath, aqueous, metal, half, semiconductor, H2O } from '../src/kit.js';
 
@@ -440,4 +441,48 @@ test('an electrode on a metal of many cells, behind a Stern layer: Z at 1 nHz is
     const Z = new Device(def(V, hmin, platinum)).impedance([1e-9], { terminal: 'left' }).Z.re[0];
     assert.ok(Math.abs((Z * (p - m)) / (2 * h) - 1) < 1e-5, `hmin ${hmin}, platinum ${platinum}: Z ${Z} for dV/dI ${(2 * h) / (p - m)}`);
   }
+});
+
+// From round 15's fuzzer: a resistance behind another terminal wasn't added in series. A
+// floating terminal's circuit row read its current through a metal (the round-off of G Δη) or at a
+// semiconductor contact, and y, the response to the measured terminal with it held, nearly a
+// uniform shift of the electrolyte, read its current as a difference of large terms: a Pt
+// electrode behind 3000 Ω·m², read at the bath, came out Z − R = 70.5 for 3070.5; a MOS gate's C
+// fell with a back contact's R (1/C gaining 43 R). Floating contacts read at the cut of least
+// error, and y by every terminal's uniform shift passing nothing.
+test('a resistance behind another terminal adds R in series, whatever the electrode', () => {
+  const lib = aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+']);
+  const bc = { 'K+': 470, 'Cl-': 470 + 3 * 7.6 + 2 * 3.7, 'Fe3+': 7.6, 'Fe2+': 3.7 };
+  const face = { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-5 }], phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 };
+  const L = 30e-6;
+  const mk = (left) => build({ library: [lib, metal('Pt')], stack: [left, layer('Pt', 1e-6), face, layer('water', L, { c0: bc }), bath(bc, 'Cl-')], grid: { hmin: 0.1e-9, hmax: L / 40 } });
+  const rest = new Device(mk(ohmic({ I: 0 }, ['e-']))).solve().terminals.left.V;
+  const fs = [1e-9, 1e-4, 1, 1e4], R = 3000;
+  const A = new Device(mk(ohmic(rest, ['e-']))).impedance(fs).Z, B = new Device(mk(ohmic({ V: rest, R }, ['e-']))).impedance(fs).Z;
+  fs.forEach((f, q) => assert.ok(Math.hypot(B.re[q] - R - A.re[q], B.im[q] - A.im[q]) < 1e-6 * Math.hypot(A.re[q] + R, A.im[q]), `${f} Hz: Z − R (${B.re[q] - R}, ${B.im[q]}) for (${A.re[q]}, ${A.im[q]})`));
+  // A MOS capacitor (Pt, 7 nm oxide, p-Ge), its back contact behind R: the gate's C is R's alone.
+  const mos = JSON.parse(readFileSync(new URL('./fixtures/mos-back-contact-behind-r.json', import.meta.url), 'utf8'));
+  const C = (r) => {
+    const d = structuredClone(mos);
+    if (r) d.contacts.right.R = r;
+    const Z = new Device(d).impedance([1e-2, 1e4], { terminal: 'left' }).Z;
+    return [0, 1].map((q) => ({ re: Z.re[q] - r, C: -1 / (2 * Math.PI * [1e-2, 1e4][q] * Z.im[q]) }));
+  };
+  const c0 = C(0);
+  for (const r of [0.339, 10]) C(r).forEach((x, q) => assert.ok(Math.abs(x.C / c0[q].C - 1) < 1e-6 && Math.abs(x.re - c0[q].re) < 1e-6 * r, `R ${r}: C ${x.C} for ${c0[q].C}`));
+});
+
+// A closed Fe³⁺/Fe²⁺ cell between platinum electrodes, measured at one driven at no current: its
+// law, counting no current, was read by its change all the same, and Z came out NaN.
+test('a closed redox cell measured at a contact driven at no current: the impedance it has held', () => {
+  const face = { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-4 }], phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 };
+  const L = 10e-6;
+  const def = build({ library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 }), metal('Pt')], stack: [ohmic(0, ['e-']), layer('Pt', 1e-6), face, layer('water', L, { c0: { 'Fe3+': 10, 'Fe2+': 10, 'Cl-': 50 } }), face, layer('Pt', 1e-6), ohmic(0, ['e-'])], grid: { hmin: L / 200, hmax: L / 40 } });
+  const fs = [1e-2, 1e2], dev = new Device(def);
+  dev.solve();
+  const held = dev.impedance(fs).Z;
+  dev.set({ contacts: { right: { I: 0 } } });
+  dev.solve();
+  const driven = dev.impedance(fs).Z;
+  fs.forEach((f, q) => assert.ok(Math.hypot(driven.re[q] - held.re[q], driven.im[q] - held.im[q]) < 1e-6 * Math.hypot(held.re[q], held.im[q]), `${f} Hz: (${driven.re[q]}, ${driven.im[q]}) for (${held.re[q]}, ${held.im[q]})`));
 });
