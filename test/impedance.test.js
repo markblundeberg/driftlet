@@ -391,3 +391,53 @@ test('a Z the current can\'t resolve is said to be unresolved, with its estimate
   assert.ok(fine.relError.every((e) => e < 1e-3), String(fine.relError));
   assert.equal(fine.warnings.filter((w) => /impedance:/.test(w)).length, 0);
 });
+
+// Z is the input impedance at a terminal, whichever way it's excited. From round 14's fuzzer: a
+// contact driven by a current read its current through its own circuit row, at the contact
+// alone, a barrier's or a metal's round-off: a reverse-biased diode's 4.3% off dV/dI (a Schottky
+// contact's Re Z −32 for 1282), with an error estimate of 1e-8 and no warning.
+test('a terminal driven by a current has the impedance it has held at its voltage, and its DC limit is dV/dI', () => {
+  const def = (right) => build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(right)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-7, tauP: 1e-7 } } }],
+    grid: { hmin: units.nm(1), hmax: units.nm(20) },
+  });
+  const fs = [1e-3, 1e3, 1e6], V = -0.2, h = 1e-5;
+  const held = new Device(def(V)), I = held.solve().terminals.right.current, Zv = held.impedance(fs).Z;
+  const Zi = new Device(def({ I })).impedance(fs).Z;
+  const p = new Device(def(V + h)).solve().terminals.right.current, m = new Device(def(V - h)).solve().terminals.right.current;
+  const dVdI = (2 * h) / (p - m);
+  fs.forEach((f, q) => assert.ok(Math.hypot(Zi.re[q] - Zv.re[q], Zi.im[q] - Zv.im[q]) < 1e-6 * Math.hypot(Zv.re[q], Zv.im[q]), `${f} Hz: driven (${Zi.re[q]}, ${Zi.im[q]}), held (${Zv.re[q]}, ${Zv.im[q]})`));
+  assert.ok(Math.abs(Zi.re[0] / dVdI - 1) < 1e-5, `DC: ${Zi.re[0]} for dV/dI ${dVdI}`);
+});
+
+// A platinum electrode with a Stern layer and a fast Fe³⁺/Fe²⁺ couple, beside resolved water: its
+// current read at the contact went through the metal's current unknown, the round-off of G Δη,
+// which the error estimate didn't see, and Z at 1 nHz came out 347.7672 or exactly twice that,
+// grid after grid, for a dV/dI of 312–673. (And the regions' uniform shift moved that unknown
+// as if it were φ̂.) It's read at a cut now, as the current through the water.
+test('an electrode on a metal of many cells, behind a Stern layer: Z at 1 nHz is dV/dI on any grid', () => {
+  const lib = aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+']);
+  delete lib.materials.water.T;
+  const c = { 'K+': 1, 'Cl-': 1 + 36 + 8, 'Fe3+': 12, 'Fe2+': 4 };
+  const def = (V, hmin, platinum = 1e-6) => ({
+    species: [...lib.species, { name: 'e-', z: -1 }],
+    materials: { ...lib.materials, ...metal('Pt').materials },
+    regions: [{ name: 'm', material: 'Pt', length: platinum }, { name: 'w', material: 'water', length: 1e-6, c0: c }],
+    interfaces: [{ reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-2, alpha: 0.5 }], phi: { type: 'capacitive', C: 0.18 }, zeroCharge: -0.08 }],
+    contacts: { left: { V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, bath: { c, reference: 'Cl-' } } },
+    grid: { hmin, hmax: 1e-7, ratio: 1.25 },
+  });
+  const rest = (hmin) => {
+    const d = def(0, hmin);
+    return new Device({ ...d, contacts: { ...d.contacts, left: { ...d.contacts.left, V: undefined, I: 0 } } }).solve().terminals.left.V;
+  };
+  for (const [hmin, platinum] of [[3e-10, 1e-6], [1e-10, 1e-6], [3e-10, 2e-5]]) {
+    const V = rest(hmin) + 0.05, h = 1e-6;
+    const p = new Device(def(V + h, hmin, platinum)).solve().terminals.left.current, m = new Device(def(V - h, hmin, platinum)).solve().terminals.left.current;
+    const Z = new Device(def(V, hmin, platinum)).impedance([1e-9], { terminal: 'left' }).Z.re[0];
+    assert.ok(Math.abs((Z * (p - m)) / (2 * h) - 1) < 1e-5, `hmin ${hmin}, platinum ${platinum}: Z ${Z} for dV/dI ${(2 * h) / (p - m)}`);
+  }
+});

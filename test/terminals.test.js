@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0 } from '../src/index.js';
+import { aqueous, metal } from '../src/kit.js';
 
 // Terminals: the two contacts and every port, each held at a voltage (behind a resistance, if
 // given) or driven by a current, with V and I as numbers or waveforms. Currents are into the
@@ -180,4 +181,23 @@ test('impedance at a held terminal with every other one driven by a current is r
   assert.throws(() => dev.impedance([1]), /every other terminal \(left\) is driven by a current.*infinite/);
   const { Z } = dev.impedance([1, 1e3], { terminal: 'left' });
   assert.ok(Z.re.every((r) => r > 0), 'measured where the current is driven, it is finite');
+});
+
+// From round 14's fuzzer: with no terminal held (a metal electrode driven by a current, the other
+// end behind a resistance), the driven one started at NaN, and its metal's electrons asked for a
+// c0 that a conductor can't be given. It starts level with the resistance's source now.
+test('no terminal held: a current-driven electrode beside one behind a resistance solves, IR above the held case', () => {
+  const lib = aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 });
+  const c = { 'K+': 100, 'Cl-': 135, 'Fe3+': 5, 'Fe2+': 10 };
+  const def = (right) => ({
+    species: [...lib.species, { name: 'e-', z: -1 }],
+    materials: { ...lib.materials, ...metal('Pt').materials },
+    regions: [{ name: 'm', material: 'Pt', length: 1e-6 }, { name: 'w', material: 'water', length: 20e-6, c0: c }],
+    interfaces: [{ reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-3 }] }],
+    contacts: { left: { I: 1, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { ...right, bath: { c, reference: 'Cl-' } } },
+    grid: { hmin: 10e-9, hmax: 1e-6 },
+  });
+  const held = new Device(def({ V: 0 })).solve(), behind = new Device(def({ V: 0, R: 1e-3 })).solve();
+  assert.ok(held.converged && behind.converged);
+  assert.ok(Math.abs(behind.terminals.left.V - (held.terminals.left.V + 1e-3)) < 1e-9, `${behind.terminals.left.V} for ${held.terminals.left.V} + 1 mV`);
 });

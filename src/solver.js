@@ -291,8 +291,11 @@ export class Solver {
     this.termDX = this.terms.map(() => new Float64Array(this.terms.length));
     this.termRes = new Float64Array(this.terms.length);
     this._refreshSources();
-    // A floating terminal starts level with the first held one (no current).
-    const level = this.termV[this.terms.findIndex((_, k) => !this.floating.includes(k))];
+    // A floating terminal starts level with the first held one (no current); where none is held,
+    // with the source behind the first resistance (it was NaN there, and a metal contact's
+    // carrier, its level from that V, asked for a c0 a conductor can't be given), else 0.
+    const heldK = this.terms.findIndex((_, k) => !this.floating.includes(k)), behindR = this.terms.find((t) => t.drive.R > 0);
+    const level = heldK >= 0 ? this.termV[heldK] : behindR ? sourceAt(behindR.drive.src, this.time) : 0;
     for (const k of this.floating) this.termV[k] = this.terms[k].drive.kind === 'V' ? this.termV[k] : level;
     // Accepted steps, most recent first: start time, size, start state (for BDF2 and the
     // error estimate of adaptive stepping).

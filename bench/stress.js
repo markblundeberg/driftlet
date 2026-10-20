@@ -478,7 +478,8 @@ function runCase(family, k) {
       if (!sol.converged) return 'no equilibrium to linearise about';
       // (well below the slowest diffusion's corner, L²/D)
       const fDC = Math.min(1e-6, 1e-3 / (2 * Math.PI * d._solver.slowestTime()));
-      const fs = [fDC, 1e-2, 1e2, 1e6, 1e9], Z = d.impedance(fs, { terminal: plan.side }).Z;
+      const fs = [fDC, 1e-2, 1e2, 1e6, 1e9], Zr = d.impedance(fs, { terminal: plan.side }), Z = Zr.Z;
+      let unresolved = Zr.relError[0] > 1e-2;
       for (let j = 0; j < fs.length; j++) {
         const re = Z.re[j], im = Z.im[j], m = Math.hypot(re, im);
         if (!Number.isFinite(m)) return `non-finite at ${fs[j]} Hz`;
@@ -504,9 +505,13 @@ function runCase(family, k) {
       const tau = Y.im / (2 * Math.PI * f) / Math.abs(G);
       if (2 * Math.PI * f * tau > 1e-3) {
         f = 1e-3 / (2 * Math.PI * tau);
-        const z = d.impedance([f], { terminal: plan.side }).Z;
+        const zr = d.impedance([f], { terminal: plan.side }), z = zr.Z;
         Y = admittance(z.re[0], z.im[0]);
+        unresolved = zr.relError[0] > 1e-2;
       }
+      // (Where the impedance says Z isn't resolved there, its relError over 1% and warned of,
+      // there's nothing to compare: a silver cell passing 5e-9 A/m² per volt at 5e-12 Hz.)
+      if (unresolved) return '';
       // (0.5%: a cell passing nanoamps at ±0.1 mV has steady currents precise to about that;
       // and none below 1e-13 A/m²)
       if (Math.abs(Y.re - G) > 5e-3 * Math.hypot(Y.re, Y.im, G) + 1e-13 / dV) return `at ${f.toPrecision(2)} Hz Re Y = ${Y.re.toExponential(3)}, steady dI/dV = ${G.toExponential(3)} S/m²`;

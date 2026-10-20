@@ -115,7 +115,7 @@ after a voltage step; and the impedance about equilibrium, from far below its sl
 to 1 GHz. Every result is judged by `check()`, and by what must hold whatever the device:
 levels flat at equilibrium with no current, warm and cold solves agreeing, the current driven
 being the one passed, the impedance passive (to 1e-3 of |Z|) and, at low frequency, equal to
-the steady dI/dV, a MOS capacitance never above its oxide's, and its gate charge with the back
+the steady dI/dV where it says it's resolved (`relError` under 1%), a MOS capacitance never above its oxide's, and its gate charge with the back
 contact moved what it is with the gate moved the other way. Each case is seeded from its family and index, so
 any failure reruns alone (`npm run stress -- semi 79`).
 
