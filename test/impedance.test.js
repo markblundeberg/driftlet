@@ -334,3 +334,57 @@ test('a blocking electrode in a crowded or Debye–Hückel electrolyte: the real
     assert.ok(z.Z.im[0] < 0); // (a capacitor; crowding changes how much)
   }
 });
+
+// A MOS capacitor whose gate floats (I = 0), or sits behind a series resistance, read at either
+// terminal. Its circuit row reads the gate's current by the change of its charge (src/lawRows.js);
+// at dt = ∞ it was read by the flux through the metal instead, so a floating gate's current was
+// counted twice (its capacitance 2× dQ/dV); and read by that flux throughout, the back contact's
+// Z behind 1 kΩ·m² was the round-off of the metal's G Δη (Re Z −2.7 for 1000).
+const mosGate = (gate) => build({
+  T: 300,
+  library: [semiconductor('Si'), metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }],
+  stack: [ohmic(gate, ['e-']), layer('Al', units.nm(20)), { phi: { type: 'capacitive', C: 10 }, zeroCharge: -0.95 }, layer('SiO2', units.nm(10)), { dipole: 0 }, layer('Si', units.um(1), { name: 'Si', acceptors: units.perCm3(1e17) }), ohmic(0)],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: units.nm(0.5), hmax: units.nm(100), ratio: 1.3 },
+});
+
+test('a floating gate has the impedance of the same gate held at its voltage', () => {
+  const fs = [1e-2, 1, 1e2, 1e4];
+  const floating = new Device(mosGate({ I: 0 })), V = floating.solve().terminals.left.V;
+  const a = floating.impedance(fs, { terminal: 'left' }).Z, b = new Device(mosGate(V)).impedance(fs, { terminal: 'left' }).Z;
+  fs.forEach((_, q) => assert.ok(Math.hypot(a.re[q] - b.re[q], a.im[q] - b.im[q]) < 1e-6 * Math.hypot(b.re[q], b.im[q]), `f = ${fs[q]}: (${a.re[q]}, ${a.im[q]}) floating, (${b.re[q]}, ${b.im[q]}) held`));
+});
+
+test('a gate behind a series resistance, read at the back contact: Z is the held gate\'s plus R', () => {
+  const fs = [1e-2, 1e2, 1e4, 1e5, 1e6];
+  const Z0 = new Device(mosGate(-1.95)).impedance(fs).Z;
+  for (const R of [1e-2, 1e3]) {
+    const r = new Device(mosGate({ V: -1.95, R })).impedance(fs), Z = r.Z;
+    fs.forEach((f, q) => {
+      assert.ok(Math.abs(Z.re[q] - (Z0.re[q] + R)) < 1e-6 * R + 1e-6 * Math.abs(Z0.re[q]), `R ${R}, f ${f}: Re ${Z.re[q]}`);
+      assert.ok(Math.abs(Z.im[q] - Z0.im[q]) < 1e-4 * Math.abs(Z0.im[q]), `R ${R}, f ${f}: Im ${Z.im[q]} for ${Z0.im[q]}`);
+    });
+    assert.equal(r.warnings.filter((w) => /impedance:/.test(w)).length, 0);
+  }
+});
+
+// Between blocking electrodes far below the double layers' relaxation, almost no current flows,
+// and what does is lost to round-off: Re Z read 1e4 times too large at 1e-4 Hz, negative at
+// 1e-2, each returned without a word. Each Z now carries its estimated error, and is warned of.
+test('a Z the current can\'t resolve is said to be unresolved, with its estimated error', () => {
+  const c0 = 1, eps = 78.5 * EPS0, L = 1e-6, lam = Math.sqrt((eps * RT) / (2 * FARADAY ** 2 * c0));
+  const wall = { V: 0, phi: 'pinned', zeroCharge: 0 };
+  const dev = new Device({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 78.5, species: { 'Na+': { D: 1.5e-9, mu0: -261.9e3 }, 'Cl-': { D: 1.5e-9, mu0: -131.2e3 } } } },
+    regions: [{ material: 'water', length: L, c0: { 'Na+': c0, 'Cl-': c0 } }],
+    contacts: { left: wall, right: wall },
+    grid: { hmin: lam / 200, hmax: lam / 5, ratio: 1.05 },
+  });
+  const low = dev.impedance([1e-6, 1e-4]);
+  assert.ok(low.relError.every((e) => e > 1e-2), String(low.relError));
+  assert.ok(low.warnings.some((w) => /Z isn't resolved at 0\.000001…0\.0001 Hz/.test(w)), low.warnings.join('\n'));
+  const fine = dev.impedance([1, 1e4]);
+  assert.ok(fine.relError.every((e) => e < 1e-3), String(fine.relError));
+  assert.equal(fine.warnings.filter((w) => /impedance:/.test(w)).length, 0);
+});

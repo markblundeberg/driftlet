@@ -19,14 +19,19 @@
 //   ComplexBlockTridiagonal (src/blockTridiagonal.js)  a complex block-tridiagonal factorisation.
 //
 // impedance(frequencies, { terminal = 'right', profiles = false })
-//   → { f, Z: { re, im }, profiles? }, Z in Ω·m² (Ω for a non-planar device) at each frequency.
+//   → { f, Z: { re, im }, relError, profiles? }, Z in Ω·m² (Ω for a non-planar device) at each
+//   frequency.
 //   Throws a SolverError where the terminal doesn't exist, has a series resistance, or every
 //   other terminal is driven by a current (no return path: Z infinite), or where a frequency
-//   isn't positive.
+//   isn't positive and finite.
 //   Linearised about the present state: (J + iωS)·δx + Σ_k B_k δV_k = 0 for the grid's rows and,
 //   for each floating terminal k (driven by a current), (C_k + iωC′_k)·δx + (DI_k + iωDI′_k) δV_k
 //   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J the steady Jacobian (dt = ∞) and S, C′, DI′,
-//   DX′ the storage parts, (X(dt) − X(∞))·dt at dt = 1e-30. The measured terminal: held at a
+//   DX′ the storage parts, (X(dt) − X(∞))·dt at dt = 1e-30. A floating terminal that alone feeds
+//   a conserved combination (a circuit law: a constraint or time law with its circuit row) has
+//   its current read by that combination's change at every frequency, iω F δS/λ plus what a
+//   resistance passes: at dt = 1e-30 every circuit law reads by the change (this.lawForm), and
+//   its steady parts are C = 0, DI = 1/R (0 driven by a current), DX = 0. The measured terminal: held at a
 //   voltage, δV = 1 and Z = 1/δI, δI its current into the device; driven by a current, δI = 1
 //   and Z = δV. Every other terminal keeps its drive: held, δV = 0 (AC ground); driven, δI = 0
 //   (AC open).
@@ -39,10 +44,15 @@
 //   estimated from its terms' round-off and the solves' residuals; for a contact, also across
 //   each cut (_currentCuts: a segment's linearised total current, conduction and displacement,
 //   between that contact and the nearest port's window where there are ports), the reading with
-//   the least error taken. With no floating terminal, cuts, and that error over 1% of the current:
+//   the least error taken; and where every other terminal floats, by Kirchhoff, Σ δV_k/R_k over
+//   those behind a resistance, its error (ε + the solves' residual)·|δV_k|/R_k. With no floating
+//   terminal, cuts, and that error over 1% of the current:
 //   the response split into each region's uniform shift (_regionShift) and a remainder solved to
 //   GMRES's floor, the shift's effect taken only at the rows it can touch (_regionEdgeRows), and
 //   that reading kept where its error is less.
+//   relError: per frequency, the chosen reading's error estimate over |δI| (held); driven, the
+//   same estimate of its unit current read back from δx. Cautious: it can exceed the true error
+//   many times, and Device.impedance warns where it's over 1%, or a negative Re Z is within it.
 //   profiles: per frequency, _smallSignalProfiles(δx): δφ (V), δμ̄_i (J/mol) and δc_i (mol/m³)
 //   at each node, complex, per volt (held) or per unit current (driven); NaN where φ is undefined,
 //   where a species is absent, and for a metal's concentration.
@@ -53,13 +63,17 @@
 //      the steady state's differential dV/dI at the measured terminal (the other terminals'
 //      drives held), and the readout doesn't depend on which cut or the contact it was read at
 //      beyond its error estimate.
+//   2b. The same terminal measured held (at the voltage it has) or driven by a current (at the
+//      current it passes) has the same Z, within relError: one input impedance.
 //   3. A term the steady system holds by a law in place of a balance row (src/lawRows.js) is in
 //      the linearisation only as the assembly's rows are: steady rows replaced by laws are not
 //      in J (the assembly here runs with this.steady false).
 //   4. Deterministic: the same state, frequencies and options give the same Z, bit for bit.
 // Also written, left as the last assembly at dt = ∞ left them: this.sourceTime (the present
 // time), cOld, thOld, th0Old, gateOld (the present state's), contactDStart, portQStart, the
-// residual, the Jacobian and the terminal terms, sysRest and the concentrations.
+// residual, the Jacobian and the terminal terms, sysRest and the concentrations; this.lawForm
+// (every circuit law by the change, until a step sets it afresh). _regionShift treats every
+// node's slot 0 as φ̂, a metal's flux unknown too: harmless while a metal region is one cell.
 // Tests: test/impedance.test.js (Macdonald's blocking electrodes, a junction's depletion
 // capacitance, a MOS capacitor at both terminals, ports, profiles, Fermi–Dirac against
 // Boltzmann); the demos' EIS.
@@ -233,12 +247,13 @@ export class SmallSignal {
       );
     }
     const N = nB * M, fl = this.floating, K = fl.length;
+    const kirchhoff = dT.kind === 'V' && others.every((t) => t.drive.kind === 'I' || t.drive.R > 0);
     this.sourceTime = this.time;
     this.computeConcentrations();
     this.cOld.set(this.c);
     this.thOld.set(this.th);
     this.th0Old.set(this.th0);
-    this.gateList.forEach((gt, j) => (this.gateOld[j] = this.u[gt.o]));
+    this.gateList.forEach((gt, j) => (this.gateOld[j] = this.u[gt.o] + this.uLo[gt.o]));
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };
     this.portQStart = Float64Array.from(this.portQ);
@@ -247,7 +262,21 @@ export class SmallSignal {
     const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
     const Bt = this.termB.map((v) => v.slice()), Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI), DX = this.termDX.map((v) => v.slice());
     const dts = 1e-30;
+    // A floating terminal that alone feeds a conserved combination has its current read, at a
+    // finite dt, by that combination's change (circuitLaws in src/lawRows.js), and here always
+    // so: iω F δS/λ, plus what a resistance passes, with no steady part of its own. Read by the
+    // flux at dt = ∞ and by the change at dt = 1e-30, a floating gate's current was counted
+    // twice (its capacitance 2× dQ/dV); read by the flux throughout, through a metal it is the
+    // round-off of G Δη (a gate behind 1 kΩ·m², measured at the back contact: Re Z = −2.7).
+    this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, true]));
     this.assemble(dts);
+    for (const cs of [...this.constraints, ...this.timeLaws]) {
+      const k = cs.circuit;
+      if (k < 0 || !fl.includes(k) || cs.contacts?.length > 0) continue;
+      Ct[k].fill(0);
+      DI[k] = this.terms[k].drive.R > 0 ? 1 / this.terms[k].drive.R : 0;
+      DX[k].fill(0);
+    }
     const S = {};
     for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
     const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
@@ -282,7 +311,7 @@ export class SmallSignal {
     const xr = new Float64Array(N), xi = new Float64Array(N);
     const rRes = new Float64Array(Nc), iRes = new Float64Array(Nc);
     const jr = new Float64Array(Nc), ji = new Float64Array(Nc), sr = new Float64Array(Nc), si = new Float64Array(Nc);
-    const out = { f: Float64Array.from(frequencies), Z: { re: new Float64Array(frequencies.length), im: new Float64Array(frequencies.length) } };
+    const out = { f: Float64Array.from(frequencies), Z: { re: new Float64Array(frequencies.length), im: new Float64Array(frequencies.length) }, relError: new Float64Array(frequencies.length) };
     if (profiles) out.profiles = [];
     // (C + iωC′)·(ar + i ai) for terminal k
     const dot = (k, w, ar, ai) => {
@@ -296,7 +325,7 @@ export class SmallSignal {
     };
     Array.from(frequencies).forEach((f, q) => {
       const w = 2 * Math.PI * f;
-      if (!(w > 0)) throw new SolverError('impedance: frequencies must be positive');
+      if (!(w > 0 && Number.isFinite(w))) throw new SolverError('impedance: frequencies must be positive and finite');
       // Rows scaled by their largest entry (and the terminal columns with them).
       const scale = new Float64Array(Nc);
       for (let blk = 0; blk < nB; blk++) {
@@ -428,11 +457,13 @@ export class SmallSignal {
       // levels that the solved rows don't pin.
       // `parts`: the response as a sum, each part compact (r, i) and full-index (fr, fi), with the
       // absolute error of its entries.
-      const read = (parts) => {
-        const eps = 1.1e-16, c = Ct[kT], cs = Cs[kT];
-        let Ir = DI[kT], Ii = w * DIs[kT], err = eps * (Math.abs(DI[kT]) + w * Math.abs(DIs[kT]));
+      // `own`: the measured terminal's δV (1 held; driven, its solved one).
+      const read = (parts, own = [1, 0]) => {
+        const eps = 1.1e-16, c = Ct[kT], cs = Cs[kT], dr = DI[kT], di = w * DIs[kT];
+        let Ir = dr * own[0] - di * own[1], Ii = dr * own[1] + di * own[0], err = eps * (Math.abs(dr) + Math.abs(di)) * Math.hypot(...own);
         // (the floating terminals' voltages, where kT's current reads rows they reach)
         fl.forEach((k2, b) => {
+          if (k2 === kT) return;
           const xr = DX[kT][k2], xi = w * DXs[kT][k2];
           Ir += xr * dV.re[b] - xi * dV.im[b];
           Ii += xr * dV.im[b] + xi * dV.re[b];
@@ -442,6 +473,22 @@ export class SmallSignal {
           Ir += re;
           Ii += im;
           for (let j = 0; j < Nc; j++) err += (Math.abs(c[j]) + w * Math.abs(cs[j])) * (eps * Math.hypot(p.r[j], p.i[j]) + p.floor);
+        }
+        // Kirchhoff, where every other terminal floats: what they pass comes back through kT,
+        // δI = Σ δV_k/R_k over those behind a resistance (one driven by a current passes no small
+        // signal), from their voltages alone. (Read at the contact, a back contact's current with
+        // the gate behind 1 kΩ·m² is the difference of two responses equal to 1e-6 of each: its
+        // Im Z came out 2.7× off at 1 MHz.)
+        if (kirchhoff) {
+          let re = 0, im = 0, e = 0;
+          fl.forEach((k2, b) => {
+            const R = this.terms[k2].drive.R;
+            if (k2 === kT || !(R > 0)) return;
+            re += dV.re[b] / R;
+            im += dV.im[b] / R;
+            e += ((eps + accuracy) * Math.hypot(dV.re[b], dV.im[b])) / R;
+          });
+          if (e < err) [err, Ir, Ii] = [e, re, im];
         }
         if (!cuts) return { Ir, Ii, err };
         const sgn = kT === 0 ? 1 : -1;
@@ -511,14 +558,18 @@ export class SmallSignal {
             }
           }
         }
+        out.relError[q] = err / Math.hypot(Ir, Ii);
         const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
         Zr = Ir / d2;
         Zi = -Ii / d2;
       } else {
-        // δV per unit current
+        // δV per unit current; its error as the unit current's, read back from δx, is uncertain
+        // (round-off in the current's terms, and the solves' residuals: see read)
         const a = fl.indexOf(kT);
         Zr = dV.re[a];
         Zi = dV.im[a];
+        const back = read([{ r: yr, i: yi, fr: xr, fi: xi, floor: accuracy * largest(yr, yi) }], [Zr, Zi]);
+        out.relError[q] = back.err / Math.hypot(back.Ir, back.Ii);
       }
       out.Z.re[q] = Zr;
       out.Z.im[q] = Zi;

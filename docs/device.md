@@ -1012,7 +1012,11 @@ const now = dev.solution();                   // snapshot of the current state
   and nothing warns of it: in a porous electrode, $`\sqrt{\kappa/(\omega C a)}`$ (cells of 2 µm
   against a 3.4 µm depth put Z 7% off, falling as the cells do; at an electrode, the diffusion
   length $`\sqrt{2D/\omega}`$ at the highest frequency). The result is `{ f, Z: { re, im },
-  warnings }`, the warnings being the steady state's. With `profiles: true`, `profiles[k]` holds
+  relError, warnings }`: `relError[k]`, each Z's estimated error relative to $`|Z|`$ (from
+  round-off in the current and the solves' residuals, and cautious: it can exceed the true error
+  many times), and the warnings, the steady state's and one where a Z isn't resolved (an error
+  over 1%: far below a capacitive device's relaxation, almost no current flows, and what does is
+  lost to round-off) or a negative Re Z lies within its error of 0. With `profiles: true`, `profiles[k]` holds
   frequency k's complex profiles, `{ phi, mu: {name}, c: {name} }`, each `{ re, im }` at the
   nodes (`NaN` where a quantity doesn't exist), per unit excitation: a volt, or an A/m² where the
   terminal is driven by a current.

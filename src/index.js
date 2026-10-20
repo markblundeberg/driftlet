@@ -241,7 +241,28 @@ export class Device {
     if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
-    return { ...this.solver.impedance(frequencies, opts), warnings };
+    const out = this.solver.impedance(frequencies, opts);
+    // Where the current a frequency carries is lost to round-off (far below the device's slowest
+    // relaxation, or read as a small difference of large terms), Z is said to be unresolved: an
+    // electrolyte between blocking electrodes at 1e-4 Hz read Re Z 1e4 times too large, and a
+    // closed host's held terminal at 1e-7 Hz a negative one, each returned without a word.
+    const g = (x) => String(Number(x.toPrecision(3))), lost = [], rough = [];
+    out.f.forEach((f, q) => {
+      const e = out.relError[q], Z = Math.hypot(out.Z.re[q], out.Z.im[q]);
+      if (!(e <= 1e-2)) lost.push(f);
+      else if (out.Z.re[q] < 0 && -out.Z.re[q] < e * Z) rough.push(f); // (a negative Re Z within its error of 0; the estimate is cautious, so a positive one isn't flagged)
+    });
+    if (lost.length > 0) {
+      warnings.push(
+        `impedance: Z isn't resolved at ${g(lost[0])}${lost.length > 1 ? `…${g(lost.at(-1))}` : ''} Hz (${lost.length} of ${out.f.length} frequencies): its estimated error (relError) is over 1%, the current there lost to round-off ` +
+          '(far below a capacitive device\'s relaxation, where almost no current flows, or where the current is a small difference of large terms). ' +
+          'Measuring at another terminal, or with this one driven by a current (at its steady current, e.g. I: 0), can avoid it: a closed host at open circuit resolved so, blocking electrodes did not.',
+      );
+    }
+    if (rough.length > 0) {
+      warnings.push(`impedance: Re Z is negative at ${g(rough[0])}${rough.length > 1 ? `…${g(rough.at(-1))}` : ''} Hz (${rough.length} of ${out.f.length} frequencies), but within its estimated error of 0: there it is too small to resolve, not negative.`);
+    }
+    return { ...out, warnings };
   }
 
   /**
