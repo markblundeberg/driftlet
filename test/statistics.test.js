@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AVOGADRO, Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { fermiHalf, fermiMinusHalf } from '../src/fermi.js';
+import { readFileSync } from 'node:fs';
 
 const RT = GAS_CONSTANT * 298.15;
 const VT = RT / FARADAY;
@@ -480,4 +481,19 @@ test('Debye–Hückel: a composition given in part inverts to its levels up to t
     assert.ok(Math.abs(z[0] - zt) < 1e-13, `ζ ${zt} (c ${c[0]}): back as ${z[0]}`);
   }
   assert.throws(() => md.evaluate(Float64Array.of(-0.9, -0.9), new Float64Array(2), K), /not convex/);
+});
+
+// From round 14's fuzzer (its device ec 94: a Pt electrode in K⁺/Cl⁻/Fe³⁺/Fe²⁺ water under
+// Debye–Hückel, driven hard): the states a solve or a transient reaches leave Debye–Hückel's
+// range (it isn't convex there). solve() said "nothing specific showed why", and after a failed
+// transient threw the model's error uncaught; both now fail and say it.
+test('a Debye–Hückel solution driven past its range: solve() and advance() fail and say why, without throwing', () => {
+  const def = JSON.parse(readFileSync(new URL('./fixtures/debye-huckel-past-range.json', import.meta.url), 'utf8'));
+  const s = new Device(def).solve();
+  assert.equal(s.converged, false);
+  assert.ok(s.warnings.some((w) => /refused by a statistics model: debye-huckel/.test(w)), s.warnings.join('\n'));
+  const d = new Device(def), a = d.advance(1e5, { tol: 1e-5 });
+  assert.equal(a.converged, false);
+  assert.ok(a.warnings.some((w) => /refused by a statistics model: debye-huckel/.test(w)), a.warnings.join('\n'));
+  assert.equal(d.solve().converged, false);
 });

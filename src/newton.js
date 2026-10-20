@@ -75,7 +75,9 @@
 // Also written: s.islandsOn (as asked, or on by 8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
 // s.rowDiv; what an assembly writes, at the returned state where a probe or 6's check ran;
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
-// its message).
+// its message); s.modelError, the message of a SolverError a statistics model threw at a state
+// Newton reached (in the assembly, or computing the concentrations where it stops), which fails
+// the call rather than leaving it (cleared by solveSteady and integrate, for their failures).
 // Tests: every solve and step goes through here; test/newton.test.js (the islands round, the
 // residual check's failure) and the MOS gate step in test/ports.test.js (a lost mode, to 1e-6);
 // test/jacobian.test.js checks the system it solves. The devices that needed each branch are in
@@ -401,6 +403,19 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   };
   // A steady solve that fails: record how nearly singular the system was, and where; or, failing
   // with the islands' rows in, go back to the solution without them.
+  // The concentrations at the state Newton stops at, where a statistics model can refuse it (a
+  // Debye–Hückel solution past its range, at the converged state of a transient: the error was
+  // thrown from here, uncaught, out of solve() and advance()). Its message, for the failure.
+  const settle = () => {
+    try {
+      s.computeConcentrations();
+      return null;
+    } catch (err) {
+      if (!(err instanceof SolverError)) throw err;
+      s.modelError = err.message;
+      return err.message;
+    }
+  };
   const fail = (r) => {
     if (kept) {
       s.u.set(kept.u);
@@ -430,6 +445,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     } catch (err) {
       // A statistics model can fail far from the solution (e.g. Debye–Hückel beyond its range).
       if (!(err instanceof SolverError)) throw err;
+      s.modelError = err.message;
       return fail({ converged: false, iterations: it, history, error: err.message });
     }
     equilibrate(s);
@@ -500,7 +516,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       const done = { converged: true, iterations: it, history, residual: rmax };
       if (probed()) continue;
       if (islandsOff(it, done)) continue;
-      s.computeConcentrations();
+      const refused = settle();
+      if (refused) return fail({ converged: false, iterations: it, history, error: refused });
       return done;
     }
     // Converged as far as round-off allows: the updates are already tiny (below 1e-6 thermal
@@ -523,12 +540,13 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
       if (probed()) continue;
       if (islandsOff(it, done)) continue;
-      s.computeConcentrations();
+      const refused = settle();
+      if (refused) return fail({ converged: false, iterations: it, history, error: refused });
       return done;
     }
   }
-  s.computeConcentrations();
-  return fail({ converged: false, iterations: maxIter, history });
+  const refused = settle();
+  return fail({ converged: false, iterations: maxIter, history, ...(refused ? { error: refused } : {}) });
 }
 
 // How far the terminal currents (as last assembled) are from adding up to zero, relative to the

@@ -311,6 +311,11 @@ export function makeSolution(solver, result = {}) {
       `the solve did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
         'Hold that terminal at a voltage first, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.',
     );
+  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.modelError) {
+    sol.warnings.push(
+      `the solve did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
+        'The model doesn\'t hold there: a smaller concentration or drive, or a model for it (lattice for crowding).',
+    );
   } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12)) {
     sol.warnings.push(
       'the solve did not converge, and nothing specific showed why. ' +

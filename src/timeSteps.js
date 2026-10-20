@@ -267,6 +267,7 @@ export function integrate(s, tEnd, opts = {}) {
   const sample = s._probes(opts.probes);
   const trace = { t: [], current: [], voltage: [], ...(sample ? { probes: sample.out } : {}) };
   let steps = 0, rejected = 0, iterations = 0, failed = false;
+  s.modelError = null; // (a statistics model's refusal, for the failure: see newton)
   // Already there (an animation frame with no time to add): nothing to do, and the step size
   // carried to the next call stays as it was. A time already passed, or reached again outside
   // an animation, is most likely advance(dt) read as a duration: say so.
@@ -400,6 +401,8 @@ export function integrate(s, tEnd, opts = {}) {
     stopped = `${at}: the start can't be neutral in ${unbalanced.join(', ')}, strictly neutral (ε = 0): the amounts its c0 gives leave a net charge that no species held at a contact's level can balance, and a step can't move a stored amount at once. Give c0 that balances (with any fixed charge), or leave out of c0 the species a contact feeds, so that they start at its level.`;
   else if (failed && violent.length > 0)
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
+  else if (failed && s.modelError)
+    stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s, the state it reached refused by a statistics model: ${s.modelError}. The model doesn't hold there: a smaller concentration or drive, or a model for it (lattice for crowding).`;
   else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };

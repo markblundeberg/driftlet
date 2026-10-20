@@ -190,6 +190,7 @@ export class SteadySolves {
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
     this.drifted = null; // (an amount no row keeps, lost by a giant step: see _steadySteps)
+    this.modelError = null; // (a statistics model's refusal, for the failure: see newton)
     // A solve that fails leaves where the state was solved, and whether it was stepped, as they
     // were (Device.solve restores the state): a floating continuation's held solves had set them,
     // and the next held solve ramped warm from a voltage the state was never at, and failed.
