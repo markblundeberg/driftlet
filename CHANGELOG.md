@@ -3,6 +3,29 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.3.2 (2026-10-20)
+
+From two more fuzzers (round 15), aimed at what changed this week:
+- A resistance behind another terminal is added in series in the impedance: a floating
+  contact's circuit row read its current through a metal (round-off) or a faulty semiconductor
+  contact reading, and the response to the measured terminal's voltage, nearly a uniform shift
+  of the levels, read its current as a difference of large terms (a Pt electrode behind 3000
+  Ω·m², read at the bath: Z − R came out 70.5 for 3070.5; a MOS gate's C fell with its back
+  contact's R; a MOS with a channel port read Re Z −10% of |Z| at equilibrium). Floating contacts
+  now read at the most accurate cut, and that response through every terminal's shift passing
+  nothing. A closed Fe³⁺/Fe²⁺ cell measured at a contact at I: 0 gave NaN; a singular
+  factorisation threw a bare Error.
+- A statistics model refusing a state (Debye–Hückel past its range) fails the solve or transient
+  and says so, where it threw uncaught or said "nothing specific"; and Debye–Hückel's limiting
+  law (its default) between baths, with no c0, no longer throws from the cold start.
+- Terminals behind a resistance: a cold solve holds them at their source (or, beside terminals
+  driven by currents, at V_src − I R, Kirchhoff's I) and puts the resistance back, or finds the
+  load line's crossing by held solves; every floating terminal starts level with the held one.
+  Cold solves behind resistances that failed (a Schottky diode behind 7 Ω·m²; a silver cell 16 V
+  behind R) converge; some extreme cases still fail, loudly (ROADMAP).
+- A transient that fails at its first step from c0's layout says to solve() first.
+- Docs: taking a resistance off a terminal (`R: undefined`).
+
 ## 1.3.1 (2026-10-20)
 
 - The impedance at a terminal driven by a current is now measured as its input impedance read
