@@ -24,6 +24,12 @@ if (cmd === 'record') {
   const dir = resolve(args[0]), at = args.indexOf('--root'), root = resolve(at >= 0 ? args[at + 1] : join(here, '..'));
   const files = args.slice(1).filter((a, i, all) => a !== '--root' && all[i - 1] !== '--root');
   const tests = files.length > 0 ? files : readdirSync(join(root, 'test')).filter((f) => f.endsWith('.test.js')).sort().map((f) => `test/${f}`);
+  // (Each call appends to DIR/<test>.txt: into a folder an earlier run used, the comparison
+  // would carry that run's lines too, and can pass on them.)
+  if (existsSync(dir) && readdirSync(dir).length > 0) {
+    console.log(`record: ${dir} isn't empty; give a new folder`);
+    process.exit(2);
+  }
   mkdirSync(dir, { recursive: true });
   let failed = 0;
   for (const t of tests) {
