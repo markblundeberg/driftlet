@@ -21,6 +21,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/assemble.js` | yes: the equations assembled, the conventions of every row, and the order of the terms |
 | `src/regions.js` | yes: statistics, storage, fluxes along segments, bulk reactions, the neutral nodes' charge rows |
 | `src/boundaries.js` | yes: faces (φ laws, links, reactions, gates), ports, contacts, circuit rows |
+| `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
@@ -68,7 +69,7 @@ By method, in file order:
 
 - **Setup:** the constructor (layout, per-node data, φ-undefined regions, terminals),
   `_activeSlots`, `_findStretches` (stretches, flat stretches), `_laws` and `_structure` (the
-  laws, from `src/laws.js`), `_directSteady`.
+  laws, from `src/laws.js`).
 - **Applying the laws** is `src/lawRows.js` (`captureLaws`, `captureLocal`, `snapFlat`,
   `applyLaws`, `solveBordered`), called from `assemble`, Newton and the steady solves.
 - **Starting state** is `src/start.js` (`initFromComposition`, which the Solver's own calls);
@@ -86,8 +87,10 @@ By method, in file order:
   `_restore`, `_warmFrom` and `_probes`, which the API uses too, stay in the solver.
 - **Small signal:** `impedance` and the helpers after it.
 - **Bookkeeping:** `segmentFluxes`, `faceOneWay`, `_assembleBookkeeping`, the contacts' intake.
-- **Steady solves:** `solveSteady`, `_steadyFromHere`, the continuations (floating, generation,
-  a terminal's level), `_steadySteps`.
+- **Steady solves** are `src/steady.js` (`solveSteady`, `_steadyFromHere`, the continuations:
+  floating, generation, a contact's voltage; `_steadySteps`, the pseudo-transient ramp, and
+  `_renormalizeSpectators`; `_directSteady`, `slowestTime`, `fastestTime`, `stuckReactions`),
+  methods of the Solver like the assembly's.
 
 The rest of `src/solver.js` is to be split along these lines, each piece with its contract.
 
