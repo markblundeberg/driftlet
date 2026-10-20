@@ -384,6 +384,9 @@ test('a Z the current can\'t resolve is said to be unresolved, with its estimate
   const low = dev.impedance([1e-6, 1e-4]);
   assert.ok(low.relError.every((e) => e > 1e-2), String(low.relError));
   assert.ok(low.warnings.some((w) => /Z isn't resolved at 0\.000001…0\.0001 Hz/.test(w)), low.warnings.join('\n'));
+  // Re Z, positive but 153× too large at 1e-3 Hz, where its error estimate is over it.
+  const rough = dev.impedance([1e-3]);
+  assert.ok(rough.relError[0] < 1e-2 && rough.warnings.some((w) => /Re Z isn't resolved at 0\.001 Hz/.test(w)), rough.warnings.join('\n'));
   const fine = dev.impedance([1, 1e4]);
   assert.ok(fine.relError.every((e) => e < 1e-3), String(fine.relError));
   assert.equal(fine.warnings.filter((w) => /impedance:/.test(w)).length, 0);

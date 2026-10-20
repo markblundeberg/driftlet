@@ -318,7 +318,7 @@
  * @property {Float64Array} f frequencies, Hz
  * @property {{ re: Float64Array, im: Float64Array }} Z impedance δV/δI at the terminal, I into the device, Ω·m²
  * @property {Float64Array} relError each Z's estimated error, relative to |Z| (on Re Z and Im Z alike): the current's round-off
- *   and the solves' residuals; cautious (it can exceed the true error many times). Over 1%, or a negative Re Z within it,
+ *   and the solves' residuals; cautious (it can exceed the true error many times). Over 1%, or over 10·|Re Z|/|Z|,
  *   a warning says so
  * @property {{ phi: ComplexProfile, mu: Record<string, ComplexProfile>, c: Record<string, ComplexProfile> }[]} [profiles]
  *   per frequency, per unit excitation (volt, or A/m² in current mode)

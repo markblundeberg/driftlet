@@ -1016,7 +1016,7 @@ const now = dev.solution();                   // snapshot of the current state
   round-off in the current and the solves' residuals, and cautious: it can exceed the true error
   many times), and the warnings, the steady state's and one where a Z isn't resolved (an error
   over 1%: far below a capacitive device's relaxation, almost no current flows, and what does is
-  lost to round-off) or a negative Re Z lies within its error of 0. With `profiles: true`, `profiles[k]` holds
+  lost to round-off) or Re Z is under a tenth of its error, relError·|Z|. With `profiles: true`, `profiles[k]` holds
   frequency k's complex profiles, `{ phi, mu: {name}, c: {name} }`, each `{ re, im }` at the
   nodes (`NaN` where a quantity doesn't exist), per unit excitation: a volt, or an A/m² where the
   terminal is driven by a current.

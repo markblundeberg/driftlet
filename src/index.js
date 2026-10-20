@@ -245,12 +245,14 @@ export class Device {
     // Where the current a frequency carries is lost to round-off (far below the device's slowest
     // relaxation, or read as a small difference of large terms), Z is said to be unresolved: an
     // electrolyte between blocking electrodes at 1e-4 Hz read Re Z 1e4 times too large, and a
-    // closed host's held terminal at 1e-7 Hz a negative one, each returned without a word.
+    // closed host's held terminal at 1e-7 Hz a negative one, each returned without a word; Re Z
+    // as well, where its error estimate is over 10 times it (the same electrodes at 1e-3 Hz: 153×
+    // too large, its estimate 170 times it; at 100 Hz, right, 2 times).
     const g = (x) => String(Number(x.toPrecision(3))), lost = [], rough = [];
     out.f.forEach((f, q) => {
       const e = out.relError[q], Z = Math.hypot(out.Z.re[q], out.Z.im[q]);
       if (!(e <= 1e-2)) lost.push(f);
-      else if (out.Z.re[q] < 0 && -out.Z.re[q] < e * Z) rough.push(f); // (a negative Re Z within its error of 0; the estimate is cautious, so a positive one isn't flagged)
+      else if (!(10 * Math.abs(out.Z.re[q]) > e * Z)) rough.push(f); // (the estimate is cautious: right ones sat within 3× of it)
     });
     if (lost.length > 0) {
       warnings.push(
@@ -260,7 +262,7 @@ export class Device {
       );
     }
     if (rough.length > 0) {
-      warnings.push(`impedance: Re Z is negative at ${g(rough[0])}${rough.length > 1 ? `…${g(rough.at(-1))}` : ''} Hz (${rough.length} of ${out.f.length} frequencies), but within its estimated error of 0: there it is too small to resolve, not negative.`);
+      warnings.push(`impedance: Re Z isn't resolved at ${g(rough[0])}${rough.length > 1 ? `…${g(rough.at(-1))}` : ''} Hz (${rough.length} of ${out.f.length} frequencies): it's under a tenth of its estimated error, relError·|Z| (a cautious estimate), so there read it only as small next to Im Z.`);
     }
     return { ...out, warnings };
   }

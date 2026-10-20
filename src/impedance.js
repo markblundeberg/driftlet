@@ -52,7 +52,10 @@
 //   that reading kept where its error is less.
 //   relError: per frequency, the chosen reading's error estimate over |δI| (held); driven, the
 //   same estimate of its unit current read back from δx. Cautious: it can exceed the true error
-//   many times, and Device.impedance warns where it's over 1%, or a negative Re Z is within it.
+//   many times (a factorised solve already under GMRES's tol is taken as it stands, and its
+//   residual, carried through a current that cancels, can put it 1e5 times over: blocking
+//   electrodes at 100 Hz), and Device.impedance warns where it's over 1%, or relError·|Z| is over
+//   10·|Re Z|.
 //   profiles: per frequency, _smallSignalProfiles(δx): δφ (V), δμ̄_i (J/mol) and δc_i (mol/m³)
 //   at each node, complex, per volt (held) or per unit current (driven); NaN where φ is undefined,
 //   where a species is absent, and for a metal's concentration.
