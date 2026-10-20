@@ -20,7 +20,10 @@
 //                        this.unkept which no row can keep.
 //   this.redrive(), this._refreshSources(), this.sourceOverride  a terminal's drive, changed
 //                        and put back; the held voltages read at this.sourceTime, or the
-//                        override where one is set.
+//                        override where one is set. A redrive() that changes how a terminal is
+//                        driven (a voltage, a current) finds the laws again (this._laws): new
+//                        constraints, local constraints with their references at 0, islands
+//                        off, no pins; this.atSteady false, the history empty.
 //   this.initFromComposition() (src/start.js), this._snapshot()/_restore(), this.amount(st),
 //   this.computeConcentrations(), maxPotentialStep (src/newton.js).
 //
@@ -28,12 +31,13 @@
 //   opts: maxSteps (80: time steps per pseudo-transient ramp), tol (1e-11: the largest potential
 //   change, in thermal units, that ends a ramp of giant steps), continuation (false: Newton from
 //   here and the pseudo-transient ramp only). Sets this.violent (violentStart, where nothing has
-//   been stepped or solved), clears this.unreached and this.charging, captures the laws, and
+//   been stepped or solved), clears this.unreached, this.charging and this.drifted, captures the
+//   laws, and
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
 //   current that only charges a capacitance or feeds a conserved combination (a constraint):
 //   this.charging says which terminal and what it fills. Else _steadyFromHere, and
-//   this.atSteady = converged.
+//   this.atSteady = converged. Not converged: this.solvedV and this.stepped as before the call.
 //
 // _steadyFromHere(opts): in stages until one converges, each from the state the solve began in
 // (u, uLo and termV, put back between stages, the concentrations recomputed) unless it says
@@ -42,8 +46,9 @@
 //   1. Newton from here (_steadySteps): a single step (maxSteps 1) where canContinue or there's
 //      generation, and the device can be solved directly (_directSteady); else the
 //      pseudo-transient ramp with opts' maxSteps. Failing on a state reached by time steps
-//      (this.stepped), on a direct device, the same again from a cold start
-//      (initFromComposition), whose u and uLo become the stages' start.
+//      (this.stepped), on a direct device with continuation not off, the same again from a cold
+//      start (initFromComposition), whose u and uLo become the stages' start (termV stays the
+//      start's: a floating terminal keeps the voltage the transient left it at).
 //   2. Continuation: generation ramped up (_generationContinuation); a terminal driven by a
 //      current, not bound (_bound), held at voltages instead (_floatingContinuation); with
 //      canContinue, the right contact's voltage ramped to its target (_continuation): from the
@@ -51,9 +56,11 @@
 //      moved, else from level contacts, a cold start.
 //   3. The pseudo-transient ramp: after the contact's ramp fails, from the start; otherwise only
 //      where stage 1 was a single step, from the dimmer light's solution where the generation
-//      ramp got past its first solve, else from the start.
-//   Converged (but by _floatingContinuation): this.solvedV = [left, right] held voltages,
-//   this.stepped = false.
+//      ramp got past its first solve (u, uLo and termV as that ramp left them), else from the
+//      start.
+//   Converged (but by _floatingContinuation): this.solvedV = [termV[0], termV[1]], the contacts'
+//   own voltages at the solution (driven by a current or behind a resistance too), this.stepped =
+//   false. (By _floatingContinuation: as its last held solve set them.)
 //
 // _steadySteps({ maxSteps, tol }): up to maxSteps time steps (tau = slowestTime), dt from giant
 //   (∞ where the device can be solved directly; else 1e6·tau): a first step at ∞ that fails is
@@ -65,7 +72,13 @@
 //   or, not direct, where a step of dt ≥ giant moved the potentials under tol (finished by one
 //   step of exactly giant where dt had grown past it, which must converge too). Not direct,
 //   before each step of dt ≥ giant and the finishing one, each spectator's amount restored
-//   (_renormalizeSpectators). On return, whatever the outcome: this.time as it was, the history
+//   (_renormalizeSpectators). Not direct, with unkept laws: after each step of dt ≥ giant, each
+//   unkept combination of stretches' and surfaces' amounts (_unkeptAmounts) must be within 1e-6
+//   of its size (Σ |w·amount|) of what it was when the call began, else the step is put back
+//   (_restore) and counts as failed (`drifted` in its history entry; this.drifted names the
+//   combination's parts); the finishing step, failing that, ends the call unconverged. (A
+//   combination through an electrode's or a contact's charge isn't checked.) On return, whatever
+//   the outcome: this.time as it was, the history
 //   empty, this.dtNext undefined; converged, every connected stretch's referenceAmounts its
 //   amount now and its boundaryIntake 0.
 //
@@ -88,10 +101,13 @@
 //                            held solve whose current is within 1e-10 of the target (by regula
 //                            falsi, Illinois, from the bracket; the scale is the largest current
 //                            seen) is returned as converged, its drive put back. No crossing:
-//                            this.unreached says what the held voltages passed.
+//                            this.unreached says what the held voltages passed. Each time its
+//                            drive is put back, the local constraints' references are taken from
+//                            the state again (captureLocal), which redrive() zeroed.
 //
-// Also: slowestTime() = L²/D_min over present species with D > 0 (1 where none), fastestTime() =
-// h_min²/D_max (slowestTime where there's no such cell); _directSteady(): no law unkept and every
+// Also: slowestTime() = L²/D_min over the species present with D > 0 in the materials some
+// region is made of (1 where none), fastestTime() = h_min²/D_max over the same (slowestTime where
+// there's no such cell); _directSteady(): no law unkept and every
 // stretch connected or conserved; stuckReactions(): after a steady solve, each reaction that
 // alone changes a combination nothing feeds and whose affinity keeps one sign, over 1e-6, wherever
 // it acts (see its comment).
@@ -101,12 +117,19 @@
 //      a giant step's (whose storage term is 1e-6/tau of the rest at most); or, by
 //      _floatingContinuation's regula falsi, the held equations at a voltage whose current is
 //      within 1e-10 of the target's scale.
-//   2. Whatever the outcome, on return: this.time, every terminal's drive, sourceOverride,
-//      generationScale and this.steady as before the call; the history empty.
+//   2. On return: this.time, every terminal's drive, sourceOverride, generationScale and
+//      this.steady as before the call; the history empty, but where the call stopped at once
+//      (this.charging) before any step.
 //   3. A stage that fails leaves no trace in the next one's start: u, uLo and termV are put back
 //      (the concentrations recomputed); only stage 1's cold start, on a stepped state, moves the
 //      start, and stage 3 may begin from the generation ramp's solution.
-//   4. Deterministic: the same state and options give the same result, bit for bit.
+//   4. Deterministic: the same state and options give the same result, bit for bit. The state
+//      here is more than u, uLo, termV and time: this.solvedV, this.stepped, whether the history
+//      is empty (this.violent) and the drives, all of which choose the stages.
+//   5. Reach: time steps reach a mode as slow as ~1e12·tau (1e6·tau a step, past the giant; on a
+//      direct device no finite step is longer than 1e6·tau). A reaction that alone settles a
+//      closed combination, slower than that, isn't waited out: the solve fails or converges where
+//      it began, and stuckReactions names it (Solution's warnings, both ways).
 // Tests: every Device.solve goes through here; test/steady.test.js (the stages, the laws, the
 // continuations) and test/generation.test.js; the devices that needed each stage are named in its
 // comments.
@@ -119,20 +142,26 @@ import { violentStart } from './timeSteps.js';
 
 export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
+  // (Of the materials some region is made of: one defined but unused, its D = 1e-22, made a
+  // giant step 1e7 times longer, too long to keep a fast species' amount: see _steadySteps.)
   slowestTime() {
     const { model } = this;
     let dMin = Infinity;
-    for (const mat of model.materials) {
+    for (const mat of this._usedMaterials()) {
       for (let i = 0; i < this.n; i++) if (mat.present[i] && mat.D[i] > 0) dMin = Math.min(dMin, mat.D[i]);
     }
     const L = model.grid.length;
     return Number.isFinite(dMin) ? (L * L) / dMin : 1;
   }
 
+  _usedMaterials() {
+    return [...new Set(this.model.regions.map((reg) => reg.material))].map((m) => this.model.materials[m]);
+  }
+
   // The fastest diffusion time: across the smallest cell, at the largest D.
   fastestTime() {
     let dMax = 0;
-    for (const mat of this.model.materials) {
+    for (const mat of this._usedMaterials()) {
       for (let i = 0; i < this.n; i++) if (mat.present[i]) dMax = Math.max(dMax, mat.D[i]);
     }
     let h = Infinity;
@@ -142,8 +171,10 @@ export class SteadySolves {
 
   /**
    * Steady state: where a transient from the present state ends, found as the solution of the
-   * steady equations (dt = ∞, no storage term), with no slow modes to wait out, however slow the
-   * physics (e.g. exponentially scarce minority carriers). What the storage term held is held by
+   * steady equations (dt = ∞, no storage term), with no slow transport to wait out (e.g.
+   * exponentially scarce minority carriers); but a slow reaction that alone settles a closed
+   * combination is waited out by time steps, to ~1e12 of the slowest diffusion time (invariant
+   * 5). What the storage term held is held by
    * the steady system's own rows instead (see src/laws.js): each conserved amount in place of a balance
    * row that says nothing new, levels that carry nothing held flat, islands' summed balances.
    * Where Newton from here fails: continuation along the drives, then the pseudo-transient ramp.
@@ -158,8 +189,15 @@ export class SteadySolves {
     captureLaws(this);
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
+    this.drifted = null; // (an amount no row keeps, lost by a giant step: see _steadySteps)
+    // A solve that fails leaves where the state was solved, and whether it was stepped, as they
+    // were (Device.solve restores the state): a floating continuation's held solves had set them,
+    // and the next held solve ramped warm from a voltage the state was never at, and failed.
+    const was = [this.solvedV, this.stepped];
     try {
-      return this._solveSteadyAll(opts);
+      const r = this._solveSteadyAll(opts);
+      if (!r.converged) [this.solvedV, this.stepped] = was;
+      return r;
     } finally {
       this.steady = false;
     }
@@ -212,7 +250,7 @@ export class SteadySolves {
     };
     const solved = (q) => {
       if (q.converged) {
-        this.solvedV = [level, target];
+        this.solvedV = [this.termV[0], this.termV[1]]; // (a contact's own: driven by a current, not the current)
         this.stepped = false;
       }
       return q;
@@ -242,12 +280,12 @@ export class SteadySolves {
 
     // 2. Continuation. Generation (e.g. light) holding the device far from equilibrium: ramp it up
     // from nearly nothing, each solve warm from the last.
-    let dimmer = false;
+    let dimmer = null;
     if (this.hasGeneration && allowed) {
       restart();
       this.dimmer = false;
       const g = this._generationContinuation(opts, r);
-      dimmer = this.dimmer;
+      if (this.dimmer) dimmer = [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
       if (g.converged) return solved(g);
       r = g;
     }
@@ -282,7 +320,13 @@ export class SteadySolves {
     // from there as it would in time), else from the start.
     if (!quick) return r;
     if (!dimmer) restart();
-    else this.computeConcentrations();
+    else {
+      // (where it was left, not where a floating continuation since left the state)
+      this.u.set(dimmer[0]);
+      this.uLo.set(dimmer[1]);
+      this.termV.set(dimmer[2]);
+      this.computeConcentrations();
+    }
     return after(this._steadySteps(opts), r);
   }
 
@@ -301,6 +345,14 @@ export class SteadySolves {
   _floatingContinuation(opts, r) {
     const k = this.floating.find((j) => this.terms[j].drive.kind === 'I' && !this._bound(j));
     const drive = this.terms[k].drive, target = sourceAt(drive.src, this.time);
+    // Its drive put back: redrive() finds the laws again for it, with the local constraints'
+    // references at zero, so they're taken from the state again (an immobile species held at 0
+    // at every node: the floated solve failed, 80 steps, and the regula falsi rescued it at 6×).
+    const floatAgain = () => {
+      this.terms[k].drive = drive;
+      this.redrive();
+      captureLocal(this);
+    };
     let steps = r.steps ?? 0, iterations = r.iterations ?? 0;
     const history = (r.history ?? []).slice();
     const hold = (V) => {
@@ -359,8 +411,7 @@ export class SteadySolves {
       }
       hold(Math.abs(fa) < Math.abs(fb) ? Va : Vb);
     } finally {
-      this.terms[k].drive = drive;
-      this.redrive();
+      floatAgain();
     }
     const q = this._steadySteps(opts);
     steps += q.steps ?? 0;
@@ -391,12 +442,11 @@ export class SteadySolves {
       }
       return fail();
     } finally {
-      this.terms[k].drive = drive;
-      this.redrive();
+      floatAgain();
     }
   }
 
-  // Steady solves with the generation reactions' rates scaled from 1e-12 up to 1, ×100 a step
+  // Steady solves with the generation reactions' rates scaled from 1e-30 up to 1, ×100 a step
   // while they converge, smaller steps where they don't.
   _generationContinuation(opts, r) {
     const sub = this._directSteady() ? { ...opts, maxSteps: 1 } : opts;
@@ -503,14 +553,30 @@ export class SteadySolves {
     let triedDirect = 0;
     let totalIter = 0, steps = 0, converged = false;
     const history = [];
+    // What no row keeps (laws.js's unkept) a giant step keeps only by its storage term, which can
+    // fall below round-off against the fast species' conduction, and Newton then converges
+    // anywhere along it: a closed Y + Z, Y still in part of its stretch, converged 1e8× too large.
+    // So each such amount is checked after every step of dt ≥ giant, and a step that moved it
+    // fails.
+    const unkept = !direct && this.unkept.length > 0 ? this._unkeptAmounts() : null;
+    const drifted = () => {
+      const now = this._unkeptAmounts(), lost = now.findIndex(([a], j) => !(Math.abs(a - unkept[j][0]) <= 1e-6 * unkept[j][1]));
+      if (lost >= 0) this.drifted = now[lost][2];
+      return lost >= 0;
+    };
     while (steps < maxSteps) {
       steps++;
       // Restore conserved amounts exactly before each huge step; the step then re-solves, so
       // the final state satisfies every equation.
       if (!direct && dt >= giant) this._renormalizeSpectators();
+      const snap = unkept && dt >= giant ? this._snapshot() : null;
       let r = this.step(dt);
+      if (snap && r.converged && drifted()) {
+        this._restore(snap);
+        r = { ...r, converged: false, drifted: true };
+      }
       totalIter += r.iterations;
-      history.push({ dt, converged: r.converged, iterations: r.iterations });
+      history.push({ dt, converged: r.converged, iterations: r.iterations, ...(r.drifted ? { drifted: true } : {}) });
       if (!r.converged && dt === Infinity && steps === 1) {
         // A large change can overshoot Newton's usual damping: retry with a tighter limit.
         r = this.step(dt, { maxStep: 3, maxIter: 80 });
@@ -551,7 +617,7 @@ export class SteadySolves {
           this._renormalizeSpectators();
           const f = this.step(giant);
           totalIter += f.iterations;
-          converged = f.converged;
+          converged = f.converged && !(unkept && drifted());
         }
         break;
       }
@@ -574,6 +640,24 @@ export class SteadySolves {
       });
     }
     return { converged, steps, iterations: totalIter, history };
+  }
+
+  // The amounts no row keeps (unkept) that are of stretches and surfaces alone: each as [its value,
+  // the sum of its parts' sizes, the names of its parts].
+  _unkeptAmounts() {
+    const S = this.stretches.length, X = S + this.surfCols.length, { species, ports } = this.model;
+    return this.unkept.filter((w) => w.every((x, k) => k < X || x === 0)).map((w) => {
+      let a = 0, size = 0;
+      const names = [];
+      w.forEach((x, k) => {
+        if (x === 0) return;
+        const v = x * (k < S ? this.amount(this.stretches[k]) : this.surfaceAmount(k - S));
+        a += v;
+        size += Math.abs(v);
+        names.push(k < S ? species[this.stretches[k].species].name : ports[this.surfCols[k - S][0]].surface[this.surfCols[k - S][1]].name);
+      });
+      return [a, size, names];
+    });
   }
 
   // Huge steps pin each conserved amount only through a tiny storage term, so round-off can let

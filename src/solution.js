@@ -239,7 +239,11 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
-  const cond = solver.conditioning, un = solver.unreached, ch = solver.charging;
+  const cond = solver.conditioning, un = solver.unreached, ch = solver.charging, lost = result.unsolved ? solver.drifted : null; // (a failed steady solve's: see Device.solve)
+  // A failed solve with a reaction that a steady state needs at equilibrium, left far from it (see
+  // stuckReactions): one too slow for the steady solve's time steps, which reach ~1e12 of the
+  // slowest diffusion time (Y = Z at kf 1e-10/s failed with nothing said).
+  const slow = result.unsolved && !ch && !un && !lost ? solver.stuckReactions() : [];
   if (result.converged === false && ch) {
     const A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     sol.warnings.push(
@@ -261,6 +265,19 @@ export function makeSolution(solver, result = {}) {
           ? ' It passes almost nothing steadily at any voltage, so it may only store what comes in (a host filling, a capacitor charging), which has no steady state at a current: advance() in time instead.'
           : ''),
     );
+  } else if (lost) {
+    sol.warnings.push(
+      `the solve did not converge: the amount of ${lost.join(' + ')}, which no row of the steady system keeps (it runs through a species ` +
+        'that moves in part of the device only), is kept by time steps alone, and steps long enough for the slowest species lost it to round-off. ' +
+        'advance() in time instead, or give the still species a small D where it is still.',
+    );
+  } else if (slow.length > 0) {
+    for (const { where, affinity } of slow) {
+      sol.warnings.push(
+        `the solve did not converge, likely because ${where} is out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium: ` +
+          'it is too slow for the steady solve to wait out. Raise its rate constant (the steady state does not depend on it), or advance() in time.',
+      );
+    }
   } else if (result.converged === false && cond && cond.digits > 12) {
     const digits = Number.isFinite(cond.digits) ? `lost ${cond.digits.toFixed(0)} of its ~16 digits` : 'was exactly singular';
     // An ion there so scarce beside the others (a minority swept out of a junction by a large
@@ -294,7 +311,7 @@ export function makeSolution(solver, result = {}) {
       `the solve did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
         'Hold that terminal at a voltage first, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.',
     );
-  } else if (result.converged === false && !result.stopped && !un && !ch && !(cond && cond.digits > 12)) {
+  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12)) {
     sol.warnings.push(
       'the solve did not converge, and nothing specific showed why. ' +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',

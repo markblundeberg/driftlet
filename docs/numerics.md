@@ -812,7 +812,11 @@ the terms that cancel:
   next: there, backward-Euler steps at a huge $`dt`$ (10⁶ × the slowest diffusion time) keep
   the storage term, growing ×10 (capped) while the state still moves, each spectator's level
   first shifted uniformly to restore its amount exactly (round-off creeps through the vanishing
-  storage term), and one last step at the base huge $`dt`$, where pinning is tight.
+  storage term), and one last step at the base huge $`dt`$, where pinning is tight. The amounts
+  that only those steps keep are checked after each, and a step that moved one fails: where the
+  slowest species is very slow (D ~ 1e-22 m²/s), the storage term falls below round-off against a
+  fast species' conduction, and a closed Y + Z, Y still in part of its stretch, had converged 1e8
+  times too large. The slowest diffusion time counts only materials some region is made of.
 - **A flat level.** A species that no reaction or port touches, reached by one contact at most,
   carries no flux in a steady state: every sum of its balance rows from its closed end is the
   flux through one segment, zero. In an ideal region without flow or mixing that's a level flat
@@ -952,7 +956,11 @@ A solve that fails falls back stage by stage:
    the direct solve. After a failed step it grows ×2, then ×1.5 more each success, back to ×10.
    Once steps reach the slowest diffusion time, the direct solve is tried from there, once a
    decade of $`dt`$ (the state kept if it fails): with immobile traps and ions of D = 1e-17 m²/s,
-   steps from 1e8 to 1e9 s kept failing on the way to the end.
+   steps from 1e8 to 1e9 s kept failing on the way to the end. The ramp reaches about 1e12 times
+   the slowest diffusion time, so a reaction slower than that, which alone settles a closed
+   combination (no row of the steady system holds a reaction at equilibrium node by node), isn't
+   waited out: the solve fails, or converges where it began, and its warnings name the reaction
+   either way. A transient gets there (Y = Z at $`k_f`$ = 1e-12 s⁻¹ in 1610 steps).
 
 Each of these carries cases that nothing else does (switched off one at a time, each fails
 tests or stress cases the others pass).

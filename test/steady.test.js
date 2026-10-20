@@ -884,3 +884,122 @@ test('a face reaction with a fixed participant, between a level a contact holds 
   assert.ok(steady.converged && late.converged && Math.abs(r(steady) / r(late) - 1) < 1e-6, `face rate ${r(steady)} vs the transient's ${r(late)}`);
   assert.ok(check(d, steady).ok, check(d, steady).text);
 });
+
+// Y = Z in A, with Y also in B where it can't move: their sum no row of the steady system keeps
+// (laws.js's unkept), so the device goes by time steps, whose giant ones hold it only through
+// their storage term. A spectator W slow enough (D = 1e-22) to set the time scale made that term
+// fall below round-off against the electrons' conduction, and the first giant step converged with
+// Y + Z 1e8 times too large; converged: true, the solve said nothing. Each such step is now
+// checked against the amount it must keep, and one that moved it fails. A material that no
+// region uses no longer sets the time scale at all (it made the same mess).
+const stillInPart = ({ W, unused } = {}) => {
+  const def = {
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Y', z: 0 }, { name: 'Z', z: 0 }],
+    materials: {
+      m1: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 1e-9, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+      m2: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 0, mu0: 0, cRef: 1e3 } } },
+    },
+    regions: [
+      { name: 'A', material: 'm1', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 1, Z: 0.01 } },
+      { name: 'B', material: 'm2', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 2 } },
+    ],
+    interfaces: [{ dipole: 0 }],
+    bulkReactions: [{ equation: 'Y = Z', kf: { m1: 1 } }],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+      right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+    },
+    grid: { minCells: 40 },
+  };
+  if (W) {
+    def.species.push({ name: 'W', z: 0 });
+    def.materials.m1.species.W = { D: W, mu0: 0, cRef: 1e3 };
+    def.regions[0].c0.W = 1e-3;
+  }
+  if (unused) def.materials.m3 = { epsr: 10, species: { Y: { D: unused, mu0: 0, cRef: 1e3 } } };
+  return new Device(def);
+};
+
+test('an amount no steady row keeps, kept through giant steps however slow the slowest species: Y = Z, Y still in part', () => {
+  for (const opts of [{ W: 1e-22 }, { unused: 1e-22 }, {}]) {
+    const dev = stillInPart(opts), sv = dev.solver, vol = sv.model.grid.vol;
+    assert.equal(sv._directSteady(), false);
+    const total = () => {
+      let t = 0;
+      for (let g = 0; g < sv.nNodes; g++) t += vol[g] * (sv.c[g * sv.n + 1] + sv.c[g * sv.n + 2]);
+      return t;
+    };
+    const before = total(), sol = dev.solve();
+    assert.ok(sol.converged, JSON.stringify(opts));
+    assert.ok(Math.abs(total() / before - 1) < 1e-6, `${JSON.stringify(opts)}: Y + Z ${before} → ${total()}`);
+    // Its equilibrium: Z = Y throughout A (K = 1).
+    for (let g = 0; g < sv.nNodes; g++) if (sol.region[g] === 0) assert.ok(Math.abs(sol.c.Z[g] / sol.c.Y[g] - 1) < 1e-6);
+  }
+  assert.equal(stillInPart({ unused: 1e-22 }).solver.slowestTime(), stillInPart().solver.slowestTime());
+});
+
+test('a reaction too slow for the steady solve to wait out, failing: the warning names it', () => {
+  const dev = stillInPart();
+  dev.set({ bulkReactions: [{ equation: 'Y = Z', kf: { m1: 1e-10 } }] });
+  const sol = dev.solve();
+  assert.equal(sol.converged, false);
+  assert.ok(sol.warnings.some((w) => /bulkReactions\[0\] is out of equilibrium/.test(w)), sol.warnings.join('\n'));
+});
+
+// The dark Si cell, right contact driven by a current, then held at a voltage. The solve at a
+// current recorded the current (50 A/m²) as the voltage it was solved at, and the held solve,
+// ramping warm from "50 V", failed at −40 V; and a solve that failed left behind the voltages
+// its floating continuation's held solves were at, with the next held solve failing the same way.
+const darkCell = (right) => {
+  const Si = semiconductor('Si'), NA = units.perCm3(1e16);
+  return new Device(build({
+    T: 300,
+    library: [Si],
+    stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: NA }), { ...ohmic(0), V: undefined, ...right }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (60e-6 * NA) } }],
+    grid: { hmin: units.nm(1), hmax: units.um(1) },
+  }));
+};
+
+test('a held solve after one at a current ramps from the voltage the state was solved at', () => {
+  const dev = darkCell({ I: 50 });
+  const a = dev.solve();
+  assert.ok(a.converged);
+  assert.deepEqual(dev.solver.solvedV, [0, a.terminals.right.V]);
+  const b = dev.set({ contacts: { right: { I: undefined, V: -40 } } }).solve();
+  assert.ok(b.converged);
+  assert.ok(b.steps < 20, `${b.steps} steps`);
+});
+
+test('a failed steady solve leaves where the state was solved as it was', () => {
+  const dev = darkCell({ I: -50 }); // (reverse, past saturation: no steady state)
+  dev.advance(1e-9);
+  const a = dev.solve();
+  assert.equal(a.converged, false);
+  assert.equal(dev.solver.solvedV, undefined);
+  assert.equal(dev.solver.stepped, true);
+  assert.ok(dev.set({ contacts: { right: { I: undefined, V: -20 } } }).solve().converged);
+});
+
+// The lit Si cell at open circuit, with an immobile species Q: putting the current drive back
+// after its floating continuation found the laws again, with Q's local constraints at zero, and
+// the floated solve failed (80 steps) before the regula falsi rescued it, at 6× the cost.
+test('a floating continuation keeps what immobile species hold node by node', () => {
+  const Si = semiconductor('Si'), NA = units.perCm3(1e16), W = units.um(60.5);
+  const def = build({
+    T: 300,
+    library: [Si],
+    stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: NA }), { ...ohmic(0), V: undefined, I: 0 }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (60e-6 * NA) } }, photogeneration({ material: 'Si', flux: 3e-5, alpha: 1630, mu: units.eV(1.18), to: W })],
+    grid: { hmin: units.nm(1), hmax: units.um(1) },
+  });
+  def.species.push({ name: 'Q', z: 0 });
+  def.materials.Si.species.Q = { D: 0, mu0: 0, cRef: 1000 };
+  def.regions.forEach((r) => (r.c0 = { Q: 1 }));
+  const dev = new Device(def), sol = dev.solve();
+  assert.ok(sol.converged);
+  assert.ok(Math.abs(sol.terminals.right.V - 0.38442194) < 1e-6);
+  assert.ok(sol.steps < 60, `${sol.steps} steps`);
+  for (const lc of dev.solver.localConstraints) for (const ref of lc.reference) assert.ok(Math.abs(ref - 1) < 1e-12);
+});
