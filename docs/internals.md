@@ -22,10 +22,11 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/regions.js` | yes: statistics, storage, fluxes along segments, bulk reactions, the neutral nodes' charge rows |
 | `src/boundaries.js` | yes: faces (φ laws, links, reactions, gates), ports, contacts, circuit rows |
 | `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
+| `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
-| `src/solver.js` | not yet (below) |
+| `src/solver.js` | no: setup, bookkeeping and drivers, described below |
 
 ## From a definition to a solution
 
@@ -85,14 +86,18 @@ By method, in file order:
 - **Time steps** are `src/timeSteps.js` (`step`, `advance`, `integrate`, the predictor and the
   error norm), which the Solver's own `step`, `advance` and `integrate` call; `_snapshot` /
   `_restore`, `_warmFrom` and `_probes`, which the API uses too, stay in the solver.
-- **Small signal:** `impedance` and the helpers after it.
+- **Small signal** is `src/impedance.js` (`impedance` and its helpers: the current cuts, the
+  regions' uniform shift, the profiles; the complex GMRES and small dense solve), methods of the
+  Solver like the assembly's.
 - **Bookkeeping:** `segmentFluxes`, `faceOneWay`, `_assembleBookkeeping`, the contacts' intake.
 - **Steady solves** are `src/steady.js` (`solveSteady`, `_steadyFromHere`, the continuations:
   floating, generation, a contact's voltage; `_steadySteps`, the pseudo-transient ramp, and
   `_renormalizeSpectators`; `_directSteady`, `slowestTime`, `fastestTime`, `stuckReactions`),
   methods of the Solver like the assembly's.
 
-The rest of `src/solver.js` is to be split along these lines, each piece with its contract.
+What stays in `src/solver.js` is the setup, the bookkeeping, the probes and snapshots, and the thin
+drivers that call the modules: about a thousand lines, with no contract of its own beyond this
+section.
 
 ## Reviewing one module
 
