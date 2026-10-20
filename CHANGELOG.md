@@ -3,6 +3,24 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.2.9 (2026-10-20)
+
+- A steady solve on a device that goes by time steps (an amount no steady row can keep: a species
+  that moves in only part of where it is, reacting) could report converged with that amount
+  wrong: a closed Y + Z came out 1e8 times too large when a species with D ~ 1e-22 m²/s set the
+  time scale, since a step that long holds the amount only through a storage term below
+  round-off. Each such step is now checked against the amount, and one that moves it fails
+  (the ramp then gets there in shorter steps, or the solve fails and says why). A material that
+  no region uses no longer sets the time scale.
+- A held-voltage solve after one at a current no longer ramps from the current's value as if it
+  were a voltage (a diode solved at 50 A/m², then at −40 V, failed); and a steady solve that
+  fails leaves where the state was solved as it was, so the next solve doesn't ramp from
+  voltages it was never at.
+- A terminal floated after its open-circuit search keeps what immobile species hold at each node
+  (it held them at zero for that solve: right in the end, at 6× the cost).
+- A steady solve that fails because a reaction is too slow for it to wait out (beyond ~1e12 of
+  the slowest diffusion time) now names the reaction, where it said nothing specific.
+
 ## 1.2.8 (2026-10-19)
 
 - Eddy mixing in a crowded solution (non-ideal statistics) now mixes concentration: in a
