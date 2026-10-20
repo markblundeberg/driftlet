@@ -114,6 +114,8 @@ export function unitWarnings(def) {
     if (!isObject(p)) return;
     capacitance(`ports[${k}].capacitance.C`, p.capacitance?.C);
     kinetics(`ports[${k}]`, p.reactions);
+    // (an area per volume typed in cm²/cm³ is 100 times too small: a mesh at 10 cm²/cm³ went by)
+    if (typeof p.area === 'number' && p.area > 0 && p.area < 100) warn(`ports[${k}].area`, `${num(p.area)} m²/m³ is under 1 cm² of electrode per cm³; area is m²/m³ (1 cm²/cm³ = 100 m²/m³)`);
   });
   for (const side of ['left', 'right']) {
     const c = def.contacts?.[side];

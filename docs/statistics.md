@@ -73,6 +73,19 @@ of exponentially. With one species it's Langmuir filling of sites. The dilute re
 $`c_{\mathrm{ref}}`$ is kept. To use the half-filling convention of site models
 ($`e^\zeta = x/(1-x)`$), set `cRef` equal to `cMax`.
 
+`cMax` from an ion's size: a cube of side $`a`$ per site gives $`c_{\mathrm{max}} = 1/(N_A a^3)`$, so
+$`a`$ = 0.66 nm (a hydrated ion, about) is 5.8 M, and 0.5 nm is 13 M. The model counts sites only:
+D falling with concentration, solvent counterflow and ion pairing are left out. On a material from
+`aqueous()`, add it to the material it returns:
+
+```js
+import { AVOGADRO } from 'driftlet';
+import { aqueous } from 'driftlet/kit';
+
+const aq = aqueous(['Cu2+', 'SO42-', 'H+']);
+aq.materials.water.statistics = [{ type: 'lattice', species: ['Cu2+', 'SO42-', 'H+'], cMax: 1 / (AVOGADRO * 0.66e-9 ** 3) }];
+```
+
 ### Redlich–Kister
 
 One species on its own $`c_{\mathrm{max}}`$ sites, with the excess Gibbs energy of mixing per site

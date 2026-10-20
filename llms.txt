@@ -317,6 +317,8 @@ const mos = (Vg, zeroCharge) =>
       layer('Si', units.um(1), { name: 'Si', acceptors: NA }),
       ohmic(0),
     ],
+    // The inversion layer's supply: with it, the low-frequency C–V at every frequency, even
+    // impedance at 1 MHz. Leave it out for the high-frequency curve (see below the code).
     ports: [{ name: 'channel', region: 'Si', from: 0, to: units.nm(1), V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' } }],
     grid: { hmin: units.nm(0.25), hmax: units.nm(50), ratio: 1.15 },
   });
@@ -383,8 +385,9 @@ electrons' V minus φ in the bulk (with the library's μ°), and a Cl⁻ termina
 that, so an electrode held at 0 V beside it is strongly anodic: `describe(def)` says where SHE
 sits, and an offset of that much (`bath(c, 'Cl-', 0, { offset })`) makes the terminal read SHE.
 The working electrode's current is positive when oxidising. The layer's resistance is in series
-(uncompensated IR: keep it thin, or the supporting salt strong); a 100:1 excess of salt still
-leaves the limiting current about 1% off pure diffusion.
+(uncompensated IR: keep it thin, or the supporting salt strong); a 100:1 excess of a 1:1 salt
+still leaves the limiting current about 1% off pure diffusion, and migration counts for more with
+more charge: Cu²⁺ in 1 M H₂SO₄ (20:1) reads 3% above it, with no acid 2×.
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';

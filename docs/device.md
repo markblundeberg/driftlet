@@ -543,6 +543,12 @@ levels are that material's, and the end node takes them through a Donnan step.
   means. For example, a Schottky barrier $`\phi_B`$ on n-type material with
   $`\mu^\circ_{\mathrm{e}^-} = 0`$ is `zeroCharge: φ_B`.
 
+An ideally blocking electrode (inert: no reactions, nothing crossing) is a contact with no
+terminal species and no links, `{ V, phi: 'pinned', zeroCharge }`: the solution's diffuse layer
+is its whole double layer (the validation suite's Macdonald impedance is this cell), and a Stern layer in
+series is `phi: { type: 'capacitive', C }` in place of `'pinned'`. (A metal layer behind a
+capacitive face of large C does the same at more cost, and its C is warned of as a unit slip.)
+
 A Schottky contact is that pinned barrier with its carriers passing at their emission velocities:
 `{ V, terminal: 'e-', species: { 'e-': { type: 'velocity', v }, 'h+': { type: 'velocity', v: vp, offset: 0 } }, phi: 'pinned', zeroCharge: φ_B }`,
 with Bethe's thermionic-emission velocity $`v = A^* T^2/(F N_c)`$ ($`N_c`$ in mol/m³, the data
@@ -755,8 +761,12 @@ as for reactions, and the window holds the opposite. Each node's charge balance 
 Gauss's law averaged across the section, $`-\partial_x(\varepsilon\,\partial_x\phi) = \rho + a\sigma`$,
 and at $`\varepsilon = 0`$ neutrality $`\rho + a\sigma = 0`$, the mobile species rearranging to supply
 it (counter-ions in, co-ions out). The port passes the charging current, $`d(\int a\sigma\,dV)/dt`$,
-none in a steady state. Capacitances on overlapping windows add (a channel's top and bottom
-gates). A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
+none in a steady state. `zeroCharge` is in the frame a contact's is (see the capacitive contact
+above): $`V - \phi`$ at zero charge, with $`\phi`$ the device's own, which a bath or contact sets
+(beside a bath referenced to Cl⁻, with the library's μ°, it sits near −1.4 V). Omitted, it's 0, so
+a port held at V = 0 there starts charged by 1.4 V; to start it uncharged, give `zeroCharge` = V −
+φ at its window (`sol.phi` after a solve). Capacitances on overlapping windows add (a channel's
+top and bottom gates). A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
 follows it, and `solve()` refuses (there's no steady state, as for a gate contact driven by one).
 
 ```js nocheck
@@ -1013,7 +1023,11 @@ const now = dev.solution();                   // snapshot of the current state
   resistance belongs to the external circuit. The grid must resolve how far the signal reaches,
   and nothing warns of it: in a porous electrode, $`\sqrt{\kappa/(\omega C a)}`$ (cells of 2 µm
   against a 3.4 µm depth put Z 7% off, falling as the cells do; at an electrode, the diffusion
-  length $`\sqrt{2D/\omega}`$ at the highest frequency). The result is `{ f, Z: { re, im },
+  length $`\sqrt{2D/\omega}`$ at the highest frequency, and coarser than that, a port's window
+  edges falling mid-cell moved a faradaic C 17%); and a double layer's capacitance wants cells
+  well inside its Debye length (0.1 M NaCl: hmin λ_D/2.4 read C_dl 2.1% low, 0.1 nm 0.5%, 0.05 nm
+  to 5e-4; the warning about unresolved double layers starts only at λ_D). `relError` is the
+  round-off's, not the grid's. The result is `{ f, Z: { re, im },
   relError, warnings }`: `relError[k]`, each Z's estimated error relative to $`|Z|`$ (from
   round-off in the current and the solves' residuals, and cautious: it can exceed the true error
   many times), and the warnings, the steady state's and one where a Z isn't resolved (an error
