@@ -340,6 +340,13 @@ for live demos.
 
 ## Later
 
+- **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
+  lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
+  the others': a MOS whose back contact sees the silicon only through a channel port, its gate
+  floating, reads Z at the back contact as noise (relError ~100, now warned of) while the
+  channel's own reads to 5e-11. Today only terminals that all float are summed this way, from
+  their voltages. (From the impedance module's cold review, 2026-10-20.)
+
 - **Water at other temperatures.** `aqueous(list, { T })`: μ°ᵢ(T) from the standard entropies
   (and heat capacities where tabulated; NBS/CODATA, conventional for single ions, which cancel in
   any neutral combination), ε_r(T) (Malmberg–Maryott) and D ∝ T/η_water(T); checked against
