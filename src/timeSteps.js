@@ -275,7 +275,7 @@ export function integrate(s, tEnd, opts = {}) {
     const relative = tEnd < s.time || (s.time > 0 && opts.budgetMs === undefined);
     return { converged: true, done: true, steps: 0, rejected: 0, iterations: 0, trace, ...(relative ? { stopped: `advance(${tEnd}) did nothing: ${absolute}. To run for a further dt, advance(sol.time + dt)` } : {}) };
   }
-  const t0 = s.time;
+  const t0 = s.time, fromLayout = s.history.length === 0 && !s.stepped && !s.atSteady; // (c0's layout, not a solution)
   // A cold start whose floating double layers start uncharged far from the equilibrium of an ion
   // link beside them (a capacitive contact or port passing K⁺, its outside level set for the
   // charged steady state): the link closes the gap in the first instant, which can be far below
@@ -403,6 +403,10 @@ export function integrate(s, tEnd, opts = {}) {
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
   else if (failed && s.modelError)
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s, the state it reached refused by a statistics model: ${s.modelError}. The model doesn't hold there: a smaller concentration or drive, or a model for it (lattice for crowding).`;
+  else if (failed && fromLayout && steps === 0)
+    // (round 15's fuzzer: the pn template advanced from its c0, a step of 3e-24 s failing, 23 of 62
+    // plain diodes; nothing said to solve first)
+    stopped = `${at}: the first step did not converge even when shortened to ${dt.toExponential(1)} s, from the starting state, which is c0's layout rather than a solution (a junction's depletion not yet formed, say). For a transient from equilibrium, solve() first at the starting drives, then change what the experiment changes, then advance().`;
   else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };

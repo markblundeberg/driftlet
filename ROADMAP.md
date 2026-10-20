@@ -340,6 +340,15 @@ for live demos.
 
 ## Later
 
+- **Steady solves the fuzzers still beat (round 15, loud, each with a repro in
+  `~/.cache/driftlet-claude/round15/fuzzB/work/`).** A diode reverse-biased behind 1e4 Ω·m² or
+  more, cold (its 0.5 µA/m² read at an ohmic contact below the majority fluxes' round-off; held
+  or warm it converges); two terminals behind resistances with nothing held, past ~16 V across a
+  silver cell; a resistance beside a current at 30 V (16 and 100 converge); a slow reaction's
+  failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y mobile in
+  part); the open-circuit march's sign hint, wrong beside a resistance; and Kirchhoff off by 7e-5
+  at 1e-10 A/m², near the current floor, with check() calling it equilibrium.
+
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
   the others': a MOS whose back contact sees the silicon only through a channel port, its gate

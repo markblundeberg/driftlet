@@ -1039,7 +1039,10 @@ const now = dev.solution();                   // snapshot of the current state
   terminal is driven by a current.
 - `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
   or `I` drops the other (and given `I`, any series `R`): `{ contacts: { right: { I: 0 } } }`
-  switches it to open circuit, whether it was held or behind a resistance. A patch that changes only the
+  switches it to open circuit, whether it was held or behind a resistance. Given `V` alone, a terminal
+  behind a resistance stays behind it: `{ V, R: undefined }` takes the resistance off (`R: 0` and
+  `null` are refused, and `undefined` doesn't survive JSON, so a worker's patch says it this way in
+  JavaScript). A patch that changes only the
   terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
   Otherwise the device is rebuilt: the current state carries over while the species, regions
   and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate

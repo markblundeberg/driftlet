@@ -653,3 +653,15 @@ test('the start: a metal beside a semiconductor isn\'t shifted as if it were an 
   assert.equal(st.contacts.left.current, 0);
   assert.ok(Math.abs(st.V['e-'][0]) < 1e-12, `${st.V['e-'][0]}`);
 });
+
+// From round 15's fuzzer: a transient straight from c0's layout (a 1e18 | 1e18 cm⁻³ Si junction,
+// its depletion not yet formed) failed at t = 0 with a list of causes that never said to solve
+// first; now it does, and from the solved state the same transient runs.
+test('a transient that fails at its first step from c0\'s layout says to solve() first, and runs from there', () => {
+  const def = build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e18) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e18) }), ohmic(0)], grid: { hmin: units.nm(1), hmax: units.nm(20) } });
+  const cold = new Device(def).advance(1e-9);
+  if (!cold.converged) assert.ok(cold.warnings.some((w) => /solve\(\) first/.test(w)), cold.warnings.join('\n'));
+  const d = new Device(def);
+  assert.ok(d.solve().converged);
+  assert.ok(d.advance(1e-9).converged);
+});
