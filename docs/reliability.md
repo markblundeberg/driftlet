@@ -137,7 +137,8 @@ carriers flat where it reaches one contact alone, 43 of the 500 failed it, 5 of 
 coarse for its double layers; the other is a diode whose current, a small difference of large fluxes, a warm sweep
 reaches to 1.8e-6 of what a cold solve does, against the 1e-6 the check asks: Newton's tolerance, not the physics
 (its own current varies 2.8e-6 along the device, its balances converged).
-`bench/stress.json` keeps the summary.
+`bench/stress.json` keeps the summary, and CI runs `npm run stress -- --check` against it: any
+scenario failing that passes there fails the build.
 
 Most of what driftlet's numerics do differently began as a failure here: the impedance's
 current read across the quietest cut of the device rather than at the contact, GMRES judged by

@@ -10,6 +10,9 @@
 //   npm run stress -- semi 17            one case, with its definition and what went wrong
 //   npm run stress -- semi 17 --def f    …and write its definition and plan to f
 //   npm run stress -- --save             write the summary as bench/stress.json
+//   npm run stress -- --check            every family at the summary's n; fails (exit 1) on any
+//                                        scenario that fails where the summary has it passing
+//                                        (--against f: another summary)
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
@@ -20,8 +23,9 @@ const flag = (name, dflt) => {
   const k = argv.indexOf(`--${name}`);
   return k >= 0 ? argv[k + 1] : dflt;
 };
-const N = +flag('n', 40), save = argv.includes('--save');
-const positional = argv.filter((a, k) => !a.startsWith('--') && !(k > 0 && ['--n', '--def'].includes(argv[k - 1])));
+const checking = argv.includes('--check'), saved = checking ? JSON.parse(readFileSync(flag('against') ?? new URL('./stress.json', import.meta.url), 'utf8')) : null;
+const N = +flag('n', checking ? saved.n : 40), save = argv.includes('--save');
+const positional = argv.filter((a, k) => !a.startsWith('--') && !(k > 0 && ['--n', '--def', '--against'].includes(argv[k - 1])));
 const [onlyFamily, onlyCase] = [positional[0], positional[1] === undefined ? undefined : +positional[1]];
 
 // --- a seeded generator per case
@@ -537,6 +541,18 @@ for (const [key, { ok, of }] of Object.entries(tally)) console.log(`${key.padEnd
 const total = Object.values(tally).reduce((t, v) => ({ ok: t.ok + v.ok, of: t.of + v.of }), { ok: 0, of: 0 });
 console.log(`\n${total.ok} of ${total.of} passed (${(100 * total.ok / total.of).toFixed(1)}%), ${(ms / 1000).toFixed(1)} s`);
 if (failures.length) console.log(`\nFailures (rerun one with: npm run stress -- <family> <case>):\n  ${failures.join('\n  ')}`);
+if (checking) {
+  // A failure is known by its case and scenario (its message carries numbers that may move).
+  const key = (f) => f.slice(0, f.indexOf(': ', f.indexOf(' · ')));
+  const known = new Set(saved.failures.map(key)), now = new Set(failures.map(key));
+  const ran = (f) => { const [fam, k] = f.split(' '); return names.includes(fam) && (onlyCase === undefined ? +k < N : +k === onlyCase); };
+  const fresh = failures.filter((f) => !known.has(key(f))), fixed = saved.failures.filter((f) => ran(f) && !now.has(key(f)));
+  if (fixed.length) console.log(`\nPassing now, failing in bench/stress.json (save the summary): ${fixed.map(key).join('; ')}`);
+  if (fresh.length) {
+    console.log(`\nNew failures against bench/stress.json:\n  ${fresh.join('\n  ')}`);
+    process.exitCode = 1;
+  } else console.log('\nNo failures beyond bench/stress.json\'s.');
+}
 if (save) {
   writeFileSync(new URL('./stress.json', import.meta.url), JSON.stringify({ n: N, tally, failures }, null, 2) + '\n');
   console.log('Saved bench/stress.json');

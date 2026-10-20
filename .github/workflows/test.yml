@@ -29,3 +29,14 @@ jobs:
         with:
           node-version: 24
       - run: npm run smoke
+
+  stress:
+    # Random devices against bench/stress.json: fails on any scenario the summary has passing
+    # (two such regressions went unnoticed for days with the run left to memory).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm run stress -- --check
