@@ -72,13 +72,13 @@ test('eddy mixing: a neutral species diffuses with D + D_mix, exactly', () => {
 test('eddy mixing carries no current: junction EMF unchanged, salt flux raised by D_mix', () => {
   const Dp = 1.33e-9, Dm = 2.03e-9, tp = Dp / (Dp + Dm), c1 = 100, c2 = 10, Lj = 10e-6;
   const bath = (c) => ({ bath: { c: { 'Na+': c, 'Cl-': c }, reference: 'Cl-' } });
-  const junction = (mixing) =>
+  const junction = (mixing, statistics) =>
     new Device({
       species: [
         { name: 'Na+', z: 1, cRef: 1000 },
         { name: 'Cl-', z: -1, cRef: 1000 },
       ],
-      materials: { water: { epsr: 0, species: { 'Na+': { D: Dp, mu0: -261.9e3 }, 'Cl-': { D: Dm, mu0: -131.2e3 } } } },
+      materials: { water: { epsr: 0, species: { 'Na+': { D: Dp, mu0: -261.9e3 }, 'Cl-': { D: Dm, mu0: -131.2e3 } }, ...(statistics ? { statistics } : {}) } },
       regions: [{ material: 'water', length: Lj, mixing }],
       contacts: { left: bath(c1), right: { ...bath(c2), I: 0 } },
       grid: { minCells: 400 },
@@ -91,26 +91,90 @@ test('eddy mixing carries no current: junction EMF unchanged, salt flux raised b
     const flux = ((Ds + mixing) * (c1 - c2)) / Lj;
     assert.ok(Math.abs(sol.contacts.left.flux['Na+'] / flux - 1) < 1e-6, `salt flux with D_mix = ${mixing}`);
   }
+  // Crowded, the EMF is mixing's to the same 1e-5 (mixing carries no current whatever K̄ is).
+  const lattice = [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: 400 }];
+  const [still, stirred] = [0, 1e-8].map((mixing) => junction(mixing, lattice));
+  assert.ok(stirred.converged && Math.abs(stirred.terminalVoltage / still.terminalVoltage - 1) < 1e-5, `${stirred.terminalVoltage} vs ${still.terminalVoltage}`);
 });
 
 test('eddy mixing leaves equilibrium double layers alone', () => {
   // A gated island with strong mixing: still flat μ̄ and the same gate charge as without it.
   const gate = (V) => ({ V, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 });
-  const island = (mixing) =>
+  // Crowded too (a lattice of 300 mM, nearly full at the gates), where K̄ isn't diagonal.
+  const island = (mixing, crowded) =>
     new Device({
       species: [
         { name: 'Na+', z: 1, cRef: 1000 },
         { name: 'Cl-', z: -1, cRef: 1000 },
       ],
-      materials: { water: { epsr: 78.5, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } } } },
+      materials: {
+        water: {
+          epsr: 78.5,
+          species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } },
+          ...(crowded ? { statistics: [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax: 300 }] } : {}),
+        },
+      },
       regions: [{ material: 'water', length: 200e-9, c0: { 'Na+': 10, 'Cl-': 10 }, mixing }],
       contacts: { left: gate(0.3), right: gate(-0.3) },
       grid: { hmin: 0.05e-9, hmax: 5e-9, ratio: 1.1 },
     }).solve();
-  const a = island(0), b = island(1e-6);
-  assert.ok(b.converged);
-  assert.ok(Math.abs(b.plates.left.charge / a.plates.left.charge - 1) < 1e-10);
-  for (const mu of Object.values(b.mu)) assert.ok((Math.max(...mu) - Math.min(...mu)) / RT < 1e-9);
+  for (const crowded of [false, true]) {
+    const a = island(0, crowded), b = island(1e-6, crowded);
+    assert.ok(b.converged);
+    assert.ok(Math.abs(b.plates.left.charge / a.plates.left.charge - 1) < 1e-10);
+    for (const mu of Object.values(b.mu)) assert.ok((Math.max(...mu) - Math.min(...mu)) / RT < 1e-9);
+    if (crowded) assert.ok(Math.max(...b.c['Na+'], ...b.c['Cl-']) > 200, 'crowded at a gate');
+  }
+});
+
+test('eddy mixing in a crowded solution mixes concentration, −D_mix Δc, not activity', () => {
+  // Eddies carry parcels of fluid, so they mix c. A neutral X on a lattice of cMax = 3, between
+  // c = 2 and 1: its molecular flux integrates to D·cMax·ln((cMax − c_R)/(cMax − c_L)), exactly on
+  // any grid, and its mixing to D_mix·Δc, at second order in the cells. (Mixing by activity, as
+  // before 1.2.8, ran 2.08× too fast here; found by a cold review of src/regions.js.)
+  const cMax = 3, Dx = 1e-10, Dm = 1e-9;
+  const mu = (c) => RT * (Math.log(c / 1000) + Math.log(cMax / (cMax - c)));
+  const want = (Dx * cMax * Math.log((cMax - cR) / (cMax - cL)) + Dm * (cL - cR)) / L;
+  const err = (cells) => {
+    const sol = new Device({
+      species: [{ name: 'X', z: 0, cRef: 1000 }],
+      materials: { m: { epsr: 10, species: { X: { D: Dx, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['X'], cMax }] } },
+      regions: [{ material: 'm', length: L, mixing: Dm }],
+      contacts: {
+        left: { species: { X: { type: 'equilibrium', mu: mu(cL) } }, phi: 'neutral' },
+        right: { species: { X: { type: 'equilibrium', mu: mu(cR) } }, phi: 'neutral' },
+      },
+      grid: { hmin: L / cells, hmax: L / cells },
+    }).solve();
+    assert.ok(sol.converged && sol.iterations <= 8, `${cells} cells`);
+    const N = sol.contacts.left.flux.X;
+    assert.ok(sol.flux.X.every((x) => Math.abs(x / N - 1) < 1e-12), `${cells} cells: the readout`);
+    return N / want - 1;
+  };
+  const e = [12, 24, 48].map(err);
+  assert.ok(Math.abs(e[0]) < 2e-5 && Math.abs(e[2]) < 1e-6, `${e}`);
+  for (let k = 1; k < 3; k++) assert.ok(Math.abs(e[k - 1] / e[k] - 4) < 0.05, `second order: ${e}`);
+  // Ions in a neutral crowded solution (ε = 0), lattice and Debye–Hückel, where mixing far
+  // outruns diffusion: every ion's flux is D_mix·Δc/L, segment by segment (within 1e-4 on 20
+  // cells; mixing by activity was 19% off).
+  const salt = (c) => ({ bath: { c, reference: 'Cl-' } });
+  const left = { 'Na+': 200, 'K+': 20, 'Cl-': 220 }, right = { 'Na+': 50, 'K+': 100, 'Cl-': 150 };
+  for (const statistics of [{ type: 'lattice', cMax: 1000 }, { type: 'debye-huckel', epsr: 78.5, a: 4e-10 }]) {
+    const ion = (mu0) => ({ D: 1e-16, mu0 });
+    const sol = new Device({
+      species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 0, species: { 'Na+': ion(-261.9e3), 'K+': ion(-282.5e3), 'Cl-': ion(-131.2e3) }, statistics: [{ ...statistics, species: ['Na+', 'K+', 'Cl-'] }] } },
+      regions: [{ material: 'water', length: L, mixing: 1e-9 }],
+      contacts: { left: salt(left), right: { ...salt(right), I: 0 } },
+      grid: { hmin: L / 20, hmax: L / 20 },
+    }).solve();
+    assert.ok(sol.converged, statistics.type);
+    for (const sp of ['Na+', 'K+', 'Cl-']) {
+      const want = (1e-9 * (left[sp] - right[sp])) / L;
+      assert.ok(Math.abs(sol.contacts.left.flux[sp] / want - 1) < 1e-4, `${statistics.type} ${sp}: ${sol.contacts.left.flux[sp]} vs ${want}`);
+      sol.flux[sp].forEach((N) => assert.ok(Math.abs(N / want - 1) < 1e-4, `${statistics.type} ${sp}: segment ${N} vs ${want}`));
+    }
+  }
 });
 
 test('flow and mixing are checked', () => {

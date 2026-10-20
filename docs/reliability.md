@@ -76,7 +76,7 @@ recipes.
 | Second law | free energy in through the terminals (Σ N μ̄ over every species) equals the dissipation, every term ≥ 0: a pn diode, an open-circuit junction running on chemical input alone, electrodes with a bipolar plate, a port and a contact behind conductances | 1e-10 |
 | Transients | RC charging of a gated island; water relaxation rate | 1%; 2e-3 |
 | Time integration | BE first order, BDF2 second order; adaptive error control | ratios 2, 4 |
-| Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing | 1e-12; 1e-12; 1e-5 |
+| Advection and eddy mixing | exact convection–diffusion profile; `D + D_mix`; junction EMF unchanged by mixing, ideal and crowded; crowded mixing −D_mix Δc (a neutral species on a lattice, second order; ions, lattice and Debye–Hückel, on 20 cells) | 1e-12; 1e-12; 1e-5; ratios 4, 1e-4 |
 | Metal regions | ohmic; Schottky face and MOS gate equal their contact forms; Ag \| AgNO₃ \| Ag with metal electrodes; bipolar electrode at V/2 | 1e-12; 1e-9; 1e-9; 1e-9 |
 | Internal ports | transmission line σV tanh(L/λ)/λ (O(h²)); held level; MOS low-frequency C–V with a grounded channel, and without one the same equilibrium, and a gate step filling the inversion layer to it | 1e-4; 1e-9; 2e-3; 1e-6; 1e-3 |
 | Cross-sections (spherical, cylindrical, any A(x)) | steady diffusion to a sphere and a cylinder (exact on any grid); Cottrell with the spherical term; uptake by a sphere filling from its surface; Debye–Hückel around a charged sphere, potential and charge | 1e-10; 3e-4; 2e-4; 1e-3, 3e-4 |

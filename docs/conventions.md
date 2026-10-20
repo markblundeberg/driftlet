@@ -94,13 +94,18 @@ Two optional transport terms describe a moving fluid:
 
 - **Advection** by an imposed velocity $`v`$ adds $`v \cdot c_i`$ to every mobile species' flux.
 - **Eddy mixing** adds $`-(D_{\mathrm{mix}}/RT) P \nabla\bar\mu`$, with
-  $`P = C - C z z^\mathsf{T} C / (z^\mathsf{T} C z)`$ and $`C = \mathrm{diag}(c)`$.
+  $`P = K - K z z^\mathsf{T} K / (z^\mathsf{T} K z)`$ and $`K = \partial c/\partial\zeta`$ (the
+  statistics' $`K`$; $`\mathrm{diag}(c)`$ when dilute).
   - It's an Onsager term: symmetric, positive semi-definite, and zero at equilibrium (flat
     $`\bar\mu`$), so double layers at rest are untouched.
   - The projection removes any current ($`z^\mathsf{T} P = 0`$). Eddies move neutral fluid, so
     they mix salt and stir concentration gradients but conduct nothing.
-  - For a neutral dilute species it's exactly $`-D_{\mathrm{mix}} \nabla c`$. For a binary salt it
-    adds $`D_{\mathrm{mix}}`$ to the salt's ambipolar diffusivity and leaves diffusion potentials
+  - Since $`K\nabla\zeta = \nabla c`$, it's $`-D_{\mathrm{mix}} \nabla c`$ for every species in a
+    neutral solution, under any statistics: eddies carry parcels of fluid, so they mix
+    concentration, not activity. (Molecular diffusion differs on purpose: a molecule's own random
+    walk is driven by the thermodynamic force, so its mobility is $`D c`$, above.) For a neutral
+    dilute species it's $`-D_{\mathrm{mix}} \nabla c`$ anywhere. For a binary salt it adds
+    $`D_{\mathrm{mix}}`$ to the salt's ambipolar diffusivity and leaves diffusion potentials
     unchanged.
 
 ## Materials, regions, interfaces

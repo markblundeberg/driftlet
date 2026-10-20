@@ -176,12 +176,20 @@ the flux is taken from its downstream end, $`g B(-\Delta) c_R \operatorname{expm
 same flux, since there $`B(\Delta)`$ underflows and $`\operatorname{expm1}(\Delta\eta)`$ overflows.
 
 **Eddy mixing** is discretised on each segment as
-$`N_i = -(D_{\mathrm{mix}}/h) \sum_j \bar P_{ij} \Delta\eta_j`$, where $`\bar P`$ is built from the
-logarithmic mean of each concentration across the segment. The logarithmic mean makes a dilute
-neutral species' mixing flux exactly $`-D_{\mathrm{mix}} \Delta c/h`$ (a crowded one's carries its
-thermodynamic factor). The flux is exactly zero at
+$`N_i = -(D_{\mathrm{mix}}/h) \sum_j \bar P_{ij} \Delta\eta_j`$, where $`\bar P`$ is built from a
+segment mobility $`\bar K`$. Between ideal ends $`\bar K`$ is the logarithmic mean of each
+concentration, which makes a neutral species' mixing flux exactly $`-D_{\mathrm{mix}} \Delta c/h`$.
+Between crowded ends it's $`\bar K = \tfrac12(R_L K_L R_L + R_R K_R R_R)`$ with
+$`R = \mathrm{diag}(\sqrt{\bar c/c})`$ at each end: each end's $`K`$ rescaled to the logarithmic
+means and averaged. That's the dilute form where statistics are ideal, positive definite, and
+smooth in the state, and in a neutral solution it gives $`-D_{\mathrm{mix}} \Delta c/h`$ to second
+order in the cells. (A secant $`\bar K`$, exact in $`\Delta c`$, can be built from the ends' $`c`$ and
+$`\zeta`$ alone, but not smoothly: where a solution is uniform its correction depends on the
+direction of $`\Delta\zeta`$, a kink right where a salt carries current.) The flux is exactly zero at
 equilibrium, and exactly current-free ($`z^\mathsf{T}\bar P = 0`$ for any $`\bar P`$ built this way). Its
-full Jacobian, including the dependence of $`\bar P`$ on both ends, keeps Newton quadratic.
+full Jacobian, including the dependence of $`\bar P`$ on both ends, keeps Newton quadratic. Through
+$`K_L`$ and $`K_R`$ that needs $`\partial K/\partial\zeta`$, which the statistics models don't give, so
+it's taken by central differences of the model (a step of 1e-5, accurate to about 1e-10).
 
 With non-ideal statistics, $`\ln c = \zeta - \mathrm{ex}`$, where the excess
 $`\mathrm{ex} = \zeta - \ln(c/c_{\mathrm{ref}})`$ is zero for ideal statistics. The excess enters

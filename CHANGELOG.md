@@ -3,6 +3,15 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Eddy mixing in a crowded solution (non-ideal statistics) now mixes concentration: in a
+  neutral solution every species' mixing flux is −D_mix ∇c, as eddies carrying parcels of fluid
+  give, where it was D_mix times the thermodynamic factor (2.1× too fast for a neutral species on a
+  lattice a third to two-thirds full, 3–19% for a stirred salt). Its mobility is the statistics' K = ∂c/∂ζ in
+  place of diag(c), still current-free and exactly zero at equilibrium; second order on the
+  grid between crowded nodes, and unchanged (exact) where statistics are ideal. Its Jacobian
+  needs K's slope, taken by central differences of the statistics model.
 ## 1.2.7 (2026-10-19)
 
 The equations' assembly moves out of `src/solver.js` into `src/assemble.js` (the rows'

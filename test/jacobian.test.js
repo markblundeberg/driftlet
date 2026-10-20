@@ -181,6 +181,17 @@ const flowing = (v) =>
     stack: [bath(film, 'Cl-'), layer('water', 20e-6, { name: 'film', velocity: v, c0: film }), bath({ 'Na+': 50, 'K+': 1, 'Cl-': 51 }, 'Cl-')],
     grid: { hmin: 1e-6, hmax: 1e-6 },
   });
+const stirred = (right, epsr = 80) =>
+  build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr })],
+    stack: [bath(film, 'Cl-'), layer('water', 20e-6, { name: 'film', mixing: 1e-8, c0: film }), bath(right, 'Cl-', 0.02)],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+const debyeHuckel = (def) => {
+  def.materials.water.statistics = [{ type: 'debye-huckel', species: ['Na+', 'K+', 'Cl-'], epsr: 78.5, a: 4e-10 }];
+  return def;
+};
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -223,6 +234,13 @@ const devices = {
   // (sgFlux past SG_FAR; test/transport.test.js), ideal and crowded.
   'a salt flowing against x': () => flowing(-1),
   'a salt flowing against x, crowded': () => lattice(flowing(-1), ['Na+', 'K+', 'Cl-'], 3000),
+  // Eddy mixing in a salt carrying current: ideal, crowded (the secant mobility of
+  // _mixCrowded), Debye–Hückel in a neutral solution, and a uniform crowded salt (Δζ ≈ 0, the
+  // secant faded out).
+  'a stirred salt carrying current': () => stirred({ 'Na+': 50, 'K+': 1, 'Cl-': 51 }),
+  'a stirred salt carrying current, crowded': () => lattice(stirred({ 'Na+': 50, 'K+': 1, 'Cl-': 51 }), ['Na+', 'K+', 'Cl-'], 3000),
+  'a stirred salt carrying current, Debye–Hückel': () => debyeHuckel(stirred({ 'Na+': 50, 'K+': 1, 'Cl-': 51 }, 0)),
+  'a stirred uniform salt carrying current, crowded': () => lattice(stirred(film), ['Na+', 'K+', 'Cl-'], 3000),
   // A port whose window reaches a contact's end box: the contact's current, read from that box,
   // depends on the port's voltage (termDX), and a bath's held level replaces a row the port
   // wrote its ∂/∂V into (both found by a cold review of src/boundaries.js).

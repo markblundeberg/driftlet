@@ -349,6 +349,13 @@ export class Solver {
     });
     this._activeSlots();
     this.K = this.anyNonIdeal ? new Float64Array(nNodes * n * n) : null;
+    // Crowded nodes under eddy mixing: K's slope too (_statSlopes), for its mobility's Jacobian.
+    this.nodeDK = new Uint8Array(nNodes);
+    regions.forEach((reg, r) => {
+      if (reg.mixing > 0) for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) if (!this.nodeIdeal[g]) this.nodeDK[g] = 1;
+    });
+    this.dK = this.nodeDK.some((v) => v) ? new Float64Array(nNodes * n * n * n) : null;
+    if (!this.dK) this.nodeDK = null;
     this.ex = new Float64Array(nNodes * n);
     this.zeta = new Float64Array(n);
     this.scratch = new Map(); // per statistics model: ζ, c, K work arrays
@@ -1549,8 +1556,14 @@ export class Solver {
           out[i][s] = sgFlux(mat.D[i] / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
         }
         if (reg.mixing > 0) {
-          // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic mean.
+          // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic
+          // mean; between crowded ends, _mixCrowded's.
           const on = [...Array(n).keys()].filter((i) => mat.present[i] && mat.D[i] > 0);
+          if (!this.nodeIdeal[s] || !this.nodeIdeal[s + 1]) {
+            const { N } = this._mixBase(s, s + 1, bL, bR, on);
+            on.forEach((i, p) => (out[i][s] += (reg.mixing / h) * N[p]));
+            continue;
+          }
           const cb = [], de = [];
           let S = 0, Q = 0;
           for (const k of on) {

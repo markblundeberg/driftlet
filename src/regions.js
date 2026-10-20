@@ -22,6 +22,7 @@
 //     face's sheet, sheetSign·D·A/(zF·vol);
 //   absent species: c = 0; then the coverages (_coverages: Langmuir, θ_s = e^{ζ_s}/(1 + Σe^ζ)).
 //   ∂c_i/∂η_j = K_ij, ∂c_i/∂φ̂ = −(Kz)_i (_Kz; _dlnc adds these as ∂ln c, _dc sets them as ∂c).
+//   At a non-ideal node of a region with eddy mixing (nodeDK), K's slope dK = ∂K/∂ζ as well.
 //
 // The terms:
 //   node (dilute, concentrated): storage vol·(c − c_old)/dt in each present species' row, and
@@ -41,9 +42,11 @@
 //   concentrated: the same with Δ = zΔφ̂ + Δex − Pe, and c_L, ex through K at both ends.
 //   conductor: the flux J in slot 0 of the segment's left node, its row η_R − η_L + J/g = 0,
 //     g = σRT/(z²F²h) (Ohm's law), and J out of the left node's carrier balance, into the right's.
-//   eddy mixing: N = −(D_mix/h) P̄ Δη, P̄ = C̄ − (C̄z)(C̄z)ᵀ/(zᵀC̄z), C̄ the logarithmic means of
-//     the two ends' c (mobile species only): no current, and zero where μ̄ is level; a dilute
-//     neutral species' is −D_mix Δc/h (a crowded one's, D_mix Δc/h times its thermodynamic factor).
+//   eddy mixing: N = −(D_mix/h) P̄ Δη, P̄ = K̄ − (K̄z)(K̄z)ᵀ/(zᵀK̄z) over the mobile species: no
+//     current, and zero where μ̄ is level. Between ideal ends K̄ = C̄, the logarithmic means of
+//     the two ends' c, and a neutral species' mixing is exactly −D_mix Δc/h; elsewhere
+//     (_mixCrowded) K̄ = ½(R_L K_L R_L + R_R K_R R_R), R = diag(√(c̄/c)), and in a neutral
+//     solution every species' mixing is −D_mix Δc/h to second order (eddies mix concentration).
 //   bulk reaction at a node: rate r = P(1 − e^{−a}), a = fixedA + Σ ν η (reactants ν > 0,
 //     products ν < 0; compensated), P = k_f Π c^ν over reactants (times generationScale for a
 //     generation); or SRH (_srhRate) where the material has an SRH law, its derivatives through
@@ -61,14 +64,16 @@
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Every term's Jacobian entries are its residual's derivatives (via c(ζ) and K); in
-//      difference form (this.lin), the same terms, each on differences of δη and δφ̂.
+//      difference form (this.lin), the same terms, each on differences of δη and δφ̂. One
+//      exception: crowded mixing's K̄ needs K's own slope, which no statistics model gives, so it
+//      comes from central differences of the model (_statSlopes: near 1e-10 of K).
 //   2. A segment's flux goes into its two nodes' rows with opposite signs, the same number.
 //   3. At a level μ̄ along a segment (Δη = 0, no velocity), its flux and mixing are exactly 0;
 //      at a = 0 a bulk reaction's rate is exactly 0.
-//   4. computeConcentrations writes c, K, ex, th, th0 (and scratch: zeta, the statistics
-//      models' work arrays) and nothing else; the kernels write res,
+//   4. computeConcentrations writes c, K, ex, th, th0, dK at the nodeDK nodes (and scratch:
+//      zeta, the statistics models' work arrays) and nothing else; the kernels write res,
 //      sys (or lin), termB/termC (the charge rows), and scratch kept on the Solver (dA, dB, jL,
-//      jR, sg, mixWork) or cached on a material (mobile).
+//      jR, sg, mixWork, mixCrowd) or cached on a material (mobile).
 //   5. The charge rows are an invertible transformation of the equations at the node (the same
 //      solution), and _untransform inverts the column change exactly.
 // Tests: test/jacobian.test.js (1), test/layout.test.js (difference form), test/srh.test.js,
@@ -78,6 +83,37 @@
 import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { powi } from './pow.js';
+
+// The logarithmic mean of a and b = a·e^l, a·f(l) with f = expm1(l)/l, into cb[k], with
+// ∂/∂a = f − f′ and ∂/∂b = a f′/b into dLa[k] and dLb[k].
+function logMean(a, b, l, cb, dLa, dLb, k) {
+  let f, fp;
+  if (Math.abs(l) < 1e-3) {
+    f = 1 + l / 2 + (l * l) / 6 + (l * l * l) / 24;
+    fp = 0.5 + l / 3 + (l * l) / 8 + (l * l * l) / 30;
+  } else {
+    const em = Math.expm1(l);
+    f = em / l;
+    fp = (l * (em + 1) - em) / (l * l);
+  }
+  cb[k] = a * f;
+  dLa[k] = f - fp;
+  dLb[k] = b > 0 ? (a * fp) / b : 0.5;
+}
+
+// _statSlopes' step in ζ.
+const STAT_STEP = 1e-5;
+
+// _mixCrowded's work arrays.
+function mixWork(n, M) {
+  const W = {};
+  for (const k of ['a', 'b', 'cb', 'dLa', 'dLb', 'rL', 'rR', 'de', 'zc', 'g', 'kz', 'N', 'tg', 'tkz', 'tr', 'tcbr']) W[k] = new Float64Array(n);
+  for (const k of ['KL', 'KR', 'Kb', 'tK']) W[k] = new Float64Array(n * n);
+  W.Jl = new Float64Array(n * (n + 1));
+  W.Jr = new Float64Array(n * (n + 1));
+  W.dcs = new Float64Array(n * M);
+  return W;
+}
 
 export class RegionTerms {
   // Each electrode surface's coverages from its η: Langmuir on shared sites, θ_s = e^{ζ_s}/(1 + Σ e^{ζ}),
@@ -160,6 +196,34 @@ export class RegionTerms {
         c[g * n + i] = ci;
         ex[g * n + i] = ci > 0 ? zeta[i] - Math.log(ci / this.cRef[g * n + i]) : 0;
         for (let q = 0; q < k; q++) K[Kg + i * n + idx[q]] = w.K[a * k + q];
+      }
+    }
+    if (this.nodeDK?.[g]) this._statSlopes(g, mat);
+  }
+
+  // K's own slope at node g, dK[g·n³ + (i·n + j)·n + r] = ∂K_ij/∂ζ_r, which no statistics model
+  // gives: by central differences of each model's evaluate, a step of 1e-5 in ζ (truncation
+  // and round-off near 1e-10 of K). Only where crowded eddy mixing needs it (nodeDK).
+  _statSlopes(g, mat) {
+    const { n, c, dK, zeta } = this;
+    const o = g * n * n * n;
+    dK.fill(0, o, o + n * n * n);
+    for (let i = 0; i < n; i++) if (this.present[g * n + i] && mat.modelOf[i] < 0) dK[o + (i * n + i) * n + i] = c[g * n + i];
+    for (const md of mat.models) {
+      const w = this._work(md), idx = md.idx, k = idx.length;
+      w.zp ??= new Float64Array(k);
+      w.cp ??= new Float64Array(k);
+      w.Kp ??= new Float64Array(k * k);
+      w.Km ??= new Float64Array(k * k);
+      for (let r = 0; r < k; r++) {
+        for (const [sgn, Kx] of [[1, w.Kp], [-1, w.Km]]) {
+          for (let a = 0; a < k; a++) w.zp[a] = zeta[idx[a]];
+          w.zp[r] += sgn * STAT_STEP;
+          md.evaluate(w.zp, w.cp, Kx, this.background[g]);
+        }
+        for (let a = 0; a < k; a++) {
+          for (let q = 0; q < k; q++) dK[o + (idx[a] * n + idx[q]) * n + idx[r]] = (w.Kp[a * k + q] - w.Km[a * k + q]) / (2 * STAT_STEP);
+        }
       }
     }
   }
@@ -623,38 +687,27 @@ export class RegionTerms {
     this._j(bR, r, bL, 0, -1);
   }
 
-  // Eddy mixing: N = −(D_mix/RT) P ∇μ̄ with P = C − (Cz)(Cz)ᵀ/(zᵀCz), C = diag(c). It mixes
-  // composition without carrying current (zᵀP = 0) and vanishes exactly at equilibrium. On a
-  // segment, N_i = −(D_mix/h) Σ_j P̄_ij Δη_j, with P̄ from the logarithmic mean of each c, so a
-  // dilute neutral species gets exactly −D_mix Δc/h. Only mobile species (D > 0) take part.
+  // Eddy mixing: N = −(D_mix/RT) P ∇μ̄ with P = K − (Kz)(Kz)ᵀ/(zᵀKz), K = ∂c/∂ζ. It mixes
+  // composition without carrying current (zᵀP = 0) and vanishes exactly at equilibrium; in a
+  // neutral solution it's −D_mix ∇c for every species, under any statistics (eddies carry parcels
+  // of fluid, so they mix concentration). On a segment, N_i = −(D_mix/h) Σ_j P̄_ij Δη_j, with
+  // P̄ from K̄ = C̄, the logarithmic mean of each c, where both ends are ideal (so K̄ Δζ = Δc
+  // exactly), and from the secant K̄ of _mixCrowded otherwise. Only mobile species (D > 0) take part.
   _segmentMixing(s, bL, bR, Dm, h, mat) {
     const R = this.rix;
     const { n, M, u, uLo, res, c, z } = this;
     const gL = s, gR = s + 1, k0 = Dm / h;
     const on = mat.mobile ?? (mat.mobile = [...Array(n).keys()].filter((i) => mat.present[i] && mat.D[i] > 0));
     if (on.length === 0) return;
+    if (!this.nodeIdeal[gL] || !this.nodeIdeal[gR]) return this._mixCrowded(gL, gR, bL, bR, on, k0);
     const w = this.mixWork ?? (this.mixWork = [0, 1, 2, 3].map(() => new Float64Array(n)));
     const [cb, dLa, dLb, de] = w;
     let S = 0, Q = 0;
     for (const k of on) {
       const a = c[gL * n + k], b = c[gR * n + k];
-      // l = ln(c_R/c_L), from the compensated potentials where statistics are ideal
-      const l = this.nodeIdeal[gL]
-        ? u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]) - z[k] * (u[bR * M] - u[bL * M])
-        : Math.log(b / a);
-      // L = a·f(l), f = expm1(l)/l; ∂L/∂a = f − f′, ∂L/∂b = a f′/b
-      let f, fp;
-      if (Math.abs(l) < 1e-3) {
-        f = 1 + l / 2 + (l * l) / 6 + (l * l * l) / 24;
-        fp = 0.5 + l / 3 + (l * l) / 8 + (l * l * l) / 30;
-      } else {
-        const em = Math.expm1(l);
-        f = em / l;
-        fp = (l * (em + 1) - em) / (l * l);
-      }
-      cb[k] = a * f;
-      dLa[k] = f - fp;
-      dLb[k] = b > 0 ? (a * fp) / b : 0.5;
+      // l = ln(c_R/c_L), from the compensated potentials (statistics ideal at both ends)
+      const l = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]) - z[k] * (u[bR * M] - u[bL * M]);
+      logMean(a, b, l, cb, dLa, dLb, k);
       de[k] = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]);
       S += z[k] * z[k] * cb[k];
       Q += z[k] * cb[k] * de[k];
@@ -698,6 +751,144 @@ export class RegionTerms {
         }
       }
     }
+  }
+
+  // Eddy mixing where either end is crowded (non-ideal): N = −k0 P̄ Δη as in the dilute case,
+  // with C̄ replaced by K̄ = ½(R_L K_L R_L + R_R K_R R_R), R = diag(√(c̄/c)) at each end (c̄ the
+  // logarithmic mean): each end's K rescaled to the segment's mean concentrations, and averaged.
+  // It's C̄ where statistics are ideal, symmetric and positive definite, and smooth in the state,
+  // so P̄ keeps everything the dilute term has (no current, exactly zero at a level μ̄); and in
+  // a neutral solution it gives −k0 Δc to second order in the segment's Δζ. Its Jacobian runs
+  // through K's own slope, dK (_statSlopes).
+  _mixCrowded(gL, gR, bL, bR, on, k0) {
+    const R = this.rix;
+    const { n, M, res } = this;
+    const m = on.length, W = this._mixBase(gL, gR, bL, bR, on);
+    const { N, a, b, cb, dLa, dLb, rL, rR, KL, KR, Kb, de, zc, kz, tK, tg, tkz, tr, dcs } = W;
+    const { S, Q } = W;
+    const Jl = W.Jl, Jr = W.Jr; // ∂N_p/∂slot t at either end, m × (n + 1)
+    for (const end of [0, 1]) {
+      const gX = end ? gR : gL, cX = end ? b : a, rX = end ? rR : rL, KX = end ? KR : KL, J = end ? Jr : Jl;
+      const dLX = end ? dLb : dLa, sgn = end ? 1 : -1;
+      for (let q = 0; q < m; q++) this._dc(gX, on[q], dcs.subarray(q * M, (q + 1) * M));
+      for (let t = 0; t <= n; t++) {
+        // the tangent of K̄ along slot t: through c at this end (its own ρ and c̄) and K there
+        for (let p = 0; p < m; p++) {
+          const tc = dcs[p * M + t], tcb = dLX[p] * tc;
+          tr[p] = 0.5 * rX[p] * (tcb / cb[p] - tc / cX[p]); // tρ at this end
+          W.tcbr[p] = tcb; // and c̄'s, which moves the other end's ρ too
+        }
+        for (let p = 0; p < m; p++) {
+          for (let q = 0; q < m; q++) {
+            const dk = this._dKslot(gX, on[p], on[q], t);
+            const rO = end ? rL : rR, KO = end ? KL : KR;
+            const trO_p = 0.5 * rO[p] * (W.tcbr[p] / cb[p]), trO_q = 0.5 * rO[q] * (W.tcbr[q] / cb[q]);
+            tK[p * m + q] =
+              0.5 * ((tr[p] * rX[q] + rX[p] * tr[q]) * KX[p * m + q] + rX[p] * rX[q] * dk) +
+              0.5 * (trO_p * rO[q] + rO[p] * trO_q) * KO[p * m + q];
+          }
+        }
+        for (let p = 0; p < m; p++) {
+          let x = 0, y = 0;
+          for (let q = 0; q < m; q++) {
+            x += tK[p * m + q] * de[q] + (t === 1 + on[q] ? sgn * Kb[p * m + q] : 0);
+            y += tK[p * m + q] * zc[q];
+          }
+          tg[p] = x;
+          tkz[p] = y;
+        }
+        let tS = 0, tQ = 0;
+        for (let p = 0; p < m; p++) {
+          tS += zc[p] * tkz[p];
+          tQ += zc[p] * tg[p];
+        }
+        for (let p = 0; p < m; p++) {
+          J[p * (n + 1) + t] = -(S > 0 ? tg[p] - (tkz[p] * Q + kz[p] * tQ) / S + (kz[p] * Q * tS) / (S * S) : tg[p]);
+        }
+      }
+    }
+    for (let p = 0; p < m; p++) {
+      const r = 1 + on[p], Ni = k0 * N[p];
+      res[R[bL * M + r]] += Ni;
+      res[R[bR * M + r]] -= Ni;
+      for (let t = 0; t <= n; t++) {
+        const vl = k0 * Jl[p * (n + 1) + t], vr = k0 * Jr[p * (n + 1) + t];
+        if (vl !== 0) {
+          this._j(bL, r, bL, t, vl);
+          this._j(bR, r, bL, t, -vl);
+        }
+        if (vr !== 0) {
+          this._j(bL, r, bR, t, vr);
+          this._j(bR, r, bR, t, -vr);
+        }
+      }
+    }
+  }
+
+  // ∂K_ij/∂(slot t) at node g: through ζ, slot 1 + r moving ζ_r and slot 0 (φ̂) every ζ_r by −z_r.
+  _dKslot(g, i, j, t) {
+    const { n, z } = this;
+    if (this.nodeIdeal[g]) {
+      if (i !== j) return 0;
+      const ci = this.c[g * n + i];
+      return t === 0 ? -z[i] * ci : t === 1 + i ? ci : 0;
+    }
+    const o = g * n * n * n + (i * n + j) * n;
+    if (t > 0) return this.dK[o + t - 1];
+    let v = 0;
+    for (let r = 0; r < n; r++) v -= this.dK[o + r] * z[r];
+    return v;
+  }
+
+  // _mixCrowded's flux per k0 on a segment, into W.N (indexed as on), and what its Jacobian
+  // needs. Also the solution's readout (segmentFluxes).
+  _mixBase(gL, gR, bL, bR, on) {
+    const { n, M, u, uLo, c, z } = this;
+    const m = on.length;
+    const W = this.mixCrowd ?? (this.mixCrowd = mixWork(n, M));
+    const { a, b, cb, dLa, dLb, rL, rR, KL, KR, Kb, de, zc, g, kz, N } = W;
+    for (let p = 0; p < m; p++) {
+      const k = on[p], oL = bL * M + 1 + k, oR = bR * M + 1 + k;
+      a[p] = c[gL * n + k];
+      b[p] = c[gR * n + k];
+      zc[p] = z[k];
+      logMean(a[p], b[p], Math.log(b[p] / a[p]), cb, dLa, dLb, p);
+      rL[p] = Math.sqrt(cb[p] / a[p]);
+      rR[p] = Math.sqrt(cb[p] / b[p]);
+      de[p] = u[oR] - u[oL] + (uLo[oR] - uLo[oL]);
+    }
+    for (let p = 0; p < m; p++) {
+      for (let q = 0; q < m; q++) {
+        KL[p * m + q] = this._Kat(gL, on[p], on[q]);
+        KR[p * m + q] = this._Kat(gR, on[p], on[q]);
+        Kb[p * m + q] = 0.5 * (rL[p] * rL[q] * KL[p * m + q] + rR[p] * rR[q] * KR[p * m + q]);
+      }
+    }
+    let S = 0, Q = 0;
+    for (let p = 0; p < m; p++) {
+      let x = 0, y = 0;
+      for (let q = 0; q < m; q++) {
+        x += Kb[p * m + q] * de[q];
+        y += Kb[p * m + q] * zc[q];
+      }
+      g[p] = x;
+      kz[p] = y;
+    }
+    for (let p = 0; p < m; p++) {
+      S += zc[p] * kz[p];
+      Q += zc[p] * g[p];
+    }
+    W.S = S;
+    W.Q = Q;
+    for (let p = 0; p < m; p++) N[p] = -(S > 0 ? g[p] - (kz[p] * Q) / S : g[p]);
+    return W;
+  }
+
+  // K_ij at node g.
+  _Kat(g, i, j) {
+    const { n } = this;
+    if (this.nodeIdeal[g]) return i === j ? this.c[g * n + i] : 0;
+    return this.K[g * n * n + i * n + j];
   }
 
   // ∂c_k/∂slot at node g into d (slot 0 = φ̂, 1 + j = η_j).
