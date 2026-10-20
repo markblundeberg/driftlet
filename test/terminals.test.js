@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Device, EPS0 } from '../src/index.js';
 import { aqueous, metal } from '../src/kit.js';
 
@@ -200,4 +201,21 @@ test('no terminal held: a current-driven electrode beside one behind a resistanc
   const held = new Device(def({ V: 0 })).solve(), behind = new Device(def({ V: 0, R: 1e-3 })).solve();
   assert.ok(held.converged && behind.converged);
   assert.ok(Math.abs(behind.terminals.left.V - (held.terminals.left.V + 1e-3)) < 1e-9, `${behind.terminals.left.V} for ${held.terminals.left.V} + 1 mV`);
+});
+
+// From round 14's fuzzer (its device sc 20, a Schottky-contacted diode): a terminal behind a
+// resistance, solved cold, failed where the same device held at the voltage it passes converged.
+// A cold solve now holds it at its source first, then puts the resistance back.
+test('a terminal behind a resistance, solved cold, reaches the state the held one is in', () => {
+  const def = JSON.parse(readFileSync(new URL('./fixtures/series-resistance-cold.json', import.meta.url), 'utf8'));
+  const base = new Device(def).solve();
+  assert.ok(base.converged);
+  for (const side of ['left', 'right']) {
+    const I = base.terminals[side].current, R = 0.01 / Math.max(Math.abs(I), 1e-3);
+    const d = new Device(def);
+    d.set({ contacts: { [side]: { V: base.terminals[side].V + I * R, R } } });
+    const s = d.solve();
+    assert.ok(s.converged, side);
+    assert.ok(Math.abs(s.terminals[side].V - base.terminals[side].V) < 1e-9, `${side}: ${s.terminals[side].V} for ${base.terminals[side].V}`);
+  }
 });

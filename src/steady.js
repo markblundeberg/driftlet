@@ -50,7 +50,9 @@
 //      start (initFromComposition), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
 //   2. Continuation: generation ramped up (_generationContinuation); a terminal driven by a
-//      current, not bound (_bound), held at voltages instead (_floatingContinuation); with
+//      current, not bound (_bound), held at voltages instead (_floatingContinuation); terminals
+//      behind a resistance held at their source voltages, then the resistances put back and the
+//      steady system solved from there (_resistanceContinuation); with
 //      canContinue, the right contact's voltage ramped to its target (_continuation): from the
 //      voltages of the last converged solve (this.solvedV), the left contact's first where it
 //      moved, else from level contacts, a cold start.
@@ -299,6 +301,15 @@ export class SteadySolves {
       if (q.converged) return q;
       r = q;
     }
+    // A terminal behind a resistance, cold: held at its source voltage first (with that its own
+    // continuations), then the resistance put back and solved from there (a diode behind 7 Ω·m²
+    // failed cold, and converged so; round 14's fuzzer, 4 of 9 such re-solves).
+    if (allowed && this.floating.some((k) => this.terms[k].drive.kind === 'V' && this.terms[k].drive.R > 0)) {
+      restart();
+      const q = this._resistanceContinuation(opts, r);
+      if (q.converged) return solved(q);
+      r = q;
+    }
     if (canContinue) {
       // The right terminal's voltage ramped to its target: from the contacts' voltages at the last
       // converged solve when the state is that solution (a warm start), the left one first where
@@ -446,6 +457,30 @@ export class SteadySolves {
     } finally {
       floatAgain();
     }
+  }
+
+  // Each terminal behind a resistance held at its source voltage (R taken off), solved, then the
+  // resistances put back and the steady system solved from that state.
+  _resistanceContinuation(opts, r) {
+    const ks = this.floating.filter((k) => this.terms[k].drive.kind === 'V' && this.terms[k].drive.R > 0);
+    const drives = ks.map((k) => this.terms[k].drive);
+    let steps = r.steps ?? 0, iterations = r.iterations ?? 0;
+    const history = (r.history ?? []).slice();
+    try {
+      ks.forEach((k) => (this.terms[k].drive = { ...this.terms[k].drive, R: 0 }));
+      this.redrive();
+      const q = this._steadyFromHere(opts);
+      steps += q.steps ?? 0;
+      iterations += q.iterations ?? 0;
+      history.push({ resistancesOff: true, converged: q.converged });
+      if (!q.converged) return { converged: false, steps, iterations, history };
+    } finally {
+      ks.forEach((k, j) => (this.terms[k].drive = drives[j]));
+      this.redrive();
+      captureLocal(this);
+    }
+    const q = this._steadySteps(opts);
+    return { ...q, steps: steps + q.steps, iterations: iterations + q.iterations, history: [...history, ...q.history] };
   }
 
   // Steady solves with the generation reactions' rates scaled from 1e-30 up to 1, ×100 a step

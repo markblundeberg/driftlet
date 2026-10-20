@@ -113,9 +113,11 @@ test('a change that fails only when the solver is built is refused, and the devi
 test('a failed change of drive is rolled back exactly: no leftover I or R', async () => {
   const dev = live(pn(1e17, 1e16, 0), { maxRamp: 2 });
   await dev.ready;
-  const huge = await within(dev.set({ contacts: { right: { V: 1000, R: 1e-12 } } }));
+  // (Once V: 1000 behind R: 1e-12, which a steady solve now reaches by holding it at its source
+  // first; the rollback is the same for any change that fails.)
+  const huge = await within(dev.set({ contacts: { right: { V: undefined, I: -1e9 } } })); // (reverse, past what passes)
   assert.ok(huge.info.failed);
-  const back = await within(dev.set({ contacts: { right: { V: 0.2 } } }));
+  const back = await within(dev.set({ contacts: { right: { I: undefined, V: 0.2 } } }));
   assert.ok(!back.info.failed);
   const direct = new Device(pn(1e17, 1e16, 0.2)).solve();
   assert.ok(Math.abs(back.solution.current / direct.current - 1) < 1e-9, 'no series resistance left behind');
