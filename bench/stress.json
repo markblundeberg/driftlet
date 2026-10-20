@@ -14,7 +14,7 @@
       "of": 500
     },
     "semi: warm sweep": {
-      "ok": 500,
+      "ok": 499,
       "of": 500
     },
     "semi: transient": {
@@ -139,6 +139,7 @@
     }
   },
   "failures": [
+    "semi 158 · warm sweep: warm 0.00017228453772242337 vs cold 0.00017228484579912237 A/m²",
     "junction 387 · transient: failed at t = 0.00 s (0 steps)"
   ]
 }

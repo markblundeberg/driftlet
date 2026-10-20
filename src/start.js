@@ -34,11 +34,14 @@
 //      neutral region (ε = 0) with every charged species' amount given must have a neutral c0:
 //      an error otherwise. A non-ideal material's composition comes from its statistics
 //      (materialAt).
-//   2. A face between two strictly neutral ideal regions, its φ type neutral, whose links hold
-//      some charged species in equilibrium: its two nodes are set to that equilibrium (each
-//      passing species' μ̄ equal across it, the left node neutral, each passing species' amount
-//      over the two nodes kept; the jump in φ̂ between them the one unknown), everything else at
-//      them unchanged in concentration.
+//   2. Marks the state cold (s.coldStart). equilibrateFaces(s), which the first time step from it
+//      calls (src/timeSteps.js) and a steady solve doesn't: a face between two strictly neutral
+//      ideal regions, its φ type neutral, whose links hold some charged species in equilibrium,
+//      its two nodes set to that equilibrium, its t = 0⁺ (each passing species' μ̄ equal across
+//      it, the left node neutral, each passing species' amount over the two nodes kept; the jump
+//      in φ̂ between them the one unknown), everything else at them unchanged in concentration;
+//      s.coldStart false. A solve that converges, a warm start and a carried state set it as
+//      their state is.
 //   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ so that its first
 //      charged species shared with a neighbour across a face starts at that neighbour's level.
 //   4. A floating contact facing a held one: V = the held V + the difference between the two
@@ -55,8 +58,8 @@
 //      pass the current it's driven at, or behind a resistance (V_src − V)/R, by bisection.
 //
 // Invariants (each says what a reviewer should be able to check here):
-//   1. A species given by its amount starts at c0 (or its profile) at every node, but for the
-//      two nodes of a face equilibrated in step 2, where its amount over the two is kept.
+//   1. A species given by its amount starts at c0 (or its profile) at every node; at a face
+//      equilibrated by step 2 (a transient's first step), its amount over the two nodes is kept.
 //   2. A species given by its level starts at the level of what feeds it, as step 1 orders them.
 //   3. Where a level-fixed charged species responds, each node starts neutral (Σ z c + the fixed
 //      charge = 0) to the bisection's tolerance, unless neutrality is out of reach (step 1); a
@@ -65,7 +68,7 @@
 //      z·Δ), step 2 moves the passing species between a face's two nodes only.
 //   5. Each floating terminal's V is set by the last of steps 4, 6, 7, 9 that applies to it;
 //      held terminals' V are untouched.
-//   6. Only u, uLo, termV, s.unbalanced and what computeConcentrations derives are written; the
+//   6. Only u, uLo, termV, s.unbalanced, s.coldStart and what computeConcentrations derives are written; the
 //      result depends on the model, every terminal's voltage and s.time, deterministically.
 // Known, and not an invariant (a cold review; see ROADMAP): the gauge (φ̂ and each η by z·Δ)
 // runs from the left, so behind a closed or floating left end the start sits away from a right
@@ -279,53 +282,6 @@ export function initFromComposition(s) {
       }
     }
   }
-  // Two strictly neutral regions meeting at a face whose links hold ions in equilibrium: where
-  // c0 leaves the two sides out of it (a different fixed charge or immobile ion on each, so
-  // c₊c₋ differs across it), the face reaches it at t = 0⁺, before anything diffuses, and a
-  // first step made to take that jump met an exactly singular pivot. Start there: the ions the
-  // face passes shared between its two nodes in equilibrium (μ̄ equal across it), each one's
-  // amount over the two nodes kept, everything else as c0 has it. The one unknown is the jump
-  // in φ̂ across it (a Donnan potential), set by neutrality on one side; the other's follows,
-  // the two nodes' charge summing to what it was, zero.
-  for (let f = 0; f < interfaces.length; f++) {
-    const itf = interfaces[f], mL = materials[regions[f].material], mR = materials[regions[f + 1].material];
-    const strict = (m) => m.epsr === 0 && !m.conductor && !m.phiFree && m.ideal;
-    if (itf.phi.type !== 'neutral' || !strict(mL) || !strict(mR)) continue;
-    const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1], bL = s.blockOfNode[gL] * M, bR = s.blockOfNode[gR] * M;
-    const pass = [];
-    for (let i = 0; i < n; i++) if (itf.links[i].type === 'equilibrium' && mL.present[i] && mR.present[i]) pass.push(i);
-    if (!pass.some((i) => z[i] !== 0)) continue;
-    const RT = model.RT, vL = grid.vol[gL], vR = grid.vol[gR];
-    const conc = (m, b, i) => m.cRef[i] * Math.exp(u[b + 1 + i] - m.mu0[i] / RT - z[i] * u[b]);
-    const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
-    let qOther = regions[f].fixedCharge / FARADAY; // (the left node's charge from all it doesn't share)
-    for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
-    // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
-    const split = (D) =>
-      pass.map((i, j) => {
-        const K = (mL.cRef[i] / mR.cRef[i]) * Math.exp((mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D), cR = amount[j] / (vL * K + vR);
-        return [K * cR, cR];
-      });
-    const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther); // (increasing in D)
-    const D0 = u[bR] - u[bL];
-    let lo = D0 - 1, hi = D0 + 1;
-    while (qL(lo) > 0 && lo > D0 - 1e3) lo -= 2 * (hi - lo);
-    while (qL(hi) < 0 && hi < D0 + 1e3) hi += 2 * (hi - lo);
-    if (!(qL(lo) <= 0 && qL(hi) >= 0)) continue; // (nothing the face shares can balance it: leave c0)
-    for (let it = 0; it < 200 && hi - lo > 1e-13 * Math.max(1, Math.abs(D0)); it++) {
-      const m = 0.5 * (lo + hi);
-      if (qL(m) < 0) lo = m;
-      else hi = m;
-    }
-    const D = 0.5 * (lo + hi), cs = split(D);
-    const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
-    u[bR] = u[bL] + D;
-    for (let i = 0; i < n; i++) if (mR.present[i] && !pass.includes(i)) u[bR + 1 + i] = Math.log(keep[i] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
-    pass.forEach((i, j) => {
-      u[bL + 1 + i] = Math.log(cs[j][0] / mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
-      u[bR + 1 + i] = Math.log(cs[j][1] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
-    });
-  }
   // An insertion host's φ is a gauge: c0 sets only its neutral combination's level, not how that
   // splits between its ion and its electrons. Start its ion level with the same ion's beside it
   // across a face (the equilibrium a link or a transfer reaction heads for), so its electrons,
@@ -447,6 +403,69 @@ export function initFromComposition(s) {
     }
     s.termV[k] = 0.5 * (lo + hi);
   }
+  s.coldStart = true; // (until a solve or a step moves it: see equilibrateFaces)
+}
+
+/**
+ * The t = 0⁺ state at the faces between strictly neutral regions, taken by the first time step
+ * from a cold start (src/timeSteps.js) and not by a steady solve, which needs no t = 0⁺: there it
+ * was the worse start, its face nodes moved while the rest of a region stayed (a stack whose
+ * middle region started 2.2 V from its neighbour's level failed every steady solve, where the
+ * cold start converged in one).
+ */
+export function equilibrateFaces(s) {
+  const { model, n, M, u, z } = s;
+  const { regions, interfaces, materials } = model;
+  const grid = model.grid;
+  s.coldStart = false;
+  // Two strictly neutral regions meeting at a face whose links hold ions in equilibrium: where
+  // c0 leaves the two sides out of it (a different fixed charge or immobile ion on each, so
+  // c₊c₋ differs across it), the face reaches it at t = 0⁺, before anything diffuses, and a
+  // first step made to take that jump met an exactly singular pivot. Start there: the ions the
+  // face passes shared between its two nodes in equilibrium (μ̄ equal across it), each one's
+  // amount over the two nodes kept, everything else as c0 has it. The one unknown is the jump
+  // in φ̂ across it (a Donnan potential), set by neutrality on one side; the other's follows,
+  // the two nodes' charge summing to what it was, zero.
+  for (let f = 0; f < interfaces.length; f++) {
+    const itf = interfaces[f], mL = materials[regions[f].material], mR = materials[regions[f + 1].material];
+    const strict = (m) => m.epsr === 0 && !m.conductor && !m.phiFree && m.ideal;
+    if (itf.phi.type !== 'neutral' || !strict(mL) || !strict(mR)) continue;
+    const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1], bL = s.blockOfNode[gL] * M, bR = s.blockOfNode[gR] * M;
+    const pass = [];
+    for (let i = 0; i < n; i++) if (itf.links[i].type === 'equilibrium' && mL.present[i] && mR.present[i]) pass.push(i);
+    if (!pass.some((i) => z[i] !== 0)) continue;
+    const RT = model.RT, vL = grid.vol[gL], vR = grid.vol[gR];
+    const conc = (m, b, i) => m.cRef[i] * Math.exp(u[b + 1 + i] - m.mu0[i] / RT - z[i] * u[b]);
+    const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
+    let qOther = regions[f].fixedCharge / FARADAY; // (the left node's charge from all it doesn't share)
+    for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
+    // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
+    const split = (D) =>
+      pass.map((i, j) => {
+        const K = (mL.cRef[i] / mR.cRef[i]) * Math.exp((mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D), cR = amount[j] / (vL * K + vR);
+        return [K * cR, cR];
+      });
+    const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther); // (increasing in D)
+    const D0 = u[bR] - u[bL];
+    let lo = D0 - 1, hi = D0 + 1;
+    while (qL(lo) > 0 && lo > D0 - 1e3) lo -= 2 * (hi - lo);
+    while (qL(hi) < 0 && hi < D0 + 1e3) hi += 2 * (hi - lo);
+    if (!(qL(lo) <= 0 && qL(hi) >= 0)) continue; // (nothing the face shares can balance it: leave c0)
+    for (let it = 0; it < 200 && hi - lo > 1e-13 * Math.max(1, Math.abs(D0)); it++) {
+      const m = 0.5 * (lo + hi);
+      if (qL(m) < 0) lo = m;
+      else hi = m;
+    }
+    const D = 0.5 * (lo + hi), cs = split(D);
+    const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
+    u[bR] = u[bL] + D;
+    for (let i = 0; i < n; i++) if (mR.present[i] && !pass.includes(i)) u[bR + 1 + i] = Math.log(keep[i] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
+    pass.forEach((i, j) => {
+      u[bL + 1 + i] = Math.log(cs[j][0] / mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
+      u[bR + 1 + i] = Math.log(cs[j][1] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
+    });
+  }
+  s.computeConcentrations();
 }
 
 // A non-ideal material's composition at φ̂ = ph: level-fixed species (mode 1) at their η,

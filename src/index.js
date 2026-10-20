@@ -132,6 +132,7 @@ export class Device {
       solver.sourceTime = old.sourceTime;
       solver._refreshSources();
       solver.dtNext = old.dtNext;
+      solver.coldStart = old.coldStart; // (a carried state is as cold as it was: see equilibrateFaces)
       solver.contactDEnd = old.contactDEnd;
       if (old.portQEnd?.length === solver.portQ.length) solver.portQEnd = old.portQEnd;
       solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)

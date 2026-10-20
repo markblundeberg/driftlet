@@ -252,6 +252,7 @@ export class SteadySolves {
       if (q.converged) {
         this.solvedV = [this.termV[0], this.termV[1]]; // (a contact's own: driven by a current, not the current)
         this.stepped = false;
+        this.coldStart = false; // (solved: no t = 0⁺ left for a transient to start from)
       }
       return q;
     };

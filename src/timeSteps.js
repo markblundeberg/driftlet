@@ -21,6 +21,8 @@
 // (ports' charges) }: what BDF2 and the predictor need.
 //
 // step(s, dt, opts) → newton's result (+ bdf)
+//   From a cold start (s.coldStart, outside a steady solve), the faces between strictly neutral
+//   regions first set to their t = 0⁺ equilibrium (equilibrateFaces, src/start.js).
 //   One step from s.time to tEnd = s.time + dt (or s.landing exactly, where it's within 1e-9·dt
 //   of that). Backward Euler; BDF2 when opts.method is 'bdf2', a previous step exists and the
 //   ratio ω = dt/dt_prev ≤ 2: then c* = b1·c_n − b2·c_{n−1} (b1 = (1+ω)/a0, b2 = ω²/((1+ω)a0),
@@ -85,6 +87,7 @@
 
 import { nextBreakpoint } from './device.js';
 import { SolverError } from './solver.js';
+import { equilibrateFaces } from './start.js';
 
 // Lagrange weights at x through the points s0, s1, s2.
 function lagrange3(x, s0, s1, s2) {
@@ -120,6 +123,8 @@ export function advance(s, dt, opts, depth = 0) {
  * the start-of-step values, and dt/a0 replaces dt.
  */
 export function step(s, dt, opts = {}) {
+  // A transient's first step from a cold start begins at its t = 0⁺ (see equilibrateFaces).
+  if (s.coldStart && !s.steady) equilibrateFaces(s);
   // What the step overwrites before Newton runs, for a failed one to put back: the Solution read
   // after it takes its contacts' fluxes against the start-of-step values (a host emptied by its
   // current read its contact's Li⁺ flux 8× off at the same state).

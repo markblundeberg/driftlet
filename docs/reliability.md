@@ -97,7 +97,7 @@ recipes.
 
 The validation suite shows driftlet is right where it converges. Whether it converges, on
 devices nobody tuned it for, is what `npm run stress` tests. It builds random but plausible
-devices in five families:
+devices in six families:
 
 | Family | What's drawn |
 |---|---|
@@ -105,6 +105,7 @@ devices in five families:
 | MOS capacitors | Si, Ge or GaAs, doped 1e15–1e18 cm⁻³; oxide 1–20 nm; Au, Al or Pt gate at any flat-band offset; with or without generation |
 | Electrolyte cells | one to three salts from the data library's ions, 0.1 mM–1 M, 1 µm–1 mm; double layers resolved or strictly neutral; bath, reversible or blocking electrodes |
 | Electrodes | Ag, Cu or Zn deposition, or Fe³⁺/Fe²⁺ on platinum, with Butler–Volmer kinetics over four decades of k₀; with or without a supporting salt; against a second electrode or a bath |
+| Reacting solutions | complexations (Na⁺ + A⁻ = NaA, B + A⁻ = BA⁻, …) in 2–3 regions whose faces block some species, so conserved combinations overlap; against a bath, another bath, closed or a K⁺ electrode; sometimes an electrode at no current reducing a closed M⁺ |
 | Liquid junctions | two mixed solutions, 1 µM–1 M, sharp or graded, at open circuit |
 
 Each device goes through what a user would do with it: a cold solve at no bias, and one at a
@@ -118,21 +119,24 @@ the steady dI/dV, a MOS capacitance never above its oxide's, and its gate charge
 contact moved what it is with the gate moved the other way. Each case is seeded from its family and index, so
 any failure reruns alone (`npm run stress -- semi 79`).
 
-At 500 devices per family (about three minutes on a desktop), 11,880 of 11,881 scenarios pass:
+At 500 devices per family (about five minutes on a desktop), 16,379 of 16,381 scenarios pass:
 
-| Family | Cold at 0 V | Cold at bias | Warm sweep | Open circuit, current or back contact | Transient | Impedance |
-|---|---|---|---|---|---|---|
-| Semiconductor stacks | 500/500 | 500/500 | 500/500 | 105/105 | 500/500 | 395/395 |
-| MOS capacitors | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
-| Electrolyte cells | 500/500 | 500/500 | 500/500 | | 500/500 | 381/381 |
-| Electrodes | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
-| Liquid junctions | | | | 500/500 | 499/500 | |
+| Family | Cold at 0 V | Cold at bias | Species reversed | Warm sweep | Open circuit, current or back contact | Transient | Impedance |
+|---|---|---|---|---|---|---|---|
+| Semiconductor stacks | 500/500 | 500/500 | 500/500 | 499/500 | 105/105 | 500/500 | 395/395 |
+| MOS capacitors | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
+| Electrolyte cells | 500/500 | 500/500 | 500/500 | 500/500 |  | 500/500 | 381/381 |
+| Electrodes | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 | 500/500 |
+| Reacting solutions | 500/500 | 500/500 | 500/500 | 500/500 |  | 500/500 |  |
+| Liquid junctions |  |  |  |  | 500/500 | 499/500 |  |
 
 (Impedance only where the device has an equilibrium to linearise about; open circuit only for
 lit cells.) The MOS back contact came last: before steady solves held a group of reacting
 carriers flat where it reaches one contact alone, 43 of the 500 failed it, 5 of them silently
-(a gate charge up to 2× off). The one that fails is among the known limits below: a junction on a grid far too
-coarse for its double layers.
+(a gate charge up to 2× off). Of the two that fail, one is among the known limits below, a junction on a grid far too
+coarse for its double layers; the other is a diode whose current, a small difference of large fluxes, a warm sweep
+reaches to 1.8e-6 of what a cold solve does, against the 1e-6 the check asks: Newton's tolerance, not the physics
+(its own current varies 2.8e-6 along the device, its balances converged).
 `bench/stress.json` keeps the summary.
 
 Most of what driftlet's numerics do differently began as a failure here: the impedance's

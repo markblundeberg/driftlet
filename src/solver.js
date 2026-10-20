@@ -830,6 +830,7 @@ export class Solver {
     }
     this.termV.set(src.termV);
     this.solvedV = src.solvedV;
+    this.coldStart = src.coldStart;
     this.time = src.time;
     this.computeConcentrations();
   }
@@ -855,6 +856,7 @@ export class Solver {
       history: this.history.slice(),
       termV: Float64Array.from(this.termV),
       sourceTime: this.sourceTime,
+      coldStart: this.coldStart,
     };
   }
 
@@ -878,6 +880,7 @@ export class Solver {
     this.history = s.history.slice();
     this.termV.set(s.termV);
     this.sourceTime = s.sourceTime;
+    this.coldStart = s.coldStart;
     this.computeConcentrations();
   }
 
