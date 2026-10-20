@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.2.8 (2026-10-19)
 
 - Eddy mixing in a crowded solution (non-ideal statistics) now mixes concentration: in a
   neutral solution every species' mixing flux is −D_mix ∇c, as eddies carrying parcels of fluid
