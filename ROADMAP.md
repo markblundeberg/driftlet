@@ -341,21 +341,16 @@ for live demos.
 ## Later
 
 - **Steady solves the fuzzers still beat (round 15, each with a repro in
-  `~/.cache/driftlet-claude/round15/fuzzB/work/`).** A diode reverse-biased behind a large R
-  converges cold now (the load line), but its terminal's voltage carries the current's round-off
-  (read at an ohmic contact, ~1e-6 relative at 1 µA/m² beside the majority fluxes) times I R: 3.5 µV
-  behind 1e7 Ω·m² with 10 V across R, the two contacts' currents 2e-12 A/m² apart. Reading it at the
-  cut of least error, as the impedance does, would fix that, but check()'s grid test sees 4000× more
-  there (a grid twice as fine moves that V by 13 mV, the current's 0.13% times I R), so it waits for
-  a case where round-off is what limits. Two terminals behind resistances with nothing held, past
-  ~16 V across a silver cell; a resistance beside a current at 30 V (16 and 100 converge); a slow
+  `~/.cache/driftlet-claude/round15/fuzzB/work/`).** A reverse-biased diode behind a large R
+  converges cold now (the load line), but its steady solve can stall and be taken as converged at
+  round-off (Newton's updates near 1e-6 thermal units, not shrinking), a few µV off with Kirchhoff
+  off 1e-6 to 1e-4 (behind 1e7 Ω·m² and 3.2e4 Ω·m²): 4000× and 200× below check()'s grid error
+  there, and check()'s balance now fails the worse one. The round-off acceptance could ask the
+  residual's true floor (a held solve gets Kirchhoff to 1e-20 A/m²; the scaled rows stop at 3e-14 of
+  terms 1e10 times the current). Two terminals behind resistances with nothing held, past ~16 V
+  across a silver cell; a resistance beside a current at 30 V (16 and 100 converge); a slow
   reaction's failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y
-  mobile in part); the open-circuit march's sign hint, wrong beside a resistance; and a reverse
-  diode behind 3.2e4 Ω·m² whose steady solve stalls (Newton's updates near 1e-6, not shrinking, its
-  refinement failed) and is taken as converged at round-off, Kirchhoff off by 8e-5: check()'s
-  balance now fails it (it called it equilibrium), and the error is 200× below check()'s grid error
-  there, but the round-off acceptance could ask the residual's true floor (a held solve gets 1e-20
-  A/m²; the scaled rows stop at 3e-14 of terms 1e10 times the current).
+  mobile in part); and the open-circuit march's sign hint, wrong beside a resistance.
 
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
