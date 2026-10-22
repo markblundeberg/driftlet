@@ -72,7 +72,8 @@
 //   (∞ where the device can be solved directly; else 1e6·tau): a first step at ∞ that fails is
 //   retried once with maxStep 3. A step that fails sends dt down (to tau·1e-6 from giant, then
 //   ÷4, stopping below min(1e-15·tau, 1e-2·fastestTime)); one that converges sends it back up
-//   (×2 after a failure, growing by ×1.5 to ×10 a step; past 1e6·tau, giant); on a direct device,
+//   (×2 after a failure, growing by ×1.5 to ×10 a step; past 1e6·tau, giant, or on a direct
+//   device past 1e12·tau); on a direct device,
 //   once dt ≥ tau, a step at ∞ is tried once a decade of dt, the state kept where it fails. Past
 //   giant (not direct), dt grows ×10 a step to 1e6·giant. Converged where a step at ∞ converged,
 //   or, not direct, where a step of dt ≥ giant moved the potentials under tol (finished by one
@@ -133,7 +134,7 @@
 //      here is more than u, uLo, termV and time: this.solvedV, this.stepped, whether the history
 //      is empty (this.violent) and the drives, all of which choose the stages.
 //   5. Reach: time steps reach a mode as slow as ~1e12·tau (1e6·tau a step, past the giant; on a
-//      direct device no finite step is longer than 1e6·tau). A reaction that alone settles a
+//      direct device by finite steps to 1e12·tau). A reaction that alone settles a
 //      closed combination, slower than that, isn't waited out: the solve fails or converges where
 //      it began, and stuckReactions names it (Solution's warnings, both ways).
 // Tests: every Device.solve goes through here; test/steady.test.js (the stages, the laws, the
@@ -707,7 +708,10 @@ export class SteadySolves {
       if (dt < giant) {
         dt *= grow; // ramping up after a failure
         grow = Math.min(10, grow * 1.5);
-        if (dt > 1e6 * tau) dt = giant; // then the direct steady solve (or the giant step)
+        // Then the giant step; or, solved directly, on to 1e12 τ, the direct solve tried once a
+        // decade (above): jumping to dt = ∞ at 1e6 τ, its failure sent dt back to 1e-6 τ, round
+        // and round below 70 s, where traps filled by 1e9 cm⁻³ electrons took 1e3 s (τ 7e-5 s).
+        if (dt > (direct ? 1e12 : 1e6) * tau) dt = giant;
       } else if (dt < 1e6 * giant) {
         dt *= 10; // conserved amounts present and still moving: let dt keep growing (capped)
       }

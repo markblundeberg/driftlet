@@ -1003,3 +1003,32 @@ test('a floating continuation keeps what immobile species hold node by node', ()
   assert.ok(sol.steps < 60, `${sol.steps} steps`);
   for (const lc of dev.solver.localConstraints) for (const ref of lc.reference) assert.ok(Math.abs(ref - 1) < 1e-12);
 });
+
+// From a fuzzer of one-carrier layers (after round 16): an electron-only layer with traps 1e8×
+// denser than the electrons its barriers let in, filled at 0 V over ~1e3 s (τ, the diffusion
+// time, 7e-5 s). The pseudo-transient, on a device solved directly, jumped to dt = ∞ once dt
+// passed 1e6 τ; that failing sent dt back to 1e-6 τ, round and round below 70 s, and the solve
+// failed. It now steps on to 1e12 τ (the direct solve tried once a decade), and reaches the
+// state a long transient ends in.
+test('a steady solve waits out traps that fill far slower than the diffusion time', () => {
+  const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, L = 1.1433596114652047e-6;
+  const lib = {
+    species: [{ name: 'e-', z: -1, cRef: units.perCm3(1347298430062256600) }, { name: 'T0', z: 0, cRef: 1 }, { name: 'T-', z: -1, cRef: 1 }],
+    materials: { org: { epsr: 8.140955402515829, T, species: { 'e-': { D: 7.278481361236377e-7 * VT, mu0: 0 }, T0: { D: 0, mu0: 0 }, 'T-': { D: 0, mu0: -units.eV(0.6735234403517099) } } } },
+  };
+  const contact = (b) => ({ V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'pinned', zeroCharge: b });
+  const Nt = units.perCm3(424260963192335900);
+  const def = () => build({
+    T, library: [lib],
+    stack: [contact(0.5393866365775466), layer('org', L, { c0: { T0: Nt * (1 - 1e-6), 'T-': Nt * 1e-6 } }), contact(0.7547585865482689)],
+    bulkReactions: [{ equation: 'e- + T0 = T-', kf: { org: 3927216.114693567 } }],
+    grid: { hmin: 3.13445349422881e-11, hmax: L / 50, ratio: 1.15 },
+  });
+  const s = new Device(def()).solve();
+  assert.ok(s.converged, s.warnings.join(' '));
+  const d = new Device(def());
+  assert.ok(d.advance(1e10).converged);
+  const a = d.solve(); // (polished where the transient ended)
+  const worst = Math.max(...Array.from(a.c['T-'], (c, g) => Math.abs(c - s.c['T-'][g]) / Nt));
+  assert.ok(worst < 1e-9, `trapped fraction differs by ${worst}`);
+});

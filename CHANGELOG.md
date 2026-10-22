@@ -3,6 +3,14 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A steady solve on a device solved directly waits out slow modes to 1e12 of the slowest
+  diffusion time, as documented: past 1e6 of it the pseudo-transient jumped to the direct solve,
+  whose failure sent it back to its smallest step, round and round below 70 s, where an
+  electron-only layer's traps (1e8× denser than the electrons its barriers let in) fill over
+  1e3 s. From a fuzzer of one-carrier layers (400 devices: 1 failure left by 1.3.3, now none).
+
 ## 1.3.3 (2026-10-21)
 
 - A terminal behind a resistance, solved cold, finds its load line's crossing by held solves
