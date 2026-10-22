@@ -178,12 +178,15 @@ function balance(device, sol) {
   const natural = naturalScales(device, sol), inSolution = naturalScales(device, sol, false); // (partners' scale: not a metal's conductance)
   const scale = (l) => Math.max(natural[l.i], ...l.terms.flatMap((t) => (partners.get(t.what) ?? []).map((j) => inSolution[j])));
   // Small flows count too where they balance, as real ones do to round-off (a diode at 1 µV,
-  // 1e-19 of its scale, to 1e-15), and round-off doesn't. (Above 1e-8 of the scale, any.) One
-  // that balances to 1e-2 isn't round-off either, which doesn't add up that well: it counts,
-  // and its residual says how nearly steady it is (a reverse diode behind a resistance, its 1.3
-  // µA/m² at 4e-15 of its scale, balanced to 8e-5 by a solve that stalled: "equilibrium").
-  const balanced = (l) => Math.abs(l.terms.reduce((a, t) => a + t.rate, 0)) <= 1e-2 * size(l);
+  // 1e-19 of its scale, to 1e-15), and round-off doesn't. (Above 1e-8 of the scale, any.)
+  const balanced = (l) => Math.abs(l.terms.reduce((a, t) => a + t.rate, 0)) <= 1e-9 * size(l);
   const moving = ledgers.filter((l) => size(l) > 1e-8 * scale(l) || (size(l) > 1e-20 * scale(l) && balanced(l)));
+  // What's left unbalanced can be round-off or a small real flow the solve didn't settle (a
+  // reverse diode behind a resistance, 1.3 µA/m² at 4e-15 of its scale, balanced to 8e-5 by a
+  // solve that stalled), and nothing here tells them apart: round-off reaches 8e-12 of the scale
+  // in the stress devices, and one in a thousand of those flows balances to 1%. So above ε of the
+  // scale it isn't called equilibrium: the largest is named, as what balance can't check.
+  const unsure = ledgers.filter((l) => !moving.includes(l) && size(l) > 1e-16 * scale(l)).sort((a, b) => size(b) / scale(b) - size(a) / scale(a))[0];
   let worst = 0;
   const lines = [];
   for (const l of moving) {
@@ -198,7 +201,9 @@ function balance(device, sol) {
   const ok = worst < 1e-6;
   const summary =
     moving.length === 0
-      ? 'nothing flows or reacts (equilibrium)'
+      ? unsure
+        ? `nothing flows that it can tell from round-off: the largest, ${unsure.title} at ${sig(size(unsure))} ${units.rate}${unsure.z !== 0 ? ` (${sig(FARADAY * Math.abs(unsure.z) * size(unsure))} ${units.current})` : ''}, is ${sig(size(unsure) / scale(unsure), 1)} of what it could carry and doesn't balance (to ${sig(Math.abs(unsure.terms.reduce((a, t) => a + t.rate, 0)) / size(unsure), 1)}), so it's round-off, or a flow too small for this check`
+        : 'nothing flows or reacts (equilibrium)'
       : `${moving.length === 1 ? 'one ledger sums' : `${moving.length} ledgers sum`} to zero ${ok ? `(to ${sig(worst, 1)})` : `only to ${sig(worst, 2)}: not a steady state`}: each species' sources and sinks, ${units.rate}, + in or made`;
   // The largest current any charged species carries anywhere: the scale a net current is read against.
   const gross = Math.max(0, ...moving.filter((l) => l.z !== 0).map((l) => FARADAY * Math.abs(l.z) * size(l)));

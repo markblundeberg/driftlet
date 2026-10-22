@@ -12,9 +12,9 @@ major version.
   remains for several resistances, and where Kirchhoff gives the current.
 - check()'s balance called a small real current "equilibrium" where the solve hadn't balanced it
   to round-off: a reverse diode behind 3.2e4 Ω·m², passing 1.3 µA/m² (4e-15 of what its holes
-  could carry), its steady solve stalled at Kirchhoff 8e-5 without a warning. Flows that balance
-  to 1% aren't round-off: they're listed, and that one now fails balance, "only to 7.9e-5: not
-  a steady state".
+  could carry), its steady solve stalled at Kirchhoff 8e-5 without a warning. Such flows can't
+  be told from round-off (which reaches 8e-12 of the scale in the stress devices), so where any
+  comes within ε of its scale, balance names the largest instead of saying "equilibrium".
 
 ## 1.3.2 (2026-10-20)
 

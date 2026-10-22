@@ -218,7 +218,8 @@ test('check(): one grid item, whatever the order check does; and a grid given hL
 // Ω·m², passing 1.3 µA/m², 4e-15 of what its holes could carry. Its steady solve stalled at
 // Kirchhoff 8e-5 (a round-off acceptance, its updates near 1e-6 and not shrinking), and balance,
 // reading flows that small and that unbalanced as round-off, called it "nothing flows or reacts
-// (equilibrium)". Balanced to 8e-5 isn't round-off: it says how nearly steady the state is.
+// (equilibrium)". It can't tell them from round-off (counting them, by a 1% balance, failed two
+// stress devices' noise on Node 24), but it says so, and names the flow.
 test('balance never calls a current that small but real equilibrium', () => {
   const Vr = -0.1429757184349001, NA = units.perCm3(5.361343567000716e17), ND = units.perCm3(1.1838201064729304e17), Si = semiconductor('Si');
   const make = (right) => build({
@@ -233,6 +234,5 @@ test('balance never calls a current that small but real equilibrium', () => {
   assert.ok(held.converged && Math.abs(I) > 1e-6, `${I}`);
   const d = new Device(make({ V: Vr + I * R, R })), s = d.solve();
   const balance = item(check(d, s, { refine: false, order: false }), 'balance');
-  assert.ok(!/equilibrium/.test(balance.summary), balance.summary);
-  assert.equal(balance.details.ledgers.filter((l) => l.residual !== undefined).length, 2, balance.summary);
+  assert.ok(!/equilibrium/.test(balance.summary) && /h\+ at 1\.2\de-11/.test(balance.summary), balance.summary);
 });
