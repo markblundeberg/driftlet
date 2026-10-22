@@ -541,7 +541,12 @@ levels are that material's, and the end node takes them through a Donnan step.
 - `'pinned'` with `zeroCharge`: the $`C \to \infty`$ limit,
   $`\phi_{\mathrm{edge}} = V - \mathtt{zeroCharge}`$. This is what a "fixed $`\phi`$" boundary honestly
   means. For example, a Schottky barrier $`\phi_B`$ on n-type material with
-  $`\mu^\circ_{\mathrm{e}^-} = 0`$ is `zeroCharge: φ_B`.
+  $`\mu^\circ_{\mathrm{e}^-} = 0`$ is `zeroCharge: φ_B`. With a carrier linked in equilibrium, a
+  pinned contact sets that carrier's density at the edge,
+  $`c_{\mathrm{edge}} = c_{\mathrm{ref}} \exp\big((z F\,\mathtt{zeroCharge} - \mu^\circ)/RT\big)`$, so a contact that injects holes at
+  $`N_v`$ (their `cRef`, $`\mu^\circ = 0`$) is `zeroCharge: 0`, and a 0.5 eV barrier for them is
+  `zeroCharge: -0.5`. This is the contact for a layer of one carrier with nothing to neutralise it
+  (a hole-only organic diode): `ohmic()`'s `'bulk'` law, local neutrality, can't hold there.
 
 An ideally blocking electrode (inert: no reactions, nothing crossing) is a contact with no
 terminal species and no links, `{ V, phi: 'pinned', zeroCharge }`: the solution's diffuse layer

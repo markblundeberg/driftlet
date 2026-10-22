@@ -59,8 +59,9 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
   a metal region). `bath(c, reference, drive, { offset, material })` is a bath whose terminal voltage is
   the level of its `reference` species, as an electrode reversible to it would read (`offset`
-  places that species relative to the terminal voltage, e.g. to read a solution's potentials
-  against SHE). `bath(c, drive)`, without a reference, is a bath whose terminal voltage is its
+  places that species relative to the terminal voltage, its level at V + `offset`, e.g. to read a
+  solution's potentials against SHE). Every species a bath lists is held at its level there, so
+  one absent from the bulk (a product) is given as a trace, not 0. `bath(c, drive)`, without a reference, is a bath whose terminal voltage is its
   φ: an ideal salt bridge, the convention of membrane potentials, so that between two such baths
   V_right − V_left is the φ difference a voltage clamp sets. A drive is a voltage, a waveform, or
   `{ V }`, `{ I }`, `{ V, R }`. A bath against a charged layer (an ion exchanger) gives its own

@@ -105,7 +105,11 @@ $`\ln\gamma_i = -z_i^2 \ell_B \kappa / (2(1 + \kappa a))`$, with the Bjerrum len
 $`\ell_B = e^2/(4\pi\varepsilon kT)`$ and $`\kappa^2 = F^2 \sum z^2 c / (\varepsilon RT)`$ from the
 solvent permittivity `epsr` (which defaults to the material's, if that's non-zero) and a
 distance of closest approach `a` (default 0, the limiting law). It stops being convex at high
-ionic strength, and the solver then reports a failure.
+ionic strength, and the solver then reports a failure. It goes on a material's `statistics`, as
+any model does; with `aqueous()`, on the piece it returns: `lib.materials.water.statistics =
+[{ type: 'debye-huckel', species: ['H+', 'Cl-'], a: 4.5e-10 }]`. `a` is an ion size (a few
+ångström: tabulated per ion, as Kielland's sizes, or fitted to measured γ±), and it matters:
+in 10 mM HCl, 4.5 Å against the limiting law moves a concentration cell's voltage by 0.6 mV.
 
 Single-ion activity coefficients are a convention: only neutral combinations (the mean
 activity $`\gamma_\pm`$) are measurable. In a strictly neutral ($`\varepsilon = 0`$) material only

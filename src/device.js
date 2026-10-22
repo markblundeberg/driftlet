@@ -811,6 +811,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
       need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${reg.name} (material '${mat.name}'), so its level outside means nothing here`);
+      need(v !== 0, `${path}.bath.c.${sname}: a bath holds each species it lists at its level, and at 0 there is none (ln 0); a species absent from the bulk (a product, say) is a trace there, 1e-6 of the rest or so, so that it can leave`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
     }
     const zb = bathZeta(mat, cb, reg.background);
@@ -1359,6 +1360,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       need(bm.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${own ? 'the bath' : 'the end'} material '${bm.name}'`);
+      need(v !== 0, `${path}.bath.c.${sname}: a bath holds each species it lists at its level, and at 0 there is none (ln 0); a species absent from the bulk (a product, say) is a trace there, 1e-6 of the rest or so, so that it can leave`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
       charge += species[i].z * cb[i];
       scale += Math.abs(species[i].z) * cb[i];
@@ -1413,6 +1415,20 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0),
       `${path}.phi: 'bulk' needs at least one connected charged species at this contact`,
     );
+    // Neutral at the contact must be possible: an undoped layer of holes alone never is, and
+    // ohmic(V, ['h+']) on one failed with "nothing specific showed why" (round 16's cold agent).
+    if (!mat.conductor && !mat.phiFree && !mat.models.some((md) => md.type === 'insertion')) {
+      const signs = new Set(species.flatMap((sp, i) => (mat.present[i] && sp.z !== 0 ? [Math.sign(sp.z)] : [])));
+      const fixed = Math.sign(region.fixedCharge ?? 0);
+      if (signs.size === 1 && !(fixed !== 0 && !signs.has(fixed))) {
+        const [only] = signs;
+        throw new DeviceError(
+          `${path}.phi: 'bulk' (what ohmic() and a bath use) holds the contact neutral, but '${region.name ?? region.material}' can't be: ` +
+            `its only charged species are ${only > 0 ? 'positive' : 'negative'} and no fixed charge balances them (an undoped layer of one carrier). ` +
+            "For a contact that sets the carrier's density, pin φ instead: phi: 'pinned' with zeroCharge, the contact's level against the carrier's (see docs/device.md, contacts).",
+        );
+      }
+    }
   }
 
   if (terminal !== null) {

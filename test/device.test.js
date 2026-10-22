@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, units } from '../src/index.js';
+import { build, layer, ohmic } from '../src/kit.js';
 
 // A valid baseline: an n-type / p-type heterojunction between two ohmic contacts.
 function hetero() {
@@ -232,4 +233,14 @@ test('a misspelt or misplaced field is an error, never ignored', () => {
     edit(def);
     throwsDevice(def, pattern);
   }
+});
+
+// From round 16's cold agent: ohmic(V, ['h+']) on an undoped layer of holes alone failed to
+// solve with "nothing specific showed why". A 'bulk' contact holds the edge neutral, which a
+// layer of one carrier with no dopant never is: now an error that names the pinned contact.
+test("a 'bulk' contact on a layer of one carrier with nothing to neutralise it is an error", () => {
+  const lib = { species: [{ name: 'h+', z: 1, cRef: 1660 }], materials: { org: { epsr: 3, species: { 'h+': { D: 1e-9, mu0: 0 } } } } };
+  const make = (more) => build({ library: [lib], stack: [ohmic(1, ['h+']), layer('org', 100e-9, more), ohmic(0, ['h+'])], grid: { hmin: 1e-9, hmax: 5e-9 } });
+  throwsDevice(make({}), /'bulk'.*can't be: its only charged species are positive.*pin φ instead/);
+  assert.ok(new Device(make({ acceptors: 1 })).solve().converged); // (acceptors balance the holes)
 });

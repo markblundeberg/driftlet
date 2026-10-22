@@ -558,7 +558,8 @@ species }` (its flux) or `{ interface: f, gate }`.
   (docs/statistics.md). At no current (`I: 0`), `solve()` keeps the charge it holds: a closed
   battery sits at the OCV of its state of charge, a floating gate keeps its charge.
 - **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,
-  { terminal })` the small-signal Z(f) about the steady state, in Ω·m².
+  { terminal })` the small-signal Z(f) about the steady state, in Ω·m²: `{ f, Z: { re, im } }`,
+  each an array over the frequencies (`Z.re[k]`, not `Z[k].re`).
 
 ```js
 import { Device, units, FARADAY } from 'driftlet';

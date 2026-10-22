@@ -50,10 +50,14 @@ export function vacuumLevel(def, side, path = 'vacuum') {
   if (!Number.isFinite(side.offset)) fail(`${path}.offset must be a finite number (V)`);
   if (side.anchor === 'phi') return -side.offset;
   const sp = (def.species ?? []).find((s) => s.name === side.anchor);
-  if (!sp) fail(`${path}.anchor must be 'phi' or a charged species, got ${JSON.stringify(side.anchor)}`);
+  if (!sp)
+    fail(
+      `${path}.anchor must be 'phi' or a charged species of the device, got ${JSON.stringify(side.anchor)}` +
+        (typeof side.anchor === 'string' ? ` (to anchor on it, list it in the library: aqueous([..., '${side.anchor}']), say)` : ''),
+    );
   if (!(sp.z !== 0)) fail(`${path}.anchor: '${side.anchor}' is neutral, so it has no level in volts`);
   const entry = mat.species?.[side.anchor];
-  if (!isObject(entry)) fail(`${path}.anchor: '${side.anchor}' is absent from '${side.material}'`);
+  if (!isObject(entry)) fail(`${path}.anchor: '${side.anchor}' is absent from '${side.material}' (to anchor on it, give the material that species)`);
   if (!Number.isFinite(entry.mu0)) fail(`${path}.anchor: '${side.anchor}' in '${side.material}' has no mu0`);
   return entry.mu0 / (sp.z * FARADAY) - side.offset;
 }

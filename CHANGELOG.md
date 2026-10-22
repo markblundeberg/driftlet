@@ -23,6 +23,14 @@ major version.
   of the agent's seeded solves). The trap-free layer: 9 Newton iterations where it took 18.
   The rate-constant advice is now given only where the solve took time steps; where it failed
   from its first, it says to start nearer the reaction's equilibrium. (Round 16's cold agent.)
+- From round 16's other agents (Mott–Schottky at Si | KCl, a concentration cell with
+  transference, a Koutecký–Levich disk: all matched theory, to 0.02–0.2%): a `'bulk'` contact
+  (`ohmic()`) on a layer of one carrier with nothing to neutralise it is an error naming the
+  pinned contact, where its solve failed with "nothing specific"; a bath concentration of 0 says
+  to give an absent species as a trace; an anchor on a species the library lacks says to list
+  it. Docs: a pinned contact sets a carrier's edge density (zeroCharge for a hole barrier); a
+  bath's offset puts its reference at V + offset; attaching Debye–Hückel to `aqueous()` and
+  choosing `a`; impedance()'s `Z.re[k]`.
 
 ## 1.3.2 (2026-10-20)
 
