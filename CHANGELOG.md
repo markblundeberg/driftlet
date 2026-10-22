@@ -10,6 +10,10 @@ major version.
   whose failure sent it back to its smallest step, round and round below 70 s, where an
   electron-only layer's traps (1e8× denser than the electrons its barriers let in) fill over
   1e3 s. From a fuzzer of one-carrier layers (400 devices: 1 failure left by 1.3.3, now none).
+- Templates (docs/templates.md), each printing its closed-form check: traps in a layer of holes
+  alone (pinned contacts as density setters; trap filling exactly p/(p + p₁)), a semiconductor
+  electrode's Mott–Schottky plot (N_D back to 1e-4, flat band to 0.1 mV), a concentration cell
+  with transference (ideal and Debye–Hückel, to 1 µV). Round 16's agents asked for them.
 
 ## 1.3.3 (2026-10-21)
 

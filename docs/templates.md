@@ -4,9 +4,12 @@ Templates for devices outside [llms.txt](../llms.txt)'s core set, written the sa
 block runs in the test suite and prints its closed-form check. Read llms.txt first; these build
 on it.
 
-- semiconductors: [a Schottky diode](#a-schottky-diode), [a thin-film transistor](#a-thin-film-transistor-a-capacitance-along-a-channel);
+- semiconductors: [a Schottky diode](#a-schottky-diode), [a thin-film transistor](#a-thin-film-transistor-a-capacitance-along-a-channel),
+  [traps in a layer of holes alone](#traps-in-a-layer-of-holes-alone-a-space-charge-limited-diode);
 - electrochemistry: [corrosion under a drop](#corrosion-under-a-drop-an-electrode-spread-through-a-film)
-  (an electrode spread through a film, and a cross-section that varies);
+  (an electrode spread through a film, and a cross-section that varies),
+  [a semiconductor electrode's Mott–Schottky plot](#a-semiconductor-electrodes-mottschottky-plot),
+  [a concentration cell with transference](#a-concentration-cell-with-transference);
 - physiology: [a voltage clamp](#a-voltage-clamp), [an action potential](#an-action-potential),
   [one travelling along an axon](#an-action-potential-travelling-along-an-axon).
 
@@ -77,6 +80,45 @@ To sweep the gate on one device instead, patch the port: `dev.set({ ports: { gat
 An organic electrochemical transistor is the same with a volumetric capacitance C*:
 `area: 1 / t, capacitance: { C: Cstar * t }`.
 
+## traps in a layer of holes alone (a space-charge-limited diode)
+
+An organic layer with holes and no dopant can't be neutral anywhere, so `ohmic()`'s `'bulk'` law
+can't hold at its contacts: **pinned contacts** set the hole density at each edge instead
+(`zeroCharge` = −barrier for holes of $`\mu^\circ = 0`$, density $`N_v e^{-\mathrm{barrier}/kT}`$). A **trap**
+is two immobile species, empty and filled, and a reaction between them; its depth is the filled
+one's $`\mu^\circ`$. In a steady state immobile traps sit at their reaction's equilibrium at every
+node, under current too, so their filling is exactly $`p/(p + p_1)`$; past the trap-filled limit
+the current climbs toward the trap-free space-charge-limited one.
+
+```js
+import { Device, units, FARADAY, GAS_CONSTANT } from 'driftlet';
+import { build, layer } from 'driftlet/kit';
+
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, Nv = units.perCm3(1e21), Nt = units.perCm3(1e17), Et = 0.45;
+// Holes alone (an organic semiconductor's), and a trap level Et above the valence band: empty T0,
+// filled T+, h⁺ + T0 = T+. The filled one's μ° below the empty's sets the depth.
+const lib = {
+  species: [{ name: 'h+', z: 1, cRef: Nv }, { name: 'T0', z: 0, cRef: 1 }, { name: 'T+', z: 1, cRef: 1 }],
+  materials: { org: { epsr: 3, T, species: { 'h+': { D: 1e-8 * VT, mu0: 0 }, T0: { D: 0, mu0: 0 }, 'T+': { D: 0, mu0: -units.eV(Et) } } } },
+};
+// Pinned contacts set the hole density at each edge: Nv at the anode, Nv·e^(−0.5 eV/kT) at the cathode.
+const contact = (V, barrier) => ({ V, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'pinned', zeroCharge: -barrier });
+const diode = (V, traps) => build({
+  T, library: [lib],
+  stack: [contact(V, 0), layer('org', 100e-9, { c0: { T0: Nt / 2, 'T+': Nt / 2 } }), contact(0, 0.5)],
+  bulkReactions: traps ? [{ equation: 'h+ + T0 = T+', kf: { org: 1e6 } }] : [],
+  grid: { hmin: 0.01e-9, hmax: 1e-9, ratio: 1.15 },
+});
+const p1 = Nv * Math.exp(-Et / VT); // the hole density at which a trap is half full
+for (const V of [1, 3, 10]) {
+  const s = new Device(diode(V, true)).solve(), free = new Device(diode(V, false)).solve();
+  // Immobile traps in a steady state sit at their reaction's equilibrium at every node: T+/Nt = p/(p + p1).
+  const off = Math.max(...Array.from(s.c['h+'], (p, g) => Math.abs(s.c['T+'][g] / Nt - p / (p + p1))));
+  const mid = s.x.length >> 1;
+  console.log(`${V} V: J ${s.current.toExponential(3)} A/m², ${(s.current / free.current).toFixed(3)} of the trap-free; traps ${(100 * s.c['T+'][mid] / Nt).toFixed(1)}% full mid-layer; occupancy off p/(p + p1) by ${off.toExponential(1)}`);
+}
+```
+
 ## corrosion under a drop (an electrode spread through a film)
 
 A **port with reactions** is an electrode spread through a strictly neutral region: a metal under
@@ -136,6 +178,85 @@ for (const rx of evans.reactions) console.log(`${rx.equation}: ${Array.from(rx.c
 
 Species can take an electrode's surface sites (`surface`, Langmuir coverages), and a reaction
 with `bare: true` runs only on bare metal: a passive film (docs/device.md).
+
+## a semiconductor electrode's Mott–Schottky plot
+
+A semiconductor dipped in an electrolyte, the face between them **blocking** (no reactions), with
+its **alignment** given (a `dipole`: what puts silicon's levels against the solution's is a
+choice, here Si's electron affinity against an absolute SHE, not a datum). Its capacitance from
+`impedance()` at a frequency where the space charge is what's measured, $`1/C^2`$ against the
+voltage across the depletion range, gives back the doping from the slope and the flat band from
+the intercept less kT/q. Past about $`2\phi_F`$ of depletion, holes gather at the face (inversion):
+keep the fit below it.
+
+```js
+import { Device, units, EPS0, FARADAY, GAS_CONSTANT } from 'driftlet';
+import { build, layer, ohmic, bath, semiconductor, aqueous } from 'driftlet/kit';
+
+const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY, ND = units.perCm3(1e16);
+const water = { 'K+': 100, 'Cl-': 100 }; // 0.1 M KCl
+const lib = [semiconductor('Si', { T }), aqueous(['K+', 'Cl-'])];
+// n-Si | a blocking face | 40 nm of the solution, resolved | the bath, read against an electrode reversible to Cl⁻.
+// The face's dipole aligns the two (here Si's electron affinity against the solution: an assumption, not data).
+const cell = (V) => build({
+  T, library: lib,
+  stack: [ohmic(V), layer('Si', units.um(2), { donors: ND }), { dipole: 0.39 }, layer('water', 40e-9, { c0: water }), bath(water, 'Cl-')],
+  grid: { hmin: 0.1e-9, hmax: 5e-9, ratio: 1.1 },
+});
+const pts = [];
+for (const V of [-1.3, -1.2, -1.1, -1.0]) { // the silicon positive: its electrons pushed back, a depletion layer
+  const dev = new Device(cell(V));
+  dev.solve();
+  const { f, Z } = dev.impedance([1e5]); // 100 kHz: the space charge, the double layer in series negligible
+  const w = 2 * Math.PI * f[0], C = -Z.im[0] / (w * (Z.re[0] ** 2 + Z.im[0] ** 2));
+  pts.push([V, 1 / C ** 2]);
+}
+// 1/C² = 2/(F ε N_D) (V − V_fb − kT/q) in depletion (N_D in mol/m³, as driftlet's are)
+const slope = (pts.at(-1)[1] - pts[0][1]) / (pts.at(-1)[0] - pts[0][0]), V0 = pts[0][0] - pts[0][1] / slope;
+console.log(`N_D from the slope: ${units.toPerCm3(2 / (FARADAY * 11.9 * EPS0 * slope)).toPrecision(5)} cm⁻³ (1e16 put in)`);
+// The model's own flat band: where the silicon holds no charge at the face (interfaces[0].D = 0).
+let lo = -2, hi = -1.3;
+for (let k = 0; k < 40; k++) {
+  const m = (lo + hi) / 2, D = new Device(cell(m)).solve().interfaces[0].D;
+  if (D < 0) lo = m;
+  else hi = m;
+}
+console.log(`flat band: ${(V0 - VT).toFixed(4)} V from the intercept less kT/q, ${hi.toFixed(4)} V where the face holds no charge`);
+```
+
+## a concentration cell with transference
+
+Two electrodes reversible to Cl⁻ (`bath(c, 'Cl-')`), one held and one at open circuit, with
+two strengths of HCl between them meeting at a **liquid junction**. For one salt the voltage
+doesn't depend on the junction's profile, so baths at both ends holding it stationary give
+the free-diffusion junction's value: $`E = -2t_+ (RT/F)\ln(a_{\pm,2}/a_{\pm,1})`$, the junction's
+share $`(2t_+ - 1)/(2t_+)`$. Activity coefficients go on the water's `statistics`.
+
+```js
+import { Device, FARADAY, GAS_CONSTANT, EPS0, AVOGADRO } from 'driftlet';
+import { build, layer, bath, aqueous, IONS } from 'driftlet/kit';
+
+const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
+const dilute = { 'H+': 1, 'Cl-': 1 }, strong = { 'H+': 10, 'Cl-': 10 }; // mol/m³: 1 and 10 mM HCl
+const tPlus = IONS['H+'].D / (IONS['H+'].D + IONS['Cl-'].D);
+// Ag|AgCl at each end: a bath read against an electrode reversible to Cl⁻. The left one held, the
+// right at open circuit; between them a junction held stationary by the two baths (strictly
+// neutral water, ε = 0: the junction is 2 mm wide, its double layers nothing to it).
+for (const activity of [null, { type: 'debye-huckel', species: ['H+', 'Cl-'], epsr: 78.4, a: 0 }]) {
+  const lib = aqueous(['H+', 'Cl-'], { epsr: 0 });
+  if (activity) lib.materials.water.statistics = [activity];
+  const s = new Device(build({
+    T, library: [lib],
+    stack: [bath(dilute, 'Cl-'), layer('water', 2e-3, { c0: dilute }), { phi: 'neutral' }, layer('water', 2e-3, { c0: strong }), bath(strong, 'Cl-', { I: 0 })],
+    grid: { hmin: 1e-7, hmax: 2e-5 },
+  })).solve();
+  // E = −2 t₊ (RT/F) ln(a±₂/a±₁), the limiting law's ln γ± = −ℓ_B κ/2 (Bjerrum length, Debye κ)
+  const eps = EPS0 * (activity?.epsr ?? 1), lB = FARADAY ** 2 / (4 * Math.PI * eps * GAS_CONSTANT * T * AVOGADRO);
+  const lnGamma = (c) => (activity ? (-lB * Math.sqrt((2 * FARADAY ** 2 * c) / (eps * GAS_CONSTANT * T))) / 2 : 0);
+  const E = s.terminals.right.V - s.terminals.left.V, theory = -2 * tPlus * VT * (Math.log(10) + lnGamma(10) - lnGamma(1));
+  console.log(`${activity ? 'Debye–Hückel' : 'ideal'}: ${(E * 1e3).toFixed(3)} mV, theory ${(theory * 1e3).toFixed(3)}; the junction's share ${(2 * tPlus - 1) / (2 * tPlus)}`);
+}
+```
 
 ## a voltage clamp
 

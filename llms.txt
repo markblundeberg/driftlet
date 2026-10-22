@@ -17,9 +17,10 @@ two sections, then go to the template nearest your device:
   voltammogram), a battery particle discharging;
 - physiology: a cell membrane (a resting potential).
 
-More in docs/templates.md: a Schottky diode, a thin-film transistor, corrosion under a drop (an
-electrode spread through a film), a voltage clamp, an action potential, one travelling along an
-axon.
+More in docs/templates.md: a Schottky diode, a thin-film transistor, traps in a layer of holes
+alone (pinned contacts that set a carrier's density), corrosion under a drop (an electrode spread
+through a film), a semiconductor electrode's Mott–Schottky plot, a concentration cell with
+transference, a voltage clamp, an action potential, one travelling along an axon.
 
 The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
 (signs and levels), visualization.md, alignment.md (band offsets), statistics.md (non-ideal
