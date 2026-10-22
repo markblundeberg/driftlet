@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Device, EPS0 } from '../src/index.js';
-import { aqueous, build, half, layer, metal, ohmic } from '../src/kit.js';
+import { Device, EPS0, units } from '../src/index.js';
+import { aqueous, build, half, layer, metal, ohmic, recombination, semiconductor } from '../src/kit.js';
 
 // Terminals: the two contacts and every port, each held at a voltage (behind a resistance, if
 // given) or driven by a current, with V and I as numbers or waveforms. Currents are into the
@@ -205,7 +205,8 @@ test('no terminal held: a current-driven electrode beside one behind a resistanc
 
 // From round 14's fuzzer (its device sc 20, a Schottky-contacted diode): a terminal behind a
 // resistance, solved cold, failed where the same device held at the voltage it passes converged.
-// A cold solve now holds it at its source first, then puts the resistance back.
+// A cold solve now finds its load line's crossing by held solves (held at its source, then the
+// resistance put back, was the first fix).
 test('a terminal behind a resistance, solved cold, reaches the state the held one is in', () => {
   const def = JSON.parse(readFileSync(new URL('./fixtures/series-resistance-cold.json', import.meta.url), 'utf8'));
   const base = new Device(def).solve();
@@ -241,4 +242,27 @@ test('a terminal behind a resistance dropping volts solves cold, and starts leve
   const c = new Device(make({ V: -30, R: 0.1 }, { I: 36.3 }));
   assert.equal(c.solver.termV[0], c.solver.termV[1]); // (level at the start)
   assert.ok(c.advance(1e-6).converged);
+});
+
+// From a scan of round 15's fuzzer diodes: a lit GaAs Schottky diode passing 0.9 A/m², its
+// Schottky side behind R. Held at its source first, the state sat I R from the answer and the
+// pseudo-transient relaxed it over R C: 1622 steps behind 1e4 Ω·m², 15458 behind 1e5, steps ∝ R.
+// Now the load line's crossing, by held solves: the same 36 steps at any R.
+test('a terminal behind a large resistance solves cold in as many steps as a small one', () => {
+  const make = (left) => build({
+    T: 300, library: [semiconductor('GaAs')],
+    stack: [
+      { V: left.V, R: left.R, terminal: 'e-', species: { 'e-': { type: 'velocity', v: 2e4 }, 'h+': { type: 'velocity', v: 1e4, offset: 0 } }, phi: 'pinned', zeroCharge: 0.86 },
+      layer('GaAs', 1.53e-6, { donors: units.perCm3(7.4e16) }), layer('GaAs', 4.23e-6, { acceptors: units.perCm3(2.4e16) }), ohmic(0.224)],
+    bulkReactions: [recombination({ material: 'GaAs', tau: 1.8e-9, majority: units.perCm3(7.4e16) }),
+      { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { GaAs: 3.2 } }],
+    grid: { hmin: units.nm(1), hmax: 1.53e-6 / 20 },
+  });
+  const held = new Device(make({ V: 0 })).solve(), I = held.terminals.left.current;
+  assert.ok(held.converged && I > 0.5, `${I}`);
+  for (const R of [1, 1e4]) {
+    const s = new Device(make({ V: I * R, R })).solve();
+    assert.ok(s.converged && Math.abs(s.terminals.left.V) < 1e-9, `R ${R}: ${s.converged} ${s.terminals.left.V}`);
+    assert.ok(s.steps < 100, `R ${R}: ${s.steps} steps`);
+  }
 });

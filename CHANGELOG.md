@@ -3,6 +3,14 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A terminal behind a resistance, solved cold, finds its load line's crossing by held solves
+  first, rather than holding it at its source and relaxing the I R between: that took steps in
+  proportion to R (a lit Schottky diode behind 1e5 Ω·m²: 105 s, now 33 ms at any R; 80 fuzzed
+  diodes from 0.01 to 1e7 Ω·m²: 1835 s → 34 s, none failing either way). Holding at the source
+  remains for several resistances, and where Kirchhoff gives the current.
+
 ## 1.3.2 (2026-10-20)
 
 From two more fuzzers (round 15), aimed at what changed this week:

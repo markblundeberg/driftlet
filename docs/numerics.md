@@ -951,6 +951,17 @@ A solve that fails falls back stage by stage:
      the floated solve fails, held solves find that voltage instead, by regula falsi within the
      bracket, to 1e-10 of the current. (Not a terminal at no current that keeps an amount or a
      charge: every voltage passes nothing there.)
+   - **A resistance.** A terminal behind a resistance R, its source at $`V_{\mathrm{src}}`$, is
+     found the same way, held at voltages marched from the held terminal's level until the
+     device's current crosses the load line's, $`(V_{\mathrm{src}} - V)/R`$, and floated from
+     beside it. Held at its source instead and the resistance put back, the state would sit
+     $`IR`$ from the answer, and the pseudo-transient relaxes that over $`RC`$ at the pace Newton
+     takes through the swing: a lit Schottky diode passing 0.9 A/m² took 0.05 s behind
+     1 Ω·m² and 105 s behind 10⁵ Ω·m² that way, and takes 33 ms behind any R by the load line
+     (80 fuzzed diodes from 0.01 to 10⁷ Ω·m²: 1835 s → 34 s). That route remains for terminals the load line doesn't
+     fit: several behind resistances, or one beside terminals all driven by currents, where
+     Kirchhoff gives its current and it's held at $`V_{\mathrm{src}} - IR`$ (from there, putting
+     $`R`$ back moves nothing).
    - **The voltages.** The right terminal's voltage ramped to its target: from the contacts'
      voltages at the last converged solve when the state is that solution (the left one first,
      where it moved), and otherwise from level terminals, where a cold start is consistent. (A

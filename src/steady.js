@@ -49,11 +49,14 @@
 //      (this.stepped), on a direct device with continuation not off, the same again from a cold
 //      start (initFromComposition), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
-//   2. Continuation: generation ramped up (_generationContinuation); a terminal driven by a
-//      terminals behind a resistance held (at their source voltages, or where every other
-//      terminal is driven by a current at V_src − I R, Kirchhoff's I), then the resistances put
-//      back and the steady system solved from there (_resistanceContinuation); a terminal
-//      driven by a current, not bound (_bound), held at voltages instead (_floatingContinuation); with
+//   2. Continuation: generation ramped up (_generationContinuation); terminals behind a
+//      resistance (_resistanceContinuation): one whose current Kirchhoff doesn't give, held at
+//      voltages marched to its load line's crossing (_floatingContinuation with a line); else, or
+//      where that fails, each held (at its source voltage, or where every other terminal is
+//      driven by a current at V_src − I R, Kirchhoff's I), then the resistances put back and the
+//      steady system solved from there (and where that fails for one terminal held by
+//      Kirchhoff, its load line); a terminal driven by a current, not bound (_bound), held at
+//      voltages instead (_floatingContinuation); with
 //      canContinue, the right contact's voltage ramped to its target (_continuation): from the
 //      voltages of the last converged solve (this.solvedV), the left contact's first where it
 //      moved, else from level contacts, a cold start.
@@ -462,8 +465,10 @@ export class SteadySolves {
     }
   }
 
-  // Each terminal behind a resistance held at its source voltage (R taken off), solved, then the
-  // resistances put back and the steady system solved from that state.
+  // One terminal behind a resistance: its load line's crossing by held solves. Otherwise (or where
+  // that fails), each terminal behind a resistance held at its source voltage (R taken off; at
+  // V_src − I R where Kirchhoff gives I), solved, then the resistances put back and the steady
+  // system solved from that state.
   _resistanceContinuation(opts, r) {
     const ks = this.floating.filter((k) => this.terms[k].drive.kind === 'V' && this.terms[k].drive.R > 0);
     const drives = ks.map((k) => this.terms[k].drive);
@@ -479,8 +484,29 @@ export class SteadySolves {
       const I = -this.terms.reduce((t, tm, j) => (j === k ? t : t + sourceAt(tm.drive.src, this.time)), 0);
       return V - I * d.R;
     };
-    let heldOk = false;
     const start = [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
+    const restore = () => {
+      this.u.set(start[0]);
+      this.uLo.set(start[1]);
+      this.termV.set(start[2]);
+      this.computeConcentrations();
+    };
+    // One terminal behind R, the rest not all driven by currents (so its current isn't known):
+    // its crossing with the load line, (V_src − V)/R, by held solves, as an open circuit's is
+    // with its target, first. Held at its source instead, the state is I R from the answer and
+    // the pseudo-transient relaxes it over R C at Newton's pace through that swing (a lit Schottky
+    // diode passing 0.9 A/m²: 0.05 s at 1 Ω·m², 10 s at 1e4, 105 s at 1e5, steps ∝ R).
+    const d = drives[0], Vs = sourceAt(d.src, this.time), line = (V) => (Vs - V) / d.R;
+    const byLine = ks.length === 1 && !others;
+    if (byLine) {
+      const q = this._floatingContinuation(opts, r, ks[0], line);
+      if (q.converged) return q;
+      restore(); // (from where this stage began, not where the failed one left it)
+      steps = q.steps ?? steps;
+      iterations = q.iterations ?? iterations;
+      history.splice(0, history.length, ...(q.history ?? []));
+    }
+    let heldOk = false;
     try {
       const held = ks.map(at);
       ks.forEach((k, j) => (this.terms[k].drive = { ...this.terms[k].drive, src: { value: held[j] }, R: 0 }));
@@ -497,16 +523,10 @@ export class SteadySolves {
     }
     const q = heldOk ? this._steadySteps(opts) : { converged: false, steps: 0, iterations: 0, history: [] };
     const done = { ...q, steps: steps + q.steps, iterations: iterations + q.iterations, history: [...history, ...q.history] };
-    if (q.converged || ks.length !== 1) return done;
-    // One terminal behind R, the rest not all driven by currents (so its current isn't known):
-    // its crossing with the load line, (V_src − V)/R, by held solves, as an open circuit's is
-    // with its target (a silver cell held at 0 V on one side, 16 V behind R on the other, failed).
-    const d = drives[0], Vs = sourceAt(d.src, this.time);
-    this.u.set(start[0]);
-    this.uLo.set(start[1]);
-    this.termV.set(start[2]);
-    this.computeConcentrations(); // (from where this stage began, not where the failed one left it)
-    return this._floatingContinuation(opts, done, ks[0], (V) => (Vs - V) / d.R);
+    if (q.converged || ks.length !== 1 || byLine) return done;
+    // Where Kirchhoff's hold failed too, the load line.
+    restore();
+    return this._floatingContinuation(opts, done, ks[0], line);
   }
 
   // Steady solves with the generation reactions' rates scaled from 1e-30 up to 1, ×100 a step
