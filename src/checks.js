@@ -178,8 +178,11 @@ function balance(device, sol) {
   const natural = naturalScales(device, sol), inSolution = naturalScales(device, sol, false); // (partners' scale: not a metal's conductance)
   const scale = (l) => Math.max(natural[l.i], ...l.terms.flatMap((t) => (partners.get(t.what) ?? []).map((j) => inSolution[j])));
   // Small flows count too where they balance, as real ones do to round-off (a diode at 1 µV,
-  // 1e-19 of its scale, to 1e-15), and round-off doesn't. (Above 1e-8 of the scale, any.)
-  const balanced = (l) => Math.abs(l.terms.reduce((a, t) => a + t.rate, 0)) <= 1e-9 * size(l);
+  // 1e-19 of its scale, to 1e-15), and round-off doesn't. (Above 1e-8 of the scale, any.) One
+  // that balances to 1e-2 isn't round-off either, which doesn't add up that well: it counts,
+  // and its residual says how nearly steady it is (a reverse diode behind a resistance, its 1.3
+  // µA/m² at 4e-15 of its scale, balanced to 8e-5 by a solve that stalled: "equilibrium").
+  const balanced = (l) => Math.abs(l.terms.reduce((a, t) => a + t.rate, 0)) <= 1e-2 * size(l);
   const moving = ledgers.filter((l) => size(l) > 1e-8 * scale(l) || (size(l) > 1e-20 * scale(l) && balanced(l)));
   let worst = 0;
   const lines = [];

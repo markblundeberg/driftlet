@@ -448,7 +448,9 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   term named by its equation; two with the same equation (radiative and SRH recombination, both
   `e- + h+ = 0`) are told apart by their place, `e- + h+ = 0 (bulkReactions[1])`, and
   `sol.bulkReactions[k]` has each one's rates. A species at rest
-  (in equilibrium, flows only of round-off against what it could carry) isn't listed.
+  (in equilibrium, flows only of round-off against what it could carry) isn't listed; flows that
+  small that still balance to 1% aren't round-off, so they're listed, and how nearly they sum to
+  zero says how nearly steady the state is.
 - **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
   what came in.
 - **order**, in a steady state (unless `refine: false` or `order: false`): the device solved from

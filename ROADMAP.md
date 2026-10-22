@@ -350,8 +350,12 @@ for live demos.
   a case where round-off is what limits. Two terminals behind resistances with nothing held, past
   ~16 V across a silver cell; a resistance beside a current at 30 V (16 and 100 converge); a slow
   reaction's failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y
-  mobile in part); the open-circuit march's sign hint, wrong beside a resistance; and Kirchhoff off
-  by 7e-5 at 1e-10 A/m², near the current floor, with check() calling it equilibrium.
+  mobile in part); the open-circuit march's sign hint, wrong beside a resistance; and a reverse
+  diode behind 3.2e4 Ω·m² whose steady solve stalls (Newton's updates near 1e-6, not shrinking, its
+  refinement failed) and is taken as converged at round-off, Kirchhoff off by 8e-5: check()'s
+  balance now fails it (it called it equilibrium), and the error is 200× below check()'s grid error
+  there, but the round-off acceptance could ask the residual's true floor (a held solve gets 1e-20
+  A/m²; the scaled rows stop at 3e-14 of terms 1e10 times the current).
 
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
