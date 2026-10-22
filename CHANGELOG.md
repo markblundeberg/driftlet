@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.3.3 (2026-10-21)
 
 - A terminal behind a resistance, solved cold, finds its load line's crossing by held solves
   first, rather than holding it at its source and relaxing the I R between: that took steps in
