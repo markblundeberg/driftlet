@@ -345,12 +345,13 @@ for live demos.
   converges cold now (the load line), but its terminal's voltage carries the current's round-off
   (read at an ohmic contact, ~1e-6 relative at 1 µA/m² beside the majority fluxes) times I R: 3.5 µV
   behind 1e7 Ω·m² with 10 V across R, the two contacts' currents 2e-12 A/m² apart. Reading it at the
-  cut of least error, as the impedance does, would fix it. Two terminals behind resistances with
-  nothing held, past ~16 V across a silver cell; a resistance beside a current at 30 V (16 and 100
-  converge); a slow reaction's failure unnamed, and whether it converges, varying with the listing
-  order (Y = Z, Y mobile in part); the open-circuit march's sign hint, wrong beside a resistance;
-  and Kirchhoff off by 7e-5 at 1e-10 A/m², near the current floor, with check() calling it
-  equilibrium.
+  cut of least error, as the impedance does, would fix that, but check()'s grid test sees 4000× more
+  there (a grid twice as fine moves that V by 13 mV, the current's 0.13% times I R), so it waits for
+  a case where round-off is what limits. Two terminals behind resistances with nothing held, past
+  ~16 V across a silver cell; a resistance beside a current at 30 V (16 and 100 converge); a slow
+  reaction's failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y
+  mobile in part); the open-circuit march's sign hint, wrong beside a resistance; and Kirchhoff off
+  by 7e-5 at 1e-10 A/m², near the current floor, with check() calling it equilibrium.
 
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
