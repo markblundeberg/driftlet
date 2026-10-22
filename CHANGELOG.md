@@ -15,6 +15,14 @@ major version.
   could carry), its steady solve stalled at Kirchhoff 8e-5 without a warning. Such flows can't
   be told from round-off (which reaches 8e-12 of the scale in the stress devices), so where any
   comes within ε of its scale, balance names the largest instead of saying "equilibrium".
+- A layer that can only hold one sign of charge (undoped, with holes alone) started full of its
+  contact's carriers: a 100 nm hole-only layer held the anode's 1e27 m⁻³ throughout, 7 kV of
+  space charge. With traps in it (h⁺ + T0 = T⁺), every step failed from there and the warning
+  said to raise the trap's rate constant, which changed nothing. It now starts with no more
+  charge than it holds with a thermal voltage across it, and solves cold (35 voltages, to 5e-14
+  of the agent's seeded solves). The trap-free layer: 9 Newton iterations where it took 18.
+  The rate-constant advice is now given only where the solve took time steps; where it failed
+  from its first, it says to start nearer the reaction's equilibrium. (Round 16's cold agent.)
 
 ## 1.3.2 (2026-10-20)
 

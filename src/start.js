@@ -29,9 +29,11 @@
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
 //      through the region has a reaction that can balance, the φ̂ that balances it (by bisection;
 //      a trial a non-ideal model refuses counts its ideal charge, which has the sign there). Where
-//      neutrality is out of reach (c0's amounts leave a charge no held level balances), the
-//      running φ̂, and a strictly neutral region is noted in s.unbalanced (for a transient that
-//      fails from it to say why). A strictly
+//      neutrality is out of reach (c0's amounts leave a charge no held level balances): in a
+//      strictly neutral region the running φ̂, the region noted in s.unbalanced (for a transient
+//      that fails from it to say why); otherwise the φ̂ nearest the running one, toward less
+//      charge, where the charge is at most ε V_T/(F L²) (L the region's length: what it holds with
+//      a thermal voltage across it), or where it stops falling (a fixed charge). A strictly
 //      neutral region (ε = 0) with every charged species' amount given must have a neutral c0:
 //      an error otherwise. A non-ideal material's composition comes from its statistics
 //      (materialAt).
@@ -63,7 +65,8 @@
 //      equilibrated by step 2 (a transient's first step), its amount over the two nodes is kept.
 //   2. A species given by its level starts at the level of what feeds it, as step 1 orders them.
 //   3. Where a level-fixed charged species responds, each node starts neutral (Σ z c + the fixed
-//      charge = 0) to the bisection's tolerance, unless neutrality is out of reach (step 1); a
+//      charge = 0) to the bisection's tolerance, unless neutrality is out of reach (step 1: then
+//      its charge at most ε V_T/(F L²), or the least φ̂ gives, to the bisection's tolerance); a
 //      strictly neutral region given by amounts is neutral by its c0, checked.
 //   4. Steps 2 and 3 change no concentration but as they say: step 3 is a gauge (φ̂ and each η by
 //      z·Δ), step 2 moves the passing species between a face's two nodes only.
@@ -81,7 +84,7 @@
 // Tests: every test (each device starts here); test/transient.test.js on what a start must be.
 
 import { gateRate } from './boundaries.js';
-import { FARADAY } from './constants.js';
+import { EPS0, FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { profileAt, SolverError } from './solver.js';
 
@@ -260,13 +263,39 @@ export function initFromComposition(s) {
       while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
       while (charge(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
       // Out of reach (every responding carrier has one sign and nothing balances it, as in an
-      // undoped layer that holds only holes): keep the running φ̂ rather than run it to ±∞.
+      // undoped layer that holds only holes): not run to ±∞, but where the charge is no more than
+      // the region holds with a thermal voltage across it, ε V_T/(F L²), or as little as it gets
+      // (a fixed charge left). Kept at the running φ̂ (a contact's level), a hole-only layer 100
+      // nm thick started full of the anode's 1e27 m⁻³ holes, 7 kV of space charge: with traps in
+      // it, every step failed from there.
       if (charge(lo) < 0 || charge(hi) > 0) {
         // In a strictly neutral region that's a start that can't be: the amounts c0 gives leave
         // a charge no level-held species can balance. Noted, for a transient that fails from it
         // to say so (a steady solve, its levels from the contacts, can still find the state).
-        if (mat.epsr === 0) s.unbalanced.push(r);
-        return ph;
+        if (mat.epsr === 0) {
+          s.unbalanced.push(r);
+          return ph;
+        }
+        const L = grid.x[grid.regionEnd[r]] - grid.x[grid.regionStart[r]];
+        const most = (mat.epsr * EPS0 * model.RT) / (FARADAY * FARADAY * L * L);
+        const q0 = charge(ph), dir = q0 > 0 ? 1 : -1; // (the charge falls as φ̂ rises)
+        if (!(Math.abs(q0) > most)) return ph;
+        let a = ph, qa = Math.abs(q0);
+        for (let step = 1; step < 1e4; step *= 2) {
+          let b = a + dir * step;
+          const qb = Math.abs(charge(b));
+          if (qb <= most) {
+            for (let it = 0; it < 100 && Math.abs(b - a) > 1e-9; it++) {
+              const m = 0.5 * (a + b);
+              if (Math.abs(charge(m)) > most) a = m;
+              else b = m;
+            }
+            return b;
+          }
+          if (!(qb < qa * (1 - 1e-9))) return a; // (a fixed charge: as little as it gets)
+          [a, qa] = [b, qb];
+        }
+        return a;
       }
       for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
         const m = 0.5 * (lo + hi);

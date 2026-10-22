@@ -414,3 +414,33 @@ test('a region held only weakly: its level found through its summed balance, exa
   assert.equal(direct.converged, false);
   assert.ok(direct.warnings.some((w) => /\(fast\): part of the device is held only weakly/.test(w)), direct.warnings.join('\n'));
 });
+
+// From round 16's cold agent (a hole-only organic diode with traps): a region that can't be
+// neutral, holding only holes, started at its contact's level, full of the anode's 1e27 m⁻³
+// holes: 7 kV of space charge across 100 nm. With h+ + T0 = T+ in it every step failed from
+// there, and the warning said to raise the trap's rate constant (×1e4 changed nothing). It
+// starts with no more charge than the region holds with a thermal voltage across it, and the
+// cold solve reaches the state the agent got by seeding the traps and solving without them first.
+test('a layer that can only hold one sign of charge starts with what a thermal voltage holds', () => {
+  const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, Nv = units.perCm3(1e21), Nt = units.perCm3(1e17), Et = 0.45;
+  const lib = {
+    species: [{ name: 'h+', z: 1, cRef: Nv }, { name: 'T0', z: 0, cRef: 1 }, { name: 'T+', z: 1, cRef: 1 }],
+    materials: { org: { epsr: 3, T, species: { 'h+': { D: 1e-8 * VT, mu0: 0 }, T0: { D: 0, mu0: 0 }, 'T+': { D: 0, mu0: -units.eV(Et) } } } },
+  };
+  const contact = (V, zeroCharge) => ({ V, terminal: 'h+', species: { 'h+': 'equilibrium' }, phi: 'pinned', zeroCharge });
+  const make = (bulkReactions, c0) => build({
+    T, library: [lib], stack: [contact(2, 0), layer('org', 100e-9, { c0 }), contact(0, -0.5)], bulkReactions,
+    grid: { hmin: 0.01e-9, hmax: 1e-9, ratio: 1.15 },
+  });
+  const traps = [{ equation: 'h+ + T0 = T+', kf: { org: 6e6 } }];
+  const cold = new Device(make(traps, { T0: Nt / 2, 'T+': Nt / 2 })).solve();
+  assert.ok(cold.converged, cold.warnings.join(' '));
+  // The agent's way: the traps seeded where the trap-free holes would fill them, then switched on.
+  const free = new Device(make([], { T0: Nt / 2, 'T+': Nt / 2 })).solve();
+  const p1 = Nv * Math.exp(-Et / VT), mid = free.c['h+'][free.x.length >> 1], f = mid / (mid + p1);
+  const seeded = new Device(make([], { T0: Nt * (1 - f), 'T+': Nt * f }));
+  seeded.solve();
+  seeded.set({ bulkReactions: traps });
+  const warm = seeded.solve();
+  assert.ok(warm.converged && Math.abs(cold.current / warm.current - 1) < 1e-9, `${cold.current} vs ${warm.current}`);
+});

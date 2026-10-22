@@ -272,10 +272,16 @@ export function makeSolution(solver, result = {}) {
         'advance() in time instead, or give the still species a small D where it is still.',
     );
   } else if (slow.length > 0) {
+    // Too slow to wait out only where the solve waited: where no time step was taken at all, the
+    // start was the trouble (a hole-only layer full of the anode's holes, with traps: "raise its
+    // rate constant" changed nothing, ×1e4).
+    const waited = (result.history ?? []).some((h) => h.converged && h.dt > 0);
     for (const { where, affinity } of slow) {
       sol.warnings.push(
         `the solve did not converge, likely because ${where} is out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium: ` +
-          'it is too slow for the steady solve to wait out. Raise its rate constant (the steady state does not depend on it), or advance() in time.',
+          (waited
+            ? 'it is too slow for the steady solve to wait out. Raise its rate constant (the steady state does not depend on it), or advance() in time.'
+            : 'the solve failed from its first steps, so start it nearer that equilibrium: c0 near it, or solve without the reaction and set() it back.'),
       );
     }
   } else if (result.converged === false && cond && cond.digits > 12) {
