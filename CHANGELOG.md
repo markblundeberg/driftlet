@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.3.4 (2026-10-25)
 
 - A steady solve on a device solved directly waits out slow modes to 1e12 of the slowest
   diffusion time, as documented: past 1e6 of it the pseudo-transient jumped to the direct solve,
