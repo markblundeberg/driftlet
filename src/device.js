@@ -1076,7 +1076,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, links, reactions, gates);
+  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, reactions);
   return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null, diffuse };
 }
 
@@ -1084,7 +1084,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 // charged face a Gouy–Chapman layer below the grid, of that permittivity, holding the side's
 // share of the face's charge as surface excesses of its ions instead of as excess ions in the
 // edge cell. Normalised to { epsr, left, right } (the sides that have one), or null.
-function normalizeDiffuse(raw, where, phi, matL, matR, species, links, reactions, gates) {
+function normalizeDiffuse(raw, where, phi, matL, matR, species, reactions) {
   if (raw === undefined) return null;
   const path = `${where}.diffuse`;
   need(isObject(raw), `${path} must be { epsr } (the diffuse layer's relative permittivity)`);
@@ -1119,8 +1119,6 @@ function normalizeDiffuse(raw, where, phi, matL, matR, species, links, reactions
       if (rx.srh && rx.part.some((p) => p.side === side)) need(false, `${path}: SRH kinetics beside a diffuse layer isn't supported (its carriers would be read at the plane); resolve the layer instead`);
     }
   }
-  links.forEach((l, i) => need(l.type !== 'permeability', `${path}: the permeability link of '${species[i].name}' beside a diffuse layer isn't supported yet (it would need the layers' drops across the membrane)`));
-  need(gates.length === 0, `${path}: gates beside a diffuse layer aren't supported yet (they'd follow the voltage between the planes)`);
   return { epsr, left, right };
 }
 
@@ -1257,7 +1255,7 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
   }
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, links, reactions, []);
+  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, reactions);
   return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i }, diffuse };
 }
 

@@ -17,7 +17,10 @@ major version.
   cells shrink (6e-5 at 0.0125 nm). Checked against Poisson–Boltzmann solved in x and the z:z closed
   forms, a closed blocking cell's Stern + Gouy–Chapman charge, drop, excesses and salt balance
   (1e-10), its capacitance in the impedance, and charging by a current of ions over steps up to
-  1e10 s. The solution reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
+  1e10 s. At a membrane with a layer on each side, permeability links run between the planes
+  (GHK on the planes' concentrations) and gates follow the voltage between them, so a surface
+  charge shifts gating and permeation (against an mpmath answer sheet: 1e-14). The solution
+  reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
   faces now point to it. A template (docs/templates.md): an electrode's double-layer capacitance,
   its minimum at the potential of zero charge, against Gouy–Chapman–Stern.
 

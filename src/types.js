@@ -299,7 +299,7 @@
  *   (V) and sheet charge (C/m²), its displacement D (C/m²), each species' flux N across it and each face
  *   reaction's net rate (mol/(m²·s), toward +x and forward), how each species that crosses it does (its
  *   link type); for those crossing by permeability, the one-way fluxes [toward +x, toward −x] whose
- *   difference is N; with gates, each one's fraction open and the voltage they follow, φ_right − φ_left (V);
+ *   difference is N; with gates, each one's fraction open and the voltage they follow, φ_right − φ_left (V; between the diffuse layers' planes, where it has them);
  *   with a diffuse layer, each side's
  * @property {{ rate: Float64Array, forward: Float64Array, nu: Record<string, number>, regions: number[], total: number }[]} bulkReactions
  *   each bulk reaction's net rate per node (mol/(m³·s), forward minus backward, NaN where it doesn't

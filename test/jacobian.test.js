@@ -282,6 +282,12 @@ const devices = {
     stack: [bath(film, 'Cl-'), layer('water', 5e-6, { c0: film }), { phi: { type: 'capacitive', C: 0.01 }, sheetCharge: -0.02, diffuse: { epsr: 78.4 }, species: { 'K+': { type: 'conductance', G: 10 }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('water', 5e-6, { c0: { 'Na+': 10, 'K+': 140, 'Cl-': 150 } }), bath({ 'Na+': 10, 'K+': 140, 'Cl-': 150 }, 'Cl-', -0.06)],
     grid: { hmin: 0.2e-6, hmax: 1e-6 },
   }),
+  'a gated permeability between diffuse layers': () => build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],
+    stack: [bath(film, 'Cl-'), layer('water', 5e-6, { c0: film }), { phi: { type: 'capacitive', C: 0.01 }, sheetCharge: -0.02, diffuse: { epsr: 78.4 }, gates: { n: { alpha: { type: 'sigmoid', rate: 100, midpoint: -0.03, scale: 0.01 }, beta: { type: 'sigmoid', rate: 100, midpoint: -0.03, scale: -0.01 } } }, species: { 'K+': { type: 'permeability', P: 1e-7, gates: { n: 1 } }, 'Na+': { type: 'permeability', P: 1e-9 }, 'Cl-': 'blocked' } }, layer('water', 5e-6, { c0: { 'Na+': 10, 'K+': 140, 'Cl-': 150 } }), bath({ 'Na+': 10, 'K+': 140, 'Cl-': 150 }, 'Cl-', -0.02)],
+    grid: { hmin: 0.2e-6, hmax: 1e-6 },
+  }),
   'a semiconductor pinned to a solution through a diffuse layer': () => build({
     T: 298.15,
     library: [semiconductor('Si', { T: 298.15 }), aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],

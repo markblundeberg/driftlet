@@ -221,8 +221,34 @@ test('a diffuse layer is refused where it would be wrong or meaningless', () => 
   refused(make({ diffuse: { epsr: 78 } }, { epsr: 78 }), /neither side is a strictly neutral.*the grid resolves the double layer itself/);
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'lattice', species: ['K+', 'Cl-'], cMax: 5000 }]) }), /'K\+' in 'water' has non-ideal statistics, and the diffuse layer is a dilute \(Boltzmann\) one/);
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.species['K+'].D = 0) }), /'K\+' is charged and can't move in 'water' \(D = 0\)/);
-  // (between two solutions: a permeability, or gates, aren't supported beside one yet)
-  const membrane = (face) => build({ library: [lib], stack: [bath(c, 'Cl-'), layer('water', 1e-6, { c0: c }), { phi: { type: 'capacitive', C: 0.01 }, diffuse: { epsr: 78 }, ...face }, layer('water', 1e-6, { c0: c }), bath(c, 'Cl-')], grid: { hmin: 1e-7, hmax: 1e-7 } });
-  refused(membrane({ species: { 'K+': { type: 'permeability', P: 1e-6 } } }), /the permeability link of 'K\+' beside a diffuse layer isn't supported yet/);
-  assert.ok(new Device(membrane({})).solve().converged); // (and without them, it is)
+});
+
+// A charged membrane (C 0.01 F/m², a sheet of −0.02 C/m² on its right face) between two strictly
+// neutral solutions, a diffuse layer on each side; K⁺ crosses by a permeability gated by n
+// (sigmoid α, β about −30 mV), the rest are blocked. Its answer sheet (membrane.py, mpmath): the
+// drops from Gauss and the Stern law alone, q_L(ψ_L) = D, q_R(ψ_R) = −(D + σ), D = −C V_m with
+// V_m = Δφ + ψ_R − ψ_L between the planes; the gate at α/(α + β) of V_m; Goldman–Hodgkin–Katz
+// between the planes' concentrations c e^{−zFψ/RT}.
+const MEMBRANE = [
+  { V: -0.1, D: 0.00110145342394159, psiL: -0.0014884579314256, psiR: -0.0207976995439835, Vm: -0.110145342394159, n: 0.000330512920061092, NK: 1.40028794604074e-12 },
+  { V: -0.06, D: 0.000710804212490204, psiL: -0.000960629355138855, psiR: -0.0212049494436698, Vm: -0.0710804212490204, n: 0.0161740304336446, NK: -7.11608873808973e-10 },
+  { V: 0, D: 0.000124810284894188, psiL: -0.000168686448995856, psiR: -0.0218135019386403, Vm: -0.0124810284894188, n: 0.852191928423054, NK: -2.11175716567407e-7 },
+  { V: 0.05, D: -0.000363537632357396, psiL: 0.000491328861962143, psiR: -0.0223184772918532, Vm: 0.0363537632357396, n: 0.99868863742237, NK: -6.20685552170249e-7 },
+];
+
+test('a charged membrane between diffuse layers: its permeability and gates work between the planes', () => {
+  const cL = { 'Na+': 100, 'K+': 5, 'Cl-': 105 }, cR = { 'Na+': 10, 'K+': 140, 'Cl-': 150 };
+  const gate = { alpha: { type: 'sigmoid', rate: 100, midpoint: -0.03, scale: 0.01 }, beta: { type: 'sigmoid', rate: 100, midpoint: -0.03, scale: -0.01 } };
+  for (const t of MEMBRANE) {
+    const def = build({
+      library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],
+      stack: [bath(cL, 'Cl-'), layer('water', 5e-6, { c0: cL }), { phi: { type: 'capacitive', C: 0.01 }, sheetCharge: -0.02, diffuse: { epsr: 78.4 }, gates: { n: gate }, species: { 'K+': { type: 'permeability', P: 1e-9, gates: { n: 1 } }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('water', 5e-6, { c0: cR }), bath(cR, 'Cl-', t.V)],
+      grid: { hmin: 0.5e-6, hmax: 1e-6 },
+    });
+    const s = new Device(def).solve(), f = s.interfaces[0];
+    assert.ok(s.converged && s.warnings.length === 0, s.warnings.join('\n'));
+    for (const [what, got, want] of [['D', f.D, t.D], ['ψ left', f.diffuse.left.psi, t.psiL], ['ψ right', f.diffuse.right.psi, t.psiR], ['V between the planes', f.V, t.Vm], ['n', f.gates.n, t.n], ['K⁺ flux', f.N['K+'], t.NK]]) {
+      assert.ok(Math.abs(got - want) < 1e-9 * Math.abs(want), `${t.V} V: ${what} ${got} for ${want}`);
+    }
+  }
 });

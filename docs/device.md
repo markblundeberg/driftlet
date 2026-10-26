@@ -218,9 +218,12 @@ the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0
 solution reports it as `interfaces[f].diffuse.left`/`.right`: `psi` (V), `charge` (C/m²), `excess`
 (mol/m²) and `plane` (each ion's concentration there). It's a dilute layer, so a warning says
 where its plane passes 5 M (a Stern C so large, or a zeroCharge so far from where the face works,
-that its counter-ions would have no room there); its ions must be ideal and mobile, and beside one a
-face can't yet have permeability links, gates or SRH kinetics (a diffuse layer at a membrane's
-face is on the [roadmap](../ROADMAP.md)).
+that its counter-ions would have no room there); its ions must be ideal and mobile, and SRH kinetics
+beside one isn't supported. At a membrane between two solutions, a layer on each side: a
+permeability link runs between the planes (Goldman–Hodgkin–Katz on the planes' concentrations,
+across the drop between them), and gates follow the voltage between the planes, the one the
+membrane itself has across it (`interfaces[f].V`), so a surface charge (`sheetCharge`) and the
+ions that screen it shift a channel's gating and permeation, as divalent cations do.
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides and can move on one at least; blocked otherwise, so trap states with

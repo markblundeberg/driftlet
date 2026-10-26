@@ -40,8 +40,9 @@
 //     gives that side (D on the left, −(D + sheetCharge) on the right); −Af·q in the edge node's
 //     Gauss row, and Af (Γ_i − Γ_i,old)/dt in its balances (none at dt = ∞). A reaction's
 //     participant on that side reacts at the plane: its c times e^{−z s} in the rate (Butler–Volmer
-//     and saturating; SRH, permeability links and gates beside a layer are refused by
-//     normalizeDevice), its η unchanged.
+//     and saturating; SRH beside a layer is refused by normalizeDevice), its η unchanged; a
+//     permeability link runs between the planes (c e^{−z s} at each, its drift over φ̂ + s), and
+//     gates follow the voltage between them (_faceVoltage).
 //
 // The terminals (_terminals), in order: the sources refreshed (_refreshSources); the live
 // terminals' termB, termC zeroed, and termDI, termDX, termI, qg, qgSlope; each port's terms but
@@ -233,14 +234,17 @@ export class BoundaryTerms {
         // materials). Between like solutions it's Goldman–Hodgkin–Katz's flux,
         //   N = P·zu·(c_L − c_R e^{zu})/(e^{zu} − 1),  u = (φ_R − φ_L)/V_T,
         // and it's exactly zero where μ̄ is level.
+        // Beside a diffuse layer, between its plane's: c e^{−z s} at each, the drift over the
+        // drop between the planes (s acting as φ̂ does on its side).
         const gl = grid.regionEnd[f], gr = gl + 1, kl = gl * n + i, kr = gr * n + i, zi = z[i], link = itf.links[i];
         const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
-        const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
+        const sL = sOf(dlL), sR = sOf(dlR), cl = this.c[kl] * (sL === 0 ? 1 : Math.exp(-zi * sL)), cr = this.c[kr] * (sR === 0 ? 1 : Math.exp(-zi * sR));
+        const d = zi * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) + sR - sL) + shift;
         // Gated: P × Π x^p, each x taken in [0, 1] (Newton's iterates can stray past its ends).
         const gated = link.gates ?? [], gx = (q) => u[this._gateSlot(f, q)];
-        const N1 = gated.length ? sgFlux(link.P, d, -deta, this.c[kl], this.c[kr], this.sg)[0] : 0; // (fully open)
+        const N1 = gated.length ? sgFlux(link.P, d, -deta, cl, cr, this.sg)[0] : 0; // (fully open)
         const P = link.P * (gated.length ? this._open(gated, gx) : 1);
-        const sg = sgFlux(P, d, -deta, this.c[kl], this.c[kr], this.sg); // (−deta = η_R − η_L)
+        const sg = sgFlux(P, d, -deta, cl, cr, this.sg); // (−deta = η_R − η_L)
         const N = sg[0], dNdd = sg[1];
         res[R[o]] = u[o] - N;
         this._j(bf, r, bf, r, 1);
@@ -253,6 +257,8 @@ export class BoundaryTerms {
         if (zi !== 0) {
           this._j(bf, r, bL, 0, zi * dNdd + zi * N);
           this._j(bf, r, bR, 0, -zi * dNdd);
+          jS(r, dlL, zi * dNdd + zi * N);
+          jS(r, dlR, -zi * dNdd);
         }
       } else {
         // conductance: J = G (V_L − V_R), V = V_T η / z  ⇒  N = G V_T (η_L − η_R) / (z² F); gated,
@@ -347,10 +353,12 @@ export class BoundaryTerms {
     return VT * (u[b * M] + uLo[b * M]) - (this.termV[2 + k] - port.capacitance.zeroCharge);
   }
 
-  // The voltage across face f, φ_right − φ_left (V).
+  // The voltage across face f, φ_right − φ_left (V): between its diffuse layers' planes, where it
+  // has them (what the face's own layer, a membrane, has across it).
   _faceVoltage(f) {
-    const { M, u, uLo, VT } = this, bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
-    return VT * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]));
+    const { M, u, uLo, VT } = this, bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1, [dL, dR] = this.diffAt[f];
+    const planes = (dR < 0 ? 0 : u[this.diffList[dR].o]) - (dL < 0 ? 0 : u[this.diffList[dL].o]);
+    return VT * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) + planes);
   }
 
   // Face f's gates, each a row (x − x_old)/dt = α(1 − x) − βx in the voltage across the face.
@@ -366,6 +374,10 @@ export class BoundaryTerms {
       const dV = -(da * (1 - x) - db * x) * VT; // per unit φ̂_R, and minus that per unit φ̂_L
       this._j(bf, k0 + q, bR, 0, dV);
       this._j(bf, k0 + q, bL, 0, -dV);
+      // (and per unit of each diffuse layer's drop, as of its side's φ̂)
+      const [dlL, dlR] = this.diffAt[f];
+      if (dlR >= 0) this._j(bf, k0 + q, bf, this.diffList[dlR].slot, dV);
+      if (dlL >= 0) this._j(bf, k0 + q, bf, this.diffList[dlL].slot, -dV);
     });
   }
 

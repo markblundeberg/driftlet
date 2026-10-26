@@ -1020,13 +1020,16 @@ export class Solver {
       if (link.type !== 'permeability') return null;
       const kl = gl * n + i, kr = gr * n + i;
       const shift = this.mu0hat[kr] - this.mu0hat[kl] - Math.log(this.cRef[kr] / this.cRef[kl]);
-      const d = z[i] * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M])) + shift;
+      // (between the diffuse layers' planes, where the face has them: see _face)
+      const [dL, dR] = this.diffAt[f], sL = dL < 0 ? 0 : u[this.diffList[dL].o], sR = dR < 0 ? 0 : u[this.diffList[dR].o];
+      const cl = this.c[kl] * Math.exp(-z[i] * sL), cr = this.c[kr] * Math.exp(-z[i] * sR);
+      const d = z[i] * (u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) + sR - sL) + shift;
       const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]);
       const gated = link.gates ?? [];
       const P = link.P * (gated.length ? this._open(gated, (q) => u[this._gateSlot(f, q)]) : 1);
-      const right = P * bernoulli(d) * this.c[kl];
+      const right = P * bernoulli(d) * cl;
       // (far up a drift, right × e^Δη is 0·∞: the backward one is then sgFlux's, whole)
-      return [right, d < SG_FAR ? right * Math.exp(deta) : sgFlux(P, d, deta, this.c[kl], this.c[kr], this.sg)[3]];
+      return [right, d < SG_FAR ? right * Math.exp(deta) : sgFlux(P, d, deta, cl, cr, this.sg)[3]];
     });
   }
 
