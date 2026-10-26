@@ -33,6 +33,15 @@
 //     carrier at activity 1), or saturating (vmax), or SRH; −Af·ν·r into each participant's row.
 //   gates (_faceGates): (x − x_old)/dt − α(V)(1 − x) + β(V)x = 0, V = φ_R − φ_L (no storage at
 //     dt = ∞).
+//   diffuse layers (_diffuseTerms; itf.diffuse, on each strictly neutral side: s.diffList, its
+//     q, Γ and their derivatives from computeConcentrations, src/diffuse.js): each a slot after
+//     the gates, its drop s = Fψ/RT, which puts that side's plane at φ̂_edge + s: the φ law (each
+//     form above) runs to the planes, φ̂ → φ̂ + s. Its row: q(s, c_edge) − Q, Q the charge the face
+//     gives that side (D on the left, −(D + sheetCharge) on the right); −Af·q in the edge node's
+//     Gauss row, and Af (Γ_i − Γ_i,old)/dt in its balances (none at dt = ∞). A reaction's
+//     participant on that side reacts at the plane: its c times e^{−z s} in the rate (Butler–Volmer
+//     and saturating; SRH, permeability links and gates beside a layer are refused by
+//     normalizeDevice), its η unchanged.
 //
 // The terminals (_terminals), in order: the sources refreshed (_refreshSources); the live
 // terminals' termB, termC zeroed, and termDI, termDX, termI, qg, qgSlope; each port's terms but
@@ -78,15 +87,18 @@
 //      from outside, read from its residual (so the current is conserved through the device).
 //   3. A face's flux enters its two edge nodes with opposite signs, times Af.
 //   4. Where μ̄ is level across a link (or a = 0 for a reaction), its flux (rate) is exactly 0.
+//   4b. A diffuse layer's side holds the face's charge in the layer: at its row's solution the
+//      edge box's own charge (vol·ρ) is what its other terms put there, as without the face.
 //   5. The readouts (contactFlux, contactD, portFlux, portQ, portRates) are those of the state
 //      assembled, written at every assembly.
 // Tests: test/contacts.test.js, test/ports.test.js, test/terminals.test.js, test/circuit.test.js,
 // test/gates.test.js, test/membrane.test.js, test/kinetics.test.js, test/coverage.test.js,
-// test/capacitance.test.js, test/metal.test.js, test/jacobian.test.js.
+// test/capacitance.test.js, test/metal.test.js, test/diffuse.test.js, test/jacobian.test.js.
 
 import { sgFlux } from './bernoulli.js';
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
+import { diffuseLayer } from './diffuse.js';
 import { powi, powr } from './pow.js';
 
 // Butler–Volmer factor g(a) = e^{αa} − e^{−(1−α)a} = e^{−(1−α)a}·expm1(a) (precise near a = 0),
@@ -143,35 +155,44 @@ export class BoundaryTerms {
     const grid = model.grid, interfaces = model.interfaces;
     const bf = this.blockOfFace[f], bL = bf - 1, bR = bf + 1;
     const itf = interfaces[f];
+    // A diffuse layer's drop s on a side (src/diffuse.js) puts that side's plane, where the Stern
+    // layer ends, at φ̂_edge + s: [left, right] layer indices (−1: none) and slots.
+    const [dlL, dlR] = this.diffAt[f], dl = this.diffList;
+    const sOf = (d) => (d < 0 ? 0 : u[dl[d].o]);
+    const jS = (rs, d, v) => d >= 0 && this._j(bf, rs, bf, dl[d].slot, v);
     // φ law: pinned jump (dipole), Helmholtz capacitor, or no charge at all (neutral).
     const law = itf.phi.type;
     const condSide = itf.conductor && law !== 'neutral' ? itf.conductor.side : null;
     if (condSide) {
       // Against a metal: the other side's φ is tied to the metal's Fermi level V_F = V_T η/z.
       const im = itf.conductor.i, bm = condSide === 'left' ? bL : bR, bo = condSide === 'left' ? bR : bL;
-      const sg = condSide === 'left' ? 1 : -1;
+      const sg = condSide === 'left' ? 1 : -1, dlo = condSide === 'left' ? dlR : dlL;
       const vf = (u[bm * M + 1 + im] + uLo[bm * M + 1 + im]) / z[im]; // V_F / V_T
-      const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]); // (V_F − zeroCharge − φ_edge)/V_T
+      const gap = vf - itf.zeroCharge / VT - (u[bo * M] + uLo[bo * M]) - sOf(dlo); // (V_F − zeroCharge − φ_plane)/V_T
       if (law === 'pinned') {
         res[R[bf * M]] = gap;
         this._j(bf, 0, bm, 1 + im, 1 / z[im]);
         this._j(bf, 0, bo, 0, -1);
+        jS(0, dlo, -1);
       } else {
-        // D toward the other side = C (V_F − zeroCharge − φ_edge); toward +x that's sg times it.
+        // D toward the other side = C (V_F − zeroCharge − φ_plane); toward +x that's sg times it.
         const kC = itf.phi.C * VT;
         res[R[bf * M]] = u[bf * M] - sg * kC * gap;
         this._j(bf, 0, bf, 0, 1);
         this._j(bf, 0, bm, 1 + im, (-sg * kC) / z[im]);
         this._j(bf, 0, bo, 0, sg * kC);
+        jS(0, dlo, sg * kC);
       }
     } else if (law === 'neutral') {
       // D = 0 (not an unknown); the jump is whatever each side's neutrality needs
     } else {
-      const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) - itf.dipole / VT;
+      const jump = u[bR * M] - u[bL * M] + (uLo[bR * M] - uLo[bL * M]) + sOf(dlR) - sOf(dlL) - itf.dipole / VT;
       if (law === 'pinned') {
         res[R[bf * M]] = jump;
         this._j(bf, 0, bR, 0, 1);
         this._j(bf, 0, bL, 0, -1);
+        jS(0, dlR, 1);
+        jS(0, dlL, -1);
       } else {
         // D = −C (φ_R − φ_L − dipole): displacement toward +x drops across the layer.
         const kC = itf.phi.C * VT;
@@ -179,6 +200,8 @@ export class BoundaryTerms {
         this._j(bf, 0, bf, 0, 1);
         this._j(bf, 0, bR, 0, kC);
         this._j(bf, 0, bL, 0, -kC);
+        jS(0, dlR, kC);
+        jS(0, dlL, -kC);
       }
     }
     // D_f enters each side's Gauss row; a metal side holds it as surface carriers instead. The
@@ -192,6 +215,8 @@ export class BoundaryTerms {
       res[R[bR * M]] -= Af * (u[bf * M] + itf.sheetCharge);
       this._j(bR, 0, bf, 0, -Af);
     }
+    if (dlL >= 0) this._diffuseTerms(dlL, bf, Af);
+    if (dlR >= 0) this._diffuseTerms(dlR, bf, Af);
     for (let i = 0; i < n; i++) {
       const r = 1 + i, o = bf * M + r;
       const type = itf.links[i].type;
@@ -252,6 +277,59 @@ export class BoundaryTerms {
     if (itf.gates.length > 0) this._faceGates(f, bf, bL, bR);
   }
 
+  // Diffuse layer d's terms (src/diffuse.js; its q and Γ from computeConcentrations): its row,
+  // q(s, c) equal to the charge its side holds (D on the left, −(D + sheetCharge) on the right);
+  // its charge in the edge box's Gauss row and its excesses in the box's balances, stored like the
+  // box's own ions (so the box's bulk stays neutral, and what the face's charge draws in is
+  // counted). The edge node's c enters through ∂c_j/∂η_j = c_j, ∂c_j/∂φ̂ = −z_j c_j (ideal).
+  _diffuseTerms(d, bf, Af) {
+    const { n, M, u, res, z, c, gam, gamOld } = this, R = this.rix, dt = this.dtNow;
+    const { g, b, slot, o, side, f, dl } = this.diffList[d], gn = g * n;
+    const sheet = this.model.interfaces[f].sheetCharge;
+    // its row (per area): q − Q
+    res[R[o]] = dl.q - (side ? -(u[bf * M] + sheet) : u[bf * M]);
+    this._j(bf, slot, bf, slot, dl.dqds);
+    this._j(bf, slot, bf, 0, side ? 1 : -1);
+    let dphi = 0;
+    for (let j = 0; j < n; j++) {
+      if (!this.present[gn + j]) continue;
+      const w = dl.dqdc[j] * c[gn + j];
+      this._j(bf, slot, b, 1 + j, w);
+      dphi -= w * z[j];
+    }
+    this._j(bf, slot, b, 0, dphi);
+    // the box's charge: −Af·q in its Gauss row
+    res[R[b * M]] -= Af * dl.q;
+    this._j(b, 0, bf, slot, -Af * dl.dqds);
+    for (let j = 0; j < n; j++) if (this.present[gn + j]) this._j(b, 0, b, 1 + j, -Af * dl.dqdc[j] * c[gn + j]);
+    this._j(b, 0, b, 0, -Af * dphi);
+    // the box's store of each ion: Af (Γ_i − Γ_i,old)/dt
+    if (!Number.isFinite(dt)) return;
+    const k = Af / dt;
+    for (let i = 0; i < n; i++) {
+      if (!this.present[gn + i] || z[i] === 0) continue;
+      res[R[b * M + 1 + i]] += k * (gam[d * n + i] - gamOld[d * n + i]);
+      this._j(b, 1 + i, bf, slot, k * dl.dgds[i]);
+      let dp = 0;
+      for (let j = 0; j < n; j++) {
+        if (!this.present[gn + j]) continue;
+        const w = k * dl.dgdc[i * n + j] * c[gn + j];
+        if (w !== 0) this._j(b, 1 + i, b, 1 + j, w);
+        dp -= w * z[j];
+      }
+      this._j(b, 1 + i, b, 0, dp);
+    }
+  }
+
+  // The diffuse layers' charges and excesses at the present state (after the concentrations).
+  _diffuseLayers() {
+    const { n, u, c, z, gam } = this;
+    this.diffList.forEach((d, k) => {
+      diffuseLayer(c.subarray(d.g * n, d.g * n + n), z, n, u[d.o], d.units, d.dl);
+      gam.set(d.dl.gam, k * n);
+    });
+  }
+
   // Full index of face f's gate q (its fraction open).
   _gateSlot(f, q) {
     return this.blockOfFace[f] * this.M + 1 + this.n + this.model.interfaces[f].reactions.length + q;
@@ -302,6 +380,9 @@ export class BoundaryTerms {
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     const al = rx.alpha;
     const dL = this.dA.fill(0), dR = this.dB.fill(0); // ∂ ln(prefactor)/∂slot, per side
+    // Beside a diffuse layer (src/diffuse.js), a participant reacts at the plane, where its
+    // concentration is c e^{−z s} (its μ̄ level through the layer): dS[side] = ∂ ln(prefactor)/∂s.
+    const dla = this.diffAt[f], dS = [0, 0], plane = (p) => (dla[p.side] < 0 || this.z[p.i] === 0 ? 1 : Math.exp(Math.max(-700, Math.min(700, -this.z[p.i] * u[this.diffList[dla[p.side]].o]))));
     let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
@@ -309,17 +390,19 @@ export class BoundaryTerms {
       aLo -= p.nu * uLo[o];
       if (rx.srh || rx.vmax || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
-      pref *= powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+      pref *= powr((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
+      if (dla[p.side] >= 0) dS[p.side] -= this.z[p.i] * e;
     }
     if (rx.vmax) {
       // Saturating: r = vmax Π (c/(c + K))^{|ν|} (1 − e^{−a}); ∂ln S/∂ln c = |ν| K/(c + K).
       let S = 1;
       rx.part.forEach((p, q) => {
         if (p.nu >= 0) return;
-        const g = p.side ? gR : gL, cc = c[g * n + p.i], K = rx.K[q];
+        const g = p.side ? gR : gL, cc = c[g * n + p.i] * plane(p), K = rx.K[q];
         S *= powi(cc / (cc + K), -p.nu);
         this._dlnc(g, p.i, (-p.nu * K) / (cc + K), p.side ? dR : dL);
+        if (dla[p.side] >= 0) dS[p.side] -= (this.z[p.i] * -p.nu * K) / (cc + K);
       });
       const a = aHi + aLo, back = Math.exp(-a);
       rate = rx.vmax * S * -Math.expm1(-a);
@@ -349,6 +432,7 @@ export class BoundaryTerms {
     const slot = 1 + n + k, o = bf * M + slot;
     res[R[o]] = u[o] - rate;
     this._j(bf, slot, bf, slot, 1);
+    for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -rate * dS[sd]);
     for (let s = 0; s < M; s++) {
       if (dL[s] !== 0) this._j(bf, slot, bL, s, -dL[s]);
       if (dR[s] !== 0) this._j(bf, slot, bR, s, -dR[s]);

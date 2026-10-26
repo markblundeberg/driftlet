@@ -20,7 +20,9 @@
 //     potential; a species no model holds is ideal there;
 //   a conductor's node: no bulk concentration; its carrier's c is the excess charge of a charged
 //     face's sheet, sheetSign·D·A/(zF·vol);
-//   absent species: c = 0; then the coverages (_coverages: Langmuir, θ_s = e^{ζ_s}/(1 + Σe^ζ)).
+//   absent species: c = 0; then the coverages (_coverages: Langmuir, θ_s = e^{ζ_s}/(1 + Σe^ζ)),
+//   and the faces' diffuse layers from their edge nodes' c and their drops (_diffuseLayers in
+//   src/boundaries.js: q, Γ and their derivatives, into each layer's scratch and gam).
 //   ∂c_i/∂η_j = K_ij, ∂c_i/∂φ̂ = −(Kz)_i (_Kz; _dlnc adds these as ∂ln c, _dc sets them as ∂c).
 //   At a non-ideal node of a region with eddy mixing (nodeDK), K's slope dK = ∂K/∂ζ as well.
 //
@@ -70,8 +72,8 @@
 //   2. A segment's flux goes into its two nodes' rows with opposite signs, the same number.
 //   3. At a level μ̄ along a segment (Δη = 0, no velocity), its flux and mixing are exactly 0;
 //      at a = 0 a bulk reaction's rate is exactly 0.
-//   4. computeConcentrations writes c, K, ex, th, th0, dK at the nodeDK nodes (and scratch:
-//      zeta, the statistics models' work arrays) and nothing else; the kernels write res,
+//   4. computeConcentrations writes c, K, ex, th, th0, gam, dK at the nodeDK nodes (and scratch:
+//      zeta, the statistics models' work arrays, the diffuse layers' dl) and nothing else; the kernels write res,
 //      sys (or lin), termB/termC (the charge rows), and scratch kept on the Solver (dA, dB, jL,
 //      jR, sg, mixWork, mixCrowd) or cached on a material (mobile).
 //   5. The charge rows are an invertible transformation of the equations at the node (the same
@@ -156,6 +158,7 @@ export class RegionTerms {
       }
     }
     this._coverages();
+    if (this.diffList.length > 0) this._diffuseLayers();
   }
 
   _work(md) {

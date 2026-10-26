@@ -213,6 +213,8 @@ export function describe(def) {
       }
       const law = itf.phi.type === 'capacitive' ? `capacitive, C = ${num(itf.phi.C)} F/m²` : itf.phi.type;
       const align = itf.conductor ? (itf.phi.type === 'capacitive' ? `, zeroCharge ${num(itf.zeroCharge)} V` : '') : itf.phi.type === 'neutral' ? '' : `, dipole ${num(itf.dipole)} V`;
+      const sides = itf.diffuse ? [itf.diffuse.left && L.name, itf.diffuse.right && R.name].filter(Boolean) : [];
+      const diffuse = sides.length ? `; a diffuse layer below the grid (Gouy–Chapman, εr ${num(itf.diffuse.epsr)}) on the ${sides.join(' and ')} side${sides.length > 1 ? 's' : ''}` : '';
       const blocked = species.filter((sp, i) => itf.links[i].type === 'blocked' && materials[L.material].present[i] && materials[R.material].present[i]).map((sp) => sp.name);
       const kinetics = (r) => (r.vmax !== undefined ? ` (saturating, vmax ${num(r.vmax)} mol/(m²·s))` : r.srh ? ' (SRH)' : '');
       const rx = (idef.reactions ?? []).map((r) => (r.equation ?? equation(r.left, r.right)) + kinetics(r));
@@ -223,7 +225,7 @@ export function describe(def) {
       });
       const gates = (itf.gates ?? []).map((g) => g.name);
       lines.push(
-        `  ${L.name} | ${R.name}: ${law}${align}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}${gates.length ? `; gates (voltage-dependent, see interfaces[f].gates): ${gates.join(', ')}` : ''}`,
+        `  ${L.name} | ${R.name}: ${law}${align}${diffuse}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}${gates.length ? `; gates (voltage-dependent, see interfaces[f].gates): ${gates.join(', ')}` : ''}`,
       );
     });
   }

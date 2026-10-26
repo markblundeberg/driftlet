@@ -8,7 +8,8 @@
 // in docs/internals.md. The Solver's own step, advance and integrate call them (the API, the
 // steady solves' time stepping and the kit call those). What they use of it:
 //   s.newton(dt, opts)  solves the equations at the step's end, from the state as it stands,
-//                       with storage (c − c*)/dt against s.cOld, s.thOld, s.th0Old, s.gateOld,
+//                       with storage (c − c*)/dt against s.cOld, s.thOld, s.th0Old, s.gamOld (the
+//                       diffuse layers' excesses), s.gateOld,
 //                       s.contactDStart, s.portQStart; leaves the state at its last iterate.
 //   s._snapshot() / s._restore(snap)  the whole time state (u, uLo, termV, the start-of-step
 //                       values, time, lastDt, history, the boundary intake, sourceTime).
@@ -17,7 +18,7 @@
 //
 // The state: u + uLo (Newton's unknowns, η and φ̂ in thermal units), termV (terminal voltages),
 // time. The history: s.history, the accepted steps before this one, newest first, at most 3,
-// each { t (its start), dt, u (its start state), c, th, th0, g (gates), D (contacts' D), Q
+// each { t (its start), dt, u (its start state), c, th, th0, gam, g (gates), D (contacts' D), Q
 // (ports' charges) }: what BDF2 and the predictor need.
 //
 // step(s, dt, opts) → newton's result (+ bdf)
@@ -128,7 +129,7 @@ export function step(s, dt, opts = {}) {
   // What the step overwrites before Newton runs, for a failed one to put back: the Solution read
   // after it takes its contacts' fluxes against the start-of-step values (a host emptied by its
   // current read its contact's Li⁺ flux 8× off at the same state).
-  const was = { cOld: Float64Array.from(s.cOld), thOld: Float64Array.from(s.thOld), th0Old: Float64Array.from(s.th0Old), gateOld: Float64Array.from(s.gateOld), contactDStart: s.contactDStart, portQStart: s.portQStart, atSteady: s.atSteady };
+  const was = { cOld: Float64Array.from(s.cOld), thOld: Float64Array.from(s.thOld), th0Old: Float64Array.from(s.th0Old), gamOld: Float64Array.from(s.gamOld), gateOld: Float64Array.from(s.gateOld), contactDStart: s.contactDStart, portQStart: s.portQStart, atSteady: s.atSteady };
   s.atSteady = false;
   const prev = s.history[0];
   const w = prev ? dt / prev.dt : 0;
@@ -137,7 +138,7 @@ export function step(s, dt, opts = {}) {
   s.uPrevLo.set(s.uLo);
   s.termVPrev.set(s.termV);
   s.computeConcentrations();
-  const cN = Float64Array.from(s.c), thN = Float64Array.from(s.th), th0N = Float64Array.from(s.th0);
+  const cN = Float64Array.from(s.c), thN = Float64Array.from(s.th), th0N = Float64Array.from(s.th0), gamN = Float64Array.from(s.gam);
   const gN = Float64Array.from(s.gateList, (gt) => s.u[gt.o] + s.uLo[gt.o]);
   // Contact displacement before the step: as it was at the end of the previous step (under
   // the parameters then), so a gate-voltage change shows up as displacement current.
@@ -155,6 +156,7 @@ export function step(s, dt, opts = {}) {
     for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
     for (let k = 0; k < thN.length; k++) s.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
     for (let k = 0; k < th0N.length; k++) s.th0Old[k] = b1 * th0N[k] - b2 * prev.th0[k];
+    for (let k = 0; k < gamN.length; k++) s.gamOld[k] = b1 * gamN[k] - b2 * prev.gam[k];
     for (let k = 0; k < gN.length; k++) s.gateOld[k] = b1 * gN[k] - b2 * prev.g[k];
     s.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
     s.portQStart = QN.map((q, k) => b1 * q - b2 * prev.Q[k]);
@@ -163,6 +165,7 @@ export function step(s, dt, opts = {}) {
     s.cOld.set(cN);
     s.thOld.set(thN);
     s.th0Old.set(th0N);
+    s.gamOld.set(gamN);
     s.gateOld.set(gN);
     s.contactDStart = DN;
     s.portQStart = QN;
@@ -205,13 +208,13 @@ export function step(s, dt, opts = {}) {
   }
   result.bdf = bdf;
   if (result.converged) {
-    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), c: cN, th: thN, th0: th0N, g: gN, D: DN, Q: QN });
+    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN });
     if (s.history.length > 3) s.history.length = 3;
     s.time = tEnd;
     s.lastDt = dtEff;
     s.contactDOld = s.contactDStart;
     s.portQOld = s.portQStart;
-    s._accumulateBoundaryIntake(dtEff, cN);
+    s._accumulateBoundaryIntake(dtEff, cN, gamN);
     // (In time, the state is no longer the steady solve's that a continuation would start from.)
     if (!s.steady) {
       s.solvedV = undefined;
@@ -224,6 +227,7 @@ export function step(s, dt, opts = {}) {
     s.cOld.set(was.cOld);
     s.thOld.set(was.thOld);
     s.th0Old.set(was.th0Old);
+    s.gamOld.set(was.gamOld);
     s.gateOld.set(was.gateOld);
     s.contactDStart = was.contactDStart;
     s.portQStart = was.portQStart;

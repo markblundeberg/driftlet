@@ -381,7 +381,10 @@ function orderCheck(device, sol, gross) {
     diffs.push({ what: `${name} voltage`, a: t.V, b: u.V, rel: Math.abs(u.V - t.V) / (1e-6 * Math.max(VT, Math.abs(t.V))), unit: 'V' });
     if (gross > 0 && Math.max(Math.abs(t.current), Math.abs(u.current), gross) > floorI) diffs.push({ what: `${name} current`, a: t.current, b: u.current, rel: Math.abs(u.current - t.current) / (1e-3 * Math.max(Math.abs(t.current), Math.abs(u.current), gross)), unit: unitsOf(model).current });
   }
-  const vol = model.grid.vol, amount = (s, name) => s.x.reduce((m, _, g) => m + (Number.isFinite(s.c[name][g]) ? vol[g] * s.c[name][g] : 0), 0);
+  // (with what the faces' diffuse layers hold, below the grid)
+  const vol = model.grid.vol, area = model.grid.area;
+  const held = (s, name) => s.interfaces.reduce((m, itf, f) => m + Object.entries(itf.diffuse ?? {}).reduce((t, [side, d]) => t + area[side === 'left' ? model.grid.regionEnd[f] : model.grid.regionStart[f + 1]] * (d.excess[name] ?? 0), 0), 0);
+  const amount = (s, name) => s.x.reduce((m, _, g) => m + (Number.isFinite(s.c[name][g]) ? vol[g] * s.c[name][g] : 0), 0) + held(s, name);
   const amounts = model.species.map((sp) => [sp.name, amount(a, sp.name), amount(b, sp.name)]);
   const most = Math.max(0, ...amounts.map(([, x, y]) => Math.max(Math.abs(x), Math.abs(y))));
   for (const [name, x, y] of amounts) diffs.push({ what: `${name} amount`, a: x, b: y, rel: Math.abs(y - x) / (1e-6 * Math.max(Math.abs(x), Math.abs(y)) + 1e-12 * most), unit: unitsOf(model).amount });

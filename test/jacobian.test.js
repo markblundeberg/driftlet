@@ -192,6 +192,16 @@ const debyeHuckel = (def) => {
   def.materials.water.statistics = [{ type: 'debye-huckel', species: ['Na+', 'K+', 'Cl-'], epsr: 78.5, a: 4e-10 }];
   return def;
 };
+// Pt | a strictly neutral Fe³⁺/Fe²⁺ chloride | a bath, the face a Stern layer with a diffuse layer.
+const diffuseCell = (face, V) => {
+  const fe = { 'Fe3+': 1, 'Fe2+': 5, 'Cl-': 13 };
+  return build({
+    T: 298.15,
+    library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 }), metal('Pt')],
+    stack: [ohmic(V, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.2, diffuse: { epsr: 78.4 }, ...face }, layer('water', 20e-6, { c0: fe }), bath(fe, 'Cl-')],
+    grid: { hmin: 1e-7, hmax: 2e-6 },
+  });
+};
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -262,6 +272,22 @@ const devices = {
       grid: { hmin: 2e-9, hmax: 500e-9, ratio: 1.3 },
     };
   },
+  // Diffuse layers below the grid (src/diffuse.js): their drops, charges and excesses in the
+  // faces' laws, the edge boxes' Gauss rows and balances, and the reactions at their planes.
+  'a diffuse layer at a reacting electrode': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 0.9),
+  'a diffuse layer at a saturating electrode': () => diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 0.9),
+  'diffuse layers on both sides of a charged membrane': () => build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],
+    stack: [bath(film, 'Cl-'), layer('water', 5e-6, { c0: film }), { phi: { type: 'capacitive', C: 0.01 }, sheetCharge: -0.02, diffuse: { epsr: 78.4 }, species: { 'K+': { type: 'conductance', G: 10 }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('water', 5e-6, { c0: { 'Na+': 10, 'K+': 140, 'Cl-': 150 } }), bath({ 'Na+': 10, 'K+': 140, 'Cl-': 150 }, 'Cl-', -0.06)],
+    grid: { hmin: 0.2e-6, hmax: 1e-6 },
+  }),
+  'a semiconductor pinned to a solution through a diffuse layer': () => build({
+    T: 298.15,
+    library: [semiconductor('Si', { T: 298.15 }), aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],
+    stack: [ohmic(-1.1), layer('Si', 2e-6, { donors: units.perCm3(1e16) }), { dipole: 0.39, diffuse: { epsr: 78.4 } }, layer('water', 1e-6, { c0: film }), bath(film, 'Cl-')],
+    grid: { hmin: 0.5e-9, hmax: 50e-9, ratio: 1.15 },
+  }),
 };
 
 for (const [name, def] of Object.entries(devices)) {

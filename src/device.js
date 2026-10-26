@@ -994,7 +994,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
   if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
-  fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'gates']);
+  fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'gates', 'diffuse']);
   const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
   const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'pinned');
   const phi = typeof rawPhi === 'string' ? { type: rawPhi } : { ...rawPhi };
@@ -1005,7 +1005,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // A pinned face is a capacitor of infinite C. With no field on either side (ε = 0), its
   // charge would sit as free excess ions in the edge cells at no cost, so nothing determines it.
   need(
-    !(phi.type === 'pinned' && matL.epsr === 0 && matR.epsr === 0),
+    !(phi.type === 'pinned' && matL.epsr === 0 && matR.epsr === 0 && idef.diffuse === undefined),
     `${where}.phi: 'pinned' between two ε = 0 materials leaves the face's charge undetermined (no field on either side to hold it); ` +
       "use 'neutral' (the default: a free Donnan jump), or { type: 'capacitive', C } for a charged layer such as a lipid bilayer",
   );
@@ -1076,7 +1076,52 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null };
+  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, links, reactions, gates);
+  return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null, diffuse };
+}
+
+// A face's diffuse layers (src/diffuse.js): { epsr } gives each strictly neutral side of a
+// charged face a Gouy–Chapman layer below the grid, of that permittivity, holding the side's
+// share of the face's charge as surface excesses of its ions instead of as excess ions in the
+// edge cell. Normalised to { epsr, left, right } (the sides that have one), or null.
+function normalizeDiffuse(raw, where, phi, matL, matR, species, links, reactions, gates) {
+  if (raw === undefined) return null;
+  const path = `${where}.diffuse`;
+  need(isObject(raw), `${path} must be { epsr } (the diffuse layer's relative permittivity)`);
+  fields(raw, path, ['epsr']);
+  const epsr = positive(raw.epsr, `${path}.epsr`);
+  need(phi.type !== 'neutral', `${path}: a neutral face holds no charge, so it has no diffuse layer; give phi a capacitive (Stern) or pinned law`);
+  const charged = (mat) => species.some((sp, i) => mat.present[i] && sp.z !== 0);
+  const holds = (mat) => !mat.conductor && !mat.phiFree && mat.epsr === 0 && charged(mat);
+  const left = holds(matL), right = holds(matR);
+  need(
+    left || right,
+    `${path}: neither side is a strictly neutral (ε = 0) material with ions in it, so there is no diffuse layer below the grid to model; ` +
+      'where ε > 0 the grid resolves the double layer itself (refine it below the Debye length)',
+  );
+  for (const [mat, has, side] of [[matL, left, 0], [matR, right, 1]]) {
+    if (!has) continue;
+    for (let i = 0; i < species.length; i++) {
+      need(
+        !(mat.present[i] && species[i].z !== 0 && mat.modelOf[i] >= 0),
+        `${path}: '${species[i].name}' in '${mat.name}' has non-ideal statistics, and the diffuse layer is a dilute (Boltzmann) one; ` +
+          'give it ideal statistics there, or resolve the double layer (epsr > 0, hmin below the Debye length)',
+      );
+    }
+    for (let i = 0; i < species.length; i++) {
+      need(
+        !(mat.present[i] && species[i].z !== 0 && !(mat.D[i] > 0)),
+        `${path}: '${species[i].name}' is charged and can't move in '${mat.name}' (D = 0), so it can't gather into a diffuse layer as a Boltzmann layer's ions do; ` +
+          'make it fixed charge (the region\'s fixedCharge), or resolve the double layer (epsr > 0)',
+      );
+    }
+    for (const rx of reactions) {
+      if (rx.srh && rx.part.some((p) => p.side === side)) need(false, `${path}: SRH kinetics beside a diffuse layer isn't supported (its carriers would be read at the plane); resolve the layer instead`);
+    }
+  }
+  links.forEach((l, i) => need(l.type !== 'permeability', `${path}: the permeability link of '${species[i].name}' beside a diffuse layer isn't supported yet (it would need the layers' drops across the membrane)`));
+  need(gates.length === 0, `${path}: gates beside a diffuse layer aren't supported yet (they'd follow the voltage between the planes)`);
+  return { epsr, left, right };
 }
 
 // A face's gates (Hodgkin–Huxley): each a fraction x in [0, 1] with first-order kinetics in the
@@ -1158,7 +1203,7 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
 function normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT) {
   if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
-  fields(idef, where, ['phi', 'zeroCharge', 'dipole', 'step', 'sheetCharge', 'species', 'reactions']); // (the alignment fields only to say why not)
+  fields(idef, where, ['phi', 'zeroCharge', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'diffuse']); // (the alignment fields only to say why not)
   const side = matL.conductor ? (matR.conductor ? 'both' : 'left') : 'right';
   const other = side === 'left' ? matR : matL;
   const metal = side === 'right' ? matR.conductor : matL.conductor;
@@ -1212,7 +1257,8 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
   }
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
-  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i } };
+  const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, links, reactions, []);
+  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i }, diffuse };
 }
 
 // A species present on both sides crosses freely; one that can't move on either (D = 0, trap

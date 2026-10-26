@@ -84,7 +84,7 @@
 //      in J (the assembly here runs with this.steady false).
 //   4. Deterministic: the same state, frequencies and options give the same Z, bit for bit.
 // Also written, left as the last assembly at dt = ∞ left them: this.sourceTime (the present
-// time), cOld, thOld, th0Old, gateOld (the present state's), contactDStart, portQStart, the
+// time), cOld, thOld, th0Old, gamOld, gateOld (the present state's), contactDStart, portQStart, the
 // residual, the Jacobian and the terminal terms, sysRest and the concentrations; this.lawForm
 // (every circuit law by the change, until a step sets it afresh).
 // Tests: test/impedance.test.js (Macdonald's blocking electrodes, a junction's depletion
@@ -272,6 +272,7 @@ export class SmallSignal {
     this.cOld.set(this.c);
     this.thOld.set(this.th);
     this.th0Old.set(this.th0);
+    this.gamOld.set(this.gam);
     this.gateList.forEach((gt, j) => (this.gateOld[j] = this.u[gt.o] + this.uLo[gt.o]));
     this.assemble(Infinity);
     this.contactDStart = { ...this.contactD };

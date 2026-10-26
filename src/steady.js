@@ -758,7 +758,9 @@ export class SteadySolves {
       // it, and there's nothing here to shift.
       if (!st.spectator || this.model.materials[this.model.regions[st.regions[0]].material].conductor) return;
       const want = this.referenceAmounts[k];
-      const ideal = this.nodeIdeal.subarray(st.nodes[0], st.nodes[1] + 1).every((v) => v === 1);
+      // (one shift of η scales an ideal stretch's amount exactly, but not what a diffuse layer
+      // at its edge holds, whose excess isn't proportional to c: iterate there too)
+      const ideal = this.nodeIdeal.subarray(st.nodes[0], st.nodes[1] + 1).every((v) => v === 1) && this._diffuseHeld(st, this.gam) === 0;
       for (let it = 0; it < (ideal ? 1 : 30); it++) {
         const now = this.amount(st);
         if (!(now > 0) || now === want) return;
@@ -770,6 +772,9 @@ export class SteadySolves {
             const dc = this.nodeIdeal[g] ? this.c[g * n + st.species] : this.K[g * n * n + st.species * (n + 1)];
             dA += this.model.grid.vol[g] * dc;
           }
+          this.diffList.forEach((dl, d) => {
+            if (dl.g >= st.nodes[0] && dl.g <= st.nodes[1]) dA += this.model.grid.area[dl.g] * dl.dl.dgdc[st.species * (n + 1)] * this.c[dl.g * n + st.species];
+          });
           shift = (want - now) / dA;
           if (!(Math.abs(shift) > 1e-16)) return;
         }

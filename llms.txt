@@ -19,7 +19,8 @@ two sections, then go to the template nearest your device:
 
 More in docs/templates.md: a Schottky diode, a thin-film transistor, traps in a layer of holes
 alone (pinned contacts that set a carrier's density), corrosion under a drop (an electrode spread
-through a film), a semiconductor electrode's Mott–Schottky plot, a concentration cell with
+through a film), an electrode's double-layer capacitance (Gouy–Chapman–Stern, the diffuse layer
+below the grid), a semiconductor electrode's Mott–Schottky plot, a concentration cell with
 transference, a voltage clamp, an action potential, one travelling along an axon.
 
 The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
@@ -96,7 +97,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   to a metal, a face takes no alignment, but needs a φ law if the other side has ε > 0: `{ phi: {
   type: 'capacitive', C }, zeroCharge }` or `phi: 'neutral'`, where `zeroCharge` is the metal's V −
   φ at its edge when the face holds no charge (a work-function difference, a potential of zero
-  charge, a Schottky barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`.
+  charge, a Schottky barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`. Beside a
+  strictly neutral solution, `diffuse: { epsr }` adds its Gouy–Chapman layer below the grid (the
+  Frumkin effect on any grid; `sol.interfaces[f].diffuse`).
 - **Ports** are terminals attached sideways to a window inside a region (`from`, `to`, m from its
   left end): a source or drain, an injector, a reference electrode (`I: 0`), an electrode spread
   through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon
@@ -669,9 +672,8 @@ those:
   grade it over a few thin layers, as at a frit.
 - **Changing `c0` with `set()`.** A carried state keeps what it holds: make a new `Device`.
 - **A charged electrode face beside a strictly neutral solution** (`epsr: 0`, a capacitive face
-  with reactions): refining the grid there makes the kinetics worse, not better, since the edge
-  cell holds the double layer's charge. Read `sol.warnings`; a `zeroCharge` near the rest
-  potential avoids it.
+  with reactions): give the face its diffuse layer, `diffuse: { epsr: 78.4 }`. Without it the edge
+  cell holds the double layer's charge, and the kinetics depend on the grid (a warning says so).
 - **An unresolved double layer.** If `sol.warnings` says so, refine the grid (`hmin` below the
   Debye length) or use a neutral model (`epsr: 0`, `phi: 'neutral'`).
 

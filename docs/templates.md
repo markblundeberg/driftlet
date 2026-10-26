@@ -8,6 +8,7 @@ on it.
   [traps in a layer of holes alone](#traps-in-a-layer-of-holes-alone-a-space-charge-limited-diode);
 - electrochemistry: [corrosion under a drop](#corrosion-under-a-drop-an-electrode-spread-through-a-film)
   (an electrode spread through a film, and a cross-section that varies),
+  [an electrode's double-layer capacitance](#an-electrodes-double-layer-capacitance-gouychapmanstern),
   [a semiconductor electrode's Mott–Schottky plot](#a-semiconductor-electrodes-mottschottky-plot),
   [a concentration cell with transference](#a-concentration-cell-with-transference);
 - physiology: [a voltage clamp](#a-voltage-clamp), [an action potential](#an-action-potential),
@@ -178,6 +179,39 @@ for (const rx of evans.reactions) console.log(`${rx.equation}: ${Array.from(rx.c
 
 Species can take an electrode's surface sites (`surface`, Langmuir coverages), and a reaction
 with `bare: true` runs only on bare metal: a passive film (docs/device.md).
+
+## an electrode's double-layer capacitance (Gouy–Chapman–Stern)
+
+A blocking metal in dilute KCl, the solution strictly neutral (`epsr: 0`) and the face's double
+layer below the grid: a Stern layer (`phi: { type: 'capacitive', C }`) and its diffuse layer
+(`diffuse: { epsr }`). The capacitance from `impedance()` at a low frequency has the classic
+minimum at the potential of zero charge, where the diffuse layer is thickest, and follows Stern and
+Gouy–Chapman in series, $`1/C = 1/C_H + 1/(\varepsilon\kappa\cosh(F\psi/2RT))`$, with the drop ψ
+the solution reports. (The salt the layer takes in or gives up comes from the bath by diffusion:
+at 0.1 Hz across this 100 µm it shows, 2e-5 at ±0.2 V.)
+
+```js
+import { Device, EPS0, FARADAY, GAS_CONSTANT } from 'driftlet';
+import { build, layer, ohmic, bath, aqueous, metal } from 'driftlet/kit';
+
+const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY, CH = 0.2, epsr = 78.4; // a Stern layer of 20 µF/cm²
+const salt = { 'K+': 10, 'Cl-': 10 }; // 10 mM KCl
+const cell = (V) => build({
+  T, library: [aqueous(['K+', 'Cl-'], { epsr: 0 }), metal('Pt')],
+  stack: [ohmic(V, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: CH }, zeroCharge: 0, diffuse: { epsr } }, layer('water', 100e-6, { c0: salt }), bath(salt, 'Cl-')],
+  grid: { hmin: 1e-6, hmax: 10e-6 },
+});
+// The potential of zero charge: the solution's φ at the face (zeroCharge 0: V_F − φ_plane there).
+const first = new Device(cell(0)).solve(), pzc = first.phi[first.region.indexOf(1)];
+const kappa = Math.sqrt((2 * FARADAY ** 2 * 10) / (epsr * EPS0 * GAS_CONSTANT * T)); // 1/Debye length
+for (const E of [-0.2, -0.1, 0, 0.1, 0.2]) {
+  const dev = new Device(cell(pzc + E));
+  const psi = dev.solve().interfaces[0].diffuse.right.psi; // the diffuse layer's drop
+  const f = 1e-3, { Z } = dev.impedance([f]), C = -1 / (2 * Math.PI * f * Z.im[0]);
+  const gcs = 1 / (1 / CH + 1 / (epsr * EPS0 * kappa * Math.cosh(psi / (2 * VT))));
+  console.log(`${E.toFixed(1)} V from the pzc: C ${(100 * C).toFixed(3)} µF/cm², Gouy–Chapman–Stern ${(100 * gcs).toFixed(3)}`);
+}
+```
 
 ## a semiconductor electrode's Mott–Schottky plot
 

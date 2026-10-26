@@ -282,7 +282,8 @@ test('a reaction beside a strictly neutral edge cell that holds the face charge 
   // Pt | ferri/ferrocyanide (z −3, −4) in 1 M KCl, ε = 0, with a Stern layer charged at rest
   // (zeroCharge 0, the couple at +0.36 V): the edge cell holds σ ≈ 0.07 C/m² as a diffuse layer
   // as wide as itself, and the reaction sees its composition. Measured, R_dc drifts 56.6 → 47.5
-  // Ω·cm² from h = 300 nm to 1 nm (56.7 in theory); the shift z·σ/(C_box·V_T) is 0.9% and 280%.
+  // Ω·cm² from h = 300 nm to 1 nm (the real one, its diffuse layer below the grid, 46.4: see
+  // test/diffuse.test.js); the shift z·σ/(C_box·V_T) is 0.9% and 280%.
   const { build, layer, ohmic, bath, half, metal } = await import('../src/kit.js');
   const c = { FeIII: 5, FeII: 5, 'Cl-': 1000, 'K+': 1035 };
   const def = (hmin, zeroCharge = 0) => build({

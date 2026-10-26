@@ -10,8 +10,9 @@ import { Assembly } from './assemble.js';
 import { BlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, SG_FAR, sgFlux } from './bernoulli.js';
 import { BoundaryTerms } from './boundaries.js';
-import { FARADAY } from './constants.js';
+import { EPS0, FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
+import { diffuseScratch, diffuseUnits } from './diffuse.js';
 import { DeviceError } from './errors.js';
 import { conservedMoieties, findLaws, noCurrent } from './laws.js';
 import { newton as newtonFn } from './newton.js';
@@ -66,9 +67,10 @@ export class Solver {
     const { grid, species, materials, regions, contacts } = model;
     const n = species.length;
     // Slots per block: φ̂ (or D, or a conductor's segment flux J), one per species, and at a face
-    // one per face reaction (its rate) and one per gate (its fraction open), as many as the
-    // busiest face has.
-    const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length), 0);
+    // one per face reaction (its rate), one per gate (its fraction open) and one per diffuse
+    // layer (its drop), as many as the busiest face has.
+    const nDiff = (itf) => (itf.diffuse ? (itf.diffuse.left ? 1 : 0) + (itf.diffuse.right ? 1 : 0) : 0);
+    const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length + nDiff(itf)), 0);
     // (and at an electrode port's nodes, one per surface species: its coverage's η)
     const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
     // (and a membrane port's gates, after them: each one's fraction open)
@@ -122,6 +124,26 @@ export class Solver {
     let j = 0;
     for (let f = 0; f < nFaces; j += model.interfaces[f].gates.length, f++) this.gateIndex[f] = j;
     this.portGateIndex = model.ports.map((port) => ((j += port.nodes.length * port.gates.length), j - port.nodes.length * port.gates.length));
+    // Diffuse layers (src/diffuse.js): one per strictly neutral side of a face that has them, in
+    // face order, left side first. Each: its face f, side (0 left, 1 right), edge node g and its
+    // block b, its drop s = Fψ/RT in slot o of the face's block (after the gates), the layer's
+    // constants, and its scratch (q, Γ and their derivatives, from computeConcentrations). Γ
+    // [d·n + i], the excesses, now and at the step's start; diffAt[f] = [left d, right d] (−1: none).
+    this.diffList = [];
+    this.diffAt = model.interfaces.map(() => [-1, -1]);
+    model.interfaces.forEach((itf, f) => {
+      if (!itf.diffuse) return;
+      let slot = 1 + n + itf.reactions.length + itf.gates.length;
+      for (const side of [0, 1]) {
+        if (!(side ? itf.diffuse.right : itf.diffuse.left)) continue;
+        const g = side ? grid.regionStart[f + 1] : grid.regionEnd[f];
+        this.diffAt[f][side] = this.diffList.length;
+        this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n) });
+        slot++;
+      }
+    });
+    this.gam = new Float64Array(this.diffList.length * n);
+    this.gamOld = new Float64Array(this.diffList.length * n);
 
     // Per-node material data, flattened [g·n + i].
     this.present = new Uint8Array(nNodes * n);
@@ -177,6 +199,7 @@ export class Solver {
     // A face with φ undefined on both sides holds no charge, whatever its law says.
     model.interfaces.forEach((itf, f) => {
       if (itf.phi.type !== 'neutral' && this.phiUndefined[grid.regionEnd[f]] && this.phiUndefined[grid.regionEnd[f] + 1]) itf.phi = { type: 'neutral' };
+      // (a diffuse side has ions, so φ is defined there: the face above never has one)
     });
 
     // Unknowns as compensated double-doubles, u + uLo. Only differences of η need the extra
@@ -438,6 +461,7 @@ export class Solver {
       for (let i = 0; i < n; i++) active[bf * M + 1 + i] = itf.links[i].type === 'blocked' ? 0 : 1;
       for (let k = 0; k < itf.reactions.length + itf.gates.length; k++) active[bf * M + 1 + n + k] = 1;
     });
+    for (const d of this.diffList) active[d.o] = 1;
     const sizes = new Int32Array(nB), loc = (this.loc = new Int32Array(nB * M).fill(-1));
     for (let b = 0; b < nB; b++) for (let r = 0; r < M; r++) if (active[b * M + r]) loc[b * M + r] = sizes[b]++;
     const sys = (this.sys = new BlockTridiagonal(nB, sizes));
@@ -624,6 +648,18 @@ export class Solver {
     this.contactLaw = found.contactLaw;
     this.carriers = found.carriers;
     this.unkept = found.unkept; // (laws no row here can keep: see _directSteady)
+    // (room in each law's derivative for the diffuse layers' excesses, which src/laws.js, reading
+    // the structure alone, doesn't count: each layer's drop and its edge node's slots)
+    if (this.diffList.length > 0) {
+      const more = this.diffList.length * (this.M + 1);
+      for (const cs of [...this.constraints, ...this.timeLaws]) {
+        const idx = new Int32Array(cs.idx.length + more), w = new Float64Array(cs.w.length + more);
+        idx.set(cs.idx);
+        w.set(cs.w);
+        cs.idx = idx;
+        cs.w = w;
+      }
+    }
     this.contactQ = [null, null]; // (each contact's charge as _contact captures it, for contactLaw)
     this.pinnedIslands = [];
     this.islandsOn = false; // (newton() turns them on, see there)
@@ -652,12 +688,22 @@ export class Solver {
     return port.surface[0].capacity * s;
   }
 
-  /** Total amount (mol per unit area) of a stretch's species in the current state. */
+  /** Total amount (mol per unit area) of a stretch's species in the current state, its faces' diffuse layers' included. */
   amount(stretch) {
     const { n, c, model } = this;
     const vol = model.grid.vol;
     let s = 0;
     for (let g = stretch.nodes[0]; g <= stretch.nodes[1]; g++) s += vol[g] * c[g * n + stretch.species];
+    return s + this._diffuseHeld(stretch, this.gam);
+  }
+
+  // What the faces' diffuse layers hold of a stretch's species (mol, per area if planar), by the
+  // excesses gam (now, or gamOld at the step's start).
+  _diffuseHeld(stretch, gam) {
+    let s = 0;
+    this.diffList.forEach((dl, k) => {
+      if (dl.g >= stretch.nodes[0] && dl.g <= stretch.nodes[1]) s += this.model.grid.area[dl.g] * gam[k * this.n + stretch.species];
+    });
     return s;
   }
 
@@ -848,6 +894,7 @@ export class Solver {
       cOld: Float64Array.from(this.cOld),
       thOld: Float64Array.from(this.thOld),
       th0Old: Float64Array.from(this.th0Old),
+      gamOld: Float64Array.from(this.gamOld),
       gateOld: Float64Array.from(this.gateOld),
       time: this.time,
       lastDt: this.lastDt,
@@ -872,6 +919,7 @@ export class Solver {
     this.cOld.set(s.cOld);
     this.thOld.set(s.thOld);
     this.th0Old.set(s.th0Old);
+    this.gamOld.set(s.gamOld);
     this.gateOld.set(s.gateOld);
     this.time = s.time;
     this.lastDt = s.lastDt;
@@ -984,7 +1032,7 @@ export class Solver {
 
   // Add this step's contact fluxes (at the converged state) to each stretch's intake.
   // (A BDF2 step also moves each amount by Σ v (c* − c_n), its history term.)
-  _accumulateBoundaryIntake(dt, cN) {
+  _accumulateBoundaryIntake(dt, cN, gamN = this.gamOld) {
     this._assembleBookkeeping(dt);
     this.contactDEnd = { ...this.contactD };
     this.portQEnd = Float64Array.from(this.portQ);
@@ -1008,6 +1056,7 @@ export class Solver {
       if (driven.has(k)) q = driven.get(k);
       let hist = 0;
       for (let g = st.nodes[0]; g <= st.nodes[1]; g++) hist += vol[g] * (cOld[g * n + st.species] - cN[g * n + st.species]);
+      hist += this._diffuseHeld(st, this.gamOld) - this._diffuseHeld(st, gamN);
       this.boundaryIntake[k] += q * dt + hist;
     });
   }

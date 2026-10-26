@@ -157,6 +157,7 @@ interfaces: [
     step: { species: 'e-', value: units.eV(0.25) }, // alignment: or { dipole: volts }
     phi: 'pinned', // 'pinned' | 'neutral' | { type: 'capacitive', C }
     sheetCharge: 0, // C/m²
+    diffuse: { epsr: 78.4 }, // a Gouy–Chapman layer below the grid, beside a strictly neutral side
     species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 }, 'Na+': 'blocked' },
     reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ crosses only by this
   },
@@ -187,10 +188,39 @@ defaults to no dipole.
   in series with C. So keep that cell coarse rather than fine (a warning says when it costs C more
   than 2%, and how coarse is enough). A face reaction there sees that cell's composition, which
   holding the charge shifts by about $`z\sigma F/(C_{\mathrm{cell}} RT)`$ for an ion of charge $`z`$: a
-  Frumkin effect set by the mesh, growing without limit as the cell shrinks (an electrode's DC
-  resistance in ferri/ferrocyanide fell from 56.6 to 47.5 Ω·cm² between 300 nm and 1 nm). A
-  warning says past 1%; a `zeroCharge` near the face's rest potential, so it holds little charge,
-  avoids it on any grid. A sub-grid Gouy–Chapman law is on the [roadmap](../ROADMAP.md).
+  Frumkin effect set by the mesh, which doesn't settle as the cell shrinks (an electrode's DC
+  resistance in ferri/ferrocyanide went from 56.6 to 47.4 Ω·cm² between 300 nm and 1 nm, the
+  real one being 46.4). A warning says past 1%. A diffuse layer (next) puts that charge where it
+  belongs, on any grid; a `zeroCharge` near the face's rest potential, so it holds little charge,
+  avoids the question.
+
+**Diffuse layer** `diffuse: { epsr }`: on each strictly neutral side of a charged (pinned or
+capacitive) face, a Gouy–Chapman layer below the grid, of relative permittivity `epsr` (the bulk's
+is 0, so it's given here: 78.4 for water at 25 °C). Its ions are in Boltzmann equilibrium with the
+edge node's concentrations $`c_i`$ across a drop $`\psi = \phi_{\mathrm{plane}} - \phi_{\mathrm{edge}}`$
+($`s = F\psi/RT`$), and it holds that side's share of the face's charge,
+
+```math
+q_d = -\operatorname{sign}(s)\sqrt{2\varepsilon RT \sum_i c_i \left(e^{-z_i s} - 1 + z_i s\right)}, \qquad
+\Gamma_i = \int (c_i(x) - c_i)\,dx,\quad F \sum_i z_i \Gamma_i = q_d
+```
+
+as each ion's surface excess $`\Gamma_i`$ (by quadrature of the same first integral; exact for any
+mixture, a uniform fixed charge included). The face's law then runs to the plane: the Stern drop
+is $`V_F - \mathtt{zeroCharge} - \phi_{\mathrm{plane}}`$, or between two materials
+$`\phi_{R,\mathrm{plane}} - \phi_{L,\mathrm{plane}} - \mathtt{dipole}`$. The edge box holds what the
+layer holds, $`A\,\Gamma_i`$ of each ion, in every amount, conservation law and transient (so its
+bulk stays neutral, and the salt a charging layer takes comes out of the solution), and a face
+reaction's participant on that side reacts at the plane, at $`c_i e^{-z_i s}`$ with its $`\bar\mu`$
+unchanged: Butler–Volmer then depends on the Stern drop alone, the Frumkin correction, and the
+mesh no longer enters (the ferri/ferrocyanide electrode: 46.399 Ω·cm² on cells from 1 nm to 300 nm,
+the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0125 nm). Each
+solution reports it as `interfaces[f].diffuse.left`/`.right`: `psi` (V), `charge` (C/m²), `excess`
+(mol/m²) and `plane` (each ion's concentration there). It's a dilute layer, so a warning says
+where its plane passes 5 M (a Stern C so large, or a zeroCharge so far from where the face works,
+that its counter-ions would have no room there); its ions must be ideal and mobile, and beside one a
+face can't yet have permeability links, gates or SRH kinetics (a diffuse layer at a membrane's
+face is on the [roadmap](../ROADMAP.md)).
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides and can move on one at least; blocked otherwise, so trap states with

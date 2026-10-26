@@ -59,7 +59,9 @@
 //   affinity         pin: fixedA − Σ ν η at the face's two nodes = 0, ∂ = −ν.
 //   constraint       in a balance row, a pin: amount − ref = 0 (ref: its reference without
 //                    terminals, else lawRefs; with no reference captured there, none, the amount
-//                    held where it is), its ∂ from lawAmount. In terminal k's circuit row
+//                    held where it is), its ∂ from lawAmount. A stretch's amount is Σ vol·c over
+//                    its nodes and A_f Γ_i of each face's diffuse layer at them (s.gam; its ∂
+//                    by the layer's drop and its edge node's slots). In terminal k's circuit row
 //                    (in place of what Solver._terminals wrote): the same, its contacts' charges
 //                    λ·D_in/F added from s.contactQ[t] (as Solver._contact captured them in this
 //                    assembly), termDI and termDX from the electrodes' charges' ∂/∂V.
@@ -316,6 +318,32 @@ function lawAmount(s, cs) {
       }
     }
   }
+  // What the faces' diffuse layers hold of it (src/diffuse.js): A_f Γ_i at their edge nodes, Γ a
+  // function of the layer's drop and the edge node's c (∂c_j/∂η_j = c_j, ∂c_j/∂φ̂ = −z_j c_j).
+  for (const { stretch, w } of cs.parts) {
+    const st = s.stretches[stretch], i = st.species;
+    s.diffList.forEach((dl, k) => {
+      const g = dl.g;
+      if (g < st.nodes[0] || g > st.nodes[1] || s.z[i] === 0) return;
+      const f = w * s.model.grid.area[g], b = dl.b, D = dl.dl;
+      amount += f * s.gam[k * n + i];
+      gross += Math.abs(f * s.gam[k * n + i]);
+      cs.idx[len] = s.rix[dl.o];
+      cs.w[len++] = f * D.dgds[i];
+      let dphi = 0;
+      for (let j = 0; j < n; j++) {
+        if (!s.present[g * n + j] || s.loc[b * M + 1 + j] < 0) continue;
+        const v = f * D.dgdc[i * n + j] * c[g * n + j];
+        cs.idx[len] = s.rix[b * M + 1 + j];
+        cs.w[len++] = v;
+        dphi -= v * s.z[j];
+      }
+      if (s.loc[b * M] >= 0) {
+        cs.idx[len] = s.rix[b * M];
+        cs.w[len++] = dphi;
+      }
+    });
+  }
   // What the electrodes' surfaces hold of it: Γ Σ v·a·θ, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
   for (const { col, w } of cs.surface) {
     const [k, q] = s.surfCols[col], port = s.model.ports[k], G = port.surface[0].capacity, ns = port.surface.length;
@@ -362,6 +390,7 @@ function lawStart(s, cs) {
   for (const { stretch, w } of cs.parts) {
     const st = s.stretches[stretch], i = st.species;
     for (let g = st.nodes[0]; g <= st.nodes[1]; g++) a += w * vol[g] * s.cOld[g * n + i];
+    s.diffList.forEach((dl, k) => dl.g >= st.nodes[0] && dl.g <= st.nodes[1] && (a += w * s.model.grid.area[dl.g] * s.gamOld[k * n + i]));
   }
   for (const { col, w } of cs.surface) {
     const [k, q] = s.surfCols[col], port = s.model.ports[k], G = port.surface[0].capacity;

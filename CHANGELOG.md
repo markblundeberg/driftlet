@@ -3,6 +3,24 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A diffuse layer below the grid: `interfaces[f].diffuse: { epsr }` gives each strictly neutral
+  side of a charged face a Gouy–Chapman layer, its drop one more unknown, holding that side's
+  share of the face's charge as its ions' surface excesses (exact for any mixture of ideal ions,
+  from the first integral of Poisson–Boltzmann), which every amount, conservation law, transient
+  and the impedance count; a face reaction's participant there reacts at the plane, at
+  c e^{−zFψ/RT} (the Frumkin correction). Before, the face's charge sat as excess ions in the
+  edge cell, and an electrode's kinetics depended on the mesh without settling (ferri/ferrocyanide
+  in 1 M KCl, charged at rest: R_dc 56.6 to 47.4 Ω·cm² from cells of 300 nm to 1 nm); now 46.399 on
+  every grid, which the same electrode with its double layer resolved (ε = 78.4) approaches as its
+  cells shrink (6e-5 at 0.0125 nm). Checked against Poisson–Boltzmann solved in x and the z:z closed
+  forms, a closed blocking cell's Stern + Gouy–Chapman charge, drop, excesses and salt balance
+  (1e-10), its capacitance in the impedance, and charging by a current of ions over steps up to
+  1e10 s. The solution reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
+  faces now point to it. A template (docs/templates.md): an electrode's double-layer capacitance,
+  its minimum at the potential of zero charge, against Gouy–Chapman–Stern.
+
 ## 1.3.4 (2026-10-25)
 
 - A steady solve on a device solved directly waits out slow modes to 1e12 of the slowest

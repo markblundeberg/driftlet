@@ -6,6 +6,10 @@
 
 import { EPS0, FARADAY } from './constants.js';
 
+// A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
+// hydrated ions pack, beyond what a dilute layer describes.
+const DIFFUSE_CROWDED = 5000;
+
 export function makeSolution(solver, result = {}) {
   const { model, n, M, u, c, VT } = solver;
   const { grid, species, contacts, interfaces } = model;
@@ -184,6 +188,19 @@ export function makeSolution(solver, result = {}) {
     out.links = Object.fromEntries(itf.links.flatMap((l, i) => (l.type === 'blocked' ? [] : [[species[i].name, l.type]])));
     const oneWay = solver.faceOneWay(f);
     if (oneWay.some((w) => w)) out.oneWay = Object.fromEntries(oneWay.flatMap((w, i) => (w ? [[species[i].name, w]] : [])));
+    // Its diffuse layers (src/diffuse.js), per side: the drop ψ = φ(plane) − φ(edge) (V), the
+    // layer's charge (C/m²) and each ion's surface excess (mol/m²), and each ion's concentration
+    // at the plane, c e^{−zFψ/RT} (mol/m³), which the face's reactions see.
+    solver.diffAt[f].forEach((d, side) => {
+      if (d < 0) return;
+      const dl = solver.diffList[d], sd = u[dl.o], excess = {}, plane = {};
+      for (let i = 0; i < n; i++) {
+        if (!solver.present[dl.g * n + i]) continue;
+        excess[species[i].name] = solver.gam[d * n + i];
+        plane[species[i].name] = c[dl.g * n + i] * Math.exp(-species[i].z * sd);
+      }
+      (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane };
+    });
     if (itf.gates.length > 0) {
       // Each gate's fraction open, and the voltage across the face that drives them.
       out.gates = Object.fromEntries(itf.gates.map((gate, q) => [gate.name, u[solver._gateSlot(f, q)]]));
@@ -222,6 +239,7 @@ export function makeSolution(solver, result = {}) {
     q += grid.vol[g] * rho;
   }
   interfaces.forEach((itf, f) => (q += itf.sheetCharge * grid.area[grid.regionEnd[f]]));
+  solver.diffList.forEach((d) => (q += d.dl.q * grid.area[d.g])); // (the diffuse layers', held below the grid)
   sol.charge = q;
 
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
@@ -370,7 +388,8 @@ export function makeSolution(solver, result = {}) {
       sol.warnings.push(
         `${where}: the reaction here sees the strictly neutral cell beside the face (${h.toExponential(2)} m), which holds the face's charge as a diffuse layer that wide: ` +
           `${species[ion].name} there is shifted by about ${(100 * shift).toPrecision(2)}%, a Frumkin effect set by the mesh that grows as the cell shrinks. ` +
-          `Set the face's zeroCharge near its rest potential (so it holds little charge), coarsen that cell to ${((200 * Math.abs(species[ion].z * sigma)) / (F * s2)).toExponential(1)} m or more, ` +
+          "Give the face a diffuse layer below the grid (diffuse: { epsr: 78.4 }, say, for water), which holds that charge where it belongs on any grid; " +
+          `or set the face's zeroCharge near its rest potential (so it holds little charge), coarsen that cell to ${((200 * Math.abs(species[ion].z * sigma)) / (F * s2)).toExponential(1)} m or more, ` +
           'or resolve the double layer (epsr > 0, hmin below the Debye length).',
       );
     }
@@ -385,7 +404,7 @@ export function makeSolution(solver, result = {}) {
       `${where}: the face's charge sits in the strictly neutral cell beside it (${h.toExponential(2)} m), which acts as a diffuse layer that wide ` +
         `(${Cbox.toPrecision(2)} F/m² in series), ${lowers}, so it depends on the mesh. ` +
         (Number.isFinite(C)
-          ? `Coarsen the grid there: a cell of ${((2 * 49 * C * RT) / (F * F * s2)).toExponential(1)} m or more keeps it within 2%.`
+          ? `${where.startsWith('interfaces') ? 'Give the face a diffuse layer below the grid (diffuse: { epsr }), or coarsen' : 'Coarsen'} the grid there: a cell of ${((2 * 49 * C * RT) / (F * F * s2)).toExponential(1)} m or more keeps it within 2%.`
           : "Give the face a Helmholtz capacitance (phi: { type: 'capacitive', C }), or make it neutral."),
     );
   };
@@ -395,9 +414,21 @@ export function makeSolution(solver, result = {}) {
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
     const reacting = (side) => itf.reactions.flatMap((rx) => rx.part.filter((p) => p.side === side).map((p) => p.i));
-    const sigma = sol.interfaces[f].D;
-    boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0));
-    boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1));
+    const sigma = sol.interfaces[f].D, [dlL, dlR] = solver.diffAt[f];
+    // (a side with a diffuse layer holds the face's charge there, below the grid, not in its cell)
+    if (dlL < 0) boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0));
+    if (dlR < 0) boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1));
+    // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
+    // they'd have no room, and the layer's charge and capacitance are overstated.
+    for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {
+      const [name, top] = Object.entries(dd.plane).reduce((a, e) => (e[1] > a[1] ? e : a), ['', 0]);
+      if (top > DIFFUSE_CROWDED) {
+        sol.warnings.push(
+          `interfaces[${f}] (${side} side): the diffuse layer's plane holds ${name} at ${top.toPrecision(3)} mol/m³ (a drop of ${(1e3 * dd.psi).toPrecision(3)} mV), ` +
+            'past where ions have room to pack, so this dilute layer overstates its charge and capacitance. A smaller Stern capacitance C, or a zeroCharge nearer the operating potential, keeps the drop modest.',
+        );
+      }
+    }
   });
   const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
   if (solved && resolves(contacts.left)) {

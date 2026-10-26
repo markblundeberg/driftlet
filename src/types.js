@@ -115,6 +115,14 @@
  *   every species the forward reaction consumes
  */
 /**
+ * A face's diffuse layer on one side, in a solution.
+ * @typedef {object} DiffuseLayerResult
+ * @property {number} psi the drop from the side's edge node to the plane, φ_plane − φ_edge (V)
+ * @property {number} charge the layer's charge (C/m²)
+ * @property {Record<string, number>} excess each ion's surface excess, ∫ (c − c_edge) dx (mol/m²)
+ * @property {Record<string, number>} plane each ion's concentration at the plane, c e^{−zFψ/RT} (mol/m³)
+ */
+/**
  * One face between consecutive regions. For different materials under a 'pinned' or
  * 'capacitive' law, exactly one alignment (step or dipole) is required.
  * @typedef {object} InterfaceDef
@@ -124,6 +132,9 @@
  * @property {InterfacePhiLaw} [phi] electrostatic law (default 'pinned'; 'neutral' between ε = 0 materials;
  *   beside a conductor 'neutral' or capacitive, required next to an ε > 0 material)
  * @property {number} [sheetCharge] C/m²
+ * @property {{ epsr: number }} [diffuse] a Gouy–Chapman diffuse layer below the grid on each strictly
+ *   neutral (ε = 0) side of a charged face, of relative permittivity epsr: the side's share of the
+ *   face's charge held as its ions' surface excesses, the face's reactions at its plane
  * @property {Record<string, InterfaceSpeciesLink>} [species] per-species laws (default equilibrium
  *   where present on both sides and mobile on one, blocked otherwise; a species reacting at the
  *   face and present on both sides has no default)
@@ -283,11 +294,13 @@
  *   side holds; with gates, each gate's fraction open at each node and the voltage they follow (V)
  * @property {{ left: string, right: string, dipole: number, sheetCharge: number, D: number, N: Record<string, number>,
  *   rates: number[], links: Record<string, string>, oneWay?: Record<string, [number, number]>,
- *   gates?: Record<string, number>, V?: number }[]} interfaces each face: the regions it joins, its dipole
+ *   gates?: Record<string, number>, V?: number,
+ *   diffuse?: { left?: DiffuseLayerResult, right?: DiffuseLayerResult } }[]} interfaces each face: the regions it joins, its dipole
  *   (V) and sheet charge (C/m²), its displacement D (C/m²), each species' flux N across it and each face
  *   reaction's net rate (mol/(m²·s), toward +x and forward), how each species that crosses it does (its
  *   link type); for those crossing by permeability, the one-way fluxes [toward +x, toward −x] whose
- *   difference is N; with gates, each one's fraction open and the voltage they follow, φ_right − φ_left (V)
+ *   difference is N; with gates, each one's fraction open and the voltage they follow, φ_right − φ_left (V);
+ *   with a diffuse layer, each side's
  * @property {{ rate: Float64Array, forward: Float64Array, nu: Record<string, number>, regions: number[], total: number }[]} bulkReactions
  *   each bulk reaction's net rate per node (mol/(m³·s), forward minus backward, NaN where it doesn't
  *   run), its one-way forward rate (the backward is forward − rate), what one forward reaction makes
