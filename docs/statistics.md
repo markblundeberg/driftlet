@@ -69,7 +69,8 @@ The listed species share $`c_{\mathrm{max}}`$ sites per volume and each occupies
 concentration can exceed $`c_{\mathrm{max}}`$. With both ions of an electrolyte on one lattice, this
 is the Bikerman / Kilic–Bazant–Ajdari model of a crowded double layer. At large potentials the
 counter-ion saturates at $`c_{\mathrm{max}}`$, and the diffuse charge grows as $`\sqrt{\psi}`$ instead
-of exponentially. With one species it's Langmuir filling of sites. The dilute reference
+of exponentially: resolved by the grid (ε > 0), or below it, a face's `diffuse` layer beside a
+strictly neutral solution on a lattice crowds on the same sites ([faces](device.md)). With one species it's Langmuir filling of sites. The dilute reference
 $`c_{\mathrm{ref}}`$ is kept. To use the half-filling convention of site models
 ($`e^\zeta = x/(1-x)`$), set `cRef` equal to `cMax`.
 

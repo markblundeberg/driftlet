@@ -197,7 +197,7 @@ export function makeSolution(solver, result = {}) {
       for (let i = 0; i < n; i++) {
         if (!solver.present[dl.g * n + i]) continue;
         excess[species[i].name] = solver.gam[d * n + i];
-        plane[species[i].name] = c[dl.g * n + i] * Math.exp(-species[i].z * sd);
+        plane[species[i].name] = (c[dl.g * n + i] * Math.exp(-species[i].z * sd)) / (dl.holds[i] ? dl.dl.D : 1); // (crowded: over D)
       }
       (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane };
     });
@@ -421,6 +421,7 @@ export function makeSolution(solver, result = {}) {
     // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
     // they'd have no room, and the layer's charge and capacitance are overstated.
     for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {
+      if (itf.diffuse.lattice[side === 'left' ? 0 : 1]) continue; // (a crowded layer can't pass its sites)
       const [name, top] = Object.entries(dd.plane).reduce((a, e) => (e[1] > a[1] ? e : a), ['', 0]);
       if (top > DIFFUSE_CROWDED) {
         sol.warnings.push(

@@ -127,7 +127,9 @@ export class Solver {
     // Diffuse layers (src/diffuse.js): one per strictly neutral side of a face that has them, in
     // face order, left side first. Each: its face f, side (0 left, 1 right), edge node g and its
     // block b, its drop s = Fψ/RT in slot o of the face's block (after the gates), the layer's
-    // constants, and its scratch (q, Γ and their derivatives, from computeConcentrations). Γ
+    // constants, its lattice (crowded: { cMax, on }, the species on it; or null, dilute), which
+    // species it holds an excess of (the charged, and a lattice's neutral ones, displaced), and
+    // its scratch (q, Γ and their derivatives, D, from computeConcentrations). Γ
     // [d·n + i], the excesses, now and at the step's start; diffAt[f] = [left d, right d] (−1: none).
     this.diffList = [];
     this.diffAt = model.interfaces.map(() => [-1, -1]);
@@ -138,7 +140,8 @@ export class Solver {
         if (!(side ? itf.diffuse.right : itf.diffuse.left)) continue;
         const g = side ? grid.regionStart[f + 1] : grid.regionEnd[f];
         this.diffAt[f][side] = this.diffList.length;
-        this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n) });
+        const lat = itf.diffuse.lattice[side];
+        this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n), lat, holds: Uint8Array.from(species, (sp, i) => (sp.z !== 0 || lat?.on[i] ? 1 : 0)) });
         slot++;
       }
     });

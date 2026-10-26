@@ -216,10 +216,19 @@ unchanged: Butler–Volmer then depends on the Stern drop alone, the Frumkin cor
 mesh no longer enters (the ferri/ferrocyanide electrode: 46.399 Ω·cm² on cells from 1 nm to 300 nm,
 the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0125 nm). Each
 solution reports it as `interfaces[f].diffuse.left`/`.right`: `psi` (V), `charge` (C/m²), `excess`
-(mol/m²) and `plane` (each ion's concentration there). It's a dilute layer, so a warning says
-where its plane passes 5 M (a Stern C so large, or a zeroCharge so far from where the face works,
-that its counter-ions would have no room there); its ions must be ideal and mobile, and SRH kinetics
-beside one isn't supported. At a membrane between two solutions, a layer on each side: a
+(mol/m²) and `plane` (each ion's concentration there). With ideal ions it's a dilute layer, so a
+warning says where its plane passes 5 M (a Stern C so large, or a zeroCharge so far from where the
+face works, that its counter-ions would have no room there). Where the side's ions are on a
+[lattice](statistics.md) instead, the layer crowds on the same sites (Bikerman): $`c_i e^{-z_i s}`$
+over $`1 + \sum_j \theta_j (e^{-z_j s} - 1)`$, $`\theta_j = c_j/c_{\mathrm{max}}`$, and
+$`\sum_i c_i (e^{-z_i s} - 1 + z_i s)`$ above becomes $`c_{\mathrm{max}}\ln(1 + \sum_j \theta_j (e^{-z_j s} - 1)) + s\sum_j c_j z_j`$, so the plane fills to $`c_{\mathrm{max}}`$
+and no further, and a neutral species on the lattice is pushed out of it. Its ions must otherwise be
+ideal (all of them on the one lattice, or none) and mobile, and SRH kinetics beside a layer isn't
+supported. The layer is taken in equilibrium across itself: its own transport resistance, about
+$`\lambda_D c/(L\,c_{\mathrm{plane}})`$ of a cell of length L, is left out. That's negligible in a
+macroscopic cell unless a reacting species is driven out of the plane (at 6% of the bulk, the
+resistance of the ferri/ferrocyanide electrode in 30 µm came out 3.6e-4 below the resolved one's)
+or the lattice there is packed, leaving its ions no room to move (99.7% full: 6%). At a membrane between two solutions, a layer on each side: a
 permeability link runs between the planes (Goldman–Hodgkin–Katz on the planes' concentrations,
 across the drop between them), and gates follow the voltage between the planes, the one the
 membrane itself has across it (`interfaces[f].V`), so a surface charge (`sheetCharge`) and the

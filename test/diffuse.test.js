@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { AVOGADRO, Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, half, metal, aqueous, describe } from '../src/kit.js';
 import { diffuseLayer, diffuseScratch, diffuseUnits } from '../src/diffuse.js';
 
@@ -54,6 +54,42 @@ test("a diffuse layer's derivatives are its functions' own", () => {
       // (the co-ions' excesses are small beside the counter-ions': their derivatives to the row's scale)
       const row = Math.max(...Array.from({ length: n }, (_, i) => Math.abs(o.dgdc[i * n + j])));
       for (let i = 0; i < n; i++) assert.ok(Math.abs((a.gam[i] - b.gam[i]) / (2 * dc) - o.dgdc[i * n + j]) <= 1e-7 * row, `${name} at s = ${s}: ∂Γ[${i}]/∂c[${j}]`);
+    }
+  }
+});
+
+// Crowded (Bikerman): the ions on a lattice of cMax sites, as the bulk's lattice statistics have
+// them, c_i(s) = c_i e^{−z_i s}/D(s), D = 1 + Σ θ_j (e^{−z_j s} − 1), θ_j = c_j/cMax. Its answer
+// sheet (bikerman.py): the BVP in x (within 5e-10), mpmath quadrature of G = cMax ln D + s Σ c z
+// (below), and Kilic–Bazant–Ajdari's closed form for q of a z:z salt (to round-off).
+// [name, c, z, on the lattice, cMax, s, q, Γ]
+const CROWDED = [
+  ['KCl 0.1 M, 0.71 nm sites', [100, 100], [1, -1], [1, 1], 4639.530685488421, -20, 0.5080158268921463, [4.996315542685478e-6, -2.6889747705435907e-7]],
+  ['KCl 0.1 M, 0.71 nm sites', [100, 100], [1, -1], [1, 1], 4639.530685488421, 1, -0.019222580254097645, [-7.6331925817044e-8, 1.2289607943239935e-7]],
+  ['KCl 0.1 M, 0.71 nm sites', [100, 100], [1, -1], [1, 1], 4639.530685488421, 40, -0.7598886436245672, [-3.2516346564739623e-7, 7.550527345879109e-6]],
+  ['CuSO4 0.1 M, 0.71 nm', [100, 100], [2, -2], [1, 1], 4639.530685488421, -8, 0.4406926642529582, [2.1567997517142786e-6, -1.2692905229120115e-7]],
+  ['ferri/ferro in KCl, 0.71 nm', [5, 5, 1035, 1000], [-3, -4, 1, -1], [1, 1, 1, 1], 4639.530685488421, -6, 0.2682340850523549, [-5.485619530516571e-9, -5.8955162932153116e-9, 1.9321940013056307e-6, -8.078174635086997e-7]],
+  ['ferri/ferro in KCl, 0.71 nm', [5, 5, 1035, 1000], [-3, -4, 1, -1], [1, 1, 1, 1], 4639.530685488421, 10, -0.7277341684393017, [7.59152333056317e-8, 1.5916334031666858e-6, -7.422436661649903e-7, 2.0591018129076168e-7]],
+  ['KCl 0.5 M + 1 M neutral, 0.6 nm', [500, 500, 1000], [1, -1, 0], [1, 1, 1], 7687.680866545586, -10, 0.4385127922421983, [3.964424972638353e-6, -5.804398540361775e-7, -5.060027812526466e-7]],
+];
+
+test("a crowded diffuse layer's charge and excesses match the Bikerman answer sheet, its neutral species displaced", () => {
+  for (const [name, c, z, on, cMax, s, q, gam] of CROWDED) {
+    const n = c.length, lat = { cMax, on: Uint8Array.from(on) };
+    const at = (cc, ss) => diffuseLayer(Float64Array.from(cc), z, n, ss, sheetUnits, diffuseScratch(n), lat), out = at(c, s);
+    assert.ok(Math.abs(out.q - q) <= 1e-13 * Math.abs(q), `${name} at s = ${s}: q ${out.q} for ${q}`);
+    gam.forEach((g, i) => assert.ok(Math.abs(out.gam[i] - g) <= 1e-13 * Math.abs(g), `${name} at s = ${s}: Γ[${i}] ${out.gam[i]} for ${g}`));
+    // its derivatives, by differences
+    const h = 1e-5 * Math.max(1, Math.abs(s)), p = at(c, s + h), m = at(c, s - h);
+    assert.ok(Math.abs((p.q - m.q) / (2 * h) - out.dqds) < 1e-7 * Math.abs(out.dqds), `${name} at s = ${s}: ∂q/∂s`);
+    assert.ok(Math.abs((p.D - m.D) / (2 * h) - out.dDds) < 1e-6 * Math.abs(out.dDds), `${name} at s = ${s}: ∂D/∂s`);
+    for (let j = 0; j < n; j++) {
+      const up = [...c], dn = [...c], dc = 1e-5 * c[j];
+      up[j] += dc;
+      dn[j] -= dc;
+      const a = at(up, s), b = at(dn, s), row = Math.max(...Array.from({ length: n }, (_, i) => Math.abs(out.dgdc[i * n + j])));
+      assert.ok(Math.abs((a.q - b.q) / (2 * dc) - out.dqdc[j]) <= 1e-7 * Math.abs(out.dqdc[j]) + 1e-30, `${name} at s = ${s}: ∂q/∂c[${j}]`);
+      for (let i = 0; i < n; i++) assert.ok(Math.abs((a.gam[i] - b.gam[i]) / (2 * dc) - out.dgdc[i * n + j]) <= 1e-7 * row, `${name} at s = ${s}: ∂Γ[${i}]/∂c[${j}]`);
     }
   }
 });
@@ -143,6 +179,71 @@ test('a diffuse layer charged over very long steps, read by the change of what i
   }
 });
 
+test('a crowded diffuse layer is the limit of the resolved one, and keeps what a closed cell holds', () => {
+  // Pt | 0.1 M KCl on a lattice of 0.71 nm sites | a bath, a stiff Stern layer (1 F/m²) held 1 V
+  // below the pzc, the plane full of K⁺: against the same solution resolved (ε = 78.4, its lattice
+  // in the bulk too), which converges onto it at second order (1.4e-4, 3.6e-5, 8.7e-6 at cells
+  // from 0.02, 0.01, 0.005 nm growing by 5%, 2.5%, 1.25%).
+  const salt = { 'K+': 100, 'Cl-': 100 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
+  const cell = (V, resolved) => {
+    const l = aqueous(['K+', 'Cl-'], { epsr: resolved ? 78.4 : 0 });
+    l.materials.water.statistics = [{ type: 'lattice', species: ['K+', 'Cl-'], cMax }];
+    return build({ library: [l, metal('Pt')], stack: [ohmic(V, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 1 }, zeroCharge: 0, ...(resolved ? {} : { diffuse: { epsr: 78.4 } }) }, layer('water', 2e-6, { c0: salt }), bath(salt, 'Cl-')], grid: resolved ? { hmin: 0.01e-9, hmax: 0.2e-6, ratio: 1.025 } : { hmin: 1e-7, hmax: 0.2e-6, ratio: 1.15 } });
+  };
+  const rest = new Device(cell(0, false)).solve(), pzc = rest.phi[rest.region.indexOf(1)];
+  const s = new Device(cell(pzc - 1, false)).solve(), r = new Device(cell(pzc - 1, true)).solve(), d = s.interfaces[0].diffuse.right;
+  assert.ok(s.converged && s.warnings.length === 0, s.warnings.join('\n'));
+  assert.ok(Math.abs(d.plane['K+'] / cMax - 1) < 1e-6, `the plane's K⁺ ${d.plane['K+']} of ${cMax} sites`);
+  const gap = (r.interfaces[0].D - s.interfaces[0].D) / s.interfaces[0].D;
+  assert.ok(gap > 2e-5 && gap < 6e-5, `resolved σ ${r.interfaces[0].D} against ${s.interfaces[0].D}: ${gap}`);
+  // A closed cell (Pt | 0.5 M KCl and 1 M of a neutral species, all on 0.6 nm sites | Pt) stepped to
+  // 1.5 V: the planes fill, the neutral species is pushed out of them, and every amount is kept.
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'S', z: 0, cRef: 1000 });
+  lib.materials.water.species.S = { D: 1e-9, mu0: 0 };
+  lib.materials.water.statistics = [{ type: 'lattice', species: ['K+', 'Cl-', 'S'], cMax: 1 / (AVOGADRO * 0.6e-9 ** 3) }];
+  const stern1 = { phi: { type: 'capacitive', C: 1 }, zeroCharge: 0, diffuse: { epsr: 78.4 } }, c0 = { 'K+': 500, 'Cl-': 500, S: 1000 };
+  const closed = (V) => build({ library: [lib, metal('Pt')], stack: [ohmic(V, ['e-']), layer('Pt', 1e-6), stern1, layer('water', 10e-6, { c0 }), stern1, layer('Pt', 1e-6), ohmic(0, ['e-'])], grid: { hmin: 0.5e-6, hmax: 0.5e-6 } });
+  const all = (dev, sol) => Object.fromEntries(['K+', 'Cl-', 'S'].map((name) => {
+    let a = 0;
+    sol.c[name].forEach((cc, g) => Number.isFinite(cc) && (a += dev.model.grid.vol[g] * cc));
+    for (const itf of sol.interfaces) for (const dd of Object.values(itf.diffuse ?? {})) a += dd.excess[name];
+    return [name, a];
+  }));
+  const dev = new Device(closed(0)), a0 = all(dev, dev.solve());
+  dev.set({ contacts: { left: { V: 1.5 } } });
+  let sol;
+  for (const t of [1e-6, 1e-2, 1]) {
+    sol = dev.advance(t);
+    const a = all(dev, sol);
+    for (const k of ['K+', 'Cl-', 'S']) assert.ok(sol.converged && Math.abs(a[k] / a0[k] - 1) < 1e-12, `at ${t} s: ${k} ${a[k]} from ${a0[k]}`);
+  }
+  assert.ok(sol.interfaces[0].diffuse.right.excess.S < -5e-7, `S displaced from the planes: ${sol.interfaces[0].diffuse.right.excess.S}`);
+  const st = new Device(closed(1.5)).solve();
+  assert.ok(Math.abs(sol.interfaces[0].D / st.interfaces[0].D - 1) < 1e-8, `σ after 1 s ${sol.interfaces[0].D}, steady ${st.interfaces[0].D}`);
+});
+
+test("a reaction at a crowded plane sees what the resolved lattice's does, where the layer's own transport doesn't count", () => {
+  // The ferri/ferrocyanide electrode on a lattice of 0.71 nm sites, a Stern layer of 1 F/m² at
+  // zeroCharge 0.25 V, its plane half full of Cl⁻: R_dc as the resolved electrode's (ε = 78.4,
+  // its lattice in the bulk) to 1.3e-5. (The layer is taken in equilibrium across itself, its own
+  // transport left out: about λ_D c/(L c_plane) of the cell's, which grows where a reacting species
+  // is driven out of the plane, 3.6e-4 at 6% of the bulk, or a packed plane leaves no room to
+  // move, 6% at 99.7% full.)
+  const c = { FeIII: 5, FeII: 5, 'Cl-': 1000, 'K+': 1035 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
+  const def = (grid, resolved) => {
+    const d = ferri(30e-9, { diffuse: resolved ? null : { epsr: 78.4 }, epsr: resolved ? 78.4 : 0, zeroCharge: 0.25 });
+    d.materials.water.statistics = [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax }];
+    d.interfaces[0].phi.C = 1;
+    d.grid = grid;
+    return d;
+  };
+  const g = rdc(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false)), r = rdc(def({ hmin: 0.01e-9, hmax: 2e-6, ratio: 1.025 }, true));
+  assert.ok(Math.abs(r - g) < 3e-5 * g, `R_dc ${g} Ω·cm², resolved ${r}`);
+  const d = new Device(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false)).solve().interfaces[0].diffuse.right;
+  assert.ok(d.plane['Cl-'] > 0.4 * cMax, `the plane's Cl⁻ ${d.plane['Cl-']} of ${cMax}`);
+});
+
 test("the cell's low-frequency capacitance is Stern's and Gouy–Chapman's in series", () => {
   const RT = GAS_CONSTANT * 298.15, kappa = Math.sqrt((2 * FARADAY ** 2 * 100) / (78.4 * EPS0 * RT));
   const Cdl = 1 / (1 / 0.2 + 1 / (78.4 * EPS0 * kappa)); // each face at its zero charge: C_d = εκ
@@ -219,7 +320,8 @@ test('a diffuse layer is refused where it would be wrong or meaningless', () => 
   refused(make({ diffuse: { epsr: 78, a: 1 } }), /diffuse\.a: not a field here/);
   refused(make({ diffuse: { epsr: 78 }, phi: 'neutral', zeroCharge: undefined }), /a neutral face holds no charge, so it has no diffuse layer/);
   refused(make({ diffuse: { epsr: 78 } }, { epsr: 78 }), /neither side is a strictly neutral.*the grid resolves the double layer itself/);
-  refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'lattice', species: ['K+', 'Cl-'], cMax: 5000 }]) }), /'K\+' in 'water' has non-ideal statistics, and the diffuse layer is a dilute \(Boltzmann\) one/);
+  refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'debye-huckel', species: ['K+', 'Cl-'], epsr: 78.4 }]) }), /'K\+' in 'water' has statistics a diffuse layer can't take: its ions must all be ideal \(a dilute layer\) or all on one lattice model/);
+  refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'lattice', species: ['K+'], cMax: 5000 }]) }), /'Cl-' in 'water' has statistics a diffuse layer can't take/);
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.species['K+'].D = 0) }), /'K\+' is charged and can't move in 'water' \(D = 0\)/);
 });
 

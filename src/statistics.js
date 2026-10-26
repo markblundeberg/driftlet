@@ -207,6 +207,7 @@ function latticeModel(idx, cRef, cMax) {
   return {
     type: 'lattice',
     idx,
+    cMax, // (read by a face's diffuse layer beside it, which crowds on the same sites: src/diffuse.js)
     // c_a = c_max w_a / (1 + Σ w), w_a = (c_ref,a / c_max) e^{ζ_a}; K = diag(c) − c cᵀ/c_max.
     evaluate(zeta, c, K) {
       let m = 0;

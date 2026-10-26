@@ -19,7 +19,11 @@ major version.
   (1e-10), its capacitance in the impedance, and charging by a current of ions over steps up to
   1e10 s. At a membrane with a layer on each side, permeability links run between the planes
   (GHK on the planes' concentrations) and gates follow the voltage between them, so a surface
-  charge shifts gating and permeation (against an mpmath answer sheet: 1e-14). The solution
+  charge shifts gating and permeation (against an mpmath answer sheet: 1e-14). On a solution whose
+  ions are on a lattice, the layer crowds on the same sites (Bikerman), its plane filling to cMax
+  and its neutral species displaced (against the BVP and Kilic–Bazant–Ajdari, and the resolved
+  lattice, which converges onto it at second order). The layer is in equilibrium across itself,
+  its own transport left out: stated in docs/device.md, with where it matters. The solution
   reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
   faces now point to it. A template (docs/templates.md): an electrode's double-layer capacitance,
   its minimum at the potential of zero charge, against Gouy–Chapman–Stern.

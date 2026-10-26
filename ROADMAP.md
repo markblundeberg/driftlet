@@ -393,10 +393,12 @@ for live demos.
   within a region, with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change across
   each segment. $`\phi`$'s gauge freedom then becomes a continuous function.
 - **More of the diffuse layer below the grid** (`interfaces[f].diffuse`, src/diffuse.js, done
-  2026-10-25 for electrodes, charged faces and membranes' permeabilities and gates). Not yet: a
-  contact's own (a capacitive contact holds its charge in its
-  end cell, warned of); crowding (Bikerman's lattice, a few molar at the plane, where the dilute
-  layer now warns); non-ideal statistics in the layer; and SRH carriers read at the plane.
+  2026-10-25 for electrodes, charged faces, membranes' permeabilities and gates, and crowding on
+  the bulk's lattice). Not yet: a contact's own (a capacitive contact holds its charge in its end
+  cell, warned of); other statistics in the layer (Debye–Hückel, Fermi–Dirac); SRH carriers read
+  at the plane; and the layer's own transport resistance, λ_D c/(L c_plane) of the cell's, which
+  the equilibrium layer leaves out (a reacting species driven out of the plane, or a packed
+  lattice: a ferrocyanide plane 99.7% full put R_dc 6% off the resolved electrode's).
 - **Driven species fluxes.** A terminal driving one species' molar flux instead of the charge
   current (a gas feed at a fixed rate, a neutral species injected), the flux-side twin of a held
   $`\mu`$ for neutral species.

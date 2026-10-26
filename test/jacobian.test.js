@@ -202,6 +202,15 @@ const diffuseCell = (face, V) => {
     grid: { hmin: 1e-7, hmax: 2e-6 },
   });
 };
+// The same on a lattice of 0.5 nm sites, with a neutral species on it.
+const crowded = (def) => {
+  def.species.push({ name: 'S', z: 0, cRef: 1000 });
+  def.materials.water.species.S = { D: 1e-9, mu0: 0 };
+  for (const r of def.regions) if (r.material === 'water') r.c0 = { ...r.c0, S: 500 };
+  def.contacts.right.bath.c.S = 500;
+  def.materials.water.statistics = [{ type: 'lattice', species: ['Fe3+', 'Fe2+', 'Cl-', 'S'], cMax: 13000 }];
+  return def;
+};
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -276,6 +285,9 @@ const devices = {
   // faces' laws, the edge boxes' Gauss rows and balances, and the reactions at their planes.
   'a diffuse layer at a reacting electrode': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 0.9),
   'a diffuse layer at a saturating electrode': () => diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 0.9),
+  // (crowded: on the bulk's lattice, with a neutral species on it, displaced at the plane)
+  'a crowded diffuse layer at a reacting electrode': () => crowded(diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 1.4)),
+  'a crowded diffuse layer at a saturating electrode': () => crowded(diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 1.4)),
   'diffuse layers on both sides of a charged membrane': () => build({
     T: 298.15,
     library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 })],

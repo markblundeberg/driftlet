@@ -1099,15 +1099,20 @@ function normalizeDiffuse(raw, where, phi, matL, matR, species, reactions) {
     `${path}: neither side is a strictly neutral (ε = 0) material with ions in it, so there is no diffuse layer below the grid to model; ` +
       'where ε > 0 the grid resolves the double layer itself (refine it below the Debye length)',
   );
+  const lattice = [null, null];
   for (const [mat, has, side] of [[matL, left, 0], [matR, right, 1]]) {
     if (!has) continue;
-    for (let i = 0; i < species.length; i++) {
+    // Its ions dilute (ideal), or all on one lattice (crowding: Bikerman's layer, on the bulk's own sites).
+    const charged = species.flatMap((sp, i) => (mat.present[i] && sp.z !== 0 ? [i] : []));
+    const md = mat.modelOf[charged[0]] >= 0 ? mat.models[mat.modelOf[charged[0]]] : null;
+    for (const i of charged) {
       need(
-        !(mat.present[i] && species[i].z !== 0 && mat.modelOf[i] >= 0),
-        `${path}: '${species[i].name}' in '${mat.name}' has non-ideal statistics, and the diffuse layer is a dilute (Boltzmann) one; ` +
-          'give it ideal statistics there, or resolve the double layer (epsr > 0, hmin below the Debye length)',
+        md ? mat.modelOf[i] >= 0 && mat.models[mat.modelOf[i]] === md && md.type === 'lattice' : mat.modelOf[i] < 0,
+        `${path}: '${species[i].name}' in '${mat.name}' has statistics a diffuse layer can't take: its ions must all be ideal (a dilute layer) ` +
+          'or all on one lattice model (a crowded one, on the same sites); or resolve the double layer (epsr > 0, hmin below the Debye length)',
       );
     }
+    if (md) lattice[side] = { cMax: md.cMax, on: Uint8Array.from(species, (_, i) => (md.idx.includes(i) ? 1 : 0)) };
     for (let i = 0; i < species.length; i++) {
       need(
         !(mat.present[i] && species[i].z !== 0 && !(mat.D[i] > 0)),
@@ -1119,7 +1124,7 @@ function normalizeDiffuse(raw, where, phi, matL, matR, species, reactions) {
       if (rx.srh && rx.part.some((p) => p.side === side)) need(false, `${path}: SRH kinetics beside a diffuse layer isn't supported (its carriers would be read at the plane); resolve the layer instead`);
     }
   }
-  return { epsr, left, right };
+  return { epsr, left, right, lattice };
 }
 
 // A face's gates (Hodgkin–Huxley): each a fraction x in [0, 1] with first-order kinetics in the

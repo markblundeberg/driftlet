@@ -319,28 +319,24 @@ function lawAmount(s, cs) {
     }
   }
   // What the faces' diffuse layers hold of it (src/diffuse.js): A_f Γ_i at their edge nodes, Γ a
-  // function of the layer's drop and the edge node's c (∂c_j/∂η_j = c_j, ∂c_j/∂φ̂ = −z_j c_j).
+  // function of the layer's drop and the edge node's c (through its ∂c_j/∂(φ̂, η): _diffuseChain).
   for (const { stretch, w } of cs.parts) {
     const st = s.stretches[stretch], i = st.species;
     s.diffList.forEach((dl, k) => {
       const g = dl.g;
-      if (g < st.nodes[0] || g > st.nodes[1] || s.z[i] === 0) return;
-      const f = w * s.model.grid.area[g], b = dl.b, D = dl.dl;
+      if (g < st.nodes[0] || g > st.nodes[1] || !dl.holds[i]) return;
+      const f = w * s.model.grid.area[g], b = dl.b, D = dl.dl, dc = s._diffuseChain(k);
       amount += f * s.gam[k * n + i];
       gross += Math.abs(f * s.gam[k * n + i]);
       cs.idx[len] = s.rix[dl.o];
       cs.w[len++] = f * D.dgds[i];
-      let dphi = 0;
-      for (let j = 0; j < n; j++) {
-        if (!s.present[g * n + j] || s.loc[b * M + 1 + j] < 0) continue;
-        const v = f * D.dgdc[i * n + j] * c[g * n + j];
-        cs.idx[len] = s.rix[b * M + 1 + j];
-        cs.w[len++] = v;
-        dphi -= v * s.z[j];
-      }
-      if (s.loc[b * M] >= 0) {
-        cs.idx[len] = s.rix[b * M];
-        cs.w[len++] = dphi;
+      for (let r = 0; r <= n; r++) {
+        if (s.loc[b * M + r] < 0) continue;
+        let v = 0;
+        for (let j = 0; j < n; j++) v += D.dgdc[i * n + j] * dc[j * M + r];
+        if (v === 0) continue;
+        cs.idx[len] = s.rix[b * M + r];
+        cs.w[len++] = f * v;
       }
     });
   }

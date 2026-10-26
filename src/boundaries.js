@@ -287,51 +287,61 @@ export class BoundaryTerms {
   // q(s, c) equal to the charge its side holds (D on the left, −(D + sheetCharge) on the right);
   // its charge in the edge box's Gauss row and its excesses in the box's balances, stored like the
   // box's own ions (so the box's bulk stays neutral, and what the face's charge draws in is
-  // counted). The edge node's c enters through ∂c_j/∂η_j = c_j, ∂c_j/∂φ̂ = −z_j c_j (ideal).
+  // counted). The edge node's c enters through its ∂c_j/∂(φ̂, η) (_diffuseChain).
   _diffuseTerms(d, bf, Af) {
-    const { n, M, u, res, z, c, gam, gamOld } = this, R = this.rix, dt = this.dtNow;
-    const { g, b, slot, o, side, f, dl } = this.diffList[d], gn = g * n;
-    const sheet = this.model.interfaces[f].sheetCharge;
+    const { n, M, u, res, gam, gamOld } = this, R = this.rix, dt = this.dtNow;
+    const { b, slot, o, side, f, dl, holds } = this.diffList[d], dc = this._diffuseChain(d);
+    const sheet = this.model.interfaces[f].sheetCharge, w = this.dW ?? (this.dW = new Float64Array(M));
+    // ∂(Σ_j a_j c_j)/∂(the edge node's slot r), into w
+    const chain = (a) => {
+      w.fill(0);
+      for (let j = 0; j < n; j++) if (a[j] !== 0) for (let r = 0; r <= n; r++) w[r] += a[j] * dc[j * M + r];
+      return w;
+    };
     // its row (per area): q − Q
     res[R[o]] = dl.q - (side ? -(u[bf * M] + sheet) : u[bf * M]);
     this._j(bf, slot, bf, slot, dl.dqds);
     this._j(bf, slot, bf, 0, side ? 1 : -1);
-    let dphi = 0;
-    for (let j = 0; j < n; j++) {
-      if (!this.present[gn + j]) continue;
-      const w = dl.dqdc[j] * c[gn + j];
-      this._j(bf, slot, b, 1 + j, w);
-      dphi -= w * z[j];
+    chain(dl.dqdc);
+    for (let r = 0; r <= n; r++) {
+      if (w[r] === 0) continue;
+      this._j(bf, slot, b, r, w[r]);
+      this._j(b, 0, b, r, -Af * w[r]); // (and the box's charge: −Af·q in its Gauss row)
     }
-    this._j(bf, slot, b, 0, dphi);
-    // the box's charge: −Af·q in its Gauss row
     res[R[b * M]] -= Af * dl.q;
     this._j(b, 0, bf, slot, -Af * dl.dqds);
-    for (let j = 0; j < n; j++) if (this.present[gn + j]) this._j(b, 0, b, 1 + j, -Af * dl.dqdc[j] * c[gn + j]);
-    this._j(b, 0, b, 0, -Af * dphi);
-    // the box's store of each ion: Af (Γ_i − Γ_i,old)/dt
+    // the box's store of each species it holds: Af (Γ_i − Γ_i,old)/dt
     if (!Number.isFinite(dt)) return;
     const k = Af / dt;
     for (let i = 0; i < n; i++) {
-      if (!this.present[gn + i] || z[i] === 0) continue;
+      if (!this.present[this.diffList[d].g * n + i] || !holds[i]) continue;
       res[R[b * M + 1 + i]] += k * (gam[d * n + i] - gamOld[d * n + i]);
       this._j(b, 1 + i, bf, slot, k * dl.dgds[i]);
-      let dp = 0;
-      for (let j = 0; j < n; j++) {
-        if (!this.present[gn + j]) continue;
-        const w = k * dl.dgdc[i * n + j] * c[gn + j];
-        if (w !== 0) this._j(b, 1 + i, b, 1 + j, w);
-        dp -= w * z[j];
-      }
-      this._j(b, 1 + i, b, 0, dp);
+      chain(dl.dgdc.subarray(i * n, i * n + n));
+      for (let r = 0; r <= n; r++) if (w[r] !== 0) this._j(b, 1 + i, b, r, k * w[r]);
     }
+  }
+
+  // Layer d's edge node's ∂c_j/∂(slot r) for r = φ̂, η_1…η_n, [j·M + r] (src/regions.js, _dc).
+  _diffuseChain(d) {
+    const { n, M } = this, g = this.diffList[d].g, out = this.diffList[d].chain ?? (this.diffList[d].chain = new Float64Array(n * M));
+    const t = this.dV2 ?? (this.dV2 = new Float64Array(M));
+    for (let j = 0; j < n; j++) {
+      if (!this.present[g * n + j]) {
+        out.fill(0, j * M, (j + 1) * M);
+        continue;
+      }
+      this._dc(g, j, t);
+      out.set(t, j * M);
+    }
+    return out;
   }
 
   // The diffuse layers' charges and excesses at the present state (after the concentrations).
   _diffuseLayers() {
     const { n, u, c, z, gam } = this;
     this.diffList.forEach((d, k) => {
-      diffuseLayer(c.subarray(d.g * n, d.g * n + n), z, n, u[d.o], d.units, d.dl);
+      diffuseLayer(c.subarray(d.g * n, d.g * n + n), z, n, u[d.o], d.units, d.dl, d.lat);
       gam.set(d.dl.gam, k * n);
     });
   }
@@ -393,8 +403,22 @@ export class BoundaryTerms {
     const al = rx.alpha;
     const dL = this.dA.fill(0), dR = this.dB.fill(0); // ∂ ln(prefactor)/∂slot, per side
     // Beside a diffuse layer (src/diffuse.js), a participant reacts at the plane, where its
-    // concentration is c e^{−z s} (its μ̄ level through the layer): dS[side] = ∂ ln(prefactor)/∂s.
-    const dla = this.diffAt[f], dS = [0, 0], plane = (p) => (dla[p.side] < 0 || this.z[p.i] === 0 ? 1 : Math.exp(Math.max(-700, Math.min(700, -this.z[p.i] * u[this.diffList[dla[p.side]].o]))));
+    // concentration is c e^{−z s}/D(s) (its μ̄ level through the layer; D = 1 unless the layer is
+    // crowded): dS[side] = ∂ ln(prefactor)/∂s, and a crowded D's ∂/∂c_j into the side's slots.
+    const dla = this.diffAt[f], dS = [0, 0];
+    const layer = (p) => (dla[p.side] < 0 ? null : this.diffList[dla[p.side]]), atPlane = (p) => layer(p) && (this.z[p.i] !== 0 || layer(p).lat?.on[p.i]);
+    const plane = (p) => (atPlane(p) ? Math.exp(Math.max(-700, Math.min(700, -this.z[p.i] * u[layer(p).o]))) / layer(p).dl.D : 1);
+    // ∂ ln(e^{−z s}/D) by s, and w·(−∂ ln D/∂c_j) through the edge node's slots into d
+    const planeSlope = (p) => -this.z[p.i] - layer(p).dl.dDds / layer(p).dl.D;
+    const crowdInto = (p, w, d) => {
+      const L = layer(p);
+      if (!L.lat || w === 0) return;
+      const dc = this._diffuseChain(dla[p.side]);
+      for (let j = 0; j < n; j++) {
+        const a = (-w * L.dl.dDdc[j]) / L.dl.D;
+        if (a !== 0) for (let r = 0; r <= n; r++) d[r] += a * dc[j * M + r];
+      }
+    };
     let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
@@ -404,7 +428,10 @@ export class BoundaryTerms {
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
-      if (dla[p.side] >= 0) dS[p.side] -= this.z[p.i] * e;
+      if (atPlane(p)) {
+        dS[p.side] += e * planeSlope(p);
+        crowdInto(p, e, p.side ? dR : dL);
+      }
     }
     if (rx.vmax) {
       // Saturating: r = vmax Π (c/(c + K))^{|ν|} (1 − e^{−a}); ∂ln S/∂ln c = |ν| K/(c + K).
@@ -414,7 +441,10 @@ export class BoundaryTerms {
         const g = p.side ? gR : gL, cc = c[g * n + p.i] * plane(p), K = rx.K[q];
         S *= powi(cc / (cc + K), -p.nu);
         this._dlnc(g, p.i, (-p.nu * K) / (cc + K), p.side ? dR : dL);
-        if (dla[p.side] >= 0) dS[p.side] -= (this.z[p.i] * -p.nu * K) / (cc + K);
+        if (atPlane(p)) {
+          dS[p.side] += ((-p.nu * K) / (cc + K)) * planeSlope(p);
+          crowdInto(p, (-p.nu * K) / (cc + K), p.side ? dR : dL);
+        }
       });
       const a = aHi + aLo, back = Math.exp(-a);
       rate = rx.vmax * S * -Math.expm1(-a);
