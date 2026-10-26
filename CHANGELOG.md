@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.4.0 (2026-10-25)
 
 - A diffuse layer below the grid: `interfaces[f].diffuse: { epsr }` gives each strictly neutral
   side of a charged face a Gouy–Chapman layer, its drop one more unknown, holding that side's
