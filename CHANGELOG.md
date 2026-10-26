@@ -22,9 +22,16 @@ major version.
   charge shifts gating and permeation (against an mpmath answer sheet: 1e-14). On a solution whose
   ions are on a lattice, the layer crowds on the same sites (Bikerman), its plane filling to cMax
   and its neutral species displaced (against the BVP and Kilic–Bazant–Ajdari, and the resolved
-  lattice, which converges onto it at second order). The layer is in equilibrium across itself,
-  its own transport left out: stated in docs/device.md, with where it matters. The solution
-  reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
+  lattice, which converges onto it at second order). What a face reaction takes or makes there
+  crosses the layer against its resistance, K_i = ∫ (c_i/c_i(x) − 1) dx (by the same quadrature;
+  against the BVP, 2e-10): each such species' level at the plane is one more unknown, below the
+  edge's by what its flux needs, exact for a species too dilute to shape the layer, the reactant
+  a charged electrode repels. So the current to a repelled reactant rises and falls as the
+  electrode is driven harder (Frumkin's dip, within 1.5e-6 of the resolved electrode, where
+  leaving it out was 68% high), and an electrode whose plane is 99.7% full of ferrocyanide has the
+  resolved one's R_dc to 1e-8 (6% off without it). The docs say where the layer stops: a salt run
+  out toward an unsupported electrolyte's limiting current, solutions only a few Debye lengths
+  wide. The solution reports each layer (`interfaces[f].diffuse`); the mesh warnings at such
   faces now point to it. A template (docs/templates.md): an electrode's double-layer capacitance,
   its minimum at the potential of zero charge, against Gouy–Chapman–Stern.
 

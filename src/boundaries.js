@@ -40,7 +40,10 @@
 //     gives that side (D on the left, −(D + sheetCharge) on the right); −Af·q in the edge node's
 //     Gauss row, and Af (Γ_i − Γ_i,old)/dt in its balances (none at dt = ∞). A reaction's
 //     participant on that side reacts at the plane: its c times e^{−z s} in the rate (Butler–Volmer
-//     and saturating; SRH beside a layer is refused by normalizeDevice), its η unchanged; a
+//     and saturating; SRH beside a layer is refused by normalizeDevice), and its level there w
+//     above the edge node's (a slot after the drops, _diffuseDraws: its η + w, its c times e^w;
+//     row 1 − e^w − N K/(D c), N what the reactions take from that side, K the layer's
+//     resistance to it; where K < 0, −w − X/√(1 + X²), X = N K/(D c)); a
 //     permeability link runs between the planes (c e^{−z s} at each, its drift over φ̂ + s), and
 //     gates follow the voltage between them (_faceVoltage).
 //
@@ -281,6 +284,50 @@ export class BoundaryTerms {
     }
     itf.reactions.forEach((rx, k) => this._faceReaction(rx, k, f, bf, bL, bR, Af));
     if (itf.gates.length > 0) this._faceGates(f, bf, bL, bR);
+    if (dlL >= 0) this._diffuseDraws(dlL, bf);
+    if (dlR >= 0) this._diffuseDraws(dlR, bf);
+  }
+
+  // Layer d's drawn species (those its face's reactions take or make at its plane): each one's
+  // level there, w = ln(a_plane/a_edge), below the edge node's by the flux N its reactions draw
+  // across the layer's resistance K (src/diffuse.js), D c (1 − e^w) = N K: its row, 1 − e^w − N K/(D c).
+  // Where it repels the species, K grows as c/c(plane), and the plane can run out of it (at
+  // N = D c/K). Where it gathers one, K < 0, bounded by about the layer's width (the bulk the grid
+  // counts in its place conducts it less well): a correction of order λ_D/L, and a negative
+  // resistance in series, which far from the solution can draw a product's plane level down the
+  // more of it is made; its row is bounded there (below).
+  _diffuseDraws(d, bf) {
+    const { n, M, u, c, res } = this, R = this.rix;
+    const { b, g, side, f, dl, drawSlot, Dm } = this.diffList[d], itf = this.model.interfaces[f];
+    if (!drawSlot.some((q) => q >= 0)) return;
+    const dc = this._diffuseChain(d), K0 = 1 + n;
+    for (let i = 0; i < n; i++) {
+      const q = drawSlot[i];
+      if (q < 0) continue;
+      // N, what the reactions take from this side (mol/(m²·s)), from their rates' slots
+      let N = 0;
+      itf.reactions.forEach((rx, k) => {
+        for (const p of rx.part) if (p.side === side && p.i === i) N -= p.nu * u[bf * M + K0 + k];
+      });
+      // X = N K/(D c); where the layer gathers the species (K < 0) the row is w = −X/√(1 + X²)
+      // instead, the same to O(X³) where it's solved (|X| about λ_D/L there) and bounded far off
+      const K = dl.K[i], w = u[bf * M + q], cc = Math.max(c[g * n + i], 1e-300), Dc = Dm[i] * cc, X = (N * K) / Dc;
+      const gathered = K < 0, root = Math.sqrt(1 + X * X), gX = gathered ? 1 / (root * root * root) : 1;
+      res[R[bf * M + q]] = gathered ? -w - X / root : -Math.expm1(w) - X;
+      this._j(bf, q, bf, q, gathered ? -1 : -Math.exp(Math.min(700, w)));
+      itf.reactions.forEach((rx, k) => {
+        let nu = 0;
+        for (const p of rx.part) if (p.side === side && p.i === i) nu += p.nu;
+        if (nu !== 0) this._j(bf, q, bf, K0 + k, (gX * nu * K) / Dc);
+      });
+      this._j(bf, q, bf, this.diffList[d].slot, (-gX * N * dl.dKds[i]) / Dc);
+      // through the edge node's c: K's ∂/∂c_j, and 1/c_i's
+      for (let r = 0; r <= n; r++) {
+        let v = (K * dc[i * M + r]) / cc;
+        for (let j = 0; j < n; j++) v -= dl.dKdc[i * n + j] * dc[j * M + r];
+        if (v !== 0) this._j(bf, q, b, r, (gX * N * v) / Dc);
+      }
+    }
   }
 
   // Diffuse layer d's terms (src/diffuse.js; its q and Γ from computeConcentrations): its row,
@@ -341,7 +388,7 @@ export class BoundaryTerms {
   _diffuseLayers() {
     const { n, u, c, z, gam } = this;
     this.diffList.forEach((d, k) => {
-      diffuseLayer(c.subarray(d.g * n, d.g * n + n), z, n, u[d.o], d.units, d.dl, d.lat);
+      diffuseLayer(c.subarray(d.g * n, d.g * n + n), z, n, u[d.o], d.units, d.dl, d.lat, d.draw);
       gam.set(d.dl.gam, k * n);
     });
   }
@@ -407,7 +454,14 @@ export class BoundaryTerms {
     // crowded): dS[side] = ∂ ln(prefactor)/∂s, and a crowded D's ∂/∂c_j into the side's slots.
     const dla = this.diffAt[f], dS = [0, 0];
     const layer = (p) => (dla[p.side] < 0 ? null : this.diffList[dla[p.side]]), atPlane = (p) => layer(p) && (this.z[p.i] !== 0 || layer(p).lat?.on[p.i]);
-    const plane = (p) => (atPlane(p) ? Math.exp(Math.max(-700, Math.min(700, -this.z[p.i] * u[layer(p).o]))) / layer(p).dl.D : 1);
+    // A drawn participant's level at the plane is w below its edge node's (_diffuseDraws): its c
+    // there e^w times as much, its η w more; the face-block slot of that w, or −1.
+    const wSlot = (p) => (atPlane(p) ? layer(p).drawSlot[p.i] : -1);
+    const wOf = (p) => (wSlot(p) < 0 ? 0 : u[bf * M + wSlot(p)]);
+    const plane = (p) => (atPlane(p) ? Math.exp(Math.max(-700, Math.min(700, -this.z[p.i] * u[layer(p).o] + wOf(p)))) / layer(p).dl.D : 1);
+    const dW = this.dWr ?? (this.dWr = new Float64Array(M)), aW = this.aWr ?? (this.aWr = new Float64Array(M)); // ∂ ln(prefactor), ∂a by each face slot w
+    dW.fill(0);
+    aW.fill(0);
     // ∂ ln(e^{−z s}/D) by s, and w·(−∂ ln D/∂c_j) through the edge node's slots into d
     const planeSlope = (p) => -this.z[p.i] - layer(p).dl.dDds / layer(p).dl.D;
     const crowdInto = (p, w, d) => {
@@ -422,8 +476,9 @@ export class BoundaryTerms {
     let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
-      aHi -= p.nu * u[o];
+      aHi -= p.nu * (u[o] + wOf(p));
       aLo -= p.nu * uLo[o];
+      if (wSlot(p) >= 0) aW[wSlot(p)] -= p.nu;
       if (rx.srh || rx.vmax || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i], e);
@@ -431,6 +486,7 @@ export class BoundaryTerms {
       if (atPlane(p)) {
         dS[p.side] += e * planeSlope(p);
         crowdInto(p, e, p.side ? dR : dL);
+        if (wSlot(p) >= 0) dW[wSlot(p)] += e;
       }
     }
     if (rx.vmax) {
@@ -444,6 +500,7 @@ export class BoundaryTerms {
         if (atPlane(p)) {
           dS[p.side] += ((-p.nu * K) / (cc + K)) * planeSlope(p);
           crowdInto(p, (-p.nu * K) / (cc + K), p.side ? dR : dL);
+          if (wSlot(p) >= 0) dW[wSlot(p)] += (-p.nu * K) / (cc + K);
         }
       });
       const a = aHi + aLo, back = Math.exp(-a);
@@ -451,6 +508,7 @@ export class BoundaryTerms {
       for (let s = 0; s < M; s++) {
         dL[s] *= rate;
         dR[s] *= rate;
+        dW[s] = rate * dW[s] + rx.vmax * S * back * aW[s];
       }
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= rx.vmax * S * back * p.nu;
     } else if (rx.srh) {
@@ -468,6 +526,7 @@ export class BoundaryTerms {
       for (let s = 0; s < M; s++) {
         dL[s] *= rate;
         dR[s] *= rate;
+        dW[s] = rate * dW[s] + pref * gp * aW[s];
       }
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= pref * gp * p.nu;
     }
@@ -475,6 +534,7 @@ export class BoundaryTerms {
     res[R[o]] = u[o] - rate;
     this._j(bf, slot, bf, slot, 1);
     for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -rate * dS[sd]);
+    if (!rx.srh) for (let q = 0; q < M; q++) if (dW[q] !== 0) this._j(bf, slot, bf, q, -dW[q]);
     for (let s = 0; s < M; s++) {
       if (dL[s] !== 0) this._j(bf, slot, bL, s, -dL[s]);
       if (dR[s] !== 0) this._j(bf, slot, bR, s, -dR[s]);

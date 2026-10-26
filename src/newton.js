@@ -20,8 +20,10 @@
 //      its message.
 //   2. Solved for the update; refined (7) where refining is on.
 //   3. Its size: `step`, the largest |Δ| over φ̂ and each present η at the grid's nodes (a metal's
-//      carrier, not its flux slot), each coverage and gate fraction, and each floating terminal's
-//      |ΔV|/V_T; `own`, the same without the terminals.
+//      carrier, not its flux slot), each coverage and gate fraction, each diffuse layer's drop and
+//      its drawn species' plane levels, and each floating terminal's |ΔV|/V_T; `own`, the same
+//      without the terminals and the diffuse layers, each plane level's own update clipped to
+//      ±maxStep first.
 //   4. Fails where step isn't finite ('non-finite update'), or where own > 1e4 after the first
 //      iteration, or own > 10× the first's after the sixth ('diverging').
 //   5. Added, damped by α = min(1, maxStep/own) (the terminal voltages by the same α), u and uLo
@@ -283,8 +285,22 @@ function refineSolve(s, dt, delta, deltaV) {
   }
 }
 
-// Largest update among the potential-like unknowns (φ̂ and η at grid nodes).
-export function maxPotentialStep(s, delta, deltaV = s.deltaV) { // (deltaV null: the device's potentials only)
+// Each diffuse layer's drawn species' plane level, its update clipped to ±maxStep.
+function clipLevels(s, delta, maxStep) {
+  const R = s.rix;
+  for (const d of s.diffList) {
+    const bf = s.blockOfFace[d.f];
+    for (const q of d.drawSlot) {
+      if (q < 0) continue;
+      const k = R[bf * s.M + q];
+      if (Math.abs(delta[k]) > maxStep) delta[k] = Math.sign(delta[k]) * maxStep;
+    }
+  }
+}
+
+// Largest update among the potential-like unknowns (φ̂ and η at grid nodes; layers false leaves out
+// the diffuse layers' drops and plane levels).
+export function maxPotentialStep(s, delta, deltaV = s.deltaV, layers = true) { // (deltaV null: the device's potentials only)
   const { n, M } = s;
   const R = s.rix; // (the sink entry of delta is 0)
   let mx = 0;
@@ -299,6 +315,11 @@ export function maxPotentialStep(s, delta, deltaV = s.deltaV) { // (deltaV null:
     if (k >= 0) for (let q = 0; q < s.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
   }
   for (const gt of s.gateList) mx = Math.max(mx, Math.abs(delta[R[gt.o]])); // a gate's fraction open
+  if (layers) for (const d of s.diffList) { // a diffuse layer's drop, and its drawn species' levels at its plane, as η
+    const bf = s.blockOfFace[d.f];
+    mx = Math.max(mx, Math.abs(delta[R[d.o]]));
+    for (const q of d.drawSlot) if (q >= 0) mx = Math.max(mx, Math.abs(delta[R[bf * M + q]]));
+  }
   return mx;
 }
 
@@ -484,8 +505,13 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     // linearly (conductance links, held levels, a capacitive face), so a large swing in one is
     // safe, and damping it would throttle the whole update (a current-driven port switching
     // off, its voltage collapsing by hundreds of volts, crawled 10 thermal units at a time).
+    // (So do the diffuse layers' drops, set by the potentials, and their drawn species' plane
+    // levels, each level's own update clipped to maxStep instead: far from the solution a
+    // reaction's rate can ask more of its layer than it can pass, and the level's update then
+    // heads for −∞.)
+    clipLevels(s, delta, maxStep);
     const step = maxPotentialStep(s, delta, deltaV);
-    const own = maxPotentialStep(s, delta, null);
+    const own = maxPotentialStep(s, delta, null, false);
     // A refined correction the next update keeps (under a tenth of it) was a lost mode: this
     // device's time steps are refined from now on, a convergence taken only on a refined update.
     if (candidate > 0 && step < 0.1 * candidate) s.lostMode = true;

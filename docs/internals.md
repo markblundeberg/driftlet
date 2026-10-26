@@ -21,7 +21,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/assemble.js` | yes: the equations assembled, the conventions of every row, and the order of the terms |
 | `src/regions.js` | yes: statistics, storage, fluxes along segments, bulk reactions, the neutral nodes' charge rows |
 | `src/boundaries.js` | yes: faces (φ laws, links, reactions, gates, diffuse layers), ports, contacts, circuit rows |
-| `src/diffuse.js` | yes: a Gouy–Chapman layer's charge, surface excesses and their derivatives |
+| `src/diffuse.js` | yes: a Gouy–Chapman layer's charge, surface excesses, resistances and their derivatives |
 | `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
 | `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
 | `src/difference.js` | header: the dilute kernels in difference form |
@@ -48,8 +48,9 @@ them is wrong: fix both, with a test, in the same commit.
   `blockOfNode[g]`, face f's flux block is `blockOfFace[f]`, in order along x.
 - **Slots.** Each block has `M = 1 + n + extra` slots: slot 0 is φ̂ (at a face its
   displacement D, at a metal's node its carriers' segment flux J), slots `1 … n` the species'
-  η = μ̄/RT, then a face's reaction rates, gates' fractions and diffuse layers' drops (`diffList`,
-  each layer's excesses in `gam`), or at an electrode port's nodes
+  η = μ̄/RT, then a face's reaction rates, gates' fractions, diffuse layers' drops (`diffList`,
+  each layer's excesses in `gam`) and the levels at their planes of the species its reactions
+  take or make there (each layer's `drawSlot`, as η), or at an electrode port's nodes
   its surface's coverages (as η) and a membrane port's gates. Row and unknown `o = b·M + slot`.
 - **Compact indices.** Only active slots enter the linear system: `loc[o]` is a slot's place in
   its block (−1: inactive), `rix[o]` its index in compact vectors, with `rix = N` (the sink) for

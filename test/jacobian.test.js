@@ -202,6 +202,19 @@ const diffuseCell = (face, V) => {
     grid: { hmin: 1e-7, hmax: 2e-6 },
   });
 };
+// A reactant its diffuse layer repels, driven toward the layer's limit: ferricyanide in KCl at a face
+// charged negative, the layer's resistance to it most of what the current sees (its plane level
+// well below the edge's), dilute or on a lattice of 0.71 nm sites.
+const repelled = (lattice) => {
+  const c = { FeIII: 1, FeII: 1, 'Cl-': 100, 'K+': 107 };
+  return build({
+    library: [{ species: [{ name: 'FeIII', z: -3, cRef: 1000 }, { name: 'FeII', z: -4, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 0, species: { FeIII: { D: 0.72e-9, mu0: 0 }, FeII: { D: 0.67e-9, mu0: -FARADAY * 0.36 }, 'K+': { D: 1.957e-9, mu0: 0 }, 'Cl-': { D: 2.032e-9, mu0: 0 } },
+        ...(lattice ? { statistics: [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax: 4640 }] } : {}) } } }, metal('Pt')],
+    stack: [ohmic(lattice ? -0.5 : -0.6, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, diffuse: { epsr: 78.4 }, reactions: [{ ...half('FeIII + e- = FeII'), k0: 5e-2, alpha: 0.5 }] }, layer('water', 30e-6, { c0: c }), bath(c, 'Cl-')],
+    grid: { hmin: 30e-9, hmax: 2e-6, ratio: 1.2 },
+  });
+};
 // The same on a lattice of 0.5 nm sites, with a neutral species on it.
 const crowded = (def) => {
   def.species.push({ name: 'S', z: 0, cRef: 1000 });
@@ -285,6 +298,11 @@ const devices = {
   // faces' laws, the edge boxes' Gauss rows and balances, and the reactions at their planes.
   'a diffuse layer at a reacting electrode': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 0.9),
   'a diffuse layer at a saturating electrode': () => diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 0.9),
+  // (a reactant the layer gathers, its plane level a little above the edge's; one it repels, near
+  // the layer's limit, dilute and crowded)
+  'a diffuse layer gathering what its electrode reduces': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, -0.3),
+  'a reactant its diffuse layer repels': () => repelled(false),
+  'a reactant its crowded diffuse layer repels': () => repelled(true),
   // (crowded: on the bulk's lattice, with a neutral species on it, displaced at the plane)
   'a crowded diffuse layer at a reacting electrode': () => crowded(diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 1.4)),
   'a crowded diffuse layer at a saturating electrode': () => crowded(diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 1.4)),

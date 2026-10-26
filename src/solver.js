@@ -61,6 +61,18 @@ export class SolverError extends Error {
   }
 }
 
+// The species a face's diffuse layer on that side (0 left, 1 right) passes to its reactions:
+// each participant there that the layer holds (charged, or on its lattice), but SRH's (refused
+// beside a layer), in species order. A flux across the layer lowers each one's level at the plane.
+function drawSpecies(itf, side, species) {
+  const lat = itf.diffuse.lattice[side], out = new Set();
+  for (const rx of itf.reactions) {
+    if (rx.srh) continue;
+    for (const p of rx.part) if (p.side === side && (species[p.i].z !== 0 || lat?.on[p.i])) out.add(p.i);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 export class Solver {
   constructor(model) {
     this.model = model;
@@ -68,8 +80,9 @@ export class Solver {
     const n = species.length;
     // Slots per block: φ̂ (or D, or a conductor's segment flux J), one per species, and at a face
     // one per face reaction (its rate), one per gate (its fraction open) and one per diffuse
-    // layer (its drop), as many as the busiest face has.
-    const nDiff = (itf) => (itf.diffuse ? (itf.diffuse.left ? 1 : 0) + (itf.diffuse.right ? 1 : 0) : 0);
+    // layer (its drop) and one per species that layer passes to a face reaction (its level at the
+    // plane: drawSpecies), as many as the busiest face has.
+    const nDiff = (itf) => (itf.diffuse ? [0, 1].reduce((m, side) => m + ((side ? itf.diffuse.right : itf.diffuse.left) ? 1 + drawSpecies(itf, side, species).length : 0), 0) : 0);
     const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length + nDiff(itf)), 0);
     // (and at an electrode port's nodes, one per surface species: its coverage's η)
     const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
@@ -131,17 +144,24 @@ export class Solver {
     // species it holds an excess of (the charged, and a lattice's neutral ones, displaced), and
     // its scratch (q, Γ and their derivatives, D, from computeConcentrations). Γ
     // [d·n + i], the excesses, now and at the step's start; diffAt[f] = [left d, right d] (−1: none).
+    // And the species it passes to the face's reactions (the drawn: each one's level at the plane
+    // in slot drawSlot[i], after both sides' drops, −1 where not drawn; draw[i] = 1 for them), and
+    // their diffusivities there, Dm.
     this.diffList = [];
     this.diffAt = model.interfaces.map(() => [-1, -1]);
     model.interfaces.forEach((itf, f) => {
       if (!itf.diffuse) return;
       let slot = 1 + n + itf.reactions.length + itf.gates.length;
-      for (const side of [0, 1]) {
-        if (!(side ? itf.diffuse.right : itf.diffuse.left)) continue;
+      const sides = [0, 1].filter((side) => (side ? itf.diffuse.right : itf.diffuse.left));
+      let level = slot + sides.length;
+      for (const side of sides) {
         const g = side ? grid.regionStart[f + 1] : grid.regionEnd[f];
         this.diffAt[f][side] = this.diffList.length;
-        const lat = itf.diffuse.lattice[side];
-        this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n), lat, holds: Uint8Array.from(species, (sp, i) => (sp.z !== 0 || lat?.on[i] ? 1 : 0)) });
+        const lat = itf.diffuse.lattice[side], drawSlot = new Int32Array(n).fill(-1);
+        for (const i of drawSpecies(itf, side, species)) drawSlot[i] = level++;
+        const draw = drawSlot.some((q) => q >= 0) ? Uint8Array.from(drawSlot, (q) => (q >= 0 ? 1 : 0)) : null;
+        const Dm = model.materials[regions[grid.nodeRegion[g]].material].D;
+        this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n), lat, holds: Uint8Array.from(species, (sp, i) => (sp.z !== 0 || lat?.on[i] ? 1 : 0)), drawSlot, draw, Dm });
         slot++;
       }
     });
@@ -464,7 +484,10 @@ export class Solver {
       for (let i = 0; i < n; i++) active[bf * M + 1 + i] = itf.links[i].type === 'blocked' ? 0 : 1;
       for (let k = 0; k < itf.reactions.length + itf.gates.length; k++) active[bf * M + 1 + n + k] = 1;
     });
-    for (const d of this.diffList) active[d.o] = 1;
+    for (const d of this.diffList) {
+      active[d.o] = 1;
+      for (const q of d.drawSlot) if (q >= 0) active[this.blockOfFace[d.f] * M + q] = 1;
+    }
     const sizes = new Int32Array(nB), loc = (this.loc = new Int32Array(nB * M).fill(-1));
     for (let b = 0; b < nB; b++) for (let r = 0; r < M; r++) if (active[b * M + r]) loc[b * M + r] = sizes[b]++;
     const sys = (this.sys = new BlockTridiagonal(nB, sizes));

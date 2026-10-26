@@ -58,6 +58,49 @@ test("a diffuse layer's derivatives are its functions' own", () => {
   }
 });
 
+// The layer's resistance to each species, K_i = ∫ (c_i/c_i(x) − 1) dx (m), in excess of the bulk
+// it displaces: its answer sheet (ktruth.py) the BVP in x, dilute and Bikerman (within 2e-10),
+// mpmath quadrature of the first integral (below), and a z:z salt's closed form, (2/κ)(e^{z s/2} − 1)
+// (within 3e-14). [name, c, z, cMax (null: dilute; every species on the lattice), s, K]
+const KTABLE = [
+  ['KCl 0.1 M', [100, 100], [1, -1], null, -5, [-1.764912036347612e-9, 2.150103022397819e-8]],
+  ['KCl 0.1 M', [100, 100], [1, -1], null, 2, [3.303809477281056e-9, -1.2154035842390576e-9]],
+  ['ferri/ferro in KCl', [5, 5, 1035, 1000], [-3, -4, 1, -1], null, -6, [0.0003923544387856649, 0.11298713427609193, -5.644825613191853e-10, 1.1398063366314176e-8]],
+  ['ferri/ferro in KCl', [5, 5, 1035, 1000], [-3, -4, 1, -1], null, -2, [2.237407212579413e-8, 1.1567674564979709e-7, -3.7449844118931354e-10, 1.0208070045074244e-9]],
+  ['ferri/ferro in KCl', [5, 5, 1035, 1000], [-3, -4, 1, -1], null, 6, [-6.516431150864475e-10, -7.336856113075164e-10, 1.3134021822616313e-9, -3.61226918527453e-10]],
+  ['ferri/ferro in 0.1 M KCl', [1, 1, 107, 100], [-3, -4, 1, -1], null, -4.5, [2.911156998397293e-5, 0.001866111724404636, -1.6426552769413111e-9, 1.5728635328382e-8]],
+  ['CaCl2 10 mM', [10, 20], [2, -1], null, -3, [-3.087477901183619e-9, 7.369898913761607e-9]],
+  ['CaCl2 10 mM', [10, 20], [2, -1], null, 3, [1.3834063058033572e-7, -3.04832426805273e-9]],
+  ['ferri/ferro in KCl, 0.71 nm sites', [5, 5, 1035, 1000], [-3, -4, 1, -1], 4639.530685488421, -6, [0.10203952154823462, 32.70635913963544, -6.379631598091004e-10, 1.3064088601986689e-6]],
+  ['ferri/ferro in KCl, 0.71 nm sites', [5, 5, 1035, 1000], [-3, -4, 1, -1], 4639.530685488421, 2, [-6.440312626179838e-10, -7.309413516211651e-10, 2.1851465644424773e-9, -2.9312911110438043e-10]],
+  ['ferri/ferro in KCl, 0.71 nm sites', [5, 5, 1035, 1000], [-3, -4, 1, -1], 4639.530685488421, 5.8, [-8.334081894742034e-10, -9.34839000440791e-10, 0.0304576879390301, 4.746015470071252e-7]],
+  ['KCl 0.5 M + 1 M neutral, 0.6 nm sites', [500, 500, 1000], [1, -1, 0], 7687.680866545586, -10, [-1.0812315205031789e-9, 0.0006673866514793496, 6.358763786473052e-8]],
+];
+
+test("a diffuse layer's resistance to each species matches its answer sheet, with its derivatives", () => {
+  for (const [name, c, z, cMax, s, K] of KTABLE) {
+    const n = c.length, draw = new Uint8Array(n).fill(1), lat = cMax ? { cMax, on: new Uint8Array(n).fill(1) } : null;
+    const at = (cc, ss) => diffuseLayer(Float64Array.from(cc), z, n, ss, sheetUnits, diffuseScratch(n), lat, draw);
+    const o = at(c, s);
+    K.forEach((k, i) => assert.ok(Math.abs(o.K[i] - k) <= 1e-12 * Math.abs(k), `${name} at s = ${s}: K[${i}] ${o.K[i]} for ${k}`));
+    const h = 1e-6, p = at(c, s + h), m = at(c, s - h);
+    for (let i = 0; i < n; i++) assert.ok(Math.abs((p.K[i] - m.K[i]) / (2 * h) - o.dKds[i]) <= 1e-6 * Math.abs(o.dKds[i]) + 1e-9 * Math.abs(o.K[i]), `${name} at s = ${s}: ∂K[${i}]/∂s`);
+    for (let j = 0; j < n; j++) {
+      const up = [...c], dn = [...c], dc = 1e-6 * c[j];
+      up[j] += dc;
+      dn[j] -= dc;
+      const a = at(up, s), b = at(dn, s);
+      for (let i = 0; i < n; i++) {
+        const fd = (a.K[i] - b.K[i]) / (2 * dc), w = o.dKdc[i * n + j];
+        assert.ok(Math.abs(fd - w) <= 1e-6 * Math.abs(w) + 1e-9 * Math.abs(o.K[i] / c[j]), `${name} at s = ${s}: ∂K[${i}]/∂c[${j}] ${w} written, ${fd} by differences`);
+      }
+    }
+    // the excesses are untouched by what's drawn
+    const plain = diffuseLayer(Float64Array.from(c), z, n, s, sheetUnits, diffuseScratch(n), lat);
+    plain.gam.forEach((g, i) => assert.equal(o.gam[i], g));
+  }
+});
+
 // Crowded (Bikerman): the ions on a lattice of cMax sites, as the bulk's lattice statistics have
 // them, c_i(s) = c_i e^{−z_i s}/D(s), D = 1 + Σ θ_j (e^{−z_j s} − 1), θ_j = c_j/cMax. Its answer
 // sheet (bikerman.py): the BVP in x (within 5e-10), mpmath quadrature of G = cMax ln D + s Σ c z
@@ -223,25 +266,73 @@ test('a crowded diffuse layer is the limit of the resolved one, and keeps what a
   assert.ok(Math.abs(sol.interfaces[0].D / st.interfaces[0].D - 1) < 1e-8, `σ after 1 s ${sol.interfaces[0].D}, steady ${st.interfaces[0].D}`);
 });
 
-test("a reaction at a crowded plane sees what the resolved lattice's does, where the layer's own transport doesn't count", () => {
+test("a reaction at a crowded plane sees what the resolved lattice's does, a packed plane's resistance too", () => {
   // The ferri/ferrocyanide electrode on a lattice of 0.71 nm sites, a Stern layer of 1 F/m² at
   // zeroCharge 0.25 V, its plane half full of Cl⁻: R_dc as the resolved electrode's (ε = 78.4,
-  // its lattice in the bulk) to 1.3e-5. (The layer is taken in equilibrium across itself, its own
-  // transport left out: about λ_D c/(L c_plane) of the cell's, which grows where a reacting species
-  // is driven out of the plane, 3.6e-4 at 6% of the bulk, or a packed plane leaves no room to
-  // move, 6% at 99.7% full.)
+  // its lattice in the bulk) to 6e-6, its cells to 0.01 nm (which converge onto it at second order).
   const c = { FeIII: 5, FeII: 5, 'Cl-': 1000, 'K+': 1035 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
-  const def = (grid, resolved) => {
-    const d = ferri(30e-9, { diffuse: resolved ? null : { epsr: 78.4 }, epsr: resolved ? 78.4 : 0, zeroCharge: 0.25 });
+  const def = (grid, resolved, zeroCharge = 0.25) => {
+    const d = ferri(30e-9, { diffuse: resolved ? null : { epsr: 78.4 }, epsr: resolved ? 78.4 : 0, zeroCharge });
     d.materials.water.statistics = [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax }];
     d.interfaces[0].phi.C = 1;
     d.grid = grid;
     return d;
   };
   const g = rdc(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false)), r = rdc(def({ hmin: 0.01e-9, hmax: 2e-6, ratio: 1.025 }, true));
-  assert.ok(Math.abs(r - g) < 3e-5 * g, `R_dc ${g} Ω·cm², resolved ${r}`);
+  assert.ok(Math.abs(r - g) < 1e-5 * g, `R_dc ${g} Ω·cm², resolved ${r}`); // (extrapolated, 46.2902605: 4e-9)
   const d = new Device(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false)).solve().interfaces[0].diffuse.right;
   assert.ok(d.plane['Cl-'] > 0.4 * cMax, `the plane's Cl⁻ ${d.plane['Cl-']} of ${cMax}`);
+  // At zeroCharge −0.3 V the plane is 99.7% ferrocyanide, and the ferricyanide and K⁺ it shuts out
+  // pass it only through its resistance: R_dc 5.5e6 Ω·cm², the resolved electrode's (cells to
+  // 0.01, 0.005, 0.0025 nm, ratio 1.025, 1.0125, 1.00625: 5497820.88, 5497769.67, 5497756.78,
+  // extrapolated 5497752.48) to 1e-6. Without the resistance it came out 6% high.
+  const packed = rdc(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false, -0.3));
+  assert.ok(Math.abs(packed - 5497752.48) < 1e-6 * packed, `packed: R_dc ${packed} Ω·cm²`);
+});
+
+// A reactant the electrode's charge repels, driven toward its limiting current: ferricyanide (z = −3,
+// 1 mM, with 1 mM ferrocyanide) reduced in 0.1 M KCl on a lattice of 0.71 nm sites, at a face
+// charged negative (Stern 0.2 F/m², zeroCharge 0.6 V), 30 µm from a bath. What the reaction takes
+// has to cross the layer to the plane, where K⁺ fills most of the sites and the ferricyanide is
+// 1e-5 of the bulk's or less: as the electrode goes negative its rate rises, then falls, the layer
+// driving the reactant out faster than the Stern drop speeds the reaction (Frumkin's dip, as in
+// peroxodisulfate's reduction). Answer sheet: the same electrode resolved (ε = 78.4, its lattice
+// in the bulk; cells to 0.01, 0.005 and 0.0025 nm at ratios 1.025, 1.0125, 1.00625, converging at
+// second order, ratio 3.89), extrapolated; the current as a fraction of F D c/L. Without the
+// layer's resistance the law came out 68% high at −0.5 V.
+const DIP = [[-0.1, 0.0029985939], [-0.3, 0.0038684881], [-0.5, 0.0025623523]];
+// (and the plane's ferricyanide, mol/m³, the resolved electrode's at its first node, extrapolated the same way)
+const DIP_PLANE = [[-0.3, 1.6412531e-7], [-0.5, 3.4508778e-9]];
+const dip = (contact) => {
+  const c = { FeIII: 1, FeII: 1, 'Cl-': 100, 'K+': 107 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
+  return build({
+    library: [{ species: [{ name: 'FeIII', z: -3, cRef: 1000 }, { name: 'FeII', z: -4, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { water: { epsr: 0, species: { FeIII: { D: 0.72e-9, mu0: 0 }, FeII: { D: 0.67e-9, mu0: -FARADAY * 0.36 }, 'K+': { D: 1.957e-9, mu0: 0 }, 'Cl-': { D: 2.032e-9, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax }] } } }, metal('Pt')],
+    stack: [ohmic(contact, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, diffuse: { epsr: 78.4 }, reactions: [{ ...half('FeIII + e- = FeII'), k0: 5e-2, alpha: 0.5 }] }, layer('water', 30e-6, { c0: c }), bath(c, 'Cl-')],
+    grid: { hmin: 30e-9, hmax: 2e-6, ratio: 1.2 },
+  });
+};
+
+test("a reactant the layer repels crosses it through the layer's resistance: Frumkin's dip, as resolved", () => {
+  const unit = (FARADAY * 0.72e-9 * 1) / 30e-6;
+  for (const [V, want] of DIP) {
+    const sol = new Device(dip({ V })).solve();
+    assert.ok(sol.converged && sol.warnings.length === 0, sol.warnings.join('\n'));
+    const got = -sol.terminals.left.current / unit;
+    assert.ok(Math.abs(got - want) < 1e-5 * want, `at ${V} V: ${got} of F D c/L, resolved ${want}`);
+  }
+  // what the solution reports at the plane, its level below the edge's included
+  for (const [V, want] of DIP_PLANE) {
+    const got = new Device(dip({ V })).solve().interfaces[0].diffuse.right.plane.FeIII;
+    assert.ok(Math.abs(got - want) < 1e-5 * want, `at ${V} V: the plane's ferricyanide ${got}, resolved ${want}`);
+  }
+  // deeper, the plane all but loses its reactant (the resolved electrode gets there only by a sweep)
+  const deep = new Device(dip({ V: -1.0 })).solve(), top = new Device(dip({ V: -0.3 })).solve();
+  assert.ok(deep.converged && -deep.terminals.left.current < 1e-3 * -top.terminals.left.current, `at −1 V: ${deep.terminals.left.current} A/m²`);
+  assert.ok(deep.interfaces[0].diffuse.right.plane.FeIII < 1e-6 * top.interfaces[0].diffuse.right.plane.FeIII, 'the plane loses its reactant as the dip deepens');
+  // past the top, no steady state carries a driven current, and the solve says so
+  const over = new Device(dip({ I: -0.006 * unit })).solve();
+  assert.ok(!over.converged && /no steady state passes the driven current/.test(over.warnings.join(' ')), over.warnings.join('\n'));
 });
 
 test("the cell's low-frequency capacitance is Stern's and Gouy–Chapman's in series", () => {
@@ -305,6 +396,12 @@ test('the reaction at a diffuse layer sees the plane, which the solution reports
     assert.ok(Math.abs(d.plane[name] - s.c[name][g] * Math.exp((-z * d.psi) / VT)) < 1e-12 * d.plane[name], `${name} at the plane`);
   }
   assert.ok(Math.abs(d.charge + s.interfaces[0].D) < 1e-9 * Math.abs(d.charge), `the layer holds the metal's charge: ${d.charge} against ${s.interfaces[0].D}`);
+  // (Newton counts the drop in its convergence: without it, this one stopped 3e-5 off, the drop still moving)
+  const thin = ferri(1e-9, { zeroCharge: 0.3 }), c = { FeIII: 1, FeII: 1, 'Cl-': 10, 'K+': 17 };
+  thin.regions[1].c0 = c;
+  thin.contacts.right.bath.c = c;
+  const t = new Device(thin).solve(), td = t.interfaces[0].diffuse.right;
+  assert.ok(Math.abs(td.charge + t.interfaces[0].D) < 1e-12 * Math.abs(td.charge), `10 mM: ${td.charge} against ${t.interfaces[0].D}`);
   assert.match(describe(ferri(30e-9)), /a diffuse layer below the grid \(Gouy–Chapman, εr 78\.4\) on the region 1 side/);
 });
 

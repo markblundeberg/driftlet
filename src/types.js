@@ -120,7 +120,8 @@
  * @property {number} psi the drop from the side's edge node to the plane, φ_plane − φ_edge (V)
  * @property {number} charge the layer's charge (C/m²)
  * @property {Record<string, number>} excess each ion's surface excess, ∫ (c − c_edge) dx (mol/m²)
- * @property {Record<string, number>} plane each ion's concentration at the plane, c e^{−zFψ/RT} (mol/m³)
+ * @property {Record<string, number>} plane each ion's concentration at the plane, c e^{−zFψ/RT} (mol/m³; on a
+ *   lattice, over its crowding; for what a face reaction takes or makes there, times its level's drop across the layer)
  */
 /**
  * One face between consecutive regions. For different materials under a 'pinned' or

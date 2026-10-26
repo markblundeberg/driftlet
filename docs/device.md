@@ -156,7 +156,7 @@ interfaces: [
   {
     step: { species: 'e-', value: units.eV(0.25) }, // alignment: or { dipole: volts }
     phi: 'pinned', // 'pinned' | 'neutral' | { type: 'capacitive', C }
-    sheetCharge: 0, // C/m²
+    sheetCharge: 0, // C/m², on the face's right plate
     diffuse: { epsr: 78.4 }, // a Gouy–Chapman layer below the grid, beside a strictly neutral side
     species: { 'Cl-': 'blocked', 'Li+': { type: 'conductance', G: 50 }, 'Na+': 'blocked' },
     reactions: [{ left: { 'Na+': -1 }, right: { 'Na+': 1 }, k0: 1e-3, alpha: 0.5 }], // Na⁺ crosses only by this
@@ -224,15 +224,41 @@ over $`1 + \sum_j \theta_j (e^{-z_j s} - 1)`$, $`\theta_j = c_j/c_{\mathrm{max}}
 $`\sum_i c_i (e^{-z_i s} - 1 + z_i s)`$ above becomes $`c_{\mathrm{max}}\ln(1 + \sum_j \theta_j (e^{-z_j s} - 1)) + s\sum_j c_j z_j`$, so the plane fills to $`c_{\mathrm{max}}`$
 and no further, and a neutral species on the lattice is pushed out of it. Its ions must otherwise be
 ideal (all of them on the one lattice, or none) and mobile, and SRH kinetics beside a layer isn't
-supported. The layer is taken in equilibrium across itself: its own transport resistance, about
-$`\lambda_D c/(L\,c_{\mathrm{plane}})`$ of a cell of length L, is left out. That's negligible in a
-macroscopic cell unless a reacting species is driven out of the plane (at 6% of the bulk, the
-resistance of the ferri/ferrocyanide electrode in 30 µm came out 3.6e-4 below the resolved one's)
-or the lattice there is packed, leaving its ions no room to move (99.7% full: 6%). At a membrane between two solutions, a layer on each side: a
+supported.
+
+What a face reaction takes or makes at the plane crosses the layer, against the layer's
+resistance to it, $`K_i = \int (c_i/c_i(x) - 1)\,dx`$ (a length, by the same quadrature): its level
+at the plane is below the edge node's by what its flux $`N_i`$ toward the plane needs,
+$`a_{\mathrm{plane}} = a_{\mathrm{edge}}\,(1 - N_i K_i/(D_i c_i))`$, one more unknown per such species
+(the `plane` it reports includes it). That's exact for a species too dilute to shape the layer,
+which is the case that matters: a reactant the face's charge repels, for which $`K_i`$ grows as
+$`c_i/c_{i,\mathrm{plane}}`$, so the plane can run out of it. Its current then rises and falls as the
+electrode is driven harder, Frumkin's dip (ferricyanide reduced at a negatively charged electrode
+in 0.1 M KCl, as peroxodisulfate is): within 1.5e-6 of the same electrode resolved, where leaving
+the resistance out had it 68% high; and a plane 99.7% full of ferrocyanide, which its other ions
+cross only through it, puts the electrode's R_dc within 1e-8 of the resolved one's (6% off
+without it). Where the layer gathers a species, $`K_i < 0`$, bounded by about the layer's width: a
+correction of order $`\lambda_D/L`$. What the layer doesn't cover:
+- a salt run out at the electrode, toward and past an unsupported electrolyte's limiting current:
+  the layer spreads into the solution there (an extended space charge), and where the resolved
+  electrode's current climbs past the limit, the law's stays at it (silver deposited from 10 mM
+  AgNO₃ across 100 µm: 8e-4 high at 96% of the limiting current, 1% low at −1.5 V, well past it);
+- a solution beside it only a few Debye lengths wide (a nanopore, overlapping layers): the layer is
+  taken whole, as if the solution went on;
+- a permeability link's ions crossing it: at a membrane they're at the planes in equilibrium with
+  the edges (the membrane, many orders less permeable than the layer, sets their flux);
+- ions of different sizes, and the field's lowering of ε near the plane: one site for every ion
+  (Bikerman), and one permittivity.
+
+At a membrane between two solutions, a layer on each side: a
 permeability link runs between the planes (Goldman–Hodgkin–Katz on the planes' concentrations,
 across the drop between them), and gates follow the voltage between the planes, the one the
 membrane itself has across it (`interfaces[f].V`), so a surface charge (`sheetCharge`) and the
-ions that screen it shift a channel's gating and permeation, as divalent cations do.
+ions that screen it shift a channel's gating and permeation, as divalent cations do. A face's
+`sheetCharge` sits on its right plate: beside a layer on the right, at that layer's plane (ions
+adsorbed at the outer Helmholtz plane, the Stern layer between them and the left side). For a
+charge on the left plate (an oxide's surface groups, its Stern layer on the solution's side),
+build the stack the other way round.
 
 **Species laws** `species` (default: local equilibrium, $`\bar\mu`$ continuous, where the species is
 present on both sides and can move on one at least; blocked otherwise, so trap states with

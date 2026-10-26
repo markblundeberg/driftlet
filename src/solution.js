@@ -197,7 +197,9 @@ export function makeSolution(solver, result = {}) {
       for (let i = 0; i < n; i++) {
         if (!solver.present[dl.g * n + i]) continue;
         excess[species[i].name] = solver.gam[d * n + i];
-        plane[species[i].name] = (c[dl.g * n + i] * Math.exp(-species[i].z * sd)) / (dl.holds[i] ? dl.dl.D : 1); // (crowded: over D)
+        // (crowded: over D; drawn by a reaction, times e^w, its level there below the edge's)
+        const w = dl.drawSlot[i] < 0 ? 0 : u[solver.blockOfFace[f] * solver.M + dl.drawSlot[i]];
+        plane[species[i].name] = (c[dl.g * n + i] * Math.exp(-species[i].z * sd + w)) / (dl.holds[i] ? dl.dl.D : 1);
       }
       (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane };
     });
