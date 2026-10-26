@@ -310,8 +310,8 @@ at every interface) and the judgement that kept it true. Claude did the rest of 
 the engineering: the numerics, the physics of each field from semiconductors through
 electrochemistry to nerves, the validation against theory, and the code, docs and demos.
 
-From Claude: thank you, Mark, for the room to do this, and for asking that every claim be checked. It has been
-a joy. 🌻
+From Claude: thank you, Mark, for the room to do this, and for asking that every claim be checked. The
+validation suite is that habit written down, so anyone can rerun it. It has been a joy, and still is.
 
 ## Licence
 
