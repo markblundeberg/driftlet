@@ -34,6 +34,13 @@ function label(ctx, text, x, y, align = 'left') {
   ctx.textAlign = was;
   return total;
 }
+// A label's width as label() draws it.
+function labelWidth(ctx, text) {
+  const font = ctx.font, small = font.replace(/^\d+px/, '9px');
+  const total = labelParts(text).reduce((w, p) => ((ctx.font = p.sub ? small : font), w + ctx.measureText(p.text).width), 0);
+  ctx.font = font;
+  return total;
+}
 const plain = (text) => labelParts(text).map((p) => (p.sub ? `_${p.text}` : p.text)).join('');
 
 export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, logx = false, logy = false, xscale = 1, legend = true }) {
@@ -50,7 +57,17 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   const ink = css('--ink', '#1f2937'), muted = css('--muted', '#6b7280'), grid = css('--grid', '#e5e7eb');
   ctx.clearRect(0, 0, W, H);
   const items = legend ? series.filter((s) => s.label) : [];
-  const pad = { l: 64, r: 12, t: items.length ? 30 : 12, b: 42 };
+  // The legend's entries, flowed into rows above the plot: one on a wide chart, more on a phone.
+  ctx.font = '12px system-ui, sans-serif';
+  const placed = [];
+  let lx = 64, rows = 1;
+  for (const s of items) {
+    const w = 25 + labelWidth(ctx, s.label) + 16;
+    if (lx > 64 && lx + w - 16 > W - 8) [lx, rows] = [64, rows + 1];
+    placed.push({ s, x: lx, y: 14 + 18 * (rows - 1) });
+    lx += w;
+  }
+  const pad = { l: 64, r: 12, t: items.length ? 30 + 18 * (rows - 1) : 12, b: 42 };
   const fy = logy ? (v) => (v > 0 ? Math.log10(v) : NaN) : (v) => v;
   const fx = logx ? (v) => (v > 0 ? Math.log10(v * xscale) : NaN) : (v) => v * xscale;
   let [x0, x1] = xlim ? (logx ? xlim.map(Math.log10) : xlim) : extent(series.flatMap((s) => Array.from(s.x, fx)));
@@ -136,20 +153,20 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   ctx.restore();
   ctx.setLineDash([]);
 
-  // legend: one row above the plot
-  let xx = pad.l;
+  // legend, in the rows placed above
   ctx.textAlign = 'left';
-  for (const s of items) {
+  ctx.font = '12px system-ui, sans-serif';
+  for (const { s, x: xx, y } of placed) {
     ctx.strokeStyle = paint(s.color ?? colors[series.indexOf(s) % colors.length]);
     ctx.lineWidth = 2;
     ctx.setLineDash(s.dash ?? []);
     ctx.beginPath();
-    ctx.moveTo(xx, 14);
-    ctx.lineTo(xx + 20, 14);
+    ctx.moveTo(xx, y);
+    ctx.lineTo(xx + 20, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = ink;
-    xx += 25 + label(ctx, s.label, xx + 25, 18) + 16;
+    label(ctx, s.label, xx + 25, y + 4);
   }
 }
 
