@@ -155,6 +155,17 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
   const small = past(runs['0.1 1']), big = past(runs['0.7 1']);
   assert.ok(small.at(-1) > 1.5 * Math.min(...small), `0.1 nm: ${Math.min(...small)} at the least, ${small.at(-1)} at −1.2 V`);
   assert.ok(big.every((v, k) => k === 0 || v < big[k - 1]), `0.7 nm: ${big}`);
+  // "the minimum moves the other way ... −0.79 V in 1 mM and −0.61 V in 0.1 M, where it's a dip of under 10%";
+  // "it about doubles from the minimum to −1.2 V in dilute salt (the classic correction's triples)"
+  setSite(0.1e-9);
+  const fine = Array.from({ length: 101 }, (_, k) => -0.2 - 0.01 * k);
+  const least = (salt, kind) => {
+    const j = fine.map((E) => theory(salt, E, kind)), k = j.indexOf(Math.min(...j));
+    return { E: fine[k], rise: j.at(-1) / j[k], depth: j[k] / theory(salt, 0.4, kind) };
+  };
+  const [m1, m100] = [least(1), least(100)], c1 = least(1, 'classic');
+  assert.ok(Math.abs(m1.E + 0.79) < 0.015 && Math.abs(m100.E + 0.61) < 0.015 && m100.depth > 0.9, `${JSON.stringify(m1)}, ${JSON.stringify(m100)}`);
+  assert.ok(Math.abs(m1.rise - 2.1) < 0.2 && Math.abs(c1.rise - 3) < 0.25, `${m1.rise}, ${c1.rise}`);
   // "However fast the reaction, that caps the current at the limiting current times L/(L + K) ... and the cap falls"
   for (const a of [0.1, 0.7]) {
     setSite(a * 1e-9);
@@ -287,6 +298,15 @@ test('demos/randles.html: the Randles circuit, from the physics, is the simulate
     }));
     assert.ok(worst < 1e-2, `${JSON.stringify(p)}: within ${worst}`);
   }
+  // At the start: "the dip between the arcs sits about 11% beyond R_s + R_ct"; "the phase plot's tall peak ...
+  // at 1/(2πC_dl√(R_s(R_s + R_ct))), near 1 kHz"; "the corner ... 37 Hz"
+  const th = randles({ k0: 0.01, salt: 100, L: 10 ** 1.75 * 1e-6 }), ft = Array.from({ length: 4001 }, (_, k) => 10 ** (-2 + k / 500)), z = ft.map(th.Z);
+  const fRC = 1 / (2 * Math.PI * th.Rct * th.Cdl);
+  let dip = null;
+  for (let k = 1; k < z.length - 1; k++) if (ft[k] < fRC && -z[k].im < -z[k - 1].im && -z[k].im < -z[k + 1].im) dip = z[k];
+  const ph = z.map((w) => -Math.atan2(w.im, w.re)), peak = ft[ph.indexOf(Math.max(...ph.slice(1000)))];
+  const formula = 1 / (2 * Math.PI * th.Cdl * Math.sqrt(th.Rs * (th.Rs + th.Rct)));
+  assert.ok(Math.abs(dip.re / (th.Rs + th.Rct) - 1.11) < 0.02 && Math.abs(peak / formula - 1) < 0.02 && peak > 800 && peak < 1500 && Math.abs(fRC - 37) < 1, `${dip.re / (th.Rs + th.Rct)}, ${peak} against ${formula}, ${fRC}`);
 });
 
 test('demos/corrosion.html: the mixed potential and the Evans diagram against their closed forms, as the page says', async () => {

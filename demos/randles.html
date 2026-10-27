@@ -51,7 +51,13 @@
     Warburg there is small; then the 45° line takes over; and once the diffusion reaches through the
     stagnant layer to the stirred bulk (about D/(2πL²) in frequency), Z<sub>W</sub> stops growing and the
     spectrum bends back to the real axis at R<sub>s</sub> + R<sub>ct</sub> + R<sub>W</sub>, with
-    R<sub>W</sub> = (RTL/F²c)(1/D<sub>Fe³⁺</sub> + 1/D<sub>Fe²⁺</sub>). That's the transmissive finite
+    R<sub>W</sub> = (RTL/F²c)(1/D<sub>Fe³⁺</sub> + 1/D<sub>Fe²⁺</sub>). Reading those off the plots takes care
+    where the features overlap. The dip between the arcs sits about 11% beyond R<sub>s</sub> + R<sub>ct</sub>
+    (both ends are marked on the axis), as the Warburg's start bends the first arc, so k⁰ from the dip comes
+    out low. The phase plot's tall peak isn't the R<sub>ct</sub>C<sub>dl</sub> corner (marked, 37 Hz at the
+    start) but sits at 1/(2πC<sub>dl</sub>√(R<sub>s</sub>(R<sub>s</sub> + R<sub>ct</sub>))), near 1 kHz, and is
+    tall only because R<sub>s</sub> here is so small; the corner is the knee in |Z|. And the Warburg's σ, from
+    Z′ against ω<sup>−½</sup>, comes cleanly only from a thick layer. That's the transmissive finite
     Warburg of a Nernst diffusion layer (fitting programs' "Ws"); a <a href="rde.html">rotating disk</a> is
     the usual way to make one.</p>
   <p>driftlet knows nothing of the circuit: it solves the ions, the potential and the reaction for their small
@@ -165,7 +171,7 @@ function rebuild() {
   document.getElementById('status').textContent =
     `R_s ${cm2(th.Rs).toPrecision(3)} Ω·cm² · C_dl ${(th.Cdl * 100).toPrecision(3)} µF/cm² · R_ct ${cm2(th.Rct).toPrecision(3)} Ω·cm² · ` +
     `σ ${cm2(th.sigma).toPrecision(3)} Ω·cm²·s⁻¹ᐟ² · R_W ${cm2(th.RW).toPrecision(3)} Ω·cm² · the R_ct·C_dl corner ${(1 / (2 * Math.PI * th.Rct * th.Cdl)).toPrecision(2)} Hz, ` +
-    `the diffusion's ${(IONS['Fe3+'].D / (2 * Math.PI * p.L * p.L)).toPrecision(2)} Hz · simulation and circuit within ${(100 * worst).toPrecision(2)}%`;
+    `D/(2πL²) ${(IONS['Fe3+'].D / (2 * Math.PI * p.L * p.L)).toPrecision(2)} Hz · simulation and circuit within ${(100 * worst).toPrecision(2)}%`;
   // Nyquist on equal scales: one Ω·cm² per so many pixels both ways (the chart's plot area is the canvas
   // less 76 px across and 72 down), enough to hold the whole spectrum.
   const canvas = document.getElementById('nyquist'), pw = Math.max(1, canvas.clientWidth - 76), ph = Math.max(1, canvas.clientHeight - 72);
@@ -176,14 +182,20 @@ function rebuild() {
     series: [
       { x: line.map((z) => cm2(z.re)), y: line.map((z) => -cm2(z.im)), color: colors[0], width: 1.2, label: 'Randles circuit' },
       { x: sim.map((z) => cm2(z.re)), y: sim.map((z) => -cm2(z.im)), color: colors[3], marker: true, width: 0, label: 'simulated' },
+      // where R_ct and R_W really end, on the real axis (the dip between the arcs isn't R_s + R_ct)
+      { x: [cm2(th.Rs + th.Rct), cm2(th.Rs + th.Rct + th.RW)], y: [0, 0], color: colors[6], marker: true, width: 0, label: 'R_s + R_ct, + R_W' },
     ],
   });
+  // The two corners, marked on the Bode plots: R_ct·C_dl's, and the diffusion's D/(2πL²).
+  const fRC = 1 / (2 * Math.PI * th.Rct * th.Cdl), fD = IONS['Fe3+'].D / (2 * Math.PI * p.L * p.L);
+  const corners = (lo, hi) => [{ x: [fRC, fRC], y: [lo, hi], color: 'var(--muted)', width: 1, dash: [2, 3], label: '1/(2πR_ct C_dl)' }, { x: [fD, fD], y: [lo, hi], color: 'var(--muted)', width: 1, dash: [6, 3], label: 'D/(2πL²)' }];
   const mag = (z) => cm2(Math.hypot(z.re, z.im)), phase = (z) => (-180 / Math.PI) * Math.atan2(z.im, z.re);
   chart(document.getElementById('mag'), {
     xlabel: 'f (Hz)', ylabel: '|Z| (Ω·cm²)', logx: true, logy: true,
     series: [
       { x: ft, y: line.map(mag), color: colors[0], width: 1.2, label: 'circuit' },
       { x: fs, y: sim.map(mag), color: colors[3], marker: true, width: 0, label: 'simulated' },
+      ...corners(Math.min(...line.map(mag)), Math.max(...line.map(mag))),
     ],
   });
   chart(document.getElementById('phase'), {
@@ -191,6 +203,7 @@ function rebuild() {
     series: [
       { x: ft, y: line.map(phase), color: colors[0], width: 1.2, label: 'circuit' },
       { x: fs, y: sim.map(phase), color: colors[3], marker: true, width: 0, label: 'simulated' },
+      ...corners(0, 90),
     ],
   });
   document.getElementById('circuit').innerHTML = circuitSvg(th);

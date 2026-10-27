@@ -46,7 +46,10 @@
     outside sets how much reactant is at the plane: Boltzmann's c e<sup>−zFψ/RT</sup>, with z = −2 and ψ the
     diffuse layer's drop. Past the pzc, ψ turns negative, and the plane loses its reactant faster than the
     inner layer's drop speeds the reaction up. More salt thins the diffuse layer and shrinks ψ, so the fall
-    starts later and goes less deep. (Positive of the pzc it works the other way: the layer draws the anion
+    starts later and goes less deep, while the minimum moves the other way, to less negative potentials
+    (with small ions, −0.79 V in 1 mM and −0.61 V in 0.1 M, where it's a dip of under 10%): in the classic
+    correction it sits where the diffuse layer's capacitance is eight times the inner layer's (dψ/dE = 1/9,
+    for a transfer coefficient of 0.25 and z = −2), which more salt reaches sooner. (Positive of the pzc it works the other way: the layer draws the anion
     in, and the wave sits at more positive potentials than the bare kinetics would put it.)</p>
   <p>The dashed line is that classic correction, which takes the reactant at the plane to be in equilibrium
     with the solution just outside the double layer. The full line adds what that leaves out, Levich's
@@ -56,7 +59,7 @@
     (L the stagnant layer's 20 µm), and the cap falls as the electrode goes negative.</p>
   <p>How much of the fall is the cap and how much the classic correction depends on how fast the reaction
     at the plane is. With this page's kinetics its rate constant k<sub>f</sub> (in the readout) climbs from
-    a fraction of a centimetre a second near the pzc to about 5 m/s at −1.2 V in dilute salt, 10 to 20 in the
+    a fraction of a centimetre a second near the pzc to about 5 m/s at −1.2 V in dilute salt, 14 to 21 in the
     strongest (below the collision ceiling,
     but far above the 10⁻³ to 1 cm/s of everyday couples), and the cap trims the far end, by up to a third at
     −1.2 V; with faster kinetics the cap would be most of it. A 2023 study
@@ -68,8 +71,8 @@
     line, to 0.1% where the current is down: that checks the solver against this model, not the model
     against mercury.</p>
   <p>On real mercury the current passes a minimum and rises again at more negative potentials. Here, with
-    small ions (0.1 nm is all but the plain Gouy–Chapman layer of the textbook correction), it rises a little
-    past the minimum, but it can't keep rising: whatever the kinetics, the cap L/(L + K) keeps falling. On
+    small ions (0.1 nm is all but the plain Gouy–Chapman layer of the textbook correction), it about doubles
+    from the minimum to −1.2 V in dilute salt (the classic correction's triples), but it can't keep rising: whatever the kinetics, the cap L/(L + K) keeps falling. On
     sites 0.7 nm across it doesn't turn at all within the window: the crowded layer holds ψ more negative,
     and the crowding cations push the reactant off the plane. The illustrative kinetics move all this as
     much as the size does. What real mercury has that this model doesn't: molecular models of the
@@ -259,7 +262,7 @@ function update() {
   const length = (v) => (v < 1e-6 ? `${(v * 1e9).toPrecision(2)} nm` : v < 1e-3 ? `${(v * 1e6).toPrecision(2)} µm` : `${(v * 1e3).toPrecision(2)} mm`);
   // (positive of the pzc the layer draws the anion in, and at the limiting current the plane's figures say little)
   const plane = lay.d.psi < 0
-    ? `S₂O₈²⁻ at the plane ${(lay.d.plane['S2O82-'] / reactant).toExponential(1)} of the bulk's (Boltzmann's ${(lay.conc('S2O82-', lay.d.psi / VT) / reactant).toExponential(1)}) · k_f there ${planeRate(sol).toPrecision(2)} m/s · the layer's resistance K ${length(K)}`
+    ? `S₂O₈²⁻ at the plane ${(lay.d.plane['S2O82-'] / reactant).toExponential(1)} of the bulk's (Boltzmann's from just outside the layer ${(lay.conc('S2O82-', lay.d.psi / VT) / reactant).toExponential(1)}) · k_f there ${planeRate(sol).toPrecision(2)} m/s · the layer's resistance K ${length(K)}`
     : `k_f at the plane ${planeRate(sol).toPrecision(2)} m/s · the layer draws the anion in`;
   document.getElementById('status').textContent = `${uAcm2(j).toPrecision(3)} µA/cm² of ${uAcm2(jlim).toPrecision(3)} at the limit · ψ ${(lay.d.psi * 1000).toFixed(0)} mV · ${plane}`;
   const log = logy.checked, top = uAcm2(jlim) * 1.08;
