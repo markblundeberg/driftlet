@@ -237,7 +237,8 @@ electrode is driven harder, Frumkin's dip (ferricyanide reduced at a negatively 
 in 0.1 M KCl, as peroxodisulfate is): within 1.5e-6 of the same electrode resolved, where leaving
 the resistance out had it 68% high; and a plane 99.7% full of ferrocyanide, which its other ions
 cross only through it, puts the electrode's R_dc within 1e-8 of the resolved one's (6% off
-without it). Where the layer gathers a species, $`K_i < 0`$, bounded by about the layer's width: a
+without it). The [Frumkin-effect demo](https://markblundeberg.github.io/driftlet/demos/frumkin.html)
+draws peroxodisulfate's dip at mercury against the closed forms, the layer opened up. Where the layer gathers a species, $`K_i < 0`$, bounded by about the layer's width: a
 correction of order $`\lambda_D/L`$. What the layer doesn't cover:
 - a salt run out at the electrode, toward and past an unsupported electrolyte's limiting current:
   the layer spreads into the solution there (an extended space charge), and where the resolved

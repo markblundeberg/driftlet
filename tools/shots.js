@@ -30,6 +30,7 @@ const SHOTS = {
   junction: { query: 't=5', budget: 60000 },
   membrane: { query: '', budget: 60000 },
   'double-layer': { query: '', budget: 60000 },
+  frumkin: { query: '', budget: 60000 },
   insertion: { query: 't=6000', budget: 60000 },
 };
 

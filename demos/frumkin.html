@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frumkin effect</title>
+<meta name="description" content="Peroxodisulfate reduced at mercury: past the potential of zero charge the double layer repels the reactant, and in dilute salt the current falls as the drive grows. Against the Frumkin correction.">
+<meta property="og:title" content="Frumkin effect · driftlet">
+<meta property="og:description" content="Peroxodisulfate reduced at mercury: past the potential of zero charge the double layer repels the reactant, and in dilute salt the current falls as the drive grows. Against the Frumkin correction.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/frumkin.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/frumkin.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>The Frumkin effect: a reaction its double layer repels</h1>
+  <p>Peroxodisulfate (S₂O₈²⁻) reduced to sulfate at a mercury electrode in sodium fluoride, stirred as on a
+    rotating disk: the steady current against the electrode's potential. Negative of the potential of zero
+    charge (pzc) the electrode's charge turns negative and its double layer pushes the anion away from where
+    it reacts, so in dilute salt the current falls as the drive grows. Vary the salt and the potential. (More
+    about the model below.)</p>
+  <div class="controls">
+    <label>NaF <input id="salt" type="range" min="-3" max="-0.5" step="0.25" value="-3"><output id="saltOut"></output></label>
+    <label>E <input id="E" type="range" min="-1.6" max="0.4" step="0.01" value="-0.6"><output id="EOut"></output></label>
+    <label><input id="log" type="checkbox"> log current</label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="iv"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
+    <div class="levels" id="psi"></div>
+    <div class="levels" id="layer"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>Kryukova found this dip in 1949 at a dropping mercury electrode, and Frumkin and Florianovich explained it
+    two years later. The electron jumps to the reactant at the plane of closest approach, a few ångströms
+    from the metal, so only the drop across that inner (Stern) layer drives it. The diffuse layer outside sets
+    how much reactant is at the plane: Boltzmann's c e<sup>−zFψ/RT</sup>, with z = −2 and ψ the diffuse
+    layer's drop. Past the pzc, ψ turns negative, and the plane loses its reactant faster than the inner
+    layer's drop speeds the reaction up. More salt thins the diffuse layer and shrinks ψ, so the dip moves
+    to more negative potentials and fills in. (Positive of the pzc it works the other way: the layer draws
+    the anion in, and the wave sits at more positive potentials than the bare kinetics would put it.)</p>
+  <p>The dashed line is that classic correction. It takes the reactant at the plane to be in equilibrium with
+    the solution just outside the double layer, and past the dip it rises again as the drive keeps growing,
+    as real mercury electrodes do. The full line adds what that leaves out: the reactant has to cross the
+    diffuse layer against its field to reach the plane, and the layer resists it, by a length
+    K = ∫(c/c(x) − 1) dx that grows as fast as the plane empties (the readout above gives it). The stagnant
+    solution and the double layer then supply the plane in series, so deep in the dip the current is about
+    the limiting current times L/(L + K), with L the stagnant layer's 20 µm: every ion that gets through is
+    reduced, and the current keeps falling as K grows. The
+    simulation (points) follows the full line. On real
+    mercury the current does rise again; molecular models of the reaction (<a
+    href="https://istina.msu.ru/publications/article/2462311/">Nazmutdinov, Glukhov, Tsirlina and Petrii,
+    2002</a>) put that down to a reaction layer that thickens, with ions farther out in the diffuse layer
+    taking electrons too. Here the reactant reacts only at the plane.</p>
+  <p>The double layer is thousands of times thinner than the stagnant solution (0.5 to 10 nm against 20 µm), so
+    driftlet holds it below the grid: a Gouy–Chapman layer beside the face (<code>diffuse: { epsr }</code>),
+    its ions crowding on sites 0.7 nm across (Bikerman), in series with an inner layer of 17 µF/cm²
+    (constant here; mercury's is near that at negative charge). The pzc is mercury's in NaF, −0.19 V vs SHE.
+    The rate constant and α = 0.25 are illustrative, and the reactant is a trace, 10 µM. The theory lines
+    are worked out apart from the solver: the Frumkin correction with the same crowded layer, the layer's resistance by
+    quadrature, and diffusion across the stagnant layer. They leave out migration there (the electrode's
+    field in the solution holds the anion back too), which lowers the plateau by about 1% in the most dilute
+    salt; in the dip they agree with the simulation to 0.2%.</p>
+  <p>The level diagram has the mercury's Fermi level, the S₂O₈²⁻/SO₄²⁻ redox level and its standard level,
+    E° = 1.94 V from the μ° used here, and φ, which is the SHE's level here. The 2 V or more between the
+    Fermi level and the redox level is the overpotential this slow reaction needs. The inner layer's drop
+    and ψ sit between the mercury and the solution's first node, far too thin to see at this scale; the last
+    two panels open the diffuse part up, from the plane outward: φ across it, and each ion's concentration
+    there (log scale). The reactant's thin line is where Boltzmann would put it; the thick one is where it
+    is, drawn down by what the reaction takes.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, EPS0 } from '../src/index.js';
+import { build, layer, ohmic, bath, half, WATER_EPSR } from '../src/kit.js';
+import { levelChart } from '../src/plot.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY, eps = WATER_EPSR * EPS0;
+// The ions, with table μ° (J/mol), so potentials read against SHE.
+const ions = {
+  'Na+': { z: 1, D: 1.334e-9, mu0: -261905 },
+  'F-': { z: -1, D: 1.475e-9, mu0: -278790 },
+  'S2O82-': { z: -2, D: 1.145e-9, mu0: -1114900 },
+  'SO42-': { z: -2, D: 1.065e-9, mu0: -744530 },
+};
+const names = Object.keys(ions), cMax = 1 / (AVOGADRO * 0.7e-9 * 0.7e-9 * 0.7e-9); // ions on sites 0.7 nm across
+const E0 = (ions['S2O82-'].mu0 - 2 * ions['SO42-'].mu0) / (2 * FARADAY); // 1.94 V
+const reduction = half('S2O82- + 2 e- = 2 SO42-');
+const C = 0.17, pzc = -0.19, k0 = 1e-16, alpha = 0.25, L = 20e-6, reactant = 0.01; // F/m², V vs SHE, mol/(m²·s), m, mol/m³
+const library = {
+  species: [{ name: 'e-', z: -1 }, ...names.map((name) => ({ name, z: ions[name].z, cRef: 1000 }))],
+  materials: {
+    Hg: { conductor: { species: 'e-', conductivity: 1.04e6 } },
+    // ε = 0: the solution is neutral on the grid, and the double layer is held below it
+    water: { epsr: 0, species: Object.fromEntries(names.map((n) => [n, { D: ions[n].D, mu0: ions[n].mu0 }])), statistics: [{ type: 'lattice', species: names, cMax }] },
+  },
+};
+const bulkOf = (salt) => ({ 'Na+': salt + 2 * reactant + 4e-5, 'F-': salt, 'S2O82-': reactant, 'SO42-': 2e-5 });
+// The bath's terminal on the SHE scale: F⁻'s species voltage, less its μ° and activity (on the lattice).
+const she = (b) => -(ions['F-'].mu0 + RT * Math.log(b['F-'] / 1000 / (1 - Object.values(b).reduce((s, c) => s + c, 0) / cMax))) / FARADAY;
+const electrode = (salt, E) => {
+  const b = bulkOf(salt);
+  return build({
+    T,
+    library: [library],
+    stack: [
+      ohmic(E, ['e-']), // the mercury's terminal
+      layer('Hg', 1e-6),
+      { phi: { type: 'capacitive', C }, zeroCharge: pzc, diffuse: { epsr: WATER_EPSR }, reactions: [{ ...reduction, k0, alpha }] },
+      layer('water', L, { name: 'stagnant layer', c0: b }),
+      bath(b, 'F-', 0, { offset: she(b) }), // the stirred bulk
+    ],
+    grid: { hmin: 20e-9, hmax: L / 30, ratio: 1.2 },
+  });
+};
+
+// Theory. The crowded (Bikerman) layer of edge composition c at s = Fψ/RT: its first integral G,
+// so that (ds/dx)² = (2F²/εRT) G and its charge is ∓√(2εRT G), and the crowding at s.
+const filled = (c, s) => names.reduce((a, n) => a + (c[n] / cMax) * Math.expm1(-ions[n].z * s), 0);
+const crowd = (c, s) => 1 + filled(c, s);
+const G = (c, s) => cMax * Math.log1p(filled(c, s)) + s * names.reduce((a, n) => a + ions[n].z * c[n], 0);
+const slope = (c, s) => Math.sqrt(((2 * FARADAY * FARADAY) / (eps * RT)) * Math.max(G(c, s), 0)); // |ds/dx|
+const bisect = (f, lo, hi, n = 60) => {
+  const up = f(lo) < 0;
+  for (let k = 0; k < n; k++) {
+    const m = 0.5 * (lo + hi);
+    if (f(m) < 0 === up) lo = m;
+    else hi = m;
+  }
+  return 0.5 * (lo + hi);
+};
+// ψ: the metal's charge C (E − pzc − ψ) is the diffuse layer's, opposite.
+const layerDrop = (c, E) => bisect((s) => C * (E - pzc - s * VT) - Math.sign(s) * Math.sqrt(2 * eps * RT * Math.max(G(c, s), 0)), -60, 60);
+// The layer's resistance to the reactant, K = ∫ (c/c(x) − 1) dx, as an integral over s (Gauss–Legendre).
+const GL = [[-0.906179845938664, 0.236926885056189], [-0.538469310105683, 0.478628670499366], [0, 0.568888888888889], [0.538469310105683, 0.478628670499366], [0.906179845938664, 0.236926885056189]];
+const resistance = (c, s, panels = 100) => {
+  const z = ions['S2O82-'].z, h = s / panels;
+  let K = 0;
+  for (let j = 0; j < panels; j++) for (const [u, w] of GL) {
+    const t = (j + 0.5 + 0.5 * u) * h;
+    K += 0.5 * w * h * (Math.exp(z * t) * crowd(c, t) - 1) / slope(c, t);
+  }
+  return Math.abs(K);
+};
+// The steady current: the reaction at the plane, fed by diffusion across the stagnant layer (the edge
+// composition follows from the flux N) and across the double layer (K). 'classic' is Frumkin's
+// correction alone (the plane in equilibrium with the edge), 'none' no double-layer correction at all.
+function theory(salt, E, kind = 'full') {
+  const b = bulkOf(salt), Dox = ions['S2O82-'].D, Dred = ions['SO42-'].D;
+  const rate = (N) => {
+    const ox = b['S2O82-'] - (N * L) / Dox, red = b['SO42-'] + (2 * N * L) / Dred;
+    const c = { 'Na+': b['Na+'], 'F-': b['Na+'] - 2 * ox - 2 * red, 'S2O82-': ox, 'SO42-': red };
+    const s = kind === 'none' ? 0 : layerDrop(c, E), K = kind === 'full' ? resistance(c, s) : 0;
+    const vacancies = (1 - Object.values(c).reduce((a, x) => a + x, 0) / cMax) / crowd(c, s); // at the plane
+    const kf = (k0 / 1000) * vacancies ** alpha * Math.exp((-2 * alpha * (E - s * VT - E0)) / VT); // m/s, at the plane's activity
+    const plane = (Math.exp(-ions['S2O82-'].z * s) / crowd(c, s)) * (ox - (N * K) / Dox);
+    return kf * plane;
+  };
+  const N = bisect((n) => n - rate(n), 0, (b['S2O82-'] * Dox) / L);
+  return 2 * FARADAY * N; // A/m²
+}
+
+// The diffuse layer from the plane outward, from the solution's ψ and edge composition: φ, and each
+// ion's concentration, Boltzmann's on the sites. The reactant's is drawn down by its flux N toward the
+// plane: its activity relative to Boltzmann's, u = c/c_B, climbs by N/(D c_B) per length (less the
+// bulk's own gradient, which the grid carries), from the plane's, as the solution reports it, outward.
+function opened(sol) {
+  const g = sol.region.indexOf(1), d = sol.interfaces[0].diffuse.right, sp = d.psi / VT;
+  const c = Object.fromEntries(names.map((n) => [n, sol.c[n][g]])), N = sol.interfaces[0].rates[0];
+  const conc = (n, s) => (c[n] * Math.exp(-ions[n].z * s)) / crowd(c, s);
+  const t = [], x = [0], u = [d.plane['S2O82-'] / conc('S2O82-', sp)];
+  for (let k = 0; k <= 400; k++) t.push(sp * Math.exp(-k / 40)); // s from the plane's toward the bulk's 0
+  // x by ∫ ds/|ds/dx|, and u by ∫ N/(D c_B) dx, step by step
+  const f = (s) => (Math.exp(ions['S2O82-'].z * s) * crowd(c, s) - 1) / slope(c, s);
+  for (let k = 1; k < t.length; k++) {
+    const ds = Math.abs(t[k - 1] - t[k]);
+    x.push(x[k - 1] + ds * 0.5 * (1 / slope(c, t[k - 1]) + 1 / slope(c, t[k])));
+    u.push(u[k - 1] + ((N / (ions['S2O82-'].D * c['S2O82-'])) * ds * 0.5 * (f(t[k - 1]) + f(t[k]))));
+  }
+  return { x, phi: t.map((s) => s * VT * 1000), conc, t, drawn: t.map((s, k) => conc('S2O82-', s) * u[k]), u, c, d, N };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const salt = document.getElementById('salt'), Ein = document.getElementById('E'), logy = document.getElementById('log');
+for (const el of [salt, Ein]) fromQuery(el);
+const cs = () => 1000 * 10 ** +salt.value; // mol/m³ of NaF
+const jlim = (2 * FARADAY * ions['S2O82-'].D * reactant) / L; // the limiting current, A/m²
+const Es = Array.from({ length: 41 }, (_, k) => 0.4 - 0.05 * k), Et = Array.from({ length: 201 }, (_, k) => 0.4 - 0.01 * k);
+let dev, curves;
+function rebuild() {
+  dev = new Device(electrode(cs(), Es[0]));
+  const sim = Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), -dev.solve().terminals.left.current));
+  curves = { sim, full: Et.map((E) => theory(cs(), E)), classic: Et.map((E) => theory(cs(), E, 'classic')), none: Et.map((E) => theory(cs(), E, 'none')) };
+  update();
+}
+const labels = () => {
+  document.getElementById('saltOut').textContent = `${+(cs() / 1000).toPrecision(2)} M`;
+  document.getElementById('EOut').textContent = `${(+Ein.value).toFixed(2)} V vs SHE`;
+};
+const uAcm2 = (j) => j * 100; // A/m² to µA/cm²
+
+function update() {
+  labels();
+  const E = +Ein.value;
+  dev.set({ contacts: { left: { V: E } } });
+  const sol = dev.solve(), j = -sol.terminals.left.current, lay = opened(sol);
+  const lambda = Math.sqrt((eps * RT) / (FARADAY * FARADAY * names.reduce((a, n) => a + ions[n].z * ions[n].z * lay.c[n], 0)));
+  const K = resistance(lay.c, lay.d.psi / VT);
+  document.getElementById('status').textContent =
+    `${uAcm2(j).toPrecision(3)} µA/cm² of ${uAcm2(jlim).toPrecision(3)} at the limit · ψ ${(lay.d.psi * 1000).toFixed(0)} mV · ` +
+    `S₂O₈²⁻ at the plane ${(lay.d.plane['S2O82-'] / reactant).toExponential(1)} of the bulk's (Boltzmann's ${(lay.conc('S2O82-', lay.d.psi / VT) / reactant).toExponential(1)}) · the layer's resistance K ${K < 1e-6 ? `${(K * 1e9).toPrecision(2)} nm` : K < 1e-3 ? `${(K * 1e6).toPrecision(2)} µm` : `${(K * 1e3).toPrecision(2)} mm`}`;
+  const log = logy.checked, top = uAcm2(jlim) * 1.08;
+  chart(document.getElementById('iv'), {
+    xlabel: 'E (V vs SHE)', ylabel: 'reduction current (µA/cm²)', logy: log, ylim: log ? [top * 1e-5, top * 2] : [0, top],
+    series: [
+      { x: Et, y: curves.none.map(uAcm2), color: 'var(--muted)', width: 1, label: 'no double-layer correction' },
+      { x: Et, y: curves.classic.map(uAcm2), color: colors[2], width: 1.5, dash: [6, 4], label: 'Frumkin correction (equilibrium layer)' },
+      { x: Et, y: curves.full.map(uAcm2), color: colors[0], width: 1.5, label: '… and the layer\'s resistance' },
+      { x: Es, y: curves.sim.map(uAcm2), color: colors[0], marker: true, width: 0, label: 'simulated' },
+      { x: [pzc, pzc], y: log ? [top * 1e-5, top * 2] : [0, top], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'pzc' },
+      { x: [E], y: [uAcm2(j)], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  levels(document.getElementById('levels'), sol, {
+    title: `electronic levels at E = ${E.toFixed(2)} V vs SHE`,
+    species: ['e-'],
+    phi: true,
+    labels: { 'V:e-': 'Fermi level (V_{e⁻})', phi: 'φ = V°_{e⁻}(SHE)' },
+    levels: [
+      { half: reduction, label: 'S₂O₈²⁻/SO₄²⁻ redox level' },
+      { half: reduction, standard: true, label: 'V°_{e⁻}(S₂O₈²⁻/SO₄²⁻)' },
+    ],
+    range: [-1.8, 2.4],
+    ylabel: 'electron voltage (V vs SHE)',
+    height: 300,
+  });
+  profiles(document.getElementById('conc'), sol, {
+    species: ['S2O82-', 'SO42-'],
+    title: 'across the stagnant layer', ylabel: 'concentration (µM)', scale: 1000,
+  });
+  // The double layer opened up: x from the plane, out to five Debye lengths.
+  const xe = 5 * lambda, region = [{ name: 'the diffuse layer', material: 'water', x0: 0, x1: xe }];
+  const role = (n) => (ions[n].z > 0 ? { role: 'cation', slot: 0 } : { role: 'anion', slot: names.filter((m) => ions[m].z < 0).indexOf(n) });
+  document.getElementById('psi').innerHTML = levelChart({ x: lay.x, regions: region, faces: [], series: [{ id: 'psi', label: 'φ − φ_{edge}', kind: 'level', role: 'phi', y: lay.phi }] },
+    { width: 360, height: 300, title: `ψ = ${(lay.d.psi * 1000).toFixed(0)} mV across the layer`, ylabel: 'mV', xlim: [0, xe], range: [Math.min(0, ...lay.phi) * 1.1 - 5, Math.max(0, ...lay.phi) * 1.1 + 5] });
+  const lg = (v) => (v > 0 ? Math.log10(v / 1000) : NaN); // log₁₀ M
+  // (sulfate, the product, is left out: Boltzmann's profile, like the reactant's, and at the same few µM)
+  const series = [
+    ...['Na+', 'F-'].map((n) => ({ id: n, label: `c_{${{ 'Na+': 'Na⁺', 'F-': 'F⁻' }[n]}}`, kind: 'level', ...role(n), y: lay.t.map((s) => lg(lay.conc(n, s))) })),
+    { id: 'boltzmann', label: 'c_{S₂O₈²⁻} by Boltzmann', kind: 'standard', ...role('S2O82-'), y: lay.t.map((s) => lg(lay.conc('S2O82-', s))) },
+    { id: 'drawn', label: 'c_{S₂O₈²⁻}, drawn down', kind: 'level', ...role('S2O82-'), y: lay.drawn.map(lg) },
+  ];
+  const ys = series.flatMap((s) => s.y).filter(Number.isFinite);
+  document.getElementById('layer').innerHTML = levelChart({ x: lay.x, regions: region, faces: [], series },
+    { width: 360, height: 300, title: 'concentrations (log₁₀ M)', ylabel: 'log₁₀ c (M)', xlim: [0, xe], range: [Math.max(-24, Math.floor(Math.min(...ys))), Math.ceil(Math.max(...ys)) + 0.5] });
+}
+let pending = false;
+const later = (fn) => () => {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => {
+    pending = false;
+    fn();
+  });
+};
+Ein.addEventListener('input', later(update));
+logy.addEventListener('change', update);
+salt.addEventListener('change', rebuild);
+salt.addEventListener('input', labels);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>
