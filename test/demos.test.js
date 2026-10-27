@@ -152,6 +152,20 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
   const small = past(runs['0.1 1']), big = past(runs['0.7 1']);
   assert.ok(small.at(-1) > 1.5 * Math.min(...small), `0.1 nm: ${Math.min(...small)} at the least, ${small.at(-1)} at −1.2 V`);
   assert.ok(big.every((v, k) => k === 0 || v < big[k - 1]), `0.7 nm: ${big}`);
+  // "However fast the reaction, that caps the current at the limiting current times L/(L + K) ... and the cap falls"
+  for (const a of [0.1, 0.7]) {
+    setSite(a * 1e-9);
+    const cap = new Device(electrode(1, 0.4));
+    let lastK = 0;
+    for (const E of Es) {
+      cap.set({ contacts: { left: { V: E } } });
+      const sol = cap.solve();
+      if (E > -0.3) continue;
+      const { K } = opened(sol), j = -sol.terminals.left.current;
+      assert.ok(K > lastK && j <= (1.02 * jlim * L) / (L + K), `${a} nm, ${E} V: K ${K} after ${lastK}, ${j / jlim} of the limit against ${L / (L + K)}`);
+      lastK = K;
+    }
+  }
   // "Most of K builds up within an ångström or two of the plane"; and the plane's level is what K says it is.
   setSite(0.7e-9);
   const dev = new Device(electrode(1, 0.4));

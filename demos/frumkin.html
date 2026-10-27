@@ -27,7 +27,7 @@
     ions' size. (More about the model below.)</p>
   <div class="controls">
     <label>NaF <input id="salt" type="range" min="-3" max="-0.5" step="0.25" value="-3"><output id="saltOut"></output></label>
-    <label>ion size <input id="a" type="range" min="0.1" max="0.8" step="0.1" value="0.7"><output id="aOut"></output></label>
+    <label>ion size <input id="a" type="range" min="0.1" max="0.8" step="0.1" value="0.1"><output id="aOut"></output></label>
     <label>E <input id="E" type="range" min="-1.2" max="0.4" step="0.01" value="-0.6"><output id="EOut"></output></label>
     <label><input id="log" type="checkbox" checked> log current</label>
     <span class="readout" id="status"></span>
@@ -41,7 +41,7 @@
   </div>
   <h2>About this simulation</h2>
   <p>Kryukova found this inhibition in 1949 at a dropping mercury electrode, and Frumkin and Florianovich
-    explained it two years later. The electron jumps to the reactant at the plane of closest approach, a few
+    explained it soon after. The electron jumps to the reactant at the plane of closest approach, a few
     ångströms from the metal, so only the drop across that inner (Stern) layer drives it. The diffuse layer
     outside sets how much reactant is at the plane: Boltzmann's c e<sup>−zFψ/RT</sup>, with z = −2 and ψ the
     diffuse layer's drop. Past the pzc, ψ turns negative, and the plane loses its reactant faster than the
@@ -49,44 +49,54 @@
     starts later and goes less deep. (Positive of the pzc it works the other way: the layer draws the anion
     in, and the wave sits at more positive potentials than the bare kinetics would put it.)</p>
   <p>The dashed line is that classic correction, which takes the reactant at the plane to be in equilibrium
-    with the solution just outside the double layer. The full line adds what that leaves out: the reactant
-    has to cross the diffuse layer against its field to reach the plane, and the layer resists it, by a
-    length K = ∫(c/c(x) − 1) dx that grows as the plane empties. That costs little until the reaction at
-    the plane is fast, its rate constant k<sub>f</sub> (in the readout) past about 1 m/s, so here it trims
-    the far end of the fall, by up to a third at −1.2 V. Most of K builds up within an ångström or two of the
-    plane, closer than the ion's own size, where a continuum picture is at its edge. The simulation (points)
-    follows the full line, to 0.1% where the current is down: that checks the solver against this model,
-    not the model against mercury.</p>
-  <p>On real mercury the current passes a minimum and rises again at more negative potentials. Here that
-    turns on the ions' size: with small sites (0.1 nm is all but the plain Gouy–Chapman layer of the textbook
-    correction) the current turns and rises within the window, while on sites 0.7 nm across the crowded
-    layer holds ψ more negative and it keeps falling. Real mercury has more in it than this model:
-    molecular models of the reaction (<a href="https://istina.msu.ru/publications/article/2462311/">Nazmutdinov,
-    Glukhov, Tsirlina and Petrii, 2002</a>) put the rise down to a reaction layer that thickens, with ions
-    farther out in the diffuse layer taking electrons too, and the rate depends on the cation, which can pair
-    with the anion. Here the reactant reacts only at the plane, and the ions are point charges on sites. A
-    2023 study, <a href="https://pubs.acs.org/doi/10.1021/acs.jpcc.3c01822">Double-layer inhibition of
-    peroxydisulfate reduction at mercury ultramicroelectrodes</a>, models the transport through the double
-    layer and the electron transfer at a distance together.</p>
+    with the solution just outside the double layer. The full line adds what that leaves out, Levich's
+    non-equilibrium double layer (1949): the reactant has to cross the diffuse layer against its field to
+    reach the plane, and the layer resists it, by a length K = ∫(c/c(x) − 1) dx that grows as the plane
+    empties. However fast the reaction, that caps the current at the limiting current times L/(L + K)
+    (L the stagnant layer's 20 µm), and the cap falls as the electrode goes negative. How much of the fall
+    is the cap and how much the classic correction depends on how fast the reaction at the plane is: with
+    this page's kinetics, its rate constant k<sub>f</sub> (in the readout) stays modest and the cap trims
+    the far end, by up to a third at −1.2 V; with faster kinetics the cap would be most of it. A 2023 study
+    of this experiment (<a href="https://pubs.acs.org/doi/10.1021/acs.jpcc.3c01822">Pendergast and White</a>),
+    with transport through the double layer and electron transfer at a distance, compared against
+    measurements, finds the anion's migration within the double layer the main cause of the fall. Most of K
+    builds up within an ångström or two of the plane, so its size also rests on the reaction happening at a
+    sharp plane, which electron transfer at a distance softens. The simulation (points) follows the full
+    line, to 0.1% where the current is down: that checks the solver against this model, not the model
+    against mercury.</p>
+  <p>On real mercury the current passes a minimum and rises again at more negative potentials. This model
+    can't sustain a rise: whatever the kinetics, the cap L/(L + K) keeps falling. Within the window the current
+    turns and starts to rise with small ions (0.1 nm is all but the plain Gouy–Chapman layer of the textbook
+    correction), but not on sites 0.7 nm across, where the crowded layer holds ψ more negative and the
+    crowding cations push the reactant off the plane; and the illustrative kinetics move that as much as
+    the size does. What real mercury has that this model doesn't: molecular models of the
+    reaction (<a href="https://istina.msu.ru/publications/article/2462311/">Nazmutdinov, Glukhov, Tsirlina and
+    Petrii, 2002</a>) put the rise down to a reaction layer that thickens, with ions farther out in the diffuse
+    layer taking electrons too, and the rate depends on the cation, which can pair with the anion. Here the
+    reactant reacts only at the plane, and the ions are point charges on sites.</p>
   <p>The double layer is thousands of times thinner than the stagnant solution (0.5 to 10 nm against 20 µm),
     so driftlet holds it below the grid: a Gouy–Chapman layer beside the face (<code>diffuse: { epsr }</code>),
-    its ions crowding on sites of the chosen size (Bikerman), in series with an inner layer of 17 µF/cm²
-    (constant here; mercury's is near that at negative charge). The pzc is mercury's in NaF, −0.19 V vs SHE,
-    and the reactant is a trace, 10 µM. The kinetics are illustrative, chosen so the rate constant at the
-    plane stays below 25 m/s in this window (a collision-limited one, √(RT/2πM), is 45 m/s for S₂O₈²⁻): a
-    transfer coefficient of 0.25 for the current as a whole, a Tafel slope of 236 mV per decade (driftlet's
-    α = 0.125, for the two-electron step as written). A Butler–Volmer rate allowed to grow without limit over
-    3 V would change both lines' shape past the minimum. The theory lines are worked out apart from the
-    solver: the Frumkin correction with the same layer, the layer's resistance by quadrature, and diffusion
-    across the stagnant layer. They leave out migration there (the electrode's field in the solution holds
-    the anion back too), which lowers the plateau by about 1% in the most dilute salt.</p>
+    its ions on sites of the chosen size (Bikerman), in series with an inner layer of 17 µF/cm² (constant
+    here; mercury's is near that at negative charge). The pzc is mercury's in NaF, −0.19 V vs SHE. The
+    reactant is a trace, 10 µM, where the experiments used millimolar peroxodisulfate in dilute salt, enough
+    to shape the layer itself. The kinetics are illustrative: the accepted mechanism's rate-determining
+    first electron (S₂O₈²⁻ + e⁻ → SO₄²⁻ + SO₄•⁻, the O–O bond breaking) with a transfer coefficient of 0.25,
+    a Tafel slope of 236 mV per decade, written here as the two-electron step with driftlet's α = 0.125;
+    chosen so the rate constant at the plane stays below 25 m/s in this window, where the heterogeneous
+    collision factor √(RT/2πM), an order-of-magnitude ceiling, is 45 m/s for S₂O₈²⁻. A Butler–Volmer rate
+    allowed to grow without limit over 3 V would change both lines' shape past the minimum. The theory lines
+    are worked out apart from the solver: the Frumkin correction with the same layer, the layer's resistance
+    by quadrature, and diffusion across the stagnant layer. They leave out migration there (the electrode's
+    field in the solution holds the anion back too), which lowers the plateau by about 1% in the most dilute
+    salt.</p>
   <p>The level diagram has the mercury's Fermi level, the S₂O₈²⁻/SO₄²⁻ redox level and its standard level,
-    E° = 1.94 V from the μ° used here, and φ, which is the SHE's level here. The gap of over 2 V between the
-    Fermi level and the redox level is set partly by the oxidant's strength and partly by the trace of
-    sulfate (20 nM) in the bulk. The inner layer's drop and ψ sit between the mercury and the solution's
-    first node, far too thin to see at this scale; the last two panels open the diffuse part up, from the
-    plane outward: φ across it, and each ion's concentration there (log scale). The reactant's thin line is
-    where Boltzmann would put it; the thick one is where it is, drawn down by what the reaction takes.</p>
+    E° = 1.94 V from the μ° used here (tables of E° give 2.01 V), and φ, which is the SHE's level here. The
+    gap between the Fermi level and the redox level, about 2.4 V at the pzc, is set partly by the oxidant's
+    strength and partly by the trace of sulfate (20 nM) in the bulk. The inner layer's drop and ψ sit between
+    the mercury and the solution's first node, far too thin to see at this scale; the last two panels open
+    the diffuse part up, from the plane outward: φ across it, and each ion's concentration there (log scale).
+    The reactant is drawn down below Boltzmann's only within a fraction of a nanometre of the plane, too
+    close to see here; the readout gives both at the plane.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, EPS0 } from '../src/index.js';
@@ -106,7 +116,7 @@ const ions = {
 const names = Object.keys(ions);
 let cMax; // the sites' concentration, for ions a across: setSite(a)
 const setSite = (a) => (cMax = 1 / (AVOGADRO * a * a * a));
-setSite(0.7e-9);
+setSite(0.1e-9);
 const E0 = (ions['S2O82-'].mu0 - 2 * ions['SO42-'].mu0) / (2 * FARADAY); // 1.94 V
 const reduction = half('S2O82- + 2 e- = 2 SO42-');
 const C = 0.17, pzc = -0.19, k0 = 2.5e-9, alpha = 0.125, L = 20e-6, reactant = 0.01; // F/m², V vs SHE, mol/(m²·s), m, mol/m³
@@ -157,6 +167,7 @@ const layerDrop = (c, E) => bisect((s) => C * (E - pzc - s * VT) - Math.sign(s) 
 // The layer's resistance to the reactant, K = ∫ (c/c(x) − 1) dx, as an integral over s (Gauss–Legendre).
 const GL = [[-0.906179845938664, 0.236926885056189], [-0.538469310105683, 0.478628670499366], [0, 0.568888888888889], [0.538469310105683, 0.478628670499366], [0.906179845938664, 0.236926885056189]];
 const resistance = (c, s, panels = 100) => {
+  if (Math.abs(s) < 1e-9) return 0; // (at zero charge there's no layer to cross)
   const z = ions['S2O82-'].z, h = s / panels;
   let K = 0;
   for (let j = 0; j < panels; j++) for (const [u, w] of GL) {
