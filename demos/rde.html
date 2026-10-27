@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotating disk electrode</title>
+<meta name="description" content="A rotating disk electrode at five rotation rates: steady currents against Levich, and the Koutecký–Levich and Tafel analysis that recovers the electrode's rate constant from them.">
+<meta property="og:title" content="Rotating disk electrode · driftlet">
+<meta property="og:description" content="A rotating disk electrode at five rotation rates: steady currents against Levich, and the Koutecký–Levich and Tafel analysis that recovers the electrode's rate constant from them.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/rde.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/rde.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A rotating disk electrode: Levich and Koutecký–Levich</h1>
+  <p>A platinum disk spinning in 1 mM Fe³⁺ and Fe²⁺ (in 1 M KCl): the steady current against potential at
+    five rotation rates, and the analysis an electrochemist would run on them, Koutecký–Levich plots to take
+    the transport out and a Tafel plot of what's left, which gives back the electrode's rate constant k⁰
+    and transfer coefficient α. Vary k⁰ and the potential the Koutecký–Levich plot is read at. (More about
+    the model below.)</p>
+  <div class="controls">
+    <label>k⁰ <input id="k0" type="range" min="-4" max="0" step="0.25" value="-2"><output id="k0Out"></output></label>
+    <label>E <input id="E" type="range" min="-0.3" max="0.1" step="0.01" value="-0.1"><output id="EOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="iv"></canvas>
+    <canvas id="kl"></canvas>
+    <canvas id="tafel"></canvas>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>A spinning disk pulls solution up to its face and flings it outward, and the flow thins the layer the
+    ions must diffuse across to the same thickness everywhere on the disk, Levich's
+    δ = 1.61 D<sup>1/3</sup>ν<sup>1/6</sup>ω<sup>−1/2</sup>. So the limiting current grows as √ω (Levich's
+    equation), and at any potential the current is the kinetics and the transport in series:
+    1/i = 1/i<sub>k</sub> + 1/(Bω<sup>1/2</sup>), a straight line against ω<sup>−1/2</sup> whose intercept
+    is the current the electrode would pass with no transport limit at all. Those intercepts, one per
+    potential, make the Tafel plot: corrected for the back reaction (i<sub>k</sub>/(1 − e<sup>Fη/RT</sup>)
+    with equal Fe³⁺ and Fe²⁺), its slope is αF/RT and it meets η = 0 at Fk⁰c.</p>
+  <p>The page does that analysis on the simulated currents alone, as on measured ones: a straight-line fit
+    per potential across the five rotation rates, and a line through the corrected intercepts where they're
+    well determined (where the kinetic current is at most ten times the fastest disk's limiting current;
+    past that the intercept is the small difference of big numbers, as with real data). The readout gives
+    what comes back against what went in. With k⁰ large the wave is all transport, the intercepts sink
+    into that difference, and few points are left to fit: an electrode too fast for a disk
+    to measure.</p>
+  <p>The model stands one stagnant layer of Levich's thickness for Fe³⁺ in for the flow: the flux to the
+    disk is then exactly Levich's (the disk is uniformly accessible, so a layer of that thickness carries
+    the same flux), though the profile across it is a straight line where the real one curves. Fe²⁺'s
+    layer would be 6% thicker (δ goes as D<sup>1/3</sup>); here they share one. The lines are the exact
+    steady solution of this model, i = F(k<sub>f</sub>c − k<sub>b</sub>c)/(1 + k<sub>f</sub>δ/D<sub>O</sub> +
+    k<sub>b</sub>δ/D<sub>R</sub>), less migration, which the 1 M KCl keeps to 0.1% (it scales with the
+    iron's concentration, and the analysis puts it into the slopes: k⁰ comes back within 0.02%).
+    ν = 1 mm²/s, water's.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { profiles, showCode, fromQuery } from './common.js';
+
+const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
+const iron = half('Fe3+ + e- = Fe2+');
+const c = 1, alpha = 0.5, nu = 1e-6; // mol/m³ of each ion; m²/s, water's kinematic viscosity
+const Do = IONS['Fe3+'].D, Dr = IONS['Fe2+'].D, E0 = (IONS['Fe3+'].mu0 - IONS['Fe2+'].mu0) / FARADAY;
+const bulk = { 'K+': 1000, 'Cl-': 1000 + 5 * c, 'Fe3+': c, 'Fe2+': c };
+const she = -(IONS['Cl-'].mu0 + GAS_CONSTANT * T * Math.log(bulk['Cl-'] / 1000)) / FARADAY; // the bath on the SHE scale
+const rpms = [100, 400, 900, 1600, 2500];
+const omega = (rpm) => (2 * Math.PI * rpm) / 60; // rad/s
+const levich = (rpm) => (1.61 * Math.cbrt(Do) * Math.pow(nu, 1 / 6)) / Math.sqrt(omega(rpm)); // δ for Fe³⁺, m
+const disk = (E, rpm, k0) => {
+  const L = levich(rpm);
+  return build({
+    library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(E, ['e-']), // the disk's terminal
+      layer('Pt', 1e-6),
+      { reactions: [{ ...iron, k0, alpha }] },
+      layer('water', L, { name: 'Levich layer', c0: bulk }),
+      bath(bulk, 'Cl-', 0, { offset: she }), // the bulk, stirred by the spin
+    ],
+    grid: { hmin: L / 2000, hmax: L / 40, ratio: 1.15 },
+  });
+};
+// The model's exact steady current (A/m², cathodic +): Butler–Volmer at the disk, diffusion across δ.
+const theory = (E, rpm, k0) => {
+  const d = levich(rpm), eta = E - E0, kf = (k0 / 1000) * Math.exp((-alpha * eta) / VT), kb = (k0 / 1000) * Math.exp(((1 - alpha) * eta) / VT);
+  return (FARADAY * (kf * c - kb * c)) / (1 + (kf * d) / Do + (kb * d) / Dr);
+};
+// A least-squares line y = a + b x.
+const fit = (x, y) => {
+  const n = x.length, mx = x.reduce((s, v) => s + v, 0) / n, my = y.reduce((s, v) => s + v, 0) / n;
+  let sxy = 0, sxx = 0;
+  x.forEach((v, k) => {
+    sxy += (v - mx) * (y[k] - my);
+    sxx += (v - mx) * (v - mx);
+  });
+  return { a: my - (sxy / sxx) * mx, b: sxy / sxx };
+};
+// Sweep every disk, then analyse the simulated currents: per potential a Koutecký–Levich line,
+// 1/i against ω^{-1/2}; its intercept 1/i_k; the Tafel line through ln(i_k/(1 − e^{Fη/RT})) against η.
+const Es = Array.from({ length: 56 }, (_, k) => E0 + 0.25 - 0.01 * k); // E° + 0.25 V down to E° − 0.30 V
+function sweep(k0) {
+  const I = rpms.map((rpm) => {
+    const dev = new Device(disk(Es[0], rpm, k0));
+    return Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), -dev.solve().terminals.left.current));
+  });
+  const x = rpms.map((rpm) => 1 / Math.sqrt(omega(rpm)));
+  const kl = Es.map((E, k) => ({ E, ...fit(x, I.map((row) => 1 / row[k])) }));
+  const jlim = (FARADAY * Do * c) / levich(rpms.at(-1));
+  const used = kl.filter((p) => E0 - p.E > 0.02 && p.a > 0 && 1 / p.a < 10 * jlim); // cathodic, and well determined
+  const tafel = used.length >= 2 ? fit(used.map((p) => p.E - E0), used.map((p) => Math.log(1 / p.a / -Math.expm1((p.E - E0) / VT)))) : null;
+  const back = tafel && { alpha: -tafel.b * VT, k0: (Math.exp(tafel.a) / (FARADAY * c)) * 1000 };
+  return { k0, I, x, kl, used, tafel, back };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const k0In = document.getElementById('k0'), EIn = document.getElementById('E');
+for (const el of [k0In, EIn]) fromQuery(el);
+const k0 = () => 10 ** +k0In.value;
+let run;
+const labels = () => {
+  document.getElementById('k0Out').textContent = `${k0().toPrecision(2)} mol/(m²·s) (${(k0() / 10).toPrecision(2)} cm/s)`;
+  document.getElementById('EOut').textContent = `E° ${+EIn.value < 0 ? '−' : '+'} ${Math.abs(+EIn.value).toFixed(2)} V`;
+};
+function rebuild() {
+  run = sweep(k0());
+  update();
+}
+const mA = (j) => j / 10; // A/m² to mA/cm²
+function update() {
+  labels();
+  const { I, x, kl, used, tafel, back } = run;
+  const at = kl.reduce((best, p) => (Math.abs(p.E - E0 - +EIn.value) < Math.abs(best.E - E0 - +EIn.value) ? p : best));
+  const k = kl.indexOf(at);
+  document.getElementById('status').textContent = back
+    ? `back from the analysis (${used.length} potentials): k⁰ ${back.k0.toPrecision(3)} mol/(m²·s), α ${back.alpha.toFixed(3)}; put in: ${k0().toPrecision(3)}, ${alpha}`
+    : 'too fast for the disk: no potential has a well-determined kinetic current';
+  const Et = Array.from({ length: 221 }, (_, j) => E0 + 0.25 - 0.0025 * j);
+  chart(document.getElementById('iv'), {
+    xlabel: 'E (V vs SHE)', ylabel: 'reduction current (mA/cm²)',
+    series: [
+      ...rpms.map((rpm, r) => ({ x: Et, y: Et.map((E) => mA(theory(E, rpm, k0()))), color: colors[r], width: 1.2, label: `${rpm} rpm` })),
+      ...rpms.map((rpm, r) => ({ x: Es, y: I[r].map(mA), color: colors[r], marker: true, width: 0 })),
+      { x: [at.E, at.E], y: [mA(Math.min(...I.flat())), mA(Math.max(...I.flat()))], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'read at' },
+    ],
+  });
+  // Koutecký–Levich: 1/i against ω^{-1/2} at the potential read, with its line out to the axis.
+  const xs = [0, ...x];
+  chart(document.getElementById('kl'), {
+    xlabel: 'ω⁻¹ᐟ² (s¹ᐟ²)', ylabel: '1/i (cm²/mA)', xlim: [0, 1.05 * Math.max(...x)],
+    series: [
+      { x: xs, y: xs.map((v) => (at.a + at.b * v) * 10), color: colors[0], width: 1.2, label: 'line, to 1/i_k' },
+      { x, y: I.map((row) => 10 / row[k]), color: colors[3], marker: true, width: 0, label: `simulated, E° ${at.E < E0 ? '−' : '+'} ${Math.abs(at.E - E0).toFixed(2)} V` },
+    ],
+  });
+  // Tafel: the corrected kinetic currents, those used in the fit, and Butler–Volmer's line.
+  const eta = kl.map((p) => p.E - E0);
+  const corrected = kl.map((p) => (p.a > 0 && p.E < E0 - 0.005 ? mA(1 / p.a / -Math.expm1((p.E - E0) / VT)) : NaN));
+  const usedEta = used.map((p) => p.E - E0);
+  chart(document.getElementById('tafel'), {
+    xlabel: 'η (V)', ylabel: 'i_k/(1 − e^(Fη/RT)) (mA/cm²)', logy: true, xlim: [-0.3, 0],
+    series: [
+      { x: eta, y: eta.map((v) => mA((FARADAY * k0()) / 1000) * c * Math.exp((-alpha * v) / VT)), color: colors[2], width: 1.2, dash: [6, 4], label: 'put in' },
+      ...(tafel ? [{ x: usedEta, y: usedEta.map((v) => mA(Math.exp(tafel.a + tafel.b * v))), color: colors[0], width: 1.2, label: 'fitted' }] : []),
+      { x: eta, y: corrected, color: 'var(--muted)', marker: true, width: 0, label: 'all intercepts' },
+      { x: usedEta, y: used.map((p) => mA(1 / p.a / -Math.expm1((p.E - E0) / VT))), color: colors[3], marker: true, width: 0, label: 'used' },
+    ],
+  });
+  // The profiles across the slowest disk's layer, at the potential read.
+  profiles(document.getElementById('conc'), new Device(disk(at.E, rpms[0], k0())).solve(), {
+    species: ['Fe3+', 'Fe2+'],
+    title: `across the ${rpms[0]} rpm disk's layer at E° ${at.E < E0 ? '−' : '+'} ${Math.abs(at.E - E0).toFixed(2)} V (at ${rpms.at(-1)} rpm it's ${(levich(rpms.at(-1)) * 1e6).toFixed(1)} µm thick)`,
+    ylabel: 'concentration (mM)', range: [0, 2.1],
+  });
+}
+k0In.addEventListener('change', rebuild);
+k0In.addEventListener('input', labels);
+EIn.addEventListener('input', update);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>

@@ -197,3 +197,20 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
     assert.ok(!end.converged && Math.abs(end.time / th.tau - 1) < 5e-3, `${i} A/m²: the transition at ${end.time} s, τ ${th.tau}`);
   }
 });
+
+test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ and α, as the page says', async () => {
+  const { sweep, theory, rpms, Es } = await pageTheory('rde.html', ['sweep', 'theory', 'rpms', 'Es']);
+  for (const k0 of [1e-4, 1e-2, 0.3]) {
+    const run = sweep(k0);
+    let worst = 0;
+    rpms.forEach((rpm, r) => Es.forEach((E, k) => {
+      const th = theory(E, rpm, k0);
+      if (Math.abs(th) > 1e-2) worst = Math.max(worst, Math.abs(run.I[r][k] / th - 1));
+    }));
+    // "less migration, which the 1 M KCl keeps to 0.1%"; "k⁰ comes back within 0.02%"
+    assert.ok(worst < 1.2e-3, `k⁰ ${k0}: the currents within ${worst} of the theory`);
+    assert.ok(run.used.length >= 3 && Math.abs(run.back.k0 / k0 - 1) < 3e-4 && Math.abs(run.back.alpha - 0.5) < 5e-4, `k⁰ ${k0}: back ${JSON.stringify(run.back)} from ${run.used.length}`);
+  }
+  // "an electrode too fast for a disk to measure"
+  assert.equal(sweep(1).used.length, 0);
+});
