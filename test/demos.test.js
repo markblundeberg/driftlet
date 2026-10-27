@@ -288,3 +288,25 @@ test('demos/randles.html: the Randles circuit, from the physics, is the simulate
     assert.ok(worst < 1e-2, `${JSON.stringify(p)}: within ${worst}`);
   }
 });
+
+test('demos/corrosion.html: the mixed potential and the Evans diagram against their closed forms, as the page says', async () => {
+  const { Device, FARADAY } = await import('../src/index.js');
+  const { electrode, net, currents, corrosion } = await pageTheory('corrosion.html', ['electrode', 'net', 'currents', 'corrosion']);
+  for (const L of [10 ** -4.25, 1e-3, 10 ** -2.75]) {
+    // "the two corrosion potentials and currents, which agree to four digits"
+    const rest = new Device(electrode({ I: 0 }, L)).solve(), th = corrosion(L), E = rest.terminals.left.V;
+    const icorr = 2 * FARADAY * -rest.interfaces[0].rates[0];
+    assert.ok(rest.converged && Math.abs(E - th.E) < 2e-4 && Math.abs(icorr / th.i - 1) < 1e-4, `${L} m: E_corr ${E} against ${th.E}, i_corr ${icorr} against ${th.i}`);
+    // "about −0.4 V vs SHE" (for the default, 1 mm), and the corrosion current near oxygen's limit where the layer is thick
+    if (L === 1e-3) assert.ok(Math.abs(E + 0.45) < 0.03 && icorr / currents(E, L).limit > 0.9, `${E}, ${icorr / currents(E, L).limit}`);
+    // "the cathodic side agrees everywhere"; "by 0.1 V up ... about 10% below the closed form"
+    const dev = new Device(electrode(E, L));
+    dev.solve();
+    for (const d of [-0.6, -0.4, -0.2, -0.05, 0.1]) {
+      dev.set({ contacts: { left: { V: E + d } } });
+      const sol = dev.solve(), ratio = sol.terminals.left.current / net(E + d, L);
+      assert.ok(sol.converged && sol.warnings.length === 0, sol.warnings.join(' '));
+      assert.ok(d < 0 ? Math.abs(ratio - 1) < 1e-3 : ratio > 0.85 && ratio < 0.96, `${L} m, ${d} V: ${ratio}`);
+    }
+  }
+});

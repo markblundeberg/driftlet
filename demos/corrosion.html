@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corrosion potential</title>
+<meta name="description" content="Iron in aerated salt water: a mixed potential where its dissolution and oxygen's reduction balance, the Evans diagram against closed forms, and why stirring speeds corrosion.">
+<meta property="og:title" content="Corrosion and the Evans diagram · driftlet">
+<meta property="og:description" content="Iron in aerated salt water: a mixed potential where its dissolution and oxygen's reduction balance, the Evans diagram against closed forms, and why stirring speeds corrosion.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/corrosion.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/corrosion.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Corrosion: a mixed potential and the Evans diagram</h1>
+  <p>Iron in aerated 0.5 M NaCl, behind a layer of still water: left to itself it settles at the corrosion
+    potential, where its own dissolution (Fe → Fe²⁺ + 2e⁻) and the reduction of dissolved oxygen
+    (O₂ + 2H₂O + 4e⁻ → 4OH⁻) pass equal currents, and it corrodes at that current. The Evans diagram, each
+    reaction's current against potential, shows where; driving the iron away from it gives the polarization
+    curve you'd measure. Vary how still the water is, and the potential. (More about the model below.)</p>
+  <div class="controls">
+    <label>still layer <input id="L" type="range" min="-4.25" max="-2.75" step="0.25" value="-3"><output id="LOut"></output></label>
+    <label>E − E<sub>corr</sub> <input id="dE" type="range" min="-0.6" max="0.15" step="0.01" value="0"><output id="dEOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="wide"><p class="note">The Evans diagram: each reaction's current, and the net current you'd measure</p><canvas class="wide" id="evans"></canvas></div>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>Two reactions share one piece of metal, so they share its Fermi level, and with no current leaving
+    the metal, the electrons one makes the other must take. The iron settles where they balance, the
+    corrosion (or mixed) potential E<sub>corr</sub>, between the iron's own redox level and oxygen's,
+    equilibrium with neither: iron goes on dissolving at the corrosion current i<sub>corr</sub>, and oxygen
+    goes on being reduced at the same rate. On the Evans diagram (E against log|i|) that's where the iron's
+    anodic line crosses oxygen's cathodic curve. Oxygen's curve bends over to a plateau, its limiting
+    current 4FDc/L, set by how fast it diffuses in through the still layer: so where the crossing falls on
+    that plateau, the corrosion rate is oxygen's supply, and stirring the water (a thinner layer) speeds the
+    corrosion in proportion. (Far below E<sub>corr</sub>, water's own reduction to hydrogen would take over;
+    it's left out here, so the plateau runs on.)</p>
+  <p>The lines are closed forms, worked out apart from the solver: Butler–Volmer for each reaction at the
+    iron's face, with the Fe²⁺ the iron makes held back by diffusion through the layer (its back reaction
+    sees the surface's Fe²⁺, not the bulk's), and oxygen's supply through the layer in series with its
+    kinetics. The points are the simulation's net current; the readout gives the two corrosion potentials
+    and currents, which agree to four digits, and the cathodic side agrees everywhere. Above
+    E<sub>corr</sub> the iron's current grows tenfold every 60 mV, and by 0.1 V up the simulation runs about
+    10% below the closed form: half of that is the ohmic drop through the still layer (the solution at the
+    face 3 mV up), the rest comes with the Fe²⁺ piling up to tens of millimolar at the iron, where the
+    closed form treats it as a dilute trace. The model leaves out what makes real corrosion hard: the Fe²⁺ and OH⁻ meeting as rust,
+    films that slow the iron (passivity), chloride's pitting, and an iron surface that isn't one uniform
+    electrode. Its rate constants are illustrative, chosen to put E<sub>corr</sub> where steel in sea water
+    sits, around −0.45 V vs SHE; the potentials are on an ideal-solution scale, from table μ°.</p>
+  <p>The level diagram is the mixed potential itself: the iron's Fermi level, and the two couples' redox
+    levels across the still layer, drawn in volts (electron energy is down the page). Electrons leave the
+    iron's redox level for the Fermi level (dissolution) and go on up to oxygen's (reduction); the Fermi
+    level sits between the two, where the flows match. Below it, the concentrations across the layer:
+    oxygen drawn down toward the iron, Fe²⁺ and OH⁻ building up at it.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, ohmic, bath, half, aqueous, IONS, H2O } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T, f = FARADAY / RT;
+const cO2 = 0.26, DO2 = 2e-9, muO2 = 16.4e3; // dissolved O₂ in air-saturated water (mol/m³), its D (m²/s) and μ° (J/mol, at 1 M)
+const library = aqueous(['Na+', 'Cl-', 'Fe2+', 'OH-', 'H+'], { epsr: 0 });
+library.species.push({ name: 'O2', z: 0, cRef: 1000 }, { name: 'e-', z: -1 });
+library.materials.water.species.O2 = { D: DO2, mu0: muO2 };
+library.materials.Fe = { conductor: { species: 'e-', conductivity: 1e7 } };
+const bulk = { 'Na+': 500, 'Cl-': 500 + 2e-3, 'Fe2+': 1e-3, 'OH-': 1e-4, 'H+': 1e-4, O2: cO2 }; // pH 7, 1 µM Fe²⁺
+const she = -(IONS['Cl-'].mu0 + RT * Math.log(bulk['Cl-'] / 1000)) / FARADAY; // the bath on the SHE scale
+const iron = { ...half('Fe2+ + 2 e- = Fe(s)'), fixed: { 'Fe(s)': 0 }, k0: 5e-6, alpha: 0.5 };
+const oxygen = { ...half('O2 + 2 H2O + 4 e- = 4 OH-'), fixed: { H2O }, k0: 3e-9, alpha: 0.125 };
+const electrode = (drive, L) =>
+  build({
+    T,
+    library: [library],
+    stack: [
+      ohmic(drive, ['e-']), // the iron's terminal
+      layer('Fe', L / 25), // a metal is one cell whatever its length: sized to show
+      { reactions: [iron, oxygen] },
+      layer('water', L, { name: 'still layer', c0: bulk }),
+      bath(bulk, 'Cl-', 0, { offset: she }), // the stirred bulk, air-saturated
+    ],
+    bulkReactions: [{ equation: 'H+ + OH- = H2O', fixed: { H2O }, kf: { water: 1.4e8 } }],
+    grid: { hmin: 20e-9, hmax: L / 40, ratio: 1.15 },
+  });
+
+// Theory: each reaction's current (A/m², anodic +) at the iron's potential E, with the solution's φ = 0
+// at the face (the SHE scale; the iR through the layer is a few µV). Standard potentials from the μ°.
+const E0Fe = IONS['Fe2+'].mu0 / (2 * FARADAY);
+const E0O2 = (muO2 + 2 * H2O - 4 * IONS['OH-'].mu0) / (4 * FARADAY);
+function currents(E, L) {
+  // iron: dissolution as e^{2(1−α)f(E−E°)}, its back reaction on the surface's Fe²⁺, which the dissolution
+  // itself raises by its flux × L/D
+  const A = Math.exp(2 * (1 - iron.alpha) * f * (E - E0Fe)), B = Math.exp(-2 * iron.alpha * f * (E - E0Fe));
+  const DFe = IONS['Fe2+'].D, out = (iron.k0 * (A - (B * bulk['Fe2+']) / 1000)) / (1 + (iron.k0 * B * L) / (DFe * 1000));
+  // oxygen: first order in O₂ at the surface, which its own flux draws down (Koutecký–Levich)
+  const kO2 = (oxygen.k0 / 1000) * Math.exp(4 * oxygen.alpha * f * (E0O2 - E)), rO2 = (kO2 * cO2) / (1 + (kO2 * L) / DO2);
+  return { Fe: 2 * FARADAY * out, O2: -4 * FARADAY * rO2, limit: (4 * FARADAY * DO2 * cO2) / L };
+}
+const net = (E, L) => {
+  const c = currents(E, L);
+  return c.Fe + c.O2;
+};
+// E_corr: where the net current is zero.
+function corrosion(L) {
+  let lo = -1, hi = 0.2;
+  for (let k = 0; k < 80; k++) {
+    const m = 0.5 * (lo + hi);
+    if (net(m, L) < 0) lo = m;
+    else hi = m;
+  }
+  const E = 0.5 * (lo + hi);
+  return { E, i: currents(E, L).Fe };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const LIn = document.getElementById('L'), dEIn = document.getElementById('dE');
+for (const el of [LIn, dEIn]) fromQuery(el);
+const L = () => 10 ** +LIn.value;
+const dEs = Array.from({ length: 31 }, (_, k) => 0.15 - 0.025 * k);
+let run;
+function rebuild() {
+  const rest = new Device(electrode({ I: 0 }, L())).solve(); // left to itself
+  const Ecorr = rest.terminals.left.V;
+  const dev = new Device(electrode(Ecorr, L()));
+  dev.solve();
+  const sim = dEs.map((d) => (dev.set({ contacts: { left: { V: Ecorr + d } } }), dev.solve().terminals.left.current)); // anodic +: out of the device at the iron
+  run = { rest, Ecorr, dev, sim, theory: corrosion(L()) };
+  update();
+}
+const labels = () => {
+  document.getElementById('LOut').textContent = `${L() < 1e-3 ? `${Math.round(L() * 1e6)} µm` : `${(L() * 1e3).toPrecision(2)} mm`}`;
+  document.getElementById('dEOut').textContent = `${+dEIn.value >= 0 ? '+' : '−'}${Math.abs(+dEIn.value).toFixed(2)} V`;
+};
+const uA = (i) => i * 100; // A/m² to µA/cm²
+function update() {
+  labels();
+  const { rest, Ecorr, dev, sim, theory } = run, E = Ecorr + +dEIn.value;
+  const icorr = 2 * FARADAY * -rest.interfaces[0].rates[0]; // the iron's dissolution, A/m²
+  const mmPerYear = (icorr / (2 * FARADAY)) * (0.05585 / 7874) * 3.156e7 * 1e3; // mol/(m²·s) to mm of iron a year
+  document.getElementById('status').textContent =
+    `E_corr ${Ecorr.toFixed(3)} V vs SHE (theory ${theory.E.toFixed(3)}) · i_corr ${uA(icorr).toPrecision(3)} µA/cm² (theory ${uA(theory.i).toPrecision(3)}), ` +
+    `${Math.round((100 * icorr) / currents(Ecorr, L()).limit)}% of oxygen's limit · ${mmPerYear.toPrecision(2)} mm of iron a year`;
+  // Evans: E against log|i|, the partial currents as lines, the measured net current as points.
+  const Et = Array.from({ length: 221 }, (_, k) => Ecorr + 0.15 - 0.0035 * k), part = Et.map((e) => currents(e, L()));
+  const pos = (v) => (v > 0 ? uA(v) : NaN);
+  chart(document.getElementById('evans'), {
+    xlabel: '|i| (µA/cm²)', ylabel: 'E (V vs SHE)', logx: true, xlim: [0.1, 1e5], ylim: [Ecorr - 0.65, Ecorr + 0.18],
+    series: [
+      { x: part.map((c) => pos(c.Fe)), y: Et, color: colors[1], width: 1.5, label: 'Fe → Fe²⁺' },
+      { x: part.map((c) => pos(-c.O2)), y: Et, color: colors[0], width: 1.5, label: 'O₂ → OH⁻' },
+      { x: part.map((c) => pos(Math.abs(c.Fe + c.O2))), y: Et, color: 'var(--muted)', width: 1, dash: [4, 3], label: 'net, theory' },
+      { x: sim.map((i) => pos(Math.abs(i))), y: dEs.map((d) => Ecorr + d), color: colors[3], marker: true, width: 0, label: 'net, simulated' },
+      { x: [0.1, 1e5], y: [Ecorr, Ecorr], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'E_corr' },
+    ],
+  });
+  dev.set({ contacts: { left: { V: E } } });
+  const sol = dev.solve();
+  levels(document.getElementById('levels'), sol, {
+    title: `electronic levels at E = ${E.toFixed(3)} V vs SHE`,
+    species: ['e-'],
+    phi: true,
+    labels: { 'V:e-': 'Fermi level (V_{e⁻})', phi: 'φ = V°_{e⁻}(SHE)' },
+    levels: [
+      { half: iron, label: 'Fe²⁺/Fe redox level' },
+      { half: oxygen, label: 'O₂/OH⁻ redox level' },
+    ],
+    range: [-0.9, 1.0],
+    ylabel: 'electron voltage (V vs SHE)',
+  });
+  profiles(document.getElementById('conc'), sol, {
+    species: [{ c: sol.c.O2, label: 'c_{O₂}' }, 'Fe2+', 'OH-'], title: 'across the still layer', ylabel: 'concentration (mM)',
+  });
+}
+LIn.addEventListener('change', rebuild);
+LIn.addEventListener('input', labels);
+dEIn.addEventListener('input', update);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>
