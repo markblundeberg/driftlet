@@ -141,6 +141,9 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
         return i;
       });
       runs[`${a} ${salt}`] = j;
+      // "about 5 m/s at −1.2 V in dilute salt, 10 to 20 in the strongest"
+      if (salt === 1) assert.ok(planeRate(dev.solve()) > 4 && planeRate(dev.solve()) < 7, `${a} nm, 1 mM: k_f at −1.2 V ${planeRate(dev.solve())}`);
+      if (salt === 316) assert.ok(kmax > 10, `${a} nm, 316 mM: k_f up to ${kmax}`);
       // "to 0.1% where the current is down", "the plateau by about 1%", "below 25 m/s in this window"
       assert.ok(dip < 1e-3 && plateau < 1.2e-2 && kmax < 25, `${a} nm, ${salt} mM: ${dip} in the dip, ${plateau} of the limit, k_f up to ${kmax} m/s`);
       // "costs little until ... k_f past about 1 m/s" (under 3% while it's below 0.1 m/s), "by up to a third at −1.2 V"
@@ -242,7 +245,7 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
 });
 
 test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ and α, as the page says', async () => {
-  const { sweep, theory, rpms, Es, Do, Dr, nu } = await pageTheory('rde.html', ['sweep', 'theory', 'rpms', 'Es', 'Do', 'Dr', 'nu']);
+  const { sweep, theory, kinetic, rpms, Es, E0, Do, Dr, nu } = await pageTheory('rde.html', ['sweep', 'theory', 'kinetic', 'rpms', 'Es', 'E0', 'Do', 'Dr', 'nu']);
   for (const k0 of [1e-4, 1e-2, 0.3]) {
     const run = sweep(k0);
     let worst = 0;
@@ -254,16 +257,20 @@ test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ 
     assert.ok(worst < 1e-3, `k⁰ ${k0}: the currents within ${worst} of the theory`);
     assert.ok(run.used.length >= 3 && Math.abs(run.back.k0 / k0 - 1) < 5e-4 && Math.abs(run.back.alpha / 0.5 - 1) < 5e-4, `k⁰ ${k0}: back ${JSON.stringify(run.back)} from ${run.used.length}`);
   }
-  // "too fast for the disk, by the ×10 rule"; "its intercepts err by about 0.2% times i_k over the plateau"
+  // "too fast for the disk, by the ×10 rule"; "the simulation's intercepts stay within 0.06% of the true kinetic
+  // current however far past it they go"; with 0.5% noise, "about 4% at ten times the plateau and 30% at a hundred",
+  // "k⁰ comes back within about 1% for a slow electrode, 3% at 0.01 cm/s and 12% at 0.03 cm/s"
   assert.equal(sweep(1).used.length, 0);
-  const mid = sweep(0.1), lim = mid.plateau.at(-1);
-  const past = mid.kl.filter((p) => p.E < Es[0] - 0.27).map((p) => {
-    const ik = theory(p.E, 1e9, 0.1);
-    return [ik / lim, Math.abs(1 / p.a / ik - 1)];
-  }).filter(([q]) => q > 3);
-  const near = (q0) => past.reduce((best, r) => (Math.abs(Math.log(r[0] / q0)) < Math.abs(Math.log(best[0] / q0)) ? r : best));
-  assert.ok(past.filter(([q]) => q <= 100).every(([q, e]) => e / q > 1.5e-3 && e / q < 2.5e-3), JSON.stringify(past));
-  assert.ok(Math.abs(near(10)[1] - 0.02) < 0.005 && near(200)[1] > 0.35 && near(200)[1] < 0.55, `${near(10)}, ${near(200)}`);
+  const errs = (run, k0) => run.kl.filter((p) => p.E < E0 - 0.02).map((p) => [kinetic(p.E, k0) / run.plateau.at(-1), Math.abs(1 / p.a / kinetic(p.E, k0) - 1)]);
+  const near = (rows, q0) => rows.reduce((best, r) => (Math.abs(Math.log(r[0] / q0)) < Math.abs(Math.log(best[0] / q0)) ? r : best))[1];
+  const clean = errs(sweep(1), 1);
+  assert.ok(Math.max(...clean.map((r) => r[0])) > 1000 && clean.every(([, e]) => e < 7e-4), JSON.stringify(clean));
+  const loud = errs(sweep(0.1, 0.005), 0.1);
+  assert.ok(near(loud, 10) > 0.02 && near(loud, 10) < 0.08 && near(loud, 100) > 0.15 && near(loud, 100) < 0.5, `${near(loud, 10)}, ${near(loud, 100)}`);
+  for (const [k0, within] of [[1e-4, 0.01], [1e-3, 0.012], [1e-2, 0.01], [0.1, 0.035], [0.3, 0.14]]) {
+    const back = sweep(k0, 0.005).back;
+    assert.ok(Math.abs(back.k0 / k0 - 1) < within, `k⁰ ${k0} with noise: ${back.k0}`);
+  }
   // "about 3% above a real disk at this Schmidt number (Newman's correction)"; "1.19 times ... a real disk's would be 1.12"
   const sc = nu / Do, newman = 1 + 0.298 * Math.cbrt(1 / sc) + 0.14514 * Math.cbrt(1 / (sc * sc));
   assert.ok(Math.abs(newman - 1.03) < 0.005 && Math.abs(Dr / Do - 1.19) < 0.005 && Math.abs(Math.cbrt((Dr / Do) * (Dr / Do)) - 1.12) < 0.005, `${newman}, ${Dr / Do}`);

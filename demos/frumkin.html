@@ -53,10 +53,13 @@
     non-equilibrium double layer (1949): the reactant has to cross the diffuse layer against its field to
     reach the plane, and the layer resists it, by a length K = ∫(c/c(x) − 1) dx that grows as the plane
     empties. However fast the reaction, that caps the current at the limiting current times L/(L + K)
-    (L the stagnant layer's 20 µm), and the cap falls as the electrode goes negative. How much of the fall
-    is the cap and how much the classic correction depends on how fast the reaction at the plane is: with
-    this page's kinetics, its rate constant k<sub>f</sub> (in the readout) stays modest and the cap trims
-    the far end, by up to a third at −1.2 V; with faster kinetics the cap would be most of it. A 2023 study
+    (L the stagnant layer's 20 µm), and the cap falls as the electrode goes negative.</p>
+  <p>How much of the fall is the cap and how much the classic correction depends on how fast the reaction
+    at the plane is. With this page's kinetics its rate constant k<sub>f</sub> (in the readout) climbs from
+    a fraction of a centimetre a second near the pzc to about 5 m/s at −1.2 V in dilute salt, 10 to 20 in the
+    strongest (below the collision ceiling,
+    but far above the 10⁻³ to 1 cm/s of everyday couples), and the cap trims the far end, by up to a third at
+    −1.2 V; with faster kinetics the cap would be most of it. A 2023 study
     of this experiment (<a href="https://pubs.acs.org/doi/10.1021/acs.jpcc.3c01822">Pendergast and White</a>),
     with transport through the double layer and electron transfer at a distance, compared against
     measurements, finds the anion's migration within the double layer the main cause of the fall. Most of K
@@ -64,12 +67,12 @@
     sharp plane, which electron transfer at a distance softens. The simulation (points) follows the full
     line, to 0.1% where the current is down: that checks the solver against this model, not the model
     against mercury.</p>
-  <p>On real mercury the current passes a minimum and rises again at more negative potentials. This model
-    can't sustain a rise: whatever the kinetics, the cap L/(L + K) keeps falling. Within the window the current
-    turns and starts to rise with small ions (0.1 nm is all but the plain Gouy–Chapman layer of the textbook
-    correction), but not on sites 0.7 nm across, where the crowded layer holds ψ more negative and the
-    crowding cations push the reactant off the plane; and the illustrative kinetics move that as much as
-    the size does. What real mercury has that this model doesn't: molecular models of the
+  <p>On real mercury the current passes a minimum and rises again at more negative potentials. Here, with
+    small ions (0.1 nm is all but the plain Gouy–Chapman layer of the textbook correction), it rises a little
+    past the minimum, but it can't keep rising: whatever the kinetics, the cap L/(L + K) keeps falling. On
+    sites 0.7 nm across it doesn't turn at all within the window: the crowded layer holds ψ more negative,
+    and the crowding cations push the reactant off the plane. The illustrative kinetics move all this as
+    much as the size does. What real mercury has that this model doesn't: molecular models of the
     reaction (<a href="https://istina.msu.ru/publications/article/2462311/">Nazmutdinov, Glukhov, Tsirlina and
     Petrii, 2002</a>) put the rise down to a reaction layer that thickens, with ions farther out in the diffuse
     layer taking electrons too, and the rate depends on the cation, which can pair with the anion. Here the
@@ -90,13 +93,15 @@
     field in the solution holds the anion back too), which lowers the plateau by about 1% in the most dilute
     salt.</p>
   <p>The level diagram has the mercury's Fermi level, the S₂O₈²⁻/SO₄²⁻ redox level and its standard level,
-    E° = 1.94 V from the μ° used here (tables of E° give 2.01 V), and φ, which is the SHE's level here. The
+    E° = 1.94 V from the μ° used here (tables of E° give 2.01 V), and φ, which is the SHE's level here. It's
+    drawn in volts, so electron energy is down the page: reducing the oxidant, electrons go from the Fermi
+    level up to the redox level, toward higher voltage. The
     gap between the Fermi level and the redox level, about 2.4 V at the pzc, is set partly by the oxidant's
     strength and partly by the trace of sulfate (20 nM) in the bulk. The inner layer's drop and ψ sit between
     the mercury and the solution's first node, far too thin to see at this scale; the last two panels open
     the diffuse part up, from the plane outward: φ across it, and each ion's concentration there (log scale).
-    The reactant is drawn down below Boltzmann's only within a fraction of a nanometre of the plane, too
-    close to see here; the readout gives both at the plane.</p>
+    Negative of the pzc the reactant is drawn down below Boltzmann's only within a fraction of a nanometre
+    of the plane, too close to see here; the readout gives both at the plane.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, EPS0 } from '../src/index.js';
@@ -174,7 +179,7 @@ const resistance = (c, s, panels = 100) => {
     const t = (j + 0.5 + 0.5 * u) * h;
     K += 0.5 * w * h * (Math.exp(z * t) * crowd(c, t) - 1) / slope(c, t);
   }
-  return Math.abs(K);
+  return K * Math.sign(s); // (a length, positive where the layer repels the reactant, negative where it helps)
 };
 // The steady current: the reaction at the plane, fed by diffusion across the stagnant layer (the edge
 // composition follows from the flux N) and across the double layer (K). 'classic' is Frumkin's
@@ -251,12 +256,15 @@ function update() {
   const sol = dev.solve(), j = -sol.terminals.left.current, lay = opened(sol);
   const lambda = Math.sqrt((eps * RT) / (FARADAY * FARADAY * names.reduce((a, n) => a + ions[n].z * ions[n].z * lay.c[n], 0)));
   const K = resistance(lay.c, lay.d.psi / VT);
-  document.getElementById('status').textContent =
-    `${uAcm2(j).toPrecision(3)} µA/cm² of ${uAcm2(jlim).toPrecision(3)} at the limit · ψ ${(lay.d.psi * 1000).toFixed(0)} mV · ` +
-    `S₂O₈²⁻ at the plane ${(lay.d.plane['S2O82-'] / reactant).toExponential(1)} of the bulk's (Boltzmann's ${(lay.conc('S2O82-', lay.d.psi / VT) / reactant).toExponential(1)}) · k_f there ${planeRate(sol).toPrecision(2)} m/s · the layer's resistance K ${K < 1e-6 ? `${(K * 1e9).toPrecision(2)} nm` : K < 1e-3 ? `${(K * 1e6).toPrecision(2)} µm` : `${(K * 1e3).toPrecision(2)} mm`}`;
+  const length = (v) => (v < 1e-6 ? `${(v * 1e9).toPrecision(2)} nm` : v < 1e-3 ? `${(v * 1e6).toPrecision(2)} µm` : `${(v * 1e3).toPrecision(2)} mm`);
+  // (positive of the pzc the layer draws the anion in, and at the limiting current the plane's figures say little)
+  const plane = lay.d.psi < 0
+    ? `S₂O₈²⁻ at the plane ${(lay.d.plane['S2O82-'] / reactant).toExponential(1)} of the bulk's (Boltzmann's ${(lay.conc('S2O82-', lay.d.psi / VT) / reactant).toExponential(1)}) · k_f there ${planeRate(sol).toPrecision(2)} m/s · the layer's resistance K ${length(K)}`
+    : `k_f at the plane ${planeRate(sol).toPrecision(2)} m/s · the layer draws the anion in`;
+  document.getElementById('status').textContent = `${uAcm2(j).toPrecision(3)} µA/cm² of ${uAcm2(jlim).toPrecision(3)} at the limit · ψ ${(lay.d.psi * 1000).toFixed(0)} mV · ${plane}`;
   const log = logy.checked, top = uAcm2(jlim) * 1.08;
   chart(document.getElementById('iv'), {
-    xlabel: 'E (V vs SHE)', ylabel: 'reduction current (µA/cm²)', logy: log, ylim: log ? [top * 1e-5, top * 2] : [0, top],
+    xlabel: 'E (V vs SHE)', ylabel: 'current (µA/cm²)', logy: log, ylim: log ? [top * 1e-5, top * 2] : [0, top],
     series: [
       { x: Et, y: curves.none.map(uAcm2), color: 'var(--muted)', width: 1, label: 'no double-layer correction' },
       { x: Et, y: curves.classic.map(uAcm2), color: colors[2], width: 1.5, dash: [6, 4], label: 'Frumkin correction (equilibrium layer)' },
@@ -311,7 +319,11 @@ const later = (fn) => () => {
 Ein.addEventListener('input', later(update));
 logy.addEventListener('change', update);
 for (const el of [salt, size]) {
-  el.addEventListener('change', rebuild);
+  el.addEventListener('change', () => {
+    // (some 500 solves and theory points: say so, and let the page paint it first)
+    document.getElementById('status').textContent = 'computing…';
+    setTimeout(rebuild, 30);
+  });
   el.addEventListener('input', labels);
 }
 addEventListener('resize', update);

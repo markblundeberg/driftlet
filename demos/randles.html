@@ -29,7 +29,7 @@
   <div class="controls">
     <label>k⁰ <input id="k0" type="range" min="-4" max="0" step="0.25" value="-2"><output id="k0Out"></output></label>
     <label>KCl <input id="salt" type="range" min="-2" max="0" step="0.25" value="-1"><output id="saltOut"></output></label>
-    <label>stagnant layer <input id="L" type="range" min="0.5" max="2.5" step="0.25" value="1.25"><output id="LOut"></output></label>
+    <label>stagnant layer <input id="L" type="range" min="0.5" max="2.5" step="0.25" value="1.75"><output id="LOut"></output></label>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
@@ -73,7 +73,7 @@
     set to have no charge at rest; real platinum at this potential sits well positive of its zero charge,
     with chloride adsorbed, and off zero charge ψ would shift the exchange current (the Frumkin effect, on
     <a href="frumkin.html">its own page</a>) and C<sub>dl</sub>. And it's an ideal capacitor, where real solid
-    electrodes give depressed arcs, which fits model with a constant-phase element. The solution has 10 mM
+    electrodes give depressed arcs, which fits stand in for with a constant-phase element (CPE). The solution has 10 mM
     HCl so that Fe³⁺ doesn't hydrolyse and precipitate; in reality the chloride also complexes Fe³⁺ and
     speeds its reaction, which this model leaves out. k⁰ is illustrative, in the range reported for this
     couple at platinum.</p>
@@ -195,24 +195,25 @@ function rebuild() {
   });
   document.getElementById('circuit').innerHTML = circuitSvg(th);
 }
-// The circuit, drawn: R_s in series with C_dl across R_ct + Z_W (400 units wide, so its labels stay
-// readable on a phone).
+// The circuit, drawn as it sits in space: the interface (C_dl across R_ct and Z_W) at the platinum, then
+// the solution's R_s out to the bulk (400 units wide, so its labels stay readable on a phone).
 function circuitSvg({ Rs, Rct, Cdl }) {
   const ink = 'var(--ink)', muted = 'var(--muted)';
   const label = (x, y, text, sub = '') => `<text x="${x}" y="${y}" text-anchor="middle" fill="${ink}" font-size="16">${text}<tspan font-size="12" dy="4">${sub}</tspan></text>`;
   const value = (x, y, text) => `<text x="${x}" y="${y}" text-anchor="middle" fill="${muted}" font-size="13">${text}</text>`;
-  return `<svg viewBox="0 0 400 170" role="img" aria-label="the Randles circuit: R_s in series with C_dl in parallel with R_ct and Z_W" font-family="system-ui, sans-serif" style="width:100%;max-width:640px;height:auto;display:block;margin:auto">
+  return `<svg viewBox="0 0 400 170" role="img" aria-label="the Randles circuit: C_dl in parallel with R_ct and Z_W, in series with R_s" font-family="system-ui, sans-serif" style="width:100%;max-width:640px;height:auto;display:block;margin:auto">
     <g stroke="${ink}" stroke-width="1.5" fill="none">
-      <path d="M10 85 H40 M90 85 H120 V40 H183 M197 40 H330 V85 H390 M120 85 V130 H160 M210 130 H240 M290 130 H330 V85"/>
-      <rect x="40" y="73" width="50" height="24"/>
-      <path d="M183 24 V56 M197 24 V56"/>
-      <rect x="160" y="118" width="50" height="24"/>
-      <path d="M240 118 L253 142 L265 118 L278 142 L290 118"/>
+      <path d="M10 85 H40 V40 H138 M152 40 H250 V85 H290 M340 85 H390 M40 85 V130 H70 M120 130 H170 M220 130 H250 V85"/>
+      <path d="M138 24 V56 M152 24 V56"/>
+      <rect x="70" y="118" width="50" height="24"/>
+      <rect x="170" y="118" width="50" height="24"/>
+      <rect x="290" y="73" width="50" height="24"/>
     </g>
-    ${label(65, 63, 'R', 's')}${value(65, 115, `${cm2(Rs).toPrecision(2)} Ω·cm²`)}
-    ${label(190, 18, 'C', 'dl')}${value(262, 34, `${(Cdl * 100).toPrecision(3)} µF/cm²`)}
-    ${label(185, 110, 'R', 'ct')}${value(185, 162, `${cm2(Rct).toPrecision(3)} Ω·cm²`)}
-    ${label(265, 110, 'Z', 'W')}${value(275, 162, 'finite Warburg')}
+    <text x="195" y="135" text-anchor="middle" fill="${ink}" font-size="13">W</text>
+    ${label(145, 18, 'C', 'dl')}${value(205, 34, `${(Cdl * 100).toPrecision(3)} µF/cm²`)}
+    ${label(95, 110, 'R', 'ct')}${value(95, 162, `${cm2(Rct).toPrecision(3)} Ω·cm²`)}
+    ${label(195, 110, 'Z', 'W')}${value(200, 162, 'finite Warburg')}
+    ${label(315, 63, 'R', 's')}${value(315, 115, `${cm2(Rs).toPrecision(2)} Ω·cm²`)}
     ${value(16, 75, 'Pt')}${value(378, 75, 'bulk')}
   </svg>`;
 }

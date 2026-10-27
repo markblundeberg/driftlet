@@ -28,13 +28,14 @@
   <div class="controls">
     <label>k⁰ <input id="k0" type="range" min="-4" max="0" step="0.25" value="-2"><output id="k0Out"></output></label>
     <label>E <input id="E" type="range" min="-0.3" max="0.1" step="0.01" value="-0.1"><output id="EOut"></output></label>
+    <label><input id="noise" type="checkbox"> with 0.5% noise, as measured</label>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
     <canvas class="wide" id="iv"></canvas>
-    <canvas id="levich"></canvas>
-    <canvas id="kl"></canvas>
-    <canvas id="tafel"></canvas>
+    <div><p class="note">The Levich plot: the plateau against ω<sup>½</sup></p><canvas id="levich"></canvas></div>
+    <div><p class="note">Koutecký–Levich: 1/i against ω<sup>−½</sup> at the potential read</p><canvas id="kl"></canvas></div>
+    <div><p class="note">Tafel (Allen–Hickling): the intercepts, corrected for the back reaction</p><canvas id="tafel"></canvas></div>
     <div class="levels" id="conc"></div>
   </div>
   <h2>About this simulation</h2>
@@ -54,13 +55,15 @@
     plot), fall on a line of slope −αF/RT that meets η = 0 at the exchange current Fk⁰c.</p>
   <p>The page runs that analysis on the simulated currents alone, as on measured ones: the plateaus for the
     Levich plot, a straight-line fit per potential across the five rotation rates, and a line through the
-    corrected intercepts where i<sub>k</sub> is at most ten times the fastest disk's plateau. That cut is a
-    rule of thumb for real data: past it the intercept is the small difference of big numbers, and small
-    errors in the currents grow into large ones in i<sub>k</sub>. The simulation's own small error, the
-    migration the theory leaves out, grows the same way: its intercepts err by about 0.2% times
-    i<sub>k</sub> over the plateau, 2% at the cut and nearly half at 200 times (the grey points past the cut drift
-    off the line). So when k⁰ is large the readout calls the electrode too fast for the disk, and it's
-    right to. The readout gives what comes back against what went in.</p>
+    corrected intercepts where i<sub>k</sub> is at most ten times the fastest disk's plateau. Without noise
+    that cut isn't needed: the simulation's intercepts stay within 0.06% of the true kinetic current however
+    far past it they go (the grey points; its small migration error goes into the slopes, not the
+    intercepts). The cut is for measured data, where an intercept far past it is the small difference of
+    big numbers. Tick "0.5% noise" and the intercepts scatter by about 4% at ten times the plateau and 30%
+    at a hundred, and k⁰ comes back within about 1% for a slow electrode, 3% at 0.01 cm/s and 12% at
+    0.03 cm/s, where only three potentials pass. So when k⁰ is large the readout calls the electrode too
+    fast for the disk: the rule speaking, for measured data. The readout gives what comes back against
+    what went in.</p>
   <p>The model stands one stagnant layer of Levich's thickness for Fe³⁺ in for the flow. The flux to the disk
     is then Levich's (the disk is uniformly accessible), though the profile across the layer is a straight
     line where the real one curves, and Levich's formula itself runs about 3% above a real disk at this
@@ -121,10 +124,25 @@ const fit = (x, y) => {
 // Sweep every disk, then analyse the simulated currents: per potential a Koutecký–Levich line,
 // 1/i against ω^{-1/2}; its intercept 1/i_k; the Tafel line through ln(i_k/(1 − e^{Fη/RT})) against η.
 const Es = Array.from({ length: 56 }, (_, k) => E0 + 0.25 - 0.01 * k); // E° + 0.25 V down to E° − 0.30 V
-function sweep(k0) {
+// The kinetic current itself, with no transport limit at all: what the intercepts should give.
+const kinetic = (E, k0) => FARADAY * (k0 / 1000) * c * (Math.exp((-alpha * (E - E0)) / VT) - Math.exp(((1 - alpha) * (E - E0)) / VT));
+// Noise like a measurement's, if asked: each current off by a relative error of that rms (seeded, so the
+// same every time).
+function noisy(rms, seed = 1) {
+  let a = seed;
+  const uniform = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return (i) => i * (1 + rms * Math.sqrt(-2 * Math.log(1 - uniform())) * Math.cos(2 * Math.PI * uniform()));
+}
+function sweep(k0, noise = 0) {
+  const err = noisy(noise);
   const I = rpms.map((rpm) => {
     const dev = new Device(disk(Es[0], rpm, k0));
-    return Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), -dev.solve().terminals.left.current));
+    return Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), err(-dev.solve().terminals.left.current)));
   });
   const x = rpms.map((rpm) => 1 / Math.sqrt(omega(rpm)));
   const kl = Es.map((E, k) => ({ E, ...fit(x, I.map((row) => 1 / row[k])) }));
@@ -137,7 +155,7 @@ function sweep(k0) {
 
 // (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
 
-const k0In = document.getElementById('k0'), EIn = document.getElementById('E');
+const k0In = document.getElementById('k0'), EIn = document.getElementById('E'), noiseIn = document.getElementById('noise');
 for (const el of [k0In, EIn]) fromQuery(el);
 const k0 = () => 10 ** +k0In.value;
 let run;
@@ -146,7 +164,7 @@ const labels = () => {
   document.getElementById('EOut').textContent = `E° ${+EIn.value < 0 ? '−' : '+'} ${Math.abs(+EIn.value).toFixed(2)} V`;
 };
 function rebuild() {
-  run = sweep(k0());
+  run = sweep(k0(), noiseIn.checked ? 0.005 : 0);
   update();
 }
 const mA = (j) => j / 10; // A/m² to mA/cm²
@@ -208,6 +226,7 @@ function update() {
   });
 }
 k0In.addEventListener('change', rebuild);
+noiseIn.addEventListener('change', rebuild);
 k0In.addEventListener('input', labels);
 EIn.addEventListener('input', update);
 addEventListener('resize', update);

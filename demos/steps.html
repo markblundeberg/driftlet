@@ -72,7 +72,9 @@
     step it matters more: the potential can move no faster than i/C<sub>dl</sub>, and the charge that moving
     it takes, C<sub>dl</sub>ΔE, comes out of the current, so the transition is smeared out and read late:
     crossing E° − 0.25 V at 1.10τ at 0.2 mA/cm², 1.19τ at 0.5 mA/cm², and not by 1.3τ at 2 mA/cm².
-    That is chronopotentiometry's old weakness. Tick the box to see it (the double layer is driftlet's
+    That is chronopotentiometry's old weakness. (Before τ, about half of the potential's lift above Sand's
+    line isn't charging but the diffuse layer's own effect on the kinetics: its ψ draws both iron cations
+    toward the plane and speeds the reaction, the Frumkin effect. The late transition is the charging.) Tick the box to see it (the double layer is driftlet's
     <code>diffuse</code> layer behind a Stern layer, uncharged at rest).</p>
   <p>The electrode faces 100 µm of still solution, then a stirred bulk: long enough that over these times the
     solution is as good as infinite (natural convection would end a real Cottrell experiment after 10 or 20
@@ -86,8 +88,9 @@
     illustrative, within the range reported for this couple at platinum (driftlet's k0 is that times its
     1 M reference concentration, 0.05 mol/(m²·s)). Currents are cathodic positive.</p>
   <p>The profiles below are the concentrations across the solution, simulated (thick) against the same
-    theory (thin). The level diagram has the platinum's Fermi level and the couple's redox level, which tilts
-    across the depleted layer: its gap to the Fermi level at the surface is the overpotential the kinetics
+    theory (thin). The level diagram has the platinum's Fermi level and the couple's redox level, drawn in
+    volts, so electron energy is down the page (reducing Fe³⁺, electrons go from the Fermi level up to the
+    redox level, toward higher voltage). The redox level tilts across the depleted layer: its gap to the Fermi level at the surface is the overpotential the kinetics
     see, and the tilt is the concentration polarisation. φ is the SHE's level here.</p>
 </main>
 <script type="module">
@@ -221,9 +224,10 @@ function draw(sol) {
       xlabel: 't (s)', ylabel: 'reduction current (mA/cm²)', logx: true, logy: true, xlim: [t0, t1],
       ylim: [mA(theory.current(t1)) / 2, Math.max(mA(theory.current(t0)), mA(theory.cottrell(t0))) * 2],
       series: [
+        // (the simulation first, so the theory's thin lines show on top of it)
+        { x: shown.map((k) => run.t[k]), y: shown.map((k) => mA(run.i[k])), color: colors[3], width: 3, label: 'simulated' },
         { x: ts, y: ts.map((tt) => mA(theory.cottrell(tt))), color: colors[2], width: 1.2, dash: [6, 4], label: 'Cottrell' },
         { x: ts, y: ts.map((tt) => mA(theory.current(tt))), color: colors[0], width: 1.2, label: 'with kinetics' },
-        { x: shown.map((k) => run.t[k]), y: shown.map((k) => mA(run.i[k])), color: colors[3], width: 2.5, label: 'simulated' },
       ],
     });
   } else {
@@ -237,8 +241,8 @@ function draw(sol) {
       xlabel: 't (s)', ylabel: 'E (V vs SHE)', xlim: [0, run.end], ylim: [E0 - 0.35, E0 + 0.05],
       series: [
         { x: [theory.tau, theory.tau], y: [E0 - 0.35, E0 + 0.05], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'Sand’s τ' },
+        { x: run.t, y: run.E, color: colors[3], width: 3, label: 'simulated' },
         { x: ts, y: ts.map((tt) => theory.potential(tt)), color: colors[0], width: 1.2, label: 'Sand, with kinetics' },
-        { x: run.t, y: run.E, color: colors[3], width: 2.5, label: 'simulated' },
       ],
     });
   }
