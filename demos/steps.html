@@ -56,20 +56,27 @@
     starts where nothing reacts, with no Fe²⁺; this is the same law, generalised.) At first the electrode
     can't keep up: at t → 0 the current is F(k<sub>f</sub> − k<sub>b</sub>)c, the rate constants
     k<sub>f</sub> = k⁰e<sup>−αFη/RT</sup> and k<sub>b</sub> = k⁰e<sup>(1−α)Fη/RT</sup>, and it joins
-    Cottrell's line once diffusion has slowed below that, after about 1/H² with
-    H = k<sub>f</sub>/√D<sub>Fe³⁺</sub> + k<sub>b</sub>/√D<sub>Fe²⁺</sub> (2 µs at −0.3 V, 5 ms at −0.1 V).
+    Cottrell's line once diffusion has slowed below that, on a time scale 1/H² with
+    H = k<sub>f</sub>/√D<sub>Fe³⁺</sub> + k<sub>b</sub>/√D<sub>Fe²⁺</sub> (2 µs at −0.3 V, 5 ms at −0.1 V); it's
+    within 5% of the line only after about ten times that, so fit Cottrell's line later than that. Its
+    slope gives D back: here D<sub>Fe³⁺</sub> = 6.04 × 10⁻⁶ cm²/s, the value the model uses
+    (D<sub>Fe²⁺</sub> = 7.19 × 10⁻⁶).
     The full line is that whole theory, Butler–Volmer kinetics and semi-infinite diffusion in closed form;
     the dashed one is Cottrell's line alone.</p>
   <p>A current step draws Fe³⁺ out of the surface at a fixed rate, and its concentration there falls as √t
     (Sand's solution), reaching zero at the transition time τ = πD(Fc)²/(4i²), so iτ<sup>½</sup>/c is the
     same at every current, whatever the kinetics. Until then the potential drifts as the surface's
     Fe³⁺/Fe²⁺ ratio and Butler–Volmer need; the line is Sand's surface concentrations put into
-    Butler–Volmer. At τ nothing is left to carry the current. With no double layer, the potential falls
-    away at once and the run stops there.</p>
+    Butler–Volmer. At τ nothing is left in the model to carry the current: with no double layer the
+    potential falls away at once, toward any value at all, and the run stops there. In this cell the next
+    thing to reduce is H⁺ (from the 0.1 M HCl), near 0 V vs SHE, which would hold the potential there; the
+    model leaves it out.</p>
   <p>A real electrode has a double layer, and it changes both experiments. After a potential step it takes a
     spike of charge first (here only microseconds, through 100 µm of solution; on a millimetre disk, in a
-    real cell, ten microseconds or more, which would hide the first decade of this plot). After a current
-    step it matters more: the potential can move no faster than i/C<sub>dl</sub>, and the charge that moving
+    real cell, ten microseconds or more, which would hide the first decade of this plot). At small steps it
+    does more: its ψ speeds the reaction (the Frumkin effect, as below), so for milliseconds the current
+    runs above the theory drawn (1.8 times at 0.1 ms and 1.1 at 10 ms, at η = −0.1 V), and a k⁰ read from
+    the early current would come out too high by about that. After a current step it matters more still: the potential can move no faster than i/C<sub>dl</sub>, and the charge that moving
     it takes, C<sub>dl</sub>ΔE, comes out of the current, so the transition is smeared out and read late:
     crossing E° − 0.25 V at 1.10τ at 0.2 mA/cm², 1.19τ at 0.5 mA/cm², and not by 1.3τ at 2 mA/cm².
     That is chronopotentiometry's old weakness. (Before τ, about half of the potential's lift above Sand's
@@ -236,7 +243,9 @@ function draw(sol) {
     const crossed = Number.isNaN(run.cross) ? '' : ` · past E° − 0.25 V at ${run.cross.toFixed(3)}τ`;
     document.getElementById('status').textContent = run.stopped
       ? `the transition at ${t.toPrecision(4)} s; Sand's τ ${theory.tau.toPrecision(4)} s`
-      : `t = ${t.toPrecision(3)} s (${(t / theory.tau).toFixed(2)}τ) · E = ${E.toFixed(3)} V vs SHE; Sand ${Number.isNaN(theory.potential(t)) ? '—' : theory.potential(t).toFixed(3)}${crossed}`;
+      : E < E0 - 0.6
+        ? `t = ${t.toPrecision(3)} s (${(t / theory.tau).toFixed(2)}τ) · the potential falling away: the transition${crossed}`
+        : `t = ${t.toPrecision(3)} s (${(t / theory.tau).toFixed(2)}τ) · E = ${E.toFixed(3)} V vs SHE; Sand ${Number.isNaN(theory.potential(t)) ? '—' : theory.potential(t).toFixed(3)}${crossed}`;
     chart(document.getElementById('main'), {
       xlabel: 't (s)', ylabel: 'E (V vs SHE)', xlim: [0, run.end], ylim: [E0 - 0.35, E0 + 0.05],
       series: [

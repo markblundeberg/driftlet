@@ -205,6 +205,19 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
     return 1 / (H * H);
   };
   assert.ok(Math.abs(settle(-0.3) / 2e-6 - 1) < 0.05 && Math.abs(settle(-0.1) / 5e-3 - 1) < 0.06, `${settle(-0.3)}, ${settle(-0.1)} s`);
+  // "within 5% of the line only after about ten times that"
+  for (const eta of [-0.3, -0.1]) {
+    const { kf, kb } = rates(eta), H = kf / Math.sqrt(Do) + kb / Math.sqrt(Dr), th = stepE(eta), t = 10 / (H * H);
+    assert.ok(Math.abs(th.current(t) / th.cottrell(t) - 0.95) < 0.01, `${eta} V: ${th.current(t) / th.cottrell(t)} at 10/H²`);
+  }
+  // with a double layer, at η = −0.1 V: "1.8 times at 0.1 ms and 1.1 at 10 ms"
+  {
+    const dl = new Device(electrode(E0, true));
+    dl.solve();
+    dl.set({ contacts: { left: { V: E0 - 0.1 } } });
+    const th = stepE(-0.1), r1 = -dl.advance(1e-4, { tol: 1e-4 }).terminals.left.current / th.current(1e-4), r2 = -dl.advance(1e-2, { tol: 1e-4 }).terminals.left.current / th.current(1e-2);
+    assert.ok(Math.abs(r1 - 1.8) < 0.08 && Math.abs(r2 - 1.12) < 0.04, `${r1}, ${r2}`);
+  }
   // A potential step: the current, with kinetics, from 10 µs to 1 s ("up to 1.2%" at first, the solution's
   // resistance; "0.2% from 1 ms on")
   for (const eta of [-0.5, -0.35, -0.2, -0.1, -0.05, -0.02]) {
@@ -276,12 +289,20 @@ test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ 
   const near = (rows, q0) => rows.reduce((best, r) => (Math.abs(Math.log(r[0] / q0)) < Math.abs(Math.log(best[0] / q0)) ? r : best))[1];
   const clean = errs(sweep(1), 1);
   assert.ok(Math.max(...clean.map((r) => r[0])) > 1000 && clean.every(([, e]) => e < 7e-4), JSON.stringify(clean));
-  const loud = errs(sweep(0.1, 0.005), 0.1);
-  assert.ok(near(loud, 10) > 0.02 && near(loud, 10) < 0.08 && near(loud, 100) > 0.15 && near(loud, 100) < 0.5, `${near(loud, 10)}, ${near(loud, 100)}`);
-  for (const [k0, within] of [[1e-4, 0.01], [1e-3, 0.012], [1e-2, 0.01], [0.1, 0.035], [0.3, 0.14]]) {
-    const back = sweep(k0, 0.005).back;
-    assert.ok(Math.abs(back.k0 / k0 - 1) < within, `k⁰ ${k0} with noise: ${back.k0}`);
+  // over many draws of the noise: "an intercept scatters by about 10% at ten times the plateau, and by its own
+  // size or more at a hundred"; "k⁰ comes back within about 1% for a slow electrode, 4% at 0.01 cm/s and 12% at
+  // 0.03 cm/s (medians over draws), where a third of the draws leave fewer than the three potentials"
+  const draws = (k0, n) => Array.from({ length: n }, (_, k) => sweep(k0, 0.005, k + 1));
+  const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  const rms = (a) => Math.sqrt(a.reduce((t, x) => t + x * x, 0) / a.length);
+  const at01 = draws(0.1, 16), scatter = (lo, hi) => rms(at01.flatMap((run) => errs(run, 0.1).filter(([q]) => q > lo && q < hi).map(([, e]) => e)));
+  assert.ok(scatter(8, 12) > 0.05 && scatter(8, 12) < 0.2 && scatter(80, 120) > 1, `${scatter(8, 12)}, ${scatter(80, 120)}`);
+  for (const [k0, within] of [[1e-3, 0.012], [1e-2, 0.025], [0.1, 0.06]]) {
+    const back = median((k0 === 0.1 ? at01 : draws(k0, 16)).map((run) => Math.abs(run.back.k0 / k0 - 1)));
+    assert.ok(back < within && back > within / 4, `k⁰ ${k0} with noise: median ${back}`);
   }
+  const fast = draws(0.316, 18), fits = fast.filter((run) => run.back);
+  assert.ok(fits.length < 16 && fits.length > 6 && Math.abs(median(fits.map((run) => Math.abs(run.back.k0 / 0.316 - 1))) - 0.12) < 0.08, `${fits.length} fits`);
   // "about 3% above a real disk at this Schmidt number (Newman's correction)"; "1.19 times ... a real disk's would be 1.12"
   const sc = nu / Do, newman = 1 + 0.298 * Math.cbrt(1 / sc) + 0.14514 * Math.cbrt(1 / (sc * sc));
   assert.ok(Math.abs(newman - 1.03) < 0.005 && Math.abs(Dr / Do - 1.19) < 0.005 && Math.abs(Math.cbrt((Dr / Do) * (Dr / Do)) - 1.12) < 0.005, `${newman}, ${Dr / Do}`);

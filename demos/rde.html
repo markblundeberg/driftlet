@@ -29,6 +29,7 @@
     <label>k⁰ <input id="k0" type="range" min="-4" max="0" step="0.25" value="-2"><output id="k0Out"></output></label>
     <label>E <input id="E" type="range" min="-0.3" max="0.1" step="0.01" value="-0.1"><output id="EOut"></output></label>
     <label><input id="noise" type="checkbox"> with 0.5% noise, as measured</label>
+    <button id="redraw" type="button">new noise</button>
     <span class="readout" id="status"></span>
   </div>
   <div class="grid">
@@ -52,16 +53,20 @@
     where the back reaction counts, and its intercept the current the electrode would pass with no
     transport limit at all. Those intercepts, one per potential and corrected for the back reaction,
     i<sub>k</sub>/(1 − e<sup>Fη/RT</sup>) with equal Fe³⁺ and Fe²⁺ (the Allen–Hickling form of the Tafel
-    plot), fall on a line of slope −αF/RT that meets η = 0 at the exchange current Fk⁰c.</p>
+    plot), fall on a line of slope −αF/RT (in log₁₀, 118 mV per decade for α = ½) that meets η = 0 at the
+    exchange current Fk⁰c. The Levich slope gives D back: here D<sub>Fe³⁺</sub> = 6.04 × 10⁻⁶ cm²/s, the
+    value the model uses (D<sub>Fe²⁺</sub> = 7.19 × 10⁻⁶).</p>
   <p>The page runs that analysis on the simulated currents alone, as on measured ones: the plateaus for the
     Levich plot, a straight-line fit per potential across the five rotation rates, and a line through the
     corrected intercepts where i<sub>k</sub> is at most ten times the fastest disk's plateau. Without noise
     that cut isn't needed: the simulation's intercepts stay within 0.06% of the true kinetic current however
     far past it they go (the grey points; its small migration error goes into the slopes, not the
     intercepts). The cut is for measured data, where an intercept far past it is the small difference of
-    big numbers. Tick "0.5% noise" and the intercepts scatter by about 4% at ten times the plateau and 30%
-    at a hundred, and k⁰ comes back within about 1% for a slow electrode, 3% at 0.01 cm/s and 12% at
-    0.03 cm/s, where only three potentials pass. So when k⁰ is large the readout calls the electrode too
+    big numbers. Tick "0.5% noise" (and draw again with "new noise"): over many draws an intercept scatters
+    by about 10% at ten times the plateau, and by its own size or more at a hundred, and k⁰ comes back
+    within about 1% for a slow electrode, 4% at 0.01 cm/s and 12% at 0.03 cm/s (medians over draws), where
+    a third of the draws leave fewer than the three potentials a line needs. Potentials within 20 mV of E°
+    are left out too: there the correction divides by nearly zero. So when k⁰ is large the readout calls the electrode too
     fast for the disk: the rule speaking, for measured data. The readout gives what comes back against
     what went in.</p>
   <p>The model stands one stagnant layer of Levich's thickness for Fe³⁺ in for the flow. The flux to the disk
@@ -138,8 +143,8 @@ function noisy(rms, seed = 1) {
   };
   return (i) => i * (1 + rms * Math.sqrt(-2 * Math.log(1 - uniform())) * Math.cos(2 * Math.PI * uniform()));
 }
-function sweep(k0, noise = 0) {
-  const err = noisy(noise);
+function sweep(k0, noise = 0, seed = 1) {
+  const err = noisy(noise, seed);
   const I = rpms.map((rpm) => {
     const dev = new Device(disk(Es[0], rpm, k0));
     return Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), err(-dev.solve().terminals.left.current)));
@@ -148,7 +153,7 @@ function sweep(k0, noise = 0) {
   const kl = Es.map((E, k) => ({ E, ...fit(x, I.map((row) => 1 / row[k])) }));
   const plateau = I.map((row) => row.at(-1)); // at E° − 0.30 V, for the Levich plot
   const used = kl.filter((p) => E0 - p.E > 0.02 && p.a > 0 && 1 / p.a < 10 * plateau.at(-1)); // cathodic, and i_k at most 10× the fastest plateau
-  const tafel = used.length >= 2 ? fit(used.map((p) => p.E - E0), used.map((p) => Math.log(1 / p.a / -Math.expm1((p.E - E0) / VT)))) : null;
+  const tafel = used.length >= 3 ? fit(used.map((p) => p.E - E0), used.map((p) => Math.log(1 / p.a / -Math.expm1((p.E - E0) / VT)))) : null;
   const back = tafel && { alpha: -tafel.b * VT, k0: (Math.exp(tafel.a) / (FARADAY * c)) * 1000 };
   return { k0, I, x, kl, plateau, used, tafel, back };
 }
@@ -156,6 +161,7 @@ function sweep(k0, noise = 0) {
 // (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
 
 const k0In = document.getElementById('k0'), EIn = document.getElementById('E'), noiseIn = document.getElementById('noise');
+let seed = 1;
 for (const el of [k0In, EIn]) fromQuery(el);
 const k0 = () => 10 ** +k0In.value;
 let run;
@@ -164,7 +170,7 @@ const labels = () => {
   document.getElementById('EOut').textContent = `E° ${+EIn.value < 0 ? '−' : '+'} ${Math.abs(+EIn.value).toFixed(2)} V`;
 };
 function rebuild() {
-  run = sweep(k0(), noiseIn.checked ? 0.005 : 0);
+  run = sweep(k0(), noiseIn.checked ? 0.005 : 0, seed);
   update();
 }
 const mA = (j) => j / 10; // A/m² to mA/cm²
@@ -177,7 +183,7 @@ function update() {
   const k = kl.indexOf(at);
   document.getElementById('status').textContent = back
     ? `back from the analysis (${used.length} potentials): k⁰ ${(back.k0 / 10).toPrecision(3)} cm/s, α ${back.alpha.toFixed(3)}; put in: ${(k0() / 10).toPrecision(3)}, ${alpha}`
-    : `too fast for the disk, by the ×10 rule: ${used.length === 0 ? 'no potential' : 'only one potential'} has a kinetic current within it`;
+    : `too fast for the disk, by the ×10 rule: ${['no potential has', 'only one potential has', 'only two potentials have'][used.length]} a kinetic current within it, and a line needs three`;
   const Et = Array.from({ length: 221 }, (_, j) => E0 + 0.25 - 0.0025 * j);
   chart(document.getElementById('iv'), {
     xlabel: 'E (V vs SHE)', ylabel: 'reduction current (mA/cm²)',
@@ -190,7 +196,7 @@ function update() {
   // Levich: the plateau at E° − 0.30 V against ω^{1/2}, and Levich's line, F D c/δ.
   const sq = rpms.map((rpm) => Math.sqrt(omega(rpm))), sqs = [0, ...sq];
   chart(document.getElementById('levich'), {
-    xlabel: 'ω¹ᐟ² (s⁻¹ᐟ²)', ylabel: 'i at E° − 0.30 V (mA/cm²)', xlim: [0, 1.05 * Math.max(...sq)], ylim: [0, 1.1 * mA((FARADAY * Do * c) / levich(rpms.at(-1)))],
+    xlabel: 'ω¹ᐟ² (ω in rad/s)', ylabel: 'i at E° − 0.30 V (mA/cm²)', xlim: [0, 1.05 * Math.max(...sq)], ylim: [0, 1.1 * mA((FARADAY * Do * c) / levich(rpms.at(-1)))],
     series: [
       { x: sqs, y: sqs.map((w) => mA((FARADAY * Do * c * w) / ((1.61 * Math.cbrt(Do) * Math.pow(nu, 1 / 6))))), color: colors[0], width: 1.2, label: 'Levich' },
       { x: sq, y: plateau.map(mA), color: colors[3], marker: true, width: 0, label: 'simulated plateau' },
@@ -199,7 +205,7 @@ function update() {
   // Koutecký–Levich: 1/i against ω^{-1/2} at the potential read, with its line out to the axis.
   const xs = [0, ...x];
   chart(document.getElementById('kl'), {
-    xlabel: 'ω⁻¹ᐟ² (s¹ᐟ²)', ylabel: '1/i (cm²/mA)', xlim: [0, 1.05 * Math.max(...x)],
+    xlabel: 'ω⁻¹ᐟ² (ω in rad/s)', ylabel: '1/i (cm²/mA)', xlim: [0, 1.05 * Math.max(...x)],
     series: [
       { x: xs, y: xs.map((v) => (at.a + at.b * v) * 10), color: colors[0], width: 1.2, label: 'line, to 1/i_k' },
       { x, y: I.map((row) => 10 / row[k]), color: colors[3], marker: true, width: 0, label: `simulated, E° ${at.E < E0 ? '−' : '+'} ${Math.abs(at.E - E0).toFixed(2)} V` },
@@ -227,6 +233,11 @@ function update() {
 }
 k0In.addEventListener('change', rebuild);
 noiseIn.addEventListener('change', rebuild);
+document.getElementById('redraw').addEventListener('click', () => {
+  seed += 1;
+  noiseIn.checked = true;
+  rebuild();
+});
 k0In.addEventListener('input', labels);
 EIn.addEventListener('input', update);
 addEventListener('resize', update);
