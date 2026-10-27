@@ -1,7 +1,7 @@
 // Minimal canvas line charts for the demos (no dependencies).
 //
 // chart(canvas, { series, xlabel, ylabel, xlim, ylim, logx, logy, xscale })
-//   series: [{ x, y, color, label, dash, width }]. NaN values break a line; repeated x values
+//   series: [{ x, y, color, label, dash, width, marker }] (width 0 with marker: dots alone, in the legend too). NaN values break a line; repeated x values
 //   (doubled interface nodes) draw as vertical steps. Labels mark subscripts as driftlet/plot's
 //   do: `C_ox`, `c_{Zn²⁺}`.
 
@@ -158,13 +158,22 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   ctx.font = '12px system-ui, sans-serif';
   for (const { s, x: xx, y } of placed) {
     ctx.strokeStyle = paint(s.color ?? colors[series.indexOf(s) % colors.length]);
-    ctx.lineWidth = 2;
-    ctx.setLineDash(s.dash ?? []);
-    ctx.beginPath();
-    ctx.moveTo(xx, y);
-    ctx.lineTo(xx + 20, y);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (s.width !== 0) {
+      ctx.lineWidth = 2;
+      ctx.setLineDash(s.dash ?? []);
+      ctx.beginPath();
+      ctx.moveTo(xx, y);
+      ctx.lineTo(xx + 20, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (s.marker) {
+      // (a series of dots shows a dot)
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.arc(xx + 10, y, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
     ctx.fillStyle = ink;
     label(ctx, s.label, xx + 25, y + 4);
   }
