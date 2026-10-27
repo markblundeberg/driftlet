@@ -20,11 +20,11 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Potential and current steps: Cottrell and Sand</h1>
-  <p>A platinum electrode in still 1 mM Fe³⁺ and Fe²⁺ (in 1 M KCl), stepped from rest: to a potential, where
-    the current falls as 1/√t as the solution near the electrode runs out of Fe³⁺ (chronoamperometry,
-    against Cottrell), or to a current, which the surface's Fe³⁺ keeps up with only until Sand's transition
-    time, when the potential leaves (chronopotentiometry, against Sand). Choose the step and its size.
-    (More about the model below.)</p>
+  <p>A platinum electrode in still 1 mM Fe³⁺ and Fe²⁺ (in 1 M KCl with 0.1 M HCl), stepped from rest: to a
+    potential, where the current falls as 1/√t as the solution near the electrode runs out of Fe³⁺
+    (chronoamperometry, against Cottrell), or to a current, which the surface's Fe³⁺ can carry only until
+    Sand's transition time (chronopotentiometry, against Sand). Choose the step and its size, and whether
+    the electrode has a double layer to charge. (More about the model below.)</p>
   <div class="controls" id="controls">
     <label>step <select id="mode">
       <option value="E" selected>potential</option>
@@ -32,6 +32,7 @@
     </select></label>
     <label id="etaBox">η <input id="eta" type="range" min="-0.5" max="-0.02" step="0.01" value="-0.3"><output id="etaOut"></output></label>
     <label id="iBox">i <input id="i" type="range" min="0.2" max="2" step="0.05" value="0.5"><output id="iOut"></output></label>
+    <label><input id="dl" type="checkbox"> with a double layer (20 µF/cm²)</label>
     <label>playback <select id="pace">
       <option value="12">slow</option>
       <option value="5" selected>5 s a run</option>
@@ -46,35 +47,52 @@
     <div class="levels wide" id="levels"></div>
   </div>
   <h2>About this simulation</h2>
-  <p>A potential step to η below the couple's standard potential holds the surface's Fe³⁺/Fe²⁺ ratio near
-    e<sup>Fη/RT</sup>, and Fe³⁺ has to diffuse in from farther and farther away, across a depleted layer
-    √(πDt) thick: the current falls as 1/√t, Cottrell's law, the straight line of slope −½ on these axes.
-    A small step converts only part of the Fe³⁺ (the line drops as e<sup>Fη/RT</sup>/(1 + e<sup>Fη/RT</sup>));
-    past about −0.2 V the step takes it all. At first the electrode can't keep up: in the first instants the
-    current is the rate constant's, k⁰e<sup>−αFη/RT</sup>c, and it joins Cottrell's line only once
-    diffusion has slowed below that. The theory drawn is the whole of it, Butler–Volmer kinetics and
-    semi-infinite diffusion, in closed form, against Cottrell's line alone, dashed.</p>
+  <p>At rest the solution has as much Fe²⁺ as Fe³⁺, so the electrode sits at the couple's standard potential
+    E° and a step's η is its overpotential. A potential step holds the surface's Fe³⁺/Fe²⁺ ratio near
+    θ = e<sup>Fη/RT</sup>, and Fe³⁺ has to diffuse in from farther and farther away: the current falls as
+    1/√t, the straight line of slope −½ on these axes, and i√t stays constant (which is how D is measured).
+    With Fe²⁺ present the line is Cottrell's times (1 − θ)/(1 + ξθ), ξ = √(D<sub>Fe³⁺</sub>/D<sub>Fe²⁺</sub>):
+    a small step converts only part of the Fe³⁺, and past about −0.2 V it takes it all. (The textbook step
+    starts where nothing reacts, with no Fe²⁺; this is the same law, generalised.) At first the electrode
+    can't keep up: at t → 0 the current is F(k<sub>f</sub> − k<sub>b</sub>)c, the rate constants
+    k<sub>f</sub> = k⁰e<sup>−αFη/RT</sup> and k<sub>b</sub> = k⁰e<sup>(1−α)Fη/RT</sup>, and it joins
+    Cottrell's line once diffusion has slowed below that, after about 1/H² with
+    H = k<sub>f</sub>/√D<sub>Fe³⁺</sub> + k<sub>b</sub>/√D<sub>Fe²⁺</sub> (2 µs at −0.3 V, 5 ms at −0.1 V).
+    The full line is that whole theory, Butler–Volmer kinetics and semi-infinite diffusion in closed form;
+    the dashed one is Cottrell's line alone.</p>
   <p>A current step draws Fe³⁺ out of the surface at a fixed rate, and its concentration there falls as √t
-    (Sand's solution), reaching zero at the transition time τ = πD(Fc)²/(4i²). Until then the potential
-    only drifts, as the surface's Fe³⁺/Fe²⁺ ratio and Butler–Volmer need. At τ there's nothing left to carry
-    the current, and the potential falls away: on a real electrode, to the next thing that can be reduced
-    (here there's none, so the run stops there). The theory drawn is Sand's surface concentrations put into
-    Butler–Volmer.</p>
+    (Sand's solution), reaching zero at the transition time τ = πD(Fc)²/(4i²), so iτ<sup>½</sup>/c is the
+    same at every current, whatever the kinetics. Until then the potential drifts as the surface's
+    Fe³⁺/Fe²⁺ ratio and Butler–Volmer need; the line is Sand's surface concentrations put into
+    Butler–Volmer. At τ nothing is left to carry the current. With no double layer, the potential falls
+    away at once and the run stops there.</p>
+  <p>A real electrode has a double layer, and it changes both experiments. After a potential step it takes a
+    spike of charge first (here only microseconds, through 100 µm of solution; on a millimetre disk, in a
+    real cell, ten microseconds or more, which would hide the first decade of this plot). After a current
+    step it matters more: the potential can move no faster than i/C<sub>dl</sub>, and the charge that moving
+    it takes, C<sub>dl</sub>ΔE, comes out of the current, so the transition is smeared out and read late:
+    crossing E° − 0.25 V at 1.10τ at 0.2 mA/cm², 1.19τ at 0.5 mA/cm², and not by 1.3τ at 2 mA/cm².
+    That is chronopotentiometry's old weakness. Tick the box to see it (the double layer is driftlet's
+    <code>diffuse</code> layer behind a Stern layer, uncharged at rest).</p>
+  <p>The electrode faces 100 µm of still solution, then a stirred bulk: long enough that over these times the
+    solution is as good as infinite (natural convection would end a real Cottrell experiment after 10 or 20
+    s anyway), and thin enough that the current through it shifts the electrode's potential little. That
+    shift, about 2 mV at 10 µs, puts the current up to 1.2% off the theory there (most for middling steps,
+    where the kinetics still count); from 1 ms on they agree to 0.2%. In a real cell the
+    uncompensated resistance is set by the cell's geometry, and is often ten times more. The solution is
+    acidified because Fe³⁺ must be (above about pH 2 it hydrolyses and precipitates), and would be purged
+    of oxygen, which Pt reduces in this range. The potentials are on an ideal-solution scale, from table μ°:
+    E° = 0.77 V, where the formal potential in real 1 M HCl is nearer 0.70 V. k⁰ = 5 × 10⁻³ cm/s is
+    illustrative, within the range reported for this couple at platinum (driftlet's k0 is that times its
+    1 M reference concentration, 0.05 mol/(m²·s)). Currents are cathodic positive.</p>
   <p>The profiles below are the concentrations across the solution, simulated (thick) against the same
-    theory (thin). The electrode faces 100 µm of still solution, then a stirred bulk: long enough that over
-    these times the solution is as good as infinite, and short enough that the current through it shifts the
-    electrode's potential little: by up to 2 mV in the first 0.1 ms, which puts the current up to 1.5% off
-    the theory there (most for middling steps, where the kinetics still count); from 1 ms on they agree to
-    0.15%. There's no double layer here (the face has no capacitance), so the step
-    charges nothing: in a real cell the first microseconds go to charging it. k⁰ = 0.05 mol/(m²·s)
-    (5 × 10⁻³ cm/s) is illustrative.</p>
-  <p>The level diagram has the platinum's Fermi level and the couple's redox level, which tilts across the
-    depleted layer: its gap to the Fermi level at the surface is the overpotential the kinetics see, and the
-    tilt is the concentration polarisation. φ is the SHE's level here.</p>
+    theory (thin). The level diagram has the platinum's Fermi level and the couple's redox level, which tilts
+    across the depleted layer: its gap to the Fermi level at the surface is the overpotential the kinetics
+    see, and the tilt is the concentration polarisation. φ is the SHE's level here.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, IONS, WATER_EPSR } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
 
@@ -82,16 +100,17 @@ const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
 const iron = half('Fe3+ + e- = Fe2+');
 const L = 100e-6, c = 1, k0 = 0.05, alpha = 0.5; // m of still solution; mol/m³ of each ion; mol/(m²·s)
 const Do = IONS['Fe3+'].D, Dr = IONS['Fe2+'].D, E0 = (IONS['Fe3+'].mu0 - IONS['Fe2+'].mu0) / FARADAY; // E° 0.769 V
-const bulk = { 'K+': 1000, 'Cl-': 1000 + 5 * c, 'Fe3+': c, 'Fe2+': c };
+const bulk = { 'K+': 1000, 'H+': 100, 'Cl-': 1100 + 5 * c, 'Fe3+': c, 'Fe2+': c }; // 1 M KCl, 0.1 M HCl
 // The bath's terminal on the SHE scale, as in the voltammetry demo: then every V below is against SHE.
 const she = -(IONS['Cl-'].mu0 + GAS_CONSTANT * T * Math.log(bulk['Cl-'] / 1000)) / FARADAY;
-const electrode = (drive) =>
+// With a double layer: a Stern layer of 20 µF/cm² and the diffuse layer below the grid, uncharged at rest.
+const electrode = (drive, dl = false) =>
   build({
-    library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    library: [aqueous(['K+', 'H+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
     stack: [
       ohmic(drive, ['e-']), // the platinum's terminal
       layer('Pt', 4e-6),
-      { reactions: [{ ...iron, k0, alpha }] },
+      { ...(dl ? { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: E0, diffuse: { epsr: WATER_EPSR } } : {}), reactions: [{ ...iron, k0, alpha }] },
       layer('water', L, { name: 'still solution', c0: bulk }),
       bath(bulk, 'Cl-', 0, { offset: she }), // the stirred bulk
     ],
@@ -139,19 +158,20 @@ function stepI(i) {
 
 // (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
 
-const mode = document.getElementById('mode'), etaIn = document.getElementById('eta'), iIn = document.getElementById('i'), pace = document.getElementById('pace');
+const mode = document.getElementById('mode'), etaIn = document.getElementById('eta'), iIn = document.getElementById('i'), dlIn = document.getElementById('dl'), pace = document.getElementById('pace');
 for (const el of [mode, etaIn, iIn]) fromQuery(el);
+if (new URLSearchParams(location.search).has('dl')) dlIn.checked = true;
 const step = () => (mode.value === 'E' ? { eta: +etaIn.value } : { i: +iIn.value * 10 }); // mA/cm² to A/m²
 const t0 = 1e-5, t1 = 1; // the potential step's window, s
 let dev, rest, run, running = false;
 function start() {
   const s = step();
   if (!rest) rest = new Device(electrode({ I: 0 })).solve(); // at rest: E°, with c_O = c_R
-  dev = new Device(electrode(s.i ? { I: 0 } : rest.terminals.left.V));
+  dev = new Device(electrode(s.i ? { I: 0 } : rest.terminals.left.V, dlIn.checked));
   dev.solve();
   dev.set({ contacts: { left: s.i ? { I: -s.i } : { V: E0 + s.eta } } });
   const theory = s.i ? stepI(s.i) : stepE(s.eta);
-  run = { s, theory, t: [], i: [], E: [], wall: 0, end: s.i ? 1.2 * theory.tau : t1, stopped: false, stop: jumpTo() || Infinity };
+  run = { s, theory, t: [], i: [], E: [], wall: 0, end: s.i ? (dlIn.checked ? 1.3 : 1.2) * theory.tau : t1, stopped: false, stop: jumpTo() || Infinity, cross: NaN };
   document.getElementById('etaBox').style.display = s.i ? 'none' : '';
   document.getElementById('iBox').style.display = s.i ? '' : 'none';
   labels();
@@ -180,6 +200,7 @@ function frame(now = performance.now()) {
     run.t.push(t);
     run.i.push(-sol.trace.current[j]); // the trace's is into the device at the electrode, anodic: so cathodic +
     run.E.push(-sol.trace.voltage[j]); // the bath (0) minus the electrode
+    if (run.s.i && Number.isNaN(run.cross) && run.E.at(-1) < E0 - 0.25) run.cross = t / run.theory.tau;
   });
   // Past τ, nothing carries the current: the step can't converge, and the run ends there.
   if (!sol.converged) run.stopped = true;
@@ -208,9 +229,10 @@ function draw(sol) {
   } else {
     const ts = Array.from({ length: 241 }, (_, k) => (run.end * k) / 240);
     const E = sol.terminals.left.V;
+    const crossed = Number.isNaN(run.cross) ? '' : ` · past E° − 0.25 V at ${run.cross.toFixed(3)}τ`;
     document.getElementById('status').textContent = run.stopped
       ? `the transition at ${t.toPrecision(4)} s; Sand's τ ${theory.tau.toPrecision(4)} s`
-      : `t = ${t.toPrecision(3)} s · E = ${E.toFixed(3)} V vs SHE; theory ${theory.potential(t).toFixed(3)}`;
+      : `t = ${t.toPrecision(3)} s (${(t / theory.tau).toFixed(2)}τ) · E = ${E.toFixed(3)} V vs SHE; Sand ${Number.isNaN(theory.potential(t)) ? '—' : theory.potential(t).toFixed(3)}${crossed}`;
     chart(document.getElementById('main'), {
       xlabel: 't (s)', ylabel: 'E (V vs SHE)', xlim: [0, run.end], ylim: [E0 - 0.35, E0 + 0.05],
       series: [
@@ -250,6 +272,7 @@ const pause = pauser(document.getElementById('controls'), () => {
 });
 document.getElementById('run').addEventListener('click', start);
 mode.addEventListener('change', start);
+dlIn.addEventListener('change', start);
 for (const el of [etaIn, iIn]) {
   el.addEventListener('change', start);
   el.addEventListener('input', labels);

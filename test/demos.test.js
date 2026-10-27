@@ -168,12 +168,18 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
 
 test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the page says", async () => {
   const { Device } = await import('../src/index.js');
-  const { electrode, stepE, stepI, E0, Do, Dr, c } = await pageTheory('steps.html', ['electrode', 'stepE', 'stepI', 'E0', 'Do', 'Dr', 'c']);
+  const { electrode, stepE, stepI, rates, E0, Do, Dr, c } = await pageTheory('steps.html', ['electrode', 'stepE', 'stepI', 'rates', 'E0', 'Do', 'Dr', 'c']);
   const rest = new Device(electrode({ I: 0 })).solve();
   assert.ok(Math.abs(rest.terminals.left.V - E0) < 1e-9, `at rest ${rest.terminals.left.V} V, E° ${E0}`);
-  // A potential step: the current, with kinetics, from 10 µs to 1 s ("up to 1.5%" at first, the solution's
-  // resistance; "0.15% from 1 ms on")
-  for (const eta of [-0.5, -0.35, -0.2, -0.1, -0.05]) {
+  // "after about 1/H² ... (2 µs at −0.3 V, 5 ms at −0.1 V)"
+  const settle = (eta) => {
+    const { kf, kb } = rates(eta), H = kf / Math.sqrt(Do) + kb / Math.sqrt(Dr);
+    return 1 / (H * H);
+  };
+  assert.ok(Math.abs(settle(-0.3) / 2e-6 - 1) < 0.05 && Math.abs(settle(-0.1) / 5e-3 - 1) < 0.06, `${settle(-0.3)}, ${settle(-0.1)} s`);
+  // A potential step: the current, with kinetics, from 10 µs to 1 s ("up to 1.2%" at first, the solution's
+  // resistance; "0.2% from 1 ms on")
+  for (const eta of [-0.5, -0.35, -0.2, -0.1, -0.05, -0.02]) {
     const dev = new Device(electrode(E0));
     dev.solve();
     dev.set({ contacts: { left: { V: E0 + eta } } });
@@ -181,7 +187,7 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
     let worst = 0, profile = 0;
     for (const t of [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 1]) {
       const sol = dev.advance(t, { tol: 1e-4 });
-      const bound = t < 1e-4 ? 1.6e-2 : t < 1e-3 ? 6e-3 : 1.6e-3;
+      const bound = t < 1e-4 ? 1.3e-2 : t < 1e-3 ? 6e-3 : 2e-3;
       worst = Math.max(worst, Math.abs(-sol.terminals.left.current / th.current(t) - 1) / bound);
       // (the profiles until 0.1 s: by 1 s the semi-infinite theory is 0.4% from the bath's at its edge, 100 µm out)
       const x0 = sol.x[sol.region.indexOf(1)];
@@ -193,12 +199,13 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
     }
     assert.ok(worst < 1 && profile < 1, `η ${eta}: the current at ${worst} of its bound, the profiles at ${profile} of theirs`);
   }
-  // A current step: the potential until τ, and the transition at τ
-  for (const i of [2, 5, 20]) {
+  // A current step: the potential until τ, and the transition at τ; with a double layer, read late
+  // ("crossing E° − 0.25 V at 1.10τ at 0.2 mA/cm², 1.19τ at 0.5 mA/cm², and not by 1.3τ at 2 mA/cm²")
+  for (const [i, late] of [[2, 1.1], [5, 1.19], [20, Infinity]]) {
+    const th = stepI(i);
     const dev = new Device(electrode({ I: 0 }));
     dev.solve();
     dev.set({ contacts: { left: { I: -i } } });
-    const th = stepI(i);
     let worst = 0;
     for (const f of [0.1, 0.3, 0.5, 0.7, 0.9]) {
       const sol = dev.advance(f * th.tau, { tol: 1e-4 });
@@ -207,6 +214,16 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
     const end = dev.advance(1.2 * th.tau, { tol: 1e-4 });
     assert.ok(worst < 1e-3, `${i} A/m²: E within ${worst} V`);
     assert.ok(!end.converged && Math.abs(end.time / th.tau - 1) < 5e-3, `${i} A/m²: the transition at ${end.time} s, τ ${th.tau}`);
+    const dl = new Device(electrode({ I: 0 }, true));
+    dl.solve();
+    dl.set({ contacts: { left: { I: -i } } });
+    let cross = Infinity;
+    for (let k = 1; k <= 520 && cross === Infinity; k++) {
+      const sol = dl.advance((k * 1.3 * th.tau) / 520, { tol: 1e-4 });
+      assert.ok(sol.converged, `${i} A/m² with a double layer, at ${sol.time} s`);
+      if (sol.terminals.left.V < E0 - 0.25) cross = sol.time / th.tau;
+    }
+    assert.ok(late === Infinity ? cross === Infinity : Math.abs(cross - late) < 0.01, `${i} A/m² with a double layer: past E° − 0.25 V at ${cross}τ`);
   }
 });
 
