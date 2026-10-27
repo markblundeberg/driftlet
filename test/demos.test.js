@@ -226,3 +226,16 @@ test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ 
   // "an electrode too fast for a disk to measure"
   assert.equal(sweep(1).used.length, 0);
 });
+
+test('demos/randles.html: the Randles circuit, from the physics, is the simulated spectrum, as the page says', async () => {
+  const { atRest, randles, fs } = await pageTheory('randles.html', ['atRest', 'randles', 'fs']);
+  // "under 1% across these controls" (the corners of the sliders, and the middle)
+  for (const p of [{ k0: 1, salt: 10, L: 3.2e-6 }, { k0: 1, salt: 10, L: 316e-6 }, { k0: 1e-4, salt: 1000, L: 316e-6 }, { k0: 1e-4, salt: 10, L: 3.2e-6 }, { k0: 1e-2, salt: 100, L: 17.8e-6 }]) {
+    const dev = atRest(p), th = randles(p), { Z } = dev.impedance(fs);
+    const worst = Math.max(...fs.map((f, k) => {
+      const z = th.Z(f);
+      return Math.hypot(Z.re[k] - z.re, Z.im[k] - z.im) / Math.hypot(z.re, z.im);
+    }));
+    assert.ok(worst < 1e-2, `${JSON.stringify(p)}: within ${worst}`);
+  }
+});

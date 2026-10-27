@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Randles circuit</title>
+<meta name="description" content="A redox electrode's impedance spectrum, simulated, against the Randles circuit with each element worked out from the physics: solution resistance, double-layer capacitance, charge-transfer resistance and the finite-length Warburg.">
+<meta property="og:title" content="Randles circuit · driftlet">
+<meta property="og:description" content="A redox electrode's impedance spectrum, simulated, against the Randles circuit with each element worked out from the physics: solution resistance, double-layer capacitance, charge-transfer resistance and the finite-length Warburg.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/randles.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/randles.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A redox electrode's impedance: the Randles circuit</h1>
+  <p>Platinum in 1 mM Fe³⁺ and Fe²⁺ with KCl, at rest, behind a stagnant layer of solution: its impedance
+    spectrum, simulated from the ions and the reaction, against the Randles equivalent circuit with every
+    element worked out from the same physics. A semicircle for the reaction and its double layer, then
+    diffusion's arc: a 45° line while the diffusion is short of the stirred bulk (a thick stagnant layer
+    shows it best), bending back once it reaches it. Vary the rate constant, the salt and the stagnant
+    layer. (More about the model below.)</p>
+  <div class="controls">
+    <label>k⁰ <input id="k0" type="range" min="-4" max="0" step="0.25" value="-2"><output id="k0Out"></output></label>
+    <label>KCl <input id="salt" type="range" min="-2" max="0" step="0.25" value="-1"><output id="saltOut"></output></label>
+    <label>stagnant layer <input id="L" type="range" min="0.5" max="2.5" step="0.25" value="1.25"><output id="LOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="nyquist"></canvas>
+    <canvas id="mag"></canvas>
+    <canvas id="phase"></canvas>
+    <div class="levels wide" id="circuit"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>A small sine wave of voltage on the electrode drives three things at once. Charge piles onto the double
+    layer, like a capacitor C<sub>dl</sub>. Fe³⁺ is reduced and Fe²⁺ oxidised a little faster and slower in turn,
+    which near rest is a resistor, the charge-transfer resistance R<sub>ct</sub> = RT/(Fi<sub>0</sub>), with
+    i<sub>0</sub> = Fk⁰c the exchange current. And the reaction's own small changes in concentration have to
+    diffuse to and from the bulk, which lags: the Warburg impedance Z<sub>W</sub>. The current to all of
+    them crosses the solution, R<sub>s</sub>. So Z = R<sub>s</sub> + 1/(iωC<sub>dl</sub> + 1/(R<sub>ct</sub> +
+    Z<sub>W</sub>)), Randles' circuit. The semicircle's top sits at ω = 1/(R<sub>ct</sub>C<sub>dl</sub>);
+    below that frequency the Warburg's 45° line takes over; and once the diffusion reaches through the
+    stagnant layer to the stirred bulk (about D/L²), Z<sub>W</sub> stops growing and the spectrum bends back to
+    the real axis at R<sub>s</sub> + R<sub>ct</sub> + R<sub>W</sub>, with R<sub>W</sub> =
+    (RTL/F²c)(1/D<sub>Fe³⁺</sub> + 1/D<sub>Fe²⁺</sub>).</p>
+  <p>driftlet knows nothing of the circuit: it solves the ions, the potential and the reaction for their small
+    oscillation at each frequency. The circuit's elements here come from the same physics, by hand:
+    R<sub>s</sub> = L/κ from the solution's conductivity; C<sub>dl</sub>, an inner (Stern) layer of
+    20 µF/cm² in series with the diffuse layer's εκ<sub>D</sub> (Gouy–Chapman at zero charge, which the
+    electrode is held at); R<sub>ct</sub> from k⁰; and Z<sub>W</sub> for a layer of thickness L ending at a
+    fixed bulk, (RT/F²c)·Σ tanh(L√(iω/D))/√(iωD) over Fe³⁺ and Fe²⁺. The readout gives how far the two
+    disagree, under 1% across these controls. Most of that shrinks with less iron: the iron's own
+    migration, and its share in charging the double layer, which the circuit leaves out. The rest, a few
+    tenths of a percent in the most dilute salt, isn't traced here. (Not the Frumkin effect: at rest a
+    change in ψ moves the forward and back reactions alike, z<sub>Fe³⁺</sub> − z<sub>Fe²⁺</sub> = 1 being
+    the electron's own charge, so R<sub>ct</sub> sees the whole of the overpotential.)</p>
+  <p>The double layer is below the grid (driftlet's <code>diffuse: { epsr }</code>), set so the electrode
+    has no charge at rest: off its zero charge, ψ would shift the reaction's rate (the Frumkin effect, on
+    <a href="frumkin.html">its own page</a>) and the diffuse layer's capacitance, and the circuit's elements
+    would need those corrections too. k⁰ is illustrative.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT, EPS0 } from '../src/index.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, IONS, WATER_EPSR } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T;
+const iron = half('Fe3+ + e- = Fe2+');
+const c = 1, alpha = 0.5, Cstern = 0.2; // mol/m³ of each iron ion; F/m² (20 µF/cm²)
+const names = ['K+', 'Cl-', 'Fe3+', 'Fe2+'];
+const bulkOf = (salt) => ({ 'K+': salt, 'Cl-': salt + 5 * c, 'Fe3+': c, 'Fe2+': c });
+const electrode = (drive, { salt, k0, L, zeroCharge }) => {
+  const b = bulkOf(salt);
+  return build({
+    T,
+    library: [aqueous(names, { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(drive, ['e-']), // the platinum's terminal
+      layer('Pt', 1e-6),
+      { phi: { type: 'capacitive', C: Cstern }, zeroCharge, diffuse: { epsr: WATER_EPSR }, reactions: [{ ...iron, k0, alpha }] },
+      layer('water', L, { name: 'stagnant layer', c0: b }),
+      bath(b, 'Cl-'), // the stirred bulk
+    ],
+    grid: { hmin: 5e-9, hmax: L / 40, ratio: 1.15 }, // (5 nm: √(D/ω) at 1 MHz is 10 nm)
+  });
+};
+// At rest, with the face uncharged: zeroCharge is the rest's own V − φ (a first solve finds it).
+function atRest(p) {
+  const first = new Device(electrode({ I: 0 }, { ...p, zeroCharge: 0 })).solve();
+  const zeroCharge = first.terminals.left.V - first.phi.at(-1);
+  const rest = new Device(electrode({ I: 0 }, { ...p, zeroCharge })).solve();
+  const dev = new Device(electrode(rest.terminals.left.V, { ...p, zeroCharge }));
+  dev.solve();
+  return dev;
+}
+
+// Complex arithmetic, for the circuit.
+const cx = (re, im = 0) => ({ re, im });
+const add = (a, b) => cx(a.re + b.re, a.im + b.im), mul = (a, b) => cx(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
+const inv = (a) => { const d = a.re * a.re + a.im * a.im; return cx(a.re / d, -a.im / d); };
+const sqrt = (a) => { const r = Math.hypot(a.re, a.im); return cx(Math.sqrt((r + a.re) / 2), Math.sign(a.im) * Math.sqrt((r - a.re) / 2)); };
+const tanh = (a) => {
+  if (a.re > 20) return cx(1, 0);
+  const d = Math.cosh(2 * a.re) + Math.cos(2 * a.im);
+  return cx(Math.sinh(2 * a.re) / d, Math.sin(2 * a.im) / d);
+};
+// The Randles circuit's elements from the physics (Ω·m², F/m²), and its impedance at f.
+function randles({ salt, k0, L }) {
+  const b = bulkOf(salt), ion = (n) => IONS[n];
+  const kappa = ((FARADAY * FARADAY) / RT) * names.reduce((a, n) => a + ion(n).z * ion(n).z * ion(n).D * b[n], 0); // S/m
+  const debye = Math.sqrt((FARADAY * FARADAY * names.reduce((a, n) => a + ion(n).z * ion(n).z * b[n], 0)) / (WATER_EPSR * EPS0 * RT)); // κ_D, 1/m
+  const Cdl = 1 / (1 / Cstern + 1 / (WATER_EPSR * EPS0 * debye));
+  const i0 = FARADAY * (k0 / 1000) * c, Rct = RT / (FARADAY * i0), Rs = L / kappa;
+  const RW = (RT / (FARADAY * FARADAY * c)) * L * (1 / ion('Fe3+').D + 1 / ion('Fe2+').D); // Z_W as ω → 0
+  const Z = (f) => {
+    const jw = cx(0, 2 * Math.PI * f);
+    const W = (D) => mul(inv(sqrt(mul(jw, cx(D)))), tanh(mul(sqrt(cx(0, (2 * Math.PI * f) / D)), cx(L))));
+    const Zw = mul(cx(RT / (FARADAY * FARADAY * c)), add(W(ion('Fe3+').D), W(ion('Fe2+').D)));
+    return add(cx(Rs), inv(add(mul(jw, cx(Cdl)), inv(add(cx(Rct), Zw)))));
+  };
+  return { Rs, Rct, Cdl, RW, Z };
+}
+const fs = Array.from({ length: 36 }, (_, k) => 10 ** (-2 + (8 * k) / 35)); // 10 mHz to 1 MHz
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const k0In = document.getElementById('k0'), saltIn = document.getElementById('salt'), LIn = document.getElementById('L');
+for (const el of [k0In, saltIn, LIn]) fromQuery(el);
+const params = () => ({ k0: 10 ** +k0In.value, salt: 1000 * 10 ** +saltIn.value, L: 1e-6 * 10 ** +LIn.value });
+const labels = () => {
+  const p = params();
+  document.getElementById('k0Out').textContent = `${p.k0.toPrecision(2)} mol/(m²·s)`;
+  document.getElementById('saltOut').textContent = `${+(p.salt / 1000).toPrecision(2)} M`;
+  document.getElementById('LOut').textContent = `${(p.L * 1e6).toPrecision(2)} µm`;
+};
+const cm2 = (z) => z * 1e4; // Ω·m² to Ω·cm²
+function rebuild() {
+  labels();
+  const p = params(), dev = atRest(p), th = randles(p);
+  const { Z } = dev.impedance(fs);
+  const sim = fs.map((f, k) => cx(Z.re[k], Z.im[k])), theory = fs.map(th.Z);
+  const worst = Math.max(...sim.map((z, k) => Math.hypot(z.re - theory[k].re, z.im - theory[k].im) / Math.hypot(theory[k].re, theory[k].im)));
+  const ft = Array.from({ length: 321 }, (_, k) => 10 ** (-2 + k / 40)), line = ft.map(th.Z);
+  document.getElementById('status').textContent =
+    `R_s ${cm2(th.Rs).toPrecision(3)} Ω·cm² · C_dl ${(th.Cdl * 100).toPrecision(3)} µF/cm² · R_ct ${cm2(th.Rct).toPrecision(3)} Ω·cm² · ` +
+    `the semicircle's top at ${(1 / (2 * Math.PI * th.Rct * th.Cdl)).toPrecision(2)} Hz · simulation and circuit within ${(100 * worst).toPrecision(2)}%`;
+  // Nyquist, its axes in a 3 : 1 span to keep the semicircle round on this canvas.
+  const xmax = 1.05 * cm2(Math.max(...line.map((z) => z.re))), ymax = xmax / 3;
+  chart(document.getElementById('nyquist'), {
+    xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, xmax], ylim: [0, ymax],
+    series: [
+      { x: line.map((z) => cm2(z.re)), y: line.map((z) => -cm2(z.im)), color: colors[0], width: 1.2, label: 'Randles circuit' },
+      { x: sim.map((z) => cm2(z.re)), y: sim.map((z) => -cm2(z.im)), color: colors[3], marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  const mag = (z) => cm2(Math.hypot(z.re, z.im)), phase = (z) => (-180 / Math.PI) * Math.atan2(z.im, z.re);
+  chart(document.getElementById('mag'), {
+    xlabel: 'f (Hz)', ylabel: '|Z| (Ω·cm²)', logx: true, logy: true,
+    series: [
+      { x: ft, y: line.map(mag), color: colors[0], width: 1.2, label: 'circuit' },
+      { x: fs, y: sim.map(mag), color: colors[3], marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  chart(document.getElementById('phase'), {
+    xlabel: 'f (Hz)', ylabel: '−phase (°)', logx: true, ylim: [0, 90],
+    series: [
+      { x: ft, y: line.map(phase), color: colors[0], width: 1.2, label: 'circuit' },
+      { x: fs, y: sim.map(phase), color: colors[3], marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  document.getElementById('circuit').innerHTML = circuitSvg(th);
+}
+// The circuit, drawn: R_s in series with C_dl across R_ct + Z_W.
+function circuitSvg({ Rs, Rct, Cdl }) {
+  const ink = 'var(--ink)', muted = 'var(--muted)';
+  const label = (x, y, text, sub = '') => `<text x="${x}" y="${y}" text-anchor="middle" fill="${ink}" font-size="14">${text}<tspan font-size="10" dy="3">${sub}</tspan></text>`;
+  const value = (x, y, text) => `<text x="${x}" y="${y}" text-anchor="middle" fill="${muted}" font-size="11">${text}</text>`;
+  return `<svg viewBox="0 0 720 150" role="img" aria-label="the Randles circuit: R_s in series with C_dl in parallel with R_ct and Z_W" font-family="system-ui, sans-serif" style="width:100%;height:auto">
+    <g stroke="${ink}" stroke-width="1.5" fill="none">
+      <path d="M20 75 H90 M150 75 H220 V35 H330 M372 35 H600 V75 H700 M220 75 V115 H290 M350 115 H420 M480 115 H600 V75"/>
+      <rect x="90" y="63" width="60" height="24"/>
+      <path d="M330 20 V50 M342 20 V50"/><path d="M342 35 H372"/>
+      <rect x="290" y="103" width="60" height="24"/>
+      <path d="M420 103 L440 127 L460 103 L480 127"/>
+    </g>
+    ${label(120, 55, 'R', 's')}${value(120, 103, `${cm2(Rs).toPrecision(2)} Ω·cm²`)}
+    ${label(336, 14, 'C', 'dl')}${value(400, 30, `${(Cdl * 100).toPrecision(3)} µF/cm²`)}
+    ${label(320, 97, 'R', 'ct')}${value(320, 143, `${cm2(Rct).toPrecision(3)} Ω·cm²`)}
+    ${label(450, 97, 'Z', 'W')}${value(450, 143, 'finite Warburg')}
+    ${value(20, 65, 'Pt')}${value(700, 65, 'bulk')}
+  </svg>`;
+}
+for (const el of [k0In, saltIn, LIn]) {
+  el.addEventListener('change', rebuild);
+  el.addEventListener('input', labels);
+}
+addEventListener('resize', rebuild);
+rebuild();
+showCode();
+</script>
+</body>
+</html>
