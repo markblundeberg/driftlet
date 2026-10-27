@@ -310,13 +310,27 @@ test('demos/corrosion.html: the mixed potential and the Evans diagram against th
       const Rp = 2e-3 / (at(1e-3).terminals.left.current - at(-1e-3).terminals.left.current);
       assert.ok(E < -0.42 && E > -0.45 && icorr / lim > 0.9, `${E} V, ${icorr / lim} of the limit`);
       assert.ok(prot.Fe / icorr < 0.02 && -prot.O2 / lim > 0.98, `${prot.Fe / icorr}, ${-prot.O2 / lim}`);
-      assert.ok(Math.abs((Rp * icorr) / B - 1) < 0.05 && Math.abs(tafel / icorr - 1) < 0.05, `R_p·i_corr ${Rp * icorr} against ${B}; Tafel ${tafel / icorr}`);
+      assert.ok(Math.abs((Rp * icorr) / B - 1) < 0.035 && Math.abs(tafel / icorr - 1) < 0.05, `R_p·i_corr ${Rp * icorr} against ${B}; Tafel ${tafel / icorr}`);
+      // fitted to the measured (net) points: "anywhere from half to 1.6 times i_corr depending on where you fit";
+      // "add the plateau back and fit close in, 25 to 75 mV above E_corr, and it comes within 5%"
+      const pts = [0.025, 0.05, 0.075, 0.1, 0.125, 0.15].map((d) => [d, at(d).terminals.left.current]);
+      const tafelFit = (lo, hi, back = 0) => {
+        const p = pts.filter(([d]) => d > lo - 1e-9 && d < hi + 1e-9), n = p.length;
+        const x = p.map((q) => q[0]), y = p.map((q) => Math.log(q[1] + back)), mx = x.reduce((a, v) => a + v, 0) / n, my = y.reduce((a, v) => a + v, 0) / n;
+        const b = x.reduce((a, v, k) => a + (v - mx) * (y[k] - my), 0) / x.reduce((a, v) => a + (v - mx) * (v - mx), 0);
+        return Math.exp(my - b * mx) / icorr;
+      };
+      const near = tafelFit(0.025, 0.075), far = tafelFit(0.1, 0.15), fixed = tafelFit(0.025, 0.075, lim);
+      assert.ok(near > 0.45 && near < 0.65 && far > 1.45 && far < 1.7 && Math.abs(fixed - 1) < 0.06, `${near}, ${far}, ${fixed}`);
+      // "about 0.15 V below, the Fermi level passes the iron's own redox level and iron would plate"
+      assert.ok(currents(E - 0.13, L).Fe > 0 && currents(E - 0.17, L).Fe < 0, `${currents(E - 0.13, L).Fe}, ${currents(E - 0.17, L).Fe}`);
       // "9% by 0.1 V up, all of it the solution's potential at the face, 2.4 mV there: about half ohmic drop";
       // "with that taken out the two agree to 10⁻⁴"
       const up = at(0.1), g = up.region.indexOf(1), phi = up.phi[g], i = up.terminals.left.current;
       const kappa = ((FARADAY * FARADAY) / (GAS_CONSTANT * 298.15)) * (IONS['Na+'].D * 500 + IONS['Cl-'].D * 500), ohmic = (i * L) / kappa;
       const c = currents(E + 0.1 - phi, L);
       assert.ok(Math.abs(i / net(E + 0.1, L) - 0.91) < 0.01 && Math.abs(phi - 2.4e-3) < 1e-4 && ohmic / phi > 0.4 && ohmic / phi < 0.6, `${i / net(E + 0.1, L)}, φ ${phi}, ohmic ${ohmic}`);
+      assert.ok(Math.abs(at(0.15).terminals.left.current / net(E + 0.15, L) - 0.68) < 0.01, '"by 0.15 V up it\'s 32% below"');
       assert.ok(Math.abs(i / (c.Fe + c.O2) - 1) < 2e-4, `with φ taken out: ${i / (c.Fe + c.O2)}`);
     }
     // "for the thinnest layers ... the kinetics share the control"

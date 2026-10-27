@@ -20,7 +20,8 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Corrosion: a mixed potential and the Evans diagram</h1>
-  <p>Iron in aerated 0.5 M NaCl, behind a layer of still water: left to itself it settles at the corrosion
+  <p>Iron in aerated 0.5 M NaCl, behind a layer of still water (Nernst's picture of the diffusion layer that
+    stirring, or natural convection, leaves next to the metal: thicker for stiller water): left to itself it settles at the corrosion
     potential, where its own dissolution (Fe → Fe²⁺ + 2e⁻) and the reduction of dissolved oxygen
     (O₂ + 2H₂O + 4e⁻ → 4OH⁻) pass equal currents, and it corrodes at that current. The Evans diagram, each
     reaction's current against potential, shows where; driving the iron away from it gives the polarization
@@ -48,14 +49,21 @@
     supply, and stirring the water (a thinner layer) speeds corrosion as 1/L; for the thinnest layers here
     the crossing moves up the bend, and the kinetics share the control.</p>
   <p>Driven below E<sub>corr</sub>, the iron's dissolution dies away while oxygen's plateau carries on: that is
-    cathodic protection, and 0.1 V below E<sub>corr</sub> the iron already dissolves at about 1% of its free
-    rate, for a protection current of about oxygen's limit. Driven above, the iron's current grows tenfold
-    every 60 mV (its Tafel slope, 2.3RT/(2(1 − α)F) with α = ½). That is also how i<sub>corr</sub> is
-    measured: the anodic Tafel line extrapolated back to E<sub>corr</sub> gives it within a few percent here
-    (the cathodic branch, a plateau, has no line to extrapolate), and so does the polarization resistance,
-    R<sub>p</sub> = dE/di at E<sub>corr</sub>, through Stern and Geary's i<sub>corr</sub> =
-    B/R<sub>p</sub> (1957), with B the anodic Tafel slope over 2.3 alone, the cathode being
-    diffusion-limited.</p>
+    cathodic protection. 0.1 V below E<sub>corr</sub> the iron dissolves at about 1% of its free rate (the
+    readout's second line gives it for the potential you choose), for a protection current of about oxygen's
+    limit; about 0.15 V below, the Fermi level passes the iron's own redox level and iron would plate rather
+    than dissolve (Pourbaix's immunity). Driven above, the iron's current grows tenfold every 60 mV (its
+    Tafel slope, 2.3RT/(2(1 − α)F) with α = ½). That is also how i<sub>corr</sub> is measured, with care.
+    The iron's own line, extrapolated back to E<sub>corr</sub>, gives it within a few percent, but no
+    experiment sees that line: the measured curve is the net current, and a straight line fitted to it
+    gives anywhere from half to 1.6 times i<sub>corr</sub> depending on where you fit (near E<sub>corr</sub>
+    oxygen's plateau current takes away from it; higher up the solution's potential at the face bends it).
+    Add the plateau back and fit close in, 25 to 75 mV above E<sub>corr</sub>, and it comes within 5%. The
+    polarization resistance does better: R<sub>p</sub> = dE/di at E<sub>corr</sub>, through Stern and
+    Geary's i<sub>corr</sub> = B/R<sub>p</sub> (1957), with B the anodic Tafel slope over 2.3 alone (the
+    cathode is diffusion-limited), gives it within 3%. The textbook construction starts each line from its
+    couple's equilibrium potential: the iron's is −0.59 V here (with the bulk's 1 µM Fe²⁺, Pourbaix's 10⁻⁶
+    convention), off this diagram's left edge, and oxygen's +0.80 V, far above its top.</p>
   <p>The lines are closed forms, worked out apart from the solver: Butler–Volmer for each reaction at the
     iron's face, with the Fe²⁺ the iron makes held back by diffusion through the layer (its back reaction
     sees the surface's Fe²⁺, not the bulk's), and oxygen's supply through the layer in series with its
@@ -64,10 +72,10 @@
     E<sub>corr</sub> the simulation runs below the closed form (9% by 0.1 V up), all of it the solution's
     potential at the face, 2.4 mV there: about half ohmic drop through the layer, and half a diffusion
     potential from the FeCl₂ built up at the iron diffusing out (Fe²⁺ is slower than Cl⁻). With that taken
-    out the two agree to 10⁻⁴. The simulation is the more realistic curve here: it has what a reference
+    out the two agree to 10⁻⁴. (By 0.15 V up it's 32% below.) The simulation is the more realistic curve here: it has what a reference
     electrode in the bulk would see.</p>
   <p>What the model leaves out matters. The profiles below are its, and in a real cell they couldn't last:
-    with Fe²⁺ and OH⁻ together at the face, ferrous hydroxide would be some 10⁵ times past its solubility,
+    with Fe²⁺ and OH⁻ together at the face, ferrous hydroxide would be 10⁵ to 10⁶ times past its solubility,
     and dissolved oxygen oxidises Fe²⁺ in seconds at the pH there. So in reality rust forms within the layer,
     and the oxygen it takes there never reaches the metal; at most that brings the iron's rate down to two
     thirds of oxygen's supply. Below about −0.7 V vs SHE, on real steel, water's own reduction to hydrogen
@@ -80,8 +88,10 @@
     table μ°: E°(Fe²⁺/Fe) is −0.41 V here, where tables give −0.44 V; and the solution's conductivity is the
     ideal one, a third above real 0.5 M NaCl's.</p>
   <p>The level diagram is the mixed potential itself: the iron's Fermi level, and the two couples' redox
-    levels across the still layer, drawn in volts (electron energy is down the page). Electrons leave the
-    iron's redox level for the Fermi level (dissolution) and go on up to oxygen's (reduction); the Fermi
+    levels across the still layer, drawn in volts, so electron energy is down the page (an electron's
+    voltage, μ̄/(−F), is the electrochemist's electrode potential; φ, the dotted line, is the SHE's level
+    here). Electrons leave the iron's redox level for the Fermi level (dissolution) and go on up the page, down
+    in energy, to oxygen's (reduction); the Fermi
     level sits between the two, where the flows match. Below it, the concentrations across the layer:
     oxygen drawn down toward the iron, Fe²⁺ and OH⁻ building up at it.</p>
 </main>
@@ -173,11 +183,14 @@ function update() {
   const icorr = 2 * FARADAY * -rest.interfaces[0].rates[0]; // the iron's dissolution, A/m²
   const mmPerYear = (icorr / (2 * FARADAY)) * (0.05585 / 7874) * 3.156e7 * 1e3; // mol/(m²·s) to mm of iron a year
   const minus = (t) => t.replace('-', '−');
-  document.getElementById('status').textContent =
-    `corrosion potential ${minus(Ecorr.toFixed(4))} V vs SHE (theory ${minus(theory.E.toFixed(4))}) · corrosion current ${uA(icorr).toPrecision(5)} µA/cm² (theory ${uA(theory.i).toPrecision(5)}), ` +
-    `${Math.round((100 * icorr) / currents(Ecorr, L()).limit)}% of oxygen's limit · ${mmPerYear.toPrecision(2)} mm of iron a year`;
   dev.set({ contacts: { left: { V: E } } });
-  const sol = dev.solve();
+  const sol = dev.solve(), here = 2 * FARADAY * -sol.interfaces[0].rates[0]; // the iron's own dissolution at E
+  document.getElementById('status').innerHTML =
+    `left to itself: ${minus(Ecorr.toFixed(4))} V vs SHE, corroding at ${uA(icorr).toPrecision(5)} µA/cm², ` +
+    `${Math.round((100 * icorr) / currents(Ecorr, L()).limit)}% of oxygen's limit, ${mmPerYear.toPrecision(2)} mm of iron a year ` +
+    `<span class="note">(the closed form: ${minus(theory.E.toFixed(4))} V, ${uA(theory.i).toPrecision(5)} µA/cm²)</span><br>` +
+    `at ${minus(E.toFixed(3))} V: the iron ${here >= 0 ? `dissolving at ${uA(here).toPrecision(3)} µA/cm², ${((100 * here) / icorr).toPrecision(2)}% of its free rate` : `plating, at ${uA(-here).toPrecision(2)} µA/cm²`}; ` +
+    `the net current ${minus(uA(sol.terminals.left.current).toPrecision(3))} µA/cm² (anodic +)`;
   // Evans: E against log|i|, the partial currents as lines, the measured net current as points.
   const Et = Array.from({ length: 301 }, (_, k) => 0.1 - ((0.1 - (Ecorr - 0.3)) * k) / 300), part = Et.map((e) => currents(e, L())); // oxygen's Tafel line shows from +0.1 V
   const pos = (v) => (v > 0 ? uA(v) : NaN);
@@ -189,11 +202,12 @@ function update() {
       { x: part.map((c) => pos(Math.abs(c.Fe + c.O2))), y: Et, color: 'var(--muted)', width: 1, dash: [4, 3], label: 'net, theory' },
       { x: sim.map((i) => pos(Math.abs(i))), y: dEs.map((d) => Ecorr + d), color: colors[3], marker: true, width: 0, label: 'net, simulated' },
       { x: [0.1, 1e5], y: [Ecorr, Ecorr], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'E_corr' },
-      { x: [pos(Math.abs(sol.terminals.left.current))], y: [E], color: colors[2], marker: true, width: 0, label: 'now' },
+      { x: [pos(Math.abs(sol.terminals.left.current))], y: [E], color: colors[2], marker: true, width: 0, label: 'net, now' },
+      { x: [pos(here)], y: [E], color: colors[1], marker: true, width: 0, label: 'iron, now' },
     ],
   });
   levels(document.getElementById('levels'), sol, {
-    title: `electronic levels at E = ${E.toFixed(3)} V vs SHE`,
+    title: `electronic levels at E = ${minus(E.toFixed(3))} V vs SHE`,
     species: ['e-'],
     phi: true,
     labels: { 'V:e-': 'Fermi level (V_{e⁻})', phi: 'φ = V°_{e⁻}(SHE)' },
