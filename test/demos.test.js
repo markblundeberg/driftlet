@@ -290,23 +290,41 @@ test('demos/randles.html: the Randles circuit, from the physics, is the simulate
 });
 
 test('demos/corrosion.html: the mixed potential and the Evans diagram against their closed forms, as the page says', async () => {
-  const { Device, FARADAY } = await import('../src/index.js');
+  const { Device, FARADAY, GAS_CONSTANT } = await import('../src/index.js');
+  const { IONS } = await import('../src/kit.js');
   const { electrode, net, currents, corrosion } = await pageTheory('corrosion.html', ['electrode', 'net', 'currents', 'corrosion']);
-  for (const L of [10 ** -4.25, 1e-3, 10 ** -2.75]) {
-    // "the two corrosion potentials and currents, which agree to four digits"
+  const B = (GAS_CONSTANT * 298.15) / FARADAY; // the anodic Tafel slope over 2.3, with α = ½ for two electrons
+  for (const L of [10 ** -4.25, 10 ** -3.25, 1e-3]) {
+    // "they agree to 0.1 mV and five digits"
     const rest = new Device(electrode({ I: 0 }, L)).solve(), th = corrosion(L), E = rest.terminals.left.V;
-    const icorr = 2 * FARADAY * -rest.interfaces[0].rates[0];
-    assert.ok(rest.converged && Math.abs(E - th.E) < 2e-4 && Math.abs(icorr / th.i - 1) < 1e-4, `${L} m: E_corr ${E} against ${th.E}, i_corr ${icorr} against ${th.i}`);
-    // "about −0.4 V vs SHE" (for the default, 1 mm), and the corrosion current near oxygen's limit where the layer is thick
-    if (L === 1e-3) assert.ok(Math.abs(E + 0.45) < 0.03 && icorr / currents(E, L).limit > 0.9, `${E}, ${icorr / currents(E, L).limit}`);
-    // "the cathodic side agrees everywhere"; "by 0.1 V up ... about 10% below the closed form"
+    const icorr = 2 * FARADAY * -rest.interfaces[0].rates[0], lim = currents(E, L).limit;
+    assert.ok(rest.converged && Math.abs(E - th.E) < 1e-4 && Math.abs(icorr / th.i - 1) < 1e-5, `${L} m: E_corr ${E} against ${th.E}, i_corr ${icorr} against ${th.i}`);
     const dev = new Device(electrode(E, L));
     dev.solve();
-    for (const d of [-0.6, -0.4, -0.2, -0.05, 0.1]) {
-      dev.set({ contacts: { left: { V: E + d } } });
-      const sol = dev.solve(), ratio = sol.terminals.left.current / net(E + d, L);
-      assert.ok(sol.converged && sol.warnings.length === 0, sol.warnings.join(' '));
-      assert.ok(d < 0 ? Math.abs(ratio - 1) < 1e-3 : ratio > 0.85 && ratio < 0.96, `${L} m, ${d} V: ${ratio}`);
+    const at = (d) => (dev.set({ contacts: { left: { V: E + d } } }), dev.solve());
+    if (L === 10 ** -3.25) {
+      // the default: "in the range measured for steel in sea water (−0.35 to −0.45 V vs SHE), here at its
+      // negative end"; "on that plateau"; "0.1 V below ... about 1% of its free rate, for a protection current
+      // of about oxygen's limit"; Tafel extrapolation and Stern–Geary "within a few percent"
+      const prot = currents(E - 0.1, L), tafel = 2 * FARADAY * 5e-6 * Math.exp((E - IONS['Fe2+'].mu0 / (2 * FARADAY)) / B); // the anodic Tafel line alone, at E_corr
+      const Rp = 2e-3 / (at(1e-3).terminals.left.current - at(-1e-3).terminals.left.current);
+      assert.ok(E < -0.42 && E > -0.45 && icorr / lim > 0.9, `${E} V, ${icorr / lim} of the limit`);
+      assert.ok(prot.Fe / icorr < 0.02 && -prot.O2 / lim > 0.98, `${prot.Fe / icorr}, ${-prot.O2 / lim}`);
+      assert.ok(Math.abs((Rp * icorr) / B - 1) < 0.05 && Math.abs(tafel / icorr - 1) < 0.05, `R_p·i_corr ${Rp * icorr} against ${B}; Tafel ${tafel / icorr}`);
+      // "9% by 0.1 V up, all of it the solution's potential at the face, 2.4 mV there: about half ohmic drop";
+      // "with that taken out the two agree to 10⁻⁴"
+      const up = at(0.1), g = up.region.indexOf(1), phi = up.phi[g], i = up.terminals.left.current;
+      const kappa = ((FARADAY * FARADAY) / (GAS_CONSTANT * 298.15)) * (IONS['Na+'].D * 500 + IONS['Cl-'].D * 500), ohmic = (i * L) / kappa;
+      const c = currents(E + 0.1 - phi, L);
+      assert.ok(Math.abs(i / net(E + 0.1, L) - 0.91) < 0.01 && Math.abs(phi - 2.4e-3) < 1e-4 && ohmic / phi > 0.4 && ohmic / phi < 0.6, `${i / net(E + 0.1, L)}, φ ${phi}, ohmic ${ohmic}`);
+      assert.ok(Math.abs(i / (c.Fe + c.O2) - 1) < 2e-4, `with φ taken out: ${i / (c.Fe + c.O2)}`);
+    }
+    // "for the thinnest layers ... the kinetics share the control"
+    if (L === 10 ** -4.25) assert.ok(icorr / lim < 0.6, `${icorr / lim}`);
+    // "the cathodic side agrees everywhere"
+    for (const d of [-0.25, -0.1, -0.05]) {
+      const sol = at(d);
+      assert.ok(sol.converged && sol.warnings.length === 0 && Math.abs(sol.terminals.left.current / net(E + d, L) - 1) < 1e-3, `${L} m, ${d} V`);
     }
   }
 });
