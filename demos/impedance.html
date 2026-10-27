@@ -147,9 +147,12 @@ function frame(now = performance.now()) {
   const { f, z, p } = at;
   const mag2 = z.re * z.re + z.im * z.im, y = { re: z.re / mag2, im: -z.im / mag2 }; // admittance 1/Z
 
-  // Nyquist, with the chosen frequency marked.
-  chart(document.getElementById('nyquist'), {
-    xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, 3.6], ylim: [0, 1.2],
+  // Nyquist, with the chosen frequency marked, on equal scales (the chart's plot area is the canvas less
+  // 76 px across and 72 down): at least 3.6 by 1.2 Ω·cm², so a 45° line is drawn at 45°.
+  const nq = document.getElementById('nyquist'), pw = Math.max(1, nq.clientWidth - 76), ph = Math.max(1, nq.clientHeight - 72);
+  const per = Math.max(3.6 / pw, 1.2 / ph);
+  chart(nq, {
+    xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, per * pw], ylim: [0, per * ph],
     series: [
       { x: theory.map((w) => ohmCm2(w.re)), y: theory.map((w) => -ohmCm2(w.im)), color: colors[6], dash: [6, 4], label: 'theory' },
       { x: Array.from(spectrum.re, ohmCm2), y: Array.from(spectrum.im, (v) => -ohmCm2(v)), color: colors[2], marker: true, width: 0, label: 'simulated, 10 mHz – 100 kHz' },
