@@ -228,7 +228,7 @@ test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the
 });
 
 test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ and α, as the page says', async () => {
-  const { sweep, theory, rpms, Es } = await pageTheory('rde.html', ['sweep', 'theory', 'rpms', 'Es']);
+  const { sweep, theory, rpms, Es, Do, Dr, nu } = await pageTheory('rde.html', ['sweep', 'theory', 'rpms', 'Es', 'Do', 'Dr', 'nu']);
   for (const k0 of [1e-4, 1e-2, 0.3]) {
     const run = sweep(k0);
     let worst = 0;
@@ -236,12 +236,23 @@ test('demos/rde.html: the Koutecký–Levich and Tafel analysis gives back k⁰ 
       const th = theory(E, rpm, k0);
       if (Math.abs(th) > 1e-2) worst = Math.max(worst, Math.abs(run.I[r][k] / th - 1));
     }));
-    // "less migration, which the 1 M KCl keeps to 0.1%"; "k⁰ comes back within 0.02%"
-    assert.ok(worst < 1.2e-3, `k⁰ ${k0}: the currents within ${worst} of the theory`);
-    assert.ok(run.used.length >= 3 && Math.abs(run.back.k0 / k0 - 1) < 3e-4 && Math.abs(run.back.alpha - 0.5) < 5e-4, `k⁰ ${k0}: back ${JSON.stringify(run.back)} from ${run.used.length}`);
+    // "less migration, which the supporting salt keeps to 0.1%"; "k⁰ and α come back within 0.05%"
+    assert.ok(worst < 1e-3, `k⁰ ${k0}: the currents within ${worst} of the theory`);
+    assert.ok(run.used.length >= 3 && Math.abs(run.back.k0 / k0 - 1) < 5e-4 && Math.abs(run.back.alpha / 0.5 - 1) < 5e-4, `k⁰ ${k0}: back ${JSON.stringify(run.back)} from ${run.used.length}`);
   }
-  // "an electrode too fast for a disk to measure"
+  // "too fast for the disk, by the ×10 rule"; "its intercepts err by about 0.2% times i_k over the plateau"
   assert.equal(sweep(1).used.length, 0);
+  const mid = sweep(0.1), lim = mid.plateau.at(-1);
+  const past = mid.kl.filter((p) => p.E < Es[0] - 0.27).map((p) => {
+    const ik = theory(p.E, 1e9, 0.1);
+    return [ik / lim, Math.abs(1 / p.a / ik - 1)];
+  }).filter(([q]) => q > 3);
+  const near = (q0) => past.reduce((best, r) => (Math.abs(Math.log(r[0] / q0)) < Math.abs(Math.log(best[0] / q0)) ? r : best));
+  assert.ok(past.filter(([q]) => q <= 100).every(([q, e]) => e / q > 1.5e-3 && e / q < 2.5e-3), JSON.stringify(past));
+  assert.ok(Math.abs(near(10)[1] - 0.02) < 0.005 && near(200)[1] > 0.35 && near(200)[1] < 0.55, `${near(10)}, ${near(200)}`);
+  // "about 3% above a real disk at this Schmidt number (Newman's correction)"; "1.19 times ... a real disk's would be 1.12"
+  const sc = nu / Do, newman = 1 + 0.298 * Math.cbrt(1 / sc) + 0.14514 * Math.cbrt(1 / (sc * sc));
+  assert.ok(Math.abs(newman - 1.03) < 0.005 && Math.abs(Dr / Do - 1.19) < 0.005 && Math.abs(Math.cbrt((Dr / Do) * (Dr / Do)) - 1.12) < 0.005, `${newman}, ${Dr / Do}`);
 });
 
 test('demos/randles.html: the Randles circuit, from the physics, is the simulated spectrum, as the page says', async () => {
