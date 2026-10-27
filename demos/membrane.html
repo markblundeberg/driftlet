@@ -78,7 +78,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, speciesRole, particles, IONS } from '../src/kit.js';
 import { themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, onScreen } from './common.js';
+import { levels, profiles, showCode, fromQuery, onScreen, fitted } from './common.js';
 
 // Solution and membrane, both strictly neutral (macroscopic). The membrane is the same water,
 // with its ions ten times slower and a fixed charge.
@@ -205,7 +205,8 @@ function paint() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, Wc, Hc);
   const x0 = sol.x[0], x1 = sol.x.at(-1);
-  const pad = { l: (56 / 720) * Wc, r: (14 / 720) * Wc }; // the plots' area, to line up with them
+  const u = fitted(document.getElementById('levels')); // the plots' width, in their own units
+  const pad = { l: (56 / u) * Wc, r: (14 / u) * Wc }; // the plots' area, to line up with them
   const px = (v) => pad.l + ((v - x0) / (x1 - x0)) * (Wc - pad.l - pad.r);
   const top = 10, laneH = (Hc - top - 30) / 2, dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   // the membrane, its fixed anions a pattern of −

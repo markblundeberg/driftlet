@@ -107,7 +107,7 @@ import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
+import { profiles, showCode, fromQuery, pauser, jumpTo, fitted } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
@@ -184,7 +184,7 @@ function frame(now = performance.now()) {
   for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) trace.range = [Math.min(trace.range[0], y), Math.max(trace.range[1], y)];
   const pad = 0.06 * (trace.range[1] - trace.range[0]);
   document.getElementById('levels').innerHTML = levelChart(tr, {
-    width: 720, height: 380, range: [trace.range[0] - pad, trace.range[1] + pad],
+    width: fitted(document.getElementById('levels')), height: 380, range: [trace.range[0] - pad, trace.range[1] + pad],
     title: `species voltages and standard levels, t = ${(1000 * s.time).toFixed(0)} ms`,
   });
   profiles(document.getElementById('conc'), s, {
@@ -273,7 +273,7 @@ function drawFet() {
   const ys = tr.series.flatMap((line) => Array.from(line.y).filter(Number.isFinite));
   const lo = Math.min(-3.1, ...ys), hi = Math.max(0.3, ...ys), pad = 0.05 * (hi - lo);
   document.getElementById('bands').innerHTML = levelChart(tr, {
-    width: 720, height: 380, ylabel: 'electron energy (eV)', range: [lo - pad, hi + pad],
+    width: fitted(document.getElementById('bands')), height: 380, ylabel: 'electron energy (eV)', range: [lo - pad, hi + pad],
     title: `bands along the channel, V_G = ${Vg.toFixed(2)} V, V_D = ${Vd.toFixed(2)} V`,
   });
   profiles(document.getElementById('density'), sol, {

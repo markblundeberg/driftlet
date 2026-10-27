@@ -85,7 +85,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { hodgkinHuxley, injector, square, traces, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser } from './common.js';
+import { showCode, fromQuery, pauser, fitted } from './common.js';
 
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const L = 0.06, H = 2e-4, SETTLE = 30e-3, WINDOW = 12e-3, SITES = [0.01, 0.03, 0.05];
@@ -245,7 +245,7 @@ function draw() {
     const out = s.id === 'phi' ? 0 : (VT / z[s.species]) * Math.log(OUT[s.species] / 1000);
     s.y = s.y.map((v) => 1000 * (v - out));
   }
-  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 340, title: 'species voltages along the axon, against outside: each ion\'s driving force', ylabel: 'against outside (mV)', range: [-150, 160] });
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: fitted(document.getElementById('levels')), height: 340, title: 'species voltages along the axon, against outside: each ion\'s driving force', ylabel: 'against outside (mV)', range: [-150, 160] });
 }
 
 // Played back at a pace, on and on; each frame advances in a time budget.

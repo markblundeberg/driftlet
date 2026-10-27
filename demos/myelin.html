@@ -77,7 +77,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { hodgkinHuxley, injector, square, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser } from './common.js';
+import { showCode, fromQuery, pauser, fitted } from './common.js';
 
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const T = 273.15 + 18.5, VT = (GAS_CONSTANT * T) / FARADAY, a = 5e-6, am = 2 / a, L = 0.02, Ln = 1e-6;
@@ -236,7 +236,7 @@ function draw() {
     sr.y = sr.y.map((v) => 1000 * (v - out));
   }
   tr.regions = []; // (forty regions, nodes and internodes: no bands)
-  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 320, title: 'the myelinated axon: species voltages along it, against outside', ylabel: 'against outside (mV)', range: [-150, 160] });
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: fitted(document.getElementById('levels')), height: 320, title: 'the myelinated axon: species voltages along it, against outside', ylabel: 'against outside (mV)', range: [-150, 160] });
   chart(document.getElementById('jx'), {
     xlabel: 'x along the axon (cm)', ylabel: 'current along the axon (µA)', xlim: [0, 100 * L],
     series: [{ x: jb.xm, y: jb.j, color: colors[6], label: 'bare' }, { x: jm.xm, y: jm.j, color: colors[1], label: 'myelinated' }],

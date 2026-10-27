@@ -120,7 +120,7 @@ import { Device } from '../src/index.js';
 import { build, layer, bath, aqueous, injector, hodgkinHuxley, traces, speciesRole, particles } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, onScreen } from './common.js';
+import { showCode, fromQuery, pauser, onScreen, fitted } from './common.js';
 
 const IONS = ['Na+', 'K+', 'Cl-'];
 const OUT = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
@@ -300,7 +300,7 @@ function draw() {
   }
   // (with the space, zoomed onto it: the Schwann cells' barrier at 1 µm, the space, the membrane)
   const zoom = space.face === 1 ? [0.97e-6, 1.06e-6] : undefined;
-  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 340, xlim: zoom, title: `species voltages across the membrane: V_m = ${mV(Vm)}`, ylabel: 'against the sea water (mV)', range: [-140, 90] });
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: fitted(document.getElementById('levels')), height: 340, xlim: zoom, title: `species voltages across the membrane: V_m = ${mV(Vm)}`, ylabel: 'against the sea water (mV)', range: [-140, 90] });
 }
 
 // The ions crossing the membrane as dots (driftlet/kit's particles()): both sides are seas

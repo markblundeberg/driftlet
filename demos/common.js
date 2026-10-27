@@ -19,9 +19,16 @@ export function showCode() {
   if (!new URLSearchParams(location.search).has('shot')) document.querySelector('main').append(details);
 }
 
+// The width to draw a diagram at in an element: its own (less the panel's padding) where that's
+// narrower than asked, as on a phone, so the text keeps its size instead of shrinking with the drawing.
+export function fitted(el, width = 720) {
+  const w = el?.clientWidth;
+  return typeof w === 'number' && w > 0 ? Math.min(width, Math.max(300, Math.floor(w - 12))) : width;
+}
+
 // A level diagram from driftlet/plot into an element.
 export function levels(el, sol, opts = {}) {
-  el.innerHTML = bandDiagram(sol, { width: 720, height: 380, ...opts });
+  el.innerHTML = bandDiagram(sol, { height: 380, ...opts, width: fitted(el, opts.width ?? 720) });
 }
 
 // Concentration profiles drawn like the level diagrams (same layout, x axis and species colours),
@@ -44,7 +51,7 @@ export function profiles(el, sol, { species, title, ylabel = 'concentration (mol
     range = log ? [Math.floor(lo - 0.2), Math.ceil(hi + 0.2)] : b > a ? [b > 0 ? a : a - pad, b > 0 ? b + pad : b] : [0, 1];
   }
   const tr = { x: sol.x, series, regions: sol.regions, faces: sol.regions.slice(1).map((r) => r.x0), range };
-  el.innerHTML = levelChart(tr, { width, height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
+  el.innerHTML = levelChart(tr, { width: fitted(el, width), height, title, ylabel, range, xlim, ytick: log ? powerOfTen : undefined });
 }
 const superscript = (n) => String(n).replace(/[-0-9]/g, (d) => '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'['-0123456789'.indexOf(d)]);
 const powerOfTen = (v) => (Number.isInteger(v) ? `10${superscript(v)}` : '');

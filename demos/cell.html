@@ -75,7 +75,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, traces, recorder, check, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, jumpTo, jumpPending } from './common.js';
+import { showCode, fromQuery, pauser, jumpTo, jumpPending, fitted } from './common.js';
 
 const T = 310.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 const IONS = ['Na+', 'K+', 'Cl-'];
@@ -137,7 +137,7 @@ function drawLevels(sol, title) {
     const y0 = s.y.find(Number.isFinite);
     s.y = s.y.map((v) => (v - y0) * 1000);
   }
-  document.getElementById('levels').innerHTML = levelChart(tr, { width: 720, height: 360, title, ylabel: 'against outside (mV)', range: [-150, 90] });
+  document.getElementById('levels').innerHTML = levelChart(tr, { width: fitted(document.getElementById('levels')), height: 360, title, ylabel: 'against outside (mV)', range: [-150, 90] });
 }
 
 const mV = (v) => `${(1000 * v).toFixed(1)} mV`;

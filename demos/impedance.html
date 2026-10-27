@@ -80,7 +80,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, aqueous, traces, speciesRole, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser } from './common.js';
+import { showCode, fromQuery, pauser, fitted } from './common.js';
 
 // The saturation demo's cell: reversible silver electrodes (Ag⁺ in equilibrium with the metal,
 // NO₃⁻ blocked) either side of 10 mM silver nitrate, strictly neutral.
@@ -189,7 +189,7 @@ function frame(now = performance.now()) {
   };
   document.getElementById('levels').innerHTML = levelChart(
     { ...base, series: [...ion('Ag+', 1), ...ion('NO3-', -1)] },
-    { width: 720, height: 340, range: [-11.5, 11.5], xlim, ylabel: 'δV_i (mV)', title: `species voltages, ωt = ${Math.round((theta * 180) / Math.PI)}°` },
+    { width: fitted(document.getElementById('levels')), height: 340, range: [-11.5, 11.5], xlim, ylabel: 'δV_i (mV)', title: `species voltages, ωt = ${Math.round((theta * 180) / Math.PI)}°` },
   );
 
   // The salt: δc of either ion (the electrolyte is neutral), in mM.
@@ -205,7 +205,7 @@ function frame(now = performance.now()) {
       ],
     },
     {
-      width: 720, height: 300, range: [-cMax, cMax], xlim, ylabel: 'δc (mM)',
+      width: fitted(document.getElementById('conc')), height: 300, range: [-cMax, cMax], xlim, ylabel: 'δc (mM)',
       title: `salt concentration: a diffusion length √(D/ω) = ${reach < 1e-6 ? `${(reach * 1e9).toFixed(0)} nm` : `${short(reach * 1e6)} µm`}${reach > L / 2 ? ', spanning the cell' : ' from each electrode'}`,
     },
   );

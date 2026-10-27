@@ -77,7 +77,7 @@
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, live, particles } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, onScreen } from './common.js';
+import { levels, profiles, showCode, fromQuery, onScreen, fitted } from './common.js';
 
 const Si = semiconductor('Si'), W = units.um(1.5), ND = units.perCm3(1e17), NA = units.perCm3(1e16);
 const recombination = (kf) => [{ equation: 'e- + h+ = 0', kf: { Si: kf } }]; // band to band
@@ -219,7 +219,8 @@ function paint(now) {
   const x = sol.x, n = x.length;
   const Ec = Array.from(sol.muStd['e-'], (m) => m / FARADAY), Ev = Array.from(sol.muStd['h+'], (m) => -m / FARADAY);
   const lo = Math.min(...Ev) - 0.15, hi = Math.max(...Ec) + 0.15;
-  const pad = { l: (56 / 720) * Wc, r: (14 / 720) * Wc, t: 10, b: 10 }; // the diagrams' plot area, to line up with them
+  const u = fitted(document.getElementById('levels')); // the diagrams' width, in their own units
+  const pad = { l: (56 / u) * Wc, r: (14 / u) * Wc, t: 10, b: 10 }; // the diagrams' plot area, to line up with them
   const px = (v) => pad.l + ((v - x[0]) / (x[n - 1] - x[0])) * (Wc - pad.l - pad.r);
   const py = (e) => pad.t + ((hi - e) / (hi - lo)) * (Hc - pad.t - pad.b);
   const at = (arr, xv) => {

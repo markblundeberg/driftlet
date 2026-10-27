@@ -65,7 +65,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser } from './common.js';
+import { profiles, showCode, fromQuery, pauser, fitted } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
 const Q = FARADAY * cMax * L; // capacity, C/m²
@@ -209,7 +209,7 @@ function draw(s) {
   for (const line of tr.series) for (const y of line.y) if (Number.isFinite(y)) run.range = [Math.min(run.range[0], y), Math.max(run.range[1], y)];
   const span = run.range[1] - run.range[0];
   document.getElementById('levels').innerHTML = levelChart(tr, {
-    width: 720, height: 340, range: [run.range[0] - 0.2 * span, run.range[1] + 0.06 * span], // room for the ⌇ note
+    width: fitted(document.getElementById('levels')), height: 340, range: [run.range[0] - 0.2 * span, run.range[1] + 0.06 * span], // room for the ⌇ note
     title: `species voltages in the host, E = ${s.terminalVoltage.toFixed(3)} V`,
   });
   profiles(document.getElementById('profile'), s, { species: ['Li+'], labels: { 'Li+': 'x = c_{Li⁺} / c_max' }, title: 'filling across the host', ylabel: 'site fraction x', scale: 1 / cMax, range: [0, 1] });
