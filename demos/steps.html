@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Potential and current steps</title>
+<meta name="description" content="Chronoamperometry and chronopotentiometry at a platinum electrode: the current after a potential step against Cottrell (with kinetics), the potential after a current step against Sand.">
+<meta property="og:title" content="Cottrell and Sand · driftlet">
+<meta property="og:description" content="Chronoamperometry and chronopotentiometry at a platinum electrode: the current after a potential step against Cottrell (with kinetics), the potential after a current step against Sand.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/steps.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/steps.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Potential and current steps: Cottrell and Sand</h1>
+  <p>A platinum electrode in still 1 mM Fe³⁺ and Fe²⁺ (in 1 M KCl), stepped from rest: to a potential, where
+    the current falls as 1/√t as the solution near the electrode runs out of Fe³⁺ (chronoamperometry,
+    against Cottrell), or to a current, which the surface's Fe³⁺ keeps up with only until Sand's transition
+    time, when the potential leaves (chronopotentiometry, against Sand). Choose the step and its size.
+    (More about the model below.)</p>
+  <div class="controls" id="controls">
+    <label>step <select id="mode">
+      <option value="E" selected>potential</option>
+      <option value="I">current</option>
+    </select></label>
+    <label id="etaBox">η <input id="eta" type="range" min="-0.5" max="-0.02" step="0.01" value="-0.3"><output id="etaOut"></output></label>
+    <label id="iBox">i <input id="i" type="range" min="0.2" max="2" step="0.05" value="0.5"><output id="iOut"></output></label>
+    <label>playback <select id="pace">
+      <option value="12">slow</option>
+      <option value="5" selected>5 s a run</option>
+      <option value="0">as fast as it solves</option>
+    </select></label>
+    <button id="run">restart</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="main"></canvas>
+    <div class="levels wide" id="conc"></div>
+    <div class="levels wide" id="levels"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>A potential step to η below the couple's standard potential holds the surface's Fe³⁺/Fe²⁺ ratio near
+    e<sup>Fη/RT</sup>, and Fe³⁺ has to diffuse in from farther and farther away, across a depleted layer
+    √(πDt) thick: the current falls as 1/√t, Cottrell's law, the straight line of slope −½ on these axes.
+    A small step converts only part of the Fe³⁺ (the line drops as e<sup>Fη/RT</sup>/(1 + e<sup>Fη/RT</sup>));
+    past about −0.2 V the step takes it all. At first the electrode can't keep up: in the first instants the
+    current is the rate constant's, k⁰e<sup>−αFη/RT</sup>c, and it joins Cottrell's line only once
+    diffusion has slowed below that. The theory drawn is the whole of it, Butler–Volmer kinetics and
+    semi-infinite diffusion, in closed form, against Cottrell's line alone, dashed.</p>
+  <p>A current step draws Fe³⁺ out of the surface at a fixed rate, and its concentration there falls as √t
+    (Sand's solution), reaching zero at the transition time τ = πD(Fc)²/(4i²). Until then the potential
+    only drifts, as the surface's Fe³⁺/Fe²⁺ ratio and Butler–Volmer need. At τ there's nothing left to carry
+    the current, and the potential falls away: on a real electrode, to the next thing that can be reduced
+    (here there's none, so the run stops there). The theory drawn is Sand's surface concentrations put into
+    Butler–Volmer.</p>
+  <p>The profiles below are the concentrations across the solution, simulated (thick) against the same
+    theory (thin). The electrode faces 100 µm of still solution, then a stirred bulk: long enough that over
+    these times the solution is as good as infinite, and short enough that the current through it shifts the
+    electrode's potential little: by up to 2 mV in the first 0.1 ms, which puts the current up to 1.5% off
+    the theory there (most for middling steps, where the kinetics still count); from 1 ms on they agree to
+    0.15%. There's no double layer here (the face has no capacitance), so the step
+    charges nothing: in a real cell the first microseconds go to charging it. k⁰ = 0.05 mol/(m²·s)
+    (5 × 10⁻³ cm/s) is illustrative.</p>
+  <p>The level diagram has the platinum's Fermi level and the couple's redox level, which tilts across the
+    depleted layer: its gap to the Fermi level at the surface is the overpotential the kinetics see, and the
+    tilt is the concentration polarisation. φ is the SHE's level here.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
+
+const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
+const iron = half('Fe3+ + e- = Fe2+');
+const L = 100e-6, c = 1, k0 = 0.05, alpha = 0.5; // m of still solution; mol/m³ of each ion; mol/(m²·s)
+const Do = IONS['Fe3+'].D, Dr = IONS['Fe2+'].D, E0 = (IONS['Fe3+'].mu0 - IONS['Fe2+'].mu0) / FARADAY; // E° 0.769 V
+const bulk = { 'K+': 1000, 'Cl-': 1000 + 5 * c, 'Fe3+': c, 'Fe2+': c };
+// The bath's terminal on the SHE scale, as in the voltammetry demo: then every V below is against SHE.
+const she = -(IONS['Cl-'].mu0 + GAS_CONSTANT * T * Math.log(bulk['Cl-'] / 1000)) / FARADAY;
+const electrode = (drive) =>
+  build({
+    library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    stack: [
+      ohmic(drive, ['e-']), // the platinum's terminal
+      layer('Pt', 4e-6),
+      { reactions: [{ ...iron, k0, alpha }] },
+      layer('water', L, { name: 'still solution', c0: bulk }),
+      bath(bulk, 'Cl-', 0, { offset: she }), // the stirred bulk
+    ],
+    grid: { hmin: 2e-9, hmax: L / 60, ratio: 1.1 },
+  });
+
+// Theory. erfcx(y) = e^{y²} erfc(y) for y ≥ 0 (Numerical Recipes' erfcc, fractional error < 1.2e-7).
+const erfcx = (y) => {
+  const t = 1 / (1 + 0.5 * y);
+  return t * Math.exp(-1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+};
+const erfc = (y) => Math.exp(-y * y) * erfcx(y);
+// Butler–Volmer's rate constants at overpotential η (m/s), with k⁰ per c_ref = 1 M.
+const rates = (eta) => ({ kf: (k0 / 1000) * Math.exp((-alpha * eta) / VT), kb: (k0 / 1000) * Math.exp(((1 - alpha) * eta) / VT) });
+// A potential step: the current (A/m², cathodic +) and the profiles, with K = k_f c_O − k_b c_R and
+// H = k_f/√D_O + k_b/√D_R; Cottrell's line alone, its limit as H → ∞.
+function stepE(eta) {
+  const { kf, kb } = rates(eta), K = kf * c - kb * c, H = kf / Math.sqrt(Do) + kb / Math.sqrt(Dr);
+  const theta = Math.exp(eta / VT), xi = Math.sqrt(Do / Dr);
+  return {
+    current: (t) => FARADAY * K * erfcx(H * Math.sqrt(t)),
+    cottrell: (t) => (FARADAY * Math.sqrt(Do / (Math.PI * t)) * (c - theta * c)) / (1 + xi * theta),
+    profile: (x, t, D, sign) => {
+      const z = x / (2 * Math.sqrt(D * t));
+      return c + ((sign * K) / (H * Math.sqrt(D))) * (erfc(z) - Math.exp(-z * z) * erfcx(z + H * Math.sqrt(t)));
+    },
+  };
+}
+// A current step i (A/m², cathodic): Sand's profiles, and the potential at which Butler–Volmer passes N
+// with the surface's concentrations (a quadratic in e^{Fη/2RT}, for α = ½).
+function stepI(i) {
+  const N = i / FARADAY, tau = (Math.PI * Do * c * c) / (4 * N * N);
+  const profile = (x, t, D, sign) => {
+    const z = x / (2 * Math.sqrt(D * t));
+    return c + ((sign * 2 * N) / D) * (Math.sqrt((D * t) / Math.PI) * Math.exp(-z * z) - (x / 2) * erfc(z));
+  };
+  const potential = (t) => {
+    const cO = profile(0, t, Do, -1), cR = profile(0, t, Dr, 1), ks = k0 / 1000;
+    if (!(cO > 0)) return NaN;
+    const u = (-N / ks + Math.sqrt((N / ks) * (N / ks) + 4 * cR * cO)) / (2 * cR);
+    return E0 + 2 * VT * Math.log(u);
+  };
+  return { tau, profile, potential };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const mode = document.getElementById('mode'), etaIn = document.getElementById('eta'), iIn = document.getElementById('i'), pace = document.getElementById('pace');
+for (const el of [mode, etaIn, iIn]) fromQuery(el);
+const step = () => (mode.value === 'E' ? { eta: +etaIn.value } : { i: +iIn.value * 10 }); // mA/cm² to A/m²
+const t0 = 1e-5, t1 = 1; // the potential step's window, s
+let dev, rest, run, running = false;
+function start() {
+  const s = step();
+  if (!rest) rest = new Device(electrode({ I: 0 })).solve(); // at rest: E°, with c_O = c_R
+  dev = new Device(electrode(s.i ? { I: 0 } : rest.terminals.left.V));
+  dev.solve();
+  dev.set({ contacts: { left: s.i ? { I: -s.i } : { V: E0 + s.eta } } });
+  const theory = s.i ? stepI(s.i) : stepE(s.eta);
+  run = { s, theory, t: [], i: [], E: [], wall: 0, end: s.i ? 1.2 * theory.tau : t1, stopped: false, stop: jumpTo() || Infinity };
+  document.getElementById('etaBox').style.display = s.i ? 'none' : '';
+  document.getElementById('iBox').style.display = s.i ? '' : 'none';
+  labels();
+  lastFrame = undefined;
+  if (!running) requestAnimationFrame(frame);
+  running = true;
+}
+const labels = () => {
+  document.getElementById('etaOut').textContent = `${(+etaIn.value).toFixed(2)} V (E = ${(E0 + +etaIn.value).toFixed(2)} V vs SHE)`;
+  document.getElementById('iOut').textContent = `${(+iIn.value).toFixed(2)} mA/cm² (τ = ${stepI(+iIn.value * 10).tau.toPrecision(2)} s)`;
+};
+
+// Playback: the potential step's time runs a decade at a time (log t), the current step's evenly, each
+// over a chosen wall-clock time; "as fast as it solves" advances as far as 12 ms of computing allows.
+let lastFrame;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  const per = +pace.value, logt = !run.s.i;
+  run.wall += per > 0 ? wall / per : 1;
+  let target = logt ? t0 * (t1 / t0) ** Math.min(1, run.wall) : run.end * Math.min(1, run.wall);
+  if (run.stop < Infinity) target = Math.min(run.stop, run.end);
+  else if (per === 0) target = run.end;
+  let sol = dev.advance(Math.max(target, logt ? t0 : 1e-6), { budgetMs: 12, tol: 1e-4 });
+  sol.trace.t.forEach((t, j) => {
+    run.t.push(t);
+    run.i.push(-sol.trace.current[j]); // the trace's is into the device at the electrode, anodic: so cathodic +
+    run.E.push(-sol.trace.voltage[j]); // the bath (0) minus the electrode
+  });
+  // Past τ, nothing carries the current: the step can't converge, and the run ends there.
+  if (!sol.converged) run.stopped = true;
+  draw(sol);
+  const more = !run.stopped && sol.time < Math.min(run.end, run.stop) * (1 - 1e-9);
+  if (more && !pause.paused) requestAnimationFrame(frame);
+  else running = false;
+}
+
+function draw(sol) {
+  const { s, theory } = run, t = sol.time;
+  const mA = (j) => j / 10; // A/m² to mA/cm²
+  if (!s.i) {
+    const ts = Array.from({ length: 121 }, (_, k) => t0 * (t1 / t0) ** (k / 120));
+    const shown = run.t.map((tt, k) => (tt >= t0 * 0.999 ? k : -1)).filter((k) => k >= 0);
+    document.getElementById('status').textContent = `t = ${t.toPrecision(3)} s · ${mA(-sol.terminals.left.current).toPrecision(3)} mA/cm²; theory ${mA(theory.current(t)).toPrecision(3)}`;
+    chart(document.getElementById('main'), {
+      xlabel: 't (s)', ylabel: 'reduction current (mA/cm²)', logx: true, logy: true, xlim: [t0, t1],
+      ylim: [mA(theory.current(t1)) / 2, Math.max(mA(theory.current(t0)), mA(theory.cottrell(t0))) * 2],
+      series: [
+        { x: ts, y: ts.map((tt) => mA(theory.cottrell(tt))), color: colors[2], width: 1.2, dash: [6, 4], label: 'Cottrell' },
+        { x: ts, y: ts.map((tt) => mA(theory.current(tt))), color: colors[0], width: 1.2, label: 'with kinetics' },
+        { x: shown.map((k) => run.t[k]), y: shown.map((k) => mA(run.i[k])), color: colors[3], width: 2.5, label: 'simulated' },
+      ],
+    });
+  } else {
+    const ts = Array.from({ length: 241 }, (_, k) => (run.end * k) / 240);
+    const E = sol.terminals.left.V;
+    document.getElementById('status').textContent = run.stopped
+      ? `the transition at ${t.toPrecision(4)} s; Sand's τ ${theory.tau.toPrecision(4)} s`
+      : `t = ${t.toPrecision(3)} s · E = ${E.toFixed(3)} V vs SHE; theory ${theory.potential(t).toFixed(3)}`;
+    chart(document.getElementById('main'), {
+      xlabel: 't (s)', ylabel: 'E (V vs SHE)', xlim: [0, run.end], ylim: [E0 - 0.35, E0 + 0.05],
+      series: [
+        { x: [theory.tau, theory.tau], y: [E0 - 0.35, E0 + 0.05], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'Sand’s τ' },
+        { x: ts, y: ts.map((tt) => theory.potential(tt)), color: colors[0], width: 1.2, label: 'Sand, with kinetics' },
+        { x: run.t, y: run.E, color: colors[3], width: 2.5, label: 'simulated' },
+      ],
+    });
+  }
+  // Concentrations across the solution: simulated (thick) and the theory's (thin), at this moment.
+  const th = (D, sign) => (t > 0 ? sol.x.map((x) => theory.profile(Math.max(0, x - sol.x[sol.region.indexOf(1)]), t, D, sign)) : sol.x.map(() => c));
+  const water = sol.region.map((r) => r === 1);
+  profiles(document.getElementById('conc'), sol, {
+    species: ['Fe3+', 'Fe2+', { name: 'Fe3+', c: th(Do, -1).map((v, g) => (water[g] ? v : NaN)), kind: 'standard', label: 'c_{Fe³⁺}, theory' }, { name: 'Fe2+', c: th(Dr, 1).map((v, g) => (water[g] ? v : NaN)), kind: 'standard', label: 'c_{Fe²⁺}, theory' }],
+    title: `concentrations at t = ${t.toPrecision(3)} s`, ylabel: 'concentration (mM)', range: [0, 2.1],
+  });
+  levels(document.getElementById('levels'), sol, {
+    title: `electronic levels at t = ${t.toPrecision(3)} s`,
+    species: ['e-'],
+    phi: true,
+    labels: { 'V:e-': 'Fermi level (V_{e⁻})', phi: 'φ = V°_{e⁻}(SHE)' },
+    levels: [
+      { half: iron, label: 'Fe³⁺/Fe²⁺ redox level' },
+      { half: iron, standard: true, label: 'V°_{e⁻}(Fe³⁺/Fe²⁺)' },
+    ],
+    range: [E0 - 0.6, E0 + 0.35],
+    ylabel: 'electron voltage (V vs SHE)',
+  });
+}
+
+const pause = pauser(document.getElementById('controls'), () => {
+  lastFrame = undefined;
+  if (!running) {
+    running = true;
+    requestAnimationFrame(frame);
+  }
+});
+document.getElementById('run').addEventListener('click', start);
+mode.addEventListener('change', start);
+for (const el of [etaIn, iIn]) {
+  el.addEventListener('change', start);
+  el.addEventListener('input', labels);
+}
+start();
+showCode();
+</script>
+</body>
+</html>

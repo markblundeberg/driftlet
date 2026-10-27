@@ -31,6 +31,7 @@ const SHOTS = {
   membrane: { query: '', budget: 60000 },
   'double-layer': { query: '', budget: 60000 },
   frumkin: { query: '', budget: 60000 },
+  steps: { query: 'eta=-0.1&t=0.1', budget: 60000 },
   insertion: { query: 't=6000', budget: 60000 },
 };
 

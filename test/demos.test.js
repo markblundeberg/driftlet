@@ -104,10 +104,10 @@ for (const page of pages) {
   });
 }
 
-// The Frumkin page draws its simulation against its own theory and says how well they agree: here
-// its script, up to where it needs a page, is run against the claims its text makes.
-test("demos/frumkin.html: its theory is the simulation's, as the page says", async () => {
-  const html = readFileSync(join(demos, 'frumkin.html'), 'utf8');
+// Pages that draw their simulation against their own theory say how well they agree: here each one's
+// script, up to where it needs a page, is run against the claims its text makes.
+async function pageTheory(page, names) {
+  const html = readFileSync(join(demos, page), 'utf8');
   const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
   const at = (path) => pathToFileURL(join(root, path)).href;
   const head = script
@@ -115,10 +115,12 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
     .replace(/^import .*'\.\/(plot|common)\.js';$/gm, '')
     .replaceAll("'../src/", `'${at('src/')}`);
   assert.ok(head.length > 1000 && !/document\./.test(head), 'the page-free part of its script');
+  return import(`data:text/javascript;base64,${Buffer.from(`${head}\nexport { ${names.join(', ')} };`).toString('base64')}`);
+}
+
+test("demos/frumkin.html: its theory is the simulation's, as the page says", async () => {
   const { Device, FARADAY } = await import('../src/index.js');
-  const { electrode, theory, resistance, opened, ions, reactant, L, VT } = await import(
-    `data:text/javascript;base64,${Buffer.from(`${head}\nexport { electrode, theory, resistance, opened, ions, reactant, L, VT };`).toString('base64')}`
-  );
+  const { electrode, theory, resistance, opened, ions, reactant, L, VT } = await pageTheory('frumkin.html', ['electrode', 'theory', 'resistance', 'opened', 'ions', 'reactant', 'L', 'VT']);
   const jlim = (2 * FARADAY * ions['S2O82-'].D * reactant) / L;
   for (const salt of [1, 10, 100]) {
     const dev = new Device(electrode(salt, 0.4));
@@ -150,4 +152,48 @@ test("demos/frumkin.html: its theory is the simulation's, as the page says", asy
   const far = lay.u[0] + (lay.N * K) / (ions['S2O82-'].D * lay.c['S2O82-']);
   assert.ok(lay.u[0] < 1e-3 && Math.abs(far - 1) < 1e-6, `the plane's level ${lay.u[0]}, and back out ${far}`);
   assert.ok(Math.abs(lay.u.at(-1) - 1) < 2e-2, `the drawn profile, out at ${lay.x.at(-1)} m: ${lay.u.at(-1)}`);
+});
+
+test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the page says", async () => {
+  const { Device } = await import('../src/index.js');
+  const { electrode, stepE, stepI, E0, Do, Dr, c } = await pageTheory('steps.html', ['electrode', 'stepE', 'stepI', 'E0', 'Do', 'Dr', 'c']);
+  const rest = new Device(electrode({ I: 0 })).solve();
+  assert.ok(Math.abs(rest.terminals.left.V - E0) < 1e-9, `at rest ${rest.terminals.left.V} V, E° ${E0}`);
+  // A potential step: the current, with kinetics, from 10 µs to 1 s ("up to 1.5%" at first, the solution's
+  // resistance; "0.15% from 1 ms on")
+  for (const eta of [-0.5, -0.35, -0.2, -0.1, -0.05]) {
+    const dev = new Device(electrode(E0));
+    dev.solve();
+    dev.set({ contacts: { left: { V: E0 + eta } } });
+    const th = stepE(eta);
+    let worst = 0, profile = 0;
+    for (const t of [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 1]) {
+      const sol = dev.advance(t, { tol: 1e-4 });
+      const bound = t < 1e-4 ? 1.6e-2 : t < 1e-3 ? 6e-3 : 1.6e-3;
+      worst = Math.max(worst, Math.abs(-sol.terminals.left.current / th.current(t) - 1) / bound);
+      // (the profiles until 0.1 s: by 1 s the semi-infinite theory is 0.4% from the bath's at its edge, 100 µm out)
+      const x0 = sol.x[sol.region.indexOf(1)];
+      sol.x.forEach((x, g) => {
+        if (sol.region[g] !== 1 || t > 0.1) return;
+        const off = Math.max(Math.abs(sol.c['Fe3+'][g] - th.profile(x - x0, t, Do, -1)), Math.abs(sol.c['Fe2+'][g] - th.profile(x - x0, t, Dr, 1)));
+        profile = Math.max(profile, off / (2 * bound * c)); // (the same shift as the current's, near the surface)
+      });
+    }
+    assert.ok(worst < 1 && profile < 1, `η ${eta}: the current at ${worst} of its bound, the profiles at ${profile} of theirs`);
+  }
+  // A current step: the potential until τ, and the transition at τ
+  for (const i of [2, 5, 20]) {
+    const dev = new Device(electrode({ I: 0 }));
+    dev.solve();
+    dev.set({ contacts: { left: { I: -i } } });
+    const th = stepI(i);
+    let worst = 0;
+    for (const f of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const sol = dev.advance(f * th.tau, { tol: 1e-4 });
+      worst = Math.max(worst, Math.abs(sol.terminals.left.V - th.potential(f * th.tau)));
+    }
+    const end = dev.advance(1.2 * th.tau, { tol: 1e-4 });
+    assert.ok(worst < 1e-3, `${i} A/m²: E within ${worst} V`);
+    assert.ok(!end.converged && Math.abs(end.time / th.tau - 1) < 5e-3, `${i} A/m²: the transition at ${end.time} s, τ ${th.tau}`);
+  }
 });
