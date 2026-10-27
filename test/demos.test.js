@@ -120,38 +120,50 @@ async function pageTheory(page, names) {
 
 test("demos/frumkin.html: its theory is the simulation's, as the page says", async () => {
   const { Device, FARADAY } = await import('../src/index.js');
-  const { electrode, theory, resistance, opened, ions, reactant, L, VT } = await pageTheory('frumkin.html', ['electrode', 'theory', 'resistance', 'opened', 'ions', 'reactant', 'L', 'VT']);
+  const { electrode, theory, opened, planeRate, setSite, ions, reactant, L } = await pageTheory('frumkin.html', ['electrode', 'theory', 'opened', 'planeRate', 'setSite', 'ions', 'reactant', 'L']);
   const jlim = (2 * FARADAY * ions['S2O82-'].D * reactant) / L;
-  for (const salt of [1, 10, 100]) {
-    const dev = new Device(electrode(salt, 0.4));
-    let dip = 0, plateau = 0, classic = 0;
-    for (let k = 0; k <= 40; k++) {
-      const E = 0.4 - 0.05 * k;
-      dev.set({ contacts: { left: { V: E } } });
-      const sol = dev.solve(), j = -sol.terminals.left.current, th = theory(salt, E);
-      assert.ok(sol.converged && sol.warnings.length === 0, `${salt} mM, ${E} V: ${sol.warnings.join(' ')}`);
-      if (j < 0.5 * jlim) dip = Math.max(dip, Math.abs(j / th - 1));
-      plateau = Math.max(plateau, Math.abs(j - th) / jlim);
-      classic = Math.max(classic, Math.abs(Math.log(j / theory(salt, E, 'classic'))));
+  const Es = Array.from({ length: 33 }, (_, k) => 0.4 - 0.05 * k);
+  const runs = {};
+  for (const a of [0.1, 0.7]) {
+    setSite(a * 1e-9);
+    for (const salt of [1, 10, 100, 316]) {
+      const dev = new Device(electrode(salt, 0.4));
+      let dip = 0, plateau = 0, kmax = 0, trim = 1, early = 0;
+      const j = Es.map((E) => {
+        dev.set({ contacts: { left: { V: E } } });
+        const sol = dev.solve(), i = -sol.terminals.left.current, th = theory(salt, E), cl = theory(salt, E, 'classic');
+        assert.ok(sol.converged && sol.warnings.length === 0, `${a} nm, ${salt} mM, ${E} V: ${sol.warnings.join(' ')}`);
+        if (i < 0.5 * jlim) dip = Math.max(dip, Math.abs(i / th - 1));
+        plateau = Math.max(plateau, Math.abs(i - th) / jlim);
+        kmax = Math.max(kmax, planeRate(sol));
+        trim = Math.min(trim, th / cl);
+        if (planeRate(sol) < 0.1) early = Math.max(early, Math.abs(th / cl - 1));
+        return i;
+      });
+      runs[`${a} ${salt}`] = j;
+      // "to 0.1% where the current is down", "the plateau by about 1%", "below 25 m/s in this window"
+      assert.ok(dip < 1e-3 && plateau < 1.2e-2 && kmax < 25, `${a} nm, ${salt} mM: ${dip} in the dip, ${plateau} of the limit, k_f up to ${kmax} m/s`);
+      // "costs little until ... k_f past about 1 m/s" (under 3% while it's below 0.1 m/s), "by up to a third at −1.2 V"
+      assert.ok(early < 3e-2 && trim > 0.66, `${a} nm, ${salt} mM: the layer's resistance ${early} while k_f < 0.1 m/s, down to ${trim} of the classic`);
     }
-    // "in the dip they agree with the simulation to 0.2%", "the plateau by about 1%"
-    assert.ok(dip < 2e-3 && plateau < 1.2e-2, `${salt} mM: ${dip} in the dip, ${plateau} of the limit`);
-    // (and the check can tell: the correction without the layer's resistance is far off, in dilute salt)
-    if (salt < 100) assert.ok(classic > Math.log(2), `${salt} mM: the classic correction within ${classic}`);
   }
-  // Deep in the dip, the limiting current times L/(L + K); and the plane's level is what K says it is.
+  // "with small sites the current turns and rises within the window, while on sites 0.7 nm across ... it keeps falling"
+  const past = (j) => j.filter((_, k) => Es[k] < -0.3);
+  const small = past(runs['0.1 1']), big = past(runs['0.7 1']);
+  assert.ok(small.at(-1) > 1.5 * Math.min(...small), `0.1 nm: ${Math.min(...small)} at the least, ${small.at(-1)} at −1.2 V`);
+  assert.ok(big.every((v, k) => k === 0 || v < big[k - 1]), `0.7 nm: ${big}`);
+  // "Most of K builds up within an ångström or two of the plane"; and the plane's level is what K says it is.
+  setSite(0.7e-9);
   const dev = new Device(electrode(1, 0.4));
-  for (let E = 0.4; E > -1.2; E -= 0.05) {
+  for (const E of Es) {
     dev.set({ contacts: { left: { V: E } } });
-    dev.solve();
+    const sol = dev.solve();
+    if (E > -0.95) continue;
+    const lay = opened(sol), u0 = lay.u[0], k2 = lay.x.findIndex((x) => x > 2e-10);
+    const far = u0 + (lay.N * lay.K) / (ions['S2O82-'].D * lay.c['S2O82-']);
+    assert.ok((lay.u[k2] - u0) / (lay.u.at(-1) - u0) > 0.5, `${E} V: ${(lay.u[k2] - u0) / (lay.u.at(-1) - u0)} of K within 2 Å`);
+    assert.ok(Math.abs(far - 1) < 1e-6, `${E} V: the plane's level ${u0}, and back out ${far}`);
   }
-  dev.set({ contacts: { left: { V: -1.2 } } });
-  const sol = dev.solve(), lay = opened(sol), K = resistance(lay.c, lay.d.psi / VT), j = -sol.terminals.left.current;
-  assert.ok(Math.abs(j / jlim / (L / (L + K)) - 1) < 1e-3, `−1.2 V: ${j / jlim} of the limit, L/(L + K) ${L / (L + K)}`);
-  // (the plane's level, as reported, and the page's own K: the edge's level, 1, from the far side)
-  const far = lay.u[0] + (lay.N * K) / (ions['S2O82-'].D * lay.c['S2O82-']);
-  assert.ok(lay.u[0] < 1e-3 && Math.abs(far - 1) < 1e-6, `the plane's level ${lay.u[0]}, and back out ${far}`);
-  assert.ok(Math.abs(lay.u.at(-1) - 1) < 2e-2, `the drawn profile, out at ${lay.x.at(-1)} m: ${lay.u.at(-1)}`);
 });
 
 test("demos/steps.html: Cottrell's and Sand's theory is the simulation's, as the page says", async () => {
