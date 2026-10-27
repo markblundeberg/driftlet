@@ -20,10 +20,10 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A redox electrode's impedance: the Randles circuit</h1>
-  <p>Platinum in 1 mM Fe³⁺ and Fe²⁺ with KCl, at rest, behind a stagnant layer of solution: its impedance
-    spectrum, simulated from the ions and the reaction, against the Randles equivalent circuit with every
-    element worked out from the same physics. A semicircle for the reaction and its double layer, then
-    diffusion's arc: a 45° line while the diffusion is short of the stirred bulk (a thick stagnant layer
+  <p>Platinum in 1 mM Fe³⁺ and Fe²⁺ with KCl (and 10 mM HCl), at rest, behind a stagnant layer of solution:
+    its impedance spectrum, simulated from the ions and the reaction, against the Randles equivalent circuit
+    with every element worked out from the same physics. A semicircle for the reaction and its double layer,
+    then diffusion's arc: a 45° line while the diffusion is short of the stirred bulk (a thick stagnant layer
     shows it best), bending back once it reaches it. Vary the rate constant, the salt and the stagnant
     layer. (More about the model below.)</p>
   <div class="controls">
@@ -39,32 +39,44 @@
     <div class="levels wide" id="circuit"></div>
   </div>
   <h2>About this simulation</h2>
-  <p>A small sine wave of voltage on the electrode drives three things at once. Charge piles onto the double
-    layer, like a capacitor C<sub>dl</sub>. Fe³⁺ is reduced and Fe²⁺ oxidised a little faster and slower in turn,
-    which near rest is a resistor, the charge-transfer resistance R<sub>ct</sub> = RT/(Fi<sub>0</sub>), with
-    i<sub>0</sub> = Fk⁰c the exchange current. And the reaction's own small changes in concentration have to
-    diffuse to and from the bulk, which lags: the Warburg impedance Z<sub>W</sub>. The current to all of
-    them crosses the solution, R<sub>s</sub>. So Z = R<sub>s</sub> + 1/(iωC<sub>dl</sub> + 1/(R<sub>ct</sub> +
-    Z<sub>W</sub>)), Randles' circuit. The semicircle's top sits at ω = 1/(R<sub>ct</sub>C<sub>dl</sub>);
-    below that frequency the Warburg's 45° line takes over; and once the diffusion reaches through the
-    stagnant layer to the stirred bulk (about D/L²), Z<sub>W</sub> stops growing and the spectrum bends back to
-    the real axis at R<sub>s</sub> + R<sub>ct</sub> + R<sub>W</sub>, with R<sub>W</sub> =
-    (RTL/F²c)(1/D<sub>Fe³⁺</sub> + 1/D<sub>Fe²⁺</sub>).</p>
+  <p>A small sine wave of voltage on the electrode (small next to RT/F, 26 mV, so the response is linear)
+    drives three things at once. Charge piles onto the double layer, like a capacitor C<sub>dl</sub>. Fe³⁺
+    is reduced and Fe²⁺ oxidised a little faster and slower in turn, which near rest is a resistor, the
+    charge-transfer resistance R<sub>ct</sub> = RT/(Fi<sub>0</sub>), with i<sub>0</sub> = Fk⁰c the exchange
+    current (k⁰ in m/s; so k⁰ = RT/(F²R<sub>ct</sub>c) gives it back from a fit). And the reaction's own
+    small changes in concentration have to diffuse to and from the bulk, which lags: the Warburg impedance
+    Z<sub>W</sub>, at first σ(1 − i)ω<sup>−½</sup>. The current to all of them crosses the solution,
+    R<sub>s</sub>. So Z = R<sub>s</sub> + 1/(iωC<sub>dl</sub> + 1/(R<sub>ct</sub> + Z<sub>W</sub>)), Randles'
+    circuit. Its corner at ω = 1/(R<sub>ct</sub>C<sub>dl</sub>) is the top of the semicircle while the
+    Warburg there is small; then the 45° line takes over; and once the diffusion reaches through the
+    stagnant layer to the stirred bulk (about D/(2πL²) in frequency), Z<sub>W</sub> stops growing and the
+    spectrum bends back to the real axis at R<sub>s</sub> + R<sub>ct</sub> + R<sub>W</sub>, with
+    R<sub>W</sub> = (RTL/F²c)(1/D<sub>Fe³⁺</sub> + 1/D<sub>Fe²⁺</sub>). That's the transmissive finite
+    Warburg of a Nernst diffusion layer (fitting programs' "Ws"); a <a href="rde.html">rotating disk</a> is
+    the usual way to make one.</p>
   <p>driftlet knows nothing of the circuit: it solves the ions, the potential and the reaction for their small
     oscillation at each frequency. The circuit's elements here come from the same physics, by hand:
-    R<sub>s</sub> = L/κ from the solution's conductivity; C<sub>dl</sub>, an inner (Stern) layer of
-    20 µF/cm² in series with the diffuse layer's εκ<sub>D</sub> (Gouy–Chapman at zero charge, which the
-    electrode is held at); R<sub>ct</sub> from k⁰; and Z<sub>W</sub> for a layer of thickness L ending at a
-    fixed bulk, (RT/F²c)·Σ tanh(L√(iω/D))/√(iωD) over Fe³⁺ and Fe²⁺. The readout gives how far the two
-    disagree, under 1% across these controls. Most of that shrinks with less iron: the iron's own
-    migration, and its share in charging the double layer, which the circuit leaves out. The rest, a few
-    tenths of a percent in the most dilute salt, isn't traced here. (Not the Frumkin effect: at rest a
-    change in ψ moves the forward and back reactions alike, z<sub>Fe³⁺</sub> − z<sub>Fe²⁺</sub> = 1 being
-    the electron's own charge, so R<sub>ct</sub> sees the whole of the overpotential.)</p>
-  <p>The double layer is below the grid (driftlet's <code>diffuse: { epsr }</code>), set so the electrode
-    has no charge at rest: off its zero charge, ψ would shift the reaction's rate (the Frumkin effect, on
-    <a href="frumkin.html">its own page</a>) and the diffuse layer's capacitance, and the circuit's elements
-    would need those corrections too. k⁰ is illustrative.</p>
+    R<sub>s</sub> = L/κ from the solution's ideal conductivity; C<sub>dl</sub>, an inner (Stern) layer of
+    20 µF/cm² in series with the diffuse layer's εκ<sub>D</sub> (Gouy–Chapman at zero charge); R<sub>ct</sub>
+    from k⁰; and Z<sub>W</sub> for a layer of thickness L ending at a fixed bulk, (RT/F²c)·Σ
+    tanh(L√(iω/D))/√(iωD) over Fe³⁺ and Fe²⁺. The readout gives how far the two disagree, under 1% across
+    these controls. Most of that shrinks with less iron: the iron's own migration, which the circuit leaves
+    out (in the most dilute salt Fe³⁺ and Fe²⁺ carry a few percent of the current, but both are cations
+    pushed the same way, and their corrections to R<sub>W</sub> mostly cancel: a couple with one neutral
+    form would be off by more). The rest, a tenth of a percent or two, isn't traced here. (Not the Frumkin
+    effect: at rest a change in ψ moves the forward and back reactions alike, since z<sub>Fe³⁺</sub> −
+    z<sub>Fe²⁺</sub> is the electrons' charge, as for any couple, so R<sub>ct</sub> sees the whole of the
+    overpotential.)</p>
+  <p>Three choices make this cleaner than a measurement. R<sub>s</sub> here is only the stagnant layer's, to
+    a reference at its edge; in a real cell it's set by the cell's shape and where the reference sits, and is
+    often tens of times more. The double layer (driftlet's <code>diffuse: { epsr }</code>, below the grid) is
+    set to have no charge at rest; real platinum at this potential sits well positive of its zero charge,
+    with chloride adsorbed, and off zero charge ψ would shift the exchange current (the Frumkin effect, on
+    <a href="frumkin.html">its own page</a>) and C<sub>dl</sub>. And it's an ideal capacitor, where real solid
+    electrodes give depressed arcs, which fits model with a constant-phase element. The solution has 10 mM
+    HCl so that Fe³⁺ doesn't hydrolyse and precipitate; in reality the chloride also complexes Fe³⁺ and
+    speeds its reaction, which this model leaves out. k⁰ is illustrative, in the range reported for this
+    couple at platinum.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT, EPS0 } from '../src/index.js';
@@ -75,8 +87,8 @@ import { showCode, fromQuery } from './common.js';
 const T = 298.15, RT = GAS_CONSTANT * T;
 const iron = half('Fe3+ + e- = Fe2+');
 const c = 1, alpha = 0.5, Cstern = 0.2; // mol/m³ of each iron ion; F/m² (20 µF/cm²)
-const names = ['K+', 'Cl-', 'Fe3+', 'Fe2+'];
-const bulkOf = (salt) => ({ 'K+': salt, 'Cl-': salt + 5 * c, 'Fe3+': c, 'Fe2+': c });
+const names = ['K+', 'H+', 'Cl-', 'Fe3+', 'Fe2+'];
+const bulkOf = (salt) => ({ 'K+': salt, 'H+': 10, 'Cl-': salt + 10 + 5 * c, 'Fe3+': c, 'Fe2+': c }); // KCl, 10 mM HCl
 const electrode = (drive, { salt, k0, L, zeroCharge }) => {
   const b = bulkOf(salt);
   return build({
@@ -126,7 +138,8 @@ function randles({ salt, k0, L }) {
     const Zw = mul(cx(RT / (FARADAY * FARADAY * c)), add(W(ion('Fe3+').D), W(ion('Fe2+').D)));
     return add(cx(Rs), inv(add(mul(jw, cx(Cdl)), inv(add(cx(Rct), Zw)))));
   };
-  return { Rs, Rct, Cdl, RW, Z };
+  const sigma = (RT / (FARADAY * FARADAY * c * Math.SQRT2)) * (1 / Math.sqrt(ion('Fe3+').D) + 1 / Math.sqrt(ion('Fe2+').D)); // Ω·m²·s^{-1/2}
+  return { Rs, Rct, Cdl, RW, sigma, Z };
 }
 const fs = Array.from({ length: 36 }, (_, k) => 10 ** (-2 + (8 * k) / 35)); // 10 mHz to 1 MHz
 
@@ -137,9 +150,9 @@ for (const el of [k0In, saltIn, LIn]) fromQuery(el);
 const params = () => ({ k0: 10 ** +k0In.value, salt: 1000 * 10 ** +saltIn.value, L: 1e-6 * 10 ** +LIn.value });
 const labels = () => {
   const p = params();
-  document.getElementById('k0Out').textContent = `${p.k0.toPrecision(2)} mol/(m²·s)`;
+  document.getElementById('k0Out').textContent = `${(p.k0 / 10).toPrecision(2)} cm/s`;
   document.getElementById('saltOut').textContent = `${+(p.salt / 1000).toPrecision(2)} M`;
-  document.getElementById('LOut').textContent = `${(p.L * 1e6).toPrecision(2)} µm`;
+  document.getElementById('LOut').textContent = `${p.L < 1e-5 ? (p.L * 1e6).toFixed(1) : Math.round(p.L * 1e6)} µm`;
 };
 const cm2 = (z) => z * 1e4; // Ω·m² to Ω·cm²
 function rebuild() {
@@ -151,9 +164,13 @@ function rebuild() {
   const ft = Array.from({ length: 321 }, (_, k) => 10 ** (-2 + k / 40)), line = ft.map(th.Z);
   document.getElementById('status').textContent =
     `R_s ${cm2(th.Rs).toPrecision(3)} Ω·cm² · C_dl ${(th.Cdl * 100).toPrecision(3)} µF/cm² · R_ct ${cm2(th.Rct).toPrecision(3)} Ω·cm² · ` +
-    `the semicircle's top at ${(1 / (2 * Math.PI * th.Rct * th.Cdl)).toPrecision(2)} Hz · simulation and circuit within ${(100 * worst).toPrecision(2)}%`;
-  // Nyquist, its axes in a 3 : 1 span to keep the semicircle round on this canvas.
-  const xmax = 1.05 * cm2(Math.max(...line.map((z) => z.re))), ymax = xmax / 3;
+    `σ ${cm2(th.sigma).toPrecision(3)} Ω·cm²·s⁻¹ᐟ² · R_W ${cm2(th.RW).toPrecision(3)} Ω·cm² · the R_ct·C_dl corner ${(1 / (2 * Math.PI * th.Rct * th.Cdl)).toPrecision(2)} Hz, ` +
+    `the diffusion's ${(IONS['Fe3+'].D / (2 * Math.PI * p.L * p.L)).toPrecision(2)} Hz · simulation and circuit within ${(100 * worst).toPrecision(2)}%`;
+  // Nyquist on equal scales: one Ω·cm² per so many pixels both ways (the chart's plot area is the canvas
+  // less 76 px across and 72 down), enough to hold the whole spectrum.
+  const canvas = document.getElementById('nyquist'), pw = Math.max(1, canvas.clientWidth - 76), ph = Math.max(1, canvas.clientHeight - 72);
+  const per = 1.05 * Math.max(cm2(Math.max(...line.map((z) => z.re))) / pw, cm2(Math.max(...line.map((z) => -z.im))) / ph);
+  const xmax = per * pw, ymax = per * ph;
   chart(document.getElementById('nyquist'), {
     xlabel: 'Z′ (Ω·cm²)', ylabel: '−Z″ (Ω·cm²)', xlim: [0, xmax], ylim: [0, ymax],
     series: [
@@ -178,24 +195,25 @@ function rebuild() {
   });
   document.getElementById('circuit').innerHTML = circuitSvg(th);
 }
-// The circuit, drawn: R_s in series with C_dl across R_ct + Z_W.
+// The circuit, drawn: R_s in series with C_dl across R_ct + Z_W (400 units wide, so its labels stay
+// readable on a phone).
 function circuitSvg({ Rs, Rct, Cdl }) {
   const ink = 'var(--ink)', muted = 'var(--muted)';
-  const label = (x, y, text, sub = '') => `<text x="${x}" y="${y}" text-anchor="middle" fill="${ink}" font-size="14">${text}<tspan font-size="10" dy="3">${sub}</tspan></text>`;
-  const value = (x, y, text) => `<text x="${x}" y="${y}" text-anchor="middle" fill="${muted}" font-size="11">${text}</text>`;
-  return `<svg viewBox="0 0 720 150" role="img" aria-label="the Randles circuit: R_s in series with C_dl in parallel with R_ct and Z_W" font-family="system-ui, sans-serif" style="width:100%;height:auto">
+  const label = (x, y, text, sub = '') => `<text x="${x}" y="${y}" text-anchor="middle" fill="${ink}" font-size="16">${text}<tspan font-size="12" dy="4">${sub}</tspan></text>`;
+  const value = (x, y, text) => `<text x="${x}" y="${y}" text-anchor="middle" fill="${muted}" font-size="13">${text}</text>`;
+  return `<svg viewBox="0 0 400 170" role="img" aria-label="the Randles circuit: R_s in series with C_dl in parallel with R_ct and Z_W" font-family="system-ui, sans-serif" style="width:100%;max-width:640px;height:auto;display:block;margin:auto">
     <g stroke="${ink}" stroke-width="1.5" fill="none">
-      <path d="M20 75 H90 M150 75 H220 V35 H330 M372 35 H600 V75 H700 M220 75 V115 H290 M350 115 H420 M480 115 H600 V75"/>
-      <rect x="90" y="63" width="60" height="24"/>
-      <path d="M330 20 V50 M342 20 V50"/><path d="M342 35 H372"/>
-      <rect x="290" y="103" width="60" height="24"/>
-      <path d="M420 103 L440 127 L460 103 L480 127"/>
+      <path d="M10 85 H40 M90 85 H120 V40 H183 M197 40 H330 V85 H390 M120 85 V130 H160 M210 130 H240 M290 130 H330 V85"/>
+      <rect x="40" y="73" width="50" height="24"/>
+      <path d="M183 24 V56 M197 24 V56"/>
+      <rect x="160" y="118" width="50" height="24"/>
+      <path d="M240 118 L253 142 L265 118 L278 142 L290 118"/>
     </g>
-    ${label(120, 55, 'R', 's')}${value(120, 103, `${cm2(Rs).toPrecision(2)} Ω·cm²`)}
-    ${label(336, 14, 'C', 'dl')}${value(400, 30, `${(Cdl * 100).toPrecision(3)} µF/cm²`)}
-    ${label(320, 97, 'R', 'ct')}${value(320, 143, `${cm2(Rct).toPrecision(3)} Ω·cm²`)}
-    ${label(450, 97, 'Z', 'W')}${value(450, 143, 'finite Warburg')}
-    ${value(20, 65, 'Pt')}${value(700, 65, 'bulk')}
+    ${label(65, 63, 'R', 's')}${value(65, 115, `${cm2(Rs).toPrecision(2)} Ω·cm²`)}
+    ${label(190, 18, 'C', 'dl')}${value(262, 34, `${(Cdl * 100).toPrecision(3)} µF/cm²`)}
+    ${label(185, 110, 'R', 'ct')}${value(185, 162, `${cm2(Rct).toPrecision(3)} Ω·cm²`)}
+    ${label(265, 110, 'Z', 'W')}${value(275, 162, 'finite Warburg')}
+    ${value(16, 75, 'Pt')}${value(378, 75, 'bulk')}
   </svg>`;
 }
 for (const el of [k0In, saltIn, LIn]) {
