@@ -12,7 +12,17 @@ major version.
   running on exponentially; the same k0, still exactly zero at equilibrium. The integral is
   computed by the trapezoid rule, which converges geometrically for it (against mpmath at 30
   digits: 1e-12), and the steady current against the closed form for kinetics in series with
-  diffusion (5e-4). `polarization()` draws its curves. Not yet at an electrode port.
+  diffusion (5e-4) and the Frumkin-corrected rate at a diffuse layer's plane (1e-10). `polarization()`
+  draws its curves. Not yet at an electrode port, and not between a metal and a semiconductor's band.
+  `lambda` under 1000 J/mol is warned of as a likely slip for eV.
+- Fixed: `polarization()` beside a diffuse layer used the edge node's concentrations and levels
+  where the face's reactions see the plane's, so its rates at the metal's own level weren't the
+  solved ones (off by up to 1e14 at a strongly charged face, for Butler–Volmer too). Each
+  solution's `interfaces[f].diffuse.left`/`.right` now also gives `draw`, each drawn species' μ̄
+  at the plane less the edge node's, which it uses. (Found by a cold review.)
+- A worked example, lithium plating (demos/lithium.html): Marcus–Hush–Chidsey kinetics as fitted to
+  ultramicroelectrode measurements, against Butler–Volmer, with Gerischer's picture of the metal's
+  filled states against the ion's.
 
 ## 1.4.0 (2026-10-25)
 

@@ -190,18 +190,20 @@ export function makeSolution(solver, result = {}) {
     if (oneWay.some((w) => w)) out.oneWay = Object.fromEntries(oneWay.flatMap((w, i) => (w ? [[species[i].name, w]] : [])));
     // Its diffuse layers (src/diffuse.js), per side: the drop ψ = φ(plane) − φ(edge) (V), the
     // layer's charge (C/m²) and each ion's surface excess (mol/m²), and each ion's concentration
-    // at the plane, c e^{−zFψ/RT} (mol/m³), which the face's reactions see.
+    // at the plane, c e^{−zFψ/RT} (mol/m³), which the face's reactions see; and for a species a
+    // reaction draws across the layer, its μ̄ at the plane less the edge node's (J/mol, RT w).
     solver.diffAt[f].forEach((d, side) => {
       if (d < 0) return;
-      const dl = solver.diffList[d], sd = u[dl.o], excess = {}, plane = {};
+      const dl = solver.diffList[d], sd = u[dl.o], excess = {}, plane = {}, draw = {};
       for (let i = 0; i < n; i++) {
         if (!solver.present[dl.g * n + i]) continue;
         excess[species[i].name] = solver.gam[d * n + i];
         // (crowded: over D; drawn by a reaction, times e^w, its level there below the edge's)
         const w = dl.drawSlot[i] < 0 ? 0 : u[solver.blockOfFace[f] * solver.M + dl.drawSlot[i]];
         plane[species[i].name] = (c[dl.g * n + i] * Math.exp(-species[i].z * sd + w)) / (dl.holds[i] ? dl.dl.D : 1);
+        if (dl.drawSlot[i] >= 0) draw[species[i].name] = model.RT * w;
       }
-      (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane };
+      (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane, draw };
     });
     if (itf.gates.length > 0) {
       // Each gate's fraction open, and the voltage across the face that drives them.

@@ -4,7 +4,7 @@
 
 import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
-import { mhcIntegral } from './marcus.js';
+import { mhcRate } from './marcus.js';
 import { powi, powr } from './pow.js';
 
 const fail = (message) => {
@@ -35,6 +35,7 @@ export function polarization(device, sol, where, V, opts = {}) {
   const model = device.model, { species, grid, RT } = model, solver = device.solver;
   const Vs = Float64Array.from(typeof V === 'number' ? [V] : V);
   let reactions, nodeOf, carrier, names, surface = null; // (an electrode port's coverages at the spot)
+  let atPlane = () => null;
   if (where?.face !== undefined) {
     const f = where.face, itf = model.interfaces[f];
     if (!itf) fail(`polarization: no face ${f} (the device has ${model.interfaces.length})`);
@@ -43,6 +44,9 @@ export function polarization(device, sol, where, V, opts = {}) {
     if (metal < 0) fail(`polarization: face ${f} has no metal on either side`);
     carrier = { side: metal, i: solver.nodeConductor[metal ? gR : gL] };
     nodeOf = (p) => (p.side ? gR : gL);
+    // (beside a diffuse layer, a participant reacts at its plane: its concentration and level there)
+    const layers = sol.interfaces[f].diffuse ?? {};
+    atPlane = (p, name) => layers[p.side ? 'right' : 'left'] && { c: layers[p.side ? 'right' : 'left'].plane[name], dmu: layers[p.side ? 'right' : 'left'].draw?.[name] ?? 0 };
     reactions = itf.reactions;
     names = device.def.interfaces?.[f]?.reactions;
   } else if (where?.port !== undefined) {
@@ -67,7 +71,7 @@ export function polarization(device, sol, where, V, opts = {}) {
   // its prefactor apart from them too, so a surface can be held or re-equilibrated at each V.
   const parts = reactions.map((rx, k) => {
     if (rx.srh) fail('polarization: SRH kinetics has no electrode level');
-    let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnQP = 0; // (Marcus–Hush–Chidsey's a° = a + lnQP)
+    let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's P and Q apart)
     const surf = [];
     rx.part.forEach((p, x) => {
       if (p.side === 2) {
@@ -80,20 +84,20 @@ export function polarization(device, sol, where, V, opts = {}) {
         s -= (p.nu * species[p.i].z * FARADAY) / RT;
         return;
       }
-      const g = nodeOf(p), name = species[p.i].name;
-      base -= (p.nu * sol.mu[name][g]) / RT;
+      const g = nodeOf(p), name = species[p.i].name, pl = atPlane(p, name);
+      base -= (p.nu * (sol.mu[name][g] + (pl ? pl.dmu : 0))) / RT;
       q += p.side === carrier.side ? 0 : p.nu * species[p.i].z; // charge the forward reaction puts into the solution
-      const c = sol.c[name][g];
+      const c = pl ? pl.c : sol.c[name][g];
       if (rx.vmax) {
         if (p.nu < 0) pref *= powi(c / (c + rx.K[x]), -p.nu);
       } else if (rx.mhc) {
         const l = Math.log(c / solver.cRef[g * species.length + p.i]);
-        if (p.nu < 0) pref *= Math.exp(-p.nu * l);
-        lnQP += p.nu * l;
+        if (p.nu < 0) lnP -= p.nu * l;
+        else lnQ += p.nu * l;
       } else pref *= powr(c / solver.cRef[g * species.length + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     });
     if (s === 0) fail(`polarization: reaction ${k} there takes no ${species[carrier.i].name} from the metal`);
-    return { rx, k, base, s, q, pref, surf, lnQP };
+    return { rx, k, base, s, q, pref, surf, lnP, lnQ };
   });
   // The surface's activities (ln a) and bare fraction at a level: held as `sol` has them, or in
   // equilibrium there, each species by the first reaction that makes it from the solution alone.
@@ -117,7 +121,7 @@ export function polarization(device, sol, where, V, opts = {}) {
     return { lnA, bare: Math.exp(-m) / sum };
   };
   const at = Array.from(Vs, (v) => surfaceAt(v));
-  const out = parts.map(({ rx, k, base, s, q, pref, surf, lnQP }) => {
+  const out = parts.map(({ rx, k, base, s, q, pref, surf, lnP, lnQ }) => {
     const rate = Float64Array.from(Vs, (v, j) => {
       const { lnA, bare } = at[j];
       let a = base + s * v, p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
@@ -125,7 +129,7 @@ export function polarization(device, sol, where, V, opts = {}) {
         a -= u.nu * lnA[u.s];
         p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
       }
-      if (rx.mhc) return (p * mhcIntegral(rx.mhc.lam, a + lnQP).I * -Math.expm1(-a)) / rx.mhc.I0;
+      if (rx.mhc) return mhcRate(rx.mhc, p, lnP, lnQ, a).rate;
       return rx.vmax ? p * -Math.expm1(-a) : p * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));
     });
     // (its level with the surface as held)

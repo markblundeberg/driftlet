@@ -104,7 +104,7 @@ import { sgFlux } from './bernoulli.js';
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { diffuseLayer } from './diffuse.js';
-import { mhcIntegral } from './marcus.js';
+import { mhcRate } from './marcus.js';
 import { powi, powr } from './pow.js';
 
 // Butler–Volmer factor g(a) = e^{αa} − e^{−(1−α)a} = e^{−(1−α)a}·expm1(a) (precise near a = 0),
@@ -522,8 +522,8 @@ export class BoundaryTerms {
       this._srhInto(gq, pp.i, s.Cp, s.Cxp, pp.side ? dR : dL);
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= s.Ca * p.nu;
     } else if (rx.mhc) {
-      // Marcus–Hush–Chidsey: r = k0 P F(a°) (1 − e^{−a}), P = Π_{ν<0} (c/c_ref)^{|ν|}, Q = Π_{ν>0}
-      // (c/c_ref)^ν (at the plane beside a diffuse layer), a° = a − ln P + ln Q, F = I(λ, a°)/I(λ, 0).
+      // Marcus–Hush–Chidsey (src/marcus.js, mhcRate): r = k0 P F(a°) (1 − e^{−a}), P = Π_{ν<0} (c/c_ref)^{|ν|},
+      // Q = Π_{ν>0} (c/c_ref)^ν (at the plane beside a diffuse layer), a° = a − ln P + ln Q, F = I(λ, a°)/I(λ, 0).
       let lnP = 0, lnQ = 0;
       for (const p of rx.part) {
         const g = p.side ? gR : gL;
@@ -532,12 +532,9 @@ export class BoundaryTerms {
         if (p.nu < 0) lnP -= p.nu * l;
         else lnQ += p.nu * l;
       }
-      const a = aHi + aLo, { I, dI } = mhcIntegral(rx.mhc.lam, a - lnP + lnQ);
-      const kP = rx.k0 * Math.exp(lnP), F = I / rx.mhc.I0, Fp = dI / rx.mhc.I0;
-      const back = Math.exp(Math.min(-a, 700)), fwd = 1 - back; // (held finite where Newton's iterates stray)
-      rate = kP * F * fwd;
-      // ∂rate/∂a, ∂rate/∂ln P and ∂rate/∂ln Q, each participant's ln c weighted by its |ν| in one of them
-      const ra = kP * (Fp * fwd + F * back), rq = kP * Fp * fwd, rp = rate - rq;
+      // its derivatives by a, ln P and ln Q: each participant's ln c weighted by its |ν| in one of them
+      const { rate: r, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP, lnQ, aHi + aLo);
+      rate = r;
       for (const p of rx.part) {
         const g = p.side ? gR : gL;
         if (this.nodeConductor[g] === p.i) continue;

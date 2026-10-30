@@ -216,7 +216,8 @@ unchanged: Butler–Volmer then depends on the Stern drop alone, the Frumkin cor
 mesh no longer enters (the ferri/ferrocyanide electrode: 46.399 Ω·cm² on cells from 1 nm to 300 nm,
 the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0125 nm). Each
 solution reports it as `interfaces[f].diffuse.left`/`.right`: `psi` (V), `charge` (C/m²), `excess`
-(mol/m²) and `plane` (each ion's concentration there). With ideal ions it's a dilute layer, so a
+(mol/m²), `plane` (each ion's concentration there) and `draw` (for each species a reaction draws
+across the layer, its $`\bar\mu`$ at the plane less the edge node's, J/mol). With ideal ions it's a dilute layer, so a
 warning says where its plane passes 5 M (a Stern C so large, or a zeroCharge so far from where the
 face works, that its counter-ions would have no room there). Where the side's ions are on a
 [lattice](statistics.md) instead, the layer crowds on the same sites (Bikerman): $`c_i e^{-z_i s}`$
@@ -332,18 +333,23 @@ r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|} \,\frac{I(\lambda, a^\circ)}{
 ```
 
 ($`\lambda`$ and $`x`$, the electron's energy from the Fermi level, in units of RT), with
-$`a^\circ = a - \sum \nu \ln(c/c_{\mathrm{ref}})`$ the affinity with every participant at its standard
-concentration, zero where the metal's level is at the couple's standard level. The backward rate
+$`a^\circ = a + \sum \nu \ln(c/c_{\mathrm{ref}})`$ the affinity with every participant at its standard
+concentration, zero where the metal's level is at the couple's formal level (at the plane beside a
+diffuse layer, and with whatever activity coefficients the statistics give). The backward rate
 constant is $`I(\lambda, -a^\circ) = e^{-a^\circ} I(\lambda, a^\circ)`$, so it's still exactly zero at
 $`A = 0`$, and $`k_0`$ means what it does for Butler–Volmer. Near $`a^\circ = 0`$ it is Butler–Volmer
 with $`\alpha = \frac12`$; driven harder, the Tafel plot bends (its slope
-$`\alpha \approx \frac12 - a^\circ/4\lambda`$ while $`|a^\circ| \ll \lambda`$, Marcus's parabola), and well
+$`\alpha \approx \frac12 - a^\circ/2\lambda`$ while $`|a^\circ| \ll \lambda`$, from Marcus's parabola for
+$`\lambda \gg 1`$; the metal's spread of electrons slows that fall, by 30% at $`\lambda`$ = 8.6), and well
 past $`a^\circ = \lambda`$ (half-way there) the rate constant levels off at $`k_0\sqrt{4\pi\lambda}/I(\lambda, 0)`$: every
 occupied level is already below the reactant's. (Marcus's inverted region, for one level, is filled in by the
 band.) $`I`$ is computed to ~1e−12 by the trapezoid rule, exponentially convergent here (checked
-against mpmath), not by Zeng et al.'s closed form, which is within 9% up to $`\lambda`$ = 0.5 eV and
-runs high past it. Typical reorganization energies are 0.2 to 1 eV for a couple in water; at a face
-reaction only (a port's electrode reactions are Butler–Volmer).
+against mpmath), not by Zeng et al.'s closed form, which is within 12% up to $`\lambda`$ = 0.5 eV and
+runs high past it (26% at 1 eV). Reorganization energies are typically 0.2 to 2 eV; `lambda` is in
+J/mol, and a value under 1000 J/mol (0.01 eV) is warned of as a likely slip. A face reaction only (a
+port's electrode reactions are Butler–Volmer), and an electron to or from a molecule or ion, not
+between a metal and a semiconductor's band. With `k0` held, a larger λ doesn't slow the reaction
+at equilibrium: k0 already holds the activation energy λ/4 there.
 
 **Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
 `srh: { vn, vp, n1 }`, on a reaction consuming one negative and one positive species and making

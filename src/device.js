@@ -567,7 +567,7 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
 // Michaelis–Menten in each substrate, and still exactly zero at A = 0 (the backward rate is the
 // one detailed balance implies).
 // Or Marcus–Hush–Chidsey (lambda, the reorganization energy, in place of alpha), for one electron
-// to or from a metal: with a° = a − Σ ν ln(c/c_ref) the affinity at standard concentrations,
+// to or from a metal: with a° = a + Σ ν ln(c/c_ref) the affinity at standard concentrations,
 //   r = k0 Π_{ν<0} (c/c_ref)^{|ν|} (I(λ, a°)/I(λ, 0)) (1 − e^{−a}),
 // I from src/marcus.js; again exactly zero at A = 0, and Butler–Volmer's α = ½ near a° = 0.
 function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT) {
@@ -624,9 +624,11 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     if (rdef.lambda !== undefined) {
       need(rdef.alpha === undefined, `${rpath}: give lambda (Marcus–Hush–Chidsey) or alpha (Butler–Volmer), not both`);
       const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
-      need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV`);
+      need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV, units.eV(0.5) for 0.5 eV`);
       const metal = part.filter((p) => (p.side ? matR : matL).conductor);
       need(metal.length === 1 && Math.abs(metal[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from a metal, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      // (and to or from a molecule or ion, not a band: the metal's carrier, or an opposite one, on the other side is band-to-band transfer)
+      need(!part.some((p) => p !== metal[0] && (p.i === metal[0].i || Math.abs(species[p.i].z) === 1 && /^[eh][+-]$/.test(species[p.i].name))), `${rpath}: Marcus–Hush–Chidsey kinetics is for an electron to or from a molecule or ion, not between a metal's band and a semiconductor's`);
       return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I } };
     }
     return { part, fixedA, k0, alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };

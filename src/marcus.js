@@ -34,12 +34,32 @@ function forward(lam, b) {
   const hi = x0 > 0 ? Math.min(2 * K, x0 + w) : x0 + w;
   const h0 = Math.min(0.5, Math.sqrt(lam) / 2), m = Math.ceil((hi - lo) / h0), h = (hi - lo) / m;
   let I = 0, J = 0;
+  const d0 = lo - x0; // (stepping over d = x − x0 itself: for a tiny λ, x − x0 would cancel)
   for (let k = 0; k <= m; k++) {
-    const x = lo + k * h, d = x - x0, g = Math.exp(-(d * d) / (4 * lam) - softplus(x));
+    const d = d0 + k * h, g = Math.exp(-(d * d) / (4 * lam) - softplus(x0 + d));
     I += g;
     J += d * g;
   }
   return { I: I * h, dI: (-J * h) / (2 * lam) };
+}
+
+/**
+ * The rate itself, r = k0 P F(a°) (1 − e^{−a}) with F = I(λ, a°)/I(λ, 0), a° = a − ln P + ln Q, and its
+ * derivatives by a (all of a's dependence), ln P and ln Q. Written for a ≥ 0 as above and for a < 0 as
+ * its backward form, k0 Q F(−a°) (e^{a} − 1) (the same by detailed balance): neither overflows, and
+ * each is precise to the last digit near equilibrium.
+ * @param {{ lam: number, I0: number }} mhc λ/RT and I(λ, 0)
+ */
+export function mhcRate(mhc, k0, lnP, lnQ, a) {
+  const a0 = a - lnP + lnQ;
+  if (a >= 0) {
+    const { I, dI } = mhcIntegral(mhc.lam, a0), X = k0 * Math.exp(lnP), h = -Math.expm1(-a);
+    const rate = (X * I * h) / mhc.I0, rd = (X * dI * h) / mhc.I0; // rd = ∂rate/∂a°
+    return { rate, ra: rd + (X * I * Math.exp(-a)) / mhc.I0, rp: rate - rd, rq: rd };
+  }
+  const { I, dI } = mhcIntegral(mhc.lam, -a0), X = k0 * Math.exp(lnQ), h = Math.expm1(a);
+  const rate = (X * I * h) / mhc.I0, rd = (-X * dI * h) / mhc.I0;
+  return { rate, ra: rd + (X * I * Math.exp(a)) / mhc.I0, rp: -rd, rq: rate + rd };
 }
 
 /** I(λ, a) and ∂I/∂a (see the contract above). */

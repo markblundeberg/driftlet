@@ -100,6 +100,7 @@ export function unitWarnings(def) {
       const said = rx?.equation ?? (rx?.left || rx?.right ? JSON.stringify([rx.left, rx.right]) : null);
       const electrons = said === null || /(^|[^\w])e-($|[^\w])/.test(said);
       if (rx?.k0 > 10 && electrons) warn(`${path}.reactions[${k}].k0`, `${num(rx.k0)} mol/(m²·s) is an exchange current of ${num(rx.k0 * FARADAY)} A/m² per electron; k0 is mol/(m²·s)`);
+      if (typeof rx?.lambda === 'number' && rx.lambda > 0 && rx.lambda < 1000) warn(`${path}.reactions[${k}].lambda`, `${num(rx.lambda)} J/mol is ${num(rx.lambda / FARADAY)} eV; lambda is J/mol (units.eV(0.5) for 0.5 eV)`);
     });
   };
   (def.interfaces ?? []).forEach((f, k) => {
