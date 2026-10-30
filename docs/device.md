@@ -250,7 +250,10 @@ correction of order $`\lambda_D/L`$. What the layer doesn't cover:
 - a permeability link's ions crossing it: at a membrane they're at the planes in equilibrium with
   the edges (the membrane, many orders less permeable than the layer, sets their flux);
 - ions of different sizes, and the field's lowering of ε near the plane: one site for every ion
-  (Bikerman), and one permittivity.
+  (Bikerman), and one permittivity;
+- a reactant that packs the plane while current consumes it there: in proportion to the current
+  (an Fe³⁺ plane 89% full under −1.76 A/m², 1.9e-3 from the resolved electrode; 1e-4 at a tenth of
+  the rate constant, 9e-6 at a hundredth: round 17's fuzzer).
 
 At a membrane between two solutions, a layer on each side: a
 permeability link runs between the planes (Goldman–Hodgkin–Katz on the planes' concentrations,
@@ -333,9 +336,10 @@ r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|} \,\frac{I(\lambda, a^\circ)}{
 ```
 
 ($`\lambda`$ and $`x`$, the electron's energy from the Fermi level, in units of RT), with
-$`a^\circ = a + \sum \nu \ln(c/c_{\mathrm{ref}})`$ the affinity with every participant at its standard
-concentration, zero where the metal's level is at the couple's formal level (at the plane beside a
-diffuse layer, and with whatever activity coefficients the statistics give). The backward rate
+$`a^\circ = a + \sum \nu \ln(c/c_{\mathrm{ref}})`$ the affinity with every participant's concentration at
+$`c_{\mathrm{ref}}`$ (concentrations, not activities: under non-ideal statistics $`a`$ keeps each activity
+coefficient, so $`a^\circ`$ is zero at the couple's formal level for the composition there, not its
+standard level), at the plane beside a diffuse layer. The backward rate
 constant is $`I(\lambda, -a^\circ) = e^{-a^\circ} I(\lambda, a^\circ)`$, so it's still exactly zero at
 $`A = 0`$, and $`k_0`$ means what it does for Butler–Volmer. Near $`a^\circ = 0`$ it is Butler–Volmer
 with $`\alpha = \frac12`$; driven harder, the Tafel plot bends (its slope
@@ -874,8 +878,12 @@ that fills $`\Delta`$ sites going forward holds $`m = \max(\Delta, 0)`$ bare one
 state, so its forward rate goes as $`\theta_0^{\,m}`$ and its backward as $`\theta_0^{\,m-\Delta}`$.
 Adsorption goes on at a rate ∝ $`\theta_0`$ and off ∝ $`\theta`$, an adsorbed couple converts at a
 rate ∝ its coverage, and $`2\mathrm{H_{ads}} \to \mathrm{H_2}`$ goes as $`\theta_H^2`$ and back as
-$`\theta_0^2`$. A reaction with `bare: true` runs only on bare metal, needing a bare site even
-where it fills none ($`m \ge 1`$): a metal dissolving, blocked by a film. Equilibrium is exact
+$`\theta_0^2`$ (at a face: a port's reactions each pass an electron to or from the electrode, so a
+chemical step like that one goes at a face). A reaction with `bare: true` runs only on bare metal,
+needing a bare site even where it fills none ($`m \ge 1`$): a metal dissolving, blocked by a film. (So
+`bare` isn't symmetric under writing a reaction backwards: $`m \ge 1`$ either way, so with it
+`'Hads = H+ + e-'` adsorbs, its backward rate, as $`\theta_0^2`$, where `'H+ + e- = Hads'` adsorbs as
+$`\theta_0`$.) Equilibrium is exact
 throughout, from the affinity. A species' `theta0` is its starting coverage (not the bare
 fraction). Surface species carry no charge, so an adsorbed redox couple
 balances its electrons through the solution: `'Oads + e- = Rads + Cl-'`, its coverages at

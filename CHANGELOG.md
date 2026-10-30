@@ -10,6 +10,12 @@ major version.
   ~70 ms), and the speeds its text quotes, taken before rest, are corrected (the nodes' spacing has a
   broad best near 1 mm, not "closer is faster").
 - Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
+- A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
+  an adsorbate failed or converged by which reaction was listed first (the start balanced the first
+  without the surface's μ°, volts off; round 17's fuzzer, 45 cold failures).
+- Docs: MHC's a° is the concentration (formal) convention; a reactant packing a sub-grid diffuse
+  layer's plane under current is outside what the layer covers (1.9e-3 at 89% full); chemical steps
+  go at a face, not a port; `bare` isn't symmetric under writing a reaction backwards.
 
 ## 1.6.0 (2026-10-30)
 

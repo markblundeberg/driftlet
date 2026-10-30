@@ -174,3 +174,26 @@ test('a face’s surface is asked for clearly, and described', () => {
   assert.throws(() => new Device(two), (e) => e instanceof DeviceError && /a metal on one side/.test(e.message));
   assert.match(describe(tethered(0)), /its surface: Fc, FcClO4 on 1.00e-6 mol\/m² of sites \(Langmuir\)/);
 });
+
+test("a face's surface species enter its cold start: a cold solve converges whichever reaction is listed first (round 17's fuzzer)", () => {
+  // Pt with H(ads) (the Volmer step) beside Fe³⁺/Fe²⁺: the start balanced the first reaction at the face
+  // without the surface species' μ° (−226 kJ/mol here), volts off, and Newton failed from it, saying the
+  // Volmer step was out of equilibrium; listed the other way round, it converged
+  const lib = aqueous(['K+', 'Cl-', 'H+', 'Fe3+', 'Fe2+'], { epsr: 0 });
+  lib.materials.water.species['Fe2+'].mu0 = -194340;
+  const c = { 'K+': 20.94, 'H+': 0.01695, 'Fe3+': 8.991, 'Fe2+': 2.5007 };
+  c['Cl-'] = c['K+'] + c['H+'] + 3 * c['Fe3+'] + 2 * c['Fe2+'];
+  const volmer = { equation: 'H+ + e- = Hads', k0: 1.374e-3, alpha: 0.5 }, iron = { equation: 'Fe3+ + e- = Fe2+', k0: 2.2045e-5, alpha: 0.6626 };
+  const solve = (reactions, V) =>
+    new Device(build({
+      library: [lib, metal('Pt')],
+      stack: [ohmic(V, ['e-']), layer('Pt', 1e-6), { surface: { Hads: { mu0: -226342, capacity: 2.71e-6, theta0: 0.225 } }, reactions }, layer('water', 15.3e-6, { c0: c }), bath(c, 'Cl-')],
+      grid: { hmin: 1.73e-8, hmax: 1.35e-6 },
+    })).solve();
+  for (const V of [0.3, 0.5048, 0.7]) {
+    const a = solve([volmer, iron], V), b = solve([iron, volmer], V);
+    assert.ok(a.converged && b.converged, `at ${V} V: ${a.warnings[0] ?? ''}`);
+    assert.ok(Math.abs(a.terminals.left.current / b.terminals.left.current - 1) < 1e-9 && Math.abs(a.interfaces[0].coverage.Hads - b.interfaces[0].coverage.Hads) < 1e-9);
+  }
+  assert.ok(Math.abs(solve([volmer, iron], 0.5048).terminals.left.current + 0.0326621) < 1e-7);
+});

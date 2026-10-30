@@ -28,7 +28,8 @@
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
 //      through the region has a reaction that can balance, the φ̂ that balances it, each species
-//      in it at its activity (a non-ideal material's from its statistics) (the neutrality is by
+//      in it at its activity (a non-ideal material's from its statistics) and each surface species
+//      at its starting coverage (a face's or the port's) (the neutrality is by
 //      bisection; a trial a non-ideal model refuses counts its ideal charge, which has the sign
 //      there). Where
 //      neutrality is out of reach (c0's amounts leave a charge no held level balances): in a
@@ -226,8 +227,11 @@ export function initFromComposition(s) {
       // that takes a species from this side at equilibrium (the electrode at its open-circuit
       // level), rather than φ carried over from the metal, which can be volts away.
       const bn = s.blockOfNode[grid.regionEnd[r - 1]];
+      // (the face's surface species at their starting coverages, as an electrode port's are below)
+      const surf = interfaces[r - 1].surface ?? [], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
       for (const rx of interfaces[r - 1].reactions) {
         let a = rx.fixedA, slope = 0;
+        for (const q of rx.surf ?? []) a -= q.nu * (surf[q.s].mu0 / model.RT + Math.log(surf[q.s].theta0 / bare));
         for (const p of rx.part) {
           if (p.side === 0) a -= p.nu * u[bn * M + 1 + p.i];
           else if (mode[p.i] === 2) {

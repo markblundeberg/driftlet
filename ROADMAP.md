@@ -355,6 +355,15 @@ for live demos.
   reaction's failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y
   mobile in part); and the open-circuit march's sign hint, wrong beside a resistance.
 
+- **From round 17's fuzzer (2026-10-30; repros in `~/.cache/driftlet-claude/round17/fuzz/repro/`).** No
+  silent wrong answer in ~1,840 devices; the cold start's missing face surface species is fixed. Left:
+  a failed solve's warning names the reaction out of equilibrium at the failed iterate, not at the
+  start, and its advice (solve without it) can be the wrong one; a metal on the right with c0 given
+  starts ~55 RT from the bath (start.js's Known list: 20 of 273 mirrored face devices fail cold,
+  converging with c0 dropped); a closed end reports ~1e-8 A/m² in transients, its end box's balance
+  residual (steady states read 0); a port refuses chemical steps (no electron from the electrode), a
+  face refuses `bare` on a reaction with no surface species of its own (a port accepts it), and
+  `polarization()` refuses a whole face or port if one of its reactions is a chemical step.
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of
   the others': a MOS whose back contact sees the silicon only through a channel port, its gate
