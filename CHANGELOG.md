@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.6.0 (2026-10-30)
 
 - Marcus–Hush–Chidsey kinetics at electrode ports too (`lambda` on a port's reaction), with its
   Langmuir sites; the rate at each node checked against the formula from the levels there, and
@@ -25,6 +25,8 @@ major version.
   KCl against the exact Poisson–Boltzmann theory, where the line bends (accumulation, inversion, deep
   depletion without holes) or misleads (the solution's share, the circuit the capacitance is read
   through). The templates' Mott–Schottky example now reads on the SHE scale and in series.
+- The cyclic voltammetry demo is checked against the same experiment worked out apart from the solver
+  (diffusion, Butler–Volmer, the ohmic drop): within 1% of the peak current, the rest migration.
 
 ## 1.5.0 (2026-10-29)
 

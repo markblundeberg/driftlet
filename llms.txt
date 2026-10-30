@@ -32,9 +32,9 @@ materials, insertion hosts), data.md and reliability.md (what's validated, and t
 From a CDN, pin the version you tested against:
 
 ```js nocheck
-import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/plot.js';
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/plot.js';
 ```
 
 From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at the end.
@@ -136,8 +136,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant
   at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
   `k0: 10`). Butler–Volmer by default (`alpha`, 0.5); `lambda: units.eV(0.5)` in its place makes it
-  Marcus–Hush–Chidsey, for one electron to or from a metal: the same k0, a Tafel plot that bends and
-  saturates. A metal's face can carry surface species (`surface: { name: { mu0, capacity, theta0 } }`,
+  Marcus–Hush–Chidsey (at a face or an electrode port), for one electron to or from a metal: the same
+  k0, a Tafel plot that bends and saturates. A metal's face can carry surface species (`surface: { name: { mu0, capacity, theta0 } }`,
   Langmuir, neutral), which its reactions name on the metal's side: a tethered couple, an adsorbate;
   solutions report `interfaces[f].coverage`.
 - **Grids** grade geometrically from `hmin` at each region's ends up to `hmax`, neighbouring cells
@@ -228,9 +228,9 @@ a CDN needs a long virtual-time budget, 30 s.)
 <span id="readout"></span>
 <div id="figure"></div>
 <script type="module">
-import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.5.0/src/plot.js';
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.6.0/src/plot.js';
 
 const def = build({
   T: 300,
