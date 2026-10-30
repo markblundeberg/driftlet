@@ -127,7 +127,11 @@ function differences(s, dt) {
     }
     for (const r of members) together.set(r, r === first ? members : []);
   }
+  // (a step's charge rows pivot on the larger z²c at each neutral node: where two ions tie, as in
+  // a strictly neutral 1:1 salt, a nudge would swap it and the differences see half of each, so
+  // the nudged residuals keep the pivots of the system checked)
   const bad = [];
+  s.holdPivots = true;
   for (let j = 0; j < N + K; j++) {
     const nudge = (h) => {
       if (j >= N) s.termV[fl[j - N]] += h;
@@ -149,6 +153,7 @@ function differences(s, dt) {
     }
   }
   restore();
+  s.holdPivots = false;
   residual(s, dt); // (the system as it was, for the solve to go on with)
   return bad;
 }
@@ -257,6 +262,12 @@ const crowded = (def) => {
   def.materials.water.statistics = [{ type: 'lattice', species: ['Fe3+', 'Fe2+', 'Cl-', 'S'], cMax: 13000 }];
   return def;
 };
+const blockingSalt = (face) => build({
+  T: 298.15,
+  library: [aqueous(['K+', 'Cl-'], { epsr: 0 }), metal('Au')],
+  stack: [ohmic(0.1, ['e-']), layer('Au', 1e-6), face, layer('water', 10e-6, { c0: { 'K+': 1000, 'Cl-': 1000 } }), bath({ 'K+': 1000, 'Cl-': 1000 }, 'Cl-')],
+  grid: { hmin: 1e-8, hmax: 1e-6 },
+});
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -289,8 +300,8 @@ const devices = {
   },
   // A face's surface (an electrode's): a tethered couple, Butler–Volmer and Marcus–Hush–Chidsey, an
   // adsorbate that fills a bare site from the solution, beside a diffuse layer, at a floating metal.
-  // (each beside a solution couple at a floating metal: a fully blocked face beside a neutral
-  // solution shows an older mismatch at time steps, being looked into)
+  'a tethered couple at a face, held': () => tethered({ alpha: 0.4 }, 0.1),
+  'a tethered Marcus–Hush–Chidsey couple at a face, held': () => tethered({ lambda: units.eV(0.85) }, 0.3),
   'a tethered couple at a face': () => tethered({ alpha: 0.4 }, { I: 0 }, true),
   'a tethered Marcus–Hush–Chidsey couple at a face': () => tethered({ lambda: units.eV(0.85) }, { I: 0 }, true),
   'a tethered couple at a face driven by a current': () => tethered({ alpha: 0.5 }, { I: 0.02 }, true),
@@ -379,6 +390,10 @@ const devices = {
     stack: [ohmic(-1.1), layer('Si', 2e-6, { donors: units.perCm3(1e16) }), { dipole: 0.39, diffuse: { epsr: 78.4 } }, layer('water', 1e-6, { c0: film }), bath(film, 'Cl-')],
     grid: { hmin: 0.5e-9, hmax: 50e-9, ratio: 1.15 },
   }),
+  // A strictly neutral 1:1 salt at a blocking gold face, bare and capacitive: at its neutral nodes
+  // K⁺ and Cl⁻ tie to the last digit, so a time step's charge rows pivot on one of a tie.
+  'a neutral 1:1 salt at a blocking face': () => blockingSalt({ species: {} }),
+  'a neutral 1:1 salt at a capacitive blocking face': () => blockingSalt({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }),
 };
 
 for (const [name, def] of Object.entries(devices)) {
@@ -395,9 +410,7 @@ for (const [name, def] of Object.entries(devices)) {
 // Devices of the law sweep (tools/lawsweep-devices.js) with what the ones above lack: a law with
 // an electrode's surface or its capacitance read by a time step, two floating electrodes. Checked
 // at a short step, and at a long one (100 s, from a state 10 ms on), where a circuit law reads its
-// current by its amount's change. (Not where two ions are within a nudge of each other at a
-// strictly neutral node: a step's charge rows pivot on the larger, and a central difference
-// across the swap sees half of each.)
+// current by its amount's change.
 for (const idx of [426, 156, 66]) {
   test(`the Newton system's derivatives are its residual's: law-sweep device ${idx}, steady, and at short and long steps`, () => {
     const def = () => device(choice(idx));

@@ -75,7 +75,9 @@
 //   4. computeConcentrations writes c, K, ex, th, th0, gam, dK at the nodeDK nodes (and scratch:
 //      zeta, the statistics models' work arrays, the diffuse layers' dl) and nothing else; the kernels write res,
 //      sys (or lin), termB/termC (the charge rows), and scratch kept on the Solver (dA, dB, jL,
-//      jR, sg, mixWork, mixCrowd) or cached on a material (mobile).
+//      jR, sg, mixWork, mixCrowd, chargePivots: each charge node's pivot, reused where
+//      holdPivots is set, as test/jacobian.test.js does around its central differences) or cached
+//      on a material (mobile).
 //   5. The charge rows are an invertible transformation of the equations at the node (the same
 //      solution), and _untransform inverts the column change exactly.
 // Tests: test/jacobian.test.js (1), test/layout.test.js (difference form), test/srh.test.js,
@@ -391,17 +393,25 @@ export class RegionTerms {
   _chargeRows(dt) {
     const { n, M, res, c, cOld, z, sys, loc, present, termB, termC } = this, R = this.rix, F = FARADAY, live = this._liveTerms();
     const { A, B, C, sizes, offA, offB, offC } = sys, vol = this.model.grid.vol, last = this.nB - 1;
-    for (const g of this.chargeNodes) {
-      const b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < last ? sizes[b + 1] : 0;
+    // Each node's pivot, kept in chargePivots; where holdPivots is set (test/jacobian.test.js, whose
+    // central differences would see half of each where two ions tie), the last assembly's again.
+    const piv = this.chargePivots?.length === this.chargeNodes.length ? this.chargePivots : (this.chargePivots = new Int32Array(this.chargeNodes.length).fill(-1));
+    const hold = this.holdPivots === true;
+    for (let at = 0; at < this.chargeNodes.length; at++) {
+      const g = this.chargeNodes[at], b = this.blockOfNode[g], lb = b * M, m = sizes[b], mp = b > 0 ? sizes[b - 1] : 0, mn = b < last ? sizes[b + 1] : 0;
       const p = loc[lb], gn = g * n;
       let k = -1, best = -1;
-      for (let i = 0; i < n; i++) {
-        if (!present[gn + i] || z[i] === 0) continue;
-        const w = z[i] * z[i] * c[gn + i];
-        if (w > best) {
-          k = i;
-          best = w;
+      if (hold) k = piv[at];
+      else {
+        for (let i = 0; i < n; i++) {
+          if (!present[gn + i] || z[i] === 0) continue;
+          const w = z[i] * z[i] * c[gn + i];
+          if (w > best) {
+            k = i;
+            best = w;
+          }
         }
+        piv[at] = k;
       }
       if (k < 0 || p < 0) continue;
       // Rows: the pivot's balance becomes the z-weighted sum (all still without storage).
