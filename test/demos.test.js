@@ -619,3 +619,31 @@ test('demos/mott-schottky.html: the capacitance against Poisson–Boltzmann, bot
   const inv = measure(ep, [1e3], [eth.Einv + 0.1, eth.Einv + 0.4]).map((q) => reading(q.Z[0], 1e3, 'series'));
   assert.ok(Math.abs(inv[1] / inv[0] - 1) < 0.02 && eth.C(eth.Einv + 0.4) > 10 * inv[1], `${inv} vs ${eth.C(eth.Einv + 0.4)}`);
 });
+
+test('demos/redox.html: the settled cycle against the same experiment worked out apart from the solver, as the page says', async () => {
+  const { simulate, cvTheory, peaks, ironBulk } = await pageTheory('redox.html', ['simulate', 'cvTheory', 'peaks', 'ironBulk']);
+  const gap = (v, k0, L, b) => {
+    const sim = simulate(v, k0, L, b), th = cvTheory({ v, k0, L, b });
+    const at = (t) => {
+      let k = th.t.findIndex((x) => x >= t);
+      if (k < 1) k = t <= th.t[0] ? 1 : th.t.length - 1;
+      return th.I[k - 1] + ((th.I[k] - th.I[k - 1]) * (t - th.t[k - 1])) / (th.t[k] - th.t[k - 1]);
+    };
+    const top = Math.max(...th.I.map(Math.abs));
+    return { worst: Math.max(...sim.t.map((t, j) => Math.abs(sim.I[j] - at(t)) / top)), sim: peaks(sim), th: peaks(th) };
+  };
+  // within 1% of the peak current at the controls' corners (the rest is migration)
+  for (const [v, L, k0] of [[1e-3, 10 ** 0.5, 1e-6], [0.1, 1000, 10], [10, 10 ** 1.25, 1e-3], [10, 1000, 10], [0.1, 10 ** 1.25, 1e-3]]) {
+    const g = gap(v, k0, L * 1e-6);
+    assert.ok(g.worst < 1e-2, `${v} V/s, ${L} µm, k0 ${k0}: ${g.worst}`);
+  }
+  // with a tenth of the iron, a tenth of the gap: it's migration
+  assert.ok(gap(0.1, 1e-3, 10 ** 1.25 * 1e-6, ironBulk(0.5)).worst < 1.5e-3);
+  // a still solution and fast kinetics: peaks 64 mV apart at 0.1 V/s, 57 mV (2.22 RT/F) without the ohmic drop
+  const still = gap(0.1, 10, 1e-3);
+  assert.ok(still.th.peaked && Math.abs(1000 * (still.th.Ea - still.th.Ec) - 64.5) < 1 && Math.abs(1000 * (still.sim.Ea - still.sim.Ec) - 64.5) < 2.5);
+  const rev = peaks(cvTheory({ v: 0.1, k0: 1000, L: 1e-3, iR: false, steps: 8000 }));
+  assert.ok(Math.abs(1000 * (rev.Ea - rev.Ec) - 57.3) < 0.6, `${1000 * (rev.Ea - rev.Ec)}`);
+  // a thin layer: no peaks, a plateau at the sweep's ends
+  assert.ok(!gap(1e-3, 1e-3, 10 ** 0.5 * 1e-6).th.peaked);
+});

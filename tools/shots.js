@@ -18,7 +18,7 @@ const SHOTS = {
   organic: { query: 'LX=25', budget: 60000 },
   perovskite: { query: 't=0.75', budget: 60000 },
   mos: { query: '', budget: 60000 },
-  redox: { query: 't=15', budget: 60000 },
+  redox: { query: 't=55', budget: 120000 },
   daniell: { query: 't=3600', budget: 60000 },
   saturation: { query: 't=0.53', budget: 60000 },
   impedance: { query: 'f=1.25&phase=15', budget: 60000 },
