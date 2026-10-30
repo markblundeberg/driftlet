@@ -140,15 +140,24 @@ export class BoundaryTerms {
   // A port reaction's rate per area at node g (mol/(m²·s), forward), at the present state.
   _portRate(port, rx, g) {
     const { n, M, u, uLo, c, nSurf, th } = this, b = this.blockOfNode[g], RT = this.model.RT;
-    let pref = rx.k0, a = rx.fixedA;
+    let pref = rx.k0, a = rx.fixedA, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's prefactors apart, as logs)
     for (const p of rx.part) {
       if (p.side === 1) {
         a -= p.nu * this.portEta(port, p.i);
         continue;
       }
-      const o = b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i), e = p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha;
+      const o = b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i), act = p.side === 2 ? th[g * nSurf + p.s] : c[g * n + p.i] / this.cRef[g * n + p.i];
       a -= p.nu * (u[o] + uLo[o]);
-      pref *= p.side === 2 ? powr(th[g * nSurf + p.s], e) : powr(c[g * n + p.i] / this.cRef[g * n + p.i], e);
+      if (rx.mhc) {
+        if (p.nu < 0) lnP -= p.nu * Math.log(act);
+        else lnQ += p.nu * Math.log(act);
+        continue;
+      }
+      pref *= powr(act, p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
+    }
+    if (rx.mhc) {
+      const l0 = Math.log(this.th0[g]);
+      return mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, a).rate;
     }
     if (rx.sites) pref *= powr(this.th0[g], rx.sites);
     return pref * bvFactor(a, rx.alpha).g;
@@ -769,6 +778,7 @@ export class BoundaryTerms {
     port.nodes.forEach((g, w) => {
       const b = this.blockOfNode[g], s = vol[g] * area[w];
       d.fill(0);
+      if (rx.mhc) return this._portMhc(port, rx, g, b, s, w, aV, daV, q, rates, flux, k);
       let pref = rx.k0, aHi = aV, aLo = 0;
       for (const p of rx.part) {
         if (p.side === 1) continue;
@@ -810,6 +820,55 @@ export class BoundaryTerms {
       for (let t = 0; t < M; t++) if (d[t] !== 0) C[R[b * M + t]] += q * F * s * d[t];
       this.termDI[k] += q * F * s * dV;
     });
+  }
+
+  // A port reaction at node g with Marcus–Hush–Chidsey kinetics: r = k0 P F(a°) (1 − e^{−a}) from
+  // mhcRate (src/marcus.js), P and Q Butler–Volmer's prefactors at α = 0 and 1 (each region species at
+  // c/c_ref, each surface species at θ, the bare sites θ₀^m and θ₀^(m−Δ)), into the same rows as
+  // _portReaction's. Its derivatives: ∂rate/∂ln P and ∂ln Q onto each activity's ln, ∂rate/∂a onto each η
+  // (∂a/∂η = −ν) and the port's voltage.
+  _portMhc(port, rx, g, b, s, w, aV, daV, q, rates, flux, k) {
+    const { n, M, u, uLo, c, res, VT, nSurf, th } = this, R = this.rix, F = FARADAY, d = this.dA, surf = port.surface;
+    const B = this.termB[k], C = this.termC[k];
+    const slot = (p) => (p.side === 2 ? 1 + n + p.s : 1 + p.i);
+    let aHi = aV, aLo = 0, lnP = 0, lnQ = 0;
+    for (const p of rx.part) {
+      if (p.side === 1) continue;
+      const o = b * M + slot(p), l = Math.log(p.side === 2 ? th[g * nSurf + p.s] : c[g * n + p.i] / this.cRef[g * n + p.i]);
+      aHi -= p.nu * u[o];
+      aLo -= p.nu * uLo[o];
+      if (p.nu < 0) lnP -= p.nu * l;
+      else lnQ += p.nu * l;
+    }
+    const l0 = Math.log(this.th0[g]);
+    const { rate, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, aHi + aLo);
+    rates[w] = rate;
+    // ∂ ln θ_s/∂η_x = δ_sx − θ_x; ∂ ln θ₀/∂η_x = −θ_x
+    for (const p of rx.part) {
+      if (p.side === 1) continue;
+      const e = p.nu < 0 ? -p.nu * rp : p.nu * rq;
+      if (p.side === 2) {
+        d[1 + n + p.s] += e;
+        for (let x = 0; x < surf.length; x++) d[1 + n + x] -= e * th[g * nSurf + x];
+      } else this._dlnc(g, p.i, e, d);
+      d[slot(p)] -= ra * p.nu;
+    }
+    if (surf.length > 0) {
+      const e0 = rx.m * rp + (rx.m - rx.fills) * rq;
+      for (let x = 0; x < surf.length; x++) d[1 + n + x] -= e0 * th[g * nSurf + x];
+    }
+    const dV = ra * daV;
+    for (const p of rx.part) {
+      if (p.side === 1) continue;
+      // the region's species per volume of the window; a surface's per area of electrode
+      const row = slot(p), o = b * M + row, f = p.side === 2 ? 1 : s;
+      res[R[o]] -= f * p.nu * rate;
+      if (p.side === 0) flux[p.i] += s * p.nu * rate;
+      for (let t = 0; t < M; t++) if (d[t] !== 0) this._j(b, row, b, t, -f * p.nu * d[t]);
+      B[R[o]] -= f * p.nu * dV;
+    }
+    for (let t = 0; t < M; t++) if (d[t] !== 0) C[R[b * M + t]] += q * F * s * d[t];
+    this.termDI[k] += q * F * s * dV;
   }
 
   // A membrane port's gates, at each node of its window: (x − x_old)/dt = α(1 − x) − βx in the

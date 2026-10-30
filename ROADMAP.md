@@ -365,11 +365,9 @@ for live demos.
   K_w(T) and an E°(T) from the tables. The cell and axon demos take the 25 °C data as their temperature's, fairly: only D counts there, and scaled it moves nothing they show.
   Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
 
-- **More interface kinetics.** Marcus–Hush–Chidsey rates at an electrode port (done at faces,
-  2026-10-29, with surface species at faces too); surface species carrying charge (in the face's
-  φ law) and lateral interactions between them (Frumkin isotherms); a worked example of a
-  multi-step mechanism through an intermediate (hydrogen evolution, Volmer–Heyrovsky–Tafel); and a
-  custom forward rate
+- **More interface kinetics.** (Marcus–Hush–Chidsey rates at faces and ports and surface species at
+  faces done 2026-10-29.) Surface species carrying charge (in the face's
+  φ law) and lateral interactions between them (Frumkin isotherms); and a custom forward rate
   $`r_f(\mathrm{state})`$ as an escape hatch, which the solver multiplies by $`(1 - e^{-A/RT})`$ so
   equilibrium stays exact. Not a bare current–overpotential curve, which loses the concentration
   dependence and can break detailed balance.

@@ -346,8 +346,8 @@ occupied level is already below the reactant's. (Marcus's inverted region, for o
 band.) $`I`$ is computed to ~1e−12 by the trapezoid rule, exponentially convergent here (checked
 against mpmath), not by Zeng et al.'s closed form, which is within 12% up to $`\lambda`$ = 0.5 eV and
 runs high past it (26% at 1 eV). Reorganization energies are typically 0.2 to 2 eV; `lambda` is in
-J/mol, and a value under 1000 J/mol (0.01 eV) is warned of as a likely slip. A face reaction only (a
-port's electrode reactions are Butler–Volmer), and an electron to or from a molecule or ion, not
+J/mol, and a value under 1000 J/mol (0.01 eV) is warned of as a likely slip. At a face or an electrode
+port (the same `lambda`, with a port's Langmuir sites), and an electron to or from a molecule or ion, not
 between a metal and a semiconductor's band. With `k0` held, a larger λ doesn't slow the reaction
 at equilibrium: k0 already holds the activation energy λ/4 there.
 

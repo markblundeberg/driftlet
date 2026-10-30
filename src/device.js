@@ -968,9 +968,8 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
   const carrier = species[terminal].name;
   return list.map((rdef, k) => {
     const rpath = `${path}.reactions[${k}]`;
-    need(isObject(rdef) && typeof rdef.equation === 'string', `${rpath} must be { equation, fixed, k0, alpha }`);
-    need(rdef.lambda === undefined, `${rpath}.lambda: Marcus–Hush–Chidsey kinetics is for a face's reactions; a port's electrode reactions are Butler–Volmer (alpha)`);
-    fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha', 'bare']);
+    need(isObject(rdef) && typeof rdef.equation === 'string', `${rpath} must be { equation, fixed, k0, alpha } (or lambda in place of alpha)`);
+    fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha', 'lambda', 'bare']);
     const holds = (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
     const onSurface = (name) => surface.findIndex((sp) => sp.name === name);
     const sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: mat.name, holds, conductor: false }, { name: 'the electrode', holds: (name) => name === carrier || onSurface(name) >= 0, conductor: true }, rdef.fixed, `${rpath}.equation`);
@@ -999,7 +998,18 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
     // goes as θ₀^m and the backward as θ₀^(m−Δ): the prefactor's θ₀^(m(1−α)+(m−Δ)α), with each
     // surface species at its coverage θ.
     const fills = part.reduce((t, p) => t + (p.side === 2 ? p.nu : 0), 0), m = Math.max(fills, 0, bare ? 1 : 0);
-    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`), alpha, bare, sites: m * (1 - alpha) + (m - fills) * alpha };
+    const k0 = positive(rdef.k0, `${rpath}.k0 (mol/(m²·s))`);
+    if (rdef.lambda !== undefined) {
+      // Marcus–Hush–Chidsey, as at a face: one electron from the electrode; its prefactors forward and
+      // back are Butler–Volmer's at α = 0 and 1 (θ₀^m and θ₀^(m−Δ) among them)
+      need(rdef.alpha === undefined, `${rpath}: give lambda (Marcus–Hush–Chidsey) or alpha (Butler–Volmer), not both`);
+      const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
+      need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV, units.eV(0.5) for 0.5 eV`);
+      const e = part.filter((p) => p.side === 1);
+      need(e.length === 1 && Math.abs(e[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from the electrode, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, bare, m, fills };
+    }
+    return { part, fixedA, k0, alpha, bare, sites: m * (1 - alpha) + (m - fills) * alpha };
   });
 }
 

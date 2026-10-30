@@ -221,7 +221,7 @@
  *   port's gates that scale G, with their exponents
  * @property {{ c: Record<string, number> }} [bath] the outside's composition (mol/m³): V is then its φ,
  *   and each linked species' level there follows from it (unless its link gives an offset or mu)
- * @property {{ equation: string, fixed?: Record<string, number>, k0: number, alpha?: number, bare?: boolean }[]} [reactions] an
+ * @property {{ equation: string, fixed?: Record<string, number>, k0: number, alpha?: number, lambda?: number, bare?: boolean }[]} [reactions] an
  *   electrode spread through the window: Butler–Volmer per area (k0 in mol/(m²·s), alpha default 0.5)
  *   between the region's species and the terminal species at the port's level
  * @property {Record<string, { mu0: number, capacity: number, theta0?: number }>} [surface] with reactions: species

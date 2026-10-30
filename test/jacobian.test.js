@@ -200,7 +200,7 @@ const lattice = (def, species, cMax) => {
   for (const m of Object.values(def.materials)) if (m.species && !m.conductor) m.statistics = [{ type: 'lattice', species: species.filter((x) => m.species[x]), cMax }];
   return def;
 };
-const adsorbing = () => {
+const adsorbing = (kin = { alpha: 0.5 }) => {
   const l = aqueous(['Na+', 'OH-', 'Cl-'], { epsr: 0 });
   l.species.push({ name: 'e-', z: -1 }, { name: 'S0', z: 0 });
   l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
@@ -208,7 +208,7 @@ const adsorbing = () => {
     T: 298.15,
     library: [l],
     stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'OH-': 1, 'Cl-': 99, S0: 1 } }), bath({ 'Na+': 100, 'OH-': 1, 'Cl-': 99 }, 'Cl-')],
-    ports: [{ name: 'metal', region: 'film', from: 0, to: 4e-6, I: 0, terminal: 'e-', area: 1e4, surface: { Cads: { mu0: 0, capacity: 1e-5, theta0: 0.2 } }, reactions: [{ equation: 'S0 + OH- = Cads + e-', k0: 1e-4, alpha: 0.5 }] }],
+    ports: [{ name: 'metal', region: 'film', from: 0, to: 4e-6, I: 0, terminal: 'e-', area: 1e4, surface: { Cads: { mu0: 0, capacity: 1e-5, theta0: 0.2 } }, reactions: [{ equation: 'S0 + OH- = Cads + e-', k0: 1e-4, ...kin }] }],
     grid: { hmin: 1e-6, hmax: 1e-6 },
   });
 };
@@ -273,6 +273,8 @@ const devices = {
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
   'adsorbing on a floating electrode': adsorbing,
   'adsorbing, crowded': () => lattice(adsorbing(), ['Na+', 'Cl-', 'S0'], 2000),
+  'adsorbing on a floating electrode, Marcus–Hush–Chidsey': () => adsorbing({ lambda: units.eV(0.4) }),
+  'a held electrode port, Marcus–Hush–Chidsey': () => { const d = adsorbing({ lambda: units.eV(0.6) }); d.ports[0] = { ...d.ports[0], I: undefined, V: -0.2 }; return d; },
   // A contact at I = 0 passing K⁺, its charge in the law: capacitive, bulk; a membrane port's.
   'a capacitive contact passing K⁺': () => capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: Kc } }),
   'a capacitive contact, crowded': () => lattice(capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: Kc } }), ['Na+', 'K+', 'Cl-'], 3000),

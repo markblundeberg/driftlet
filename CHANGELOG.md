@@ -3,6 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Marcus–Hush–Chidsey kinetics at electrode ports too (`lambda` on a port's reaction), with its
+  Langmuir sites; the rate at each node checked against the formula from the levels there.
+- A worked example, hydrogen evolution through adsorbed hydrogen (demos/hydrogen.html): the Volmer,
+  Heyrovsky and Tafel steps, their Tafel slopes, and Parsons's volcano.
+
 ## 1.5.0 (2026-10-29)
 
 - Surface species at a face: `interfaces[f].surface`, beside a metal, in the form an electrode

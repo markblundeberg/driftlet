@@ -208,8 +208,8 @@ test('Marcus–Hush–Chidsey kinetics is asked for clearly', () => {
   bad({ left: { 'e-': -2 }, right: { 'O+': -2, R: 2 } }, /one electron/);
   const port = electrode(Veq);
   port.materials.water.epsr = 0; // (an electrode port's region is strictly neutral)
-  port.ports = [{ name: 'wire', region: 1, from: 0, to: 1e-6, V: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'O+ + e- = R', k0: 1e-5, lambda }] }];
-  assert.throws(() => new Device(port), (e) => e instanceof DeviceError && /for a face's reactions/.test(e.message));
+  port.ports = [{ name: 'wire', region: 1, from: 0, to: 1e-6, V: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'O+ + 2 e- = R + Cl-', k0: 1e-5, lambda }] }];
+  assert.throws(() => new Device(port), (e) => e instanceof DeviceError && /one electron/.test(e.message));
   // not between a metal's band and a semiconductor's (Marcus's picture is a molecule's or an ion's)
   const band = build({
     T: 298.15, library: [semiconductor('Si', { T: 298.15 }), metal('Pt')],
@@ -260,4 +260,23 @@ test('beside a diffuse layer: the Frumkin-corrected rate at the plane, and polar
       assert.ok(Math.abs(p / sol.interfaces[0].rates[0] - 1) < 1e-9, `${kin.lambda ? 'MHC' : 'BV'}, V ${V}${crowd ? ', crowded' : ''}: polarization ${p} vs ${sol.interfaces[0].rates[0]}`);
     }
   }
+});
+
+// An electrode spread through a window (a port) with Marcus–Hush–Chidsey kinetics: its rate at each
+// node against k0 (c_O/c_ref) F(a°) (1 − e^{−a}) from the solution's own levels there, and polarization().
+test('Marcus–Hush–Chidsey at an electrode port: the rate at each node from the levels there, and polarization()', () => {
+  const def = electrode(Veq);
+  def.materials.water.epsr = 0;
+  def.interfaces[0].reactions = [];
+  def.ports = [{ name: 'wire', region: 1, from: 0, to: 5e-6, V: Veq - 0.3, terminal: 'e-', area: 1e5, reactions: [{ equation: 'O+ + e- = R', k0: 1e-5, lambda }] }];
+  const dev = new Device(def), sol = dev.solve(), port = dev.model.ports[0], lam = lambda / RT, I0 = mhcIntegral(lam, 0).I;
+  assert.ok(sol.converged);
+  port.nodes.forEach((g, w) => {
+    const cO = sol.c['O+'][g] / 1000, cR = sol.c.R[g] / 1000, muE = -FARADAY * (Veq - 0.3);
+    const a = (sol.mu['O+'][g] + muE - sol.mu.R[g]) / RT, a0 = a - Math.log(cO) + Math.log(cR);
+    const want = 1e-5 * cO * (mhcIntegral(lam, a0).I / I0) * -Math.expm1(-a);
+    assert.ok(Math.abs(sol.ports[0].rates[0][w] / want - 1) < 1e-9, `node ${w}: ${sol.ports[0].rates[0][w]} vs ${want}`);
+  });
+  const r = polarization(dev, sol, { port: 'wire' }, Veq - 0.3).reactions[0].rate[0];
+  assert.ok(Math.abs(r / sol.ports[0].rates[0][0] - 1) < 1e-9, `${r} vs ${sol.ports[0].rates[0][0]}`);
 });

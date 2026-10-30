@@ -71,6 +71,7 @@ recipes.
 | Concentration polarization | `i = i_lim tanh(V/4V_T)`, incl. galvanostatic and load modes | 2e-4 |
 | Butler–Volmer electrode | Nernst equilibrium; mixed kinetic/diffusion closed form | 5e-4 |
 | Marcus–Hush–Chidsey electrode | its integral against mpmath at 30 digits, exact identities (mirror about a = λ, slope ½, saturation √(4πλ)) and limits (Marcus's parabola, a single level, Zeng et al.'s closed form within 9%); Nernst equilibrium; mixed kinetic/diffusion closed form, saturating below the limiting current | 1e-12, 1e-13; 5e-4 |
+| Surface species at a face | a tethered couple's Nernst coverages and kept total; its relaxation after a potential step against e^{−kt} (Butler–Volmer and Marcus–Hush–Chidsey); Laviron's voltammogram (peak F²νΓ/4RT, 90.6 mV wide) and adsorption impedance; a Langmuir electrosorption isotherm; hydrogen evolution's steady state through H(ads) (Tafel slopes 118, 39.5, 29.7 mV/dec) | 1e-9; 1e-4; 2e-3, 5e-3; 1e-3; 1e-10; 4e-6 |
 | Redox couple between inert electrodes | Nernst level of Fe³⁺/Fe²⁺; the couple's total conserved at equilibrium and under current | 1e-9; 1e-10 |
 | Interface conductance and ion transfer | series 1/G; BV rate law at the interface state | 1e-4; 1e-8 |
 | Mass action | `c(H⁺)c(OH⁻) = K_w` from standard potentials; moiety conservation | 1e-9 |
