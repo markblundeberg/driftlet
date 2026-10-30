@@ -275,6 +275,18 @@ const devices = {
   'adsorbing, crowded': () => lattice(adsorbing(), ['Na+', 'Cl-', 'S0'], 2000),
   'adsorbing on a floating electrode, Marcus–Hush–Chidsey': () => adsorbing({ lambda: units.eV(0.4) }),
   'a held electrode port, Marcus–Hush–Chidsey': () => { const d = adsorbing({ lambda: units.eV(0.6) }); d.ports[0] = { ...d.ports[0], I: undefined, V: -0.2 }; return d; },
+  // where a reaction's bare sites forward and back differ (m ≠ Δ): written as a reduction, and on bare
+  // metal with no surface species of its own (a cold review: every device above had m = Δ)
+  'a held electrode port, Marcus–Hush–Chidsey, written as a reduction': () => {
+    const d = adsorbing({ lambda: units.eV(0.4) });
+    d.ports[0] = { ...d.ports[0], I: undefined, V: 0.3, reactions: [{ equation: 'Cads + e- = S0 + OH-', k0: 1e-4, lambda: units.eV(0.4) }] };
+    return d;
+  },
+  'a held electrode port, on bare metal beside an adsorbate': () => {
+    const d = adsorbing({ lambda: units.eV(0.4) });
+    d.ports[0] = { ...d.ports[0], I: undefined, V: 0.3, reactions: [...d.ports[0].reactions, { equation: 'S0 + OH- = e-', k0: 1e-6, bare: true, lambda: units.eV(0.7) }, { equation: 'S0 + OH- = e-', k0: 1e-6, bare: true, alpha: 0.4 }] };
+    return d;
+  },
   // A contact at I = 0 passing K⁺, its charge in the law: capacitive, bulk; a membrane port's.
   'a capacitive contact passing K⁺': () => capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: Kc } }),
   'a capacitive contact, crowded': () => lattice(capCell({ contact: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: Kc } }), ['Na+', 'K+', 'Cl-'], 3000),
@@ -406,6 +418,11 @@ for (const [name, def] of Object.entries(devices)) {
     const step = checkInside(def(), (d) => d.advance(1e-3, { tol: 1e-6 }), (s, dt) => Number.isFinite(dt));
     assert.ok(step, 'no time step was checked');
     assert.deepEqual(step.slice(0, 5), [], 'a time step');
+    // and at a step of 1e-4 s: an adaptive run's first steps are short, and a surface's storage then
+    // buries its reactions' entries under the harness's floor (a cold review of MHC at ports)
+    const moderate = checkInside(def(), (d) => (d.advance(1e-3, { tol: 1e-6 }), d.solver.step(1e-4)), (s, dt) => dt === 1e-4, { nth: 1 });
+    assert.ok(moderate, 'no step of 1e-4 s was checked');
+    assert.deepEqual(moderate.slice(0, 5), [], 'a step of 1e-4 s');
   });
 }
 
