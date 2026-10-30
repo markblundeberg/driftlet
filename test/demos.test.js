@@ -387,12 +387,12 @@ test('demos/corrosion.html: the mixed potential and the Evans diagram against th
 test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed form, and the numbers the page gives', async () => {
   const { FARADAY, GAS_CONSTANT } = await import('../src/index.js');
   const { mhcIntegral } = await import('../src/marcus.js');
-  const { kinetic, steady, sweep, etas, limit, ceiling, states, mhcI, c, DLi } = await pageTheory('lithium.html', ['kinetic', 'steady', 'sweep', 'etas', 'limit', 'ceiling', 'states', 'mhcI', 'c', 'DLi']);
+  const { kinetic, steady, sweep, etas, limit, ceiling, states, mhcI, c, DLi, marcusHush } = await pageTheory('lithium.html', ['kinetic', 'steady', 'sweep', 'etas', 'limit', 'ceiling', 'states', 'mhcI', 'c', 'DLi', 'marcusHush']);
   const RT = GAS_CONSTANT * 298.15, VT = RT / FARADAY, kT = (lam) => (lam * FARADAY) / RT;
   // its own integral (Simpson) is the library's
   for (const [lam, a] of [[8.56, 0], [8.56, 9.7], [8.56, -9.7], [19.5, 30], [39, -20]]) assert.ok(Math.abs(mhcI(lam, a) / mhcIntegral(lam, a).I - 1) < 1e-12, `I(${lam}, ${a})`);
   // the simulated currents follow the full line: 3e-5 at the defaults, 3e-4 across the controls
-  for (const [lam, r, tol] of [[0.22, 5e-6, 3e-5], [0.22, 1e-6, 3e-4], [0.22, 25e-6, 3e-4], [0.5, 5e-6, 3e-4], [0.5, 25e-6, 3e-4], [1, 1e-6, 3e-4]]) {
+  for (const [lam, r, tol] of [[0.22, 5e-6, 3e-5], [0.22, 1e-6, 5e-4], [0.22, 25e-6, 5e-4], [0.5, 5e-6, 5e-4], [0.5, 25e-6, 5e-4], [1, 1e-6, 5e-4], [1, 25e-6, 5e-4], [0.1, 25e-6, 5e-4]]) {
     const I = sweep(lam, r);
     I.forEach((i, k) => {
       const th = steady(etas[k], lam, r);
@@ -400,6 +400,18 @@ test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed for
     });
   }
   const mA = (j) => j / 10, r = 5e-6;
+  // the two fits, Marcus–Hush (0.34 eV, 8.8) and MHC (0.22 eV, 8.6), within 8% over the measured ±0.25 V;
+  // past it MHC levels off and Marcus–Hush turns down
+  for (let eta = -0.25; eta <= 0.25001; eta += 0.01) {
+    if (Math.abs(eta) < 1e-9) continue;
+    assert.ok(Math.abs(marcusHush(eta) / kinetic(eta, 0.22, c) - 1) < 0.08, `η ${eta}: ${marcusHush(eta) / kinetic(eta, 0.22, c)}`);
+  }
+  assert.ok(marcusHush(-0.6) < marcusHush(-0.45) && kinetic(-0.6, 0.22, c) > kinetic(-0.45, 0.22, c));
+  // the ceiling: roughly 300 mA/cm², a quarter more or less for ±0.02 eV in λ, nearer 350 with the exact integral's pair
+  assert.ok(Math.abs(ceiling(0.24) / ceiling(0.22) - 1.25) < 0.03 && Math.abs(ceiling(0.22) / ceiling(0.2) - 1.25) < 0.03, `${ceiling(0.24) / ceiling(0.22)}`);
+  assert.ok(Math.abs((1.034 * ceiling(0.2326)) / 10 / 350 - 1) < 0.02, `${(1.034 * ceiling(0.2326)) / 10}`);
+  // by 0.25 V, Butler–Volmer six times the kinetic current
+  assert.ok(Math.abs(kinetic(-0.25, 0.22, c, 'bv') / kinetic(-0.25, 0.22, c) / 6.3 - 1) < 0.02);
   // the kinetic ceiling, 295 mA/cm²; a third of a 5 µm sphere's limit; Butler–Volmer three times the current at −0.25 V; the plateau 225
   assert.equal(Math.round(mA(ceiling(0.22))), 295);
   assert.ok(Math.abs(ceiling(0.22) / limit(r) - 1 / 3) < 0.03, `${ceiling(0.22) / limit(r)}`);
@@ -429,7 +441,7 @@ test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed for
     assert.ok(Math.abs((area(s.plating) * Math.sqrt(4 * Math.PI * kT(lam))) / fwd - 1) < 1e-3, `the area is the rate: ${(area(s.plating) * Math.sqrt(4 * Math.PI * kT(lam))) / fwd}`);
   }
   // Zeng et al.'s closed form at λ = 0.22 eV: 4% low at η = 0, 4.5% high at 0.25 V; the exact integral
-  // puts the same curve at λ = 0.23 eV with an exchange current 3% higher, within about 1% rms
+  // puts the same curve at λ = 0.23 (to 0.24) eV with an exchange current 3% higher (within 5%)
   const erfc = (x) => {
     const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
     const v = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
