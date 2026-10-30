@@ -463,3 +463,43 @@ test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed for
   const kappa = (FARADAY * FARADAY * c * (DLi + (DLi * 0.62) / 0.38)) / RT;
   assert.ok(Math.abs(kappa - 2.4) < 0.05, `${kappa}`);
 });
+
+test("demos/chidsey.html: Chidsey's experiment, the fitted rates against the theory, and the numbers the page gives", async () => {
+  const { mhcIntegral } = await import('../src/marcus.js');
+  const { step, rate, etas, mhcI, kT, A, states } = await pageTheory('chidsey.html', ['step', 'rate', 'etas', 'mhcI', 'kT', 'A', 'states']);
+  for (const [lam, a] of [[33.1, 0], [33.1, 30], [33.1, -30], [19.5, 15]]) assert.ok(Math.abs(mhcI(lam, a) / mhcIntegral(lam, a).I - 1) < 1e-12);
+  // the rate constants fitted to the simulated decays, against the theory: 2e-4, across η, T and λ
+  for (const [T, lam] of [[298.15, 0.85], [274.15, 0.85], [320.15, 0.5], [298.15, 1.2]]) {
+    for (const e of [-0.9, -0.3, 0.1, 0.5, 0.8]) {
+      const s = step(e, lam, T);
+      assert.ok(Math.abs(s.k / rate(e, lam, T) - 1) < 2e-4, `T ${T}, λ ${lam}, η ${e}: ${s.k} vs ${rate(e, lam, T)}`);
+    }
+  }
+  assert.equal(etas.length, 18);
+  // at the formal potential 1.35 s⁻¹ at 25 °C, 0.61 at 1 °C, 2.55 at 47 °C; the ceiling 3.7e4 s⁻¹
+  const k0 = (T) => rate(1e-9, 0.85, T) / 2;
+  assert.ok(Math.abs(k0(298.15) - 1.35) < 0.005 && Math.abs(k0(274.15) - 0.61) < 0.005 && Math.abs(k0(320.15) - 2.55) < 0.005);
+  assert.ok(Math.abs(A * kT(298.15) * Math.sqrt((4 * Math.PI * 0.85) / kT(298.15)) / 3.7e4 - 1) < 0.01);
+  // by 0.8 V: Butler–Volmer 500 times faster; one-level Marcus at its peak, η = λ; the temperature 10% there, ×4 at E°′
+  assert.ok(Math.abs(rate(0.8, 0.85, 298.15, 'bv') / rate(0.8, 0.85, 298.15) / 523 - 1) < 0.01);
+  const mk = (e) => rate(e, 0.85, 298.15, 'marcus');
+  assert.ok(mk(0.85) > mk(0.8) && mk(0.85) > mk(0.9));
+  assert.ok(Math.abs(rate(0.8, 0.85, 320.15) / rate(0.8, 0.85, 274.15) - 1.10) < 0.01 && Math.abs(k0(320.15) / k0(274.15) - 4.2) < 0.05);
+  // the ceiling's share: half for the oxidation at η = λ, 41% for the sum at 0.8 V, 99.9% by 1.5 V
+  const ceil = (T) => A * kT(T) * Math.sqrt((4 * Math.PI * 0.85) / kT(T)), L25 = 0.85 / kT(298.15);
+  assert.ok(Math.abs((A * kT(298.15) * mhcI(L25, L25)) / ceil(298.15) - 0.5) < 1e-9);
+  assert.ok(Math.abs(rate(0.8, 0.85, 298.15) / ceil(298.15) - 0.41) < 0.005 && rate(1.5, 0.85, 298.15) / ceil(298.15) > 0.998);
+  // the activation energy at the formal potential, 0.24 eV (λ/4 = 0.21); 2.7 s⁻¹ for the step's relaxation there
+  const Ea = (Math.log(k0(320.15) / k0(274.15)) * (kT(298.15) / 298.15)) / (1 / 274.15 - 1 / 320.15); // (R/F = kT/T)
+  assert.ok(Math.abs(Ea - 0.2365) < 0.001, `${Ea}`);
+  assert.ok(Math.abs(rate(1e-9, 0.85, 298.15) - 2.7) < 0.01);
+  // with the coupling held instead of A (A ∝ 1/√T): 2% at 0.8 V, 3.9-fold at the formal potential
+  const fixed = (e, T) => rate(e, 0.85, T) * Math.sqrt(298.15 / T);
+  assert.ok(Math.abs(fixed(0.8, 320.15) / fixed(0.8, 274.15) - 1.018) < 0.002 && Math.abs(fixed(1e-9, 320.15) / fixed(1e-9, 274.15) - 3.90) < 0.01);
+  // Gerischer's overlaps are the oxidation and reduction rates: their areas against the integral
+  for (const [e, lam, T] of [[0.5, 0.85, 298.15], [-0.3, 0.6, 320.15]]) {
+    const E = Array.from({ length: 4001 }, (_, k) => -3 + 0.0015 * k), s = states(e, lam, T, E), area = (v) => v.reduce((t, x) => t + x, 0) * 0.0015;
+    const L = lam / kT(T), want = mhcI(L, e / kT(T)) / Math.sqrt(4 * Math.PI * L);
+    assert.ok(Math.abs(area(s.oxidation) / want - 1) < 1e-3 && Math.abs(area(s.reduction) / (mhcI(L, -e / kT(T)) / Math.sqrt(4 * Math.PI * L)) - 1) < 1e-3);
+  }
+});

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Electron transfer through a monolayer</title>
+<meta name="description" content="Chidsey's experiment: ferrocene held at the end of a monolayer on gold, its electron transfer rate measured by potential steps against the driving force and temperature, Marcus–Hush–Chidsey kinetics against Butler–Volmer and one-level Marcus theory.">
+<meta property="og:title" content="Electron transfer through a monolayer · driftlet">
+<meta property="og:description" content="Chidsey's experiment: ferrocene held at the end of a monolayer on gold, its electron transfer rate measured by potential steps against the driving force and temperature, Marcus–Hush–Chidsey kinetics against Butler–Volmer and one-level Marcus theory.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/chidsey.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/chidsey.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Electron transfer through a monolayer: Chidsey's experiment</h1>
+  <p>Ferrocene held at the end of a long alkanethiol in a monolayer on gold, in perchloric acid: nothing
+    diffuses, and the chain slows the electron's tunnelling into milliseconds, so after a potential step
+    the ferrocene's charge relaxes at its electron transfer rate alone, and the current decays as a single
+    exponential. Its rate constant, step by step, against the overpotential, is the plot Chidsey made in
+    1991, with the parameters he fitted: it bends away from Butler–Volmer's straight line toward a ceiling,
+    as Marcus–Hush–Chidsey kinetics say (where one-level Marcus theory would turn down, past η = λ). The
+    top panel is why. Vary the step's overpotential η, the temperature and the reorganization energy λ.
+    (More about the model below.)</p>
+  <div class="controls">
+    <label>η <input id="eta" type="range" min="-0.9" max="0.9" step="0.1" value="0.5"><output id="etaOut"></output></label>
+    <label>T <input id="T" type="range" min="1" max="47" step="1" value="25"><output id="TOut"></output></label>
+    <label>λ <input id="lam" type="range" min="0.4" max="1.2" step="0.05" value="0.85"><output id="lamOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="states"></div>
+    <div><p class="note">After the step: the current, on a log scale, and the line fitted to it</p><canvas id="decay"></canvas></div>
+    <div><p class="note">The fitted rate constant against η, step by step (the theory's curves run on past the steps)</p><canvas id="rates"></canvas></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>Before an electron can leave a ferrocene for the gold (or arrive), the solvent and the molecule around
+    it have to rearrange, as if the charge had already moved; λ is what the whole rearrangement would cost
+    with the electron still in place. Marcus's theory puts the barrier at (λ − D)²/4λ for a driving force D
+    (the free energy the transfer releases), so for one electron level the rate grows with D up to D = λ and
+    falls past it (his inverted region: the dotted line). A metal offers a band of levels, filled to its
+    Fermi level, with an empty level at every energy, the activationless one among them. Summed over them,
+    the rate climbs until the levels at which the transfer is activationless are all on offer; driving
+    harder only adds levels deep in the inverted region, which give almost nothing, and the rate levels
+    off. In the top panel (electron energy upward, from the couple's
+    formal level, at the step's start, when half the ferrocene is oxidised), ferrocene's filled states
+    spread over a Gaussian λ below that level and ferrocenium's empty ones λ above, each about √(4λkT) wide
+    (Gerischer's picture of the couple's states). Oxidation
+    takes electrons from the filled states above the Fermi level into the metal's empty ones, the shaded
+    overlap; reduction the reverse. The rate constant the step measures is their sum,
+    k = A kT [I(λ, η) + I(λ, −η)], with I the integral over the band in units of kT.</p>
+  <p><a href="https://pubmed.ncbi.nlm.nih.gov/17847385/">Chidsey (Science, 1991)</a> held ferrocene a fixed
+    distance from gold by self-assembling a mixed thiol monolayer, its ferrocene on a 16-methylene chain, and
+    measured its electron transfer in 1 M HClO₄ from 1 to 47 °C over reaction free energies from −1.0 to
+    +0.8 eV: rate constants from 1 per second to 2 × 10⁴ per second, which Marcus–Hush–Chidsey kinetics
+    fitted reasonably with λ = 0.85 eV and a tunnelling prefactor A = 7 × 10⁴ s⁻¹ eV⁻¹, this page's values
+    (A for that chain: each methylene cuts the tunnelling roughly e-fold, which is what puts these rates
+    within reach of a potential step, ahead of the cell's own charging time). Those put the rate at the
+    formal potential at 1.35 s⁻¹ each way at 25 °C, so 2.7 s⁻¹ for the relaxation a step measures, which
+    Chidsey's group later quoted as 2.5 s⁻¹ measured (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3434967/">Devaraj
+    and colleagues, 2006</a>); 0.61 each way at 1 °C, 2.55 at 47 °C, an activation energy of 0.24 eV, a
+    little above λ/4. The ceiling is A kT √(4πλ/kT) = 3.7 × 10⁴ s⁻¹, half of which the oxidation reaches at
+    η = λ; at 0.8 V the rate is 41% of it, and by 1.5 V it has all but reached it (99.9%). By 0.8 V Butler–Volmer, with
+    the same rate at the formal potential, would be 500 times faster. Driven hard, the rate depends on the
+    temperature far less than at the formal potential: 10% between 1 and 47 °C at 0.8 V against fourfold,
+    and 2% if the electronic coupling, rather than A, is held fixed (A in this form carries 1/√T).</p>
+  <p>The simulation runs the experiment: the gold at the couple's formal potential, a step to η, and the
+    current through the gold as the ferrocene's coverage moves to its new equilibrium. Its rate constant is
+    the slope of a straight line fitted to ln i over the decay (between half a decay time and three), with
+    nothing of the theory in the fit; the points follow the line, worked out apart from the solver (the
+    integral by Simpson's rule), within 2 × 10⁻⁴. The couple is driftlet's surface species at the face
+    (<code>surface</code>, with the reaction <code>Fc + ClO4- = FcClO4 + e-</code>, Marcus–Hush–Chidsey
+    kinetics), and the coverage is held by the face, not carried by the solution.</p>
+  <p>What the model leaves out. Surface species here carry no charge, so ferrocenium is written as an ion
+    pair with perchlorate, which the acid's 1 M supplies, as it's often described in these monolayers
+    (ion pairing there is well documented: Rowe and Creager, Langmuir 7, 2307, 1991). The face has no capacitance, so no charging current follows the step, where a real
+    measurement must separate the two (it decays in microseconds there). All the potential the step applies
+    drives the reaction: the share of the interfacial drop that falls between the ferrocene and the
+    solution isn't modelled, nor the spread of rates a real monolayer shows, nor the solution's resistance
+    between the gold and a reference. The gold's density of states and the coupling are taken as flat in
+    energy; λ and A are held fixed as the temperature changes; and the rate is symmetric, one λ for both
+    directions. Later work has refined each of these (kinetic dispersion, asymmetric forms of the theory):
+    the fit here is the first one, the one that made the case. The ferrocene covers 2% of the monolayer's sites (1.5 × 10⁻¹¹
+    mol/cm², an illustrative coverage: k doesn't depend on it).</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, bath, aqueous, metal } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery, fitted } from './common.js';
+
+const A = 7e4; // Chidsey's tunnelling prefactor, s⁻¹ eV⁻¹
+const sites = 7.6e-6, cover = 0.02; // a full alkanethiol monolayer's sites (mol/m²), and the ferrocene's share
+const acid = { 'H+': 1000, 'ClO4-': 1000 }; // 1 M HClO₄
+const kT = (T) => (GAS_CONSTANT * T) / FARADAY; // eV
+// The Marcus–Hush–Chidsey integral by Simpson's rule, apart from the library's: I(λ, a) =
+// ∫ e^{−(x − λ + a)²/4λ}/(1 + eˣ) dx, with x, λ and a in units of kT.
+function mhcI(lam, a) {
+  const L = lam + Math.abs(a) + 14 * Math.sqrt(lam) + 60, n = 2 * Math.ceil(L / 0.1), h = (2 * L) / n;
+  const f = (x) => Math.exp(-((x - lam + a) * (x - lam + a)) / (4 * lam)) / (1 + Math.exp(x));
+  let s = f(-L) + f(L);
+  for (let k = 1; k < n; k++) s += (k % 2 ? 4 : 2) * f(-L + k * h);
+  return (s * h) / 3;
+}
+// The rate constant a step to η measures (s⁻¹), oxidation's plus reduction's: Chidsey's, A kT [I(η) + I(−η)];
+// Butler–Volmer's with α = ½ and the same rate at the formal potential; and one-level Marcus theory's.
+function rate(eta, lam, T, law = 'mhc') {
+  const kt = kT(T), L = lam / kt, a = eta / kt, k0 = A * kt * mhcI(L, 0);
+  if (law === 'bv') return k0 * 2 * Math.cosh(a / 2);
+  if (law === 'marcus') return k0 * 2 * Math.cosh(a / 2) * Math.exp(-(a * a) / (4 * L));
+  return A * kt * (mhcI(L, a) + mhcI(L, -a));
+}
+// Gold, its face holding ferrocene (Fc) and ferrocenium paired with perchlorate (FcClO4) on the
+// monolayer's sites, half each at the start; the acid; a bath. k0 per area: sites × the rate per
+// ferrocene at the formal potential (each Fc and ClO₄⁻ at its standard state).
+const monolayer = (V, lam, T) => build({
+  T,
+  library: [aqueous(['H+', 'ClO4-'], { epsr: 0 }), metal('Au')],
+  stack: [
+    ohmic(V, ['e-']),
+    layer('Au', 1e-6),
+    {
+      surface: { Fc: { mu0: 0, capacity: sites, theta0: cover / 2 }, FcClO4: { mu0: 0, capacity: sites, theta0: cover / 2 } },
+      reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: sites * A * kT(T) * mhcI(lam / kT(T), 0), lambda: units.eV(lam) }],
+    },
+    layer('water', 1e-6, { c0: acid }),
+    bath(acid, 'ClO4-'),
+  ],
+  grid: { hmin: 1e-8, hmax: 1e-7 },
+});
+// The experiment: the couple's formal potential (where its coverages are equal), a step to η, the current
+// sampled over four of its decay times, and k from a line through ln i between half of one and three.
+function step(eta, lam, T) {
+  const dev = new Device(monolayer(0, lam, T)), cov = dev.solve().interfaces[0].coverage;
+  const E0 = -kT(T) * Math.log(cov.FcClO4 / cov.Fc); // (the step's start: θ_O = θ_R there)
+  dev.set({ contacts: { left: { V: E0 } } });
+  dev.solve();
+  dev.set({ contacts: { left: { V: E0 + eta } } });
+  const span = 4 / rate(eta, lam, T), t = Array.from({ length: 41 }, (_, j) => (span * (j + 1)) / 41);
+  const i = t.map((tj) => dev.advance(tj, { tol: 1e-8 }).current);
+  const fit = t.map((tj, j) => [tj, Math.log(Math.abs(i[j]))]).filter(([tj]) => tj > span / 8 && tj < (3 * span) / 4);
+  const n = fit.length, mx = fit.reduce((s, [x]) => s + x, 0) / n, my = fit.reduce((s, [, y]) => s + y, 0) / n;
+  const slope = fit.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / fit.reduce((s, [x]) => s + (x - mx) * (x - mx), 0);
+  return { t, i, k: -slope, a: my - slope * mx, E0 };
+}
+const etas = Array.from({ length: 19 }, (_, j) => -0.9 + 0.1 * j).filter((e) => Math.abs(e) > 1e-9);
+// Gerischer's picture at the step's start (θ_O = θ_R), on an energy grid E (eV from the formal level,
+// electron energy up): the metal's occupancy, ferrocene's filled and ferrocenium's empty states, and the
+// overlaps whose areas are the oxidation and reduction rates.
+function states(eta, lam, T, E) {
+  const kt = kT(T), w = 4 * lam * kt, norm = 1 / Math.sqrt(Math.PI * w), EF = -eta;
+  const f = E.map((e) => 1 / (1 + Math.exp((e - EF) / kt)));
+  const filled = E.map((e) => norm * Math.exp(-((e + lam) * (e + lam)) / w)), empty = E.map((e) => norm * Math.exp(-((e - lam) * (e - lam)) / w));
+  return { EF, f, filled, empty, oxidation: filled.map((v, k) => v * (1 - f[k])), reduction: empty.map((v, k) => v * f[k]) };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const etaIn = document.getElementById('eta'), TIn = document.getElementById('T'), lamIn = document.getElementById('lam');
+for (const el of [etaIn, TIn, lamIn]) fromQuery(el);
+const eta = () => +etaIn.value, temp = () => 273.15 + +TIn.value, lam = () => +lamIn.value;
+const signed = (v, d = 2) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`;
+const sup = (n) => String(n).replace(/[-0-9]/g, (d) => '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'['-0123456789'.indexOf(d)]);
+const fmt = (v) => (v >= 1000 ? `${(v / 10 ** Math.floor(Math.log10(v))).toFixed(2)} × 10${sup(Math.floor(Math.log10(v)))}` : v.toPrecision(3));
+let run;
+const labels = () => {
+  document.getElementById('etaOut').textContent = `${signed(eta(), 1)} V`;
+  document.getElementById('TOut').textContent = `${TIn.value} °C`;
+  document.getElementById('lamOut').textContent = `${lam().toFixed(2)} eV`;
+};
+function rebuild() {
+  const L = lam(), T = temp();
+  run = { L, T, steps: etas.map((e) => step(e, L, T)) };
+  update();
+}
+function update() {
+  labels();
+  const { L, T, steps } = run, j = etas.reduce((b, e, q) => (Math.abs(e - eta()) < Math.abs(etas[b] - eta()) ? q : b), 0), s = steps[j], e = etas[j];
+  document.getElementById('status').textContent = `step to η ${signed(e, 1)} V: k ${fmt(s.k)} s⁻¹ fitted (theory ${fmt(rate(e, L, T))}) · at the formal potential ${fmt(rate(1e-9, L, T) / 2)} s⁻¹ each way · ceiling ${fmt(A * kT(T) * Math.sqrt((4 * Math.PI * L) / kT(T)))} s⁻¹`;
+  const el = document.getElementById('states');
+  el.innerHTML = statesSvg(e, L, T, fitted(el, 720));
+  const ia = s.i.map((v) => Math.abs(v) / 1e-2), lo = 10 ** Math.floor(Math.log10(Math.min(...ia))), hi = 10 ** Math.ceil(Math.log10(Math.max(...ia)));
+  chart(document.getElementById('decay'), {
+    xlabel: 't (ms)', ylabel: '|i| (µA/cm²)', logy: true, ylim: [lo, hi],
+    series: [
+      { x: s.t.map((t) => t * 1e3), y: s.t.map((t) => Math.exp(s.a - s.k * t) / 1e-2), color: colors[0], width: 1.4, label: `fitted, k = ${fmt(s.k)} s⁻¹` },
+      { x: s.t.map((t) => t * 1e3), y: ia, color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  const Et = Array.from({ length: 301 }, (_, q) => -1.5 + 0.01 * q), low = 10 ** Math.floor(Math.log10(rate(1e-9, L, T) / 2));
+  chart(document.getElementById('rates'), {
+    xlabel: 'η (V)', ylabel: 'k (s⁻¹)', logy: true, ylim: [low, 1e8],
+    series: [
+      { x: Et, y: Et.map((v) => rate(v, L, T)), color: colors[0], width: 1.6, label: 'Marcus–Hush–Chidsey' },
+      { x: Et, y: Et.map((v) => rate(v, L, T, 'bv')), color: colors[1], width: 1, dash: [5, 4], label: 'Butler–Volmer, α = ½' },
+      { x: Et, y: Et.map((v) => rate(v, L, T, 'marcus')), color: colors[3], width: 1.2, dash: [1.5, 3], label: 'Marcus, one level' },
+      { x: etas, y: steps.map((q) => q.k), color: 'var(--ink)', marker: true, width: 0, label: 'fitted to the simulation' },
+      { x: [e, e], y: [low, 1e8], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'this step' },
+    ],
+  });
+}
+// The states panel: the metal's filled band (left) and the couple's states (right), the overlaps shaded.
+function statesSvg(eta, lam, T, width) {
+  const sigma = Math.sqrt(2 * lam * kT(T)), R = Math.max(0.6, lam + 3.2 * sigma, Math.abs(eta) + 0.15);
+  const E = Array.from({ length: 481 }, (_, k) => -R + (2 * R * k) / 480);
+  const { EF, f, filled, empty, oxidation, reduction } = states(eta, lam, T, E);
+  const H = 330, top = 26, bottom = 30, mid = Math.max(120, Math.round(width * 0.3)), right = width - 10;
+  const y = (e) => top + ((R - e) / (2 * R)) * (H - top - bottom);
+  const peak = Math.max(...empty, ...filled) || 1, gx = (v) => mid + 8 + (v / peak) * (right - mid - 14);
+  const curve = (vals) => `M${gx(0)} ${y(E[0])} ` + vals.map((v, k) => `L${gx(v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${gx(0)} ${y(E.at(-1))} Z`;
+  // (the outline alone, where it stands off its baseline: no line along the axis)
+  const line = (vals) => vals.map((v, k) => (v > 2e-3 * peak ? `${vals[k - 1] > 2e-3 * peak ? 'L' : 'M'}${gx(v).toFixed(1)} ${y(E[k]).toFixed(1)}` : '')).join(' ');
+  const band = `M${mid - 6} ${y(E[0])} ` + f.map((v, k) => `L${(mid - 6 - (mid - 60) * v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${mid - 6} ${y(E.at(-1))} Z`;
+  const muted = 'var(--muted)';
+  const text = (x, yy, s, anchor, color) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="13" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${s}</text>`;
+  const stepE = R > 0.9 ? 0.5 : 0.25, ticks = [];
+  for (let e = -Math.floor(R / stepE) * stepE; e <= R + 1e-9; e += stepE) ticks.push(e);
+  const ef = y(EF), clear = (a, b) => Math.abs(a - b) > 15;
+  return `<svg viewBox="0 0 ${width} ${H}" role="img" aria-label="the gold's filled states up to its Fermi level, and ferrocene's filled and ferrocenium's empty states, each a Gaussian λ from the couple's level; the overlaps are the oxidation and reduction rates" font-family="system-ui, sans-serif" style="width:100%;height:auto;display:block">
+    <path d="${band}" fill="var(--c7)" opacity="0.3"/>
+    <path d="${curve(oxidation)}" fill="var(--c2)" opacity="0.45"/>
+    <path d="${curve(reduction)}" fill="var(--c1)" opacity="0.45"/>
+    <path d="${line(empty)}" fill="none" stroke="var(--c1)" stroke-width="1.3"/>
+    <path d="${line(filled)}" fill="none" stroke="var(--c2)" stroke-width="1.3"/>
+    <line x1="${mid}" x2="${right}" y1="${y(0)}" y2="${y(0)}" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="56" x2="${right}" y1="${ef}" y2="${ef}" stroke="var(--mark)" stroke-width="1.5"/>
+    ${text(60, ef - 6, 'Fermi level', 'start', 'var(--mark)')}
+    ${clear(y(0), ef) ? text(right, y(0) - 5, 'formal level', 'end', muted) : ''}
+    ${text(right - 24, clear(y(lam) - 18, ef) ? y(lam) - 18 : ef - 8, 'Fc⁺: empty', 'end', 'var(--c1)')}
+    ${text(right - 24, clear(y(-lam) + 28, ef) ? y(-lam) + 28 : ef + 18, 'Fc: filled', 'end', 'var(--c2)')}
+    ${text((mid + 56) / 2, H - 10, 'gold', 'middle', muted)}
+    ${text((mid + right) / 2, H - 10, 'ferrocene on the monolayer', 'middle', muted)}
+    ${text(10, 16, 'electron energy ↑ (eV from the couple’s level)', 'start', muted)}
+    ${ticks.map((e) => text(48, y(e) + 4, Math.abs(e) < 1e-9 ? '0' : signed(e), 'end', muted)).join('')}
+  </svg>`;
+}
+for (const el of [TIn, lamIn]) {
+  el.addEventListener('change', rebuild);
+  el.addEventListener('input', labels);
+}
+etaIn.addEventListener('input', update);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>

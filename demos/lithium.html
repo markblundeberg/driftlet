@@ -262,9 +262,11 @@ function statesSvg(eta, L, cs, width) {
   const y = (e) => top + ((R - e) / (2 * R)) * (H - top - bottom);
   const peak = Math.max(...empty, ...filled) || 1, gx = (v) => mid + 8 + (v / peak) * (right - mid - 14);
   const curve = (vals) => `M${gx(0)} ${y(E[0])} ` + vals.map((v, k) => `L${gx(v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${gx(0)} ${y(E.at(-1))} Z`;
+  // (the outline alone, where it stands off its baseline: no line along the axis)
+  const line = (vals) => vals.map((v, k) => (v > 2e-3 * peak ? `${vals[k - 1] > 2e-3 * peak ? 'L' : 'M'}${gx(v).toFixed(1)} ${y(E[k]).toFixed(1)}` : '')).join(' ');
   const band = `M${mid - 6} ${y(E[0])} ` + f.map((v, k) => `L${(mid - 6 - (mid - 60) * v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${mid - 6} ${y(E.at(-1))} Z`;
   const muted = 'var(--muted)';
-  const text = (x, yy, s, anchor, color) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="13">${s}</text>`;
+  const text = (x, yy, s, anchor, color) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="13" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${s}</text>`;
   const step = R > 0.9 ? 0.5 : 0.25, ticks = [];
   for (let e = -Math.floor(R / step) * step; e <= R + 1e-9; e += step) ticks.push(e);
   const ef = y(EF), clear = (a, b) => Math.abs(a - b) > 15; // (a label kept off the Fermi level's)
@@ -272,14 +274,14 @@ function statesSvg(eta, L, cs, width) {
     <path d="${band}" fill="var(--c7)" opacity="0.3"/>
     <path d="${curve(plating)}" fill="var(--c1)" opacity="0.45"/>
     <path d="${curve(stripping)}" fill="var(--c2)" opacity="0.45"/>
-    <path d="${curve(empty)}" fill="none" stroke="var(--c1)" stroke-width="1.3"/>
-    <path d="${curve(filled)}" fill="none" stroke="var(--c2)" stroke-width="1.3"/>
+    <path d="${line(empty)}" fill="none" stroke="var(--c1)" stroke-width="1.3"/>
+    <path d="${line(filled)}" fill="none" stroke="var(--c2)" stroke-width="1.3"/>
     <line x1="${mid}" x2="${right}" y1="${y(0)}" y2="${y(0)}" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3"/>
     <line x1="56" x2="${right}" y1="${ef}" y2="${ef}" stroke="var(--mark)" stroke-width="1.5"/>
     ${text(60, ef - 6, 'Fermi level', 'start', 'var(--mark)')}
     ${clear(y(0), ef) ? text(right, y(0) - 5, 'Li⁺/Li level', 'end', muted) : ''}
-    ${text(right, clear(y(L) - 6, ef) ? y(L) - 6 : ef - 8, 'Li⁺: empty', 'end', 'var(--c1)')}
-    ${text(right, clear(y(-L) + 16, ef) ? y(-L) + 16 : ef + 18, 'Li: filled', 'end', 'var(--c2)')}
+    ${text(right - 24, clear(y(L) - 18, ef) ? y(L) - 18 : ef - 8, 'Li⁺: empty', 'end', 'var(--c1)')}
+    ${text(right - 24, clear(y(-L) + 28, ef) ? y(-L) + 28 : ef + 18, 'Li: filled', 'end', 'var(--c2)')}
     ${text((mid + 56) / 2, H - 10, 'lithium', 'middle', muted)}
     ${text((mid + right) / 2, H - 10, 'Li⁺ and Li at the surface', 'middle', muted)}
     ${text(10, 16, 'electron energy ↑ (eV from the couple’s level)', 'start', muted)}
