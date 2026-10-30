@@ -3,8 +3,15 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.6.1 (2026-10-30)
 
+- A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
+  an adsorbate failed or converged by which reaction was listed first (the start balanced the first
+  without the surface's μ°, volts off; round 17's fuzzer, 45 cold failures).
+- Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
+- Docs: MHC's a° is the concentration (formal) convention; a reactant packing a sub-grid diffuse
+  layer's plane under current is outside what the layer covers (1.9e-3 at 89% full); chemical steps
+  go at a face, not a port; `bare` isn't symmetric under writing a reaction backwards.
 - The myelin demo is drawn against compartmental cables worked out in the page (every arrival within
   1.5 µs); it now settles 400 ms before its first pulse (thin myelin's internodes charge in up to
   ~70 ms), and the speeds its text quotes, taken before rest, are corrected (the nodes' spacing has a
@@ -24,13 +31,6 @@ major version.
   The action potential page's agreement holds away from threshold only, its residual's cause unclaimed;
   heat block as the loss of all-or-none firing; the periaxonal space's K⁺ and depolarization as between
   spikes, not at rest.
-- Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
-- A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
-  an adsorbate failed or converged by which reaction was listed first (the start balanced the first
-  without the surface's μ°, volts off; round 17's fuzzer, 45 cold failures).
-- Docs: MHC's a° is the concentration (formal) convention; a reactant packing a sub-grid diffuse
-  layer's plane under current is outside what the layer covers (1.9e-3 at 89% full); chemical steps
-  go at a face, not a port; `bare` isn't symmetric under writing a reaction backwards.
 
 ## 1.6.0 (2026-10-30)
 
