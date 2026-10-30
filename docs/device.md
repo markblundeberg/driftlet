@@ -400,6 +400,34 @@ experiment:
   reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-6, lambda: units.eV(0.85) }] }
 ```
 
+For a surface wave's usual rate constant (a couple each on one site, converting into the other):
+$`k_s = k_0/\Gamma`$ in s⁻¹, with the solution's participants at $`c_{\mathrm{ref}}`$ (ClO₄⁻ at 1 M here;
+at other concentrations they scale the prefactor, as at any face). $`\alpha`$ belongs to the reaction as
+written: written as an oxidation, as here, driftlet's $`\alpha`$ is the $`1-\alpha`$ of Laviron's papers,
+which give the reduction's. The starting coverages must sum to under 1 (a site is always left bare),
+so a monolayer starts all but fully reduced, and $`\Gamma`$ of the couple is the coverages' sum times the
+capacity. The solution between the face and the reference adds its iR: keep it thin, or count it (10 µm
+of 1 M salt, 1e−6 Ω·m², adds 27 mV to the peak separation at 3·10⁴ V/s). A whole cell, its voltammogram
+peaking at $`0.99\,F^2\nu\Gamma/4RT`$ at 0 V at 0.01 V/s, where $`F\nu/RTk_s`$ is small:
+
+```js nocheck
+const G = 1e-6, ks = 10; // mol of sites per m²; the surface wave's rate constant, 1/s
+const cell = (V) => build({
+  library: [aqueous(['K+', 'ClO4-'], { epsr: 0 }), metal('Au')],
+  stack: [
+    ohmic(V, ['e-']), layer('Au', 1e-6),
+    { surface: { Fc: { mu0: 0, capacity: G, theta0: 0.98 }, FcClO4: { mu0: 0, capacity: G, theta0: 0.01 } },
+      reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: ks * G, alpha: 0.5 }] },
+    layer('water', 100e-9), // thin: its iR is small
+    bath({ 'K+': 1000, 'ClO4-': 1000 }, 'ClO4-'),
+  ],
+});
+const dev = new Device(cell(-0.3));
+dev.solve();
+dev.set({ contacts: { left: { V: triangle({ from: -0.3, to: 0.3, period: 120 }) } } }); // 0.01 V/s
+const { trace } = dev.advance(120, { tol: 1e-5 }); // trace.current against −trace.voltage, anodic positive
+```
+
 Only at a face with a metal on one side (a semiconductor's surface states aren't this), and a node
 has one surface: not where an electrode port's window with a surface or gates reaches the face.
 Validated in test/surface.test.js: a tethered couple's Nernstian coverages and their kept total

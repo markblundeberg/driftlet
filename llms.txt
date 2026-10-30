@@ -138,8 +138,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   `k0: 10`). Butler–Volmer by default (`alpha`, 0.5); `lambda: units.eV(0.5)` in its place makes it
   Marcus–Hush–Chidsey (at a face or an electrode port), for one electron to or from a metal: the same
   k0, a Tafel plot that bends and saturates. A metal's face can carry surface species (`surface: { name: { mu0, capacity, theta0 } }`,
-  Langmuir, neutral), which its reactions name on the metal's side: a tethered couple, an adsorbate;
-  solutions report `interfaces[f].coverage`.
+  Langmuir, neutral), which its reactions name on the metal's side: a tethered couple (its surface
+  wave's k_s = k0/capacity, s⁻¹; α is the reaction's as written), an adsorbate; solutions report
+  `interfaces[f].coverage`.
 - **Grids** grade geometrically from `hmin` at each region's ends up to `hmax`, neighbouring cells
   differing by at most `ratio` (1.2): put `hmin` below the shortest length that matters (a Debye
   length, a depletion edge). Left out, `grid` is a coarse default for a first look; `check()`
