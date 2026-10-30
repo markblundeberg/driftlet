@@ -20,6 +20,28 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A semiconductor electrode's Mott–Schottky plot</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A three-electrode cell: an n-type silicon electrode, a reference electrode and a platinum counter electrode in a beaker of KCl, wired to a potentiostat; a red line runs from the silicon's back contact through the silicon into the solution.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M136 32 V44 H89 V62 M170 32 V58 M204 32 V44 H262 V102"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/>
+      <path class="k-surface" d="M31 98 H309"/>
+      <path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect class="k-insulator" x="78" y="62" width="20" height="106" rx="3"/>
+      <path class="k-ink" d="M89 62 V118" stroke-dasharray="2 2"/>
+      <rect class="k-metal" x="90" y="114" width="3" height="34"/>
+      <rect class="k-semi" x="93" y="114" width="8" height="34"/>
+      <rect class="k-glass" x="164" y="58" width="12" height="96" rx="6"/>
+      <path class="k-ink" d="M170 58 V136"/><rect class="k-insulator" x="166" y="149" width="8" height="5"/>
+      <rect class="k-metal" x="258" y="102" width="8" height="54" rx="1"/>
+      <path class="k-cut" d="M91 131 H140"/><path class="k-cut-head" d="M146 131 L137 126.5 V135.5 Z"/>
+      <text x="89" y="186" text-anchor="middle">n-Si</text>
+      <text x="170" y="172" text-anchor="middle">reference</text>
+      <text x="262" y="172" text-anchor="middle">Pt</text>
+      <text x="222" y="122" text-anchor="middle" class="k-small">KCl in water</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>n-type silicon in KCl, the face between them blocking, its capacitance read from a simulated impedance
     measurement at each potential: 1/C² against the potential is a straight line while the silicon's surface
     is depleted of electrons, its slope giving the doping and its intercept the flat-band potential. The
@@ -114,7 +136,7 @@
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, semiconductor, aqueous } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, levels } from './common.js';
+import { showCode, fromQuery, levels, sliceNotation } from './common.js';
 
 const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 const si = semiconductor('Si', { T }), aq = aqueous(['K+', 'Cl-']), dipole = 0.39; // V: Si's alignment against the solution, an assumption
@@ -313,6 +335,7 @@ for (const el of [circuitIn, loIn, hiIn, EIn]) el.addEventListener('input', upda
 circuitIn.addEventListener('change', update);
 addEventListener('resize', update);
 rebuild();
+document.getElementById('slice').textContent = sliceNotation(cell(0, { N: 1, c: 100 }), { Si: 'n-Si', water: 'KCl', bath: 'bulk KCl' });
 showCode();
 </script>
 </body>

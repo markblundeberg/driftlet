@@ -23,6 +23,30 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>An action potential: Hodgkin and Huxley's channels, and the ions they let through</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A squid giant axon lying in a dish of sea water, a stimulating pipette in it; a magnified view of its surface shows a red line crossing the membrane from the sea water into the axoplasm (behind a sheath of Schwann cells, when chosen).">
+      <defs><clipPath id="lens"><circle cx="282" cy="66" r="40"/></clipPath></defs>
+      <path class="k-liquid" d="M11 126 H329 V192 Q329 201 320 201 H20 Q11 201 11 192 Z"/><path class="k-surface" d="M11 126 H329"/>
+      <path class="k-glass" d="M10 110 V192 Q10 202 20 202 H320 Q330 202 330 192 V110"/>
+      <path d="M30 152 H232 V180 H30 Q20 180 20 166 Q20 152 30 152 Z" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1.3"/>
+      <ellipse cx="232" cy="166" rx="5" ry="14" fill="color-mix(in srgb, var(--c4) 24%, var(--panel))" stroke="var(--ink)" stroke-width="1.3"/>
+      <path class="k-glass" d="M60 30 L92 159 M70 30 L93 159"/>
+      <text x="64" y="24" text-anchor="middle" class="k-small">stimulus</text>
+      <text x="126" y="195" text-anchor="middle" class="k-small">squid giant axon, in sea water</text>
+      <circle cx="200" cy="152" r="5" fill="none" stroke="var(--muted)" stroke-width="1"/>
+      <path d="M204 149 L248 84 M197 148 L244 66" stroke="var(--muted)" stroke-width="0.8" fill="none"/>
+      <g clip-path="url(#lens)">
+        <rect x="240" y="24" width="84" height="84" fill="var(--panel)"/>
+        <rect x="240" y="24" width="84" height="84" class="k-liquid"/>
+        <circle cx="330" cy="140" r="90" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="2.2"/>
+        <circle data-space="fh" cx="330" cy="140" r="99" fill="none" stroke="color-mix(in srgb, var(--c3) 45%, var(--muted))" stroke-width="7" style="display: none"/>
+        <path class="k-cut" d="M254 42 L287.5 85.5"/><path class="k-cut-head" d="M291.2 90.3 L283.3 87.2 L289.3 82.6 Z"/>
+        <text x="286" y="42" text-anchor="middle" class="k-small">out</text><text x="304" y="80" text-anchor="middle" class="k-small">in</text>
+      </g>
+      <circle cx="282" cy="66" r="40" fill="none" stroke="var(--ink)" stroke-width="1.3"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A squid axon's membrane with Hodgkin and Huxley's voltage-gated Na⁺ and K⁺ channels, stimulated by a
     brief current every so often. Past threshold, Na⁺ channels open, which depolarizes the membrane and opens
     more of them; then they inactivate, K⁺ channels open, and the membrane swings back below rest. Underneath,
@@ -132,7 +156,7 @@ import { Device } from '../src/index.js';
 import { build, layer, bath, aqueous, injector, hodgkinHuxley, traces, speciesRole, particles } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, onScreen, fitted } from './common.js';
+import { showCode, fromQuery, pauser, onScreen, fitted, sliceNotation } from './common.js';
 
 const IONS = ['Na+', 'K+', 'Cl-'];
 const OUT = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, IN = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
@@ -260,7 +284,10 @@ function start() {
     ...['m', 'h', 'n'].map((g) => ({ interface: space.face, gate: g })),
     { x: space.x, species: 'K+', region: space.outside },
   ];
-  d = new Device(axon(p));
+  const def = axon(p);
+  d = new Device(def);
+  for (const g of document.querySelectorAll('.sketch [data-space]')) g.style.display = g.dataset.space === p.space ? '' : 'none';
+  document.getElementById('slice').textContent = sliceNotation(def, { bath: 'bulk sea water', outside: 'sea water', sea: 'sea water', space: 'space' }, (f) => (f.gates ? 'membrane' : f.phi === 'neutral' ? 'Schwann cells' : undefined));
   swarm = null;
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (the space fills, too)
   d.set({ ports: { stim: { I: stimulus(p) } } });

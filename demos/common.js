@@ -128,3 +128,25 @@ export function pauser(controls, resume, { watch } = {}) {
   controls.append(button);
   return { get paused() { return paused(); } };
 }
+
+// The device's slice in cell notation, from its definition (the one the solver is given), so the
+// caption under a page's sketch can't drift from the model: each region (layers of one name
+// merged) and its thickness, between what holds each end. `names` renames a region or an end
+// ('contact', 'bath', 'closed'); `face(interface)` names a face worth showing (a membrane), or not.
+export function sliceNotation(def, names = {}, face = () => undefined) {
+  const parts = [];
+  def.regions.forEach((r, i) => {
+    const f = i > 0 ? face(def.interfaces[i - 1]) : undefined;
+    if (f) parts.push({ n: f });
+    const n = names[r.name ?? r.material] ?? r.name ?? r.material, last = parts.at(-1);
+    if (last && last.n === n && last.L !== undefined) last.L += r.length;
+    else parts.push({ n, L: r.length });
+  });
+  const size = (L) => {
+    const [s, u] = L >= 1e-3 ? [1e3, 'mm'] : L >= 1e-6 ? [1e6, 'µm'] : [1e9, 'nm'];
+    return `${+(L * s).toPrecision(2)} ${u}`;
+  };
+  const end = (c) => (c?.bath ? names.bath ?? 'bath' : c?.terminal || c?.V !== undefined ? names.contact ?? 'contact' : names.closed ?? 'closed');
+  const keep = (t) => t.replaceAll(' ', '\u00a0').replaceAll('-', '\u2011'); // (each part on one line)
+  return [end(def.contacts?.left), ...parts.map((p) => (p.L === undefined ? p.n : `${p.n} ${size(p.L)}`)), end(def.contacts?.right)].map(keep).join(' | ');
+}

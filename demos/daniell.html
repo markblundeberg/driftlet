@@ -20,6 +20,35 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A Daniell cell, discharged through a load</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A Daniell cell: a zinc rod in zinc sulfate and a copper rod in copper sulfate, joined by a salt bridge (or, chosen instead, the zinc in a porous pot standing in the copper sulfate), the two metals wired through a load; a red line runs from the zinc through the solutions and the separator to the copper.">
+      <path class="k-ink" d="M150 20 l4 -6 l6 12 l6 -12 l6 12 l6 -12 l4 6 H284 V58"/><text x="170" y="40" text-anchor="middle" class="k-small">load</text>
+      <g data-sep="bridge">
+        <path class="k-liquid" d="M17 100 H155 V194 Q155 203 146 203 H26 Q17 203 17 194 Z M185 100 H323 V194 Q323 203 314 203 H194 Q185 203 185 194 Z"/>
+        <path class="k-surface" d="M17 100 H155 M185 100 H323"/>
+        <path class="k-glass" d="M16 78 V194 Q16 204 26 204 H146 Q156 204 156 194 V78 M184 78 V194 Q184 204 194 204 H314 Q324 204 324 194 V78"/>
+        <path d="M136 150 V72 Q136 58 150 58 H190 Q204 58 204 72 V150" fill="none" stroke="var(--muted)" stroke-width="14"/>
+        <path d="M136 151 V72 Q136 58 150 58 H190 Q204 58 204 72 V151" fill="none" stroke="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke-width="11"/>
+        <path class="k-cut" d="M63 132 H128 Q136 132 136 124 V72 Q136 58 150 58 H190 Q204 58 204 72 V124 Q204 132 212 132 H271"/><path class="k-cut-head" d="M277 132 L268 127.5 V136.5 Z"/>
+        <text x="96" y="186" text-anchor="middle" class="k-small">ZnSO₄</text><text x="244" y="186" text-anchor="middle" class="k-small">CuSO₄</text>
+        <text x="170" y="76" text-anchor="middle" class="k-small">KCl</text>
+        <path class="k-ink" d="M56 58 V20 H150"/><rect class="k-metal" x="50" y="58" width="12" height="104" rx="1"/><text x="56" y="176" text-anchor="middle">Zn</text>
+      </g>
+      <g data-sep="pot" style="display: none">
+        <path class="k-liquid" d="M41 100 H299 V194 Q299 203 290 203 H50 Q41 203 41 194 Z"/>
+        <path class="k-surface" d="M41 100 H299"/>
+        <path class="k-glass" d="M40 78 V194 Q40 204 50 204 H290 Q300 204 300 194 V78"/>
+        <path d="M78 70 V178 Q78 190 90 190 H142 Q154 190 154 178 V70" fill="color-mix(in srgb, var(--c2) 9%, var(--panel))" stroke="color-mix(in srgb, var(--c2) 40%, var(--muted))" stroke-width="4"/>
+        <path class="k-liquid" d="M80 98 H152 V178 Q152 188 142 188 H90 Q80 188 80 178 Z"/>
+        <path class="k-cut" d="M107 132 H271"/><path class="k-cut-head" d="M277 132 L268 127.5 V136.5 Z"/>
+        <text x="116" y="203" text-anchor="middle" class="k-small">porous pot</text>
+        <text x="131" y="180" text-anchor="middle" class="k-small">ZnSO₄</text><text x="226" y="186" text-anchor="middle" class="k-small">CuSO₄</text>
+        <path class="k-ink" d="M101 58 V20 H150"/><rect class="k-metal" x="95" y="58" width="12" height="96" rx="1"/><text x="101" y="166" text-anchor="middle">Zn</text>
+      </g>
+      <rect x="278" y="58" width="12" height="104" rx="1" stroke="var(--ink)" stroke-width="1.1" fill="color-mix(in srgb, var(--c2) 55%, var(--muted))"/><text x="284" y="176" text-anchor="middle">Cu</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Zn | ZnSO₄ | salt bridge | CuSO₄ | Cu, with every ion simulated, the bridge's included: the voltage across
     the load, the electrode levels that set it, the salt leaking out
     of the bridge, and where the voltage goes. Choose Daniell's own porous pot instead of the bridge, a lighter
@@ -93,7 +122,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, half, level, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser, jumpTo, sliceNotation } from './common.js';
 
 const zinc = half('Zn2+ + 2 e- = Zn(s)', { 'Zn(s)': 0 });
 const copper = half('Cu2+ + 2 e- = Cu(s)', { 'Cu(s)': 0 });
@@ -177,7 +206,10 @@ function start() {
   // backward-Euler step (the trace of Cu²⁺ at the zinc plates out at once: a stiff start that a
   // single implicit step takes in its stride), then the load: I = (0 − V)/R.
   locate();
-  dev = new Device(cell(emf0, sep.value));
+  const def = cell(emf0, sep.value);
+  dev = new Device(def);
+  for (const g of document.querySelectorAll('.sketch [data-sep]')) g.style.display = g.dataset.sep === sep.value ? '' : 'none';
+  document.getElementById('slice').textContent = sliceNotation(def, { anolyte: 'ZnSO₄', catholyte: 'CuSO₄', frit: sep.value === 'pot' ? 'premixed' : 'frit' });
   dev.step(1e-6);
   dev.set({ contacts: { right: { V: 0, R: R() } } });
   run = { t0: dev.solver.time, t: [], V: [], q: [0], energy: 0, I: 0, plated: 0, copper: copperLeft(dev.solution()), stop: jumpTo() || Infinity };

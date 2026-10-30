@@ -88,6 +88,7 @@ nav.site .brand svg { width: 30px; height: 26px; flex: none; }
 .mark-dot { fill: var(--mark-dot); }
 
 .controls {
+  clear: both;
   position: sticky; /* stays in reach while you scroll down to the lower plots */
   top: 0;
   z-index: 10;
@@ -182,3 +183,22 @@ footer.site { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--l
 @media (prefers-reduced-motion: reduce) {
   .card, .card:hover { transition: none; transform: none; }
 }
+
+/* A page's sketch: the real thing, in ink, and the line its one dimension runs along in the accent. */
+.sketch { float: right; width: 340px; margin: 4px 0 10px 24px; }
+.sketch svg { display: block; width: 100%; height: auto; overflow: visible; }
+.sketch figcaption { font-size: 12.5px; line-height: 1.4; color: var(--muted); margin-top: 2px; }
+.sketch figcaption b { color: var(--mark); font-weight: 600; }
+.sketch text { font: 11px system-ui, sans-serif; fill: var(--ink); }
+.sketch .k-ink { fill: none; stroke: var(--ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.sketch .k-glass { fill: none; stroke: var(--muted); stroke-width: 1.3; }
+.sketch .k-liquid { fill: color-mix(in srgb, var(--c1) 13%, transparent); stroke: none; }
+.sketch .k-surface { stroke: color-mix(in srgb, var(--c1) 55%, transparent); stroke-width: 1; }
+.sketch .k-insulator { fill: var(--line); stroke: var(--ink); stroke-width: 1.1; }
+.sketch .k-metal { fill: color-mix(in srgb, var(--muted) 55%, var(--panel)); stroke: var(--ink); stroke-width: 1.1; }
+.sketch .k-semi { fill: color-mix(in srgb, var(--c1) 30%, #3a3f4a); stroke: var(--ink); stroke-width: 1.1; }
+.sketch .k-box { fill: var(--panel); stroke: var(--ink); stroke-width: 1.3; }
+.sketch .k-cut { fill: none; stroke: var(--mark); stroke-width: 2.6; stroke-linecap: round; }
+.sketch .k-cut-head { fill: var(--mark); }
+.sketch .k-small { font-size: 9.5px; fill: var(--muted); }
+@media (max-width: 720px) { .sketch { float: none; width: 100%; max-width: 420px; margin: 8px auto 12px; } }
