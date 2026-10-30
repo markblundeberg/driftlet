@@ -285,12 +285,24 @@ test("a reaction at a crowded plane sees what the resolved lattice's does, a pac
   assert.ok(Math.abs(r - g) < 1e-5 * g, `R_dc ${g} Ω·cm², resolved ${r}`); // (extrapolated, 46.2902605: 4e-9)
   const d = new Device(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false)).solve().interfaces[0].diffuse.right;
   assert.ok(d.plane['Cl-'] > 0.4 * cMax, `the plane's Cl⁻ ${d.plane['Cl-']} of ${cMax}`);
-  // At zeroCharge −0.3 V the plane is 99.7% ferrocyanide, and the ferricyanide and K⁺ it shuts out
-  // pass it only through its resistance: R_dc 5.5e6 Ω·cm², the resolved electrode's (cells to
-  // 0.01, 0.005, 0.0025 nm, ratio 1.025, 1.0125, 1.00625: 5497820.88, 5497769.67, 5497756.78,
-  // extrapolated 5497752.48) to 1e-6. Without the resistance it came out 6% high.
-  const packed = rdc(def({ hmin: 30e-9, hmax: 2e-6, ratio: 1.2 }, false, -0.3));
-  assert.ok(Math.abs(packed - 5497752.48) < 1e-6 * packed, `packed: R_dc ${packed} Ω·cm²`);
+  // At zeroCharge −0.3 V the plane at rest is 99.7% ferrocyanide: R_dc there 46.244366, the resolved
+  // electrode's (cells to 0.01, 0.005, 0.0025 nm, ratio 1.025, 1.0125, 1.00625: 46.24426071,
+  // 46.24433941, 46.24435964, second order, extrapolated 46.24436638) to 1e-8. Driven negative, its
+  // current climbs to the ferricyanide's limit, 11.5 A/m², then falls as K⁺ packs the plane
+  // and shuts the ferricyanide out (Frumkin's dip): 1 mA/m² again at −0.72461 V, where the reactant
+  // passes the plane only through its resistance, the resolved electrode's (−1.001202163,
+  // −1.000470404, −1.000286239 mA/m², extrapolated −1.000224851) to 1e-6. (Driven at −1 mA/m², the
+  // electrode has both states, the one on the dip's falling branch unstable at a held current; a start
+  // that sat volts from the couple's level once landed there, and R_dc came out 5.5e6.)
+  const coarse = { hmin: 30e-9, hmax: 2e-6, ratio: 1.2 };
+  const packed = rdc(def(coarse, false, -0.3));
+  assert.ok(Math.abs(packed - 46.24436638) < 1e-8 * packed, `packed: R_dc ${packed} Ω·cm²`);
+  const dip = def(coarse, false, -0.3);
+  dip.contacts.left = { ...dip.contacts.left, V: -0.72461 };
+  delete dip.contacts.left.I;
+  const s = new Device(dip).solve(), i = -s.terminals.left.current;
+  assert.ok(s.converged && Math.abs(i / 1.000224851e-3 - 1) < 1e-6, `at −0.72461 V: ${i} A/m²`);
+  assert.ok(s.interfaces[0].diffuse.right.plane['K+'] > 0.99 * cMax);
 });
 
 // A reactant the electrode's charge repels, driven toward its limiting current: ferricyanide (z = −3,

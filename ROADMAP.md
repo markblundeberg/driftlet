@@ -146,6 +146,9 @@ for live demos.
      0.2 V off both contacts, 17× the steps); a terminal behind R at 0 V; a reaction with a
      neutral level-held participant passed over beside an electrode (0.68 V off). Their common
      shape: the start's gauge and levels should come from what holds them, not from the left.
+     (One more was found and fixed in 2026-10: a non-ideal solution beside an electrode skipped the
+     balance an ideal one gets, so a resolved crowded double layer at −0.6 V failed every cold
+     solve; it now starts balanced and converges cold.)
    - A capacitive electrode with adsorbates, at no current from an uncharged start 1.65 V from
      where its surface balances (Argon's law8): steady solve and transient both fail, and now
      say why and what to do (hold it at a voltage, solve, then let it float), which works.
@@ -316,9 +319,9 @@ for live demos.
        detailed balance, an ionic RC time), a transient's time step against the device's fast
        and slow time scales, and the second law's ledger (free energy in = dissipation ≥ 0, which
        the test suite checks) as a reported item.
-     - **Energy-up band diagrams** in `driftlet/plot` for electrons and holes (E_c, E_v, quasi-Fermi
-       levels in eV), with species voltages kept for what that picture can't show: ions, and
-       equilibrium between species.
+     - Done: energy-up band diagrams in `driftlet/plot` (`energy: true`) for electrons and holes,
+       with species voltages kept for what that picture can't show: ions, and equilibrium between
+       species.
      - **Inputs in the source's vocabulary**: a trap level against a band edge (SRH takes n₁ as a
        concentration today), and `describe()` reporting derived quantities to check against intent
        (built-in voltage, n_i, band offsets, the equilibrium levels against vacuum).
@@ -329,14 +332,14 @@ for live demos.
        numbers to check against.
      - **Failure messages that prescribe the next step** (continuation, a smaller first step), as
        the lost-digits warning already does.
-   - Before 1.0, definitions as a contract: an optional `version` field, and errors that name
-     renames ("`foo` became `bar` in 0.3"), since agents will copy old definitions long after the
-     API moves on.
-   - A written worked example of an electrochemical cell with its voltage ledger (the Daniell
-     demo has one: the couples' levels, the electrolyte's share, each electrode's
-     overpotential, summing exactly to the terminal voltage). A ledger's division is specific
-     to its device family, so it belongs in a worked example, not the library; the spatial
-     diagram stays the primary picture.
+   - If a 2.0 ever renames anything: an optional `version` field in definitions, and errors that
+     name the renames ("`foo` became `bar` in 2.0"), since agents copy old definitions long after
+     the API moves on. (None since 1.0's freeze.)
+   - Done: worked examples: the Daniell cell's voltage ledger, and the electrode pages (Frumkin,
+     potential steps, the rotating disk, Randles, corrosion, lithium plating, Chidsey's
+     monolayer, hydrogen evolution), each checked against theory solved apart from the solver in
+     the page's own script (test/demos.test.js). A ledger's division is specific to its
+     device family, so it belongs in a worked example, not the library.
 
 ## Later
 

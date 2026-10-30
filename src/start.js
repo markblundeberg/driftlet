@@ -27,8 +27,10 @@
 //      plus each face's dipole. In a region where a level-fixed charged species responds to φ̂,
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
-//      through the region has a reaction that can balance, the φ̂ that balances it (by bisection;
-//      a trial a non-ideal model refuses counts its ideal charge, which has the sign there). Where
+//      through the region has a reaction that can balance, the φ̂ that balances it, each species
+//      in it at its activity (a non-ideal material's from its statistics) (the neutrality is by
+//      bisection; a trial a non-ideal model refuses counts its ideal charge, which has the sign
+//      there). Where
 //      neutrality is out of reach (c0's amounts leave a charge no held level balances): in a
 //      strictly neutral region the running φ̂, the region noted in s.unbalanced (for a transient
 //      that fails from it to say why); otherwise the φ̂ nearest the running one, toward less
@@ -215,7 +217,11 @@ export function initFromComposition(s) {
       }
     };
     if (mustBalance && !profiled) checkNeutral('');
-    if (!mat.phiFree && !responds && mat.ideal && r > 0 && materials[regions[r - 1].material].conductor) {
+    // Each amount-given species' ζ (its activity's ln), for a balance below: no level-fixed charged
+    // species responding, they don't depend on φ̂ (a non-ideal model's from its statistics).
+    const activity = (i) => (mat.ideal ? Math.log(cFix[i] / mat.cRef[i]) : zeta[i]);
+    if (!mat.phiFree && !responds && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
+    if (!mat.phiFree && !responds && r > 0 && materials[regions[r - 1].material].conductor) {
       // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
       // that takes a species from this side at equilibrium (the electrode at its open-circuit
       // level), rather than φ carried over from the metal, which can be volts away.
@@ -225,7 +231,7 @@ export function initFromComposition(s) {
         for (const p of rx.part) {
           if (p.side === 0) a -= p.nu * u[bn * M + 1 + p.i];
           else if (mode[p.i] === 2) {
-            a -= p.nu * (Math.log(cFix[p.i] / mat.cRef[p.i]) + mat.mu0[p.i] / model.RT);
+            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
             slope += p.nu * z[p.i];
           } else slope = NaN;
         }
@@ -236,7 +242,7 @@ export function initFromComposition(s) {
       }
     }
     const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
-    if (!mat.phiFree && !responds && mat.ideal && electrode) {
+    if (!mat.phiFree && !responds && electrode) {
       // Nor here, but an electrode spread through it does: start with the port's first reaction
       // that can be balanced at equilibrium with the port's level (the electrode at open circuit).
       const bare = 1 - electrode.surface.reduce((t, sp) => t + sp.theta0, 0);
@@ -248,7 +254,7 @@ export function initFromComposition(s) {
             const sp = electrode.surface[p.s]; // (at its starting coverage)
             a -= p.nu * (sp.mu0 / model.RT + Math.log(sp.theta0 / bare));
           } else if (mode[p.i] === 2) {
-            a -= p.nu * (Math.log(cFix[p.i] / mat.cRef[p.i]) + mat.mu0[p.i] / model.RT);
+            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
             slope += p.nu * z[p.i];
           } else slope = NaN;
         }

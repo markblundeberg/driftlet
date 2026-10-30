@@ -510,3 +510,42 @@ test('Debye–Hückel\'s limiting law starts from the contacts\' levels, no c0 n
   assert.ok(sol.converged);
   for (const c of [...sol.c['K+'], ...sol.c['Cl-']]) assert.ok(Math.abs(c / 10 - 1) < 1e-9, `${c}`);
 });
+
+test('a crowded electrolyte beside an electrode starts with its reaction balanced: a cold solve converges where only a sweep reached, and is the same state at any gauge', async () => {
+  // ferricyanide and ferrocyanide in KCl on a lattice of 0.71 nm sites, at a capacitive Pt face, the
+  // diffuse layer resolved (0.01 nm cells): at −0.6 V and beyond, the start's φ̂ in the water (0, not the
+  // couple's level beside the metal) put the whole drive across the crowded face, and Newton diverged
+  // from it at every time step; a sweep from −0.5 V got there
+  const { ohmic, half, metal } = await import('../src/kit.js');
+  const c = { FeIII: 1, FeII: 1, 'Cl-': 100, 'K+': 107 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
+  const def = (V, right = 0) => {
+    const d = build({
+      library: [
+        {
+          species: [{ name: 'FeIII', z: -3, cRef: 1000 }, { name: 'FeII', z: -4, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+          materials: { water: { epsr: 78.4, species: { FeIII: { D: 0.72e-9, mu0: 0 }, FeII: { D: 0.67e-9, mu0: -FARADAY * 0.36 }, 'K+': { D: 1.957e-9, mu0: 0 }, 'Cl-': { D: 2.032e-9, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax }] } },
+        },
+        metal('Pt'),
+      ],
+      stack: [ohmic({ V }, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, reactions: [{ ...half('FeIII + e- = FeII'), k0: 5e-2, alpha: 0.5 }] }, layer('water', 30e-6, { c0: c }), kitBath(c, 'Cl-')],
+      grid: { hmin: 0.01e-9, hmax: 1e-6, ratio: 1.025 },
+    });
+    d.contacts.right.V = right;
+    return d;
+  };
+  const cold = (V, right) => {
+    const s = new Device(def(V, right)).solve();
+    assert.ok(s.converged, `cold at ${V}, ${right}: ${s.warnings.join(' ')}`);
+    return s.terminals.left.current;
+  };
+  const dev = new Device(def(-0.5));
+  assert.ok(dev.solve().converged);
+  for (const V of [-0.55, -0.6, -0.65, -0.7, -0.75, -0.8]) {
+    dev.set({ contacts: { left: { V } } });
+    const s = dev.solve();
+    assert.ok(s.converged);
+    if (V === -0.6 || V === -0.8) assert.ok(Math.abs(cold(V) / s.terminals.left.current - 1) < 1e-6, `${V}: cold ${cold(V)}, swept ${s.terminals.left.current}`);
+  }
+  // the same states with both contacts shifted
+  assert.ok(Math.abs(cold(0, 0.6) / cold(-0.6) - 1) < 1e-6 && Math.abs(cold(-0.6, -0.6) / cold(0, 0) - 1) < 1e-6);
+});
