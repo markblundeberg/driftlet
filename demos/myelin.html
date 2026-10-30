@@ -59,11 +59,12 @@
     clearest in the current along the axon: in the myelinated one it's a sawtooth, stepping up at each node,
     where the channels drive it in, and draining along each internode into the myelin's small capacitance.
     (The internodes charge in a few microseconds, faster than the nodes take to fire, so the arrival times
-    along them run smoothly from node to node rather than in steps.) And it takes about a tenth of the
-    current: the bare axon charges all of its membrane as the spike goes, the myelinated one its nodes and a
-    little myelin, which is myelin's other saving, in the ions the pumps must later put back. The bare axon
-    has to charge all of its membrane as it goes, at 2.7 m/s (Hodgkin and Huxley's speed scaled by √a, as the
-    propagation demo shows); the myelinated one runs at 35 m/s.</p>
+    along them run smoothly from node to node rather than in steps.) It takes about a tenth of the current
+    along the axon, and far fewer ions: the bare axon lets Na⁺ in all along as the spike goes, the myelinated
+    one only at its nodes, about a two-hundredth as much per centimetre, which is myelin's other saving, in
+    the ions the pumps must later put back. The bare axon, charging all of its membrane as it goes, conducts
+    at 2.7 m/s (Hodgkin and Huxley's speed scaled by √a, as the propagation demo shows); the myelinated one
+    at 34 m/s.</p>
   <p>The dashed lines are the same two axons worked out apart from the solver, as compartmental cables: each
     node one compartment with its channels, each internode fifty of myelin (the bare axon's membrane in 20 µm
     compartments), the axoplasm's resistance between them, and the same pulse, from rest. The simulated spike
@@ -71,14 +72,19 @@
     defaults), and the bare one within 4 µs at 0.5 cm. Rest takes a while here: the internodes' myelin
     charges through the nodes' few channels, with a time constant of up to 70 ms with thin myelin, long
     internodes and sparse channels, so both axons settle for 400 ms before the first pulse.</p>
-  <p>Thicker myelin (more wraps, less capacitance) is faster: with 50 wraps it runs at 11 m/s, with 800 at
-    79 m/s, and with 20 the internodes take too much charge and the spike dies. More channels at the nodes are
-    faster too: 24 m/s at Hodgkin and Huxley's own density, 43 m/s at twenty times it. The nodes' spacing
-    matters less, around a broad best: 35 m/s for nodes anywhere from half a millimetre to 1.25 mm apart, a
-    little slower closer together (33 m/s at a quarter millimetre, with more nodes to charge and fire on the
-    way) and further apart (32 m/s at 3 mm, each longer internode, an RC line, charging the next node more
-    slowly). Real fibres' nodes sit about a hundred times the fibre's diameter apart, in the same broad
-    range.</p>
+  <p>The speeds here are conduction velocities: how fast a spike runs once it's under way, from the slope of
+    its arrival times between 2 and 4 cm along the same axon's cable made three times as long. The page's
+    2 cm is shorter than the spike (its rising edge spans about a centimetre), and its readout, 1 cm over the
+    arrival time from the pulse, includes the stimulus's reach of a few millimetres: 35 m/s at the defaults,
+    against 34. Thicker myelin is faster: 12 m/s with 50 wraps, 69 with 794 and 75 with 1000 (each wrap
+    counted as one membrane; a real lamella is two); with 28 or fewer the internodes take too much charge and
+    the spike dies (with 32 it still runs, at 7 m/s). More channels at the nodes are much faster: 16 m/s at
+    Hodgkin and Huxley's own density, 45 at twenty times it. The nodes' spacing has a broad best near half a
+    millimetre (36 m/s; 35 at a quarter or three quarters of one), falling off as they spread (34 m/s at 1 mm,
+    30 at 2, 27 at 3), each longer internode, an RC line, charging the next node more slowly. Real fibres'
+    nodes sit about a hundred times the fibre's diameter apart (1 mm here). These nodes carry squid channels at
+    18.5 °C, not a real node's (for those, Frankenhaeuser and Huxley's model is the classic one), and the
+    myelin is a capacitance alone, without its own leak or the space beneath it.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -142,13 +148,13 @@ const rateOf = (r, V) => {
   const y = (V - r.midpoint) / r.scale;
   return r.type === 'exp' ? r.rate * Math.exp(y) : r.type === 'sigmoid' ? r.rate / (1 + Math.exp(-y)) : (r.rate * y) / -Math.expm1(-y);
 };
-function cable(p, { bare = false, dt = 1e-7, tEnd = 2e-3 } = {}) {
+function cable(p, { bare = false, dt = 1e-7, tEnd = 2e-3, length = L } = {}) {
   const len = [], g = [], C = [], at = [];
   if (bare) {
-    for (let i = 0; i < L / 20e-6; i++) (len.push(20e-6), g.push(1), C.push(0.01));
-    for (let i = 0; i <= 40; i++) at.push({ x: i * 0.5e-3, i: Math.min(len.length - 1, Math.round((i * 0.5e-3) / 20e-6)) });
+    for (let i = 0; i < length / 20e-6; i++) (len.push(20e-6), g.push(1), C.push(0.01));
+    for (let i = 0; i <= length / 0.5e-3; i++) at.push({ x: i * 0.5e-3, i: Math.min(len.length - 1, Math.round((i * 0.5e-3) / 20e-6)) });
   } else {
-    const n = Math.floor(L / (Ln + p.Lint)) + 1, step = Ln + p.Lint;
+    const n = Math.floor(length / (Ln + p.Lint)) + 1, step = Ln + p.Lint;
     for (let k = 0; k < n; k++) {
       at.push({ x: k * step + Ln / 2, i: len.length });
       len.push(Ln), g.push(p.gNode), C.push(0.01);
@@ -195,6 +201,15 @@ function cable(p, { bare = false, dt = 1e-7, tEnd = 2e-3 } = {}) {
     });
   }
   return { x: at.map((q) => q.x), t: arrive, Vr };
+}
+// The conduction velocity proper: on a cable three times as long, the slope of the arrival times at the
+// nodes (every half millimetre, bare) from 2 to 4 cm, clear of the stimulus's reach and the sealed end
+// (m/s; NaN where the spike dies).
+function velocity(p, { bare = false, dt = 1e-7 } = {}) {
+  const c = cable(p, { bare, length: 3 * L, tEnd: bare ? 25e-3 : 8e-3, dt }), pts = c.x.map((x, j) => [x, c.t[j]]).filter(([x, t], j) => x >= 0.02 && x <= 0.04 && (bare || j % 2 === 0));
+  if (pts.some(([, t]) => !Number.isFinite(t)) || pts.length < 2) return NaN;
+  const n = pts.length, sx = pts.reduce((a, [x]) => a + x, 0), st = pts.reduce((a, [, t]) => a + t, 0), sxx = pts.reduce((a, [x]) => a + x * x, 0), sxt = pts.reduce((a, [x, t]) => a + x * t, 0);
+  return (n * sxx - sx * sx) / (n * sxt - sx * st); // 1/slope of t against x
 }
 
 // (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
@@ -269,7 +284,7 @@ function draw() {
   const sb = axons.bare.d.solution(), sm = axons.myelinated.d.solution(), t = sm.time;
   const f = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} m/s` : '—');
   document.getElementById('status').textContent =
-    `t ${(1000 * (t - SETTLE)).toFixed(3)} ms · from the left end to 1 cm: bare ${f(speed(axons.bare))}, myelinated ${f(speed(axons.myelinated))}`;
+    `t ${(1000 * (t - SETTLE)).toFixed(3)} ms · 1 cm over the time from the pulse (the stimulus's reach included): bare ${f(speed(axons.bare))}, myelinated ${f(speed(axons.myelinated))}`;
   const cm = (s) => Array.from(s.x, (x) => 100 * x), Vm = (s) => Array.from(s.phi, (v) => 1000 * v);
   // node positions, as faint ticks along the bottom
   const p = params(), ticks = [];

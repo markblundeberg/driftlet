@@ -17,6 +17,13 @@ major version.
   restarted from each pulse: in the open sea the peak within 1 mV and the upstroke within 40 µs; behind
   the Schwann cells, the gap is the K⁺ piling up in the space. No card in the gallery says "no check on the
   page" any more (the Daniell cell's carries no stamp).
+- From a review of the two: the myelin page's speeds are now conduction velocities (the slope of arrival
+  times on its cable made three times as long), where they had been 1 cm over the time from the pulse,
+  the stimulus's reach included: up to 50% apart (16 to 45 m/s across channel density, not 24 to 43; the
+  best spacing near 0.5 mm); the spike dies at 28 wraps or fewer; myelin's ion saving is ~200×, not 10×.
+  The action potential page's agreement holds away from threshold only, its residual's cause unclaimed;
+  heat block as the loss of all-or-none firing; the periaxonal space's K⁺ and depolarization as between
+  spikes, not at rest.
 - Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
 - A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
   an adsorbate failed or converged by which reaction was listed first (the start balanced the first

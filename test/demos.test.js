@@ -687,22 +687,19 @@ test('demos/myelin.html: the spikes against the compartmental cables in its scri
   }
   const tb = cable({}, { bare: true }), b = arrivals(bare, tb);
   assert.ok(worst(b, tb) < 4e-6, `bare: ${worst(b, tb)} s`);
-  // the speeds the text quotes (to the node nearest 1 cm, by the cable the simulation follows)
-  const speed = (p) => {
-    const step = 1e-6 + p.Lint, x = Math.round(0.01 / step) * step + 0.5e-6, th = cable(p, { tEnd: 4e-3 });
-    return x / th.t[th.x.findIndex((xx) => Math.abs(xx - x) < 1e-12)];
-  };
-  const v = (wraps, Lint, gNode) => speed({ wraps, Lint: Lint * 1e-3, gNode });
+  // the speeds the text quotes: conduction velocities on the cable three times as long (the simulation
+  // follows the cable), and the readout's 1 cm over the time from the pulse at the defaults
+  const { velocity } = await pageTheory('myelin.html', ['velocity']);
   const near = (got, want, tol) => assert.ok(Math.abs(got - want) < tol, `${got} m/s for ${want}`);
-  near(v(200, 1, 5), 35, 0.5);
-  near(v(50, 1, 5), 11, 0.5);
-  near(v(800, 1, 5), 79, 0.5);
-  assert.ok(Number.isNaN(v(20, 1, 5)));
-  near(v(200, 1, 1), 24, 0.5);
-  near(v(200, 1, 20), 43, 0.5);
-  for (const L of [0.5, 0.75, 1, 1.25]) near(v(200, L, 5), 35, 0.5);
-  near(v(200, 0.25, 5), 33, 0.5);
-  near(v(200, 3, 5), 32, 0.5);
+  const v = (wraps, Lint, gNode) => velocity({ wraps, Lint: Lint * 1e-3, gNode }, { dt: 1e-6 });
+  near(v(200, 1, 5), 34.2, 0.2);
+  near(v(200, 1, 1), 15.8, 0.2);
+  near(v(794, 1, 5), 68.7, 0.4);
+  assert.ok(Number.isNaN(v(28.2, 1, 5)) && Math.abs(v(31.6, 1, 5) - 7.1) < 0.3);
+  near(v(200, 0.5, 5), 35.9, 0.3);
+  near(v(200, 3, 5), 26.9, 0.3);
+  const th = cable({ wraps: 200, Lint: 1e-3, gNode: 5 }), x = 10 * 1.001e-3 + 0.5e-6;
+  near(x / th.t[th.x.findIndex((xx) => Math.abs(xx - x) < 1e-12)], 35, 0.3);
 });
 
 test('demos/axon.html: the spike against the space-clamped Hodgkin–Huxley equations in its script, as the page says', async () => {

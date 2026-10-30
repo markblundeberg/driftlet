@@ -76,16 +76,19 @@
     cost of treating the channels by electrodiffusion. Matched instead where each channel opens, the rest destabilizes
     and the axon fires on its own: the two models can't agree at every voltage. Warmer, every gate runs
     faster (three times for each 10 °C, as they measured), and the spike gets briefer and smaller, as K⁺
-    channels and Na⁺ inactivation catch up with Na⁺ activation: a 1 ms stimulus must be stronger to fire it,
-    about 6 µA/cm² at 6.3 °C, 30 at 25 °C and 90 at 30 °C, and there the spike barely reaches 0 mV.
-    That's Hodgkin and Huxley's heat block, coming on.</p>
+    channels and Na⁺ inactivation catch up with Na⁺ activation. At 6.3 °C a 1 ms stimulus fires it all or
+    none, from about 6 µA/cm²; at 25 °C it fires from about 14, but the spike only reaches 0 mV near 30;
+    at 30 °C there's no threshold left, the response growing with the stimulus (it reaches 0 mV near 90).
+    That loss of all-or-none firing is Hodgkin and Huxley's heat block, coming on.</p>
   <p>The dashed line is the same membrane worked out apart from the solver: Hodgkin and Huxley's equations,
     space-clamped, with these GHK currents at the bulk concentrations either side, the same gates, blocks and
     stimulus, restarted at each pulse from the membrane's state then. In the open sea water the spike follows
-    it, its peak within 1 mV and its upstroke within 40 µs (the most where the stimulus barely reaches
-    threshold, where the timing is most sensitive): what's left is what the spike's ions do to the
-    concentrations right at the membrane, which the equations hold fixed. Behind the Schwann cells the gap is
-    the point: it's the K⁺ piling up in the space, which the equations don't have.</p>
+    it, its peak within 1 mV and its upstroke within 40 µs, except within a few percent of threshold, where
+    they can disagree on whether it fires at all (the simulation is a shade more excitable). Half the
+    residual is this page's time steps (finer ones halve it); the rest we haven't pinned down, and it isn't
+    the concentrations at the membrane, which barely move. Behind the Schwann cells the gap is the point:
+    it's the K⁺ piling up in the space, which the equations hold at the sea's (fed the space's K⁺ as the
+    simulation has it, they agree again, peaks within 0.5 mV).</p>
   <p>The level diagram draws each ion's <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
     V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), its electrochemical potential in volts, against its value
     outside, and φ the same way. Each line is flat through each solution and steps at the membrane by
@@ -100,10 +103,12 @@
     clears over tens of milliseconds. Choose that outside, and the space is a 30 nm layer behind a barrier
     that every ion crosses with one permeability, set to clear it in 50 ms (θ/P, as they estimated). Here
     each spike adds about 3.5 mM (some 13 pmol/cm² of K⁺ leaves per spike in this model; they put it at
-    about 1.6 mM a spike), and K⁺ just outside the membrane sits at 24 mM even at rest, where it leaks out
-    steadily. E<sub>K</sub>, which counts only the concentrations either side of the membrane, follows it:
-    the rest depolarizes by a few millivolts, and each spike's undershoot is shallower than the last, as
-    they saw. In the level diagram, zoomed onto the space, K⁺'s line steps up across the barrier: the
+    about 1.6 mM a spike, at a temperature we haven't checked: a spike here moves three times the ions at
+    6.3 °C that it does at 18.5), and between spikes in the default train K⁺ just outside the membrane
+    climbs from 24 to 27 mM (at true rest it's 21, where K⁺ leaks out steadily). E<sub>K</sub>, which counts
+    only the concentrations either side of the membrane, follows it: between spikes the membrane climbs to
+    3 mV above its rest (−59 against −62 mV; the space's K⁺ at true rest moves that rest only half a
+    millivolt), and each spike's undershoot is shallower than the last, as they saw. In the level diagram, zoomed onto the space, K⁺'s line steps up across the barrier: the
     driving force that clears it. Nothing in Hodgkin and Huxley's equations, which take E<sub>K</sub> as
     fixed, can do this.</p>
   <p>There's no Na⁺/K⁺ pump, so this axon has no true steady state: over hours it would run down to Donnan
@@ -278,8 +283,9 @@ function keep(sol) {
       rec.odes.push(hhODE(p, { t0: t[k], V, m: pr[5][k], h: pr[6][k], n: pr[7][k] }, t[k] + Math.min(p.period, WINDOW)));
     }
     // the last spike's peak
-    if (V > 0) rec.spikeMax = Math.max(rec.spikeMax, V);
-    else if (rec.spikeMax > 0 && V < -0.03) [rec.peak, rec.spikeMax] = [rec.spikeMax, -1];
+    // (a spike: above −30 mV, ended below −50; warm, one can peak below 0 mV)
+    if (V > -0.03) rec.spikeMax = Math.max(rec.spikeMax, V);
+    else if (rec.spikeMax > -0.03 && V < -0.05) [rec.peak, rec.spikeMax] = [rec.spikeMax, -1];
   }
   if (t.length) rec.stimWas = stimOn(t.at(-1), p);
   if (t.length) rec.odes = rec.odes.filter((o) => o.t.at(-1) >= t.at(-1) - 1.2 * WINDOW);
