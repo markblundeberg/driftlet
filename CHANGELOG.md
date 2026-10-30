@@ -3,6 +3,14 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- The myelin demo is drawn against compartmental cables worked out in the page (every arrival within
+  1.5 µs); it now settles 400 ms before its first pulse (thin myelin's internodes charge in up to
+  ~70 ms), and the speeds its text quotes, taken before rest, are corrected (the nodes' spacing has a
+  broad best near 1 mm, not "closer is faster").
+- Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
+
 ## 1.6.0 (2026-10-30)
 
 - Marcus–Hush–Chidsey kinetics at electrode ports too (`lambda` on a port's reaction), with its
