@@ -20,6 +20,14 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Liquid junctions: the voltage where two solutions meet</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="Where two solutions meet: the tip of a patch pipette in a bath (or, as chosen, two salt solutions meeting in a tube, or a reference electrode's frit in a sample); a red line runs from one solution, through where they mix, into the other.">
+      <g data-preset="patch"><path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/><path d="M40 22 L196 128 L199 124 L52 12 Z" fill="color-mix(in srgb, var(--c4) 20%, var(--panel))" stroke="var(--muted)" stroke-width="1.3" stroke-linejoin="round"/><path class="k-ink" d="M52 21 L140 84.7"/><path class="k-cut" d="M160 99 L236 154"/><path class="k-cut-head" d="M244 159.5 L234.1 157.9 L239.3 150.6 Z"/><text x="112" y="40" text-anchor="start" class="k-small">pipette: K-gluconate</text><text x="250" y="190" text-anchor="middle" class="k-small">bath</text></g>
+      <g data-preset="zinc" style="display: none"><rect x="30" y="104" width="140" height="30" fill="color-mix(in srgb, var(--c7) 16%, var(--panel))"/><rect x="170" y="104" width="140" height="30" fill="color-mix(in srgb, var(--c3) 16%, var(--panel))"/><path class="k-glass" d="M30 102 H310 M30 136 H310"/><path class="k-cut" d="M60 119 H274"/><path class="k-cut-head" d="M282 119 L273 114.5 V123.5 Z"/><text x="100" y="96" text-anchor="middle" class="k-small">9 mM ZnCl₂</text><text x="240" y="96" text-anchor="middle" class="k-small">3 mM KCl</text><text x="170" y="156" text-anchor="middle" class="k-small">where they meet</text></g>
+      <g data-preset="bridge" style="display: none"><path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/><rect x="150" y="20" width="40" height="120" rx="6" fill="color-mix(in srgb, var(--c3) 16%, var(--panel))" stroke="var(--muted)" stroke-width="1.3"/><rect x="154" y="140" width="32" height="12" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1"/><rect x="166" y="26" width="8" height="70" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1"/><path class="k-cut" d="M170 112 V176"/><path class="k-cut-head" d="M170 184 L165.5 175 H174.5 Z"/><text x="222" y="60" text-anchor="start" class="k-small">3 M KCl</text><text x="196" y="150" text-anchor="start" class="k-small">frit</text><text x="250" y="190" text-anchor="middle" class="k-small">dilute NaCl sample</text><text x="178" y="14" text-anchor="middle" class="k-small">reference electrode</text></g>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Wherever two different solutions touch (the tip of a patch pipette, a salt bridge, the frit of a
     reference electrode), their ions diffuse into each other at different speeds, and the faster ones pull ahead
     until the field they leave behind holds them back: a junction potential, from a few millivolts to more than 15, inside every such
@@ -116,7 +124,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { recorder, henderson, planck, check, typeset } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
+import { profiles, showCode, fromQuery, pauser, jumpTo, sliceNotation } from './common.js';
 
 // Charge, equivalent conductivity (10⁻⁴ m² S/mol), as LJPcalc tabulates them; D = λRT/(|z|F²).
 const LAMBDA = { 'K+': [1, 73.5], 'Na+': [1, 50.11], 'Mg2+': [2, 53.06], 'Ca2+': [2, 59.5], 'Zn2+': [2, 52.8], 'Cl-': [-1, 76.31], 'gluconate-': [-1, 0.33 * 73.5], 'HEPES-': [-1, 0.3 * 73.5] };
@@ -168,12 +176,12 @@ function freeJunction({ T, left, right }) {
   const cl = withTraces(left, names, ions), cr = withTraces(right, names, ions), lib = library(names, ions);
   const c0 = Object.fromEntries(names.map((n) => [n, { x: [0, L / 2 - 2e-6, L / 2 + 2e-6, L], values: [cl[n], cl[n], cr[n], cr[n]] }]));
   const ref = names.find((n) => ions[n].z < 0);
-  return new Device({
+  return {
     T, species: lib.species, materials: { water: lib.water },
     regions: [{ name: 'junction', material: 'water', length: L, c0 }],
     contacts: { left: { bath: { c: cl, reference: ref } }, right: { bath: { c: cr, reference: ref }, I: 0 } },
     grid: { hmin: 2e-6, hmax: 2e-6 },
-  });
+  };
 }
 
 // The salt bridge: 3 M KCl | 1 mm frit | the sample, in steady state (the bridge and the sample
@@ -183,7 +191,7 @@ function bridgeCell(c, X) {
   const ions = ionsAt(T0), names = ['K+', 'Na+', 'Cl-'];
   const cl = withTraces({ 'K+': BRIDGE, 'Cl-': BRIDGE }, names, ions), cr = withTraces({ 'Na+': c, 'Cl-': c }, names, ions);
   const lib = library(names, ions), frit = { epsr: 0, species: Object.fromEntries(names.map((n) => [n, { D: ions[n].D / 10, mu0: 0 }])) };
-  return new Device({
+  return {
     T: T0, species: lib.species, materials: { water: lib.water, frit },
     regions: [
       { name: 'bridge', material: 'water', length: 0.2e-3 },
@@ -192,10 +200,10 @@ function bridgeCell(c, X) {
     ],
     contacts: { left: { bath: { c: cl, reference: 'Cl-' } }, right: { bath: { c: cr, reference: 'Cl-' }, I: 0 } },
     grid: { hmin: 0.5e-6, hmax: 20e-6, ratio: 1.15 },
-  });
+  };
 }
 const bridgeE = (c, X) => {
-  const s = bridgeCell(c, X).solve();
+  const s = new Device(bridgeCell(c, X)).solve();
   return s.converged ? s : null;
 };
 
@@ -207,8 +215,13 @@ function start() {
   document.querySelectorAll('.free').forEach((e) => (e.style.display = p === 'bridge' ? 'none' : ''));
   el('checks').style.display = p === 'bridge' ? '' : 'none'; // the checks are the bridge's steady state
   run = null;
+  for (const g of document.querySelectorAll('.sketch [data-preset]')) g.style.display = g.dataset.preset === p ? '' : 'none';
+  el('slice').textContent =
+    p === 'bridge'
+      ? sliceNotation(bridgeCell(10, 0), { left: '3 M KCl', right: 'stirred sample' })
+      : sliceNotation(freeJunction(PRESETS[p]), { left: PRESETS[p].names[0], right: PRESETS[p].names[1] });
   if (p === 'bridge') return bridge();
-  const set = PRESETS[p], ions = ionsAt(set.T), dev = freeJunction(set);
+  const set = PRESETS[p], ions = ionsAt(set.T), dev = new Device(freeJunction(set));
   run = {
     set, dev, rec: recorder(dev, { probes: [{ x: 0, quantity: 'phi' }, { x: L, quantity: 'phi' }] }), last: undefined, wall: 0,
     H: henderson(set.left, set.right, ions, { T: set.T }), P: planck(set.left, set.right, ions, { T: set.T }),
@@ -286,7 +299,7 @@ function bridge() {
   const c = 10 ** +cs.value, X = 10 ** +Xf.value - 1; // mM, 0 … 99 mM of charge
   el('csOut').textContent = c >= 1 ? `${c.toPrecision(2)} mM` : `${(1000 * c).toPrecision(2)} µM`;
   el('XfOut').textContent = X < 0.05 ? 'none' : `${X.toPrecision(2)} mM`;
-  const d = bridgeCell(c, X), solved = d.solve(), s = solved.converged ? solved : null, ions = ionsAt(T0);
+  const d = new Device(bridgeCell(c, X)), solved = d.solve(), s = solved.converged ? solved : null, ions = ionsAt(T0);
   if (!s) return (el('status').textContent = 'no steady state at these settings');
   const E = s.phi.at(-1) - s.phi[0], H = henderson({ 'K+': BRIDGE, 'Cl-': BRIDGE }, { 'Na+': c, 'Cl-': c }, ions);
   el('status').textContent = `junction potential ${mV(E)} · Henderson's formula ${mV(H)} · sample ${c.toPrecision(2)} mM NaCl against 3 M KCl`;

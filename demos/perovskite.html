@@ -20,6 +20,40 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Perovskite solar cell: hysteresis from mobile ions</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A perovskite solar cell seen at an angle: light through glass and a transparent FTO contact onto titanium dioxide, the perovskite, spiro-OMeTAD and a gold contact; a red line runs down from the titanium dioxide to the gold.">
+      <rect x="46" y="74" width="168" height="18" fill="color-mix(in srgb, var(--c1) 6%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 74 l24 -13 v18 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 6%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M46 74 l24 -13 H238 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 6%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="92" width="168" height="7" fill="color-mix(in srgb, var(--c3) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 92 l24 -13 v7 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c3) 16%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="99" width="168" height="12" fill="color-mix(in srgb, var(--muted) 14%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 99 l24 -13 v12 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 14%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="111" width="168" height="34" fill="color-mix(in srgb, #5a3d2b 78%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 111 l24 -13 v34 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, #5a3d2b 78%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="145" width="168" height="16" fill="color-mix(in srgb, var(--c4) 26%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 145 l24 -13 v16 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c4) 26%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="161" width="168" height="8" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 161 l24 -13 v8 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M241 76.5 L250 76.5 L258 73.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="76.5">glass</text>
+      <path d="M241 89.0 L250 89.0 L258 88.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="91.5">FTO</text>
+      <path d="M241 98.5 L250 98.5 L258 103.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="106.5">TiO₂</text>
+      <path d="M241 121.5 L250 121.5 L258 121.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="125.0">MAPbI₃</text>
+      <path d="M241 146.5 L250 146.5 L258 145.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="148.5">spiro-OMeTAD</text>
+      <path d="M241 158.5 L250 158.5 L258 160.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="163.5">gold</text>
+      <path d="M98.0 16 L82.0 60" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M80.6 65 L78.5 55 L86.0 58 Z" fill="var(--c4)"/>
+      <path d="M144.0 16 L128.0 60" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M126.6 65 L124.5 55 L132.0 58 Z" fill="var(--c4)"/>
+      <path d="M190.0 16 L174.0 60" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M172.6 65 L170.5 55 L178.0 58 Z" fill="var(--c4)"/>
+      <path class="k-cut" d="M130.0 102 V161"/><path class="k-cut-head" d="M130.0 167 L125.5 158 H134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A lead-halide perovskite cell's current–voltage curve depends on how fast you measure it, because the
     perovskite holds mobile iodide vacancies as well as electrons and holes. Held at 1.2 V, then swept down to
     0 V and back, the vacancies take seconds to follow: scanned slowly they keep up, scanned fast they stay
@@ -85,7 +119,7 @@
 import { Device, AVOGADRO } from '../src/index.js';
 import { perovskiteCell, PEROVSKITE_SCANS, hysteresis, recorder } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, pauser, jumpTo } from './common.js';
+import { levels, profiles, showCode, fromQuery, pauser, jumpTo, sliceNotation } from './common.js';
 
 // The cell, as plain definition data: IonMonger's default device, from the kit (print it to see
 // every parameter). V is the spiro side's (the anode's) voltage. Frozen, the vacancies stay where
@@ -244,6 +278,7 @@ rate.addEventListener('change', start);
 rate.addEventListener('input', () => (document.getElementById('rateOut').textContent = fmt(scanRate()))); // (while dragging)
 document.getElementById('run').addEventListener('click', start);
 start();
+document.getElementById('slice').textContent = sliceNotation(cell(0), { left: 'FTO', right: 'gold' });
 showCode();
 </script>
 </body>

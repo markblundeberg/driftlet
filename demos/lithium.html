@@ -20,6 +20,21 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Lithium plating: a Tafel plot that bends</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A sealed cell: a lithium microelectrode on a glass capillary, a lithium reference and a lithium counter electrode in a carbonate electrolyte, wired to a potentiostat; a magnified view shows the lithium sphere at the tip and a red line from it outward into the electrolyte.">
+      <rect class="k-box" x="50" y="4" width="104" height="28" rx="4"/><text x="102.0" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M64 32 V44 H90 V62 M124 32 V58 M140 32 V44 H160 V102"/>
+      <path class="k-liquid" d="M21 98 H185 V194 Q185 205 174 205 H32 Q21 205 21 194 Z"/><path class="k-surface" d="M21 98 H185"/><path class="k-glass" d="M16 66 L20 70 V194 Q20 206 32 206 H174 Q186 206 186 194 V70 L190 66"/>
+      
+      <path class="k-glass" d="M86 62 V136 M94 62 V136"/><circle cx="90" cy="139" r="3" fill="color-mix(in srgb, var(--muted) 30%, var(--panel))" stroke="var(--ink)" stroke-width="0.9"/><text x="90" y="160" text-anchor="middle">Li</text>
+      <rect class="k-glass" x="118" y="58" width="12" height="96" rx="6"/><path class="k-ink" d="M124 58 V136"/><rect class="k-insulator" x="120" y="149" width="8" height="5"/><text x="124" y="172" text-anchor="middle">Li ref</text>
+      <rect x="156" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="160" y="172" text-anchor="middle">Li</text>
+      <defs><clipPath id="lensLi"><circle cx="276" cy="124" r="54"/></clipPath></defs><circle cx="90" cy="139" r="5" fill="none" stroke="var(--muted)" stroke-width="1"/><path d="M90.4 144.0 L280.3 177.8 M89.6 134.0 L271.7 70.2" stroke="var(--muted)" stroke-width="0.8" fill="none"/><g clip-path="url(#lensLi)"><rect x="222" y="70" width="108" height="108" fill="var(--panel)"/><rect x="210" y="66" width="140" height="130" class="k-liquid"/><circle cx="242" cy="148" r="16" fill="color-mix(in srgb, var(--muted) 30%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><path class="k-glass" d="M234 66 V133 M250 66 V133"/><path class="k-cut" d="M255 137 L300 102"/><path class="k-cut-head" d="M306 97 L297.5 99.8 L302.5 106.1 Z"/><text x="242" y="184" text-anchor="middle" class="k-small">Li, 5 µm</text></g><circle cx="276" cy="124" r="54" fill="none" stroke="var(--ink)" stroke-width="1.3"/>
+      <text x="110" y="196" text-anchor="middle" class="k-small">LiPF₆ in EC:DEC</text>
+      <text x="172" y="62" text-anchor="start" class="k-small">under argon</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Lithium plated onto, and stripped from, a lithium microelectrode in 1 M LiPF₆ in EC:DEC: the steady
     current against the overpotential η, simulated from the ions and the reaction, with Marcus–Hush–Chidsey
     kinetics as fitted to measurements of exactly this, and Butler–Volmer's straight Tafel line for
@@ -113,7 +128,7 @@
 import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, bath } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, fitted } from './common.js';
+import { levels, profiles, showCode, fromQuery, fitted, sliceNotation } from './common.js';
 
 const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 // 1 M LiPF₆: a salt diffusivity and Li⁺ transference number typical of LiPF₆ in carbonates
@@ -215,6 +230,7 @@ const labels = () => {
 const Et = Array.from({ length: 181 }, (_, j) => 0.3 - 0.005 * j).filter((e) => Math.abs(e) > 1e-9); // (not at η = 0, where |i| = 0 has no log)
 function rebuild() {
   const L = lam(), r = radius();
+  document.getElementById('slice').textContent = `${sliceNotation(electrode(0, L, r), { 'EC:DEC': 'LiPF₆ in EC:DEC', bath: 'bulk' })} (radially, from a lithium sphere ${+(r * 1e6).toPrecision(2)} µm in radius)`;
   run = { lam: L, r, I: sweep(L, r), lines: Object.fromEntries(['mhc', 'bv'].map((law) => [law, Et.map((e) => steady(e, L, r, law))])) };
   run.alone = Object.fromEntries(['mhc', 'bv'].map((law) => [law, Et.map((e) => kinetic(e, L, c, law))]));
   run.alone.marcus = Et.map(marcusHush);

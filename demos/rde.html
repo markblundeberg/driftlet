@@ -20,6 +20,19 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A rotating disk electrode: Levich and Koutecký–Levich</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A rotating disk electrode: a platinum disk at the end of a spinning shaft, face down in a solution of iron(III) and iron(II), with a reference and a platinum counter electrode, wired to a potentiostat, the solution drawn up toward the disk; a red line runs down from the disk into the solution.">
+      <rect class="k-box" x="74" y="6" width="56" height="24" rx="4"/><text x="102" y="22" text-anchor="middle">rotator</text><rect class="k-insulator" x="94" y="30" width="16" height="96" rx="2"/><rect x="96" y="123" width="12" height="4" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/><path d="M84 84 A18 5 0 0 0 120 84" fill="none" stroke="var(--muted)" stroke-width="1"/><path d="M120 84 l-1.5 -4.6 l-3.6 3.2 Z" fill="var(--muted)"/><path d="M60 186 Q66 150 92 136 M144 186 Q138 150 112 136" fill="none" stroke="var(--muted)" stroke-width="0.8" stroke-dasharray="3 2.5"/><text x="76" y="118" text-anchor="end">Pt disk</text>
+      <rect class="k-box" x="170" y="4" width="104" height="28" rx="4"/><text x="222.0" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M130 18 H150 V40 H200 M200 32 V40 M222 32 V58 M252 32 V44 H274 V102"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect class="k-glass" x="216" y="58" width="12" height="96" rx="6"/><path class="k-ink" d="M222 58 V136"/><rect class="k-insulator" x="218" y="149" width="8" height="5"/><text x="222" y="172" text-anchor="middle">reference</text>
+      <rect x="270" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="274" y="172" text-anchor="middle">Pt</text>
+      <path class="k-cut" d="M102 128 V160"/><path class="k-cut-head" d="M102 167 L97.5 158 H106.5 Z"/>
+      <text x="222" y="190" text-anchor="middle" class="k-small">Fe³⁺, Fe²⁺, KCl</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A platinum disk spinning in 1 mM Fe³⁺ and Fe²⁺ (in 1 M KCl with 0.1 M HCl): the steady current against
     potential at five rotation rates, and the analysis an electrochemist would run on them. The Levich plot
     takes the limiting currents; Koutecký–Levich plots take the transport out; and a Tafel plot of what's
@@ -86,7 +99,7 @@
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery } from './common.js';
+import { profiles, showCode, fromQuery, sliceNotation } from './common.js';
 
 const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
 const iron = half('Fe3+ + e- = Fe2+');
@@ -171,6 +184,7 @@ const labels = () => {
 };
 function rebuild() {
   run = sweep(k0(), noiseIn.checked ? 0.005 : 0, seed);
+  document.getElementById('slice').textContent = `${sliceNotation(disk(0, rpms[0], k0()), { bath: 'bulk' })} (at ${rpms[0]} rpm: thinner, faster)`;
   update();
 }
 const mA = (j) => j / 10; // A/m² to mA/cm²

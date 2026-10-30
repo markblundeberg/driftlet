@@ -20,6 +20,22 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Cycling an intercalation host at constant current</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A cell cycled at constant current: an electrode of an intercalation host coated on a metal current collector, facing a lithium counter electrode across a liquid electrolyte, wired to a galvanostat; a red line runs from the electrolyte through the host to the collector.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170" y="22" text-anchor="middle">galvanostat</text>
+      <path class="k-ink" d="M136 32 V44 H84 V62 M204 32 V44 H262 V62"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/>
+      <path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect x="80" y="62" width="8" height="112" rx="1" fill="color-mix(in srgb, var(--muted) 30%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="252" y="62" width="6" height="112" rx="1" fill="color-mix(in srgb, var(--c2) 55%, var(--muted))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="236" y="104" width="16" height="70" fill="color-mix(in srgb, var(--ink) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <path class="k-cut" d="M196 140 H252"/><path class="k-cut-head" d="M258 140 L249 135.5 V144.5 Z"/>
+      <text x="84" y="190" text-anchor="middle">Li</text><text x="244" y="190" text-anchor="middle">host</text>
+      <text x="292" y="118" class="k-small" text-anchor="middle">collector</text><path d="M260 113 L276 113" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="160" y="124" text-anchor="middle" class="k-small">electrolyte, Li⁺</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A lithium intercalation host, cycled at constant current between voltage cutoffs: its voltage against
     the open-circuit curve, and lithium piling up and draining inside it. Vary the rate (C-rate) and the
     interaction Ω that flattens the open-circuit curve. (More about the model below.)</p>
@@ -65,7 +81,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser, fitted } from './common.js';
+import { profiles, showCode, fromQuery, pauser, fitted, sliceNotation } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, cMax = 20000, L = 2e-6, mu0 = -293.3e3, x0 = 0.03;
 const Q = FARADAY * cMax * L; // capacity, C/m²
@@ -87,26 +103,26 @@ const E = (x, Om) => -(mu0 + RT * Math.log(x / (1 - x)) - 2 * Om * x) / FARADAY;
 let dev, run, running = false, held = true; // held: the first start honours ?t
 function start() {
   const Om = +omega.value * RT, I = (C() * Q) / 3600;
-  dev = new Device(
-    build({
-      species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
-      materials: {
-        // A strictly neutral host whose Li⁺ and e⁻ are one neutral combination, Li, with a
-        // regular-solution OCV (interaction Ω): φ is undefined inside.
-        host: {
-          epsr: 0,
-          species: { 'Li+': { D: 1e-15, mu0, cRef: cMax }, 'e-': { D: 1e-6, mu0: 0, cRef: cMax } },
-          statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, A: [Om] }],
-        },
+  const def = build({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: {
+      // A strictly neutral host whose Li⁺ and e⁻ are one neutral combination, Li, with a
+      // regular-solution OCV (interaction Ω): φ is undefined inside.
+      host: {
+        epsr: 0,
+        species: { 'Li+': { D: 1e-15, mu0, cRef: cMax }, 'e-': { D: 1e-6, mu0: 0, cRef: cMax } },
+        statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax, A: [Om] }],
       },
-      stack: [
-        { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, // the electrolyte: Li⁺ at 0 V vs Li
-        layer('host', L),
-        { V: E(x0, Om), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, // the current collector
-      ],
-      grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
-    }),
-  );
+    },
+    stack: [
+      { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, // the electrolyte: Li⁺ at 0 V vs Li
+      layer('host', L),
+      { V: E(x0, Om), terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, // the current collector
+    ],
+    grid: { hmin: 5e-9, hmax: 40e-9, ratio: 1.1 },
+  });
+  dev = new Device(def);
+  document.getElementById('slice').textContent = sliceNotation(def, { left: 'electrolyte', host: 'host', right: 'current collector' });
   dev.solve();
   // Filling first: a terminal's I is the current into the device there, so −I at the collector
   // (electrons in), with Li⁺ coming in from the left.

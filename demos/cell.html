@@ -20,6 +20,20 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A cell's resting potential: leaks, a pump, and what happens when the pump stops</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A cell in extracellular fluid, its membrane holding the sodium–potassium pump; a red line runs from the fluid across the membrane into the cytoplasm.">
+      <rect x="0" y="0" width="340" height="214" rx="6" class="k-liquid"/>
+      <circle cx="190" cy="118" r="86" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="2.2"/>
+      <circle cx="214" cy="132" r="22" fill="color-mix(in srgb, var(--c7) 14%, var(--panel))" stroke="var(--muted)" stroke-width="1"/>
+      <rect x="104" y="96" width="14" height="22" rx="5" transform="rotate(-14 111 107)" fill="color-mix(in srgb, var(--c3) 45%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path class="k-cut" d="M48 48 L155 104"/><path class="k-cut-head" d="M162 108 L152.0 107.8 L156.2 99.8 Z"/>
+      <text x="52" y="196" text-anchor="start" class="k-small">extracellular fluid</text>
+      <text x="190" y="70" text-anchor="middle" class="k-small">cytoplasm</text>
+      <text x="76" y="128" text-anchor="middle" class="k-small">Na⁺/K⁺ pump</text>
+      <text x="214" y="166" text-anchor="middle" class="k-small">nucleus</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A cell membrane leaks K⁺ out and Na⁺ in, and the Na⁺/K⁺ pump, spending ATP, puts them back. The membrane
     potential settles where the leaks' currents cancel the pump's, against the Mullins–Noda equation. Vary
     the K⁺ outside, how leaky the membrane is to Na⁺, and the free energy each ATP gives the pump; then stop
@@ -75,7 +89,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, traces, recorder, check, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, jumpTo, jumpPending, fitted } from './common.js';
+import { showCode, fromQuery, pauser, jumpTo, jumpPending, fitted, sliceNotation } from './common.js';
 
 const T = 310.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
 const IONS = ['Na+', 'K+', 'Cl-'];
@@ -268,6 +282,7 @@ function drawTime() {
 }
 
 if (jumpPending()) dev.ready.then(startRun);
+document.getElementById('slice').textContent = sliceNotation(cell(params()), { bath: 'extracellular fluid', outside: 'fluid', closed: 'no flux (the far side)' }, (f) => (f.phi?.type === 'capacitive' ? 'membrane (leaks, pump)' : undefined));
 showCode();
 </script>
 </body>

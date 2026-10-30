@@ -20,6 +20,21 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Ag | AgNO₃ | Ag: concentration polarisation and saturation</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="Two silver electrodes facing each other across a thin layer of silver nitrate solution, driven by a square wave of voltage; a red line runs across the gap from one silver to the other.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">square wave</text>
+      <path class="k-ink" d="M136 32 V44 H112 V60 M204 32 V44 H228 V60"/>
+      <rect x="100" y="60" width="24" height="120" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="216" y="60" width="24" height="120" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="124" y="64" width="92" height="112" class="k-liquid"/>
+      <path d="M124 64 H216 M124 176 H216" stroke="var(--muted)" stroke-width="1"/>
+      <path class="k-cut" d="M125 120 H209"/><path class="k-cut-head" d="M215 120 L206 115.5 V124.5 Z"/>
+      <text x="112" y="196" text-anchor="middle">Ag</text><text x="228" y="196" text-anchor="middle">Ag</text>
+      <text x="170" y="100" text-anchor="middle" class="k-small">10 mM AgNO₃</text>
+      <text x="170" y="160" text-anchor="middle" class="k-small">20 µm</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>10 mM silver nitrate between two silver electrodes 20 µm apart, driven by a square wave of cell
     voltage: the current's burst and sag as salt piles up at one electrode and depletes at the other, and its
     saturation at a limiting current however hard the cell is driven. Vary the voltage and the half-period.
@@ -107,7 +122,7 @@ import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, aqueous, traces, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { profiles, showCode, fromQuery, pauser, jumpTo, fitted } from './common.js';
+import { profiles, showCode, fromQuery, pauser, jumpTo, fitted, sliceNotation } from './common.js';
 
 // A reversible silver electrode: a contact whose terminal species is the Ag⁺ it exchanges, so its
 // voltage is the electrode potential. NO₃⁻ can't cross it.
@@ -287,6 +302,7 @@ vg.addEventListener('input', () => {
 vd.addEventListener('input', drawFet);
 sweep();
 drawFet();
+document.getElementById('slice').textContent = sliceNotation(def, { left: 'Ag', right: 'Ag', water: 'AgNO₃' });
 showCode();
 </script>
 </body>

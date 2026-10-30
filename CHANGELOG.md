@@ -3,6 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Every demo page has a sketch beside its introduction: the real thing (a beaker and its electrodes, a
+  solar cell's layers, a squid axon in a dish), the line its one dimension runs along drawn in red,
+  and under it that slice in cell notation, written from the definition the solver is given
+  (contact | n‑Si 4 µm | KCl 100 µm | bulk KCl), so it follows the controls.
+
 ## 1.6.1 (2026-10-30)
 
 - A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with

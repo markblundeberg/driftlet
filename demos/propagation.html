@@ -20,6 +20,20 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>An action potential travels: cable theory out of the ions</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A squid giant axon six centimetres long lying in sea water, a stimulating pipette at its left end and recording pipettes at 1, 3 and 5 centimetres; a red line runs along the inside of the axon from end to end.">
+      <path class="k-liquid" d="M11 96 H329 V192 Q329 201 320 201 H20 Q11 201 11 192 Z"/><path class="k-surface" d="M11 96 H329"/>
+      <path class="k-glass" d="M10 80 V192 Q10 202 20 202 H320 Q330 202 330 192 V80"/>
+      <path d="M42 138 H298 A12 12 0 0 1 298 162 H42 A12 12 0 0 1 42 138 Z" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1.3"/>
+      <path class="k-glass" d="M30 40 L35 146 M40 40 L37 146"/><text x="36" y="34" text-anchor="middle" class="k-small">stimulus</text>
+      <path class="k-glass" d="M70.66666666666666 40 L75.66666666666666 146 M80.66666666666666 40 L77.66666666666666 146"/><text x="76.66666666666666" y="34" text-anchor="middle" class="k-small">1 cm</text>
+      <path class="k-glass" d="M164.0 40 L169.0 146 M174.0 40 L171.0 146"/><text x="170.0" y="34" text-anchor="middle" class="k-small">3 cm</text>
+      <path class="k-glass" d="M257.3333333333333 40 L262.3333333333333 146 M267.3333333333333 40 L264.3333333333333 146"/><text x="263.3333333333333" y="34" text-anchor="middle" class="k-small">5 cm</text>
+      <path class="k-cut" d="M36 150 H296"/><path class="k-cut-head" d="M304 150 L295 145.5 V154.5 Z"/>
+      <text x="170" y="186" text-anchor="middle" class="k-small">squid giant axon, 6 cm, in sea water</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Six centimetres of a squid giant axon, along its length. The axoplasm is a salt solution whose ions drift in
     the field along it; the membrane, all along, is a capacitor with Hodgkin and Huxley's channels to the sea water
     outside. Stimulate one end and the spike runs down the axon at 18.7 m/s, within half a percent of the
@@ -85,7 +99,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { hodgkinHuxley, injector, square, traces, speciesRole } from '../src/kit.js';
 import { levelChart, themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, fitted } from './common.js';
+import { showCode, fromQuery, pauser, fitted, sliceNotation } from './common.js';
 
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const L = 0.06, H = 2e-4, SETTLE = 30e-3, WINDOW = 12e-3, SITES = [0.01, 0.03, 0.05];
@@ -141,6 +155,7 @@ let d, rec, speed = NaN;
 function start() {
   const p = showControls();
   d = new Device(axon(p));
+  document.getElementById('slice').textContent = `${sliceNotation(axon(p), { axon: 'axoplasm', closed: 'sealed' })}, its membrane all along it, to the sea water`;
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (no pump: no steady state)
   d.set(axon({ ...p, started: true }));
   // (ups: when the spikes crossed −30 mV going up at each site; last: the step before this call's)

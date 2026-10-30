@@ -23,6 +23,24 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Silicon pn junction</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A silicon pn diode seen at an angle: an n-type and a p-type block side by side between metal contacts, wired to a voltage source; a red line runs along it from one contact to the other.">
+      <rect x="30" y="104" width="10" height="54" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M30 104 l24 -13 h10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="40" y="104" width="125" height="54" fill="color-mix(in srgb, var(--c1) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M40 104 l24 -13 h125 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 16%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <text x="102.5" y="176" text-anchor="middle">n-Si</text>
+      <rect x="165" y="104" width="125" height="54" fill="color-mix(in srgb, var(--c8) 14%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M165 104 l24 -13 h125 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c8) 14%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <text x="227.5" y="176" text-anchor="middle">p-Si</text>
+      <rect x="290" y="104" width="10" height="54" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M290 104 l24 -13 h10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M300 104 l24 -13 v54 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path class="k-ink" d="M35 104 V40 H150 M190 40 H295 V104"/><circle cx="170" cy="40" r="14" class="k-box"/><text x="170" y="44" text-anchor="middle">V</text>
+      <path class="k-cut" d="M36 131.0 H284"/><path class="k-cut-head" d="M293 131.0 L284 126.5 V135.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A silicon pn diode between metal contacts, with electrons and holes simulated as ordinary species: its
     current–voltage curve against Shockley's law, and the band diagram and carrier densities at the bias you
     choose. The lifetime takes it from a short diode, whose carriers recombine at the contacts, to a long one,
@@ -77,7 +95,7 @@
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, live, particles } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, onScreen, fitted } from './common.js';
+import { levels, profiles, showCode, fromQuery, onScreen, fitted, sliceNotation } from './common.js';
 
 const Si = semiconductor('Si'), W = units.um(1.5), ND = units.perCm3(1e17), NA = units.perCm3(1e16);
 const recombination = (kf) => [{ equation: 'e- + h+ = 0', kf: { Si: kf } }]; // band to band
@@ -276,6 +294,7 @@ function paint(now) {
     ctx.fill();
   }
 }
+document.getElementById('slice').textContent = sliceNotation(diode(kf()), { n: 'n-Si', p: 'p-Si' });
 showCode();
 </script>
 </body>

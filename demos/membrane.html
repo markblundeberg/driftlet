@@ -23,6 +23,25 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>A cation-exchange membrane between two salt solutions</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A two-compartment cell: two stirred salt solutions separated by a cation-exchange membrane, a silver/silver chloride electrode in each, wired to a voltmeter; a red line runs from the left solution through the membrane into the right.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">voltmeter</text>
+      <path class="k-ink" d="M136 32 V44 H70 V62 M204 32 V44 H270 V62"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/>
+      <path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect x="166" y="60" width="8" height="146" fill="color-mix(in srgb, var(--c7) 30%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="66" y="62" width="8" height="80" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="266" y="62" width="8" height="80" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <text x="70" y="158" text-anchor="middle">Ag/AgCl</text><text x="270" y="158" text-anchor="middle">Ag/AgCl</text>
+      <rect x="86" y="196" width="28" height="6" rx="3" fill="var(--panel)" stroke="var(--ink)" stroke-width="1"/><path d="M80 190 A22 7 0 0 0 120 190" fill="none" stroke="var(--muted)" stroke-width="0.9"/><path d="M120 190 l-1 4.5 l-3.5 -3 Z" fill="var(--muted)"/>
+      <rect x="226" y="196" width="28" height="6" rx="3" fill="var(--panel)" stroke="var(--ink)" stroke-width="1"/><path d="M220 190 A22 7 0 0 0 260 190" fill="none" stroke="var(--muted)" stroke-width="0.9"/><path d="M260 190 l-1 4.5 l-3.5 -3 Z" fill="var(--muted)"/>
+      <path class="k-cut" d="M120 120 H214"/><path class="k-cut-head" d="M220 120 L211 115.5 V124.5 Z"/>
+      <text x="110" y="184" text-anchor="middle" class="k-small">NaCl, c₁</text>
+      <text x="230" y="184" text-anchor="middle" class="k-small">NaCl, c₂</text>
+      <text x="170" y="54" text-anchor="middle" class="k-small">membrane</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A cation-exchange membrane between 0.1 M NaCl and a more dilute solution, at open circuit: the
     voltage between Ag/AgCl electrodes in the two solutions, against the Teorell–Meyer–Sievers theory, and
     each ion's level through the membrane. Vary the dilute side, the membrane's fixed charge and the unstirred
@@ -78,7 +97,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, bath, aqueous, live, speciesRole, particles, IONS } from '../src/kit.js';
 import { themeColor } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery, onScreen, fitted } from './common.js';
+import { levels, profiles, showCode, fromQuery, onScreen, fitted, sliceNotation } from './common.js';
 
 // Solution and membrane, both strictly neutral (macroscopic). The membrane is the same water,
 // with its ions ten times slower and a fixed charge.
@@ -134,7 +153,9 @@ function curve() {
 }
 
 const dev = live(cell(c2(), X(), Lw()), { onsolution: draw });
-const update = () => dev.set(cell(c2(), X(), Lw()));
+const showSlice = () => (document.getElementById('slice').textContent = sliceNotation(cell(c2(), X(), Lw()), { left: 'stirred NaCl', right: 'stirred NaCl' }));
+const update = () => (dev.set(cell(c2(), X(), Lw())), showSlice());
+showSlice();
 for (const el of [c2s, Xs, Ls]) el.addEventListener('input', update);
 for (const el of [Xs, Ls])
   el.addEventListener('change', () => {

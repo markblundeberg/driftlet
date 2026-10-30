@@ -20,6 +20,20 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>The Frumkin effect: a reaction its double layer repels</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A three-electrode cell: a hanging mercury drop electrode on a glass capillary, a reference and a platinum counter electrode in stirred sodium fluoride with peroxodisulfate, wired to a potentiostat; a red line runs from the mercury into the solution.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M136 32 V44 H90 V62 M170 32 V58 M204 32 V44 H262 V102"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <path class="k-glass" d="M86 62 V118 M94 62 V118"/><path d="M90 62 V118" stroke="color-mix(in srgb, var(--muted) 45%, var(--panel))" stroke-width="3"/><circle cx="90" cy="130" r="13" fill="color-mix(in srgb, var(--muted) 45%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><circle cx="85" cy="125" r="3.5" fill="var(--panel)" opacity="0.8"/><text x="90" y="160" text-anchor="middle">Hg drop</text>
+      <rect class="k-glass" x="164" y="58" width="12" height="96" rx="6"/><path class="k-ink" d="M170 58 V136"/><rect class="k-insulator" x="166" y="149" width="8" height="5"/><text x="170" y="172" text-anchor="middle">reference</text>
+      <rect x="258" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="262" y="172" text-anchor="middle">Pt</text>
+      <rect x="200" y="196" width="28" height="6" rx="3" fill="var(--panel)" stroke="var(--ink)" stroke-width="1"/><path d="M194 190 A22 7 0 0 0 234 190" fill="none" stroke="var(--muted)" stroke-width="0.9"/><path d="M234 190 l-1 4.5 l-3.5 -3 Z" fill="var(--muted)"/>
+      <text x="222" y="122" text-anchor="middle" class="k-small">NaF, S₂O₈²⁻</text>
+      <path class="k-cut" d="M103 130 H140"/><path class="k-cut-head" d="M146 130 L137 125.5 V134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Peroxodisulfate (S₂O₈²⁻) reduced to sulfate at a mercury electrode in sodium fluoride, stirred as on a
     rotating disk: the steady current against the electrode's potential. Negative of the potential of zero
     charge (pzc) the electrode's charge turns negative and its double layer pushes the anion away from where
@@ -111,7 +125,7 @@ import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, EPS0 } from '../src/index.js';
 import { build, layer, ohmic, bath, half, WATER_EPSR } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, sliceNotation } from './common.js';
 
 const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY, eps = WATER_EPSR * EPS0;
 // The ions, with table μ° (J/mol), so potentials read against SHE.
@@ -241,6 +255,7 @@ let dev, curves;
 function rebuild() {
   setSite(+size.value * 1e-9);
   dev = new Device(electrode(cs(), Es[0]));
+  document.getElementById('slice').textContent = sliceNotation(electrode(cs(), Es[0]), { bath: 'stirred bulk' });
   const sim = Es.map((E) => (dev.set({ contacts: { left: { V: E } } }), -dev.solve().terminals.left.current));
   curves = { sim, full: Et.map((E) => theory(cs(), E)), classic: Et.map((E) => theory(cs(), E, 'classic')), none: Et.map((E) => theory(cs(), E, 'none')) };
   update();

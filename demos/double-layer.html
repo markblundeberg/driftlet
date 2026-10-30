@@ -20,6 +20,19 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Double layer at a blocking electrode: dilute vs crowded ions</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A three-electrode cell: a blocking working electrode, a reference and a platinum counter electrode in sodium chloride solution, wired to a potentiostat; a red line runs from the electrode into the solution.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M136 32 V44 H90 V62 M170 32 V58 M204 32 V44 H262 V102"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect class="k-insulator" x="81.0" y="62" width="18" height="48" rx="3"/><rect x="85.0" y="110" width="10" height="40" rx="1" fill="color-mix(in srgb, var(--c4) 55%, var(--muted))" stroke="var(--ink)" stroke-width="1.1"/><text x="90" y="166" text-anchor="middle">electrode</text>
+      <rect class="k-glass" x="164" y="58" width="12" height="96" rx="6"/><path class="k-ink" d="M170 58 V136"/><rect class="k-insulator" x="166" y="149" width="8" height="5"/><text x="170" y="172" text-anchor="middle">reference</text>
+      <rect x="258" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="262" y="172" text-anchor="middle">Pt</text>
+      <text x="222" y="122" text-anchor="middle" class="k-small">NaCl in water</text>
+      <path class="k-cut" d="M95 130 H140"/><path class="k-cut-head" d="M146 130 L137 125.5 V134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A salt solution against a blocking electrode held ψ above the bulk: the double layer's charge against
     Gouy–Chapman theory for ideal ions and Kilic–Bazant–Ajdari theory for crowded ones, and the crowded
     layer's levels and concentrations. Vary ψ, the ion size and the salt. (More about the model below.)</p>
@@ -53,7 +66,7 @@
 import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, bath, aqueous, WATER_EPSR } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, sliceNotation } from './common.js';
 
 const RT = GAS_CONSTANT * 298.15, eps = WATER_EPSR * EPS0;
 const psi = document.getElementById('psi'), size = document.getElementById('a'), salt = document.getElementById('c');
@@ -115,6 +128,7 @@ const sweep = (d) => {
 function rebuild() {
   cMax = 1 / ((+size.value * 1e-9) ** 3 * AVOGADRO); // one ion per a³
   ideal = device([]);
+  document.getElementById('slice').textContent = sliceNotation(def(c0(), []), { left: 'electrode', water: 'NaCl', bath: 'bulk' });
   crowded = device([{ type: 'lattice', species: ['Na+', 'Cl-'], cMax }]);
   curves = { ideal: sweep(ideal), crowded: sweep(crowded) };
   update();

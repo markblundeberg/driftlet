@@ -20,6 +20,36 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Organic bilayer solar cell: excitons</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="An organic solar cell seen at an angle: light through a glass substrate and a transparent anode onto a donor film, then an acceptor film and a metal cathode; a red line runs down from the anode to the cathode.">
+      <rect x="46" y="78" width="168" height="22" fill="color-mix(in srgb, var(--c1) 6%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 78 l24 -13 v22 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 6%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M46 78 l24 -13 H238 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 6%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="100" width="168" height="8" fill="color-mix(in srgb, var(--c3) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 100 l24 -13 v8 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c3) 16%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="108" width="168" height="30" fill="color-mix(in srgb, var(--c7) 24%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 108 l24 -13 v30 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c7) 24%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="138" width="168" height="22" fill="color-mix(in srgb, var(--c2) 24%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 138 l24 -13 v22 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c2) 24%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="160" width="168" height="10" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 160 l24 -13 v10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M241 82.5 L250 82.5 L258 82.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="86.0">glass</text>
+      <path d="M241 97.5 L250 97.5 L258 97.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="101.0">anode</text>
+      <path d="M241 116.5 L250 116.5 L258 116.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="120.0">donor</text>
+      <path d="M241 142.5 L250 142.5 L258 142.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="146.0">acceptor</text>
+      <path d="M241 158.5 L250 158.5 L258 158.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="162.0">cathode</text>
+      <path d="M98.0 20 L82.0 64" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M80.6 69 L78.5 59 L86.0 62 Z" fill="var(--c4)"/>
+      <path d="M144.0 20 L128.0 64" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M126.6 69 L124.5 59 L132.0 62 Z" fill="var(--c4)"/>
+      <path d="M190.0 20 L174.0 64" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M172.6 69 L170.5 59 L178.0 62 Z" fill="var(--c4)"/>
+      <path class="k-cut" d="M130.0 104 V162"/><path class="k-cut-head" d="M130.0 168 L125.5 159 H134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>In an organic semiconductor, light doesn't make free electrons and holes: it makes excitons, bound pairs
     that are electrically neutral. They wander by diffusion, whatever the field, for about ten nanometres
     before they decay, and they split into an electron and a hole only at an interface between a donor and an
@@ -80,7 +110,7 @@
 import { Device, units, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { photogeneration, live } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, sliceNotation } from './common.js';
 
 const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, N = units.perCm3(1e21), eV = units.eV;
 const EX = 1.7, HOMO = 5.2, LUMO = 4.0, tauX = 1e-9, alpha = 1e7, PHI1 = 1e-3, kSplit = 1e3, kCT = 1e-2, La = units.nm(40);
@@ -193,6 +223,7 @@ function labels() {
   document.getElementById('dOut').textContent = `${dIn.value} nm`;
   document.getElementById('LXout').textContent = `${LXin.value} nm`;
   document.getElementById('Gout').textContent = `${(+light.value).toFixed(1)}×`;
+  document.getElementById('slice').textContent = sliceNotation(cell({ V: 0, ...params() }), { left: 'anode', right: 'cathode' });
 }
 
 function draw(sol) {

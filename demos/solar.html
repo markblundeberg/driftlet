@@ -20,6 +20,29 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Silicon solar cell under light</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A silicon solar cell seen at an angle: light falling on a thin n-plus emitter with metal fingers, over a thick p base and a metal back; a red line runs down through it from the front.">
+      <rect x="46" y="92" width="168" height="14" fill="color-mix(in srgb, var(--c1) 30%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 92 l24 -13 v14 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 30%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M46 92 l24 -13 H238 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 30%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="106" width="168" height="66" fill="color-mix(in srgb, var(--c8) 14%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 106 l24 -13 v66 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c8) 14%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="46" y="172" width="168" height="9" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M214 172 l24 -13 v9 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M241 92.5 L250 92.5 L258 92.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="96.0">n⁺ emitter</text>
+      <path d="M241 132.5 L250 132.5 L258 132.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="136.0">p base</text>
+      <path d="M241 170.0 L250 170.0 L258 170.0 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
+      <text x="264" y="173.5">back metal</text>
+      <path d="M70 92 l24 -13 h7 l-24 13 Z" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="0.9" stroke-linejoin="round"/><path d="M104 92 l24 -13 h7 l-24 13 Z" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="0.9" stroke-linejoin="round"/><path d="M156 92 l24 -13 h7 l-24 13 Z" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="0.9" stroke-linejoin="round"/><path d="M190 92 l24 -13 h7 l-24 13 Z" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="0.9" stroke-linejoin="round"/>
+      <path class="k-cut" d="M130.0 93 V173"/><path class="k-cut-head" d="M130.0 179 L125.5 170 H134.5 Z"/>
+      <path d="M98.0 34 L82.0 78" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M80.6 83 L78.5 73 L86.0 76 Z" fill="var(--c4)"/>
+      <path d="M144.0 34 L128.0 78" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M126.6 83 L124.5 73 L132.0 76 Z" fill="var(--c4)"/>
+      <path d="M190.0 34 L174.0 78" stroke="var(--c4)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M172.6 83 L170.5 73 L178.0 76 Z" fill="var(--c4)"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>A silicon solar cell, a thin n⁺ emitter on a 60 µm p base, lit by one colour at a time: its
     current–voltage curve and its spectral response, both checked against textbook theory, and where the light
     makes electron–hole pairs and the quasi-Fermi levels split. Blue light is absorbed within a fraction of a
@@ -80,7 +103,7 @@
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, photogeneration, live, check } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { levels, profiles, showCode, fromQuery } from './common.js';
+import { levels, profiles, showCode, fromQuery, sliceNotation } from './common.js';
 
 const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), W = We + Wb, ND = units.perCm3(1e19), NA = units.perCm3(1e16);
 const PHI1 = 3e-3; // photon flux at "1×" light, mol/(m²·s): 1.8e17 photons per cm² per second, 29 mA/cm² if all collected
@@ -245,6 +268,7 @@ function draw(sol) {
   });
   profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }
+document.getElementById('slice').textContent = sliceNotation(cell(0, 600, 1, kf()), { 'n⁺': 'n⁺-Si', p: 'p-Si', left: 'front fingers', right: 'back metal' });
 showCode();
 </script>
 </body>

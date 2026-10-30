@@ -20,6 +20,22 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Myelin: a spike that jumps from node to node</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="Two thin axons side by side in fluid, both stimulated at their left ends: one bare, the other wrapped in myelin with gaps, the nodes of Ranvier, between the wraps; a red line runs along the inside of each.">
+      <path class="k-liquid" d="M11 96 H329 V192 Q329 201 320 201 H20 Q11 201 11 192 Z"/><path class="k-surface" d="M11 96 H329"/>
+      <path class="k-glass" d="M10 80 V192 Q10 202 20 202 H320 Q330 202 330 192 V80"/>
+      <path d="M42 106 H298 A12 12 0 0 1 298 130 H42 A12 12 0 0 1 42 106 Z" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1.3"/>
+      <path d="M40 158 H300 A10 10 0 0 1 300 178 H40 A10 10 0 0 1 40 158 Z" fill="color-mix(in srgb, var(--c4) 16%, var(--panel))" stroke="var(--ink)" stroke-width="1.3"/>
+      <rect x="36" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/><rect x="82" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/><rect x="128" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/><rect x="174" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/><rect x="220" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/><rect x="266" y="151" width="40" height="34" rx="12" fill="color-mix(in srgb, var(--panel) 70%, var(--c4))" stroke="var(--ink)" stroke-width="1.1"/>
+      <path class="k-glass" d="M30 40 L35 116 M40 40 L37 116"/><text x="36" y="34" text-anchor="middle" class="k-small">stimulus</text>
+      <path class="k-cut" d="M36 118 H296"/><path class="k-cut-head" d="M304 118 L295 113.5 V122.5 Z"/>
+      <path class="k-cut" d="M36 168 H296"/><path class="k-cut-head" d="M304 168 L295 163.5 V172.5 Z"/>
+      <text x="170" y="90" text-anchor="middle" class="k-small">bare</text>
+      <text x="170" y="196" text-anchor="middle" class="k-small">myelinated: a node of Ranvier between each wrap</text>
+      <path class="k-glass" d="M8 136 L34 164 M8 144 L33 166"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Two axons of the same thin radius, 5 µm, side by side, both stimulated at their left ends. One is bare, its
     membrane full of Hodgkin and Huxley's channels all along; the other is wrapped in myelin, which leaves only
     nodes of Ranvier, 1 µm wide every millimetre, to carry channels. The myelinated spike jumps from node to node,
@@ -91,7 +107,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { hodgkinHuxley, injector, square, traces } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, fitted } from './common.js';
+import { showCode, fromQuery, pauser, fitted, sliceNotation } from './common.js';
 
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const T = 273.15 + 18.5, VT = (GAS_CONSTANT * T) / FARADAY, a = 5e-6, am = 2 / a, L = 0.02, Ln = 1e-6;
@@ -231,6 +247,8 @@ function showControls() {
 let axons, theory;
 function start() {
   const p = showControls();
+  const nodes = myelinated(p, false).regions.filter((r) => r.name.startsWith('node')).length;
+  document.getElementById('slice').textContent = `${sliceNotation(bare(false), { axon: 'axoplasm', closed: 'sealed' })}, its membrane all along; or myelinated, ${nodes} nodes 1 µm wide every ${+(p.Lint * 1e3).toPrecision(2)} mm`;
   const make = (def, on) => {
     const d = new Device(def(false));
     d.advance(SETTLE, { tol: 1e-4 });

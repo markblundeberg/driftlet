@@ -20,6 +20,21 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Hydrogen evolution: Tafel slopes and the volcano</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A three-electrode cell: a platinum working electrode giving off hydrogen bubbles, a reference and a platinum counter electrode in perchloric acid, wired to a potentiostat; a red line runs from the platinum into the acid.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">potentiostat</text>
+      <path class="k-ink" d="M136 32 V44 H90 V62 M170 32 V58 M204 32 V44 H262 V102"/>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <rect class="k-insulator" x="81.0" y="62" width="18" height="48" rx="3"/><rect x="85.0" y="110" width="10" height="40" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="90" y="166" text-anchor="middle">Pt</text>
+      <rect class="k-glass" x="164" y="58" width="12" height="96" rx="6"/><path class="k-ink" d="M170 58 V136"/><rect class="k-insulator" x="166" y="149" width="8" height="5"/><text x="170" y="172" text-anchor="middle">reference</text>
+      <rect x="258" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="262" y="172" text-anchor="middle">Pt</text>
+      <circle cx="99" cy="146" r="1.6" fill="var(--panel)" stroke="var(--muted)" stroke-width="0.9"/><circle cx="102" cy="136" r="2" fill="var(--panel)" stroke="var(--muted)" stroke-width="0.9"/><circle cx="100" cy="124" r="2.2" fill="var(--panel)" stroke="var(--muted)" stroke-width="0.9"/><circle cx="104" cy="113" r="2.4" fill="var(--panel)" stroke="var(--muted)" stroke-width="0.9"/><circle cx="101" cy="104" r="2.6" fill="var(--panel)" stroke="var(--muted)" stroke-width="0.9"/>
+      <text x="222" y="122" text-anchor="middle" class="k-small">1 M HClO₄</text>
+      <text x="110" y="108" text-anchor="start" class="k-small">H₂</text>
+      <path class="k-cut" d="M95 130 H140"/><path class="k-cut-head" d="M146 130 L137 125.5 V134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>Hydrogen from acid at a metal, made in steps through hydrogen adsorbed on the metal's surface: H⁺ + e⁻ →
     H(ads) (the Volmer step), then either H(ads) + H⁺ + e⁻ → H₂ (Heyrovsky) or 2 H(ads) → H₂ (Tafel).
     Which step is slow, and how much hydrogen covers the surface, sets the Tafel slope an experiment
@@ -111,7 +126,7 @@
 import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { build, layer, ohmic, bath, aqueous, metal, IONS } from '../src/kit.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, fitted } from './common.js';
+import { showCode, fromQuery, fitted, sliceNotation } from './common.js';
 
 const T = 298.15, RT = GAS_CONSTANT * T, f = FARADAY / RT; // 1/V
 const acid = { 'H+': 1000, 'ClO4-': 1000 }, c = 1000, L = 10e-6, DH = IONS['H+'].D; // 1 M HClO₄; its unstirred layer
@@ -308,6 +323,7 @@ dGIn.addEventListener('input', () => (document.getElementById('dGOut').textConte
 EIn.addEventListener('input', update);
 addEventListener('resize', update);
 rebuild();
+document.getElementById('slice').textContent = sliceNotation(electrode(+EIn.value, +dGIn.value, 'heyrovsky'), { water: 'HClO₄', bath: 'bulk' }, (f) => (f.surface ? 'H(ads)' : undefined));
 showCode();
 </script>
 </body>

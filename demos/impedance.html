@@ -20,6 +20,21 @@
 <main>
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>Ag | AgNO₃ | Ag: impedance, and what the cell does inside</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="Two silver electrodes facing each other across a thin layer of silver nitrate solution, wired to an impedance analyzer; a red line runs across the gap from one silver to the other.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">impedance</text>
+      <path class="k-ink" d="M136 32 V44 H112 V60 M204 32 V44 H228 V60"/>
+      <rect x="100" y="60" width="24" height="120" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="216" y="60" width="24" height="120" rx="1" fill="color-mix(in srgb, var(--muted) 35%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="124" y="64" width="92" height="112" class="k-liquid"/>
+      <path d="M124 64 H216 M124 176 H216" stroke="var(--muted)" stroke-width="1"/>
+      <path class="k-cut" d="M125 120 H209"/><path class="k-cut-head" d="M215 120 L206 115.5 V124.5 Z"/>
+      <text x="112" y="196" text-anchor="middle">Ag</text><text x="228" y="196" text-anchor="middle">Ag</text>
+      <text x="170" y="100" text-anchor="middle" class="k-small">10 mM AgNO₃</text>
+      <text x="170" y="160" text-anchor="middle" class="k-small">20 µm</text>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
   <p>The impedance spectrum of 10 mM silver nitrate between two silver electrodes 20 µm apart, against
     theory, and the small-signal response inside the cell at the frequency you choose: each ion's voltage
     and the salt concentration oscillating across the cell, slowed down to watch. Slide the frequency from
@@ -80,7 +95,7 @@ import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, aqueous, traces, speciesRole, IONS } from '../src/kit.js';
 import { levelChart } from '../src/plot.js';
 import { chart, colors } from './plot.js';
-import { showCode, fromQuery, pauser, fitted } from './common.js';
+import { showCode, fromQuery, pauser, fitted, sliceNotation } from './common.js';
 
 // The saturation demo's cell: reversible silver electrodes (Ag⁺ in equilibrium with the metal,
 // NO₃⁻ blocked) either side of 10 mM silver nitrate, strictly neutral.
@@ -232,6 +247,7 @@ const pause = pauser(document.getElementById('controls'), () => {
 });
 solveAt();
 requestAnimationFrame(frame);
+document.getElementById('slice').textContent = sliceNotation(def, { left: 'Ag', right: 'Ag', water: 'AgNO₃' });
 showCode();
 </script>
 </body>
