@@ -9,6 +9,10 @@ major version.
   1.5 µs); it now settles 400 ms before its first pulse (thin myelin's internodes charge in up to
   ~70 ms), and the speeds its text quotes, taken before rest, are corrected (the nodes' spacing has a
   broad best near 1 mm, not "closer is faster").
+- The cyclic voltammetry demo compares cycle by cycle (a thick layer drifts for hundreds of cycles), its
+  theory steps on at 16,000 steps a cycle; the text gives k⁰ in cm/s too and the separations by
+  Nicholson's ψ (57.5 mV reversible, 80 at ψ ≈ 1), the √v scaling, and what the model leaves out; the
+  readout tells a levelled wave from one still rising, and reads peaks by a parabola.
 - Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
 - A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
   an adsorbate failed or converged by which reaction was listed first (the start balanced the first

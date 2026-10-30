@@ -47,19 +47,33 @@
     electrode is ever converted; the bulk is a fixed reservoir. A thin layer stands for vigorous stirring (a
     rotating disk): once the depleted zone fills it, the wave is steady and sigmoidal. A thick one is a still
     solution, where the depleted zone keeps growing through the sweep and the current peaks then sags: the
-    classic "duck". With fast kinetics (k⁰ ≳ 1) its peaks sit 57 mV apart (2.22 RT/F, a reversible
-    couple's with these switching potentials; the 59 mV often quoted is 2.3 RT/F, a rule of thumb), plus the ohmic drop through the
-    layer: 64 mV apart through 1 mm at 0.1 V/s. A smaller rate constant pulls them further apart
-    (quasi-reversible, then irreversible). Faster scans outrun diffusion.</p>
-  <p>The dashed line is the same experiment worked out apart from the solver, once it has settled into a
-    repeating cycle: each iron ion diffusing through the stagnant layer (a finite-volume scheme of its own,
-    with implicit steps), Butler–Volmer at the platinum in the same form, and the layer's ohmic drop. The
-    simulated cycle follows it within 1% of the peak current for every setting of the controls. What the
-    dashed line leaves out is migration: the iron ions carry a little of the current through the field in the
-    layer, and with 5 mM of them against 0.5 M of KCl that's the 1% (with a tenth of the iron, it's 0.1%).
-    The peaks in the readout are the last whole cycle's; a wave that only levels off, its current largest at
-    the sweep's ends, has none. (The textbook's Randles–Ševčík peak current is for a first sweep through a
-    solution of one form of the couple; here each cycle starts from what the last left at the surface.)</p>
+    classic "duck". The rate constant k⁰ is per area at the reference concentration (1 M): in the cm/s of
+    tables, k° = 0.1·k⁰. The peaks' separation depends on it and the scan rate only together, through
+    Nicholson's ψ ∝ k°/√(Dv) (Anal. Chem. 37, 1351, 1965). Reversible, they're 57.5 mV apart (near 2.22 RT/F,
+    the limit for switching potentials far past the wave; the 59 mV often quoted is 2.3 RT/F, a rule of
+    thumb); without the ohmic drop, at 0.1 V/s, k⁰ = 10 gives 57.8 mV, k⁰ = 1 gives 59.9, and k⁰ = 0.1 (ψ ≈ 1)
+    gives 80, and each decade faster a scan needs √10 times the k⁰ for the same. The layer's ohmic drop adds
+    to it: 65 mV apart through 1 mm at 0.1 V/s with k⁰ = 10. The peak currents grow as √v, whatever the
+    kinetics hold the wave to.</p>
+  <p>The dashed line is the same experiment worked out apart from the solver, for the cycle under way: each
+    iron ion diffusing through the stagnant layer (a finite-volume scheme of its own, with implicit steps),
+    Butler–Volmer at the platinum in the same form, and the layer's ohmic drop. A thick layer settles slowly,
+    cycle after cycle (its diffusion time L²/D is half an hour at 1 mm), so the comparison is cycle by cycle.
+    The simulated cycle follows it within about 1% of the peak current for every setting of the controls.
+    What the dashed line leaves out is migration: the iron ions carry a little of the current through the field in the
+    layer, and with 5 mM of them against 0.5 M of KCl that's most of the 1% (with a tenth of the iron, 0.1%
+    at slow scans; at fast ones the simulation's own resolution, up to 0.3%, is what's left;
+    a separate Nernst–Planck calculation with migration in it, run once for this page, closed the gap to
+    0.005% where the simulation's grid was fine). The readout's peaks are the last whole cycle's. A wave
+    whose current is largest at a switching potential has none there: it has levelled off (a thin layer, the
+    supply steady) or is still rising (kinetics too slow to reach it). (The textbook's Randles–Ševčík peak
+    current is for a first sweep through a solution of one form of the couple; here each cycle starts from
+    what the last left at the surface, and the peaks are 1.7 to 1.8 times its value for 5 mM.)</p>
+  <p>What it leaves out: an ideal solution, without the acid real Fe³⁺ needs to stay in solution (in 1 M HCl
+    its formal potential is nearer 0.70 V than the tables' 0.77); no double layer, so no charging current
+    (every real voltammogram's baseline: about 2% of the peak at 10 V/s); the platinum's own oxide at the top
+    of the window; and a reference electrode at the stagnant layer's far edge, so the ohmic drop is the
+    layer's alone.</p>
   <p>The first level diagram is electronic: the platinum's Fermi level, and the couple's redox level, the
     electronic level at which the local Fe³⁺/Fe²⁺ mixture is in equilibrium. The gap between them at the
     surface is the overpotential, which drives Butler–Volmer kinetics; the redox level's slope across the
@@ -73,7 +87,8 @@
     volts, so it can be drawn on the same axis as the electrons' Fermi level. Each ion moves down its own
     μ̄<sub>i</sub>, so its current flows down slopes in its own V<sub>i</sub> (thick; cations move downhill,
     anions uphill); the thin line under each, the standard level V°<sub>i</sub>, is where V<sub>i</sub> would
-    sit at the reference concentration. K⁺, about 3 V lower, is left out.</p>
+    sit at the reference concentration. K⁺, Cl⁻ and Fe²⁺ are drawn with display offsets (marked ⌇), so that
+    all share one readable axis.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -101,17 +116,17 @@ const electrode = (drive, k0, L, b = bulk) =>
     ],
     grid: { hmin: 10e-9, hmax: L / 40 },
   });
-// The cycle the simulation settles into, three cycles in, from rest at Erest: its times, potentials and
+// The simulation's nth cycle (the third by default), from rest at Erest: its times, potentials and
 // currents (mA/cm², anodic positive).
-function simulate(v, k0, L, b = bulk) {
+function simulate(v, k0, L, b = bulk, cycles = 3) {
   const rest = new Device(electrode({ I: 0 }, k0, L, b)).solve(), Erest = rest.terminals.left.V, period = (4 * span) / v;
   const dev = new Device(electrode(Erest, k0, L, b));
   dev.solve();
   dev.set({ contacts: { left: { V: { t: [0, period / 4, (3 * period) / 4, period], values: [Erest, Erest + span, Erest - span, Erest], repeat: true } } } });
-  const { trace } = dev.advance(3 * period, { tol: 1e-4 }), out = { t: [], E: [], I: [], Erest };
+  const { trace } = dev.advance(cycles * period, { tol: 1e-4 }), out = { t: [], E: [], I: [], Erest };
   trace.t.forEach((t, j) => {
-    if (t < 2 * period) return;
-    out.t.push(t - 2 * period);
+    if (t < (cycles - 1) * period) return;
+    out.t.push(t - (cycles - 1) * period);
     out.E.push(-trace.voltage[j]);
     out.I.push(trace.current[j] / 10);
   });
@@ -121,8 +136,8 @@ function simulate(v, k0, L, b = bulk) {
 // (finite volumes, implicit steps), the bulk's at its far side; Butler–Volmer at the platinum, in
 // driftlet's form (r = (k0/c_ref)(c₃e^{−αfη} − c₂e^{(1−α)fη}), η = E − iR − E°); the layer's iR drop, R =
 // L/κ. What it leaves out is migration: the iron ions carry a little of the current through the layer's
-// field, about 1% of it beside 0.5 M KCl.
-function cvTheory({ v, k0, L, alpha = 0.5, cycles = 3, steps = 4000, b = bulk, iR = true }) {
+// field, about 1% of it beside 0.5 M KCl. A model of it steps on cycle by cycle.
+function cvModel({ v, k0, L, alpha = 0.5, steps = 16000, b = bulk, iR = true }) {
   const f = FARADAY / RT, DO = IONS['Fe3+'].D, DR = IONS['Fe2+'].D, cO = b['Fe3+'], cR = b['Fe2+'];
   const E0 = (IONS['Fe3+'].mu0 - IONS['Fe2+'].mu0) / FARADAY, Er = E0 + Math.log(cO / cR) / f; // the rest potential, Nernst's
   const kappa = FARADAY * f * Object.keys(b).reduce((t, n) => t + IONS[n].z * IONS[n].z * IONS[n].D * b[n], 0), R = iR ? L / kappa : 0;
@@ -134,56 +149,103 @@ function cvTheory({ v, k0, L, alpha = 0.5, cycles = 3, steps = 4000, b = bulk, i
     x += hw;
   }
   const n = h.length, period = (4 * span) / v, dt = period / steps;
-  const vol = Array.from({ length: n }, (_, j) => (j === 0 ? h[0] / 2 : (h[j - 1] + h[j]) / 2)); // node n is the bulk's, held
-  const matrix = (D) => ({ a: vol.map((_, j) => (j > 0 ? -D / h[j - 1] : 0)), c: vol.map((_, j) => -D / h[j]), b: vol.map((V, j) => V / dt + (j > 0 ? D / h[j - 1] : 0) + D / h[j]) });
-  const thomas = ({ a, b: d0, c }, d) => {
-    const cp = new Float64Array(n), dp = new Float64Array(n);
-    cp[0] = c[0] / d0[0];
-    dp[0] = d[0] / d0[0];
-    for (let j = 1; j < n; j++) {
-      const den = d0[j] - a[j] * cp[j - 1];
-      cp[j] = c[j] / den;
-      dp[j] = (d[j] - a[j] * dp[j - 1]) / den;
+  const vol = Float64Array.from({ length: n }, (_, j) => (j === 0 ? h[0] / 2 : (h[j - 1] + h[j]) / 2)); // node n is the bulk's, held
+  // each ion's implicit step, (vol/dt − diffusion) c = vol/dt c_old + the bulk's at the far side: factorised once
+  const factor = (D) => {
+    const cp = new Float64Array(n), den = new Float64Array(n), a = (j) => (j > 0 ? -D / h[j - 1] : 0);
+    for (let j = 0; j < n; j++) {
+      const diag = vol[j] / dt + (j > 0 ? D / h[j - 1] : 0) + D / h[j];
+      den[j] = diag - (j > 0 ? a(j) * cp[j - 1] : 0);
+      cp[j] = -D / h[j] / den[j];
     }
-    for (let j = n - 2; j >= 0; j--) dp[j] -= cp[j] * dp[j + 1];
-    return dp;
+    return { cp, den, a: Float64Array.from({ length: n }, (_, j) => a(j)) };
   };
-  const MO = matrix(DO), MR = matrix(DR), unit = vol.map((_, j) => (j === 0 ? 1 : 0));
-  const uO = thomas(MO, unit), uR = thomas(MR, unit); // each profile's response to a unit flux out at the platinum
+  const solve = ({ cp, den, a }, d, x) => {
+    x[0] = d[0] / den[0];
+    for (let j = 1; j < n; j++) x[j] = (d[j] - a[j] * x[j - 1]) / den[j];
+    for (let j = n - 2; j >= 0; j--) x[j] -= cp[j] * x[j + 1];
+    return x;
+  };
+  const MO = factor(DO), MR = factor(DR), unit = new Float64Array(n);
+  unit[0] = 1;
+  const uO = solve(MO, unit, new Float64Array(n)), uR = solve(MR, unit, new Float64Array(n)); // each profile's response to a unit flux out at the platinum
+  const O = new Float64Array(n).fill(cO), Rd = new Float64Array(n).fill(cR), d = new Float64Array(n), O0 = new Float64Array(n), R0 = new Float64Array(n);
   const E = (t) => {
     const s = ((t % period) + period) % period;
     return s < period / 4 ? Er + v * s : s < (3 * period) / 4 ? Er + span - v * (s - period / 4) : Er - span + v * (s - (3 * period) / 4);
   };
-  let O = new Float64Array(n).fill(cO), Rd = new Float64Array(n).fill(cR);
-  const out = { t: [], E: [], I: [], R };
-  for (let k = 1; k <= cycles * steps; k++) {
-    const t = k * dt, Et = E(t);
-    const O0 = thomas(MO, O.map((c, j) => (vol[j] / dt) * c + (j === n - 1 ? (DO / h[j]) * cO : 0)));
-    const R0 = thomas(MR, Rd.map((c, j) => (vol[j] / dt) * c + (j === n - 1 ? (DR / h[j]) * cR : 0)));
-    // the reduction rate r (mol/(m²·s)): Fe³⁺ at the platinum O0 − r·uO, Fe²⁺ R0 + r·uR (bisection, both ≥ 0)
-    const excess = (r) => r - (k0 / 1000) * ((O0[0] - r * uO[0]) * Math.exp(-alpha * f * (Et + FARADAY * r * R - E0)) - (R0[0] + r * uR[0]) * Math.exp((1 - alpha) * f * (Et + FARADAY * r * R - E0)));
-    let lo = -R0[0] / uR[0], hi = O0[0] / uO[0];
-    for (let it = 0; it < 100; it++) {
-      const mid = 0.5 * (lo + hi);
-      if (excess(mid) > 0) hi = mid;
-      else lo = mid;
+  let k = 0, r = 0;
+  // the next cycle: its times (from its start), potentials and currents (mA/cm², anodic positive), every
+  // 10th step's
+  const cycle = () => {
+    const out = { t: [], E: [], I: [] };
+    for (let m = 1; m <= steps; m++) {
+      const t = ++k * dt, Et = E(t);
+      for (let j = 0; j < n; j++) d[j] = (vol[j] / dt) * O[j];
+      d[n - 1] += (DO / h[n - 1]) * cO;
+      solve(MO, d, O0);
+      for (let j = 0; j < n; j++) d[j] = (vol[j] / dt) * Rd[j];
+      d[n - 1] += (DR / h[n - 1]) * cR;
+      solve(MR, d, R0);
+      // the reduction rate r (mol/(m²·s)): Fe³⁺ at the platinum O0 − r·uO, Fe²⁺ R0 + r·uR; Newton from the
+      // last step's, kept inside the bracket where both stay ≥ 0 (bisecting where a step would leave it)
+      let lo = -R0[0] / uR[0], hi = O0[0] / uO[0];
+      r = Math.min(Math.max(r, lo), hi);
+      for (let it = 0; it < 60; it++) {
+        const eta = Et + FARADAY * r * R - E0, ef = Math.exp(-alpha * f * eta), eb = Math.exp((1 - alpha) * f * eta);
+        const Os = O0[0] - r * uO[0], Rs = R0[0] + r * uR[0], g = r - (k0 / 1000) * (Os * ef - Rs * eb);
+        if (g > 0) hi = r;
+        else lo = r;
+        const dg = 1 + (k0 / 1000) * (uO[0] * ef + Os * alpha * f * FARADAY * R * ef + uR[0] * eb + Rs * (1 - alpha) * f * FARADAY * R * eb);
+        let next = r - g / dg;
+        if (!(next > lo && next < hi)) next = 0.5 * (lo + hi);
+        if (Math.abs(next - r) <= 1e-13 * Math.max(Math.abs(r), 1e-12)) {
+          r = next;
+          break;
+        }
+        r = next;
+      }
+      for (let j = 0; j < n; j++) {
+        O[j] = O0[j] - r * uO[j];
+        Rd[j] = R0[j] + r * uR[j];
+      }
+      if (m % 10 === 0) {
+        out.t.push(m * dt);
+        out.E.push(Et);
+        out.I.push((-FARADAY * r) / 10);
+      }
     }
-    const r = 0.5 * (lo + hi);
-    O = O0.map((c, j) => c - r * uO[j]);
-    Rd = R0.map((c, j) => c + r * uR[j]);
-    if (k > (cycles - 1) * steps) {
-      out.t.push(t - (cycles - 1) * period);
-      out.E.push(Et);
-      out.I.push((-FARADAY * r) / 10);
-    }
-  }
-  return out;
+    return out;
+  };
+  return { cycle, R, period };
+}
+// Its cycle the simulation's nth matches (three in, by default).
+function cvTheory({ cycles = 3, ...p }) {
+  const model = cvModel(p);
+  let c;
+  for (let m = 0; m < cycles; m++) c = model.cycle();
+  return { ...c, R: model.R };
 }
 // A cycle's peaks: the anodic and cathodic currents and their potentials.
+// A cycle's peaks: each one's potential by a parabola through it and its neighbours (a simulation's points
+// are sparse). Where the current is largest at a switching potential the wave has no peak there: it has
+// levelled off, or is still rising (by over 5% in the last 50 mV).
 const peaks = ({ E, I }) => {
-  const a = I.indexOf(Math.max(...I)), c = I.indexOf(Math.min(...I));
-  const top = Math.max(...E), bottom = Math.min(...E); // (a peak at a switching potential is a plateau's end, not a peak)
-  return { Ea: E[a], Ia: I[a], Ec: E[c], Ic: I[c], peaked: E[a] < top - 0.005 && E[c] > bottom + 0.005 };
+  const a = I.indexOf(Math.max(...I)), c = I.indexOf(Math.min(...I)), top = Math.max(...E), bottom = Math.min(...E);
+  const vertex = (k) => {
+    if (k <= 0 || k >= I.length - 1) return E[k];
+    const den = I[k - 1] - 2 * I[k] + I[k + 1], d = den === 0 ? 0 : (0.5 * (I[k - 1] - I[k + 1])) / den;
+    return E[k] + d * (d > 0 ? E[k + 1] - E[k] : E[k] - E[k - 1]);
+  };
+  // at a switching potential: how much the current grew over the 50 mV before it
+  const rise = (k, end) => {
+    let j = k;
+    while (j > 0 && Math.abs(E[j - 1] - end) < 0.05) j--;
+    return Math.abs(I[k] / I[j]);
+  };
+  const atEnd = (k, end) => Math.abs(E[k] - end) < 0.005;
+  const shape = atEnd(a, top) || atEnd(c, bottom) ? (Math.max(atEnd(a, top) ? rise(a, top) : 1, atEnd(c, bottom) ? rise(c, bottom) : 1) > 1.05 ? 'rising' : 'level') : 'peaks';
+  return { Ea: vertex(a), Ia: I[a], Ec: vertex(c), Ic: I[c], shape, peaked: shape === 'peaks' };
 };
 
 // (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
@@ -196,7 +258,12 @@ const L = () => 1e-6 * 10 ** +Ls.value; // m: 3 µm (vigorous stirring) to 1 mm 
 const scan = () => 10 ** +rate.value; // V/s
 const k = () => 10 ** +k0.value; // mol/(m²·s)
 
-let dev, Erest, cv, theory, theoryPeaks, running = false;
+let dev, Erest, cv, model, cycles, running = false;
+// the theory's cycles, stepped on as the simulation reaches them (cycle n, from 1)
+const theoryCycle = (n) => {
+  while (cycles.length < n) cycles.push(model.cycle());
+  return cycles[n - 1];
+};
 function start() {
   // At rest, the electrode floats to the couple's Nernst potential; then a triangle wave about it.
   const rest = new Device(electrode({ I: 0 }, k(), L())).solve();
@@ -208,8 +275,8 @@ function start() {
   dev.set({ contacts: { left: { V: wave } } });
   // It runs on, cycle after cycle (?t=… stops it there, for a screenshot), keeping the last three.
   cv = { t: [], E: [], I: [], period, stop: jumpTo() || Infinity };
-  theory = cvTheory({ v: scan(), k0: k(), L: L() });
-  theoryPeaks = peaks(theory);
+  model = cvModel({ v: scan(), k0: k(), L: L() });
+  cycles = [];
   labels();
   lastFrame = undefined;
   if (!running) requestAnimationFrame(frame);
@@ -236,20 +303,22 @@ function frame(now = performance.now()) {
   // The cycle under way, and the two before it, fainter: watch it settle onto a repeating curve.
   const split = cv.t.findIndex((t) => t > sol.time - period);
   const E = sol.terminals.left.V;
-  // the last whole cycle's peaks against the theory's (the cycle settles by about the third)
-  const n = Math.floor(sol.time / period), from = cv.t.findIndex((t) => t >= (n - 1) * period), to = cv.t.findIndex((t) => t > n * period);
-  const sp = n >= 3 && from >= 0 && to > from ? peaks({ E: cv.E.slice(from, to), I: cv.I.slice(from, to) }) : null, tp = theoryPeaks;
-  document.getElementById('status').textContent = `cycle ${Math.floor(sol.time / period) + 1} · E = ${E.toFixed(3)} V vs SHE · ` +
-    (tp.peaked ? `peaks ${(1000 * (tp.Ea - tp.Ec)).toFixed(0)} mV apart, ${tp.Ia.toFixed(2)} and ${tp.Ic.toFixed(2)} mA/cm² in theory` : `no peaks: it levels off at ${tp.Ia.toFixed(2)} and ${tp.Ic.toFixed(2)} mA/cm² in theory`) +
-    (sp ? `; simulated, ${sp.peaked ? `${(1000 * (sp.Ea - sp.Ec)).toFixed(0)} mV, ` : ''}${sp.Ia.toFixed(2)} and ${sp.Ic.toFixed(2)}` : '');
+  // the theory's cycle for the one under way, and the last whole cycle's peaks against the theory's same one
+  const n = Math.floor(sol.time / period), theory = theoryCycle(n + 1);
+  const from = cv.t.findIndex((t) => t >= (n - 1) * period), to = cv.t.findIndex((t) => t > n * period);
+  const sp = n >= 1 && from >= 0 && to > from ? peaks({ E: cv.E.slice(from, to), I: cv.I.slice(from, to) }) : null, tp = n >= 1 ? peaks(theoryCycle(n)) : null;
+  const what = (q) =>
+    q.shape === 'peaks' ? `peaks ${(1000 * (q.Ea - q.Ec)).toFixed(0)} mV apart, ${q.Ia.toFixed(2)} and ${q.Ic.toFixed(2)} mA/cm²` : `no peaks, ${q.shape === 'rising' ? 'still rising at the switching potentials' : 'levelled off'}: ${q.Ia.toFixed(2)} and ${q.Ic.toFixed(2)} mA/cm² there`;
+  const nums = (q) => (q.shape === 'peaks' ? `${(1000 * (q.Ea - q.Ec)).toFixed(0)} mV, ${q.Ia.toFixed(2)} and ${q.Ic.toFixed(2)}` : `${q.Ia.toFixed(2)} and ${q.Ic.toFixed(2)}`);
+  document.getElementById('status').textContent = `cycle ${n + 1} · E = ${E.toFixed(3)} V vs SHE` + (sp ? ` · cycle ${n}: ${what(sp)}; in theory, ${tp.shape === sp.shape ? nums(tp) : what(tp)}` : '');
   chart(document.getElementById('cv'), {
     // Fixed axes (the sweep's span, and at least the limiting currents), so the curve draws into them.
     xlabel: 'E (V vs SHE)', ylabel: 'I (mA/cm², anodic +)', xlim: [Erest - 0.5, Erest + 0.5],
-    ylim: (() => { const m = Math.max(2, 1.1 * Math.max(0, ...cv.I.map(Math.abs), ...theory.I.map(Math.abs))); return [-m, m]; })(),
+    ylim: (() => { const m = 1.1 * Math.max(...cv.I.map(Math.abs), ...theory.I.map(Math.abs)); return [-m, m]; })(),
     series: [
       { x: cv.E.slice(0, split + 1), y: cv.I.slice(0, split + 1), color: colors[6], width: 1.2, label: 'earlier cycles' },
       { x: cv.E.slice(split), y: cv.I.slice(split), color: colors[2], label: 'this cycle' },
-      { x: theory.E, y: theory.I, color: 'var(--ink)', width: 1, dash: [4, 4], label: 'theory, settled (no migration)' },
+      { x: theory.E, y: theory.I, color: 'var(--ink)', width: 1, dash: [4, 4], label: 'theory, this cycle (no migration)' },
       { x: [E], y: [cv.I.at(-1) ?? 0], color: colors[3], marker: true, width: 0, label: 'now' },
     ],
   });
@@ -295,7 +364,8 @@ for (const el of [rate, k0, Ls]) el.addEventListener('change', start);
 for (const el of [rate, k0, Ls]) el.addEventListener('input', labels); // (readouts while dragging; the run on release)
 function labels() {
   document.getElementById('rateOut').textContent = `${scan() < 0.1 ? scan().toFixed(3) : scan().toFixed(2)} V/s`;
-  document.getElementById('k0Out').textContent = `${k().toExponential(0)} mol/(m²·s)`;
+  const p10 = (x) => { const e = Math.round(Math.log10(x) * 2) / 2; return Number.isInteger(e) ? `10${String(e).replace('-', '⁻').replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d])}` : x.toPrecision(2); };
+  document.getElementById('k0Out').textContent = `${p10(k())} mol/(m²·s), k° ${p10(k() / 10)} cm/s`;
   document.getElementById('LOut').textContent = L() >= 1e-3 ? '1 mm (still)' : `${(L() * 1e6).toPrecision(2)} µm`;
 }
 document.getElementById('run').addEventListener('click', start);
