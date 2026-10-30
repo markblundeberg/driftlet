@@ -54,22 +54,29 @@
     (Gerischer's picture of the couple's states). Oxidation
     takes electrons from the filled states above the Fermi level into the metal's empty ones, the shaded
     overlap; reduction the reverse. The rate constant the step measures is their sum,
-    k = A kT [I(λ, η) + I(λ, −η)], with I the integral over the band in units of kT.</p>
+    k = νρ kT [I(λ, η) + I(λ, −η)], with I the integral over the band in units of kT (Chidsey's form).</p>
   <p><a href="https://pubmed.ncbi.nlm.nih.gov/17847385/">Chidsey (Science, 1991)</a> held ferrocene a fixed
     distance from gold by self-assembling a mixed thiol monolayer, its ferrocene on a 16-methylene chain, and
     measured its electron transfer in 1 M HClO₄ from 1 to 47 °C over reaction free energies from −1.0 to
-    +0.8 eV: rate constants from 1 per second to 2 × 10⁴ per second, which Marcus–Hush–Chidsey kinetics
-    fitted reasonably with λ = 0.85 eV and a tunnelling prefactor A = 7 × 10⁴ s⁻¹ eV⁻¹, this page's values
-    (A for that chain: each methylene cuts the tunnelling roughly e-fold, which is what puts these rates
-    within reach of a potential step, ahead of the cell's own charging time). Those put the rate at the
-    formal potential at 1.35 s⁻¹ each way at 25 °C, so 2.7 s⁻¹ for the relaxation a step measures, where the
-    1991 paper reported 2.5 s⁻¹ for that monolayer (as <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3434967/">Devaraj
-    and colleagues, 2006</a>, from Chidsey's group, quote it; their own monolayers are different); 0.61 each way at 1 °C, 2.55 at 47 °C, an activation energy of 0.24 eV, a
-    little above λ/4. The ceiling is A kT √(4πλ/kT) = 3.7 × 10⁴ s⁻¹, half of which the oxidation reaches at
-    η = λ; at 0.8 V the rate is 41% of it, and by 1.5 V it has all but reached it (99.9%). By 0.8 V Butler–Volmer, with
-    the same rate at the formal potential, would be 500 times faster. Driven hard, the rate depends on the
-    temperature far less than at the formal potential: 10% between 1 and 47 °C at 0.8 V against fourfold,
-    and 2% if the electronic coupling, rather than A, is held fixed (A in this form carries 1/√T).</p>
+    +0.8 eV, by potential steps, judging the sites' kinetic homogeneity by the single exponential: rate
+    constants from 1 per second to 2 × 10⁴ per second. Marcus–Hush–Chidsey kinetics fitted them with
+    λ = 0.85 eV and a tunnelling prefactor νρ = 6.73 × 10⁴ s⁻¹ eV⁻¹ (7 × 10⁴ in his abstract), this page's
+    values, the prefactor set to give the decay rate constant he measured at the formal potential,
+    2.5 s⁻¹ (the same monolayer's voltammetry gave a standard rate constant of 1.3 s⁻¹ by Laviron's
+    analysis; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3434967/">Devaraj and colleagues (2006)</a>,
+    from his group, later measured 2.2 s⁻¹ with a triazole link in place of the ester). With the integral
+    exact, those parameters give 1.30 s⁻¹ each way at the formal potential at 25 °C, so 2.60 s⁻¹ for the
+    relaxation a step measures, 4% above the 2.5 they were set to; 0.58 each way at 1 °C and 2.46 at 47 °C,
+    4.2-fold where he measured 3.7-fold, an activation energy of 0.24 eV, a little above λ/4. The chain is
+    what makes the experiment possible: each methylene cuts the tunnelling roughly e-fold (as later
+    measurements put it; the 1991 paper left the distance dependence to later work), which brings these
+    rates within reach of a potential step, ahead of the cell's own charging time. The ceiling is
+    νρ kT √(4πλ/kT) = 3.5 × 10⁴ s⁻¹, half of which the oxidation reaches at η = λ; at 0.8 V the rate is
+    41% of it, and by 1.5 V it has all but reached it (99.9%). By 0.8 V Butler–Volmer, with the same rate
+    at the formal potential, would be 500 times faster. Driven hard, the rate depends on the temperature far
+    less than at the formal potential, as he found: 10% between 1 and 47 °C at 0.8 V against fourfold, and
+    2% if the electronic coupling, rather than νρ, is held fixed (νρ in this form carries 1/√T; he held it
+    fixed across his temperatures).</p>
   <p>The simulation runs the experiment: the gold at the couple's formal potential, a step to η, and the
     current through the gold as the ferrocene's coverage moves to its new equilibrium. Its rate constant is
     the slope of a straight line fitted to ln i over the decay (between half a decay time and three), with
@@ -80,9 +87,9 @@
   <p>What the model leaves out. Surface species here carry no charge, so ferrocenium is written as an ion
     pair with perchlorate, which the acid's 1 M supplies, as it's often described in these monolayers
     (ion pairing there is well documented: Rowe and Creager, Langmuir 7, 2307, 1991). The face has no capacitance, so no charging current follows the step, where a real
-    measurement must separate the two (it decays in microseconds there). All the potential the step applies
-    drives the reaction: the share of the interfacial drop that falls between the ferrocene and the
-    solution isn't modelled, nor the spread of rates a real monolayer shows, nor the solution's resistance
+    measurement must separate the two (his cell's time constant was 3 µs). All the potential the step
+    applies drives the reaction, which Chidsey calculated is nearly so here: with the ferrocene that far
+    out, the interfacial drop falls almost entirely between it and the gold. Not modelled: the spread of rates a real monolayer can show, or the solution's resistance
     between the gold and a reference. The gold's density of states and the coupling are taken as flat in
     energy; λ and A are held fixed as the temperature changes; and the rate is symmetric, one λ for both
     directions. Later work has refined each of these (kinetic dispersion, asymmetric forms of the theory):
@@ -95,7 +102,7 @@ import { build, layer, ohmic, bath, aqueous, metal } from '../src/kit.js';
 import { chart, colors } from './plot.js';
 import { showCode, fromQuery, fitted } from './common.js';
 
-const A = 7e4; // Chidsey's tunnelling prefactor, s⁻¹ eV⁻¹
+const A = 6.73e4; // Chidsey's tunnelling prefactor νρ, s⁻¹ eV⁻¹ (rounded to 7 × 10⁴ in his abstract)
 const sites = 7.6e-6, cover = 0.02; // a full alkanethiol monolayer's sites (mol/m²), and the ferrocene's share
 const acid = { 'H+': 1000, 'ClO4-': 1000 }; // 1 M HClO₄
 const kT = (T) => (GAS_CONSTANT * T) / FARADAY; // eV

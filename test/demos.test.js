@@ -476,10 +476,13 @@ test("demos/chidsey.html: Chidsey's experiment, the fitted rates against the the
     }
   }
   assert.equal(etas.length, 18);
-  // at the formal potential 1.35 s⁻¹ at 25 °C, 0.61 at 1 °C, 2.55 at 47 °C; the ceiling 3.7e4 s⁻¹
+  // Chidsey's νρ (6.73e4, 7e4 in his abstract): at the formal potential 1.30 s⁻¹ each way at 25 °C, so 2.60 for
+  // the step (4% over the 2.5 he set it by), 0.58 at 1 °C, 2.46 at 47 °C; the ceiling 3.5e4 s⁻¹
+  assert.equal(A, 6.73e4);
   const k0 = (T) => rate(1e-9, 0.85, T) / 2;
-  assert.ok(Math.abs(k0(298.15) - 1.35) < 0.005 && Math.abs(k0(274.15) - 0.61) < 0.005 && Math.abs(k0(320.15) - 2.55) < 0.005);
-  assert.ok(Math.abs(A * kT(298.15) * Math.sqrt((4 * Math.PI * 0.85) / kT(298.15)) / 3.7e4 - 1) < 0.01);
+  assert.ok(Math.abs(k0(298.15) - 1.30) < 0.005 && Math.abs(k0(274.15) - 0.58) < 0.005 && Math.abs(k0(320.15) - 2.46) < 0.005);
+  assert.ok(Math.abs(2 * k0(298.15) / 2.5 - 1.04) < 0.005);
+  assert.ok(Math.abs(A * kT(298.15) * Math.sqrt((4 * Math.PI * 0.85) / kT(298.15)) / 3.5e4 - 1) < 0.01);
   // by 0.8 V: Butler–Volmer 500 times faster; one-level Marcus at its peak, η = λ; the temperature 10% there, ×4 at E°′
   assert.ok(Math.abs(rate(0.8, 0.85, 298.15, 'bv') / rate(0.8, 0.85, 298.15) / 523 - 1) < 0.01);
   const mk = (e) => rate(e, 0.85, 298.15, 'marcus');
@@ -489,10 +492,10 @@ test("demos/chidsey.html: Chidsey's experiment, the fitted rates against the the
   const ceil = (T) => A * kT(T) * Math.sqrt((4 * Math.PI * 0.85) / kT(T)), L25 = 0.85 / kT(298.15);
   assert.ok(Math.abs((A * kT(298.15) * mhcI(L25, L25)) / ceil(298.15) - 0.5) < 1e-9);
   assert.ok(Math.abs(rate(0.8, 0.85, 298.15) / ceil(298.15) - 0.41) < 0.005 && rate(1.5, 0.85, 298.15) / ceil(298.15) > 0.998);
-  // the activation energy at the formal potential, 0.24 eV (λ/4 = 0.21); 2.7 s⁻¹ for the step's relaxation there
+  // the activation energy at the formal potential, 0.24 eV (λ/4 = 0.21); 2.60 s⁻¹ for the step's relaxation there
   const Ea = (Math.log(k0(320.15) / k0(274.15)) * (kT(298.15) / 298.15)) / (1 / 274.15 - 1 / 320.15); // (R/F = kT/T)
   assert.ok(Math.abs(Ea - 0.2365) < 0.001, `${Ea}`);
-  assert.ok(Math.abs(rate(1e-9, 0.85, 298.15) - 2.7) < 0.01);
+  assert.ok(Math.abs(rate(1e-9, 0.85, 298.15) - 2.60) < 0.005);
   // with the coupling held instead of A (A ∝ 1/√T): 2% at 0.8 V, 3.9-fold at the formal potential
   const fixed = (e, T) => rate(e, 0.85, T) * Math.sqrt(298.15 / T);
   assert.ok(Math.abs(fixed(0.8, 320.15) / fixed(0.8, 274.15) - 1.018) < 0.002 && Math.abs(fixed(1e-9, 320.15) / fixed(1e-9, 274.15) - 3.90) < 0.01);
