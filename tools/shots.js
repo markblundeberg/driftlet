@@ -35,6 +35,7 @@ const SHOTS = {
   rde: { query: '', budget: 60000 },
   randles: { query: '', budget: 60000 },
   corrosion: { query: '', budget: 60000 },
+  lithium: { query: '', budget: 60000 },
   insertion: { query: 't=6000', budget: 60000 },
 };
 

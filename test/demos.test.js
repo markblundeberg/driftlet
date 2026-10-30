@@ -383,3 +383,71 @@ test('demos/corrosion.html: the mixed potential and the Evans diagram against th
     }
   }
 });
+
+test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed form, and the numbers the page gives', async () => {
+  const { FARADAY, GAS_CONSTANT } = await import('../src/index.js');
+  const { mhcIntegral } = await import('../src/marcus.js');
+  const { kinetic, steady, sweep, etas, limit, ceiling, states, mhcI, c, DLi } = await pageTheory('lithium.html', ['kinetic', 'steady', 'sweep', 'etas', 'limit', 'ceiling', 'states', 'mhcI', 'c', 'DLi']);
+  const RT = GAS_CONSTANT * 298.15, VT = RT / FARADAY, kT = (lam) => (lam * FARADAY) / RT;
+  // its own integral (Simpson) is the library's
+  for (const [lam, a] of [[8.56, 0], [8.56, 9.7], [8.56, -9.7], [19.5, 30], [39, -20]]) assert.ok(Math.abs(mhcI(lam, a) / mhcIntegral(lam, a).I - 1) < 1e-12, `I(${lam}, ${a})`);
+  // the simulated currents follow the full line: 3e-5 at the defaults, 3e-4 across the controls
+  for (const [lam, r, tol] of [[0.22, 5e-6, 3e-5], [0.22, 1e-6, 3e-4], [0.22, 25e-6, 3e-4], [0.5, 5e-6, 3e-4], [0.5, 25e-6, 3e-4], [1, 1e-6, 3e-4]]) {
+    const I = sweep(lam, r);
+    I.forEach((i, k) => {
+      const th = steady(etas[k], lam, r);
+      assert.ok(Math.abs(i - th) < tol * Math.max(Math.abs(th), 1e-2), `λ ${lam} eV, r ${r} m, η ${etas[k]}: ${i} vs ${th}`);
+    });
+  }
+  const mA = (j) => j / 10, r = 5e-6;
+  // the kinetic ceiling, 295 mA/cm²; a third of a 5 µm sphere's limit; Butler–Volmer three times the current at −0.25 V; the plateau 225
+  assert.equal(Math.round(mA(ceiling(0.22))), 295);
+  assert.ok(Math.abs(ceiling(0.22) / limit(r) - 1 / 3) < 0.03, `${ceiling(0.22) / limit(r)}`);
+  const bv = steady(-0.25, 0.22, r, 'bv') / steady(-0.25, 0.22, r);
+  assert.ok(bv > 2.9 && bv < 3.1, `Butler–Volmer ×${bv}`);
+  // past the data: Marcus–Hush–Chidsey levels off below its ceiling, Butler–Volmer runs on to the limit
+  const plateau = steady(-0.6, 0.22, r);
+  assert.ok(Math.round(mA(plateau)) === 225 && Math.abs(steady(-0.55, 0.22, r) / plateau - 1) < 0.01, `plateau ${plateau}`);
+  assert.ok(steady(-0.6, 0.22, r, 'bv') / limit(r) > 0.98);
+  // on 25 µm, transport caps the current below the ceiling; λ = 0.5 eV moves the plateau up
+  assert.ok(limit(25e-6) < ceiling(0.22));
+  assert.ok(steady(-0.6, 0.5, r) > 3 * plateau);
+  // α = ½ at η = 0, and the local slope ½ − |η|F/4λ while |η| ≪ λ
+  // (the forward rate's slope, d ln I/da at a = −η/kT, by the page's own integral)
+  const slope = (eta, lam) => (Math.log(mhcI(kT(lam), -eta / VT + 1e-3)) - Math.log(mhcI(kT(lam), -eta / VT - 1e-3))) / 2e-3;
+  assert.ok(Math.abs(slope(0, 0.22) - 0.5) < 1e-6, `${slope(0, 0.22)}`);
+  assert.ok(Math.abs(kinetic(-1e-3, 0.22, c) / ((86 * 1e-3) / VT) - 1) < 1e-3, 'the exchange current, from the slope at η = 0');
+  // (falling 30% slower than Marcus's ½ − F|η|/2λ at first)
+  const fall = (slope(0.001, 0.22) - slope(-0.001, 0.22)) / 0.002 / (1 / (2 * 0.22)); // dα/dη in units of F/2λ
+  assert.ok(Math.abs(fall - 0.7) < 0.01, `${fall}`);
+  // Gerischer's overlaps are the forward and backward rates: their areas, against the integral
+  for (const [eta, lam, cs] of [[-0.25, 0.22, 800], [0.1, 0.22, 1200], [-0.5, 0.6, 500]]) {
+    const s = states(eta, lam, cs), dE = s.E[1] - s.E[0], area = (v) => v.reduce((t, x) => t + x, 0) * dE;
+    const a0 = -eta / VT + Math.log(cs / c);
+    const fwd = (cs / c) * mhcI(kT(lam), a0), back = mhcI(kT(lam), -a0);
+    assert.ok(Math.abs(area(s.plating) / area(s.stripping) / (fwd / back) - 1) < 1e-3, `η ${eta}: ${area(s.plating) / area(s.stripping)} vs ${fwd / back}`);
+    assert.ok(Math.abs((area(s.plating) * Math.sqrt(4 * Math.PI * kT(lam))) / fwd - 1) < 1e-3, `the area is the rate: ${(area(s.plating) * Math.sqrt(4 * Math.PI * kT(lam))) / fwd}`);
+  }
+  // Zeng et al.'s closed form at λ = 0.22 eV: 4% low at η = 0, 4.5% high at 0.25 V; the exact integral
+  // puts the same curve at λ = 0.23 eV with an exchange current 3% higher, within about 1% rms
+  const erfc = (x) => {
+    const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
+    const v = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+    return x >= 0 ? v : 2 - v;
+  };
+  const zeng = (l, a) => (Math.sqrt(Math.PI * l) / (1 + Math.exp(-a))) * erfc((l - Math.sqrt(1 + Math.sqrt(l) + a * a)) / (2 * Math.sqrt(l)));
+  const L = kT(0.22), I = (l, a) => mhcIntegral(l, a).I;
+  assert.ok(Math.abs(zeng(L, 0) / I(L, 0) - 1 + 0.04) < 0.005 && Math.abs(zeng(L, 0.25 / VT) / I(L, 0.25 / VT) - 1.045) < 0.005);
+  const ev = Array.from({ length: 50 }, (_, k) => -0.25 + 0.01 * k + (k >= 25 ? 0.01 : 0));
+  const net = (f, l, e) => (f(l, e / VT) - f(l, -e / VT)) / f(l, 0);
+  let best = null;
+  for (let lam = 0.2; lam <= 0.26; lam += 0.0005) {
+    const d = ev.map((e) => Math.log(net(I, kT(lam), e) / net(zeng, L, e))), m = d.reduce((s, x) => s + x, 0) / d.length;
+    const rms = Math.sqrt(d.reduce((s, x) => s + (x - m) * (x - m), 0) / d.length);
+    if (!best || rms < best.rms) best = { lam, rms, i0: Math.exp(-m) };
+  }
+  assert.ok(Math.abs(best.lam - 0.23) < 0.005 && Math.abs(best.i0 - 1.03) < 0.01 && best.rms < 0.012, JSON.stringify(best));
+  // the ideal conductivity, Nernst–Einstein's: 2.4 S/m
+  const kappa = (FARADAY * FARADAY * c * (DLi + (DLi * 0.62) / 0.38)) / RT;
+  assert.ok(Math.abs(kappa - 2.4) < 0.05, `${kappa}`);
+});

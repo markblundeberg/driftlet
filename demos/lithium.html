@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lithium plating and Marcus kinetics</title>
+<meta name="description" content="Lithium plating at a microelectrode with Marcus–Hush–Chidsey kinetics fitted to measurements: a Tafel plot that bends away from Butler–Volmer and levels off, with the metal's filled states against the lithium ion's, and the simulation against theory.">
+<meta property="og:title" content="Lithium plating and Marcus kinetics · driftlet">
+<meta property="og:description" content="Lithium plating at a microelectrode with Marcus–Hush–Chidsey kinetics fitted to measurements: a Tafel plot that bends away from Butler–Volmer and levels off, with the metal's filled states against the lithium ion's, and the simulation against theory.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/lithium.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/lithium.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Lithium plating: a Tafel plot that bends</h1>
+  <p>Lithium plated onto, and stripped from, a lithium microelectrode in 1 M LiPF₆ in EC:DEC, with the
+    Marcus–Hush–Chidsey kinetics fitted to measurements of exactly this: the steady current against the
+    overpotential η, simulated from the ions and the reaction, against Butler–Volmer's straight Tafel line
+    with the same exchange current. The top panel is why they part: the metal's electrons, filled to its
+    Fermi level, against the states a lithium ion offers. Vary the reorganization energy λ, the electrode's
+    radius and η. (More about the model below.)</p>
+  <div class="controls">
+    <label>λ <input id="lam" type="range" min="0.1" max="1" step="0.01" value="0.22"><output id="lamOut"></output></label>
+    <label>radius <input id="r" type="range" min="0" max="1.4" step="0.05" value="0.7"><output id="rOut"></output></label>
+    <label>η <input id="eta" type="range" min="-0.6" max="0.3" step="0.025" value="-0.25"><output id="etaOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="levels wide" id="states"></div>
+    <div><p class="note">The Tafel plot: the current's size against η, on a log scale</p><canvas id="tafel"></canvas></div>
+    <div><p class="note">The current itself, plating negative, as it's measured</p><canvas id="iv"></canvas></div>
+    <div class="levels" id="levels"></div>
+    <div class="levels" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>Before an electron can land on a lithium ion, the solvent around the ion has to rearrange, partly, as if
+    the charge had already gone; λ is the energy that rearrangement would cost with the electron still in
+    the metal. Marcus's theory puts the barrier at (λ − ΔG)²/4λ for a driving force ΔG, so the rate for one
+    electron level grows with ΔG up to ΔG = λ and then falls again (his inverted region: the dotted line).
+    A metal offers a whole band of levels, filled up to its Fermi level, and Chidsey (1991) added them up:
+    driven harder, the Fermi level rises past the ion's states, and the deeper electrons, for which the jump
+    is still downhill but not too far, take over. The rate then levels off instead of falling. In the top
+    panel (electron energy upward, from the couple's level), the ion's empty states spread over a Gaussian
+    λ above that level, its filled ones λ below, each about √(4λkT) wide (Gerischer's picture). Plating
+    takes electrons from the metal's filled states into the ion's empty ones, so its rate is the shaded
+    overlap below the Fermi level; stripping the reverse. Near η = 0 it's Butler–Volmer with α = ½; driven
+    harder, the local slope falls, by Marcus's parabola as α ≈ ½ − F|η|/2λ (for a λ much larger than kT;
+    the spread of the metal's electrons slows it, by 30% at 0.22 eV), and once the Fermi level is well past
+    λ the whole Gaussian is below it, and the kinetics can go no faster, whatever the drive: i<sub>0</sub>√(4πλ)/I(λ, 0) in the notation
+    of driftlet's <code>lambda</code>, 295 mA/cm² here.</p>
+  <p>Boyle and colleagues measured lithium plating and stripping in four carbonate electrolytes by fast
+    voltammetry at ultramicroelectrodes (ACS Energy Letters, 2020), out to 0.25 V either way, and found the
+    current curving away from Butler–Volmer. <a href="https://arxiv.org/abs/2008.00112">Sripad, Korff, DeCaluwe and Viswanathan</a>
+    fitted Marcus–Hush–Chidsey kinetics to their data: in EC:DEC, λ = 0.22 eV and an exchange current of
+    8.6 mA/cm², this page's defaults. They evaluated the integral with Zeng and colleagues' closed form,
+    which is 4% low at η = 0 and 4% high at 0.25 V for this λ; driftlet computes it exactly, and the same
+    curve then has λ = 0.23 eV and an exchange current 3% higher (within 1% across the measured range). On
+    a 5 µm electrode, by 0.25 V Butler–Volmer with α = ½ would pass three times the current, and past the
+    data the two part for good: Marcus–Hush–Chidsey levels off below its kinetic ceiling (a third of a
+    5 µm sphere's transport limit; with the salt's supply in series, the plateau is 225 mA/cm²), where
+    Butler–Volmer runs on to that limit. That plateau is what the fitted
+    model predicts beyond what was measured, not a measurement. On a larger electrode transport caps the
+    current first, and the bend is hidden behind it: hence the microelectrodes. A larger λ, at the same
+    exchange current, moves the bend out and the plateau up (try 0.5 eV).</p>
+  <p>The lines are worked out apart from the solver: the integral by Simpson's rule, and the steady supply
+    of a binary salt to a sphere, exact for this model. PF₆⁻, which the lithium neither takes nor gives, sits
+    in Boltzmann equilibrium in the potential the current sets up, so the salt moves as if Li⁺ diffused at
+    twice its rate, and the Li⁺ at the surface is c − jr(1 − r/R)/(2D<sub>Li⁺</sub>) for a plating flux j,
+    a radius r and the bulk at R = 100r. That one expression holds the depletion, the ohmic drop and the
+    diffusion potential together; with the kinetics in series it leaves one equation in j. The simulated
+    currents (points) follow the full line within 3 × 10⁻⁵ here, and 3 × 10⁻⁴ anywhere on the sliders. The thin lines are the kinetics alone, with
+    the surface at the bulk's concentration: what a fit to the measured currents is after.</p>
+  <p>What the model leaves out. It's an ideal solution: activities are concentrations and the conductivity
+    is Nernst–Einstein's from the ions' diffusivities (2.4 S/m), where real 1 M LiPF₆ in carbonates is
+    concentrated enough for ion pairing and conducts well under half as well. The diffusivity and transference
+    number are typical of LiPF₆ in carbonates (salt diffusivity 3 × 10⁻¹⁰ m²/s, t<sub>+</sub> = 0.38), and
+    the concentration, 1 M, is the usual one rather than one the fit reports. The electrode is a sphere at
+    steady state, where the measurements were transient voltammetry at a disk; the metal's surface is
+    smooth and fixed (no growth, no dendrites) and bare: the solid-electrolyte interphase every real
+    lithium surface carries isn't modelled. And the rate is symmetric Marcus–Hush–Chidsey, one λ for
+    both directions, as the fit has it. The level diagram below shows the electrons' Fermi level and the
+    ions' voltages, V<sub>i</sub> = μ̄<sub>i</sub>/z<sub>i</sub>F, against distance from the electrode
+    (electron energy down the page here); the step at the face is what drives the reaction. Below it, the
+    salt, depleted toward the electrode while plating and piled up while stripping.</p>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, ohmic, bath } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery, fitted } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
+// 1 M LiPF₆: a salt diffusivity and Li⁺ transference number typical of LiPF₆ in carbonates
+const c = 1000, tplus = 0.38, Dsalt = 3e-10; // mol/m³, m²/s
+const DLi = Dsalt / (2 * (1 - tplus)), DPF6 = (DLi * (1 - tplus)) / tplus;
+// Sripad et al.'s Marcus–Hush–Chidsey fit in EC:DEC: an exchange current of 8.6 mA/cm² at 1 M
+const i0 = 86, k0 = i0 / FARADAY; // A/m²; mol/(m²·s)
+const library = {
+  species: [{ name: 'Li+', z: 1, cRef: 1000 }, { name: 'PF6-', z: -1, cRef: 1000 }, { name: 'e-', z: -1 }],
+  materials: {
+    'EC:DEC': { epsr: 0, species: { 'Li+': { D: DLi, mu0: 0 }, 'PF6-': { D: DPF6, mu0: 0 } } },
+    Li: { conductor: { species: 'e-', conductivity: 1.1e7 } },
+  },
+};
+const salt = { 'Li+': c, 'PF6-': c };
+// A lithium sphere of radius r in the electrolyte out to 100 r, its level held at η against a lithium
+// reference in the bulk (μ° = 0 for both forms puts the couple's level at 0 V there).
+const electrode = (eta, lam, r) => build({
+  T,
+  library: [library],
+  stack: [
+    ohmic(eta, ['e-']),
+    layer('Li', 0.5 * r), // (a shell, its inside not modelled: thick enough to see its level)
+    { reactions: [{ equation: 'Li+ + e- = Li(s)', fixed: { 'Li(s)': 0 }, k0, lambda: units.eV(lam) }] },
+    layer('EC:DEC', 99 * r, { c0: salt }),
+    bath(salt, 'Li+'),
+  ],
+  geometry: { type: 'spherical', r0: 0.5 * r },
+  grid: { hmin: r / 2000, hmax: 3 * r, ratio: 1.15 },
+});
+
+// The Marcus–Hush–Chidsey integral by Simpson's rule, apart from the library's: I(λ, a) =
+// ∫ e^{−(x − λ + a)²/4λ}/(1 + eˣ) dx, x the electron's energy from the Fermi level and λ, a in units of kT.
+function mhcI(lam, a) {
+  const L = lam + Math.abs(a) + 14 * Math.sqrt(lam) + 60, n = 2 * Math.ceil(L / 0.1), h = (2 * L) / n;
+  const f = (x) => Math.exp(-((x - lam + a) * (x - lam + a)) / (4 * lam)) / (1 + Math.exp(x));
+  let s = f(-L) + f(L);
+  for (let k = 1; k < n; k++) s += (k % 2 ? 4 : 2) * f(-L + k * h);
+  return (s * h) / 3;
+}
+// The kinetics alone, with the surface's Li⁺ at cs (A/m², plating positive), for each law. The drive with
+// Li⁺ at its standard concentration (c = c_ref) is a° = −η/kT + ln(cs/c): the second term is the
+// solution's potential at the surface, kT ln(cs/c) above the bulk's where PF₆⁻ sits in Boltzmann
+// equilibrium (true of this binary salt; with cs = c, the kinetics alone). The whole drive is a° + ln(cs/c).
+const I0 = new Map(), mhcI0 = (L) => I0.get(L) ?? (I0.set(L, mhcI(L, 0)), I0.get(L));
+function kinetic(eta, lam, cs = c, law = 'mhc') {
+  const L = (lam * FARADAY) / RT, a0 = -eta / VT + Math.log(cs / c), a = a0 + Math.log(cs / c), back = -Math.expm1(-a);
+  const k = law === 'mhc' ? mhcI(L, a0) / mhcI0(L) : law === 'bv' ? Math.exp(a0 / 2) : Math.exp(a0 / 2 - (a0 * a0) / (4 * L)); // 'marcus': one level
+  return i0 * (cs / c) * k * back;
+}
+// The steady current with the salt's supply in series (A/m², plating positive): Li⁺ at the surface
+// c − j r (1 − r/R)/(2 D_Li), j the plating flux, solved for j by bisection.
+const limit = (r) => (FARADAY * 2 * DLi * c) / (r * (1 - 1 / 100));
+function steady(eta, lam, r, law = 'mhc') {
+  const il = limit(r), cs = (i) => c * (1 - i / il);
+  let lo = eta < 0 ? 0 : -1e6, hi = eta < 0 ? il : 0;
+  for (let k = 0; k < 64; k++) {
+    const m = 0.5 * (lo + hi);
+    if (m - kinetic(eta, lam, cs(m), law) > 0) hi = m;
+    else lo = m;
+  }
+  return 0.5 * (lo + hi);
+}
+const ceiling = (lam) => (i0 * Math.sqrt((4 * Math.PI * lam * FARADAY) / RT)) / mhcI0((lam * FARADAY) / RT);
+const etas = Array.from({ length: 37 }, (_, k) => 0.3 - 0.025 * k); // +0.3 V down to −0.6 V
+// The simulated sweep: the plating current density at each η (A/m², from the terminal's total current).
+function sweep(lam, r) {
+  const dev = new Device(electrode(etas[0], lam, r)), area = 4 * Math.PI * r * r;
+  return etas.map((eta) => (dev.set({ contacts: { left: { V: eta } } }), -dev.solve().current / area));
+}
+// Gerischer's picture as numbers, on an energy grid E (eV from the couple's level, electron energy up):
+// the metal's occupancy f, the ion's empty and filled states (each a unit Gaussian, the empty ones scaled
+// by the surface's cs/c), and the overlaps whose areas are the plating and stripping rates.
+function states(eta, lam, cs = c, E = Array.from({ length: 601 }, (_, k) => -1.6 + 0.0053333 * k)) {
+  const kT = VT, w = 4 * lam * kT, norm = 1 / Math.sqrt(Math.PI * w);
+  const EF = -eta + kT * Math.log(cs / c); // the Fermi level above the couple's standard level, at the surface
+  const f = E.map((e) => 1 / (1 + Math.exp((e - EF) / kT)));
+  const empty = E.map((e) => ((cs / c) * norm) * Math.exp(-((e - lam) * (e - lam)) / w));
+  const filled = E.map((e) => norm * Math.exp(-((e + lam) * (e + lam)) / w));
+  return { E, EF, f, empty, filled, plating: empty.map((v, k) => v * f[k]), stripping: filled.map((v, k) => v * (1 - f[k])) };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const lamIn = document.getElementById('lam'), rIn = document.getElementById('r'), etaIn = document.getElementById('eta');
+for (const el of [lamIn, rIn, etaIn]) fromQuery(el);
+const lam = () => +lamIn.value, radius = () => 10 ** +rIn.value * 1e-6, eta = () => +etaIn.value;
+const mA = (j) => j / 10; // A/m² to mA/cm²
+const fmt = (v) => (Math.abs(v) >= 1000 ? `${Math.round(Math.abs(v))}` : Math.abs(v).toPrecision(3));
+const signed = (v, d = 2) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`;
+let run;
+const labels = () => {
+  document.getElementById('lamOut').textContent = `${lam().toFixed(2)} eV`;
+  document.getElementById('rOut').textContent = `${(radius() * 1e6).toPrecision(2)} µm`;
+  document.getElementById('etaOut').textContent = `${signed(eta(), 3)} V`;
+};
+const Et = Array.from({ length: 181 }, (_, j) => 0.3 - 0.005 * j);
+function rebuild() {
+  const L = lam(), r = radius();
+  run = { lam: L, r, I: sweep(L, r), lines: Object.fromEntries(['mhc', 'bv'].map((law) => [law, Et.map((e) => steady(e, L, r, law))])) };
+  run.alone = Object.fromEntries(['mhc', 'bv', 'marcus'].map((law) => [law, Et.map((e) => kinetic(e, L, c, law))]));
+  update();
+}
+function update() {
+  labels();
+  const { lam: L, r, I } = run, il = limit(r), sat = ceiling(L);
+  const k = etas.reduce((b, e, j) => (Math.abs(e - eta()) < Math.abs(etas[b] - eta()) ? j : b), 0);
+  const i = I[k], bv = run.lines.bv[Et.findIndex((e) => Math.abs(e - etas[k]) < 1e-9)];
+  document.getElementById('status').textContent =
+    `at η ${signed(etas[k], 3)} V: ${i >= 0 ? 'plating' : 'stripping'} ${fmt(mA(i))} mA/cm² (Butler–Volmer, α = ½: ${fmt(mA(bv))}) · kinetic ceiling ${fmt(mA(sat))} · transport limit ${fmt(mA(il))} mA/cm²`;
+  // the energy picture at the surface's own concentration
+  const sol = new Device(electrode(etas[k], L, r)).solve();
+  const cs = sol.c['Li+'][sol.x.findIndex((x, g) => sol.region[g] === 1)];
+  document.getElementById('states').innerHTML = statesSvg(etas[k], L, cs, fitted(document.getElementById('states'), 720));
+  const line = (law, transport) => (transport ? run.lines : run.alone)[law].map((v) => Math.abs(mA(v)));
+  chart(document.getElementById('tafel'), {
+    xlabel: 'η (V vs Li/Li⁺)', ylabel: '|i| (mA/cm²)', logy: true, ylim: [0.3, 2e4],
+    series: [
+      { x: Et, y: line('mhc', true), color: colors[0], width: 1.6, label: 'Marcus–Hush–Chidsey' },
+      { x: Et, y: line('mhc', false), color: colors[0], width: 1, dash: [5, 4], label: 'its kinetics alone' },
+      { x: Et, y: line('bv', false), color: colors[1], width: 1, dash: [5, 4], label: 'Butler–Volmer, α = ½' },
+      { x: Et, y: line('marcus', false), color: colors[3], width: 1, dash: [1.5, 3], label: 'Marcus, one level' },
+      { x: [-0.6, 0], y: [mA(il), mA(il)], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'transport limit' },
+      { x: etas, y: I.map((v) => Math.abs(mA(v))), color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  chart(document.getElementById('iv'), {
+    xlabel: 'η (V vs Li/Li⁺)', ylabel: 'i (mA/cm²)',
+    series: [
+      { x: Et, y: run.lines.bv.map((v) => -mA(v)), color: colors[1], width: 1.2, label: 'Butler–Volmer' },
+      { x: Et, y: run.lines.mhc.map((v) => -mA(v)), color: colors[0], width: 1.6, label: 'Marcus–Hush–Chidsey' },
+      { x: [-0.25, -0.25], y: [-mA(il), 0], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'measured to here' },
+      { x: etas, y: I.map((v) => -mA(v)), color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
+    ],
+  });
+  const xlim = [0, 6 * r]; // (the metal's shell, then five radii of solution)
+  levels(document.getElementById('levels'), sol, { species: ['Li+', 'e-'], xlim, title: `levels near the electrode, η ${signed(etas[k], 3)} V`, width: 360, height: 300 });
+  profiles(document.getElementById('conc'), sol, { species: ['Li+'], labels: { 'Li+': 'c_{LiPF₆}' }, title: 'the salt near the electrode', ylabel: 'concentration (M)', scale: 1e-3, xlim, width: 360, height: 300 });
+}
+// The states panel: the metal's filled band (left) and the ion's states (right), the overlaps shaded,
+// over the energies that matter here: the Gaussians and the Fermi level, with a margin.
+function statesSvg(eta, L, cs, width) {
+  const sigma = Math.sqrt(2 * L * VT), EF0 = -eta + VT * Math.log(cs / c), R = Math.max(0.45, L + 3.2 * sigma, Math.abs(EF0) + 0.12);
+  const { E, EF, f, empty, filled, plating, stripping } = states(eta, L, cs, Array.from({ length: 481 }, (_, k) => -R + (2 * R * k) / 480));
+  const H = 330, top = 26, bottom = 30, mid = Math.max(120, Math.round(width * 0.3)), right = width - 10;
+  const y = (e) => top + ((R - e) / (2 * R)) * (H - top - bottom);
+  const peak = Math.max(...empty, ...filled) || 1, gx = (v) => mid + 8 + (v / peak) * (right - mid - 14);
+  const curve = (vals) => `M${gx(0)} ${y(E[0])} ` + vals.map((v, k) => `L${gx(v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${gx(0)} ${y(E.at(-1))} Z`;
+  const band = `M${mid - 6} ${y(E[0])} ` + f.map((v, k) => `L${(mid - 6 - (mid - 60) * v).toFixed(1)} ${y(E[k]).toFixed(1)}`).join(' ') + ` L${mid - 6} ${y(E.at(-1))} Z`;
+  const muted = 'var(--muted)';
+  const text = (x, yy, s, anchor, color) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="13">${s}</text>`;
+  const step = R > 0.9 ? 0.5 : 0.25, ticks = [];
+  for (let e = -Math.floor(R / step) * step; e <= R + 1e-9; e += step) ticks.push(e);
+  const ef = y(EF), clear = (a, b) => Math.abs(a - b) > 15; // (a label kept off the Fermi level's)
+  return `<svg viewBox="0 0 ${width} ${H}" role="img" aria-label="the metal's filled states up to its Fermi level, and the lithium ion's empty and filled states, each a Gaussian λ from the couple's level; the overlaps are the plating and stripping rates" font-family="system-ui, sans-serif" style="width:100%;height:auto;display:block">
+    <path d="${band}" fill="var(--c7)" opacity="0.3"/>
+    <path d="${curve(plating)}" fill="var(--c1)" opacity="0.45"/>
+    <path d="${curve(stripping)}" fill="var(--c2)" opacity="0.45"/>
+    <path d="${curve(empty)}" fill="none" stroke="var(--c1)" stroke-width="1.3"/>
+    <path d="${curve(filled)}" fill="none" stroke="var(--c2)" stroke-width="1.3"/>
+    <line x1="${mid}" x2="${right}" y1="${y(0)}" y2="${y(0)}" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="56" x2="${right}" y1="${ef}" y2="${ef}" stroke="var(--mark)" stroke-width="1.5"/>
+    ${text(60, ef - 6, 'Fermi level', 'start', 'var(--mark)')}
+    ${clear(y(0), ef) ? text(right, y(0) - 5, 'Li⁺/Li level', 'end', muted) : ''}
+    ${text(right, clear(y(L) - 6, ef) ? y(L) - 6 : ef - 8, 'Li⁺: empty', 'end', 'var(--c1)')}
+    ${text(right, clear(y(-L) + 16, ef) ? y(-L) + 16 : ef + 18, 'filled', 'end', 'var(--c2)')}
+    ${text((mid + 56) / 2, H - 10, 'lithium', 'middle', muted)}
+    ${text((mid + right) / 2, H - 10, 'Li⁺ at the surface', 'middle', muted)}
+    ${text(10, 16, 'electron energy ↑ (eV from the couple’s level)', 'start', muted)}
+    ${ticks.map((e) => text(48, y(e) + 4, Math.abs(e) < 1e-9 ? '0' : signed(e), 'end', muted)).join('')}
+  </svg>`;
+}
+lamIn.addEventListener('change', rebuild);
+rIn.addEventListener('change', rebuild);
+for (const el of [lamIn, rIn]) el.addEventListener('input', labels);
+etaIn.addEventListener('input', update);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>
