@@ -10,15 +10,21 @@ major version.
   each derivative against differences of the rate. From a cold review of it: `polarization()` gave a
   port's MHC reaction on bare metal with no surface species of its own 1/θ₀ too fast; `describe()`
   printed its α as undefined; a semiconductor's band is refused at a port as at a face.
-- A test's "packed plane's resistance" (5.5e6 Ω·cm²) was the gap between two steady states at
-  −1 mA/m², one of them on Frumkin's falling branch, unstable at a held current: its R_dc at rest is
-  46.24 Ω·cm², the resolved electrode's to 1e-8, and the dip's branch is now checked held at a voltage.
-- A worked example, hydrogen evolution through adsorbed hydrogen (demos/hydrogen.html): the Volmer,
-  Heyrovsky and Tafel steps, their Tafel slopes, and Parsons's volcano.
 - A non-ideal electrolyte (crowded, say) beside an electrode starts with the electrode's reaction
   balanced, as an ideal one did: it started at φ̂ = 0, putting the whole drive across the face, and a
   resolved crowded double layer at −0.6 V failed every cold solve that a sweep reached. Cold solves
   there now converge, about five times faster, to the swept state.
+- A test's "packed plane's resistance" (5.5e6 Ω·cm²) was the gap between two steady states at
+  −1 mA/m², one of them on Frumkin's falling branch, unstable at a held current: its R_dc at rest is
+  46.24 Ω·cm², the resolved electrode's to 1e-8, and the dip's branch is now checked held at a voltage.
+  The Jacobian test also checks a step of 1e-4 s, where a surface's storage no longer hides its
+  reactions' derivatives.
+- A worked example, hydrogen evolution through adsorbed hydrogen (demos/hydrogen.html): the Volmer,
+  Heyrovsky and Tafel steps, their Tafel slopes, and Parsons's volcano.
+- A worked example, a semiconductor electrode's Mott–Schottky plot (demos/mott-schottky.html): n-Si in
+  KCl against the exact Poisson–Boltzmann theory, where the line bends (accumulation, inversion, deep
+  depletion without holes) or misleads (the solution's share, the circuit the capacitance is read
+  through). The templates' Mott–Schottky example now reads on the SHE scale and in series.
 
 ## 1.5.0 (2026-10-29)
 

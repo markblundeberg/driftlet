@@ -563,3 +563,59 @@ test('demos/hydrogen.html: the three routes against their steady theory, the Taf
   const leg = (mech) => 100 / Math.log10(exchange(0.2, mech) / exchange(0.3, mech)); // meV per decade
   assert.ok(Math.abs(leg('heyrovsky') - 118.3) < 1.5 && Math.abs(leg('volmer') - 118.3) < 1.5 && Math.abs(leg('tafel') - 59.2) < 1, `${leg('heyrovsky')} ${leg('tafel')}`);
 });
+
+test('demos/mott-schottky.html: the capacitance against Poisson–Boltzmann, both readings against the cell, and the fits, as the page says', async () => {
+  const { Device, units } = await import('../src/index.js');
+  const { theory, measure, reading, fit, cell } = await pageTheory('mott-schottky.html', ['theory', 'measure', 'reading', 'fit', 'cell']);
+  const fd = Array.from({ length: 21 }, (_, k) => 10 ** (2 + 0.25 * k));
+  for (const [nd, c, holes] of [[1e15, 1, 'none'], [1e16, 100, 'none'], [1e18, 1000, 'none'], [1e16, 100, 'equilibrium']]) {
+    const p = { N: units.perCm3(nd), c, holes }, th = theory(p);
+    // the flat band on the SHE scale (−0.186 V at 10¹⁶ cm⁻³): where the simulated face holds no charge
+    const D = (E) => new Device(cell(E, p)).solve().interfaces[0].D;
+    assert.ok(D(th.Vfb - 1e-4) < 0 && D(th.Vfb + 1e-4) > 0, `${nd}, ${c}: flat band ${th.Vfb}`);
+    // C read in series at 100 Hz: within 0.5% from 0.2 V below the flat band up (short of inversion, with holes)
+    for (const q of measure(p, [100])) {
+      if (q.E < th.Vfb - 0.2 || (holes === 'equilibrium' && q.E > th.Einv - 0.15)) continue;
+      assert.ok(Math.abs(reading(q.Z[0], 100, 'series') / th.C(q.E) - 1) < 5e-3, `${nd}, ${c}, ${holes} at ${q.E}: ${reading(q.Z[0], 100, 'series')} vs ${th.C(q.E)}`);
+    }
+    // both readings of Z, 100 Hz to 10 MHz, against the cell's circuit (the solution's ε/L across its R), in depletion
+    for (const E of [th.Vfb + 0.15, th.Vfb + 0.45]) {
+      const [h] = measure(p, fd, [E]);
+      h.Z.forEach((z, k) => {
+        for (const how of ['series', 'parallel']) assert.ok(Math.abs(reading(z, fd[k], how) / reading(th.Z(fd[k], E), fd[k], how) - 1) < 3e-3, `${nd}, ${c}, ${E}, ${fd[k]} Hz, ${how}`);
+      });
+    }
+  }
+  assert.ok(Math.abs(theory({ N: units.perCm3(1e16), c: 100 }).Vfb + 0.1863) < 1e-4);
+  // the fits (1 kHz, in series): from 0.1 V above the flat band about 1% high and 2–4 mV low; from 0.3 V
+  // above (the default, +0.1 to +0.5 V at 10¹⁶ cm⁻³), within 0.2% and 0.4 mV, as the theory's own points fit
+  const p = { N: units.perCm3(1e16), c: 100 }, th = theory(p);
+  const sim = measure(p, [1e3]).map((q) => ({ E: q.E, y: 1 / reading(q.Z[0], 1e3, 'series') ** 2 }));
+  const near = fit(sim, -0.1, 0.3), dflt = fit(sim, 0.1, 0.5), own = fit(sim.map((q) => ({ E: q.E, y: 1 / th.C(q.E) ** 2 })), 0.1, 0.5);
+  assert.ok(near.N / p.N - 1 > 0.005 && near.N / p.N - 1 < 0.012 && near.Vfb - th.Vfb < -0.002 && near.Vfb - th.Vfb > -0.004, `near: ${near.N / p.N - 1}, ${near.Vfb - th.Vfb}`);
+  assert.ok(Math.abs(dflt.N / p.N - 1) < 2e-3 && Math.abs(dflt.Vfb - th.Vfb) < 4e-4 && Math.abs(dflt.N / own.N - 1) < 5e-4, `default: ${dflt.N / p.N - 1}, ${dflt.Vfb - th.Vfb}`);
+  // across accumulation, far off
+  assert.ok(fit(sim, -0.45, 0.1).N / p.N - 1 > 0.5);
+  // read in parallel at 1 MHz: the slope nearly right, the flat band 31 mV low (1/C_p² = 1/C² + 2(ωR)² + …)
+  const par = fit(measure(p, [1e6]).map((q) => ({ E: q.E, y: 1 / reading(q.Z[0], 1e6, 'parallel') ** 2 })), 0.1, 0.5);
+  assert.ok(Math.abs(par.N / p.N - 1) < 2e-3 && Math.abs(par.Vfb - th.Vfb + 0.031) < 1.5e-3, `parallel: ${par.N / p.N - 1}, ${par.Vfb - th.Vfb}`);
+  // heavily doped in 1 mM: 8% of E − E_fb in the solution at +0.3 V (3.5% of a change), the doping 2–3% high
+  // and the flat band a few mV low; read in series at 100 kHz, C down by about a third; read in parallel there, the line turns over
+  const hp = { N: units.perCm3(1e18), c: 1 }, hth = theory(hp);
+  assert.ok(Math.abs((hth.split(0.3).yw * 0.025693) / (0.3 - hth.Vfb) - 0.083) < 0.003 && Math.abs(hth.C(0.3) / hth.Cw(0.3) - 0.035) < 0.002);
+  const hs = measure(hp, [1e3]).map((q) => ({ E: q.E, y: 1 / reading(q.Z[0], 1e3, 'series') ** 2 }));
+  for (const [a, b] of [[0.1, 0.5], [hth.Vfb + 0.1, hth.Vfb + 0.5]]) {
+    const hf = fit(hs, Math.round(a * 20) / 20, Math.round(b * 20) / 20);
+    assert.ok(hf.N / hp.N - 1 > 0.02 && hf.N / hp.N - 1 < 0.035 && hf.Vfb - hth.Vfb < -0.001 && hf.Vfb - hth.Vfb > -0.007, `1e18: ${hf.N / hp.N - 1}, ${hf.Vfb - hth.Vfb}`);
+  }
+  const [at] = measure(hp, [1e5], [0.3]), fall = reading(at.Z[0], 1e5, 'series') / hth.C(0.3);
+  assert.ok(fall > 0.62 && fall < 0.72, `series at 100 kHz: ${fall}`);
+  assert.ok(fit(measure(hp, [1e5]).map((q) => ({ E: q.E, y: 1 / reading(q.Z[0], 1e5, 'parallel') ** 2 })), 0.1, 0.5).slope < 0);
+  // holes: none made, the line goes on straight past where inversion would begin (deep depletion); in
+  // equilibrium, the simulated 1/C² goes flat (the holes can't follow), where the theory's falls toward 0
+  const deep = measure(p, [1e3], [th.Einv + 0.1, th.Einv + 0.4]).map((q) => 1 / reading(q.Z[0], 1e3, 'series') ** 2);
+  assert.ok(Math.abs(deep[0] / (1 / th.C(th.Einv + 0.1) ** 2) - 1) < 5e-3 && deep[1] > 1.3 * deep[0], `deep depletion: ${deep}`);
+  const ep = { ...p, holes: 'equilibrium' }, eth = theory(ep);
+  const inv = measure(ep, [1e3], [eth.Einv + 0.1, eth.Einv + 0.4]).map((q) => reading(q.Z[0], 1e3, 'series'));
+  assert.ok(Math.abs(inv[1] / inv[0] - 1) < 0.02 && eth.C(eth.Einv + 0.4) > 10 * inv[1], `${inv} vs ${eth.C(eth.Einv + 0.4)}`);
+});

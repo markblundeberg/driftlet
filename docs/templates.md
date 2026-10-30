@@ -218,10 +218,14 @@ for (const E of [-0.2, -0.1, 0, 0.1, 0.2]) {
 A semiconductor dipped in an electrolyte, the face between them **blocking** (no reactions), with
 its **alignment** given (a `dipole`: what puts silicon's levels against the solution's is a
 choice, here Si's electron affinity against an absolute SHE, not a datum). Its capacitance from
-`impedance()` at a frequency where the space charge is what's measured, $`1/C^2`$ against the
-voltage across the depletion range, gives back the doping from the slope and the flat band from
-the intercept less kT/q. Past about $`2\phi_F`$ of depletion, holes gather at the face (inversion):
-keep the fit below it.
+`impedance()`, read as R and C in series ($`C = -1/\omega Z''`$, as a blocking electrode is), at a
+frequency where the space charge is what's measured, $`1/C^2`$ against the voltage across the
+depletion range, gives back the doping from the slope and the flat band from the intercept less
+kT/q. Start the fit several kT/q above the flat band, where the electrons' tail no longer bends the
+line. Past about $`2\phi_F`$ of depletion, holes gather at the face in a steady state (inversion; an
+ohmic contact on the electrons alone keeps them out, as a sweep too fast for them would): keep the
+fit below it. The [Mott–Schottky demo](https://markblundeberg.github.io/driftlet/demos/mott-schottky.html)
+shows where the line bends or misleads.
 
 ```js
 import { Device, units, EPS0, FARADAY, GAS_CONSTANT } from 'driftlet';
@@ -230,26 +234,28 @@ import { build, layer, ohmic, bath, semiconductor, aqueous } from 'driftlet/kit'
 const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY, ND = units.perCm3(1e16);
 const water = { 'K+': 100, 'Cl-': 100 }; // 0.1 M KCl
 const lib = [semiconductor('Si', { T }), aqueous(['K+', 'Cl-'])];
-// n-Si | a blocking face | 40 nm of the solution, resolved | the bath, read against an electrode reversible to Cl⁻.
+// the bath's terminal on the SHE scale (without an offset it reads Cl⁻'s own level: the chlorine electrode's scale, 1.36 V above SHE)
+const she = -(lib[1].materials.water.species['Cl-'].mu0 + GAS_CONSTANT * T * Math.log(water['Cl-'] / 1000)) / FARADAY;
+// n-Si | a blocking face | 40 nm of the solution, resolved | the bath.
 // The face's dipole aligns the two (here Si's electron affinity against the solution: an assumption, not data).
 const cell = (V) => build({
   T, library: lib,
-  stack: [ohmic(V), layer('Si', units.um(2), { donors: ND }), { dipole: 0.39 }, layer('water', 40e-9, { c0: water }), bath(water, 'Cl-')],
+  stack: [ohmic(V), layer('Si', units.um(2), { donors: ND }), { dipole: 0.39 }, layer('water', 40e-9, { c0: water }), bath(water, 'Cl-', 0, { offset: she })],
   grid: { hmin: 0.1e-9, hmax: 5e-9, ratio: 1.1 },
 });
 const pts = [];
-for (const V of [-1.3, -1.2, -1.1, -1.0]) { // the silicon positive: its electrons pushed back, a depletion layer
+for (const V of [0.1, 0.2, 0.3, 0.4]) { // V against SHE, the silicon positive: its electrons pushed back, a depletion layer
   const dev = new Device(cell(V));
   dev.solve();
   const { f, Z } = dev.impedance([1e5]); // 100 kHz: the space charge, the double layer in series negligible
-  const w = 2 * Math.PI * f[0], C = -Z.im[0] / (w * (Z.re[0] ** 2 + Z.im[0] ** 2));
+  const C = -1 / (2 * Math.PI * f[0] * Z.im[0]); // read as R and C in series, as a blocking electrode is
   pts.push([V, 1 / C ** 2]);
 }
 // 1/C² = 2/(F ε N_D) (V − V_fb − kT/q) in depletion (N_D in mol/m³, as driftlet's are)
 const slope = (pts.at(-1)[1] - pts[0][1]) / (pts.at(-1)[0] - pts[0][0]), V0 = pts[0][0] - pts[0][1] / slope;
 console.log(`N_D from the slope: ${units.toPerCm3(2 / (FARADAY * 11.9 * EPS0 * slope)).toPrecision(5)} cm⁻³ (1e16 put in)`);
 // The model's own flat band: where the silicon holds no charge at the face (interfaces[0].D = 0).
-let lo = -2, hi = -1.3;
+let lo = -1, hi = 0.1;
 for (let k = 0; k < 40; k++) {
   const m = (lo + hi) / 2, D = new Device(cell(m)).solve().interfaces[0].D;
   if (D < 0) lo = m;

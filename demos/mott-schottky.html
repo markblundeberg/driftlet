@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mott–Schottky plots</title>
+<meta name="description" content="A semiconductor electrode's Mott–Schottky plot, simulated from the silicon and the solution, against the exact Poisson–Boltzmann theory: the doping from the slope, the flat band from the intercept, and where the line bends or misleads (accumulation, inversion, the solution's own layer, and the circuit a capacitance is read through).">
+<meta property="og:title" content="Mott–Schottky plots · driftlet">
+<meta property="og:description" content="A semiconductor electrode's Mott–Schottky plot, simulated from the silicon and the solution, against the exact Poisson–Boltzmann theory: the doping from the slope, the flat band from the intercept, and where the line bends or misleads.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/mott-schottky.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/mott-schottky.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A semiconductor electrode's Mott–Schottky plot</h1>
+  <p>n-type silicon in KCl, the face between them blocking, its capacitance read from a simulated impedance
+    measurement at each potential: 1/C² against the potential is a straight line while the silicon's surface
+    is depleted of electrons, its slope giving the doping and its intercept the flat-band potential. The
+    points against the exact theory of the same model, and a fit as an experiment would make one. Vary the
+    doping, the salt, the frequency and the circuit the capacitance is read through, whether holes can
+    gather at the surface, and the range the line is fitted over. (More about the model below.)</p>
+  <div class="controls">
+    <label>doping <input id="nd" type="range" min="15" max="18" step="0.25" value="16"><output id="ndOut"></output></label>
+    <label>KCl <input id="salt" type="range" min="-3" max="0" step="0.25" value="-1"><output id="saltOut"></output></label>
+    <label>f <input id="f" type="range" min="2" max="6" step="0.25" value="3"><output id="fOut"></output></label>
+    <label>read as <select id="circuit"><option value="series" selected>R and C in series</option><option value="parallel">R and C in parallel</option></select></label>
+    <label>holes <select id="holes"><option value="none" selected>none made (a sweep in seconds)</option><option value="equilibrium">in equilibrium (after hours)</option></select></label>
+    <label>fit from <input id="lo" type="range" min="-0.5" max="1" step="0.05" value="0.1"><output id="loOut"></output></label>
+    <label>to <input id="hi" type="range" min="-0.5" max="1" step="0.05" value="0.5"><output id="hiOut"></output></label>
+    <label>E <input id="E" type="range" min="-0.5" max="1" step="0.05" value="0.3"><output id="EOut"></output></label>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <div class="wide"><p class="note">The Mott–Schottky plot: 1/C² against the potential, and the fit</p><canvas id="ms"></canvas></div>
+    <div><p class="note">The silicon's bands at E, electron energy up (its face with the solution at the right)</p><div class="levels" id="levels"></div></div>
+    <div><p class="note">The capacitance at E, as each circuit reads it, against frequency</p><canvas id="disp"></canvas></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>A potential that pulls electrons away from the surface of n-type silicon leaves its donors bare, a layer
+    of positive charge W deep that the solution's ions answer across the face. Its capacitance is ε/W, and in
+    the depletion approximation W grows as the square root of the potential across it, so 1/C² = 2(E −
+    E<sub>fb</sub> − kT/q)/(qεN<sub>D</sub>): a line whose slope gives the doping and whose intercept, less kT/q, the
+    flat-band potential (the kT/q is the tail of the electrons the depletion approximation leaves out). That's
+    Mott and Schottky's analysis of a metal–semiconductor contact, applied to an electrode, as photo&shy;electrochemists
+    do to place a semiconductor's bands against a solution's redox levels. The line here is the exact
+    Poisson–Boltzmann theory of the same model, worked out apart from the solver: electrons and holes in the
+    silicon, K⁺ and Cl⁻ in the solution, each in Boltzmann equilibrium, the same displacement either side of the
+    face, so the silicon's space-charge capacitance and the solution's own diffuse layer (Gouy and Chapman's) in
+    series. The potential is against the standard hydrogen electrode; the flat band, about −0.19 V at
+    10¹⁶ cm⁻³, follows from the alignment the face is given (below). Read in series at a low frequency, the
+    simulated capacitance follows the theory within 0.5% from 0.2 V below the flat band up (to 0.15 V short
+    of inversion, where holes gather).</p>
+  <p>Where to fit. Close to the flat band the electrons' tail still bends the line: four kT/q above it, the
+    exact 1/C² is still 4% above the straight line it approaches (at eight, 0.07%). Fitted from 0.1 V above the
+    flat band, the doping comes out about 1% high and the flat band 2 to 4 mV low; from 0.3 V above (where the
+    default fit starts, at 10¹⁶ cm⁻³), within 0.2% and 0.4 mV. Below
+    the flat band the surface accumulates electrons and the capacitance rises steeply: the line turns flat
+    toward the axis, and a fit across that bend is far off (drag the fit's start below the flat band).</p>
+  <p>Holes. Far enough positive, the bands bend by twice the Fermi level's distance from the intrinsic level,
+    and holes, the silicon's minority carriers, would gather at the face (inversion). But something has to
+    make them. There are no traps here to generate them, and the back contact's few take from minutes to
+    months to arrive, so a sweep at seconds per point (the default) never sees them: the depletion layer goes
+    on deepening (deep depletion), and the line goes on straight (the bands panel shows the holes' level apart
+    from the electrons': they're out of equilibrium, too few for where the bands now sit). Given hours, or traps to make the holes as
+    real silicon has, the surface does invert (choose holes in equilibrium: the steady state, its back contact
+    holding holes too). The inversion layer then stops the depletion layer growing, and since the holes can't
+    follow any frequency here (only below about 10⁻³ Hz), the measured 1/C² goes flat: the high-frequency
+    curve of a MOS capacitor. The theory's line, every carrier following, bends instead. (Past about +0.8 V at
+    10¹⁶ cm⁻³ the inversion layer's holes pass the band's effective density of states, where Boltzmann
+    statistics no longer describe real silicon; the library says so.) On the wide-gap oxides most
+    Mott–Schottky work is done on (TiO₂, Fe₂O₃, ZnO), inversion never forms at all.</p>
+  <p>The solution's share. The same charge sits in the solution's diffuse layer, whose capacitance is in
+    series with the silicon's. In 0.1 M salt it is over a thousand times the silicon's at 10¹⁶ cm⁻³ in
+    depletion, and the line is the silicon's. Heavily doped silicon in dilute salt brings the two closer: at
+    10¹⁸ cm⁻³ in 1 mM, 8% of E − E<sub>fb</sub> drops in the solution at +0.3 V (the readout's share; of each
+    small change of potential, 3.5%), and the fit gives the doping 2–3% high and the flat band a few
+    mV low. (On a real electrode a Helmholtz layer adds a third capacitance in series, and surface states can
+    pin the bands outright; neither is in this model.)</p>
+  <p>The circuit. An impedance analyser measures Z; a capacitance is a reading of it through an assumed
+    circuit. A blocking electrode is nearly the solution's resistance R in series with C, and reading Z as R
+    and C in series, C = −1/(ωZ″), gives C (a leaky electrode, with a reaction across C, would need its own
+    circuit at low frequencies). Read as R and C in parallel, C<sub>p</sub> = −Z″/(ω|Z|²), it gives C/(1 + (ωRC)²),
+    and 1/C<sub>p</sub>² = 1/C² + 2(ωR)² + (ωR)⁴C²: first an offset, which moves the fitted flat band (31 mV at
+    10¹⁶ cm⁻³ in 0.1 M at 1 MHz), then a slope that changes with the frequency and, at high enough
+    frequencies, turns the line over. The series reading isn't immune either: the solution between the silicon
+    and the reference is a dielectric too, a capacitance ε/L across its resistance, and where R is large
+    (dilute salt) that shunt adds to Z″ well below the solution's own relaxation frequency, κ/(2πε): in 1 mM
+    KCl, beside silicon at 10¹⁸ cm⁻³, the series reading has fallen by a third at 100 kHz. Here the solution
+    is 100 µm (R = L/κ, from the ions' diffusion coefficients, 0.67 Ω·cm² in 0.1 M), with the silicon's own
+    resistance in series, and both readings of the simulated Z follow that circuit's in depletion. A real
+    cell's uncompensated resistance per area is often ten to a hundred times larger, and these effects then
+    set in at lower frequencies. The plot also shows the points at a tenth and ten times the frequency: lines
+    that don't agree are the standard warning. Frequency dispersion in measured Mott–Schottky plots has other
+    causes too (surface states, a constant-phase double layer, a rough surface); these are only the reading and
+    the cell.</p>
+  <p>What the model leaves out. It's a stand-in: real silicon in water grows an oxide, which makes it an
+    electrolyte–insulator–semiconductor structure whose surface answers the pH (the flat band moving about
+    59 mV per pH unit on oxides), and holes at its surface oxidize it, so it isn't blocking past inversion;
+    near and below the flat band it evolves hydrogen. The silicon here is ideal: Boltzmann statistics, every
+    donor ionized, no traps or surface states. The face is blocking, with no Helmholtz layer and a fixed dipole
+    for its alignment, 0.39 V (silicon's electron affinity against the solution, an assumption, not a datum).
+    The solution is ideal KCl. Real analyses also stumble on the electrode's true area (1/C² goes as the area
+    squared) and on ε. For the method's pitfalls in practice: Hankin et al., J. Mater. Chem. A 7, 26162 (2019),
+    and Sivula, ACS Energy Lett. 6, 2549 (2021).</p>
+</main>
+<script type="module">
+import { Device, units, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { build, layer, ohmic, bath, semiconductor, aqueous } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { showCode, fromQuery, levels } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
+const si = semiconductor('Si', { T }), aq = aqueous(['K+', 'Cl-']), dipole = 0.39; // V: Si's alignment against the solution, an assumption
+const Lsi = units.um(4), Lw = 100e-6; // the silicon, and the solution between it and the reference
+const m = si.materials.Si, Nc = m.species['e-'].cRef, ni2 = Nc * m.species['h+'].cRef * Math.exp(-m.species['h+'].mu0 / RT);
+const bulk = (N) => {
+  const n0 = N / 2 + Math.sqrt((N * N) / 4 + ni2);
+  return { n0, p0: ni2 / n0 }; // the bulk's carriers (mol/m³)
+};
+// n-Si (N_D in mol/m³) | a blocking face | KCl (c mol/m³), its terminal on the SHE scale. Holes 'equilibrium':
+// the back contact holds them too (the steady state's inversion layer); 'none': it holds the electrons
+// alone, and the holes keep the bulk's amount (no generation: deep depletion).
+const cell = (V, { N, c, holes = 'none' }) => {
+  const she = -(aq.materials.water.species['Cl-'].mu0 + RT * Math.log(c / 1000)) / FARADAY;
+  return build({
+    T,
+    library: [si, aq],
+    stack: [
+      holes === 'none' ? ohmic(V, ['e-']) : ohmic(V),
+      layer('Si', Lsi, { donors: N, ...(holes === 'none' ? { c0: { 'h+': bulk(N).p0 } } : {}), grid: { hmin: 0.01e-9, hmax: 20e-9, ratio: 1.05 } }), // (fine: an accumulated surface is thin)
+      { dipole },
+      layer('water', Lw, { c0: { 'K+': c, 'Cl-': c }, grid: { hmin: 0.05e-9, hmax: 5e-6, ratio: 1.1 } }),
+      bath({ 'K+': c, 'Cl-': c }, 'Cl-', 0, { offset: she }),
+    ],
+  });
+};
+
+// The exact theory of the same model: Poisson–Boltzmann either side of the face, the same displacement
+// through it (holes 'none': none at all, their bulk amount ~1e-20 mol/m² left out).
+function theory({ N, c, holes = 'none' }) {
+  const eS = m.epsr * EPS0, eW = aq.materials.water.epsr * EPS0, { n0, p0: pb } = bulk(N), p0 = holes === 'none' ? 0 : pb;
+  // the flat band: the silicon's φ is V + V_T ln(n₀/N_c), the solution's 0 on the SHE scale, and at flat band they differ by the dipole
+  const Vfb = -VT * Math.log(n0 / Nc) - dipole;
+  // charge per area (C/m²) at a surface potential y (thermal units, surface less bulk), and its slope in y
+  const G = (y) => n0 * (Math.expm1(y) - y) + p0 * (Math.expm1(-y) + y); // (½ the field², over ε RT: ≥ 0)
+  const Qs = (y) => -Math.sign(y) * Math.sqrt(2 * eS * RT * G(y));
+  const dQs = (y) => (Math.abs(y) < 1e-6 ? Math.sqrt(eS * RT * (n0 + p0)) : (Math.abs(n0 * Math.expm1(y) - p0 * Math.expm1(-y)) * Math.sqrt(2 * eS * RT)) / (2 * Math.sqrt(G(y))));
+  const Qw = (y) => -Math.sqrt(8 * eW * RT * c) * Math.sinh(y / 2), dQw = (y) => Math.sqrt(2 * eW * RT * c) * Math.cosh(y / 2);
+  // E − E_fb = (y_w − y_s) V_T, with Q_s(y_s) + Q_w(y_w) = 0 (bisections: y_w falls as y_s rises)
+  const yw = (ys) => {
+    const q = Qs(ys);
+    let lo = -100, hi = 100;
+    for (let k = 0; k < 100; k++) {
+      const mid = 0.5 * (lo + hi);
+      if (Qw(mid) + q > 0) lo = mid;
+      else hi = mid;
+    }
+    return 0.5 * (lo + hi);
+  };
+  const split = (E) => {
+    let lo = -200, hi = 100;
+    for (let k = 0; k < 100; k++) {
+      const mid = 0.5 * (lo + hi);
+      if ((yw(mid) - mid) * VT > E - Vfb) lo = mid;
+      else hi = mid;
+    }
+    const ys = 0.5 * (lo + hi);
+    return { ys, yw: yw(ys) };
+  };
+  // the capacitance (F/m²), every carrier there following: the silicon's and the solution's in series, and the solution's alone
+  const Cw = (E) => dQw(split(E).yw) / VT;
+  const C = (E) => {
+    const { ys, yw: w } = split(E);
+    return 1 / (VT / dQs(ys) + VT / dQw(w));
+  };
+  // the cell's impedance (Ω·m²) at f: the solution's resistance L/κ with its own geometric capacitance
+  // ε/L across it (it's a dielectric too), the silicon's resistance, and C
+  const ion = aq.materials.water.species, kappa = ((FARADAY * FARADAY) / RT) * c * (ion['K+'].D + ion['Cl-'].D);
+  const sigma = ((FARADAY * FARADAY) / RT) * (m.species['e-'].D * n0 + m.species['h+'].D * pb);
+  const Rw = Lw / kappa, Rsi = Lsi / sigma, Cgeo = eW / Lw;
+  const Z = (f, E, Cs = C(E)) => {
+    const w = 2 * Math.PI * f, a = w * Rw * Cgeo, d = 1 + a * a;
+    return { re: Rw / d + Rsi, im: (-Rw * a) / d - 1 / (w * Cs) };
+  };
+  // inversion's onset: the bands bent by twice the Fermi level's distance from the intrinsic level (the potential, by bisection)
+  const twoPhiF = 2 * VT * Math.log(n0 / Math.sqrt(ni2));
+  let lo = Vfb, hi = Vfb + 3;
+  for (let k = 0; k < 60; k++) {
+    const mid = 0.5 * (lo + hi);
+    if (-split(mid).ys * VT < twoPhiF) lo = mid;
+    else hi = mid;
+  }
+  return { Vfb, C, Cw, split, Z, R: Rw + Rsi, n0, p0: pb, twoPhiF, Einv: 0.5 * (lo + hi) };
+}
+// The capacitance (F/m²) as an impedance Z (Ω·m²) at f is read through a circuit: R and C in series, or in parallel.
+const reading = (Z, f, circuit) => {
+  const w = 2 * Math.PI * f;
+  return circuit === 'parallel' ? -Z.im / (w * (Z.re * Z.re + Z.im * Z.im)) : -1 / (w * Z.im);
+};
+// The simulated measurement: at each potential, the steady state and its impedance at the frequencies fs.
+const Es = Array.from({ length: 31 }, (_, k) => Math.round(100 * (-0.5 + 0.05 * k)) / 100); // −0.5 V to +1.0 V against SHE
+function measure(p, fs, at = Es) {
+  const dev = new Device(cell(at[0], p));
+  return at.map((E) => {
+    dev.set({ contacts: { left: { V: E } } });
+    const sol = dev.solve(), { Z } = dev.impedance(fs);
+    return { E, sol, Z: fs.map((f, k) => ({ re: Z.re[k], im: Z.im[k] })) };
+  });
+}
+// A least-squares line through 1/C² (m⁴/F²) over [lo, hi]: the doping from its slope, the flat band from its intercept less kT/q.
+function fit(points, lo, hi) {
+  const use = points.filter((q) => q.E >= lo - 1e-9 && q.E <= hi + 1e-9);
+  if (use.length < 2) return null;
+  const n = use.length, sx = use.reduce((t, q) => t + q.E, 0), sy = use.reduce((t, q) => t + q.y, 0);
+  const sxx = use.reduce((t, q) => t + q.E * q.E, 0), sxy = use.reduce((t, q) => t + q.E * q.y, 0);
+  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icept = (sy - slope * sx) / n;
+  return { slope, icept, N: 2 / (FARADAY * m.epsr * EPS0 * slope), Vfb: -icept / slope - VT };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
+const inputs = ['nd', 'salt', 'f', 'circuit', 'holes', 'lo', 'hi', 'E'].map((id) => document.getElementById(id));
+const [ndIn, saltIn, fIn, circuitIn, holesIn, loIn, hiIn, EIn] = inputs;
+for (const el of inputs) fromQuery(el);
+const params = () => ({ N: units.perCm3(10 ** +ndIn.value), c: 1000 * 10 ** +saltIn.value, holes: holesIn.value === 'equilibrium' ? 'equilibrium' : 'none' });
+const signed = (v, d = 2) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`;
+const sci = (v) => {
+  const e = Math.floor(Math.log10(v)), mt = v / 10 ** e;
+  return `${mt.toFixed(2)} × 10${String(e).replace('-', '⁻').replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d])}`;
+};
+const fmtF = (f) => (f >= 1e6 ? `${+(f / 1e6).toPrecision(2)} MHz` : f >= 1e3 ? `${+(f / 1e3).toPrecision(2)} kHz` : `${+f.toPrecision(2)} Hz`);
+const uF = (C) => C * 100; // F/m² to µF/cm²
+const pc = (x) => (x >= 0.1 ? `${Math.round(100 * x)}%` : `${(100 * x).toPrecision(2)}%`);
+const cm4 = (y) => y * 1e-4; // m⁴/F² to cm⁴/µF²
+const fd = Array.from({ length: 21 }, (_, k) => 10 ** (2 + 0.25 * k)); // 100 Hz to 10 MHz
+const [xmin, xmax] = [Es[0], Es.at(-1)];
+function labels() {
+  document.getElementById('ndOut').textContent = `${sci(10 ** +ndIn.value)} cm⁻³`;
+  document.getElementById('saltOut').textContent = `${+(10 ** +saltIn.value).toPrecision(2)} M`;
+  document.getElementById('fOut').textContent = fmtF(10 ** +fIn.value);
+  document.getElementById('loOut').textContent = `${signed(+loIn.value)} V`;
+  document.getElementById('hiOut').textContent = `${signed(+hiIn.value)} V`;
+  document.getElementById('EOut').textContent = `${signed(+EIn.value)} V`;
+}
+let run;
+function rebuild() {
+  labels();
+  const p = params(), f = 10 ** +fIn.value;
+  run = { p, f, th: theory(p), pts: measure(p, [f / 10, f, 10 * f]) };
+  update();
+}
+function update() {
+  labels();
+  const { p, f, th, pts } = run, circuit = circuitIn.value, E = +EIn.value;
+  const [lo, hi] = [Math.min(+loIn.value, +hiIn.value), Math.max(+loIn.value, +hiIn.value)];
+  const ms = (k) => pts.map((q) => ({ E: q.E, y: 1 / reading(q.Z[k], [f / 10, f, 10 * f][k], circuit) ** 2 }));
+  const at1 = ms(1), ft = fit(at1, lo, hi);
+  const Et = Array.from({ length: 301 }, (_, k) => xmin + ((xmax - xmin) * k) / 300), line = Et.map((e) => cm4(1 / th.C(e) ** 2));
+  // (scaled to the points at f and the theory short of inversion, so a misread line shows how far off it
+  // is; the points at f/10 and 10f may run off the top)
+  const shown = [...line.filter((v, k) => p.holes === 'none' || Et[k] < th.Einv), ...at1.map((q) => cm4(q.y))];
+  const ymax = 1.1 * Math.max(...shown.filter(Number.isFinite));
+  const vline = (x, color, dash, label) => ({ x: [x, x], y: [0, ymax], color, width: 1, dash, label });
+  // the fit's line, from its intercept (or the axis's start) to the axis's end, and only where it rises
+  const fitLine = ft && ft.slope > 0 ? [{ x: [Math.max(xmin, ft.Vfb + VT), xmax], y: [Math.max(xmin, ft.Vfb + VT), xmax].map((x) => cm4(ft.slope * x + ft.icept)), color: colors[1], width: 1.2, dash: [6, 4], label: 'fit' }] : [];
+  chart(document.getElementById('ms'), {
+    xlabel: 'E (V against SHE)', ylabel: '1/C² (cm⁴/µF²)', xlim: [xmin, xmax], ylim: [0, ymax],
+    series: [
+      { x: Et, y: line, color: colors[0], width: 1.6, label: 'theory, every carrier following' },
+      { x: Es, y: ms(0).map((q) => cm4(q.y)), color: colors[4], marker: true, width: 0, label: `at ${fmtF(f / 10)}` },
+      { x: Es, y: ms(2).map((q) => cm4(q.y)), color: colors[2], marker: true, width: 0, label: `at ${fmtF(10 * f)}` },
+      { x: Es, y: at1.map((q) => cm4(q.y)), color: 'var(--ink)', marker: true, width: 0, label: `simulated at ${fmtF(f)}` },
+      ...fitLine,
+      { x: [lo, hi], y: [0.02 * ymax, 0.02 * ymax], color: colors[1], width: 4, label: 'fitted over' },
+      vline(th.Vfb, 'var(--muted)', [2, 3], 'E_fb'),
+      vline(th.Einv, colors[3], [2, 3], p.holes === 'none' ? 'inversion, if holes were made' : 'inversion'),
+      vline(E, 'var(--mark)', [1, 3], 'E'),
+    ],
+  });
+  // the bands, and the capacitance against frequency, at E
+  const [here] = measure(p, fd, [E]), sol = here.sol;
+  levels(document.getElementById('levels'), sol, { energy: true, xlim: [Lsi - 2e-6, Lsi], title: `at E = ${signed(E)} V` });
+  const series = here.Z.map((z, k) => uF(reading(z, fd[k], 'series'))), parallel = here.Z.map((z, k) => uF(reading(z, fd[k], 'parallel')));
+  const C0 = th.C(E), ft2 = Array.from({ length: 201 }, (_, k) => 10 ** (2 + k / 40)), top = 1.2 * Math.max(...series, ...parallel);
+  chart(document.getElementById('disp'), {
+    xlabel: 'f (Hz)', ylabel: 'C (µF/cm²)', logx: true, ylim: [0, top],
+    series: [
+      { x: ft2, y: ft2.map((x) => uF(reading(th.Z(x, E), x, 'series'))), color: colors[0], width: 1.6, label: 'theory, in series' },
+      { x: ft2, y: ft2.map((x) => uF(reading(th.Z(x, E), x, 'parallel'))), color: colors[2], width: 1.2, dash: [5, 4], label: 'in parallel' },
+      { x: fd, y: series, color: 'var(--ink)', marker: true, width: 0, label: 'simulated, in series' },
+      { x: fd, y: parallel, color: colors[2], marker: true, width: 0, label: 'in parallel' },
+      { x: [f, f], y: [0, top], color: 'var(--mark)', width: 1, dash: [1, 3], label: 'f' },
+    ],
+  });
+  const Cs = reading(here.Z[0], fd[0], 'series'), cut = 1 / (2 * Math.PI * th.R * Cs), { yw } = th.split(E);
+  const inverted = p.holes === 'equilibrium' && E > th.Einv;
+  document.getElementById('status').textContent =
+    (ft && ft.slope <= 0 ? 'fitted: a slope ≤ 0, no doping from it' : ft ? `fitted: N_D ${sci(units.toPerCm3(ft.N))} cm⁻³ (${ft.N > p.N ? '+' : '−'}${pc(Math.abs(ft.N / p.N - 1))}), E_fb ${signed(ft.Vfb, 3)} V (${signed(1000 * (ft.Vfb - th.Vfb), 1)} mV)` : 'fit: give it two points or more') +
+    ` · true E_fb ${signed(th.Vfb, 3)} V · at E: ` +
+    (inverted ? 'inverted (the theory, every carrier following, is the holes’ equilibrium, which no frequency here sees)' : `the solution takes ${(100 * Math.abs((yw * VT) / (E - th.Vfb || 1))).toPrecision(2)}% of E − E_fb, ${(100 * (C0 / th.Cw(E))).toPrecision(2)}% of a small change`) +
+    ` · R ${(th.R * 1e4).toPrecision(3)} Ω·cm², 1/(2πRC) ${fmtF(cut)}`;
+}
+for (const el of [ndIn, saltIn, fIn, holesIn]) el.addEventListener('change', rebuild);
+for (const el of [ndIn, saltIn, fIn]) el.addEventListener('input', labels);
+for (const el of [circuitIn, loIn, hiIn, EIn]) el.addEventListener('input', update);
+circuitIn.addEventListener('change', update);
+addEventListener('resize', update);
+rebuild();
+showCode();
+</script>
+</body>
+</html>

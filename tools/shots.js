@@ -38,6 +38,7 @@ const SHOTS = {
   lithium: { query: '', budget: 60000 },
   chidsey: { query: '', budget: 60000 },
   hydrogen: { query: '', budget: 60000 },
+  'mott-schottky': { query: '', budget: 60000 },
   insertion: { query: 't=6000', budget: 60000 },
 };
 
