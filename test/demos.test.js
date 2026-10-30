@@ -506,3 +506,40 @@ test("demos/chidsey.html: Chidsey's experiment, the fitted rates against the the
     assert.ok(Math.abs(area(s.oxidation) / want - 1) < 1e-3 && Math.abs(area(s.reduction) / (mhcI(L, -e / kT(T)) / Math.sqrt(4 * Math.PI * L)) - 1) < 1e-3);
   }
 });
+
+test('demos/hydrogen.html: the three routes against their steady theory, the Tafel slopes and the volcano, as the page says', async () => {
+  const { FARADAY } = await import('../src/index.js');
+  const { steady, sweep, volcano, exchange, Es, dGs, MECHS } = await pageTheory('hydrogen.html', ['steady', 'sweep', 'volcano', 'exchange', 'Es', 'dGs', 'MECHS']);
+  // the simulated currents and coverages against the theory: 4e-6 (the most at 4.6 A/cm²)
+  for (const mech of ['volmer', 'heyrovsky', 'tafel']) {
+    for (const dG of [-0.2, 0.1, 0.3]) {
+      sweep(dG, mech).forEach((s, j) => {
+        const th = steady(Es[j], dG, mech);
+        assert.ok(Math.abs(s.i - th.i) < 4e-6 * Math.max(Math.abs(th.i), 1e-6) && Math.abs(s.theta / th.theta - 1) < 4e-6, `${mech} ${dG} ${Es[j]}: ${s.i} vs ${th.i}`);
+      });
+    }
+  }
+  // the volcano's points: 1e-7
+  for (const mech of ['volmer', 'heyrovsky', 'tafel']) {
+    volcano(mech).forEach((v, j) => {
+      const th = exchange(dGs[j], mech);
+      assert.ok(Math.abs(v / th - 1) < 1e-7, `${mech} ${dGs[j]}: ${v} vs ${th}`);
+    });
+  }
+  // the Tafel slopes (mV per decade, from ±2 mV): a slow Volmer step 118 on a weak binder and 40 on a strong
+  // one (θ near 1), the mirror image of a slow Heyrovsky step's 40 on a weak binder, which bends back to about
+  // 118 as the surface fills; a slow Tafel step 29.7, then its limit on a full surface, 2F k_T e^{ΔG/RT}
+  const slope = (E, dG, mech) => 4 / Math.log10(steady(E - 0.002, dG, mech).i / steady(E + 0.002, dG, mech).i);
+  assert.ok(Math.abs(slope(-0.25, 0.2, 'volmer') - 118.3) < 0.2);
+  assert.ok(Math.abs(slope(-0.1, -0.2, 'volmer') - 40) < 1 && steady(-0.1, -0.2, 'volmer').theta > 0.9);
+  assert.ok(Math.abs(slope(-0.075, 0.2, 'heyrovsky') - 39.5) < 0.3 && steady(-0.075, 0.2, 'heyrovsky').theta < 0.01);
+  assert.ok(Math.abs(slope(-0.29, 0.2, 'heyrovsky') - 118) < 6);
+  assert.ok(slope(-0.4, 0.2, 'heyrovsky') > 125); // (above 118 where the acid at the surface runs low)
+  assert.ok(Math.abs(slope(-0.075, 0.2, 'tafel') - 29.7) < 0.3);
+  const lim = 2 * FARADAY * MECHS.tafel.T * Math.exp((-0.2 * FARADAY) / (8.314462618 * 298.15));
+  assert.ok(Math.abs(steady(-0.6, -0.2, 'tafel').i / lim - 1) < 1e-3 && steady(-0.6, -0.2, 'tafel').theta > 0.99);
+  // the volcano: exactly symmetric about 0 for every route, its legs a decade per 118 meV (per 59 for the Tafel route)
+  for (const mech of ['volmer', 'heyrovsky', 'tafel']) for (const d of [0.05, 0.15, 0.25]) assert.ok(Math.abs(exchange(d, mech) / exchange(-d, mech) - 1) < 1e-6, `${mech} ±${d}`);
+  const leg = (mech) => 100 / Math.log10(exchange(0.2, mech) / exchange(0.3, mech)); // meV per decade
+  assert.ok(Math.abs(leg('heyrovsky') - 118.3) < 1.5 && Math.abs(leg('volmer') - 118.3) < 1.5 && Math.abs(leg('tafel') - 59.2) < 1, `${leg('heyrovsky')} ${leg('tafel')}`);
+});
