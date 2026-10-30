@@ -63,8 +63,16 @@
     current: the bare axon charges all of its membrane as the spike goes, the myelinated one its nodes and a
     little myelin, which is myelin's other saving, in the ions the pumps must later put back. The bare axon
     has to charge all of its membrane as it goes, at 2.7 m/s (Hodgkin and Huxley's speed scaled by √a, as the
-    propagation demo shows); the myelinated one runs at some 30 m/s, against a compartmental cable to within
-    1 µs a node (the <code>cable</code> test).</p>
+    propagation demo shows); the myelinated one runs at some 30 m/s.</p>
+  <p>The dashed lines are the same two axons worked out apart from the solver, as compartmental cables: each
+    node one compartment with its channels, each internode fifty of myelin (the bare axon's membrane in 20 µm
+    compartments), the axoplasm's resistance between them, and the same pulse. At the default settings the
+    simulated spike reaches 1.9 cm within 0.3% of the cable's time (0.477 ms against 0.476), and the bare one
+    0.5 cm within 0.2%; across the controls the two part by up to about 2% (50 wraps, closest to failing:
+    1.45 ms against 1.47; nodes every quarter millimetre: 0.543 against 0.554). Both are converged (at 50 wraps,
+    finer cells and steps move each by under 0.1%), and the difference isn't the ions' concentrations at the nodes, which a spike moves by 0.1%: what
+    makes it up we haven't pinned down. The cable leaves out what the simulation solves for, the ions
+    themselves, moving in the axoplasm's field and through the channels.</p>
   <p>Thicker myelin (more wraps, less capacitance) is faster: with 50 wraps it runs at 12 m/s, with 800 at 68 m/s,
     and with 20 the internodes take too much charge and the spike dies. More channels at the nodes are faster too.
     In this thin axon, nodes closer together are faster (44 m/s at a quarter millimetre, 27 m/s at 3 mm): each
@@ -125,6 +133,71 @@ const myelinated = (p, on) => {
   return base(regions, ports, { hmin: 0.5e-6, hmax: 50e-6, ratio: 1.5 });
 };
 
+// The same axon worked out apart from the solver, as a compartmental cable: each node isopotential with
+// its channels, each internode 50 passive compartments of myelin (the bare axon, 20 µm compartments of
+// membrane), the axoplasm's resistivity between them; V by backward Euler, the gates exponentially
+// (Rush–Larsen), from rest; the same pulse at t = 0. When the spike crosses −30 mV at each node's middle
+// and half-way along each internode (the bare axon's every half millimetre), as the page reads them.
+const rateOf = (r, V) => {
+  const y = (V - r.midpoint) / r.scale;
+  return r.type === 'exp' ? r.rate * Math.exp(y) : r.type === 'sigmoid' ? r.rate / (1 + Math.exp(-y)) : (r.rate * y) / -Math.expm1(-y);
+};
+function cable(p, { bare = false, dt = 1e-7, tEnd = 2e-3 } = {}) {
+  const len = [], g = [], C = [], at = [];
+  if (bare) {
+    for (let i = 0; i < L / 20e-6; i++) (len.push(20e-6), g.push(1), C.push(0.01));
+    for (let i = 0; i <= 40; i++) at.push({ x: i * 0.5e-3, i: Math.min(len.length - 1, Math.round((i * 0.5e-3) / 20e-6)) });
+  } else {
+    const n = Math.floor(L / (Ln + p.Lint)) + 1, step = Ln + p.Lint;
+    for (let k = 0; k < n; k++) {
+      at.push({ x: k * step + Ln / 2, i: len.length });
+      len.push(Ln), g.push(p.gNode), C.push(0.01);
+      if (k === n - 1) break;
+      at.push({ x: k * step + Ln / 2 + step / 2, i: len.length + 25 });
+      for (let j = 0; j < 50; j++) (len.push(p.Lint / 50), g.push(0), C.push(0.01 / p.wraps));
+    }
+  }
+  const N = len.length, sigma = 1 / 0.354, gAx = len.slice(1).map((l, i) => sigma / (0.5 * (l + len[i])));
+  const inf = (k, V) => rateOf(gates[k].alpha, V) / (rateOf(gates[k].alpha, V) + rateOf(gates[k].beta, V));
+  // rest: where the channels (at their density 1, with the leak) pass no current, by Newton
+  const I = (V) => G['Na+'] * inf('m', V) ** 3 * inf('h', V) * (V - E0['Na+']) + G['K+'] * inf('n', V) ** 4 * (V - E0['K+']) + G['Cl-'] * (V - E0['Cl-']);
+  let Vr = -0.065;
+  for (let it = 0; it < 60; it++) Vr -= I(Vr) / ((I(Vr + 1e-7) - I(Vr - 1e-7)) / 2e-7);
+  const V = new Float64Array(N).fill(Vr), x = { m: new Float64Array(N).fill(inf('m', Vr)), h: new Float64Array(N).fill(inf('h', Vr)), n: new Float64Array(N).fill(inf('n', Vr)) };
+  const lo = new Float64Array(N), di = new Float64Array(N), up = new Float64Array(N), rhs = new Float64Array(N);
+  const arrive = at.map(() => NaN), stim = bare ? { I: 600, n: 1 } : { I: 100, n: 1 };
+  for (let t = 0; t < tEnd; t += dt) {
+    for (let i = 0; i < N; i++) {
+      if (g[i] === 0) continue;
+      for (const k of ['m', 'h', 'n']) {
+        const al = rateOf(gates[k].alpha, V[i]), be = rateOf(gates[k].beta, V[i]), xi = al / (al + be);
+        x[k][i] = xi + (x[k][i] - xi) * Math.exp(-(al + be) * dt);
+      }
+    }
+    for (let i = 0; i < N; i++) {
+      const A = am * len[i], gNa = g[i] * G['Na+'] * x.m[i] ** 3 * x.h[i], gK = g[i] * G['K+'] * x.n[i] ** 4, gL = g[i] > 0 ? G['Cl-'] : 0;
+      lo[i] = i > 0 ? -gAx[i - 1] : 0;
+      up[i] = i < N - 1 ? -gAx[i] : 0;
+      di[i] = (C[i] * A) / dt + A * (gNa + gK + gL) - lo[i] - up[i];
+      rhs[i] = ((C[i] * A) / dt) * V[i] + A * (gNa * E0['Na+'] + gK * E0['K+'] + gL * E0['Cl-']) + (i < stim.n && t < 0.1e-3 ? stim.I : 0);
+    }
+    for (let i = 1; i < N; i++) {
+      const w = lo[i] / di[i - 1];
+      di[i] -= w * up[i - 1];
+      rhs[i] -= w * rhs[i - 1];
+    }
+    const prev = at.map((q) => V[q.i]);
+    V[N - 1] = rhs[N - 1] / di[N - 1];
+    for (let i = N - 2; i >= 0; i--) V[i] = (rhs[i] - up[i] * V[i + 1]) / di[i];
+    at.forEach((q, j) => {
+      if (Number.isNaN(arrive[j]) && prev[j] < -0.03 && V[q.i] >= -0.03) arrive[j] = t + (dt * (-0.03 - prev[j])) / (V[q.i] - prev[j]);
+    });
+  }
+  return { x: at.map((q) => q.x), t: arrive, Vr };
+}
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
 const els = Object.fromEntries(['wraps', 'Lint', 'gNode', 'pace'].map((id) => [id, document.getElementById(id)]));
 for (const el of Object.values(els)) fromQuery(el);
 const params = () => ({ wraps: Math.round(10 ** +els.wraps.value), Lint: +els.Lint.value * 1e-3, gNode: +els.gNode.value });
@@ -139,7 +212,7 @@ function showControls() {
 // Each axon: a device, settled to rest, then stimulated; φ (V_m) read at every step at the site 1 cm
 // along, and at points along it for when the spike arrives (the bare one's every half millimetre, the
 // myelinated one's at its nodes and between them).
-let axons;
+let axons, theory;
 function start() {
   const p = showControls();
   const make = (def, on) => {
@@ -151,6 +224,7 @@ function start() {
   // (the myelinated site is the middle of the node nearest 1 cm)
   const k = Math.round(SITE / (Ln + p.Lint)), step = Ln + p.Lint;
   axons = { bare: make(bare), myelinated: make((on) => myelinated(p, on)) };
+  theory = { bare: theory?.bare ?? cable(p, { bare: true }), myelinated: cable(p) }; // (the bare one's doesn't change with the controls)
   axons.myelinated.site = k * step + Ln / 2;
   axons.bare.site = SITE;
   // (the myelinated axon ends at its last node, a little short of 2 cm)
@@ -203,7 +277,11 @@ function draw() {
   const arr = (ax) => ({ x: ax.points.map((q) => 100 * q.x), y: Array.from(ax.arrived, (v) => 1000 * v) });
   chart(document.getElementById('ax'), {
     xlabel: 'x along the axon (cm)', ylabel: 'arrives, ms after its stimulus', xlim: [0, 100 * L], ylim: [0, 2],
-    series: [{ ...arr(axons.bare), color: colors[6], width: 2, label: 'bare' }, { ...arr(axons.myelinated), color: colors[1], width: 2, label: 'myelinated' }],
+    series: [
+      { ...arr(axons.bare), color: colors[6], width: 2, label: 'bare' },
+      { ...arr(axons.myelinated), color: colors[1], width: 2, label: 'myelinated' },
+      ...['bare', 'myelinated'].map((k) => ({ x: theory[k].x.map((v) => 100 * v), y: Array.from(theory[k].t, (v) => 1000 * v), color: 'var(--ink)', width: 1, dash: [3, 3], label: k === 'bare' ? 'compartmental cable' : '' })),
+    ],
   });
   chart(document.getElementById('vx'), {
     xlabel: 'x along the axon (cm)', ylabel: 'V_m (mV)', xlim: [0, 100 * L], ylim: [-100, 60],

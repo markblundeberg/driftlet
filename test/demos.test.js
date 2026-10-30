@@ -647,3 +647,32 @@ test('demos/redox.html: the settled cycle against the same experiment worked out
   // a thin layer: no peaks, a plateau at the sweep's ends
   assert.ok(!gap(1e-3, 1e-3, 10 ** 0.5 * 1e-6).th.peaked);
 });
+
+test('demos/myelin.html: the spikes against the compartmental cables in its script, as the page says', async () => {
+  const { Device } = await import('../src/index.js');
+  const { cable, myelinated, bare, SETTLE } = await pageTheory('myelin.html', ['cable', 'myelinated', 'bare', 'SETTLE']);
+  // when the spike crosses −30 mV at the cable's points, simulated from rest, against the cable
+  const arrivals = (def, th) => {
+    const d = new Device(def(false));
+    d.advance(SETTLE, { tol: 1e-4 });
+    d.set(def(true));
+    const end = d.solution().x.at(-1), probes = th.x.filter((x) => x <= end).map((x) => ({ x, quantity: 'phi' }));
+    const { t, probes: pr } = d.advance(SETTLE + 2e-3, { tol: 1e-5, probes }).trace;
+    return probes.map((_, j) => {
+      for (let i = 1; i < t.length; i++) if (pr[j][i - 1] < -0.03 && pr[j][i] >= -0.03) return t[i - 1] + ((t[i] - t[i - 1]) * (-0.03 - pr[j][i - 1])) / (pr[j][i] - pr[j][i - 1]) - SETTLE;
+      return NaN;
+    });
+  };
+  const last = (a, th) => {
+    const k = a.findLastIndex(Number.isFinite);
+    return { sim: a[k], cable: th.t[k] };
+  };
+  // the defaults: 1.9 cm within 0.3% (0.477 ms against 0.476); the bare axon, 0.5 cm within 0.2%
+  const p = { wraps: 200, Lint: 1e-3, gNode: 5 }, tm = cable(p), m = last(arrivals((on) => myelinated(p, on), tm), tm);
+  assert.ok(Math.abs(m.sim / m.cable - 1) < 4e-3 && Math.abs(m.sim - 0.477e-3) < 1e-6, `myelinated: ${m.sim} vs ${m.cable}`);
+  const tb = cable(p, { bare: true }), b = last(arrivals(bare, tb), tb);
+  assert.ok(Math.abs(b.sim / b.cable - 1) < 2e-3, `bare: ${b.sim} vs ${b.cable}`);
+  // 50 wraps: 1.45 ms against 1.47, both converged
+  const p50 = { ...p, wraps: 50 }, t50 = cable(p50), m50 = last(arrivals((on) => myelinated(p50, on), t50), t50);
+  assert.ok(Math.abs(m50.sim - 1.448e-3) < 5e-6 && Math.abs(m50.cable - 1.469e-3) < 5e-6, `50 wraps: ${m50.sim} vs ${m50.cable}`);
+});
