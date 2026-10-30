@@ -667,12 +667,29 @@ test('demos/myelin.html: the spikes against the compartmental cables in its scri
     const k = a.findLastIndex(Number.isFinite);
     return { sim: a[k], cable: th.t[k] };
   };
-  // the defaults: 1.9 cm within 0.3% (0.477 ms against 0.476); the bare axon, 0.5 cm within 0.2%
-  const p = { wraps: 200, Lint: 1e-3, gNode: 5 }, tm = cable(p), m = last(arrivals((on) => myelinated(p, on), tm), tm);
-  assert.ok(Math.abs(m.sim / m.cable - 1) < 4e-3 && Math.abs(m.sim - 0.477e-3) < 1e-6, `myelinated: ${m.sim} vs ${m.cable}`);
-  const tb = cable(p, { bare: true }), b = last(arrivals(bare, tb), tb);
-  assert.ok(Math.abs(b.sim / b.cable - 1) < 2e-3, `bare: ${b.sim} vs ${b.cable}`);
-  // 50 wraps: 1.45 ms against 1.47, both converged
-  const p50 = { ...p, wraps: 50 }, t50 = cable(p50), m50 = last(arrivals((on) => myelinated(p50, on), t50), t50);
-  assert.ok(Math.abs(m50.sim - 1.448e-3) < 5e-6 && Math.abs(m50.cable - 1.469e-3) < 5e-6, `50 wraps: ${m50.sim} vs ${m50.cable}`);
+  // within 1.5 µs at every point (0.477 ms to 1.9 cm at the defaults; 50 wraps, settling slowest), the bare axon within 4 µs
+  const worst = (a, th) => Math.max(...a.map((v, j) => (Number.isFinite(v) ? Math.abs(v - th.t[j]) : 0)));
+  for (const p of [{ wraps: 200, Lint: 1e-3, gNode: 5 }, { wraps: 50, Lint: 1e-3, gNode: 5 }]) {
+    const th = cable(p), a = arrivals((on) => myelinated(p, on), th);
+    assert.ok(worst(a, th) < 1.5e-6 && a.filter(Number.isFinite).length > 30, `${p.wraps} wraps: ${worst(a, th)} s`);
+    if (p.wraps === 200) assert.ok(Math.abs(last(a, th).sim - 0.477e-3) < 1e-6);
+  }
+  const tb = cable({}, { bare: true }), b = arrivals(bare, tb);
+  assert.ok(worst(b, tb) < 4e-6, `bare: ${worst(b, tb)} s`);
+  // the speeds the text quotes (to the node nearest 1 cm, by the cable the simulation follows)
+  const speed = (p) => {
+    const step = 1e-6 + p.Lint, x = Math.round(0.01 / step) * step + 0.5e-6, th = cable(p, { tEnd: 4e-3 });
+    return x / th.t[th.x.findIndex((xx) => Math.abs(xx - x) < 1e-12)];
+  };
+  const v = (wraps, Lint, gNode) => speed({ wraps, Lint: Lint * 1e-3, gNode });
+  const near = (got, want, tol) => assert.ok(Math.abs(got - want) < tol, `${got} m/s for ${want}`);
+  near(v(200, 1, 5), 35, 0.5);
+  near(v(50, 1, 5), 11, 0.5);
+  near(v(800, 1, 5), 79, 0.5);
+  assert.ok(Number.isNaN(v(20, 1, 5)));
+  near(v(200, 1, 1), 24, 0.5);
+  near(v(200, 1, 20), 43, 0.5);
+  for (const L of [0.5, 0.75, 1, 1.25]) near(v(200, L, 5), 35, 0.5);
+  near(v(200, 0.25, 5), 33, 0.5);
+  near(v(200, 3, 5), 32, 0.5);
 });

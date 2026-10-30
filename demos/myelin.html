@@ -63,22 +63,22 @@
     current: the bare axon charges all of its membrane as the spike goes, the myelinated one its nodes and a
     little myelin, which is myelin's other saving, in the ions the pumps must later put back. The bare axon
     has to charge all of its membrane as it goes, at 2.7 m/s (Hodgkin and Huxley's speed scaled by √a, as the
-    propagation demo shows); the myelinated one runs at some 30 m/s.</p>
+    propagation demo shows); the myelinated one runs at 35 m/s.</p>
   <p>The dashed lines are the same two axons worked out apart from the solver, as compartmental cables: each
     node one compartment with its channels, each internode fifty of myelin (the bare axon's membrane in 20 µm
-    compartments), the axoplasm's resistance between them, and the same pulse. At the default settings the
-    simulated spike reaches 1.9 cm within 0.3% of the cable's time (0.477 ms against 0.476), and the bare one
-    0.5 cm within 0.2%; across the controls the two part by up to about 2% (50 wraps, closest to failing:
-    1.45 ms against 1.47; nodes every quarter millimetre: 0.543 against 0.554). Both are converged (at 50 wraps,
-    finer cells and steps move each by under 0.1%), and the difference isn't the ions' concentrations at the nodes, which a spike moves by 0.1%: what
-    makes it up we haven't pinned down. The cable leaves out what the simulation solves for, the ions
-    themselves, moving in the axoplasm's field and through the channels.</p>
-  <p>Thicker myelin (more wraps, less capacitance) is faster: with 50 wraps it runs at 12 m/s, with 800 at 68 m/s,
-    and with 20 the internodes take too much charge and the spike dies. More channels at the nodes are faster too.
-    In this thin axon, nodes closer together are faster (44 m/s at a quarter millimetre, 27 m/s at 3 mm): each
-    internode charges as an RC line, in a time that grows as its length squared, about 7 µs per millimetre here,
-    so a longer jump costs more time than it gains. Thicker fibres with thicker myelin charge faster, which is
-    why their nodes are spaced further apart, about a hundred times the fibre's diameter.</p>
+    compartments), the axoplasm's resistance between them, and the same pulse, from rest. The simulated spike
+    follows them within 1.5 µs at every node and between them, across the controls (0.477 ms to 1.9 cm at the
+    defaults), and the bare one within 4 µs at 0.5 cm. Rest takes a while here: the internodes' myelin
+    charges through the nodes' few channels, with a time constant of up to 70 ms with thin myelin, long
+    internodes and sparse channels, so both axons settle for 400 ms before the first pulse.</p>
+  <p>Thicker myelin (more wraps, less capacitance) is faster: with 50 wraps it runs at 11 m/s, with 800 at
+    79 m/s, and with 20 the internodes take too much charge and the spike dies. More channels at the nodes are
+    faster too: 24 m/s at Hodgkin and Huxley's own density, 43 m/s at twenty times it. The nodes' spacing
+    matters less, around a broad best: 35 m/s for nodes anywhere from half a millimetre to 1.25 mm apart, a
+    little slower closer together (33 m/s at a quarter millimetre, with more nodes to charge and fire on the
+    way) and further apart (32 m/s at 3 mm, each longer internode, an RC line, charging the next node more
+    slowly). Real fibres' nodes sit about a hundred times the fibre's diameter apart, in the same broad
+    range.</p>
 </main>
 <script type="module">
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
@@ -89,7 +89,7 @@ import { showCode, fromQuery, pauser, fitted } from './common.js';
 
 const mV = 1e-3, z = { 'Na+': 1, 'K+': 1, 'Cl-': -1, 'A-': -1 };
 const T = 273.15 + 18.5, VT = (GAS_CONSTANT * T) / FARADAY, a = 5e-6, am = 2 / a, L = 0.02, Ln = 1e-6;
-const PERIOD = 10e-3, SETTLE = 30e-3, WINDOW = 1.5e-3, SITE = 0.01;
+const PERIOD = 10e-3, SETTLE = 400e-3, WINDOW = 1.5e-3, SITE = 0.01;
 // The time shown: the window, or four seconds of playback at the rate it's reaching ("as fast as it
 // solves" asks for 1 s a second and reaches far less: taken as asked, it showed 4 s).
 let rate = 0;
@@ -159,8 +159,9 @@ function cable(p, { bare = false, dt = 1e-7, tEnd = 2e-3 } = {}) {
   }
   const N = len.length, sigma = 1 / 0.354, gAx = len.slice(1).map((l, i) => sigma / (0.5 * (l + len[i])));
   const inf = (k, V) => rateOf(gates[k].alpha, V) / (rateOf(gates[k].alpha, V) + rateOf(gates[k].beta, V));
-  // rest: where the channels (at their density 1, with the leak) pass no current, by Newton
-  const I = (V) => G['Na+'] * inf('m', V) ** 3 * inf('h', V) * (V - E0['Na+']) + G['K+'] * inf('n', V) ** 4 * (V - E0['K+']) + G['Cl-'] * (V - E0['Cl-']);
+  // rest: where the channels pass no current, by Newton (at the nodes' density: their Na⁺ and K⁺, not their leak, scaled)
+  const gr = bare ? 1 : p.gNode;
+  const I = (V) => gr * (G['Na+'] * inf('m', V) ** 3 * inf('h', V) * (V - E0['Na+']) + G['K+'] * inf('n', V) ** 4 * (V - E0['K+'])) + G['Cl-'] * (V - E0['Cl-']);
   let Vr = -0.065;
   for (let it = 0; it < 60; it++) Vr -= I(Vr) / ((I(Vr + 1e-7) - I(Vr - 1e-7)) / 2e-7);
   const V = new Float64Array(N).fill(Vr), x = { m: new Float64Array(N).fill(inf('m', Vr)), h: new Float64Array(N).fill(inf('h', Vr)), n: new Float64Array(N).fill(inf('n', Vr)) };
