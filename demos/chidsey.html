@@ -25,8 +25,9 @@
     the ferrocene's charge relaxes at its electron transfer rate alone, and the current decays as a single
     exponential. Its rate constant, step by step, against the overpotential, is the plot Chidsey made in
     1991, with the parameters he fitted: it bends away from Butler–Volmer's straight line toward a ceiling,
-    as Marcus–Hush–Chidsey kinetics say (where one-level Marcus theory would turn down, past η = λ). The
-    top panel is why. Vary the step's overpotential η, the temperature and the reorganization energy λ.
+    as Marcus–Hush–Chidsey kinetics say. (One-level Marcus theory, given its own λ, 1.02 eV, follows it
+    within 9% over his range and turns down beyond it: the dotted line.) The top panel is why the band's sum levels
+    off. Vary the step's overpotential η, the temperature and the reorganization energy λ.
     (More about the model below.)</p>
   <div class="controls">
     <label>η <input id="eta" type="range" min="-0.9" max="0.9" step="0.1" value="0.5"><output id="etaOut"></output></label>
@@ -44,7 +45,7 @@
     it have to rearrange, as if the charge had already moved; λ is what the whole rearrangement would cost
     with the electron still in place. Marcus's theory puts the barrier at (λ − D)²/4λ for a driving force D
     (the free energy the transfer releases), so for one electron level the rate grows with D up to D = λ and
-    falls past it (his inverted region: the dotted line). A metal offers a band of levels, filled to its
+    falls past it (his inverted region). A metal offers a band of levels, filled to its
     Fermi level, with an empty level at every energy, the activationless one among them. Summed over them,
     the rate climbs until the levels at which the transfer is activationless are all on offer; driving
     harder only adds levels deep in the inverted region, which give almost nothing, and the rate levels
@@ -66,8 +67,12 @@
     analysis; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3434967/">Devaraj and colleagues (2006)</a>,
     from his group, later measured 2.2 s⁻¹ with a triazole link in place of the ester). With the integral
     exact, those parameters give 1.30 s⁻¹ each way at the formal potential at 25 °C, so 2.60 s⁻¹ for the
-    relaxation a step measures, 4% above the 2.5 they were set to; 0.58 each way at 1 °C and 2.46 at 47 °C,
-    4.2-fold where he measured 3.7-fold, an activation energy of 0.24 eV, a little above λ/4. The chain is
+    relaxation a step measures, 4% above the 2.5 they were set to (the paper doesn't give enough of its
+    numerics to say why); 0.58 each way at 1 °C and 2.46 at 47 °C,
+    4.2-fold where he measured 3.7-fold, an activation energy of 0.24 eV, a little above λ/4. Over his
+    range a single level with λ = 1.02 eV draws nearly the same curve (within 9%); the band's sum is the one
+    he fitted, and its λ, 0.85 eV, compares reasonably, as he noted, with the 0.94 eV he calculated for the
+    solvent's reorganization. The chain is
     what makes the experiment possible: each methylene cuts the tunnelling roughly e-fold (as later
     measurements put it; the 1991 paper left the distance dependence to later work), which brings these
     rates within reach of a potential step, ahead of the cell's own charging time. The ceiling is
@@ -91,7 +96,7 @@
     applies drives the reaction, which Chidsey calculated is nearly so here: with the ferrocene that far
     out, the interfacial drop falls almost entirely between it and the gold. Not modelled: the spread of rates a real monolayer can show, or the solution's resistance
     between the gold and a reference. The gold's density of states and the coupling are taken as flat in
-    energy; λ and A are held fixed as the temperature changes; and the rate is symmetric, one λ for both
+    energy; λ and νρ are held fixed as the temperature changes (and as the λ slider moves); and the rate is symmetric, one λ for both
     directions. Later work has refined each of these (kinetic dispersion, asymmetric forms of the theory):
     the fit here is a landmark early one. The ferrocene covers 2% of the monolayer's sites (1.5 × 10⁻¹¹
     mol/cm², an illustrative coverage: k doesn't depend on it).</p>
@@ -117,8 +122,10 @@ function mhcI(lam, a) {
 }
 // The rate constant a step to η measures (s⁻¹), oxidation's plus reduction's: Chidsey's, A kT [I(η) + I(−η)];
 // Butler–Volmer's with α = ½ and the same rate at the formal potential; and one-level Marcus theory's.
-function rate(eta, lam, T, law = 'mhc') {
-  const kt = kT(T), L = lam / kt, a = eta / kt, k0 = A * kt * mhcI(L, 0);
+function rate(eta, lam, T, law = 'mhc', fit = null) {
+  const kt = kT(T), a = eta / kt;
+  if (law === 'marcus1') return fit.k0 * 2 * Math.cosh(a / 2) * Math.exp(-(a * a) / (4 * (fit.lam / kt))); // its own λ and k0
+  const L = lam / kt, k0 = A * kt * mhcI(L, 0);
   if (law === 'bv') return k0 * 2 * Math.cosh(a / 2);
   if (law === 'marcus') return k0 * 2 * Math.cosh(a / 2) * Math.exp(-(a * a) / (4 * L));
   return A * kt * (mhcI(L, a) + mhcI(L, -a));
@@ -157,6 +164,18 @@ function step(eta, lam, T) {
   return { t, i, k: -slope, a: my - slope * mx, E0 };
 }
 const etas = Array.from({ length: 19 }, (_, j) => -0.9 + 0.1 * j).filter((e) => Math.abs(e) > 1e-9);
+// One-level Marcus theory given its own chance: the λ and rate at the formal potential that bring it
+// closest to the band's curve over Chidsey's range, −1.0 to +0.8 V (least worst ratio, in log).
+function marcusFit(lam, T) {
+  const es = Array.from({ length: 37 }, (_, j) => -1 + 0.05 * j), mhc = es.map((e) => Math.log(rate(e, lam, T)));
+  let best = null;
+  for (let l1 = 0.4; l1 <= 2; l1 += 0.002) {
+    const d = es.map((e, j) => mhc[j] - Math.log(rate(e, lam, T, 'marcus1', { lam: l1, k0: 1 })));
+    const hi = Math.max(...d), lo = Math.min(...d);
+    if (!best || hi - lo < best.spread) best = { lam: l1, k0: Math.exp((hi + lo) / 2), spread: hi - lo };
+  }
+  return { ...best, dev: Math.expm1(best.spread / 2) };
+}
 // Gerischer's picture at the step's start (θ_O = θ_R), on an energy grid E (eV from the formal level,
 // electron energy up): the metal's occupancy, ferrocene's filled and ferrocenium's empty states, and the
 // overlaps whose areas are the oxidation and reduction rates.
@@ -183,7 +202,7 @@ const labels = () => {
 };
 function rebuild() {
   const L = lam(), T = temp();
-  run = { L, T, steps: etas.map((e) => step(e, L, T)) };
+  run = { L, T, steps: etas.map((e) => step(e, L, T)), fit: marcusFit(L, T) };
   update();
 }
 function update() {
@@ -198,6 +217,7 @@ function update() {
     series: [
       { x: s.t.map((t) => t * 1e3), y: s.t.map((t) => Math.exp(s.a - s.k * t) / 1e-2), color: colors[0], width: 1.4, label: `fitted, k = ${fmt(s.k)} s⁻¹` },
       { x: s.t.map((t) => t * 1e3), y: ia, color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
+      { x: [s.t.at(-1) * 1e3 / 8, s.t.at(-1) * 1e3 / 8, NaN, s.t.at(-1) * 3e3 / 4, s.t.at(-1) * 3e3 / 4], y: [lo, hi, NaN, lo, hi], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'fitted between' },
     ],
   });
   const Et = Array.from({ length: 301 }, (_, q) => -1.5 + 0.01 * q), low = 10 ** Math.floor(Math.log10(rate(1e-9, L, T) / 2));
@@ -206,7 +226,7 @@ function update() {
     series: [
       { x: Et, y: Et.map((v) => rate(v, L, T)), color: colors[0], width: 1.6, label: 'Marcus–Hush–Chidsey' },
       { x: Et, y: Et.map((v) => rate(v, L, T, 'bv')), color: colors[1], width: 1, dash: [5, 4], label: 'Butler–Volmer, α = ½' },
-      { x: Et, y: Et.map((v) => rate(v, L, T, 'marcus')), color: colors[3], width: 1.2, dash: [1.5, 3], label: 'Marcus, one level' },
+      { x: Et, y: Et.map((v) => rate(v, L, T, 'marcus1', run.fit)), color: colors[3], width: 1.2, dash: [1.5, 3], label: `Marcus, one level, its own fit (λ ${run.fit.lam.toFixed(2)} eV)` },
       { x: etas, y: steps.map((q) => q.k), color: 'var(--ink)', marker: true, width: 0, label: 'fitted to the simulation' },
       { x: [e, e], y: [low, 1e8], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'this step' },
     ],
@@ -251,7 +271,12 @@ for (const el of [TIn, lamIn]) {
   el.addEventListener('change', rebuild);
   el.addEventListener('input', labels);
 }
-etaIn.addEventListener('input', update);
+// (η = 0 is no step: the slider passes over it)
+etaIn.addEventListener('input', () => {
+  if (Math.abs(+etaIn.value) < 1e-9) etaIn.value = 0.1;
+  update();
+});
+if (Math.abs(+etaIn.value) < 1e-9) etaIn.value = 0.1;
 addEventListener('resize', update);
 rebuild();
 showCode();

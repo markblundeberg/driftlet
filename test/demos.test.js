@@ -458,7 +458,16 @@ test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed for
     const rms = Math.sqrt(d.reduce((s, x) => s + (x - m) * (x - m), 0) / d.length);
     if (!best || rms < best.rms) best = { lam, rms, i0: Math.exp(-m) };
   }
-  assert.ok(Math.abs(best.lam - 0.23) < 0.005 && Math.abs(best.i0 - 1.03) < 0.01 && best.rms < 0.012, JSON.stringify(best));
+  assert.ok(Math.abs(best.lam - 0.233) < 0.001 && Math.abs(best.i0 - 1.034) < 0.005 && best.rms < 0.012, JSON.stringify(best));
+  // weighed on the currents themselves instead: 0.226 eV and 6% higher, its ceiling 335 mA/cm² (the page: 0.226 to 0.233, 3 to 6%, 335 to 350)
+  let abs = null;
+  for (let lam = 0.2; lam <= 0.26; lam += 0.0005) {
+    const e = ev.map((x) => net(I, kT(lam), x)), z = ev.map((x) => net(zeng, L, x));
+    const sc = z.reduce((t, v, k) => t + v * e[k], 0) / e.reduce((t, v) => t + v * v, 0), res = e.reduce((t, v, k) => t + (sc * v - z[k]) * (sc * v - z[k]), 0);
+    if (!abs || res < abs.res) abs = { lam, res, i0: sc };
+  }
+  assert.ok(Math.abs(abs.lam - 0.2265) < 0.001 && Math.abs(abs.i0 - 1.056) < 0.006, JSON.stringify(abs));
+  assert.ok(Math.abs((abs.i0 * ceiling(abs.lam)) / 10 - 335) < 3 && Math.abs((best.i0 * ceiling(best.lam)) / 10 - 350) < 4, `${(abs.i0 * ceiling(abs.lam)) / 10}`);
   // the ideal conductivity, Nernst–Einstein's: 2.4 S/m
   const kappa = (FARADAY * FARADAY * c * (DLi + (DLi * 0.62) / 0.38)) / RT;
   assert.ok(Math.abs(kappa - 2.4) < 0.05, `${kappa}`);
@@ -466,7 +475,11 @@ test('demos/lithium.html: Marcus–Hush–Chidsey plating against its closed for
 
 test("demos/chidsey.html: Chidsey's experiment, the fitted rates against the theory, and the numbers the page gives", async () => {
   const { mhcIntegral } = await import('../src/marcus.js');
-  const { step, rate, etas, mhcI, kT, A, states } = await pageTheory('chidsey.html', ['step', 'rate', 'etas', 'mhcI', 'kT', 'A', 'states']);
+  const { step, rate, etas, mhcI, kT, A, states, marcusFit } = await pageTheory('chidsey.html', ['step', 'rate', 'etas', 'mhcI', 'kT', 'A', 'states', 'marcusFit']);
+  // one-level Marcus with its own λ over −1.0 to +0.8 V: 1.02 eV, within 9%; and it turns down past it
+  const one = marcusFit(0.85, 298.15);
+  assert.ok(Math.abs(one.lam - 1.02) < 0.005 && one.dev < 0.09 && one.dev > 0.08, JSON.stringify(one));
+  assert.ok(rate(1.4, 0.85, 298.15, 'marcus1', one) / rate(1.4, 0.85, 298.15) < 0.2);
   for (const [lam, a] of [[33.1, 0], [33.1, 30], [33.1, -30], [19.5, 15]]) assert.ok(Math.abs(mhcI(lam, a) / mhcIntegral(lam, a).I - 1) < 1e-12);
   // the rate constants fitted to the simulated decays, against the theory: 2e-4, across η, T and λ
   for (const [T, lam] of [[298.15, 0.85], [274.15, 0.85], [320.15, 0.5], [298.15, 1.2]]) {
