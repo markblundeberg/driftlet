@@ -196,9 +196,12 @@ test('a diffuse layer charged by a current of ions: what comes in is held, read 
   }));
   const s0 = dev.solve(), K0 = amounts(dev, s0)['K+'], D0 = s0.interfaces[0].D;
   dev.set({ contacts: { left: { I } } });
+  // (to 1e-8 of what came in, above the amounts' own round-off: each c is e^η with |η| near 110, so an
+  // amount carries ε|η| of itself, 3e-14 of the 1e-3 mol/m² here, which the first step's 5e-10 mol/m²
+  // in can't resolve to 1e-8; it doesn't grow, 2.5e-17 mol/m² still after 1000 s)
   for (const t of [1e-4, 1e-3, 1e-2]) {
     const s = dev.advance(t), dK = amounts(dev, s)['K+'] - K0;
-    assert.ok(s.converged && Math.abs(dK / ((I * t) / FARADAY) - 1) < 1e-8, `at ${t} s: K⁺ in ${dK} for ${(I * t) / FARADAY}`);
+    assert.ok(s.converged && Math.abs(dK - (I * t) / FARADAY) < 1e-8 * ((I * t) / FARADAY) + 1e-13 * K0, `at ${t} s: K⁺ in ${dK} for ${(I * t) / FARADAY}`);
     assert.ok(Math.abs(s.interfaces[0].D - D0 - I * t) < 1e-8 * I * t, `at ${t} s: the metal's charge ${-s.interfaces[0].D} from ${-D0}`);
   }
 });
