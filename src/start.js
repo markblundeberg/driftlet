@@ -368,7 +368,7 @@ export function initFromComposition(s) {
     const shift = level(t.side) - level(s.terms[held].side);
     if (Number.isFinite(shift)) s.termV[k] = s.termV[held] + shift;
   }
-  for (let g = 0; g < s.nNodes; g++) if (s.surfPort[g] >= 0) s._surfaceStart(g);
+  for (let g = 0; g < s.nNodes; g++) if (s.surfAt[g] >= 0) s._surfaceStart(g);
   s.computeConcentrations();
   // A floating capacitance starts uncharged (σ = 0 at the window's mean φ), as the starting
   // composition, neutral without it, assumes; with reactions too, its double layer then charges

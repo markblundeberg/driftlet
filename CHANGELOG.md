@@ -5,6 +5,16 @@ major version.
 
 ## Unreleased
 
+- Surface species at a face: `interfaces[f].surface`, beside a metal, in the form an electrode
+  port's surface takes (Langmuir coverages on shared sites, neutral), held at the node beside the
+  face, with the face's reactions (Butler–Volmer or Marcus–Hush–Chidsey) taking and making them:
+  a tethered redox couple, an adsorbate, an intermediate. Their storage, conservation (the steady
+  solve keeps their amount), Jacobian, impedance and `polarization()` come with them; each
+  solution reports `interfaces[f].coverage` and `.bare`. Checked against a tethered couple's Nernst
+  coverages, its relaxation after a potential step (Butler–Volmer and Marcus–Hush–Chidsey: Chidsey's
+  experiment), Laviron's voltammogram and adsorption impedance, and a Langmuir electrosorption
+  isotherm. Internally a port's surface and a face's are one kind of thing (`model.surfaces`).
+
 - Marcus–Hush–Chidsey kinetics at a face: `lambda` (the reorganization energy, J/mol) in place of
   `alpha`, for one electron to or from a metal. The Marcus rate for each level of the metal's band,
   weighted by its occupancy and summed (Chidsey 1991): Butler–Volmer with α = ½ near the couple's

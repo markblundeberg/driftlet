@@ -33,7 +33,7 @@ test('ions: μ° reproduce the electrochemical series, E° = −Σν μ°/(nF)',
 
 test('ions: D reproduce the limiting conductivities by Nernst–Einstein, λ = z²F²D/RT', () => {
   // Equivalent limiting conductivities λ/|z|, S·cm²/mol (CRC Handbook).
-  const lambda = { 'H+': 349.65, 'Li+': 38.66, 'Na+': 50.08, 'K+': 73.48, 'Ag+': 61.9, 'Cu2+': 53.6, 'Zn2+': 52.8, 'Fe2+': 54, 'Fe3+': 68, 'OH-': 198, 'Cl-': 76.31, 'NO3-': 71.42, 'SO42-': 80.0 };
+  const lambda = { 'H+': 349.65, 'Li+': 38.66, 'Na+': 50.08, 'K+': 73.48, 'Ag+': 61.9, 'Cu2+': 53.6, 'Zn2+': 52.8, 'Fe2+': 54, 'Fe3+': 68, 'OH-': 198, 'Cl-': 76.31, 'NO3-': 71.42, 'SO42-': 80.0, 'ClO4-': 67.3 };
   assert.deepEqual(Object.keys(lambda).sort(), Object.keys(IONS).sort());
   for (const [ion, l] of Object.entries(lambda)) {
     const { z, D } = IONS[ion];

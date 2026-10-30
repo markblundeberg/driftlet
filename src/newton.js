@@ -311,8 +311,8 @@ export function maxPotentialStep(s, delta, deltaV = s.deltaV, layers = true) { /
     for (let i = 0; i < n; i++) {
       if (s.present[g * n + i]) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + i]]));
     }
-    const k = s.surfPort[g]; // an electrode surface's coverages, as η
-    if (k >= 0) for (let q = 0; q < s.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
+    const k = s.surfAt[g]; // an electrode surface's coverages, as η
+    if (k >= 0) for (let q = 0; q < s.model.surfaces[k].species.length; q++) mx = Math.max(mx, Math.abs(delta[R[b * M + 1 + n + q]]));
   }
   for (const gt of s.gateList) mx = Math.max(mx, Math.abs(delta[R[gt.o]])); // a gate's fraction open
   if (layers) for (const d of s.diffList) { // a diffuse layer's drop, and its drawn species' levels at its plane, as η

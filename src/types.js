@@ -108,6 +108,7 @@
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {number} [k0] Butler–Volmer: standard rate constant, mol/(m²·s) (required unless srh or vmax)
  * @property {number} [alpha] with k0: transfer coefficient, 0…1 (default 0.5)
+ * @property {boolean} [bare] with the face's surface: the reaction needs a bare site even where it fills none
  * @property {number} [lambda] with k0, in place of alpha: Marcus–Hush–Chidsey kinetics with this
  *   reorganization energy, J/mol (units.eV(0.5) for 0.5 eV); a curved Tafel plot that saturates
  * @property {{ vn: number, vp: number, n1?: number }} [srh] instead: trap-assisted recombination, for a
@@ -143,6 +144,9 @@
  *   where present on both sides and mobile on one, blocked otherwise; a species reacting at the
  *   face and present on both sides has no default)
  * @property {FaceReactionDef[]} [reactions] reactions at the face
+ * @property {Record<string, { mu0: number, capacity: number, theta0?: number }>} [surface] beside a metal:
+ *   species on its sites (a tethered couple, an adsorbate), as an electrode port's surface; the face's
+ *   reactions name them on the metal's side, and the solution reports interfaces[f].coverage and .bare
  * @property {Record<string, GateDef>} [gates] voltage-gated channels: gates following
  *   V = φ_right − φ_left, which its links name (not beside a conductor)
  */

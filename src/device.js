@@ -462,9 +462,23 @@ export function normalizeDevice(def) {
       surfaced[g] = k;
     }
   });
+  // Every electrode surface, a port's (through its window) or a face's (at the edge node of the side
+  // facing its metal): src/solver.js keeps each one's coverages as slots after the species there.
+  const surfaces = [];
+  ports.forEach((port, k) => {
+    port.surfaceOf = port.surface.length > 0 ? surfaces.length : -1;
+    if (port.surface.length > 0) surfaces.push({ name: port.name, port: k, face: -1, species: port.surface, nodes: port.nodes });
+  });
+  interfaces.forEach((itf, f) => {
+    itf.surfaceOf = itf.surface.length > 0 ? surfaces.length : -1;
+    if (itf.surface.length === 0) return;
+    const g = itf.surfaceSide ? grid.regionStart[f + 1] : grid.regionEnd[f];
+    need(surfaced[g] < 0, `interfaces[${f}].surface: ports[${surfaced[g]}]'s window, with a surface or gates, holds the node beside the face where its surface is; a spot of metal has one surface`);
+    surfaces.push({ name: `interfaces[${f}]`, port: -1, face: f, species: itf.surface, nodes: Int32Array.of(g) });
+  });
 
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry, surfaces,
   };
 }
 
@@ -570,17 +584,35 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
 // to or from a metal: with a° = a + Σ ν ln(c/c_ref) the affinity at standard concentrations,
 //   r = k0 Π_{ν<0} (c/c_ref)^{|ν|} (I(λ, a°)/I(λ, 0)) (1 − e^{−a}),
 // I from src/marcus.js; again exactly zero at A = 0, and Butler–Volmer's α = ½ near a° = 0.
-function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT) {
+// A face's surface species (an electrode's, `surface`, held at the edge node of side
+// `surfaceSide`) take part as `surf`: [{ s, nu }], s its index there, written on the metal's side of
+// an equation (or on either side's map), as at an electrode port.
+function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT, surface = [], surfaceSide = -1) {
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
+  const onSurface = (name) => surface.findIndex((sp) => sp.name === name);
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
     need(isObject(rdef), `${rpath} must be { equation, fixed, k0, alpha } or { left, right, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'lambda', 'srh', 'vmax', 'K']);
+    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'lambda', 'srh', 'vmax', 'K', 'bare']);
     let sides = rdef;
     if (rdef.equation !== undefined) {
       need(rdef.left === undefined && rdef.right === undefined, `${rpath}: give the reaction as an equation or as left and right, not both`);
-      const holds = (mat) => (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
-      sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: matL.name, holds: holds(matL), conductor: !!matL.conductor }, { name: matR.name, holds: holds(matR), conductor: !!matR.conductor }, rdef.fixed, `${rpath}.equation`);
+      const holds = (mat, side) => (name) => (speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)])) || (surface.length > 0 && side !== surfaceSide && onSurface(name) >= 0);
+      sides = faceSides(parseEquation(rdef.equation, `${rpath}.equation`), { name: matL.name, holds: holds(matL, 0), conductor: !!matL.conductor }, { name: matR.name, holds: holds(matR, 1), conductor: !!matR.conductor }, rdef.fixed, `${rpath}.equation`);
+    }
+    // (the surface's species out of either side's map)
+    const surf = [];
+    if (surface.length > 0) {
+      sides = { left: { ...(sides.left ?? {}) }, right: { ...(sides.right ?? {}) } };
+      for (const key of ['left', 'right']) {
+        for (const [name, nu] of Object.entries(sides[key])) {
+          const q = onSurface(name);
+          if (q < 0) continue;
+          need(Number.isInteger(nu) && nu !== 0, `${rpath}: ${name}'s coefficient must be a nonzero integer`);
+          surf.push({ s: q, nu });
+          delete sides[key][name];
+        }
+      }
     }
     const part = [];
     let fixedA = 0, charge = 0;
@@ -593,8 +625,10 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       fixedA += st.fixedA;
       charge += st.charge;
     }
-    need(part.length > 0, `${rpath}: no species participate`);
+    need(part.length > 0 || surf.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
+    need(surf.length === 0 || (rdef.vmax === undefined && rdef.K === undefined && rdef.srh === undefined), `${rpath}: a reaction of the face's surface is Butler–Volmer or Marcus–Hush–Chidsey`);
+    need(rdef.bare === undefined || (surf.length > 0 && typeof rdef.bare === 'boolean'), `${rpath}.bare: true or false, for a reaction of the face's surface`);
     if (rdef.vmax !== undefined || rdef.K !== undefined) {
       need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined && rdef.srh === undefined, `${rpath}: give vmax and K (saturating), srh, or k0 and alpha (Butler–Volmer) or lambda (Marcus–Hush–Chidsey), one of them`);
       const vmax = positive(rdef.vmax, `${rpath}.vmax (mol/(m²·s))`);
@@ -609,7 +643,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
         need(!mat.conductor, `${rpath}: saturating kinetics is for dissolved substrates, not a metal's ${species[p.i].name}`);
         need(rdef.K[species[p.i].name] !== undefined, `${rpath}.K.${species[p.i].name}: give a half-saturation concentration for every species the forward reaction consumes`);
       }
-      return { part, fixedA, vmax, K: part.map((p) => (p.nu < 0 ? rdef.K[species[p.i].name] : 0)) };
+      return { part, fixedA, vmax, K: part.map((p) => (p.nu < 0 ? rdef.K[species[p.i].name] : 0)), surf };
     }
     if (rdef.srh !== undefined) {
       need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined, `${rpath}: give srh or k0 (and alpha or lambda), not both`);
@@ -618,9 +652,14 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
         const mat = p.side ? matR : matL;
         need(!mat.conductor, `${rpath}.srh: SRH kinetics is for carriers in semiconductors, not a metal's ${species[p.i].name}`);
       }
-      return { part, fixedA, srh };
+      return { part, fixedA, srh, surf };
     }
     const k0 = positive(rdef.k0, `${rpath}.k0`);
+    // Langmuir sites, as at an electrode port: the reaction fills Δ of them going forward, and its
+    // transition state holds m bare ones (those it fills, or one if it runs only on bare metal),
+    // so the forward rate goes as θ₀^m and the backward as θ₀^(m−Δ).
+    const fills = surf.reduce((t, p) => t + p.nu, 0), m = Math.max(fills, 0, rdef.bare ? 1 : 0);
+    const onSites = surf.length > 0 ? { surf, m, fills } : { surf };
     if (rdef.lambda !== undefined) {
       need(rdef.alpha === undefined, `${rpath}: give lambda (Marcus–Hush–Chidsey) or alpha (Butler–Volmer), not both`);
       const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
@@ -629,9 +668,10 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       need(metal.length === 1 && Math.abs(metal[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from a metal, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
       // (and to or from a molecule or ion, not a band: the metal's carrier, or an opposite one, on the other side is band-to-band transfer)
       need(!part.some((p) => p !== metal[0] && (p.i === metal[0].i || Math.abs(species[p.i].z) === 1 && /^[eh][+-]$/.test(species[p.i].name))), `${rpath}: Marcus–Hush–Chidsey kinetics is for an electron to or from a molecule or ion, not between a metal's band and a semiconductor's`);
-      return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I } };
+      return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, ...onSites };
     }
-    return { part, fixedA, k0, alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
+    const alpha = transferCoefficient(rdef.alpha, `${rpath}.alpha`);
+    return { part, fixedA, k0, alpha, ...onSites, ...(surf.length > 0 ? { sites: m * (1 - alpha) + (m - fills) * alpha } : {}) };
   });
 }
 
@@ -806,7 +846,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     need(speciesIndex.has(pdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(pdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(pdef.terminal);
   }
-  const surface = portSurface(pdef, path, speciesIndex);
+  const surface = electrodeSurface(pdef, path, speciesIndex);
   const reactions = portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface);
   surface.forEach((sp, s) => need(reactions.some((rx) => rx.part.some((p) => p.side === 2 && p.s === s)), `${path}.surface.${sp.name}: no reaction of the port makes or uses it`));
   const capacitance = portCapacitance(pdef, path, mat);
@@ -890,14 +930,15 @@ function portCapacitance(pdef, path, mat) {
   return { C: positive(pdef.capacitance.C, `${cpath}.C (F/m² of electrode)`), zeroCharge: pdef.capacitance.zeroCharge === undefined ? 0 : finite(pdef.capacitance.zeroCharge, `${cpath}.zeroCharge (V)`) };
 }
 
-// An electrode port's surface species: coverages θ of its sites (Langmuir: each takes one site,
-// μ = μ° + RT ln(θ/θ₀) with θ₀ = 1 − Σθ the bare fraction), Γ mol of sites per m² of electrode.
-function portSurface(pdef, path, speciesIndex) {
+// An electrode's surface species, a port's or a face's: coverages θ of its sites (Langmuir: each
+// takes one site, μ = μ° + RT ln(θ/θ₀) with θ₀ = 1 − Σθ the bare fraction), Γ mol of sites per m² of
+// electrode.
+function electrodeSurface(pdef, path, speciesIndex) {
   if (pdef.surface === undefined) return [];
   need(isObject(pdef.surface), `${path}.surface must map surface species to { mu0, capacity, theta0 }`);
   const list = Object.entries(pdef.surface).map(([name, d]) => {
     const spath = `${path}.surface.${name}`;
-    need(!speciesIndex.has(name), `${spath}: '${name}' is a species of the device; a surface species is the port's own, with its own name`);
+    need(!speciesIndex.has(name), `${spath}: '${name}' is a species of the device; a surface species is the electrode's own, with its own name`);
     need(isObject(d), `${spath} must be { mu0, capacity, theta0 }`);
     fields(d, spath, ['mu0', 'capacity', 'theta0']);
     const theta0 = d.theta0 === undefined ? 1e-6 : positive(d.theta0, `${spath}.theta0`);
@@ -1011,6 +1052,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
   // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
   if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
+  need(idef.surface === undefined, `${where}.surface: a surface is an electrode's, at a face with a metal on one side`);
   fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'gates', 'diffuse']);
   const bothNeutral = (matL.epsr === 0 && matR.epsr === 0) || matL.phiFree || matR.phiFree;
   const rawPhi = idef.phi ?? (bothNeutral ? 'neutral' : 'pinned');
@@ -1094,7 +1136,7 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
   checkReactingLinks(reactions, idef, where, matL, matR, species);
   const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, reactions);
-  return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null, diffuse };
+  return { phi, dipole, sheetCharge, links, reactions, gates, conductor: null, diffuse, surface: [], surfaceSide: -1 };
 }
 
 // A face's diffuse layers (src/diffuse.js): { epsr } gives each strictly neutral side of a
@@ -1223,7 +1265,7 @@ function normalizeConductor(mat, mname, path, species, speciesIndex) {
 function normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT) {
   if (idef === undefined || idef === null) idef = {};
   need(isObject(idef), `${where} must be an object`);
-  fields(idef, where, ['phi', 'zeroCharge', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'diffuse']); // (the alignment fields only to say why not)
+  fields(idef, where, ['phi', 'zeroCharge', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'diffuse', 'surface']); // (the alignment fields only to say why not)
   const side = matL.conductor ? (matR.conductor ? 'both' : 'left') : 'right';
   const other = side === 'left' ? matR : matL;
   const metal = side === 'right' ? matR.conductor : matL.conductor;
@@ -1275,10 +1317,15 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
       links[i] = { ...link };
     }
   }
-  const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT);
+  // An electrode's surface species (neutral, on Langmuir sites), held at the solution's edge node.
+  const surface = electrodeSurface(idef, where, speciesIndex);
+  need(surface.length === 0 || side !== 'both', `${where}.surface: a surface is an electrode's, between a metal and what it faces`);
+  const surfaceSide = surface.length > 0 ? (side === 'left' ? 1 : 0) : -1;
+  const reactions = normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT, surface, surfaceSide);
+  surface.forEach((sp, q) => need(reactions.some((rx) => rx.surf.some((p) => p.s === q)), `${where}.surface.${sp.name}: no reaction of the face makes or uses it`));
   checkReactingLinks(reactions, idef, where, matL, matR, species);
   const diffuse = normalizeDiffuse(idef.diffuse, where, phi, matL, matR, species, reactions);
-  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i }, diffuse };
+  return { phi, dipole: 0, zeroCharge, sheetCharge: 0, links, reactions, gates: [], conductor: { side, i: metal.i }, diffuse, surface, surfaceSide };
 }
 
 // A species present on both sides crosses freely; one that can't move on either (D = 0, trap

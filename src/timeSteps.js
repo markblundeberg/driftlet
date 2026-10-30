@@ -471,8 +471,8 @@ function errorNorm(s, ref) {
     for (let i = 0; i < n; i++) {
       if (s.present[g * n + i]) mx = Math.max(mx, Math.abs(u[b * M + 1 + i] - ref[b * M + 1 + i]));
     }
-    const k = s.surfPort[g]; // an electrode surface's coverages, as η
-    if (k >= 0) for (let q = 0; q < s.model.ports[k].surface.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
+    const k = s.surfAt[g]; // an electrode surface's coverages, as η
+    if (k >= 0) for (let q = 0; q < s.model.surfaces[k].species.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
   }
   for (const { o } of s.gateList) mx = Math.max(mx, Math.abs(u[o] - ref[o])); // (a fraction: 1e-3 of m³ is 0.3% of P)
   return mx;

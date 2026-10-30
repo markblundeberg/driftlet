@@ -84,10 +84,10 @@ export class Solver {
     // plane: drawSpecies), as many as the busiest face has.
     const nDiff = (itf) => (itf.diffuse ? [0, 1].reduce((m, side) => m + ((side ? itf.diffuse.right : itf.diffuse.left) ? 1 + drawSpecies(itf, side, species).length : 0), 0) : 0);
     const nRx = model.interfaces.reduce((m, itf) => Math.max(m, itf.reactions.length + itf.gates.length + nDiff(itf)), 0);
-    // (and at an electrode port's nodes, one per surface species: its coverage's η)
-    const nSurf = model.ports.reduce((m, port) => Math.max(m, port.surface.length), 0);
+    // (and at an electrode surface's nodes, a port's or a face's, one per surface species: its coverage's η)
+    const nSurf = model.surfaces.reduce((m, sf) => Math.max(m, sf.species.length), 0);
     // (and a membrane port's gates, after them: each one's fraction open)
-    const nPortSlots = model.ports.reduce((m, port) => Math.max(m, port.surface.length + port.gates.length), 0);
+    const nPortSlots = Math.max(nSurf, model.ports.reduce((m, port) => Math.max(m, port.surface.length + port.gates.length), 0));
     const M = n + 1 + Math.max(nRx, nPortSlots);
     const nNodes = grid.nNodes;
     const nFaces = regions.length - 1;
@@ -108,16 +108,15 @@ export class Solver {
     this.blockOfFace = new Int32Array(nFaces);
     for (let f = 0; f < nFaces; f++) this.blockOfFace[f] = grid.regionEnd[f] + f + 1;
 
-    // Electrode ports' surfaces: each node's port (−1: none) and its index in the port's window;
-    // the coverages there, θ [g·nSurf + s], now and at the step's start.
-    this.surfPort = new Int32Array(nNodes).fill(-1);
+    // Electrode surfaces (model.surfaces: a port's, through its window, or a face's, at one node):
+    // each node's surface (−1: none) and its index among the surface's nodes; the coverages there,
+    // θ [g·nSurf + s], now and at the step's start.
+    this.surfAt = new Int32Array(nNodes).fill(-1);
     this.surfW = new Int32Array(nNodes);
-    model.ports.forEach((port, k) => {
-      if (port.surface.length > 0) port.nodes.forEach((g, w) => ((this.surfPort[g] = k), (this.surfW[g] = w)));
-    });
-    // Each surface species of each port, as a column of what's conserved: [port, species].
-    this.surfCols = model.ports.flatMap((port, k) => port.surface.map((_, q) => [k, q]));
-    this.surfColOf = model.ports.map((port, k) => this.surfCols.findIndex(([kk]) => kk === k));
+    model.surfaces.forEach((sf, j) => sf.nodes.forEach((g, w) => ((this.surfAt[g] = j), (this.surfW[g] = w))));
+    // Each species of each surface, as a column of what's conserved: [surface, species].
+    this.surfCols = model.surfaces.flatMap((sf, j) => sf.species.map((_, q) => [j, q]));
+    this.surfColOf = model.surfaces.map((sf, j) => this.surfCols.findIndex(([jj]) => jj === j));
     this.th = new Float64Array(nNodes * nSurf);
     this.thOld = new Float64Array(nNodes * nSurf);
     // The bare fraction θ₀, directly (1 − Σθ cancels as θ → 1); 1 where there's no surface.
@@ -377,6 +376,8 @@ export class Solver {
       port.area === null ? null : Float64Array.from(port.nodes, (g, w) => (port.area.value ?? profileMean(port.area, port.lo[w], port.hi[w])) * port.fill[w]),
     );
     this.portRates = model.ports.map((port) => port.reactions.map(() => new Float64Array(port.nodes.length)));
+    // Each surface's electrode area per volume at its nodes: a port's, or a face's area over its node's box.
+    this.surfArea = model.surfaces.map((sf) => (sf.port >= 0 ? this.portArea[sf.port] : Float64Array.from(sf.nodes, (g) => model.grid.area[g] / model.grid.vol[g])));
 
     // Scales the generation reactions' rates during a steady solve's continuation (else 1).
     this.generationScale = 1;
@@ -473,8 +474,8 @@ export class Solver {
       }
       active[b * M] = this.phiUndefined[g] ? 0 : 1;
       for (let i = 0; i < n; i++) active[b * M + 1 + i] = this.present[g * n + i];
-      const k = this.surfPort[g];
-      if (k >= 0) for (let q = 0; q < model.ports[k].surface.length; q++) active[b * M + 1 + n + q] = 1;
+      const k = this.surfAt[g];
+      if (k >= 0) for (let q = 0; q < model.surfaces[k].species.length; q++) active[b * M + 1 + n + q] = 1;
       const kg = this.gatePort[g], pg = model.ports[kg];
       if (kg >= 0) for (let q = 0; q < pg.gates.length; q++) active[b * M + 1 + n + pg.surface.length + q] = 1;
     }
@@ -701,17 +702,17 @@ export class Solver {
 
   // An electrode surface at its starting coverages at node g: η = μ°/RT + ln(θ/θ₀).
   _surfaceStart(g) {
-    const { n, M, u, model } = this, surf = model.ports[this.surfPort[g]].surface, b = this.blockOfNode[g];
+    const { n, M, u, model } = this, surf = model.surfaces[this.surfAt[g]].species, b = this.blockOfNode[g];
     const bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
     surf.forEach((sp, q) => (u[b * M + 1 + n + q] = sp.mu0 / model.RT + Math.log(sp.theta0 / bare)));
   }
 
   /** Amount (mol per unit area) of surface column j's species, Γ Σ v·a·θ, in the current state. */
   surfaceAmount(j) {
-    const [k, q] = this.surfCols[j], port = this.model.ports[k], vol = this.model.grid.vol;
+    const [k, q] = this.surfCols[j], sf = this.model.surfaces[k], vol = this.model.grid.vol;
     let s = 0;
-    port.nodes.forEach((g, w) => (s += vol[g] * this.portArea[k][w] * this.th[g * this.nSurf + q]));
-    return port.surface[0].capacity * s;
+    sf.nodes.forEach((g, w) => (s += vol[g] * this.surfArea[k][w] * this.th[g * this.nSurf + q]));
+    return sf.species[0].capacity * s;
   }
 
   /** Total amount (mol per unit area) of a stretch's species in the current state, its faces' diffuse layers' included. */

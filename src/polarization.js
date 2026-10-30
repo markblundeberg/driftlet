@@ -49,6 +49,8 @@ export function polarization(device, sol, where, V, opts = {}) {
     atPlane = (p, name) => layers[p.side ? 'right' : 'left'] && { c: layers[p.side ? 'right' : 'left'].plane[name], dmu: layers[p.side ? 'right' : 'left'].draw?.[name] ?? 0 };
     reactions = itf.reactions;
     names = device.def.interfaces?.[f]?.reactions;
+    // (its surface, an electrode's, as a port's: each species' coverage, and the bare fraction)
+    if (itf.surface.length > 0) surface = { sp: itf.surface, theta: itf.surface.map((sp) => sol.interfaces[f].coverage[sp.name]), bare: sol.interfaces[f].bare };
   } else if (where?.port !== undefined) {
     const k = typeof where.port === 'number' ? where.port : model.ports.findIndex((p) => p.name === where.port);
     const port = model.ports[k];
@@ -73,7 +75,9 @@ export function polarization(device, sol, where, V, opts = {}) {
     if (rx.srh) fail('polarization: SRH kinetics has no electrode level');
     let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's P and Q apart)
     const surf = [];
-    rx.part.forEach((p, x) => {
+    // (a face's surface species are rx.surf, a port's side-2 participants: the same from here on)
+    const all = [...rx.part, ...(rx.surf ?? []).map((p) => ({ ...p, side: 2 }))];
+    all.forEach((p, x) => {
       if (p.side === 2) {
         // a surface species: μ = μ° + RT ln a, a = θ/θ₀
         base -= (p.nu * surface.sp[p.s].mu0) / RT;
@@ -129,7 +133,16 @@ export function polarization(device, sol, where, V, opts = {}) {
         a -= u.nu * lnA[u.s];
         p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
       }
-      if (rx.mhc) return mhcRate(rx.mhc, p, lnP, lnQ, a).rate;
+      if (rx.mhc) {
+        // (a surface species at θ = θ₀ a, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
+        let sP = lnP, sQ = lnQ;
+        for (const u of surf) (u.nu < 0 ? (sP -= u.nu * (lnA[u.s] + Math.log(bare))) : (sQ += u.nu * (lnA[u.s] + Math.log(bare))));
+        if (surf.length > 0) {
+          sP += rx.m * Math.log(bare);
+          sQ += (rx.m - rx.fills) * Math.log(bare);
+        }
+        return mhcRate(rx.mhc, rx.k0, sP, sQ, a).rate;
+      }
       return rx.vmax ? p * -Math.expm1(-a) : p * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));
     });
     // (its level with the surface as held)

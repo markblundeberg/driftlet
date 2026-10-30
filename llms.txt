@@ -76,7 +76,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works.
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
   300 K; `semiconductor('Si', { T: 350 })` moves them, 150–500 K, for a device at that `T`),
-  `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ in water, at 25
+  `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ ClO₄⁻ in water, at 25
   °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
   Li Pt), all from `driftlet/kit`. A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si`
   (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the
@@ -137,7 +137,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
   `k0: 10`). Butler–Volmer by default (`alpha`, 0.5); `lambda: units.eV(0.5)` in its place makes it
   Marcus–Hush–Chidsey, for one electron to or from a metal: the same k0, a Tafel plot that bends and
-  saturates.
+  saturates. A metal's face can carry surface species (`surface: { name: { mu0, capacity, theta0 } }`,
+  Langmuir, neutral), which its reactions name on the metal's side: a tethered couple, an adsorbate;
+  solutions report `interfaces[f].coverage`.
 - **Grids** grade geometrically from `hmin` at each region's ends up to `hmax`, neighbouring cells
   differing by at most `ratio` (1.2): put `hmin` below the shortest length that matters (a Debye
   length, a depletion edge). Left out, `grid` is a coarse default for a first look; `check()`

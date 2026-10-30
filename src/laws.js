@@ -23,8 +23,8 @@
 //   stretchOf            stretch index by region·n + species, −1 where absent
 //   flatStretches        stretches a steady solve holds at a flat level (Solver._findStretches)
 //   rough                each stretch's starting amount (Infinity where a level sets it)
-//   surfCols, surfColOf  electrode surface species as columns: surfCols[j] = [port, slot];
-//                        surfColOf[port] its first column (−1 for none)
+//   surfCols, surfColOf  electrode surface species as columns: surfCols[j] = [surface, slot],
+//                        model.surfaces's (a port's or a face's); surfColOf[surface] its first column
 //   terms, floating      terminals (0 left, 1 right, 2 + k port k) with their drives as they are
 //                        now; the terminals whose voltage is an unknown
 //   blockOfNode, blockOfFace, rxsIn, nodeMaterial, phiUndefined
@@ -54,7 +54,7 @@
 //   affinities[]   { rx, f, row }: face reaction rx at interface f, its affinity Σ ν η = 0 in place
 //                  of balance row `row`; idx, w, len, res: workspace.
 //   localConstraints[]  { parts: [{i, w}] or [{q, k, w}], row, nodes, reference }: at each node
-//                  g of `nodes`, Σ w c_i + Σ w Γ a θ_q (a surface's only where port k is), as it
+//                  g of `nodes`, Σ w c_i + Σ w Γ a θ_q (a surface's only where surface k is), as it
 //                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
 //                  one region: nothing carries them between nodes) that no terminal feeds, and
 //                  surfaces. One law can have several entries, a row per set of nodes.
@@ -188,6 +188,7 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
     for (const rx of itf.reactions) {
       const row = new Float64Array(C);
       for (const p of rx.part) row[stretchOf[(f + p.side) * n + p.i]] += p.nu;
+      for (const p of rx.surf) row[S + surfColOf[itf.surfaceOf] + p.s] += p.nu; // (its surface's species)
       (rx === skip ? skipped : rows).push(row);
     }
   });
@@ -200,7 +201,7 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
       if (rx === skip) skipped.push(row);
       for (const p of rx.part) {
         if (p.side === 0) row[stretchOf[port.region * n + p.i]] += p.nu;
-        else if (p.side === 2) row[S + surfColOf[k] + p.s] += p.nu;
+        else if (p.side === 2) row[S + surfColOf[port.surfaceOf] + p.s] += p.nu;
         else if (carriers.includes(k + 2)) row[X + carriers.indexOf(k + 2)] += p.nu;
       }
       if (rx !== skip) rows.push(row);
@@ -324,7 +325,7 @@ export function findLaws(s) {
     const lam = (t) => parts.map((p) => (driven(stretches[p.stretch]).includes(t) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
     const contacts = circuit < 0 ? [] : [0, 1].filter((t) => lam(t) && contactCharges(s, t)).map((t) => ({ t, lambda: lam(t) }));
     let nn = parts.reduce((m, p) => m + stretches[p.stretch].nodes[1] - stretches[p.stretch].nodes[0] + 1, 0);
-    for (const p of surface) nn += model.ports[surfCols[p.col][0]].nodes.length * model.ports[surfCols[p.col][0]].surface.length;
+    for (const p of surface) nn += model.surfaces[surfCols[p.col][0]].nodes.length * model.surfaces[surfCols[p.col][0]].species.length;
     for (const p of carriers) nn += model.ports[p.k - 2].nodes.length;
     for (const p of parts) conserved.add(p.stretch);
     constraints.push({
@@ -452,7 +453,7 @@ export function findLaws(s) {
       const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
       if (col < 0) continue;
       chosen.push([col, v.map((x) => x / v[col])]);
-      affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length), w: new Float64Array(rx.part.length), len: 0, res: 0 });
+      affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
       break;
     }
   }
@@ -533,7 +534,7 @@ export function findLaws(s) {
     // several nodes carries it between them too. Kept here as well, S⁺ that a port at I = 0
     // links was held twice, and the port's I = 0 lost: the solve settled at 0 V for −1.42 V.)
     if (parts.some((k) => isStretch(k) && terms.some((_, t) => feeds(t, stretches[k])))) continue;
-    const sets = parts.map((k) => (isSurface(k) ? model.ports[surfCols[k - S][0]].nodes : still(s, stretches[k]) ? span(stretches[k].nodes) : null));
+    const sets = parts.map((k) => (isSurface(k) ? model.surfaces[surfCols[k - S][0]].nodes : still(s, stretches[k]) ? span(stretches[k].nodes) : null));
     if (sets.includes(null)) continue; // (through a moving stretch: above)
     // Its nodes: the immobile stretches', side by side, with any surface's window among them (a
     // surface's term only where it is: an immobile S that adsorbs on an electrode spread over
@@ -684,7 +685,7 @@ export function findLaws(s) {
       const lambda = carriers.find((p) => p.k === k)?.w / zk || parts.map((p) => (feeds(k, stretches[p.stretch]) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
       if (!lambda) continue;
       let nn = parts.reduce((m, p) => m + stretches[p.stretch].nodes[1] - stretches[p.stretch].nodes[0] + 1, 0);
-      for (const p of surface) nn += model.ports[surfCols[p.col][0]].nodes.length * model.ports[surfCols[p.col][0]].surface.length;
+      for (const p of surface) nn += model.surfaces[surfCols[p.col][0]].nodes.length * model.surfaces[surfCols[p.col][0]].species.length;
       for (const p of carriers) nn += model.ports[p.k - 2].nodes.length;
       timeLaws.push({ parts, surface, carriers, terminals: [k], circuit: k, lambda, idx: new Int32Array(nn * M), w: new Float64Array(nn * M), len: 0 });
     }

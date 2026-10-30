@@ -366,8 +366,10 @@ for live demos.
   Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
 
 - **More interface kinetics.** Marcus–Hush–Chidsey rates at an electrode port (done at faces,
-  2026-10-29); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
-  such as hydrogen evolution emerge from elementary steps; and a custom forward rate
+  2026-10-29, with surface species at faces too); surface species carrying charge (in the face's
+  φ law) and lateral interactions between them (Frumkin isotherms); a worked example of a
+  multi-step mechanism through an intermediate (hydrogen evolution, Volmer–Heyrovsky–Tafel); and a
+  custom forward rate
   $`r_f(\mathrm{state})`$ as an escape hatch, which the solver multiplies by $`(1 - e^{-A/RT})`$ so
   equilibrium stays exact. Not a bare current–overpotential curve, which loses the concentration
   dependence and can break detailed balance.

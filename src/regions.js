@@ -123,9 +123,9 @@ export class RegionTerms {
   _coverages() {
     const { n, M, u, uLo, nSurf, th } = this, RT = this.model.RT;
     for (let g = 0; g < this.nNodes; g++) {
-      const k = this.surfPort[g];
+      const k = this.surfAt[g];
       if (k < 0) continue;
-      const surf = this.model.ports[k].surface, b = this.blockOfNode[g];
+      const surf = this.model.surfaces[k].species, b = this.blockOfNode[g];
       let m = 0;
       for (let q = 0; q < surf.length; q++) m = Math.max(m, u[b * M + 1 + n + q] + uLo[b * M + 1 + n + q] - surf[q].mu0 / RT);
       let sum = Math.exp(-m);

@@ -188,6 +188,12 @@ export function makeSolution(solver, result = {}) {
     out.links = Object.fromEntries(itf.links.flatMap((l, i) => (l.type === 'blocked' ? [] : [[species[i].name, l.type]])));
     const oneWay = solver.faceOneWay(f);
     if (oneWay.some((w) => w)) out.oneWay = Object.fromEntries(oneWay.flatMap((w, i) => (w ? [[species[i].name, w]] : [])));
+    // Its surface (an electrode's): each species' coverage θ, and the bare fraction.
+    if (itf.surfaceOf >= 0) {
+      const g = model.surfaces[itf.surfaceOf].nodes[0];
+      out.coverage = Object.fromEntries(itf.surface.map((sp, q) => [sp.name, solver.th[g * solver.nSurf + q]]));
+      out.bare = solver.th0[g];
+    }
     // Its diffuse layers (src/diffuse.js), per side: the drop ψ = φ(plane) − φ(edge) (V), the
     // layer's charge (C/m²) and each ion's surface excess (mol/m²), and each ion's concentration
     // at the plane, c e^{−zFψ/RT} (mol/m³), which the face's reactions see; and for a species a

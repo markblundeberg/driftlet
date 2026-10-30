@@ -741,7 +741,7 @@ export class SteadySolves {
         const v = x * (k < S ? this.amount(this.stretches[k]) : this.surfaceAmount(k - S));
         a += v;
         size += Math.abs(v);
-        names.push(k < S ? species[this.stretches[k].species].name : ports[this.surfCols[k - S][0]].surface[this.surfCols[k - S][1]].name);
+        names.push(k < S ? species[this.stretches[k].species].name : this.model.surfaces[this.surfCols[k - S][0]].species[this.surfCols[k - S][1]].name);
       });
       return [a, size, names];
     });
@@ -823,7 +823,8 @@ export class SteadySolves {
       const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
       itf.reactions.forEach((rx, q) => {
         if (this.affinities.some((af) => af.rx === rx) || !needed(rx)) return;
-        report(`interfaces[${f}].reactions[${q}]`, [rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA)]);
+        const gS = itf.surfaceSide ? gR : gL;
+        report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA))]);
       });
     });
     model.reactions.forEach((mrx, x) => {

@@ -476,6 +476,30 @@ export class BoundaryTerms {
       }
     };
     let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
+    // A surface species of the face's (rx.surf), at its coverage θ_s at the node beside the face on
+    // side surfaceSide, slot 1 + n + s there: in the affinity by its η, in the prefactor as θ_s^e (and
+    // the bare sites as θ₀^sites), with ∂ln θ_s/∂η_x = δ_sx − θ_x into that side's d.
+    const sSide = this.model.interfaces[f].surfaceSide, gS = sSide ? gR : gL, bS = sSide ? bR : bL, dSf = sSide ? dR : dL;
+    const surfLn = (wt, s) => {
+      dSf[1 + n + s] += wt;
+      for (let x = 0; x < this.model.interfaces[f].surface.length; x++) dSf[1 + n + x] -= wt * this.th[gS * this.nSurf + x];
+    };
+    const bareLn = (wt) => {
+      for (let x = 0; x < this.model.interfaces[f].surface.length; x++) dSf[1 + n + x] -= wt * this.th[gS * this.nSurf + x];
+    };
+    for (const p of rx.surf) {
+      const o = bS * M + 1 + n + p.s;
+      aHi -= p.nu * u[o];
+      aLo -= p.nu * uLo[o];
+      if (rx.mhc) continue;
+      const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
+      pref *= powr(this.th[gS * this.nSurf + p.s], e);
+      surfLn(e, p.s);
+    }
+    if (rx.sites && !rx.mhc) {
+      pref *= powr(this.th0[gS], rx.sites);
+      bareLn(rx.sites);
+    }
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
       aHi -= p.nu * (u[o] + wOf(p));
@@ -532,9 +556,25 @@ export class BoundaryTerms {
         if (p.nu < 0) lnP -= p.nu * l;
         else lnQ += p.nu * l;
       }
+      // (a surface species at its coverage, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
+      for (const p of rx.surf) {
+        const l = Math.log(this.th[gS * this.nSurf + p.s]);
+        if (p.nu < 0) lnP -= p.nu * l;
+        else lnQ += p.nu * l;
+      }
+      if (rx.surf.length > 0) {
+        const l0 = Math.log(this.th0[gS]);
+        lnP += rx.m * l0;
+        lnQ += (rx.m - rx.fills) * l0;
+      }
       // its derivatives by a, ln P and ln Q: each participant's ln c weighted by its |ν| in one of them
       const { rate: r, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP, lnQ, aHi + aLo);
       rate = r;
+      for (const p of rx.surf) {
+        surfLn(p.nu < 0 ? -p.nu * rp : p.nu * rq, p.s);
+        dSf[1 + n + p.s] -= ra * p.nu;
+      }
+      if (rx.surf.length > 0) bareLn(rx.m * rp + (rx.m - rx.fills) * rq);
       for (const p of rx.part) {
         const g = p.side ? gR : gL;
         if (this.nodeConductor[g] === p.i) continue;
@@ -558,6 +598,7 @@ export class BoundaryTerms {
         dW[s] = rate * dW[s] + pref * gp * aW[s];
       }
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= pref * gp * p.nu;
+      for (const p of rx.surf) dSf[1 + n + p.s] -= pref * gp * p.nu;
     }
     const slot = 1 + n + k, o = bf * M + slot;
     res[R[o]] = u[o] - rate;
@@ -573,6 +614,11 @@ export class BoundaryTerms {
       const b = p.side ? bR : bL;
       res[R[b * M + 1 + p.i]] -= Af * p.nu * u[o];
       this._j(b, 1 + p.i, bf, slot, -Af * p.nu);
+    }
+    // (a surface species' row is per area of electrode, as its storage is)
+    for (const p of rx.surf) {
+      res[R[bS * M + 1 + n + p.s]] -= p.nu * u[o];
+      this._j(bS, 1 + n + p.s, bf, slot, -p.nu);
     }
   }
 
@@ -701,7 +747,7 @@ export class BoundaryTerms {
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
     if (port.capacitance) this._portCapacitance(port, k, dt);
     if (port.gates.length > 0) this._portGates(port, k, dt);
-    if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(port, dt);
+    if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(this.model.surfaces[port.surfaceOf], dt);
   }
 
   // A port's reaction at each node of its window: Butler–Volmer per area, as at a face, against
@@ -831,11 +877,11 @@ export class BoundaryTerms {
     }
   }
 
-  // An electrode surface's storage, per area of electrode: Γ (θ_s − θ_s,old)/dt in each surface
-  // species' row, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
-  _surfaceStorage(port, dt) {
-    const { n, M, res, nSurf, th, thOld } = this, R = this.rix, surf = port.surface, G = surf[0].capacity;
-    for (const g of port.nodes) {
+  // An electrode surface's storage (model.surfaces[j], a port's or a face's), per area of electrode:
+  // Γ (θ_s − θ_s,old)/dt in each surface species' row, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
+  _surfaceStorage(sf, dt) {
+    const { n, M, res, nSurf, th, thOld } = this, R = this.rix, surf = sf.species, G = surf[0].capacity;
+    for (const g of sf.nodes) {
       const b = this.blockOfNode[g];
       // Near full coverage θ − θ_old cancels (both ~1, the change ~θ₀): the dominant species'
       // change comes from the small ones instead, Δθ = −Δθ₀ − Σ_others Δθ.

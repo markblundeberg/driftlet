@@ -122,8 +122,8 @@ export class Device {
         solver.uLo.set(old.uLo);
         // A node newly on an electrode's surface (a window moved, a surface added) starts at its
         // starting coverages, not at whatever its slots held.
-        const surfaceAt = (sv, g) => (sv.surfPort[g] < 0 ? '' : sv.model.ports[sv.surfPort[g]].surface.map((sp) => sp.name).join());
-        for (let g = 0; g < solver.nNodes; g++) if (solver.surfPort[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
+        const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());
+        for (let g = 0; g < solver.nNodes; g++) if (solver.surfAt[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
       } else solver._warmFrom(old);
       solver.computeConcentrations();
       solver.time = old.time;
@@ -154,9 +154,9 @@ export class Device {
       solver.boundaryIntake.fill(0);
       // Each surface's reference likewise: kept where its window and the boxes are unchanged.
       const sameSurface = (j) => {
-        const [k, q] = solver.surfCols[j], o = old.surfCols.findIndex(([kk, qq]) => old.model.ports[kk].name === model.ports[k].name && qq === q);
-        const a = old.model.ports[old.surfCols[o]?.[0]], b = model.ports[k];
-        return o >= 0 && a.surface[q].name === b.surface[q].name && a.nodes.length === b.nodes.length && a.nodes.every((g, w) => g === b.nodes[w]) ? o : -1;
+        const [k, q] = solver.surfCols[j], o = old.surfCols.findIndex(([kk, qq]) => old.model.surfaces[kk].name === model.surfaces[k].name && qq === q);
+        const a = old.model.surfaces[old.surfCols[o]?.[0]], b = model.surfaces[k];
+        return o >= 0 && a.species[q].name === b.species[q].name && a.nodes.length === b.nodes.length && a.nodes.every((g, w) => g === b.nodes[w]) ? o : -1;
       };
       solver.surfaceRef = Float64Array.from(solver.surfCols, (_, j) => {
         const o = sameBoxes ? sameSurface(j) : -1;

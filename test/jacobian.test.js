@@ -18,6 +18,39 @@ import { choice, device } from '../tools/lawsweep-devices.js';
 
 const steadyAt = (s, dt) => s.steady && dt === Infinity;
 
+// A gold face with a tethered couple on its surface, Fc + ClO₄⁻ = FcClO₄ + e⁻, in perchloric acid;
+// with `iron`, Fe³⁺/Fe²⁺ in the solution too, reacting at the same face.
+const perchloric = (iron) => ({
+  species: [{ name: 'H+', z: 1, cRef: 1000 }, { name: 'ClO4-', z: -1, cRef: 1000 }, ...(iron ? [{ name: 'Fe3+', z: 3, cRef: 1000 }, { name: 'Fe2+', z: 2, cRef: 1000 }] : [])],
+  materials: { acid: { epsr: 0, species: { 'H+': { D: 9.311e-9, mu0: 0 }, 'ClO4-': { D: 1.792e-9, mu0: -8.52e3 }, ...(iron ? { 'Fe3+': { D: 0.604e-9, mu0: -4.7e3 }, 'Fe2+': { D: 0.719e-9, mu0: -78.9e3 } } : {}) } } },
+});
+const tethered = (kin, V, iron = false) => {
+  const acid = iron ? { 'H+': 1000, 'ClO4-': 1005, 'Fe3+': 1, 'Fe2+': 1 } : { 'H+': 1000, 'ClO4-': 1000 };
+  return build({
+    T: 298.15, library: [perchloric(iron), metal('Au')],
+    stack: [ohmic(V, ['e-']), layer('Au', 1e-6), {
+      ...(iron ? { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.3 } : {}),
+      surface: { Fc: { mu0: 0, capacity: 1e-7, theta0: 0.2 }, FcClO4: { mu0: -2e3, capacity: 1e-7, theta0: 0.3 } },
+      reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-6, ...kin }, ...(iron ? [{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-4 }] : [])],
+    }, layer('acid', 10e-6, { c0: acid }), bath(acid, 'ClO4-')],
+    grid: { hmin: 1e-8, hmax: 1e-6 },
+  });
+};
+// Cl⁻ adsorbing on bare platinum (Cl⁻ + * = Cl(ads) + e⁻) beside Fe³⁺/Fe²⁺, at a floating metal,
+// beside a diffuse layer.
+const adsorbed = (kin) => {
+  const salt = { 'K+': 100, 'Cl-': 105, 'Fe3+': 1, 'Fe2+': 1 };
+  return build({
+    T: 298.15, library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+    stack: [ohmic({ I: 0 }, ['e-']), layer('Pt', 1e-6), {
+      phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, diffuse: { epsr: 78.4 },
+      surface: { Clads: { mu0: -62e3, capacity: 2e-5, theta0: 0.1 } }, // (about half covered at the iron's level)
+      reactions: [{ equation: 'Cl- = Clads + e-', k0: 1e-3, ...kin }, { ...half('Fe3+ + e- = Fe2+'), k0: 1e-3 }],
+    }, layer('water', 10e-6, { c0: salt }), bath(salt, 'Cl-')],
+    grid: { hmin: 1e-8, hmax: 1e-6 },
+  });
+};
+
 // The full residual as Newton solves it: block rows, each pin's law in its row, then the
 // floating terminals' circuit rows.
 function residual(s, dt) {
@@ -254,6 +287,15 @@ const devices = {
       grid: { hmin: 10e-9, hmax: 0.5e-6 },
     });
   },
+  // A face's surface (an electrode's): a tethered couple, Butler–Volmer and Marcus–Hush–Chidsey, an
+  // adsorbate that fills a bare site from the solution, beside a diffuse layer, at a floating metal.
+  // (each beside a solution couple at a floating metal: a fully blocked face beside a neutral
+  // solution shows an older mismatch at time steps, being looked into)
+  'a tethered couple at a face': () => tethered({ alpha: 0.4 }, { I: 0 }, true),
+  'a tethered Marcus–Hush–Chidsey couple at a face': () => tethered({ lambda: units.eV(0.85) }, { I: 0 }, true),
+  'a tethered couple at a face driven by a current': () => tethered({ alpha: 0.5 }, { I: 0.02 }, true),
+  'an adsorbate on bare sites at a face, beside a diffuse layer': () => adsorbed({ alpha: 0.5 }),
+  'a Marcus–Hush–Chidsey adsorbate on bare sites at a face': () => adsorbed({ lambda: units.eV(0.6) }),
   // A metal floating between capacitive faces (test/metal.test.js).
   'a floating gate': () => ({
     species: [{ name: 'e-', z: -1 }],

@@ -34,6 +34,7 @@ export const IONS = freeze({
   'Cl-': { z: -1, D: 2.032e-9, mu0: -131.228e3 },
   'NO3-': { z: -1, D: 1.902e-9, mu0: -111.25e3 },
   'SO42-': { z: -2, D: 1.065e-9, mu0: -744.53e3 },
+  'ClO4-': { z: -1, D: 1.792e-9, mu0: -8.52e3 },
 });
 
 /** μ° of liquid water at 25 °C, J/mol (Wagman et al. 1982), for reactions such as H₂O ⇌ H⁺ + OH⁻. */

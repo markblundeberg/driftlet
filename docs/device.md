@@ -381,6 +381,33 @@ force is large, and it's still exactly zero at $`A = 0`$, so a pump stalls where
 spends is used up: its static head. The backward rate is the one detailed balance implies, and
 isn't itself saturating, so this is for reactions that run forward.
 
+### A face's surface: a tethered couple, adsorbates
+
+A metal's face can carry species on its surface, as an [electrode port](#an-electrodes-surface-adsorbates-and-passive-films)
+can, in the same form: `surface: { name: { mu0, capacity, theta0 } }`, Langmuir coverages
+$`\theta`$ on `capacity` $`\Gamma`$ mol of sites per m², neutral, held at the node beside the face on the
+side facing the metal. A face reaction names them on the metal's side of its equation, with the
+port's Langmuir kinetics (each at its coverage in the prefactor, $`\theta_0^{\,m}`$ forward and
+$`\theta_0^{\,m-\Delta}`$ back, `bare: true` for one that needs a bare site), Butler–Volmer or
+Marcus–Hush–Chidsey (whose forward and backward prefactors are Butler–Volmer's at $`\alpha = 0`$ and
+$`\alpha = 1`$). The surface stores $`\Gamma\,d\theta/dt`$ per area of the face, conserved with what its
+reactions take and make, through the impedance as well; each solution reports
+`interfaces[f].coverage` and `.bare`. Ferrocene held at the end of a monolayer on gold, Chidsey's
+experiment:
+
+```js nocheck
+{ surface: { Fc: { mu0: 0, capacity: 1e-6, theta0: 0.3 }, FcClO4: { mu0: -10e3, capacity: 1e-6, theta0: 0.1 } },
+  reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-6, lambda: units.eV(0.85) }] }
+```
+
+Only at a face with a metal on one side (a semiconductor's surface states aren't this), and a node
+has one surface: not where an electrode port's window with a surface or gates reaches the face.
+Validated in test/surface.test.js: a tethered couple's Nernstian coverages and their kept total
+(1e-9), its relaxation after a potential step against $`e^{-kt}`$ with $`k`$ from Butler–Volmer and
+Marcus–Hush–Chidsey (1e-4, out to 0.9 V), Laviron's voltammogram (the peak $`F^2\nu\Gamma/4RT`$ at
+$`E^{\circ\prime}`$ to 2e-3, 90.6 mV wide to 5e-3) and adsorption impedance
+($`R_s + R_{ct} + 1/i\omega C_{ad}`$, 1e-3), and a Langmuir electrosorption isotherm (1e-10).
+
 ### Membranes
 
 A membrane thin against everything else (a lipid bilayer, 4–5 nm) is a face. Give it a
@@ -1210,7 +1237,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact, flux and current toward +x (out of the device at the right contact; `terminals` give it into the device); `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
 | `plates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device (an electrode's `flux` is of what its reactions make and use in the solution, its carrier's being outside); an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
-| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
+| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; with a [surface](#a-faces-surface-a-tethered-couple-adsorbates), `coverage: {name}` and `bare`; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section): its regions' space charge and its faces' sheet charges, not the charge on a capacitive contact's or port's plates, so under a gate's bias it's the gate's opposite |
 | `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |

@@ -125,8 +125,10 @@ export class Assembly {
       if (mat.ideal) this._segmentsDilute(g0, g1, r, mat, reg.velocity);
     }
 
-    // Faces: the flux node carries D, the linked species' fluxes and the reaction rates.
+    // Faces: the flux node carries D, the linked species' fluxes and the reaction rates; and a
+    // face's surface its coverages' storage (a port's comes with its terminal's terms).
     for (let f = 0; f < this.nFaces; f++) this._face(f);
+    if (Number.isFinite(dt)) for (const sf of model.surfaces) if (sf.face >= 0) this._surfaceStorage(sf, dt);
 
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.

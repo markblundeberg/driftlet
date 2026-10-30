@@ -45,6 +45,7 @@ T/η moves nothing they show).
 | Cl- | −1 | 2.032 | −131.228 |
 | NO3- | −1 | 1.902 | −111.25 |
 | SO42- | −2 | 1.065 | −744.53 |
+| ClO4- | −1 | 1.792 | −8.52 |
 
 - **D**: diffusivities at infinite dilution, from the CRC Handbook of Chemistry and Physics,
   "Ionic conductivity and diffusion at infinite dilution". They're limiting values, so at

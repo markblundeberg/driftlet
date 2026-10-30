@@ -226,7 +226,7 @@ export function describe(def) {
       });
       const gates = (itf.gates ?? []).map((g) => g.name);
       lines.push(
-        `  ${L.name} | ${R.name}: ${law}${align}${diffuse}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}${gates.length ? `; gates (voltage-dependent, see interfaces[f].gates): ${gates.join(', ')}` : ''}`,
+        `  ${L.name} | ${R.name}: ${law}${align}${diffuse}${laws.length ? `; crossing by a law: ${laws.join(', ')}` : ''}${blocked.length ? `; blocked: ${blocked.join(', ')}` : ''}${rx.length ? `; reactions: ${rx.join('; ')}` : ''}${itf.surface?.length ? `; its surface: ${itf.surface.map((sp) => sp.name).join(', ')} on ${num(itf.surface[0].capacity)} mol/m² of sites (Langmuir)` : ''}${gates.length ? `; gates (voltage-dependent, see interfaces[f].gates): ${gates.join(', ')}` : ''}`,
       );
     });
   }

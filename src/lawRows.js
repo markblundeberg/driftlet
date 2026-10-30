@@ -145,7 +145,7 @@ export function captureLocal(s) {
       let t = 0;
       for (const { i, q, k, w } of lc.parts) {
         if (i !== undefined) t += w * c[g * n + i];
-        else if (s.surfPort[g] === k) t += w * sites(s, g) * th[g * nSurf + q];
+        else if (s.surfAt[g] === k) t += w * sites(s, g) * th[g * nSurf + q];
       }
       lc.reference[j] = t;
     });
@@ -221,8 +221,8 @@ function rowInto(s, o, add) {
 // beside the concentrations of a local constraint. (Summed as θ alone, an immobile S that adsorbs
 // as A(ads) kept S + θ_A, mol/m³ and a fraction.)
 function sites(s, g) {
-  const k = s.surfPort[g];
-  return s.model.ports[k].surface[0].capacity * s.portArea[k][s.surfW[g]];
+  const k = s.surfAt[g];
+  return s.model.surfaces[k].species[0].capacity * s.surfArea[k][s.surfW[g]];
 }
 
 // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.
@@ -243,8 +243,8 @@ function applyLocalConstraints(s) {
           continue;
         }
         // A coverage, with ∂θ_q/∂η_x = θ_q (δ_qx − θ_x) over its surface's species (where it is).
-        if (s.surfPort[g] !== k) continue;
-        const tq = th[g * nSurf + q], ns = s.model.ports[s.surfPort[g]].surface.length, ws = w * sites(s, g);
+        if (s.surfAt[g] !== k) continue;
+        const tq = th[g * nSurf + q], ns = s.model.surfaces[k].species.length, ws = w * sites(s, g);
         t += ws * tq;
         for (let x = 0; x < ns; x++) s._j(b, lc.row, b, 1 + n + x, ws * tq * ((q === x ? 1 : 0) - th[g * nSurf + x]));
       }
@@ -342,10 +342,10 @@ function lawAmount(s, cs) {
   }
   // What the electrodes' surfaces hold of it: Γ Σ v·a·θ, with ∂θ_s/∂η_x = θ_s (δ_sx − θ_x).
   for (const { col, w } of cs.surface) {
-    const [k, q] = s.surfCols[col], port = s.model.ports[k], G = port.surface[0].capacity, ns = port.surface.length;
+    const [k, q] = s.surfCols[col], sf = s.model.surfaces[k], G = sf.species[0].capacity, ns = sf.species.length;
     if (cs.terminals.length === 0) reference += w * s.surfaceRef[col];
-    port.nodes.forEach((g, j) => {
-      const f = w * G * vol[g] * s.portArea[k][j], b = s.blockOfNode[g], tq = s.th[g * s.nSurf + q];
+    sf.nodes.forEach((g, j) => {
+      const f = w * G * vol[g] * s.surfArea[k][j], b = s.blockOfNode[g], tq = s.th[g * s.nSurf + q];
       amount += f * tq;
       gross += Math.abs(f * tq);
       for (let x = 0; x < ns; x++) {
@@ -389,8 +389,8 @@ function lawStart(s, cs) {
     s.diffList.forEach((dl, k) => dl.g >= st.nodes[0] && dl.g <= st.nodes[1] && (a += w * s.model.grid.area[dl.g] * s.gamOld[k * n + i]));
   }
   for (const { col, w } of cs.surface) {
-    const [k, q] = s.surfCols[col], port = s.model.ports[k], G = port.surface[0].capacity;
-    port.nodes.forEach((g, j) => (a += w * G * vol[g] * s.portArea[k][j] * s.thOld[g * nSurf + q]));
+    const [k, q] = s.surfCols[col], sf = s.model.surfaces[k], G = sf.species[0].capacity;
+    sf.nodes.forEach((g, j) => (a += w * G * vol[g] * s.surfArea[k][j] * s.thOld[g * nSurf + q]));
   }
   for (const { k, w } of cs.carriers) if (s.model.ports[k - 2].capacitance) a += (w * s.portQStart[k - 2]) / (carrierZ(s, k) * FARADAY);
   return a;
@@ -575,13 +575,14 @@ function applyAffinities(s) {
     res[s.rix[af.row]] = 0;
     const gL = grid.regionEnd[af.f], gR = grid.regionStart[af.f + 1];
     let hi = af.rx.fixedA, lo = 0, len = 0;
-    for (const p of af.rx.part) {
-      const o = s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i;
-      hi -= p.nu * u[o];
-      lo -= p.nu * uLo[o];
+    const sSide = s.model.interfaces[af.f].surfaceSide;
+    const terms = [...af.rx.part.map((p) => [s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu]), ...af.rx.surf.map((p) => [s.blockOfNode[sSide ? gR : gL] * M + 1 + s.n + p.s, p.nu])];
+    for (const [o, nu] of terms) {
+      hi -= nu * u[o];
+      lo -= nu * uLo[o];
       if (s.loc[o] < 0) continue;
       af.idx[len] = s.rix[o];
-      af.w[len++] = -p.nu;
+      af.w[len++] = -nu;
     }
     af.len = len;
     af.res = hi + lo;
