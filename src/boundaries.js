@@ -759,7 +759,8 @@ export class BoundaryTerms {
     if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(this.model.surfaces[port.surfaceOf], dt);
   }
 
-  // A port's reaction at each node of its window: Butler–Volmer per area, as at a face, against
+  // A port's reaction at each node of its window: Butler–Volmer per area, as at a face (Marcus–Hush–Chidsey
+  // in _portMhc), against
   // the electrode's carrier at the port's level (activity 1), times the electrode's area per
   // volume. Each node's rate is explicit (no unknown of its own): it enters the balances of the
   // species it makes and consumes, and the port's current.

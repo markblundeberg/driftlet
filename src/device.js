@@ -951,7 +951,7 @@ function electrodeSurface(pdef, path, speciesIndex) {
   return list;
 }
 
-// A port's reactions: Butler–Volmer, as at a face, between species of the port's region and the
+// A port's reactions: Butler–Volmer or Marcus–Hush–Chidsey, as at a face, between species of the port's region and the
 // port's terminal species (a metal's carrier, activity 1, at the port's level), per area of the
 // electrode: part side 0 for the region's species, side 1 for the carrier.
 function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface = []) {
@@ -1007,6 +1007,8 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
       need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV, units.eV(0.5) for 0.5 eV`);
       const e = part.filter((p) => p.side === 1);
       need(e.length === 1 && Math.abs(e[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from the electrode, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      // (and to or from a molecule or ion in the region, not a band: an electron or hole there is band-to-band transfer)
+      need(!part.some((p) => p.side === 0 && (p.i === e[0].i || (Math.abs(species[p.i].z) === 1 && /^[eh][+-]$/.test(species[p.i].name)))), `${rpath}: Marcus–Hush–Chidsey kinetics is for an electron to or from a molecule or ion, not between a metal's band and a semiconductor's`);
       return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, bare, m, fills };
     }
     return { part, fixedA, k0, alpha, bare, sites: m * (1 - alpha) + (m - fills) * alpha };

@@ -270,7 +270,7 @@ export function describe(def) {
     lines.push(`  port ${port.name}: ${drive(p, model.geometry.type === 'planar')}, in ${regions[port.region].name}`);
     // an electrode spread through the window
     if (port.reactions.length) lines.push(`    an electrode (its ${species[port.terminal].name} at the port's level), ${typeof p.area === 'number' ? `${p.area} m²` : 'a profile of m²'} of it per m³, reacting:`);
-    (p.reactions ?? []).forEach((rx, j) => lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), α ${port.reactions[j].alpha}${rx.bare ? ', on bare metal' : ''}`)); // (α as used: 0.5 if not given)
+    (p.reactions ?? []).forEach((rx, j) => lines.push(`      ${rx.equation}: k0 ${rx.k0} mol/(m²·s), ${port.reactions[j].mhc ? `Marcus–Hush–Chidsey, λ ${num(rx.lambda / FARADAY)} eV` : `α ${port.reactions[j].alpha}`}${rx.bare ? ', on bare metal' : ''}`)); // (α as used: 0.5 if not given)
     if (port.capacitance) lines.push(`    a capacitance of ${num(port.capacitance.C)} F/m² through the window (zero charge at ${num(port.capacitance.zeroCharge)} V), ${typeof p.area === 'number' ? `${p.area} m²` : 'a profile of m²'} per m³`);
     if (port.surface.length) lines.push(`    its surface: ${port.surface.map((sp) => sp.name).join(', ')} on ${num(port.surface[0].capacity)} mol/m² of sites (Langmuir)`);
   });

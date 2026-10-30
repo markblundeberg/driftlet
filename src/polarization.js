@@ -137,7 +137,8 @@ export function polarization(device, sol, where, V, opts = {}) {
         // (a surface species at θ = θ₀ a, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
         let sP = lnP, sQ = lnQ;
         for (const u of surf) (u.nu < 0 ? (sP -= u.nu * (lnA[u.s] + Math.log(bare))) : (sQ += u.nu * (lnA[u.s] + Math.log(bare))));
-        if (surf.length > 0) {
+        if (rx.m !== undefined) {
+          // (a face's reaction without surface species has no m; a port's always has, bare: true included)
           sP += rx.m * Math.log(bare);
           sQ += (rx.m - rx.fills) * Math.log(bare);
         }

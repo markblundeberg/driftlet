@@ -347,8 +347,8 @@ band.) $`I`$ is computed to ~1e−12 by the trapezoid rule, exponentially conver
 against mpmath), not by Zeng et al.'s closed form, which is within 12% up to $`\lambda`$ = 0.5 eV and
 runs high past it (26% at 1 eV). Reorganization energies are typically 0.2 to 2 eV; `lambda` is in
 J/mol, and a value under 1000 J/mol (0.01 eV) is warned of as a likely slip. At a face or an electrode
-port (the same `lambda`, with a port's Langmuir sites), and an electron to or from a molecule or ion, not
-between a metal and a semiconductor's band. With `k0` held, a larger λ doesn't slow the reaction
+port (the same `lambda`, with the surface's Langmuir sites at either), and an electron to or from a
+molecule or ion, not between a metal and a semiconductor's band (refused at both). With `k0` held, a larger λ doesn't slow the reaction
 at equilibrium: k0 already holds the activation energy λ/4 there.
 
 **Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
@@ -790,9 +790,9 @@ choose).
 A port can hold an electrode: a metal whose carrier sits at the port's level, reacting all
 through the window rather than at one face. That's the floor under a thin film of electrolyte, the
 walls of a crevice or a pit, or the matrix of a porous electrode, wherever the metal conducts well
-enough to be one level. Give the port its `reactions` (Butler–Volmer, as at a face), the carrier as
-its `terminal` (the species need be in no material), and the electrode's `area` per volume of the
-window:
+enough to be one level. Give the port its `reactions` (Butler–Volmer or Marcus–Hush–Chidsey, as
+at a face), the carrier as its `terminal` (the species need be in no material), and the
+electrode's `area` per volume of the window:
 
 ```js nocheck
 ports: [{

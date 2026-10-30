@@ -280,3 +280,105 @@ test('Marcus–Hush–Chidsey at an electrode port: the rate at each node from t
   const r = polarization(dev, sol, { port: 'wire' }, Veq - 0.3).reactions[0].rate[0];
   assert.ok(Math.abs(r / sol.ports[0].rates[0][0] - 1) < 1e-9, `${r} vs ${sol.ports[0].rates[0][0]}`);
 });
+
+// An adsorbing electrode port (S0 + OH⁻ = Cads + e⁻ on Langmuir sites), from a review of the port MHC
+// change: a reaction written either way, on bare metal with no surface species of its own, beside
+// another surface species.
+const adsorbing = (kin, { eq = 'S0 + OH- = Cads + e-', drive = { V: 0.3 }, extra = [], theta0 = 0.2 } = {}) => {
+  const l = aqueous(['Na+', 'OH-', 'Cl-'], { epsr: 0 });
+  l.species.push({ name: 'e-', z: -1 }, { name: 'S0', z: 0 });
+  l.materials.water.species.S0 = { D: 0, mu0: 0, cRef: 1 };
+  return build({
+    T: 298.15,
+    library: [l],
+    stack: [{}, layer('water', 10e-6, { name: 'film', c0: { 'Na+': 100, 'OH-': 1, 'Cl-': 99, S0: 1 } }), bath({ 'Na+': 100, 'OH-': 1, 'Cl-': 99 }, 'Cl-')],
+    ports: [{ name: 'metal', region: 'film', from: 0, to: 4e-6, ...drive, terminal: 'e-', area: 1e4, surface: { Cads: { mu0: 0, capacity: 1e-5, theta0 } }, reactions: [{ equation: eq, k0: 1e-4, ...kin }, ...extra] }],
+    grid: { hmin: 1e-6, hmax: 1e-6 },
+  });
+};
+const onBare = (kin) => adsorbing({ lambda: units.eV(0.4) }, { theta0: 0.5, extra: [{ equation: 'S0 + OH- = e-', k0: 1e-6, bare: true, ...kin }] });
+
+test("polarization() at a port: a reaction on bare metal with no surface species of its own has its sites, as the solver's rate does", () => {
+  // (Marcus–Hush–Chidsey's came out 1/θ₀ too fast: twice, at half coverage)
+  for (const kin of [{ alpha: 0.5 }, { lambda: units.eV(0.7) }]) {
+    const dev = new Device(onBare(kin)), sol = dev.advance(1e-4);
+    const pol = polarization(dev, sol, { port: 'metal' }, sol.ports[0].V);
+    assert.ok(sol.ports[0].bare[0] < 0.6);
+    for (const k of [0, 1]) assert.ok(Math.abs(pol.reactions[k].rate[0] / sol.ports[0].rates[k][0] - 1) < 1e-9, `${JSON.stringify(kin)} reaction ${k}: ${pol.reactions[k].rate[0]} vs ${sol.ports[0].rates[k][0]}`);
+  }
+});
+
+test("a port's Marcus–Hush–Chidsey derivatives against differences of its rate, where the bare sites forward and back differ", () => {
+  // At each node of the window, ∂rate/∂u as _portMhc writes it (and ∂/∂V for a floating port) against
+  // central differences of _portRate. The Jacobian test's time step buries these entries under the
+  // surface's storage (at dt 1e-7), and its devices had m = Δ, so θ₀^(m−Δ)'s derivative went unseen.
+  const L = { lambda: units.eV(0.4) };
+  const cases = {
+    'oxidation, held': () => adsorbing(L, { theta0: 0.7 }),
+    'reduction written, held': () => adsorbing(L, { eq: 'Cads + e- = S0 + OH-', theta0: 0.7 }),
+    'reduction written, cathodic': () => adsorbing(L, { eq: 'Cads + e- = S0 + OH-', drive: { V: -0.2 } }),
+    'on bare metal, held': () => adsorbing({ ...L, bare: true }, { theta0: 0.5 }),
+    'no surface species of its own, on bare metal': () => onBare({ lambda: units.eV(0.7) }),
+    'reduction written, floating': () => adsorbing(L, { eq: 'Cads + e- = S0 + OH-', drive: { I: 0 }, theta0: 0.7 }),
+  };
+  for (const [name, mk] of Object.entries(cases)) {
+    const dev = new Device(mk()), s = dev.solver;
+    dev.advance(1e-4);
+    const port = s.model.ports[0], M = s.M, k = s.terms.findIndex((t) => t.port === port);
+    let n = 0;
+    port.reactions.forEach((rx) => {
+      if (!rx.mhc) return;
+      port.nodes.forEach((g) => {
+        let dCode = null, dV = null;
+        const orig = s._portMhc;
+        s._portMhc = function (pt, r, gg, b, sA, ww, aV, daV, q, rates, flux, kk) {
+          const before = this.termDI[kk];
+          orig.call(this, pt, r, gg, b, sA, ww, aV, daV, q, rates, flux, kk);
+          if (r === rx && gg === g) [dCode, dV] = [Float64Array.from(this.dA), (this.termDI[kk] - before) / (q * FARADAY * sA)];
+        };
+        s.assemble(1e-4);
+        s._portMhc = orig;
+        // (a floor at the node's largest entry: a floating port sits at equilibrium, its rate round-off)
+        const rate = () => (s.assemble(1e-4), s._portRate(port, rx, g)), scale = Math.max(...Array.from(dCode, Math.abs), Math.abs(dV));
+        const check = (fd, code, what) => {
+          n++;
+          assert.ok(Math.abs(fd - code) <= 1e-6 * (Math.abs(fd) + Math.abs(code)) + 1e-8 * scale, `${name}, ${rx.part.length} participants, ${what}: written ${code}, by differences ${fd}`);
+        };
+        const b = s.blockOfNode[g];
+        for (let t = 0; t < M; t++) {
+          const o = b * M + t;
+          if (s.loc[o] < 0) continue;
+          const u0 = s.u[o], h = 1e-5 * Math.max(1, Math.abs(u0));
+          s.u[o] = u0 + h;
+          const rp = rate();
+          s.u[o] = u0 - h;
+          const rm = rate();
+          s.u[o] = u0;
+          check((rp - rm) / (2 * h), dCode[t], `slot ${t}`);
+        }
+        if (s.floating.includes(k)) {
+          const V0 = s.termV[k], h = 1e-6;
+          s.termV[k] = V0 + h;
+          const rp = rate();
+          s.termV[k] = V0 - h;
+          const rm = rate();
+          s.termV[k] = V0;
+          check((rp - rm) / (2 * h), dV, 'V');
+        }
+        rate();
+      });
+    });
+    assert.ok(n > 4, `${name}: ${n} derivatives`);
+  }
+});
+
+test("a port's Marcus–Hush–Chidsey reaction: describe() names it, and a semiconductor's band is refused as at a face", async () => {
+  const { describe } = await import('../src/kit.js');
+  assert.match(describe(adsorbing({ lambda: units.eV(0.4) })), /S0 \+ OH- = Cads \+ e-: k0 0\.0001 mol\/\(m²·s\), Marcus–Hush–Chidsey, λ 0\.4 eV/);
+  const lib = semiconductor('Si');
+  lib.materials.Si.epsr = 0;
+  lib.species.push({ name: 'em-', z: -1 });
+  const def = build({ library: [lib], stack: [ohmic(0), layer('Si', 1e-6, { donors: 1 }), ohmic(0)], grid: { hmin: 1e-7, hmax: 1e-7 } });
+  def.ports = [{ name: 'm', region: 0, from: 0, to: 5e-7, V: 0, terminal: 'em-', area: 1e4, reactions: [{ equation: 'h+ + em- = 0', k0: 1e-5, lambda: units.eV(0.5) }] }];
+  assert.throws(() => new Device(def), (e) => e instanceof DeviceError && /not between a metal's band and a semiconductor's/.test(e.message));
+});
