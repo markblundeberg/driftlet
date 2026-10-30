@@ -3,6 +3,17 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Marcus–Hush–Chidsey kinetics at a face: `lambda` (the reorganization energy, J/mol) in place of
+  `alpha`, for one electron to or from a metal. The Marcus rate for each level of the metal's band,
+  weighted by its occupancy and summed (Chidsey 1991): Butler–Volmer with α = ½ near the couple's
+  level, a Tafel plot that bends as it's driven harder, and a rate that saturates instead of
+  running on exponentially; the same k0, still exactly zero at equilibrium. The integral is
+  computed by the trapezoid rule, which converges geometrically for it (against mpmath at 30
+  digits: 1e-12), and the steady current against the closed form for kinetics in series with
+  diffusion (5e-4). `polarization()` draws its curves. Not yet at an electrode port.
+
 ## 1.4.0 (2026-10-25)
 
 - A diffuse layer below the grid: `interfaces[f].diffuse: { epsr }` gives each strictly neutral

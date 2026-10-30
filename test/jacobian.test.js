@@ -244,6 +244,16 @@ const devices = {
       grid: { hmin: 10e-9, hmax: 0.5e-6 },
     });
   },
+  // (Marcus–Hush–Chidsey: the rate's slope off the parabola, and both couples driven far)
+  'a floating Pt with two Marcus–Hush–Chidsey couples': () => {
+    const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }), iron = half('Fe3+ + e- = Fe2+');
+    const bathC = { 'K+': 5000, 'Fe3+': 10, 'Fe2+': 10, 'NO3-': 5050 };
+    return build({
+      library: [aqueous(['K+', 'NO3-', 'Fe3+', 'Fe2+', 'Ag+'], { epsr: 0 }), metal('Pt')],
+      stack: [ohmic({ I: 0 }, ['e-']), layer('Pt', 1e-6), { reactions: [{ ...iron, k0: 1e-3, lambda: units.eV(0.3) }, { ...silver, k0: 1e-3, lambda: units.eV(0.8) }] }, layer('water', 20e-6, { c0: { ...bathC, 'Ag+': 1, 'NO3-': 5051 } }), bath(bathC, 'NO3-')],
+      grid: { hmin: 10e-9, hmax: 0.5e-6 },
+    });
+  },
   // A metal floating between capacitive faces (test/metal.test.js).
   'a floating gate': () => ({
     species: [{ name: 'e-', z: -1 }],
@@ -305,6 +315,9 @@ const devices = {
   'a reactant its crowded diffuse layer repels': () => repelled(true),
   // (crowded: on the bulk's lattice, with a neutral species on it, displaced at the plane)
   'a crowded diffuse layer at a reacting electrode': () => crowded(diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, alpha: 0.4 }] }, 1.4)),
+  'a diffuse layer at a Marcus–Hush–Chidsey electrode': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, lambda: units.eV(0.5) }] }, 0.9),
+  'a diffuse layer gathering what its Marcus–Hush–Chidsey electrode reduces': () => diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, lambda: units.eV(0.5) }] }, -0.3),
+  'a crowded diffuse layer at a Marcus–Hush–Chidsey electrode': () => crowded(diffuseCell({ reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-2, lambda: units.eV(0.5) }] }, 1.4)),
   'a crowded diffuse layer at a saturating electrode': () => crowded(diffuseCell({ reactions: [{ equation: 'Fe2+ = Fe3+ + e-', vmax: 1e-4, K: { 'Fe2+': 2 } }] }, 1.4)),
   'diffuse layers on both sides of a charged membrane': () => build({
     T: 298.15,

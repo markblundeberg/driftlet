@@ -30,7 +30,8 @@
 //   reactions (_faceReaction): its rate r an unknown, row r − rate = 0, with a = fixedA − Σ ν η
 //     over its participants (ν > 0 made, at either side's edge node); rate Butler–Volmer, k0
 //     Π (c/c_ref)^e g(a) (e = |ν|(1 − α) for what it consumes, να for what it makes; a metal's
-//     carrier at activity 1), or saturating (vmax), or SRH; −Af·ν·r into each participant's row.
+//     carrier at activity 1), or Marcus–Hush–Chidsey (lambda: k0 Π_{ν<0} (c/c_ref)^{|ν|} F(a°)
+//     (1 − e^{−a}), src/marcus.js), or saturating (vmax), or SRH; −Af·ν·r into each participant's row.
 //   gates (_faceGates): (x − x_old)/dt − α(V)(1 − x) + β(V)x = 0, V = φ_R − φ_L (no storage at
 //     dt = ∞).
 //   diffuse layers (_diffuseTerms; itf.diffuse, on each strictly neutral side: s.diffList, its
@@ -103,6 +104,7 @@ import { sgFlux } from './bernoulli.js';
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { diffuseLayer } from './diffuse.js';
+import { mhcIntegral } from './marcus.js';
 import { powi, powr } from './pow.js';
 
 // Butler–Volmer factor g(a) = e^{αa} − e^{−(1−α)a} = e^{−(1−α)a}·expm1(a) (precise near a = 0),
@@ -479,7 +481,7 @@ export class BoundaryTerms {
       aHi -= p.nu * (u[o] + wOf(p));
       aLo -= p.nu * uLo[o];
       if (wSlot(p) >= 0) aW[wSlot(p)] -= p.nu;
-      if (rx.srh || rx.vmax || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
+      if (rx.srh || rx.vmax || rx.mhc || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i], e);
       this._dlnc(g, p.i, e, p.side ? dR : dL);
@@ -519,6 +521,36 @@ export class BoundaryTerms {
       this._srhInto(gn, pn.i, s.Cn, s.Cxn, pn.side ? dR : dL);
       this._srhInto(gq, pp.i, s.Cp, s.Cxp, pp.side ? dR : dL);
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= s.Ca * p.nu;
+    } else if (rx.mhc) {
+      // Marcus–Hush–Chidsey: r = k0 P F(a°) (1 − e^{−a}), P = Π_{ν<0} (c/c_ref)^{|ν|}, Q = Π_{ν>0}
+      // (c/c_ref)^ν (at the plane beside a diffuse layer), a° = a − ln P + ln Q, F = I(λ, a°)/I(λ, 0).
+      let lnP = 0, lnQ = 0;
+      for (const p of rx.part) {
+        const g = p.side ? gR : gL;
+        if (this.nodeConductor[g] === p.i) continue;
+        const l = Math.log((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i]);
+        if (p.nu < 0) lnP -= p.nu * l;
+        else lnQ += p.nu * l;
+      }
+      const a = aHi + aLo, { I, dI } = mhcIntegral(rx.mhc.lam, a - lnP + lnQ);
+      const kP = rx.k0 * Math.exp(lnP), F = I / rx.mhc.I0, Fp = dI / rx.mhc.I0;
+      const back = Math.exp(Math.min(-a, 700)), fwd = 1 - back; // (held finite where Newton's iterates stray)
+      rate = kP * F * fwd;
+      // ∂rate/∂a, ∂rate/∂ln P and ∂rate/∂ln Q, each participant's ln c weighted by its |ν| in one of them
+      const ra = kP * (Fp * fwd + F * back), rq = kP * Fp * fwd, rp = rate - rq;
+      for (const p of rx.part) {
+        const g = p.side ? gR : gL;
+        if (this.nodeConductor[g] === p.i) continue;
+        const e = p.nu < 0 ? -p.nu * rp : p.nu * rq;
+        this._dlnc(g, p.i, e, p.side ? dR : dL);
+        if (atPlane(p)) {
+          dS[p.side] += e * planeSlope(p);
+          crowdInto(p, e, p.side ? dR : dL);
+          if (wSlot(p) >= 0) dW[wSlot(p)] += e;
+        }
+      }
+      for (let s = 0; s < M; s++) dW[s] += ra * aW[s];
+      for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= ra * p.nu;
     } else {
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
       rate = pref * bv;
@@ -533,7 +565,8 @@ export class BoundaryTerms {
     const slot = 1 + n + k, o = bf * M + slot;
     res[R[o]] = u[o] - rate;
     this._j(bf, slot, bf, slot, 1);
-    for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -rate * dS[sd]);
+    // (dS is ∂ ln(prefactor)/∂s, except for Marcus–Hush–Chidsey's, which is ∂rate/∂s already)
+    for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -(rx.mhc ? 1 : rate) * dS[sd]);
     if (!rx.srh) for (let q = 0; q < M; q++) if (dW[q] !== 0) this._j(bf, slot, bf, q, -dW[q]);
     for (let s = 0; s < M; s++) {
       if (dL[s] !== 0) this._j(bf, slot, bL, s, -dL[s]);

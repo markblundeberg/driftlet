@@ -216,7 +216,7 @@ export function describe(def) {
       const sides = itf.diffuse ? [itf.diffuse.left && L.name, itf.diffuse.right && R.name].filter(Boolean) : [];
       const diffuse = sides.length ? `; a diffuse layer below the grid (Gouy–Chapman, εr ${num(itf.diffuse.epsr)}) on the ${sides.join(' and ')} side${sides.length > 1 ? 's' : ''}` : '';
       const blocked = species.filter((sp, i) => itf.links[i].type === 'blocked' && materials[L.material].present[i] && materials[R.material].present[i]).map((sp) => sp.name);
-      const kinetics = (r) => (r.vmax !== undefined ? ` (saturating, vmax ${num(r.vmax)} mol/(m²·s))` : r.srh ? ' (SRH)' : '');
+      const kinetics = (r) => (r.vmax !== undefined ? ` (saturating, vmax ${num(r.vmax)} mol/(m²·s))` : r.srh ? ' (SRH)' : r.lambda !== undefined ? ` (Marcus–Hush–Chidsey, λ ${num(r.lambda / FARADAY)} eV)` : '');
       const rx = (idef.reactions ?? []).map((r) => (r.equation ?? equation(r.left, r.right)) + kinetics(r));
       const laws = species.flatMap((sp, i) => {
         const l = itf.links[i];

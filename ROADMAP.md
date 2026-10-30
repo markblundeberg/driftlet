@@ -365,8 +365,8 @@ for live demos.
   K_w(T) and an E°(T) from the tables. The cell and axon demos take the 25 °C data as their temperature's, fairly: only D counts there, and scaled it moves nothing they show.
   Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
 
-- **More interface kinetics.** Marcus–Hush–Chidsey rates (curved Tafel plots, saturation at large
-  overpotential); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
+- **More interface kinetics.** Marcus–Hush–Chidsey rates at an electrode port (done at faces,
+  2026-10-29); surface species (adsorbed intermediates with a coverage), so multi-step mechanisms
   such as hydrogen evolution emerge from elementary steps; and a custom forward rate
   $`r_f(\mathrm{state})`$ as an escape hatch, which the solver multiplies by $`(1 - e^{-A/RT})`$ so
   equilibrium stays exact. Not a bare current–overpotential curve, which loses the concentration

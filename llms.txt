@@ -135,7 +135,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   `set()`, a list replaces and an object merges (the state and the step size carry over).
 - **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant
   at cRef: i₀ = nF·k0 there, and k0 = k°·cRef for a textbook k° in m/s (1 cm/s at 1 M is
-  `k0: 10`).
+  `k0: 10`). Butler–Volmer by default (`alpha`, 0.5); `lambda: units.eV(0.5)` in its place makes it
+  Marcus–Hush–Chidsey, for one electron to or from a metal: the same k0, a Tafel plot that bends and
+  saturates.
 - **Grids** grade geometrically from `hmin` at each region's ends up to `hmax`, neighbouring cells
   differing by at most `ratio` (1.2): put `hmin` below the shortest length that matters (a Debye
   length, a depletion edge). Left out, `grid` is a coarse default for a first look; `check()`

@@ -97,8 +97,9 @@
 
 /**
  * A reaction at a face: participants on each side with signed stoichiometric coefficients
- * (ν < 0 consumed by the forward reaction). Butler–Volmer kinetics (k0, alpha), or instead SRH
- * (srh) or saturating (vmax and K), neither with a conductor's carrier.
+ * (ν < 0 consumed by the forward reaction). Butler–Volmer kinetics (k0, alpha), Marcus–Hush–Chidsey
+ * (k0, lambda: one electron to or from a metal), or instead SRH (srh) or saturating (vmax and K),
+ * neither with a conductor's carrier.
  * @typedef {object} FaceReactionDef
  * @property {string} [equation] the reaction as an equation, e.g. 'Ag+ + e- = Ag(s)', each
  *   participant on the side that holds it ('Li+(left)' where both do); or give left and right
@@ -107,6 +108,8 @@
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {number} [k0] Butler–Volmer: standard rate constant, mol/(m²·s) (required unless srh or vmax)
  * @property {number} [alpha] with k0: transfer coefficient, 0…1 (default 0.5)
+ * @property {number} [lambda] with k0, in place of alpha: Marcus–Hush–Chidsey kinetics with this
+ *   reorganization energy, J/mol (units.eV(0.5) for 0.5 eV); a curved Tafel plot that saturates
  * @property {{ vn: number, vp: number, n1?: number }} [srh] instead: trap-assisted recombination, for a
  *   reaction consuming one negative and one positive species and making none; capture velocities
  *   vn, vp in m/s, n1 in mol/m³ (default n_i, a midgap trap)

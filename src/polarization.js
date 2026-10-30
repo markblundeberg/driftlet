@@ -4,6 +4,7 @@
 
 import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
+import { mhcIntegral } from './marcus.js';
 import { powi, powr } from './pow.js';
 
 const fail = (message) => {
@@ -66,7 +67,7 @@ export function polarization(device, sol, where, V, opts = {}) {
   // its prefactor apart from them too, so a surface can be held or re-equilibrated at each V.
   const parts = reactions.map((rx, k) => {
     if (rx.srh) fail('polarization: SRH kinetics has no electrode level');
-    let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0;
+    let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnQP = 0; // (Marcus–Hush–Chidsey's a° = a + lnQP)
     const surf = [];
     rx.part.forEach((p, x) => {
       if (p.side === 2) {
@@ -85,10 +86,14 @@ export function polarization(device, sol, where, V, opts = {}) {
       const c = sol.c[name][g];
       if (rx.vmax) {
         if (p.nu < 0) pref *= powi(c / (c + rx.K[x]), -p.nu);
+      } else if (rx.mhc) {
+        const l = Math.log(c / solver.cRef[g * species.length + p.i]);
+        if (p.nu < 0) pref *= Math.exp(-p.nu * l);
+        lnQP += p.nu * l;
       } else pref *= powr(c / solver.cRef[g * species.length + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     });
     if (s === 0) fail(`polarization: reaction ${k} there takes no ${species[carrier.i].name} from the metal`);
-    return { rx, k, base, s, q, pref, surf };
+    return { rx, k, base, s, q, pref, surf, lnQP };
   });
   // The surface's activities (ln a) and bare fraction at a level: held as `sol` has them, or in
   // equilibrium there, each species by the first reaction that makes it from the solution alone.
@@ -112,7 +117,7 @@ export function polarization(device, sol, where, V, opts = {}) {
     return { lnA, bare: Math.exp(-m) / sum };
   };
   const at = Array.from(Vs, (v) => surfaceAt(v));
-  const out = parts.map(({ rx, k, base, s, q, pref, surf }) => {
+  const out = parts.map(({ rx, k, base, s, q, pref, surf, lnQP }) => {
     const rate = Float64Array.from(Vs, (v, j) => {
       const { lnA, bare } = at[j];
       let a = base + s * v, p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
@@ -120,6 +125,7 @@ export function polarization(device, sol, where, V, opts = {}) {
         a -= u.nu * lnA[u.s];
         p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
       }
+      if (rx.mhc) return (p * mhcIntegral(rx.mhc.lam, a + lnQP).I * -Math.expm1(-a)) / rx.mhc.I0;
       return rx.vmax ? p * -Math.expm1(-a) : p * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));
     });
     // (its level with the surface as held)

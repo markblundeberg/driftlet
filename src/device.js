@@ -11,6 +11,7 @@ import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
 import { stoichiometry as equationStoichiometry, faceSides, parseEquation } from './equation.js';
+import { mhcIntegral } from './marcus.js';
 
 export { DeviceError };
 
@@ -565,12 +566,16 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
 //   r = vmax Π_{ν<0} (c/(c + K))^{|ν|} (1 − e^{−a}),
 // Michaelis–Menten in each substrate, and still exactly zero at A = 0 (the backward rate is the
 // one detailed balance implies).
+// Or Marcus–Hush–Chidsey (lambda, the reorganization energy, in place of alpha), for one electron
+// to or from a metal: with a° = a − Σ ν ln(c/c_ref) the affinity at standard concentrations,
+//   r = k0 Π_{ν<0} (c/c_ref)^{|ν|} (I(λ, a°)/I(λ, 0)) (1 − e^{−a}),
+// I from src/marcus.js; again exactly zero at A = 0, and Butler–Volmer's α = ½ near a° = 0.
 function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT) {
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
     need(isObject(rdef), `${rpath} must be { equation, fixed, k0, alpha } or { left, right, fixed, k0, alpha }`);
-    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'srh', 'vmax', 'K']);
+    fields(rdef, rpath, ['equation', 'left', 'right', 'fixed', 'k0', 'alpha', 'lambda', 'srh', 'vmax', 'K']);
     let sides = rdef;
     if (rdef.equation !== undefined) {
       need(rdef.left === undefined && rdef.right === undefined, `${rpath}: give the reaction as an equation or as left and right, not both`);
@@ -591,7 +596,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     need(part.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
     if (rdef.vmax !== undefined || rdef.K !== undefined) {
-      need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.srh === undefined, `${rpath}: give vmax and K (saturating), srh, or k0 and alpha (Butler–Volmer), one of them`);
+      need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined && rdef.srh === undefined, `${rpath}: give vmax and K (saturating), srh, or k0 and alpha (Butler–Volmer) or lambda (Marcus–Hush–Chidsey), one of them`);
       const vmax = positive(rdef.vmax, `${rpath}.vmax (mol/(m²·s))`);
       need(isObject(rdef.K), `${rpath}.K must map each species the forward reaction consumes to its half-saturation concentration (mol/m³)`);
       for (const name of Object.keys(rdef.K)) {
@@ -607,7 +612,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       return { part, fixedA, vmax, K: part.map((p) => (p.nu < 0 ? rdef.K[species[p.i].name] : 0)) };
     }
     if (rdef.srh !== undefined) {
-      need(rdef.k0 === undefined && rdef.alpha === undefined, `${rpath}: give srh or k0 (and alpha), not both`);
+      need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined, `${rpath}: give srh or k0 (and alpha or lambda), not both`);
       const srh = srhLaw(rdef.srh, `${rpath}.srh`, part, species, ['vn', 'vp']);
       for (const p of part) {
         const mat = p.side ? matR : matL;
@@ -615,7 +620,16 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       }
       return { part, fixedA, srh };
     }
-    return { part, fixedA, k0: positive(rdef.k0, `${rpath}.k0`), alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
+    const k0 = positive(rdef.k0, `${rpath}.k0`);
+    if (rdef.lambda !== undefined) {
+      need(rdef.alpha === undefined, `${rpath}: give lambda (Marcus–Hush–Chidsey) or alpha (Butler–Volmer), not both`);
+      const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
+      need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV`);
+      const metal = part.filter((p) => (p.side ? matR : matL).conductor);
+      need(metal.length === 1 && Math.abs(metal[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from a metal, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I } };
+    }
+    return { part, fixedA, k0, alpha: transferCoefficient(rdef.alpha, `${rpath}.alpha`) };
   });
 }
 
@@ -912,6 +926,7 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
   return list.map((rdef, k) => {
     const rpath = `${path}.reactions[${k}]`;
     need(isObject(rdef) && typeof rdef.equation === 'string', `${rpath} must be { equation, fixed, k0, alpha }`);
+    need(rdef.lambda === undefined, `${rpath}.lambda: Marcus–Hush–Chidsey kinetics is for a face's reactions; a port's electrode reactions are Butler–Volmer (alpha)`);
     fields(rdef, rpath, ['equation', 'fixed', 'k0', 'alpha', 'bare']);
     const holds = (name) => speciesIndex.has(name) && Boolean(mat.present[speciesIndex.get(name)]);
     const onSurface = (name) => surface.findIndex((sp) => sp.name === name);

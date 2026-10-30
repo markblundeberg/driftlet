@@ -315,6 +315,36 @@ electrode at open circuit with no double-layer capacitance at its face has nothi
 level but its reactions, and below an exchange current of ~1e-5 A/m² it can't take a step: give
 the face a capacitance (`phi: { type: 'capacitive', C }`), as a real electrode has.
 
+**Marcus–Hush–Chidsey kinetics** replaces `alpha` with `lambda`, the reorganization energy (J/mol;
+`units.eV(0.5)` for 0.5 eV), for one electron to or from a metal (its carrier with $`\nu = \pm 1`$):
+
+```js nocheck
+{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-4, lambda: units.eV(0.5) }
+```
+
+Butler–Volmer's exponentials stand for one electron level in the metal. The metal has a band
+of them, filled to the Fermi level, and Marcus's rate for each, weighted by its occupancy and summed
+(Chidsey, Science 251, 919 (1991)), gives the forward rate constant $`\propto I(\lambda, a^\circ)`$,
+
+```math
+I(\lambda, a) = \int_{-\infty}^{\infty} \frac{e^{-(x - \lambda + a)^2/4\lambda}}{1 + e^{x}}\,dx, \qquad
+r = k_0 \prod_{\nu<0} (c/c_{\mathrm{ref}})^{|\nu|} \,\frac{I(\lambda, a^\circ)}{I(\lambda, 0)} \left(1 - e^{-a}\right)
+```
+
+($`\lambda`$ and $`x`$, the electron's energy from the Fermi level, in units of RT), with
+$`a^\circ = a - \sum \nu \ln(c/c_{\mathrm{ref}})`$ the affinity with every participant at its standard
+concentration, zero where the metal's level is at the couple's standard level. The backward rate
+constant is $`I(\lambda, -a^\circ) = e^{-a^\circ} I(\lambda, a^\circ)`$, so it's still exactly zero at
+$`A = 0`$, and $`k_0`$ means what it does for Butler–Volmer. Near $`a^\circ = 0`$ it is Butler–Volmer
+with $`\alpha = \frac12`$; driven harder, the Tafel plot bends (its slope
+$`\alpha \approx \frac12 - a^\circ/4\lambda`$ while $`|a^\circ| \ll \lambda`$, Marcus's parabola), and well
+past $`a^\circ = \lambda`$ (half-way there) the rate constant levels off at $`k_0\sqrt{4\pi\lambda}/I(\lambda, 0)`$: every
+occupied level is already below the reactant's. (Marcus's inverted region, for one level, is filled in by the
+band.) $`I`$ is computed to ~1e−12 by the trapezoid rule, exponentially convergent here (checked
+against mpmath), not by Zeng et al.'s closed form, which is within 9% up to $`\lambda`$ = 0.5 eV and
+runs high past it. Typical reorganization energies are 0.2 to 1 eV for a couple in water; at a face
+reaction only (a port's electrode reactions are Butler–Volmer).
+
 **Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
 `srh: { vn, vp, n1 }`, on a reaction consuming one negative and one positive species and making
 none, such as `'e-(left) + h+(right) = 0'`:
