@@ -30,7 +30,7 @@
     below.)</p>
   <div class="controls">
     <label>route <select id="mech"><option value="volmer">Volmer–Heyrovsky, Volmer slow</option><option value="heyrovsky" selected>Volmer–Heyrovsky, Heyrovsky slow</option><option value="tafel">Volmer–Tafel, Tafel slow</option></select></label>
-    <label>ΔG<sub>H</sub> <input id="dG" type="range" min="-0.3" max="0.3" step="0.02" value="0.2"><output id="dGOut"></output></label>
+    <label>ΔG<sub>H</sub> <input id="dG" type="range" min="-0.3" max="0.3" step="0.01" value="0.2"><output id="dGOut"></output></label>
     <label>E <input id="E" type="range" min="-0.4" max="0.1" step="0.025" value="-0.15"><output id="EOut"></output></label>
     <span class="readout" id="status"></span>
   </div>
@@ -38,7 +38,7 @@
     <div class="levels wide" id="steps"></div>
     <div><p class="note">The Tafel plot: the current against the potential, on a log scale</p><canvas id="tafel"></canvas></div>
     <div><p class="note">Its local slope (an experiment quotes it where it stays flat)</p><canvas id="slope"></canvas></div>
-    <div><p class="note">The surface's hydrogen coverage</p><canvas id="cover"></canvas></div>
+    <div><p class="note">The surface's hydrogen coverage, and its bare sites</p><canvas id="cover"></canvas></div>
     <div><p class="note">Parsons's volcano: the exchange current against the binding energy</p><canvas id="volcano"></canvas></div>
   </div>
   <h2>About this simulation</h2>
@@ -49,30 +49,44 @@
     coverage settles where hydrogen arrives as fast as it leaves. Each step here has α = ½ (for the Tafel
     step, which moves no charge, that's the share of the binding energy its barrier feels), so an electron
     step's rate grows e-fold for every 2RT/F (51 mV) of overpotential: 118 mV per decade. If the Volmer step
-    is slow and the surface nearly bare, that's what the current shows. If it's fast, it holds the coverage
-    at its equilibrium with the potential, θ/θ₀ growing tenfold per 59 mV while the coverage is small: then
-    the Heyrovsky step's rate goes as θ times its own exponential, 40 mV per decade, and the Tafel step's as
-    θ², 30 mV per decade. Driven harder, the surface fills (the coverage panel) and the slopes bend: the
-    Heyrovsky step's back to 118, the Tafel step's to a limit it can't pass, its rate on a full surface,
-    2F k<sub>T</sub> e<sup>ΔG<sub>H</sub>/RT</sup>.</p>
+    is slow and the surface nearly bare, that's what the current shows (and the harder it's driven, the
+    barer the surface, the fast Heyrovsky step taking each hydrogen as it comes). If it's fast, it holds the
+    coverage at its equilibrium with the potential, θ/θ₀ growing tenfold per 59 mV while the coverage is
+    small: then the Heyrovsky step's rate goes as θ times its own exponential, 40 mV per decade, and the
+    Tafel step's as θ², 30 mV per decade. Driven harder, the surface fills (the coverage panel) and the
+    slopes bend: the Heyrovsky step's up through 118, the Tafel step's to a limit it can't pass, its rate on
+    a full surface, 2F k<sub>T</sub> e<sup>ΔG<sub>H</sub>/kT</sup> (k<sub>T</sub> its rate constant). On a strong
+    binder the surface is nearly full already at equilibrium, so that limit is barely above the exchange
+    current, i₀(1 + e<sup>ΔG<sub>H</sub>/kT</sup>)²: no Tafel region at all (try platinum's −0.09 eV on the Tafel
+    route). "Slow" in the menu means a small rate constant, 10⁴ or 10⁵ times below the other step's; but each
+    step's rate also carries the binding energy, as e<sup>±ΔG<sub>H</sub>/2kT</sup>, and at the ends of the range,
+    driven hard, that can hand much of the control to the other step (on the Volmer route at −0.3 eV and
+    −0.4 V, a little more than the Volmer step keeps).</p>
   <p>So the slope alone doesn't name the slow step. A slow Volmer step on a metal that binds hydrogen
     strongly (ΔG<sub>H</sub> below zero) gives 40 mV per decade too, on a nearly full surface, the mirror image
     of a slow Heyrovsky step on a weak binder: in these laws, swapping the two steps and the sign of
-    ΔG<sub>H</sub> swaps covered and bare sites (try the Volmer route at −0.2 eV and the Heyrovsky at +0.2). And
-    118 can be either step. What tells them apart is the coverage, which experiments measure only
-    indirectly. The local slope also plunges near equilibrium, where the reverse reaction takes over (no
-    experiment quotes a slope there), and rises above 118 at large currents, where the acid at the surface
-    runs low. The top panel is the free energies along the Volmer–Heyrovsky route at the potential E
-    (against the reversible hydrogen electrode): two protons and electrons, then H(ads) with one of each
-    left, at ΔG<sub>H</sub> + eE, then H₂ at 2eE, the picture computational catalysis uses. At E = 0 the two steps
-    are ΔG<sub>H</sub> and −ΔG<sub>H</sub>: one is uphill unless ΔG<sub>H</sub> = 0.</p>
+    ΔG<sub>H</sub> swaps covered and bare sites (try the Volmer route at −0.2 eV and the Heyrovsky at +0.2: the
+    same current at every potential, one's coverage the other's bare sites). And 118 can be either step. What
+    tells them apart is the coverage, which experiments measure only indirectly. The local slope also
+    plunges near equilibrium, where the reverse reaction takes over (no experiment quotes a slope there),
+    and rises past 118 at large currents, as the acid's supply through its 10 µm unstirred layer begins to
+    tell: at −0.4 V the surface still has 90% of the bulk's acid, but the rate goes as its 3/2 power (once for
+    the protons and half again for the diffusion potential their depletion sets up), so each further percent
+    drawn down costs a percent and a half of the rate, and the slope there is 139. The top panel is the free
+    energies along the Volmer–Heyrovsky route at the potential E (against the reversible hydrogen electrode):
+    two protons and electrons, then H(ads) with one of each left, at ΔG<sub>H</sub> + eE, then H₂ at 2eE, the
+    picture computational catalysis uses. Those are standard free energies, H(ads) at half coverage: at E = 0 the two
+    steps are ΔG<sub>H</sub> and −ΔG<sub>H</sub>, one uphill unless ΔG<sub>H</sub> = 0, but uphill there isn't the same as
+    slow. The dashed level is H(ads) at its actual coverage, ΔG<sub>H</sub> + eE + kT ln(θ/θ₀), and the drops
+    either side of it are what drive each step: nearly all of the drive falls on the slow step, and the
+    fast one sits near equilibrium. (On the Volmer–Tafel route the first drop is still the Volmer step's.)</p>
   <p>That is the volcano: bind hydrogen too weakly and putting it on the surface is uphill; too strongly and
     taking it off is. The exchange current peaks at ΔG<sub>H</sub> = 0, as Parsons (Trans. Faraday Soc. 54, 1053,
     1958) and, independently, Gerischer argued; Trasatti (1972) plotted measured exchange currents against
     metal–hydrogen bond strengths, and computed binding energies later put the metals on it (Nørskov and
     colleagues, J. Electrochem. Soc. 152, J23, 2005), platinum near its top (its computed ΔG<sub>H</sub> is about
     −0.09 eV). Here, with the same rate constants throughout and α = ½ for every step, the volcano is exactly
-    symmetric for every route: at equilibrium θ/θ₀ = e<sup>−ΔG<sub>H</sub>/RT</sup>, and each step's exchange rate goes
+    symmetric for every route: at equilibrium θ/θ₀ = e<sup>−ΔG<sub>H</sub>/kT</sup>, and each step's exchange rate goes
     as √(θθ₀) (the Tafel step's as θθ₀), which doesn't change when covered and bare swap. Its legs fall a
     decade per 118 meV (per 59 meV for the Tafel route); other models of the volcano give other slopes, and
     whether the measured volcano is one at all (or oxides on the strongly binding metals) is debated. The
@@ -105,7 +119,7 @@ const sites = 2.2e-5; // mol of sites per m² (platinum's surface atoms, about 1
 // Illustrative rate constants (mol/(m²·s)) that make each step the slow one in turn: the Volmer–Heyrovsky
 // route with either step slow, and the Volmer–Tafel route with the Tafel step slow.
 const MECHS = {
-  volmer: { V: 1e-6, H: 1e-2, T: 0 },
+  volmer: { V: 1e-6, H: 1e-1, T: 0 }, // (the heyrovsky route's mirror image)
   heyrovsky: { V: 1e-1, H: 1e-6, T: 0 },
   tafel: { V: 1e-1, H: 0, T: 1e-5 },
 };
@@ -146,7 +160,7 @@ function rates(E, dG, mech, lt, x) {
   return {
     V: k.V * Math.sqrt(x * th * th0) * g(aV, 0.5),
     H: k.H * Math.sqrt(x * th * th0) * g(aH, 0.5),
-    T: k.T * th * th0 * g(aT, 0.5), // (α = ½ here too: its forward rate k_T θ² e^{ΔG/RT}, as the binding energy shares itself)
+    T: k.T * th * th0 * g(aT, 0.5), // (α = ½ here too: its forward rate k_T θ² e^{ΔG/kT}, as the binding energy shares itself)
   };
 }
 // The steady state: the coverage where H(ads) arrives as fast as it leaves (bisection on ln(θ/θ₀)), the
@@ -198,6 +212,7 @@ function volcano(mech) {
 
 const mechIn = document.getElementById('mech'), dGIn = document.getElementById('dG'), EIn = document.getElementById('E');
 for (const el of [mechIn, dGIn, EIn]) fromQuery(el);
+const dec = (1e3 * Math.LN10) / f; // mV per decade: 59.2
 const signed = (v, d = 2) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`;
 const mA = (j) => j / 10; // A/m² to mA/cm²
 let run;
@@ -212,12 +227,16 @@ function update() {
   document.getElementById('EOut').textContent = `${signed(E, 3)} V vs RHE`;
   const here = steady(E, dG, mech), Et = Array.from({ length: 201 }, (_, j) => 0.1 - 0.0025 * j).filter((v) => Math.abs(v) > 1e-9);
   const th = Et.map((v) => steady(v, dG, mech));
-  const slope = Et.map((v, j) => (j > 0 && j < Et.length - 1 && th[j - 1].i > 0 && th[j + 1].i > 0 ? (1e3 * (Et[j - 1] - Et[j + 1])) / Math.log10(th[j + 1].i / th[j - 1].i) : NaN));
+  // (centred, and one-sided at the ends)
+  const slope = Et.map((v, j) => {
+    const a = Math.max(j - 1, 0), b = Math.min(j + 1, Et.length - 1);
+    return th[a].i > 0 && th[b].i > 0 ? (1e3 * (Et[a] - Et[b])) / Math.log10(th[b].i / th[a].i) : NaN;
+  });
   const at = Et.reduce((b, v, j) => (Math.abs(v - E) < Math.abs(Et[b] - E) ? j : b), 0);
-  document.getElementById('status').textContent = `at E ${signed(E, 3)} V: ${here.i >= 0 ? 'evolving' : 'oxidising'} H₂ at ${Math.abs(mA(here.i)).toPrecision(3)} mA/cm² · coverage ${here.theta.toPrecision(3)} · Tafel slope ${Number.isFinite(slope[at]) && Math.abs(slope[at]) < 1000 ? Math.abs(slope[at]).toFixed(0) + ' mV per decade' : Number.isFinite(slope[at]) ? 'off the scale (the current at its limit)' : '—'} · exchange current ${mA(exchange(dG, mech)).toPrecision(3)} mA/cm²`;
-  document.getElementById('steps').innerHTML = stepsSvg(E, dG, fitted(document.getElementById('steps'), 720));
+  document.getElementById('status').textContent = `at E ${signed(E, 3)} V: ${Math.abs(E) < 1e-9 ? 'at equilibrium, no net current' : `${here.i >= 0 ? 'evolving' : 'oxidising'} H₂ at ${Math.abs(mA(here.i)).toPrecision(3)} mA/cm²`} · coverage ${here.theta.toPrecision(3)} · Tafel slope ${Number.isFinite(slope[at]) && Math.abs(slope[at]) < 1000 ? Math.abs(slope[at]).toFixed(0) + ' mV per decade' : Number.isFinite(slope[at]) ? 'off the scale (the current at its limit)' : '—'} · exchange current ${mA(exchange(dG, mech)).toPrecision(3)} mA/cm²`;
+  document.getElementById('steps').innerHTML = stepsSvg(E, dG, here.theta, fitted(document.getElementById('steps'), 720));
   const mark = (y0, y1) => ({ x: [E, E], y: [y0, y1], color: 'var(--muted)', width: 1, dash: [2, 3], label: 'E' });
-  const ic = th.map((t) => (t.i > 0 ? mA(t.i) : NaN)), lo = 10 ** Math.floor(Math.log10(Math.min(...ic.filter((v) => v > 0)))), hi = 10 ** Math.ceil(Math.log10(Math.max(...ic.filter((v) => v > 0))));
+  const ic = th.map((t) => (t.i > 0 ? mA(t.i) : NaN)), lo = 10 ** Math.floor(Math.log10(Math.min(...ic.filter((v) => v > 0)))), hi = Math.max(10 ** Math.ceil(Math.log10(Math.max(...ic.filter((v) => v > 0)))), 100 * lo);
   chart(document.getElementById('tafel'), {
     xlabel: 'E (V vs RHE)', ylabel: 'evolution current (mA/cm²)', logy: true, ylim: [lo, hi],
     series: [
@@ -230,21 +249,22 @@ function update() {
     xlabel: 'E (V vs RHE)', ylabel: 'Tafel slope (mV per decade)', ylim: [0, 160],
     series: [
       { x: Et, y: slope.map((v) => (v > 0 ? v : NaN)), color: colors[0], width: 1.6, label: 'theory' },
-      ...[120, 40, 30].map((v, q) => ({ x: [-0.4, 0.1], y: [v, v], color: colors[[1, 2, 3][q]], width: 1, dash: [4, 4], label: `${v}` })),
+      ...[2, 2 / 3, 1 / 2].map((m, q) => ({ x: [-0.4, 0.1], y: [m * dec, m * dec], color: colors[[1, 2, 3][q]], width: 1, dash: [4, 4], label: (m * dec).toPrecision(3) })),
       mark(0, 160),
     ],
   });
   chart(document.getElementById('cover'), {
     xlabel: 'E (V vs RHE)', ylabel: 'coverage θ', logy: true, ylim: [1e-8, 1],
     series: [
-      { x: Et, y: th.map((t) => t.theta), color: colors[0], width: 1.6, label: 'theory' },
-      { x: Es, y: sim.map((s) => s.theta), color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
+      { x: Et, y: th.map((t) => t.theta), color: colors[0], width: 1.6, label: 'covered, θ' },
+      { x: Et, y: th.map((t) => 1 - t.theta), color: colors[0], width: 1.2, dash: [4, 4], label: 'bare, θ₀' },
+      { x: Es, y: sim.map((s) => s.theta), color: 'var(--ink)', marker: true, width: 0, label: 'simulated θ' },
       mark(1e-8, 1),
     ],
   });
   const gt = Array.from({ length: 121 }, (_, j) => -0.3 + 0.005 * j);
   chart(document.getElementById('volcano'), {
-    xlabel: 'ΔG_H (eV)', ylabel: 'exchange current (mA/cm²)', logy: true,
+    xlabel: 'ΔG_H (eV)', ylabel: 'exchange current (mA/cm²)', logy: true, xlim: [-0.33, 0.33],
     series: [
       { x: gt, y: gt.map((v) => mA(exchange(v, mech))), color: colors[0], width: 1.6, label: 'theory' },
       { x: dGs, y: vol.map(mA), color: 'var(--ink)', marker: true, width: 0, label: 'simulated' },
@@ -253,23 +273,33 @@ function update() {
   });
 }
 // The free-energy picture along the Volmer–Heyrovsky route: 2(H⁺ + e⁻), H(ads) + H⁺ + e⁻, H₂, at the potential E.
-function stepsSvg(E, dG, width) {
-  const H = 190, top = 30, bottom = 30, left = 20, right = width - 20;
+function stepsSvg(E, dG, theta, width) {
+  const narrow = width < 500, sz = narrow ? 10.5 : 12; // (a phone: smaller labels, shorter words)
+  const H = 190, top = 30, bottom = 30, left = narrow ? 6 : 20, right = width - left;
   const G = [0, dG + E, 2 * E], names = ['2(H⁺ + e⁻)', 'H(ads) + H⁺ + e⁻', 'H₂'];
-  const lo = Math.min(...G) - 0.15, hi = Math.max(...G) + 0.25, y = (v) => top + ((hi - v) / (hi - lo)) * (H - top - bottom);
+  const Ga = G[1] + (RT / FARADAY) * Math.log(theta / (1 - theta)); // H(ads) at its coverage (eV)
+  const lo = Math.min(...G, Ga) - 0.15, hi = Math.max(...G, Ga) + 0.25, y = (v) => top + ((hi - v) / (hi - lo)) * (H - top - bottom);
   const w = (right - left) / 3, xs = [0, 1, 2].map((k) => left + k * w + 0.15 * w), xe = xs.map((x) => x + 0.7 * w);
   const muted = 'var(--muted)', ink = 'var(--ink)';
-  const text = (x, yy, s, anchor, color, size = 13) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="${size}">${s}</text>`;
+  const text = (x, yy, s, anchor, color, size = 13) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" fill="${color}" font-size="${size}" stroke="var(--panel)" stroke-width="6" stroke-linejoin="round" paint-order="stroke">${s}</text>`;
   const levels = G.map((v, k) => `<line x1="${xs[k]}" x2="${xe[k]}" y1="${y(v)}" y2="${y(v)}" stroke="${k === 1 ? 'var(--c1)' : ink}" stroke-width="3"/>`).join('');
   const links = [0, 1].map((k) => `<line x1="${xe[k]}" x2="${xs[k + 1]}" y1="${y(G[k])}" y2="${y(G[k + 1])}" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3"/>`).join('');
   const step = (k) => G[k + 1] - G[k];
+  // H(ads)'s two levels, standard and at its coverage: each labelled under its line, or both under the lower when they're close
+  const actual = `${narrow ? 'θ' : 'at θ ='} ${theta.toPrecision(2)}: ${signed(Math.abs(Ga) < 0.005 ? 0 : Ga)} eV`, standard = `${narrow ? '' : 'standard '}${signed(G[1])} eV`, mid = (xs[1] + xe[1]) / 2;
+  const hadsLabels = () =>
+    Math.abs(y(Ga) - y(G[1])) < 28
+      ? text(mid, Math.max(y(G[1]), y(Ga)) + 18, standard, 'middle', muted, sz) + text(mid, Math.max(y(G[1]), y(Ga)) + 18 + 1.25 * sz, actual, 'middle', 'var(--c1)', sz)
+      : text(mid, y(G[1]) + 18, standard, 'middle', muted, sz) + text(mid, y(Ga) + 18, actual, 'middle', 'var(--c1)', sz);
   return `<svg viewBox="0 0 ${width} ${H}" role="img" aria-label="free energies along the Volmer–Heyrovsky route at the potential E: two protons and electrons, adsorbed hydrogen with one of each, and a hydrogen molecule" font-family="system-ui, sans-serif" style="width:100%;height:auto;display:block">
     <line x1="${left - 6}" x2="${right}" y1="${y(0)}" y2="${y(0)}" stroke="${muted}" stroke-width="0.6"/>
     ${links}${levels}
-    ${G.map((v, k) => text((xs[k] + xe[k]) / 2, y(v) - 8, names[k], 'middle', k === 1 ? 'var(--c1)' : ink)).join('')}
-    ${G.map((v, k) => text((xs[k] + xe[k]) / 2, y(v) + 18, `${signed(v)} eV`, 'middle', muted, 12)).join('')}
-    ${[0, 1].map((k) => text((xe[k] + xs[k + 1]) / 2, (y(G[k]) + y(G[k + 1])) / 2 + 16, `${signed(step(k))}`, 'middle', step(k) > 0 ? 'var(--mark)' : muted, 12)).join('')}
-    ${text(10, 16, `free energy at E = ${signed(E, 3)} V (eV); uphill in red`, 'start', muted, 13)}
+    <line x1="${xs[1]}" x2="${xe[1]}" y1="${y(Ga)}" y2="${y(Ga)}" stroke="var(--c1)" stroke-width="1.6" stroke-dasharray="5 4"/>
+    ${G.map((v, k) => text((xs[k] + xe[k]) / 2, (k === 1 ? Math.min(y(v), y(Ga)) : y(v)) - 8, names[k], 'middle', k === 1 ? 'var(--c1)' : ink, narrow ? 12 : 13)).join('')}
+    ${[0, 2].map((k) => text((xs[k] + xe[k]) / 2, y(G[k]) + 18, `${signed(G[k])} eV`, 'middle', muted, sz)).join('')}
+    ${hadsLabels()}
+    ${[0, 1].map((k) => text((xe[k] + xs[k + 1]) / 2, (y(G[k]) + y(G[k + 1])) / 2 + 16, `${signed(step(k))}`, 'middle', step(k) > 0 ? 'var(--mark)' : muted, sz)).join('')}
+    ${text(10, 16, `standard free energy at E = ${signed(E, 3)} V (eV); uphill in red`, 'start', muted, 13)}
   </svg>`;
 }
 mechIn.addEventListener('change', rebuild);

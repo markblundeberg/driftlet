@@ -540,14 +540,21 @@ test('demos/hydrogen.html: the three routes against their steady theory, the Taf
     });
   }
   // the Tafel slopes (mV per decade, from ±2 mV): a slow Volmer step 118 on a weak binder and 40 on a strong
-  // one (θ near 1), the mirror image of a slow Heyrovsky step's 40 on a weak binder, which bends back to about
-  // 118 as the surface fills; a slow Tafel step 29.7, then its limit on a full surface, 2F k_T e^{ΔG/RT}
+  // one (θ near 1), the mirror image of a slow Heyrovsky step's 40 on a weak binder, which bends up through
+  // 118 as the surface fills; a slow Tafel step 29.7, then its limit on a full surface, 2F k_T e^{ΔG/kT}
   const slope = (E, dG, mech) => 4 / Math.log10(steady(E - 0.002, dG, mech).i / steady(E + 0.002, dG, mech).i);
   assert.ok(Math.abs(slope(-0.25, 0.2, 'volmer') - 118.3) < 0.2);
   assert.ok(Math.abs(slope(-0.1, -0.2, 'volmer') - 40) < 1 && steady(-0.1, -0.2, 'volmer').theta > 0.9);
   assert.ok(Math.abs(slope(-0.075, 0.2, 'heyrovsky') - 39.5) < 0.3 && steady(-0.075, 0.2, 'heyrovsky').theta < 0.01);
   assert.ok(Math.abs(slope(-0.29, 0.2, 'heyrovsky') - 118) < 6);
-  assert.ok(slope(-0.4, 0.2, 'heyrovsky') > 125); // (above 118 where the acid at the surface runs low)
+  assert.ok(Math.abs(slope(-0.4, 0.2, 'heyrovsky') - 139) < 1 && Math.abs(steady(-0.4, 0.2, 'heyrovsky').x - 0.9) < 0.01); // (the acid's supply)
+  // the mirror: the Volmer route at −ΔG the Heyrovsky route at +ΔG, the same current, covered and bare swapped
+  for (const E of [0.05, -0.1, -0.2, -0.3, -0.4]) {
+    const a = steady(E, -0.2, 'volmer'), b = steady(E, 0.2, 'heyrovsky');
+    assert.ok(Math.abs(a.i / b.i - 1) < 1e-9 && Math.abs(a.theta + b.theta - 1) < 1e-9, `mirror at ${E}`);
+  }
+  // the Tafel route's limit, i₀(1 + e^{ΔG/kT})²: 1.06 i₀ at platinum's −0.09 eV (i₀ from ±1 mV, so 1e-3)
+  for (const dG of [-0.09, 0, 0.1]) assert.ok(Math.abs(steady(-1, dG, 'tafel').i / exchange(dG, 'tafel') / (1 + Math.exp((dG * FARADAY) / (8.314462618 * 298.15))) ** 2 - 1) < 1e-3, `tafel limit ${dG}`);
   assert.ok(Math.abs(slope(-0.075, 0.2, 'tafel') - 29.7) < 0.3);
   const lim = 2 * FARADAY * MECHS.tafel.T * Math.exp((-0.2 * FARADAY) / (8.314462618 * 298.15));
   assert.ok(Math.abs(steady(-0.6, -0.2, 'tafel').i / lim - 1) < 1e-3 && steady(-0.6, -0.2, 'tafel').theta > 0.99);

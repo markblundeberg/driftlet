@@ -87,7 +87,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
   ctx.fillStyle = muted;
   ctx.strokeStyle = grid;
   ctx.lineWidth = 1;
-  for (const t of logx ? ticks(Math.ceil(x0), Math.floor(x1), 6).filter(Number.isInteger) : ticks(x0, x1, 6)) {
+  for (const t of logx ? decades(x0, x1) : ticks(x0, x1, 6)) {
     ctx.beginPath();
     ctx.moveTo(px(t), pad.t);
     ctx.lineTo(px(t), H - pad.b);
@@ -95,7 +95,7 @@ export function chart(canvas, { series, xlabel = '', ylabel = '', xlim, ylim, lo
     ctx.textAlign = 'center';
     ctx.fillText(logx ? `1e${t}` : fmt(t), px(t), H - pad.b + 16);
   }
-  for (const t of logy ? ticks(Math.ceil(y0), Math.floor(y1), 6).filter(Number.isInteger) : ticks(y0, y1, 5)) {
+  for (const t of logy ? decades(y0, y1) : ticks(y0, y1, 5)) {
     ctx.beginPath();
     ctx.moveTo(pad.l, py(t));
     ctx.lineTo(W - pad.r, py(t));
@@ -194,9 +194,12 @@ function ticks(a, b, n) {
   const mag = 10 ** Math.floor(Math.log10(step0));
   const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= step0) ?? 10 * mag;
   const out = [];
-  for (let t = Math.ceil(a / step) * step; t <= b + 1e-9 * step; t += step) out.push(Math.abs(t) < 1e-12 * step ? 0 : t);
+  // (counted, not summed, and a/step allowed its round-off: −0.3/0.1 is −2.9999999999999996)
+  for (let k = Math.ceil(a / step - 1e-9); k * step <= b + 1e-9 * step; k++) out.push(k === 0 ? 0 : k * step);
   return out;
 }
+// A log axis's ticks, whole decades (a and b in log10)
+const decades = (a, b) => ticks(Math.ceil(a - 1e-9), Math.floor(b + 1e-9), 6).map(Math.round).filter((t, k, all) => all.indexOf(t) === k);
 
 function fmt(v) {
   const a = Math.abs(v);
