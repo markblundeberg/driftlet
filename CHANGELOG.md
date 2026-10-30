@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.5.0 (2026-10-29)
 
 - Surface species at a face: `interfaces[f].surface`, beside a metal, in the form an electrode
   port's surface takes (Langmuir coverages on shared sites, neutral), held at the node beside the
@@ -30,6 +30,10 @@ major version.
   solved ones (off by up to 1e14 at a strongly charged face, for Butler–Volmer too). Each
   solution's `interfaces[f].diffuse.left`/`.right` now also gives `draw`, each drawn species' μ̄
   at the plane less the edge node's, which it uses. (Found by a cold review.)
+- Perchlorate (ClO₄⁻) in the ion library.
+- A worked example, Chidsey's experiment (demos/chidsey.html): ferrocene tethered on gold as the
+  face's surface, its rate constant fitted to simulated potential-step decays, against the
+  overpotential and the temperature.
 - A worked example, lithium plating (demos/lithium.html): Marcus–Hush–Chidsey kinetics as fitted to
   ultramicroelectrode measurements, against Butler–Volmer, with Gerischer's picture of the metal's
   filled states against the ion's.
