@@ -79,6 +79,13 @@
     channels and Na⁺ inactivation catch up with Na⁺ activation: a 1 ms stimulus must be stronger to fire it,
     about 6 µA/cm² at 6.3 °C, 30 at 25 °C and 90 at 30 °C, and there the spike barely reaches 0 mV.
     That's Hodgkin and Huxley's heat block, coming on.</p>
+  <p>The dashed line is the same membrane worked out apart from the solver: Hodgkin and Huxley's equations,
+    space-clamped, with these GHK currents at the bulk concentrations either side, the same gates, blocks and
+    stimulus, restarted at each pulse from the membrane's state then. In the open sea water the spike follows
+    it, its peak within 1 mV and its upstroke within 40 µs (the most where the stimulus barely reaches
+    threshold, where the timing is most sensitive): what's left is what the spike's ions do to the
+    concentrations right at the membrane, which the equations hold fixed. Behind the Schwann cells the gap is
+    the point: it's the K⁺ piling up in the space, which the equations don't have.</p>
   <p>The level diagram draws each ion's <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/visualization.md">species voltage</a>
     V<sub>i</sub> = μ̄<sub>i</sub>/(z<sub>i</sub>F), its electrochemical potential in volts, against its value
     outside, and φ the same way. Each line is flat through each solution and steps at the membrane by
@@ -182,6 +189,44 @@ const axon = (p) => {
   });
 };
 
+// The membrane worked out apart from the solver: Hodgkin and Huxley's equations, space-clamped, their
+// channels' currents by Goldman–Hodgkin–Katz at the bulk concentrations either side (fixed: no ions
+// piling up anywhere), the same gates and blocks, by RK4 from a given V and gates, with the stimulus's
+// current (A/m², on where stimOn says) charging C = 1 µF/cm². Its V every 10 µs.
+const rateOf = (r, V) => {
+  const y = (V - r.midpoint) / r.scale;
+  return r.type === 'exp' ? r.rate * Math.exp(y) : r.type === 'sigmoid' ? r.rate / (1 + Math.exp(-y)) : (r.rate * y) / -Math.expm1(-y);
+};
+function hhODE(p, { t0, V, m, h, n }, tEnd, dt = 2e-6) {
+  const hh = hodgkinHuxley({ inside: IN, outside: OUT, T: p.T }), RT = 8.314462618 * p.T, F = 96485.33212;
+  const P = { 'Na+': hh.species['Na+'].P * Math.max(p.na, 1e-6), 'K+': hh.species['K+'].P * Math.max(p.k, 1e-6), 'Cl-': hh.species['Cl-'].P };
+  const z = { 'Na+': 1, 'K+': 1, 'Cl-': -1 };
+  // each ion's outward current (A/m²) at V
+  const ghk = (s, v) => {
+    const u = (z[s] * F * v) / RT, w = Math.abs(u) < 1e-9 ? 1 : u / -Math.expm1(-u);
+    return z[s] * F * P[s] * w * (IN[s] - OUT[s] * Math.exp(-u));
+  };
+  const x = (g, v, q) => rateOf(hh.gates[g].alpha, v) * (1 - q) - rateOf(hh.gates[g].beta, v) * q;
+  const f = (t, [v, mm, hh_, nn]) => {
+    const I = mm * mm * mm * hh_ * ghk('Na+', v) + nn * nn * nn * nn * ghk('K+', v) + ghk('Cl-', v);
+    return [((stimOn(t, p) ? p.I : 0) - I) / 0.01, x('m', v, mm), x('h', v, hh_), x('n', v, nn)];
+  };
+  let y = [V, m, h, n];
+  const out = { t: [t0], V: [V] }, every = Math.round(1e-5 / dt);
+  for (let k = 1, t = t0; t < tEnd; k++) {
+    const k1 = f(t, y), k2 = f(t + dt / 2, y.map((v, i) => v + (dt / 2) * k1[i])), k3 = f(t + dt / 2, y.map((v, i) => v + (dt / 2) * k2[i])), k4 = f(t + dt, y.map((v, i) => v + dt * k3[i]));
+    y = y.map((v, i) => v + (dt / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    t = t0 + k * dt;
+    if (k % every === 0) (out.t.push(t), out.V.push(y[0]));
+  }
+  return out;
+}
+
+// the settling before the first pulse: the outside chosen's (start() sets it)
+let SETTLE = SPACES.open.settle;
+
+// (All above runs without a page: test/demos.test.js checks this theory against the simulation.)
+
 const els = Object.fromEntries(['I', 'period', 'temp', 'na', 'k', 'space', 'pace'].map((id) => [id, document.getElementById(id)]));
 for (const el of Object.values(els)) fromQuery(el);
 const params = () => ({ I: +els.I.value / 100, period: +els.period.value / 1000, T: 273.15 + +els.temp.value, na: +els.na.value / 100, k: +els.k.value / 100, space: els.space.value });
@@ -198,7 +243,7 @@ function showControls() {
 // Readings at each accepted step: φ either side of the membrane, the currents through it, its gates,
 // and K⁺ just outside it.
 const F = 96485.33212;
-let d, rec, probes, space, SETTLE, swarm = null;
+let d, rec, probes, space, swarm = null;
 function start() {
   const p = showControls();
   space = SPACES[p.space] ?? SPACES.open;
@@ -214,7 +259,7 @@ function start() {
   swarm = null;
   d.advance(SETTLE, { tol: 1e-4 }); // from the concentrations given, to rest (the space fills, too)
   d.set({ ports: { stim: { I: stimulus(p) } } });
-  rec = { t: [], V: [], stim: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1 };
+  rec = { t: [], V: [], stim: [], I: { 'Na+': [], 'K+': [], 'Cl-': [] }, g: { m: [], h: [], n: [] }, K: [], peak: NaN, spikeMax: -1, odes: [] };
 }
 function keep(sol) {
   const { t, probes: pr } = sol.trace; // (this call's steps, every one)
@@ -228,10 +273,16 @@ function keep(sol) {
     IONS.forEach((s, j) => rec.I[s].push(-100 * (s === 'Cl-' ? -1 : 1) * F * pr[2 + j][k]));
     ['m', 'h', 'n'].forEach((g, j) => rec.g[g].push(pr[5 + j][k]));
     rec.K.push(pr[8][k]);
+    // at each pulse's start, the space-clamped equations restarted from the membrane's state, to the next
+    if (stimOn(t[k], p) && !(k > 0 ? stimOn(t[k - 1], p) : rec.stimWas)) {
+      rec.odes.push(hhODE(p, { t0: t[k], V, m: pr[5][k], h: pr[6][k], n: pr[7][k] }, t[k] + Math.min(p.period, WINDOW)));
+    }
     // the last spike's peak
     if (V > 0) rec.spikeMax = Math.max(rec.spikeMax, V);
     else if (rec.spikeMax > 0 && V < -0.03) [rec.peak, rec.spikeMax] = [rec.spikeMax, -1];
   }
+  if (t.length) rec.stimWas = stimOn(t.at(-1), p);
+  if (t.length) rec.odes = rec.odes.filter((o) => o.t.at(-1) >= t.at(-1) - 1.2 * WINDOW);
   // only the window shown (and a little)
   const cut = rec.t.findIndex((x) => x >= t.at(-1) - 1.2 * WINDOW);
   if (cut > 0) {
@@ -269,6 +320,7 @@ function draw() {
       { x: xlim, y: [1000 * E['K+'], 1000 * E['K+']], color: col('K+'), dash: [2, 3], width: 1.2, label: 'E_K' },
       { x: ms, y: stim, color: 'var(--muted)', width: 1, label: 'stimulus' },
       { x: ms, y: rec.V.map((v) => 1000 * v), color: colors[6], width: 2, label: 'V_m' },
+      ...rec.odes.map((o, j) => ({ x: o.t.map((x) => 1000 * (x - SETTLE)), y: o.V.map((v) => 1000 * v), color: 'var(--ink)', width: 1, dash: [3, 3], label: j === 0 ? 'HH equations, from each pulse' : '' })),
     ],
   });
   chart(document.getElementById('it'), {

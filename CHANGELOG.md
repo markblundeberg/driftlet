@@ -13,6 +13,10 @@ major version.
   theory steps on at 16,000 steps a cycle; the text gives k⁰ in cm/s too and the separations by
   Nicholson's ψ (57.5 mV reversible, 80 at ψ ≈ 1), the √v scaling, and what the model leaves out; the
   readout tells a levelled wave from one still rising, and reads peaks by a parabola.
+- The action potential demo is drawn against the space-clamped Hodgkin–Huxley equations (GHK currents),
+  restarted from each pulse: in the open sea the peak within 1 mV and the upstroke within 40 µs; behind
+  the Schwann cells, the gap is the K⁺ piling up in the space. No card in the gallery says "no check on the
+  page" any more (the Daniell cell's carries no stamp).
 - Docs: a tethered couple's k_s = k0/Γ, its α's direction, a whole cell, and the solution's iR.
 - A face's surface species enter its cold start, as an electrode port's did: a cold solve at a face with
   an adsorbate failed or converged by which reaction was listed first (the start balanced the first

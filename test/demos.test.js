@@ -704,3 +704,25 @@ test('demos/myelin.html: the spikes against the compartmental cables in its scri
   near(v(200, 0.25, 5), 33, 0.5);
   near(v(200, 3, 5), 32, 0.5);
 });
+
+test('demos/axon.html: the spike against the space-clamped Hodgkin–Huxley equations in its script, as the page says', async () => {
+  const { Device } = await import('../src/index.js');
+  const { axon, hhODE, stimulus, stimOn, SPACES } = await pageTheory('axon.html', ['axon', 'hhODE', 'stimulus', 'stimOn', 'SPACES']);
+  // the open sea water: from each pulse, the peak within 1 mV and the upstroke (−30 mV) within 40 µs
+  const space = SPACES.open, up = (ts, Vs) => {
+    for (let i = 1; i < ts.length; i++) if (Vs[i - 1] < -0.03 && Vs[i] >= -0.03) return ts[i - 1] + ((ts[i] - ts[i - 1]) * (-0.03 - Vs[i - 1])) / (Vs[i] - Vs[i - 1]);
+    return NaN;
+  };
+  for (const p of [{ I: 0.1, period: 25e-3, T: 279.45, na: 1, k: 1, space: 'open' }, { I: 0.1, period: 25e-3, T: 293.15, na: 1, k: 1, space: 'open' }, { I: 1, period: 25e-3, T: 279.45, na: 1, k: 0.2, space: 'open' }]) {
+    const probes = [{ x: space.x, quantity: 'phi', region: space.outside }, { x: space.x, quantity: 'phi', region: 'axoplasm' }, ...['m', 'h', 'n'].map((g) => ({ interface: space.face, gate: g }))];
+    const d = new Device(axon(p));
+    d.advance(space.settle, { tol: 1e-4 });
+    d.set({ ports: { stim: { I: stimulus(p) } } });
+    const { t, probes: pr } = d.advance(space.settle + 2 * p.period - 1e-3, { tol: 1e-4, dtMax: 5e-5, probes }).trace;
+    const k0 = t.findIndex((x, k) => k > 0 && stimOn(x, p) && !stimOn(t[k - 1], p)), V = t.map((_, k) => pr[1][k] - pr[0][k]);
+    const ode = hhODE(p, { t0: t[k0], V: V[k0], m: pr[2][k0], h: pr[3][k0], n: pr[4][k0] }, t[k0] + 0.9 * p.period);
+    const ts = t.slice(k0), vs = V.slice(k0), peak = Math.max(...vs), odePeak = Math.max(...ode.V);
+    assert.ok(peak > -0.02 && Math.abs(peak - odePeak) < 1e-3, `${JSON.stringify(p)}: peak ${peak} vs ${odePeak}`); // (fired; at 20 °C it barely reaches −9 mV)
+    assert.ok(Math.abs(up(ts, vs) - up(ode.t, ode.V)) < 40e-6, `${JSON.stringify(p)}: upstroke ${up(ts, vs)} vs ${up(ode.t, ode.V)}`);
+  }
+});
