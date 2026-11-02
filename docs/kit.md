@@ -149,10 +149,13 @@ the SHE level (`sol.phi` with the usual tables' ions).
 
 The example above ends with the left electrode's curve.
 
-An electrode port's surface is held too by default. With `{ surface: 'equilibrium' }` (a fifth
-argument) its coverages are re-equilibrated at each V instead, each species by the reaction that
-makes it from the solution: the steady-state curve, where a passive film's active–passive peak
-shows (`curve.bare` gives the bare fraction along it).
+An electrode's surface (a face's or a port's) is held too by default. With `{ surface: 'equilibrium' }`
+(a fifth argument) its coverages are re-equilibrated at each V instead: the steady-state curve,
+where a passive film's active–passive peak shows (`curve.bare` and `curve.coverage` give the bare
+fraction and each species' coverage along it). Each reaction with surface species is at
+equilibrium there, as far as they're independent (where two would set one species, the first that
+makes it from the solution alone does), and what they leave free keeps its amount from `sol`: a
+tethered couple's total $`\theta_R + \theta_O`$, with only its ratio set by V, or a species no reaction touches.
 
 Concentrations are held, so these are the curves of that instant (for a mixed potential, the
 kinetic picture). Away from the actual level the composition beside the electrode would change,

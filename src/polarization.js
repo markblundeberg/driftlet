@@ -22,13 +22,16 @@ const fail = (message) => {
  * @param {{ face: number } | { port: string | number, x?: number }} where a face's index, or a port
  *   (name or index) and the position in its window (m, the device's x; default its first node)
  * @param {number | ArrayLike<number>} V the metal's level(s), V
- * @param {{ surface?: 'held' | 'equilibrium' }} [opts] an electrode port's surface coverages: held as
+ * @param {{ surface?: 'held' | 'equilibrium' }} [opts] an electrode's surface coverages: held as
  *   in `sol` (the default: this instant's curves), or in equilibrium at each V (the steady-state
- *   curve, with a passive film's active–passive peak), each species by the reaction that makes it
- * @returns {{ V: Float64Array, current: Float64Array, bare?: Float64Array, reactions: { equation: string, level: number,
+ *   curve, with a passive film's active–passive peak): each reaction with surface species at zero
+ *   affinity, as far as they're independent (those making one from the solution alone first), and
+ *   the totals they leave fixed kept as in `sol` (a tethered couple's)
+ * @returns {{ V: Float64Array, current: Float64Array, bare?: Float64Array, coverage?: Record<string, Float64Array>, reactions: { equation: string, level: number,
  *   rate: Float64Array, current: Float64Array }[] }} per reaction: its equilibrium level here (where
  *   its rate is zero; NaN for a chemical step, which takes no electron from the metal and passes no current), its rate (mol/(m²·s) of electrode, forward) and its current (A/m², anodic
- *   positive: into the solution); and their sum
+ *   positive: into the solution); and their sum, with the surface's bare fraction and coverages
+ *   at each V where there is one
  */
 export function polarization(device, sol, where, V, opts = {}) {
   checkOptions('polarization', arguments[4], ['surface']);
@@ -105,25 +108,13 @@ export function polarization(device, sol, where, V, opts = {}) {
     return { rx, k, base, s, q, pref, surf, lnP, lnQ };
   });
   // The surface's activities (ln a) and bare fraction at a level: held as `sol` has them, or in
-  // equilibrium there, each species by the first reaction that makes it from the solution alone.
+  // equilibrium there.
   const held = surface && surface.theta.map((t) => Math.log(t / surface.bare));
-  let former = null;
-  if (surface && opts.surface === 'equilibrium') {
-    former = surface.sp.map((sp, x) => {
-      const f = parts.find((pt) => pt.surf.length === 1 && pt.surf[0].s === x);
-      if (!f) fail(`polarization: no reaction makes ${sp.name} from the solution alone, so its equilibrium coverage isn't defined (a tethered couple's turn into each other, their total fixed): give { surface: 'held' }`);
-      return f;
-    });
-  } else if (opts.surface !== undefined && opts.surface !== 'held') fail("polarization: surface must be 'held' (the default) or 'equilibrium'");
+  if (opts.surface !== undefined && opts.surface !== 'held' && opts.surface !== 'equilibrium') fail("polarization: surface must be 'held' (the default) or 'equilibrium'");
+  const equilibrium = surface && opts.surface === 'equilibrium' ? surfaceEquilibrium(parts, surface, held) : null;
   const surfaceAt = (v) => {
     if (!surface) return { lnA: [], bare: 1 };
-    // base + s v − ν ln a = 0 for each species' former
-    const lnA = former ? former.map((f) => (f.base + f.s * v) / f.surf[0].nu) : held;
-    if (!former) return { lnA, bare: surface.bare };
-    const m = Math.max(0, ...lnA);
-    let sum = Math.exp(-m);
-    for (const l of lnA) sum += Math.exp(l - m);
-    return { lnA, bare: Math.exp(-m) / sum };
+    return equilibrium ? equilibrium(v) : { lnA: held, bare: surface.bare };
   };
   const at = Array.from(Vs, (v) => surfaceAt(v));
   const out = parts.map(({ rx, k, base, s, q, pref, surf, lnP, lnQ }) => {
@@ -153,5 +144,108 @@ export function polarization(device, sol, where, V, opts = {}) {
   });
   const current = new Float64Array(Vs.length);
   for (const r of out) for (let j = 0; j < Vs.length; j++) current[j] += r.current[j];
-  return { V: Vs, current, ...(surface ? { bare: Float64Array.from(at, (x) => x.bare) } : {}), reactions: out };
+  const coverage = surface && Object.fromEntries(surface.sp.map((sp, x) => [sp.name, Float64Array.from(at, ({ lnA, bare }) => bare * Math.exp(lnA[x]))]));
+  return { V: Vs, current, ...(surface ? { bare: Float64Array.from(at, (x) => x.bare), coverage } : {}), reactions: out };
+}
+
+// The surface in equilibrium at each level: each reaction with surface species at zero affinity,
+// ν·ln a = base + s·V (ln a = ln θ/θ₀, θ₀ the bare fraction), as far as they're independent (those
+// making one species from the solution alone first, in order, then the rest), and what they leave
+// free fixed by the totals they keep: a tethered couple's θ_R + θ_O, a species no reaction touches.
+// Those free directions, n, are the ones every reaction's ν is orthogonal to, so n·θ is what the
+// surface conserves, and with ln a = P(V) + Σ t_k n_k the totals are kept where t minimizes
+// ln(1 + Σ e^{ln a}) − t·(n·θ_held): strictly convex (its Hessian, the covariance of n over the
+// sites, is positive definite while any site is bare), so Newton with a line search finds it.
+function surfaceEquilibrium(parts, surface, held) {
+  const X = surface.sp.length;
+  const dot = (a, b) => a.reduce((t, x, j) => t + x * b[j], 0);
+  // Independent rows by Gram–Schmidt (q: the orthonormal basis so far).
+  const q = [], rows = [];
+  const orth = (v) => {
+    const w = Float64Array.from(v);
+    for (const b of q) {
+      const c = dot(w, b);
+      for (let j = 0; j < X; j++) w[j] -= c * b[j];
+    }
+    return w;
+  };
+  const candidates = [...parts.filter((pt) => pt.surf.length === 1), ...parts.filter((pt) => pt.surf.length > 1)];
+  for (const pt of candidates) {
+    const r = new Float64Array(X);
+    for (const u of pt.surf) r[u.s] += u.nu;
+    const w = orth(r), n = Math.sqrt(dot(w, w));
+    if (n <= 1e-9 * Math.sqrt(dot(r, r))) continue;
+    q.push(w.map((x) => x / n));
+    rows.push({ r, pt });
+  }
+  const free = [];
+  for (let x = 0; x < X && q.length < X; x++) {
+    const e = new Float64Array(X);
+    e[x] = 1;
+    const w = orth(e), n = Math.sqrt(dot(w, w));
+    if (n <= 1e-9) continue;
+    const b = w.map((v) => v / n);
+    q.push(b);
+    free.push(b);
+  }
+  const k = rows.length, d = free.length;
+  // (the rows' Gram matrix, for the particular solution P = Rᵀ (R Rᵀ)⁻¹ b, the one with no free part)
+  const gram = rows.map((a) => rows.map((b) => dot(a.r, b.r)));
+  const theta = surface.theta, target = free.map((n) => dot(n, theta));
+  let t = free.map((n) => dot(n, held.map((l) => (Number.isFinite(l) ? l : 0))));
+  const lnAOf = (P, t) => P.map((p, x) => free.reduce((s, n, j) => s + t[j] * n[x], p));
+  const lse = (lnA) => {
+    const m = Math.max(0, ...lnA);
+    return m + Math.log(lnA.reduce((s, l) => s + Math.exp(l - m), Math.exp(-m)));
+  };
+  return (v) => {
+    const P = new Float64Array(X);
+    if (k > 0) {
+      const y = solveSmall(gram, rows.map(({ pt }) => pt.base + pt.s * v));
+      rows.forEach(({ r }, j) => {
+        for (let x = 0; x < X; x++) P[x] += y[j] * r[x];
+      });
+    }
+    const f = (t) => lse(lnAOf(P, t)) - dot(t, target);
+    let fx = f(t);
+    for (let it = 0; d > 0; it++) {
+      if (it === 100) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge`);
+      const lnA = lnAOf(P, t), Z = lse(lnA), th = lnA.map((l) => Math.exp(l - Z));
+      const m = free.map((n) => dot(n, th)), g = m.map((x, j) => x - target[j]);
+      const H = free.map((a, i) => free.map((b, j) => a.reduce((s, ax, x) => s + ax * b[x] * th[x], 0) - m[i] * m[j]));
+      const step = solveSmall(H, g.map((x) => -x));
+      if (Math.max(...step.map(Math.abs)) < 1e-12) break; // (Newton's step, near quadratic here)
+      let lam = 1, tn, fn;
+      for (;;) {
+        tn = t.map((x, j) => x + lam * step[j]);
+        fn = f(tn);
+        if (fn <= fx + 1e-4 * lam * dot(g, step) || lam < 1e-12) break;
+        lam /= 2;
+      }
+      [t, fx] = [tn, fn];
+    }
+    const lnA = lnAOf(P, t);
+    return { lnA, bare: Math.exp(-lse(lnA)) };
+  };
+}
+
+// A small dense system A x = b, by Gaussian elimination with partial pivoting.
+function solveSmall(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r][c] / M[c][c];
+      for (let j = c; j <= n; j++) M[r][j] -= f * M[c][j];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = M[r][n];
+    for (let j = r + 1; j < n; j++) s -= M[r][j] * x[j];
+    x[r] = s / M[r][r];
+  }
+  return x;
 }

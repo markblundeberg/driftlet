@@ -3,6 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- `polarization(..., { surface: 'equilibrium' })` takes any surface: a tethered couple keeps its
+  total from `sol` with its ratio set by V, and a species made from another surface species follows
+  it (both were refused: no reaction made them from the solution alone). Its result gives each
+  species' `coverage` along the curve, beside `bare`. Checked against steady solves at each V.
+
 ## 1.7.0 (2026-11-02)
 
 From Gemini 4 Argon's review of 1.6.1, each with its device as a test:

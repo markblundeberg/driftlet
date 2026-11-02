@@ -183,6 +183,39 @@ test('polarization() at a face with a chemical step beside the electron transfer
   assert.ok(Math.abs(sol.interfaces[0].rates[0] / sol.interfaces[0].rates[1] - 2) < 1e-6); // (steady: two H made per H₂)
 });
 
+test("polarization() with the surface in equilibrium: a tethered couple keeps its total, and a species made from another surface species follows it, as steady solves at each V find them", () => {
+  // Fc/FcClO₄ tethered (θ_R + θ_O = 0.4 kept, only its ratio set by V), H(ads) made from the acid, and
+  // Y made only from H(ads). With nothing passing, each steady solve is the equilibrium at its V,
+  // and the acid beside the gold is the same at every V, so one solution's curve must give each's
+  // coverages. (Once the couple, and Y, were refused: no reaction made them from the solution alone.)
+  const def = (V) => build({
+    T,
+    library: [lib, metal('Au')],
+    stack: [
+      ohmic(V, ['e-']), layer('Au', 1e-6),
+      {
+        surface: { Fc: { mu0: 0, capacity: G, theta0: 0.3 }, FcClO4: { mu0: -10e3, capacity: G, theta0: 0.1 }, Hads: { mu0: -5e3, capacity: G, theta0: 0.2 }, Y: { mu0: -2e3, capacity: G, theta0: 0.05 } },
+        reactions: [
+          { equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-6, alpha: 0.5 },
+          { equation: 'H+ + e- = Hads', k0: 1e-4, alpha: 0.5 },
+          { equation: 'Hads + ClO4- = Y + e-', k0: 1e-4, alpha: 0.5 },
+        ],
+      },
+      layer('acid', L, { c0: acid }), bath(acid, 'ClO4-'),
+    ],
+    grid: { hmin: 1e-8, hmax: 0.5e-6 },
+  });
+  const dev = new Device(def(0)), sol = dev.solve(), gL = dev.model.grid.regionEnd[0], Vs = [-0.3, 0, 0.1, 0.4];
+  const curve = polarization(dev, sol, { face: 0 }, Vs.map((V) => sol.V['e-'][gL] + V), { surface: 'equilibrium' });
+  Vs.forEach((V, j) => {
+    const at = new Device(def(V)).solve();
+    assert.ok(at.converged);
+    for (const name of ['Fc', 'FcClO4', 'Hads', 'Y']) assert.ok(Math.abs(curve.coverage[name][j] / at.interfaces[0].coverage[name] - 1) < 1e-10, `V ${V}, ${name}: ${curve.coverage[name][j]} vs ${at.interfaces[0].coverage[name]}`);
+    assert.ok(Math.abs(curve.bare[j] / at.interfaces[0].bare - 1) < 1e-10);
+    assert.ok(Math.abs(curve.coverage.Fc[j] + curve.coverage.FcClO4[j] - 0.4) < 1e-12);
+  });
+});
+
 test('a face’s surface is asked for clearly, and described', () => {
   const bad = (edit, re) => {
     const def = tethered(0);
