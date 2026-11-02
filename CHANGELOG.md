@@ -21,6 +21,28 @@ From Gemini 4 Argon's review of 1.6.1, each with its device as a test:
 - A neutral species on a lattice beside a diffuse layer that can't move (D = 0) is refused, as a
   charged one was: the layer pushes it out, and it failed to converge.
 
+And from its second round, a hunt for every other place a face reaction was read without its
+surface species, each with a script:
+- Two steps through a surface intermediate at one face, both at equilibrium in a closed cell
+  (Ox⁺ + e⁻ = S, S = Red): pinned at A = 0 in Ox⁺'s and Red's rows, they left S's own row saying
+  nothing new, and Ox⁺ + Red + S had no row: dropped, and the solve failed. A reaction's affinity
+  now takes its surface species' own row where it can (a kept amount can't take one), and a law
+  left only such a row is handed to the time steps, which keep every amount.
+- The cold start: a floating metal's level counts its face's surface species (a floating Pt with
+  H(ads) beside Fe³⁺/Fe²⁺ started 93 RT off and converged or failed by which reaction came first),
+  and an electrode on the right of its solution is balanced as one on the left is (written that
+  way round, the same electrode started at φ̂ = 0 and failed).
+- A steady solve's renormalization of a spectator on a lattice beside a diffuse layer took the
+  layer's excess through the spectator's own concentration alone, with the wrong sign there; it
+  now follows every concentration the excess depends on.
+- Warnings: a face's surface covered to a bare fraction below 1e-10 is warned of, as a port's was;
+  a tethered couple fed by a current is named as what it charges, not a capacitance; and a crowded
+  layer whose plane a reaction's draw overfills says it's past what the sub-grid layer covers.
+- A time step behind a series resistance reads a tethered couple's current by its change, as it
+  does a stretch's (the same answer, the steadier reading over long steps).
+- Docs: an ion with a channel and a pump at one face with a diffuse layer is drawn by the pump
+  alone (negligible at a membrane's fluxes; on the ROADMAP).
+
 - Every demo page has a sketch beside its introduction: the real thing (a beaker and its electrodes, a
   solar cell's layers, a squid axon in a dish), the line its one dimension runs along drawn in red,
   and under it that slice in cell notation, written from the definition the solver is given

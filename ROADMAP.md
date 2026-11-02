@@ -343,6 +343,11 @@ for live demos.
 
 ## Later
 
+- A sub-grid diffuse layer's draw from everything that crosses it: an ion with a permeability link
+  and a face reaction at once is drawn by the reactions alone, its channel at the undrawn plane
+  (negligible at a membrane's fluxes, two-fold at 1.4 mol/(m²·s); Argon's review of 1.6.1). And a
+  draw that respects a crowded layer's sites (now warned of where the plane overfills).
+
 - **Steady solves the fuzzers still beat (round 15, each with a repro in
   `~/.cache/driftlet-claude/round15/fuzzB/work/`).** A reverse-biased diode behind a large R
   converges cold now (the load line), but its steady solve can stall and be taken as converged at

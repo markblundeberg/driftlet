@@ -375,8 +375,16 @@ export function findLaws(s) {
   // taken above), and the circuit row of each terminal driven by a current that feeds it, at w/z
   // (w/z of an electrode's charge too). The same map for every law, affinities and constraints
   // alike, so that the elimination compares like with like.
+  // And a face's surface species' own rows (one node each), after the circuits, S + T + j for
+  // surface column j: an affinity may take one (a constraint can't), and the elimination must see
+  // them. (Without them, Ox⁺ + e⁻ = S and S = Red at one face, both at A = 0 in Ox⁺'s and Red's
+  // rows, left S's own row saying nothing new, and Ox⁺ + Red + S was lost.) A port's surface
+  // spreads over its window, a row per node: not a column here.
+  const V = S + T + surfCols.length;
+  const faceSurface = (j) => model.surfaces[surfCols[j][0]].face >= 0;
   const rowsOf = (w) => {
-    const v = new Float64Array(S + T);
+    const v = new Float64Array(V);
+    for (let j = 0; j < surfCols.length; j++) if (w[S + j] !== 0 && faceSurface(j)) v[S + T + j] = w[S + j];
     for (let k = 0; k < S; k++) {
       if (w[k] === 0) continue;
       const st = stretches[k];
@@ -438,27 +446,41 @@ export function findLaws(s) {
     if (news.some((w) => [...w.keys()].every((k) => !isStretch(k) || w[k] === 0 || still(s, stretches[k])))) continue;
     const kept = laws.filter((l) => !fed(l));
     const tries = [...news, ...news.flatMap((w) => kept.flatMap((l) => [1, -1].map((sg) => w.map((x, m) => x + sg * l[m]))))];
-    for (const w of tries) {
-      const v = rowsOf(w);
-      for (const [col, row] of chosen) {
-        const fc = v[col];
-        if (fc !== 0) for (let j = 0; j < S + T; j++) v[j] -= fc * row[j];
+    // Its face's surface species' own rows first, in any of the combinations, then a stretch's:
+    // a constraint can take only a stretch's or a circuit row, so one left to it may be needed.
+    // (A surface's by its species' names, never by the listing.)
+    const itf = model.interfaces[f], surfOwn = rx.surf.map((p) => ({ j: surfColOf[itf.surfaceOf] + p.s, p })).sort((a, b) => (itf.surface[a.p.s].name < itf.surface[b.p.s].name ? -1 : 1));
+    pick: for (const pass of ['surface', 'stretch']) {
+      for (const w of tries) {
+        const v = rowsOf(w);
+        for (const [col, row] of chosen) {
+          const fc = v[col];
+          if (fc !== 0) for (let j = 0; j < V; j++) v[j] -= fc * row[j];
+        }
+        const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+        if (!(scale > 1e-9)) continue;
+        if (pass === 'surface') {
+          const sj = surfOwn.find(({ j }) => Math.abs(v[S + T + j]) > 1e-9 * scale);
+          if (!sj) continue;
+          const col = S + T + sj.j;
+          chosen.push([col, v.map((x) => x / v[col])]);
+          affinities.push({ rx, f, row: blockOfNode[model.surfaces[itf.surfaceOf].nodes[0]] * M + 1 + n + sj.p.s, idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
+          break pick;
+        }
+        // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
+        // carry the terminal's current, and Pt's electrons standing for an iron couple's balance
+        // put the electrode at 602 V.)
+        const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(stretches[j]) && terms.every((_, t) => !feeds(t, stretches[j]));
+        // (One of its own species first, then weight 1, the largest, and by name.)
+        const own = (k) => rx.part.some((p) => p.i === stretches[k].species && stretchOf[(f + p.side) * n + p.i] === k);
+        const key = (k) => [own(k) ? 0 : 1, Math.abs(v[k]) === 1 ? 0 : 1, -Math.abs(v[k]), model.species[stretches[k].species].name, stretches[k].regions[0]];
+        const less = (a, b) => { const ka = key(a), kb = key(b); for (let j = 0; j < ka.length; j++) if (ka[j] !== kb[j]) return ka[j] < kb[j]; return false; };
+        const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
+        if (col < 0) continue;
+        chosen.push([col, v.map((x) => x / v[col])]);
+        affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
+        break pick;
       }
-      const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
-      if (!(scale > 1e-9)) continue;
-      // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
-      // carry the terminal's current, and Pt's electrons standing for an iron couple's balance
-      // put the electrode at 602 V.)
-      const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(stretches[j]) && terms.every((_, t) => !feeds(t, stretches[j]));
-      // (One of its own species first, then weight 1, the largest, and by name.)
-      const own = (k) => rx.part.some((p) => p.i === stretches[k].species && stretchOf[(f + p.side) * n + p.i] === k);
-      const key = (k) => [own(k) ? 0 : 1, Math.abs(v[k]) === 1 ? 0 : 1, -Math.abs(v[k]), model.species[stretches[k].species].name, stretches[k].regions[0]];
-      const less = (a, b) => { const ka = key(a), kb = key(b); for (let j = 0; j < ka.length; j++) if (ka[j] !== kb[j]) return ka[j] < kb[j]; return false; };
-      const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
-      if (col < 0) continue;
-      chosen.push([col, v.map((x) => x / v[col])]);
-      affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
-      break;
     }
   }
   // A contact's charge has no column: a law through what a contact driven by a current passes,
@@ -500,14 +522,21 @@ export function findLaws(s) {
     const v = rowsOf(w);
     for (const [col, row] of chosen) {
       const f = v[col];
-      if (f !== 0) for (let j = 0; j < S + T; j++) v[j] -= f * row[j];
+      if (f !== 0) for (let j = 0; j < V; j++) v[j] -= f * row[j];
     }
     const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
     // DROP: no row of its own left once those already chosen are taken off: of still stretches
     // alone (kept node by node, below), or said by the laws already kept.
     if (!(scale > 1e-9)) continue;
-    const ok = (j) => j !== undefined && Math.abs(v[j]) > 1e-9 * scale;
-    const col = [...Array(T).keys()].map((t) => S + t).find(ok) ?? [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own].find(ok) ?? v.findIndex((x) => Math.abs(x) === scale);
+    const ok = (j) => j !== undefined && j < S + T && Math.abs(v[j]) > 1e-9 * scale;
+    const big = v.subarray(0, S + T).reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+    const col = [...Array(T).keys()].map((t) => S + t).find(ok) ?? [parts.find((p) => w[p.stretch] === 1)?.stretch, w.own < S ? w.own : undefined].find(ok) ?? (ok(v.findIndex((x) => Math.abs(x) === big)) ? v.findIndex((x) => Math.abs(x) === big) : -1);
+    // UNKEPT: its only row left a face surface species' own, which an affinity took the others
+    // beside (a constraint's pin goes in a stretch's or a circuit row).
+    if (col < 0) {
+      unkept.push(w);
+      continue;
+    }
     // UNKEPT: a charge (an electrode's on its capacitance, or a contact's) in a balance row,
     // whose pin can't carry the terminal's voltage it depends on, nor (a contact's) hold it at
     // all: none left to take off, no circuit row left to take.
@@ -531,6 +560,7 @@ export function findLaws(s) {
   const localConstraints = [];
   const span = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
   const picked = new Map(); // (node → the rows chosen there: [slot, the reduced weights by slot])
+  const affinityRows = new Set(affinities.map((af) => af.row));
   for (const w of laws) {
     const parts = [...w.keys()].filter((k) => w[k] !== 0);
     if (parts.some(isCarrier)) continue; // (through an electrode: above)
@@ -572,8 +602,13 @@ export function findLaws(s) {
       }
       const scale = [...v.values()].reduce((m, x) => Math.max(m, Math.abs(x)), 0);
       if (!(scale > 1e-9)) continue;
-      const ok = (sl) => Math.abs(v.get(sl) ?? 0) > 1e-9 * scale;
+      const ok = (sl) => Math.abs(v.get(sl) ?? 0) > 1e-9 * scale && !affinityRows.has(blockOfNode[g] * M + sl); // (not a surface's row an affinity took)
       const sl = ok(slot(rowPart)) ? slot(rowPart) : [...v.keys()].sort((a, b) => a - b).find(ok);
+      // UNKEPT: no row left at this node.
+      if (sl === undefined) {
+        unkept.push(w);
+        break;
+      }
       picked.set(g, [...(picked.get(g) ?? []), [sl, new Map([...v].map(([sx, x]) => [sx, x / v.get(sl)]))]]);
       rowsAt.set(sl, [...(rowsAt.get(sl) ?? []), g]);
     }
@@ -673,9 +708,11 @@ export function findLaws(s) {
     const more = conservedMoieties(s, { drives: true, alsoCurrent: behind }), X2 = S + surfCols.length;
     for (const w of more) {
       const parts = [...w.keys()].filter((k) => k < S && w[k] !== 0).map((k) => ({ stretch: k, w: w[k] }));
-      if (parts.length === 0 || parts.some((p) => !moves(s, stretches[p.stretch]) && !still(s, stretches[p.stretch]))) continue;
       const surface = [...w.keys()].filter((k) => k >= S && k < X2 && w[k] !== 0).map((k) => ({ col: k - S, w: w[k] }));
       const carriers = more.carriers.flatMap((k, j) => (w[X2 + j] !== 0 ? [{ k, w: w[X2 + j] }] : []));
+      // (A surface's species and an electrode's charge with no stretch is one too, as constraints
+      // keep it: a tethered couple at a port behind a resistance. Argon's review of 1.6.1.)
+      if ((parts.length === 0 && (surface.length === 0 || carriers.length === 0)) || parts.some((p) => !moves(s, stretches[p.stretch]) && !still(s, stretches[p.stretch]))) continue;
       // Fed by one terminal behind a resistance and nothing else that passes current.
       const fedBy = new Set([...carriers.map((p) => p.k), ...parts.flatMap((p) => floating.filter((k) => feeds(k, stretches[p.stretch])))]);
       if (fedBy.size !== 1) continue;

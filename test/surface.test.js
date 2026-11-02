@@ -219,6 +219,18 @@ test("a face's surface species enter its cold start: a cold solve converges whic
     assert.ok(Math.abs(a.terminals.left.current / b.terminals.left.current - 1) < 1e-9 && Math.abs(a.interfaces[0].coverage.Hads - b.interfaces[0].coverage.Hads) < 1e-9);
   }
   assert.ok(Math.abs(solve([volmer, iron], 0.5048).terminals.left.current + 0.0326621) < 1e-7);
+  // The same electrode written on the right of its solution (both ends 1 V down), and as a floating
+  // Pt between two baths: the start balanced neither (φ̂ left at 0; the floating metal's level
+  // without the surface's μ°), and both failed. (Argon's review of 1.6.1, round 2.)
+  const grid = { hmin: 1.73e-8, hmax: 1.35e-6 }, surface = { Hads: { mu0: -226342, capacity: 2.71e-6, theta0: 0.225 } }, low = { ...bath(c, 'Cl-'), V: -1 };
+  const right = new Device(build({ library: [lib, metal('Pt')], stack: [low, layer('water', 15.3e-6, { c0: c }), { surface, reactions: [volmer, iron] }, layer('Pt', 1e-6), ohmic(0.5048 - 1, ['e-'])], grid })).solve();
+  assert.ok(right.converged, right.warnings[0]);
+  assert.ok(Math.abs(right.terminals.right.current + 0.0326621) < 1e-7, `${right.terminals.right.current}`);
+  const floating = (reactions) => new Device(build({ library: [lib, metal('Pt')], stack: [bath(c, 'Cl-'), layer('water', 15.3e-6, { c0: c }), { surface, reactions }, layer('Pt', 1e-6), { surface, reactions }, layer('water', 15.3e-6, { c0: c }), bath(c, 'Cl-')], grid })).solve();
+  const f1 = floating([volmer, iron]), f2 = floating([iron, volmer]);
+  assert.ok(f1.converged && f2.converged, `${f1.warnings[0] ?? ''} ${f2.warnings[0] ?? ''}`);
+  const Pt = (sol) => sol.V['e-'].find(Number.isFinite);
+  assert.ok(Math.abs(Pt(f1) - Pt(f2)) < 1e-9 && Math.abs(f1.interfaces[0].coverage.Hads - f2.interfaces[0].coverage.Hads) < 1e-9);
 });
 
 test('bare: true on a face reaction that fills no site: its rate goes as the bare fraction, Butler–Volmer and Marcus–Hush–Chidsey (Argon\'s review of 1.6.1)', () => {
@@ -247,4 +259,26 @@ test('bare: true on a face reaction that fills no site: its rate goes as the bar
     assert.ok(Math.abs(bare - 0.5) < 1e-6, `bare ${bare}`);
     assert.ok(Math.abs(a.current / b.current - 1) < 1e-9, `${JSON.stringify(kin)}: ${a.current} vs ${b.current}`);
   }
+});
+
+test('a face covered almost completely is warned of, and a tethered couple fed by a current is named as what it charges (Argon\'s review of 1.6.1)', () => {
+  // H(ads) at μ° −60 kJ/mol held 0.5 V cathodic: bare 1e-17, which only a port's surface was
+  // watched for. And a tethered couple at a port driven by a current: closed but for it, so no
+  // steady state, which the warning put down to a capacitance the port doesn't have.
+  const ions = (names) => ({ species: names.map(([name, z]) => ({ name, z, cRef: 1000 })), materials: { water: { epsr: 0, species: Object.fromEntries(names.map(([name]) => [name, { D: 1e-9, mu0: 0 }])) } } });
+  const starved = new Device(build({
+    library: [ions([['H+', 1], ['Cl-', -1]]), metal('Au')],
+    stack: [{ V: -0.5, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, layer('Au', 1e-7),
+      { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0, diffuse: { epsr: 78.4 }, surface: { Hads: { mu0: -60000, capacity: 1e-5, theta0: 0.99999999999 } }, reactions: [{ equation: 'H+ + e- = Hads', k0: 1e-2, alpha: 0.5 }] },
+      layer('water', 1e-6, { c0: { 'H+': 100, 'Cl-': 100 } }), bath({ 'H+': 100, 'Cl-': 100 }, 'Cl-')],
+  })).solve();
+  assert.ok(starved.interfaces[0].bare < 1e-10);
+  assert.ok(starved.warnings.some((w) => /interfaces\[0\]: its surface is covered to a bare fraction of/.test(w)), starved.warnings.join('\n'));
+  const salt = { 'K+': 100, 'ClO4-': 100 };
+  const fed = new Device(build({
+    library: [ions([['K+', 1], ['ClO4-', -1]]), metal('Au')],
+    stack: [bath(salt, 'ClO4-'), layer('water', 1e-6, { name: 'cell', c0: salt }), bath(salt, 'ClO4-')],
+    ports: [{ name: 'work', region: 'cell', terminal: 'e-', area: 1e6, I: 1e-3, surface: { Fc: { mu0: 0, capacity: 1e-5, theta0: 0.45 }, FcClO4: { mu0: 0, capacity: 1e-5, theta0: 0.45 } }, reactions: [{ equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-2, alpha: 0.5 }] }],
+  })).solve();
+  assert.ok(!fed.converged && fed.warnings.some((w) => /what it feeds \(Fc on ports work\) is closed but for it/.test(w)), fed.warnings.join('\n'));
 });

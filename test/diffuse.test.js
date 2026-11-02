@@ -473,3 +473,40 @@ test('a charged membrane between diffuse layers: its permeability and gates work
     }
   }
 });
+
+test('a spectator on a lattice beside diffuse layers is renormalized to its amount by the layers\' whole chain (Argon\'s review of 1.6.1)', () => {
+  // K⁺, Cl⁻ and a neutral crowder on 2 M of sites, 20 nm between two blocking gold faces with
+  // diffuse layers: the crowder's excess moves with every concentration at the edge node, and
+  // read through its own alone, the derivative had the wrong sign there: nudged 0.01 off, the
+  // renormalization drove the crowder's amount to 0.
+  const el = {
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'Solv', z: 0, cRef: 1000 }],
+    materials: { el: { epsr: 0, statistics: [{ type: 'lattice', species: ['K+', 'Cl-', 'Solv'], cMax: 2000 }], species: { 'K+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 }, Solv: { D: 1e-9, mu0: 0 } } } },
+  };
+  const face = { phi: { type: 'capacitive', C: 0.5 }, zeroCharge: 0, diffuse: { epsr: 78.4 } };
+  const dev = new Device(build({ library: [el, metal('Au')], stack: [ohmic(0, ['e-']), layer('Au', 1e-6), face, layer('el', 20e-9, { c0: { 'K+': 20, 'Cl-': 20, Solv: 1950 } }), face, layer('Au', 1e-6), ohmic(0.4, ['e-'])] }));
+  assert.ok(dev.solve().converged);
+  const s = dev.solver, k = s.stretches.findIndex((x) => s.model.species[x.species].name === 'Solv'), st = s.stretches[k];
+  for (let g = st.nodes[0]; g <= st.nodes[1]; g++) s.u[s.blockOfNode[g] * s.M + 1 + st.species] += 0.01;
+  s.computeConcentrations();
+  s._renormalizeSpectators();
+  assert.ok(Math.abs(s.amount(st) / s.referenceAmounts[k] - 1) < 1e-12, `${s.amount(st)} vs ${s.referenceAmounts[k]}`);
+});
+
+test('a crowded layer whose plane a reaction\'s draw overfills says so: past the sub-grid layer\'s reach (Argon\'s review of 1.6.1)', () => {
+  // Ox⁺ + e⁻ = Red at 0.1 m/s beside a lattice of 2 M, Red slow (D 1e-10): what the reduction
+  // makes at the plane, drawn against the layer, piled to 128% of its sites, with nothing said.
+  const el = {
+    species: [{ name: 'Ox+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'Red', z: 0, cRef: 1000 }],
+    materials: { water: { epsr: 0, species: { 'Ox+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 }, Red: { D: 1e-10, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['Ox+', 'Cl-', 'Red'], cMax: 2000 }] } },
+  };
+  const c = { 'Ox+': 500, 'Cl-': 500, Red: 500 };
+  const at = (V) => new Device(build({
+    library: [el, metal('Au')],
+    stack: [{ V, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, layer('Au', 1e-7), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0, diffuse: { epsr: 78.4 }, reactions: [{ equation: 'Ox+ + e- = Red', k0: 1e-1, alpha: 0.5 }] }, layer('water', 1e-7, { c0: c }), bath(c, 'Cl-')],
+  })).solve();
+  const over = at(-0.55), plane = over.interfaces[0].diffuse.right.plane;
+  assert.ok(plane['Ox+'] + plane['Cl-'] + plane.Red > 2000);
+  assert.ok(over.warnings.some((w) => /the diffuse layer's plane is 12\d% full of its lattice's sites/.test(w)), over.warnings.join('\n'));
+  assert.ok(!at(0).warnings.some((w) => /full of its lattice's sites/.test(w))); // (at equilibrium: within its sites, nothing said)
+});

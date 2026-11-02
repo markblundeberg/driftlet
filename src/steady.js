@@ -221,10 +221,17 @@ export class SteadySolves {
       if (this.terms[k].drive.kind !== 'I' || I === 0) continue;
       const laws = this.constraints.filter((cs) => cs.terminals.includes(k));
       if (laws.length === 0 && !chargeOnly(this, k)) continue;
-      const what = laws.flatMap((cs) => cs.parts.map(({ stretch }) => {
-        const st = this.stretches[stretch], [r0, r1] = st.regions;
-        return `${species[st.species].name} in ${regions[r0].name}${r1 > r0 ? `…${regions[r1].name}` : ''}`;
-      }));
+      const what = laws.flatMap((cs) => [
+        ...cs.parts.map(({ stretch }) => {
+          const st = this.stretches[stretch], [r0, r1] = st.regions;
+          return `${species[st.species].name} in ${regions[r0].name}${r1 > r0 ? `…${regions[r1].name}` : ''}`;
+        }),
+        // (an electrode surface's species: a tethered couple fed by the current, not a capacitance)
+        ...(cs.surface ?? []).map(({ col }) => {
+          const [k, slot] = this.surfCols[col], sf = this.model.surfaces[k];
+          return `${sf.species[slot].name} on ${sf.face >= 0 ? `interfaces[${sf.face}]` : `ports ${sf.name}`}`;
+        }),
+      ]);
       this.charging = { terminal: this.terms[k].name, current: I, what };
       return { converged: false, steps: 0, iterations: 0, history: [] };
     }
@@ -772,8 +779,20 @@ export class SteadySolves {
             const dc = this.nodeIdeal[g] ? this.c[g * n + st.species] : this.K[g * n * n + st.species * (n + 1)];
             dA += this.model.grid.vol[g] * dc;
           }
-          this.diffList.forEach((dl, d) => {
-            if (dl.g >= st.nodes[0] && dl.g <= st.nodes[1]) dA += this.model.grid.area[dl.g] * dl.dl.dgdc[st.species * (n + 1)] * this.c[dl.g * n + st.species];
+          // (a layer's excess Γ_s by every concentration at its edge node, each moving with η_s:
+          // Σ_j ∂Γ_s/∂c_j ∂c_j/∂η_s. On a lattice the others move too, and ∂Γ_s/∂c_s c_s alone
+          // had the wrong sign there; Argon's review of 1.6.1.)
+          const t = this.dV2 ?? (this.dV2 = new Float64Array(M));
+          this.diffList.forEach((dl) => {
+            if (!(dl.g >= st.nodes[0] && dl.g <= st.nodes[1])) return;
+            let dG = 0;
+            for (let j = 0; j < n; j++) {
+              const gj = dl.dl.dgdc[st.species * n + j];
+              if (gj === 0 || !this.present[dl.g * n + j]) continue;
+              this._dc(dl.g, j, t);
+              dG += gj * t[1 + st.species];
+            }
+            dA += this.model.grid.area[dl.g] * dG;
           });
           shift = (want - now) / dA;
           if (!(Math.abs(shift) > 1e-16)) return;

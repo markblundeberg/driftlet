@@ -248,7 +248,13 @@ correction of order $`\lambda_D/L`$. What the layer doesn't cover:
 - a solution beside it only a few Debye lengths wide (a nanopore, overlapping layers): the layer is
   taken whole, as if the solution went on;
 - a permeability link's ions crossing it: at a membrane they're at the planes in equilibrium with
-  the edges (the membrane, many orders less permeable than the layer, sets their flux);
+  the edges (the membrane, many orders less permeable than the layer, sets their flux). An ion that
+  also reacts at that face (a pump beside its channel) is drawn by what the reactions take alone,
+  and its channel reads the plane undrawn: the two agree where the draw is small, as at a
+  membrane's fluxes (about 1e-8 of the level for 1e-7 mol/(m²·s) across a nanometre-wide layer),
+  and part at fluxes the layer itself would limit (1.4 mol/(m²·s), a draw of −0.72);
+- a draw that piles what a reaction makes past a crowded layer's sites (its plane over the
+  lattice's capacity under a large current): warned of; resolve the layer on the grid there;
 - ions of different sizes, and the field's lowering of ε near the plane: one site for every ion
   (Bikerman), and one permittivity;
 - a reactant that packs the plane while current consumes it there: in proportion to the current

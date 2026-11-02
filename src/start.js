@@ -136,6 +136,11 @@ export function initFromComposition(s) {
         if (rx) {
           const bn = s.blockOfNode[grid.regionEnd[r - 1]];
           let a = rx.fixedA, nu = 0; // a = fixedA − Σ ν η = 0, solved for the carrier's η
+          // (the face's surface species at their starting coverages, as below: left out, a cold
+          // solve at a floating Pt with H(ads) beside Fe³⁺/Fe²⁺ started 93 RT off, and converged or
+          // failed by which reaction was listed first; Argon's review of 1.6.1)
+          const surf = interfaces[r - 1].surface ?? [], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
+          for (const q of rx.surf ?? []) a -= q.nu * (surf[q.s].mu0 / model.RT + Math.log(surf[q.s].theta0 / bare));
           for (const p of rx.part) {
             if (p.side === 1) nu += p.nu;
             else a -= p.nu * u[bn * M + 1 + p.i];
@@ -241,6 +246,30 @@ export function initFromComposition(s) {
         }
         if (slope !== 0 && Number.isFinite(slope)) {
           phiHat = a / slope; // a − slope·φ̂ = 0
+          break;
+        }
+      }
+    } else if (!mat.phiFree && !responds && r === 0 && r + 1 < regions.length && materials[regions[r + 1].material].conductor) {
+      // Likewise an electrode on the right, its level its contact's, where nothing on the left
+      // sets φ̂ (the stack written the other way round started at φ̂ = 0, volts from the
+      // electrode's level, and failed; Argon's review). Further in, φ̂ carried over from the left
+      // is kept: a Daniell cell's KCl bridge balanced against its copper instead started with a
+      // jump at the junction, and a 1 µs step failed to settle.
+      // (its carrier at its contact's level, the metal fed by the right contact)
+      const surf = interfaces[r].surface ?? [], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
+      for (const rx of interfaces[r].reactions) {
+        let a = rx.fixedA, slope = 0;
+        for (const q of rx.surf ?? []) a -= q.nu * (surf[q.s].mu0 / model.RT + Math.log(surf[q.s].theta0 / bare));
+        for (const p of rx.part) {
+          const st = p.side === 1 ? s.stretches[s.stretchOf[(r + 1) * n + p.i]] : null;
+          if (p.side === 1) a -= p.nu * (st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN);
+          else if (mode[p.i] === 2) {
+            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
+            slope += p.nu * z[p.i];
+          } else slope = NaN;
+        }
+        if (slope !== 0 && Number.isFinite(slope) && Number.isFinite(a)) {
+          phiHat = a / slope;
           break;
         }
       }

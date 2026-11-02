@@ -257,6 +257,15 @@ export function makeSolution(solver, result = {}) {
   sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
   // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
   // and Newton loses them (a transient can stall there).
+  // (A face's surface too: Argon's review of 1.6.1 found it unwatched.)
+  sol.interfaces.forEach((itf, f) => {
+    if (itf.bare !== undefined && itf.bare < 1e-10) {
+      sol.warnings.push(
+        `interfaces[${f}]: its surface is covered to a bare fraction of ${itf.bare.toExponential(1)}. ` +
+          'Below ~1e-10 the coverage barely affects anything and the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
+      );
+    }
+  });
   sol.ports.forEach((p) => {
     if (!p.bare) return;
     const min = Math.min(...p.bare);
@@ -276,7 +285,7 @@ export function makeSolution(solver, result = {}) {
     const A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     sol.warnings.push(
       `${ch.terminal}: driven at ${ch.current.toPrecision(3)} ${A}, it has no steady state: ` +
-        (ch.what.length > 0 ? `what it feeds (${ch.what.join(', ')}) is closed but for it, so it only stores what comes in (a host filling)` : 'it passes current only by charging its capacitance') +
+        (ch.what.length > 0 ? `what it feeds (${ch.what.join(', ')}) is closed but for it, so it only stores what comes in (a host filling, a surface's couple turning over)` : 'it passes current only by charging its capacitance') +
         '. advance() in time instead; at no current, a steady solve keeps the charge it holds.',
     );
   } else if (result.converged === false && un) {
@@ -431,7 +440,21 @@ export function makeSolution(solver, result = {}) {
     // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
     // they'd have no room, and the layer's charge and capacitance are overstated.
     for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {
-      if (itf.diffuse.lattice[side === 'left' ? 0 : 1]) continue; // (a crowded layer can't pass its sites)
+      const lat = itf.diffuse.lattice[side === 'left' ? 0 : 1];
+      if (lat) {
+        // A crowded layer can't pass its sites at equilibrium, but a reaction's draw across it
+        // (what it takes or makes at the plane, against the layer's transport) is taken outside
+        // the steric balance: a current that large is outside what the sub-grid layer covers.
+        // (Argon's review of 1.6.1: 2564 mol/m³ at a plane of 2000 sites, unwarned.)
+        const full = Object.entries(dd.plane).reduce((t, [name, cp]) => t + (lat.on[model.species.findIndex((sp) => sp.name === name)] ? cp : 0), 0) / lat.cMax;
+        if (full > 1 + 1e-6) {
+          sol.warnings.push(
+            `interfaces[${f}] (${side} side): the diffuse layer's plane is ${(100 * full).toPrecision(3)}% full of its lattice's sites: the reactions' draw across the layer ` +
+              'has piled what they make past what the sites hold, a current beyond what the sub-grid layer covers. Resolve the double layer on the grid (epsr > 0, hmin below the Debye length) instead.',
+          );
+        }
+        continue;
+      }
       const [name, top] = Object.entries(dd.plane).reduce((a, e) => (e[1] > a[1] ? e : a), ['', 0]);
       if (top > DIFFUSE_CROWDED) {
         sol.warnings.push(

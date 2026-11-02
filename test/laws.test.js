@@ -389,3 +389,48 @@ test('a bath species made only from a surface intermediate: not held flat at its
   const j = s.c.Red.findIndex(Number.isFinite);
   near(s.c.Red[j], late.c.Red[j], 1e-9, 'Red at the face');
 });
+
+test('two steps through a surface intermediate at one face, both at equilibrium: one takes the surface\'s own row, and Ox⁺ + Red + S is kept', () => {
+  // Ox⁺ + e⁻ = S (all but stuck) and S = Red at one electrode of a closed cell: a steady state has
+  // both at A = 0. Pinned in Ox⁺'s and Red's rows, they left S's own row saying nothing new, and
+  // the law had no row: dropped, the solve failed. (Argon's review of 1.6.1, round 2.)
+  const surfaceAt = (k0) => ({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0, surface: { S: { mu0: 0, capacity: 1e-5, theta0: 0.5 } }, reactions: [{ equation: 'Ox+ + e- = S', k0, alpha: 0.5 }, { equation: 'S = Red', k0: 1e-3, alpha: 0.5 }] });
+  const def = build({
+    library: [surfaceIons([['K+', 1], ['Cl-', -1], ['Ox+', 1], ['Red', 0]]), metal('Au')],
+    ports: [{ name: 'ref', region: 'el', from: 4e-6, to: 6e-6, I: 0, terminal: 'K+', species: { 'K+': 'equilibrium' } }],
+    stack: [ohmic(0.15, ['e-']), layer('Au', 1e-6), surfaceAt(1e-18), layer('el', 10e-6, { name: 'el', c0: { 'K+': 100, 'Cl-': 110, 'Ox+': 10, 'Red': 10 } }), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, layer('Au', 1e-6), ohmic(0, ['e-'])],
+  });
+  const total = (sol, dev) => {
+    let a = 1e-5 * sol.interfaces[0].coverage.S;
+    for (const name of ['Ox+', 'Red']) sol.c[name].forEach((c, g) => Number.isFinite(c) && (a += dev.model.grid.vol[g] * c));
+    return a;
+  };
+  const d = new Device(def), s = d.solve();
+  assert.ok(s.converged);
+  near(total(s, d), 2.05e-4, 1e-12, 'Ox⁺ + Red + S');
+  for (const r of s.interfaces[0].rates) assert.ok(Math.abs(r) < 1e-20, `rate ${r}`);
+  const late = d.advance(1000); // (and steady: time moves nothing)
+  near(late.interfaces[0].coverage.S, s.interfaces[0].coverage.S, 1e-9, 'θ_S');
+});
+
+test('a chain through two surface species, every step all but stuck: solved directly, at the equilibrium the same cell reaches when fast (Argon\'s review of 1.6.1, round 3)', () => {
+  // Ox⁺ + e⁻ = Red, Red = S1, S1 = S2 at one face of a closed cell, k0 1e-18 to 1e-16. With the face
+  // reactions read without their surface species (1.6.1), the solve fell back to time steps and
+  // failed. The equilibrium doesn't depend on k0: the same cell 1e15 times faster, stepped there,
+  // is the yardstick.
+  const cell = (scale) => build({
+    library: [surfaceIons([['K+', 1], ['Cl-', -1], ['Ox+', 1], ['Red', 0]]), metal('Au')],
+    ports: [{ name: 'ref', region: 'el', from: 4e-6, to: 6e-6, I: 0, terminal: 'K+', species: { 'K+': 'equilibrium' } }],
+    stack: [ohmic(0.15, ['e-']), layer('Au', 1e-6), {
+      phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0,
+      surface: { S1: { mu0: -5000, capacity: 1e-5, theta0: 0.25 }, S2: { mu0: -5000, capacity: 1e-5, theta0: 0.25 } },
+      reactions: [{ equation: 'Ox+ + e- = Red', k0: 1e-18 * scale, alpha: 0.5 }, { equation: 'Red = S1', k0: 1e-17 * scale, alpha: 0.5 }, { equation: 'S1 = S2', k0: 1e-16 * scale, alpha: 0.5 }],
+    }, layer('el', 10e-6, { name: 'el', c0: { 'K+': 100, 'Cl-': 110, 'Ox+': 10, 'Red': 10 } }), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, layer('Au', 1e-6), ohmic(0, ['e-'])],
+  });
+  const d = new Device(cell(1)), s = d.solve();
+  assert.ok(s.converged && d.solver._directSteady(), s.warnings.join('; '));
+  const fast = new Device(cell(1e15)).advance(1e4);
+  near(s.interfaces[0].coverage.S1, fast.interfaces[0].coverage.S1, 1e-6, 'θ_S1');
+  near(s.interfaces[0].coverage.S2, fast.interfaces[0].coverage.S2, 1e-6, 'θ_S2');
+  near(s.c.Red.find(Number.isFinite), fast.c.Red.find(Number.isFinite), 1e-6, 'Red');
+});
