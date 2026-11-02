@@ -626,11 +626,24 @@ export class Solver {
         rxns.push([ks, (side) => rx.sp.reduce((a, i, p) => a + rx.nu[p] * this.contactEta(side, i), rx.fixedA)]);
       }
     });
+    // A face's surface species join what reacts through them. (Joined through the stretches
+    // alone, Red in Ox⁺ + e⁻ = S, S = Red stood alone at its bath's level, and was held flat at
+    // 1000 mol/m³ up to the face while S = Red carried the current, 1.6× too much.) The check
+    // below leaves the surface's terms out, which only makes it stricter: where every reaction
+    // balances at the contact's levels without them, the whole group, coverages and all, can sit
+    // at equilibrium with that one contact, where a steady state with one reservoir sits.
+    const surfNode = new Map(); // ('f:s' → a node after the stretches')
+    const surfOf = (f, q) => {
+      const key = `${f}:${q}`;
+      if (!surfNode.has(key)) surfNode.set(key, group.push(group.length) - 1);
+      return surfNode.get(key);
+    };
     model.interfaces.forEach((itf, f) => {
       for (const rx of itf.reactions) {
         const ks = rx.part.map((p) => this.stretchOf[(f + p.side) * n + p.i]);
         if (ks.some((k) => k < 0)) continue;
-        join(ks);
+        const all = [...ks, ...rx.surf.map((p) => surfOf(f, p.s))];
+        if (all.length > 0) join(all);
         rxns.push([ks, (side) => rx.part.reduce((a, p) => a - p.nu * this.contactEta(side, p.i), rx.fixedA)]); // (a face's ν: products +, so − Σ ν η)
       }
     });

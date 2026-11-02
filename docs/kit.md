@@ -140,7 +140,8 @@ voltage, the terminals' convention). It works at a face (`{ face: f }`, the face
 at a spot of an [electrode port](device.md#electrodes-spread-through-a-window)
 (`{ port: name, x }`, with its surface's coverages there held too). Each reaction comes back with its rate (mol/(m²·s), forward), its partial
 current (A/m², anodic positive: into the solution) and its `level`, where the rate vanishes (the
-couple's redox level there, as `level()` gives it). The net current is their sum. Plotting
+couple's redox level there, as `level()` gives it). A chemical step at a face (`2 H = H2` beside
+`H+ + e- = H`) comes back too, with its rate, no current, and a level of NaN. The net current is their sum. Plotting
 log|current| against V gives the Evans diagram. The net crosses zero at the spot's open-circuit
 potential, between the couples' levels, and the metal's actual level is where the solve put it.
 The law is the solver's own, so at that level the rates are the solution's. Against SHE, subtract

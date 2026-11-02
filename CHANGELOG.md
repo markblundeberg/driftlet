@@ -5,6 +5,22 @@ major version.
 
 ## Unreleased
 
+From Gemini 4 Argon's review of 1.6.1, each with its device as a test:
+- A steady solve with a face's surface species in a mechanism kept its laws right: the law finder
+  read a face reaction without its surface species, so `S = Red` after `Ox+ + e- = S` seemed to change
+  Ox⁺ + Red + S alone, took a row at zero affinity where it runs, and that law was lost: converged,
+  no warning, a steady current 6× what the transient settles to (−10.98 A/m² for −1.82), with 11× the
+  couple the cell held. And a bath species made only from a surface intermediate (Red in `S = Red`)
+  was held flat at its bath's level up to the face while that step carried the current: 1.6× too
+  much. Both now agree with a long `advance()` to 1e-9.
+- `bare: true` on a face reaction with no surface species of its own (a couple, or a metal
+  dissolving, on the bare sites a surface leaves) was refused; it now goes as θ₀, Butler–Volmer and
+  Marcus–Hush–Chidsey both (checked against the same reaction on clean metal at k0·θ₀).
+- `polarization()` at a face with a chemical step (Volmer–Tafel's `2 H = H2`) refused the face; it
+  now returns that step's rate, with no current and a level of NaN.
+- A neutral species on a lattice beside a diffuse layer that can't move (D = 0) is refused, as a
+  charged one was: the layer pushes it out, and it failed to converge.
+
 - Every demo page has a sketch beside its introduction: the real thing (a beaker and its electrodes, a
   solar cell's layers, a squid axon in a dish), the line its one dimension runs along drawn in red,
   and under it that slice in cell notation, written from the definition the solver is given

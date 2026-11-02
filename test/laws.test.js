@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY } from '../src/index.js';
-import { build, layer, bath, aqueous, check } from '../src/kit.js';
+import { build, layer, bath, aqueous, check, metal, ohmic } from '../src/kit.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
 
 // What a steady solve keeps, at the edges of the law finder: devices from Gemini 4 Argon's review
@@ -336,4 +336,56 @@ test('the law sweep\'s device 19: a capacitive contact at no current beside a fl
   const def = device(choice(19)), s = new Device(def).solve(), late = new Device(def).advance(1e6, { tol: 1e-9 });
   assert.ok(s.converged && late.converged);
   for (const name of ['left', 'p1']) near(s.terminals[name].V, late.terminals[name].V, 1e-4, `V ${name}`);
+});
+
+// Two from Argon's review of 1.6.1, both through a face's surface species, which the law finder
+// and the flat-stretch shortcut had read a face reaction without.
+const surfaceIons = (names) => ({
+  species: names.map(([name, z]) => ({ name, z, cRef: 1000 })),
+  materials: { el: { epsr: 0, species: Object.fromEntries(names.map(([name]) => [name, { D: 1e-9, mu0: 0 }])) } },
+});
+const mechanism = (k0, extra = {}) => ({
+  phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0, diffuse: { epsr: 78.4 },
+  surface: { S: { mu0: 0, capacity: 1e-5, theta0: 0.5 } },
+  reactions: [{ equation: 'Ox+ + e- = S', k0, alpha: 0.5 }, { equation: 'S = Red', k0, alpha: 0.5 }],
+  ...extra,
+});
+
+test('a surface intermediate passing a closed couple on to a counter-electrode: Ox⁺ + Red + S is kept, and S = Red not held at equilibrium', () => {
+  // Ox⁺ + e⁻ = S, S = Red at one electrode, Red = Ox⁺ + e⁻ at the other, the film closed but for
+  // a reference port at no current. Over the stretches alone, S = Red changed Ox⁺ + Red + S, so it
+  // took a row at A = 0 and that law was dropped: −10.98 A/m², where the transient settles at −1.82,
+  // with 11× the couple the film started with.
+  const def = build({
+    library: [surfaceIons([['K+', 1], ['Cl-', -1], ['Ox+', 1], ['Red', 0]]), metal('Au')],
+    ports: [{ name: 'ref', region: 'el', from: 4e-6, to: 6e-6, I: 0, terminal: 'Ox+', species: { 'Ox+': 'equilibrium' } }],
+    stack: [
+      ohmic(0, ['e-']), layer('Au', 1e-6), mechanism(1e-3),
+      layer('el', 10e-6, { name: 'el', c0: { 'K+': 100, 'Cl-': 110, 'Ox+': 10, 'Red': 10 } }),
+      { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0, diffuse: { epsr: 78.4 }, reactions: [{ equation: 'Red = Ox+ + e-', k0: 1e-3, alpha: 0.5 }] },
+      layer('Au', 1e-6), ohmic(0.1, ['e-']),
+    ],
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1000);
+  assert.ok(s.converged && s.warnings.length === 0, s.warnings.join('; '));
+  near(s.current, late.current, 1e-9, 'current');
+  near(s.interfaces[0].coverage.S, late.interfaces[0].coverage.S, 1e-9, 'coverage');
+});
+
+test('a bath species made only from a surface intermediate: not held flat at its bath\'s level', () => {
+  // S = Red with Red at its bath's level reads A = 0 over the stretches alone, so Red stood in a
+  // group of its own and was held flat at 1000 mol/m³ up to the face while S = Red carried the
+  // current: 6582 A/m², where the transient settles at 4044.
+  const def = build({
+    library: [surfaceIons([['Ox+', 1], ['Cl-', -1], ['Red', 0]]), metal('Au')],
+    stack: [
+      { V: 0.1, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, layer('Au', 1e-6), mechanism(0.1),
+      layer('el', 10e-6, { c0: { 'Ox+': 1000, 'Cl-': 1000, 'Red': 1000 } }), bath({ 'Ox+': 1000, 'Cl-': 1000, 'Red': 1000 }, 'Cl-'),
+    ],
+  });
+  const d = new Device(def), s = d.solve(), late = new Device(def).advance(1000);
+  assert.ok(s.converged && s.warnings.length === 0, s.warnings.join('; '));
+  near(s.current, late.current, 1e-9, 'current');
+  const j = s.c.Red.findIndex(Number.isFinite);
+  near(s.c.Red[j], late.c.Red[j], 1e-9, 'Red at the face');
 });

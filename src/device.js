@@ -628,7 +628,10 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     need(part.length > 0 || surf.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
     need(surf.length === 0 || (rdef.vmax === undefined && rdef.K === undefined && rdef.srh === undefined), `${rpath}: a reaction of the face's surface is Butler–Volmer or Marcus–Hush–Chidsey`);
-    need(rdef.bare === undefined || (surf.length > 0 && typeof rdef.bare === 'boolean'), `${rpath}.bare: true or false, for a reaction of the face's surface`);
+    // (`bare` for any Butler–Volmer or Marcus–Hush–Chidsey reaction at a face with a surface, its
+    // own participants or none: one that fills no site, a metal dissolving where a film leaves it
+    // bare, is what it's for. Allowed only with surface participants, it was refused there.)
+    need(rdef.bare === undefined || (surface.length > 0 && typeof rdef.bare === 'boolean' && rdef.vmax === undefined && rdef.K === undefined && rdef.srh === undefined), `${rpath}.bare: true or false, for a Butler–Volmer or Marcus–Hush–Chidsey reaction at a face with a surface`);
     if (rdef.vmax !== undefined || rdef.K !== undefined) {
       need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined && rdef.srh === undefined, `${rpath}: give vmax and K (saturating), srh, or k0 and alpha (Butler–Volmer) or lambda (Marcus–Hush–Chidsey), one of them`);
       const vmax = positive(rdef.vmax, `${rpath}.vmax (mol/(m²·s))`);
@@ -659,7 +662,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     // transition state holds m bare ones (those it fills, or one if it runs only on bare metal),
     // so the forward rate goes as θ₀^m and the backward as θ₀^(m−Δ).
     const fills = surf.reduce((t, p) => t + p.nu, 0), m = Math.max(fills, 0, rdef.bare ? 1 : 0);
-    const onSites = surf.length > 0 ? { surf, m, fills } : { surf };
+    const onSites = surface.length > 0 ? { surf, m, fills } : { surf };
     if (rdef.lambda !== undefined) {
       need(rdef.alpha === undefined, `${rpath}: give lambda (Marcus–Hush–Chidsey) or alpha (Butler–Volmer), not both`);
       const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
@@ -671,7 +674,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, ...onSites };
     }
     const alpha = transferCoefficient(rdef.alpha, `${rpath}.alpha`);
-    return { part, fixedA, k0, alpha, ...onSites, ...(surf.length > 0 ? { sites: m * (1 - alpha) + (m - fills) * alpha } : {}) };
+    return { part, fixedA, k0, alpha, ...onSites, ...(surface.length > 0 ? { sites: m * (1 - alpha) + (m - fills) * alpha } : {}) };
   });
 }
 
@@ -1189,6 +1192,13 @@ function normalizeDiffuse(raw, where, phi, matL, matR, species, reactions) {
         !(mat.present[i] && species[i].z !== 0 && !(mat.D[i] > 0)),
         `${path}: '${species[i].name}' is charged and can't move in '${mat.name}' (D = 0), so it can't gather into a diffuse layer as a Boltzmann layer's ions do; ` +
           'make it fixed charge (the region\'s fixedCharge), or resolve the double layer (epsr > 0)',
+      );
+      // (A neutral species on the lattice is pushed out of the layer, which takes moving it: one
+      // that can't failed to converge, NaN in its draw across the layer. Argon's review of 1.6.1.)
+      need(
+        !(mat.present[i] && md && md.idx.includes(i) && !(mat.D[i] > 0)),
+        `${path}: '${species[i].name}' is on the lattice in '${mat.name}' but can't move there (D = 0), so it can't be pushed out of the diffuse layer as the lattice's other species are; ` +
+          'give it a D, take it off the lattice, or resolve the double layer (epsr > 0)',
       );
     }
     for (const rx of reactions) {

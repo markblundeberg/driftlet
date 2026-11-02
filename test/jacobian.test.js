@@ -38,14 +38,14 @@ const tethered = (kin, V, iron = false) => {
 };
 // Cl⁻ adsorbing on bare platinum (Cl⁻ + * = Cl(ads) + e⁻) beside Fe³⁺/Fe²⁺, at a floating metal,
 // beside a diffuse layer.
-const adsorbed = (kin) => {
+const adsorbed = (kin, iron = {}) => {
   const salt = { 'K+': 100, 'Cl-': 105, 'Fe3+': 1, 'Fe2+': 1 };
   return build({
     T: 298.15, library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
     stack: [ohmic({ I: 0 }, ['e-']), layer('Pt', 1e-6), {
       phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, diffuse: { epsr: 78.4 },
       surface: { Clads: { mu0: -62e3, capacity: 2e-5, theta0: 0.1 } }, // (about half covered at the iron's level)
-      reactions: [{ equation: 'Cl- = Clads + e-', k0: 1e-3, ...kin }, { ...half('Fe3+ + e- = Fe2+'), k0: 1e-3 }],
+      reactions: [{ equation: 'Cl- = Clads + e-', k0: 1e-3, ...kin }, { ...half('Fe3+ + e- = Fe2+'), k0: 1e-3, ...iron }],
     }, layer('water', 10e-6, { c0: salt }), bath(salt, 'Cl-')],
     grid: { hmin: 1e-8, hmax: 1e-6 },
   });
@@ -321,6 +321,9 @@ const devices = {
   'a tethered couple at a face driven by a current': () => tethered({ alpha: 0.5 }, { I: 0.02 }, true),
   'an adsorbate on bare sites at a face, beside a diffuse layer': () => adsorbed({ alpha: 0.5 }),
   'a Marcus–Hush–Chidsey adsorbate on bare sites at a face': () => adsorbed({ lambda: units.eV(0.6) }),
+  // (and the iron couple on bare sites only, filling none: `bare: true`, from Argon's review of 1.6.1)
+  'an iron couple on bare sites only, beside an adsorbate': () => adsorbed({ alpha: 0.5 }, { bare: true }),
+  'a Marcus–Hush–Chidsey iron couple on bare sites only': () => adsorbed({ alpha: 0.5 }, { bare: true, alpha: undefined, lambda: units.eV(0.7) }),
   // A metal floating between capacitive faces (test/metal.test.js).
   'a floating gate': () => ({
     species: [{ name: 'e-', z: -1 }],

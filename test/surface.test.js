@@ -160,6 +160,29 @@ test('polarization() at a face with a surface: the solved rates at the metal’s
   }
 });
 
+test('polarization() at a face with a chemical step beside the electron transfer: every rate the solver\'s, the chemical one passing no current (Argon\'s review of 1.6.1)', () => {
+  // Volmer–Tafel: H⁺ + e⁻ = H(ads), 2 H(ads) = H₂. The Tafel step takes no electron from the metal;
+  // polarization() once refused the whole face for it.
+  const ions = {
+    species: [{ name: 'H+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'H2', z: 0, cRef: 1000 }],
+    materials: { el: { epsr: 0, species: { 'H+': { D: 9e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 }, H2: { D: 5e-9, mu0: 0 } } } },
+  };
+  const def = build({
+    T, library: [ions, metal('Pt')],
+    stack: [ohmic(0.05, ['e-']), layer('Pt', 1e-6),
+      { surface: { 'H(ads)': { mu0: 0, capacity: 1e-5, theta0: 0.1 } }, reactions: [{ equation: 'H+ + e- = H(ads)', k0: 1e-3, alpha: 0.5 }, { equation: '2 H(ads) = H2', k0: 1e-3, alpha: 0.5 }] },
+      layer('el', 10e-6), bath({ 'H+': 100, 'Cl-': 100, H2: 1 }, 'Cl-')],
+  });
+  const dev = new Device(def), sol = dev.solve();
+  assert.ok(sol.converged);
+  const curve = polarization(dev, sol, { face: 0 }, [sol.V['e-'][0], sol.V['e-'][0] + 0.1]);
+  curve.reactions.forEach((r, k) => assert.ok(Math.abs(r.rate[0] / sol.interfaces[0].rates[k] - 1) < 1e-9, `${r.equation}: ${r.rate[0]} vs ${sol.interfaces[0].rates[k]}`));
+  const tafel = curve.reactions[1];
+  assert.ok(Number.isNaN(tafel.level) && tafel.current.every((c) => c === 0) && tafel.rate[1] === tafel.rate[0]); // (held coverages: the same rate at every V)
+  assert.ok(Math.abs(curve.current[0] - curve.reactions[0].current[0]) < 1e-15);
+  assert.ok(Math.abs(sol.interfaces[0].rates[0] / sol.interfaces[0].rates[1] - 2) < 1e-6); // (steady: two H made per H₂)
+});
+
 test('a face’s surface is asked for clearly, and described', () => {
   const bad = (edit, re) => {
     const def = tethered(0);
@@ -196,4 +219,32 @@ test("a face's surface species enter its cold start: a cold solve converges whic
     assert.ok(Math.abs(a.terminals.left.current / b.terminals.left.current - 1) < 1e-9 && Math.abs(a.interfaces[0].coverage.Hads - b.interfaces[0].coverage.Hads) < 1e-9);
   }
   assert.ok(Math.abs(solve([volmer, iron], 0.5048).terminals.left.current + 0.0326621) < 1e-7);
+});
+
+test('bare: true on a face reaction that fills no site: its rate goes as the bare fraction, Butler–Volmer and Marcus–Hush–Chidsey (Argon\'s review of 1.6.1)', () => {
+  // Ox⁺ + e⁻ = Red beside an adsorbate A(ads) in equilibrium with A in the solution (θ = θ₀ = ½):
+  // on bare sites only, the reaction is the same one on clean metal at k0·θ₀, transport and all.
+  // (Once `bare` was refused unless the reaction had surface participants of its own.)
+  const ions = {
+    species: ['Ox+', 'Red', 'Cl-', 'A'].map((name) => ({ name, z: name === 'Ox+' ? 1 : name === 'Cl-' ? -1 : 0, cRef: 1000 })),
+    materials: { el: { epsr: 0, species: Object.fromEntries(['Ox+', 'Red', 'Cl-', 'A'].map((name) => [name, { D: 1e-9, mu0: 0 }])) } },
+  };
+  const cell = (kin, k0, surface) => build({
+    T,
+    library: [ions, metal('Au')],
+    stack: [
+      ohmic(-0.1, ['e-']), layer('Au', 1e-6),
+      surface
+        ? { surface: { 'A(ads)': { mu0: 0, capacity: G, theta0: 0.3 } }, reactions: [{ equation: 'Ox+ + e- = Red', k0, ...kin, bare: true }, { equation: 'A = A(ads)', k0: 1e-3, alpha: 0.5 }] }
+        : { reactions: [{ equation: 'Ox+ + e- = Red', k0, ...kin }] },
+      layer('el', 10e-6), bath({ 'Ox+': 10, 'Red': 10, 'Cl-': 10, A: 1000 }, 'Cl-'),
+    ],
+  });
+  for (const kin of [{ alpha: 0.4 }, { lambda: units.eV(0.8) }]) {
+    const a = new Device(cell(kin, 1e-5, true)).solve(), bare = a.interfaces[0].bare;
+    const b = new Device(cell(kin, 1e-5 * bare, false)).solve();
+    assert.ok(a.converged && b.converged);
+    assert.ok(Math.abs(bare - 0.5) < 1e-6, `bare ${bare}`);
+    assert.ok(Math.abs(a.current / b.current - 1) < 1e-9, `${JSON.stringify(kin)}: ${a.current} vs ${b.current}`);
+  }
 });

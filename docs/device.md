@@ -224,8 +224,8 @@ face works, that its counter-ions would have no room there). Where the side's io
 over $`1 + \sum_j \theta_j (e^{-z_j s} - 1)`$, $`\theta_j = c_j/c_{\mathrm{max}}`$, and
 $`\sum_i c_i (e^{-z_i s} - 1 + z_i s)`$ above becomes $`c_{\mathrm{max}}\ln(1 + \sum_j \theta_j (e^{-z_j s} - 1)) + s\sum_j c_j z_j`$, so the plane fills to $`c_{\mathrm{max}}`$
 and no further, and a neutral species on the lattice is pushed out of it. Its ions must otherwise be
-ideal (all of them on the one lattice, or none) and mobile, and SRH kinetics beside a layer isn't
-supported.
+ideal (all of them on the one lattice, or none) and mobile, as must a neutral species on the lattice,
+and SRH kinetics beside a layer isn't supported.
 
 What a face reaction takes or makes at the plane crosses the layer, against the layer's
 resistance to it, $`K_i = \int (c_i/c_i(x) - 1)\,dx`$ (a length, by the same quadrature): its level
@@ -392,7 +392,7 @@ can, in the same form: `surface: { name: { mu0, capacity, theta0 } }`, Langmuir 
 $`\theta`$ on `capacity` $`\Gamma`$ mol of sites per m², neutral, held at the node beside the face on the
 side facing the metal. A face reaction names them on the metal's side of its equation, with the
 port's Langmuir kinetics (each at its coverage in the prefactor, $`\theta_0^{\,m}`$ forward and
-$`\theta_0^{\,m-\Delta}`$ back, `bare: true` for one that needs a bare site), Butler–Volmer or
+$`\theta_0^{\,m-\Delta}`$ back, `bare: true` for one that needs a bare site, with surface species of its own or none), Butler–Volmer or
 Marcus–Hush–Chidsey (whose forward and backward prefactors are Butler–Volmer's at $`\alpha = 0`$ and
 $`\alpha = 1`$). The surface stores $`\Gamma\,d\theta/dt`$ per area of the face, conserved with what its
 reactions take and make, through the impedance as well; each solution reports

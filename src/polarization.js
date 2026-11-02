@@ -27,7 +27,7 @@ const fail = (message) => {
  *   curve, with a passive film's active–passive peak), each species by the reaction that makes it
  * @returns {{ V: Float64Array, current: Float64Array, bare?: Float64Array, reactions: { equation: string, level: number,
  *   rate: Float64Array, current: Float64Array }[] }} per reaction: its equilibrium level here (where
- *   its rate is zero), its rate (mol/(m²·s) of electrode, forward) and its current (A/m², anodic
+ *   its rate is zero; NaN for a chemical step, which takes no electron from the metal and passes no current), its rate (mol/(m²·s) of electrode, forward) and its current (A/m², anodic
  *   positive: into the solution); and their sum
  */
 export function polarization(device, sol, where, V, opts = {}) {
@@ -100,7 +100,8 @@ export function polarization(device, sol, where, V, opts = {}) {
         else lnQ += p.nu * l;
       } else pref *= powr(c / solver.cRef[g * species.length + p.i], p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     });
-    if (s === 0) fail(`polarization: reaction ${k} there takes no ${species[carrier.i].name} from the metal`);
+    // (A chemical step, s = 0, 2 H = H₂ beside H⁺ + e⁻ = H: no current and no level, its rate at the
+    // composition held, or with the coverages re-equilibrated at each V. Once refused.)
     return { rx, k, base, s, q, pref, surf, lnP, lnQ };
   });
   // The surface's activities (ln a) and bare fraction at a level: held as `sol` has them, or in
@@ -110,7 +111,7 @@ export function polarization(device, sol, where, V, opts = {}) {
   if (surface && opts.surface === 'equilibrium') {
     former = surface.sp.map((sp, x) => {
       const f = parts.find((pt) => pt.surf.length === 1 && pt.surf[0].s === x);
-      if (!f) fail(`polarization: no reaction makes ${sp.name} from the solution alone, so its equilibrium coverage isn't defined`);
+      if (!f) fail(`polarization: no reaction makes ${sp.name} from the solution alone, so its equilibrium coverage isn't defined (a tethered couple's turn into each other, their total fixed): give { surface: 'held' }`);
       return f;
     });
   } else if (opts.surface !== undefined && opts.surface !== 'held') fail("polarization: surface must be 'held' (the default) or 'equilibrium'");
@@ -148,7 +149,7 @@ export function polarization(device, sol, where, V, opts = {}) {
     });
     // (its level with the surface as held)
     const aHeld = surf.reduce((t, u) => t - u.nu * (held ? held[u.s] : 0), base);
-    return { equation: names?.[k]?.equation ?? `reaction ${k}`, level: -aHeld / s, rate, current: rate.map((r) => q * FARADAY * r) };
+    return { equation: names?.[k]?.equation ?? `reaction ${k}`, level: s === 0 ? NaN : -aHeld / s, rate, current: rate.map((r) => q * FARADAY * r) };
   });
   const current = new Float64Array(Vs.length);
   for (const r of out) for (let j = 0; j < Vs.length; j++) current[j] += r.current[j];

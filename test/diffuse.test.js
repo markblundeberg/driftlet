@@ -435,6 +435,13 @@ test('a diffuse layer is refused where it would be wrong or meaningless', () => 
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'debye-huckel', species: ['K+', 'Cl-'], epsr: 78.4 }]) }), /'K\+' in 'water' has statistics a diffuse layer can't take: its ions must all be ideal \(a dilute layer\) or all on one lattice model/);
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.statistics = [{ type: 'lattice', species: ['K+'], cMax: 5000 }]) }), /'Cl-' in 'water' has statistics a diffuse layer can't take/);
   refused(make({ diffuse: { epsr: 78 } }, { mod: (l) => (l.materials.water.species['K+'].D = 0) }), /'K\+' is charged and can't move in 'water' \(D = 0\)/);
+  // (a neutral species on the lattice that can't move, which the layer would push out: Argon's review of 1.6.1)
+  const still = (l) => {
+    l.species.push({ name: 'S', z: 0, cRef: 1000 });
+    l.materials.water.species.S = { D: 0, mu0: 0 };
+    l.materials.water.statistics = [{ type: 'lattice', species: ['K+', 'Cl-', 'S'], cMax: 5000 }];
+  };
+  refused(make({ diffuse: { epsr: 78 } }, { mod: still }), /'S' is on the lattice in 'water' but can't move there \(D = 0\)/);
 });
 
 // A charged membrane (C 0.01 F/m², a sheet of −0.02 C/m² on its right face) between two strictly

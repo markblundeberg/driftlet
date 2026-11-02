@@ -292,7 +292,7 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
 // drive): each conserved amount, solved directly in place of one (redundant) balance row, and
 // the islands' summed balances. See the contract above.
 export function findLaws(s) {
-  const { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, surfCols, terms, floating, blockOfNode, blockOfFace, rxsIn, nodeMaterial } = s;
+  const { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, surfCols, surfColOf, terms, floating, blockOfNode, blockOfFace, rxsIn, nodeMaterial } = s;
   const { regions, materials, grid } = model;
   const laws = conservedMoieties(s, { drives: true }), carriersOf = laws.carriers;
   const conserved = new Set();
@@ -406,16 +406,20 @@ export function findLaws(s) {
   // listing, an electrode's two couples took different rows with the species reversed, and
   // Newton converged in one listing and crawled in the other.)
   const affinities = [];
-  const faceRx = model.interfaces.flatMap((itf, f) => itf.reactions.map((rx) => ({ f, rx, key: rx.part.map((p) => `${model.species[p.i].name}:${p.side}:${p.nu}`).sort().join() })));
+  // (The key and ν count a face's surface species too, as conservedMoieties does: over the
+  // stretches alone, S = Red after Ox⁺ + e⁻ = S changed Ox⁺ + Red + S, so it took a row at A = 0
+  // where it runs, and that law was lost: a steady current 6× what the transient settles to.)
+  const faceRx = model.interfaces.flatMap((itf, f) => itf.reactions.map((rx) => ({ f, rx, key: [...rx.part.map((p) => `${model.species[p.i].name}:${p.side}:${p.nu}`), ...rx.surf.map((p) => `@${itf.surface[p.s].name}:${p.nu}`)].sort().join() })));
   faceRx.sort((a, b) => a.rx.k0 - b.rx.k0 || (a.key < b.key ? -1 : a.key > b.key ? 1 : a.f - b.f));
   for (const { f, rx } of faceRx) {
-    const nu = new Float64Array(S);
+    const nu = new Float64Array(X);
     let inFlat = false;
     for (const p of rx.part) {
       const k = stretchOf[(f + p.side) * n + p.i];
       if (k < 0 || flatStretches.includes(stretches[k])) inFlat = true;
       else nu[k] += p.nu;
     }
+    for (const p of rx.surf) nu[S + surfColOf[model.interfaces[f].surfaceOf] + p.s] += p.nu;
     if (inFlat) continue; // (held flat at a contact's levels, in equilibrium already)
     // (Not one fed by a terminal driven by a current: its sum is the rate plus what that
     // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.

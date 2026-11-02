@@ -571,7 +571,7 @@ export class BoundaryTerms {
         if (p.nu < 0) lnP -= p.nu * l;
         else lnQ += p.nu * l;
       }
-      if (rx.surf.length > 0) {
+      if (rx.m !== undefined) {
         const l0 = Math.log(this.th0[gS]);
         lnP += rx.m * l0;
         lnQ += (rx.m - rx.fills) * l0;
@@ -583,7 +583,7 @@ export class BoundaryTerms {
         surfLn(p.nu < 0 ? -p.nu * rp : p.nu * rq, p.s);
         dSf[1 + n + p.s] -= ra * p.nu;
       }
-      if (rx.surf.length > 0) bareLn(rx.m * rp + (rx.m - rx.fills) * rq);
+      if (rx.m !== undefined) bareLn(rx.m * rp + (rx.m - rx.fills) * rq);
       for (const p of rx.part) {
         const g = p.side ? gR : gL;
         if (this.nodeConductor[g] === p.i) continue;
