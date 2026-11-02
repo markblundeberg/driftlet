@@ -121,7 +121,22 @@ for live demos.
      within ~1e-13 s, below any step. Settled with the owner: a start asked for that violently is
      right to fail on, if it says why and what to do. It does (f1fcc37), and `solve()` first
      then `advance()` runs all 16 tried. A floating electrode's reactions likewise (Argon's
-     law8, below).
+     law8, below). The sweep's devices no longer ask for it (2 Nov): their capacitors' zero
+     charge is measured from the bath's φ (the K⁺ offset was right for a capacitor already charged
+     1.47 V, not for one starting uncharged, and port p1's capacitance likewise 0.77 V), so each
+     starts near its steady state, and all 90 transients that failed settle and agree with
+     `solve()` (the sweep: all 735 compared, none differing); the old devices stay as the tests' fixtures,
+     `device(c, { charged: true })`. Starting at the bath's gauge was tried again and again left
+     alone: 64 of those 90 settle without it, 62 with it, and it moved the round-off-set F5 below
+     by 1e-4 V between listings.
+   - A floating double layer on a thin polar skin beside a neutral face (the sweep's second
+     family, `capK`/`RcapK`): the skin's absolute level is held only through fluxes the storage
+     term dwarfs, so at short steps its φ̂ and every η rattle together by ~1e-12/dt thermal units,
+     no concentration moving. The error control counts that: at tol 1e-9 it chases it down to the
+     shortest step at ~5e-5 s (28 devices; at 1e-8 and looser they run, and the sweep retries at
+     1e-7). And `advance(1e-9)` from the cold start fails its first step even at the default tol
+     (devices 812, 823), where `advance(1e6)` runs. An error norm on ln c and fields, rather than
+     on φ̂ and η, would ignore it, a change to every transient's steps.
    - A port's window counted each of its nodes' whole box (a cold review of `src/boundaries.js`),
      a half cell past each end: up to 27% off on a coarse grid. Fixed in 1.2.8: each node whose box
      reaches into the window takes the part inside, so a window holds `to − from` on any grid
@@ -179,9 +194,12 @@ for live demos.
      each listing of the species), their terminal currents not adding up by ~3e-13 A/m², which
      is about the fast couple's round-off. Found by round 11's fuzzer (its F5). Since 1.1.1 (the
      contact and flat-stretch rows keep a level's low part) its two listings agree to round-off
-     and its ledger closes to 4e-16, where they were 4 mV apart; with rates down to k0 1e-20,
-     whether that's the steady state can't be checked by advance(), which drifts ~20 mV a
-     decade out to 1e14 s.
+     and its ledger closes to 4e-16, where they were 4 mV apart. But it isn't the steady state:
+     advance() from the solution (0.274922 V) moves at once (the fast couple's rate falls from
+     1e-18 to 1.6e-21 mol/(m²·s) within 1 ms), drifts ~20 mV a decade from 1e9 s, and settles by
+     1e15 s at 0.195442 V, unmoved to 1e18 s; a cold advance() ends there too. The solve's
+     answer is set by round-off (any change to its start moves it by ~1e-4 V), and nothing
+     warns of it yet.
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

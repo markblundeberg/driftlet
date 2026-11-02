@@ -490,7 +490,7 @@ test('two strictly neutral regions out of equilibrium at their face: a transient
   // c_Na·c_Cl differs across a face that holds both in equilibrium.) The first step, made to
   // take that jump, met an exactly singular pivot. The first step from a cold start takes it
   // (equilibrateFaces), a steady solve doesn't: there it was the worse start (stress react 381).
-  const def = device(choice(843)), d = new Device(def), v = d.model.grid.vol;
+  const def = device(choice(843), { charged: true }), d = new Device(def), v = d.model.grid.vol;
   assert.equal(d.solver.coldStart, true);
   const e = new Device(def);
   equilibrateFaces(e.solver);
@@ -551,7 +551,7 @@ test('a capacitive contact that starts uncharged far from the equilibrium of the
   // outside level suits the charged steady state, 1.47 V from where the uncharged start is.) The
   // link closes the gap within ~1e-13 s, below any step. Asked for, that's right to fail on; the
   // message says how to start in equilibrium instead, and that works.
-  const def = device(choice(841)), s = new Device(def).advance(1e3, { tol: 1e-9 });
+  const def = device(choice(841), { charged: true }), s = new Device(def).advance(1e3, { tol: 1e-9 });
   assert.ok(!s.converged);
   assert.match(s.warnings.join(' '), /contact left's K\+ link is 1\.\d\d V from equilibrium.*solve\(\) first/);
   const d = new Device(def);

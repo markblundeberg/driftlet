@@ -4,8 +4,9 @@
 // and run long as a transient from the same start. Where the transient has settled (it moves no
 // further over 100× as long), the two must agree.
 //   node tools/lawsweep.js [--from k] [--to k] [--only i,j,…] [--show k] [--out file.json]
-// Prints one line per device that disagrees (or fails), and a tally. --show k prints device k's
-// definition and both answers.
+// Prints one line per device that disagrees (or fails), and a tally (loose: of the ok, those
+// compared after a transient at tol 1e-7, below). --out keeps what it found as JSON, with why
+// each transient that failed stopped. --show k prints device k's definition and both answers.
 import { writeFileSync } from 'node:fs';
 import { Device } from '../src/index.js';
 import { families, total, choice, device } from './lawsweep-devices.js';
@@ -46,7 +47,7 @@ const differ = (a, b) => {
 
 const from = +opt('--from', 0), to = Math.min(+opt('--to', total), total), show = opt('--show');
 const only = opt('--only')?.split(',').map(Number) ?? (show !== undefined ? [+show] : Array.from({ length: Math.max(0, to - from) }, (_, j) => from + j));
-const tally = { ok: 0, skipped: 0, invalid: 0, transientFailed: 0, unsettled: 0, solveFailed: 0, differ: 0 }, found = [];
+const tally = { ok: 0, skipped: 0, invalid: 0, transientFailed: 0, unsettled: 0, solveFailed: 0, differ: 0, loose: 0 }, found = [];
 for (const idx of only) {
   const c = choice(idx), def = device(c);
   if (!def) {
@@ -63,11 +64,21 @@ for (const idx of only) {
   }
   try {
     const d = new Device(def), s = d.solve();
-    const e = new Device(def), late = e.advance(1e6, { tol: 1e-9 });
+    // (A transient that can't keep tol = 1e-9 tries 1e-7, counted as loose: a floating double
+    // layer beside a neutral face, its absolute level held only through fluxes the storage term
+    // dwarfs, rattles at short steps by ~1e-12/dt thermal units, φ̂ and every η together with no
+    // concentration moving, and at 1e-9 the step-doubling estimate chases that down to the
+    // shortest step. The amounts it reaches are good to ~1e-7, inside the 1e-5 compared.)
+    let tol = 1e-9, e = new Device(def), late = e.advance(1e6, { tol });
+    if (!late.converged || !late.done) {
+      const e2 = new Device(def), late2 = e2.advance(1e6, { tol: 1e-7 });
+      if (late2.converged && late2.done) [tol, e, late] = [1e-7, e2, late2];
+    }
     const ms = measures(d, s), ml = measures(e, late);
     if (show !== undefined) console.log(JSON.stringify(def, null, 1), '\nsolve', ms, '\nadvance', ml);
     if (!late.converged || !late.done) {
-      tally.transientFailed++; // (nothing to compare with)
+      tally.transientFailed++; // (nothing to compare with, but --out keeps why)
+      found.push({ idx, c, kind: 'transientFailed', t: late.time, stopped: late.warnings.find((w) => w.startsWith('advance stopped')) ?? null, steps: late.steps, solved: s.converged });
       continue;
     }
     if (!s.converged) {
@@ -79,10 +90,11 @@ for (const idx of only) {
     const w = differ(ms, ml);
     if (w.rel < 1e-5) {
       tally.ok++;
+      if (tol > 1e-9) tally.loose++;
       continue;
     }
     // Settled? 100× as long again moves it no further.
-    const last = e.advance(1e8, { tol: 1e-9 }), later = measures(e, last), drift = differ(ml, later);
+    const last = e.advance(1e8, { tol }), later = measures(e, last), drift = differ(ml, later);
     if (show !== undefined) console.log('transient from 1e6 to 1e8 s:', last.converged, drift);
     if (!last.converged || !last.done || drift.rel > 1e-6) {
       tally.unsettled++;

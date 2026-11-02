@@ -185,7 +185,12 @@ in it (1.2.3), 607 agree and 115 fail, the same 13 differing. Those 13 were a mi
 a contact's current, read from its end box, didn't take the membrane port's voltage that reaches
 it (a cold review of `src/boundaries.js`), so Newton stopped short in a way the tolerance set. With
 it in (1.2.7), the transient settles on the steady state to 1e-14 V, in a third of the steps, and
-648 agree, 87 transients fail, none differ.
+648 agree, 87 transients fail, none differ. Those that failed were the sweep's own devices asking
+too much: their capacitors started uncharged 1.4 V from where their links hold them, which a
+transient can't follow (it says so, and `solve()` first works). With each capacitor's zero
+charge measured from the bath's φ, so that it starts near its steady state (and a transient that
+can't keep tol 1e-9, from a floating double layer's rattle at short steps, run at 1e-7), all 735
+agree, none fail, none differ (2 Nov 2026).
 
 ## Consistent: the derivatives
 

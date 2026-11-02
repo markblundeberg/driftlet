@@ -24,7 +24,7 @@ test('newton: at equilibrium the terminal currents are round-off, and the island
   // Every current 1e-20 to 1e-31 A/m², their sum as large as they are: off Kirchhoff by O(1)
   // of the largest, which put the islands' rows in, twice, for nothing (2 of 6 iterations).
   for (const i of [288, 365]) {
-    const dev = new Device(device(choice(i)));
+    const dev = new Device(device(choice(i), { charged: true }));
     const calls = steadyCalls(dev), sol = dev.solve();
     assert.ok(sol.converged && dev.solver.islands.length > 0, `device ${i}`);
     assert.ok(calls.every((c) => !c.on), `device ${i}: ${JSON.stringify(calls.map((c) => [c.iterations, c.on]))}`);
@@ -35,7 +35,7 @@ test('newton: a call with the islands\' rows in from the start keeps them', () =
   // step()'s second try (islands: true) converges at its 59th iteration; the islands round ran
   // there as if the rows had just gone in, into maxIter, and came back with s.islandsOn false on
   // a state solved with them in.
-  const dev = new Device(device(choice(200)));
+  const dev = new Device(device(choice(200), { charged: true }));
   const calls = steadyCalls(dev), sol = dev.solve();
   assert.ok(sol.converged);
   const asked = calls.filter((c) => c.asked);
@@ -45,7 +45,7 @@ test('newton: a call with the islands\' rows in from the start keeps them', () =
 test('newton: a steady solve whose residual isn\'t solved says so, and records how conditioned it was', () => {
   // The residual check reassembles, which cleared the factorisation its conditioning note reads:
   // the note came out empty, under a message about a perturbed pivot there wasn't.
-  const dev = new Device(device(choice(5))), s = dev.solver;
+  const dev = new Device(device(choice(5), { charged: true })), s = dev.solver;
   const orig = s.newton.bind(s);
   let r = null;
   s.newton = (dt, opts) => {

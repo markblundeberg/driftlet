@@ -9,6 +9,9 @@ major version.
   total from `sol` with its ratio set by V, and a species made from another surface species follows
   it (both were refused: no reaction made them from the solution alone). Its result gives each
   species' `coverage` along the curve, beside `bare`. Checked against steady solves at each V.
+- `npm run lawsweep` compares every device it builds: its capacitors started 1.4 V from their
+  links' equilibrium (the sweep's devices, not the library), so 90 transients failed and couldn't
+  be compared. All 735 agree now, none differing. It keeps why a transient failed in `--out`.
 
 ## 1.7.0 (2026-11-02)
 

@@ -38,7 +38,7 @@ const choice = (idx) => {
 // capacitor (the left one, or the membrane) sits in a thin layer of polar water (ε = 80) at the
 // left, on a grid fine enough for its double layer.
 const G = 1e-5, L = 10e-6, Lp = 1e-6;
-function deviceA(c) {
+function deviceA(c, charged) {
   const polar = c.left === 'capK' || c.second === 'membrane';
   const lib = aqueous(['Na+', 'K+', 'Cl-', 'OH-', 'Fe2+', 'Fe3+'], { epsr: 0 });
   lib.species.push({ name: 'S0', z: 0 }, { name: 'P0', z: 0 });
@@ -56,11 +56,15 @@ function deviceA(c) {
   const film = { 'Na+': 100, 'K+': 10, 'OH-': 1, 'Fe2+': 1, 'Fe3+': 1, S0: 1, P0: 1 };
   film['Cl-'] = film['Na+'] + film['K+'] + 2 * film['Fe2+'] + 3 * film['Fe3+'] - film['OH-'];
   // (K⁺ passed at the film's own level, 10 mM: what a start near its steady state wants)
-  // (its species voltage there: μ/F plus φ, which the bath's Cl⁻ at V = 0 sets, (μ°_Cl + RT ln a)/F)
+  // (its species voltage there: μ/F plus φ, which the bath's Cl⁻ at V = 0 sets, (μ°_Cl + RT ln a)/F;
+  // and a capacitance's zero charge measured from that φ too, so that it starts nearly
+  // uncharged where it ends: from 0, each started 1.4 V from its links' equilibrium, with up to
+  // 0.7 C/m² to take up in the first instant, and the 90 transients that failed were all such)
   const RT = 8.314462618 * 298.15, sp = lib.materials.water.species;
+  const phiBath = (sp['Cl-'].mu0 + RT * Math.log(101 / 1000)) / 96485.33212, zc = charged ? 0 : phiBath;
   const VK = (sp['K+'].mu0 + RT * Math.log(film['K+'] / 1000) + sp['Cl-'].mu0 + RT * Math.log(101 / 1000)) / 96485.33212;
   const K = { 'K+': { type: 'conductance', G: 1e6, offset: VK } };
-  const left = { closed: {}, capK: { I: 0, zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K }, heldK: { V: 0, phi: 'bulk', species: K } }[c.left];
+  const left = { closed: {}, capK: { I: 0, zeroCharge: -0.05 - zc, phi: { type: 'capacitive', C: 0.5 }, species: K }, heldK: { V: 0, phi: 'bulk', species: K } }[c.left];
   const all = (law) => Object.fromEntries(['Na+', 'K+', 'Cl-', 'OH-', 'Fe2+'].map((s) => [s, law]));
   const stack = [left];
   if (polar) stack.push(layer('polar', Lp, { name: 'skin', c0: film, grid: { hmin: 2e-10, hmax: 5e-8, ratio: 1.25 } }), { phi: 'neutral', species: { ...all('equilibrium'), 'Fe3+': 'equilibrium', S0: 'blocked', P0: 'blocked' } });
@@ -85,17 +89,17 @@ function deviceA(c) {
     // on the bath's φ scale; far from it, all the iron goes one way and the steady state is extreme)
     const E = (sp['Fe3+'].mu0 - sp['Fe2+'].mu0 + sp['Cl-'].mu0 + RT * Math.log(101 / 1000)) / 96485.33212;
     const drive = { V: { V: E + 0.02 }, I0: { I: 0 }, R: { V: E + 0.02, R: 10 } }[c.drive];
-    ports.push({ name: 'p1', region: 'film', from: 0, to: 0.4 * w, ...drive, terminal: 'e-', area: 1e4, ...(c.cap ? { capacitance: { C: 0.2, zeroCharge: 0 } } : {}), ...(surface ? { surface } : {}), reactions });
+    ports.push({ name: 'p1', region: 'film', from: 0, to: 0.4 * w, ...drive, terminal: 'e-', area: 1e4, ...(c.cap ? { capacitance: { C: 0.2, zeroCharge: charged ? 0 : E - phiBath } } : {}), ...(surface ? { surface } : {}), reactions });
   } else if (c.drive !== 'V' || c.cap) return null; // (drives and capacitances of no port: the same device again)
   if (c.second === 'redoxI0') ports.push({ name: 'p2', region: 'film', from: 0.6 * w, to: w, I: 0, terminal: 'e-', area: 1e4, reactions: [{ equation: 'Fe2+ = Fe3+ + e-', k0: 1e-4, alpha: 0.5 }] });
-  if (c.second === 'membrane') ports.push({ name: 'mem', region: 'skin', I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 }, species: { 'K+': { type: 'conductance', G: 1e12, offset: VK } } });
+  if (c.second === 'membrane') ports.push({ name: 'mem', region: 'skin', I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 - zc }, species: { 'K+': { type: 'conductance', G: 1e12, offset: VK } } });
   return build({ T: 298.15, library: [lib], stack, ports, grid: { hmin: 1e-6, hmax: 1e-6 } });
 }
 
 // The second family's: a film of strictly neutral water (ε = 0) cut by a face at its middle,
 // with an immobile S⁺ (D = 0) where it has one, after a thin polar skin where the left end is a
 // capacitor.
-function device2(c) {
+function device2(c, charged) {
   const ions = ['Na+', 'K+', 'Cl-'], lib = aqueous(ions, { epsr: 0 });
   const RT = 8.314462618 * 298.15, w = lib.materials.water.species;
   const cK = c.K === 'trace' ? 1e-6 : 1, cL = 10, cKL = 1;
@@ -119,9 +123,11 @@ function device2(c) {
   };
   // (K⁺ passed at the film's own level, as in the first family: far from it, the contact pumps K⁺
   // to an extreme state that the steady solve can't reach)
+  // (and the capacitor's zero charge from the bath's φ, as there)
+  const phiBath = (w['Cl-'].mu0 + RT * Math.log(100 / 1000)) / 96485.33212, zc = charged ? 0 : phiBath;
   const VK = (w['K+'].mu0 + RT * Math.log(cK / 1000) + w['Cl-'].mu0 + RT * Math.log(100 / 1000)) / 96485.33212;
   const K = { 'K+': { type: 'conductance', G: 1e6, offset: VK } };
-  const cap = { zeroCharge: -0.05, phi: { type: 'capacitive', C: 0.5 }, species: K };
+  const cap = { zeroCharge: -0.05 - zc, phi: { type: 'capacitive', C: 0.5 }, species: K };
   const left = { closed: {}, capK: { I: 0, ...cap }, RcapK: { V: 0, R: 1e-3, ...cap } }[c.left];
   const pass = only({ 'Na+': 'equilibrium', 'K+': 'equilibrium', 'Cl-': 'equilibrium', 'L-': 'blocked', KL: 'blocked', 'S+': 'blocked' });
   const stack = [left];
@@ -141,6 +147,8 @@ function device2(c) {
   }
   return build({ T: 298.15, library: [lib], stack, ports, ...(c.complex ? { bulkReactions: [{ equation: 'K+ + L- = KL', kf: { water: 1e3, polar: 1e3 } }] } : {}), grid: { hmin: 1e-6, hmax: 1e-6 } });
 }
-const device = (c) => (c.family === 0 ? deviceA(c) : device2(c));
+// (charged: each capacitance's zero charge from 0 instead, as the sweep had it to 1.7.0: a
+// capacitor 1.4 V from its links' equilibrium at the start, which some tests want)
+const device = (c, { charged = false } = {}) => (c.family === 0 ? deviceA(c, charged) : device2(c, charged));
 
 export { families, total, choice, device };

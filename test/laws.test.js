@@ -333,7 +333,7 @@ test('a node-by-node law in the window of a floating electrode: its row says not
 test('the law sweep\'s device 19: a capacitive contact at no current beside a floating electrode, its charge held in the contact\'s own circuit row', () => {
   // (A mutation run: holding the charge in the first circuit row whose law left none to hold, the
   // tests all passed, and 85 of the sweep's devices came out wrong, this one at 4.4 mV for −0.09.)
-  const def = device(choice(19)), s = new Device(def).solve(), late = new Device(def).advance(1e6, { tol: 1e-9 });
+  const def = device(choice(19), { charged: true }), s = new Device(def).solve(), late = new Device(def).advance(1e6, { tol: 1e-9 });
   assert.ok(s.converged && late.converged);
   for (const name of ['left', 'p1']) near(s.terminals[name].V, late.terminals[name].V, 1e-4, `V ${name}`);
 });

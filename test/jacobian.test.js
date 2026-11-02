@@ -435,7 +435,7 @@ for (const [name, def] of Object.entries(devices)) {
 // current by its amount's change.
 for (const idx of [426, 156, 66]) {
   test(`the Newton system's derivatives are its residual's: law-sweep device ${idx}, steady, and at short and long steps`, () => {
-    const def = () => device(choice(idx));
+    const def = () => device(choice(idx), { charged: true });
     const steady = checkInside(def(), (d) => d.solve(), steadyAt);
     assert.deepEqual(steady.slice(0, 5), [], 'steady');
     const short = checkInside(def(), (d) => d.advance(1e-3, { tol: 1e-6 }), (s, dt) => Number.isFinite(dt));
