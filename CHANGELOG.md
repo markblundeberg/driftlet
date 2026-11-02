@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.7.0 (2026-11-02)
 
 From Gemini 4 Argon's review of 1.6.1, each with its device as a test:
 - A steady solve with a face's surface species in a mechanism kept its laws right: the law finder
