@@ -183,8 +183,9 @@ for live demos.
      its own: the plain solves gave no update along its level at all, so nothing stalled). Such
      regions are now deflated: each one's balance summed over it, in which its own fluxes cancel
      exactly, is bordered like a conserved amount, once the plain solves converge with terminal
-     currents that don't add up. Not covered yet: a population held that weakly within a region,
-     or one fed by a reaction. Where that leaves the currents not
+     currents that don't add up (and since 2 Nov, one fed only by its faces' reactions, and a
+     floating metal: F5 below). Not covered yet: a population held that weakly within a region,
+     or one fed by a bulk reaction or a port. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
      telling apart from it. Measured (2 Nov): an islands round tried and dropped isn't that sign.
      It happened 19 times in the law sweep, every one on a device that agrees with its transient,
