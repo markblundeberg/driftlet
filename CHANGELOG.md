@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.8.0 (2026-11-02)
 
 - A steady solve at a floating electrode whose fast couple must run at a rate below its own
   round-off finds the steady state: round 11's F5 (a Pt with couples at k0 1 and 1e-20, fed
