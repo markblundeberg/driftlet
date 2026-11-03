@@ -186,7 +186,9 @@ for live demos.
      currents that don't add up. Not covered yet: a population held that weakly within a region,
      or one fed by a reaction. Where that leaves the currents not
      adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
-     telling apart from it.
+     telling apart from it. Measured (2 Nov): an islands round tried and dropped isn't that sign.
+     It happened 19 times in the law sweep, every one on a device that agrees with its transient,
+     none in the suite, and in the stress run only on semi 220 (below).
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20
