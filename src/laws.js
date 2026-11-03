@@ -63,7 +63,7 @@
 //                  (none of its rows another law's), its balance summed over its nodes (Σ weight·u
 //                  over the `flux` rows, its faces' fluxes and −A ν over its reactions' rates,
 //                  plus the `outside` rows' balances) in place of balance row `row`; and a metal
-//                  reached only by contacts driven by a current (`currents`, each passing I_set/(zF))
+//                  reached only by floating contacts (`currents`, each passing I/(zF), its drive's)
 //                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
 //                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal
@@ -658,10 +658,10 @@ export function findLaws(s) {
   const islands = [];
   const used = new Set([...constraints.map((cs) => cs.row).filter((o) => o >= 0), ...affinities.map((af) => af.row)]);
   const localRows = new Set(localConstraints.flatMap((lc) => lc.nodes.map((g) => blockOfNode[g] * M + lc.row)));
-  // A metal fed only through its faces' reactions and contacts driven by a current: summed over
-  // its nodes, the segments' fluxes cancel and what's left is Σ −A ν r over the reactions' rates
-  // (unknowns of the face blocks) = Σ I_set/(zF) over its contacts (each reads its current from
-  // its end box, the circuit holding it at I_set). Its rows are each exact already, but the
+  // A metal fed only through its faces' reactions and floating contacts (driven by a current, or
+  // behind a resistance): summed over its nodes, the segments' fluxes cancel and what's left is
+  // Σ −A ν r over the reactions' rates (unknowns of the face blocks) = Σ I/(zF) over its contacts
+  // (each reads its current from its end box, the circuit holding it at I_set or (V_src − V)/R). Its rows are each exact already, but the
   // correction one needs can sit below what a solve through the metal's conduction resolves:
   // round 11's F5, a floating Pt whose fast couple (k0 = 1) had to run at 1.6e-21 mol/(m²·s)
   // against a slow one, was left 3e-18 off its electron balance, and settled 80 mV off. Pinned
@@ -672,7 +672,7 @@ export function findLaws(s) {
     const ends = [];
     if (st.leftOpen) ends.push(['left', 0]);
     if (st.rightOpen) ends.push(['right', 1]);
-    const driven = ends.every(([side, k]) => floating.includes(k) && terms[k].drive.kind === 'I' && !(terms[k].drive.R > 0) && model.contacts[side].species[i].type === 'equilibrium');
+    const driven = ends.every(([side, k]) => floating.includes(k) && model.contacts[side].species[i].type === 'equilibrium');
     if (!driven) continue;
     if (model.ports.some((port) => port.region >= s0 && port.region <= s1)) continue;
     const rates = [];

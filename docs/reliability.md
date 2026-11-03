@@ -153,7 +153,7 @@ $`J \cdot v`$.
 A steady solve replaces one redundant equation per conserved combination with the combination's
 amount (see [numerics](numerics.md#the-steady-system)). A combination left out, or weighed wrongly,
 gives a state that converges and is steady but holds the wrong amounts, which only a transient
-from the same start shows. `npm run lawsweep` builds 870 small devices in two families. The first, 810, combine the features at the
+from the same start shows. `npm run lawsweep` builds 978 small devices in three families. The first, 810, combine the features at the
 edges of that bookkeeping: a floating, resistive or held electrode, with or without a
 capacitance, with adsorbates or an immobile species that adsorbs; a second floating electrode
 or a membrane capacitor; a capacitive or ion-passing contact at no current; a face that blocks
@@ -163,7 +163,10 @@ must agree on every species' amount, every surface's sites and every floating te
 voltage. The second, 60, put an immobile S⁺ beside what carries it (a face that passes it, a port
 at I = 0 that links it, an electrode it adsorbs on) with a capacitive contact passing K⁺ (at
 I = 0 or behind a resistance) and K⁺'s complex with a closed L⁻, each where a cold review of
-`src/laws.js` found a law kept wrongly.
+`src/laws.js` found a law kept wrongly. The third, 108, are round 11's F5 and its relatives: a
+floating metal whose fast couple runs at what a slow couple and a slow transfer into the pool
+beside it allow, far below the fast couple's round-off (at I = 0, a set current or behind a
+resistance, in either listing), run as transients to 1e16 s, since they settle over ~1e15.
 
 Every reaction starts at its equilibrium. On 1.2.1, 675 devices are built (135 combinations
 repeat others); 579 agree, and 83 transients fail to converge. In the other 13 the transient
@@ -190,7 +193,9 @@ too much: their capacitors started uncharged 1.4 V from where their links hold t
 transient can't follow (it says so, and `solve()` first works). With each capacitor's zero
 charge measured from the bath's φ, so that it starts near its steady state (and a transient that
 can't keep tol 1e-9, from a floating double layer's rattle at short steps, run at 1e-7), all 735
-agree, none fail, none differ (2 Nov 2026).
+agree, none fail, none differ (2 Nov 2026). Of the third family, 20 settled off (up to 80 mV)
+before a metal's and a reaction-fed pool's balances were summed to their rates; with them, all 843
+agree.
 
 ## Consistent: the derivatives
 

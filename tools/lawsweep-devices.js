@@ -21,7 +21,17 @@ const AXES2 = {
   complex: [false, true], // K⁺ + L⁻ = KL, L⁻ and KL closed
   K: ['trace', 'some'], // K⁺ in the film: 1e-6 or 1 mol/m³ (which law comes first, and how a step reads a current)
 };
-const families = [AXES, AXES2].map((axes) => ({ axes, keys: Object.keys(axes), size: Object.values(axes).reduce((n, a) => n * a.length, 1) }));
+// A third, after round 11's F5: a floating metal whose fast couple runs at what a slow one and
+// a slow transfer into the pool beside it allow, rates far below the fast couple's round-off.
+// These settle over ~1e15 s, so their transients run to 1e16 s (and 1e18 to see they've settled).
+const AXES3 = {
+  fast: [1, 1e-3], // the fast couple's k0, B⁻ = C²⁺ + 3 e⁻
+  slow: ['none', 1e-20, 1e-12], // a slow one's, B⁻ = e⁻ + S(s)
+  face: ['equilibrium', 1e-17, 1e-10], // B⁻ across the face into the pool: held level, or blocked but for a transfer at this k0
+  drive: ['I0', 'I', 'R'], // the metal: at I = 0, driven at 2e-16 A/m², or behind 1e12 Ω·m² from 0.2 V
+  reversed: [false, true], // the species listed backwards
+};
+const families = [AXES, AXES2, AXES3].map((axes, k) => ({ axes, keys: Object.keys(axes), size: Object.values(axes).reduce((n, a) => n * a.length, 1), horizon: k === 2 ? 1e16 : 1e6 }));
 const total = families.reduce((n, f) => n + f.size, 0);
 const choice = (idx) => {
   let fam = 0;
@@ -149,6 +159,25 @@ function device2(c, charged) {
 }
 // (charged: each capacitance's zero charge from 0 instead, as the sweep had it to 1.7.0: a
 // capacitor 1.4 V from its links' equilibrium at the start, which some tests want)
-const device = (c, { charged = false } = {}) => (c.family === 0 ? deviceA(c, charged) : device2(c, charged));
+const device = (c, { charged = false } = {}) => (c.family === 0 ? deviceA(c, charged) : c.family === 1 ? device2(c, charged) : device3(c));
+
+function device3(c) {
+  const water = { epsr: 0, species: { 'B-': { D: 1e-9, mu0: 0 }, 'C2+': { D: 1e-9, mu0: 0 } } };
+  const c0 = { 'B-': 474.7252163975241, 'C2+': 237.36260819876205 };
+  const species = [{ name: 'e-', z: -1 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'C2+', z: 2, cRef: 1000 }];
+  const reactions = [{ equation: 'B- = C2+ + 3 e-', k0: c.fast, fixed: { 'S(s)': 0 } }];
+  if (c.slow !== 'none') reactions.push({ equation: 'B- = e- + S(s)', k0: c.slow, fixed: { 'S(s)': -4108 } });
+  const face = c.face === 'equilibrium' ? {} : { species: { 'B-': 'blocked' }, reactions: [{ equation: 'B-(left) = B-(right)', k0: c.face }] };
+  const drive = { I0: { I: 0 }, I: { I: 2e-16 }, R: { V: 0.2, R: 1e12 } }[c.drive];
+  return {
+    T: 298.15,
+    species: c.reversed ? species.reverse() : species,
+    materials: { water, water2: water, M: { conductor: { species: 'e-', conductivity: 1523338.8768275294 } } },
+    regions: [{ name: 'M1', material: 'M', length: 1e-6 }, { name: 'water', material: 'water', length: 1e-6, c0 }, { name: 'water2', material: 'water2', length: 1e-6, c0 }],
+    interfaces: [{ reactions }, face],
+    contacts: { left: { ...drive, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.3, bath: { c: { 'B-': 21.62350860406672, 'C2+': 10.81175430203336 }, reference: 'B-' } } },
+    grid: { hmin: 1e-7, hmax: 3e-7 },
+  };
+}
 
 export { families, total, choice, device };

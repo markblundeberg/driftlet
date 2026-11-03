@@ -69,8 +69,9 @@
 //                    − reference = 0, its ∂ in the node's block (a coverage's,
 //                    θ_q (δ_qx − θ_x) over its surface's species).
 //   island           pin: Σ weight·u over the `flux` rows (faces' fluxes, and face reactions'
-//                    rates) + Σ the `outside` rows' residuals − Σ I_set/(zF) over `currents`
-//                    (a metal's contacts driven by a current) = 0, its ∂ the same sums of their
+//                    rates) + Σ the `outside` rows' residuals − Σ I/(zF) over `currents` (a
+//                    metal's floating contacts: I_set, or (V_src − V)/R, its ∂/∂V in `termSlope` for
+//                    solveBordered) = 0, its ∂ the same sums of their
 //                    Jacobian rows (rowInto), gathered by column. Islands that share a rate are
 //                    then recombined (separateRates) so that each rate is in one pin only, the
 //                    fastest (k0) first: the same constraints, each still in its own row.
@@ -184,8 +185,17 @@ function applyIslands(s) {
       t += res[R[o]];
       rowInto(s, o, add);
     }
-    // (a metal's: less what its current-driven contacts pass, I_set/(zF) each)
-    for (const k of isl.currents ?? []) t -= sourceAt(s.terms[k].drive.src, s.sourceTime, s.sourceBefore) / (isl.z * FARADAY);
+    // (a metal's: less what its floating contacts pass, I/(zF) each: I_set, or (V_src − V)/R,
+    // whose ∂/∂V the bordered system takes as the pin's own, termSlope)
+    isl.termSlope = null;
+    for (const k of isl.currents ?? []) {
+      const d = s.terms[k].drive, src = sourceAt(d.src, s.sourceTime, s.sourceBefore);
+      if (d.kind === 'I') t -= src / (isl.z * FARADAY);
+      else {
+        t -= (src - s.termV[k]) / (d.R * isl.z * FARADAY);
+        (isl.termSlope ??= new Map()).set(k, 1 / (d.R * isl.z * FARADAY));
+      }
+    }
     let len = 0;
     for (const col of cols) {
       if (col < s.sys.size && acc[col] !== 0) {
@@ -240,6 +250,7 @@ function separateRates(s, isls) {
       for (const [c, w] of rows[p]) rows[q].set(c, (rows[q].get(c) ?? 0) - f * w);
       rows[q].delete(col); // (exactly)
       isls[q].res -= f * isls[p].res;
+      for (const [k, v] of isls[p].termSlope ?? []) (isls[q].termSlope ??= new Map()).set(k, (isls[q].termSlope.get(k) ?? 0) - f * v);
       changed = true;
     }
   }
@@ -525,6 +536,7 @@ export function solveBordered(s, rhs, delta, deltaV, pins) {
   const A = Array.from({ length: S }, () => new Float64Array(S + 1));
   for (let a = 0; a < S; a++) {
     for (let b = 0; b < S; b++) A[a][b] = (b < P ? 1 : -1) * dot(a, cols[b]);
+    if (a < P && pins[a].termSlope) for (let b = P; b < S; b++) A[a][b] += pins[a].termSlope.get(fl[b - P]) ?? 0; // (a metal island behind a resistance)
     if (a >= P) {
       A[a][a] += s.termDI[fl[a - P]];
       for (let b = P; b < S; b++) if (b !== a) A[a][b] += s.termDX[fl[a - P]][fl[b - P]];

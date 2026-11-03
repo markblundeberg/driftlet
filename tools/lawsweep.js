@@ -69,9 +69,10 @@ for (const idx of only) {
     // dwarfs, rattles at short steps by ~1e-12/dt thermal units, φ̂ and every η together with no
     // concentration moving, and at 1e-9 the step-doubling estimate chases that down to the
     // shortest step. The amounts it reaches are good to ~1e-7, inside the 1e-5 compared.)
-    let tol = 1e-9, e = new Device(def), late = e.advance(1e6, { tol });
+    const T = families[c.family].horizon;
+    let tol = 1e-9, e = new Device(def), late = e.advance(T, { tol });
     if (!late.converged || !late.done) {
-      const e2 = new Device(def), late2 = e2.advance(1e6, { tol: 1e-7 });
+      const e2 = new Device(def), late2 = e2.advance(T, { tol: 1e-7 });
       if (late2.converged && late2.done) [tol, e, late] = [1e-7, e2, late2];
     }
     const ms = measures(d, s), ml = measures(e, late);
@@ -94,8 +95,8 @@ for (const idx of only) {
       continue;
     }
     // Settled? 100× as long again moves it no further.
-    const last = e.advance(1e8, { tol }), later = measures(e, last), drift = differ(ml, later);
-    if (show !== undefined) console.log('transient from 1e6 to 1e8 s:', last.converged, drift);
+    const last = e.advance(100 * T, { tol }), later = measures(e, last), drift = differ(ml, later);
+    if (show !== undefined) console.log(`transient from ${T} to ${100 * T} s:`, last.converged, drift);
     if (!last.converged || !last.done || drift.rel > 1e-6) {
       tally.unsettled++;
       continue;

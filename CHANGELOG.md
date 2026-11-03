@@ -11,14 +11,15 @@ major version.
   mol/(m²·s) off by a solve through the metal's conduction. A metal reached only by contacts
   driven by a current, and a pool fed only by its faces' reactions, now sum their balances to
   their rates like islands, the fast couple kept in one sum; F5 now agrees with a long transient
-  to 1e-9 V.
+  to 1e-9 V. A metal behind a resistance too. The law sweep has a third family of such devices
+  (108): 20 settled off before, none now.
 - `polarization(..., { surface: 'equilibrium' })` takes any surface: a tethered couple keeps its
   total from `sol` with its ratio set by V, and a species made from another surface species follows
   it (both were refused: no reaction made them from the solution alone). Its result gives each
   species' `coverage` along the curve, beside `bare`. Checked against steady solves at each V.
 - `npm run lawsweep` compares every device it builds: its capacitors started 1.4 V from their
   links' equilibrium (the sweep's devices, not the library), so 90 transients failed and couldn't
-  be compared. All 735 agree now, none differing. It keeps why a transient failed in `--out`.
+  be compared. All agree now, none differing. It keeps why a transient failed in `--out`.
 
 ## 1.7.0 (2026-11-02)
 

@@ -203,7 +203,13 @@ for live demos.
      0.195442 V to 1e-9 in either listing, and driven at ±2e-16 or 1e-14 A/m² too. Not covered:
      a time step so long that storage falls below the same round-off (here dt ~1e20 s, from
      1e18) lands on the old state, islands being steady-only; and such a pool or metal fed by a
-     bulk reaction, an electrode port, or a terminal behind a resistance.
+     bulk reaction or an electrode port. The law sweep's third family (108 such devices: fast and
+     slow couples, the pool's transfer, I = 0, a set current or a resistance, either listing) had
+     20 settling off before; all agree now (a terminal behind a resistance taking the sum's ∂/∂V).
+     Seen on the way, a different case: the stress run's semi 220 (three GaAs layers, no
+     recombination, its electrons degenerate past Boltzmann, warned) gives three currents by path at
+     −0.2 V: −1.73e-13 A/m² warm, −1.64e-13 by a transient from there, −3.17e-11 cold (whose
+     transient can't start); its islands round diverges and the plain solution stands, unwarned.
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

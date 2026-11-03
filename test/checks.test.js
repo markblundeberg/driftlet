@@ -195,6 +195,10 @@ test('an electrode at open circuit with a fast couple and a slow one, fed throug
   assert.ok(late.converged && Math.abs(sol.terminals.left.V - late.terminals.left.V) < 1e-8, `${sol.terminals.left.V} V solved, ${late.terminals.left.V} V settled`);
   const [r0, r1] = sol.interfaces[0].rates;
   assert.ok(Math.abs(3 * r0 + r1) < 1e-30, `the Pt's electrons: 3 r0 + r1 = ${3 * r0 + r1}`); // (at I = 0)
+  // Behind a resistance (1e12 Ω·m² from 0.2 V), its current (V_src − V)/R, the sum's ∂/∂V too.
+  const behind = () => ({ ...def(), contacts: { ...def().contacts, left: { V: 0.2, R: 1e12, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } } });
+  const rs = new Device(behind()).solve(), rl = new Device(behind()).advance(1e16);
+  assert.ok(rs.converged && rl.converged && Math.abs(rs.terminals.left.V - rl.terminals.left.V) < 1e-8, `behind R: ${rs.terminals.left.V} V solved, ${rl.terminals.left.V} V settled`);
 });
 
 test('check(): a diode passing a small current has ledgers, not equilibrium (balanced flows count however small)', () => {

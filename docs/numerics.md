@@ -895,8 +895,9 @@ the terms that cancel:
   it, so no mode needs guessing; refined solves carry the pinned rows too.
 
   A piece fed only by its faces' reactions sums the same way, each rate an unknown of its face's
-  block entering as $`-A\nu r`$; and so does a metal reached only by contacts driven by a current,
-  its sum the rates' against what the contacts pass, $`\sum I_\text{set}/(zF)`$. A floating Pt
+  block entering as $`-A\nu r`$; and so does a metal reached only by floating contacts, its sum
+  the rates' against what the contacts pass, $`\sum I/(zF)`$ ($`I_\text{set}`$, or
+  $`(V_\text{src} - V)/R`$, whose $`\partial/\partial V`$ the bordered system takes with the pin). A floating Pt
   with a fast couple ($`k_0`$ = 1) that a slow one (1e-20) and a slow transfer into the B⁻ pool
   beside it (1e-17) hold at 1.6e-21 mol/(m²·s) needs its electron balance to 1e-20 of the fast
   couple's gross rate: the Pt's own rows, each exact, were left 3e-18 off, a correction below what
