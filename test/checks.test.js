@@ -167,11 +167,16 @@ test('check() solves the device again with its species listed in reverse, and fa
 
 // The fuzzer's F5 itself: 4 mV apart by the listing (0.274922 and 0.271016 V) while the contact
 // and flat-stretch rows added a level's low part to its high part before subtracting the target,
-// which rounds the low part away. They subtract first now, and it's the same either way.
-test('an electrode at open circuit with a fast couple and a slow one, fed through a slow face: the same steady state in either listing', () => {
+// which rounds the low part away. They subtract first now, and it's the same either way. And it's
+// the steady state: both listings had agreed on 0.274922 V, 80 mV from where a transient settles
+// (0.195442 V by 1e15 s, from that solution or from cold), the floating Pt left 3e-18 mol/(m²·s)
+// off its electron balance, below what a solve through its conduction resolves, beside a fast
+// couple that must run at 1.6e-21. The metal's balance and the B⁻ pool's, summed over their nodes
+// (the rates alone left), pinned like islands', with the fast couple kept in one sum only, find it.
+test('an electrode at open circuit with a fast couple and a slow one, fed through a slow face: the steady state a transient settles at, in either listing', () => {
   const water = { epsr: 0, species: { 'B-': { D: 1e-9, mu0: 0 }, 'C2+': { D: 1e-9, mu0: 0 } } };
   const c0 = { 'B-': 474.7252163975241, 'C2+': 237.36260819876205 };
-  const d = new Device({
+  const def = () => ({
     T: 298.15,
     species: [{ name: 'e-', z: -1 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'C2+', z: 2, cRef: 1000 }],
     materials: { water, water2: water, M: { conductor: { species: 'e-', conductivity: 1523338.8768275294 } } },
@@ -183,8 +188,13 @@ test('an electrode at open circuit with a fast couple and a slow one, fed throug
     contacts: { left: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.3, bath: { c: { 'B-': 21.62350860406672, 'C2+': 10.81175430203336 }, reference: 'B-' } } },
     grid: { hmin: 1e-7, hmax: 3e-7 },
   });
-  const report = check(d, d.solve()), item = report.items.find((it) => it.name === 'order');
+  const d = new Device(def()), sol = d.solve();
+  const report = check(d, sol), item = report.items.find((it) => it.name === 'order');
   assert.ok(item?.ok === true, item?.summary);
+  const late = new Device(def()).advance(1e18);
+  assert.ok(late.converged && Math.abs(sol.terminals.left.V - late.terminals.left.V) < 1e-8, `${sol.terminals.left.V} V solved, ${late.terminals.left.V} V settled`);
+  const [r0, r1] = sol.interfaces[0].rates;
+  assert.ok(Math.abs(3 * r0 + r1) < 1e-30, `the Pt's electrons: 3 r0 + r1 = ${3 * r0 + r1}`); // (at I = 0)
 });
 
 test('check(): a diode passing a small current has ledgers, not equilibrium (balanced flows count however small)', () => {

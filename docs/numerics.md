@@ -894,6 +894,20 @@ the terms that cancel:
   is the island's uniform shift, with whatever $`\hat\phi`$ and the other species do along with
   it, so no mode needs guessing; refined solves carry the pinned rows too.
 
+  A piece fed only by its faces' reactions sums the same way, each rate an unknown of its face's
+  block entering as $`-A\nu r`$; and so does a metal reached only by contacts driven by a current,
+  its sum the rates' against what the contacts pass, $`\sum I_\text{set}/(zF)`$. A floating Pt
+  with a fast couple ($`k_0`$ = 1) that a slow one (1e-20) and a slow transfer into the B⁻ pool
+  beside it (1e-17) hold at 1.6e-21 mol/(m²·s) needs its electron balance to 1e-20 of the fast
+  couple's gross rate: the Pt's own rows, each exact, were left 3e-18 off, a correction below what
+  a solve through its conduction resolves, and the B⁻ pool's level, fed through fluxes each a
+  difference of terms ~5e-3, was lost the same way. Converged silently, 80 mV from where a
+  transient settles (round 11's fuzzer, its F5). Summed and pinned, though, the two sums are each
+  dominated by their response to the fast couple, $`k_0 c`$ per thermal unit, and nearly
+  dependent ("singular"); the same constraints in another basis, each rate in one sum only, the
+  fastest first, drop the fast couple from all but one (e⁻ + 3 B⁻, which it doesn't change), and
+  the solve lands on the transient's 0.195442 V to 1e-9, in either listing.
+
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so
   the summed rows go in only once the plain solves converge. An island at the wrong level then

@@ -5,6 +5,13 @@ major version.
 
 ## Unreleased
 
+- A steady solve at a floating electrode whose fast couple must run at a rate below its own
+  round-off finds the steady state: round 11's F5 (a Pt with couples at k0 1 and 1e-20, fed
+  through a face at 1e-17) converged silently 80 mV off, its electron balance left 3e-18
+  mol/(m²·s) off by a solve through the metal's conduction. A metal reached only by contacts
+  driven by a current, and a pool fed only by its faces' reactions, now sum their balances to
+  their rates like islands, the fast couple kept in one sum; F5 now agrees with a long transient
+  to 1e-9 V.
 - `polarization(..., { surface: 'equilibrium' })` takes any surface: a tethered couple keeps its
   total from `sol` with its ratio set by V, and a species made from another surface species follows
   it (both were refused: no reaction made them from the solution alone). Its result gives each

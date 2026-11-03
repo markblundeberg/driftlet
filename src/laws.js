@@ -58,9 +58,14 @@
 //                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
 //                  one region: nothing carries them between nodes) that no terminal feeds, and
 //                  surfaces. One law can have several entries, a row per set of nodes.
-//   islands[]      { stretch, row, flux, weight, outside }: a piece of a stretch between faces fed
-//                  by nothing else, its balance summed over its nodes (Σ weight·u over the `flux`
-//                  rows, plus the `outside` rows' balances) in place of balance row `row`.
+//   islands[]      { stretch, row, flux, weight, outside, speed, currents?, z? }: a piece of a
+//                  stretch between faces fed by nothing else, or only by its faces' reactions
+//                  (none of its rows another law's), its balance summed over its nodes (Σ weight·u
+//                  over the `flux` rows, its faces' fluxes and −A ν over its reactions' rates,
+//                  plus the `outside` rows' balances) in place of balance row `row`; and a metal
+//                  reached only by contacts driven by a current (`currents`, each passing I_set/(zF))
+//                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
+//                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal
 //                  behind a resistance that alone feeds it.
 //   contactLaw[t]  whether some constraint keeps contact t's charge.
@@ -78,7 +83,8 @@
 //   2. No equation is replaced twice and none is lost: the rows the constraints and affinities
 //      take are chosen by elimination over v (one map from w, rowsOf), each law's v reduced by
 //      those already chosen, so their v are independent. The local constraints' rows are chosen
-//      the same way node by node, over the slots there. Islands take rows no other law has.
+//      the same way node by node, over the slots there. Islands take rows no other law has (one
+//      summing rates, none of the rows it sums).
 //   3. A balance row taken is a moving stretch's (a floating metal's own amount takes its
 //      carriers'). An affinity's is never a metal's carriers', nor a stretch's that a terminal
 //      feeds, nor a circuit row.
@@ -642,7 +648,8 @@ export function findLaws(s) {
     if (free.length > 0) localConstraints.push({ parts: [{ i, w: 1 }], row: 1 + i, nodes: free, reference: new Float64Array(free.length) });
   }
   // Islands: the pieces of a stretch between its faces. One that nothing else feeds (no
-  // contact, port or reaction) holds its level only through its faces' fluxes, which can be
+  // contact, port or bulk reaction; its faces' reactions, below) holds its level only through
+  // its faces' fluxes (and rates), which can be
   // ~1e-24 of its own conduction (a tiny conductance at the face, or a neighbour that barely
   // conducts): eliminated, the level is lost to round-off, and Newton settles at a wrong one with
   // nothing to show for it. In steady solves the piece's balance summed over its nodes, where
@@ -650,25 +657,88 @@ export function findLaws(s) {
   // (see lawRows.js, applyIslands), once the plain solves converge (see Solver.newton).
   const islands = [];
   const used = new Set([...constraints.map((cs) => cs.row).filter((o) => o >= 0), ...affinities.map((af) => af.row)]);
+  const localRows = new Set(localConstraints.flatMap((lc) => lc.nodes.map((g) => blockOfNode[g] * M + lc.row)));
+  // A metal fed only through its faces' reactions and contacts driven by a current: summed over
+  // its nodes, the segments' fluxes cancel and what's left is Σ −A ν r over the reactions' rates
+  // (unknowns of the face blocks) = Σ I_set/(zF) over its contacts (each reads its current from
+  // its end box, the circuit holding it at I_set). Its rows are each exact already, but the
+  // correction one needs can sit below what a solve through the metal's conduction resolves:
+  // round 11's F5, a floating Pt whose fast couple (k0 = 1) had to run at 1.6e-21 mol/(m²·s)
+  // against a slow one, was left 3e-18 off its electron balance, and settled 80 mV off. Pinned
+  // like an island's, the response is the metal's uniform shift, which the fast couple feels.
+  for (const st of stretches) {
+    if (!conductor(st)) continue;
+    const i = st.species, [s0, s1] = st.regions;
+    const ends = [];
+    if (st.leftOpen) ends.push(['left', 0]);
+    if (st.rightOpen) ends.push(['right', 1]);
+    const driven = ends.every(([side, k]) => floating.includes(k) && terms[k].drive.kind === 'I' && !(terms[k].drive.R > 0) && model.contacts[side].species[i].type === 'equilibrium');
+    if (!driven) continue;
+    if (model.ports.some((port) => port.region >= s0 && port.region <= s1)) continue;
+    const rates = [];
+    for (let f = Math.max(0, s0 - 1); f <= Math.min(model.interfaces.length - 1, s1); f++) {
+      model.interfaces[f].reactions.forEach((rx, k) => {
+        let nu = 0;
+        for (const p of rx.part) if (p.i === i && f + p.side >= s0 && f + p.side <= s1) nu += p.nu;
+        if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
+      });
+    }
+    if (rates.length === 0) continue;
+    const g0 = grid.regionStart[s0], g1 = grid.regionEnd[s1], rows = [];
+    for (let g = g0; g <= g1; g++) rows.push(blockOfNode[g] * M + 1 + i);
+    if (rows.some((o) => used.has(o) || localRows.has(o))) continue;
+    // (its row: a node no contact holds)
+    const g = !st.leftOpen ? g0 : !st.rightOpen ? g1 : g0 + 1;
+    if (g >= g1 && st.leftOpen && st.rightOpen) continue;
+    const row = blockOfNode[g] * M + 1 + i;
+    used.add(row);
+    islands.push({
+      stretch: st,
+      row,
+      flux: rates.map(([o]) => o),
+      weight: rates.map(([, w]) => w),
+      speed: rates.map(([o, , k]) => [o, k]),
+      outside: [],
+      currents: ends.map(([, k]) => k),
+      z: z[i],
+      idx: new Int32Array(rates.length),
+      w: new Float64Array(rates.length),
+      len: 0,
+      res: 0,
+    });
+  }
   for (const st of stretches) {
     const i = st.species, [s0, s1] = st.regions;
     if (!st.mobile || conductor(st)) continue;
     for (let q0 = s0, q1 = s0; q1 <= s1; q1++) {
       const p0 = q0;
       q0 = q1 + 1;
-      if (p0 === s0 && q1 === s1) continue; // (uncut)
       if ((p0 === s0 && st.leftOpen) || (q1 === s1 && st.rightOpen)) continue;
       const inside = (q) => q >= p0 && q <= q1;
       if (model.ports.some((port) => inside(port.region) && (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))))) continue;
-      let reactive = false;
+      let bulk = false;
       for (let q = p0; q <= q1; q++) {
-        for (const rx of model.reactions) if (rx.kf[regions[q].material] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
+        for (const rx of model.reactions) if (rx.kf[regions[q].material] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) bulk = true;
       }
+      // A face reaction's rate is an unknown of its face's block, and its participant's edge node
+      // takes −A ν r: those enter the sum exactly too. (F5's closed pool of B⁻ beside the metal
+      // above, fed and drained at ~1e-21 mol/(m²·s) against diffusion whose every flux is a
+      // difference of terms ~5e-3: its level was lost to round-off as the metal's was.)
+      const rates = [];
       for (let f = Math.max(0, p0 - 1); f <= Math.min(model.interfaces.length - 1, q1); f++) {
-        for (const rx of model.interfaces[f].reactions) if (rx.part.some((p) => p.i === i && inside(f + p.side))) reactive = true;
+        model.interfaces[f].reactions.forEach((rx, k) => {
+          let nu = 0;
+          for (const p of rx.part) if (p.i === i && inside(f + p.side)) nu += p.nu;
+          if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
+        });
       }
+      if (bulk) continue;
+      if (rates.length === 0 && p0 === s0 && q1 === s1) continue; // (uncut, with nothing but its amount: a constraint's)
       const row = blockOfNode[grid.regionStart[p0]] * M + 1 + i;
-      if (reactive || used.has(row)) continue;
+      // (a reactive piece: none of its rows another law's, since the sum stands for all of them)
+      const rows = [];
+      for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) rows.push(blockOfNode[g] * M + 1 + i);
+      if (used.has(row) || (rates.length > 0 && rows.some((o) => used.has(o) || localRows.has(o)))) continue;
       used.add(row);
       // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right. Across
       // a face that holds μ̄ level, u is set only by the edge balances, and eliminated, it can
@@ -687,11 +757,12 @@ export function findLaws(s) {
       islands.push({
         stretch: st,
         row,
-        flux: faces.map(([f]) => blockOfFace[f] * M + 1 + i),
-        weight: faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]),
+        flux: [...faces.map(([f]) => blockOfFace[f] * M + 1 + i), ...rates.map(([o]) => o)],
+        weight: [...faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]), ...rates.map(([, w]) => w)],
+        speed: rates.map(([o, , k]) => [o, k]),
         outside,
-        idx: new Int32Array(faces.length + 3 * M * outside.length),
-        w: new Float64Array(faces.length + 3 * M * outside.length),
+        idx: new Int32Array(faces.length + rates.length + 3 * M * outside.length),
+        w: new Float64Array(faces.length + rates.length + 3 * M * outside.length),
         len: 0,
         res: 0,
       });

@@ -197,9 +197,13 @@ for live demos.
      and its ledger closes to 4e-16, where they were 4 mV apart. But it isn't the steady state:
      advance() from the solution (0.274922 V) moves at once (the fast couple's rate falls from
      1e-18 to 1.6e-21 mol/(m²·s) within 1 ms), drifts ~20 mV a decade from 1e9 s, and settles by
-     1e15 s at 0.195442 V, unmoved to 1e18 s; a cold advance() ends there too. The solve's
-     answer is set by round-off (any change to its start moves it by ~1e-4 V), and nothing
-     warns of it yet.
+     1e15 s at 0.195442 V, unmoved to 1e18 s; a cold advance() ends there too. Fixed (2 Nov):
+     the Pt's electron balance and the B⁻ pool's, summed over their nodes to their rates alone,
+     are pinned like islands', each rate in one sum only (numerics.md), and the solve lands on
+     0.195442 V to 1e-9 in either listing, and driven at ±2e-16 or 1e-14 A/m² too. Not covered:
+     a time step so long that storage falls below the same round-off (here dt ~1e20 s, from
+     1e18) lands on the old state, islands being steady-only; and such a pool or metal fed by a
+     bulk reaction, an electrode port, or a terminal behind a resistance.
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

@@ -68,8 +68,12 @@
 //   local constraint at each node of `nodes`, Σ w c_i (+ Σ w Γ a θ_q where port k's surface is)
 //                    − reference = 0, its ∂ in the node's block (a coverage's,
 //                    θ_q (δ_qx − θ_x) over its surface's species).
-//   island           pin: Σ weight·u over the `flux` rows + Σ the `outside` rows' residuals = 0,
-//                    its ∂ the same sums of their Jacobian rows (rowInto), gathered by column.
+//   island           pin: Σ weight·u over the `flux` rows (faces' fluxes, and face reactions'
+//                    rates) + Σ the `outside` rows' residuals − Σ I_set/(zF) over `currents`
+//                    (a metal's contacts driven by a current) = 0, its ∂ the same sums of their
+//                    Jacobian rows (rowInto), gathered by column. Islands that share a rate are
+//                    then recombined (separateRates) so that each rate is in one pin only, the
+//                    fastest (k0) first: the same constraints, each still in its own row.
 //   circuit law      (time steps) terminal k's circuit row, where it reads by the change: F (S −
 //                    S*)/(λ dt) − (its drive's current: the source, or (V_src − V)/R), with S*
 //                    the amount at the step's start (lawStart), chosen once per step per law
@@ -180,6 +184,8 @@ function applyIslands(s) {
       t += res[R[o]];
       rowInto(s, o, add);
     }
+    // (a metal's: less what its current-driven contacts pass, I_set/(zF) each)
+    for (const k of isl.currents ?? []) t -= sourceAt(s.terms[k].drive.src, s.sourceTime, s.sourceBefore) / (isl.z * FARADAY);
     let len = 0;
     for (const col of cols) {
       if (col < s.sys.size && acc[col] !== 0) {
@@ -196,7 +202,57 @@ function applyIslands(s) {
     res[R[isl.row]] = 0;
     out.push(isl);
   }
+  separateRates(s, out);
   return out;
+}
+
+// Islands that share a face reaction's rate (a fast couple between a floating metal and the pool
+// beside it, round 11's F5) are, in the bordered system, each dominated by its response to that
+// rate, k0 c per thermal unit, and nearly dependent: the slow rates that tell them apart were lost
+// in the comparison ("the bordered system is singular"). The same constraints in another basis:
+// each rate kept in one sum only, the fastest first (Gauss–Jordan over the rate columns, rate by
+// rate), so a fast couple drops out exactly from all but one (e⁻ + 3 B⁻: what it doesn't change).
+// Each sum still replaces its own row; they span what the replaced rows did.
+function separateRates(s, isls) {
+  if (isls.length < 2) return;
+  const R = s.rix, rows = isls.map((isl) => {
+    const m = new Map();
+    for (let j = 0; j < isl.len; j++) m.set(isl.idx[j], (m.get(isl.idx[j]) ?? 0) + isl.w[j]);
+    return m;
+  });
+  const speed = new Map();
+  for (const isl of isls) for (const [o, k] of isl.speed ?? []) if (s.loc[o] >= 0) speed.set(R[o], Math.max(speed.get(R[o]) ?? 0, k));
+  const order = [...speed.keys()].sort((a, b) => speed.get(b) - speed.get(a));
+  const pivoted = new Set();
+  let changed = false;
+  for (const col of order) {
+    const holders = isls.map((_, q) => q).filter((q) => (rows[q].get(col) ?? 0) !== 0);
+    const p = holders.find((q) => !pivoted.has(q));
+    if (p === undefined || holders.length < 2) {
+      if (p !== undefined) pivoted.add(p);
+      continue;
+    }
+    pivoted.add(p);
+    const wp = rows[p].get(col);
+    for (const q of holders) {
+      if (q === p) continue;
+      const f = rows[q].get(col) / wp;
+      for (const [c, w] of rows[p]) rows[q].set(c, (rows[q].get(c) ?? 0) - f * w);
+      rows[q].delete(col); // (exactly)
+      isls[q].res -= f * isls[p].res;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  isls.forEach((isl, q) => {
+    const entries = [...rows[q]].filter(([, w]) => w !== 0);
+    if (entries.length > isl.idx.length) [isl.idx, isl.w] = [new Int32Array(entries.length), new Float64Array(entries.length)];
+    entries.forEach(([c, w], j) => {
+      isl.idx[j] = c;
+      isl.w[j] = w;
+    });
+    isl.len = entries.length;
+  });
 }
 
 // Row o's Jacobian entries, as add(compact column, value): the assembled ones, and the dilute
