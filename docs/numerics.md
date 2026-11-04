@@ -559,7 +559,14 @@ which cost four assemblies per product.
   it. Floating bases solved at the wrong level missed by 3% to 15% of their current. Round-off
   reads differently: one terminal at up to 6e-14 A/m² (a reading of ions whose gross fluxes are
   far larger), every other at ~0, so the sum is the whole of the largest. That was 148 of the law
-  sweep's devices at rest, all agreeing with their transients, and none is warned.
+  sweep's devices at rest, all agreeing with their transients, and none is warned. The blind spot
+  has that shape too: a wrong state whose miss lands on one terminal while the true currents are
+  ~0 (one contact blocking, say) isn't warned. Scaling round-off from each terminal instead
+  doesn't separate them (measured 4 Nov). With $`\epsilon`$ times the charged species' fluxes at
+  each contact, the sweep's readings at rest reach 1e16 of it and the four-layer stack's misses
+  (ROADMAP) 3e14. With $`\epsilon`$ times what the end segment could carry, $`\sum_i |z_i| F D_i c_i / h`$,
+  the sweep's reach 3e-6 of it and those misses only 2e-12 to 8e-7: the fluxes are computed in
+  compensated forms, far more precise than that bound.
 - The last iteration usually only confirms convergence (updates go like 1e-2, 1e-9, 1e-15). A
   time step stops one iteration early where the convergence rate says the next update would be
   under the tolerance: with $`\theta`$ the last update over the one before (under 0.1, the update
