@@ -555,18 +555,23 @@ which cost four assemblies per product.
   converge, since digits can be lost harmlessly too (a saturated species whose $`\eta`$ nothing
   depends on). A converged steady solution whose terminal currents don't add up is reported,
   though: charge is kept, so a steady state's currents must sum to zero. It's reported where the
-  sum is over 1e-15 A/m² of the contacts' area and 1e-6 of the largest current, but under half of
-  it. Floating bases solved at the wrong level missed by 3% to 15% of their current. Round-off
-  reads differently: one terminal at up to 6e-14 A/m² (a reading of ions whose gross fluxes are
-  far larger), every other at ~0, so the sum is the whole of the largest. That was 148 of the law
-  sweep's devices at rest, all agreeing with their transients, and none is warned. The blind spot
-  has that shape too: a wrong state whose miss lands on one terminal while the true currents are
-  ~0 (one contact blocking, say) isn't warned. Scaling round-off from each terminal instead
-  doesn't separate them (measured 4 Nov). With $`\epsilon`$ times the charged species' fluxes at
-  each contact, the sweep's readings at rest reach 1e16 of it and the four-layer stack's misses
+  sum is over 1e-15 A/m² of the contacts' area, 1e-6 of the largest current, and the gap between
+  what each floating terminal passes and what its fluxes carry. A floating terminal's current is
+  its circuit's, exactly (a current source, or a resistance's $`(V_{\mathrm{src}} - V)/R`$); the rest
+  of the device carries it only to Newton's tolerance or to its fluxes' round-off, so the sum is
+  known only to that gap. Floating bases solved at the wrong level missed by 3% to 15% of their
+  current with no terminal floating; 148 of the law sweep's devices at rest, all agreeing with
+  their transients, missed by 1e-15 to 1e-13 A/m², each under a hundredth of its gap. (Until
+  4 Nov the gap was guessed from the shape instead: those devices read their whole sum on one
+  terminal, every other at ~0, so a sum over half the largest current was passed as round-off.
+  Wrong states read that way too: behind a contact passing holes only, a floating base solved
+  from cold at the wrong level put −1e-20 A/m² on one terminal and 4e-15 on the other, seven
+  solves over two stacks, each confirmed by a transient to 1e18 s. Scales from the fluxes at each
+  terminal don't separate them either. With $`\epsilon`$ times the charged species' fluxes at each
+  contact, the sweep's readings at rest reach 1e16 of it and the four-layer stack's misses
   (ROADMAP) 3e14. With $`\epsilon`$ times what the end segment could carry, $`\sum_i |z_i| F D_i c_i / h`$,
   the sweep's reach 3e-6 of it and those misses only 2e-12 to 8e-7: the fluxes are computed in
-  compensated forms, far more precise than that bound.
+  compensated forms, far more precise than that bound.)
 - The last iteration usually only confirms convergence (updates go like 1e-2, 1e-9, 1e-15). A
   time step stops one iteration early where the convergence rate says the next update would be
   under the tolerance: with $`\theta`$ the last update over the one before (under 0.1, the update

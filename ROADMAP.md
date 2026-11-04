@@ -228,7 +228,11 @@ for live demos.
      (n/p⁺/n/n⁺) the island is still summed at that face, and cold solves at −0.4, −0.2, −0.1
      and 0.1 V miss Kirchhoff (−0.2 V: 3.29e-11 and −3.83e-11 A/m², where warm gives 1.96e-13);
      they're warned now. Reaching through interior pieces would mean one island taking over
-     another's rows. Nor a neighbour that recombines, or has a port.
+     another's rows. Nor a neighbour that recombines, or has a port. Nor a contact passing holes
+     only (n/p⁺/n behind ohmic(0, ['h+'])): from cold at 0.3 V it put −1e-20 A/m² on that terminal
+     and 4.25e-15 on the other (true: ±3.59e-15), and with the fourth layer cold solves at −0.2,
+     −0.1, 0.1 and 0.3 V and warm ones at 0.1 and 0.3 V miss too, each confirmed by a transient to
+     1e18 s. All warned (since 4 Nov: the warning had passed a sum on one terminal as round-off).
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

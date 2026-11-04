@@ -120,6 +120,26 @@ test('a steady solve whose terminal currents don\'t add up says so', () => {
   assert.ok(eq.converged && !eq.warnings.some((w) => w.includes("don't add up")));
 });
 
+test('…and says so where one terminal reads ~0, which is not round-off unless a terminal floats', () => {
+  // The same base behind a contact that passes holes only: the true current is the holes' leak,
+  // ±3.594e-15 A/m² at 0.3 V (a transient from the cold state, to 1e15 s, and a solve from
+  // there, agree). From cold it converged at −1.05e-20 and 4.25e-15: the whole sum on one
+  // terminal, which the warning once took for round-off (read only under half the largest
+  // current). Round-off of that shape comes from a floating terminal, whose circuit's current
+  // and fluxes differ (the liquid-junction tests); with none, it's warned. At 0.1 V it solves.
+  const mat = 'GaAs', d = (V) => {
+    const dev = new Device(build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0, ['h+']), layer(mat, 400e-9, { donors: units.perCm3(1e17) }), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), layer(mat, 600e-9, { donors: units.perCm3(3e17) }), ohmic(0)] }));
+    dev.set({ contacts: { right: { V } } });
+    return dev.solve();
+  };
+  const off = d(0.3), { left, right } = off.terminals, sum = Math.abs(left.current + right.current);
+  assert.ok(sum > 0.5 * Math.max(Math.abs(left.current), Math.abs(right.current)), `this device now solves (${left.current}, ${right.current}): find another for this test`);
+  assert.ok(off.warnings.some((w) => w.includes("don't add up")), JSON.stringify(off.warnings));
+  const ok = d(0.1);
+  assert.deepEqual(ok.warnings, []);
+  assert.ok(Math.abs(ok.terminals.left.current + 3.519e-15) < 1e-3 * 3.519e-15 && Math.abs(ok.terminals.left.current + ok.terminals.right.current) < 1e-6 * 3.519e-15, JSON.stringify(ok.terminals));
+});
+
 test('newton: a floating gate at rest in inversion stays put (a mode the plain solves never see, found by a probe)', () => {
   // Its electrons reach the back contact only by minority diffusion, so the factorised solves
   // lose the inversion layer's level; Newton converged quadratically on the rest at every step,

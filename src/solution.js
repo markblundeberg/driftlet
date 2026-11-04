@@ -157,13 +157,17 @@ export function makeSolution(solver, result = {}) {
     }
     return out;
   });
-  // A floating terminal passes what its circuit says, exactly (see passedCurrent).
+  // A floating terminal passes what its circuit says, exactly (see passedCurrent). What its
+  // fluxes say instead is off by Newton's tolerance or their own round-off: the gap is kept, as
+  // the scale its currents' sum is known to (below).
+  let heldGap = 0;
   if (sol.converged) {
     for (const k of solver.floating) {
       const I = solver.passedCurrent(k);
-      if (k === 0) sol.contacts.left.current = I;
-      else if (k === 1) sol.contacts.right.current = -I;
-      else sol.ports[k - 2].current = I;
+      const read = k === 0 ? sol.contacts.left : k === 1 ? sol.contacts.right : sol.ports[k - 2];
+      const passed = k === 1 ? -I : I; // (the right contact's current is toward +x, out of the device)
+      heldGap += Math.abs(read.current - passed);
+      read.current = passed;
     }
   }
   sol.current = sol.contacts.right.current;
@@ -276,17 +280,19 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
-  // A steady state's terminal currents add up to zero (charge is kept): where two that carry it
-  // disagree by more than round-off, part of the device may sit at the wrong level. (The
-  // floating bases solved wrong missed by 3% to 15% of their current, 2e-15 to 3e-10 A/m².
-  // Round-off reads otherwise: one terminal's current at 1e-15 to 6e-14 A/m², of ions whose
-  // gross fluxes are far larger, every other's ~0, so the sum is the whole of the largest: 148
-  // of the law sweep's devices at rest, all agreeing with their transients, and a liquid
-  // junction's at open circuit. Under half of it, none.)
+  // A steady state's terminal currents add up to zero (charge is kept): where they don't, by more
+  // than they're known to, part of the device may sit at the wrong level. (The floating bases
+  // solved wrong missed by 3% to 15% of their current, 2e-15 to 3e-10 A/m², with no terminal
+  // floating.) A floating terminal's current is its circuit's, exactly, but the rest of the
+  // device carries it only to the gap between that and its fluxes: 148 of the law sweep's
+  // devices at rest, all agreeing with their transients, and a liquid junction's at open
+  // circuit, missed by 1e-15 to 1e-13 A/m², their gaps 100 or more times that. So the sum is
+  // read against the gaps. (Scales from the fluxes at each terminal don't separate them; see
+  // numerics.md.)
   if (result.converged !== false && sol.steady) {
     const I = Object.entries(sol.terminals), sum = I.reduce((a, [, t]) => a + t.current, 0), mx = I.reduce((m, [, t]) => Math.max(m, Math.abs(t.current)), 0);
     const area = Math.max(model.grid.area[0], model.grid.area[model.grid.area.length - 1]), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
-    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) < 0.5 * mx) {
+    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap) {
       sol.warnings.push(
         `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart): ` +
           'part of the device is held only weakly (a floating region whose carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level. ' +
