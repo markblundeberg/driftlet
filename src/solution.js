@@ -276,6 +276,24 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
+  // A steady state's terminal currents add up to zero (charge is kept): where two that carry it
+  // disagree by more than round-off, part of the device may sit at the wrong level. (The
+  // floating bases solved wrong missed by 3% to 15% of their current, 2e-15 to 3e-10 A/m².
+  // Round-off reads otherwise: one terminal's current at 1e-15 to 6e-14 A/m², of ions whose
+  // gross fluxes are far larger, every other's ~0, so the sum is the whole of the largest: 148
+  // of the law sweep's devices at rest, all agreeing with their transients, and a liquid
+  // junction's at open circuit. Under half of it, none.)
+  if (result.converged !== false && sol.steady) {
+    const I = Object.entries(sol.terminals), sum = I.reduce((a, [, t]) => a + t.current, 0), mx = I.reduce((m, [, t]) => Math.max(m, Math.abs(t.current)), 0);
+    const area = Math.max(model.grid.area[0], model.grid.area[model.grid.area.length - 1]), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
+    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) < 0.5 * mx) {
+      sol.warnings.push(
+        `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart): ` +
+          'part of the device is held only weakly (a floating region whose carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level. ' +
+          'Check it against advance() to a long time from this state, or a solve swept here in steps.',
+      );
+    }
+  }
   const cond = solver.conditioning, un = solver.unreached, ch = solver.charging, lost = result.unsolved ? solver.drifted : null; // (a failed steady solve's: see Device.solve)
   // A failed solve with a reaction that a steady state needs at equilibrium, left far from it (see
   // stuckReactions): one too slow for the steady solve's time steps, which reach ~1e12 of the

@@ -171,7 +171,10 @@ function checkInside(def, go, when, { nth = 2, islands = false } = {}) {
     if (islands) this.islandsOn = true;
     try {
       bad = differences(this, dt);
-      if (islands) bad.islands = this.pinnedIslands.length;
+      if (islands) {
+        bad.islands = this.pinnedIslands.length;
+        bad.cuts = this.pinnedIslands.reduce((m, isl) => m + (isl.deep ?? []).filter((g) => g >= 0).length, 0); // (summed out past a face)
+      }
       bad.byChange = [...this.lawForm.values()].filter(Boolean).length;
     } finally {
       this.islandsOn = on;
@@ -463,4 +466,16 @@ test("the Newton system's derivatives are its residual's: a charged pore's islan
     assert.ok(steady?.islands > 0, 'no island rows in');
     assert.deepEqual(steady.slice(0, 5), [], `steady at ${JSON.stringify(V)}`);
   }
+});
+
+// An island summed out past its faces to its neighbours' bottlenecks (applyIslands' cuts): a
+// floating p⁺ GaAs base between n layers, its holes leaking out through them.
+test("the Newton system's derivatives are its residual's: a floating base summed out to its bottlenecks", () => {
+  const def = build({
+    library: [semiconductor('GaAs')],
+    stack: [ohmic(0), layer('GaAs', 400e-9, { donors: units.perCm3(1e17) }), layer('GaAs', 200e-9, { acceptors: units.perCm3(5e18) }), layer('GaAs', 900e-9, { donors: units.perCm3(3e17) }), ohmic(-0.3)],
+  });
+  const steady = checkInside(def, (d) => d.solve(), (s, dt) => steadyAt(s, dt) && s.islandsOn, { islands: true, nth: 20 });
+  assert.ok(steady?.islands > 0 && steady.cuts === 2, `islands ${steady?.islands}, cut deep ${steady?.cuts}`);
+  assert.deepEqual(steady.slice(0, 5), []);
 });

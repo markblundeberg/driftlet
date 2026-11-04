@@ -54,8 +54,9 @@
 //      Kirchhoff by more than 1e-9 of the largest and 1e-18 A/m², the islands' summed rows go in
 //      (s.islandsOn) and Newton carries on, refining from the second iteration after; at most
 //      two rounds, one where the call began with the rows in (`islands`). If it then fails, or
-//      goes 12 iterations (or to maxIter) without converging, the solution it converged to before
-//      that round is restored, with s.islandsOn as it was, and returned as converged.
+//      goes 12 iterations (or to maxIter) without converging, not counting those that walk (an
+//      update between 1e-3 and 1.01 times the last), the solution it converged to before that
+//      round is restored, with s.islandsOn as it was, and returned as converged.
 //
 // Returns { converged, iterations, history (each iteration's step), residual (the largest scaled
 // residual before the last update; converged only), roundoff (true where 6 accepted at
@@ -417,7 +418,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   };
   const islandsOff = (it, result) => {
     if (dt !== Infinity || !s.steady || s.islands.length === 0 || rounds >= 2 || !(kirchhoff(s) > 1e-9)) return false;
-    kept = { it, result, islandsOn: s.islandsOn, u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV) };
+    kept = { it, result, walked: 0, islandsOn: s.islandsOn, u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV) };
     s.islandsOn = true;
     rounds++;
     return true;
@@ -450,7 +451,10 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     return r;
   };
   for (let it = 1; it <= maxIter; it++) {
-    if (kept && it - kept.it > 12) return fail({ converged: false, iterations: it - 1, history });
+    // (An island's leak is exponential in its level: from above, Newton walks it down by about
+    // a thermal unit an update, steadily, before it converges. Those updates are progress, so
+    // they don't count: a floating base 4 V_T above its level took 10 and was cut off at 12.)
+    if (kept && it - kept.it - kept.walked > 12) return fail({ converged: false, iterations: it - 1, history });
     if (noRefine && failures < 3 && it - failedAt >= 2 && lost()) {
       noRefine = false;
       refine = true;
@@ -519,6 +523,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     candidate = lastRefined ? pending || s.lostCandidate : 0;
     pending = 0;
     history.push(step);
+    if (kept && it > kept.it + 1 && step > 1e-3 && step <= 1.01 * history[history.length - 2]) kept.walked++;
     ownHistory.push(own);
     if (!Number.isFinite(step)) return fail({ converged: false, iterations: it, history, error: 'non-finite update' });
     // Give up early on clear divergence; the caller will take a smaller step instead.

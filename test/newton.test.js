@@ -59,6 +59,67 @@ test('newton: a steady solve whose residual isn\'t solved says so, and records h
   assert.ok(s.conditioning?.digits > 0, JSON.stringify(s.conditioning));
 });
 
+test('newton: a floating base, held only by its holes\' leaks through the n layers, settles where they balance', () => {
+  // An n/p⁺/n GaAs stack without recombination: the base's holes reach the contacts only through
+  // the n layers, where they're n_i²/N ~ 1e-5 per cm³ and conduct ~1e-24 of what they do at the
+  // junctions, so the base's level is held by leaks of ~3e-14 A/m². Summed at the junction faces,
+  // the island's balance read them as differences of terms that much larger, its round was
+  // dropped, and a cold solve at −0.2 V converged with the base at the emitter's level, its two
+  // currents 3.3e-11 and −3.9e-11 A/m² (the stress run's semi 220, with a Schottky emitter).
+  // Summed out to each n layer's bottleneck, it finds the level; a base 4 V_T above it walks down
+  // a thermal unit an update (at −0.3 V, cut off at 12 iterations, 1.6e-9 against −1.9e-9).
+  // The expected level, from the solution's φ alone: in each n layer the hole flux is uniform,
+  // J = D (e^{v_a} − e^{v_b}) / ∫ e^{(Fφ + μ°)/RT}/N_V dx (Slotboom; a sum of positive terms),
+  // and the base sits where what comes in from one side leaves by the other.
+  const mat = 'GaAs', def = build({
+    T: 300,
+    library: [semiconductor(mat)],
+    stack: [ohmic(0), layer(mat, 400e-9, { donors: units.perCm3(1e17) }), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), layer(mat, 900e-9, { donors: units.perCm3(3e17) }), ohmic(0)],
+  });
+  const hp = def.materials[mat].species['h+'], RT = 8.314462618 * 300, VT = RT / 96485.33212;
+  const balanced = (s) => {
+    const { x, phi, region } = s, w = (g) => (phi[g] + hp.mu0 / 96485.33212) / VT;
+    const seg = (g) => {
+      const a = w(g), b = w(g + 1), dx = x[g + 1] - x[g];
+      return (Math.abs(a - b) < 1e-12 ? dx * Math.exp(a) : (dx * (Math.exp(b) - Math.exp(a))) / (b - a)) / hp.cRef;
+    };
+    const mid = (region.indexOf(1) + region.lastIndexOf(1)) >> 1, Vh = s.V['h+'];
+    let IL = 0, IR = 0;
+    for (let g = 0; g < x.length - 1; g++) if (x[g + 1] > x[g]) g < mid ? (IL += seg(g)) : (IR += seg(g));
+    const vl = Vh[0] / VT, vr = Vh.at(-1) / VT;
+    return { base: Vh[mid], level: VT * Math.log((Math.exp(vl) / IL + Math.exp(vr) / IR) / (1 / IL + 1 / IR)) };
+  };
+  for (const V of [-0.5, -0.3, -0.2, 0.3]) {
+    const d = new Device(def);
+    d.set({ contacts: { right: { V } } });
+    const s = d.solve(), { left, right } = s.terminals, { base, level } = balanced(s);
+    assert.ok(s.converged && s.warnings.length === 0, `${V} V`);
+    assert.ok(Math.abs(left.current + right.current) < 1e-6 * Math.abs(left.current), `${V} V: ${left.current} and ${right.current} A/m²`);
+    assert.ok(Math.abs(base - level) < 1e-6, `${V} V: the base at ${base} V, its leaks balanced at ${level} V`);
+  }
+});
+
+test('a steady solve whose terminal currents don\'t add up says so', () => {
+  // A fourth layer beyond the floating base (n/p⁺/n/n⁺): its right neighbour isn't the stretch's
+  // end piece, so the base's island is summed at that face, and from cold at −0.2 V the currents
+  // were 3.29e-11 and −3.83e-11 A/m² (warm, 1.96e-13 both), converged with nothing said. Not
+  // warned: equilibrium's round-off (the law sweep's dropped rounds, 1e-18 to 2e-17 A/m² apart),
+  // and the three-layer base, which now solves.
+  const mat = 'GaAs', n = (N, L) => layer(mat, L, { donors: units.perCm3(N) });
+  const stack = (more) => [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, 600e-9), ...more, ohmic(0)];
+  const at = (more, V) => {
+    const d = new Device(build({ T: 300, library: [semiconductor(mat)], stack: stack(more) }));
+    d.set({ contacts: { right: { V } } });
+    return d.solve();
+  };
+  const off = at([n(4e17, 300e-9)], -0.2), { left, right } = off.terminals;
+  assert.ok(Math.abs(left.current + right.current) > 1e-3 * Math.abs(left.current), 'this device now solves: find another for this test');
+  assert.ok(off.warnings.some((w) => w.includes("don't add up")), JSON.stringify(off.warnings));
+  assert.deepEqual(at([], -0.3).warnings, []);
+  const eq = new Device(device(choice(288), { charged: true })).solve();
+  assert.ok(eq.converged && !eq.warnings.some((w) => w.includes("don't add up")));
+});
+
 test('newton: a floating gate at rest in inversion stays put (a mode the plain solves never see, found by a probe)', () => {
   // Its electrons reach the back contact only by minority diffusion, so the factorised solves
   // lose the inversion layer's level; Newton converged quadratically on the rest at every step,

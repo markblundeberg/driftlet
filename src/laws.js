@@ -66,6 +66,11 @@
 //                  reached only by floating contacts (`currents`, each passing I/(zF), its drive's)
 //                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
 //                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
+//                  `cuts`: for each face of a piece that opens onto the stretch's end piece, where
+//                  nothing adds to the species' balance (ideal, no flow, mixing, port or bulk
+//                  reaction of it there; an equilibrium link and no reaction of it at the face),
+//                  { face (its index in `flux`), sign (−1 left, +1 right), region, outside (that
+//                  face's outside row), reach (the region's segments, outward from the face) }.
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal
 //                  behind a resistance that alone feeds it.
 //   contactLaw[t]  whether some constraint keeps contact t's charge.
@@ -754,6 +759,25 @@ export function findLaws(s) {
         if (model.ports.some((port) => port.nodes.includes(g))) continue;
         outside.push(blockOfNode[g] * M + 1 + i);
       }
+      // Past a face, the stretch's end piece (its contact holds it) can hold the piece far more
+      // weakly than the face does: a floating p⁺ base's holes leak out through the n layers on
+      // each side, ~1e-19 of what they conduct at the junctions, and the sum taken at the face
+      // reads that leak as a difference of terms 1e24 times larger (the stress run's semi 220).
+      // So for each face into an end piece that adds nothing of its own (dilute, no flow,
+      // mixing, port, reaction of the species, nor one at the face), its segments in order
+      // outward (`reach`): where one conducts far less than the first, applyIslands sums the
+      // balance out to it instead (see lawRows.js).
+      const cuts = [];
+      faces.forEach(([f, sg, g], j) => {
+        const r = sg < 0 ? p0 - 1 : q1 + 1, reg = regions[r], mat = model.materials[reg.material], i0 = grid.regionStart[r], i1 = grid.regionEnd[r];
+        if (!(sg < 0 ? r === s0 && st.leftOpen : r === s1 && st.rightOpen)) return;
+        if (model.interfaces[f].links[i].type !== 'equilibrium' || model.interfaces[f].reactions.some((rx) => rx.part.some((p) => p.i === i))) return;
+        if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r)) return;
+        if (rxsIn[nodeMaterial[i0]].some((rx) => rx.sp.includes(i))) return;
+        const reach = new Int32Array(i1 - i0);
+        for (let k = 0; k < reach.length; k++) reach[k] = sg < 0 ? i1 - 1 - k : i0 + k;
+        cuts.push({ face: j, sign: sg, region: r, outside: blockOfNode[g] * M + 1 + i, reach });
+      });
       islands.push({
         stretch: st,
         row,
@@ -761,8 +785,9 @@ export function findLaws(s) {
         weight: [...faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]), ...rates.map(([, w]) => w)],
         speed: rates.map(([o, , k]) => [o, k]),
         outside,
-        idx: new Int32Array(faces.length + rates.length + 3 * M * outside.length),
-        w: new Float64Array(faces.length + rates.length + 3 * M * outside.length),
+        cuts,
+        idx: new Int32Array(faces.length + rates.length + 3 * M * outside.length + 4 * cuts.length),
+        w: new Float64Array(faces.length + rates.length + 3 * M * outside.length + 4 * cuts.length),
         len: 0,
         res: 0,
       });

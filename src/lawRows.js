@@ -72,7 +72,11 @@
 //                    rates) + Σ the `outside` rows' residuals − Σ I/(zF) over `currents` (a
 //                    metal's floating contacts: I_set, or (V_src − V)/R, its ∂/∂V in `termSlope` for
 //                    solveBordered) = 0, its ∂ the same sums of their
-//                    Jacobian rows (rowInto), gathered by column. Islands that share a rate are
+//                    Jacobian rows (rowInto), gathered by column. A cut whose reach has a segment
+//                    conducting the species under 1e-6 of its first (∂N/∂η_L at the state) takes
+//                    the least: that face's flux and outside row are left out, and sign·N of the
+//                    segment (its Scharfetter–Gummel flux, exactly as _segmentsDilute's) is in,
+//                    with its ∂ by both ends' η and φ̂. Islands that share a rate are
 //                    then recombined (separateRates) so that each rate is in one pin only, the
 //                    fastest (k0) first: the same constraints, each still in its own row.
 //   circuit law      (time steps) terminal k's circuit row, where it reads by the change: F (S −
@@ -95,9 +99,10 @@
 //      terminal's circuit row, with δV, by the Woodbury identity written at it, exact given the
 //      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs.
 //   5. Nothing here writes the laws' structure (their parts, rows, nodes): only the workspace
-//      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference), the solver's
-//      maps lawRefs, chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s
-//      (islandRow, linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
+//      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference; an island's
+//      deep, the segment each cut took or −1, and termSlope), the solver's maps lawRefs,
+//      chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s (islandRow,
+//      linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
 // Tests: test/laws.test.js, test/steady.test.js and every test that solves a steady state;
 // tools/lawsweep.js (solve() against a settled advance()).
 
@@ -105,6 +110,7 @@ import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { carrierZ, chargeOnly } from './laws.js';
 import { SolverError } from './solver.js';
+import { sgFlux } from './bernoulli.js';
 
 // The laws' rows at the end of an assembly (see the contract above).
 export function applyLaws(s, dt) {
@@ -175,16 +181,24 @@ function applyIslands(s) {
       acc[col] += v;
     };
     let t = 0;
+    // (a face cut deeper, at its end piece's bottleneck: that face's flux and outside row left
+    // out, the segment's flux in)
+    const deep = (isl.cuts ?? []).map((cut) => bottleneck(s, isl, cut)), skipFace = new Set(), skipRow = new Set();
+    isl.deep = deep;
+    deep.forEach((sg, k) => sg >= 0 && (skipFace.add(isl.cuts[k].face), skipRow.add(isl.cuts[k].outside)));
     isl.flux.forEach((o, j) => {
-      if (s.loc[o] < 0) return;
+      if (s.loc[o] < 0 || skipFace.has(j)) return;
       t += isl.weight[j] * u[o];
       add(R[o], isl.weight[j]);
     });
     for (const o of isl.outside) {
-      if (s.loc[o] < 0) continue;
+      if (s.loc[o] < 0 || skipRow.has(o)) continue;
       t += res[R[o]];
       rowInto(s, o, add);
     }
+    deep.forEach((sg, k) => {
+      if (sg >= 0) t += segmentInto(s, isl.stretch.species, sg, isl.cuts[k].region, isl.cuts[k].sign, add);
+    });
     // (a metal's: less what its floating contacts pass, I/(zF) each: I_set, or (V_src − V)/R,
     // whose ∂/∂V the bordered system takes as the pin's own, termSlope)
     isl.termSlope = null;
@@ -214,6 +228,42 @@ function applyIslands(s) {
   }
   separateRates(s, out);
   return out;
+}
+
+// A dilute segment's flux of species i toward +x (Scharfetter–Gummel, as _segmentsDilute
+// assembles it: N, then ∂N/∂Δ, ∂/∂η_L, −∂/∂η_R, in s.sg), segment sg of region r.
+function segmentFlux(s, i, sg, r) {
+  const { M, u, uLo, c, n, z } = s, { grid, regions, materials } = s.model, mat = materials[regions[r].material];
+  const bL = sg + r, bR = bL + 1, h = grid.segLength[sg] / grid.segArea[sg];
+  const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]);
+  return sgFlux(mat.D[i] / h, z[i] * (u[bR * M] - u[bL * M]), deta, c[sg * n + i], c[(sg + 1) * n + i], s.sg);
+}
+
+// Where a cut's end piece conducts the species least (∂N/∂η_L, its conductance at the state), if
+// that's under 1e-6 of its first segment's: the segment to sum the island out to, or −1.
+function bottleneck(s, isl, cut) {
+  let first = NaN, min = Infinity, at = -1;
+  for (const sg of cut.reach) {
+    const G = segmentFlux(s, isl.stretch.species, sg, cut.region)[2];
+    if (first !== first) first = G;
+    if (G < min) [min, at] = [G, sg];
+  }
+  return min < 1e-6 * first ? at : -1;
+}
+
+// That segment's flux into an island's sum, sign·N (−1: the island to its right), its ∂ into
+// `add` by column; returns the term.
+function segmentInto(s, i, sg, r, sign, add) {
+  const { M, z, loc } = s, R = s.rix, bL = sg + r, bR = bL + 1;
+  const out = segmentFlux(s, i, sg, r), N = out[0], dNdd = out[1];
+  const put = (o, v) => loc[o] >= 0 && v !== 0 && add(R[o], sign * v);
+  put(bL * M + 1 + i, out[2]);
+  put(bR * M + 1 + i, -out[3]);
+  if (z[i] !== 0) {
+    put(bL * M, -z[i] * dNdd - z[i] * N);
+    put(bR * M, z[i] * dNdd);
+  }
+  return sign * N;
 }
 
 // Islands that share a face reaction's rate (a fast couple between a floating metal and the pool

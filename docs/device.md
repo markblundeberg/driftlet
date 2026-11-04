@@ -1169,6 +1169,9 @@ const now = dev.solution();                   // snapshot of the current state
   and floated from there. If 20 V either way brings no crossing (a current beyond the limiting
   one), the solve fails with a warning giving the range of currents the held voltages passed. A
   solve that fails reports the state it failed in, then leaves the device as it was before it.
+  A converged solve whose terminal currents don't add up (two that carry the current, apart by
+  more than round-off) is warned of. Part of the device is then held only weakly and may be at the
+  wrong level: check it against a long `advance()`, or a solve swept there in steps.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling

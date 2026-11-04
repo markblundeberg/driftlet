@@ -553,7 +553,13 @@ which cost four assemblies per product.
   lost. A part of the device held only weakly, such as a floating region coupled through tiny
   conductances, loses about $`\log_{10}(g/G)`$ and fails near 15. It's not reported for solves that
   converge, since digits can be lost harmlessly too (a saturated species whose $`\eta`$ nothing
-  depends on).
+  depends on). A converged steady solution whose terminal currents don't add up is reported,
+  though: charge is kept, so a steady state's currents must sum to zero. It's reported where the
+  sum is over 1e-15 A/m² of the contacts' area and 1e-6 of the largest current, but under half of
+  it. Floating bases solved at the wrong level missed by 3% to 15% of their current. Round-off
+  reads differently: one terminal at up to 6e-14 A/m² (a reading of ions whose gross fluxes are
+  far larger), every other at ~0, so the sum is the whole of the largest. That was 148 of the law
+  sweep's devices at rest, all agreeing with their transients, and none is warned.
 - The last iteration usually only confirms convergence (updates go like 1e-2, 1e-9, 1e-15). A
   time step stops one iteration early where the convergence rate says the next update would be
   under the tolerance: with $`\theta`$ the last update over the one before (under 0.1, the update
@@ -909,6 +915,19 @@ the terms that cancel:
   fastest first, drop the fast couple from all but one (e⁻ + 3 B⁻, which it doesn't change), and
   the solve lands on the transient's 0.195442 V to 1e-9, in either listing.
 
+  A piece ends at its faces, but it isn't always held most weakly there. The holes of a floating
+  p⁺ base between n layers, with no recombination, leak to the contacts through the n layers,
+  where they're $`n_i^2/N`$ ~ 1e-5 per cm³ and conduct ~1e-24 of what they do at the junctions.
+  Summed at the faces, the base's balance was a difference of terms 1e24 times larger than itself;
+  its round was dropped, and a cold solve left the base at the emitter's level, its terminal
+  currents 3.3e-11 and −3.9e-11 A/m² (the stress run's semi 220). So where a face opens onto the
+  stretch's end piece, the one its contact holds, and nothing there adds to the species' balance
+  (dilute, without flow, mixing, a port or a reaction of it, nor one at the face), the sum reaches
+  past the face to that piece's least-conducting segment, if that conducts under 1e-6 of the
+  piece's first. That segment's Scharfetter–Gummel flux, with its exact derivatives, takes the
+  place of the face's flux and the outside row. Every balance in between is in the sum, and still
+  none is computed.
+
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so
   the summed rows go in only once the plain solves converge. An island at the wrong level then
@@ -919,8 +938,12 @@ the terms that cancel:
   leaves known only to its own round-off, so where the currents still don't add up, one more
   update polishes them. If Newton doesn't converge again within a dozen updates (a GaAs stack's
   minority carriers, whose own rows rest on static pivots, at 1e-17 A/m² of noise), the plain
-  solution stands; and a steady solve that fails outright is tried once more with the summed rows
-  in from the start. Such devices now solve directly, their currents right to ~1e-15.
+  solution stands. Updates that walk, steadily between 1e-3 and 1.01 times the last, don't count
+  toward the dozen. A leak is exponential in the level it drains, so from above Newton brings the
+  level down by about a thermal unit an update before it converges: a floating base 4 V_T high
+  took ten, and at a dozen it had been cut off two short of converging (1.6e-9 and −1.9e-9 A/m² at
+  its terminals). A steady solve that fails outright is tried once more with the summed rows in
+  from the start. Such devices now solve directly, their currents right to ~1e-15.
 
 All four move a weakly held level as a whole, where a factorisation can't: an amount's, an
 affinity's or an island's pin by a shift it solves for, a flat level by holding every node to one. What the

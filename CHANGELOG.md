@@ -3,6 +3,23 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Steady solves now find the level of a floating base held only by its minority carriers' leaks.
+  A GaAs n/p⁺/n stack without recombination (the stress run's semi 220) converged from cold with
+  its base at the emitter's level, its two terminal currents 3.3e-11 and −3.9e-11 A/m², without a
+  warning; swept there warm, it gave the right answer. The base's holes leak through the n layers
+  at ~1e-24 of what they conduct at the junctions. The islands round, summed at the junction
+  faces, couldn't see that and was dropped; it now sums out to the n layers' bottlenecks. Newton
+  on such a leak walks the level a thermal unit an update, and those updates no longer count
+  against the round's dozen. Checked against the leaks' balance from the solution's φ, at biases
+  −0.5 to 0.3 V.
+- A steady solution whose terminal currents don't add up says so, since part of the device may be
+  at the wrong level. That's a sum over 1e-15 A/m² and 1e-6 of the largest current, but under half
+  of it (round-off reads as one terminal's current alone). The floating bases above missed by 3%
+  to 15%. A base behind a fourth layer (n/p⁺/n/n⁺) still solves wrong from cold at some biases,
+  and is now warned.
+
 ## 1.8.0 (2026-11-02)
 
 - A steady solve at a floating electrode whose fast couple must run at a rate below its own

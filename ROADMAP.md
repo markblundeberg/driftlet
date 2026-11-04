@@ -185,11 +185,15 @@ for live demos.
      exactly, is bordered like a conserved amount, once the plain solves converge with terminal
      currents that don't add up (and since 2 Nov, one fed only by its faces' reactions, and a
      floating metal: F5 below). Not covered yet: a population held that weakly within a region,
-     or one fed by a bulk reaction or a port. Where that leaves the currents not
-     adding up, a warning could say so; equilibrium noise (1e-17 A/m² in a GaAs stack) would need
-     telling apart from it. Measured (2 Nov): an islands round tried and dropped isn't that sign.
-     It happened 19 times in the law sweep, every one on a device that agrees with its transient,
-     none in the suite, and in the stress run only on semi 220 (below).
+     or one fed by a bulk reaction or a port. Measured (2 Nov): an islands round tried and dropped
+     isn't the sign of a wrong steady state. It happened 19 times in the law sweep, every one on a
+     device that agrees with its transient, none in the suite, and in the stress run only on
+     semi 220 (below). Their currents were 1e-18 to 2e-17 A/m² from adding up (equilibrium's
+     noise), against 1e-15 to 1e-9 on the floating bases that were wrong. So since 3 Nov a steady
+     solution whose terminal currents miss by more than 1e-15 A/m² and 1e-6 of the largest, but
+     under half of it, says so. A wrong level that leaves two terminals' currents disagreeing by
+     more than that goes unsaid. Round-off's readings, one terminal's alone (148 of the sweep's
+     devices at rest), are the whole sum; none of the sweep's 843 solved devices is warned.
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20
@@ -210,9 +214,21 @@ for live demos.
      slow couples, the pool's transfer, I = 0, a set current or a resistance, either listing) had
      20 settling off before; all agree now (a terminal behind a resistance taking the sum's ∂/∂V).
      Seen on the way, a different case: the stress run's semi 220 (three GaAs layers, no
-     recombination, its electrons degenerate past Boltzmann, warned) gives three currents by path at
-     −0.2 V: −1.73e-13 A/m² warm, −1.64e-13 by a transient from there, −3.17e-11 cold (whose
-     transient can't start); its islands round diverges and the plain solution stands, unwarned.
+     recombination, its electrons degenerate past Boltzmann, warned) gave two currents by path at
+     −0.2 V, −1.73e-13 A/m² warm and −3.17e-11 cold, unwarned. Fixed (3 Nov): it's a floating p⁺
+     base whose holes leak through the n layers at ~4e-15 A/m², ~1e-24 of what they conduct at
+     the junctions. An independent leak integral over each state's φ put the warm state's leaks
+     in balance to 3e-7, while the cold one's base, at the emitter's level, drained 8.6e-13 A/m²,
+     which was the gap between its terminal currents. Its islands round, summed at the faces,
+     diverged. Summed out to the n layers' bottlenecks (numerics.md), it now lands on the warm
+     answer from cold. The same round was cut off at its dozen updates while still converging,
+     walking the base down a thermal unit at a time; those updates no longer count (test:
+     test/newton.test.js, a floating base checked against its leaks' balance at four biases).
+     Not covered: a base whose neighbour isn't the stretch's end piece. With a fourth layer
+     (n/p⁺/n/n⁺) the island is still summed at that face, and cold solves at −0.4, −0.2, −0.1
+     and 0.1 V miss Kirchhoff (−0.2 V: 3.29e-11 and −3.83e-11 A/m², where warm gives 1.96e-13);
+     they're warned now. Reaching through interior pieces would mean one island taking over
+     another's rows. Nor a neighbour that recombines, or has a port.
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with
