@@ -70,6 +70,11 @@ major version.
   read 1.7 mM after 298 → 310 K, and the next `advance()` failed, blaming c0. Now φ stays in
   volts, each species' concentration is kept (exactly, for ideal statistics), and so are a
   metal's level, a surface's coverages and a diffuse layer's drop. Found by the same cold user.
+- `impedance()` about a device with no steady state says why, as `solve()` would (a battery
+  charging at a driven current, say), and points to a small sine through `advance()`. It had
+  said only "did not converge". The docs say a face's probe and `N` are what crosses by its
+  links, not what its reactions make, and that a trace's current and voltage are the contacts'
+  (a port's voltage is a probe's). From the same cold user.
 - Docs, from a Fable 5.1 review of the physics docs:
   - the chemical capacitance per volume is F²K/RT, not RT·K;
   - the Schottky template's Richardson constant is the effective A** (112 A/(cm²K²)), not A*;

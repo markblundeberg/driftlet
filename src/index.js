@@ -253,7 +253,12 @@ export class Device {
   impedance(frequencies, opts) {
     options(opts, 'impedance', ['terminal', 'profiles']);
     const steady = this.solver.solveSteady();
-    if (!steady.converged) throw new SolverError('impedance: the steady state did not converge');
+    if (!steady.converged) {
+      // (with why, as solve() would say it: a terminal driven past what any steady state passes,
+      // say, where advance() is the way; Fable round 2's cold user, charging a battery)
+      const why = makeSolution(this.solver, { ...steady, unsolved: true }).warnings;
+      throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
+    }
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
     const out = this.solver.impedance(frequencies, opts);

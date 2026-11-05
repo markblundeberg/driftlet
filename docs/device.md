@@ -1200,7 +1200,9 @@ const now = dev.solution();                   // snapshot of the current state
   nodes around `x` (at a face, the side where the species is; where both sides have it, `region`
   says which). That's what a detector at `x` sees.
   At a face, `{ interface: f, species }` reads a species' flux through it (mol/(m²·s), toward +x,
-  as `interfaces[f].N`), and `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
+  as `interfaces[f].N`): what crosses by its links, not what its reactions make or take (that is
+  each reaction's rate, `interfaces[f].rates`, times its coefficient, and shows in the flux of
+  the segment beside the face, `sol.flux`), and `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
   as a transient slows, so give `dtMax` to resolve a signal in time.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the

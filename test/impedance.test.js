@@ -486,3 +486,9 @@ test('a closed redox cell measured at a contact driven at no current: the impeda
   const driven = dev.impedance(fs).Z;
   fs.forEach((f, q) => assert.ok(Math.hypot(driven.re[q] - held.re[q], driven.im[q] - held.im[q]) < 1e-6 * Math.hypot(held.re[q], held.im[q]), `${f} Hz: (${driven.re[q]}, ${driven.im[q]}) for (${held.re[q]}, ${held.im[q]})`));
 });
+
+test('impedance() about a state with no steady one says why, as solve() would', () => {
+  // (Fable round 2's cold user: the bare "did not converge" hid solve()'s own reason)
+  const d = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { acceptors: 0.1 }), layer('Si', 1e-6, { donors: 0.1 }), ohmic({ I: 1e3 })] }));
+  assert.throws(() => d.impedance([1]), (e) => /did not converge: right: no steady state passes the driven current 1\.00e\+3 A\/m².*\)\. An impedance is about a steady state/.test(e.message) && Array.isArray(e.details.warnings));
+});

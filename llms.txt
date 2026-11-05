@@ -558,7 +558,9 @@ left reads −`voltage` against a reference on the right). It stops short at
 `budgetMs` (an animation frame: call again) or, with a warning saying why, at `maxSteps` (100000)
 or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
 `{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face `{ interface: f,
-species }` (its flux) or `{ interface: f, gate }`.
+species }` (what crosses by its links: a reaction's products aren't in it) or `{ interface: f, gate }`.
+The trace's `current` and `voltage` are the contacts'; a port's voltage is a probe's, `{ x, species:
+'e-', quantity: 'V' }` at its window.
 
 - **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
   and test after each: a driven current held past what the device can pass fails to converge.
