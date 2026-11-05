@@ -694,3 +694,30 @@ test('a call ending a hair before a pulse\'s edge: the next steps across it from
     }
   }
 });
+
+test('a step of regular size ending a few ulps before a pulse\'s edge restarts the order too, within one call', () => {
+  // (Fable round 2's hunter, on its re-check: outside atBreak's 1e-9 of the step, inside
+  // nextBreakpoint()'s 1e-12 of the time; BDF2 stepped across the edge, 1.4% of the charge lost)
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2, w = 1e-3, T0 = 1e5;
+  const up = (x, n) => {
+    const f = new Float64Array([x]), u = new BigUint64Array(f.buffer);
+    u[0] += BigInt(n);
+    return f[0];
+  };
+  let tsum = T0;
+  for (let k = 0; k < 5; k++) tsum += 1e-3; // where five steps of dtMax land
+  for (const tb of [tsum, up(tsum, 1), up(tsum, 3)]) {
+    const dev = new Device({
+      species: lib.species,
+      materials: lib.materials,
+      regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
+      contacts: { left: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 }, right: { I: { t: [0, tb, tb, tb + w, tb + w], values: [0, 0, 1, 1, 0] }, phi: { type: 'capacitive', C }, zeroCharge: 0 } },
+      grid: { hmin: 2e-6, hmax: 5e-6 },
+    });
+    dev.solve();
+    dev.advance(T0);
+    const sol = dev.advance(T0 + 8e-3, { dtMax: 1e-3 });
+    assert.ok(sol.converged);
+    assert.ok(Math.abs(sol.plates.right.charge / w - 1) < 1e-6, `tb − tsum ${tb - tsum}: ${sol.plates.right.charge}`);
+  }
+});

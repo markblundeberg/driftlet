@@ -59,9 +59,9 @@
 //     each other): a jump at a boundary, self-similar in x/√t, so taken anyway.
 //   - Steps land exactly on the sources' breakpoints (and the history is cleared there: the
 //     slope jumps) and on tEnd; within round-off of tEnd (1e-10 of it and 1e-9 of the
-//     interval) the time snaps to it. A call that starts within round-off of a breakpoint
-//     (1e-12 of the time, where nextBreakpoint() counts it passed) clears the history too: it
-//     steps across that breakpoint unlanded.
+//     interval) the time snaps to it. A step that ends, or a call that starts, within
+//     round-off of a breakpoint (1e-12 of the time, where nextBreakpoint() counts it passed)
+//     clears the history too: the next step crosses that breakpoint unlanded.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. The state only moves by accepted steps: a rejected step, a failed one, or one stopped
@@ -81,7 +81,7 @@
 //      far: backward Euler's low reading at short steps is what lets the controller step through
 //      a state left off its algebraic equations (see ROADMAP). The exponent is 1/(p + 1).
 //   5. The history holds only accepted steps of the same trajectory: newest first, at most 3,
-//      cleared at a breakpoint (landed on, or within round-off of a call's start), cut to the
+//      cleared at a breakpoint (landed on, or within round-off of a step's end or a call's start), cut to the
 //      half step after a first step. So no BDF2 step spans a source's jump.
 //   6. errorNorm counts every potential that carries state (φ̂ where it's defined, every
 //      present species' η, an electrode surface's coverages as η, gates' fractions), in
@@ -389,7 +389,12 @@ export function integrate(s, tEnd, opts = {}) {
     // step after. The history starts from the half step.
     if (half) s.history.length = 1;
     dt = clamped ? Math.max(dt, h * factor(err, p)) : h * factor(err, p);
-    if (atBreak) s.history = []; // the solution's slope jumps here: restart the order
+    // The solution's slope jumps at a breakpoint: restart the order there, landed on or ended
+    // within round-off of (a step of regular size can end a few ulps short, outside atBreak's
+    // 1e-9 of the step yet inside nextBreakpoint()'s 1e-12 of the time, which then counts the
+    // breakpoint passed: BDF2 stepped across a pulse's edge, 1.4% of its charge lost; Fable
+    // round 2's hunter, on its re-check).
+    if (atBreak || s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
     if (half) {
       trace.t.push(half.t);
       trace.current.push(half.current);

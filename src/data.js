@@ -70,10 +70,13 @@ export const METALS = freeze(
 //   log10 read as such; 0–100 °C, within 0.1% of their table at 0, 25 and 40 °C), and each ion's D by
 //   Stokes–Einstein, D·η/T held at its 25 °C value. Checked against Boudreau's linear fits of the
 //   measured D (Diagenetic Models, 1997, ch. 4, fitted to data at 0, 18 and 25 °C; as tabulated
-//   in the R package marelac): at 0 °C within 3% for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and SO₄²⁻,
-//   7–8% for Li⁺ (above) and NO₃⁻ (below); at 18 °C 2–4% below. Not checked above 25 °C (the
-//   fits stop there). H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (22% and 6%
-//   below at 0 °C), so with them aqueous() takes their D at T from you.
+//   in the R package marelac, whose K⁺ row repeats Na⁺'s: K⁺'s 9.55 + 0.409 t, ×1e-10 m²/s, is
+//   Boudreau's, within 1% of the CRC at 25 °C), each as a ratio to its own 25 °C value: at 0 °C
+//   within 3% for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and SO₄²⁻, 6–8% for K⁺ and NO₃⁻ (below) and Li⁺
+//   (above); at 18 °C 2–4% below. Low when cold (the Walden product λ°η of simple ions rises as
+//   water cools), and probably a few % high above 25 °C, where it's unchecked (the fits stop
+//   there). H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (22% and 6% below at
+//   0 °C), so with them aqueous() takes their D at T from you.
 // - its permittivity by Malmberg and Maryott's fit (J. Res. NBS 56, 1, 1956, 0–100 °C), as a ratio
 //   to its value at 25 °C (78.30), so T = 298.15 K gives the table exactly.
 // - μ° isn't moved: the material says so (mu0T: 298.15), and a device warns where a reaction or a
@@ -118,7 +121,7 @@ export function aqueous(names, { epsr, material = 'water', T = T25, D = {} } = {
     const ion = IONS[name];
     if (!ion) fail(`aqueous: no data for '${name}' (the library has ${Object.keys(IONS).join(', ')})`);
     if (moved && HOPPING.includes(name) && D[name] === undefined)
-      fail(`aqueous: ${name} at ${T} K: it moves by proton hopping, which water's viscosity doesn't scale (22% off at 0 °C), so give its D at T (D: { '${name}': … }, m²/s; ${shown(ion.D)} is 25 °C's)`);
+      fail(`aqueous: ${name} at ${T} K: it moves by proton hopping, which water's viscosity doesn't scale (22% off at 0 °C), so give its D at T (D: { '${name}': … }, m²/s; ${shown(ion.D)} is 25 °C's; from a limiting conductivity λ° at T, D = RTλ°/(z²F²))`);
     species.push({ name, z: ion.z, cRef: 1000 });
     entries[name] = { D: D[name] ?? (moved ? ion.D * scale : ion.D), mu0: ion.mu0 };
   }

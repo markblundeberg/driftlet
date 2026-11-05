@@ -41,10 +41,12 @@ major version.
   0 °C for most of the table's ions and 7–8% for Li⁺ and NO₃⁻; 37 °C's are 1.34 times 25 °C's.
   ε follows Malmberg and Maryott. H⁺ and OH⁻ move by proton hopping, so at another T their D
   are yours to give, `D: { 'H+': … }`. μ° stay 25 °C's, and the material says so (`mu0T`). A
-  device warns only where a reaction's net μ° or a face into another material reads them, so a
+  device warns only where a reaction's net μ° or a face into a material of other μ° reads them, so a
   pump or a channel moving ions within one water doesn't. The templates at 6.3 °C and 37 °C use
   it, and no longer warn about themselves. The cold user's stumble: every physiology template
-  warned at every solve.
+  warned at every solve. (Its accuracy as checked, K⁺ included, from the reviewer's follow-up:
+  within 3% at 0 °C for most ions, 6–8% for K⁺, NO₃⁻ and Li⁺, low when cold; the SHE scale stays
+  25 °C's, said in data.md.)
 - The terminal-current warning again passes, as 1.8.0 did, a sum that is one terminal's
   round-off where the device has no weakly held region. A battery electrode at rest in
   docs/statistics.md, its electrons' current read at 1.2e-13 A/m² beside Li⁺'s 0, was warned
@@ -60,7 +62,10 @@ major version.
   across the jump with BDF2 and its old history, which lost 1/12 of the first step's charge for
   good: a 1 ms current pulse put 8.33% too little on an RC cell's plates, at 1 s, 100 s and 1e5 s
   alike, converged and unwarned (the plates' charge isn't in the error norm). Found by a Fable 5.1
-  hunter of transients, which searched 22 other families clean.
+  hunter of transients, which searched 22 other families clean. Its re-check found a second
+  route, within one call: a step of regular size ending a few ulps short of the edge, outside
+  the landing's tolerance and inside the window that counts the edge passed (1.4% lost). The
+  order now restarts after any step ending within that window, and at any call starting in it.
 - A `set()` that can't carry the state over, and so restarts from `c0`, says so in the next
   solution's warnings. Taking a pump off a membrane's reactions changed the face's unknowns,
   and a closed cell's run-down then started from its c0, not its rest, converged and unwarned.

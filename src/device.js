@@ -323,8 +323,8 @@ export function normalizeDevice(def) {
         (semi
           ? `so they don't hold there (a semiconductor's n_i, gap and mobilities are ${m.dataT} K's): give the device T: ${m.dataT}, ` +
             `or remake the material for ${T} K (semiconductor(name, { T: ${T} }))`
-          : `so they don't hold there: its μ° (so equilibrium constants and electrode potentials, Kw's by ~5× between 6 and 25 °C), ` +
-            `permittivity and diffusivities are ${m.dataT} K's. Give the device T: ${m.dataT}, or give the material data for ${T} K ` +
+          : `so they don't hold there: its μ° (so equilibrium constants and electrode potentials, Kw's by ~5× between 6 and 25 °C) ` +
+            `are ${m.mu0T ?? m.dataT} K's, its permittivity and diffusivities ${m.dataT} K's. Give the device T: ${m.dataT}, or give the material data for ${T} K ` +
             `and its T (aqueous(names, { T }) moves D and ε, 0 to 50 °C)`),
     );
   });
@@ -373,7 +373,10 @@ export function normalizeDevice(def) {
       const mats = [regions[f].material, regions[f + 1].material];
       if (!mats.includes(k)) return;
       itf.reactions.forEach((rx, j) => net(rx.part.map((p) => [mats[p.side], p.i, p.nu])) && reads.push(`interfaces[${f}].reactions[${j}]`));
-      if (mats[0] !== mats[1] && itf.links.some((l, i) => l.type !== 'blocked' && materials[mats[0]].present?.[i] && materials[mats[1]].present?.[i])) reads.push(`interfaces[${f}] (a species passing between two materials)`);
+      // (a species passing into another material whose μ° for it differs: two waters with the
+      // same 25 °C μ° read nothing)
+      const [mA, mB] = [materials[mats[0]], materials[mats[1]]];
+      if (mats[0] !== mats[1] && itf.links.some((l, i) => l.type !== 'blocked' && mA.present?.[i] && mB.present?.[i] && mA.mu0[i] !== mB.mu0[i])) reads.push(`interfaces[${f}] (a species passing between two materials)`);
     });
     ports.forEach((port, q) => {
       if (regions[port.region].material !== k) return;

@@ -311,6 +311,10 @@ test('aqueous() at T warns of its 25 °C μ° only where they\'re read: a reacti
   };
   assert.match(describe(wet()), /materials\.water: its μ° are for 298\.15 K, but the device is at 310\.15 K, and bulkReactions\[0\] read them/);
   assert.doesNotMatch(describe(wet(T)), /materials\.water/); // (μ° given for T)
+  // Two waters (two materials, the same μ°) with a channel between them read none either.
+  const a = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T, material: 'outside' }), b = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T, material: 'inside' });
+  const two = build({ T, library: [a, { species: [], materials: b.materials }], stack: [bath(c, 'Cl-'), layer('outside', 1e-6, { c0: c }), { phi: { type: 'capacitive', C: 0.01 }, dipole: 0, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('inside', 1e-6, { c0: c }), bath(c, 'Cl-', 0)] });
+  assert.doesNotMatch(describe(two), /μ° are for/);
 });
 
 test('set({ T, materials }) on a live device keeps its concentrations and φ, and steps on from them', () => {

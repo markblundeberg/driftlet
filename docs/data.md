@@ -25,12 +25,15 @@ The data are 25 °C's. `aqueous(names, { T })`, from 273.15 to 323.15 K (0 to 50
 - each D by Stokes–Einstein, $`D\eta/T`$ held at its 25 °C value. Water's viscosity comes from
   Korson, Drost-Hansen and Millero's fit (J. Phys. Chem. 73, 34, 1969), within 0.2% of IAPWS 2008
   from 0 to 45 °C. Against Boudreau's fits to the measured D (*Diagenetic Models*, 1997, from
-  data at 0, 18 and 25 °C), it is within 3% at 0 °C for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and
-  SO₄²⁻, and 7–8% off for Li⁺ and NO₃⁻; at 18 °C it is 2–4% low. Near 25 °C that is about 2.4% per
-  kelvin; 37 °C's D are 1.34 times 25 °C's. Above 25 °C it is unchecked: the fits stop there.
+  data at 0, 18 and 25 °C, each read as a ratio to its own 25 °C value), it is within 3% at 0 °C
+  for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and SO₄²⁻, and 6–8% off for K⁺, NO₃⁻ (low) and Li⁺ (high);
+  at 18 °C it is 2–4% low. Near 25 °C that is about 2.4% per kelvin; 37 °C's D are 1.34 times
+  25 °C's. It runs low when cold (the Walden product λ°η of simple ions rises as water cools),
+  and probably a few per cent high above 25 °C, where it is unchecked: the fits stop there. For
+  better, give your own `D` at T.
   H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (it is 22% and 6% off at
   0 °C), so with either of them a `T` needs their D at T from you, `D: { 'H+': … }` (m²/s).
-  `D` replaces any ion's D, at any `T`.
+  `D` replaces any ion's D, at any `T` (from a limiting conductivity λ° at T, $`D = RT\lambda^\circ/(z^2F^2)`$).
 - ε by Malmberg and Maryott's fit, scaled to 78.30 at 25 °C: 74.15 at 37 °C, 87.74 at 0 °C. A
   given `epsr` is kept.
 
@@ -38,7 +41,10 @@ The data are 25 °C's. `aqueous(names, { T })`, from 273.15 to 323.15 K (0 to 50
 whose `T` differs from `mu0T` warns where μ° are read: a reaction whose net μ° in the material
 isn't zero (an electrode's couple, water's dissociation), or a face passing a species into
 another material. There, equilibrium constants and electrode potentials are 25 °C's ($`K_w`$
-moves ~5× between 6 and 25 °C). Where μ° cancel, nothing warns: channels and pumps moving the
+moves ~5× between 6 and 25 °C). The SHE scale is 25 °C's too: what reads against SHE (a level
+less φ, `level()`, a bath's reference terminal, `describe()`'s SHE) is off at T by each couple's
+temperature coefficient, often ±1 mV per kelvin, though nothing in the device reads it, so
+nothing warns. Where μ° cancel, nothing warns: channels and pumps moving the
 same ions between compartments of one water. Give the material your own μ° for T and set its
 `mu0T` to T to say so. Without `T`, the material is 25 °C's throughout (`T: 298.15`), and a
 device at another temperature warns that μ°, ε and D don't hold. The cell and axon demos take
