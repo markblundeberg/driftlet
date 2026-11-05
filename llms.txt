@@ -55,7 +55,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   level: a band edge; in volts, E = −V, so E_c is the lower line). `NaN` marks a value
   that doesn't exist (a species absent from a material, `V` of a neutral one, `c` in a metal).
 - **Currents.** `sol.terminals[name]` gives each terminal's `{ V, current }`, its current into
-  the device; a current drive `{ I }` is the same way round (electrons fed in are I < 0).
+  the device; a current drive `{ I }` is the same way round (electrons fed in are I < 0, so at an
+  electrode's terminal I > 0 is anodic: electrons taken out of it).
   `sol.current` is the right contact's toward +x, so a forward diode with its p side on the right
   carries a negative one (with ports, read each contact from `sol.terminals`). Everything is per
   m² of a planar device; with a `geometry` (shells, or any cross-section A(x)) it's a total.
@@ -77,9 +78,11 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
   300 K; `semiconductor('Si', { T: 350 })` moves them, 150–500 K, for a device at that `T`),
   `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ ClO₄⁻ in water, at 25
-  °C; `{ epsr: 0 }` makes it strictly neutral, with no double layers), `metal('Ag')` (Ag Cu Au Al Zn
+  °C; `{ T: 310.15 }` moves D and ε, 0–50 °C; `{ epsr: 0 }` makes it strictly neutral, with no
+  double layers), `metal('Ag')` (Ag Cu Au Al Zn
   Li Pt), all from `driftlet/kit`. A semiconductor's textbook numbers are in `SEMICONDUCTORS.Si`
-  (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), `epsr`); in the
+  (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), lightly doped: Si's fall to roughly 800 and 330 at 1e17 cm⁻³, so set D
+  yourself for doped layers if currents must match measurements; `epsr`); in the
   material, `materials.Si.species['e-'].cRef` and `['h+'].cRef` are N_c and N_v in mol/m³ and
   h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. The
   material carries the T its data are for (`materials.Si.T`), and a device at another T warns
@@ -512,7 +515,7 @@ import { build, layer, bath, aqueous, check } from 'driftlet/kit';
 const T = 310.15, VT = (GAS_CONSTANT * T) / FARADAY;
 const out = { 'Na+': 145, 'K+': 5, 'Cl-': 110, 'A-': 40 }; // mM = mol/m³; A⁻: anions that don't cross
 const inside = { 'Na+': 12, 'K+': 140, 'Cl-': 10, 'A-': 142 };
-const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 }); // strictly neutral solutions
+const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T }); // strictly neutral solutions, D at 37 °C
 water.species.push({ name: 'A-', z: -1, cRef: 1000 });
 water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
 const P = { 'K+': 1e-8, 'Na+': 0.04e-8, 'Cl-': 0.45e-8 }; // m/s, Hodgkin and Katz's ratios
@@ -550,7 +553,8 @@ current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equili
 
 `advance(t, opts)` steps adaptively from the device's present state (its `c0`, or the steady
 state if you called `solve()`) to time t, absolute (for a further dt, `advance(sol.time + dt)`). It returns the solution there, with `done` and a `trace`
-of this call's accepted steps (`t`, `current`, `voltage`: V_right − V_left). It stops short at
+of this call's accepted steps (`t`, `current`, `voltage`: V_right − V_left, so an electrode on the
+left reads −`voltage` against a reference on the right). It stops short at
 `budgetMs` (an animation frame: call again) or, with a warning saying why, at `maxSteps` (100000)
 or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
 `{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face `{ interface: f,
@@ -671,7 +675,9 @@ those:
   semiconductor('Si', { T }).materials })`. A diode's J₀ ∝ T^(4−γ) e^(−E_g/kT), so its Arrhenius
   slope is E_g − T dE_g/dT + (4−γ)kT (≈ 1.24 eV for Si), not E_g. Hot and lightly doped, n_i
   passes the doping (Ge 6e15 cm⁻³ at 450 K) and the junction fades: compare before fitting V(T).
-  At body temperature the same μ° and D are a fair start; D rises about 2% per kelvin in water.
+  Water: `aqueous(names, { T })` moves D (Stokes–Einstein, ~2.4% per kelvin near 25 °C; H⁺'s and
+  OH⁻'s D at T are yours to give) and ε, 0–50 °C. Its μ° stay 25 °C's, warned of where a reaction
+  reads them; channels and pumps don't.
 - **A steady solve of a closed cell where every ion can cross**: its steady state is complete
   mixing. To watch a junction or a salt bridge, `advance()` from the unmixed `c0`.
 - **A sharp junction between very different solutions** (3 M KCl against 1 µM) can't start:

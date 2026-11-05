@@ -43,7 +43,7 @@ materials; its outputs are `NaN` there.
 ```js nocheck
 materials: {
   water: {
-    epsr: 78.5, // relative permittivity; 0 makes the material strictly neutral
+    epsr: 78.3, // relative permittivity; 0 makes the material strictly neutral
     species: {
       'Na+': { D: 1.33e-9, mu0: -261.9e3, cRef: 1000 },
     },
@@ -58,7 +58,9 @@ to the species' `cRef`, and must exist one way or the other). Species not listed
 A material may say what temperature its numbers are for, `T` (K). `semiconductor()` sets it.
 The device then warns, in its solutions' `warnings`, if that isn't its own `T` (to 0.01 K), since
 the material's gap, densities of states and D are then another temperature's. A material without
-`T` is taken as written.
+`T` is taken as written. `mu0T` (K) says its μ° are for another temperature than the rest of its
+data (`aqueous(names, { T })` sets it to 298.15): the device then warns only where a reaction's
+net μ°, or a face passing a species to another material, reads them.
 
 In a material, only *neutral combinations* of standard potentials mean anything physically.
 Shifting every `mu0` by $`z_i F s`$ just moves the material's $`\phi`$, its bookkeeping anchor. See
@@ -529,7 +531,9 @@ The gates scale permeabilities and nothing else: they hold no charge (the small 
 of the channels' voltage sensors is left out, as Hodgkin and Huxley left it out), and each ion
 still crosses by electrodiffusion down its own $`\bar\mu`$, so the dissipation stays positive whatever
 they do. In steady state each gate is at $`\alpha/(\alpha + \beta)`$; each solution reports them as
-`interfaces[f].gates` (`{ m, h, n }`) with the voltage they follow, `interfaces[f].V`.
+`interfaces[f].gates` (`{ m, h, n }`) with the voltage they follow, `interfaces[f].V`. (Every face
+between two regions of one material reports its `V`, gates or none: a membrane's voltage. Between
+two materials it would be a Galvani potential, bookkeeping, and isn't reported.)
 
 Two things differ from the textbook equations. The currents are GHK's, which rectify: a channel's
 conductance depends on the voltage, so a permeability matches a conductance $`g`$ at one voltage
@@ -727,7 +731,7 @@ capacitive face of large C does the same at more cost, and its C is warned of as
 A Schottky contact is that pinned barrier with its carriers passing at their emission velocities:
 `{ V, terminal: 'e-', species: { 'e-': { type: 'velocity', v }, 'h+': { type: 'velocity', v: vp, offset: 0 } }, phi: 'pinned', zeroCharge: φ_B }`,
 with Bethe's thermionic-emission velocity $`v = A^* T^2/(F N_c)`$ ($`N_c`$ in mol/m³, the data
-library's `cRef` for e⁻; about $`2 \times 10^4`$ m/s in n-Si with $`A^*`$ = 112 A/(cm²K²)). The
+library's `cRef` for e⁻; about $`2 \times 10^4`$ m/s in n-Si with the effective Richardson constant $`A^{**}`$ = 112 A/(cm²K²), Sze's, which includes quantum reflection and phonon scattering). The
 forward current is then thermionic emission's, $`J = A^* T^2 e^{-\phi_B/V_T}(e^{V/V_T} - 1)`$,
 lowered where the drift–diffusion through the depletion region can't keep up (Crowell and Sze's
 combination): 4–6% short of it for a 0.85 eV barrier on 1e16 cm⁻³ n-Si from 0.1 to 0.4 V
@@ -1284,7 +1288,7 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 | `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact, flux and current toward +x (out of the device at the right contact; `terminals` give it into the device); `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
 | `plates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device (an electrode's `flux` is of what its reactions make and use in the solution, its carrier's being outside); an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
-| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; with a [surface](#a-faces-surface-a-tethered-couple-adsorbates), `coverage: {name}` and `bare`; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
+| `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`, and `V` (φ_right − φ_left between its planes) where both sides are one material or it has gates: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; with a [surface](#a-faces-surface-a-tethered-couple-adsorbates), `coverage: {name}` and `bare`; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
 | `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section): its regions' space charge and its faces' sheet charges, not the charge on a capacitive contact's or port's plates, so under a gate's bias it's the gate's opposite |
 | `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |

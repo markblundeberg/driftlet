@@ -188,7 +188,10 @@ export function normalizeDevice(def) {
       continue;
     }
     // ε = 0 makes the material strictly neutral: Poisson becomes local neutrality there.
-    fields(mat, path, ['epsr', 'species', 'statistics', 'T']);
+    fields(mat, path, ['epsr', 'species', 'statistics', 'T', 'mu0T']);
+    // (and the temperature its μ° are for, where that differs: aqueous(names, { T }) moves D and
+    // ε, not μ°)
+    const mu0T = mat.mu0T === undefined ? dataT : positive(mat.mu0T, `${path}.mu0T (the temperature its μ° are for, K)`);
     const epsr = nonNegative(mat.epsr, `${path}.epsr`);
     need(isObject(mat.species), `${path}.species must be an object mapping species names to parameters`);
     const present = new Uint8Array(nSpecies);
@@ -208,7 +211,7 @@ export function normalizeDevice(def) {
       need(c !== undefined, `${spath}.cRef: no reference concentration (give it here or on the species)`);
       cRef[i] = positive(c, `${spath}.cRef`);
     }
-    const m = { name: mname, epsr, present, D, mu0, cRef, dataT };
+    const m = { name: mname, epsr, present, D, mu0, cRef, dataT, mu0T };
     const st = normalizeStatistics({ ...m, statistics: mat.statistics }, path, species, speciesIndex, RT, { need, finite, positive });
     m.models = st.models;
     m.modelOf = st.modelOf;
@@ -320,9 +323,9 @@ export function normalizeDevice(def) {
         (semi
           ? `so they don't hold there (a semiconductor's n_i, gap and mobilities are ${m.dataT} K's): give the device T: ${m.dataT}, ` +
             `or remake the material for ${T} K (semiconductor(name, { T: ${T} }))`
-          : `so they don't hold there: its μ° (so equilibrium constants and electrode potentials, Kw's by ~6× between 6 and 25 °C), ` +
+          : `so they don't hold there: its μ° (so equilibrium constants and electrode potentials, Kw's by ~5× between 6 and 25 °C), ` +
             `permittivity and diffusivities are ${m.dataT} K's. Give the device T: ${m.dataT}, or give the material data for ${T} K ` +
-            `and its T (aqueous() has none at other temperatures yet)`),
+            `and its T (aqueous(names, { T }) moves D and ε, 0 to 50 °C)`),
     );
   });
 
@@ -354,6 +357,36 @@ export function normalizeDevice(def) {
   // --- internal ports (outside phases attached over windows of interior nodes)
   need(def.ports === undefined || Array.isArray(def.ports), 'ports must be an array');
   const ports = (def.ports ?? []).map((pdef, k) => normalizePort(pdef, `ports[${k}]`, regions, materials, species, speciesIndex, RT));
+
+  // A material whose D and ε are for the device's T but whose μ° aren't (aqueous(names, { T })):
+  // its μ° matter only where a reaction's net μ° reads them, or a face passes a species to
+  // another material; there, say so. (A pump moving Na⁺ across a membrane reads none: they cancel.)
+  materials.forEach((m, k) => {
+    if (m.mu0T === undefined || Math.abs(m.mu0T - T) <= 0.01 || (m.dataT !== undefined && Math.abs(m.dataT - T) > 0.01) || !regions.some((reg) => reg.material === k)) return;
+    const reads = [];
+    const net = (terms) => {
+      let sum = 0, scale = 0;
+      for (const [mat, i, nu] of terms) if (mat === k) (sum += nu * m.mu0[i]), (scale += Math.abs(nu * m.mu0[i]));
+      return Math.abs(sum) > 1e-9 * scale + 1e-6;
+    };
+    interfaces.forEach((itf, f) => {
+      const mats = [regions[f].material, regions[f + 1].material];
+      if (!mats.includes(k)) return;
+      itf.reactions.forEach((rx, j) => net(rx.part.map((p) => [mats[p.side], p.i, p.nu])) && reads.push(`interfaces[${f}].reactions[${j}]`));
+      if (mats[0] !== mats[1] && itf.links.some((l, i) => l.type !== 'blocked' && materials[mats[0]].present?.[i] && materials[mats[1]].present?.[i])) reads.push(`interfaces[${f}] (a species passing between two materials)`);
+    });
+    ports.forEach((port, q) => {
+      if (regions[port.region].material !== k) return;
+      port.reactions.forEach((rx, j) => net(rx.part.filter((p) => p.side === 0).map((p) => [k, p.i, p.nu])) && reads.push(`ports[${q}].reactions[${j}]`));
+    });
+    reactions.forEach((rx, j) => rx.kf[k] > 0 && net([...rx.reactants.map(({ i, nu }) => [k, i, -nu]), ...rx.products.map(({ i, nu }) => [k, i, nu])]) && reads.push(`bulkReactions[${j}]`));
+    if (reads.length === 0) return;
+    warnings.push(
+      `materials.${m.name}: its μ° are for ${m.mu0T} K, but the device is at ${T} K, and ${reads.slice(0, 3).join(', ')}${reads.length > 3 ? ` and ${reads.length - 3} more` : ''} read them: ` +
+        `equilibrium constants and electrode potentials there are ${m.mu0T} K's (Kw's by ~5× between 6 and 25 °C, an E° by its temperature coefficient, often tenths of a mV per kelvin). ` +
+        `Give the material μ° for ${T} K and mu0T: ${T}, or leave them where that doesn't matter`,
+    );
+  });
 
   // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
   // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.

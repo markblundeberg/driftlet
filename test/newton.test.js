@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, units, FARADAY } from '../src/index.js';
+import { Device, units, FARADAY, GAS_CONSTANT } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal, bath, aqueous } from '../src/kit.js';
 import { newton } from '../src/newton.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
@@ -248,4 +248,25 @@ test('islands: a round that leaves its island less balanced, or rows satisfied o
   // 3e-18 A/m² is under the warning's floor): 22 of the law sweep's devices, each agreeing with
   // its transient, undid a round whose balance was noise before and after, and were warned.
   for (const k of [361, 452, 455, 462]) assert.deepEqual(new Device(device(choice(k))).solve().warnings.filter((w) => w.includes("doesn't balance")), [], `law sweep ${k}`);
+});
+
+test('a device with no weakly held region reads one terminal\'s round-off as such: an insertion electrode at rest, its electrons\' 1e-13 A/m² beside Li⁺\'s 0', () => {
+  // (docs/statistics.md's OCV example; c7ed8e2 warned of it, 1.8.0 didn't)
+  const RT = GAS_CONSTANT * 298.15, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  const E = x.map((v) => 0.4 - (RT / FARADAY) * Math.log(v / (1 - v)));
+  const dev = new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 30000 }, 'e-': { D: 1e-4, mu0: 0, cRef: 30000 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 30000, ocv: { x, E, muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6 }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.4, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+  });
+  let seen = 0;
+  for (const V of [0.4, 0.3]) {
+    dev.set({ contacts: { right: { V } } });
+    const sol = dev.solve();
+    assert.ok(sol.converged);
+    seen = Math.max(seen, Math.abs(sol.terminals.right.current));
+    assert.ok(!sol.warnings.some((w) => /don't add up/.test(w)), sol.warnings.join('\n'));
+  }
+  assert.ok(seen > 1e-15, `${seen}: the round-off this is about`);
 });

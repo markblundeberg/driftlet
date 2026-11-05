@@ -573,7 +573,10 @@ which cost four assemblies per product.
   terminal, every other at ~0, so a sum over half the largest current was passed as round-off.
   Wrong states read that way too: behind a contact passing holes only, a floating base solved
   from cold at the wrong level put −1e-20 A/m² on one terminal and 4e-15 on the other, seven
-  solves over two stacks, each confirmed by a transient to 1e18 s. Scales from the fluxes at each
+  solves over two stacks, each confirmed by a transient to 1e18 s. A wrong level needs a weakly
+  held region, though, so the shape still passes where the solver finds no island: a battery
+  electrode at rest in [statistics.md](statistics.md) reads its electrons' 1.2e-13 A/m² beside
+  Li⁺'s 0. Scales from the fluxes at each
   terminal don't separate them either. With $`\epsilon`$ times the charged species' fluxes at each
   contact, the sweep's readings at rest reach 1e16 of it and the four-layer stack's misses
   (ROADMAP) 3e14. With $`\epsilon`$ times what the end segment could carry, $`\sum_i |z_i| F D_i c_i / h`$,

@@ -25,7 +25,7 @@ import { Device, units, FARADAY, GAS_CONSTANT } from 'driftlet';
 import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
 
 const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, Si = semiconductor('Si');
-const phiB = 0.85, A = 1.12e6; // the barrier (V); Richardson's constant for n-Si, A/(m²K²)
+const phiB = 0.85, A = 1.12e6; // the barrier (V); the effective Richardson constant A** for n-Si, A/(m²K²) (Sze's; A* from the masses, 2.2 × 120 A/(cm²K²), is 2.4× it)
 const v = (A * T * T) / (FARADAY * Si.materials.Si.species['e-'].cRef); // Bethe's emission velocity, 2.2e4 m/s (cRef is N_c)
 const schottky = (V) => ({
   V,
@@ -311,7 +311,7 @@ import { build, layer, bath, aqueous, hodgkinHuxley } from 'driftlet/kit';
 
 const T = 279.45, VT = (GAS_CONSTANT * T) / FARADAY; // HH's 6.3 °C
 const out = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, inside = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
-const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T }); // D at HH's 6.3 °C
 water.species.push({ name: 'A-', z: -1, cRef: 1000 });
 water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
 const hh = hodgkinHuxley({ T, linear: true });
@@ -350,7 +350,7 @@ import { build, layer, bath, aqueous, injector, pulse, hodgkinHuxley } from 'dri
 
 const T = 279.45; // HH's 6.3 °C
 const out = { 'Na+': 440, 'K+': 20, 'Cl-': 450, 'A-': 10 }, inside = { 'Na+': 50, 'K+': 400, 'Cl-': 52, 'A-': 398 }; // squid, mM
-const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T }); // D at HH's 6.3 °C
 water.species.push({ name: 'A-', z: -1, cRef: 1000 });
 water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
 const hh = hodgkinHuxley({ inside, outside: out, T }); // GHK channels; outside on the left

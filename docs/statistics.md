@@ -19,8 +19,8 @@ Three rules hold for every model:
   statistics. Changing a material's statistics changes only its non-dilute behaviour.
 - **The Jacobian is a chemical capacitance.** $`K = \partial c/\partial\zeta`$ is the Hessian of a
   convex potential (the grand potential density $`P(\zeta)`$, with $`c = \partial P/\partial\zeta`$),
-  so it's symmetric and positive definite. $`RT \cdot K`$ is the chemical capacitance matrix per
-  volume. Models whose free energy isn't convex (a miscibility gap) are refused, because they
+  so it's symmetric and positive definite. $`F^2 K/RT`$ is the chemical capacitance matrix per
+  volume (F/m³; $`F^2 c/RT`$ for ideal statistics). Models whose free energy isn't convex (a miscibility gap) are refused, because they
   need phase separation (Cahn–Hilliard, on the [roadmap](../ROADMAP.md)).
 - **D keeps its meaning.** Fluxes are always $`N = -(D c/RT)\nabla\bar\mu`$, with $`D`$ the
   dilute-limit coefficient (constant mobility). The chemical diffusivity you'd measure is $`D`$
@@ -123,7 +123,7 @@ In an intercalation host, an inserted ion enters together with its compensating 
 carrier, e.g. $`\mathrm{Li}^+ + \mathrm{e}^-`$. Only their neutral combination has a well-defined
 chemical potential, $`\mu_{\mathrm{Li}} = \bar\mu_{\mathrm{Li}^+} + \bar\mu_{\mathrm{e}^-}`$, and the
 host's composition depends on nothing else. That's what an OCV curve measures, and the mutual
-chemical capacitance of the pair is the slope of that curve.
+chemical capacitance of the pair is set by its slope: $`F c_{\max}/(\mathrm{d}E/\mathrm{d}x)`$, in magnitude.
 
 The `insertion` model describes exactly this, in a strictly neutral host (`epsr: 0`) whose
 only charged species are the pair `[ion, carrier]`. For an ion of charge $`z`$ and a carrier of

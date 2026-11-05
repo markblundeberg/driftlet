@@ -220,10 +220,13 @@ export function makeSolution(solver, result = {}) {
       }
       (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane, draw };
     });
+    // The voltage across the face, where it means something: a face between two regions of one
+    // material (a membrane between solutions, where it's any ion's ΔV at equal concentrations), or
+    // one with gates, which follow it. (Between two materials it's a Galvani potential: bookkeeping.)
+    if (itf.gates.length > 0 || model.regions[f].material === model.regions[f + 1].material) out.V = solver._faceVoltage(f);
     if (itf.gates.length > 0) {
-      // Each gate's fraction open, and the voltage across the face that drives them.
+      // Each gate's fraction open.
       out.gates = Object.fromEntries(itf.gates.map((gate, q) => [gate.name, u[solver._gateSlot(f, q)]]));
-      out.V = solver._faceVoltage(f);
     }
     return out;
   });
@@ -302,7 +305,13 @@ export function makeSolution(solver, result = {}) {
     const area = Math.max(model.grid.area[0], model.grid.area[model.grid.area.length - 1]), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     const z = Object.fromEntries(species.map((sp) => [sp.name, sp.z]));
     const gross = [sol.contacts.left, sol.contacts.right, ...sol.ports].reduce((a, t) => a + Object.entries(t.flux).reduce((b, [name, J]) => b + Math.abs(z[name] * F * J), 0), 0);
-    const missed = Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross;
+    // (A device with no weakly held region has no level to be wrong at, and there a sum that is
+    // the whole of one terminal's current, every other's ~0, is that terminal's round-off: a
+    // battery electrode at rest, its electrons' current read at 1.2e-13 A/m² beside Li⁺'s 0, in
+    // docs/statistics.md. Where there are islands, a wrong level reads the same way: a holes-only
+    // contact's floating base, −1e-20 and 4.25e-15.)
+    const roundoff = solver.islands.length === 0 && Math.abs(sum) > 0.5 * mx;
+    const missed = Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross && !roundoff;
     if (missed && Math.abs(sum) > 1e-15 * area) {
       sol.warnings.push(
         `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart, ${(Math.abs(sum) / gross).toExponential(1)} of what their species carry): ` +
@@ -442,16 +451,21 @@ export function makeSolution(solver, result = {}) {
   // And a reaction at the face sees that box's composition, which holding the charge σ shifts
   // by about z·σ/(Cbox·V_T) for an ion of charge z: a Frumkin effect set by the mesh, which grows
   // without limit as the box shrinks. Flag it past 1%.
-  const boxed = (g, h, phi, other, where, sigma = 0, reacting = []) => {
+  // A link that carries an ion across the face by its concentrations there (a permeability, GHK;
+  // a conductance; a velocity) sees the same shifted box (round 1 of Fable's review: a membrane's
+  // GHK fluxes 1% off at hmin 5 nm, and worse as the grid is refined).
+  const boxed = (g, h, phi, other, where, sigma = 0, reacting = [], crossing = []) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined?.[g]) return;
     const s2 = solver.screening(g), Cbox = (F * F * s2 * h) / (2 * RT);
     if (!(s2 > 0)) return;
-    const ion = reacting.filter((i) => species[i].z !== 0).reduce((a, i) => (a < 0 || Math.abs(species[i].z) > Math.abs(species[a].z) ? i : a), -1);
+    const pick = (list) => list.filter((i) => species[i].z !== 0).reduce((a, i) => (a < 0 || Math.abs(species[i].z) > Math.abs(species[a].z) ? i : a), -1);
+    const byReaction = pick(reacting), ion = byReaction >= 0 ? byReaction : pick(crossing);
+    const what = byReaction >= 0 ? 'the reaction here' : `${ion >= 0 ? species[ion].name : ''}'s ${ion >= 0 ? 'link' : ''} across the face`;
     const shift = ion < 0 ? 0 : (Math.abs(species[ion].z * sigma) / Cbox) * (F / RT);
     if (shift > 0.01) {
       sol.warnings.push(
-        `${where}: the reaction here sees the strictly neutral cell beside the face (${h.toExponential(2)} m), which holds the face's charge as a diffuse layer that wide: ` +
+        `${where}: ${what} sees the strictly neutral cell beside the face (${h.toExponential(2)} m), which holds the face's charge as a diffuse layer that wide: ` +
           `${species[ion].name} there is shifted by about ${(100 * shift).toPrecision(2)}%, a Frumkin effect set by the mesh that grows as the cell shrinks. ` +
           "Give the face a diffuse layer below the grid (diffuse: { epsr: 78.4 }, say, for water), which holds that charge where it belongs on any grid; " +
           `or set the face's zeroCharge near its rest potential (so it holds little charge), coarsen that cell to ${((200 * Math.abs(species[ion].z * sigma)) / (F * s2)).toExponential(1)} m or more, ` +
@@ -479,10 +493,11 @@ export function makeSolution(solver, result = {}) {
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
     const reacting = (side) => itf.reactions.flatMap((rx) => rx.part.filter((p) => p.side === side).map((p) => p.i));
+    const crossing = itf.links.flatMap((l, i) => (l.type === 'permeability' || l.type === 'conductance' || l.type === 'velocity' ? [i] : []));
     const sigma = sol.interfaces[f].D, [dlL, dlR] = solver.diffAt[f];
     // (a side with a diffuse layer holds the face's charge there, below the grid, not in its cell)
-    if (dlL < 0) boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0));
-    if (dlR < 0) boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1));
+    if (dlL < 0) boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0), crossing);
+    if (dlR < 0) boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1), crossing);
     // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
     // they'd have no room, and the layer's charge and capacitance are overstated.
     for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {

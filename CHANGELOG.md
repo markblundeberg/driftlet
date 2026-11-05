@@ -36,6 +36,33 @@ major version.
   `donors` or `acceptors` and the `units.perCm3()` it meant; `describe()` had caught it as
   `fixedCharge`, which the user hadn't written. One of driftlet's own tests had that slip (1e22).
   Both found by a cold user (a Fable 5.1 agent).
+- `aqueous(names, { T })` moves water's data with temperature, 0 to 50 °C. Each D follows
+  Stokes–Einstein on water's viscosity (Korson et al. 1969), within 3% of the measured D at
+  0 °C for most of the table's ions and 7–8% for Li⁺ and NO₃⁻; 37 °C's are 1.34 times 25 °C's.
+  ε follows Malmberg and Maryott. H⁺ and OH⁻ move by proton hopping, so at another T their D
+  are yours to give, `D: { 'H+': … }`. μ° stay 25 °C's, and the material says so (`mu0T`). A
+  device warns only where a reaction's net μ° or a face into another material reads them, so a
+  pump or a channel moving ions within one water doesn't. The templates at 6.3 °C and 37 °C use
+  it, and no longer warn about themselves. The cold user's stumble: every physiology template
+  warned at every solve.
+- The terminal-current warning again passes, as 1.8.0 did, a sum that is one terminal's
+  round-off where the device has no weakly held region. A battery electrode at rest in
+  docs/statistics.md, its electrons' current read at 1.2e-13 A/m² beside Li⁺'s 0, was warned
+  from the change above.
+- A channel's link across a face beside a strictly neutral cell is warned of, as a reaction
+  there was, where holding the face's charge shifts the cell's concentrations by over 1%. That
+  shift moves a membrane's GHK currents by the mesh: 1% at hmin 5 nm, and more as the grid is
+  refined.
+- A face between two regions of one material reports `interfaces[f].V`, the voltage across it,
+  gates or none. It was undefined without gates.
+- Docs, from a Fable 5.1 review of the physics docs:
+  - the chemical capacitance per volume is F²K/RT, not RT·K;
+  - the Schottky template's Richardson constant is the effective A** (112 A/(cm²K²)), not A*;
+  - the library's mobilities are lightly doped (Si's are about halved at 1e17 cm⁻³);
+  - Kw moves ~5× between 6 and 25 °C, not 6×;
+  - at 1 M, ions conduct ~25% below their limiting D;
+  - Zeng's closed form is within 12% to λ = 0.5 eV (the validation table said 9%);
+  - an electrode's I > 0 is anodic, and an electrode on the left reads −`trace.voltage`.
 
 ## 1.8.0 (2026-11-02)
 

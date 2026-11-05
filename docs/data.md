@@ -10,9 +10,9 @@ The library holds **bulk properties only**. How levels line up at an interface, 
 work function, a pzc and rate constants all belong to a particular interface or surface, so
 you give them yourself (see [conventions](conventions.md)).
 
-## Aqueous ions, 25 °C
+## Aqueous ions, 25 °C (and 0–50 °C)
 
-`aqueous(names, { epsr, material })` returns water holding the named ions, as a library piece
+`aqueous(names, { epsr, material, T, D })` returns water holding the named ions, as a library piece
 for `build()`: each ion a species with $`c_{\mathrm{ref}}`$ = 1000 mol/m³ (1 M), and the material
 `water` with its D and $`\mu^\circ`$. `epsr` defaults to water's 78.30 at 25 °C (Malmberg and
 Maryott 1956); `epsr: 0` makes the solution strictly neutral, for macroscopic models without
@@ -21,14 +21,29 @@ double layers. The data are in `IONS`, and $`\mu^\circ`$ of liquid water is `H2O
 1.011e-14 at 25 °C (pK_w 13.995): neutral water holds 1.0055e-4 mol/m³ of each, which a bath
 with that reaction should hold too.
 
-The data are 25 °C's, and the material says so (`T: 298.15`): a device at another temperature
-warns that they don't hold there. Its μ° (so equilibrium constants and electrode potentials),
-permittivity and diffusivities would all move: $`K_w`$ by ~6× between 6 and 25 °C. Scaling them
-(μ° by the standard entropies, ε, D by water's viscosity) is planned, not done. Where only
-transport between solutions of the same ions matters (a membrane's channels), μ° cancels; if the
-D don't matter either, taking the data as another temperature's is a fair approximation, made
-by setting the material's `T` (the cell and axon demos do, having checked that D scaled by
-T/η moves nothing they show).
+The data are 25 °C's. `aqueous(names, { T })`, from 273.15 to 323.15 K (0 to 50 °C), moves two of them:
+- each D by Stokes–Einstein, $`D\eta/T`$ held at its 25 °C value. Water's viscosity comes from
+  Korson, Drost-Hansen and Millero's fit (J. Phys. Chem. 73, 34, 1969), within 0.2% of IAPWS 2008
+  from 0 to 45 °C. Against Boudreau's fits to the measured D (*Diagenetic Models*, 1997, from
+  data at 0, 18 and 25 °C), it is within 3% at 0 °C for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and
+  SO₄²⁻, and 7–8% off for Li⁺ and NO₃⁻; at 18 °C it is 2–4% low. Near 25 °C that is about 2.4% per
+  kelvin; 37 °C's D are 1.34 times 25 °C's. Above 25 °C it is unchecked: the fits stop there.
+  H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (it is 22% and 6% off at
+  0 °C), so with either of them a `T` needs their D at T from you, `D: { 'H+': … }` (m²/s).
+  `D` replaces any ion's D, at any `T`.
+- ε by Malmberg and Maryott's fit, scaled to 78.30 at 25 °C: 74.15 at 37 °C, 87.74 at 0 °C. A
+  given `epsr` is kept.
+
+μ° stays 25 °C's: the material carries `T` (its D and ε) and `mu0T: 298.15` (its μ°). A device
+whose `T` differs from `mu0T` warns where μ° are read: a reaction whose net μ° in the material
+isn't zero (an electrode's couple, water's dissociation), or a face passing a species into
+another material. There, equilibrium constants and electrode potentials are 25 °C's ($`K_w`$
+moves ~5× between 6 and 25 °C). Where μ° cancel, nothing warns: channels and pumps moving the
+same ions between compartments of one water. Give the material your own μ° for T and set its
+`mu0T` to T to say so. Without `T`, the material is 25 °C's throughout (`T: 298.15`), and a
+device at another temperature warns that μ°, ε and D don't hold. The cell and axon demos take
+25 °C's data as their own temperature's by setting the material's `T`, having checked that D
+scaled by T/η moves nothing they show.
 
 | Ion | z | D (10⁻⁹ m²/s) | $`\mu^\circ`$ (kJ/mol) |
 |---|---|---|---|
@@ -49,7 +64,8 @@ T/η moves nothing they show).
 
 - **D**: diffusivities at infinite dilution, from the CRC Handbook of Chemistry and Physics,
   "Ionic conductivity and diffusion at infinite dilution". They're limiting values, so at
-  real concentrations ions move somewhat slower.
+  real concentrations ions move slower: at 1 M, KCl conducts about 25% below its limiting value,
+  so a supporting electrolyte's resistance comes out that much low.
 - **$`\mu^\circ`$**: standard Gibbs energies of formation, from Wagman et al., "The NBS tables of
   chemical thermodynamic properties" (J. Phys. Chem. Ref. Data 11, Suppl. 2, 1982), on the usual
   table convention: $`\Delta_{\mathrm{f}} G^\circ(\mathrm{H}^+) = 0`$ and elements in their standard
@@ -80,7 +96,7 @@ temperature it was made at, and it carries that temperature as `materials.Si.T`.
 another temperature warns, in `sol.warnings` (so `check()`) and `describe()`, naming both
 temperatures. The device's own default is 298.15 K (25 °C, the ions' temperature), not the
 table's 300 K, so a semiconductor device says `T: 300`: at 298.15 K the 300 K data's
-intrinsic density is 13% low. A material written by hand has no `T` and is never warned about.
+intrinsic density is 13% below the table's 300 K value (and 2% above the data moved to 298.15 K). A material written by hand has no `T` and is never warned about.
 
 To change the temperature of a live device, give it the material for the new T in the same
 `set()`. The state carries over as a warm start:

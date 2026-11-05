@@ -435,11 +435,13 @@ for live demos.
   channel's own reads to 5e-11. Today only terminals that all float are summed this way, from
   their voltages. (From the impedance module's cold review, 2026-10-20.)
 
-- **Water at other temperatures.** `aqueous(list, { T })`: μ°ᵢ(T) from the standard entropies
-  (and heat capacities where tabulated; NBS/CODATA, conventional for single ions, which cancel in
-  any neutral combination), ε_r(T) (Malmberg–Maryott) and D ∝ T/η_water(T); checked against
-  K_w(T) and an E°(T) from the tables. The cell and axon demos take the 25 °C data as their temperature's, fairly: only D counts there, and scaled it moves nothing they show.
-  Until then the 25 °C data warn at other temperatures (1.1.1, after Argon's review).
+- **Water's μ° at other temperatures.** `aqueous(list, { T })` moves D (Stokes–Einstein on
+  water's viscosity) and ε_r (Malmberg–Maryott), 0–50 °C, since 5 Nov 2026. Still to come: μ°ᵢ(T)
+  from the standard entropies (and heat capacities where tabulated; NBS/CODATA, conventional for
+  single ions, which cancel in any neutral combination), checked against K_w(T) and an E°(T) from
+  the tables. Also H⁺'s and OH⁻'s D(T), which proton hopping keeps off Stokes–Einstein (22% at
+  0 °C), from measured limiting conductivities, and a check of everyone's D above 25 °C. Until
+  then μ° are 25 °C's, warned of where a reaction reads them.
 
 - **More interface kinetics.** (Marcus–Hush–Chidsey rates at faces and ports and surface species at
   faces done 2026-10-29.) Surface species carrying charge (in the face's

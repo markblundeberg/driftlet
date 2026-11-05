@@ -245,3 +245,70 @@ test('aqueous() water is 25 °C data: a device at 6.3 °C warns that its μ°, p
   assert.match(cold, /μ° \(so equilibrium constants/);
   assert.doesNotMatch(describe(mk(298.15)), /data are for/);
 });
+
+test('aqueous() at T: D by Stokes–Einstein on water\'s viscosity, ε by Malmberg–Maryott, 298.15 K the table exactly', () => {
+  const at = (T, names = ['Na+', 'Cl-', 'SO42-']) => aqueous(names, { T }).materials.water;
+  assert.deepEqual(at(298.15), aqueous(['Na+', 'Cl-', 'SO42-']).materials.water);
+  // η(25 °C)/η(T) against IAPWS 2008's viscosity of water at 1 atm, from the NIST Chemistry WebBook
+  // (889.82, 1791.1, 1001.4, 652.61, 595.66 µPa·s at 25.01, 0.01, 20.01, 40.01, 45.01 °C), read
+  // through D·298.15/T.
+  for (const [t, eta] of [[0.01, 1791.1], [20.01, 1001.4], [40.01, 652.61], [45.01, 595.66]]) {
+    const T = 273.15 + t, ratio = (at(T).species['Na+'].D / IONS['Na+'].D) * (298.15 / T);
+    const want = (889.82 / eta) * (aqueous(['Na+'], { T: 298.16 }).materials.water.species['Na+'].D / IONS['Na+'].D) * (298.15 / 298.16);
+    assert.ok(Math.abs(ratio / want - 1) < 2e-3, `${t} °C: ${ratio} vs ${want}`);
+  }
+  // The measured D: Boudreau's (1997) fits to data at 0, 18 and 25 °C, D = m0 + m1 t (1e-10 m²/s),
+  // read as ratios to their own 25 °C value: within 3% at 0 °C, 4% at 18 °C.
+  const fits = { 'Na+': [6.06, 0.297], 'Cl-': [9.6, 0.438], 'SO42-': [4.88, 0.232] };
+  for (const [name, [m0, m1]] of Object.entries(fits)) {
+    for (const t of [0, 18]) {
+      const ours = at(273.15 + t).species[name].D / IONS[name].D, theirs = (m0 + m1 * t) / (m0 + 25 * m1);
+      assert.ok(Math.abs(ours / theirs - 1) < (t === 0 ? 0.03 : 0.04), `${name} at ${t} °C: ${ours} vs ${theirs}`);
+    }
+  }
+  // ε: 74.15 at 37 °C, 87.74 at 0 °C (the fit's, scaled to 78.3 at 25 °C); a given epsr is kept.
+  assert.ok(Math.abs(at(310.15).epsr - 74.15) < 0.01 && Math.abs(at(273.15).epsr - 87.735) < 0.01, `${at(310.15).epsr} ${at(273.15).epsr}`);
+  assert.equal(aqueous(['Na+'], { T: 310.15, epsr: 0 }).materials.water.epsr, 0);
+  assert.equal(at(310.15).T, 310.15);
+  assert.equal(at(310.15).mu0T, 298.15);
+  assert.equal(at(310.15).species['Na+'].mu0, IONS['Na+'].mu0);
+});
+
+test('aqueous() at T: H⁺ and OH⁻ (proton hopping) take their D from you; T outside 0–50 °C, or in °C, is refused', () => {
+  assert.throws(() => aqueous(['H+', 'Cl-'], { T: 310.15 }), /H\+ at 310\.15 K: it moves by proton hopping.*D: \{ 'H\+': … \}/);
+  assert.throws(() => aqueous(['OH-', 'Na+'], { T: 280 }), /OH- at 280 K/);
+  const w = aqueous(['H+', 'Cl-'], { T: 310.15, D: { 'H+': 1.1e-8 } }).materials.water.species;
+  assert.equal(w['H+'].D, 1.1e-8);
+  assert.equal(aqueous(['H+'], { D: { 'H+': 9e-9 } }).materials.water.species['H+'].D, 9e-9);
+  assert.throws(() => aqueous(['Na+'], { T: 37 }), /T is 37; .*T is in K \(37 °C is 310\.15\)/);
+  assert.throws(() => aqueous(['Na+'], { T: 340 }), /from 273\.15 to 323\.15 K/);
+  assert.throws(() => aqueous(['Na+'], { D: { 'K+': 1e-9 } }), /D\.K\+: not one of the ions asked for/);
+  assert.throws(() => aqueous(['Na+'], { D: { 'Na+': -1 } }), /D\.Na\+ is -1/);
+});
+
+test('aqueous() at T warns of its 25 °C μ° only where they\'re read: a reaction\'s net μ°, not a pump\'s or a channel\'s', () => {
+  const c = { 'Na+': 140, 'K+': 5, 'Cl-': 145 }, T = 310.15;
+  const membrane = (water) => build({
+    T,
+    library: [water],
+    stack: [
+      bath(c, 'Cl-'),
+      layer('water', 1e-6, { c0: c }),
+      { phi: { type: 'capacitive', C: 0.01 }, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': 'blocked', 'Cl-': 'blocked' }, reactions: [{ equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: 50e3, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } }] },
+      layer('water', 1e-6, { c0: c }),
+      bath(c, 'Cl-', 0),
+    ],
+  });
+  assert.doesNotMatch(describe(membrane(aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T }))), /materials\.water/);
+  // 25 °C's water at 310 K still warns of all three.
+  assert.match(describe(membrane(aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 }))), /data are for 298\.15 K, but the device is at 310\.15 K.*aqueous\(names, \{ T \}\) moves D and ε/);
+  // Water's dissociation reads μ°_H⁺ + μ°_OH⁻: warned, and named.
+  const ions = { 'H+': 1e-4, 'OH-': 1e-4, 'Na+': 100, 'Cl-': 100 };
+  const wet = (mu0T) => {
+    const w = aqueous(Object.keys(ions), { T, D: { 'H+': 1.1e-8, 'OH-': 6.5e-9 } });
+    if (mu0T) w.materials.water.mu0T = mu0T;
+    return build({ T, library: [w], stack: [bath(ions, 'Cl-'), layer('water', 1e-5, { c0: ions }), bath(ions, 'Cl-', 0)], bulkReactions: [{ equation: 'H2O = H+ + OH-', fixed: { H2O }, kf: { water: 1e-3 } }] });
+  };
+  assert.match(describe(wet()), /materials\.water: its μ° are for 298\.15 K, but the device is at 310\.15 K, and bulkReactions\[0\] read them/);
+  assert.doesNotMatch(describe(wet(T)), /materials\.water/); // (μ° given for T)
+});

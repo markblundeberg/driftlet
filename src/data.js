@@ -65,27 +65,65 @@ export const METALS = freeze(
   ),
 );
 
+// How water's data move with temperature, for aqueous(names, { T }), 0 to 50 °C:
+// - its viscosity by Korson, Drost-Hansen and Millero's fit (J. Phys. Chem. 73, 34, 1969, eq. 5,
+//   log10 read as such; 0–100 °C, within 0.1% of their table at 0, 25 and 40 °C), and each ion's D by
+//   Stokes–Einstein, D·η/T held at its 25 °C value. Checked against Boudreau's linear fits of the
+//   measured D (Diagenetic Models, 1997, ch. 4, fitted to data at 0, 18 and 25 °C; as tabulated
+//   in the R package marelac): at 0 °C within 3% for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and SO₄²⁻,
+//   7–8% for Li⁺ (above) and NO₃⁻ (below); at 18 °C 2–4% below. Not checked above 25 °C (the
+//   fits stop there). H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (22% and 6%
+//   below at 0 °C), so with them aqueous() takes their D at T from you.
+// - its permittivity by Malmberg and Maryott's fit (J. Res. NBS 56, 1, 1956, 0–100 °C), as a ratio
+//   to its value at 25 °C (78.30), so T = 298.15 K gives the table exactly.
+// - μ° isn't moved: the material says so (mu0T: 298.15), and a device warns where a reaction or a
+//   face between materials reads it.
+const T25 = 298.15, AQ_T = [273.15, 323.15];
+const waterViscosity = (T) => {
+  const t = T - 273.15;
+  return 1.002e-3 * Math.exp(Math.LN10 * ((1.1709 * (20 - t) - 0.001827 * (t - 20) * (t - 20)) / (t + 89.93)));
+};
+const waterEpsr = (T) => {
+  const t = T - 273.15;
+  return 87.74 - 0.40008 * t + 9.398e-4 * t * t - 1.41e-6 * t * t * t;
+};
+const HOPPING = ['H+', 'OH-'];
+
 /**
  * Water with the named ions, as a library piece for `build()`: each ion as a species
  * (c_ref = 1 M) and the material `water` holding them, with D and μ° from `IONS`. The data are
- * 25 °C's, and the material says so (T: 298.15): a device at another temperature warns.
+ * 25 °C's; another T (273.15 to 323.15 K) moves D by Stokes–Einstein with water's viscosity and ε
+ * by Malmberg and Maryott's fit, and leaves μ° at 25 °C's (the material says so, and a device
+ * warns where a reaction reads it). H⁺'s and OH⁻'s D at another T are yours to give (`D`).
  * @param {string[]} names ions from `IONS`
- * @param {{ epsr?: number, material?: string }} [opts] permittivity (default that of water;
- *   0 makes the solution strictly neutral, without double layers), and the material's name
+ * @param {{ epsr?: number, material?: string, T?: number, D?: Record<string, number> }} [opts]
+ *   permittivity (default that of water at T; 0 makes the solution strictly neutral, without
+ *   double layers), the material's name, the temperature (K, default 298.15), and diffusivities
+ *   (m²/s) at T that replace the table's
  * @returns {{ species: object[], materials: Record<string, object> }}
  */
-export function aqueous(names, { epsr = WATER_EPSR, material = 'water' } = {}) {
-  checkOptions('aqueous', arguments[1], ['epsr', 'material']);
+export function aqueous(names, { epsr, material = 'water', T = T25, D = {} } = {}) {
+  checkOptions('aqueous', arguments[1], ['epsr', 'material', 'T', 'D']);
   if (!Array.isArray(names) || names.length === 0) fail('aqueous: give a list of ions, e.g. aqueous([\'Na+\', \'Cl-\'])');
+  if (!(Number.isFinite(T) && T >= AQ_T[0] && T <= AQ_T[1]))
+    fail(`aqueous: T is ${shown(T)}; its data move with temperature from ${AQ_T[0]} to ${AQ_T[1]} K (0 to 50 °C), and T is in K (37 °C is 310.15)`);
+  if (D === null || typeof D !== 'object' || Array.isArray(D)) fail('aqueous: D maps ion names to diffusivities at T, m²/s, e.g. { \'H+\': 1.1e-8 }');
+  for (const [name, d] of Object.entries(D)) {
+    if (!names.includes(name)) fail(`aqueous: D.${name}: not one of the ions asked for (${names.join(', ')})`);
+    if (!(Number.isFinite(d) && d >= 0)) fail(`aqueous: D.${name} is ${shown(d)}; give a diffusivity in m²/s`);
+  }
+  const moved = Math.abs(T - T25) > 0.01, scale = (T / T25) * (waterViscosity(T25) / waterViscosity(T));
   const species = [], entries = {};
   for (const name of names) {
     const ion = IONS[name];
     if (!ion) fail(`aqueous: no data for '${name}' (the library has ${Object.keys(IONS).join(', ')})`);
+    if (moved && HOPPING.includes(name) && D[name] === undefined)
+      fail(`aqueous: ${name} at ${T} K: it moves by proton hopping, which water's viscosity doesn't scale (22% off at 0 °C), so give its D at T (D: { '${name}': … }, m²/s; ${shown(ion.D)} is 25 °C's)`);
     species.push({ name, z: ion.z, cRef: 1000 });
-    entries[name] = { D: ion.D, mu0: ion.mu0 };
+    entries[name] = { D: D[name] ?? (moved ? ion.D * scale : ion.D), mu0: ion.mu0 };
   }
-  // (25 °C data: a device at another temperature warns)
-  return { species, materials: { [material]: { epsr, species: entries, T: 298.15 } } };
+  const eps = epsr ?? (moved ? (WATER_EPSR * waterEpsr(T)) / waterEpsr(T25) : WATER_EPSR);
+  return { species, materials: { [material]: { epsr: eps, species: entries, T, mu0T: T25 } } };
 }
 
 // How the semiconductors' data move with temperature, for semiconductor(name, { T }):

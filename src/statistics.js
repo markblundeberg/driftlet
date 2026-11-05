@@ -3,7 +3,7 @@
 // Every species i in a material has a reduced chemical potential
 //   ζ_i = (μ̄_i − z_i F φ − μ°_i) / RT,
 // and a statistics model maps the ζ of the species it covers to their concentrations c(ζ) and
-// the Jacobian K = ∂c/∂ζ (the chemical capacitance matrix, per RT). K is the Hessian of a
+// the Jacobian K = ∂c/∂ζ (the chemical capacitance matrix per volume is F²K/RT). K is the Hessian of a
 // convex potential, so it's symmetric and positive definite. Ideal (dilute) statistics are
 // c = c_ref e^ζ, K = diag(c), and every model here reduces to them in the dilute limit, so μ°
 // and c_ref keep one meaning (the dilute, Henry's-law reference) whatever the model.

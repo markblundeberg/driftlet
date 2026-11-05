@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, bath, aqueous, recorder, check, describe } from '../src/kit.js';
+import { build, layer, bath, aqueous, recorder, check, describe, half, metal, ohmic } from '../src/kit.js';
 
 // A cell membrane as a face: a capacitor (1 µF/cm²) that K⁺, Na⁺ and Cl⁻ cross by electrodiffusion
 // in a constant field (a permeability each, Goldman–Hodgkin–Katz), with the impermeant anions of
@@ -225,4 +225,30 @@ test('a restricted space behind a barrier clears as one compartment: an excess d
     const k = K(d.advance(t, { tol: 1e-6 }));
     assert.ok(Math.abs(k / (k0 * Math.exp(-t / 50e-3)) - 1) < 2e-3, `${t} s: ${k} mM over the bath, vs ${k0 * Math.exp(-t / 50e-3)}`);
   }
+});
+
+test('a membrane face reports the voltage across it, gates or none (K⁺ alone: most of its Nernst potential); a face between two materials doesn\'t', () => {
+  const T = 298.15, VT = (GAS_CONSTANT * T) / FARADAY;
+  const left = { 'K+': 100, 'Na+': 10, 'Cl-': 110 }, right = { 'K+': 10, 'Na+': 100, 'Cl-': 110 };
+  const water = aqueous(['K+', 'Na+', 'Cl-'], { epsr: 0 });
+  const sol = new Device(build({
+    T,
+    library: [water],
+    stack: [bath(left, 'Cl-'), layer('water', 1e-6, { c0: left }), { phi: { type: 'capacitive', C: 0.01 }, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('water', 1e-6, { c0: right }), bath(right, 'Cl-', { I: 0 })],
+  })).solve();
+  assert.ok(sol.converged);
+  // Bulk to bulk, K⁺'s Nernst potential; across the face itself, φ between its two nodes (the
+  // rest drops in the strictly neutral edge cells holding its charge, as warned).
+  const want = VT * Math.log(left['K+'] / right['K+']), g = sol.x.findIndex((x, k) => k > 0 && x === sol.x[k - 1]);
+  assert.ok(Math.abs(sol.phi[sol.x.length - 1] - sol.phi[0] - want) < 1e-9);
+  assert.ok(Math.abs(sol.interfaces[0].V - (sol.phi[g] - sol.phi[g - 1])) < 1e-12, `${sol.interfaces[0].V}`);
+  assert.ok(sol.interfaces[0].V > 0.9 * want && sol.interfaces[0].V < want);
+  assert.equal(sol.interfaces[0].gates, undefined);
+  const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 });
+  const cell = new Device(build({
+    library: [aqueous(['Ag+', 'NO3-']), metal('Ag')],
+    stack: [ohmic(0, ['e-']), layer('Ag', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.1, reactions: [{ ...silver, k0: 1e-3, alpha: 0.5 }] }, layer('water', 1e-6, { c0: { 'Ag+': 10, 'NO3-': 10 } }), bath({ 'Ag+': 10, 'NO3-': 10 }, 'NO3-', 0)],
+    grid: { hmin: 0.1e-9, hmax: 50e-9 },
+  })).solve();
+  assert.ok(cell.converged && !('V' in cell.interfaces[0]));
 });
