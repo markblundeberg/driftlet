@@ -1237,9 +1237,12 @@ const now = dev.solution();                   // snapshot of the current state
   Otherwise the device is rebuilt: the current state carries over while the species, regions
   and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate
   keeps its charge; `solution()` then shows that interpolation, unsolved, until the next
-  `solve()` or step), or restarts from the regions' `c0`. A change to a face's or port's unknowns
+  `solve()` or step; a steady state interpolated so is solved again on the new grid before the
+  next `advance()`, since interpolation leaves it slightly off a strictly neutral region's
+  neutrality), or restarts from the regions' `c0`. A change to a face's or port's unknowns
   restarts it too: a reaction added or removed (the count, not its rates), gates, a surface, a
-  diffuse layer. The next solution says so in its `warnings`. To switch a reaction off and keep
+  diffuse layer. Its clock carries on, and every solution says so in its `warnings` up to the
+  next steady solve (which keeps a closed region's restarted amounts). To switch a reaction off and keep
   the state, keep it listed and make it negligible (`vmax: 1e-30`). A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over

@@ -124,8 +124,13 @@ export class Device {
         : old.model.grid.regionStart.length !== model.grid.regionStart.length || old.nFaces !== solver.nFaces ? 'the regions or faces changed'
         : old.terms.length !== solver.terms.length ? 'the terminals changed'
         : "a face's or port's unknowns changed: its reactions, gates, surface or diffuse layers";
-      solver.restarted = `set(): the state couldn't carry over (${why}), so the device restarted from its regions' c0 at t = ${old.time}: this solution follows from there, not from the state before set(). ` +
-        'To switch a reaction off and keep the state, keep it listed and make it negligible (k0 or vmax tiny).';
+      solver.restarted = `set(): the state couldn't carry over (${why}), so the device restarted from its regions' c0 at t = ${old.time} (the clock carries on): what follows is from there, not from the state before set(). ` +
+        'To switch a reaction off and keep the state, keep it listed and make it negligible (k0 or vmax tiny). (Said in every solution up to the next steady solve, which keeps a closed region\'s restarted amounts.)';
+      // The clock carries on, so a run's next advance(t) is still at t (it read 0, and an
+      // advance(20.001) after a change at t = 20 ran 20 s from c0).
+      solver.time = old.time;
+      solver.sourceTime = old.sourceTime;
+      solver._refreshSources();
     }
     if (sameUnknowns || regridded) {
       if (sameUnknowns) {
@@ -138,7 +143,10 @@ export class Device {
         // starting coverages, not at whatever its slots held.
         const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());
         for (let g = 0; g < solver.nNodes; g++) if (solver.surfAt[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
-      } else solver._warmFrom(old);
+      } else {
+        solver._warmFrom(old);
+        solver.regriddedSteady = old.atSteady; // (see advance)
+      }
       solver.computeConcentrations();
       solver.time = old.time;
       // Held sources read at the same time as before, and an adaptive transient goes on at the
@@ -238,6 +246,16 @@ export class Device {
    */
   advance(tEnd, opts) {
     options(opts, 'advance', ['tol', 'dt0', 'dtMax', 'budgetMs', 'maxSteps', 'method', 'probes']);
+    // A steady state interpolated onto a new grid isn't quite one there (a strictly neutral
+    // region's interpolated levels miss neutrality), and a transient's first short steps can't
+    // close that gap: storage resists it (Fable round 2's cold user: set({ grid }) on a solved
+    // cell, then advance(), failed down to 1e-17 s). Its steady state on the new grid is what it
+    // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
+    if (this.solver.regriddedSteady) {
+      this.solver.regriddedSteady = false;
+      const snap = this.solver._snapshot();
+      if (!this.solver.solveSteady().converged) this.solver._restore(snap);
+    }
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
   }
 

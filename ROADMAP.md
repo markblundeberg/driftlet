@@ -153,6 +153,18 @@ for live demos.
      whose ratio refuses BDF2), the backward-Euler estimate just after a jump runs 170–430× its
      true error, and the end-of-call snap (1e-10 of tEnd) is wider than round-off. The consistent
      start would take the first of these with it.
+   - From Fable round 2's hunter of transients (5 Nov 2026; the pulse-edge order restart fixed):
+     the error norm leaves out floating terminals' voltages and plates' and ports' charges, so a
+     device whose only dynamics are there (an RC cell charging) is stepped blind to them; a trace
+     has one point at a jump, with the pre-jump current, so a trapezoid of it across a pulse
+     miscounts by half the next step; and `dt0` is ignored after a device's first call (the
+     carried step size wins), so it can't ask to see the first instants after a `set()`.
+   - From the same round's cold user: a trace of a port-driven device (`trace.current` and
+     `voltage` are the contacts'), and each face's production by its reactions per species (`N`
+     is links only); `photogeneration()` toward −x (light entering from a right-hand face); a
+     cold `solve()` that fails generically at a state a short sweep reaches (a photoanode at 0 V vs
+     SHE; a Schottky diode at 0 V from −0.5 V), which `solve()` could try itself; and
+     `impedance()` re-solving where the device holds a converged steady state, and failing there.
    - Starts needlessly far from where the physics goes (a cold review of `src/start.js`; each
      the first step absorbs, listed under Known in its contract): the gauge from the left; an
      insertion host's shift moving contact-held levels (a two-host battery 137 mV from both held

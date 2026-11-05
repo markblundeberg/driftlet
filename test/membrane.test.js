@@ -269,13 +269,41 @@ test('set() that can\'t carry the state (a pump taken off a face) says it restar
   }));
   const rest = dev.solve();
   assert.ok(rest.converged && !rest.warnings.some((w) => /set\(\)/.test(w)));
+  dev.advance(5);
   dev.set({ interfaces: [membrane([])] });
-  const a = dev.advance(1);
-  assert.match(a.warnings.join('\n'), /set\(\): the state couldn't carry over \(a face's or port's unknowns changed.*restarted from its regions' c0/);
-  assert.ok(!dev.advance(2).warnings.some((w) => /set\(\)/.test(w)));
+  // Said on every solution of the run from the restart, its clock carrying on, until a steady solve.
+  const a = dev.advance(6);
+  assert.match(a.warnings.join('\n'), /set\(\): the state couldn't carry over \(a face's or port's unknowns changed.*restarted from its regions' c0 at t = 5 \(the clock carries on\)/);
+  assert.equal(a.time, 6);
+  assert.ok(a.trace.t[0] > 5, `${a.trace.t[0]}`);
+  assert.ok(dev.advance(7).warnings.some((w) => /set\(\)/.test(w)));
+  assert.ok(dev.solution().warnings.some((w) => /set\(\)/.test(w)));
+  // (a steady solve says it too, since a closed region keeps the amounts it restarted with, and
+  // is the last to)
+  assert.ok(dev.solve().warnings.some((w) => /set\(\)/.test(w)));
+  assert.ok(!dev.advance(8).warnings.some((w) => /set\(\)/.test(w)));
   // A patch that carries the state says nothing.
   dev.set({ interfaces: [membrane([{ ...pump, vmax: 1e-30 }])] });
   dev.solve();
   dev.set({ interfaces: [membrane([{ ...pump, vmax: 5e-7 }])] });
   assert.ok(!dev.advance(3).warnings.some((w) => /set\(\)/.test(w)));
+});
+
+test('a solved device given a new grid steps on from its steady state there (set({ grid }), then advance())', () => {
+  // (Fable round 2's cold user: the interpolated state missed neutrality, and the first step
+  // failed down to 1e-17 s, blaming c0)
+  const out = { 'Na+': 145, 'K+': 5, 'Cl-': 110, 'A-': 40 }, inside = { 'Na+': 12, 'K+': 140, 'Cl-': 10, 'A-': 142 };
+  const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+  water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+  water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+  const pump = { equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: 50e3, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } };
+  const membrane = { phi: { type: 'capacitive', C: 0.01 }, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': { type: 'permeability', P: 0.04e-8 }, 'Cl-': { type: 'permeability', P: 0.45e-8 }, 'A-': 'blocked' }, reactions: [pump] };
+  for (const grid of [{ hmin: 25e-9, hmax: 100e-9 }, { hmin: 100e-9, hmax: 400e-9 }]) {
+    const dev = new Device(build({ library: [water], stack: [bath(out, 'Cl-'), layer('water', 1e-6, { c0: out }), membrane, layer('water', 5e-6, { c0: inside }), { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' }], grid: { hmin: 50e-9, hmax: 200e-9 } }));
+    const rest = dev.solve(), g0 = rest.x.length - 1;
+    dev.set({ grid });
+    const run = dev.advance(1e-3), g = run.x.length - 1;
+    assert.ok(run.converged, run.warnings.join('\n'));
+    assert.ok(Math.abs(run.c['Na+'][g] / rest.c['Na+'][g0] - 1) < 2e-3, `${run.c['Na+'][g]} vs ${rest.c['Na+'][g0]}`);
+  }
 });

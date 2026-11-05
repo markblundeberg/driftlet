@@ -64,7 +64,12 @@ major version.
 - A `set()` that can't carry the state over, and so restarts from `c0`, says so in the next
   solution's warnings. Taking a pump off a membrane's reactions changed the face's unknowns,
   and a closed cell's run-down then started from its c0, not its rest, converged and unwarned.
-  device.md lists what restarts. Found by a Fable 5.1 cold user.
+  device.md lists what restarts. Found by a Fable 5.1 cold user. Its re-check: the clock now
+  carries on through the restart (it read 0, so `advance(20.001)` after a change at 20 s ran
+  20 s from c0), and the warning stays on every solution up to the next steady solve. And a
+  solved device given a new grid, `set({ grid })`, then `advance()`, failed at once (the
+  interpolated state missed neutrality, and storage resisted the first short steps): its steady
+  state is solved again on the new grid first.
 - `set({ T, materials })` on a live device keeps its concentrations and φ. The carried unknowns
   are potentials over RT, so a new temperature moved every concentration: a cell's 140 mM of K⁺
   read 1.7 mM after 298 → 310 K, and the next `advance()` failed, blaming c0. Now φ stays in
