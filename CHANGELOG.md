@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.9.0 (2026-11-05)
 
 - Steady solves now find the level of a floating base held only by its minority carriers' leaks.
   A GaAs n/p⁺/n stack without recombination (the stress run's semi 220) converged from cold with
