@@ -55,6 +55,16 @@ major version.
   refined.
 - A face between two regions of one material reports `interfaces[f].V`, the voltage across it,
   gates or none. It was undefined without gates.
+- A transient whose call ends a hair before a waveform's jump (within 1e-12 of the time, as a
+  target summed from durations often is) now restarts its order there. The next call stepped
+  across the jump with BDF2 and its old history, which lost 1/12 of the first step's charge for
+  good: a 1 ms current pulse put 8.33% too little on an RC cell's plates, at 1 s, 100 s and 1e5 s
+  alike, converged and unwarned (the plates' charge isn't in the error norm). Found by a Fable 5.1
+  hunter of transients, which searched 22 other families clean.
+- A `set()` that can't carry the state over, and so restarts from `c0`, says so in the next
+  solution's warnings. Taking a pump off a membrane's reactions changed the face's unknowns,
+  and a closed cell's run-down then started from its c0, not its rest, converged and unwarned.
+  device.md lists what restarts. Found by a Fable 5.1 cold user.
 - Docs, from a Fable 5.1 review of the physics docs:
   - the chemical capacitance per volume is F²K/RT, not RT·K;
   - the Schottky template's Richardson constant is the effective A** (112 A/(cm²K²)), not A*;

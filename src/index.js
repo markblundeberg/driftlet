@@ -116,6 +116,17 @@ export class Device {
     // charge to a refined grid.)
     const sameUnknowns = old && old.u.length === solver.u.length && old.n === solver.n;
     const regridded = old && !sameUnknowns && old.M === solver.M && old.n === solver.n && old.nFaces === solver.nFaces && old.terms.length === solver.terms.length && old.model.grid.regionStart.length === model.grid.regionStart.length;
+    // A state that can't carry over restarts from c0. Say so in the next solution, where there
+    // was a state to lose: a pump taken off a membrane's reactions restarted a closed cell from
+    // its c0, converged and unwarned (Fable round 2's cold user).
+    if (old && !sameUnknowns && !regridded && (old.time > 0 || old.atSteady || old.stepped || old.history.length > 0)) {
+      const why = old.n !== solver.n ? 'the species changed'
+        : old.model.grid.regionStart.length !== model.grid.regionStart.length || old.nFaces !== solver.nFaces ? 'the regions or faces changed'
+        : old.terms.length !== solver.terms.length ? 'the terminals changed'
+        : "a face's or port's unknowns changed: its reactions, gates, surface or diffuse layers";
+      solver.restarted = `set(): the state couldn't carry over (${why}), so the device restarted from its regions' c0 at t = ${old.time}: this solution follows from there, not from the state before set(). ` +
+        'To switch a reaction off and keep the state, keep it listed and make it negligible (k0 or vmax tiny).';
+    }
     if (sameUnknowns || regridded) {
       if (sameUnknowns) {
         solver.u.set(old.u);

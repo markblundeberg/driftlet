@@ -267,6 +267,12 @@ export function makeSolution(solver, result = {}) {
   // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
   // gate contacts), check the local Debye length against the adjacent cell.
   sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
+  // (a set() that couldn't carry the state over: said in every solution until a solve or a
+  // transient has run from the restart)
+  if (solver.restarted) {
+    sol.warnings.push(solver.restarted);
+    if (result.converged !== undefined) solver.restarted = null;
+  }
   // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
   // and Newton loses them (a transient can stall there).
   // (A face's surface too: Argon's review of 1.6.1 found it unwatched.)

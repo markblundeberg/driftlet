@@ -817,6 +817,20 @@ export function sourceAt(src, t, before = false) {
   return vs[k - 1] + w * (vs[k] - vs[k - 1]);
 }
 
+/**
+ * Whether a source has a breakpoint within round-off of time t: one nextBreakpoint() counts as
+ * passed (within 1e-12 of t, relative), so a time step from t starts across it.
+ */
+export function nearBreakpoint(src, t) {
+  if (src.value !== undefined) return false;
+  const { t: ts, repeat } = src, n = ts.length;
+  const T = repeat ? ts[n - 1] - ts[0] : 0, w = 1e-12 * Math.max(Math.abs(t), T) + 1e-300;
+  if (!repeat) return ts.some((tb) => Math.abs(tb - t) <= w);
+  const cycle = Math.floor((t - ts[0]) / T);
+  for (let c = cycle - 1; c <= cycle + 1; c++) for (let k = 0; k < n; k++) if (Math.abs(ts[k] + c * T - t) <= w) return true;
+  return false;
+}
+
 /** The first breakpoint of a source strictly after time t (Infinity if none). */
 export function nextBreakpoint(src, t) {
   if (src.value !== undefined) return Infinity;

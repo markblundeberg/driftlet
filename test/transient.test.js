@@ -665,3 +665,32 @@ test('a transient that fails at its first step from c0\'s layout says to solve()
   assert.ok(d.solve().converged);
   assert.ok(d.advance(1e-9).converged);
 });
+
+test('a call ending a hair before a pulse\'s edge: the next steps across it from a restarted order, and the pulse\'s charge is kept', () => {
+  // (Fable round 2's hunter: BDF2's history across the edge lost 1/12 of the first step's charge,
+  // 8.33% of a 1 ms pulse, silently; backward Euler kept it.)
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2, w = 1e-3;
+  const ulpsBelow = (x, n) => {
+    const f = new Float64Array([x]), u = new BigUint64Array(f.buffer);
+    u[0] -= BigInt(n);
+    return f[0];
+  };
+  for (const tb of [1, 1e5]) {
+    for (const tPrev of [tb, ulpsBelow(tb, 2), tb * (1 - 1e-13)]) {
+      const dev = new Device({
+        species: lib.species,
+        materials: lib.materials,
+        regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
+        contacts: { left: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 }, right: { I: { t: [0, tb, tb, tb + w, tb + w], values: [0, 0, 1, 1, 0] }, phi: { type: 'capacitive', C }, zeroCharge: 0 } },
+        grid: { hmin: 2e-6, hmax: 5e-6 },
+      });
+      dev.solve();
+      dev.advance(tb - 0.01);
+      dev.advance(tPrev);
+      const sol = dev.advance(tb + 2e-3);
+      assert.ok(sol.converged);
+      const Q = sol.plates.right.charge;
+      assert.ok(Math.abs(Q / w - 1) < 2e-5, `tb ${tb}, ${tb - tPrev} s short: ${Q} for ${w}`);
+    }
+  }
+});

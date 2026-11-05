@@ -1235,7 +1235,10 @@ const now = dev.solution();                   // snapshot of the current state
   Otherwise the device is rebuilt: the current state carries over while the species, regions
   and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate
   keeps its charge; `solution()` then shows that interpolation, unsolved, until the next
-  `solve()` or step), or restarts from the regions' `c0`. A carried state keeps what it holds: a
+  `solve()` or step), or restarts from the regions' `c0`. A change to a face's or port's unknowns
+  restarts it too: a reaction added or removed (the count, not its rates), gates, a surface, a
+  diffuse layer. The next solution says so in its `warnings`. To switch a reaction off and keep
+  the state, keep it listed and make it negligible (`vmax: 1e-30`). A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
   what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
   from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it

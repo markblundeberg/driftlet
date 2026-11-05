@@ -252,3 +252,30 @@ test('a membrane face reports the voltage across it, gates or none (K⁺ alone: 
   })).solve();
   assert.ok(cell.converged && !('V' in cell.interfaces[0]));
 });
+
+test('set() that can\'t carry the state (a pump taken off a face) says it restarted from c0, until a solve or step has run', () => {
+  // (Fable round 2's cold user: a closed cell restarted from c0, converged and unwarned)
+  const out = { 'Na+': 145, 'K+': 5, 'Cl-': 110, 'A-': 40 }, inside = { 'Na+': 12, 'K+': 140, 'Cl-': 10, 'A-': 142 };
+  const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0 });
+  water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+  water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+  const pump = { equation: '3 Na+(right) + 2 K+(left) + ATP = 3 Na+(left) + 2 K+(right) + ADP', fixed: { ATP: 50e3, ADP: 0 }, vmax: 5e-7, K: { 'Na+': 10, 'K+': 1.5 } };
+  const membrane = (reactions) => ({ phi: { type: 'capacitive', C: 0.01 }, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': { type: 'permeability', P: 0.04e-8 }, 'Cl-': { type: 'permeability', P: 0.45e-8 }, 'A-': 'blocked' }, reactions });
+  const dev = new Device(build({
+    T: 298.15,
+    library: [water],
+    stack: [bath(out, 'Cl-'), layer('water', 1e-6, { c0: out }), membrane([pump]), layer('water', 5e-6, { c0: inside }), { species: { 'Na+': 'blocked', 'K+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' }, phi: 'neutral' }],
+    grid: { hmin: 50e-9, hmax: 200e-9 },
+  }));
+  const rest = dev.solve();
+  assert.ok(rest.converged && !rest.warnings.some((w) => /set\(\)/.test(w)));
+  dev.set({ interfaces: [membrane([])] });
+  const a = dev.advance(1);
+  assert.match(a.warnings.join('\n'), /set\(\): the state couldn't carry over \(a face's or port's unknowns changed.*restarted from its regions' c0/);
+  assert.ok(!dev.advance(2).warnings.some((w) => /set\(\)/.test(w)));
+  // A patch that carries the state says nothing.
+  dev.set({ interfaces: [membrane([{ ...pump, vmax: 1e-30 }])] });
+  dev.solve();
+  dev.set({ interfaces: [membrane([{ ...pump, vmax: 5e-7 }])] });
+  assert.ok(!dev.advance(3).warnings.some((w) => /set\(\)/.test(w)));
+});
