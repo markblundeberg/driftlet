@@ -893,6 +893,35 @@ export class Solver {
     };
   }
 
+  // The state carried from another solver of the same layout whose temperature or materials'
+  // μ° and c_ref differ (set({ T, materials })): its unknowns are potentials over RT, which would
+  // move every concentration (a cell's 140 mM of K⁺ read 1.7 mM after 298 → 310 K; Fable round
+  // 2's cold user). Keep what's physical instead: φ in volts, each species' concentration (ζ by
+  // ln(c_ref old/new); exact for ideal statistics, a warm start otherwise), a conductor's
+  // carrier's level in volts, a surface's coverages, a diffuse layer's drop in volts. A face's
+  // other unknowns (fluxes, rates) are the equations' to settle; gates' fractions stay.
+  _carryAcross(src) {
+    const { n, M, u, uLo, z } = this, RT = this.model.RT, RT0 = src.model.RT, r = RT0 / RT;
+    const v = (b, k) => src.u[b * M + k] + src.uLo[b * M + k];
+    for (let g = 0; g < this.nNodes; g++) {
+      const b = this.blockOfNode[g], phi0 = v(b, 0), phi = phi0 * r;
+      u[b * M] = phi;
+      for (let i = 0; i < n; i++) {
+        const o = b * M + 1 + i, k = g * n + i;
+        if (this.nodeConductor[g] === i) u[o] = v(b, 1 + i) * r;
+        else if (this.present[k] && src.present[k]) u[o] = v(b, 1 + i) - src.mu0hat[k] - z[i] * phi0 + Math.log(src.cRef[k] / this.cRef[k]) + this.mu0hat[k] + z[i] * phi;
+        else u[o] = v(b, 1 + i) * r;
+      }
+      const j = this.surfAt[g];
+      if (j >= 0 && src.surfAt[g] === j) {
+        const now = this.model.surfaces[j].species, was = src.model.surfaces[j].species;
+        for (let q = 0; q < now.length; q++) u[b * M + 1 + n + q] = v(b, 1 + n + q) - was[q].mu0 / RT0 + now[q].mu0 / RT;
+      }
+    }
+    for (const d of this.diffList) u[d.o] = v(Math.floor(d.o / M), d.o % M) * r;
+    uLo.fill(0);
+  }
+
   // Start from another solver's state for the same device on another grid (a refined one): each
   // node's unknowns interpolated linearly in x within its region, each face's copied, and the
   // terminals' voltages. A warm start for a steady solve; nothing else is carried over.

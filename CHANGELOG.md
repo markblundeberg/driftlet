@@ -65,6 +65,11 @@ major version.
   solution's warnings. Taking a pump off a membrane's reactions changed the face's unknowns,
   and a closed cell's run-down then started from its c0, not its rest, converged and unwarned.
   device.md lists what restarts. Found by a Fable 5.1 cold user.
+- `set({ T, materials })` on a live device keeps its concentrations and φ. The carried unknowns
+  are potentials over RT, so a new temperature moved every concentration: a cell's 140 mM of K⁺
+  read 1.7 mM after 298 → 310 K, and the next `advance()` failed, blaming c0. Now φ stays in
+  volts, each species' concentration is kept (exactly, for ideal statistics), and so are a
+  metal's level, a surface's coverages and a diffuse layer's drop. Found by the same cold user.
 - Docs, from a Fable 5.1 review of the physics docs:
   - the chemical capacitance per volume is F²K/RT, not RT·K;
   - the Schottky template's Richardson constant is the effective A** (112 A/(cm²K²)), not A*;

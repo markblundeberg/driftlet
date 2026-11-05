@@ -131,6 +131,9 @@ export class Device {
       if (sameUnknowns) {
         solver.u.set(old.u);
         solver.uLo.set(old.uLo);
+        // (a new T, or materials' μ° and c_ref: carry the concentrations and φ, not their scaled
+        // potentials)
+        if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
         // A node newly on an electrode's surface (a window moved, a surface added) starts at its
         // starting coverages, not at whatever its slots held.
         const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());

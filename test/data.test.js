@@ -312,3 +312,24 @@ test('aqueous() at T warns of its 25 °C μ° only where they\'re read: a reacti
   assert.match(describe(wet()), /materials\.water: its μ° are for 298\.15 K, but the device is at 310\.15 K, and bulkReactions\[0\] read them/);
   assert.doesNotMatch(describe(wet(T)), /materials\.water/); // (μ° given for T)
 });
+
+test('set({ T, materials }) on a live device keeps its concentrations and φ, and steps on from them', () => {
+  // (Fable round 2's cold user: the carried unknowns are potentials over RT, so a new T moved every
+  // concentration, a cell's 140 mM of K⁺ to 1.7 mM, and the next advance() failed)
+  const out = { 'Na+': 145, 'K+': 5, 'Cl-': 150 }, inside = { 'Na+': 10, 'K+': 140, 'Cl-': 150 };
+  const cell = (T) => build({ T, library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T })], stack: [bath(out, 'Cl-'), layer('water', 1e-6, { c0: out }), { phi: { type: 'capacitive', C: 0.01 }, species: { 'K+': { type: 'permeability', P: 1e-8 }, 'Na+': 'blocked', 'Cl-': 'blocked' } }, layer('water', 1e-6, { c0: inside }), bath(inside, 'Cl-', 0)] });
+  const dev = new Device(cell(298.15)), before = dev.solve();
+  dev.set({ T: 310.15, materials: cell(310.15).materials });
+  const now = dev.solution();
+  for (const name of ['Na+', 'K+', 'Cl-']) for (let g = 0; g < now.x.length; g++) assert.ok(Math.abs(now.c[name][g] / before.c[name][g] - 1) < 1e-9, `${name} at ${g}: ${now.c[name][g]} for ${before.c[name][g]}`);
+  for (let g = 0; g < now.x.length; g++) assert.ok(Math.abs(now.phi[g] - before.phi[g]) < 1e-12);
+  const run = dev.advance(1e-3);
+  assert.ok(run.converged && run.warnings.length === 0, run.warnings.join('\n'));
+  // A semiconductor's too: n and p as they were, though N_c and N_v moved.
+  const pn = (T) => build({ T, library: [semiconductor('Si', { T })], stack: [ohmic(0), layer('Si', 1e-6, { acceptors: 0.1 }), layer('Si', 1e-6, { donors: 0.1 }), ohmic(0)] });
+  const d2 = new Device(pn(300)), s0 = d2.solve();
+  d2.set({ T: 310, materials: pn(310).materials });
+  const s1 = d2.solution();
+  for (const name of ['e-', 'h+']) for (let g = 0; g < s1.x.length; g++) assert.ok(Math.abs(s1.c[name][g] / s0.c[name][g] - 1) < 1e-9, `${name} at ${g}`);
+  assert.ok(d2.solve().converged);
+});
