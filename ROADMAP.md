@@ -199,8 +199,11 @@ for live demos.
      band-to-band recombination, base −4e-10 V where it's −0.148, currents 5e-16 A/m², under the
      warning's floor); and the four-layer base at 200 K (summed at its face, its balance reads
      noise; 0.16–0.26 V off). Warned, not solved: a base whose end piece has a port (a collector
-     contact carrying 1 mA/m²: 0.135 V off). Both silent cases want the islands' cuts through
-     interior pieces and past reactions.
+     contact carrying 1 mA/m²: 0.135 V off), and the four-layer base at 300 K swept to −0.3 V
+     (0.1 V off: the plain solve failed and the retry, its rows in from the start, satisfied a
+     row that reads noise; it had solved right before 5 Nov). Below the imbalance's 1e-40
+     mol/(m²·s) floor, silent: the three-layer base at 150 K (leaks 1e-42; 0.1 V off swept at
+     −0.3 V). All want the islands' cuts through interior pieces and past reactions.
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20

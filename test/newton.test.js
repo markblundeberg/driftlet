@@ -229,3 +229,23 @@ test('a terminal behind a small resistance reports what its fluxes carry, where 
   assert.ok(Math.abs(left.current - 1.78864e-13) < 1e-17 && Math.abs(left.current + right.current) < 1e-6 * left.current && three.warnings.length === 0, JSON.stringify(three.terminals));
   for (const R of [1e-10, 1e-8, 1e-6]) assert.ok(at(true, R).warnings.some((w) => w.includes("don't add up")), `four layers behind ${R} Ω·m²`);
 });
+
+test('islands: a round that leaves its island less balanced, or rows satisfied out of balance, is said so', () => {
+  // The four-layer base at 250 K, swept to −0.3 V in 0.05 V steps: summed at its face, the
+  // base's row reads noise and Newton satisfied it 30 mV off (−0.2157 V; cold and the leaks'
+  // balance give −0.2461), its currents 13% apart at 3e-18 A/m², under the Kirchhoff floor, and
+  // nothing was said (found by a Fable 5.1 reviewer re-checking 5b8f56e).
+  const mat = 'GaAs', n = (N, L) => layer(mat, L, { donors: units.perCm3(N) });
+  const d = new Device(build({ T: 250, library: [semiconductor(mat, { T: 250 })], stack: [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, 600e-9), n(4e17, 300e-9), ohmic(0)] }));
+  let s;
+  for (let k = 1; k <= 6; k++) {
+    d.set({ contacts: { right: { V: (-0.3 * k) / 6 } } });
+    s = d.solve();
+  }
+  const mid = (s.region.indexOf(1) + s.region.lastIndexOf(1)) >> 1;
+  assert.ok(Math.abs(s.V['h+'][mid] + 0.2461) < 1e-3 || s.warnings.some((w) => w.includes("doesn't balance") || w.includes("don't add up")), `the base at ${s.V['h+'][mid]} V: ${s.warnings}`);
+  // A round undone is warned of only where the terminals miss too (relatively; that base's
+  // 3e-18 A/m² is under the warning's floor): 22 of the law sweep's devices, each agreeing with
+  // its transient, undid a round whose balance was noise before and after, and were warned.
+  for (const k of [361, 452, 455, 462]) assert.deepEqual(new Device(device(choice(k))).solve().warnings.filter((w) => w.includes("doesn't balance")), [], `law sweep ${k}`);
+});

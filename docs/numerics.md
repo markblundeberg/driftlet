@@ -967,7 +967,13 @@ the terms that cancel:
   its terminals). A steady solve that fails outright is tried once more with the summed rows in
   from the start. Such devices now solve directly, their currents right to ~1e-15. Where the
   round couldn't converge and the plain solution stands with an island still out of balance, the
-  solution says so ("a floating region doesn't balance"). Unbalanced alone isn't the sign: where
+  solution says so ("a floating region doesn't balance"). A round that converges with an island
+  less balanced than it began (over 1e-6 and ten times its imbalance then) counts as failed: summed
+  at a face, a piece's row can read noise and Newton satisfy it at the wrong level (a four-layer
+  base at 250 K swept to −0.3 V, 30 mV off, its currents 13% apart at 3e-18 A/m²). Undone, it's
+  warned of only where the terminals miss Kirchhoff too, relatively, the warning's absolute floor
+  aside: 22 of the law sweep's devices, all agreeing with their transients, undo such a round
+  whose balance is noise before and after. Unbalanced alone isn't the sign: where
   nothing crosses a piece's faces, its balance and what crosses are both noise (an open-circuit
   electrode at equilibrium read 2e-50 mol/(m²·s) one way round and 7e-34 the other, the whole of
   its balance each time, against real leaks as small as 2e-36). The round, from a right state,

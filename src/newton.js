@@ -56,11 +56,12 @@
 //      1e-6, or the terminal currents miss Kirchhoff by more than 1e-9 of the largest and
 //      1e-18 A/m², the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
 //      from the second iteration after; at most two rounds, one where the call began with the
-//      rows in (`islands`). If it then fails, or goes 12 iterations (or to maxIter) without
-//      converging, not counting those that walk (an update over 1e-3 thermal units and no more
+//      rows in (`islands`). If it then fails, or converges with an island less balanced than
+//      it began (over 1e-6 and ten times its imbalance then), or goes 12 iterations (or to
+//      maxIter) without converging, not counting those that walk (an update over 1e-3 thermal units and no more
 //      than 1.01 times the last), the solution it converged to before that round is restored,
-//      with s.islandsOn and s.islandImbalance as they were and s.islandsFailed set, and returned
-//      as converged.
+//      with s.islandsOn and s.islandImbalance as they were and s.islandsFailed set (and
+//      s.islandsWorse, for a round undone for its balance), and returned as converged.
 //
 // Returns { converged, iterations, history (each iteration's step), residual (the largest scaled
 // residual before the last update; converged only), roundoff (true where 6 accepted at
@@ -79,7 +80,7 @@
 //      the factorised Jacobian as it found them, and the update as the plain solve gave it unless
 //      it returns true.
 //   5. Deterministic: the same state and options give the same iterates, bit for bit.
-// Also written: s.islandsOn (as asked, or on by 8), s.islandImbalance and s.islandsFailed (8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
+// Also written: s.islandsOn (as asked, or on by 8), s.islandImbalance, s.islandsFailed and s.islandsWorse (8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
 // s.rowDiv; what an assembly writes, at the returned state where a probe or 6's check ran;
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
 // its message); s.modelError, the message of a SolverError a statistics model threw at a state
@@ -356,7 +357,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   s.islandsOn = islands;
   s.islandImbalance = 0;
   s.islandsFailed = false;
-  let rounds = islands ? 1 : 0, kept = null, perturbed = false; // (rows in from the start: only the polishing round)
+  s.islandsWorse = false;
+  let rounds = islands ? 1 : 0, kept = null, perturbed = false, worse = false; // (rows in from the start: only the polishing round)
   // Converged by a small update, but solved at a perturbed pivot, or in a steady solve (where a
   // factorisation that lost a row's digits left a reaction's rate 3.6e7 off it, the update
   // small, an I = 0 electrode at a voltage 0.4 V from its steady one): the residual itself,
@@ -425,6 +427,15 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   const islandsOff = (it, result) => {
     if (dt !== Infinity || !s.steady || s.islands.length === 0) return false;
     const off = (s.islandImbalance = imbalance(s));
+    // A round that converged with an island less balanced than it began isn't kept: summed at a
+    // face, a piece's row can read noise, and Newton satisfy it at the wrong level (a four-layer
+    // base at 300 K, right at −0.2356 V before the round, 0.1 V off after it, 2.5 out of balance;
+    // found by a Fable 5.1 reviewer). Ten times, for a balance that's noise throughout (an
+    // open-circuit electrode at equilibrium, 1.0 before and after).
+    if (kept && off > Math.max(1e-6, 10 * kept.imbalance)) {
+      worse = true;
+      return false;
+    }
     if (rounds >= 2 || !(kirchhoff(s) > 1e-9 || off > 1e-6)) return false;
     kept = { it, result, walked: 0, islandsOn: s.islandsOn, imbalance: off, u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV) };
     s.islandsOn = true;
@@ -454,6 +465,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       s.islandsOn = kept.islandsOn;
       s.islandImbalance = kept.imbalance;
       s.islandsFailed = true;
+      s.islandsWorse = worse;
       s.computeConcentrations();
       return { ...kept.result, iterations: r.iterations, history };
     }
@@ -557,6 +569,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       const done = { converged: true, iterations: it, history, residual: rmax };
       if (probed()) continue;
       if (islandsOff(it, done)) continue;
+      if (worse) return fail({ converged: false, iterations: it, history });
       const refused = settle();
       if (refused) return fail({ converged: false, iterations: it, history, error: refused });
       return done;
@@ -581,6 +594,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
       if (probed()) continue;
       if (islandsOff(it, done)) continue;
+      if (worse) return fail({ converged: false, iterations: it, history });
       const refused = settle();
       if (refused) return fail({ converged: false, iterations: it, history, error: refused });
       return done;

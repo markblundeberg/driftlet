@@ -302,13 +302,14 @@ export function makeSolution(solver, result = {}) {
     const area = Math.max(model.grid.area[0], model.grid.area[model.grid.area.length - 1]), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     const z = Object.fromEntries(species.map((sp) => [sp.name, sp.z]));
     const gross = [sol.contacts.left, sol.contacts.right, ...sol.ports].reduce((a, t) => a + Object.entries(t.flux).reduce((b, [name, J]) => b + Math.abs(z[name] * F * J), 0), 0);
-    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross) {
+    const missed = Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross;
+    if (missed && Math.abs(sum) > 1e-15 * area) {
       sol.warnings.push(
         `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart, ${(Math.abs(sum) / gross).toExponential(1)} of what their species carry): ` +
           'part of the device is held only weakly (a floating region whose carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level. ' +
           'Check it against advance() to a long time from this state, or a solve swept here in steps.',
       );
-    } else if (solver.islandsFailed && solver.islandImbalance > 1e-6) {
+    } else if (solver.islandsFailed && solver.islandImbalance > 1e-6 && (!solver.islandsWorse || missed)) {
       // A floating piece's own balance, which doesn't depend on what else the device carries
       // (see imbalance in src/newton.js): its summed rows don't hold here, and the solve tried
       // them and couldn't converge with them in. (Unbalanced alone isn't enough: where nothing
@@ -316,7 +317,7 @@ export function makeSolution(solver, result = {}) {
       // mol/(m²·s) in an open-circuit electrode at equilibrium.)
       sol.warnings.push(
         `a floating region doesn't balance: what leaks in and out of it differs by ${solver.islandImbalance.toExponential(1)} of what crosses its faces, where a steady state has them equal. ` +
-          'It is held only weakly (its carriers leak in or out far below what they conduct within it), and the solve has likely left it at the wrong level. ' +
+          'It is held only weakly (its carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level, or not quite steady. ' +
           'Check it against advance() to a long time from this state, or a solve swept here in steps.',
       );
     }
