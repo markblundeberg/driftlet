@@ -556,7 +556,11 @@ which cost four assemblies per product.
   depends on). A converged steady solution whose terminal currents don't add up is reported,
   though: charge is kept, so a steady state's currents must sum to zero. It's reported where the
   sum is over 1e-15 A/m² of the contacts' area, 1e-6 of the largest current, and the gap between
-  what each floating terminal passes and what its fluxes carry. A floating terminal's current is
+  what each floating terminal passes and what its fluxes carry, plus 1e-12 of the currents the
+  species carry through the terminals. (Those can cancel: a cation-exchange membrane between 500
+  and 10 mM KCl at no current passes ±93 A/m² of K⁺ and Cl⁻, and its held end reads 5e-13 A/m²,
+  up to 5e-15 of them on grids of 40 to 1000 nodes. The misses below are 0.07 to 1 of them.) A
+  floating terminal's current is
   its circuit's, exactly (a current source, or a resistance's $`(V_{\mathrm{src}} - V)/R`$); the rest
   of the device carries it only to Newton's tolerance or to its fluxes' round-off, so the sum is
   known only to that gap. Floating bases solved at the wrong level missed by 3% to 15% of their

@@ -287,14 +287,19 @@ export function makeSolution(solver, result = {}) {
   // device carries it only to the gap between that and its fluxes: 148 of the law sweep's
   // devices at rest, all agreeing with their transients, and a liquid junction's at open
   // circuit, missed by 1e-15 to 1e-13 A/m², their gaps 100 or more times that. So the sum is
-  // read against the gaps. (Scales from the fluxes at each terminal don't separate them; see
-  // numerics.md.)
+  // read against the gaps. Each terminal's current is also a sum over its species, which can
+  // cancel: an ion-exchange membrane at no current passes ±93 A/m² of K⁺ and Cl⁻, and read
+  // 5e-13 A/m² (up to 5e-15 of the species' currents, on grids of 40 to 1000 nodes). So the sum
+  // is read against 1e-12 of those too (the misses above were 0.07 to 1 of them). (Scales from
+  // the fluxes alone don't separate them; see numerics.md.)
   if (result.converged !== false && sol.steady) {
     const I = Object.entries(sol.terminals), sum = I.reduce((a, [, t]) => a + t.current, 0), mx = I.reduce((m, [, t]) => Math.max(m, Math.abs(t.current)), 0);
     const area = Math.max(model.grid.area[0], model.grid.area[model.grid.area.length - 1]), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
-    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap) {
+    const z = Object.fromEntries(species.map((sp) => [sp.name, sp.z]));
+    const gross = [sol.contacts.left, sol.contacts.right, ...sol.ports].reduce((a, t) => a + Object.entries(t.flux).reduce((b, [name, J]) => b + Math.abs(z[name] * F * J), 0), 0);
+    if (Math.abs(sum) > 1e-15 * area && Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross) {
       sol.warnings.push(
-        `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart): ` +
+        `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart, ${(Math.abs(sum) / gross).toExponential(1)} of what their species carry): ` +
           'part of the device is held only weakly (a floating region whose carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level. ' +
           'Check it against advance() to a long time from this state, or a solve swept here in steps.',
       );

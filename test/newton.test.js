@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, metal } from '../src/kit.js';
+import { Device, units, FARADAY } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, metal, bath, aqueous } from '../src/kit.js';
 import { newton } from '../src/newton.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
 
@@ -166,5 +166,20 @@ test('newton: a floating gate at rest in inversion stays put (a mode the plain s
   for (const t of [1e5, 1e7]) {
     const s = dev.advance(t);
     assert.ok(s.converged && s.steps < 100 && Math.abs(s.contacts.right.V - 1.2) < 1e-9, `t = ${t}: ${s.contacts.right.V - 1.2} V, ${s.steps} steps`);
+  }
+});
+
+test('…but not where the species\' currents cancel: a membrane at no current between two baths', () => {
+  // A cation-exchange membrane between 500 and 10 mM KCl, open circuit: K⁺ and Cl⁻ cross at
+  // ±93 A/m² and the held end read 5e-13 A/m² (5e-15 of them), warned of on every such solve
+  // once only floating terminals' gaps were allowed for (found by a cold user, 4 Nov). Its EMF is
+  // Teorell–Meyer–Sievers' (that user checked it to 1e-8 refined).
+  const X = 200, lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), w = lib.materials.water.species;
+  lib.materials.cem = { epsr: 0, species: { 'K+': { D: 2e-10, mu0: w['K+'].mu0, cRef: 1000 }, 'Cl-': { D: 1e-10, mu0: w['Cl-'].mu0, cRef: 1000 } } };
+  const coion = (c) => (-X + Math.sqrt(X * X + 4 * c * c)) / 2;
+  for (const [c1, L] of [[500, 50e-6], [500, 5e-6], [1000, 50e-6]]) {
+    const s = new Device(build({ T: 298.15, library: [lib], grid: { hmin: 0.2e-6, hmax: 2e-6 }, stack: [bath({ 'K+': c1, 'Cl-': c1 }, 'Cl-', 0, { material: 'water' }), layer('cem', L, { fixedCharge: -X * FARADAY, c0: { 'K+': X + coion(c1), 'Cl-': coion(c1) } }), bath({ 'K+': 10, 'Cl-': 10 }, 'Cl-', { I: 0 }, { material: 'water' })] })).solve();
+    assert.ok(Math.abs(FARADAY * s.flux['K+'][s.x.length >> 1]) > 20, 'the salt crosses');
+    assert.deepEqual(s.warnings, [], `${c1} mM, ${L} m`);
   }
 });

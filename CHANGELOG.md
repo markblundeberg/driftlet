@@ -15,9 +15,10 @@ major version.
   against the round's dozen. Checked against the leaks' balance from the solution's φ, at biases
   −0.5 to 0.3 V.
 - A steady solution whose terminal currents don't add up says so, since part of the device may be
-  at the wrong level. That's a sum over 1e-15 A/m², 1e-6 of the largest current, and the gap
-  between what each floating terminal passes and what its fluxes carry, which is all a device at
-  rest misses by. The floating bases above missed by 3% to 15%. A base behind a fourth layer
+  at the wrong level. That's a sum over 1e-15 A/m², 1e-6 of the largest current, the gap between
+  what each floating terminal passes and what its fluxes carry (all a device at rest misses by),
+  and 1e-12 of the currents its species carry (an ion-exchange membrane at no current passes
+  ±93 A/m² of each ion, which cancel to 5e-13). The warning says what fraction of those it is. The floating bases above missed by 3% to 15%. A base behind a fourth layer
   (n/p⁺/n/n⁺), or behind a contact passing holes only, still solves wrong from cold at some
   biases, and is now warned.
 
