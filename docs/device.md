@@ -1171,7 +1171,8 @@ const now = dev.solution();                   // snapshot of the current state
   solve that fails reports the state it failed in, then leaves the device as it was before it.
   A converged steady solve whose terminal currents don't add up, by more than they're known to, is
   warned of (a floating terminal's current is its circuit's, exactly, and the device carries it
-  only to Newton's tolerance). Part of the device is then held only weakly and may be at the
+  only to Newton's tolerance; behind a resistance small enough that the circuit's own reading is
+  the rougher, the fluxes' is reported). So is a floating region the solve couldn't balance. Part of the device is then held only weakly and may be at the
   wrong level: check it against a long `advance()`, or a solve swept there in steps.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.

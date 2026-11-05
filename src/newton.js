@@ -50,13 +50,17 @@
 //      convergence (counted in s.accepted) is followed by one refined update at the accepted
 //      state, reassembled; over 1e-8 thermal units, it isn't accepted, and Newton goes on
 //      refining.
-//   8. Islands (s.steady and dt = Infinity, with islands): converged, the terminal currents off
-//      Kirchhoff by more than 1e-9 of the largest and 1e-18 A/m², the islands' summed rows go in
-//      (s.islandsOn) and Newton carries on, refining from the second iteration after; at most
-//      two rounds, one where the call began with the rows in (`islands`). If it then fails, or
-//      goes 12 iterations (or to maxIter) without converging, not counting those that walk (an
-//      update between 1e-3 and 1.01 times the last), the solution it converged to before that
-//      round is restored, with s.islandsOn as it was, and returned as converged.
+//   8. Islands (s.steady and dt = Infinity, with islands): converged, each island's balance is
+//      assembled as its pin sums it (imbalance; s.islandImbalance, the largest |summed residual|
+//      over what crosses its faces, faces under 1e-40 mol/(m²·s) left out). Where that's over
+//      1e-6, or the terminal currents miss Kirchhoff by more than 1e-9 of the largest and
+//      1e-18 A/m², the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
+//      from the second iteration after; at most two rounds, one where the call began with the
+//      rows in (`islands`). If it then fails, or goes 12 iterations (or to maxIter) without
+//      converging, not counting those that walk (an update over 1e-3 thermal units and no more
+//      than 1.01 times the last), the solution it converged to before that round is restored,
+//      with s.islandsOn and s.islandImbalance as they were and s.islandsFailed set, and returned
+//      as converged.
 //
 // Returns { converged, iterations, history (each iteration's step), residual (the largest scaled
 // residual before the last update; converged only), roundoff (true where 6 accepted at
@@ -75,7 +79,7 @@
 //      the factorised Jacobian as it found them, and the update as the plain solve gave it unless
 //      it returns true.
 //   5. Deterministic: the same state and options give the same iterates, bit for bit.
-// Also written: s.islandsOn (as asked, or on by 8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
+// Also written: s.islandsOn (as asked, or on by 8), s.islandImbalance and s.islandsFailed (8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
 // s.rowDiv; what an assembly writes, at the returned state where a probe or 6's check ran;
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
 // its message); s.modelError, the message of a SolverError a statistics model threw at a state
@@ -350,6 +354,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   // A/m² of noise), their rows can throw Newton off instead: if it doesn't converge again
   // within a dozen iterations, the plain solution stands.
   s.islandsOn = islands;
+  s.islandImbalance = 0;
+  s.islandsFailed = false;
   let rounds = islands ? 1 : 0, kept = null, perturbed = false; // (rows in from the start: only the polishing round)
   // Converged by a small update, but solved at a perturbed pivot, or in a steady solve (where a
   // factorisation that lost a row's digits left a reaction's rate 3.6e7 off it, the update
@@ -417,8 +423,10 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     return true;
   };
   const islandsOff = (it, result) => {
-    if (dt !== Infinity || !s.steady || s.islands.length === 0 || rounds >= 2 || !(kirchhoff(s) > 1e-9)) return false;
-    kept = { it, result, walked: 0, islandsOn: s.islandsOn, u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV) };
+    if (dt !== Infinity || !s.steady || s.islands.length === 0) return false;
+    const off = (s.islandImbalance = imbalance(s));
+    if (rounds >= 2 || !(kirchhoff(s) > 1e-9 || off > 1e-6)) return false;
+    kept = { it, result, walked: 0, islandsOn: s.islandsOn, imbalance: off, u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV) };
     s.islandsOn = true;
     rounds++;
     return true;
@@ -444,6 +452,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       s.uLo.set(kept.uLo);
       s.termV.set(kept.termV);
       s.islandsOn = kept.islandsOn;
+      s.islandImbalance = kept.imbalance;
+      s.islandsFailed = true;
       s.computeConcentrations();
       return { ...kept.result, iterations: r.iterations, history };
     }
@@ -578,6 +588,33 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   }
   const refused = settle();
   return fail({ converged: false, iterations: maxIter, history, ...(refused ? { error: refused } : {}) });
+}
+
+// How far the islands are from balanced at the state: each one's summed residual, as its pin
+// sums it (out to its bottlenecks), over the fluxes through its faces; the largest. Assembled
+// with the rows in, then as it was. Unlike the terminals' sum, it doesn't depend on what else
+// the device carries, or on any floor: wrong levels read 0.5 to 1.5 (a floating base beside a
+// side port carrying 1 mA/m², the law sweep's F5 electrode beside a second electrode, a base at
+// 200 K whose leaks are 1e-29), right ones under 3e-9.
+function imbalance(s) {
+  const was = s.islandsOn;
+  s.islandsOn = true;
+  s.assemble(Infinity);
+  // (Fluxes under 1e-40 mol/(m²·s) are left out, to spare a round: an open-circuit Pt at
+  // equilibrium read 2e-50 through its one face, its whole balance. Not a floor that separates:
+  // listed the other way round, the same right state read 7e-34, and a base at 150 K leaks
+  // 2e-36. A round from a right state changes nothing, so the trigger can afford that; the
+  // warning can't, and reads only a round that failed, see solution.js.)
+  const floor = 1e-40 * Math.max(s.model.grid.area[0], s.model.grid.area[s.model.grid.area.length - 1]);
+  let worst = 0;
+  for (const isl of s.pinnedIslands) {
+    let scale = 0;
+    isl.flux.forEach((o, j) => (scale += Math.abs(isl.weight[j] * s.u[o])));
+    if (scale > floor) worst = Math.max(worst, Math.abs(isl.res) / scale);
+  }
+  s.islandsOn = was;
+  if (!was) s.assemble(Infinity);
+  return worst;
 }
 
 // How far the terminal currents (as last assembled) are from adding up to zero, relative to the

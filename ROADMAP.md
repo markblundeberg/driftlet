@@ -190,10 +190,17 @@ for live demos.
      device that agrees with its transient, none in the suite, and in the stress run only on
      semi 220 (below). Their currents were 1e-18 to 2e-17 A/m² from adding up (equilibrium's
      noise), against 1e-15 to 1e-9 on the floating bases that were wrong. So since 3 Nov a steady
-     solution whose terminal currents miss by more than 1e-15 A/m² and 1e-6 of the largest, but
-     under half of it, says so. A wrong level that leaves two terminals' currents disagreeing by
-     more than that goes unsaid. Round-off's readings, one terminal's alone (148 of the sweep's
-     devices at rest), are the whole sum; none of the sweep's 843 solved devices is warned.
+     solution whose terminal currents miss Kirchhoff says so (since 4 Nov, by more than 1e-15
+     A/m², 1e-6 of the largest, the floating terminals' gaps and 1e-12 of what the species carry:
+     numerics.md); and since 5 Nov the round is also asked for by each island's own balance, and
+     a piece the round couldn't sum out, left unbalanced, is warned of.
+     Open, from a Fable 5.1 round (4–5 Nov, ~/.cache/driftlet-claude/fable1/): silent still, a
+     floating base whose piece has a bulk reaction (no island is made: GaAs at 250 K with
+     band-to-band recombination, base −4e-10 V where it's −0.148, currents 5e-16 A/m², under the
+     warning's floor); and the four-layer base at 200 K (summed at its face, its balance reads
+     noise; 0.16–0.26 V off). Warned, not solved: a base whose end piece has a port (a collector
+     contact carrying 1 mA/m²: 0.135 V off). Both silent cases want the islands' cuts through
+     interior pieces and past reactions.
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20

@@ -556,7 +556,10 @@ which cost four assemblies per product.
   depends on). A converged steady solution whose terminal currents don't add up is reported,
   though: charge is kept, so a steady state's currents must sum to zero. It's reported where the
   sum is over 1e-15 A/m² of the contacts' area, 1e-6 of the largest current, and the gap between
-  what each floating terminal passes and what its fluxes carry, plus 1e-12 of the currents the
+  what each floating terminal passes and what its fluxes carry (but where the circuit's own reading,
+  $`(V_{\mathrm{src}} - V)/R`$, carries more round-off than that gap, a few $`\epsilon`$ of $`V`$ over
+  $`R`$, the fluxes' reading is reported and no gap kept: behind 1e-10 Ω·m² at −0.2 V that's
+  4e-7 A/m², where a floating base passed 1.8e-13 and read 0), plus 1e-12 of the currents the
   species carry through the terminals. (Those can cancel: a cation-exchange membrane between 500
   and 10 mM KCl at no current passes ±93 A/m² of K⁺ and Cl⁻, and its held end reads 5e-13 A/m²,
   up to 5e-15 of them on grids of 40 to 1000 nodes. The misses below are 0.07 to 1 of them.) A
@@ -947,19 +950,28 @@ the terms that cancel:
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so
   the summed rows go in only once the plain solves converge. An island at the wrong level then
-  shows: it takes in a different current than it passes on, so the terminal currents don't add
-  up to zero (to 1e-9 of the largest). Newton then carries on with the summed rows, refined from
-  their second update. A current that tiny against the conduction around it rides on $`\eta`$
+  shows: it takes in a different current than it passes on. Its own balance, assembled as its
+  pin sums it (out to its bottlenecks), misses by 0.5 to 1.5 of what crosses its faces, where
+  right states miss by under 3e-9; over 1e-6, the rows go in. (Until 5 Nov only the terminal
+  currents' sum asked, to 1e-9 of the largest and over 1e-18 A/m², which a second electrode's
+  1 mA/m² beside a floating Pt hid, and a base at 200 K, its leaks 5e-27 A/m², passed under.)
+  Newton then carries on with the summed rows, refined from their second update. A current that tiny against the conduction around it rides on $`\eta`$
   differences (~1e-28 for 5 fA/m² through 1e4 mol/m³ at D = 1e-4 m²/s) that the last update
   leaves known only to its own round-off, so where the currents still don't add up, one more
   update polishes them. If Newton doesn't converge again within a dozen updates (a GaAs stack's
   minority carriers, whose own rows rest on static pivots, at 1e-17 A/m² of noise), the plain
-  solution stands. Updates that walk, steadily between 1e-3 and 1.01 times the last, don't count
+  solution stands. Updates that walk, over 1e-3 thermal units and no more than 1.01 times the last, don't count
   toward the dozen. A leak is exponential in the level it drains, so from above Newton brings the
   level down by about a thermal unit an update before it converges: a floating base 4 V_T high
   took ten, and at a dozen it had been cut off two short of converging (1.6e-9 and −1.9e-9 A/m² at
   its terminals). A steady solve that fails outright is tried once more with the summed rows in
-  from the start. Such devices now solve directly, their currents right to ~1e-15.
+  from the start. Such devices now solve directly, their currents right to ~1e-15. Where the
+  round couldn't converge and the plain solution stands with an island still out of balance, the
+  solution says so ("a floating region doesn't balance"). Unbalanced alone isn't the sign: where
+  nothing crosses a piece's faces, its balance and what crosses are both noise (an open-circuit
+  electrode at equilibrium read 2e-50 mol/(m²·s) one way round and 7e-34 the other, the whole of
+  its balance each time, against real leaks as small as 2e-36). The round, from a right state,
+  changes nothing; a warning would.
 
 All four move a weakly held level as a whole, where a factorisation can't: an amount's, an
 affinity's or an island's pin by a shift it solves for, a flat level by holding every node to one. What the

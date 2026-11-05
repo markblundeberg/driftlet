@@ -67,8 +67,8 @@
 //                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
 //                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
 //                  `cuts`: for each face of a piece that opens onto the stretch's end piece, where
-//                  nothing adds to the species' balance (ideal, no flow, mixing, port or bulk
-//                  reaction of it there; an equilibrium link and no reaction of it at the face),
+//                  nothing adds to the species' balance (not a metal; ideal, no flow, mixing, port
+//                  or bulk reaction of it there; an equilibrium link and no reaction of it at the face),
 //                  { face (its index in `flux`), sign (−1 left, +1 right), region, outside (that
 //                  face's outside row), reach (the region's segments, outward from the face) }.
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal

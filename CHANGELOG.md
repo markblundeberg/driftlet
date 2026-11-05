@@ -21,6 +21,15 @@ major version.
   ±93 A/m² of each ion, which cancel to 5e-13). The warning says what fraction of those it is. The floating bases above missed by 3% to 15%. A base behind a fourth layer
   (n/p⁺/n/n⁺), or behind a contact passing holes only, still solves wrong from cold at some
   biases, and is now warned.
+- A floating region held only by its leaks now asks for the islands round by its own balance,
+  not by the terminal currents' sum (which a second electrode's current, or leaks under 1e-18
+  A/m², hid). The law sweep's F5 electrode beside a second electrode carrying 1 mA/m² converged
+  80 mV off with check() passing it; a floating base at 200 K sat 0.16 V off; a base in a
+  spherical shell, at its contact's level. All three now solve right. A region the round can't
+  sum out, left unbalanced, is warned of ("a floating region doesn't balance"). A terminal behind
+  a resistance small enough that (V_src − V)/R is the rougher reading reports what its fluxes
+  carry: behind 1e-10 Ω·m² a floating base's 1.8e-13 A/m² read 0, and hid a wrong level from the
+  Kirchhoff warning. Found by two Fable 5.1 reviewers; open cases on the ROADMAP.
 - `bath()` refuses its arguments out of order: `bath(c, { I: 0 }, 'Cl-')` built a bath without
   its reference, silently, so a concentration cell read its diffusion potential rather than its
   Ag/AgCl EMF. Doping over 1e5 mol/m³ (more than a crystal has atoms) is refused, naming

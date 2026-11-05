@@ -183,3 +183,49 @@ test('…but not where the species\' currents cancel: a membrane at no current b
     assert.deepEqual(s.warnings, [], `${c1} mM, ${L} m`);
   }
 });
+
+test('islands: the round is asked for by each island\'s own balance, not by what else the device carries', () => {
+  // Found by a Fable 5.1 hunter (4 Nov). The round once started only where the terminal currents
+  // missed by 1e-9 of the largest and 1e-18 A/m²: a second electrode carrying 1 mA/m² beside the
+  // law sweep's F5 electrode (a floating Pt, a fast couple and one 1e-20 times slower) hid its
+  // 2.9e-13 miss, and the Pt converged at 0.274922 V, 80 mV off, check() passing it. Its own
+  // balance, summed as its pin sums it, missed by 0.5 to 1.5 of what crosses its faces; right
+  // states read under 3e-9.
+  const def = device({ family: 2, fast: 1, slow: 1e-20, face: 1e-17, drive: 'I0', reversed: false });
+  const alone = new Device(def).solve();
+  def.ports = [{ name: 'aux', region: 'water2', from: 0.5e-6, to: 1e-6, I: 1e-3, terminal: 'e-', area: 1e3, reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1, fixed: { 'S(s)': 0 } }] }];
+  const beside = new Device(def).solve();
+  assert.ok(Math.abs(alone.terminals.left.V - 0.195442) < 1e-5, `alone: ${alone.terminals.left.V}`);
+  assert.ok(Math.abs(beside.terminals.left.V - alone.terminals.left.V) < 1e-6 && beside.warnings.length === 0, `beside: ${beside.terminals.left.V} V, ${beside.warnings}`);
+  // A floating base at 200 K: its leaks are 5e-27 A/m², under the old floor; it solved at a
+  // contact's level, 0.16 V off, cold and swept. Now at its leaks' balance (the hole level's).
+  const mat = 'GaAs', base = (V) => {
+    const d = new Device(build({ T: 200, library: [semiconductor(mat, { T: 200 })], stack: [ohmic(0), layer(mat, 400e-9, { donors: units.perCm3(1e17) }), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), layer(mat, 900e-9, { donors: units.perCm3(3e17) }), ohmic(0)] }));
+    d.set({ contacts: { right: { V } } });
+    return d.solve();
+  };
+  const s = base(-0.3), mid = (s.region.indexOf(1) + s.region.lastIndexOf(1)) >> 1;
+  assert.ok(s.converged && Math.abs(s.V['h+'][mid] + 0.258546) < 1e-4, `200 K: the base at ${s.V['h+'][mid]} V`);
+});
+
+test('islands: a piece the round can\'t sum out, left unbalanced, is warned of', () => {
+  // The floating base with a side port on its collector carrying 1 mA/m² (a collector contact):
+  // the base's island is summed at its face (the port is in the end piece), the round fails, and
+  // the cold solve stands 0.135 V off. Its terminals' miss is 8e-10 of the port's current, under
+  // the Kirchhoff warning's 1e-6; the island's own balance misses by 0.94.
+  const mat = 'GaAs', def = build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)], grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 } });
+  def.ports = [{ name: 'side', region: 'n2', from: 0.75e-6, to: 0.9e-6, I: 1e-3, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
+  const s = new Device(def).solve();
+  assert.ok(s.warnings.some((w) => w.includes("a floating region doesn't balance")), JSON.stringify(s.warnings));
+});
+
+test('a terminal behind a small resistance reports what its fluxes carry, where the circuit\'s reading is rougher', () => {
+  // (V_src − V)/R carries a few ε of V over R: behind 1e-10 Ω·m² at −0.2 V, 4e-7 A/m², where a
+  // floating base passes 1.8e-13. It read 0, and the gap between it and the fluxes (the whole
+  // current) hid a wrong level 0.14 V off behind a fourth layer (found by a Fable 5.1 reviewer).
+  const mat = 'GaAs', n = (N, L) => layer(mat, L, { donors: units.perCm3(N) });
+  const at = (more, R) => new Device(build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, more ? 600e-9 : 900e-9), ...(more ? [n(4e17, 300e-9)] : []), ohmic({ V: -0.2, R })] })).solve();
+  const three = at(false, 1e-10), { left, right } = three.terminals;
+  assert.ok(Math.abs(left.current - 1.78864e-13) < 1e-17 && Math.abs(left.current + right.current) < 1e-6 * left.current && three.warnings.length === 0, JSON.stringify(three.terminals));
+  for (const R of [1e-10, 1e-8, 1e-6]) assert.ok(at(true, R).warnings.some((w) => w.includes("don't add up")), `four layers behind ${R} Ω·m²`);
+});

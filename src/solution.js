@@ -159,14 +159,19 @@ export function makeSolution(solver, result = {}) {
   });
   // A floating terminal passes what its circuit says, exactly (see passedCurrent). What its
   // fluxes say instead is off by Newton's tolerance or their own round-off: the gap is kept, as
-  // the scale its currents' sum is known to (below).
+  // the scale its currents' sum is known to (below). But behind a small resistance the circuit's
+  // reading is the rougher one, (V_src − V)/R to a few ε of V over R: where the two agree within
+  // that, the fluxes' reading is reported, and no gap kept (behind 1e-10 Ω·m², a floating base's
+  // 1.8e-13 A/m² read 0, and its gap hid a wrong level 0.14 V off; found by a Fable 5.1 reviewer).
   let heldGap = 0;
   if (sol.converged) {
     for (const k of solver.floating) {
       const I = solver.passedCurrent(k);
       const read = k === 0 ? sol.contacts.left : k === 1 ? sol.contacts.right : sol.ports[k - 2];
       const passed = k === 1 ? -I : I; // (the right contact's current is toward +x, out of the device)
-      heldGap += Math.abs(read.current - passed);
+      const gap = Math.abs(read.current - passed);
+      if (gap <= solver.passedRoundoff(k)) continue;
+      heldGap += gap;
       read.current = passed;
     }
   }
@@ -301,6 +306,17 @@ export function makeSolution(solver, result = {}) {
       sol.warnings.push(
         `the terminal currents don't add up (${I.map(([name, t]) => `${name} ${t.current.toPrecision(4)}`).join(', ')} ${A}, ${sum.toPrecision(2)} apart, ${(Math.abs(sum) / gross).toExponential(1)} of what their species carry): ` +
           'part of the device is held only weakly (a floating region whose carriers leak in or out far below what they conduct within it), and the solve may have left it at the wrong level. ' +
+          'Check it against advance() to a long time from this state, or a solve swept here in steps.',
+      );
+    } else if (solver.islandsFailed && solver.islandImbalance > 1e-6) {
+      // A floating piece's own balance, which doesn't depend on what else the device carries
+      // (see imbalance in src/newton.js): its summed rows don't hold here, and the solve tried
+      // them and couldn't converge with them in. (Unbalanced alone isn't enough: where nothing
+      // crosses a piece's faces, its balance and what crosses are both noise, 1e-76 to 7e-34
+      // mol/(m²·s) in an open-circuit electrode at equilibrium.)
+      sol.warnings.push(
+        `a floating region doesn't balance: what leaks in and out of it differs by ${solver.islandImbalance.toExponential(1)} of what crosses its faces, where a steady state has them equal. ` +
+          'It is held only weakly (its carriers leak in or out far below what they conduct within it), and the solve has likely left it at the wrong level. ' +
           'Check it against advance() to a long time from this state, or a solve swept here in steps.',
       );
     }

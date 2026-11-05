@@ -988,6 +988,16 @@ export class Solver {
     return d.kind === 'I' ? src : (src - this.termV[k]) / d.R;
   }
 
+  // passedCurrent's own round-off: none for a current, and for a resistance, the difference of
+  // two voltages over R: a few ε of the larger over R (4e-7 A/m² at 0.2 V behind 1e-10 Ω·m²,
+  // where a floating base carried 1.8e-13).
+  passedRoundoff(k) {
+    const d = this.terms[k].drive;
+    if (d.kind === 'I') return 0;
+    const src = sourceAt(d.src, this.time, !this.atSteady);
+    return (4 * Number.EPSILON * Math.max(Math.abs(src), Math.abs(this.termV[k]))) / Math.abs(d.R);
+  }
+
   // Terminal current toward +x at the right contact, from the last assembly at this state.
   _terminalCurrent() {
     if (this.floating.includes(1)) return -this.passedCurrent(1);
