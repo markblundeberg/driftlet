@@ -102,7 +102,13 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
  *   material (a solution against an ion exchanger), if not the end layer's
  */
 export function bath(c, reference, d = 0, opts = {}) {
-  if (typeof reference !== 'string') [d, opts] = [reference ?? 0, isObject(d) ? d : {}];
+  if (!isObject(c)) fail(`bath: the composition comes first, as { species: mol/m³ } (got ${JSON.stringify(c)})`);
+  if (typeof reference !== 'string') {
+    // bath(c, drive, opts): a third argument that isn't the options was put in the wrong place
+    // (bath(c, { I: 0 }, 'Cl-') once built a bath without its reference, silently).
+    if (d !== 0 && d !== undefined && !isObject(d)) fail(`bath: ${JSON.stringify(d)} after the drive: the reference species comes second, bath(c, ${JSON.stringify(d)}, drive), and the options last`);
+    [d, opts] = [reference ?? 0, isObject(d) ? d : {}];
+  }
   checkOptions('bath', opts, ['offset', 'material']);
   const { offset, material } = opts;
   return {
@@ -183,6 +189,9 @@ export function build(def) {
       if (r.fixedCharge !== undefined) fail(`${path}: give doping as donors and acceptors, or fixedCharge, not both`);
       for (const [k, v] of [['donors', donors], ['acceptors', acceptors]]) {
         if (v !== undefined && !(Number.isFinite(v) && v >= 0)) fail(`${path}.${k} must be a concentration ≥ 0 (mol/m³)`);
+        // Over 1e5 mol/m³ (6e22 cm⁻³, more than a crystal has atoms) it's a count per cm³ given as
+        // mol/m³; describe() caught it, but named fixedCharge, which the user hadn't written.
+        if (v > 1e5) fail(`${path}.${k}: ${v.toExponential()} mol/m³ is ${(v * 6.02214076e17).toPrecision(2)} cm⁻³, more than a crystal has atoms; ${k} is mol/m³: for ${v.toExponential()} cm⁻³, units.perCm3(${v.toExponential()})`);
       }
       r.fixedCharge = ((donors ?? 0) - (acceptors ?? 0)) * FARADAY;
     }

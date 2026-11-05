@@ -214,3 +214,18 @@ test('library pieces, baths, contacts, face equations and half-reaction levels a
   assert.throws(() => level(sol, half('Fe3+ + 2 e- = Fe2+')), (e) => e instanceof DeviceError && /isn't charge-balanced/.test(e.message));
   assert.equal(level(sol, half('Fe3+ + e- = Fe2+')).length, 2);
 });
+
+test("bath() refuses its arguments out of order, rather than dropping the reference", () => {
+  // bath(c, { I: 0 }, 'Cl-') built a bath with no reference, its terminal φ: a concentration
+  // cell then read its diffusion potential, not its Ag/AgCl EMF (found by a cold user, 4 Nov).
+  assert.throws(() => bath({ 'K+': 10, 'Cl-': 10 }, { I: 0 }, 'Cl-'), /bath: "Cl-" after the drive: the reference species comes second/);
+  assert.throws(() => bath('Cl-', { 'K+': 10 }), /bath: the composition comes first/);
+  assert.deepEqual(bath({ 'K+': 10 }, 'Cl-', { I: 0 }), { I: 0, bath: { c: { 'K+': 10 }, reference: 'Cl-' } });
+  assert.deepEqual(bath({ 'K+': 10 }, { I: 0 }), { I: 0, bath: { c: { 'K+': 10 } } });
+  assert.deepEqual(bath({ 'K+': 10 }, 0.1, { material: 'w' }), { V: 0.1, bath: { c: { 'K+': 10 }, material: 'w' } });
+});
+
+test('doping given per cm³ where mol/m³ is meant is refused, by the name it was given', () => {
+  assert.throws(() => build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { donors: 1e16 }), ohmic(0)] }), /stack\[1\]\.donors: 1e\+16 mol\/m³ .* units\.perCm3\(1e\+16\)/);
+  assert.ok(build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { acceptors: units.perCm3(1e20) }), ohmic(0)] }));
+});

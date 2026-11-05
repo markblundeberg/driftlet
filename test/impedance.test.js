@@ -261,7 +261,7 @@ test('profiles are NaN where a solution\'s are: no concentration inside a metal'
   const dev = new Device(build({
     T: 300,
     library: [metal('Au'), semiconductor('Si')],
-    stack: [ohmic(0.5, ['e-']), layer('Au', 100e-9, { name: 'gate' }), { phi: { type: 'capacitive', C: 0.01 }, zeroCharge: 0 }, layer('Si', 1e-6, { name: 'n', donors: 1e22 }), ohmic(0)],
+    stack: [ohmic(0.5, ['e-']), layer('Au', 100e-9, { name: 'gate' }), { phi: { type: 'capacitive', C: 0.01 }, zeroCharge: 0 }, layer('Si', 1e-6, { name: 'n', donors: units.perCm3(1e16) }), ohmic(0)],
   }));
   const sol = dev.solve();
   const pr = dev.impedance([1000], { profiles: true }).profiles[0];

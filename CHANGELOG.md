@@ -21,6 +21,12 @@ major version.
   ±93 A/m² of each ion, which cancel to 5e-13). The warning says what fraction of those it is. The floating bases above missed by 3% to 15%. A base behind a fourth layer
   (n/p⁺/n/n⁺), or behind a contact passing holes only, still solves wrong from cold at some
   biases, and is now warned.
+- `bath()` refuses its arguments out of order: `bath(c, { I: 0 }, 'Cl-')` built a bath without
+  its reference, silently, so a concentration cell read its diffusion potential rather than its
+  Ag/AgCl EMF. Doping over 1e5 mol/m³ (more than a crystal has atoms) is refused, naming
+  `donors` or `acceptors` and the `units.perCm3()` it meant; `describe()` had caught it as
+  `fixedCharge`, which the user hadn't written. One of driftlet's own tests had that slip (1e22).
+  Both found by a cold user (a Fable 5.1 agent).
 
 ## 1.8.0 (2026-11-02)
 
