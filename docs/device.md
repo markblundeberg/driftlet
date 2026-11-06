@@ -373,7 +373,7 @@ r = \frac{n\,p\,(1 - e^{-A/RT})}{(n + n_1)/v_p + (p + p_1)/v_n}, \qquad p_1 = \f
 
 with n and p each at its own side's edge node, the capture velocities $`v_n`$ and $`v_p`$ in m/s,
 and $`n_1`$ (mol/m³) the negative species' concentration with its level at the trap (default:
-$`n_1 = p_1 = n_i`$, a midgap trap). Taking $`p_1`$ from the state keeps equilibrium exact whatever
+$`n_1 = p_1 = n_i`$, a trap at the intrinsic level, 13 meV below midgap in Si). Taking $`p_1`$ from the state keeps equilibrium exact whatever
 lies between the two sides (a band offset, a $`\phi`$ jump). With Fermi–Dirac carriers, each
 one's emission scales by its own $`\gamma = \mathcal{F}_{1/2}(\zeta)/e^\zeta`$, by detailed balance:
 $`n_1`$ becomes $`\gamma_n n_1`$, and $`p_1`$ keeps the product. Where one carrier is plentiful the
@@ -605,7 +605,7 @@ those materials.
 `{ tauN, tauP, n1 }`, on a reaction consuming one negative and one positive species and making
 none (`'e- + h+ = 0'`):
 $`r = n p (1 - e^{-A/RT}) / (\tau_p (n + n_1) + \tau_n (p + p_1))`$, with lifetimes in s and $`n_1`$ as
-for [interface SRH](#interfaces) (default midgap). It's what explicit trap species reduce to when
+for [interface SRH](#interfaces) (default the intrinsic level). It's what explicit trap species reduce to when
 the traps are few and fast, without them. Where their charge matters, write them out: two
 immobile species (D = 0) for the trap's charge states, filled and emptied by
 `'e- + X0 = X-'` and `'X- + h+ = X0'` (acceptor-like) at rates $`k_n = 1/(\tau_n N_t)`$ and
@@ -1090,7 +1090,10 @@ automatically. If a double layer that the model resolves is coarser than the loc
 length, the solution's `warnings` say so. That's a floor, not an accuracy: a strongly polarised
 layer screens over its local length (counter-ions piled up at the wall: 0.5 nm at 1 V on
 0.1 mM, where λ_D is 30 nm), and σ to ~1% wants cells a few times finer than that (0.3 nm cells
-there left σ 0.7% high, without a warning). Halve `hmin` and compare.
+there left σ 0.7% high, without a warning). Halve `hmin` and compare, and lower `ratio` too: where a
+rate changes sharply across graded cells (SRH generation across a depletion layer), the error follows
+the grading, not `hmin` (a reverse-biased diode's current was 0.6% low at ratio 1.2 and 1 nm, 1.0%
+high at 0.25 nm, and 0.02% off at ratio 1.05 with either). `check()`'s grid item refines the grading too.
 
 Grade the grid toward wherever a profile is steep: double layers, and electrodes where a species
 is depleted. Near a limiting current the depleted species' profile is steep in a thin layer at

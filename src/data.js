@@ -202,7 +202,7 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
  * @param {{ density: number, tauN: number, tauP: number, n1?: number, charge?: 'acceptor' | 'donor',
  *   name?: string, material?: string, T?: number }} opts density N_t (mol/m³); τ_n = 1/(c_n N_t)
  *   and τ_p = 1/(c_p N_t) (s) at that density; n₁, the electron density that half-fills it
- *   (mol/m³; default n_i, midgap); T (K, default the material's T, else 300)
+ *   (mol/m³; default n_i, a trap at the intrinsic level); T (K, default the material's T, else 300)
  * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number>, c0For: (doping: { donors?: number, acceptors?: number }) => Record<string, number> }}
  *   the library for build(), the capture reactions, c0 for each layer holding the trap (its total
  *   N_t, half full), and c0For(doping), the same total split as a layer of that doping holds it

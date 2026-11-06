@@ -225,6 +225,12 @@ const { 'e-': e, 'h+': h } = sol.contacts.left.flux;
 console.log(sol.warnings.length, (e / -h).toExponential(1)); // 0, 2.5e+7
 ```
 
+The face's link is `'equilibrium'` by default: μ̄ continuous across it, the diffusion theory of an
+interface, as at a [Schottky contact](device.md#contacts) without `velocity` links. TCAD codes offer
+thermionic emission over a band spike instead, and at 1.0 V this diode is at the edge of where the
+two agree: its electron current is about a tenth of what thermionic emission over the face could
+carry (at 1.2 V, eleven times it), so above ~1 V the diffusion limit overstates the current.
+
 ## Metals, 20 °C
 
 `metal(name, { material })` returns a conductor material carrying `e-`, with its conductivity
