@@ -203,6 +203,8 @@ export class SteadySolves {
     // A solve that fails leaves where the state was solved, and whether it was stepped, as they
     // were (Device.solve restores the state): a floating continuation's held solves had set them,
     // and the next held solve ramped warm from a voltage the state was never at, and failed.
+    // (a solved state this call began from, which a nested stage's own solves don't count as)
+    this.carried = this.solvedV != null;
     const was = [this.solvedV, this.stepped];
     try {
       const r = this._solveSteadyAll(opts);
@@ -273,6 +275,7 @@ export class SteadySolves {
       if (q.converged) {
         this.solvedV = [this.termV[0], this.termV[1]]; // (a contact's own: driven by a current, not the current)
         this.stepped = false;
+        this.carried = false;
         this.coldStart = false; // (solved: no t = 0⁺ left for a transient to start from)
       }
       return q;
@@ -291,7 +294,7 @@ export class SteadySolves {
     // solve keeps it took from the state already, so from here on it goes as a cold device would.
     // So can a solved state carried through set(): a Si diode at −5 V taken from 150 K to 300 K
     // failed warm (n_i moved 20 orders), and converges from the layout (Fable round 3's hunter).
-    if ((this.stepped || this.solvedV != null) && direct && allowed) {
+    if ((this.stepped || this.carried) && direct && allowed) {
       this._refreshSources();
       this.initFromComposition();
       u0.set(this.u);
