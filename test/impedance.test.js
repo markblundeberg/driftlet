@@ -493,27 +493,6 @@ test('impedance() about a state with no steady one says why, as solve() would', 
   assert.throws(() => d.impedance([1]), (e) => /did not converge: right: no steady state passes the driven current 1\.00e\+3 A\/m².*\)\. An impedance is about a steady state/.test(e.message) && Array.isArray(e.details.warnings));
 });
 
-test('impedance() right after a converged solve() linearizes there, without solving again; after a step it solves first', () => {
-  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 });
-  const dev = new Device({
-    species: lib.species,
-    materials: lib.materials,
-    regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
-    contacts: { left: { V: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, right: { V: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 } },
-    grid: { hmin: 2e-6, hmax: 5e-6 },
-  });
-  assert.ok(dev.solve().converged);
-  let solves = 0;
-  const solveSteady = dev.solver.solveSteady.bind(dev.solver);
-  dev.solver.solveSteady = (o) => (solves++, solveSteady(o));
-  const z = dev.impedance([1, 100]);
-  assert.equal(solves, 0);
-  dev.advance(1);
-  const z2 = dev.impedance([1, 100]);
-  assert.equal(solves, 1);
-  for (let q = 0; q < 2; q++) assert.ok(Math.abs(z2.Z.im[q] / z.Z.im[q] - 1) < 1e-6);
-});
-
 test('a floating port with a capacitance, read by its law\'s change, measured with every other terminal floating: Z is the held device\'s plus the series R', () => {
   // (Fable round 3's review of src/impedance.js: the gauge read dropped iω(DIs + Σ DXs), the
   // charge the port's capacitance holds; Z at 1 kHz came out 37% off, Im Z of the wrong sign,

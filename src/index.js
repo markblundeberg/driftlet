@@ -280,13 +280,14 @@ export class Device {
    */
   impedance(frequencies, opts) {
     options(opts, 'impedance', ['terminal', 'profiles']);
-    // A device that holds a converged steady state (solve() just now, nothing stepped or changed
-    // since) is linearized there as it stands; else the steady state is found first.
-    // (A steady solve that fails leaves the device as it was, as solve() does: a dark cell driven
-    // past saturation was left at a held stage's 26.9 V, and the advance() the error suggests
-    // went on from there; Fable round 3's steady.js review.)
-    const snap = this.solver.atSteady ? null : this.solver._snapshot();
-    const steady = snap ? this.solver.solveSteady() : { converged: true, steps: 0, iterations: 0, history: [] };
+    // The steady state, solved again even where the device holds one: the solve from there also
+    // polishes it, and taken as it stood after a solve(), a stress electrode's Z at 1 µHz came
+    // out non-passive, Re Z −2.3e3 of 1.6e6 (stress echem 133). (A steady solve that fails leaves
+    // the device as it was, as solve() does: a dark cell driven past saturation was left at a held
+    // stage's 26.9 V, and the advance() the error suggests went on from there; Fable round 3's
+    // steady.js review.)
+    const snap = this.solver._snapshot();
+    const steady = this.solver.solveSteady();
     if (!steady.converged) {
       // (with why, as solve() would say it: a terminal driven past what any steady state passes,
       // say, where advance() is the way; Fable round 2's cold user, charging a battery)
