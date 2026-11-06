@@ -146,11 +146,11 @@
     "ok": true,
     "note": "",
     "steps": 468,
-    "rejected": 69,
-    "factorizations": 1545,
-    "ms": 523,
+    "rejected": 66,
+    "factorizations": 1537,
+    "ms": 583,
     "value": {
-      "E − φ₀ (V)": 0.28871038413330813
+      "E − φ₀ (V)": 0.28857331839991496
     }
   },
   "radial drop on a passivating iron electrode, no double layer: to 3600 s": {
@@ -159,9 +159,9 @@
     "steps": 394,
     "rejected": 108,
     "factorizations": 1910,
-    "ms": 593,
+    "ms": 633,
     "value": {
-      "E − φ₀ (V)": 0.11529871958487102
+      "E − φ₀ (V)": 0.11565962985609417
     }
   },
   "MOS without a channel port: cold steady solves, 0 → 1 V in 0.1 V": {
