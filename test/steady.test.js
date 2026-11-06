@@ -1065,3 +1065,24 @@ test('a solved state carried through set({ T, materials }) far in temperature: s
   assert.ok(warm.converged && cold.converged, warm.warnings.join(' '));
   assert.ok(Math.abs(warm.current / cold.current - 1) < 1e-6, `${warm.current} against ${cold.current}`);
 });
+
+test('a gate port held far from its zeroCharge: solve() ramps it there from a cold start, the contacts level meanwhile', () => {
+  // (Fable round 3's hunter: the docs' thin-film transistor 0.8 V and more below threshold
+  // failed cold, its channel laid out e^{−31} above where it ends; a sweep of the gate reached
+  // the subthreshold law, n = N_c e^{(V_G − V_th)/V_T} at the source)
+  const VT = (GAS_CONSTANT * 300) / FARADAY, t = 20e-9, L = 10e-6;
+  const tft = (Vg) => ({
+    T: 300, species: [{ name: 'e-', z: -1, cRef: 46 }],
+    materials: { film: { epsr: 0, species: { 'e-': { D: 1e-3 * VT, mu0: 0 } } } },
+    regions: [{ name: 'channel', material: 'film', length: L }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, right: { V: 1, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' } },
+    ports: [{ name: 'gate', region: 'channel', V: Vg, area: 1 / t, capacitance: { C: 1e-3, zeroCharge: 0.3 } }],
+    grid: { hmin: L / 2000, hmax: L / 100, ratio: 1.05 },
+  });
+  for (const Vg of [-0.5, -1, -2]) {
+    const s = new Device(tft(Vg)).solve();
+    assert.ok(s.converged, `V_G ${Vg}: ${s.warnings.join(' ')}`);
+    const want = 46 * Math.exp((Vg - 0.3) / VT);
+    assert.ok(Math.abs(s.c['e-'][0] / want - 1) < 1e-3, `V_G ${Vg}: n at the source ${s.c['e-'][0]} against ${want}`);
+  }
+});

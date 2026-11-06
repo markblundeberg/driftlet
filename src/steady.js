@@ -56,7 +56,9 @@
 //      driven by a current at V_src − I R, Kirchhoff's I), then the resistances put back and the
 //      steady system solved from there (and where that fails for one terminal held by
 //      Kirchhoff, its load line); a terminal driven by a current, not bound (_bound), held at
-//      voltages instead (_floatingContinuation); with
+//      voltages instead (_floatingContinuation); a port held at a voltage across a capacitance,
+//      ramped from its zeroCharge (_continuation, cold there, with the contacts held level where
+//      canContinue, then the right one ramped warm to its target); with
 //      canContinue, the right contact's voltage ramped to its target (_continuation): from the
 //      voltages of the last converged solve (this.solvedV), the left contact's first where it
 //      moved, else from level contacts, a cold start.
@@ -327,6 +329,32 @@ export class SteadySolves {
       const q = this._floatingContinuation(opts, r);
       if (q.converged) return q;
       r = q;
+    }
+    // A port held at a voltage across a capacitance (a transistor's gate): ramped there from its
+    // zeroCharge, where the layout's neutral start is right. Cold, a thin-film transistor 0.8 V
+    // below threshold failed, its channel laid out e^{−31} above where it ends, which a sweep of
+    // the gate in 0.1 V steps reached (Fable round 3's hunter).
+    if (allowed) {
+      for (let p = 0; p < this.model.ports.length; p++) {
+        const port = this.model.ports[p], d = this.terms[2 + p].drive;
+        if (!port.capacitance || d.kind !== 'V' || d.R > 0) continue;
+        const V = sourceAt(d.src, this.time), from = port.capacitance.zeroCharge;
+        if (V === from) continue;
+        restart();
+        // (with the contacts level while it ramps, where they can be, then the right one ramped
+        // to its target from there: cold at the drain's voltage fails too)
+        if (canContinue) this.sourceOverride.set(1, level);
+        let q;
+        try {
+          q = this._continuation(opts, 2 + p, from, V, r, false);
+        } finally {
+          this.sourceOverride.delete(1);
+          this._refreshSources();
+        }
+        if (q.converged && canContinue) q = this._continuation(opts, 1, level, target, q, true);
+        if (q.converged) return solved(q);
+        r = q;
+      }
     }
     if (canContinue) {
       // The right terminal's voltage ramped to its target: from the contacts' voltages at the last
