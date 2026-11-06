@@ -467,8 +467,8 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   is left, it says "equilibrium" only if no flow comes within ε of what it could carry; otherwise
   it names the largest, which may be round-off or a real flow too small to check this way (a
   reverse diode's 1 µA/m², 4e-15 of what its holes could carry).
-- **conservation**, in a transient: every closed, unreacting stretch keeps what it held plus
-  what came in.
+- **conservation**, in a transient: every unreacting stretch, closed or reaching a terminal,
+  keeps what it held plus what came in (through its terminals, for the latter).
 - **order**, in a steady state (unless `refine: false` or `order: false`): the device solved from
   its definition twice, its species listed as given and in reverse. The same physics must give
   the same steady state, each terminal's voltage and current and each species' amount; where it

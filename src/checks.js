@@ -251,15 +251,22 @@ function naturalScales(device, sol, conductors = true) {
 
 // Closed, unreacting stretches keep their amounts in a transient.
 function conservation(sol, area = 1) {
+  // Closed stretches (a species held between blocking faces) against what they held plus what
+  // came in, and those reaching a terminal against that plus what came in through it (read only
+  // for closed ones, a broken intake would have passed; Fable round 5's review).
   const closed = sol.conservation.filter((st) => !st.connected && !st.reactive);
-  if (closed.length === 0) return { name: 'conservation', ok: true, summary: 'nothing closed to conserve (every species reaches a terminal or reacts)' };
+  const open = sol.conservation.filter((st) => st.connected && !st.reactive && Number.isFinite(st.drift));
+  if (closed.length + open.length === 0) return { name: 'conservation', ok: true, summary: 'nothing to conserve (every species reacts)' };
   // Relative to the amount, but a drift below 1e-20 mol/m² (1e-15 C/m²) is nothing: a floating
   // metal's excess electrons are themselves ~0. (Amounts are totals through the cross-section.)
-  const worst = Math.max(...closed.map((st) => (Math.abs(st.amount - st.reference - st.intake) < 1e-20 * area ? 0 : Math.abs(st.drift))));
+  const off = (st) => (Math.abs(st.amount - st.reference - st.intake) < 1e-20 * area ? 0 : Math.abs(st.drift));
+  const worst = Math.max(...[...closed, ...open].map(off));
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  const what = [closed.length ? `${n(closed.length, 'closed stretch', 'closed stretches')} (a species held between blocking faces)` : '', open.length ? n(open.length, 'stretch reaching a terminal', 'stretches reaching a terminal') : ''].filter(Boolean).join(' and ');
   return {
     name: 'conservation',
     ok: worst < 1e-8,
-    summary: `${closed.length} closed stretch${closed.length > 1 ? 'es' : ''} (a species held between blocking faces) kept ${worst < 1e-8 ? `to ${sig(worst, 1)}` : `only to ${sig(worst, 2)}`} of what ${closed.length > 1 ? 'they' : 'it'} held plus what came in`,
+    summary: `${what} kept ${worst < 1e-8 ? `to ${sig(worst, 1)}` : `only to ${sig(worst, 2)}`} of what they held plus what came in`,
     details: { worst },
   };
 }
