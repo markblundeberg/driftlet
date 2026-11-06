@@ -44,8 +44,8 @@
 //   s.time, does nothing and says why where it's likely a mistake). opts: tol (1e-3: the local
 //   error allowed per step, in thermal units, as errorNorm measures it), dtMax, budgetMs (wall
 //   time: stops early, done false, converged true), maxSteps, method ('bdf2' | 'be'), dt0,
-//   probes. The step size starts from s.dtNext (the last call's), else dt0, else 1e-4 of the
-//   interval, and is carried to the next call.
+//   probes. The step size starts from dt0 where given, else s.dtNext (the last call's), else
+//   1e-4 of the interval, and is carried to the next call.
 //   - The first step (no history): backward Euler, its error the difference from two half
 //     steps, whose result is kept (and the first half step's point is in the trace).
 //   - Later: step with Newton started from an extrapolation through the history; BDF2 once two
@@ -294,7 +294,9 @@ export function integrate(s, tEnd, opts = {}) {
   // history across a current pulse's edge lost 1/12 of the step's charge, for good (Fable round
   // 2's hunter: 8.33% of a 1 ms pulse, silent, the plates' charge outside the error norm).
   if (s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
-  let dt = s.dtNext ?? opts.dt0 ?? (tEnd - s.time) * 1e-4;
+  // An explicit dt0 is this call's first step, over the size carried from the last call (which
+  // can't see a set() that has just made the first instants fast; Fable round 2's hunter).
+  let dt = opts.dt0 ?? s.dtNext ?? (tEnd - s.time) * 1e-4;
   if (!(dt > 0)) dt = (tEnd - s.time) * 1e-4;
   // The shortest step worth trying: round-off relative to the time, or the device's fastest
   // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).

@@ -721,3 +721,23 @@ test('a step of regular size ending a few ulps before a pulse\'s edge restarts t
     assert.ok(Math.abs(sol.plates.right.charge / w - 1) < 1e-6, `tb − tsum ${tb - tsum}: ${sol.plates.right.charge}`);
   }
 });
+
+test('dt0 sets a later call\'s first step too, over the size carried from the last call', () => {
+  // (Fable round 2's hunter: after a set(), dt0 was ignored, so the first instants of a new
+  // drive were stepped over at the carried size)
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2;
+  const dev = new Device({
+    species: lib.species,
+    materials: lib.materials,
+    regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 }, right: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 } },
+    grid: { hmin: 2e-6, hmax: 5e-6 },
+  });
+  dev.solve();
+  dev.advance(10);
+  dev.set({ contacts: { right: { V: 0.01 } } });
+  const sol = dev.advance(11, { dt0: 1e-9 });
+  assert.ok(sol.converged);
+  const first = sol.trace.t.find((t) => t > 10);
+  assert.ok(first - 10 <= 1.01e-9, `first step ${first - 10} s`);
+});

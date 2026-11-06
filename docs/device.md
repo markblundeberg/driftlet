@@ -1188,8 +1188,9 @@ const now = dev.solution();                   // snapshot of the current state
   absolute time (a solution's `time` is where the device is); a NaN does nothing, and its
   `warnings` say so. Options: `tol`,
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
-  `done: false`), `maxSteps`, `method`. The step size carries over between calls, so an
-  animation can call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
+  `done: false`), `maxSteps`, `method`. The step size carries over between calls (a `dt0` given
+  to a later call wins, say after a `set()` makes the first instants fast), so an animation can
+  call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
   `rejected`, and a `trace` of terminal current and voltage after every accepted step (the
   current is the right contact's, toward +x, as `sol.current`; a port's is in `sol.terminals`
   after each call; the voltage is the right contact's minus the left's: what a meter between the terminals reads,
