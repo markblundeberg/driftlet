@@ -219,7 +219,7 @@ function draw(sol) {
   const V = sol.terminalVoltage;
   el('status').textContent = el('open').checked
     ? `zero-current voltage ${(1000 * V).toFixed(1)} mV between Ag/AgCl electrodes · a perfectly K⁺-selective channel: ${(2000 * VT * Math.log(p.cl / p.cr)).toFixed(1)} mV, an uncharged one (a liquid junction, 2t₊V_T ln(c₁/c₂)): ${((2000 * VT * Math.log(p.cl / p.cr) * D['K+']) / (D['K+'] + D['Cl-'])).toFixed(1)} mV`
-    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the channel: K⁺ carries ${((-IK * AREA) / 1e-12).toFixed(2)}, Cl⁻ ${((-ICl * AREA) / 1e-12).toFixed(2)}`;
+    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the channel: K⁺ carries ${((-IK * AREA) / 1e-12).toFixed(2).replace('-', '−')} pA, Cl⁻ ${((-ICl * AREA) / 1e-12).toFixed(2).replace('-', '−')} pA`;
   const x0 = sol.regions[1].x0, x1 = sol.regions[2].x1, pad = Math.max(10e-9, 0.25 * (x1 - x0)), xlim = [x0 - pad, x1 + pad];
   const signed = (x) => (x === 0 ? '0' : `${x > 0 ? '−' : '+'}${mM(Math.abs(x))}`); // X is negative charge
   const charges = X1 === X2 ? `${signed(X1)} of wall charge` : `${signed(X1)} | ${signed(X2)} of wall charge`;
