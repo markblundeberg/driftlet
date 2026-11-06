@@ -1205,8 +1205,8 @@ const now = dev.solution();                   // snapshot of the current state
   each reaction's rate, `interfaces[f].rates`, times its coefficient, and shows in the flux of
   the segment beside the face, `sol.flux`), and `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
   as a transient slows, so give `dtMax` to resolve a signal in time.
-- `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
-  it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
+- `impedance(frequencies, { terminal, profiles })` solves the steady state (or takes the one a
+  `solve()` just left it in), then linearises about it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
   device, its input impedance whether it's held or driven by a current (for a driven one, about
   the state its drive holds: solve() it held, then set its I, solve(), then impedance()); the other terminals
   keep their drives (held ones at AC ground, driven ones open), so at least one other must be held

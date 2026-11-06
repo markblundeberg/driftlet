@@ -270,7 +270,9 @@ export class Device {
    */
   impedance(frequencies, opts) {
     options(opts, 'impedance', ['terminal', 'profiles']);
-    const steady = this.solver.solveSteady();
+    // A device that holds a converged steady state (solve() just now, nothing stepped or changed
+    // since) is linearized there as it stands; else the steady state is found first.
+    const steady = this.solver.atSteady ? { converged: true, steps: 0, iterations: 0, history: [] } : this.solver.solveSteady();
     if (!steady.converged) {
       // (with why, as solve() would say it: a terminal driven past what any steady state passes,
       // say, where advance() is the way; Fable round 2's cold user, charging a battery)
