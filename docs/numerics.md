@@ -637,7 +637,10 @@ which cost four assemblies per product.
     previous states: quadratic after a BDF2 step, scaled by $`C_c/(C_c + C_p)`$, with
     $`C_c = h^3(1+\omega)^2/(\omega(1+2\omega))`$ and $`C_p = h(h+h_1)(h+h_1+h_2)`$; linear after
     backward Euler, scaled by $`h/(2h + h_1)`$. The first step, with no history, is checked by step
-    doubling.
+    doubling. The error is the largest over every potential that carries state, in thermal units:
+    $`\hat\phi`$, each $`\eta`$, a surface's coverages, the gates, and the floating terminals'
+    voltages (an RC charging behind a resistance, against a contact that holds $`\phi`$, moves
+    nothing else).
   - A first step whose error doesn't shrink with it is taken anyway. A jump in a level held at a
     boundary (a bath's, after a voltage step) starts a profile self-similar in $`x/\sqrt{t}`$, so a
     first step of any length errs alike (0.11 thermal units over ten decades of step, in a

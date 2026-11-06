@@ -762,3 +762,22 @@ test('a trace\'s charge is Σ current × the step ending at each point, across a
     assert.ok(Math.abs(-Q / sol.plates.right.charge - 1) < 1e-6, `${method}: ${-Q} against ${sol.plates.right.charge}`);
   }
 });
+
+test('a floating terminal\'s voltage is in the error norm: an RC whose φ is held beside it charges as e^{−t/RC}, tighter with tol', () => {
+  // (Fable round 2's hunter: a capacitive contact behind R, against a bath that holds φ, has its
+  // dynamics in the terminal's voltage alone; stepped blind to it, tol 1e-3 and 1e-5 took the
+  // same 3 steps from τ to 3τ and erred 1% in the charge)
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2, R = 1, tau = R * C, salt = { 'K+': 100, 'Cl-': 100 };
+  const run = (tol) => {
+    const dev = new Device(build({ library: [lib], stack: [bath(salt, 'Cl-'), layer('water', 100e-6, { c0: salt }), { V: 0, R, phi: { type: 'capacitive', C }, zeroCharge: 0 }], grid: { hmin: 2e-6, hmax: 5e-6 } }));
+    const s0 = dev.solve();
+    dev.set({ contacts: { right: { V: 0.01 } } });
+    dev.advance(tau, { tol });
+    const s = dev.advance(3 * tau, { tol });
+    return { q: (s.plates.right.charge - s0.plates.right.charge) / (0.01 * C), steps: s.steps };
+  };
+  const loose = run(1e-3), tight = run(1e-5), want = -Math.expm1(-3);
+  assert.ok(tight.steps > 2 * loose.steps, `steps ${loose.steps} at 1e-3, ${tight.steps} at 1e-5`);
+  assert.ok(Math.abs(tight.q - want) < 1e-3, `at 1e-5: ${tight.q} against ${want}`);
+  assert.ok(Math.abs(loose.q - want) < 1e-2, `at 1e-3: ${loose.q} against ${want}`);
+});

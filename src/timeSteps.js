@@ -18,8 +18,8 @@
 //
 // The state: u + uLo (Newton's unknowns, η and φ̂ in thermal units), termV (terminal voltages),
 // time. The history: s.history, the accepted steps before this one, newest first, at most 3,
-// each { t (its start), dt, u (its start state), c, th, th0, gam, g (gates), D (contacts' D), Q
-// (ports' charges) }: what BDF2 and the predictor need.
+// each { t (its start), dt, u (its start state), V (its start's terminal voltages), c, th, th0,
+// gam, g (gates), D (contacts' D), Q (ports' charges) }: what BDF2 and the predictor need.
 //
 // step(s, dt, opts) → newton's result (+ bdf)
 //   From a cold start (s.coldStart, outside a steady solve), the faces between strictly neutral
@@ -51,6 +51,8 @@
 //   - Later: step with Newton started from an extrapolation through the history; BDF2 once two
 //     steps are in it; the error |u − pred|·scale against the explicit predictor (quadratic
 //     after BDF2 with three, linear otherwise), scale making it the step's own local error.
+//     errorNorm is over φ̂, each η, a surface's coverages, the gates and the floating terminals'
+//     voltages (over V_T), the largest of them.
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
 //     [0.2, 2] (2 at err = 0). Rejected: the state restored, h·factor. A step that doesn't
 //     converge: h/4. Below the floor (1e-14 of tEnd, or 1e-2 of the fastest time scale), it
@@ -211,7 +213,7 @@ export function step(s, dt, opts = {}) {
   }
   result.bdf = bdf;
   if (result.converged) {
-    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN });
+    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN });
     if (s.history.length > 3) s.history.length = 3;
     s.time = tEnd;
     s.lastDt = dtEff;
@@ -305,7 +307,7 @@ export function integrate(s, tEnd, opts = {}) {
   // The shortest step worth trying: round-off relative to the time, or the device's fastest
   // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
   const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), s.fastestTime() * 1e-2);
-  const pred = new Float64Array(s.u.length), guess = new Float64Array(s.u.length);
+  const pred = new Float64Array(s.u.length), guess = new Float64Array(s.u.length), predV = new Float64Array(s.termV.length);
   const firstErrs = []; // the first step's error at each size tried (see below)
   const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
   while (s.time < tEnd) {
@@ -339,7 +341,7 @@ export function integrate(s, tEnd, opts = {}) {
       const full = s.step(h);
       iterations += full.iterations;
       if (full.converged) {
-        const uFull = Float64Array.from(s.u);
+        const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV);
         s._restore(snap);
         const a = s.step(h / 2);
         // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
@@ -347,7 +349,7 @@ export function integrate(s, tEnd, opts = {}) {
         const b = a.converged ? s.step(h / 2) : a;
         iterations += a.iterations + (b === a ? 0 : b.iterations);
         if (b.converged) {
-          err = errorNorm(s, uFull);
+          err = errorNorm(s, uFull, vFull);
           p = 1;
         }
       }
@@ -369,8 +371,8 @@ export function integrate(s, tEnd, opts = {}) {
         if (dt < floor) { failed = true; break; }
         continue;
       }
-      p = predict(s, pred, r.bdf);
-      err = errorNorm(s, pred) * p.scale;
+      p = predict(s, pred, r.bdf, predV);
+      err = errorNorm(s, pred, predV) * p.scale;
       p = p.order;
     }
     // A first step whose error doesn't shrink with it: a jump in a level held at a boundary
@@ -458,11 +460,12 @@ function extrapolate(s, out, h) {
 
 // Explicit predictor at the new time through the previous states (quadratic after BDF2,
 // linear after backward Euler), and the factor turning |u − pred| into the local error.
-function predict(s, pred, bdf) {
+function predict(s, pred, bdf, predV) {
   const [e0, e1, e2] = s.history;
   const h = e0.dt;
   if (!e1) {
     pred.set(e0.u);
+    predV.set(e0.V);
     return { scale: 1, order: 1 };
   }
   const hp = e1.dt;
@@ -471,6 +474,7 @@ function predict(s, pred, bdf) {
     // Lagrange through the three states before at the new time (offsets as in extrapolate).
     const [l0, l1, l2] = lagrange3(0, -h, -(h + hp), -(h + hp + hpp));
     for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
+    for (let k = 0; k < predV.length; k++) predV[k] = l0 * e0.V[k] + l1 * e1.V[k] + l2 * e2.V[k];
     const w = h / hp;
     const Cc = (h * h * h * (1 + w) * (1 + w)) / (w * (1 + 2 * w));
     const Cp = h * (h + hp) * (h + hp + hpp);
@@ -478,13 +482,17 @@ function predict(s, pred, bdf) {
   }
   const l0 = (h + hp) / hp, l1 = 1 - l0;
   for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
+  for (let k = 0; k < predV.length; k++) predV[k] = l0 * e0.V[k] + l1 * e1.V[k];
   // Backward Euler's error against a linear predictor; after a BDF2 step without enough
   // history this overestimates, which is safe.
   return { scale: bdf ? 1 : h / (2 * h + hp), order: 1 };
 }
 
-// Largest difference from ref among the potentials that carry state, in thermal units.
-function errorNorm(s, ref) {
+// Largest difference from ref among the potentials that carry state, in thermal units: and the
+// floating terminals' voltages (refV), which carry an RC's charging where φ is held beside it
+// (a capacitive contact behind R against a bath: stepped blind, tol 1e-3 and 1e-5 alike took 3
+// steps from τ to 3τ and erred 1% in the charge; Fable round 2's hunter).
+function errorNorm(s, ref, refV) {
   const { n, M, u } = s;
   let mx = 0;
   for (let g = 0; g < s.nNodes; g++) {
@@ -497,6 +505,7 @@ function errorNorm(s, ref) {
     if (k >= 0) for (let q = 0; q < s.model.surfaces[k].species.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
   }
   for (const { o } of s.gateList) mx = Math.max(mx, Math.abs(u[o] - ref[o])); // (a fraction: 1e-3 of m³ is 0.3% of P)
+  for (const k of s.floating) mx = Math.max(mx, Math.abs(s.termV[k] - refV[k]) / s.VT);
   return mx;
 }
 

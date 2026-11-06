@@ -443,7 +443,13 @@ for (const idx of [426, 156, 66]) {
     assert.deepEqual(steady.slice(0, 5), [], 'steady');
     const short = checkInside(def(), (d) => d.advance(1e-3, { tol: 1e-6 }), (s, dt) => Number.isFinite(dt));
     assert.deepEqual(short.slice(0, 5), [], 'a short step');
-    const long = checkInside(def(), (d) => (d.advance(1e-2, { tol: 1e-6 }), d.solver.step(100)), (s, dt) => dt === 100, { nth: 1 });
+    // (from the first of these states where a circuit law is read by its change: which one that
+    // is moves with the steps taken to get there, as the error control changes)
+    let long;
+    for (const [t, tol] of [[1e-2, 1e-6], [1e-2, 1e-4], [1e-1, 1e-6], [1e-3, 1e-6], [1, 1e-6]]) {
+      long = checkInside(def(), (d) => (d.advance(t, { tol }), d.solver.step(100)), (s, dt) => dt === 100, { nth: 1 });
+      if (long?.byChange > 0) break;
+    }
     assert.ok(long?.byChange > 0, 'no circuit law read by its change at the long step');
     assert.deepEqual(long.slice(0, 5), [], 'a long step');
   });
