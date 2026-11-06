@@ -33,6 +33,10 @@ export const units = Object.freeze({
   um: (x) => x * 1e-6,
   /** cm²/s → m²/s */
   cm2PerS: (x) => x * 1e-4,
+  /** cm³/s per particle (radiative B) → m³/(mol·s) */
+  cm3PerS: (x) => x * 1e-6 * AVOGADRO,
+  /** cm⁶/s per particle² (Auger C) → m⁶/(mol²·s) */
+  cm6PerS: (x) => x * 1e-12 * AVOGADRO * AVOGADRO,
   // Back out of SI, for display.
   /** mol/m³ → mol/L */
   toMolar: (x) => x * 1e-3,

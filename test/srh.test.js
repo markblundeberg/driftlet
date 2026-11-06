@@ -100,7 +100,7 @@ test('SRH at a face: zero in the dark, the law at the two edge nodes under light
 test('SRH definitions are checked', () => {
   const def = (rx) => build({ T, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { donors: 1 }), ohmic(0)], bulkReactions: [rx] });
   for (const [rx, message] of [
-    [{ equation: 'e- + h+ = 0', kf: { Si: 1 }, srh: { Si: { tauN: 1, tauP: 1 } } }, /kf \(mass action\) or srh/],
+    [{ equation: 'e- + h+ = 0', kf: { Si: 1 }, srh: { Si: { tauN: 1, tauP: 1 } } }, /kf \(mass action\), srh \(trap-assisted\) or auger/],
     [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1 } } }, /tauP must be/],
     [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1, tauP: 1, vn: 1 } } }, /vn/],
     [{ equation: 'photon = e- + h+', fixed: { photon: 1e5 }, srh: { Si: { tauN: 1, tauP: 1 } } }, /consuming one negative and one positive species/],

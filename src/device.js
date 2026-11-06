@@ -138,6 +138,26 @@ function srhLaw(sdef, path, list, species, timeKeys) {
   return { n: neg, p: pos, tn: time(kn), tp: time(kp), n1: sdef.n1 === undefined ? NaN : positive(sdef.n1, `${path}.n1`) };
 }
 
+// Auger recombination, for the same reactions as SRH (e⁻ + h⁺ = 0): mass action with the third
+// carrier's density as a factor,
+//   r = (C_n n + C_p p) n p (1 − e^{−A/RT}),
+// C_n and C_p in m⁶/(mol²·s) (units.cm6PerS converts the usual cm⁶/s). That's
+// (C_n n + C_p p)(n p − n_i²) for Boltzmann carriers; the affinity keeps equilibrium exact under
+// any statistics.
+function augerLaw(adef, path, list, species) {
+  need(isObject(adef), `${path} must be { Cn, Cp }`);
+  fields(adef, path, ['Cn', 'Cp']);
+  const reactants = list.filter((p) => p.nu < 0);
+  need(
+    list.length === 2 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
+    `${path}: Auger kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0'`,
+  );
+  const neg = species[list[0].i].z < 0 ? list[0] : list[1], pos = neg === list[0] ? list[1] : list[0];
+  const cn = nonNegative(adef.Cn ?? 0, `${path}.Cn`), cp = nonNegative(adef.Cp ?? 0, `${path}.Cp`);
+  need(cn + cp > 0, `${path}: give Cn or Cp (m⁶/(mol²·s)) > 0`);
+  return { n: neg, p: pos, cn, cp };
+}
+
 function nonNegative(v, path) {
   need(isFiniteNumber(v) && v >= 0, `${path} must be a non-negative number, got ${shown(v)}`);
   return v;
@@ -525,14 +545,31 @@ export function normalizeDevice(def) {
 // reaction runs only in those materials).
 function normalizeReaction(rdef, path, species, speciesIndex, materials, materialIndex, regions, RT) {
   need(isObject(rdef), `${path} must be an object`);
-  fields(rdef, path, ['nu', 'equation', 'fixed', 'kf', 'srh']);
+  fields(rdef, path, ['nu', 'equation', 'fixed', 'kf', 'srh', 'auger']);
   need((rdef.nu === undefined) !== (rdef.equation === undefined), `${path}: give the reaction as nu or as an equation, one of them`);
   const nu = rdef.nu ?? equationStoichiometry(rdef.equation, `${path}.equation`);
   const st = stoichiometry(nu, rdef.equation === undefined ? `${path}.nu` : `${path}.equation`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
   need(st.list.length > 0, `${path}: no mobile participants`);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
-  // SRH kinetics instead: srh maps material names to { tauN, tauP, n1 }.
-  need((rdef.kf === undefined) !== (rdef.srh === undefined), `${path}: give kf (mass action) or srh (trap-assisted), one of them`);
+  // SRH kinetics instead: srh maps material names to { tauN, tauP, n1 }; or Auger: auger maps
+  // them to { Cn, Cp }.
+  need(
+    [rdef.kf, rdef.srh, rdef.auger].filter((v) => v !== undefined).length === 1,
+    `${path}: give kf (mass action), srh (trap-assisted) or auger, one of them`,
+  );
+  if (rdef.auger !== undefined) {
+    need(isObject(rdef.auger), `${path}.auger must map material names to { Cn, Cp }`);
+    const auger = new Array(materials.length).fill(null), kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
+    for (const [mname, v] of Object.entries(rdef.auger)) {
+      need(materialIndex.has(mname), `${path}.auger.${mname}: unknown material`);
+      const m = materialIndex.get(mname);
+      auger[m] = augerLaw(v, `${path}.auger.${mname}`, st.list, species);
+      for (const { i } of st.list) need(materials[m].present[i], `${path}.auger.${mname}: '${species[i].name}' is absent from material '${mname}'`);
+      kf[m] = 1; // (runs here)
+    }
+    const reactants = st.list.map(({ i, nu }) => ({ i, nu: -nu }));
+    return { reactants, products: [], fixedA: st.fixedA, kf, kfProfile, srh: null, auger, generation: false };
+  }
   if (rdef.srh !== undefined) {
     need(isObject(rdef.srh), `${path}.srh must map material names to { tauN, tauP, n1 }`);
     const srh = new Array(materials.length).fill(null), kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);

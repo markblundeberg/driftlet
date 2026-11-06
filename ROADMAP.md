@@ -182,8 +182,6 @@ for live demos.
        node by node, from the carriers it lays out.
      - `advance()` fails at its first step right after a `set({ T, materials })` jump far in T
        (150 → 500 K at −5 V); `solve()` there converges, and the transient runs from it.
-     - Auger recombination can't be written (n²p needs a species on both sides); a rate law keyed
-       like `srh` would fit.
      - Demo pages at a phone's width: the membrane page's three dot-panel captions overprint, the
        myelin level diagram's 40 node lines crowd it; the rde page's Koutecký–Levich axis goes
        negative at E° + 0.1 V; the redox page could show its no-iR separation beside the readout's.

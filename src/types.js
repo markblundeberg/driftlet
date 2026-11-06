@@ -158,10 +158,13 @@
  * @property {Record<string, number>} [fixed] μ (J/mol) of fixed-activity participants that aren't species
  * @property {Record<string, number | Profile>} [kf] mass action: forward rate constant per material
  *   name, or a profile of it against the device's x (an absorption profile, for photogeneration);
- *   give kf or srh
+ *   give kf, srh or auger
  * @property {Record<string, { tauN: number, tauP: number, n1?: number }>} [srh] instead: SRH
  *   (trap-assisted) recombination per material name, for a reaction consuming one negative and
  *   one positive species and making none; lifetimes in s, n1 in mol/m³ (default n_i, a midgap trap)
+ * @property {Record<string, { Cn?: number, Cp?: number }>} [auger] instead: Auger recombination
+ *   per material name, r = (C_n n + C_p p) n p (1 − e^{−A/RT}), for the same reactions as srh;
+ *   C in m⁶/(mol²·s) (units.cm6PerS(2.8e-31) from cm⁶/s)
  */
 
 /**

@@ -358,6 +358,7 @@ export class Solver {
     this.rxs = model.reactions.map((rx) => ({
       kf: rx.kf,
       srh: rx.srh, // per material: SRH kinetics in place of mass action, or null
+      auger: rx.auger ?? null, // per material: Auger's (C_n n + C_p p) on mass action, or null
       kfNode: Float64Array.from(gx, (x, g) => {
         const m = this.nodeMaterial[g], p = rx.kfProfile[m];
         return p ? profileMean(p, x - (g > 0 ? segLength[g - 1] : 0) / 2, x + (g < segLength.length ? segLength[g] : 0) / 2) : rx.kf[m];

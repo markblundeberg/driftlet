@@ -51,7 +51,7 @@
 //     solution every species' mixing is −D_mix Δc/h to second order (eddies mix concentration).
 //   bulk reaction at a node: rate r = P(1 − e^{−a}), a = fixedA + Σ ν η (reactants ν > 0,
 //     products ν < 0; compensated), P = k_f Π c^ν over reactants (times generationScale for a
-//     generation); or SRH (_srhRate) where the material has an SRH law, its derivatives through
+//     generation; times C_n n + C_p p where the material has an Auger law, _augerFactor); or SRH (_srhRate) where the material has an SRH law, its derivatives through
 //     ln c and the excess potentials ex = ζ − ln c (_srhInto: exact for any statistics, the
 //     carriers' coupled or not). vol·ν·r in each
 //     participant's row. bulkRate, bulkForward and bulkOneWay read the same rate, its forward
@@ -527,6 +527,16 @@ export class RegionTerms {
         aHi += nu * u[b * M + 1 + i];
         aLo += nu * uLo[b * M + 1 + i];
       }
+      const ag = rx.auger?.[this.nodeMaterial[g]];
+      if (ag) {
+        // Auger: P times the third carrier's C_n n + C_p p, ∂ln of that into dr
+        const tn = ag.cn * c[g * n + ag.n.i], tp = ag.cp * c[g * n + ag.p.i], K = tn + tp;
+        P *= K;
+        if (K > 0) {
+          this._dlnc(g, ag.n.i, tn / K, dr);
+          this._dlnc(g, ag.p.i, tp / K, dr);
+        }
+      }
       const a = aHi + aLo;
       const f = -Math.expm1(-a); // 1 − e^{−a}
       const rate = P * f;
@@ -931,6 +941,7 @@ export class RegionTerms {
     if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law)).rate;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    P *= this._augerFactor(rx, g);
     return P * -Math.expm1(-(aHi + aLo));
   }
 
@@ -946,6 +957,7 @@ export class RegionTerms {
     }
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    P *= this._augerFactor(rx, g);
     return P;
   }
 
@@ -959,7 +971,15 @@ export class RegionTerms {
     if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).oneWay;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
+    P *= this._augerFactor(rx, g);
     return P * Math.max(1, Math.exp(-a));
+  }
+
+  // Auger's factor on a bulk reaction's mass action at node g: C_n n + C_p p (augerLaw in
+  // device.js), or 1.
+  _augerFactor(rx, g) {
+    const ag = rx.auger?.[this.nodeMaterial[g]];
+    return ag ? ag.cn * this.c[g * this.n + ag.n.i] + ag.cp * this.c[g * this.n + ag.p.i] : 1;
   }
 
   // SRH kinetics (see srhLaw in device.js): the rate, and its sensitivities to ln n, ln p and

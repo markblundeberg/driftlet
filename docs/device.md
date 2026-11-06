@@ -618,6 +618,19 @@ own trap total, and the trapped charge is in Poisson's equation. The kit's
 bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }]
 ```
 
+**Auger recombination** replaces `kf` with `auger`, a map from material names to `{ Cn, Cp }`
+(m⁶/(mol²·s); `units.cm6PerS` converts the usual cm⁶/s per particle²), on the same reactions as
+SRH: $`r = (C_n n + C_p p)\, n p\, (1 - e^{-A/RT})`$, which is $`(C_n n + C_p p)(np - n_i^2)`$ for
+Boltzmann carriers. Recombination by several routes is several reactions, each with its own law;
+radiative recombination is mass action, `kf: { Si: units.cm3PerS(B) }`.
+
+```js nocheck
+bulkReactions: [
+  { equation: 'e- + h+ = 0', auger: { Si: { Cn: units.cm6PerS(2.8e-31), Cp: units.cm6PerS(9.9e-32) } } },
+  { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } },
+]
+```
+
 **Generation** is a reaction from a reservoir: photogeneration is
 $`\text{photon} \to \mathrm{e}^- + \mathrm{h}^+`$, with the photons a fixed participant whose $`\mu`$
 sits well above the gap, so that $`e^{-A/RT}`$ is negligible and the rate is `kf` itself, the

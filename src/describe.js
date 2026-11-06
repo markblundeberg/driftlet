@@ -276,7 +276,7 @@ export function describe(def) {
   });
   if ((def.bulkReactions ?? []).length) {
     lines.push('bulk reactions:');
-    for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)}${rx.srh ? ' (SRH)' : ''} in ${Object.keys(rx.kf ?? rx.srh ?? {}).join(', ')}`);
+    for (const rx of def.bulkReactions) lines.push(`  ${rx.equation ?? equation(rx.nu)}${rx.srh ? ' (SRH)' : rx.auger ? ' (Auger)' : ''} in ${Object.keys(rx.kf ?? rx.srh ?? rx.auger ?? {}).join(', ')}`);
   }
   if (times.length) lines.push('time scales:', ...times);
   if (warnings.length) lines.push('warnings:', ...warnings.map((w) => `  ${w}`));

@@ -43,7 +43,7 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
 
 - **Units are SI**: m, mol/m³ (1 M = 1000 mol/m³; 1e16 cm⁻³ is only 0.0166 mol/m³), J/mol, m²/s,
   V, A/m², F/m², S/m². `units` converts in (`units.um(1)`, `units.perCm3(1e17)` for per cm³ or
-  per cm³·s, `units.eV(1.12)` to J/mol, `units.cm2PerS(36)`, `units.molar(0.1)`) and back
+  per cm³·s, `units.eV(1.12)` to J/mol, `units.cm2PerS(36)`, `units.cm6PerS(2.8e-31)`, `units.molar(0.1)`) and back
   (`units.toPerCm3`, `toEV`, `toMolar`, `toUm`, …). Physiology: 1 mS/cm² = 10 S/m², 1 µF/cm² =
   0.01 F/m², 1 µA/cm² = 0.01 A/m², mM = mol/m³.
 - **Everything you set or read is an electrochemical potential μ̄** (or a voltage made from one). A
@@ -127,7 +127,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   bimolecular, as is the kit's `recombination()`, it shortens at high injection. SRH is `srh: { Si:
   { tauN, tauP } }` in place of `kf` (s), or at a face `{ equation: 'e-(left) + h+(right) = 0',
   srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it gives n-type silicon's holes a lifetime τ_p at any
-  injection. `srh` carries no charge; for traps whose charge matters (dense or deep ones, trapped
+  injection. Auger is `auger: { Si: { Cn, Cp } }` in place of `kf` (m⁶/(mol²·s);
+  `units.cm6PerS(2.8e-31)` from cm⁶/s, `units.cm3PerS` for a radiative B as `kf`); each route is
+  its own reaction, and their rates add. `srh` carries no charge; for traps whose charge matters (dense or deep ones, trapped
   charge bending the bands), `trap(semiconductor('Si'), { density, tauN, tauP, n1, charge:
   'acceptor' })` writes the trap's two states as immobile species and returns `{ library,
   bulkReactions, c0 }` (c0 into each layer that has the trap; in a junction, `t.c0For({ donors })`
