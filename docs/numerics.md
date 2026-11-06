@@ -663,7 +663,16 @@ which cost four assemblies per product.
     but the tail's errors are swept into the front, and at matched accuracy of the terminal
     current it cost 50% more.
   - A step is rejected above `tol`. The next step size is
-    $`h \cdot \min(2, \max(0.2, 0.9\, (\mathtt{tol}/\mathrm{err})^{1/(p+1)}))`$.
+    $`h \cdot \min(2, \max(0.2, 0.9\, (\mathtt{tol}/\mathrm{err})^{1/(p+1)}))`$. Where the step
+    this asks for can't move the clock (below the time's resolution), the run stops, converged
+    false, and says so. That is what a `tol` below the estimate's own floor comes to: on steps far
+    shorter than a device's dielectric relaxation time, with $`\varepsilon > 0`$, storage outweighs
+    displacement by ~1e19 in the mode that shifts $`\hat\phi`$ with every $`\eta_i`$ by $`z_i \hat\phi`$, and
+    the linear solve splits the two to only ~1e-7 (two routes to one state differ by 1–3e-7
+    below steps of 1e-12 s, whatever the cross-section; at $`\varepsilon = 0`$, whose charge rows
+    remove that mode, by 3e-14). So `tol` below about 2e-7 is out of reach just after a jump in
+    such a device (Fable round 4's measurements); the default 1e-3 and the 1e-5 suggested for
+    fitted tails are far above it.
   - Newton failure quarters the step. (Strictly neutral materials had tried longer first steps
     instead, shorter ones being worse conditioned there; with their ends and starts fixed, no
     case needs it.)

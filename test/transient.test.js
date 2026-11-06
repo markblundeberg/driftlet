@@ -856,7 +856,7 @@ test('advance() whose error estimate has a floor above tol stops there, converge
   };
   const tight = start().advance(0.5, { tol: 1e-8 }), said = tight.warnings.join(' | ');
   assert.ok(!tight.converged && !tight.done && tight.steps + tight.rejected < 2000, `${tight.converged} ${tight.steps} + ${tight.rejected}`);
-  assert.match(said, /no longer shrinks with the step.*Loosen tol/);
+  assert.match(said, /below the time's own resolution.*loosen tol/);
   const ok = start().advance(0.5, { tol: 1e-5 });
   assert.ok(ok.converged && ok.done && Math.abs(ok.ports[0].charge / (0.2 / 6) - 1) < 1e-3, `${ok.ports[0].charge}`);
   // A run to 1e300 s: the step it needs is below the time's resolution, and it says so.

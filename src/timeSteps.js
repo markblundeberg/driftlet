@@ -59,8 +59,8 @@
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
 //     [0.2, 2] (2 at err = 0). Rejected: the state restored, h·factor. A step that doesn't
 //     converge: h/4. Below the floor (1e-14 of tEnd, or 1e-2 of the fastest time scale), it
-//     stops, converged false, with a message; past the first step an error rejection does too,
-//     and below 4ε of the time (its resolution), saying which.
+//     stops, converged false, with a message; past the first step, an error rejection whose
+//     step can't move the clock (s.time + dt === s.time) does too.
 //   - A first step whose error doesn't shrink as it's cut (three tries within a factor 2 of
 //     each other): a jump at a boundary, self-similar in x/√t, so taken anyway.
 //   - Steps land exactly on the sources' breakpoints (and the history is cleared there: the
@@ -398,11 +398,15 @@ export function integrate(s, tEnd, opts = {}) {
       s._restore(snap);
       rejected++;
       dt = h * factor(err, p);
-      // Past the first step, the floor holds here too, and the time's own resolution: where the
-      // error estimate has a floor above tol (Newton's precision on the device), the step fell
-      // without end, below the time's ulp, steps "accepted" that didn't move it, until maxSteps
-      // ran out with currents of 1e87 beside converged: true (Fable round 4: three reviewers).
-      if (!half && dt < Math.max(floor, 4 * Number.EPSILON * Math.abs(s.time))) {
+      // Past the first step, a stall stops here, by its own signatures: where the error
+      // estimate has a floor above tol (Newton's precision on the device), the step fell without
+      // end, below the time's ulp, steps "accepted" that didn't move it, until maxSteps ran out
+      // with currents of 1e87 beside converged: true (Fable round 4: three reviewers). So it
+      // stops where a step can't move the clock. (Not at the non-convergence floor: at tight tol,
+      // or late in a long run, steps far below it are legitimate; nor where the error stops
+      // shrinking as the step is cut: right after a jump it doesn't, self-similar in x/√t, and
+      // a run must go on through it; both from the re-checks.)
+      if (!half && s.time + dt === s.time) {
         stalled = { err, h };
         failed = true;
         break;
@@ -445,11 +449,7 @@ export function integrate(s, tEnd, opts = {}) {
   // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
   // an electrode at open circuit with no double layer, held only by a slow reaction.)
   const unbalanced = s.history.length === 0 && s.time === t0 ? (s.unbalanced ?? []).map((r) => s.model.regions[r].name ?? `regions[${r}]`) : [];
-  if (stalled && stalled.h < 8 * Number.EPSILON * Math.abs(s.time))
-    stopped = `${at}: the step the error control asked for (${stalled.h.toExponential(1)} s) is below the time's own resolution at t = ${s.time.toPrecision(3)} s. Advance by intervals nearer the device's time scales, or solve() for the long-time limit.`;
-  else if (stalled)
-    stopped = `${at}: the local error estimate (${stalled.err.toExponential(1)} in thermal units) stayed above tol (${tol}) as the step fell to ${stalled.h.toExponential(1)} s, where it no longer shrinks with the step: on this device that's the precision Newton solves to, a floor under the estimate. Loosen tol (${Math.min(1e-3, 10 * stalled.err).toExponential(0)} or more, say).`;
-  else if (failed && dt < 8 * Number.EPSILON * Math.abs(s.time))
+  if (failed && !stalled && dt < 8 * Number.EPSILON * Math.abs(s.time))
     // (advance(1e300) blamed the physics for a step of 9.6e-3 s at t = 3e296 s)
     stopped = `${at}: a step of ${dt.toExponential(1)} s, as short as the device needs, is below the time's own resolution at t = ${s.time.toPrecision(3)} s. Advance by intervals nearer the device's time scales, or solve() for the long-time limit.`;
   else if (failed && unbalanced.length > 0 && s.time === t0)
@@ -467,6 +467,8 @@ export function integrate(s, tEnd, opts = {}) {
     // (round 15's fuzzer: the pn template advanced from its c0, a step of 3e-24 s failing, 23 of 62
     // plain diodes; nothing said to solve first)
     stopped = `${at}: the first step did not converge even when shortened to ${dt.toExponential(1)} s, from the starting state, which is c0's layout rather than a solution (a junction's depletion not yet formed, say). For a transient from equilibrium, solve() first at the starting drives, then change what the experiment changes, then advance().`;
+  else if (stalled)
+    stopped = `${at}: the error control cut the step to ${dt.toExponential(1)} s, below the time's own resolution at t = ${s.time.toPrecision(3)} s, without bringing the local error estimate (${stalled.err.toExponential(1)} in thermal units) under tol (${tol}). Early in a run that's a floor under the estimate, the precision the steps are solved to (about 1e-7 on steps far shorter than a device's dielectric relaxation, with ε > 0): loosen tol (${Math.min(1e-3, 10 * stalled.err).toExponential(0)} or more, say). Late in a long one, advance by intervals nearer the device's time scales.`;
   else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };

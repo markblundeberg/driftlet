@@ -375,7 +375,7 @@ const devices = {
       bulkReactions: [
         { equation: 'e- + h+ = 0', auger: { Si: { Cn: units.cm6PerS(2.8e-31), Cp: units.cm6PerS(9.9e-32) } } },
         { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } },
-        { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: units.perCm3(1e22) } },
+        { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: units.perCm3(1e19) } }, // (dim enough that vol·G leaves its rows' derivatives checkable: at 1e22, 34 rows' floor passed a 10% error; Fable round 4's re-check)
       ],
       grid: { hmin: units.nm(2), hmax: units.nm(50), ratio: 1.3 },
     });
