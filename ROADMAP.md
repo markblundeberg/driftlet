@@ -171,8 +171,7 @@ for live demos.
        window falling between nodes: 20% at 9 nodes, 0.06% change on refinement).
      - Small acceptances: unused keys in `fixed`, a reference-less bath's `terminal`, a bath
        material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
-       at the first solve rather than at construction. `describe()` gives no Debye length where
-       the composition comes from a bath; `check()`'s conservation reads closed stretches only.
+       at the first solve rather than at construction.
      - After a failed `solve()`, a later `advance()` differs from a twin's at 2e-12 (something
        outside the snapshot steers Newton); a regrid loses 7 ppm of a closed stretch's amount to
        interpolation (documented).
