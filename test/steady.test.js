@@ -1151,3 +1151,25 @@ test('a ramp that runs out of steps while still settling says so, and the maxSte
   const n = +/maxSteps: (\d+)/.exec(w)[1];
   assert.ok(dev().solve({ maxSteps: n }).converged, `maxSteps ${n}`);
 });
+
+test('a face reaction too slow to show, in a device solved by giant steps: left at its start, and warned', () => {
+  // (Fable round 3's review of src/steady.js: an affinity row holds a face reaction only where
+  // the steady system is solved directly; here, Y left in region B, it's solved by giant steps,
+  // and at k0 1e-30 the solve returned Z's c0 across the face, converged and unwarned)
+  const dev = (k0) => new Device({
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Y', z: 0 }, { name: 'Z', z: 0 }],
+    materials: {
+      m1: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 1e-9, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+      m2: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 0, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+    },
+    regions: [{ name: 'A', material: 'm1', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 1, Z: 1 } }, { name: 'B', material: 'm2', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 2, Z: 0.01 } }],
+    interfaces: [{ dipole: 0, species: { Z: 'blocked' }, reactions: [{ equation: 'Z(left) = Z(right)', k0 }] }],
+    bulkReactions: [{ equation: 'Y = Z', kf: { m1: 1 } }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { minCells: 40 },
+  });
+  const fast = dev(1).solve(), stuck = dev(1e-30).solve();
+  assert.ok(fast.converged && !fast.warnings.some((w) => /out of equilibrium/.test(w)));
+  assert.ok(stuck.warnings.some((w) => /interfaces\[0\]\.reactions\[0\]: out of equilibrium/.test(w)), stuck.warnings.join(' '));
+});

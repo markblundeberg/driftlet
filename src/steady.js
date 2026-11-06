@@ -871,9 +871,10 @@ export class SteadySolves {
   // sign wherever it acts, so that its total can't be zero. Too slow to show, its rate lost to
   // round-off, it was left where the solve began: a slow complexation 43 mV off, an electrode
   // port's slow couple at its starting composition, each converged without a word. (A face
-  // reaction stands on its affinity, so it's only caught here if that couldn't be arranged.)
+  // reaction stands on its affinity where the steady system is solved directly, so there it's
+  // only caught here if that couldn't be arranged; by giant steps, it's checked like the rest.)
   stuckReactions() {
-    const { n, M, u, uLo, model } = this, grid = model.grid, S = this.stretches.length, X = S + this.surfCols.length, out = [];
+    const { n, M, u, uLo, model } = this, grid = model.grid, S = this.stretches.length, X = S + this.surfCols.length, out = [], direct = this._directSteady();
     const passes = (k) => !noCurrent(this.terms[k]);
     const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && this.terms.some((t, j) => t.drive.kind === 'I' && passes(j) && feeds(j, this.stretches[k])))));
     const needed = (rx) => {
@@ -888,7 +889,10 @@ export class SteadySolves {
     model.interfaces.forEach((itf, f) => {
       const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
       itf.reactions.forEach((rx, q) => {
-        if (this.affinities.some((af) => af.rx === rx) || !needed(rx)) return;
+        // (an affinity row holds it at equilibrium only where the steady system is solved
+        // directly; by giant steps, it's never enforced: a face reaction at 1e-30 left its c0,
+        // converged, unwarned; Fable round 3's review of src/steady.js)
+        if ((direct && this.affinities.some((af) => af.rx === rx)) || !needed(rx)) return;
         const gS = itf.surfaceSide ? gR : gL;
         report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA))]);
       });
