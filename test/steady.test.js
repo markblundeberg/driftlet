@@ -1086,3 +1086,44 @@ test('a gate port held far from its zeroCharge: solve() ramps it there from a co
     assert.ok(Math.abs(s.c['e-'][0] / want - 1) < 1e-3, `V_G ${Vg}: n at the source ${s.c['e-'][0]} against ${want}`);
   }
 });
+
+// (Fable round 3's review of src/steady.js: state a steady solve outside solve()'s own restore left behind)
+// (darkCell is the one above)
+const pnAt = (V, hmin = units.nm(1)) => build({
+  T: 300, library: [semiconductor('Si')],
+  stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(V)],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], grid: { hmin, hmax: units.nm(20) },
+});
+
+test('an impedance() whose steady solve fails leaves the device as it was, so the advance() it suggests goes on from there', () => {
+  const d = darkCell({ I: -50 }), c = darkCell({ I: -50 });
+  d.advance(1e-9);
+  c.advance(1e-9);
+  const before = d.solver.termV[1];
+  assert.throws(() => d.impedance([1, 100]), /did not converge/);
+  assert.equal(d.solver.termV[1], before);
+  assert.equal(d.advance(2e-9).terminals.right.V, c.advance(2e-9).terminals.right.V);
+});
+
+test('set({ grid }) on a steady state, then a change of drive: the step response from the regridded steady state, not the new drive\'s steady state', () => {
+  const fine = units.nm(0.5);
+  const ctl = new Device(pnAt(0, fine));
+  ctl.solve();
+  ctl.set({ contacts: { right: { V: 0.5 } } });
+  const want = ctl.advance(1e-12).current;
+  const rg = new Device(pnAt(0));
+  rg.solve();
+  rg.set({ grid: { hmin: fine, hmax: units.nm(20) } });
+  rg.set({ contacts: { right: { V: 0.5 } } });
+  const got = rg.advance(1e-12).current;
+  assert.ok(Math.abs(got / want - 1) < 1e-6, `${got} against ${want} (the steady 0.5 V current is ~ −859)`);
+});
+
+test('a failed solve() leaves the conservation ledger\'s reference and the next transient\'s step size as they were', () => {
+  const d = darkCell({ I: -50 });
+  d.advance(1e-9);
+  const ref = d.solution().conservation.map((st) => st.reference), dtNext = d.solver.dtNext;
+  assert.ok(!d.solve().converged);
+  assert.deepEqual(d.solution().conservation.map((st) => st.reference), ref);
+  assert.equal(d.solver.dtNext, dtNext);
+});

@@ -979,6 +979,10 @@ export class Solver {
       termV: Float64Array.from(this.termV),
       sourceTime: this.sourceTime,
       coldStart: this.coldStart,
+      // (a steady solve's held stages set these: a failed solve() left the conservation ledger's
+      // reference and the next transient's step size changed; Fable round 3's steady.js review)
+      referenceAmounts: this.referenceAmounts.slice(),
+      dtNext: this.dtNext,
     };
   }
 
@@ -1004,6 +1008,8 @@ export class Solver {
     this.termV.set(s.termV);
     this.sourceTime = s.sourceTime;
     this.coldStart = s.coldStart;
+    this.referenceAmounts = s.referenceAmounts.slice();
+    this.dtNext = s.dtNext;
     this.computeConcentrations();
   }
 

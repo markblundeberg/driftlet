@@ -155,6 +155,7 @@ export class Device {
       solver._refreshSources();
       solver.dtNext = old.dtNext;
       solver.coldStart = old.coldStart; // (a carried state is as cold as it was: see equilibrateFaces)
+      solver.stepped = old.stepped; // (and as stepped: a transient's state retries from the layout; see src/steady.js)
       solver.contactDEnd = old.contactDEnd;
       if (old.portQEnd?.length === solver.portQ.length) solver.portQEnd = old.portQEnd;
       solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
@@ -192,6 +193,10 @@ export class Device {
   // them in place. (Validated before anything changes.)
   _redefineDrives(def) {
     const drives = normalizeDrives(def, this.model);
+    // A regridded steady state stands for the old drives' (see advance): solve it now, before
+    // they change. (Left for advance(), it was solved at the new drive, and the step response
+    // was lost; Fable round 3's steady.js review.)
+    this._settleRegrid();
     this.model.terminals.forEach((t, k) => (t.drive = drives[k]));
     this.model.contacts.left.drive = drives[0];
     this.model.contacts.right.drive = drives[1];
@@ -214,6 +219,7 @@ export class Device {
     // (a failed solve's state isn't a solution: its accuracy warnings are left out)
     const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
+    else this.solver.regriddedSteady = false; // (solved on the new grid already: see advance)
     return sol;
   }
 
@@ -251,12 +257,16 @@ export class Device {
     // close that gap: storage resists it (Fable round 2's cold user: set({ grid }) on a solved
     // cell, then advance(), failed down to 1e-17 s). Its steady state on the new grid is what it
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
-    if (this.solver.regriddedSteady) {
-      this.solver.regriddedSteady = false;
-      const snap = this.solver._snapshot();
-      if (!this.solver.solveSteady().converged) this.solver._restore(snap);
-    }
+    this._settleRegrid();
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
+  }
+
+  // A steady state carried onto a new grid, solved there (once; see advance).
+  _settleRegrid() {
+    if (!this._solver?.regriddedSteady) return;
+    this._solver.regriddedSteady = false;
+    const snap = this._solver._snapshot();
+    if (!this._solver.solveSteady().converged) this._solver._restore(snap);
   }
 
   /**
@@ -272,11 +282,16 @@ export class Device {
     options(opts, 'impedance', ['terminal', 'profiles']);
     // A device that holds a converged steady state (solve() just now, nothing stepped or changed
     // since) is linearized there as it stands; else the steady state is found first.
-    const steady = this.solver.atSteady ? { converged: true, steps: 0, iterations: 0, history: [] } : this.solver.solveSteady();
+    // (A steady solve that fails leaves the device as it was, as solve() does: a dark cell driven
+    // past saturation was left at a held stage's 26.9 V, and the advance() the error suggests
+    // went on from there; Fable round 3's steady.js review.)
+    const snap = this.solver.atSteady ? null : this.solver._snapshot();
+    const steady = snap ? this.solver.solveSteady() : { converged: true, steps: 0, iterations: 0, history: [] };
     if (!steady.converged) {
       // (with why, as solve() would say it: a terminal driven past what any steady state passes,
       // say, where advance() is the way; Fable round 2's cold user, charging a battery)
       const why = makeSolution(this.solver, { ...steady, unsolved: true }).warnings;
+      this.solver._restore(snap);
       throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
     }
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
