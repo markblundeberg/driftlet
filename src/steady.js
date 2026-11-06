@@ -287,7 +287,9 @@ export class SteadySolves {
     // end, and Newton fails from there where it converges from the layout for the drives (and
     // the stages below took 9000 iterations from there, 2000 from the layout). What a steady
     // solve keeps it took from the state already, so from here on it goes as a cold device would.
-    if (this.stepped && direct && allowed) {
+    // So can a solved state carried through set(): a Si diode at −5 V taken from 150 K to 300 K
+    // failed warm (n_i moved 20 orders), and converges from the layout (Fable round 3's hunter).
+    if ((this.stepped || this.solvedV != null) && direct && allowed) {
       this._refreshSources();
       this.initFromComposition();
       u0.set(this.u);

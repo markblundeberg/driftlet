@@ -1048,3 +1048,20 @@ test('back to level contacts from a state solved at a bias: solve() ramps there 
   assert.ok(eq.converged, eq.warnings.join(' '));
   assert.ok(Math.abs(eq.current) < 1e-15, `${eq.current}`);
 });
+
+test('a solved state carried through set({ T, materials }) far in temperature: solve() falls back to the layout, as for a transient\'s state', () => {
+  // (Fable round 3's hunter: a Si diode at −5 V taken from 150 K to 300 K failed warm, n_i ~20
+  // orders apart, where the cold solve at 300 K converges)
+  const pn = (T) => build({
+    T, library: [semiconductor('Si', { T })],
+    stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(-5)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  });
+  const dev = new Device(pn(150));
+  assert.ok(dev.solve().converged);
+  dev.set({ T: 300, materials: semiconductor('Si', { T: 300 }).materials });
+  const warm = dev.solve(), cold = new Device(pn(300)).solve();
+  assert.ok(warm.converged && cold.converged, warm.warnings.join(' '));
+  assert.ok(Math.abs(warm.current / cold.current - 1) < 1e-6, `${warm.current} against ${cold.current}`);
+});
