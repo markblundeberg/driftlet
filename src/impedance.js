@@ -43,8 +43,10 @@
 //   GMRES (m 12, 8 restarts, tol 1e-8; its best iterate kept) on the exact J·v (difference form).
 //   A floating contact otherwise reads its current, in its circuit row, at the reading of least
 //   error by the solved responses (its own, or any cut between it and a port's window: the same
-//   current); and where every other terminal floats, a reading with no direct V dependence (a
-//   cut's, a law's change) reads y as Σ X_b, every terminal's uniform shift passing nothing.
+//   current); and where every other terminal floats, a cut's reading or a law's change reads y
+//   as Σ X_b plus its reading of the uniform shift e of every terminal (which passes nothing): 0
+//   for a cut; for a law's change, −iω(DIs + Σ DXs), the charge its amount holds in a
+//   capacitance (a port's Q) moving with the shift.
 //   Solved: y, the response with the floating terminals held (to the measured one's δV = 1),
 //   and X_k, to each floating terminal's unit δV_k; then the floating terminals' rows, a small
 //   complex system, for their δV; δx = y − Σ X_k δV_k.
@@ -535,7 +537,16 @@ export class SmallSignal {
         // no direct dependence on a V reads y as Σ X_b, exactly, from responses it resolves, where
         // y itself is nearly that shift and its current a difference of them (a Pt electrode
         // behind 3000 Ω·m², at 1 nHz: its cuts read y 10% apart).
-        const [yre, yim] = kirchhoff && gaugeRead.has(k) ? [sre, sim] : dot(k, w, yr, yi);
+        // A law's change has a direct V dependence where its amount holds a capacitance's charge
+        // (a port's Q, gauge invariant): its reading of the shift e is −iω(DIs + Σ DXs), not 0.
+        // (Left out, a floating port with a capacitance read Z 37% off at 1 kHz, Im Z of the
+        // wrong sign, relError 1e-14; Fable round 3's review of src/impedance.js.)
+        let ce = 0;
+        if (lawRead.has(k)) {
+          ce = DIs[k];
+          for (let j = 0; j < DXs[k].length; j++) if (j !== k) ce += DXs[k][j];
+        }
+        const [yre, yim] = kirchhoff && gaugeRead.has(k) ? [sre, sim - w * ce] : dot(k, w, yr, yi);
         Ar[a][K] = -yre - DX[k][kT];
         Ai[a][K] = -yim - w * DXs[k][kT];
       });

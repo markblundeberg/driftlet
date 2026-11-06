@@ -513,3 +513,25 @@ test('impedance() right after a converged solve() linearizes there, without solv
   assert.equal(solves, 1);
   for (let q = 0; q < 2; q++) assert.ok(Math.abs(z2.Z.im[q] / z.Z.im[q] - 1) < 1e-6);
 });
+
+test('a floating port with a capacitance, read by its law\'s change, measured with every other terminal floating: Z is the held device\'s plus the series R', () => {
+  // (Fable round 3's review of src/impedance.js: the gauge read dropped iω(DIs + Σ DXs), the
+  // charge the port's capacitance holds; Z at 1 kHz came out 37% off, Im Z of the wrong sign,
+  // relError 1e-14. The port passes no net current, so the left bath's series R adds exactly R.)
+  const L = 1e-5, R = 1e-3, nacl = { 'Na+': 1, 'Cl-': 1 }, film = { 'Na+': 1, 'K+': 0.1, 'Cl-': 1.1 };
+  const def = (left) => build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+    stack: [bath(nacl, 'Cl-', left), layer('water', L, { name: 'film', c0: film }), bath(nacl, 'Cl-', 0)],
+    ports: [{ name: 'mem', region: 'film', from: 0.3 * L, to: 0.5 * L, I: 0, area: 1e6, capacitance: { C: 0.1, zeroCharge: -0.05 }, species: { 'K+': { type: 'conductance', G: 1e12, offset: 0 } } }],
+    grid: { hmin: L / 40, hmax: L / 40 },
+  });
+  const fs = [1, 1e3, 1e5], held = new Device(def({ V: 0 })), behind = new Device(def({ V: 0, R }));
+  held.solve();
+  behind.solve();
+  const a = held.impedance(fs), b = behind.impedance(fs);
+  fs.forEach((f, q) => {
+    const re = b.Z.re[q] - R, im = b.Z.im[q], scale = Math.hypot(a.Z.re[q], a.Z.im[q]);
+    assert.ok(Math.hypot(re - a.Z.re[q], im - a.Z.im[q]) < 1e-6 * scale, `f ${f}: Z − R (${re}, ${im}) against (${a.Z.re[q]}, ${a.Z.im[q]})`);
+  });
+});
