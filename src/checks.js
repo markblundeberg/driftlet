@@ -325,7 +325,10 @@ function gridCheck(device, sol, tol, gross) {
       if (sp.z !== 0) continue; // (the charged ones' are in the currents)
       const a = fa[sp.name], b = fb[sp.name];
       if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floorN)) continue;
-      diffs.push({ what: `${sp.name} in at the ${side} contact`, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b)), unit: model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s' });
+      // (against 1e-3 of what the species could carry, too: a spectator's 1e-5 of it, unresolved in a
+      // thin reaction layer, failed a device whose current was right to 1e-3; the re-check)
+      const scale = Math.max(Math.abs(a), Math.abs(b), 1e-3 * (natural[model.species.indexOf(sp)] || 0));
+      diffs.push({ what: `${sp.name} in at the ${side} contact`, a, b, rel: Math.abs(b - a) / scale, unit: model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s' });
     }
   }
   // Floating terminals (driven by a current): their voltages, against the larger and the thermal voltage.
