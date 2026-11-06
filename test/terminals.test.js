@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Device, EPS0, units } from '../src/index.js';
+import { Device, EPS0, FARADAY, units } from '../src/index.js';
 import { aqueous, build, half, layer, metal, ohmic, recombination, semiconductor } from '../src/kit.js';
 
 // Terminals: the two contacts and every port, each held at a voltage (behind a resistance, if
@@ -265,4 +265,34 @@ test('a terminal behind a large resistance solves cold in as many steps as a sma
     assert.ok(s.converged && Math.abs(s.terminals.left.V) < 1e-9, `R ${R}: ${s.converged} ${s.terminals.left.V}`);
     assert.ok(s.steps < 100, `R ${R}: ${s.steps} steps`);
   }
+});
+
+test('a closed species fed by two current-driven terminals at +I and −I: a long time step keeps its amount, each terminal passing its own current', () => {
+  // (Fable round 3's review of src/lawRows.js: a time step read the law in one terminal's row
+  // as if it alone fed the amount; K⁺ gained I·dt/F a step, the contact passing twice its
+  // current, converged and silent, and an adaptive run crawled at 6 s steps)
+  const I = 1e-3, film = { 'Na+': 100, 'K+': 10, 'Cl-': 110 }, K = { 'K+': { type: 'conductance', G: 1e6, offset: 0 } };
+  const def = (Ileft, Imem) => build({
+    T: 298.15,
+    library: [aqueous(['Na+', 'K+', 'Cl-'], { epsr: 80 })],
+    stack: [{ I: Ileft, phi: 'neutral', species: K }, layer('water', 1e-6, { name: 'film', c0: film }), { V: 0, phi: { type: 'capacitive', C: 0.5 }, zeroCharge: -0.05 }],
+    ports: [{ name: 'mem', region: 'film', from: 0.4e-6, to: 0.6e-6, I: Imem, species: K }, { name: 'ref', region: 'film', from: 0.7e-6, to: 0.8e-6, V: 0, species: { 'Cl-': { type: 'equilibrium', offset: 0 } } }],
+    grid: { hmin: 5e-8, hmax: 5e-8 },
+  });
+  const amountK = (d, s) => s.c['K+'].reduce((t, c, g) => t + d.model.grid.vol[g] * c, 0);
+  const d = new Device(def(0, 0));
+  d.solve();
+  d.set({ contacts: { left: { I } }, ports: { mem: { I: -I } } });
+  const K0 = amountK(d, d.solution());
+  for (const dt of [1e-6, 1, 100, 1e4]) {
+    const s = d.step(dt);
+    assert.ok(s.converged);
+    assert.ok(Math.abs(amountK(d, s) - K0) < 1e-15, `dt ${dt}: K⁺ moved by ${amountK(d, s) - K0} mol/m²`);
+    assert.ok(Math.abs((s.contacts.left.flux['K+'] * FARADAY) / I - 1) < 1e-6, `dt ${dt}: the contact passes ${s.contacts.left.flux['K+'] * FARADAY} A/m²`);
+  }
+  const d2 = new Device(def(0, 0));
+  d2.solve();
+  d2.set({ contacts: { left: { I } }, ports: { mem: { I: -I } } });
+  const run = d2.advance(1e4);
+  assert.ok(run.converged && run.steps < 100, `${run.steps} steps`);
 });

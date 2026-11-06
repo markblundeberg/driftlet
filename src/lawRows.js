@@ -82,7 +82,9 @@
 //   circuit law      (time steps) terminal k's circuit row, where it reads by the change: F (S −
 //                    S*)/(λ dt) − (its drive's current: the source, or (V_src − V)/R), with S*
 //                    the amount at the step's start (lawStart), chosen once per step per law
-//                    (s.lawForm) by comparing the round-off of the two readings.
+//                    (s.lawForm) by comparing the round-off of the two readings; only where k
+//                    is the law's one current-driven terminal passing a current (with more, the
+//                    change is theirs together, and k reads its flux).
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. A row is replaced only where its slot is active (loc ≥ 0), and every entry a row held
@@ -513,7 +515,8 @@ function lawStart(s, cs) {
   return a;
 }
 
-// Time steps: a terminal driven by a current that alone feeds a conserved combination can read
+// Time steps: a terminal driven by a current that alone feeds a conserved combination (the
+// only one of its `terminals` passing a current; with more, each step reads the flux) can read
 // its current as the combination's change, F (S − S*)/(λ dt), which the step's balance rows sum
 // to exactly, rather than as the flux through it. Both are exact; they differ in round-off and
 // in what Newton can see. Through a metal, the flux is G Δη, its two η all but equal: a floating
@@ -530,6 +533,11 @@ function circuitLaws(s, dt) {
   for (const cs of [...s.constraints, ...s.timeLaws]) {
     const k = cs.circuit;
     if (k < 0 || !s.floating.includes(k) || cs.contacts?.length > 0) continue; // (a contact's charge: its own rows)
+    // (Fed by another current-driven terminal passing a current, the change is theirs together,
+    // not k's alone: read by the flux instead. Read by the change, K⁺ driven in at a contact and
+    // out at a port at equal currents gained I·dt/F a step, the contact passing twice its
+    // current, silently; Fable round 3's review of src/lawRows.js. Others at I = 0 add nothing.)
+    if (cs.terminals?.some((t) => t !== k && sourceAt(s.terms[t].drive.src, s.sourceTime, s.sourceBefore) !== 0)) continue;
     const { amount, dV, gross } = lawAmount(s, cs), f = FARADAY / (cs.lambda * dt), C = s.termC[k];
     if (!s.lawForm.has(cs)) {
       let G = 0;
