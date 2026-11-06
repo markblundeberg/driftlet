@@ -1452,8 +1452,11 @@ function normalizeConductorInterface(idef, where, matL, matR, species, speciesIn
 
 // A species present on both sides crosses freely; one that can't move on either (D = 0, trap
 // states, say) is blocked: held level, its two edge boxes would pass whatever flux that takes.
+// (A conductor's carrier moves, though its D is 0: two metals in contact were left blocked, isolated,
+// the second at its open-circuit potential whatever the applied V; Fable round 5's review.)
 function defaultInterfaceLinks(matL, matR, species) {
-  return species.map((_, i) => ({ type: matL.present[i] && matR.present[i] && (matL.D[i] > 0 || matR.D[i] > 0) ? 'equilibrium' : 'blocked' }));
+  const moves = (mat, i) => mat.D[i] > 0 || mat.conductor?.i === i;
+  return species.map((_, i) => ({ type: matL.present[i] && matR.present[i] && (moves(matL, i) || moves(matR, i)) ? 'equilibrium' : 'blocked' }));
 }
 
 function transferCoefficient(v, path) {

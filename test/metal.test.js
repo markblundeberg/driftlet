@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, EPS0, FARADAY, units } from '../src/index.js';
-import { vacuumZeroCharge } from '../src/kit.js';
+import { vacuumZeroCharge, aqueous, metal } from '../src/kit.js';
 
 const collector = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
 const throwsDevice = (def, pattern) =>
@@ -288,4 +288,25 @@ test('a floating gate (a metal with no reactions between two oxides) stays neutr
     const slope = VF(1) - VF(0);
     assert.ok(Math.abs(slope / (CR / (CL + CR)) - 1) < 1e-9, `${slope} vs ${CR / (CL + CR)}`);
   }
+});
+
+// Fable round 5's review of src/device.js: a conductor's carrier has D = 0, so at a face between
+// two metals the default link read it as immobile and blocked it: Au | Pt passed nothing, the Pt
+// at its open-circuit potential whatever the applied V, converged and unwarned.
+test('two metals in contact pass their carrier by default, as one metal does', () => {
+  const aq = aqueous(['Fe3+', 'Fe2+', 'K+', 'Cl-'], { epsr: 0 }), au = metal('Au'), pt = metal('Pt');
+  const cell = (two) => new Device({
+    species: [...aq.species, { name: 'e-', z: -1 }],
+    materials: { ...aq.materials, ...au.materials, ...pt.materials },
+    regions: [{ name: 'Au', material: 'Au', length: 1e-6 }, ...(two ? [{ name: 'Pt', material: 'Pt', length: 1e-6 }] : []), { name: 'sol', material: 'water', length: 10e-6 }],
+    interfaces: [...(two ? [{}] : []), { reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 1e-3, alpha: 0.5 }] }],
+    contacts: {
+      left: { V: 0.3, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+      right: { bath: { c: { 'Fe3+': 10, 'Fe2+': 10, 'K+': 1000, 'Cl-': 1050 }, reference: 'Cl-' } },
+    },
+  }).solve();
+  const one = cell(false), two = cell(true);
+  assert.ok(one.converged && two.converged && Math.abs(one.current) > 1);
+  assert.ok(Math.abs(two.current / one.current - 1) < 1e-9, `Au | Pt ${two.current} for ${one.current}`);
+  assert.equal(two.interfaces[0].links['e-'], 'equilibrium');
 });
