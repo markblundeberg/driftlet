@@ -966,11 +966,12 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     // bath must list them all; an insertion host's ion and carrier have only their combination's
     // level. (Listed alone, a lattice's Na⁺ was held as if Cl⁻ were absent, 6 mV off at 1 M; a
     // host's Li⁺ at +784 RT, filling it: Fable round 4's review of src/statistics.js.)
+    const here = reg.name ?? 'its region';
     for (const md of mat.models) {
       const names = md.idx.map((i) => species[i].name), listed = md.idx.filter((i) => cb[i] > 0);
       if (listed.length === 0) continue;
-      need(md.type !== 'insertion', `${path}.bath: ${names.join(' and ')} in ${reg.name ?? `regions[${pdef.region}]`} are an insertion host's ion and carrier, which have only their combination's level, not one each that a bath could set; hold the host at a contact`);
-      need(md.idx.length === 1 || listed.length === md.idx.length, `${path}.bath: ${names.join(', ')} share ${md.type} statistics in ${reg.name ?? 'the window'}'s material, so each one's level depends on the others' concentrations: list them all in the bath (it lists ${listed.map((i) => species[i].name).join(', ')})`);
+      need(md.type !== 'insertion', `${path}.bath: ${names.join(' and ')} in ${here} are an insertion host's ion and carrier, which have only their combination's level, not one each that a bath could set; hold the host at a contact`);
+      need(md.idx.length === 1 || listed.length === md.idx.length, `${path}.bath: ${names.join(', ')} share ${md.type} statistics in ${here}, so each one's level depends on the others' concentrations: list them all in the bath (it lists ${listed.map((i) => species[i].name).join(', ')})`);
     }
     const zb = bathZeta(mat, cb, reg.background);
     bathLevel = (i) => (cb[i] > 0 ? mat.mu0[i] + RT * zb[i] : undefined); // μ̄ − zFφ outside

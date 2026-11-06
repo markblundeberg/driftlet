@@ -372,7 +372,11 @@ test('a gate behind a series resistance, read at the back contact: Z is the held
 // Between blocking electrodes far below the double layers' relaxation, almost no current flows,
 // and what does is lost to round-off: Re Z read 1e4 times too large at 1e-4 Hz, negative at
 // 1e-2, each returned without a word. Each Z now carries its estimated error, and is warned of.
-test('a Z the current can\'t resolve is said to be unresolved, with its estimated error', () => {
+// Blocking electrodes in a dilute salt: Z was "unresolved" below 1e-4 Hz, its Re Z 153× too large
+// at 1e-3 Hz, where the walls' round-off (their blocked ions' residuals, read as current) swamped
+// the charging current. A closed contact passes exactly nothing now (Fable round 4), and Z is
+// the two Gouy–Chapman layers in series behind the solution's resistance at every frequency.
+test('blocking electrodes: Z is two diffuse layers in series behind the solution, resolved down to 1 µHz', () => {
   const c0 = 1, eps = 78.5 * EPS0, L = 1e-6, lam = Math.sqrt((eps * RT) / (2 * FARADAY ** 2 * c0));
   const wall = { V: 0, phi: 'pinned', zeroCharge: 0 };
   const dev = new Device({
@@ -382,15 +386,12 @@ test('a Z the current can\'t resolve is said to be unresolved, with its estimate
     contacts: { left: wall, right: wall },
     grid: { hmin: lam / 200, hmax: lam / 5, ratio: 1.05 },
   });
-  const low = dev.impedance([1e-6, 1e-4]);
-  assert.ok(low.relError.every((e) => e > 1e-2), String(low.relError));
-  assert.ok(low.warnings.some((w) => /Z isn't resolved at 0\.000001…0\.0001 Hz/.test(w)), low.warnings.join('\n'));
-  // Re Z, positive but 153× too large at 1e-3 Hz, where its error estimate is over it.
-  const rough = dev.impedance([1e-3]);
-  assert.ok(rough.relError[0] < 1e-2 && rough.warnings.some((w) => /Re Z isn't resolved at 0\.001 Hz/.test(w)), rough.warnings.join('\n'));
-  const fine = dev.impedance([1, 1e4]);
-  assert.ok(fine.relError.every((e) => e < 1e-3), String(fine.relError));
-  assert.equal(fine.warnings.filter((w) => /impedance:/.test(w)).length, 0);
+  const fs = [1e-6, 1e-4, 1e-3, 1], z = dev.impedance(fs), C = eps / lam / 2;
+  assert.ok(z.relError.every((e) => e < 1e-9), String(z.relError));
+  assert.equal(z.warnings.filter((w) => /impedance:/.test(w)).length, 0, z.warnings.join('\n'));
+  fs.forEach((f, k) => assert.ok(Math.abs(-1 / (2 * Math.PI * f * z.Z.im[k]) / C - 1) < 1e-3, `${f} Hz: C ${-1 / (2 * Math.PI * f * z.Z.im[k])} for ${C}`));
+  // Re Z, the solution's resistance (the bulk's, with the layers' own share), the same from 1e-4 Hz up
+  for (const k of [1, 2]) assert.ok(Math.abs(z.Z.re[k] / z.Z.re[3] - 1) < 1e-4, `${fs[k]} Hz: Re Z ${z.Z.re[k]} vs ${z.Z.re[3]}`);
 });
 
 // Z is the input impedance at a terminal, whichever way it's excited. From round 14's fuzzer: a

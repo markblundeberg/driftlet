@@ -981,12 +981,15 @@ export class BoundaryTerms {
     // closed end solved in charge rows has its ions' storage left out until later: none of them
     // passes, so their flux is zero.)
     const closedIons = this.combining && dyn && this.chargeNode[g] === 1;
+    const closed = ct.species.every((l) => l.type === 'blocked');
     let I = 0;
     const held = this.portHeldEnd.subarray(k * n, (k + 1) * n);
     for (let i = 0; i < n; i++) {
-      // (a blocked link passes nothing: its row's residual is the box's round-off, which on a
-      // short step's storage read as a closed contact's current, −1.9e-5 A/m²; Fable round 4)
-      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0) && !held[i] && ct.species[i].type !== 'blocked';
+      // (a closed contact, every link blocked, passes nothing: its rows' residuals are the box's
+      // round-off, which on a short step's storage read as a current, −1.9e-5 A/m²; Fable round
+      // 4. Where only some are blocked, a blocked species' slot may hold a charge row or a law's
+      // row, the linked ones' fluxes in it, so the residuals are read as before.)
+      const active = !closed && this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0) && !held[i];
       const nIn = active ? res[R[b * M + 1 + i]] : 0;
       flux[i] = sgn * nIn; // (toward +x)
       if (active && z[i] !== 0) {

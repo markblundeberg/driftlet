@@ -319,7 +319,7 @@ export class Device {
       warnings.push(
         `impedance: Z isn't resolved at ${g(lost[0])}${lost.length > 1 ? `…${g(lost.at(-1))}` : ''} Hz (${lost.length} of ${out.f.length} frequencies): its estimated error (relError) is over 1%, the current there lost to round-off ` +
           '(far below a capacitive device\'s relaxation, where almost no current flows, or where the current is a small difference of large terms). ' +
-          'Measuring at another terminal, or with this one driven by a current (at its steady current, e.g. I: 0), can avoid it: a closed host at open circuit resolved so, blocking electrodes did not.',
+          'Measuring at another terminal, or with this one driven by a current (at its steady current, e.g. I: 0), can avoid it: a closed host at open circuit resolved so.',
       );
     }
     if (rough.length > 0) {
