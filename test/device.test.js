@@ -266,3 +266,24 @@ test('a species newly present after set() starts from the new c0, the rest of th
   assert.deepEqual(Array.from(s2.c['K+']), Array.from(s1.c['K+'])); // (K⁺ carried, not restarted)
   assert.ok(d.advance(2e-9).converged);
 });
+
+// Fable round 5's review of src/device.js: three acceptances that meant something else. A phi beside
+// a bath overrode its 'bulk' (pinned, the end was no longer at the bath's composition); a sheet
+// charge on a 'neutral' face was screened by its right side alone; and a port on a region name two
+// regions share went to the first.
+test("a bath's phi, a neutral face's sheet charge and an ambiguous port region are refused", () => {
+  const water = { epsr: 78, species: { 'Na+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 } } };
+  const base = (over = {}) => ({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water },
+    regions: [{ name: 'w', material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }, { name: 'w', material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }],
+    interfaces: [{}],
+    contacts: { left: { V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-' } }, right: { V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-' } } },
+    ...over,
+  });
+  assert.doesNotThrow(() => new Device(base()));
+  assert.throws(() => new Device(base({ contacts: { ...base().contacts, right: { V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-' }, phi: 'pinned', zeroCharge: 0.2 } } })), /a bath sets the end's φ law itself/);
+  assert.throws(() => new Device(base({ interfaces: [{ phi: 'neutral', sheetCharge: 0.01 }] })), /a 'neutral' face holds no charge/);
+  assert.throws(() => new Device(base({ ports: [{ name: 'p', region: 'w', from: 0, to: 0.2e-6, V: 0, area: 1e5, capacitance: { C: 0.1 } }] })), /both named 'w'; give the port's region by its index/);
+  assert.doesNotThrow(() => new Device(base({ ports: [{ name: 'p', region: 1, from: 0, to: 0.2e-6, V: 0, area: 1e5, capacitance: { C: 0.1 } }] })));
+});

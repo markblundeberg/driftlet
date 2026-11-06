@@ -924,7 +924,12 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance', 'gates', 'bath']);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
-  else r = regions.findIndex((reg) => reg.name === pdef.region);
+  else {
+    r = regions.findIndex((reg) => reg.name === pdef.region);
+    // (two regions of one name: the port went to the first, silently; Fable round 5's review)
+    const also = regions.findIndex((reg, q) => q > r && reg.name === pdef.region);
+    need(r < 0 || also < 0, `${path}.region: regions ${r} and ${also} are both named '${pdef.region}'; give the port's region by its index`);
+  }
   need(r >= 0 && r < regions.length, `${path}.region: give a region's name or index, got ${JSON.stringify(pdef.region)}`);
   const reg = regions[r], mat = materials[reg.material];
   // A metal is one cell with no interior, so a port attaches to the whole of it, as a wire would.
@@ -1221,6 +1226,8 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
     dipole = (value - (matR.mu0[i] - matL.mu0[i])) / (z * FARADAY);
   }
   const sheetCharge = idef.sheetCharge === undefined ? 0 : finite(idef.sheetCharge, `${where}.sheetCharge`);
+  // ('neutral' is no charge at the face: one given was screened by the right side alone)
+  need(sheetCharge === 0 || phi.type !== 'neutral', `${where}.sheetCharge: a 'neutral' face holds no charge; give it a φ law that does (capacitive, or pinned)`);
 
   // Per-species laws across the face: local equilibrium (default where present on both sides),
   // blocked, an ohmic interface conductance G (S/m²), or a permeability P (m/s): electrodiffusion
@@ -1571,6 +1578,9 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
 
   if (cdef.bath !== undefined) {
     need(cdef.species === undefined, `${path}: give either bath or species links, not both`);
+    // (a phi beside a bath overrode its 'bulk': pinned at a zeroCharge, the end was no longer at
+    // the bath's composition, Na⁺ 2.5e-19 for 100; Fable round 5's review of src/device.js)
+    need(cdef.phi === undefined && cdef.zeroCharge === undefined, `${path}: a bath sets the end's φ law itself ('bulk': the end at the bath's composition), so give no phi or zeroCharge beside it`);
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
     fields(bath, `${path}.bath`, ['c', 'reference', 'offset', 'material']);

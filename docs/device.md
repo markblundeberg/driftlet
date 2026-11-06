@@ -268,7 +268,7 @@ permeability link runs between the planes (Goldman–Hodgkin–Katz on the plane
 across the drop between them), and gates follow the voltage between the planes, the one the
 membrane itself has across it (`interfaces[f].V`), so a surface charge (`sheetCharge`) and the
 ions that screen it shift a channel's gating and permeation, as divalent cations do. A face's
-`sheetCharge` sits on its right plate: beside a layer on the right, at that layer's plane (ions
+`sheetCharge` (refused on a `'neutral'` face, which holds no charge) sits on its right plate: beside a layer on the right, at that layer's plane (ions
 adsorbed at the outer Helmholtz plane, the Stern layer between them and the left side). For a
 charge on the left plate (an oxide's surface groups, its Stern layer on the solution's side),
 build the stack the other way round.
