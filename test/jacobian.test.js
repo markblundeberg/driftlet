@@ -109,7 +109,7 @@ function differences(s, dt) {
     s.uLo.set(l0);
     s.termV.set(v0);
   };
-  residual(s, dt);
+  const r0 = residual(s, dt);
   const J = jacobian(s), rowMax = J.map((row) => row.reduce((m, x) => Math.max(m, Math.abs(x)), 0));
   const together = new Map(), moves = new Map();
   for (const g of s.transformed ? s.chargeNodes : []) {
@@ -148,7 +148,10 @@ function differences(s, dt) {
     for (let i = 0; i < N + K; i++) {
       let code = 0;
       for (const c of cols) code += J[i][c];
-      const fd = (fp[i] - fm[i]) / (2 * h), diff = Math.abs(code - fd), floor = 1e-7 * rowMax[i] + 1e-300;
+      // (and the differences' own round-off, ε of the row's size over h: a lit device's hole rows,
+      // vol·G ≈ 2e-6 against derivatives of 1e-14, showed hundreds of "bad" entries that scaled
+      // as 1/h; Fable round 4's review of src/regions.js)
+      const fd = (fp[i] - fm[i]) / (2 * h), diff = Math.abs(code - fd), floor = 1e-7 * rowMax[i] + (4 * Number.EPSILON * Math.max(Math.abs(r0[i]), Math.abs(fp[i]), Math.abs(fm[i]))) / h + 1e-300;
       if (diff > floor && diff / (Math.abs(code) + Math.abs(fd) + floor) > 1e-5) bad.push(`row ${i} col ${j}: ${code.toExponential(4)} written, ${fd.toExponential(4)} by differences`);
     }
   }
@@ -357,6 +360,22 @@ const devices = {
       bulkReactions: [
         { equation: 'e- + h+ = 0', auger: { Si: { Cn: units.cm6PerS(2.8e-31), Cp: units.cm6PerS(9.9e-32) } } },
         { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } },
+      ],
+      grid: { hmin: units.nm(2), hmax: units.nm(50), ratio: 1.3 },
+    });
+  },
+  // The same, lit: photogeneration's vol·G in the hole rows, far above their derivatives there.
+  'Auger in a degenerate pn diode, lit': () => {
+    const si = semiconductor('Si');
+    si.materials.Si.statistics = [{ type: 'fermi-dirac', species: ['e-'] }, { type: 'fermi-dirac', species: ['h+'] }];
+    return build({
+      T: 300,
+      library: [si],
+      stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(5e19) }), { dipole: 0 }, layer('Si', units.um(2), { acceptors: units.perCm3(2e19) }), ohmic(0.4)],
+      bulkReactions: [
+        { equation: 'e- + h+ = 0', auger: { Si: { Cn: units.cm6PerS(2.8e-31), Cp: units.cm6PerS(9.9e-32) } } },
+        { equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } },
+        { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: units.perCm3(1e22) } },
       ],
       grid: { hmin: units.nm(2), hmax: units.nm(50), ratio: 1.3 },
     });
