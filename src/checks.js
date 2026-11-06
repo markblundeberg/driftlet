@@ -37,8 +37,9 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  *   fuzzer found it in ~1% of random reacting devices, by exactly this test).
  * - **grid** (with `refine`, the default; in a transient, `ok: null` and a reminder, since the
  *   answer depends on the whole run): in a steady state, the device solved again on a grid
- *   twice as fine everywhere, from this solution interpolated onto it. The current, each floating terminal's voltage and each
- *   region's charge must agree to `tol` (relative, default 1e-2, a plot's accuracy; a benchmark
+ *   twice as fine everywhere, from this solution interpolated onto it. Every terminal's current,
+ *   each neutral species' flux at the contacts, each floating terminal's voltage and each
+ *   region's charge must agree to `tol` (with nothing to compare, `ok: null`) (relative, default 1e-2, a plot's accuracy; a benchmark
  *   wants less). The discretisation is second order, so the change estimates this grid's error
  *   (about 3/4 of it).
  * @param {import('./index.js').Device} device
@@ -50,13 +51,19 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
  */
 export function check(device, sol, { refine = true, tol = 1e-2, order = true } = {}) {
   checkOptions('check', arguments[2], ['refine', 'tol', 'order']);
+  const own = sol === undefined;
   sol ??= device.solution();
   const { model, solver, def } = device;
   const steady = sol.steady ?? solver.atSteady;
   const items = [];
+  // The device's own state, never solved, nor advanced, since it was built or set(): its c0's
+  // layout, which a check passed as "a transient at t = 0, converged" (Fable round 5's review).
+  const unsolved = own && !solver.atSteady && !solver.stepped && solver.history.length === 0 && solver.time === 0;
 
   items.push(
-    sol.converged
+    unsolved
+      ? { name: 'converged', ok: false, summary: 'not solved: the device holds its starting layout (or a state set() has since changed the equations of); solve() or advance() it, then check that solution' }
+      : sol.converged
       ? { name: 'converged', ok: true, summary: `${steady ? 'steady state' : `transient at t = ${sig(sol.time)} s`}, converged` }
       : { name: 'converged', ok: false, summary: "the solve didn't converge: these numbers aren't a solution" },
   );
@@ -70,8 +77,8 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     details: { warnings },
   });
 
-  // The rest checks a solution, which an unconverged state isn't.
-  if (sol.converged) {
+  // The rest checks a solution, which an unconverged or unsolved state isn't.
+  if (sol.converged && !unsolved) {
     const ledger = steady ? balance(device, sol) : null;
     // A reaction the steady state needs at equilibrium, left far from it (too slow to see: the
     // solution warns of it), isn't steady, however quietly its ledgers sum: "equilibrium" was
@@ -302,6 +309,25 @@ function gridCheck(device, sol, tol, gross) {
   const natural = naturalScales(device, sol), floorI = 1e-16 * FARADAY * Math.max(0, ...model.species.map((sp, i) => Math.abs(sp.z) * natural[i]).filter(Number.isFinite));
   const scaleI = Math.max(Math.abs(sol.current), Math.abs(other.current), gross, floorI);
   if (gross > 0 || Math.max(Math.abs(sol.current), Math.abs(other.current)) > floorI) diffs.push({ what: 'current', a: sol.current, b: other.current, rel: Math.abs(other.current - sol.current) / scaleI, unit: unitsOf(model).current });
+  // Every other terminal's current too, and what each species brings in at the contacts (a
+  // neutral one's carries no current): the right contact's alone passed a port's current 20% off
+  // and a neutral reactant's flux 20× off, "nothing to compare" (Fable round 5's review).
+  for (const t of model.terminals) {
+    if (t.name === 'right') continue;
+    const a = sol.terminals[t.name]?.current, b = other.terminals[t.name]?.current;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b), gross) > floorI)) continue;
+    diffs.push({ what: `${t.name} current`, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), gross, floorI), unit: unitsOf(model).current });
+  }
+  const floorN = floorI / FARADAY;
+  for (const side of ['left', 'right']) {
+    const fa = sol.contacts?.[side]?.flux ?? {}, fb = other.contacts?.[side]?.flux ?? {};
+    for (const sp of model.species) {
+      if (sp.z !== 0) continue; // (the charged ones' are in the currents)
+      const a = fa[sp.name], b = fb[sp.name];
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floorN)) continue;
+      diffs.push({ what: `${sp.name} in at the ${side} contact`, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b)), unit: model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s' });
+    }
+  }
   // Floating terminals (driven by a current): their voltages, against the larger and the thermal voltage.
   const VT = model.RT / FARADAY;
   model.terminals.forEach((t, k) => {
@@ -336,7 +362,7 @@ function gridCheck(device, sol, tol, gross) {
     qa.forEach((a, r) => diffs.push({ what: `${named(sol.regions[r])} charge`, a, b: qb[r], rel: Math.abs(qb[r] - a) / scaleQ, unit: unitsOf(model).charge }));
   }
   const worst = diffs.reduce((w, d) => (d.rel > (w?.rel ?? -1) ? d : w), null);
-  if (!worst) return { name: 'grid', ok: true, summary: 'nothing to compare (no current, charge or floating voltage)' };
+  if (!worst) return { name: 'grid', ok: null, summary: 'nothing to compare (no current, flux, charge or floating voltage): the grid is unchecked' };
   const ok = worst.rel <= tol;
   return {
     name: 'grid',

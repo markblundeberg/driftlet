@@ -250,3 +250,22 @@ test('balance never calls a current that small but real equilibrium', () => {
   const balance = item(check(d, s, { refine: false, order: false }), 'balance');
   assert.ok(!/equilibrium/.test(balance.summary) && /h\+ at 1\.2\de-11/.test(balance.summary), balance.summary);
 });
+
+// Fable round 5's review of src/checks.js: the grid check compared the right contact's current
+// alone, so a neutral reactant's flux 20× off (a reaction layer thinner than the cells) passed,
+// "nothing to compare"; and check(device) on a device never solved passed as a converged transient.
+test('the grid check compares what each species brings in, and check() fails a device not yet solved', () => {
+  const lib = { species: [{ name: 'A', z: 0, cRef: 1000 }, { name: 'B', z: 0, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { w: { epsr: 0, species: { A: { D: 1e-9, mu0: 0 }, B: { D: 1e-9, mu0: -20e3 }, 'K+': { D: 2e-9, mu0: -283e3 }, 'Cl-': { D: 2e-9, mu0: -131e3 } } } } };
+  const d = new Device(build({ library: [lib],
+    stack: [{}, layer('w', 100e-6, { c0: { A: 1e-6, B: 1e-6, 'K+': 10, 'Cl-': 10 } }), bath({ A: 1, B: 1e-6, 'K+': 10, 'Cl-': 10 }, 'Cl-')],
+    bulkReactions: [{ equation: 'A = B', kf: { w: 1e4 } }], grid: { hmax: 20e-6 } }));
+  const s = d.solve(), grid = check(d, s, { order: false }).items.find((i) => i.name === 'grid');
+  assert.ok(grid.ok === false && /in at the right contact/.test(grid.summary), grid.summary);
+  // never solved: not a solution
+  const fresh = new Device(build({ T: 300, library: [semiconductor('Si')], stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e16) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0.6)] }));
+  const r = check(fresh);
+  assert.ok(!r.ok && /not solved/.test(r.items.find((i) => i.name === 'converged').summary), r.text);
+  fresh.solve();
+  assert.ok(check(fresh, undefined, { refine: false }).items.find((i) => i.name === 'converged').ok);
+});

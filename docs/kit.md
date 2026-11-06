@@ -450,7 +450,7 @@ console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s
 `check(device, sol, { refine, tol, order })` checks a solved device, and says what it compared, so a
 page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned.
 
-- **converged**: the solve converged.
+- **converged**: the solve converged (`check(device)` on a device not solved or advanced since it was built or `set()` fails here: its state is a layout, not a solution).
 - **warnings**: the solution's warnings (unresolved double layers, steep profiles, a weakly held
   part, a material's data for another temperature) and the definition's likely unit slips. They're heuristics, so they're marked `?`, a
   prompt to look, and don't fail the check.
@@ -480,10 +480,12 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
   start from the definition, not this state, so it costs two solves.
 - **grid**, in a steady state (unless `refine: false`): the device solved again on a grid twice
   as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
-  from this solution interpolated onto it. The current, each floating terminal's voltage (an open-circuit voltage) and each
-  region's charge must agree to `tol` (relative; default 1e-2, about what a plot shows; a
+  from this solution interpolated onto it. Every terminal's current (ports' too), what each
+  neutral species brings in at the contacts, each floating terminal's voltage (an open-circuit
+  voltage) and each region's charge must agree to `tol` (relative; default 1e-2, about what a plot shows; a
   benchmark wants 1e-3 or less). The discretisation is second order, so the change estimates
-  this grid's own error (about ¾ of it). It costs one more solve, so run it once, not on every
+  this grid's own error (about ¾ of it); with nothing to compare it's `?`. Where an error doesn't shrink as the grid's
+  steps halve (a port's window falling between nodes), this can't see it. It costs one more solve, so run it once, not on every
   slider move. In a transient it's `?`, not checked: the answer there depends on the whole run
   (and on drives set along the way), so run it again yourself on a grid twice as fine.
 
