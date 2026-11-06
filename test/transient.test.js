@@ -741,3 +741,24 @@ test('dt0 sets a later call\'s first step too, over the size carried from the la
   const first = sol.trace.t.find((t) => t > 10);
   assert.ok(first - 10 <= 1.01e-9, `first step ${first - 10} s`);
 });
+
+test('a trace\'s charge is Σ current × the step ending at each point, across a pulse\'s edges, as the docs say', () => {
+  // (Fable round 2's hunter: a point at a jump has the value just before it, so a trapezoid
+  // miscounts; this is the rule the docs give instead)
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2;
+  for (const method of ['be', 'bdf2']) {
+    const dev = new Device({
+      species: lib.species,
+      materials: lib.materials,
+      regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
+      contacts: { left: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 }, right: { I: { t: [0, 0.01, 0.01, 0.011, 0.011], values: [0, 0, 1, 1, 0] }, phi: { type: 'capacitive', C }, zeroCharge: 0 } },
+      grid: { hmin: 2e-6, hmax: 5e-6 },
+    });
+    dev.solve();
+    const sol = dev.advance(0.02, { method });
+    const { t, current } = sol.trace;
+    let Q = current[0] * t[0];
+    for (let k = 1; k < t.length; k++) Q += current[k] * (t[k] - t[k - 1]);
+    assert.ok(Math.abs(-Q / sol.plates.right.charge - 1) < 1e-6, `${method}: ${-Q} against ${sol.plates.right.charge}`);
+  }
+});
