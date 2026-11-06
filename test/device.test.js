@@ -244,3 +244,25 @@ test("a 'bulk' contact on a layer of one carrier with nothing to neutralise it i
   throwsDevice(make({}), /'bulk'.*can't be: its only charged species are positive.*pin φ instead/);
   assert.ok(new Device(make({ acceptors: 1 })).solve().converged); // (acceptors balance the holes)
 });
+
+// Fable round 5's review of src/solver.js: set() giving a region a material that holds a species
+// it didn't (the unknowns the same) carried that species' slot from the old solver, which never
+// solved for it: X started at 133 mol/m³ where the new c0 said 7, and a closed stretch kept it.
+test('a species newly present after set() starts from the new c0, the rest of the state carried', () => {
+  const water = { epsr: 78, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } };
+  const def = {
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'X', z: 0, cRef: 1000 }],
+    materials: { water, water2: { epsr: 78, species: { ...water.species, X: { D: 1e-9, mu0: 5e3 } } } },
+    regions: [{ name: 'w', material: 'water', length: 1e-7, c0: { 'K+': 100, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0 }, right: { V: 0.1, phi: 'pinned', zeroCharge: 0 } },
+    grid: { hmin: 0.2e-9, hmax: 2e-9 },
+  };
+  const d = new Device(def);
+  d.solve();
+  const s1 = d.step(1e-9);
+  d.set({ regions: [{ ...def.regions[0], material: 'water2', c0: { 'K+': 100, 'Cl-': 100, X: 7 } }] });
+  const s2 = d.solution();
+  assert.ok(s2.c.X.every((c) => Math.abs(c / 7 - 1) < 1e-12), `X ${s2.c.X[0]}`);
+  assert.deepEqual(Array.from(s2.c['K+']), Array.from(s1.c['K+'])); // (K⁺ carried, not restarted)
+  assert.ok(d.advance(2e-9).converged);
+});

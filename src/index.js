@@ -134,6 +134,7 @@ export class Device {
     }
     if (sameUnknowns || regridded) {
       if (sameUnknowns) {
+        const fresh = Float64Array.from(solver.u); // (its own start, from the new c0)
         solver.u.set(old.u);
         solver.uLo.set(old.uLo);
         // (a new T, or materials' μ° and c_ref: carry the concentrations and φ, not their scaled
@@ -141,6 +142,18 @@ export class Device {
         if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
         // (a jump in T, for a transient's first step to name if it fails: see advance)
         if (old.model.T !== model.T) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
+        // A species newly present at a node (a region's material changed to one that holds it)
+        // starts from the new c0: its slot held nothing the old solver solved for, and a closed
+        // stretch then kept that stale amount for good (X at 133 mol/m³ where c0 said 7; Fable
+        // round 5's review of src/solver.js).
+        for (let g = 0; g < solver.nNodes; g++) {
+          for (let i = 0; i < solver.n; i++) {
+            if (!solver.present[g * solver.n + i] || old.present[g * old.n + i]) continue;
+            const o = solver.blockOfNode[g] * solver.M + 1 + i;
+            solver.u[o] = fresh[o];
+            solver.uLo[o] = 0;
+          }
+        }
         // A node newly on an electrode's surface (a window moved, a surface added) starts at its
         // starting coverages, not at whatever its slots held.
         const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());

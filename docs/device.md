@@ -1275,7 +1275,8 @@ const now = dev.solution();                   // snapshot of the current state
   next steady solve (which keeps a closed region's restarted amounts). To switch a reaction off and keep
   the state, keep it listed and make it negligible (`vmax: 1e-30`). A carried state keeps what it holds: a
   stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
-  what it holds at that moment. So a new `c0` doesn't apply to a carried state; to start over
+  what it holds at that moment. So a new `c0` doesn't apply to a carried state, but for a species
+  newly present (a region given a material that holds it), which starts from it; to start over
   from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it
   mid-run, `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.) Either way the time stepping restarts its
   order, as after any discontinuity, but a carried state goes on at the step size an adaptive
