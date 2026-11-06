@@ -300,8 +300,14 @@ export class SteadySolves {
     if ((this.stepped || this.carried) && direct && allowed) {
       this._refreshSources();
       this.initFromComposition();
-      u0.set(this.u);
-      u0Lo.set(this.uLo);
+      // (A transient's state is replaced by the layout for the stages below; a carried solved
+      // state stays their start, which a continuation from its solved voltages wants: replaced,
+      // GaAs taken warm through T at 0.3 V failed 17 of 56 jumps against 1.9.0's 4; Fable round
+      // 3's hunter, on its re-check.)
+      if (this.stepped) {
+        u0.set(this.u);
+        u0Lo.set(this.uLo);
+      }
       const q = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
       if (q.converged) return solved(after(q, r));
       restart();
@@ -340,27 +346,39 @@ export class SteadySolves {
     // zeroCharge, where the layout's neutral start is right. Cold, a thin-film transistor 0.8 V
     // below threshold failed, its channel laid out e^{−31} above where it ends, which a sweep of
     // the gate in 0.1 V steps reached (Fable round 3's hunter).
-    if (allowed) {
-      for (let p = 0; p < this.model.ports.length; p++) {
-        const port = this.model.ports[p], d = this.terms[2 + p].drive;
-        if (!port.capacitance || d.kind !== 'V' || d.R > 0) continue;
+    // Several such gates: each starts at its zeroCharge, then they're ramped in turn, warm (two
+    // gates both below threshold, each ramped alone with the other at its target, failed: the
+    // hunter's re-check).
+    const gates = allowed
+      ? this.model.ports.flatMap((port, p) => {
+        const d = this.terms[2 + p].drive;
+        if (!port.capacitance || d.kind !== 'V' || d.R > 0) return [];
         const V = sourceAt(d.src, this.time), from = port.capacitance.zeroCharge;
-        if (V === from) continue;
-        restart();
-        // (with the contacts level while it ramps, where they can be, then the right one ramped
-        // to its target from there: cold at the drain's voltage fails too)
-        if (canContinue) this.sourceOverride.set(1, level);
-        let q;
-        try {
-          q = this._continuation(opts, 2 + p, from, V, r, false);
-        } finally {
-          this.sourceOverride.delete(1);
-          this._refreshSources();
+        return V === from ? [] : [{ k: 2 + p, from, V }];
+      })
+      : [];
+    if (gates.length > 0) {
+      restart();
+      // (with the contacts level while they ramp, where they can be, then the right one ramped
+      // to its target from there: cold at the drain's voltage fails too)
+      if (canContinue) this.sourceOverride.set(1, level);
+      for (const g of gates) this.sourceOverride.set(g.k, g.from);
+      let q = r;
+      try {
+        for (const [j, g] of gates.entries()) {
+          q = this._continuation(opts, g.k, g.from, g.V, q, j > 0);
+          // (_continuation clears its own override on return; this one is now held at its V)
+          this.sourceOverride.set(g.k, g.V);
+          if (!q.converged) break;
         }
-        if (q.converged && canContinue) q = this._continuation(opts, 1, level, target, q, true);
-        if (q.converged) return solved(q);
-        r = q;
+      } finally {
+        this.sourceOverride.delete(1);
+        for (const g of gates) this.sourceOverride.delete(g.k);
+        this._refreshSources();
       }
+      if (q.converged && canContinue) q = this._continuation(opts, 1, level, target, q, true);
+      if (q.converged) return solved(q);
+      r = q;
     }
     if (canContinue) {
       // The right terminal's voltage ramped to its target: from the contacts' voltages at the last

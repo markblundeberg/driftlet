@@ -1064,6 +1064,22 @@ test('a solved state carried through set({ T, materials }) far in temperature: s
   const warm = dev.solve(), cold = new Device(pn(300)).solve();
   assert.ok(warm.converged && cold.converged, warm.warnings.join(' '));
   assert.ok(Math.abs(warm.current / cold.current - 1) < 1e-6, `${warm.current} against ${cold.current}`);
+  // and where the layout's own attempt fails too, the stages after it start from the carried state,
+  // not the layout (the hunter's re-check: GaAs at 0.3 V from 250 K to 350 K failed so)
+  const gaas = (T) => build({
+    T, library: [semiconductor('GaAs', { T })],
+    stack: [ohmic(0), layer('GaAs', units.um(1), { donors: units.perCm3(1e17) }), layer('GaAs', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(0.3)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { GaAs: 1e8 } }],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  });
+  for (const [T1, T2] of [[250, 350], [150, 200]]) {
+    const g = new Device(gaas(T1));
+    assert.ok(g.solve().converged);
+    g.set({ T: T2, materials: semiconductor('GaAs', { T: T2 }).materials });
+    const w = g.solve(), c = new Device(gaas(T2)).solve();
+    assert.ok(w.converged, `GaAs ${T1} → ${T2} K: ${w.warnings.join(' ')}`);
+    assert.ok(Math.abs(w.current - c.current) <= 1e-6 * Math.abs(c.current) + 1e-15, `GaAs ${T1} → ${T2} K: ${w.current} against ${c.current}`);
+  }
 });
 
 test('a gate port held far from its zeroCharge: solve() ramps it there from a cold start, the contacts level meanwhile', () => {
@@ -1085,6 +1101,12 @@ test('a gate port held far from its zeroCharge: solve() ramps it there from a co
     const want = 46 * Math.exp((Vg - 0.3) / VT);
     assert.ok(Math.abs(s.c['e-'][0] / want - 1) < 1e-3, `V_G ${Vg}: n at the source ${s.c['e-'][0]} against ${want}`);
   }
+  // Two gates, both below threshold: each starts at its zeroCharge, then they're ramped in turn.
+  const two = tft(-2);
+  two.ports = [{ ...two.ports[0], name: 'g1', to: L / 2 }, { ...two.ports[0], name: 'g2', from: L / 2, V: -0.5 }];
+  const s2 = new Device(two).solve();
+  assert.ok(s2.converged, s2.warnings.join(' '));
+  assert.ok(Math.abs(s2.c['e-'][0] / (46 * Math.exp(-2.3 / VT)) - 1) < 1e-3, `two gates: n at the source ${s2.c['e-'][0]}`);
 });
 
 // (Fable round 3's review of src/steady.js: state a steady solve outside solve()'s own restore left behind)
