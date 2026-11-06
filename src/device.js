@@ -1574,6 +1574,8 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     // whose levels it sets there through a Donnan step at the end node.
     const own = bath.material !== undefined;
     const bm = own ? materials.find((m) => m.name === bath.material) : mat;
+    // (an end region that is itself φ-free, an insertion host, said "undefined is not a material")
+    need(own || !mat.phiFree, `${path}.bath: ${mat.name} at this end has no φ (an insertion host: its ion and carrier have only their combination's level), so a bath can't set its levels; hold it with 'bulk' or 'neutral' links (an equilibrium link at a contact's V), or name a solution outside it with bath.material`);
     need(bm && !bm.conductor && !bm.phiFree, `${path}.bath.material: ${JSON.stringify(bath.material)} is not a material with ions in it (one of ${materials.filter((m) => !m.conductor).map((m) => m.name).join(', ')})`);
     // Without a reference, V is the bath's φ (an ideal salt bridge: the membrane potential's
     // convention), and the terminal is the first charged species in it.

@@ -569,3 +569,14 @@ test('custom statistics invert near saturation, as the built-in lattice does', (
     assert.ok(sol.converged && Math.abs(sol.c.X[2] / (x * cMax) - 1) < 1e-12, `x ${x}: ${sol.c.X[2] / cMax}`);
   }
 });
+
+test("a contact's bath on an insertion host is refused, saying why (it said 'undefined is not a material')", () => {
+  const RT = GAS_CONSTANT * 298.15, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  const E = x.map((v) => 0.4 - (RT / FARADAY) * Math.log(v / (1 - v)));
+  assert.throws(() => new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 30000 }, 'e-': { D: 1e-4, mu0: 0, cRef: 30000 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 30000, ocv: { x, E, muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6 }],
+    contacts: { left: { V: 0, bath: { c: { 'Li+': 15000, 'e-': 15000 }, reference: 'Li+' } }, right: { V: 0.3, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+  }), /host at this end has no φ .* a bath can't set its levels/);
+});
