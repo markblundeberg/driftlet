@@ -337,3 +337,10 @@ test('set({ T, materials }) on a live device keeps its concentrations and φ, an
   for (const name of ['e-', 'h+']) for (let g = 0; g < s1.x.length; g++) assert.ok(Math.abs(s1.c[name][g] / s0.c[name][g] - 1) < 1e-9, `${name} at ${g}`);
   assert.ok(d2.solve().converged);
 });
+
+test("trap() on a library whose carriers have no cRef says so (it wrote NaN)", () => {
+  const lib = semiconductor('Si');
+  for (const sp of Object.values(lib.materials.Si.species)) delete sp.cRef;
+  for (const sp of lib.species) delete sp.cRef;
+  assert.throws(() => trap(lib, { density: units.perCm3(1e12), tauN: 1e-6, tauP: 1e-6 }), /e- and h\+ need a cRef/);
+});

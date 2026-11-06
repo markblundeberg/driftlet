@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { build, layer, ohmic, semiconductor, SEMICONDUCTORS, pulse, square, triangle, ramp, injector, recombination } from '../src/kit.js';
+import { build, layer, ohmic, semiconductor, SEMICONDUCTORS, pulse, square, triangle, ramp, injector, recombination, photogeneration } from '../src/kit.js';
 
 // Sources as plain data (waveforms, an injector port, recombination from a lifetime), and the
 // Haynes–Shockley experiment built from them, read with probes, against its analytic solution.
@@ -94,4 +94,14 @@ test('Haynes–Shockley: an injected hole pulse drifts, spreads and recombines a
   // And it reads the solution: its last sample is the concentration at its node now.
   const node = s2.x.findIndex((x) => Math.abs(x - (xe + d)) < 1e-12);
   assert.ok(Math.abs(probe.at(-1) / s2.c['h+'][node] - 1) < 1e-12);
+});
+
+// Fable round 5's review of the kit: a span under ~1e-6 of its position (1 nm at 1 mm) had its
+// zero "a hair beyond each end" round onto the end itself, and the device refused the table,
+// naming kf.Si.x, which its author never wrote.
+test('photogeneration over a span far narrower than its position writes a table the device takes', () => {
+  for (const [from, span] of [[1e-3, 1e-9], [1e-6, 1e-12]]) {
+    const { x } = photogeneration({ material: 'Si', flux: 1e-3, alpha: 1e9, mu: units.eV(3), from, to: from + span }).kf.Si;
+    assert.ok(Array.from(x).every((v, i) => i === 0 || v > x[i - 1]), `${from}, ${span}`);
+  }
 });

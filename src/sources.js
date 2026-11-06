@@ -141,7 +141,8 @@ export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes
   const fix = (step / 2) / Math.tanh(step / 2);
   // Nothing outside [from, to]: a profile holds its end values beyond its table, so it drops to
   // zero a hair beyond each end (the light enters a layer of a material that's also elsewhere).
-  const hair = 1e-10 * (to - from);
+  // (at least a few ulps of the ends: a 1 nm span at 1 mm had x[0] === x[1], refused as kf.Si.x)
+  const hair = Math.max(1e-10 * (to - from), 4 * Number.EPSILON * Math.max(Math.abs(from), Math.abs(to)));
   // Toward −x the light enters at `to`: the same points, mirrored, in increasing x.
   const xs = toward === '+x' ? taus.map((t) => from + t / alpha) : taus.map((t) => to - t / alpha).reverse();
   const gs = taus.map((t) => (flux * alpha * Math.exp(-t)) / fix);

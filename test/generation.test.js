@@ -124,3 +124,15 @@ test('photogeneration() toward −x: light entering at to, the mirror image of t
     assert.ok(Math.abs(back.current / -lit.current - 1) < 1e-3, `α = ${alpha}/m: ${back.current} against ${-lit.current}`);
   }
 });
+
+// Fable round 5's review of the kit: light written from its layer's left end, for an absorber not
+// at x = 0, fell where the material isn't and generated a fraction or nothing, unwarned.
+test('light written where its material isn\'t is warned of, with how much of it is lost', () => {
+  const Si = semiconductor('Si'), Ge = semiconductor('Ge', { material: 'Ge' }), flux = 1e-3, alpha = 2e6, L = 1e-6;
+  const cell = (g) => new Device(build({ T: 300, library: [Si, Ge], stack: [ohmic(0, ['e-']), layer('Si', 0.5e-6, { donors: units.perCm3(1e17) }), { step: { species: 'e-', value: units.eV(0.05) } }, layer('Ge', L, { donors: units.perCm3(1e15) }), ohmic(0, ['h+'])],
+    bulkReactions: [g], grid: { hmin: 5e-9, hmax: 20e-9 } }));
+  const right = cell(photogeneration({ material: 'Ge', flux, alpha, mu: units.eV(3), from: 0.5e-6, to: 1.5e-6 }));
+  assert.equal(right.model.warnings.filter((w) => /lies outside/.test(w)).length, 0);
+  const wrong = cell(photogeneration({ material: 'Ge', flux, alpha, mu: units.eV(3), to: L }));
+  assert.ok(wrong.model.warnings.some((w) => /kf\.Ge: \d+% of the profile lies outside Ge's regions/.test(w)), wrong.model.warnings.join(' | '));
+});

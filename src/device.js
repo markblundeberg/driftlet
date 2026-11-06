@@ -460,6 +460,42 @@ export function normalizeDevice(def) {
         `so the start isn't the one given; cells of about ${miss.want.toExponential(0)} m there would resolve it (hmax, or a region boundary there to grade toward)`,
     );
   });
+  // A rate-constant profile (absorbed light) that lies, in part, where its material isn't: it acts
+  // only at that material's nodes, so the rest is lost. Light written from its layer's left end
+  // rather than the device's x, for an absorber not at x = 0, generated a fraction or nothing,
+  // unwarned (Fable round 5's review of the kit).
+  const integ = (pr, a, b) => {
+    // ∫ of a piecewise-linear profile, constant beyond its ends, from a to b
+    const at = (x) => {
+      if (x <= pr.x[0]) return pr.values[0];
+      const last = pr.x.length - 1;
+      if (x >= pr.x[last]) return pr.values[last];
+      let k = 0;
+      while (pr.x[k + 1] < x) k++;
+      return pr.values[k] + ((pr.values[k + 1] - pr.values[k]) * (x - pr.x[k])) / (pr.x[k + 1] - pr.x[k]);
+    };
+    const cuts = [a, ...Array.from(pr.x).filter((v) => v > a && v < b), b];
+    let t = 0;
+    for (let k = 1; k < cuts.length; k++) t += ((at(cuts[k - 1]) + at(cuts[k])) / 2) * (cuts[k] - cuts[k - 1]);
+    return t;
+  };
+  reactions.forEach((rx, k) => {
+    rx.kfProfile.forEach((pr, m) => {
+      if (!pr) return;
+      const all = integ(pr, grid.x[0], grid.x[grid.nNodes - 1]);
+      if (!(all > 0)) return;
+      let own = 0;
+      regions.forEach((reg, r) => {
+        if (reg.material === m) own += integ(pr, grid.x[grid.regionStart[r]], grid.x[grid.regionEnd[r]]);
+      });
+      if (own < (1 - 1e-6) * all) {
+        warnings.push(
+          `bulkReactions[${k}].kf.${materials[m].name}: ${own > 0 ? `${(100 * (1 - own / all)).toPrecision(2)}% of` : 'all of'} the profile lies outside ${materials[m].name}'s regions, where it acts on nothing. ` +
+            "Its x is the device's (from its left end), not a layer's: for light into a layer not at x = 0, start it at that layer's x.",
+        );
+      }
+    });
+  });
   const geometry = normalizeGeometry(def.geometry);
   if (geometry.type !== 'planar') {
     regions.forEach((reg, r) => need(reg.velocity === 0, `regions[${r}].velocity: flow is for a planar device (a uniform velocity through a varying cross-section wouldn't conserve the liquid)`));
