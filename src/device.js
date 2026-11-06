@@ -332,6 +332,19 @@ export function normalizeDevice(def) {
     };
   });
 
+  // A ratio with nothing to grade from: given any grid option, the default grading (hmin = L/1000,
+  // hmax = L/20) is off, so a ratio alone gave uniform cells of L/minCells, 125 nm where the
+  // default was 1 nm at the ends, unwarned (Fable round 5's review of src/device.js).
+  regions.forEach((reg, r) => {
+    if (reg.cells) return;
+    const g = { ...(def.grid ?? {}), ...(def.regions[r].grid ?? {}) };
+    if (g.ratio === undefined || g.hmin !== undefined || g.hmax !== undefined || g.hLeft !== undefined || g.hRight !== undefined) return;
+    warnings.push(
+      `regions[${r}].grid: ratio grades between hmin and hmax, and neither is given, so the cells are uniform, ${(reg.length / (g.minCells ?? 8)).toExponential(1)} m (length/minCells); ` +
+        'the default grading (hmin = length/1000, hmax = length/20) applies only with no grid options at all: give hmin and hmax to grade',
+    );
+  });
+
   // A material whose data are for another temperature than the device's is silently wrong there
   // (a semiconductor's n_i, gap and mobilities; water's μ°, ε and D): say so (for each material a
   // region uses).

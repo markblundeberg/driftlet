@@ -1098,7 +1098,9 @@ advance it, `advance()` and `step()` do.
 ## Grid
 
 `{ hmin, hmax, ratio = 1.2, minCells = 8 }`, per device, overridable per region. With no grid
-options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length. Cells grow
+options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length; given any,
+those defaults are off, so `ratio` or `minCells` alone give uniform cells of length/`minCells` (a
+`ratio` with neither `hmin` nor `hmax` is warned of). Cells grow
 geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly
 (`hLeft` and `hRight` set one end's size instead, for a region fine at one end only). Each
 region boundary becomes a pair of nodes at the same x, one per side. The grid is never refined
@@ -1106,7 +1108,7 @@ automatically. If a double layer that the model resolves is coarser than the loc
 length, the solution's `warnings` say so. That's a floor, not an accuracy: a strongly polarised
 layer screens over its local length (counter-ions piled up at the wall: 0.5 nm at 1 V on
 0.1 mM, where λ_D is 30 nm), and σ to ~1% wants cells a few times finer than that (0.3 nm cells
-there left σ 0.7% high, without a warning). Halve `hmin` and compare, and lower `ratio` too: where a
+there left σ 0.7% high, without a warning). Halve `hmin` and compare, and lower `ratio` too (with `hmin` and `hmax` given): where a
 rate changes sharply across graded cells (SRH generation across a depletion layer), the error follows
 the grading, not `hmin` (a reverse-biased diode's current was 0.6% low at ratio 1.2 and 1 nm, 1.0%
 high at 0.25 nm, and 0.02% off at ratio 1.05 with either). `check()`'s grid item refines the grading too.

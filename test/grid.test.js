@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGrid, gradedCells } from '../src/grid.js';
+import { Device } from '../src/index.js';
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 
@@ -87,4 +88,21 @@ test('a grid far past any demo is refused before it is built: a length in µm gi
   assert.throws(() => buildGrid([{ name: 'n', length: 1 }, { name: 'p', length: 1 }], { hmin: 1e-9, hmax: 2e-8 }), /at least 1\.0e\+8 cells.*n is 1 m long at hmax 2e-8 m\. Lengths are in metres/);
   assert.ok(Date.now() - t0 < 100);
   assert.equal(buildGrid([{ length: 1e-3 }], { hmax: 2e-8 }).nNodes, 50001); // 5e4 cells is fine
+});
+
+// Fable round 5's review of src/device.js: a ratio alone switched the default grading off and
+// gave uniform cells, 125 nm where the default was 1 nm at the ends, unwarned.
+test('a grid ratio with neither hmin nor hmax is warned of: the cells are uniform', () => {
+  const def = (grid) => ({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 78, species: { 'Na+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0 }, right: { V: 0, phi: 'pinned', zeroCharge: 0 } },
+    ...(grid ? { grid } : {}),
+  });
+  const said = (grid) => new Device(def(grid)).model.warnings.filter((w) => /ratio grades between hmin and hmax/.test(w));
+  assert.equal(said({ ratio: 1.05 }).length, 1);
+  assert.equal(said().length, 0);
+  assert.equal(said({ hmin: 1e-9, hmax: 5e-8, ratio: 1.05 }).length, 0);
+  assert.equal(said({ minCells: 40 }).length, 0);
 });
