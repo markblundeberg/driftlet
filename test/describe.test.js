@@ -132,3 +132,17 @@ test('describe(): a port reaction without alpha says the 0.5 it takes', () => {
   });
   assert.match(describe(def), /Fe3\+ \+ e- = Fe2\+: k0 0\.01 mol\/\(m²·s\), α 0\.5\n/);
 });
+
+// Fable round 5's review of src/checks.js: a region filled from its bath, with no c0, had no Debye
+// length in describe() and no warning of end cells coarser than it.
+test("describe() reads a bath-fed region's Debye length from its bath", () => {
+  const c = { 'Na+': 1, 'Cl-': 1 };
+  const def = build({
+    library: [aqueous(['Na+', 'Cl-'])],
+    stack: [{ V: 0.1, phi: 'pinned', zeroCharge: 0 }, layer('water', 1e-6), bath(c, 'Cl-')],
+    grid: { hmin: 1e-7, hmax: 1e-7 },
+  });
+  const text = describe(def);
+  assert.match(text, /Debye length 9\.\d+ nm/);
+  assert.match(text, /coarser than the Debye length/);
+});

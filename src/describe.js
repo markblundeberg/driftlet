@@ -181,6 +181,23 @@ export function describe(def) {
     // carriers, which c0 doesn't list (and nothing, where c0 lists them, as a perovskite's
     // vacancies over their background).
     zzc += Math.abs(q);
+    // With no c0, the composition a bath beside it gives (a contact's at an end, a port's in
+    // it): most electrolytes are filled from their baths, and had no Debye length here, nor a
+    // coarse-grid warning (Fable round 5's review of src/checks.js).
+    if (zzc === 0) {
+      const baths = [];
+      if (r === 0 && def.contacts?.left?.bath?.c) baths.push(def.contacts.left.bath.c);
+      if (r === regions.length - 1 && def.contacts?.right?.bath?.c) baths.push(def.contacts.right.bath.c);
+      for (const pd of def.ports ?? []) if (pd?.bath?.c && (pd.region === r || pd.region === reg.name)) baths.push(pd.bath.c);
+      for (const c of baths) {
+        let z2 = 0;
+        for (const [name, v] of Object.entries(c)) {
+          const i = species.findIndex((sp) => sp.name === name);
+          if (i >= 0 && mat.present[i] && Number.isFinite(v)) z2 += species[i].z * species[i].z * v;
+        }
+        zzc = Math.max(zzc, z2);
+      }
+    }
     const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));
     const Dmin = Math.min(...species.map((sp, i) => (mat.present[i] && mat.D[i] > 0 ? mat.D[i] : Infinity)));
     if (mat.epsr > 0 && zzc > 0) {
