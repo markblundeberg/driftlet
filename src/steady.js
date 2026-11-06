@@ -90,7 +90,7 @@
 //   the outcome: this.time as it was, the history
 //   empty, this.dtNext undefined; converged, every connected stretch's referenceAmounts its
 //   amount now and its boundaryIntake 0. Out of steps with the last three giant steps' motions
-//   each smaller than the one before: this.settling = { maxSteps, ratio, motion, tol }, which the
+//   each smaller than the one before, by ratios under 0.95 within 0.2 of each other: this.settling = { maxSteps, ratio, motion, tol }, which the
 //   Solution's failure says (with the maxSteps that would finish).
 //
 // The continuations (each warm from the last converged solve; a solve that fails puts back
@@ -769,7 +769,8 @@ export class SteadySolves {
     // the capped step, shrinking by 1/(1 + k dt) a step): say so, and that more steps finish it.
     // (It took the generic "nothing specific showed why"; Fable round 3's review of src/steady.js.)
     const [m0, m1, m2] = motions.slice(-3);
-    if (!converged && steps >= maxSteps && m2 < m1 && m1 < m0) this.settling = { maxSteps, ratio: m2 / m1, motion: m2, tol };
+    // (a steady ratio, below 0.95: a round-off floor or a cycle can show three falling values)
+    if (!converged && steps >= maxSteps && m2 < m1 && m1 < m0 && m2 / m1 < 0.95 && Math.abs(m2 / m1 - m1 / m0) < 0.2) this.settling = { maxSteps, ratio: m2 / m1, motion: m2, tol };
     this.time = time;
     this.history = []; // a steady solve isn't a trajectory: transients restart from here
     this.dtNext = undefined;
