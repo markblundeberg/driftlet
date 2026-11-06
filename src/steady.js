@@ -121,7 +121,9 @@
 // there's no such cell); _directSteady(): no law unkept and every
 // stretch connected or conserved; stuckReactions(): after a steady solve, each reaction that
 // alone changes a combination nothing feeds and whose affinity keeps one sign, over 1e-6, wherever
-// it acts (see its comment).
+// it acts, { where, affinity } (the smallest); and each bulk reaction out of equilibrium, over
+// 1e-6, at a node where it alone changes a participant that can't move, { where, affinity (the
+// largest there), immobile: how many nodes } (see its comment).
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Converged: the state solves the steady equations as step(∞) solved them; or, not direct,
@@ -902,8 +904,9 @@ export class SteadySolves {
     };
     const eta = (g, slot) => u[this.blockOfNode[g] * M + slot] + uLo[this.blockOfNode[g] * M + slot];
     const report = (where, as) => {
-      if (as.length === 0 || !(as.every((a) => a > 1e-6) || as.every((a) => a < -1e-6))) return;
+      if (as.length === 0 || !(as.every((a) => a > 1e-6) || as.every((a) => a < -1e-6))) return false;
       out.push({ where, affinity: as.reduce((m, a) => (Math.abs(a) < Math.abs(m) ? a : m)) });
+      return true;
     };
     model.interfaces.forEach((itf, f) => {
       const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
@@ -916,12 +919,33 @@ export class SteadySolves {
         report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA))]);
       });
     });
+    // Where a participant can't move (D = 0, inside a region without flow or mixing, away from its
+    // faces and any port) and no other bulk reaction makes or uses it, each node holds its own
+    // amount, so the reaction must be at equilibrium at that node by itself. Out of equilibrium one
+    // way in one region and the other way in the next (Y immobile in the second), the sum of a
+    // frozen reaction's rates over the device was balanced and its affinities of both signs: it
+    // passed for steady (Fable round 3's review of src/steady.js).
+    const inPort = new Uint8Array(this.nNodes);
+    for (const port of model.ports) for (const g of port.nodes) inPort[g] = 1;
+    const held = (x, g) => {
+      const reg = model.regions[grid.nodeRegion[g]], mat = model.materials[reg.material];
+      if (inPort[g] || reg.velocity !== 0 || reg.mixing !== 0 || g === grid.regionStart[grid.nodeRegion[g]] || g === grid.regionEnd[grid.nodeRegion[g]]) return false;
+      const rx = this.rxs[x];
+      return Array.from(rx.sp).some((i) => !(mat.D[i] > 0) && this.rxs.every((o, y) => y === x || !(o.kfNode[g] > 0) || !o.sp.includes(i)));
+    };
     model.reactions.forEach((mrx, x) => {
       const rx = this.rxs[x];
-      if (rx.generation || !needed(mrx)) return;
-      const as = [];
-      for (let g = 0; g < this.nNodes; g++) if (rx.kfNode[g] > 0 || rx.srh?.[this.nodeMaterial[g]]) as.push(rx.sp.reduce((a, i, p) => a + rx.nu[p] * eta(g, 1 + i), rx.fixedA));
-      report(`bulkReactions[${x}]`, as);
+      if (rx.generation) return;
+      const as = [], own = [];
+      for (let g = 0; g < this.nNodes; g++) {
+        if (!(rx.kfNode[g] > 0 || rx.srh?.[this.nodeMaterial[g]])) continue;
+        const a = rx.sp.reduce((t, i, p) => t + rx.nu[p] * eta(g, 1 + i), rx.fixedA);
+        as.push(a);
+        if (held(x, g)) own.push(a);
+      }
+      if (needed(mrx) && report(`bulkReactions[${x}]`, as)) return;
+      const off = own.filter((a) => Math.abs(a) > 1e-6);
+      if (off.length > 0) out.push({ where: `bulkReactions[${x}]`, affinity: off.reduce((m, a) => (Math.abs(a) > Math.abs(m) ? a : m)), immobile: off.length });
     });
     model.ports.forEach((port, k) => {
       port.reactions.forEach((rx, q) => {

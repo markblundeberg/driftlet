@@ -1195,3 +1195,35 @@ test('a face reaction too slow to show, in a device solved by giant steps: left 
   assert.ok(fast.converged && !fast.warnings.some((w) => /out of equilibrium/.test(w)));
   assert.ok(stuck.warnings.some((w) => /interfaces\[0\]\.reactions\[0\]: out of equilibrium/.test(w)), stuck.warnings.join(' '));
 });
+
+// A reaction frozen out of equilibrium one way in one region and the other way in the next (Y
+// immobile in the second), its affinities ±4.6: stuckReactions looked for one sign only, and the
+// solve converged unwarned at its start (Fable round 3's review of src/steady.js).
+test('a reaction too slow to show, out of equilibrium both ways along the device: warned, not passed off as steady', () => {
+  const dev = (kf, c0B) => new Device({
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Y', z: 0 }, { name: 'Z', z: 0 }],
+    materials: {
+      m1: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 1e-9, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+      m2: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 0, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+    },
+    regions: [
+      { name: 'A', material: 'm1', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 1, Z: 0.01 } },
+      { name: 'B', material: 'm2', length: 1e-6, fixedCharge: FARADAY, c0: c0B },
+    ],
+    interfaces: [{ dipole: 0 }],
+    bulkReactions: [{ equation: 'Y = Z', kf: { m1: kf, m2: kf } }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { minCells: 40 },
+  });
+  const both = /bulkReactions\[0\]: out of equilibrium by up to .* where it alone changes a participant that can.t move/;
+  const d = dev(1e-30, { Y: 0.01, Z: 1 }), s = d.solve();
+  assert.ok(s.warnings.some((w) => both.test(w)), s.warnings.join(' | '));
+  const bal = check(d, s, { refine: false }).items.find((it) => it.name === 'balance');
+  assert.ok(bal.ok === false && /where a participant can.t move/.test(bal.summary), bal.summary);
+  // Fast, the same reaction settles at Z = Y everywhere, and nothing is said.
+  const fast = dev(1, { Y: 0.01, Z: 1 }).solve();
+  assert.ok(fast.converged && !fast.warnings.some((w) => /bulkReactions/.test(w)), fast.warnings.join(' | '));
+  const n = fast.c.Y.length;
+  assert.ok(Math.abs(fast.c.Z[n - 1] / fast.c.Y[n - 1] - 1) < 1e-6 && Math.abs(fast.c.Z[0] / fast.c.Y[0] - 1) < 1e-6);
+});

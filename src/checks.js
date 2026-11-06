@@ -79,7 +79,7 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     const stuck = steady ? solver.stuckReactions() : [];
     if (ledger && stuck.length > 0) {
       ledger.ok = false;
-      ledger.summary = `not a steady state: ${stuck.map((s) => `${s.where} is ${sig(s.affinity * solver.VT * 1e3)} mV of affinity from equilibrium`).join(', ')}, too slow for the solve to see (see the warnings); its ledgers say only that nothing moves fast enough to count`;
+      ledger.summary = `not a steady state: ${stuck.map((s) => `${s.where} is ${s.immobile === undefined ? '' : 'up to '}${sig(s.affinity * solver.VT * 1e3)} mV of affinity from equilibrium${s.immobile === undefined ? '' : ` where a participant can't move`}`).join(', ')}, too slow for the solve to see (see the warnings); its ledgers say only that nothing moves fast enough to count`;
     }
     items.push(ledger ?? conservation(sol, Math.max(...device.model.grid.area)));
     if (steady && refine) items.push(gridCheck(device, sol, tol, ledger.details.gross));

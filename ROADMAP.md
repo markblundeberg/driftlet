@@ -170,9 +170,9 @@ for live demos.
        currents differ by 0.4% between cuts of one region while each solve's residual is 5e-12). And
        Z measured at a port gets neither cuts nor the region-shift split, so the MOS capacitor's
        channel port is unresolved (warned) where its gate contact resolves to 1e-6.
-     - `stuckReactions` passes over a frozen reaction whose affinity changes sign along the device
-       (a reaction can be steady with local rates of both signs, so this needs a test of the rates
-       too).
+     - `stuckReactions` now checks a bulk reaction node by node where it alone changes a
+       participant that can't move; a port's reaction out of equilibrium both ways across its
+       window, with an immobile surface species, is still checked only for one sign.
      - A strictly neutral (ε = 0) bipolar membrane in reverse bias past ~1.2 V fails cold, warm and
        from a converged transient's state, "lost 12 of its digits" at the CEM | water face, and the
        message's remedy (anchor the region) doesn't help; a 37 s transient and the resolved ε > 0

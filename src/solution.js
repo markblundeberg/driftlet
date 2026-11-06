@@ -385,9 +385,10 @@ export function makeSolution(solver, result = {}) {
     // start was the trouble (a hole-only layer full of the anode's holes, with traps: "raise its
     // rate constant" changed nothing, ×1e4).
     const waited = (result.history ?? []).some((h) => h.converged && h.dt > 0);
-    for (const { where, affinity } of slow) {
+    for (const { where, affinity, immobile } of slow) {
+      const off = `out of equilibrium by ${immobile === undefined ? '' : 'up to '}${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity${immobile === undefined ? '' : ` where a participant can't move`}`;
       sol.warnings.push(
-        `the solve did not converge, likely because ${where} is out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium: ` +
+        `the solve did not converge, likely because ${where} is ${off}, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium: ` +
           (waited
             ? 'it is too slow for the steady solve to wait out. Raise its rate constant (the steady state does not depend on it), or advance() in time.'
             : 'the solve failed from its first steps, so start it nearer that equilibrium: c0 near it, or solve without the reaction and set() it back.'),
@@ -580,9 +581,11 @@ export function makeSolution(solver, result = {}) {
   });
   // A reaction a steady state needs at equilibrium, left out of it (see stuckReactions).
   if (sol.steady) {
-    for (const { where, affinity } of solver.stuckReactions()) {
+    for (const { where, affinity, immobile } of solver.stuckReactions()) {
       sol.warnings.push(
-        `${where}: out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity wherever it acts, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium. ` +
+        (immobile === undefined
+          ? `${where}: out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity wherever it acts, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium. `
+          : `${where}: out of equilibrium by up to ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity at ${immobile} node${immobile === 1 ? '' : 's'} where it alone changes a participant that can't move, so a steady state needs it at equilibrium there. `) +
           'Its rate is too small for the solve to resolve, and it was left where the solve began: this is not a steady state. Raise its rate constant (the steady state does not depend on it), or advance() in time to see how slowly it gets there.',
       );
     }
