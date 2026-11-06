@@ -163,6 +163,31 @@ for live demos.
      (Fixed in 1.10: the error norm's floating terminals, `dt0` after a call, port traces, each
      face's production, `photogeneration()` toward −x, the return to level contacts,
      `impedance()` re-solving.)
+   - From Fable round 4 (6 Nov 2026), still open:
+     - `advance()` at a `tol` its error estimate can't reach now stops where a step can't move
+       the clock, `converged: false` (it stalled at a standstill, `converged: true`). The floor is
+       the φ̂/η split's round-off at ε > 0 on steps far below the dielectric relaxation (~1e-7,
+       measured, docs/numerics.md); the charge rows remove that mode at ε = 0, and the same
+       transform at ε > 0 nodes on short steps might lift it. A run with a small `maxSteps` can
+       still end crawling above the clock's resolution (a sphere at tol 1e-7, 4000 steps:
+       `converged: true`, current 3× off); a stop on an error that won't shrink was tried and
+       broke runs through a jump, whose error is self-similar.
+     - The Jacobian test now allows for the differences' own round-off (ε of the row over h), so
+       a lit device checks clean, at a light dim enough to check its hole rows (1e19 cm⁻³s⁻¹; at
+       1e22, 34 rows would pass a 10% error). A brighter device's rows need a larger step or an
+       analytic check.
+     - A contact's fluxes are still read from the end box's residuals, a small quantity as the
+       difference of large ones on a short step; only a closed contact (every link blocked) now
+       passes exactly nothing. Where some links are blocked, a blocked species' slot can hold a
+       charge row or a law's row with the linked ions' fluxes in it, so the simple fix (skip it)
+       broke a diffuse layer charged through a contact; the link's own law at the solution would
+       be exact. With the closed contact fixed, blocking electrodes resolve Z down to 1 µHz, and
+       `impedance()`'s "Z isn't resolved" warnings have no device in the tests that triggers them.
+     - A failed first step leaves `stepped` set and `solvedV` cleared (a different continuation or
+       message later, not a wrong number).
+     - The lattice model's K at a full lattice cancels to zero (c − c²/c_max); carrying the vacancy
+       fraction would keep it. No device effect found (a crowded double layer at 60 kT agrees with
+       Kilic–Bazant–Ajdari to 1e-4).
    - From Fable round 3 (5 Nov 2026), still open:
      - `impedance()`: a floating terminal's δV carries no error estimate of its own, and where every
        other terminal floats, Kirchhoff's reading trusts it: a floating Pt island measured against a
@@ -181,7 +206,10 @@ for live demos.
        filling, which a pn junction's cold solve needs; the start could fill immobile states itself,
        node by node, from the carriers it lays out.
      - `advance()` fails at its first step right after a `set({ T, materials })` jump far in T
-       (150 → 500 K at −5 V); `solve()` there converges, and the transient runs from it.
+       (150 → 500 K at −5 V; 150 → 300 K at 0 V): the minority carriers carry over at e⁻⁸⁰ of the
+       new equilibrium and must rise ~50 thermal units within the step, and Newton's divergence
+       guard stops the climb (a guard that let shrinking updates go on rescued only one case of
+       five). The failure says so now, and jumps of 50 K, or a `solve()` first, get there.
      - Demo pages at a phone's width: the membrane page's three dot-panel captions overprint, the
        myelin level diagram's 40 node lines crowd it; the rde page's Koutecký–Levich axis goes
        negative at E° + 0.1 V; the redox page could show its no-iR separation beside the readout's.

@@ -597,7 +597,8 @@ reaction). Participants that aren't species are fixed-activity neutrals, given b
 `fixed` (J/mol). Charge must balance. The rate is mass action,
 $`r = k_f \prod_{\nu<0} c^{|\nu|} (1 - e^{-A/RT})`$ with $`A = -\sum \nu\bar\mu`$ the affinity. That's
 $`k_f \prod c_R - k_b \prod c_P`$, with $`k_b`$ fixed by the standard potentials, so equilibrium is exactly
-$`A = 0`$. `kf` maps material
+$`A = 0`$ (under non-ideal statistics too: the prefactor is in concentrations, the affinity in
+activities, so the backward one-way rate is $`k_f \prod c_R\, e^{-A/RT}`$). `kf` maps material
 names to forward rate constants (units making r mol/(m³·s)), and the reaction runs only in
 those materials.
 
