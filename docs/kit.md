@@ -272,7 +272,8 @@ console.log(`Henderson ${(1000 * henderson(pipette, bath, ions)).toFixed(2)} mV,
 ## Recording a transient
 
 `recorder(device, { every, times, probes })` runs a transient in pieces and keeps what a demo
-needs to show it: `trace`, the terminal current and voltage (and the probes' readings) at every
+needs to show it: `trace`, the terminal current and voltage (each terminal's in `trace.terminals`,
+and the probes' readings) at every
 accepted step from the start, joined up across calls; and `frames`, whole solutions to scrub back
 through or draw side by side. Frames are kept at the start, then at each of `times` or every
 `every` seconds, which the stepping lands on exactly; with neither, at the end of each call.

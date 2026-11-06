@@ -1027,6 +1027,22 @@ export class Solver {
     return (4 * Number.EPSILON * Math.max(Math.abs(src), Math.abs(this.termV[k]))) / Math.abs(d.R);
   }
 
+  // Every terminal's current into the device, as Solution's sol.terminals reads it (conduction
+  // plus displacement; a floating one passes what its circuit says), from the last assembly at
+  // this state: for each point of a trace. (A port's current was in a solution only, so a trace
+  // of a port-driven device had only the contacts'; Fable round 2's cold user.)
+  _terminalCurrents() {
+    return this.terms.map((t, k) => {
+      if (this.floating.includes(k)) return this.passedCurrent(k);
+      if (k === 1) return -this._terminalCurrent();
+      const dt = this.lastDt, flux = k === 0 ? this.contactFlux.left : this.portFlux[k - 2];
+      let I = 0;
+      for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * flux[i];
+      const stored = k === 0 ? this.contactD.left - this.contactDOld.left : this.model.ports[k - 2].capacitance ? this.portQ[k - 2] - this.portQOld[k - 2] : 0;
+      return I + (Number.isFinite(dt) ? stored / dt : 0);
+    });
+  }
+
   // Terminal current toward +x at the right contact, from the last assembly at this state.
   _terminalCurrent() {
     if (this.floating.includes(1)) return -this.passedCurrent(1);

@@ -505,3 +505,45 @@ test('a port holding an ion over a window that ends at a contact blocking it: th
     assert.ok(Math.abs(cl.drift) < 1e-9 * Math.abs(cl.amount), `Cl⁻ drift ${cl.drift} of ${cl.amount}`);
   }
 });
+
+test('a trace has every terminal\'s voltage and current, ports too, as each call\'s solution gives them; a recorder joins them', async () => {
+  // (Fable round 2's cold user: a trace of a port-driven device had only the contacts')
+  const { recorder } = await import('../src/kit.js');
+  const ends = (sol) => {
+    for (const [nm, r] of Object.entries(sol.terminals)) {
+      const tr = sol.trace.terminals[nm];
+      assert.equal(tr.V.length, sol.trace.t.length);
+      assert.ok(Math.abs(tr.V.at(-1) - r.V) <= 1e-12 * Math.max(1, Math.abs(r.V)), `${nm}: V ${tr.V.at(-1)} against ${r.V}`);
+      assert.ok(Math.abs(tr.current.at(-1) - r.current) <= 1e-9 * Math.max(1e-12, Math.abs(r.current)), `${nm}: current ${tr.current.at(-1)} against ${r.current}`);
+    }
+  };
+  // A held port draining a line after a step at its left end.
+  const dev = line(1e9, 100, 0);
+  dev.solve();
+  dev.set({ contacts: { left: { V: 0.02 } } });
+  const a = dev.advance(1e-4);
+  ends(a);
+  assert.ok(a.trace.terminals['ports[0]'].current.at(-1) < 0 && Math.abs(a.trace.terminals['ports[0]'].current.at(-1)) > 1e-3 * Math.abs(a.trace.terminals.left.current.at(-1)), 'the port drains');
+  // A port driven by a current pulse: its voltage floats up, then collapses.
+  const ND = units.perCm3(1e15), Lb = 3e-3, tp = 0.5e-6, I = (ND * FARADAY * 50e-6) / tp;
+  const bar = new Device(
+    build({
+      T: 300,
+      library: [semiconductor('Si')],
+      stack: [ohmic(3000 * Lb), layer('Si', Lb, { name: 'bar', donors: ND }), ohmic(0)],
+      ports: [{ name: 'emitter', region: 'bar', from: 0.5e-3, to: 0.55e-3, terminal: 'h+', species: { 'h+': { type: 'conductance', G: 1e6 } }, I: { t: [0, 1e-9, tp, tp + 1e-9], values: [0, I, I, 0] } }],
+      grid: { hmin: 10e-6, hmax: 10e-6 },
+    }),
+  );
+  bar.solve();
+  const rec = recorder(bar);
+  const on = rec.advance(tp);
+  ends(on);
+  const off = rec.advance(tp + 50e-9);
+  ends(off);
+  const em = rec.trace.terminals.emitter;
+  assert.equal(em.V.length, rec.trace.t.length);
+  assert.ok(Math.max(...em.V) > 100 && Math.abs(em.V.at(-1)) < 20, 'the port\'s voltage, in the trace');
+  const k = rec.trace.t.findIndex((t) => t > 0.5 * tp);
+  assert.equal(em.current[k], I);
+});

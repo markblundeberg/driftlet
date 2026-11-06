@@ -267,12 +267,16 @@ export function integrate(s, tEnd, opts = {}) {
   // clock, or a time read from a field that doesn't exist) does nothing, and says so.
   const absolute = `tEnd is the time to reach in s, absolute (the device is at t = ${s.time}, which a solution gives as its time)`;
   if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
-  if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [] }, stopped: `advance(NaN) did nothing: ${absolute}` };
+  if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
   const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
   const start = clock();
   const sample = s._probes(opts.probes);
-  const trace = { t: [], current: [], voltage: [], ...(sample ? { probes: sample.out } : {}) };
+  // (and every terminal's voltage and current into the device, by name, as sol.terminals)
+  const names = s.terms.map((t) => t.name), terminals = Object.fromEntries(names.map((nm) => [nm, { V: [], current: [] }]));
+  const trace = { t: [], current: [], voltage: [], terminals, ...(sample ? { probes: sample.out } : {}) };
+  const readTerminals = () => ({ V: Array.from(s.termV), current: s._terminalCurrents() });
+  const pushTerminals = (r) => names.forEach((nm, k) => (terminals[nm].V.push(r.V[k]), terminals[nm].current.push(r.current[k])));
   let steps = 0, rejected = 0, iterations = 0, failed = false;
   s.modelError = null; // (a statistics model's refusal, for the failure: see newton)
   // Already there (an animation frame with no time to add): nothing to do, and the step size
@@ -339,7 +343,7 @@ export function integrate(s, tEnd, opts = {}) {
         s._restore(snap);
         const a = s.step(h / 2);
         // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
-        half = a.converged ? { t: s.time, current: s._terminalCurrent(), voltage: s.termV[1] - s.termV[0], probes: sample?.read() } : null;
+        half = a.converged ? { t: s.time, current: s._terminalCurrent(), voltage: s.termV[1] - s.termV[0], terminals: readTerminals(), probes: sample?.read() } : null;
         const b = a.converged ? s.step(h / 2) : a;
         iterations += a.iterations + (b === a ? 0 : b.iterations);
         if (b.converged) {
@@ -401,11 +405,13 @@ export function integrate(s, tEnd, opts = {}) {
       trace.t.push(half.t);
       trace.current.push(half.current);
       trace.voltage.push(half.voltage);
+      pushTerminals(half.terminals);
       if (sample) sample.push(half.probes);
     }
     trace.t.push(s.time);
     trace.current.push(s._terminalCurrent());
     trace.voltage.push(s.termV[1] - s.termV[0]);
+    pushTerminals(readTerminals());
     if (sample) sample.push(sample.read());
   }
   s.dtNext = dt;

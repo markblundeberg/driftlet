@@ -1192,9 +1192,10 @@ const now = dev.solution();                   // snapshot of the current state
   to a later call wins, say after a `set()` makes the first instants fast), so an animation can
   call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
   `rejected`, and a `trace` of terminal current and voltage after every accepted step (the
-  current is the right contact's, toward +x, as `sol.current`; a port's is in `sol.terminals`
-  after each call; the voltage is the right contact's minus the left's: what a meter between the terminals reads,
-  which at a bath is its reference species' level, not $`\phi`$). Each point's current is what
+  current is the right contact's, toward +x, as `sol.current`; the voltage is the right contact's
+  minus the left's: what a meter between the terminals reads, which at a bath is its reference
+  species' level, not $`\phi`$), and `trace.terminals[name]`, `{ V, current }` arrays for every
+  terminal, the ports' too, as `sol.terminals` reads them (current into the device). Each point's current is what
   the step ending there passed, so the charge is the sum of each point's current times that step
   (exact across a drive's jumps under backward Euler, to ~1e-3 of a pulse's charge under BDF2):
   a point at a jump has the value just before it, so a trapezoid of the trace adds half the

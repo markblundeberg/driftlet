@@ -560,10 +560,10 @@ left reads −`voltage` against a reference on the right). It stops short at
 or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
 `{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face `{ interface: f,
 species }` (what crosses by its links: a reaction's products aren't in it) or `{ interface: f, gate }`.
-The trace's `current` and `voltage` are the contacts'; each point's current is what the step ending
+The trace's `current` and `voltage` are the contacts'; `trace.terminals[name]` has `{ V, current }` for
+every terminal, ports included, as `sol.terminals`. Each point's current is what the step ending
 there passed, so a charge is Σ current·(the step ending there), not a trapezoid (which adds half the
-step after a drive's jump); a port's voltage is a probe's, `{ x, species:
-'e-', quantity: 'V' }` at its window.
+step after a drive's jump).
 
 - **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
   and test after each: a driven current held past what the device can pass fails to converge.

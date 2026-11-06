@@ -12,8 +12,8 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
 /**
  * Record a device's transient. Frames are whole solutions: at the start, then at each of
  * `times` (or every `every` seconds from the start), which `advance()` lands on exactly; with
- * neither, at the end of each `advance()` call. The trace (`t`, `current`, `voltage`, and
- * `probes` if given) runs from the start through every accepted step of every call.
+ * neither, at the end of each `advance()` call. The trace (`t`, `current`, `voltage`,
+ * `terminals`, and `probes` if given) runs from the start through every accepted step of every call.
  * @param {import('./index.js').Device} device
  * @param {{ every?: number, times?: number[], probes?: ({ x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number } | { interface: number, species?: string, gate?: string })[] }} [opts]
  */
@@ -30,7 +30,8 @@ export function recorder(device, opts = {}) {
   let next = every !== undefined ? 1 : 0; // the next frame due: schedule[next], or t0 + next·every
   const due = () => (schedule ? schedule[next] : every !== undefined ? t0 + next * every : undefined);
 
-  const trace = { t: [first.time], current: [first.current], voltage: [first.terminals.right.V - first.terminals.left.V] };
+  const trace = { t: [first.time], current: [first.current], voltage: [first.terminals.right.V - first.terminals.left.V],
+    terminals: Object.fromEntries(Object.entries(first.terminals).map(([nm, r]) => [nm, { V: [r.V], current: [r.current] }])) };
   if (probes) trace.probes = device.solver._probes(probes).read().map((v) => [v]); // the start's readings
   const frames = [first];
 
@@ -55,6 +56,10 @@ export function recorder(device, opts = {}) {
         trace.t.push(tr.t[k]);
         trace.current.push(tr.current[k]);
         trace.voltage.push(tr.voltage[k]);
+        for (const nm in trace.terminals) {
+          trace.terminals[nm].V.push(tr.terminals[nm].V[k]);
+          trace.terminals[nm].current.push(tr.terminals[nm].current[k]);
+        }
         if (probes) tr.probes.forEach((p, j) => trace.probes[j].push(p[k]));
       }
       if (!sol.converged || !sol.done) break;
