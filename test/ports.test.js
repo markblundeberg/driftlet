@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js';
 import { build, layer, ohmic, semiconductor, metal, aqueous, bath, check } from '../src/kit.js';
 
 const RT = GAS_CONSTANT * 298.15;
@@ -546,4 +546,34 @@ test('a trace has every terminal\'s voltage and current, ports too, as each call
   assert.ok(Math.max(...em.V) > 100 && Math.abs(em.V.at(-1)) < 20, 'the port\'s voltage, in the trace');
   const k = rec.trace.t.findIndex((t) => t > 0.5 * tp);
   assert.equal(em.current[k], I);
+});
+
+// Fable round 4's review of src/statistics.js: a port's bath that lists one of a lattice's ions
+// held its level as if the others were absent (6 mV off at 1 M on a 5.8 M lattice), converged
+// and unwarned; on an insertion host, Li⁺ alone was held at +784 RT and filled the host. A bath
+// must now list every species of a coupled model, and isn't taken on a host at all.
+test("a port's bath on coupled statistics: refused unless it lists all the coupled species, and exact when it does", () => {
+  const cMax = 1 / (AVOGADRO * 0.66e-9 ** 3);
+  const mk = (c0, bathC) => new Device({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1.33e-9, mu0: -261.9e3 }, 'Cl-': { D: 2.03e-9, mu0: -131.2e3 } }, statistics: [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax }] } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': c0, 'Cl-': c0 } }],
+    contacts: { left: { V: 0, phi: 'neutral' }, right: { V: 0, phi: 'neutral' } },
+    ports: [{ name: 'b', region: 0, from: 0, to: 0.2e-6, V: 0, terminal: 'Na+', species: { 'Na+': 'equilibrium' }, bath: { c: bathC } }],
+  });
+  assert.throws(() => mk(1000, { 'Na+': 1000 }), /share lattice statistics .* list them all/);
+  // An insertion host's Li⁺ and e⁻ have only their combination's level: no bath on it at all.
+  const RT = GAS_CONSTANT * 298.15, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  const E = x.map((v) => 0.4 - (RT / FARADAY) * Math.log(v / (1 - v)));
+  const host = (c) => new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 30000 }, 'e-': { D: 1e-4, mu0: 0, cRef: 30000 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 30000, ocv: { x, E, muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6 }],
+    contacts: { left: { V: 0, phi: 'neutral' }, right: { V: 0.3, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    ports: [{ name: 'ref', region: 0, from: 0.4e-6, to: 0.6e-6, V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, bath: { c } }],
+  });
+  for (const c of [{ 'Li+': 15000 }, { 'Li+': 15000, 'e-': 15000 }]) assert.throws(() => host(c), /insertion host's ion and carrier/);
+  // Listing both, the bath is the bulk itself: φ = 0 in the cell.
+  const s = mk(1000, { 'Na+': 1000, 'Cl-': 1000 }).solve();
+  assert.ok(s.converged && Math.max(...s.phi.map(Math.abs)) < 1e-9, `φ ${Math.max(...s.phi.map(Math.abs))}`);
 });

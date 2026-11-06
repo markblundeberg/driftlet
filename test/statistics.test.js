@@ -549,3 +549,23 @@ test('a crowded electrolyte beside an electrode starts with its reaction balance
   // the same states with both contacts shifted
   assert.ok(Math.abs(cold(0, 0.6) / cold(-0.6) - 1) < 1e-6 && Math.abs(cold(-0.6, -0.6) / cold(0, 0) - 1) < 1e-6);
 });
+
+// Fable round 4's review of src/statistics.js: a custom model's invert stopped only on a step
+// under 1e-14, which near saturation (K small, c − target's round-off ε·c) it never took: a
+// custom Langmuir isotherm at 99% full was refused where the built-in lattice inverts.
+test('custom statistics invert near saturation, as the built-in lattice does', () => {
+  const cMax = 5000, cRef = 1000;
+  const langmuir = (zeta) => {
+    const w = (cRef / cMax) * Math.exp(zeta[0]), c = (cMax * w) / (1 + w);
+    return { c: [c], dcdzeta: [[c - (c * c) / cMax]] };
+  };
+  for (const x of [0.99, 0.999, 0.9999]) {
+    const sol = new Device({
+      species: [{ name: 'X', z: 0, cRef }],
+      materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } }, statistics: [{ type: 'custom', species: ['X'], evaluate: langmuir }] } },
+      regions: [{ material: 'm', length: 1e-6, c0: { X: x * cMax } }],
+      contacts: { left: { V: 0 }, right: { V: 0 } },
+    }).solve();
+    assert.ok(sol.converged && Math.abs(sol.c.X[2] / (x * cMax) - 1) < 1e-12, `x ${x}: ${sol.c.X[2] / cMax}`);
+  }
+});

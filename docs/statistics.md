@@ -19,7 +19,8 @@ Three rules hold for every model:
   statistics. Changing a material's statistics changes only its non-dilute behaviour.
 - **The Jacobian is a chemical capacitance.** $`K = \partial c/\partial\zeta`$ is the Hessian of a
   convex potential (the grand potential density $`P(\zeta)`$, with $`c = \partial P/\partial\zeta`$),
-  so it's symmetric and positive definite. $`F^2 K/RT`$ is the chemical capacitance matrix per
+  so it's symmetric and positive definite (semidefinite for an [insertion host](#insertion-hosts-neutral-combination-statistics), whose
+  ion and carrier respond only as their neutral combination). $`F^2 K/RT`$ is the chemical capacitance matrix per
   volume (F/m³; $`F^2 c/RT`$ for ideal statistics). Models whose free energy isn't convex (a miscibility gap) are refused, because they
   need phase separation (Cahn–Hilliard, on the [roadmap](../ROADMAP.md)).
 - **D keeps its meaning.** Fluxes are always $`N = -(D c/RT)\nabla\bar\mu`$, with $`D`$ the
@@ -179,7 +180,10 @@ carriers, $`\mathtt{background} = -\mathtt{fixedCharge}/(z_{\mathrm{carrier}} F)
 non-negative. This is a jellium description of the host's own electrons, which keep it
 conducting when it's empty. With no fixed charge, the carriers are only those that came in with
 the ions. The carrier's `cRef` plays no part (only the combination's $`\mu^\circ`$ and the ion's
-`cRef` enter), but it must still be given.
+`cRef` enter), but it must still be given. With an `ocv` table, the ion's `cRef` plays none
+either: the table sets the filling at every level, its dilute end included. It still enters a
+reaction's rate at the host's face or port, through its $`c/c_{\mathrm{ref}}`$ (kinetics, not
+thermodynamics).
 
 The ion's `D` is its dilute-limit coefficient, as everywhere: the chemical diffusivity, $`D`$
 times the thermodynamic factor, follows from the OCV's slope (with the carrier far faster than

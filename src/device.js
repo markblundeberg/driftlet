@@ -947,7 +947,8 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   // A bath: the outside's composition. The port's V is then the outside's φ, and each linked
   // species' level there, against it, follows from the composition through the window's
   // statistics, (μ° + RT ζ)/(zF) (or μ for a neutral one), unless its link gives one. Only the
-  // linked species' levels are taken, so it needn't list (or balance) the rest.
+  // linked species' levels are taken, so it needn't list (or balance) the rest, but for those
+  // whose statistics couple them to what it lists (below).
   let bathLevel = null;
   if (pdef.bath !== undefined) {
     need(isObject(pdef.bath) && isObject(pdef.bath.c), `${path}.bath must be { c: { species: concentration } }`);
@@ -959,6 +960,17 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
       need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${reg.name} (material '${mat.name}'), so its level outside means nothing here`);
       need(v !== 0, `${path}.bath.c.${sname}: a bath holds each species it lists at its level, and at 0 there is none (ln 0); a species absent from the bulk (a product, say) is a trace there, 1e-6 of the rest or so, so that it can leave`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
+    }
+    // Where the window's statistics couple species (a lattice's shared sites, Debye–Hückel's
+    // ionic strength), one species' level outside depends on the others' concentrations, so the
+    // bath must list them all; an insertion host's ion and carrier have only their combination's
+    // level. (Listed alone, a lattice's Na⁺ was held as if Cl⁻ were absent, 6 mV off at 1 M; a
+    // host's Li⁺ at +784 RT, filling it: Fable round 4's review of src/statistics.js.)
+    for (const md of mat.models) {
+      const names = md.idx.map((i) => species[i].name), listed = md.idx.filter((i) => cb[i] > 0);
+      if (listed.length === 0) continue;
+      need(md.type !== 'insertion', `${path}.bath: ${names.join(' and ')} in ${reg.name ?? `regions[${pdef.region}]`} are an insertion host's ion and carrier, which have only their combination's level, not one each that a bath could set; hold the host at a contact`);
+      need(md.idx.length === 1 || listed.length === md.idx.length, `${path}.bath: ${names.join(', ')} share ${md.type} statistics in ${reg.name ?? 'the window'}'s material, so each one's level depends on the others' concentrations: list them all in the bath (it lists ${listed.map((i) => species[i].name).join(', ')})`);
     }
     const zb = bathZeta(mat, cb, reg.background);
     bathLevel = (i) => (cb[i] > 0 ? mat.mu0[i] + RT * zb[i] : undefined); // μ̄ − zFφ outside

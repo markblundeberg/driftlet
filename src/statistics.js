@@ -4,7 +4,8 @@
 //   ζ_i = (μ̄_i − z_i F φ − μ°_i) / RT,
 // and a statistics model maps the ζ of the species it covers to their concentrations c(ζ) and
 // the Jacobian K = ∂c/∂ζ (the chemical capacitance matrix per volume is F²K/RT). K is the Hessian of a
-// convex potential, so it's symmetric and positive definite. Ideal (dilute) statistics are
+// convex potential, so it's symmetric and positive definite; semidefinite for an insertion host,
+// whose ion and carrier respond only as their neutral combination (K rank one). Ideal (dilute) statistics are
 // c = c_ref e^ζ, K = diag(c), and every model here reduces to them in the dilute limit, so μ°
 // and c_ref keep one meaning (the dilute, Henry's-law reference) whatever the model.
 //
@@ -432,10 +433,15 @@ function customModel(idx, fn, fail) {
       for (let it = 0; it < 200; it++) {
         call(zeta, cc, KK);
         const m = f.length;
+        // At the targets to round-off, done: near saturation K is small and the round-off in c −
+        // target, ε·c, kept the step above 1e-14 for 200 iterations, refused (Fable round 4).
+        let near = true;
         for (let p = 0; p < m; p++) {
           r[p] = cc[f[p]] - target[f[p]];
+          if (Math.abs(r[p]) > 8 * Number.EPSILON * Math.abs(target[f[p]])) near = false;
           for (let q = 0; q < m; q++) J[p * m + q] = KK[f[p] * k + f[q]];
         }
+        if (near && it > 0) return;
         denseSolve(J, r, dz, m);
         let mx = 0;
         for (let p = 0; p < m; p++) mx = Math.max(mx, Math.abs(dz[p]));
