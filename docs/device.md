@@ -1007,7 +1007,9 @@ cylinder of radius a has $`2/a`$ of membrane (`area`). Give the port the outside
 `bath`: its V is then the outside's $`\phi`$ (held at 0, with `zeroCharge: 0`), and each linked ion's
 level there follows from the composition, $`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$ against
 it, as an `offset` would give it. (Only the linked ions' levels are taken, so the bath needn't list
-or balance the rest.) A conductance link's current is then $`G\,(V_{i,out} - V_i)`$, which is
+or balance the rest, except where the window's statistics couple species, a lattice's or
+Debye–Hückel's: there one ion's level depends on the others', and the bath lists them all. An
+insertion host takes no bath: its ion and carrier have only their combination's level.) A conductance link's current is then $`G\,(V_{i,out} - V_i)`$, which is
 $`g\,a_m (E_i - V_m)`$: Hodgkin and Huxley's linear channel, with $`E_i`$ the Nernst potential at the
 inside's concentration there. The kit's `hodgkinHuxley({ T, area })` writes their links so:
 
@@ -1195,14 +1197,16 @@ const now = dev.solution();                   // snapshot of the current state
   the rougher, the fluxes' is reported). So is a floating region the solve couldn't balance. Part of the device is then held only weakly and may be at the
   wrong level: check it against a long `advance()`, or a solve swept there in steps.
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
-  needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`.
+  needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`. It doesn't land on a
+  drive's breakpoints (`advance()` does): a jump inside a step is first order under either
+  method, and BDF2 restarts at a breakpoint a step begins on.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
   the local error per step to `tol` (default 1e-3) in thermal units of every potential ($`\phi`$ and
   each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step. That's local: over a long decay
   the errors add up, and a small current at the end of one can be tens of percent off, so tighten
   `tol` (1e-5, say) before fitting a time constant to a tail. It lands exactly on `tEnd`, an
   absolute time (a solution's `time` is where the device is); a NaN does nothing, and its
-  `warnings` say so. Options: `tol`,
+  `warnings` say so; `Infinity` is an error (the long-time limit is `solve()`). Options: `tol`,
   `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
   `done: false`), `maxSteps`, `method`. The step size carries over between calls (a `dt0` given
   to a later call wins, say after a `set()` makes the first instants fast), so an animation can
@@ -1212,10 +1216,13 @@ const now = dev.solution();                   // snapshot of the current state
   minus the left's: what a meter between the terminals reads, which at a bath is its reference
   species' level, not $`\phi`$), and `trace.terminals[name]`, `{ V, current }` arrays for every
   terminal, the ports' too, as `sol.terminals` reads them (current into the device). Each point's current is what
-  the step ending there passed, so the charge is the sum of each point's current times that step
-  (exact across a drive's jumps under backward Euler, to ~1e-3 of a pulse's charge under BDF2):
-  a point at a jump has the value just before it, so a trapezoid of the trace adds half the
-  step after each jump (a 1 ms current pulse counted 2.8× over). With
+  the step ending there passed, so the charge is the sum of each point's current times that step:
+  exact for a current-driven terminal, and under backward Euler for any. Under BDF2 a terminal
+  held at a voltage, or behind R, passes its charging current as BDF2's difference of the
+  stored charge, and that sum is first order (3% off at the default `tol` across an RC
+  charging): read the charge itself there (`plates`, a port's `charge`), or tighten `tol`. A
+  point at a jump has the value just before it, so a trapezoid of the trace adds half the step
+  after each jump (a 1 ms current pulse counted 2.8× over). With
   `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
   as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
   mol/m³) or species voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the

@@ -32,9 +32,9 @@ materials, insertion hosts), data.md and reliability.md (what's validated, and t
 From a CDN, pin the version you tested against:
 
 ```js nocheck
-import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/plot.js';
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/plot.js';
 ```
 
 From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at the end.
@@ -236,9 +236,9 @@ a CDN needs a long virtual-time budget, 30 s.)
 <span id="readout"></span>
 <div id="figure"></div>
 <script type="module">
-import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/index.js';
-import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/kit.js';
-import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.10.1/src/plot.js';
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.11.0/src/plot.js';
 
 const def = build({
   T: 300,
@@ -566,7 +566,8 @@ species }` (what crosses by its links: a reaction's products aren't in it) or `{
 The trace's `current` and `voltage` are the contacts'; `trace.terminals[name]` has `{ V, current }` for
 every terminal, ports included, as `sol.terminals`. Each point's current is what the step ending
 there passed, so a charge is Σ current·(the step ending there), not a trapezoid (which adds half the
-step after a drive's jump).
+step after a drive's jump): exact for a current drive, or under `method: 'be'`; under BDF2 a
+held terminal's charging is first order that way (3% at the default tol), so read its stored charge.
 
 - **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
   and test after each: a driven current held past what the device can pass fails to converge.
