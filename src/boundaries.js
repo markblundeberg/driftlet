@@ -984,7 +984,9 @@ export class BoundaryTerms {
     let I = 0;
     const held = this.portHeldEnd.subarray(k * n, (k + 1) * n);
     for (let i = 0; i < n; i++) {
-      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0) && !held[i];
+      // (a blocked link passes nothing: its row's residual is the box's round-off, which on a
+      // short step's storage read as a closed contact's current, −1.9e-5 A/m²; Fable round 4)
+      const active = this.loc[b * M + 1 + i] >= 0 && !(closedIons && z[i] !== 0) && !held[i] && ct.species[i].type !== 'blocked';
       const nIn = active ? res[R[b * M + 1 + i]] : 0;
       flux[i] = sgn * nIn; // (toward +x)
       if (active && z[i] !== 0) {

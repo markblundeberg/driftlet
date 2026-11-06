@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Device, EPS0, FARADAY, units } from '../src/index.js';
-import { aqueous, build, half, layer, metal, ohmic, recombination, semiconductor } from '../src/kit.js';
+import { aqueous, bath, build, half, layer, metal, ohmic, recombination, semiconductor } from '../src/kit.js';
 
 // Terminals: the two contacts and every port, each held at a voltage (behind a resistance, if
 // given) or driven by a current, with V and I as numbers or waveforms. Currents are into the
@@ -295,4 +295,26 @@ test('a closed species fed by two current-driven terminals at +I and −I: a lon
   d2.set({ contacts: { left: { I } }, ports: { mem: { I: -I } } });
   const run = d2.advance(1e4);
   assert.ok(run.converged && run.steps < 100, `${run.steps} steps`);
+});
+
+// Fable round 4's review of src/boundaries.js: a contact's flux was read from its end box's
+// residual, so a closed end (every species blocked) reported the round-off of a short step's
+// storage as a flux and a current (−1.9e-5 A/m² 0.1 ns after a bath's step), whatever the tol.
+test('a closed contact passes exactly nothing on a time step: no flux through blocked links, no current', () => {
+  const salt = { 'K+': 1000, 'Cl-': 1000 };
+  const d = new Device(build({
+    T: 298.15, library: [aqueous(['K+', 'Cl-'], { epsr: 80 })],
+    stack: [{}, layer('water', 1e-6, { c0: salt }), bath(salt, 'Cl-', 0)],
+    grid: { hmin: 1e-9, hmax: 5e-8, ratio: 1.2 },
+  }));
+  d.solve();
+  d.set({ contacts: { right: { V: 0.2 } } });
+  for (const t of [1e-10, 1e-8]) {
+    const s = d.advance(t, { tol: 1e-6 });
+    assert.ok(s.converged);
+    assert.equal(s.terminals.left.current, 0);
+    assert.equal(s.contacts.left.flux['K+'], 0);
+    assert.equal(s.contacts.left.flux['Cl-'], 0);
+    assert.ok(Math.abs(s.terminals.right.current) > 1e-6, 'the bath still charges the cell');
+  }
 });
