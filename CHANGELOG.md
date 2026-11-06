@@ -3,6 +3,48 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.11.0 (2026-11-06)
+
+Fable 5.1 round 4: contract reviews of the boundaries, the statistics models and the time steps,
+and round 3's open items.
+
+- New: Auger recombination, `auger: { Si: { Cn, Cp } }` on `e- + h+ = 0` in place of `kf`:
+  $`r = (C_n n + C_p p)\,np\,(1 - e^{-A/RT})`$, detailed balance exact under any statistics.
+  `units.cm6PerS` and `units.cm3PerS` convert the usual per-particle coefficients.
+- `step(dt, { method: 'bdf2' })` across a current switched on lost I·dt/2 of charge for good,
+  silently (−10% at 2 ms steps): its history spanned the kink. BDF2 now restarts at a breakpoint a
+  step begins on, as `advance()` does.
+- A port's `bath` on coupled statistics: listing one ion of a lattice held its level as if the
+  others were absent (6 mV off at 1 M on a 5.8 M lattice), and on an insertion host Li⁺ was held
+  at +784 RT, filling the host; both converged, unwarned. A bath now lists every species of a
+  lattice or Debye–Hückel model it touches, and an insertion host takes none.
+- A closed contact (every link blocked) reported the round-off of its end box's storage as a
+  current and as flux on time steps (−1.9e-5 A/m² beside 1e-2): it now passes exactly nothing.
+  So blocking electrodes' `impedance()` resolves down to 1 µHz (two Gouy–Chapman layers in
+  series to 2e-4), where it was "unresolved" below 1e-4 Hz and Re Z 153× too large at 1e-3 Hz.
+- A reaction too slow to show, out of equilibrium where one participant can't move (frozen one
+  way in one region and the other way in the next), passed for steady: `stuckReactions` now
+  checks such nodes one by one, and the solution and `check()` say so.
+- `advance()` at a `tol` below what its error estimate can reach (a port's double layer at 1e-8;
+  any curved or scaled cross-section at 1e-7) cut its step without end, below the time's own
+  resolution, and stopped on `maxSteps` at a standstill with currents of 1e87 and
+  `converged: true` (three reviewers met it apart). It now stops where the step can't move the
+  clock, `converged: false`, saying to loosen `tol` (below ~2e-7 is out of reach just after a jump
+  in a device with ε > 0: docs/numerics.md says why); and a step below the time's resolution
+  (`advance(1e300)`) says that, not blames the physics. `advance(Infinity)` set the time to ∞ in
+  no steps, converged; it's now an error pointing to `solve()`. `advance()` failing at its first step after a far jump in T names the jump (it
+  said "c0's layout"), and how to get there: smaller jumps, or `solve()` first.
+- Custom statistics invert near saturation (a custom Langmuir isotherm 99% full was refused).
+- Docs: a trace's Σ current·dt is exact for a current drive or under backward Euler; under BDF2 a
+  held terminal's charging is first order that way (3% at the default `tol`); `step()` doesn't
+  land on breakpoints; an insertion host's K is semidefinite; an OCV table ignores the ion's
+  `cRef`; mass action's prefactor is in concentrations, its affinity in activities. The regions'
+  own equations (fluxes, storage, reactions, the neutral charge rows) came through their review
+  with nothing found.
+- Demo pages: the membrane page's dot-panel captions fit a phone; level diagrams draw crowded faces
+  (a myelinated axon's nodes) as ticks; the rotating disk's Koutecký–Levich plot reads an
+  oxidation as 1/|i|.
+
 ## 1.10.1 (2026-11-06)
 
 - `impedance()` solves the steady state again even right after a `solve()`, as before 1.10.0. Taken
