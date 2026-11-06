@@ -133,7 +133,8 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   bulkReactions, c0 }` (c0 into each layer that has the trap): the same rate in steady state, its
   charge in Poisson. Light is a reaction from a reservoir (`photon = e- + h+`, uniform), or absorbed as
   it goes in, `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`, `from` and
-  `to` being x in the device (a port's window is instead m from its region's left end). To switch
+  `to` being x in the device (a port's window is instead m from its region's left end), entering at
+  `from` (`toward: '-x'` enters at `to`). To switch
   it during a run, `set()` the device's whole `bulkReactions` list, recombination included: in
   `set()`, a list replaces and an object merges (the state and the step size carry over).
 - **Electrode kinetics.** A face reaction's `k0` (mol/(m²·s)) is its rate with every participant

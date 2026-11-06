@@ -90,3 +90,37 @@ test('photogeneration() in one layer of a material that runs through the device:
     assert.ok(Math.abs(ratio - 1) < 1e-3, `α = ${alpha}/m: J ${ratio} of theory`);
   }
 });
+
+test('photogeneration() toward −x: light entering at to, the mirror image of the same cell lit from the left', () => {
+  // (Fable round 2's cold user wanted light from a right-hand face: a back-lit cell, a photoanode
+  // lit through its electrolyte)
+  const a = photogeneration({ material: 'Si', flux: 2e-4, alpha: 1e5, mu: units.eV(3), from: 1e-6, to: 61e-6 }).kf.Si;
+  const b = photogeneration({ material: 'Si', flux: 2e-4, alpha: 1e5, mu: units.eV(3), from: 1e-6, to: 61e-6, toward: '-x' }).kf.Si;
+  assert.ok(b.x.every((v, k) => k === 0 || v > b.x[k - 1]), 'x increasing');
+  assert.equal(b.values.length, a.values.length);
+  for (let k = 0; k < a.x.length; k++) {
+    const j = a.x.length - 1 - k;
+    assert.ok(Math.abs(b.x[j] - (62e-6 - a.x[k])) < 1e-17 && b.values[j] === a.values[k], `point ${k}`);
+  }
+  assert.throws(() => photogeneration({ material: 'Si', flux: 1, alpha: 1e5, mu: 1e5, to: 1e-6, toward: 'left' }), /toward must be '\+x'.*or '-x'/);
+  // The n⁺p cell, and its mirror lit from the right: the same J_sc, the other way.
+  const Si = semiconductor('Si'), We = units.um(0.5), Wb = units.um(60), W = We + Wb;
+  const ND = units.perCm3(1e19), NA = units.perCm3(1e16), kf = 1 / (2e-6 * NA), flux = 1e-4;
+  for (const alpha of [1e7, 1e5, 1e3]) {
+    const cell = (mirror) =>
+      new Device(
+        build({
+          T: 300,
+          library: [Si],
+          stack: mirror
+            ? [ohmic(0), layer('Si', Wb, { acceptors: NA }), layer('Si', We, { donors: ND }), ohmic(0)]
+            : [ohmic(0), layer('Si', We, { donors: ND }), layer('Si', Wb, { acceptors: NA }), ohmic(0)],
+          bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: kf } }, photogeneration({ material: 'Si', flux, alpha, mu: units.eV(3), to: W, ...(mirror ? { toward: '-x' } : {}) })],
+          grid: { hmin: units.nm(1), hmax: units.um(1) },
+        }),
+      ).solve();
+    const lit = cell(false), back = cell(true);
+    assert.ok(lit.converged && back.converged);
+    assert.ok(Math.abs(back.current / -lit.current - 1) < 1e-3, `α = ${alpha}/m: ${back.current} against ${-lit.current}`);
+  }
+});

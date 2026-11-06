@@ -111,19 +111,20 @@ export function recombination({ material, tau, majority } = {}) {
 /**
  * Photogeneration by light absorbed in a material (Beer–Lambert): a photon flux entering at x =
  * `from` and travelling toward +x, generating pairs at G(x) = flux · α · e^{−α(x − from)} up to
- * x = `to`. Written as photon ⇌ e⁻ + h⁺ (or whatever `makes` says, such as an exciton 'X') from a
+ * x = `to` (with toward: '-x', entering at `to` and travelling back to `from`). Written as photon ⇌ e⁻ + h⁺ (or whatever `makes` says, such as an exciton 'X') from a
  * photon reservoir at μ = `mu` (J/mol; well above what it makes, so the rate is G itself), with
  * kf as a profile against the device's x. The table is
  * exact in what it generates in all (each segment's mean is the exponential's), and the solver
  * averages it over each node's box, so the total is right on any grid.
- * @param {{ material: string, flux: number, alpha: number, mu: number, from?: number, to: number, makes?: string }} opts
+ * @param {{ material: string, flux: number, alpha: number, mu: number, from?: number, to: number, makes?: string, toward?: '+x' | '-x' }} opts
  *   material name; photons absorbed, mol/(m²·s); absorption coefficient, 1/m; the photons' μ,
- *   J/mol; where the light enters and where the material ends (m, the device's x); the
- *   reaction's right-hand side (default 'e- + h+')
+ *   J/mol; the absorbing span (m, the device's x); the reaction's right-hand side (default
+ *   'e- + h+'); the light's direction (default '+x', entering at `from`)
  * @returns {{ equation: string, fixed: Record<string, number>, kf: Record<string, { x: number[], values: number[] }> }} a bulk reaction
  */
-export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes = 'e- + h+' } = {}) {
-  checkOptions('photogeneration', arguments[0], ['material', 'flux', 'alpha', 'mu', 'from', 'to', 'makes']);
+export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes = 'e- + h+', toward = '+x' } = {}) {
+  checkOptions('photogeneration', arguments[0], ['material', 'flux', 'alpha', 'mu', 'from', 'to', 'makes', 'toward']);
+  need(toward === '+x' || toward === '-x', `photogeneration: toward must be '+x' (the light enters at from) or '-x' (it enters at to), got ${JSON.stringify(toward)}`);
   need(typeof material === 'string', 'photogeneration: give the material, by name');
   need(num(flux) && flux >= 0, `photogeneration: flux must be the photon flux ≥ 0 entering the material (mol/(m²·s)), got ${flux}`);
   need(num(alpha) && alpha > 0, `photogeneration: alpha must be the absorption coefficient > 0 (1/m; 1/cm × 100), got ${alpha}`);
@@ -141,14 +142,13 @@ export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes
   // Nothing outside [from, to]: a profile holds its end values beyond its table, so it drops to
   // zero a hair beyond each end (the light enters a layer of a material that's also elsewhere).
   const hair = 1e-10 * (to - from);
+  // Toward −x the light enters at `to`: the same points, mirrored, in increasing x.
+  const xs = toward === '+x' ? taus.map((t) => from + t / alpha) : taus.map((t) => to - t / alpha).reverse();
+  const gs = taus.map((t) => (flux * alpha * Math.exp(-t)) / fix);
+  if (toward === '-x') gs.reverse();
   return {
     equation: `photon = ${makes}`,
     fixed: { photon: mu },
-    kf: {
-      [material]: {
-        x: [from - hair, ...taus.map((t) => from + t / alpha), to + hair],
-        values: [0, ...taus.map((t) => (flux * alpha * Math.exp(-t)) / fix), 0],
-      },
-    },
+    kf: { [material]: { x: [from - hair, ...xs, to + hair], values: [0, ...gs, 0] } },
   };
 }

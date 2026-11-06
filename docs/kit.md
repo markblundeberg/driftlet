@@ -198,11 +198,13 @@ Helpers that write sources as plain data:
 - **`recombination({ material, tau, majority })`**: band-to-band recombination e⁻ + h⁺ ⇌ 0 as
   a bulk reaction, from the low-injection minority lifetime it gives at that majority density,
   $`k_f = 1/(\tau \cdot n_{\mathrm{maj}})`$.
-- **`photogeneration({ material, flux, alpha, mu, from, to, makes })`**: light absorbed as it goes in
-  (Beer–Lambert). A photon flux (mol/(m²·s); a power P at photon energy E is
+- **`photogeneration({ material, flux, alpha, mu, from, to, makes, toward })`**: light absorbed as it
+  goes in (Beer–Lambert). A photon flux (mol/(m²·s); a power P at photon energy E is
   $`P/(E N_A)`$) enters the material at x = `from` heading toward +x and generates pairs at
   $`G(x) = \Phi\alpha e^{-\alpha(x - \mathrm{from})}`$ until `to`, and nothing outside (so `from` and
-  `to` can pick out one layer of a material that's also elsewhere). It's
+  `to` can pick out one layer of a material that's also elsewhere). With `toward: '-x'` it enters
+  at `to` instead and heads back to `from` (a cell lit from the right, a photoanode lit through
+  its electrolyte). It's
   photon ⇌ e⁻ + h⁺ from a photon reservoir at $`\mu`$ = `mu` (J/mol, well above the gap, e.g.
   `units.eV(3)`), with `kf` a profile against x. `makes` replaces the right-hand side: in an
   organic semiconductor, light makes neutral excitons, `makes: 'X'`. The table generates exactly what the light
