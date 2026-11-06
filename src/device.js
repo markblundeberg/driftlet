@@ -494,17 +494,24 @@ export function normalizeDevice(def) {
   };
   reactions.forEach((rx, k) => {
     rx.kfProfile.forEach((pr, m) => {
-      if (!pr) return;
-      const all = integ(pr, grid.x[0], grid.x[grid.nNodes - 1]);
+      // (Over the table's own span: it's constant beyond its ends, the way to write a layer's rate,
+      // and that tail over another material isn't light lost; nor is a table of one value, "the
+      // same wherever the material is". Both warned falsely at first: the re-check.)
+      if (!pr || pr.values.every((v) => v === pr.values[0])) return;
+      const lo = Math.max(grid.x[0], pr.x[0]), hi = Math.min(grid.x[grid.nNodes - 1], pr.x[pr.x.length - 1]);
+      if (!(hi > lo)) return;
+      const all = integ(pr, lo, hi);
       if (!(all > 0)) return;
       let own = 0;
       regions.forEach((reg, r) => {
-        if (reg.material === m) own += integ(pr, grid.x[grid.regionStart[r]], grid.x[grid.regionEnd[r]]);
+        if (reg.material !== m) return;
+        const a = Math.max(lo, grid.x[grid.regionStart[r]]), b = Math.min(hi, grid.x[grid.regionEnd[r]]);
+        if (b > a) own += integ(pr, a, b);
       });
       if (own < (1 - 1e-6) * all) {
         warnings.push(
           `bulkReactions[${k}].kf.${materials[m].name}: ${own > 0 ? `${(100 * (1 - own / all)).toPrecision(2)}% of` : 'all of'} the profile lies outside ${materials[m].name}'s regions, where it acts on nothing. ` +
-            "Its x is the device's (from its left end), not a layer's: for light into a layer not at x = 0, start it at that layer's x.",
+            "Its x is the device's (from its left end), not a layer's: for a layer not at x = 0 (light entering it, say), start the table at that layer's x.",
         );
       }
     });

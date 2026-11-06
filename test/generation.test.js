@@ -135,4 +135,10 @@ test('light written where its material isn\'t is warned of, with how much of it 
   assert.equal(right.model.warnings.filter((w) => /lies outside/.test(w)).length, 0);
   const wrong = cell(photogeneration({ material: 'Ge', flux, alpha, mu: units.eV(3), to: L }));
   assert.ok(wrong.model.warnings.some((w) => /kf\.Ge: \d+% of the profile lies outside Ge's regions/.test(w)), wrong.model.warnings.join(' | '));
+  // A table written over its own layer, its ends nonzero (constant beyond them, over the other
+  // material, by design), and a table of one value: neither is light lost (the re-check).
+  const own = (kf) => cell({ equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf }).model.warnings.filter((w) => /lies outside/.test(w));
+  assert.deepEqual(own({ Ge: { x: [0.5e-6, 1.5e-6], values: [2, 1] } }), []);
+  assert.deepEqual(own({ Si: { x: [0, 0.5e-6], values: [2, 1] } }), []);
+  assert.deepEqual(own({ Si: { x: [0, 1.5e-6], values: [1, 1] } }), []);
 });
