@@ -3,6 +3,39 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.12.0 (2026-11-06)
+
+Fable 5.1 round 5: contract reviews of the definition's validation, the solver's setup, the kit's
+builders and `check()`.
+
+- Two metals in contact pass their carrier by default. A conductor's carrier has D = 0, so the
+  default link at a face between two metals blocked it: Au | Pt passed nothing, the Pt at its
+  open-circuit potential whatever the applied V, converged and unwarned.
+- On a sphere or cylinder (or any varying cross-section), a rate-constant profile's mean in each
+  box (absorbed light) and a port window's share of a box were taken along x: a sharply absorbed
+  light generated 3% too much on a 14-node grid, a port held 1.5% too much electrode. Both are
+  weighted by the cross-section now, exact on any grid as the docs say.
+- `set()` giving a region a material that holds a species it didn't started that species from a
+  stale slot (133 mol/m³ where its new `c0` said 7), kept for good in a closed stretch: it starts
+  from the new `c0` now.
+- `check()`: the grid check compared the right contact's current alone, so a neutral reactant's
+  flux 20× off passed ("nothing to compare", which is now `?`); it compares every terminal's
+  current and each neutral species' flux. `check(device)` on a device not solved since it was
+  built or `set()` passed as a converged transient; it fails now. And a frozen reaction into a
+  fixed reservoir (water from a closed solution's H⁺ and OH⁻) passed for steady, `check()`
+  saying "equilibrium" at 4.6 RT of affinity: `stuckReactions` checks those too.
+- Light placed where its material isn't (written from its layer's left end, for an absorber not
+  at x = 0) is warned of, with how much of it is lost; it generated a fraction or nothing. So is
+  a grid `ratio` with neither `hmin` nor `hmax`: any grid option turns the default grading off,
+  and a ratio alone gave uniform cells (125 nm where the default was 1 nm at the ends). The
+  defaults stay; the docs say so.
+- Refused, where they were accepted and meant something else: a `phi` beside a `bath` (pinned,
+  the end was no longer at the bath's composition), a `sheetCharge` on a `'neutral'` face
+  (screened by one side alone), a port on a region name two regions share (it went to the
+  first), `trap()` on a library without its carriers' `cRef` (it wrote NaN). photogeneration
+  over a span far narrower than its position writes a table the device takes, and a contact's
+  bath on an insertion host says why it's refused.
+
 ## 1.11.0 (2026-11-06)
 
 Fable 5.1 round 4: contract reviews of the boundaries, the statistics models and the time steps,
