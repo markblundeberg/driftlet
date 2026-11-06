@@ -31,7 +31,7 @@
 //   opts: maxSteps (80: time steps per pseudo-transient ramp), tol (1e-11: the largest potential
 //   change, in thermal units, that ends a ramp of giant steps), continuation (false: Newton from
 //   here and the pseudo-transient ramp only). Sets this.violent (violentStart, where nothing has
-//   been stepped or solved), clears this.unreached, this.charging and this.drifted, captures the
+//   been stepped or solved), clears this.unreached, this.charging, this.drifted and this.settling, captures the
 //   laws, and
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
@@ -89,7 +89,9 @@
 //   combination through an electrode's or a contact's charge isn't checked.) On return, whatever
 //   the outcome: this.time as it was, the history
 //   empty, this.dtNext undefined; converged, every connected stretch's referenceAmounts its
-//   amount now and its boundaryIntake 0.
+//   amount now and its boundaryIntake 0. Out of steps with the last three giant steps' motions
+//   each smaller than the one before: this.settling = { maxSteps, ratio, motion, tol }, which the
+//   Solution's failure says (with the maxSteps that would finish).
 //
 // The continuations (each warm from the last converged solve; a solve that fails puts back
 // u, uLo and termV and takes a smaller step):
@@ -199,6 +201,7 @@ export class SteadySolves {
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
     this.drifted = null; // (an amount no row keeps, lost by a giant step: see _steadySteps)
+    this.settling = null; // (a ramp out of steps while still settling: see _steadySteps)
     this.modelError = null; // (a statistics model's refusal, for the failure: see newton)
     // A solve that fails leaves where the state was solved, and whether it was stepped, as they
     // were (Device.solve restores the state): a floating continuation's held solves had set them,
@@ -691,6 +694,7 @@ export class SteadySolves {
       if (lost >= 0) this.drifted = now[lost][2];
       return lost >= 0;
     };
+    const motions = []; // (each giant step's largest potential change: see settling, below)
     while (steps < maxSteps) {
       steps++;
       // Restore conserved amounts exactly before each huge step; the step then re-solves, so
@@ -737,7 +741,9 @@ export class SteadySolves {
         }
         this._restore(snap);
       }
-      if (dt >= giant && maxPotentialStep(this, this._diff()) < tol) {
+      const motion = dt >= giant ? maxPotentialStep(this, this._diff()) : NaN;
+      if (dt >= giant) motions.push(motion);
+      if (dt >= giant && motion < tol) {
         converged = true;
         if (dt > giant) {
           // Finish at the base giant step, where the storage term pins amounts tightly.
@@ -759,6 +765,11 @@ export class SteadySolves {
         dt *= 10; // conserved amounts present and still moving: let dt keep growing (capped)
       }
     }
+    // Out of steps while each one still moved the state less than the last (a mode slower than
+    // the capped step, shrinking by 1/(1 + k dt) a step): say so, and that more steps finish it.
+    // (It took the generic "nothing specific showed why"; Fable round 3's review of src/steady.js.)
+    const [m0, m1, m2] = motions.slice(-3);
+    if (!converged && steps >= maxSteps && m2 < m1 && m1 < m0) this.settling = { maxSteps, ratio: m2 / m1, motion: m2, tol };
     this.time = time;
     this.history = []; // a steady solve isn't a trajectory: transients restart from here
     this.dtNext = undefined;

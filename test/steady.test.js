@@ -1127,3 +1127,27 @@ test('a failed solve() leaves the conservation ledger\'s reference and the next 
   assert.deepEqual(d.solution().conservation.map((st) => st.reference), ref);
   assert.equal(d.solver.dtNext, dtNext);
 });
+
+test('a ramp that runs out of steps while still settling says so, and the maxSteps it names finishes it', () => {
+  // (Fable round 3's review of src/steady.js: a reaction slower than the capped step, shrinking
+  // its motion by 1/(1 + k dt) a step, ran out of steps with "nothing specific showed why")
+  const dev = () => new Device({
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Y', z: 0 }, { name: 'Z', z: 0 }],
+    materials: {
+      m1: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 1e-9, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+      m2: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 0, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+    },
+    regions: [{ name: 'A', material: 'm1', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 1, Z: 0.01 } }, { name: 'B', material: 'm2', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 2, Z: 0.01 } }],
+    interfaces: [{ dipole: 0 }],
+    bulkReactions: [{ equation: 'Y = Z', kf: { m1: 1e-10, m2: 1e-10 } }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { minCells: 40 },
+  });
+  const sol = dev().solve();
+  assert.ok(!sol.converged);
+  const w = sol.warnings.find((x) => /ran out of time steps/.test(x));
+  assert.ok(w, sol.warnings.join(' '));
+  const n = +/maxSteps: (\d+)/.exec(w)[1];
+  assert.ok(dev().solve({ maxSteps: n }).converged, `maxSteps ${n}`);
+});

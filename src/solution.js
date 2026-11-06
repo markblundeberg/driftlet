@@ -431,6 +431,12 @@ export function makeSolution(solver, result = {}) {
       `the solve did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
         'The model doesn\'t hold there: a smaller concentration or drive, or a model for it (lattice for crowding).',
     );
+  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.settling) {
+    const { maxSteps, ratio, motion, tol } = solver.settling, more = Math.ceil(Math.log(tol / motion) / Math.log(ratio));
+    sol.warnings.push(
+      `the solve ran out of time steps (maxSteps ${maxSteps}) while still settling: each step moved the state ${ratio.toFixed(2)} as far as the one before, the last ${motion.toExponential(1)} thermal units, against the ${tol} that ends a ramp. ` +
+        `Something slow is relaxing (a reaction, a link): solve({ maxSteps: ${maxSteps + (Number.isFinite(more) && more > 0 ? more + 10 : maxSteps)} }) lets it finish.`,
+    );
   } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12)) {
     sol.warnings.push(
       'the solve did not converge, and nothing specific showed why. ' +
