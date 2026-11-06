@@ -3,92 +3,92 @@
   "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
   "results": {
     "linear solve 300 × 7 (factor + solve)": {
-      "ms": 0.381,
+      "ms": 0.453,
       "factorizations": 1,
       "work": 102900
     },
     "pn diode: cold equilibrium": {
-      "ms": 2.932,
+      "ms": 3.984,
       "factorizations": 9,
       "work": 64395
     },
     "pn diode: I–V sweep 0 → 0.6 V, 31 points": {
-      "ms": 30.803,
+      "ms": 38.015,
       "factorizations": 137,
       "work": 980235
     },
     "pn diode: warm jump 0.4 V → −1 V": {
-      "ms": 8.002,
+      "ms": 9.442,
       "factorizations": 51,
       "work": 364905
     },
     "pn diode: advance 0 → 0.5 V, 100 ns": {
-      "ms": 191.196,
+      "ms": 193.069,
       "factorizations": 899,
       "work": 6432345
     },
     "Haynes–Shockley pulse in n-Si (weak, 5% of n₀): advance 12 µs": {
-      "ms": 578.277,
+      "ms": 575.883,
       "factorizations": 2153,
       "work": 17497431
     },
     "Haynes–Shockley pulse in n-Si (strong, 100% of n₀): advance 12 µs": {
-      "ms": 666.845,
+      "ms": 701.009,
       "factorizations": 2545,
       "work": 20683215
     },
     "pn diode: impedance, 20 frequencies": {
-      "ms": 18.727,
-      "factorizations": 20,
-      "work": 143100
+      "ms": 20.27,
+      "factorizations": 21,
+      "work": 150255
     },
     "MOS (Au gate): C–V sweep −1 → 1.5 V, 26 points": {
-      "ms": 12.131,
+      "ms": 12.962,
       "factorizations": 126,
       "work": 288414
     },
     "n-Si | KCl: Mott–Schottky sweep −0.5 → 1 V, 31 points": {
-      "ms": 41.497,
+      "ms": 45.262,
       "factorizations": 156,
       "work": 1322724
     },
     "n-Si | KCl: impedance, 20 frequencies": {
-      "ms": 21.942,
-      "factorizations": 20,
-      "work": 169580
+      "ms": 23.813,
+      "factorizations": 21,
+      "work": 178059
     },
     "Ag|AgNO₃|Ag (ε > 0): cold steady": {
-      "ms": 1.512,
+      "ms": 1.352,
       "factorizations": 1,
       "work": 5319
     },
     "Ag|AgNO₃|Ag (ε > 0): sweep 0 → 0.1 V, 21 points": {
-      "ms": 16.738,
+      "ms": 17.513,
       "factorizations": 81,
       "work": 430839
     },
     "Ag|AgNO₃|Ag (ε > 0): impedance, 20 frequencies": {
-      "ms": 14.131,
-      "factorizations": 20,
-      "work": 106380
+      "ms": 14.804,
+      "factorizations": 21,
+      "work": 111699
     },
     "Ag|AgNO₃|Ag (ε = 0): advance 1 s after 50 mV": {
-      "ms": 27.584,
+      "ms": 30.25,
       "factorizations": 177,
       "work": 941463
     },
     "bipolar Ag electrode: sweep 0 → 1 V, 11 points": {
-      "ms": 35.768,
+      "ms": 37.947,
       "factorizations": 54,
       "work": 705942
     },
     "squid axon (HH, 100 nodes): a spike, advance 3 ms": {
-      "ms": 423.762,
+      "ms": 426.019,
       "factorizations": 1053,
       "work": 54452736
     },
     "insertion host: OCV sweep 0.55 → 0.25 V, 31 points": {
-      "ms": 21.677,
+      "ms": 27.052,
       "factorizations": 62,
       "work": 27280
     }
