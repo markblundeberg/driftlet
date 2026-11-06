@@ -254,7 +254,11 @@ export class SteadySolves {
     const held = (d) => d.kind === 'V' && !(d.R > 0);
     const target = sourceAt(dr.src, this.time), level = sourceAt(dl.src, this.time);
     const allowed = opts.continuation !== false;
-    const canContinue = allowed && held(dl) && held(dr) && target !== level;
+    // (Level contacts too, where the state was last solved at other voltages: back to level by
+    // the same ramps. A Schottky diode at 0 V from −0.5 V failed, which a sweep reached; Fable
+    // round 2's cold user.)
+    const was = this.solvedV;
+    const canContinue = allowed && held(dl) && held(dr) && (target !== level || (was != null && (was[0] !== level || was[1] !== target)));
     const direct = this._directSteady();
     const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), v0 = Float64Array.from(this.termV);
     const restart = () => {
@@ -328,7 +332,6 @@ export class SteadySolves {
       // it moved, the right held where it was; otherwise from level terminals, consistent with a
       // cold start.
       restart();
-      const was = this.solvedV;
       let c;
       if (was) {
         c = was[0] === level ? { ...r, converged: true, ramped: false } : this._continuation(opts, 0, was[0], level, r, true, was[1]);

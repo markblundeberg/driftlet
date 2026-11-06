@@ -1032,3 +1032,19 @@ test('a steady solve waits out traps that fill far slower than the diffusion tim
   const worst = Math.max(...Array.from(a.c['T-'], (c, g) => Math.abs(c - s.c['T-'][g]) / Nt));
   assert.ok(worst < 1e-9, `trapped fraction differs by ${worst}`);
 });
+
+test('back to level contacts from a state solved at a bias: solve() ramps there itself, as a sweep would', () => {
+  // (Fable round 2's cold user: a Schottky diode at 0 V straight from −0.5 V failed, with
+  // "nothing specific showed why", where a sweep in steps of 0.1 V converged; the voltage
+  // continuation was skipped at level contacts)
+  const dev = new Device(build({ T: 300, library: [semiconductor('Si')],
+    stack: [{ V: -0.5, terminal: 'e-', species: { 'e-': { type: 'velocity', v: 2e4 }, 'h+': { type: 'velocity', v: 2e4, offset: 0 } }, phi: 'pinned', zeroCharge: 0.8 },
+      layer('Si', 600e-6, { name: 'n', donors: units.perCm3(1e15) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }], grid: { hmin: units.nm(1), hmax: 500e-9, ratio: 1.2 } }));
+  const rev = dev.solve();
+  assert.ok(rev.converged && rev.current < -1e-3);
+  dev.set({ contacts: { left: { V: 0 } } });
+  const eq = dev.solve();
+  assert.ok(eq.converged, eq.warnings.join(' '));
+  assert.ok(Math.abs(eq.current) < 1e-15, `${eq.current}`);
+});
