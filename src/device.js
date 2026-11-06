@@ -6,7 +6,7 @@
 // defaults for physically meaningful choices: interface alignments, reference concentrations
 // and standard potentials must all be given.
 
-import { buildGrid, applyGeometry } from './grid.js';
+import { buildGrid, applyGeometry, crossSection } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
@@ -477,6 +477,7 @@ export function normalizeDevice(def) {
   // (lo, hi), so a window holds to − from of electrode, capacitance or exchange however the grid
   // falls. A held level holds the nodes inside the window (inside). A window of no width is the
   // node there, its whole box.
+  const Acs = geometry.type !== 'planar' ? crossSection(geometry) : null;
   ports.forEach((port, k) => {
     const nodes = [], fill = [], lo = [], hi = [], inside = [];
     const r0 = grid.regionStart[port.region], r1 = grid.regionEnd[port.region], x0 = grid.x[r0];
@@ -493,7 +494,8 @@ export function normalizeDevice(def) {
         lo.push(bl);
         hi.push(br);
       } else {
-        fill.push(br > bl ? (h - l) / (br - bl) : 1);
+        // (by volume where the cross-section varies: by length, a sphere's window held 1.5% too much)
+        fill.push(br > bl ? (Acs ? Acs.integral(l, h) / Acs.integral(bl, br) : (h - l) / (br - bl)) : 1);
         lo.push(l);
         hi.push(h);
       }

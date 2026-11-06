@@ -141,7 +141,8 @@ export class Device {
         // potentials)
         if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
         // (a jump in T, for a transient's first step to name if it fails: see advance)
-        if (old.model.T !== model.T) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
+        if (old.model.T !== model.T || old.jumpedT) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
+        if (solver.jumpedT?.[0] === solver.jumpedT?.[1]) solver.jumpedT = undefined; // (back where it was solved: no jump to blame)
         // A species newly present at a node (a region's material changed to one that holds it)
         // starts from the new c0: its slot held nothing the old solver solved for, and a closed
         // stretch then kept that stale amount for good (X at 133 mol/m³ where c0 said 7; Fable

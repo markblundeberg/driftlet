@@ -167,3 +167,38 @@ test('check() on a sphere: a face\'s rates, per area, enter the ledgers through 
   assert.ok(sol.converged && Math.abs(sol.current) > 1e-12 && r.ok, r.text);
   assert.ok(/mol\/s/.test(r.items.find((i) => i.name === 'balance').summary), 'totals, not per m²');
 });
+
+// Fable round 5's review of src/solver.js: a rate-constant profile's per-node mean, and a port
+// window's share of a box, were taken along x, then times each box's volume ∫A dx, so on a sphere
+// a sharply absorbed light generated 3% too much on a 14-node grid, and a port held 1.5% too much
+// electrode. Both are weighted by the cross-section now: exact on any grid.
+test('a profile and a port window on a sphere: their totals are ∫A·p dx exactly, on any grid', () => {
+  const L = 10e-6, prof = { x: [0, 0.3e-6, 1e-6, 3e-6, L], values: [5e3, 1e3, 2e2, 0, 0] }, r0 = 2e-6;
+  const A = (x) => 4 * Math.PI * (r0 + x) * (r0 + x);
+  const simpson = (f, a, b, N = 20000) => {
+    const h = (b - a) / N;
+    let s = 0;
+    for (let k = 0; k <= N; k++) s += (k === 0 || k === N ? 1 : k % 2 ? 4 : 2) * f(a + k * h);
+    return (s * h) / 3;
+  };
+  const p = (x) => { // the profile, piecewise linear
+    for (let k = 1; k < prof.x.length; k++) if (x <= prof.x[k]) return prof.values[k - 1] + ((prof.values[k] - prof.values[k - 1]) * (x - prof.x[k - 1])) / (prof.x[k] - prof.x[k - 1]);
+    return 0;
+  };
+  const dev = new Device({
+    T: 300, geometry: { type: 'spherical', r0 },
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { w: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ name: 'w', material: 'w', length: L, c0: { X: 1 } }],
+    contacts: { left: { phi: 'neutral', species: { X: 'blocked' } }, right: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } } },
+    bulkReactions: [{ equation: 'X = 0', kf: { w: prof } }],
+    ports: [{ name: 'p', region: 'w', from: 1.3e-6, to: 6.1e-6, V: 0, area: 1e5, capacitance: { C: 0.1 } }],
+    grid: { hmin: 0.5e-6, hmax: 2e-6 },
+  });
+  const s = dev.solver, vol = dev.model.grid.vol;
+  const total = s.rxs[0].kfNode.reduce((t, k, g) => t + k * vol[g], 0), exact = simpson((x) => A(x) * p(x), 0, L);
+  assert.ok(Math.abs(total / exact - 1) < 1e-12, `${total} vs ${exact}`);
+  const port = dev.model.ports[0], held = s.portArea[0].reduce((t, a, w) => t + a * vol[port.nodes[w]], 0);
+  const electrode = 1e5 * simpson(A, 1.3e-6, 6.1e-6);
+  assert.ok(Math.abs(held / electrode - 1) < 1e-12, `${held} vs ${electrode}`);
+});

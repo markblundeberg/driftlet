@@ -14,6 +14,7 @@ import { EPS0, FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { diffuseScratch, diffuseUnits } from './diffuse.js';
 import { DeviceError } from './errors.js';
+import { crossSection } from './grid.js';
 import { conservedMoieties, findLaws, noCurrent } from './laws.js';
 import { newton as newtonFn } from './newton.js';
 import { RegionTerms } from './regions.js';
@@ -51,6 +52,23 @@ function profileMean(p, a, b) {
     return sum + v[last] * (t - x[last]);
   };
   return (integral(b) - integral(a)) / (b - a);
+}
+
+// The same mean weighted by a cross-section A (crossSection in src/grid.js), ∫A p dx / ∫A dx: a
+// box's total is its volume times this. Simpson's rule on each piece between the profile's and
+// A's breakpoints, exact there (A at most quadratic, p linear). Without A, profileMean. (The x
+// mean put a sphere's absorbed light 3% off on a 14-node grid; Fable round 5's review.)
+function profileMeanIn(p, a, b, A, Axs) {
+  if (!A || !(b > a)) return profileMean(p, a, b);
+  const cuts = [a, ...p.x.filter((v) => v > a && v < b), ...(Axs ?? []).filter((v) => v > a && v < b), b].sort((u, v) => u - v);
+  const f = (x) => A.at(x) * profileAt(p, x);
+  let s = 0;
+  for (let k = 1; k < cuts.length; k++) {
+    const l = cuts[k - 1], r = cuts[k];
+    if (r > l) s += ((r - l) / 6) * (f(l) + 4 * f((l + r) / 2) + f(r));
+  }
+  const vol = A.integral(a, b);
+  return vol > 0 ? s / vol : profileMean(p, a, b);
 }
 
 export class SolverError extends Error {
@@ -355,13 +373,14 @@ export class Solver {
     // node's box, so that what a sharply varying profile (strongly absorbed light) generates
     // in all is exact on any grid.
     const { x: gx, segLength } = model.grid;
+    const geo = model.geometry, A = geo && geo.type !== 'planar' ? crossSection(geo) : null, Axs = geo?.type === 'profile' ? Array.from(geo.x) : null;
     this.rxs = model.reactions.map((rx) => ({
       kf: rx.kf,
       srh: rx.srh, // per material: SRH kinetics in place of mass action, or null
       auger: rx.auger ?? null, // per material: Auger's (C_n n + C_p p) on mass action, or null
       kfNode: Float64Array.from(gx, (x, g) => {
         const m = this.nodeMaterial[g], p = rx.kfProfile[m];
-        return p ? profileMean(p, x - (g > 0 ? segLength[g - 1] : 0) / 2, x + (g < segLength.length ? segLength[g] : 0) / 2) : rx.kf[m];
+        return p ? profileMeanIn(p, x - (g > 0 ? segLength[g - 1] : 0) / 2, x + (g < segLength.length ? segLength[g] : 0) / 2, A, Axs) : rx.kf[m];
       }),
       generation: rx.generation,
       fixedA: rx.fixedA,
@@ -374,7 +393,7 @@ export class Solver {
     // mean over the part inside, times that part's share of the box, port.fill). And its
     // reactions' rates there, mol/(m²·s).
     this.portArea = model.ports.map((port) =>
-      port.area === null ? null : Float64Array.from(port.nodes, (g, w) => (port.area.value ?? profileMean(port.area, port.lo[w], port.hi[w])) * port.fill[w]),
+      port.area === null ? null : Float64Array.from(port.nodes, (g, w) => (port.area.value ?? profileMeanIn(port.area, port.lo[w], port.hi[w], A, Axs)) * port.fill[w]),
     );
     this.portRates = model.ports.map((port) => port.reactions.map(() => new Float64Array(port.nodes.length)));
     // Each surface's electrode area per volume at its nodes: a port's, or a face's area over its node's box.

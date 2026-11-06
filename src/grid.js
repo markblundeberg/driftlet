@@ -127,7 +127,7 @@ export function buildGrid(regions, opts = {}) {
 // everywhere, and its currents read as densities.
 //   spherical: A = 4π r², cylindrical: A = 2π r (per metre of length), r = r0 + x;
 //   a profile: A(x) piecewise linear through the points given, constant beyond them.
-function crossSection(geometry) {
+export function crossSection(geometry) {
   const { type } = geometry;
   if (type === 'spherical' || type === 'cylindrical') {
     const r0 = geometry.r0, sph = type === 'spherical';
