@@ -343,7 +343,14 @@ export function integrate(s, tEnd, opts = {}) {
       clamped = true;
     }
     s.landing = atBreak ? tb : clamped ? tEnd : undefined;
-    const snap = s._snapshot();
+    const snap = s._snapshot(), wasStepped = s.stepped, wasSolvedV = s.solvedV;
+    // (and what a step sets of the steady solves' choices: a rejected first step left stepped set
+    // and solvedV cleared, a different continuation later; Fable round 4's review)
+    const back = () => {
+      s._restore(snap);
+      s.stepped = wasStepped;
+      s.solvedV = wasSolvedV;
+    };
     let err, p, half = null;
     if (s.history.length > 0) firstErrs.length = 0;
     if (s.history.length === 0) {
@@ -352,7 +359,7 @@ export function integrate(s, tEnd, opts = {}) {
       iterations += full.iterations;
       if (full.converged) {
         const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV);
-        s._restore(snap);
+        back();
         const a = s.step(h / 2);
         // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
         half = a.converged ? { t: s.time, current: s._terminalCurrent(), voltage: s.termV[1] - s.termV[0], terminals: readTerminals(), probes: sample?.read() } : null;
@@ -364,7 +371,7 @@ export function integrate(s, tEnd, opts = {}) {
         }
       }
       if (err === undefined) {
-        s._restore(snap);
+        back();
         rejected++;
         dt = h / 4;
         if (dt < floor) { failed = true; break; }
@@ -375,7 +382,7 @@ export function integrate(s, tEnd, opts = {}) {
       const r = s.step(h, { method: s.history.length >= 2 ? method : 'be', guess: extrapolate(s, guess, h) });
       iterations += r.iterations;
       if (!r.converged) {
-        s._restore(snap);
+        back();
         rejected++;
         dt = h / 4;
         if (dt < floor) { failed = true; break; }
@@ -395,7 +402,7 @@ export function integrate(s, tEnd, opts = {}) {
     if (half && err > tol) firstErrs.push(err);
     const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e > 0.5 * a[j - 1] && e < 2 * a[j - 1]));
     if (err > tol && !jump) {
-      s._restore(snap);
+      back();
       rejected++;
       dt = h * factor(err, p);
       // Past the first step, a stall stops here, by its own signatures: where the error

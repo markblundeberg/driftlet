@@ -197,8 +197,6 @@ for live demos.
        broke a diffuse layer charged through a contact; the link's own law at the solution would
        be exact. With the closed contact fixed, blocking electrodes resolve Z down to 1 µHz, and
        `impedance()`'s "Z isn't resolved" warnings have no device in the tests that triggers them.
-     - A failed first step leaves `stepped` set and `solvedV` cleared (a different continuation or
-       message later, not a wrong number).
      - The lattice model's K at a full lattice cancels to zero (c − c²/c_max); carrying the vacancy
        fraction would keep it. No device effect found (a crowded double layer at 60 kT agrees with
        Kilic–Bazant–Ajdari to 1e-4).

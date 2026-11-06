@@ -863,3 +863,24 @@ test('advance() whose error estimate has a floor above tol stops there, converge
   const far = start().advance(1e300);
   assert.ok(!far.converged && /below the time's own resolution/.test(far.warnings.join(' | ')), far.warnings.join(' | '));
 });
+
+// Fable round 4's review of src/timeSteps.js: a first step whose full step converged and whose half
+// step failed was restored, but left stepped set and solvedV cleared, steering a later steady
+// solve's continuation as if a step had been taken.
+test('a rejected first step leaves the steady solves\' choices as they were', () => {
+  const tox = units.nm(10), Cf = 10, C = 1 / (2 / Cf + tox / (3.9 * EPS0)), R = 10 / C;
+  const face = { phi: { type: 'capacitive', C: Cf }, zeroCharge: 0 };
+  const d = new Device(build({ T: 300, library: [metal('Al'), { species: [], materials: { SiO2: { epsr: 3.9, species: {} } } }], stack: [ohmic(0, ['e-']), layer('Al', units.nm(20)), face, layer('SiO2', tox), face, layer('Al', units.nm(20)), ohmic(0, ['e-'])] }));
+  d.solve();
+  d.set({ contacts: { left: { V: 1, R } } });
+  const s = d.solver, before = { stepped: s.stepped, solvedV: s.solvedV && Array.from(s.solvedV) };
+  const newton = s.newton;
+  let calls = 0;
+  s.newton = function (dt, opts) {
+    const r = newton.call(this, dt, opts);
+    return ++calls === 2 ? { ...r, converged: false } : r; // (the first half step fails)
+  };
+  d.advance(R * C, { maxSteps: 1 });
+  s.newton = newton;
+  assert.deepEqual({ stepped: s.stepped, solvedV: s.solvedV && Array.from(s.solvedV) }, before);
+});
