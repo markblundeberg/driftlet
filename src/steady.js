@@ -934,8 +934,11 @@ export class SteadySolves {
       return Array.from(rx.sp).some((i) => !(mat.D[i] > 0) && this.rxs.every((o, y) => y === x || !(o.kfNode[g] > 0) || !o.sp.includes(i)));
     };
     model.reactions.forEach((mrx, x) => {
+      // (Generations too: what's classed as one, made from or turned into fixed reservoirs only,
+      // includes water formed from H⁺ and OH⁻, which a closed solution needs at equilibrium; a
+      // frozen one passed for steady at 4.6 RT of affinity, check() saying "equilibrium" (Fable
+      // round 5). Light that's balanced by recombination isn't alone in what it changes.)
       const rx = this.rxs[x];
-      if (rx.generation) return;
       const as = [], own = [];
       for (let g = 0; g < this.nNodes; g++) {
         if (!(rx.kfNode[g] > 0 || rx.srh?.[this.nodeMaterial[g]])) continue;

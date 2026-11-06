@@ -1227,3 +1227,20 @@ test('a reaction too slow to show, out of equilibrium both ways along the device
   const n = fast.c.Y.length;
   assert.ok(Math.abs(fast.c.Z[n - 1] / fast.c.Y[n - 1] - 1) < 1e-6 && Math.abs(fast.c.Z[0] / fast.c.Y[0] - 1) < 1e-6);
 });
+
+// Fable round 5's review of src/checks.js: water formed from a closed solution's H⁺ and OH⁻ (its
+// product fixed) is classed with light as a generation, which stuckReactions passed over; frozen
+// 100× off K_w it converged, and check() said "equilibrium".
+test('a frozen reaction into a fixed reservoir (water from H⁺ and OH⁻) is warned of, not passed off as steady', () => {
+  const lib = aqueous(['Na+', 'Cl-', 'H+', 'OH-'], { epsr: 0 });
+  const cell = (kf) => new Device(build({
+    library: [lib],
+    stack: [{ V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-' } }, layer('water', 1e-5, { c0: { 'Na+': 100, 'Cl-': 100, 'H+': 1e-3, 'OH-': 1e-3 } }), {}],
+    bulkReactions: [{ equation: 'H+ + OH- = H2O', fixed: { H2O: -237.1e3 }, kf: { water: kf } }],
+  }));
+  const fast = cell(1e8).solve();
+  assert.ok(fast.converged && !fast.warnings.some((w) => /bulkReactions/.test(w)), fast.warnings.join(' | '));
+  const d = cell(1e-20), slow = d.solve();
+  assert.ok(slow.warnings.some((w) => /bulkReactions\[0\]: out of equilibrium/.test(w)), slow.warnings.join(' | '));
+  assert.equal(check(d, slow, { refine: false }).items.find((it) => it.name === 'balance').ok, false);
+});
