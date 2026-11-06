@@ -835,3 +835,31 @@ test('step() with BDF2 across a current switched on: the order restarts at the e
   assert.throws(() => d.advance(Infinity), /solve\(\) the steady state/);
   assert.equal(d.advance(1e-3).converged, true);
 });
+
+// Fable round 4 (three reviewers apart): where the error estimate has a floor above tol, error
+// rejections had none, so the step fell below the time's ulp, steps were "accepted" that didn't
+// move it, and maxSteps ran out at a standstill with currents of 1e87 beside converged: true.
+// And advance(1e300) blamed the physics for a step below the time's resolution.
+test('advance() whose error estimate has a floor above tol stops there, converged false, and says to loosen tol', () => {
+  const ions = [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }];
+  const start = () => {
+    const d = new Device({
+      species: ions, materials: { water: { epsr: 0, species: { 'Na+': { D: 1.3e-9, mu0: -261.9e3 }, 'Cl-': { D: 2e-9, mu0: -131.2e3 } } } },
+      regions: [{ material: 'water', length: 1e-3, c0: { 'Na+': 500, 'Cl-': 500 } }],
+      contacts: { left: { V: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, right: { phi: 'neutral' } },
+      ports: [{ name: 'dl', region: 0, from: 0.5e-3, V: 0, area: 1e4, capacitance: { C: 0.2 } }],
+      grid: { hmin: 10e-6, hmax: 50e-6 },
+    });
+    d.solve();
+    d.set({ ports: { dl: { V: 0.2 } } });
+    return d;
+  };
+  const tight = start().advance(0.5, { tol: 1e-8 }), said = tight.warnings.join(' | ');
+  assert.ok(!tight.converged && !tight.done && tight.steps + tight.rejected < 2000, `${tight.converged} ${tight.steps} + ${tight.rejected}`);
+  assert.match(said, /no longer shrinks with the step.*Loosen tol/);
+  const ok = start().advance(0.5, { tol: 1e-5 });
+  assert.ok(ok.converged && ok.done && Math.abs(ok.ports[0].charge / (0.2 / 6) - 1) < 1e-3, `${ok.ports[0].charge}`);
+  // A run to 1e300 s: the step it needs is below the time's resolution, and it says so.
+  const far = start().advance(1e300);
+  assert.ok(!far.converged && /below the time's own resolution/.test(far.warnings.join(' | ')), far.warnings.join(' | '));
+});

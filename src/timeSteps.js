@@ -59,7 +59,8 @@
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
 //     [0.2, 2] (2 at err = 0). Rejected: the state restored, h·factor. A step that doesn't
 //     converge: h/4. Below the floor (1e-14 of tEnd, or 1e-2 of the fastest time scale), it
-//     stops, converged false, with a message.
+//     stops, converged false, with a message; past the first step an error rejection does too,
+//     and below 4ε of the time (its resolution), saying which.
 //   - A first step whose error doesn't shrink as it's cut (three tries within a factor 2 of
 //     each other): a jump at a boundary, self-similar in x/√t, so taken anyway.
 //   - Steps land exactly on the sources' breakpoints (and the history is cleared there: the
@@ -288,7 +289,7 @@ export function integrate(s, tEnd, opts = {}) {
   const trace = { t: [], current: [], voltage: [], terminals, ...(sample ? { probes: sample.out } : {}) };
   const readTerminals = () => ({ V: Array.from(s.termV), current: s._terminalCurrents() });
   const pushTerminals = (r) => names.forEach((nm, k) => (terminals[nm].V.push(r.V[k]), terminals[nm].current.push(r.current[k])));
-  let steps = 0, rejected = 0, iterations = 0, failed = false;
+  let steps = 0, rejected = 0, iterations = 0, failed = false, stalled = null;
   s.modelError = null; // (a statistics model's refusal, for the failure: see newton)
   // Already there (an animation frame with no time to add): nothing to do, and the step size
   // carried to the next call stays as it was. A time already passed, or reached again outside
@@ -397,6 +398,15 @@ export function integrate(s, tEnd, opts = {}) {
       s._restore(snap);
       rejected++;
       dt = h * factor(err, p);
+      // Past the first step, the floor holds here too, and the time's own resolution: where the
+      // error estimate has a floor above tol (Newton's precision on the device), the step fell
+      // without end, below the time's ulp, steps "accepted" that didn't move it, until maxSteps
+      // ran out with currents of 1e87 beside converged: true (Fable round 4: three reviewers).
+      if (!half && dt < Math.max(floor, 4 * Number.EPSILON * Math.abs(s.time))) {
+        stalled = { err, h };
+        failed = true;
+        break;
+      }
       continue;
     }
     steps++;
@@ -435,7 +445,14 @@ export function integrate(s, tEnd, opts = {}) {
   // with a drive's jump, as blaming a modest current pulse: a host emptied at its surface, and
   // an electrode at open circuit with no double layer, held only by a slow reaction.)
   const unbalanced = s.history.length === 0 && s.time === t0 ? (s.unbalanced ?? []).map((r) => s.model.regions[r].name ?? `regions[${r}]`) : [];
-  if (failed && unbalanced.length > 0 && s.time === t0)
+  if (stalled && stalled.h < 8 * Number.EPSILON * Math.abs(s.time))
+    stopped = `${at}: the step the error control asked for (${stalled.h.toExponential(1)} s) is below the time's own resolution at t = ${s.time.toPrecision(3)} s. Advance by intervals nearer the device's time scales, or solve() for the long-time limit.`;
+  else if (stalled)
+    stopped = `${at}: the local error estimate (${stalled.err.toExponential(1)} in thermal units) stayed above tol (${tol}) as the step fell to ${stalled.h.toExponential(1)} s, where it no longer shrinks with the step: on this device that's the precision Newton solves to, a floor under the estimate. Loosen tol (${Math.min(1e-3, 10 * stalled.err).toExponential(0)} or more, say).`;
+  else if (failed && dt < 8 * Number.EPSILON * Math.abs(s.time))
+    // (advance(1e300) blamed the physics for a step of 9.6e-3 s at t = 3e296 s)
+    stopped = `${at}: a step of ${dt.toExponential(1)} s, as short as the device needs, is below the time's own resolution at t = ${s.time.toPrecision(3)} s. Advance by intervals nearer the device's time scales, or solve() for the long-time limit.`;
+  else if (failed && unbalanced.length > 0 && s.time === t0)
     stopped = `${at}: the start can't be neutral in ${unbalanced.join(', ')}, strictly neutral (ε = 0): the amounts its c0 gives leave a net charge that no species held at a contact's level can balance, and a step can't move a stored amount at once. Give c0 that balances (with any fixed charge), or leave out of c0 the species a contact feeds, so that they start at its level.`;
   else if (failed && violent.length > 0)
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
