@@ -78,7 +78,10 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   acceptors })` splits the same total as a layer of that doping holds it at equilibrium: in a
   junction, start each layer so (`layer('Si', L, { donors: ND, c0: t.c0For({ donors: ND }) })`),
   since from half full the traps sit decades from where they end at every node, and a cold solve
-  can fail. In steady state it recombines at the
+  can fail. It takes the layer's net doping alone, so where the traps' density is comparable to it
+  the start is rough and the solve slower (hundreds of iterations, but it gets there); in an
+  intrinsic layer inside a junction it's half full again, and a cold solve there is slow, not
+  failing. In steady state it recombines at the
   `srh` law's rate with the same `tauN`, `tauP` (s, at that density) and `n1` (mol/m³, default
   n_i); unlike `srh`, its charge is in Poisson's equation
   ([device](device.md#bulk-reactions)).
