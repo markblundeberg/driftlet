@@ -301,3 +301,16 @@ test('a bath of its own material against an ion exchanger: a Donnan step at the 
   def.contacts.left.bath = { c: { 'Na+': 100, 'Cl-': 100 } };
   assert.throws(() => new Device(def), /fixed charge.*bath\.material/);
 });
+
+// Fable round 5's review of src/device.js: a terminal named beside a bath without a reference was
+// kept and meant nothing (V is the bath's φ), silently.
+test("a terminal beside a bath without a reference is refused: that bath's V is its φ", () => {
+  const def = (left) => ({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }],
+    contacts: { left, right: { V: 0, bath: { c: { 'Na+': 100, 'Cl-': 100 }, reference: 'Cl-' } } },
+  });
+  assert.doesNotThrow(() => new Device(def({ V: 0.05, bath: { c: { 'Na+': 100, 'Cl-': 100 } } })));
+  assert.throws(() => new Device(def({ V: 0.05, terminal: 'Na+', bath: { c: { 'Na+': 100, 'Cl-': 100 } } })), /a bath without a reference has its φ as its terminal voltage/);
+});

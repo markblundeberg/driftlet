@@ -169,8 +169,8 @@ for live demos.
        filling the defaults per field would move every result of such a device.
      - The grid check can't see an error that doesn't shrink as hmin and hmax halve (a port's
        window falling between nodes: 20% at 9 nodes, 0.06% change on refinement).
-     - Small acceptances: unused keys in `fixed`, a reference-less bath's `terminal`, a bath
-       material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
+     - Small acceptances: unused keys in `fixed` (a check broke face and port reactions, whose
+       `fixed` is read through their sides), a bath material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
        at the first solve rather than at construction.
      - After a failed `solve()`, a later `advance()` differs from a twin's at 2e-12 (something
        outside the snapshot steers Newton); a regrid loses 7 ppm of a closed stretch's amount to

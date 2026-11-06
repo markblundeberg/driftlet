@@ -1658,6 +1658,8 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     // convention), and the terminal is the first charged species in it.
     const byPhi = bath.reference === undefined;
     if (byPhi) need(bath.offset === undefined, `${path}.bath.offset: an offset places the reference species, and this bath has none (its V is its φ)`);
+    // (a terminal named there was kept and meant nothing: V is the bath's φ; the review)
+    if (byPhi) need(cdef.terminal === undefined, `${path}.terminal: a bath without a reference has its φ as its terminal voltage; to read V as a species' level, give the bath that species as its reference`);
     else need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}${known(speciesIndex)}`);
     const r = byPhi
       ? species.findIndex((sp) => sp.z !== 0 && bath.c[sp.name] > 0)
