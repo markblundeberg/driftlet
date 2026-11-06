@@ -187,3 +187,15 @@ test('themeColor() covers every role traces() gives, φ too, and refuses others;
   assert.throws(() => traces(sol, { species: ['Na+'] }), (e) => e instanceof DeviceError);
   assert.throws(() => traces(sol, { levels: [half('Fe3+ + e- = Fe2+')] }), (e) => e instanceof DeviceError && /its half a half\(\)/.test(e.message));
 });
+
+test('faces crowding a diagram (under 6 px apart) are ticks along its bottom, not lines across', () => {
+  // A myelinated axon's 40 nodes at a phone's width hid its levels behind dotted lines.
+  const x = Float64Array.from({ length: 201 }, (_, g) => g * 1e-6), n = 80;
+  const regions = Array.from({ length: n }, (_, k) => ({ x0: (k * 200e-6) / n, x1: ((k + 1) * 200e-6) / n, material: 'w' }));
+  const tr = (faces) => ({ x, regions, faces, series: [{ id: 'V', label: 'V', kind: 'level', role: 'cation', slot: 0, y: Float64Array.from(x, () => 0) }] });
+  const many = levelChart(tr(regions.slice(1).map((r) => r.x0)), { width: 340, range: [-1, 1] });
+  assert.equal((many.match(/stroke-dasharray="2 3"/g) ?? []).length, 0);
+  assert.equal((many.match(/<line [^>]*stroke="var\(--driftlet-face\)"\/>/g) ?? []).length, n - 1);
+  const few = levelChart(tr([50e-6, 150e-6]), { width: 340, range: [-1, 1] });
+  assert.equal((few.match(/stroke-dasharray="2 3"/g) ?? []).length, 2);
+});

@@ -242,8 +242,16 @@ function paint() {
     for (let xx = px(m.x0) + (j % 2 ? 26 : 13); xx < px(m.x1) - 6; xx += 26) ctx.fillText('−', xx, yy + 4);
   ctx.globalAlpha = 1;
   ctx.font = '12px system-ui, sans-serif';
-  const where = ['unstirred water, 0.1 M side', 'membrane (fixed anions −)', 'unstirred water, dilute side'];
-  sol.regions.forEach((r, k) => ctx.fillText(where[k], (px(r.x0) + px(r.x1)) / 2, Hc - 9));
+  // each region's caption, the longest that fits its width (on a phone the three overprinted)
+  const where = [
+    ['unstirred water, 0.1 M side', 'unstirred, 0.1 M', '0.1 M'],
+    ['membrane (fixed anions −)', 'membrane (−)', 'membrane'],
+    ['unstirred water, dilute side', 'unstirred, dilute', 'dilute'],
+  ];
+  sol.regions.forEach((r, k) => {
+    const span = px(r.x1) - px(r.x0), text = where[k].find((t) => ctx.measureText(t).width < span - 6) ?? where[k].at(-1);
+    ctx.fillText(text, (px(r.x0) + px(r.x1)) / 2, Hc - 9);
+  });
   const meanW = (x1 - x0) / CELLS, snap = (v) => Math.round(v * dpr) / dpr; // (seas meet without seams)
   LANES.forEach((nm, k) => {
     const y0 = top + k * laneH, color = themeColor(speciesRole(sol, nm).role, speciesRole(sol, nm).slot, { dark });

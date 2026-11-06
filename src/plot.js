@@ -204,7 +204,12 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   for (const t of ticks(xs * unit.scale, xe * unit.scale, 6)) {
     out.push(`<text x="${r2(px(t / unit.scale))}" y="${pad.t + ph + 16}" text-anchor="middle" fill="var(--driftlet-muted)">${fmt(t)}</text>`);
   }
-  for (const f of tr.faces.filter((f) => f > xs && f < xe)) out.push(`<line x1="${r2(px(f))}" x2="${r2(px(f))}" y1="${pad.t}" y2="${pad.t + ph}" stroke="var(--driftlet-face)" stroke-dasharray="2 3"/>`);
+  // The faces, dotted lines across; where they crowd (under 6 px apart: a myelinated axon's 40
+  // nodes at a phone's width hid its levels), ticks along the bottom instead.
+  const fx = tr.faces.filter((f) => f > xs && f < xe).map(px), crowded = fx.some((v, k) => k > 0 && v - fx[k - 1] < 6);
+  for (const v of fx) out.push(crowded
+    ? `<line x1="${r2(v)}" x2="${r2(v)}" y1="${r2(pad.t + ph - 6)}" y2="${pad.t + ph}" stroke="var(--driftlet-face)"/>`
+    : `<line x1="${r2(v)}" x2="${r2(v)}" y1="${pad.t}" y2="${pad.t + ph}" stroke="var(--driftlet-face)" stroke-dasharray="2 3"/>`);
   out.push(`<text x="${r2(pad.l + pw / 2)}" y="${height - 8}" text-anchor="middle" fill="var(--driftlet-ink)">x (${unit.name})</text>`);
   out.push(`<text transform="translate(14 ${r2(pad.t + ph / 2)}) rotate(-90)" text-anchor="middle" fill="var(--driftlet-ink)">${rich(ylabel, font)}</text>`);
 

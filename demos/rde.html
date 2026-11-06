@@ -217,12 +217,14 @@ function update() {
     ],
   });
   // Koutecký–Levich: 1/i against ω^{-1/2} at the potential read, with its line out to the axis.
-  const xs = [0, ...x];
+  // Above E° the current is an oxidation (Fe²⁺ is in the bulk too), plotted as 1/|i|: the same
+  // analysis, its intercept the anodic kinetic current (the axis went negative there).
+  const xs = [0, ...x], sgn = at.E > E0 ? -1 : 1;
   chart(document.getElementById('kl'), {
-    xlabel: 'ω⁻¹ᐟ² (ω in rad/s)', ylabel: '1/i (cm²/mA)', xlim: [0, 1.05 * Math.max(...x)],
+    xlabel: 'ω⁻¹ᐟ² (ω in rad/s)', ylabel: sgn < 0 ? '1/|i|, oxidation (cm²/mA)' : '1/i (cm²/mA)', xlim: [0, 1.05 * Math.max(...x)],
     series: [
-      { x: xs, y: xs.map((v) => (at.a + at.b * v) * 10), color: colors[0], width: 1.2, label: 'line, to 1/i_k' },
-      { x, y: I.map((row) => 10 / row[k]), color: colors[3], marker: true, width: 0, label: `simulated, E° ${at.E < E0 ? '−' : '+'} ${Math.abs(at.E - E0).toFixed(2)} V` },
+      { x: xs, y: xs.map((v) => sgn * (at.a + at.b * v) * 10), color: colors[0], width: 1.2, label: 'line, to 1/i_k' },
+      { x, y: I.map((row) => (sgn * 10) / row[k]), color: colors[3], marker: true, width: 0, label: `simulated, E° ${at.E < E0 ? '−' : '+'} ${Math.abs(at.E - E0).toFixed(2)} V` },
     ],
   });
   // Tafel: the corrected kinetic currents, those used in the fit, and Butler–Volmer's line.
