@@ -3,6 +3,59 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.10.0 (2026-11-05)
+
+Fable 5.1 round 3: six reviewers (a convergence hunt, semiconductor physics, the demo pages, and
+contract reviews of the steady solver, the impedance and the conservation laws' rows), and round
+2's open items.
+
+- `impedance()` read a floating port's capacitance wrong where every other terminal floats. A
+  terminal read by its law's change read the uniform shift of every terminal as passing nothing,
+  but the law's amount holds the capacitance's charge, which moves with it. Measured through a
+  series resistance, Z came out 37% off at 1 kHz, Im Z of the wrong sign, its relError 1e-14,
+  without a warning. Now Z − R is the held device's Z to every digit.
+- A time step charged a conserved amount's whole change to one terminal where two current-driven
+  terminals fed it. K⁺ driven in at a contact and out at a port at equal currents gained I·dt/F a
+  step at long steps, the contact passing twice its current, converged and silent; an adaptive run
+  crawled at 6 s steps. Such a step now reads the flux.
+- Time steps now see a floating terminal's voltage. A capacitive contact behind a resistance,
+  against a bath that holds φ, has its charging in that voltage alone: tol 1e-3 and 1e-5 took the
+  same steps from τ to 3τ and erred 1% in the charge. Tightening tol now tightens the answer.
+- `solve()` reaches more steady states that a sweep reaches:
+  - back to level contacts from a state solved at a bias (a Schottky diode at 0 V straight from
+    −1 V or beyond, a pn diode from −20 V, a transistor's drain back to 0 V);
+  - a gate port held far from its `zeroCharge`, ramped there with the contacts level, several in
+    turn (a thin-film transistor 0.8 V and more below threshold failed cold; its whole V_G × V_D grid
+    now converges);
+  - a solved state carried through `set({ T, materials })` far in temperature (a Si diode from
+    150 K to 300 K failed warm), which now falls back to the layout as a transient's state does.
+- A steady solve outside `solve()` leaves nothing behind when it fails: an `impedance()` whose
+  steady solve failed had left the device at a held stage's state (26.9 V for 0.65 V), and the
+  `advance()` its error suggests went on from there. `set({ grid })` on a steady state then a
+  change of drive lost the step response; a failed `solve()` left the conservation ledger's
+  references and the carried step size changed.
+- Warnings that say why: a steady solve out of time steps while still settling names the
+  `maxSteps` that finishes it (it said "nothing specific showed why"); a face reaction too slow to
+  show is warned of in a device solved by giant steps too.
+- `trap().c0For({ donors, acceptors })`: the trap's equilibrium filling for a layer. From c0's
+  half filling, a pn junction with charged traps failed its cold solve; from this it converges in
+  8 iterations.
+- New: `trace.terminals[name]`, every terminal's voltage and current in a trace, ports included;
+  `interfaces[f].made`, what a face's reactions make of each species; `photogeneration({ toward:
+  '-x' })`, light entering from the right. `dt0` sets a later call's first step too, and
+  `impedance()` right after a converged `solve()` linearizes there without solving again.
+- Docs: how to count a trace's charge (each point's current times the step ending there; a
+  trapezoid counted a 1 ms pulse 2.8× over); a heterojunction face is the diffusion limit; the
+  grid error of a sharp rate follows the grading `ratio`; a trap at n₁ = n_i is at the intrinsic
+  level, not midgap.
+- The demo pages, used as their readers would by a reviewer with five helpers: the redox page's
+  peak separations are now the ones its readout shows (the quoted ones left out the ohmic drop);
+  the propagation page opens at the 18.7 m/s it promises (its radius slider's default was off its
+  grid); the Daniell cell says its 1D bridge floods the beakers; the channel page owns up to the
+  access resistance a short pore has; the MOS gate is aluminium, as its flat band is; readouts no
+  longer say "1.0e+2%", "NaN" or a seven-digit ceiling, a failed Mott–Schottky fit says so, and
+  narrow region labels keep their names; and a dozen sentences said more exactly.
+
 ## 1.9.0 (2026-11-05)
 
 - Steady solves now find the level of a floating base held only by its minority carriers' leaks.
