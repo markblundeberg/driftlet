@@ -617,6 +617,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
   );
   if (rdef.auger !== undefined) {
     need(isObject(rdef.auger), `${path}.auger must map material names to { Cn, Cp }`);
+    need(Object.keys(rdef.auger).length > 0, `${path}.auger: no material named, so the reaction runs nowhere`);
     const auger = new Array(materials.length).fill(null), kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
     for (const [mname, v] of Object.entries(rdef.auger)) {
       need(materialIndex.has(mname), `${path}.auger.${mname}: unknown material`);
@@ -630,6 +631,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
   }
   if (rdef.srh !== undefined) {
     need(isObject(rdef.srh), `${path}.srh must map material names to { tauN, tauP, n1 }`);
+    need(Object.keys(rdef.srh).length > 0, `${path}.srh: no material named, so the reaction runs nowhere`);
     const srh = new Array(materials.length).fill(null), kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
     for (const [mname, v] of Object.entries(rdef.srh)) {
       need(materialIndex.has(mname), `${path}.srh.${mname}: unknown material`);
@@ -642,6 +644,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
     return { reactants, products: [], fixedA: st.fixedA, kf, kfProfile, srh, generation: false };
   }
   need(isObject(rdef.kf), `${path}.kf must map material names to forward rate constants`);
+  need(Object.keys(rdef.kf).length > 0, `${path}.kf: no material named, so the reaction runs nowhere`);
   // Each a number, or a profile { x, values } against the device's x (e.g. absorption); kf[m]
   // is then its largest value, which says whether the reaction runs in that material at all.
   const kf = new Float64Array(materials.length), kfProfile = new Array(materials.length).fill(null);
@@ -1056,6 +1059,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     const fromBath = bathLevel?.(i);
     if (z === 0) {
       need(link.type !== 'conductance', `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
+      need(link.offset === undefined, `${lpath}.offset: a neutral species is held at its μ, not by an offset from a voltage`);
       level = { mu: finite(link.mu ?? fromBath, `${lpath}.mu (the outside μ, J/mol${bathLevel ? `; or give '${sname}' in the bath` : ''})`) };
     } else {
       need(link.type !== 'exchange', `${lpath}: a charged species exchanges by { type: 'conductance', G }`);
@@ -1568,6 +1572,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (cdef.terminal !== undefined) {
     need(speciesIndex.has(cdef.terminal), `${path}.terminal: unknown species ${JSON.stringify(cdef.terminal)}${known(speciesIndex)}`);
     terminal = speciesIndex.get(cdef.terminal);
+    need(species[terminal].z !== 0, `${path}.terminal: '${cdef.terminal}' is neutral, and a terminal's V is a charged species' level (μ̄/(zF)); name a charged one`);
   }
 
   if (cdef.species !== undefined) {
@@ -1616,6 +1621,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
       if (link.type === 'equilibrium') {
         // In equilibrium with the outside phase, whose levels are known: a Dirichlet condition.
         if (species[i].z === 0) {
+          need(link.offset === undefined, `${lpath}.offset: a neutral species is held at its μ, not by an offset from a voltage`);
           links[i] = { type: 'equilibrium', mu: finite(link.mu, `${lpath}.mu (a neutral species is held at its μ̄, J/mol)`) };
           continue;
         }

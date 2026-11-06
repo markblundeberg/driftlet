@@ -169,9 +169,8 @@ for live demos.
        filling the defaults per field would move every result of such a device.
      - The grid check can't see an error that doesn't shrink as hmin and hmax halve (a port's
        window falling between nodes: 20% at 9 nodes, 0.06% change on refinement).
-     - Small acceptances: a stray `offset` on a neutral species' equilibrium link, unused keys in
-       `fixed`, a reference-less bath's `terminal`, `kf: {}`, a neutral species as a terminal, a
-       bath material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
+     - Small acceptances: unused keys in `fixed`, a reference-less bath's `terminal`, a bath
+       material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
        at the first solve rather than at construction. `describe()` gives no Debye length where
        the composition comes from a bath; `check()`'s conservation reads closed stretches only.
      - After a failed `solve()`, a later `advance()` differs from a twin's at 2e-12 (something

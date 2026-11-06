@@ -287,3 +287,18 @@ test("a bath's phi, a neutral face's sheet charge and an ambiguous port region a
   assert.throws(() => new Device(base({ ports: [{ name: 'p', region: 'w', from: 0, to: 0.2e-6, V: 0, area: 1e5, capacitance: { C: 0.1 } }] })), /both named 'w'; give the port's region by its index/);
   assert.doesNotThrow(() => new Device(base({ ports: [{ name: 'p', region: 1, from: 0, to: 0.2e-6, V: 0, area: 1e5, capacitance: { C: 0.1 } }] })));
 });
+
+test('a stray offset on a neutral species, an empty rate map, and a neutral terminal are refused, not ignored', () => {
+  const base = (over = {}) => ({
+    species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'O2', z: 0, cRef: 1 }],
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1e-9, mu0: 0 }, 'Cl-': { D: 1e-9, mu0: 0 }, O2: { D: 2e-9, mu0: 16.4e3 } } } },
+    regions: [{ material: 'water', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100, O2: 1 } }],
+    contacts: { left: { V: 0, terminal: 'Cl-', species: { 'Cl-': 'equilibrium', O2: { type: 'equilibrium', mu: 16.4e3 } }, phi: 'bulk' }, right: {} },
+    ...over,
+  });
+  assert.doesNotThrow(() => new Device(base()));
+  const left = (more) => ({ contacts: { left: { ...base().contacts.left, ...more }, right: {} } });
+  assert.throws(() => new Device(base(left({ species: { 'Cl-': 'equilibrium', O2: { type: 'equilibrium', mu: 16.4e3, offset: 0.7 } } }))), /O2\.offset: a neutral species is held at its μ/);
+  assert.throws(() => new Device(base(left({ terminal: 'O2' }))), /'O2' is neutral/);
+  assert.throws(() => new Device(base({ bulkReactions: [{ equation: 'Na+ + Cl- = 0', kf: {} }] })), /no material named/);
+});
