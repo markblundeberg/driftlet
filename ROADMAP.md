@@ -163,6 +163,20 @@ for live demos.
      (Fixed in 1.10: the error norm's floating terminals, `dt0` after a call, port traces, each
      face's production, `photogeneration()` toward −x, the return to level contacts,
      `impedance()` re-solving.)
+   - From Fable round 5 (6 Nov 2026), still open:
+     - Any grid option (`ratio` alone, `minCells`) drops the default grading from hmin = L/1000:
+       a uniform 8-cell grid, unwarned. Documented, but the docs invite tuning `ratio` alone;
+       filling the defaults per field would move every result of such a device.
+     - The grid check can't see an error that doesn't shrink as hmin and hmax halve (a port's
+       window falling between nodes: 20% at 9 nodes, 0.06% change on refinement).
+     - Small acceptances: a stray `offset` on a neutral species' equilibrium link, unused keys in
+       `fixed`, a reference-less bath's `terminal`, `kf: {}`, a neutral species as a terminal, a
+       bath material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
+       at the first solve rather than at construction. `describe()` gives no Debye length where
+       the composition comes from a bath; `check()`'s conservation reads closed stretches only.
+     - After a failed `solve()`, a later `advance()` differs from a twin's at 2e-12 (something
+       outside the snapshot steers Newton); a regrid loses 7 ppm of a closed stretch's amount to
+       interpolation (documented).
    - From Fable round 4 (6 Nov 2026), still open:
      - `advance()` at a `tol` its error estimate can't reach now stops where a step can't move
        the clock, `converged: false` (it stalled at a standstill, `converged: true`). The floor is
