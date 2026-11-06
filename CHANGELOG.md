@@ -3,6 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.10.1 (2026-11-06)
+
+- `impedance()` solves the steady state again even right after a `solve()`, as before 1.10.0. Taken
+  about the state a `solve()` left, a stress electrode's Z at 1 µHz came out non-passive (Re Z
+  −2.3e3 of |Z| 1.6e6), where the re-solve also polishes the state. Found by CI's stress run on the
+  1.10.0 commits; use 1.10.1 rather than 1.10.0.
+
 ## 1.10.0 (2026-11-05)
 
 Fable 5.1 round 3: six reviewers (a convergence hunt, semiconductor physics, the demo pages, and
