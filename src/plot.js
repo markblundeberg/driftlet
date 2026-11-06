@@ -190,7 +190,10 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     // A region's own name where it was given one (not the default 'region k'), with its material.
     const label = r.name && !/^region \d+$/.test(r.name) && r.name !== r.material ? `${r.name} (${r.material})` : r.material;
     const named = r.name && !/^region \d+$/.test(r.name) ? r.name : r.material;
-    const shown = [label, named, r.material].find((t) => b - a > t.length * charW + 4) ?? null;
+    // Narrow, the name shortened rather than the material alone: at a phone's width a salt
+    // bridge's band read "water" (Fable round 3's review of the demos).
+    const fits = (t) => b - a > t.length * charW + 4, room = Math.floor((b - a - 4) / charW) - 1;
+    const shown = [label, named].find(fits) ?? (room >= 3 && named.length > room ? `${named.slice(0, room)}…` : null);
     if (shown) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(shown)}</text>`);
   });
   // Grid and axes.

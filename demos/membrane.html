@@ -170,7 +170,7 @@ function draw(sol) {
   document.getElementById('LwOut').textContent = `${+(Lw() * 1e6).toPrecision(2)} µm`;
   const Em = sol.terminalVoltage, ideal = 2 * VT * Math.log(c1 / c2());
   document.getElementById('Em').textContent =
-    `cell voltage ${(1000 * Em).toFixed(1)} mV · TMS ${(1000 * tms(c2(), X())).toFixed(1)} mV · ideal membrane ${(1000 * ideal).toFixed(1)} mV · apparent t₊ = ${(Em / ideal).toFixed(3)}`;
+    `cell voltage ${(1000 * Em).toFixed(1)} mV · TMS ${(1000 * tms(c2(), X())).toFixed(1)} mV · ideal membrane ${(1000 * ideal).toFixed(1)} mV · ${Math.abs(ideal) < 1e-6 ? 'equal solutions: no apparent t₊' : `apparent t₊ = ${(Em / ideal).toFixed(3)}`}`;
   chart(document.getElementById('sweep'), {
     xlabel: 'log₁₀ (c₁/c₂)', ylabel: 'cell voltage (mV)',
     series: [

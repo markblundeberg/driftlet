@@ -110,9 +110,13 @@
     counted from its elements, and no ion here answers to another's level), and their standard levels V°<sub>i</sub> (thin), which
     follow φ. The steps in V°<sub>i</sub> at the mouths are the Donnan potentials; each ion's own level is
     continuous through them, and an ion flows only where its level slopes.</p>
-  <p>What a 1D slice leaves out: the reservoirs widen away from the mouth in 3D and add little resistance,
-    so here they're layers whose ions move 10⁴ times faster, standing in for the widening (no equilibrium
-    depends on how fast ions move, so the Donnan layers are unchanged); and the channel's radial structure,
+  <p>What a 1D slice leaves out: the reservoirs widen away from the mouth in 3D, so here they're layers
+    whose ions move 10⁴ times faster, standing in for the widening (no equilibrium depends on how fast ions
+    move, so the Donnan layers are unchanged). That leaves out the access resistance where the current
+    spreads into each reservoir, about 1/(κd) for a pore d across, which for a pore this short is not small:
+    6.7 GΩ in 1 mM KCl, against the default channel's own 1.5 GΩ, so a real pore this size passes several
+    times less current than here (the plateau above was measured in slits micrometres long, where access
+    resistance is negligible). Also left out: the channel's radial structure,
     which matters once the Debye length is well below the radius (in strong salt). The same equations,
     Poisson–Nernst–Planck theory, are used for biological ion channels (after Eisenberg and Chen), but
     there a selectivity filter a couple of nanometres long holds a handful of ions in single file, and a
@@ -215,7 +219,7 @@ function draw(sol) {
   const V = sol.terminalVoltage;
   el('status').textContent = el('open').checked
     ? `zero-current voltage ${(1000 * V).toFixed(1)} mV between Ag/AgCl electrodes · a perfectly K⁺-selective channel: ${(2000 * VT * Math.log(p.cl / p.cr)).toFixed(1)} mV, an uncharged one (a liquid junction, 2t₊V_T ln(c₁/c₂)): ${((2000 * VT * Math.log(p.cl / p.cr) * D['K+']) / (D['K+'] + D['Cl-'])).toFixed(1)} mV`
-    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the channel, ${I === 0 ? 0 : ((100 * IK) / I).toFixed(1)}% of it carried by K⁺`;
+    : `${(1000 * V).toFixed(0)} mV · ${((-I * AREA) / 1e-12).toFixed(2)} pA through the channel: K⁺ carries ${((-IK * AREA) / 1e-12).toFixed(2)}, Cl⁻ ${((-ICl * AREA) / 1e-12).toFixed(2)}`;
   const x0 = sol.regions[1].x0, x1 = sol.regions[2].x1, pad = Math.max(10e-9, 0.25 * (x1 - x0)), xlim = [x0 - pad, x1 + pad];
   const signed = (x) => (x === 0 ? '0' : `${x > 0 ? '−' : '+'}${mM(Math.abs(x))}`); // X is negative charge
   const charges = X1 === X2 ? `${signed(X1)} of wall charge` : `${signed(X1)} | ${signed(X2)} of wall charge`;

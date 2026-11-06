@@ -74,7 +74,7 @@
     experiment sees that line: the measured curve is the net current, and a straight line fitted to it
     gives anywhere from half to 1.6 times i<sub>corr</sub> depending on where you fit (near E<sub>corr</sub>
     oxygen's plateau current takes away from it; higher up the solution's potential at the face bends it).
-    Add the plateau back and fit close in, 25 to 75 mV above E<sub>corr</sub>, and it comes within 5%. The
+    Add the plateau back and fit close in, 25 to 75 mV above E<sub>corr</sub>, and it comes within about 5%. The
     polarization resistance does better: R<sub>p</sub> = dE/di at E<sub>corr</sub>, through Stern and
     Geary's i<sub>corr</sub> = B/R<sub>p</sub> (1957), with B the anodic Tafel slope over 2.3 alone (the
     cathode is diffusion-limited), gives it within 3%. The textbook construction starts each line from its
@@ -206,7 +206,7 @@ function update() {
     `left to itself: ${minus(Ecorr.toFixed(4))} V vs SHE, corroding at ${uA(icorr).toPrecision(5)} µA/cm², ` +
     `${Math.round((100 * icorr) / currents(Ecorr, L()).limit)}% of oxygen's limit, ${mmPerYear.toPrecision(2)} mm of iron a year ` +
     `<span class="note">(the closed form: ${minus(theory.E.toFixed(4))} V, ${uA(theory.i).toPrecision(5)} µA/cm²)</span><br>` +
-    `at ${minus(E.toFixed(3))} V: the iron ${here >= 0 ? `dissolving at ${uA(here).toPrecision(3)} µA/cm², ${((100 * here) / icorr).toPrecision(2)}% of its free rate` : `plating, at ${uA(-here).toPrecision(2)} µA/cm²`}; ` +
+    `at ${minus(E.toFixed(3))} V: the iron ${here >= 0 ? `dissolving at ${uA(here).toPrecision(3)} µA/cm², ${+((100 * here) / icorr).toPrecision(2)}% of its free rate` : `plating, at ${uA(-here).toPrecision(2)} µA/cm²`}; ` +
     `the net current ${minus(uA(sol.terminals.left.current).toPrecision(3))} µA/cm² (anodic +)`;
   // Evans: E against log|i|, the partial currents as lines, the measured net current as points.
   const Et = Array.from({ length: 301 }, (_, k) => 0.1 - ((0.1 - (Ecorr - 0.3)) * k) / 300), part = Et.map((e) => currents(e, L())); // oxygen's Tafel line shows from +0.1 V

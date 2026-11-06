@@ -21,7 +21,7 @@
 <nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
   <h1>MOS capacitor: accumulation, depletion, inversion, and how fast</h1>
   <figure class="sketch">
-    <svg viewBox="0 0 340 214" role="img" aria-label="A metal–oxide–semiconductor capacitor seen at an angle: a gold gate on a thin silicon dioxide layer on p-type silicon, with a metal back contact; a red line runs up from the back contact to the gate.">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A metal–oxide–semiconductor capacitor seen at an angle: an aluminium gate on a thin silicon dioxide layer on p-type silicon, with a metal back contact; a red line runs up from the back contact to the gate.">
       <rect x="46" y="70" width="168" height="10" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
       <path d="M214 70 l24 -13 v10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
       <path d="M46 70 l24 -13 H238 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
@@ -32,7 +32,7 @@
       <rect x="46" y="160" width="168" height="10" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
       <path d="M214 160 l24 -13 v10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
       <path d="M241 68.5 L250 68.5 L258 65.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
-      <text x="264" y="69.0">gold gate</text>
+      <text x="264" y="69.0">aluminium gate</text>
       <path d="M241 77.5 L250 77.5 L258 80.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
       <text x="264" y="84.0">SiO₂</text>
       <path d="M241 117.5 L250 117.5 L258 117.5 H261" fill="none" stroke="var(--muted)" stroke-width="0.8"/>
@@ -112,9 +112,10 @@
     which is that few percent above the frozen ideal. In between, both, and a quadrature part (not
     drawn) that is the loss as generation drags behind the gate. The step's frequency also depends on
     the gate voltage: just past threshold the inversion layer is thin and takes little charge per volt,
-    so generation keeps it filled at a few tenths of a hertz (τ = 1 µs), ten times faster than in strong
-    inversion. That's why, around 0.05 Hz, the C–V curve rises a little just past threshold before
-    settling to the high-frequency one.</p>
+    so generation keeps it filled to a slightly higher frequency than in strong inversion (at τ = 1 µs,
+    ~0.01 Hz just past threshold against ~0.008 Hz at 1 V; the readout gives it at each gate voltage).
+    That's why, near that knee, the C–V curve rises a little just past threshold before settling to the
+    high-frequency one.</p>
   <p>Flat band is at the work-function difference between gate and silicon, V<sub>FB</sub> = −0.90 V at
     10¹⁷ cm⁻³ (with silicon's electron affinity, 4.05 eV, a gate of work function near 4.15 eV, about
     aluminium's), whatever the anchoring of φ: the gate's zeroCharge, the step into the oxide and φ in the
@@ -145,7 +146,7 @@ silicon.materials.Si.species['h+'].mu0 += FARADAY * anchor;
 const mos = (NA, tau) =>
   build({
     T: 300,
-    library: [silicon, metal('Au')],
+    library: [silicon, metal('Al')],
     materials: { SiO2: { epsr: 3.9, species: {} } }, // an insulator: no mobile species
     stack: [
       ohmic(0), // the back contact
@@ -155,7 +156,7 @@ const mos = (NA, tau) =>
       // Oxide | gate metal. Its zeroCharge, the gate's Fermi level minus φ there when it's uncharged,
       // is a property of this interface (a work-function difference): it sets the flat-band voltage.
       { phi: { type: 'capacitive', C: 100 }, zeroCharge },
-      layer('Au', units.nm(50)),
+      layer('Al', units.nm(50)),
       ohmic(0, ['e-']), // the gate's terminal
     ],
     // Generation and recombination through midgap traps (SRH), lifetime τ for both carriers; none at
@@ -338,7 +339,7 @@ function draw(sol) {
   });
   profiles(document.getElementById('conc'), sol, { species: ['e-', 'h+'], title: 'carrier densities', ylabel: 'density (cm⁻³)', scale: AVOGADRO * 1e-6, log: true, xlim });
 }
-document.getElementById('slice').textContent = sliceNotation(mos(NA(), tau()), { SiO2: 'SiO₂', Au: 'gold gate', left: 'back contact', right: 'contact' });
+document.getElementById('slice').textContent = sliceNotation(mos(NA(), tau()), { SiO2: 'SiO₂', Al: 'aluminium gate', left: 'back contact', right: 'contact' });
 showCode();
 </script>
 </body>

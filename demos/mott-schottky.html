@@ -324,7 +324,7 @@ function update() {
   const Cs = reading(here.Z[0], fd[0], 'series'), cut = 1 / (2 * Math.PI * th.R * Cs), { yw } = th.split(E);
   const inverted = p.holes === 'equilibrium' && E > th.Einv;
   document.getElementById('status').textContent =
-    (ft && ft.slope <= 0 ? 'fitted: a slope ≤ 0, no doping from it' : ft ? `fitted: N_D ${sci(units.toPerCm3(ft.N))} cm⁻³ (${ft.N > p.N ? '+' : '−'}${pc(Math.abs(ft.N / p.N - 1))}), E_fb ${signed(ft.Vfb, 3)} V (${signed(1000 * (ft.Vfb - th.Vfb), 1)} mV)` : 'fit: give it two points or more') +
+    (ft && ft.slope <= 0 ? 'fitted: a slope ≤ 0, no doping from it' : ft ? `fitted: N_D ${sci(units.toPerCm3(ft.N))} cm⁻³ (${ft.N > p.N ? '+' : '−'}${pc(Math.abs(ft.N / p.N - 1))}), E_fb ${signed(ft.Vfb, 3)} V (${signed(1000 * (ft.Vfb - th.Vfb), 1)} mV)${Math.abs(ft.N / p.N - 1) > 0.5 || Math.abs(ft.Vfb - th.Vfb) > 0.5 ? ': the plot has failed here, its capacitance no longer the space charge’s at this frequency' : ''}` : 'fit: give it two points or more') +
     ` · true E_fb ${signed(th.Vfb, 3)} V · at E: ` +
     (inverted ? 'inverted (the theory, every carrier following, is the holes’ equilibrium, which no frequency here sees)' : `the solution takes ${(100 * Math.abs((yw * VT) / (E - th.Vfb || 1))).toPrecision(2)}% of E − E_fb, ${(100 * (C0 / th.Cw(E))).toPrecision(2)}% of a small change`) +
     ` · R ${(th.R * 1e4).toPrecision(3)} Ω·cm², 1/(2πRC) ${fmtF(cut)}`;

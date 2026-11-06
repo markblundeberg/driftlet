@@ -76,9 +76,11 @@
     <div class="readout wide" id="ledger"></div>
   </div>
   <h2>About this simulation</h2>
-  <p>The cell is built in a tube: the two solutions are each 4 cm long and stirred, the salt bridge 2 cm of
-    unstirred 3 M KCl, and everything per unit area of the tube's bore (a 1D model). A real cell's beakers are
-    far bigger than its bridge's bore, so their solutions change more slowly than here. Every ion is present
+  <p>The cell is built in a tube: the two solutions, 0.1 M ZnSO₄ and 0.1 M CuSO₄, are each 4 cm long and
+    stirred, the salt bridge 2 cm of unstirred 3 M KCl, and everything per unit area of the tube's bore (a 1D
+    model). A real cell's beakers are far bigger than its bridge's bore, so their solutions change far more
+    slowly than here: in this tube the bridge holds 15 times the salt of each solution, and within the hour it
+    has flooded both with about 0.2 M KCl, where a real bridge leaks millimolar. Every ion is present
     everywhere, if only as a 1 µM trace, so each can cross every junction; Cu²⁺ in the zinc's solution starts
     negligible and grows only as copper seeps across. Each end of the bridge starts as a thin zone where the two
     solutions are pre-mixed, as at a frit (a perfectly sharp start is harder for the solver, and no real
@@ -106,7 +108,8 @@
     and Cl⁻ move at nearly the same speed. Meanwhile every ion's own voltage changes by tens of mV across each
     junction, and that drives the leak: KCl spreads out into the solutions, and Zn²⁺, Cu²⁺ and SO₄²⁻ into the
     bridge. Over hours the leaked KCl makes the solutions more conductive, so under a heavy load the voltage
-    rises at first. Once the KCl has spread everywhere, what's left of the junction is Zn²⁺ and Cu²⁺ diffusing
+    rises at first: that's the tube's flooding (above), which a real cell, with its big beakers, hardly
+    shows. Once the KCl has spread everywhere, what's left of the junction is Zn²⁺ and Cu²⁺ diffusing
     past each other in a KCl background: with nearly equal mobilities and that supporting electrolyte, its
     potential stays tiny. (The <a href="junction.html">liquid-junction demo</a> takes junctions on their own:
     Henderson's formula against Planck's and a junction growing from contact, and what a charged frit does.)</p>

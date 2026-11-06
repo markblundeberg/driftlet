@@ -62,12 +62,14 @@
     rotating disk): once the depleted zone fills it, the wave is steady and sigmoidal. A thick one is a still
     solution, where the depleted zone keeps growing through the sweep and the current peaks then sags: the
     classic "duck". The rate constant k⁰ is per area at the reference concentration (1 M): in the cm/s of
-    tables, k° = 0.1·k⁰. The peaks' separation depends on it and the scan rate only together, through
-    Nicholson's ψ ∝ k°/√(Dv) (Anal. Chem. 37, 1351, 1965). Reversible, they're 57.5 mV apart (near 2.22 RT/F,
+    tables, k° = 0.1·k⁰. Apart from the layer's ohmic drop (below), the peaks' separation depends on it and
+    the scan rate only together, through Nicholson's ψ ∝ k°/√(Dv) (Anal. Chem. 37, 1351, 1965). Reversible, they're 57.5 mV apart (near 2.22 RT/F,
     the limit for switching potentials far past the wave; the 59 mV often quoted is 2.3 RT/F, a rule of
     thumb); without the ohmic drop, at 0.1 V/s, k⁰ = 10 gives 57.8 mV, k⁰ = 1 gives 59.9, and k⁰ = 0.1 (ψ ≈ 1)
     gives 80, and each decade faster a scan needs √10 times the k⁰ for the same. The layer's ohmic drop adds
-    to it: 65 mV apart through 1 mm at 0.1 V/s with k⁰ = 10. The peak currents grow as √v, whatever the
+    to it, and the readout includes it: through 1 mm at 0.1 V/s those three read 65, 68 and 87 mV, and at
+    10 V/s, where the peak current is ten times larger, the drop is most of the separation (122 mV with
+    k⁰ = 10, 120 with k⁰ = 100). The peak currents grow as √v, whatever the
     kinetics hold the wave to.</p>
   <p>The dashed line is the same experiment worked out apart from the solver, for the cycle under way: each
     iron ion diffusing through the stagnant layer (a finite-volume scheme of its own, with implicit steps),
