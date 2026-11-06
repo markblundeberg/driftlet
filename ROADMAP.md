@@ -163,6 +163,30 @@ for live demos.
      (Fixed in 1.10: the error norm's floating terminals, `dt0` after a call, port traces, each
      face's production, `photogeneration()` toward −x, the return to level contacts,
      `impedance()` re-solving.)
+   - From Fable round 3 (5 Nov 2026), still open:
+     - `impedance()`: a floating terminal's δV carries no error estimate of its own, and where every
+       other terminal floats, Kirchhoff's reading trusts it: a floating Pt island measured against a
+       bath behind 1 Ω·m² read Re Z 0.3% high at 3e-5–1e-4 Hz with relError 5e-12 (the responses'
+       currents differ by 0.4% between cuts of one region while each solve's residual is 5e-12). And
+       Z measured at a port gets neither cuts nor the region-shift split, so the MOS capacitor's
+       channel port is unresolved (warned) where its gate contact resolves to 1e-6.
+     - `stuckReactions` passes over a frozen reaction whose affinity changes sign along the device
+       (a reaction can be steady with local rates of both signs, so this needs a test of the rates
+       too).
+     - A strictly neutral (ε = 0) bipolar membrane in reverse bias past ~1.2 V fails cold, warm and
+       from a converged transient's state, "lost 12 of its digits" at the CEM | water face, and the
+       message's remedy (anchor the region) doesn't help; a 37 s transient and the resolved ε > 0
+       model agree on the state (−6.495 A/m²). The neutral junction's co-ions must fall to e^{−45}.
+     - The start fills a trap level half full: `trap().c0For()` gives each layer's equilibrium
+       filling, which a pn junction's cold solve needs; the start could fill immobile states itself,
+       node by node, from the carriers it lays out.
+     - `advance()` fails at its first step right after a `set({ T, materials })` jump far in T
+       (150 → 500 K at −5 V); `solve()` there converges, and the transient runs from it.
+     - Auger recombination can't be written (n²p needs a species on both sides); a rate law keyed
+       like `srh` would fit.
+     - Demo pages at a phone's width: the membrane page's three dot-panel captions overprint, the
+       myelin level diagram's 40 node lines crowd it; the rde page's Koutecký–Levich axis goes
+       negative at E° + 0.1 V; the redox page could show its no-iR separation beside the readout's.
    - Starts needlessly far from where the physics goes (a cold review of `src/start.js`; each
      the first step absorbs, listed under Known in its contract): the gauge from the left; an
      insertion host's shift moving contact-held levels (a two-host battery 137 mV from both held
