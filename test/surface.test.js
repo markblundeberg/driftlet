@@ -315,3 +315,13 @@ test('a face covered almost completely is warned of, and a tethered couple fed b
   })).solve();
   assert.ok(!fed.converged && fed.warnings.some((w) => /what it feeds \(Fc on ports work\) is closed but for it/.test(w)), fed.warnings.join('\n'));
 });
+
+test('a face\'s made covers its surface: the couple\'s turnover, G dθ/dt as it relaxes after a step', () => {
+  const dev = new Device(tethered(0)), sol0 = dev.solve(), gR = dev.model.grid.regionStart[1];
+  const eta = 0.1, V = formal(sol0, gR) + eta, a = eta / VT, kf = Math.exp(a / 2), kb = Math.exp(-a / 2), k = (1e-6 / G) * (kf + kb), eq = (total * kf) / (kf + kb);
+  dev.set({ contacts: { left: { V } } });
+  const s = dev.advance(1 / k, { tol: 1e-8 }), th = s.interfaces[0].coverage.FcClO4, made = s.interfaces[0].made.surface;
+  const want = G * k * (eq - th); // (d/dt of G θ along e^{−kt})
+  assert.ok(Math.abs(made.FcClO4 / want - 1) < 1e-3, `${made.FcClO4} against ${want}`);
+  assert.ok(Math.abs(made.Fc / want + 1) < 1e-3, `${made.Fc}`);
+});

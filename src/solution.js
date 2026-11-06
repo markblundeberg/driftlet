@@ -192,6 +192,17 @@ export function makeSolution(solver, result = {}) {
     for (let i = 0; i < n; i++) N[species[i].name] = u[b * M + 1 + i];
     const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), forward
     const out = { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
+    // What its reactions make of each species on each side (and on its surface), mol/(m²·s),
+    // negative for what they take: N is the links' alone (Fable round 2's cold user).
+    if (itf.reactions.length > 0) {
+      const made = { left: {}, right: {} };
+      itf.reactions.forEach((rx, k) => {
+        const add = (where, name, nu) => ((made[where] ??= {})[name] = (made[where][name] ?? 0) + nu * rates[k]);
+        for (const p of rx.part) add(p.side ? 'right' : 'left', species[p.i].name, p.nu);
+        for (const p of rx.surf ?? []) add('surface', itf.surface[p.s].name, p.nu);
+      });
+      out.made = made;
+    }
     // How each species crosses it (a link type), for those that do; and for those crossing by
     // permeability, the one-way fluxes [toward +x, toward −x], per area.
     out.links = Object.fromEntries(itf.links.flatMap((l, i) => (l.type === 'blocked' ? [] : [[species[i].name, l.type]])));

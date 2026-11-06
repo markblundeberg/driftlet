@@ -300,3 +300,24 @@ test('a reaction beside a strictly neutral edge cell that holds the face charge 
   const rest = new Device(def(30e-9)).solve(), g = rest.region.indexOf(1); // the water's first node
   assert.deepEqual(frumkin(def(30e-9, rest.V['e-'][g - 1] - rest.phi[g])), []);
 });
+
+test('a face\'s made: what its reactions make of each species on each side, which with N balances the segments beside it', () => {
+  // (Fable round 2's cold user: N is the links' alone, and what a face's reactions made had to
+  // be put together from rates and coefficients)
+  const dev = new Device(ionic({ species: { 'Li+': 'blocked' }, reactions: [{ left: { 'Li+': -1 }, right: { 'Li+': 1 }, k0: 1e-3, alpha: 0.3 }] }));
+  dev.solve();
+  dev.set({ contacts: { right: { V: 0.05 } } });
+  const sol = dev.solve(), itf = sol.interfaces[0], r = itf.rates[0];
+  assert.ok(sol.converged && Math.abs(r) > 0);
+  assert.equal(itf.made.left['Li+'], -r);
+  assert.equal(itf.made.right['Li+'], r);
+  const g = dev.grid, gL = g.regionEnd[0], gR = g.regionStart[1];
+  for (const [name, N] of Object.entries(itf.N)) {
+    const into = sol.flux[name][gL - 1], out = sol.flux[name][gR];
+    const scale = Math.abs(r) + Math.abs(N) + 1e-30;
+    assert.ok(Math.abs(into - (N - (itf.made.left[name] ?? 0))) < 1e-8 * scale, `${name} into the face: ${into} against ${N - (itf.made.left[name] ?? 0)}`);
+    assert.ok(Math.abs(out - (N + (itf.made.right[name] ?? 0))) < 1e-8 * scale, `${name} out of it: ${out} against ${N + (itf.made.right[name] ?? 0)}`);
+  }
+  // A face without reactions has no made.
+  assert.equal(new Device(ionic({ species: { 'Li+': 'equilibrium' } })).solve().interfaces[0].made, undefined);
+});
