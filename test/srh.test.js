@@ -274,3 +274,19 @@ test('trap()\'s midgap default is the material\'s n_i whatever its φ reference:
   const [I0, I1] = [diode(0), diode(1)];
   assert.ok(Math.abs(I1 / I0 - 1) < 1e-6, `${I0} vs ${I1} A/m²`);
 });
+
+test('trap().c0For(doping): each layer of a pn junction starts with its traps at their equilibrium filling, and solves cold', () => {
+  // (Fable round 3's semiconductor review: from c0's half filling, the kit's own recipe failed
+  // cold at 0 V on most grids, the traps 6 decades from equilibrium at every node)
+  const N = units.perCm3(1e14), D = units.perCm3(1e16);
+  const t = trap(semiconductor('Si'), { density: N, tauN: 1e-7, tauP: 2e-7 });
+  const mk = (cn, cp) => build({ T: 300, library: [t.library], stack: [ohmic(0), layer('Si', 50e-6, { donors: D, c0: cn }), layer('Si', 50e-6, { acceptors: D, c0: cp }), ohmic(0)], bulkReactions: t.bulkReactions, grid: { hmin: 1e-9, hmax: 1e-7, ratio: 1.05 } });
+  assert.ok(!new Device(mk(t.c0, t.c0)).solve().converged, 'half full fails (if this now converges, the start itself got better: drop this line)');
+  const s = new Device(mk(t.c0For({ donors: D }), t.c0For({ acceptors: D }))).solve();
+  assert.ok(s.converged && s.iterations < 30, `${s.converged}, ${s.iterations} iterations`);
+  assert.ok(Math.abs(s.current) < 1e-12);
+  // its split: the total kept, the filled fraction n/(n + n₁) at n ≈ N_D
+  const n = t.c0For({ donors: D });
+  assert.ok(Math.abs(n.X0 + n['X-'] - N) < 1e-12 * N && n['X-'] / N > 0.999999);
+  assert.throws(() => t.c0For({ donors: -1 }), /doping/);
+});

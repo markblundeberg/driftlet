@@ -130,8 +130,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   injection. `srh` carries no charge; for traps whose charge matters (dense or deep ones, trapped
   charge bending the bands), `trap(semiconductor('Si'), { density, tauN, tauP, n1, charge:
   'acceptor' })` writes the trap's two states as immobile species and returns `{ library,
-  bulkReactions, c0 }` (c0 into each layer that has the trap): the same rate in steady state, its
-  charge in Poisson. Light is a reaction from a reservoir (`photon = e- + h+`, uniform), or absorbed as
+  bulkReactions, c0 }` (c0 into each layer that has the trap; in a junction, `t.c0For({ donors })`
+  and `t.c0For({ acceptors })`, each layer's equilibrium filling, which a cold solve needs): the
+  same rate in steady state, its charge in Poisson. Light is a reaction from a reservoir (`photon = e- + h+`, uniform), or absorbed as
   it goes in, `photogeneration({ material, flux, alpha, mu: units.eV(3), from, to })`, `from` and
   `to` being x in the device (a port's window is instead m from its region's left end), entering at
   `from` (`toward: '-x'` enters at `to`). To switch

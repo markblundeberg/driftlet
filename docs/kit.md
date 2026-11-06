@@ -74,7 +74,11 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   (`X0`/`X-` for `charge: 'acceptor'`, the default; `X+`/`X0` for `'donor'`), filled and emptied
   by capturing electrons and holes. It returns `{ library, bulkReactions, c0 }`: the library to
   give `build()` in place of `lib`, the two capture reactions, and the trap's total for each
-  layer that has it (`layer('Si', L, { donors, c0: t.c0 })`). In steady state it recombines at the
+  layer that has it, half full (`layer('Si', L, { donors, c0: t.c0 })`). `t.c0For({ donors,
+  acceptors })` splits the same total as a layer of that doping holds it at equilibrium: in a
+  junction, start each layer so (`layer('Si', L, { donors: ND, c0: t.c0For({ donors: ND }) })`),
+  since from half full the traps sit decades from where they end at every node, and a cold solve
+  can fail. In steady state it recombines at the
   `srh` law's rate with the same `tauN`, `tauP` (s, at that density) and `n1` (mol/m³, default
   n_i); unlike `srh`, its charge is in Poisson's equation
   ([device](device.md#bulk-reactions)).

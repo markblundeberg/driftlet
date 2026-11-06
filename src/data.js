@@ -203,8 +203,10 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
  *   name?: string, material?: string, T?: number }} opts density N_t (mol/m³); τ_n = 1/(c_n N_t)
  *   and τ_p = 1/(c_p N_t) (s) at that density; n₁, the electron density that half-fills it
  *   (mol/m³; default n_i, midgap); T (K, default the material's T, else 300)
- * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number> }} the library
- *   for build(), the capture reactions, and c0 for each layer holding the trap (its total N_t)
+ * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number>, c0For: (doping: { donors?: number, acceptors?: number }) => Record<string, number> }}
+ *   the library for build(), the capture reactions, c0 for each layer holding the trap (its total
+ *   N_t, half full), and c0For(doping), the same total split as a layer of that doping holds it
+ *   at equilibrium (the better start in a junction)
  */
 export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name = 'X', material, T } = {}) {
   checkOptions('trap', arguments[1], ['density', 'tauN', 'tauP', 'n1', 'charge', 'name', 'material', 'T']);
@@ -247,6 +249,15 @@ export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name =
     ],
     // (each node keeps the total, X⁰ + X⁻ say; the split is the solve's to find)
     c0: { [empty]: density / 2, [full]: density / 2 },
+    // The split a layer of that doping holds at equilibrium, n from neutrality with np = n_i²: a
+    // start the solve can reach. From half full, a pn junction's cold solve at 0 V failed, the
+    // traps 6 decades off at every node; from these it converges in 8 iterations (Fable round
+    // 3's semiconductor review).
+    c0For({ donors = 0, acceptors = 0 } = {}) {
+      if (!(donors >= 0 && acceptors >= 0)) fail(`trap: c0For({ donors, acceptors }) takes the layer's doping (mol/m³, ≥ 0), got ${shown(donors)} and ${shown(acceptors)}`);
+      const net = donors - acceptors, nn = net / 2 + Math.sqrt((net * net) / 4 + ni * ni), f = nn / (nn + half);
+      return { [empty]: density * (1 - f), [full]: density * f };
+    },
   };
 }
 
