@@ -139,6 +139,8 @@ export class Device {
         // (a new T, or materials' μ° and c_ref: carry the concentrations and φ, not their scaled
         // potentials)
         if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
+        // (a jump in T, for a transient's first step to name if it fails: see advance)
+        if (old.model.T !== model.T) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
         // A node newly on an electrode's surface (a window moved, a surface added) starts at its
         // starting coverages, not at whatever its slots held.
         const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());
@@ -219,7 +221,10 @@ export class Device {
     // (a failed solve's state isn't a solution: its accuracy warnings are left out)
     const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
-    else this.solver.regriddedSteady = false; // (solved on the new grid already: see advance)
+    else {
+      this.solver.regriddedSteady = false; // (solved on the new grid already: see advance)
+      this.solver.jumpedT = undefined; // (solved at the new temperature: see advance)
+    }
     return sol;
   }
 

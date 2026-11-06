@@ -781,3 +781,57 @@ test('a floating terminal\'s voltage is in the error norm: an RC whose φ is hel
   assert.ok(Math.abs(tight.q - want) < 1e-3, `at 1e-5: ${tight.q} against ${want}`);
   assert.ok(Math.abs(loose.q - want) < 1e-2, `at 1e-3: ${loose.q} against ${want}`);
 });
+
+// Fable round 3's convergence hunt: a Si diode solved at 150 K and set() to 500 K failed its
+// first step, told it was advancing from c0's layout and to solve() first, which it had. Its
+// minority carriers carry over at e⁻⁸⁰ of the new equilibrium; the failure now names the jump,
+// and the two ways round it work.
+test("advance() right after a far jump in T: the failure names the jump, and smaller jumps or a solve() get there", () => {
+  const Si = (T) => semiconductor('Si', { T });
+  const diode = (T) => build({
+    T,
+    library: [Si(T)],
+    stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  });
+  const d = new Device(diode(150));
+  assert.ok(d.solve().converged);
+  d.set({ T: 500, materials: Si(500).materials });
+  const a = d.advance(1e-9), said = a.warnings.join(' | ');
+  assert.ok(!a.converged && /jump in temperature \(150 → 500 K\)/.test(said) && !/c0's layout/.test(said), said);
+  // In jumps of 50 K, each advanced a little, it gets there; and so does solve() at 500 K.
+  const e = new Device(diode(150));
+  e.solve();
+  for (let T = 200; T <= 500; T += 50) {
+    e.set({ T, materials: Si(T).materials });
+    assert.ok(e.advance(1e-9).converged, `at ${T} K`);
+  }
+  const f = new Device(diode(150));
+  f.solve();
+  f.set({ T: 500, materials: Si(500).materials });
+  assert.ok(f.solve().converged && f.advance(1e-9).converged);
+});
+
+// Fable round 4's review of src/timeSteps.js: step() with BDF2 across a current source's edge
+// kept a history that spans the kink in the stored charge, and lost I·dt/2 of it for good,
+// silently (−10% at 2 ms steps); and advance(Infinity) stamped the state t = ∞ in no steps.
+test('step() with BDF2 across a current switched on: the order restarts at the edge, and the charge is exact', () => {
+  const lib = aqueous(['K+', 'Cl-'], { epsr: 0 }), C = 0.2;
+  const mk = () => new Device({
+    species: lib.species, materials: lib.materials, regions: [{ material: 'water', length: 100e-6, c0: { 'K+': 100, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, phi: { type: 'capacitive', C }, zeroCharge: 0 }, right: { I: { t: [0, 0.01, 0.01], values: [0, 0, 1] }, phi: { type: 'capacitive', C }, zeroCharge: 0 } },
+    grid: { hmin: 2e-6, hmax: 5e-6 },
+  });
+  for (const dt of [2e-3, 1e-3]) {
+    const d = mk();
+    d.solve();
+    let s;
+    for (let k = 0; k < Math.round(0.02 / dt); k++) s = d.step(dt, { method: 'bdf2' });
+    assert.ok(Math.abs(s.plates.right.charge / 1e-2 - 1) < 1e-9, `dt ${dt}: Q ${s.plates.right.charge} vs 1e-2`);
+  }
+  const d = mk();
+  d.solve();
+  assert.throws(() => d.advance(Infinity), /solve\(\) the steady state/);
+  assert.equal(d.advance(1e-3).converged, true);
+});

@@ -11,6 +11,9 @@
 //                       with storage (c − c*)/dt against s.cOld, s.thOld, s.th0Old, s.gamOld (the
 //                       diffuse layers' excesses), s.gateOld,
 //                       s.contactDStart, s.portQStart; leaves the state at its last iterate.
+//   s.jumpedT           [T before, T after] where set() changed T and no step has been taken
+//                       since (cleared by an accepted step or a converged solve), for the
+//                       first step's failure to name.
 //   s._snapshot() / s._restore(snap)  the whole time state (u, uLo, termV, the start-of-step
 //                       values, time, lastDt, history, the boundary intake, sourceTime).
 //   s._assembleBookkeeping(dt), s.computeConcentrations(), s._accumulateBoundaryIntake(dt, c),
@@ -106,6 +109,10 @@ function lagrange3(x, s0, s1, s2) {
  * substeps counted are those of the last attempt's halves).
  */
 export function advance(s, dt, opts, depth = 0) {
+  // At a source's breakpoint, BDF2's history spans the kink in what it stores, and a current
+  // switched on there lost I·dt/2 of charge for good (Fable round 4's review of this module):
+  // the order restarts there, as integrate's does.
+  if (depth === 0 && s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
   const r = s.step(dt, opts);
   if (r.converged || depth >= 30) return { ...r, substeps: 1 };
   const a = s.advance(dt / 2, opts, depth + 1);
@@ -269,6 +276,8 @@ export function integrate(s, tEnd, opts = {}) {
   // clock, or a time read from a field that doesn't exist) does nothing, and says so.
   const absolute = `tEnd is the time to reach in s, absolute (the device is at t = ${s.time}, which a solution gives as its time)`;
   if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
+  // (advance(Infinity) set the time to ∞, converged in no steps, and nothing ran after it)
+  if (tEnd === Infinity || tEnd === -Infinity) throw new SolverError(`advance(${tEnd}): ${absolute}. For the long-time limit, solve() the steady state`);
   if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
   const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
@@ -391,6 +400,7 @@ export function integrate(s, tEnd, opts = {}) {
       continue;
     }
     steps++;
+    s.jumpedT = undefined; // (a step taken: see the first step's failure below)
     // The state the first step started from needn't satisfy the algebraic equations (φ in a
     // strictly neutral region, an interface's unknowns, after a start or a jump), and they
     // jump in the first instant; a predictor through it would see that jump as error on every
@@ -431,6 +441,11 @@ export function integrate(s, tEnd, opts = {}) {
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. The start is violent: ${violent.join('; ')}. A double layer starts uncharged, and what passes beside it closes such a gap in the first instant, faster than any step can follow. For a start in equilibrium, solve() first (the steady state at the starting drives), then change what the experiment changes, then advance(). Where solve() fails from there too, hold that terminal at a voltage, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.`;
   else if (failed && s.modelError)
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s, the state it reached refused by a statistics model: ${s.modelError}. The model doesn't hold there: a smaller concentration or drive, or a model for it (lattice for crowding).`;
+  else if (failed && s.jumpedT && steps === 0)
+    // (Fable round 3's convergence hunt: a Si diode solved at 150 K, set() to 500 K, failed at its
+    // first step at 1e-18 s, told to solve() from c0's layout. Its minority carriers, carried at
+    // e⁻⁸⁰ of the old equilibrium, must rise ~50 thermal units in the first instant.)
+    stopped = `${at}: the first step did not converge even when shortened to ${dt.toExponential(1)} s, from a state carried across set()'s jump in temperature (${s.jumpedT[0]} → ${s.jumpedT[1]} K): the concentrations carry over, and what the new temperature makes of them in the first instant (a minority carrier far below its new equilibrium) is more than a step can follow. Change T in smaller jumps, advancing a little after each (a Si diode from 150 K to 500 K went in jumps of 50 K), or solve() at the new temperature and advance from there.`;
   else if (failed && fromLayout && steps === 0)
     // (round 15's fuzzer: the pn template advanced from its c0, a step of 3e-24 s failing, 23 of 62
     // plain diodes; nothing said to solve first)
