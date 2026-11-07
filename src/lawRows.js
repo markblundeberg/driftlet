@@ -69,14 +69,19 @@
 //                    − reference = 0, its ∂ in the node's block (a coverage's,
 //                    θ_q (δ_qx − θ_x) over its surface's species).
 //   island           pin: Σ weight·u over the `flux` rows (faces' fluxes, and face reactions'
-//                    rates) + Σ the `outside` rows' residuals − Σ I/(zF) over `currents` (a
+//                    rates) + Σ vol·ν·r over its `bulk` entries (each node's rate and its ∂ from
+//                    the solver's _bulkRateInto, as that node's row has them) + Σ the `outside`
+//                    rows' residuals − Σ I/(zF) over `currents` (a
 //                    metal's floating contacts: I_set, or (V_src − V)/R, its ∂/∂V in `termSlope` for
 //                    solveBordered) = 0, its ∂ the same sums of their
 //                    Jacobian rows (rowInto), gathered by column. A cut whose reach has a segment
 //                    conducting the species under 1e-6 of its first (∂N/∂η_L at the state) takes
 //                    the least: that face's flux and outside row are left out, and sign·N of the
 //                    segment (its Scharfetter–Gummel flux, exactly as _segmentsDilute's) is in,
-//                    with its ∂ by both ends' η and φ̂. Islands that share a rate are
+//                    with its ∂ by both ends' η and φ̂, and vol·ν·r of the cut's `rxs` at each node
+//                    between the face and that segment. The segments cuts take are chosen once a
+//                    round (cutAt, cleared by Newton at a call's start and where it measures the
+//                    imbalance) and held through it. Islands that share a rate are
 //                    then recombined (separateRates) so that each rate is in one pin only, the
 //                    fastest (k0) first: the same constraints, each still in its own row.
 //   circuit law      (time steps) terminal k's circuit row, where it reads by the change: F (S −
@@ -102,9 +107,10 @@
 //      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs.
 //   5. Nothing here writes the laws' structure (their parts, rows, nodes): only the workspace
 //      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference; an island's
-//      deep, the segment each cut took or −1, and termSlope), the solver's maps lawRefs,
+//      deep and cutAt, the segment each cut took or −1, bulkScale, Σ|vol·ν·r| over its rates,
+//      and termSlope; idx and w grown where its row needs more room), the solver's maps lawRefs,
 //      chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s (islandRow,
-//      linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
+//      islandDr, linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
 // Tests: test/laws.test.js, test/steady.test.js and every test that solves a steady state;
 // tools/lawsweep.js (solve() against a settled advance()).
 
@@ -184,8 +190,11 @@ function applyIslands(s) {
     };
     let t = 0;
     // (a face cut deeper, at its end piece's bottleneck: that face's flux and outside row left
-    // out, the segment's flux in)
-    const deep = (isl.cuts ?? []).map((cut) => bottleneck(s, isl, cut)), skipFace = new Set(), skipRow = new Set();
+    // out, the segment's flux in. Chosen once a round, at the state the round starts from, and
+    // held through it: re-chosen at each iterate, the summed nodes moved under Newton as it
+    // walked the level (38, 41, 47, 48 in hunt A's base, listed in reverse), and an update of
+    // 4e6 thermal units on the end piece's minority holes, held by nothing, ended the round.)
+    const deep = isl.cutAt ?? (isl.cutAt = (isl.cuts ?? []).map((cut) => bottleneck(s, isl, cut))), skipFace = new Set(), skipRow = new Set();
     isl.deep = deep;
     deep.forEach((sg, k) => sg >= 0 && (skipFace.add(isl.cuts[k].face), skipRow.add(isl.cuts[k].outside)));
     isl.flux.forEach((o, j) => {
@@ -201,6 +210,24 @@ function applyIslands(s) {
     deep.forEach((sg, k) => {
       if (sg >= 0) t += segmentInto(s, isl.stretch.species, sg, isl.cuts[k].region, isl.cuts[k].sign, add);
     });
+    // (its bulk reactions, node by node: the piece's own, and an end piece's out to the
+    // bottleneck, the nodes between it and the face; each +vol·ν·r, as in the node's row)
+    let bulkScale = 0;
+    const bulkInto = (g, rx, nu) => {
+      const b = s.blockOfNode[g], w = s.model.grid.vol[g] * nu, dr = s.islandDr ?? (s.islandDr = new Float64Array(s.M));
+      const r = s._bulkRateInto(rx, g, dr);
+      t += w * r;
+      bulkScale += Math.abs(w * r);
+      for (let k = 0; k < s.M; k++) if (dr[k] !== 0 && s.loc[b * s.M + k] >= 0) add(R[b * s.M + k], w * dr[k]);
+    };
+    for (const [g, rx, nu] of isl.bulk ?? []) bulkInto(g, rx, nu);
+    deep.forEach((sg, k) => {
+      const cut = isl.cuts[k];
+      if (sg < 0 || cut.rxs.length === 0) return;
+      const g0 = cut.sign < 0 ? sg + 1 : s.model.grid.regionStart[cut.region], g1 = cut.sign < 0 ? s.model.grid.regionEnd[cut.region] : sg;
+      for (let g = g0; g <= g1; g++) for (const [rx, nu] of cut.rxs) bulkInto(g, rx, nu);
+    });
+    isl.bulkScale = bulkScale;
     // (a metal's: less what its floating contacts pass, I/(zF) each: I_set, or (V_src − V)/R,
     // whose ∂/∂V the bordered system takes as the pin's own, termSlope)
     isl.termSlope = null;
@@ -211,6 +238,11 @@ function applyIslands(s) {
         t -= (src - s.termV[k]) / (d.R * isl.z * FARADAY);
         (isl.termSlope ??= new Map()).set(k, 1 / (d.R * isl.z * FARADAY));
       }
+    }
+    // (bulk reactions add a column per slot of each node they sum over: room grown here)
+    if (cols.length > isl.idx.length) {
+      isl.idx = new Int32Array(cols.length);
+      isl.w = new Float64Array(cols.length);
     }
     let len = 0;
     for (const col of cols) {

@@ -52,7 +52,9 @@
 //      refining.
 //   8. Islands (s.steady and dt = Infinity, with islands): converged, each island's balance is
 //      assembled as its pin sums it (imbalance; s.islandImbalance, the largest |summed residual|
-//      over what crosses its faces, faces under 1e-40 mol/(m²·s) left out). Where that's over
+//      over what crosses its faces and what its bulk reactions make or take, under 1e-40
+//      mol/(m²·s) left out), its cuts chosen at that state and held through the round that
+//      follows (cutAt, cleared at the call's start: see applyIslands). Where that's over
 //      1e-6, or the terminal currents miss Kirchhoff by more than 1e-9 of the largest and
 //      1e-18 A/m², the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
 //      from the second iteration after; at most two rounds, one where the call began with the
@@ -355,6 +357,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   // A/m² of noise), their rows can throw Newton off instead: if it doesn't converge again
   // within a dozen iterations, the plain solution stands.
   s.islandsOn = islands;
+  for (const isl of s.islands) isl.cutAt = null; // (each round's cuts, chosen afresh: applyIslands)
   s.islandImbalance = 0;
   s.islandsFailed = false;
   s.islandsWorse = false;
@@ -605,7 +608,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
 }
 
 // How far the islands are from balanced at the state: each one's summed residual, as its pin
-// sums it (out to its bottlenecks), over the fluxes through its faces; the largest. Assembled
+// sums it (out to its bottlenecks), over the fluxes through its faces and its bulk reactions'
+// rates (each |vol·ν·r|); the largest. Assembled
 // with the rows in, then as it was. Unlike the terminals' sum, it doesn't depend on what else
 // the device carries, or on any floor: wrong levels read 0.5 to 1.5 (a floating base beside a
 // side port carrying 1 mA/m², the law sweep's F5 electrode beside a second electrode, a base at
@@ -613,6 +617,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
 function imbalance(s) {
   const was = s.islandsOn;
   s.islandsOn = true;
+  for (const isl of s.islands) isl.cutAt = null; // (cut where this state's bottlenecks are; a round holds them)
   s.assemble(Infinity);
   // (Fluxes under 1e-40 mol/(m²·s) are left out, to spare a round: an open-circuit Pt at
   // equilibrium read 2e-50 through its one face, its whole balance. Not a floor that separates:
@@ -624,6 +629,7 @@ function imbalance(s) {
   for (const isl of s.pinnedIslands) {
     let scale = 0;
     isl.flux.forEach((o, j) => (scale += Math.abs(isl.weight[j] * s.u[o])));
+    scale += isl.bulkScale ?? 0;
     if (scale > floor) worst = Math.max(worst, Math.abs(isl.res) / scale);
   }
   s.islandsOn = was;

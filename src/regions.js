@@ -27,6 +27,8 @@
 //   At a non-ideal node of a region with eddy mixing (nodeDK), K's slope dK = ∂K/∂ζ as well.
 //
 // The terms:
+//   bulk reaction (_bulkReactions): +vol·ν·r in each participant's row, r and its ∂ over the
+//     node's block from _bulkRateInto, which an island's summed balance reads too (src/lawRows.js).
 //   node (dilute, concentrated): storage vol·(c − c_old)/dt in each present species' row, and
 //     −vol·ρ in the Gauss row (none where φ is undefined, or, where the node's charge rows will
 //     carry them, at a chargeNode on a time step: there only a neutral species' storage); at a
@@ -489,67 +491,70 @@ export class RegionTerms {
   // Bulk reactions at node g: r = k_f Π c_R^ν · (−expm1(−a)), with a = A/RT from the
   // (compensated) η. Reactants are consumed (+v·ν·r in their balance), products made (−v·ν·r).
   _bulkReactions(g, rxs) {
-    const { n, M, u, uLo, res, c } = this, R = this.rix;
+    const { M, res } = this, R = this.rix;
     const b = this.blockOfNode[g], v = this.model.grid.vol[g];
     const dr = this.dA;
     for (let x = 0; x < rxs.length; x++) {
-      const rx = rxs[x];
-      const law = rx.srh?.[this.nodeMaterial[g]];
-      if (law) {
-        // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p, a and the excesses.
-        let aHi = rx.fixedA, aLo = 0;
-        for (let p = 0; p < rx.sp.length; p++) {
-          aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
-          aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
-        }
-        const { rate, Cn, Cp, Ca, Cxn, Cxp } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
-        dr.fill(0);
-        this._srhInto(g, law.n.i, Cn, Cxn, dr);
-        this._srhInto(g, law.p.i, Cp, Cxp, dr);
-        for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Ca * rx.nu[p];
-        for (let p = 0; p < rx.sp.length; p++) {
-          const row = 1 + rx.sp[p], w = v * rx.nu[p];
-          res[R[b * M + row]] += w * rate;
-          for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
-        }
-        continue;
-      }
-      let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g], aHi = rx.fixedA, aLo = 0;
-      dr.fill(0); // ∂ ln P / ∂slot
-      // Participants: reactants with ν > 0, then products with ν < 0.
-      for (let p = 0; p < rx.sp.length; p++) {
-        const i = rx.sp[p], nu = rx.nu[p];
-        if (nu > 0) {
-          const ci = c[g * n + i];
-          P *= nu === 1 ? ci : powi(ci, nu);
-          this._dlnc(g, i, nu, dr);
-        }
-        aHi += nu * u[b * M + 1 + i];
-        aLo += nu * uLo[b * M + 1 + i];
-      }
-      const ag = rx.auger?.[this.nodeMaterial[g]];
-      if (ag) {
-        // Auger: P times the third carrier's C_n n + C_p p, ∂ln of that into dr
-        const tn = ag.cn * c[g * n + ag.n.i], tp = ag.cp * c[g * n + ag.p.i], K = tn + tp;
-        P *= K;
-        if (K > 0) {
-          this._dlnc(g, ag.n.i, tn / K, dr);
-          this._dlnc(g, ag.p.i, tp / K, dr);
-        }
-      }
-      const a = aHi + aLo;
-      const f = -Math.expm1(-a); // 1 − e^{−a}
-      const rate = P * f;
-      const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
-      // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
-      for (let k = 0; k < M; k++) dr[k] *= rate;
-      for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Pd * rx.nu[p];
+      const rx = rxs[x], rate = this._bulkRateInto(rx, g, dr);
       for (let p = 0; p < rx.sp.length; p++) {
         const row = 1 + rx.sp[p], w = v * rx.nu[p];
         res[R[b * M + row]] += w * rate;
         for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
       }
     }
+  }
+
+  // A bulk reaction's net forward rate at node g (mol/(m³·s)), as _bulkReactions assembles it,
+  // with ∂rate/∂slot over g's block into dr (length M; filled whole). An island's sum takes the
+  // same terms (lawRows.js, applyIslands), so its rows and the nodes' are of one function.
+  _bulkRateInto(rx, g, dr) {
+    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    const law = rx.srh?.[this.nodeMaterial[g]];
+    if (law) {
+      // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p, a and the excesses.
+      let aHi = rx.fixedA, aLo = 0;
+      for (let p = 0; p < rx.sp.length; p++) {
+        aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
+        aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
+      }
+      const { rate, Cn, Cp, Ca, Cxn, Cxp } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
+      dr.fill(0);
+      this._srhInto(g, law.n.i, Cn, Cxn, dr);
+      this._srhInto(g, law.p.i, Cp, Cxp, dr);
+      for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Ca * rx.nu[p];
+      return rate;
+    }
+    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g], aHi = rx.fixedA, aLo = 0;
+    dr.fill(0); // ∂ ln P / ∂slot
+    // Participants: reactants with ν > 0, then products with ν < 0.
+    for (let p = 0; p < rx.sp.length; p++) {
+      const i = rx.sp[p], nu = rx.nu[p];
+      if (nu > 0) {
+        const ci = c[g * n + i];
+        P *= nu === 1 ? ci : powi(ci, nu);
+        this._dlnc(g, i, nu, dr);
+      }
+      aHi += nu * u[b * M + 1 + i];
+      aLo += nu * uLo[b * M + 1 + i];
+    }
+    const ag = rx.auger?.[this.nodeMaterial[g]];
+    if (ag) {
+      // Auger: P times the third carrier's C_n n + C_p p, ∂ln of that into dr
+      const tn = ag.cn * c[g * n + ag.n.i], tp = ag.cp * c[g * n + ag.p.i], K = tn + tp;
+      P *= K;
+      if (K > 0) {
+        this._dlnc(g, ag.n.i, tn / K, dr);
+        this._dlnc(g, ag.p.i, tp / K, dr);
+      }
+    }
+    const a = aHi + aLo;
+    const f = -Math.expm1(-a); // 1 − e^{−a}
+    const rate = P * f;
+    const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
+    // ∂rate/∂slot = rate·∂lnP + P·f′·∂a
+    for (let k = 0; k < M; k++) dr[k] *= rate;
+    for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Pd * rx.nu[p];
+    return rate;
   }
 
   // Displacement along a segment where φ is defined: D = −ε(φ_R − φ_L)/h into the two Gauss rows.

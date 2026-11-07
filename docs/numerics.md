@@ -956,11 +956,29 @@ the terms that cancel:
   its round was dropped, and a cold solve left the base at the emitter's level, its terminal
   currents 3.3e-11 and −3.9e-11 A/m² (the stress run's semi 220). So where a face opens onto the
   stretch's end piece, the one its contact holds, and nothing there adds to the species' balance
-  (dilute, without flow, mixing, a port or a reaction of it, nor one at the face), the sum reaches
+  but its bulk reactions (dilute, without flow, mixing or a port, nor a reaction of it at the
+  face; the bulk reactions' rates are summed too, below), the sum reaches
   past the face to that piece's least-conducting segment, if that conducts under 1e-6 of the
   piece's first. That segment's Scharfetter–Gummel flux, with its exact derivatives, takes the
   place of the face's flux and the outside row. Every balance in between is in the sum, and still
   none is computed.
+
+  A bulk reaction doesn't stop a sum. Its rate at a node is computed directly,
+  $`r = P(1 - e^{-a})`$ with $`a`$ from the compensated levels, never as a difference of the two
+  one-way rates, so each node's $`\mathrm{vol}\,\nu r`$ enters the sum as exactly as a face's rate
+  does: the piece's own nodes', and an end piece's between the face and the segment its cut takes,
+  each with the derivatives its node's row has (the same function, `_bulkRateInto`). Until 7 Nov a
+  piece with a bulk reaction of the species got no island, and a cut stopped at an end piece with
+  one: the floating base above at 250 K, with band-to-band recombination in all three layers,
+  converged cold at −4e-10 V where it's −0.1477, its currents 900 times too large, and silent, its
+  Kirchhoff miss (1.7e-17 A/m²) under the warning's floor (Fable 5.1's hunt A). Summed with its
+  rates, it lands on a warm sweep's level to 1e-9 V in either listing, and a transient's to 4e-6 V.
+  The recombination in the n layers matters to the answer: left out of the sum, the base settled
+  at −0.1460 V with Kirchhoff off 0.3%. A cut's segment is chosen once a round, at the converged
+  state the round starts from, and held: re-chosen at each update, the summed nodes moved under
+  Newton as it walked the level (segments 38, 41, 47, 48 in turn), and the end piece's minority
+  holes, held there by ~1e-24 of the junctions' conduction, took an update of 4e6 thermal units
+  that ended the round.
 
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so

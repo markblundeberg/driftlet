@@ -262,8 +262,8 @@ for live demos.
      regions are now deflated: each one's balance summed over it, in which its own fluxes cancel
      exactly, is bordered like a conserved amount, once the plain solves converge with terminal
      currents that don't add up (and since 2 Nov, one fed only by its faces' reactions, and a
-     floating metal: F5 below). Not covered yet: a population held that weakly within a region,
-     or one fed by a bulk reaction or a port. Measured (2 Nov): an islands round tried and dropped
+     floating metal: F5 below; since 7 Nov, one with bulk reactions, each node's rate summed).
+     Not covered yet: a population held that weakly within a region, or one fed by a port. Measured (2 Nov): an islands round tried and dropped
      isn't the sign of a wrong steady state. It happened 19 times in the law sweep, every one on a
      device that agrees with its transient, none in the suite, and in the stress run only on
      semi 220 (below). Their currents were 1e-18 to 2e-17 A/m² from adding up (equilibrium's
@@ -272,16 +272,20 @@ for live demos.
      A/m², 1e-6 of the largest, the floating terminals' gaps and 1e-12 of what the species carry:
      numerics.md); and since 5 Nov the round is also asked for by each island's own balance, and
      a piece the round couldn't sum out, left unbalanced, is warned of.
-     Open, from a Fable 5.1 round (4–5 Nov, ~/.cache/driftlet-claude/fable1/): silent still, a
-     floating base whose piece has a bulk reaction (no island is made: GaAs at 250 K with
-     band-to-band recombination, base −4e-10 V where it's −0.148, currents 5e-16 A/m², under the
-     warning's floor); and the four-layer base at 200 K (summed at its face, its balance reads
+     Open, from a Fable 5.1 round (4–5 Nov, ~/.cache/driftlet-claude/fable1/): silent still,
+     the four-layer base at 200 K (summed at its face, its balance reads
      noise; 0.16–0.26 V off). Warned, not solved: a base whose end piece has a port (a collector
      contact carrying 1 mA/m²: 0.135 V off), and the four-layer base at 300 K swept to −0.3 V
      (0.1 V off: the plain solve failed and the retry, its rows in from the start, satisfied a
      row that reads noise; it had solved right before 5 Nov). Below the imbalance's 1e-40
      mol/(m²·s) floor, silent: the three-layer base at 150 K (leaks 1e-42; 0.1 V off swept at
-     −0.3 V). All want the islands' cuts through interior pieces and past reactions.
+     −0.3 V). All want the islands' cuts through interior pieces. (Fixed 7 Nov: a floating base whose
+     piece has a bulk reaction, hunt A, GaAs at 250 K with band-to-band recombination, which
+     converged silently at −4e-10 V where it's −0.1477: each node's rate is in the sum now, and
+     a cut passes an end piece's reactions; numerics.md. Not covered: separateRates takes face
+     rates only, so a fast bulk reaction shared by two islands could leave the bordered system
+     nearly singular, as F5's fast couple did; hunt A's base has two such islands, e⁻ and h⁺,
+     sharing a slow one, and solves.)
    - Kinetic steady states finer than a fast couple's round-off. An electrode at open circuit
      with a fast couple (k0 = 1) and a slow one, fed through a slow transfer at a face (k0 1e-17),
      settles at a balance of ~1e-18 mol/(m²·s), which needs the fast couple's net rate to 1e-20

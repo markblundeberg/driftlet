@@ -184,6 +184,35 @@ test('…but not where the species\' currents cancel: a membrane at no current b
   }
 });
 
+test('islands: a floating base whose carriers recombine is summed with its rates, in either listing', () => {
+  // Fable 5.1's hunt A (4 Nov): the floating p⁺ base at 250 K with band-to-band recombination in
+  // all three layers. A piece with a bulk reaction got no island, nor a cut through an end piece
+  // with one, and a cold solve at −0.2 V converged with the base at −4e-10 V where it's −0.1477,
+  // its currents 4.6e-16 and −4.8e-16 A/m² (true: ±5.03e-19), silent: Kirchhoff's miss, 1.7e-17
+  // A/m², was under the warning's floor. Now each node's rate is summed (+vol·ν·r, as in its row),
+  // the piece's own and the end pieces' out to their bottlenecks. Listed in reverse, the round
+  // diverged where each iterate re-chose the bottleneck (the summed nodes moving under Newton), so
+  // a round holds them. Independent routes: a warm sweep from 0 V in 20 steps, −0.147711380 V;
+  // advance() at −0.2 V from the 0 V state, −0.14770784 V at 3e18 s (settling ~1e16 s).
+  const mat = 'GaAs', def = build({
+    T: 250,
+    library: [semiconductor(mat, { T: 250 })],
+    stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { [mat]: 1e8 } }],
+    grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 },
+  });
+  const bases = [];
+  for (const species of [def.species, [...def.species].reverse()]) {
+    const s = new Device({ ...def, species }).solve(), { left, right } = s.terminals;
+    const mid = (s.region.indexOf(1) + s.region.lastIndexOf(1)) >> 1;
+    bases.push(s.V['h+'][mid]);
+    assert.ok(s.converged && !s.warnings.some((w) => w.includes('floating')), JSON.stringify(s.warnings));
+    assert.ok(Math.abs(left.current + right.current) < 1e-6 * Math.abs(left.current), `${left.current} and ${right.current} A/m²`);
+    assert.ok(Math.abs(left.current - 5.0273e-19) < 1e-3 * 5.0273e-19, `${left.current} A/m²`);
+  }
+  assert.ok(Math.abs(bases[0] + 0.1477114) < 1e-6 && Math.abs(bases[0] - bases[1]) < 1e-9, `the base at ${bases} V`);
+});
+
 test('islands: the round is asked for by each island\'s own balance, not by what else the device carries', () => {
   // Found by a Fable 5.1 hunter (4 Nov). The round once started only where the terminal currents
   // missed by 1e-9 of the largest and 1e-18 A/m²: a second electrode carrying 1 mA/m² beside the

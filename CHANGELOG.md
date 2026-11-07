@@ -3,6 +3,16 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A floating region whose carriers react in the bulk, such as a transistor's floating base
+  with band-to-band recombination, could converge at the wrong level with no warning: a GaAs
+  n/p⁺/n stack at 250 K put its base at −4e-10 V where it sits at −0.148 V, its currents 900
+  times too large. Its summed balance (the "islands", docs/numerics.md) now includes each node's
+  reaction rate, so it solves to the right level in either listing of the species. The stress
+  run's semi 158, a silicon device of that kind whose warm sweep and cold solve disagreed in the
+  sixth digit, now agrees.
+
 ## 1.12.1 (2026-11-07)
 
 An audit for implicit state: what the solver remembers between calls is now one list (`STATE`

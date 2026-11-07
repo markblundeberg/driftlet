@@ -58,19 +58,22 @@
 //                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
 //                  one region: nothing carries them between nodes) that no terminal feeds, and
 //                  surfaces. One law can have several entries, a row per set of nodes.
-//   islands[]      { stretch, row, flux, weight, outside, speed, currents?, z? }: a piece of a
-//                  stretch between faces fed by nothing else, or only by its faces' reactions
-//                  (none of its rows another law's), its balance summed over its nodes (Σ weight·u
-//                  over the `flux` rows, its faces' fluxes and −A ν over its reactions' rates,
-//                  plus the `outside` rows' balances) in place of balance row `row`; and a metal
+//   islands[]      { stretch, row, flux, weight, outside, speed, bulk, currents?, z? }: a piece
+//                  of a stretch between faces fed by nothing else, or only by its faces' and its
+//                  bulk reactions (none of its rows another law's), its balance summed over its
+//                  nodes (Σ weight·u over the `flux` rows, its faces' fluxes and −A ν over its
+//                  reactions' rates, plus vol·ν·r of each `bulk` entry [node, the solver's
+//                  reaction, ν], plus the `outside` rows' balances) in place of balance row `row`; and a metal
 //                  reached only by floating contacts (`currents`, each passing I/(zF), its drive's)
 //                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
 //                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
 //                  `cuts`: for each face of a piece that opens onto the stretch's end piece, where
-//                  nothing adds to the species' balance (not a metal; ideal, no flow, mixing, port
-//                  or bulk reaction of it there; an equilibrium link and no reaction of it at the face),
-//                  { face (its index in `flux`), sign (−1 left, +1 right), region, outside (that
-//                  face's outside row), reach (the region's segments, outward from the face) }.
+//                  nothing but its bulk reactions adds to the species' balance (not a metal;
+//                  ideal, no flow, mixing or port there; an equilibrium link and no reaction of it
+//                  at the face), { face (its index in `flux`), sign (−1 left, +1 right), region,
+//                  outside (that face's outside row), reach (the region's segments, outward from
+//                  the face), rxs (its bulk reactions of the species, [the solver's reaction, ν]:
+//                  summed at each node between the face and the segment the cut takes) }.
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal
 //                  behind a resistance that alone feeds it.
 //   contactLaw[t]  whether some constraint keeps contact t's charge.
@@ -721,9 +724,17 @@ export function findLaws(s) {
       if ((p0 === s0 && st.leftOpen) || (q1 === s1 && st.rightOpen)) continue;
       const inside = (q) => q >= p0 && q <= q1;
       if (model.ports.some((port) => inside(port.region) && (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))))) continue;
-      let bulk = false;
-      for (let q = p0; q <= q1; q++) {
-        for (const rx of model.reactions) if (rx.kf[regions[q].material] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) bulk = true;
+      // Its bulk reactions of the species, node by node: each rate is computed directly (r =
+      // P(1 − e^{−a})), so it enters the sum as exactly as a face's (a floating p⁺ base whose
+      // carriers recombine, Fable 5.1's hunt A: with no island, a cold solve left it 0.148 V off
+      // and silent). [node, the solver's reaction, ν of the species]
+      const bulk = [];
+      for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) {
+        for (const rx of rxsIn[nodeMaterial[g]]) {
+          let nu = 0;
+          for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+          if (nu !== 0) bulk.push([g, rx, nu]);
+        }
       }
       // A face reaction's rate is an unknown of its face's block, and its participant's edge node
       // takes −A ν r: those enter the sum exactly too. (F5's closed pool of B⁻ beside the metal
@@ -737,13 +748,12 @@ export function findLaws(s) {
           if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
         });
       }
-      if (bulk) continue;
       if (rates.length === 0 && p0 === s0 && q1 === s1) continue; // (uncut, with nothing but its amount: a constraint's)
       const row = blockOfNode[grid.regionStart[p0]] * M + 1 + i;
       // (a reactive piece: none of its rows another law's, since the sum stands for all of them)
       const rows = [];
       for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) rows.push(blockOfNode[g] * M + 1 + i);
-      if (used.has(row) || (rates.length > 0 && rows.some((o) => used.has(o) || localRows.has(o)))) continue;
+      if (used.has(row) || ((rates.length > 0 || bulk.length > 0) && rows.some((o) => used.has(o) || localRows.has(o)))) continue;
       used.add(row);
       // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right. Across
       // a face that holds μ̄ level, u is set only by the edge balances, and eliminated, it can
@@ -763,20 +773,28 @@ export function findLaws(s) {
       // weakly than the face does: a floating p⁺ base's holes leak out through the n layers on
       // each side, ~1e-19 of what they conduct at the junctions, and the sum taken at the face
       // reads that leak as a difference of terms 1e24 times larger (the stress run's semi 220).
-      // So for each face into an end piece that adds nothing of its own (dilute, no flow,
-      // mixing, port, reaction of the species, nor one at the face), its segments in order
-      // outward (`reach`): where one conducts far less than the first, applyIslands sums the
-      // balance out to it instead (see lawRows.js).
+      // So for each face into an end piece that adds nothing of its own but its bulk reactions
+      // (dilute, no flow, mixing, port, nor a reaction of the species at the face), its segments
+      // in order outward (`reach`): where one conducts far less than the first, applyIslands sums
+      // the balance out to it instead, with the reactions' rates at the nodes it passes (see
+      // lawRows.js).
       const cuts = [];
       faces.forEach(([f, sg, g], j) => {
         const r = sg < 0 ? p0 - 1 : q1 + 1, reg = regions[r], mat = model.materials[reg.material], i0 = grid.regionStart[r], i1 = grid.regionEnd[r];
         if (!(sg < 0 ? r === s0 && st.leftOpen : r === s1 && st.rightOpen)) return;
         if (model.interfaces[f].links[i].type !== 'equilibrium' || model.interfaces[f].reactions.some((rx) => rx.part.some((p) => p.i === i))) return;
         if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r)) return;
-        if (rxsIn[nodeMaterial[i0]].some((rx) => rx.sp.includes(i))) return;
+        // (its bulk reactions of the species: summed node by node out to the bottleneck, as the
+        // piece's own are)
+        const rxs = [];
+        for (const rx of rxsIn[nodeMaterial[i0]]) {
+          let nu = 0;
+          for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+          if (nu !== 0) rxs.push([rx, nu]);
+        }
         const reach = new Int32Array(i1 - i0);
         for (let k = 0; k < reach.length; k++) reach[k] = sg < 0 ? i1 - 1 - k : i0 + k;
-        cuts.push({ face: j, sign: sg, region: r, outside: blockOfNode[g] * M + 1 + i, reach });
+        cuts.push({ face: j, sign: sg, region: r, outside: blockOfNode[g] * M + 1 + i, reach, rxs });
       });
       islands.push({
         stretch: st,
@@ -784,6 +802,7 @@ export function findLaws(s) {
         flux: [...faces.map(([f]) => blockOfFace[f] * M + 1 + i), ...rates.map(([o]) => o)],
         weight: [...faces.map(([f, sg]) => sg * grid.area[grid.regionEnd[f]]), ...rates.map(([, w]) => w)],
         speed: rates.map(([o, , k]) => [o, k]),
+        bulk,
         outside,
         cuts,
         idx: new Int32Array(faces.length + rates.length + 3 * M * outside.length + 4 * cuts.length),
