@@ -1202,7 +1202,8 @@ const now = dev.solution();                   // snapshot of the current state
 - `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
   needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`. It doesn't land on a
   drive's breakpoints (`advance()` does): a jump inside a step is first order under either
-  method, and BDF2 restarts at a breakpoint a step begins on.
+  method, and BDF2 restarts at a breakpoint a step begins on. dt is a duration: a negative,
+  infinite or non-number one is refused, and a NaN or 0 does nothing and says so in `warnings`.
 - `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
   the local error per step to `tol` (default 1e-3) in thermal units of every potential ($`\phi`$ and
   each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step. That's local: over a long decay

@@ -252,6 +252,12 @@ export class Device {
    */
   step(dt, opts) {
     options(opts, 'step', ['method']);
+    // dt is a duration. Unchecked, step(-1) stepped back to t = −1 and converged, and step('1')
+    // made the clock the string '-11' (the state audit). As advance() does with its tEnd, a NaN
+    // (an animation's first frame) or 0 does nothing, and says so.
+    const length = `dt is the step's length in s, a positive number (the device is at t = ${this.solver.time})`;
+    if (typeof dt !== 'number' || dt < 0 || dt === Infinity) throw new SolverError(`step(${typeof dt === 'string' ? `'${dt}'` : dt}): ${length}${dt === Infinity ? '. For the long-time limit, solve() the steady state' : ''}`);
+    if (!(dt > 0)) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` });
     return makeSolution(this.solver, this.solver.advance(dt, opts));
   }
 

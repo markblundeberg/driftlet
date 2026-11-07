@@ -836,6 +836,25 @@ test('step() with BDF2 across a current switched on: the order restarts at the e
   assert.equal(d.advance(1e-3).converged, true);
 });
 
+// The state audit: step(dt) took any dt. step(-1) stepped back to t = −1 and converged, and
+// step('1') made the clock the string '-11'.
+test('step(dt) takes a positive duration: a negative, infinite or non-number dt is refused; NaN or 0 does nothing, and says so', () => {
+  const d = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'm', length: 1e-6, c0: { X: 1 } }],
+    contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } },
+  });
+  d.solve();
+  for (const dt of [-1, Infinity, -Infinity, '1', undefined]) assert.throws(() => d.step(dt), /dt is the step's length in s, a positive number/, `step(${dt})`);
+  for (const dt of [0, NaN]) {
+    const s = d.step(dt);
+    assert.ok(s.converged && s.time === 0 && s.warnings.some((w) => w.startsWith(`step(${dt}) did nothing`)), `step(${dt})`);
+  }
+  assert.equal(d.solver.time, 0);
+  assert.equal(d.step(1e-6).time, 1e-6);
+});
+
 // Fable round 4 (three reviewers apart): where the error estimate has a floor above tol, error
 // rejections had none, so the step fell below the time's ulp, steps were "accepted" that didn't
 // move it, and maxSteps ran out at a standstill with currents of 1e87 beside converged: true.
