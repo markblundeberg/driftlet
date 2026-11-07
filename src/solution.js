@@ -349,6 +349,8 @@ export function makeSolution(solver, result = {}) {
     }
   }
   const cond = solver.conditioning, un = solver.unreached, ch = solver.charging, lost = result.unsolved ? solver.drifted : null; // (a failed steady solve's: see Device.solve)
+  // (what failed: a steady solve, or a time step; a failed step() was said to be "the solve")
+  const what = result.unsolved ? 'the solve' : 'the step', system = result.unsolved ? 'the steady system' : "the time step's system";
   // A failed solve with a reaction that a steady state needs at equilibrium, left far from it (see
   // stuckReactions): one too slow for the steady solve's time steps, which reach ~1e12 of the
   // slowest diffusion time (Y = Z at kf 1e-10/s failed with nothing said).
@@ -408,7 +410,7 @@ export function makeSolution(solver, result = {}) {
       }
     }
     sol.warnings.push(
-      `the steady system ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): ` +
+      `${system} ${digits} near x = ${cond.x.toExponential(3)} m (${cond.where}): ` +
         (scarce?.r < 1e-24
           ? `there ${scarce.name} is ${scarce.r.toExponential(0)} of the ions around it, too scarce for its level to be held in double precision ` +
             '(a minority swept out of a junction by a large bias, or excluded at a sharp neutral face). Drive less; or, at a face, ' +
@@ -424,12 +426,12 @@ export function makeSolution(solver, result = {}) {
     // A cold start far from where a floating double layer's neighbours balance (an electrode's
     // reactions with its starting coverages, an ion link): Newton has to cross that gap at once.
     sol.warnings.push(
-      `the solve did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
+      `${what} did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
         'Hold that terminal at a voltage first, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.',
     );
   } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.modelError) {
     sol.warnings.push(
-      `the solve did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
+      `${what} did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
         'The model doesn\'t hold there: a smaller concentration or drive, or a model for it (lattice for crowding).',
     );
   } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.settling) {
@@ -440,7 +442,7 @@ export function makeSolution(solver, result = {}) {
     );
   } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12)) {
     sol.warnings.push(
-      'the solve did not converge, and nothing specific showed why. ' +
+      `${what} did not converge, and nothing specific showed why. ` +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',
     );
   }

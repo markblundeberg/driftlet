@@ -20,8 +20,32 @@ import { newton as newtonFn } from './newton.js';
 import { RegionTerms } from './regions.js';
 import { SteadySolves } from './steady.js';
 import { SmallSignal } from './impedance.js';
-import { advance as advanceFn, integrate as integrateFn, step as stepFn } from './timeSteps.js';
+import { advance as advanceFn, integrate as integrateFn, step as stepFn, violentStart } from './timeSteps.js';
 import { initFromComposition as initFromCompositionFn } from './start.js';
+
+// The Solver's state between calls: every field a later call reads that an earlier call wrote,
+// and that a call which fails (or is rolled back) must leave as it was. _snapshot() copies these
+// and _restore() puts them back; nothing else does it by hand. Every other field is structure,
+// built with the solver, or scratch, written before it's read within each call (diagnostics too,
+// which a solution reads from the call just made), and test/state.test.js holds every field a run
+// writes to one of the three. (Listed by hand at each place that needed them, a rollback kept
+// whether the state was stepped and where it was solved from the attempt it undid.)
+export const STATE = [
+  'u', 'uLo', // Newton's unknowns
+  'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', // the start of the next step
+  'contactDStart', 'contactDOld', 'contactDEnd', 'portQStart', 'portQOld', 'portQEnd',
+  'time', 'lastDt', 'history', 'dtNext', 'sourceTime', // the clock, and the time steps' memory
+  'termV', // the terminals' voltages (floating ones are unknowns)
+  'atSteady', 'stepped', 'solvedV', 'coldStart', // what the state is: steady, stepped, where solved, cold
+  'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
+  'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
+];
+// (Each value its own copy: typed arrays and the history array copied, the rest replaced whole.
+// Restored in place, the arrays the solver never replaces, which assembly reads by reference; the
+// others are replaced, since a step may alias them: portQOld = portQStart, filled in place, would
+// have filled both.)
+const copyState = (v) => (ArrayBuffer.isView(v) ? v.slice() : Array.isArray(v) ? v.slice() : v);
+const IN_PLACE = new Set(['u', 'uLo', 'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', 'termV', 'boundaryIntake']);
 
 // A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
 export function profileAt({ x, values: c }, at) {
@@ -367,6 +391,12 @@ export class Solver {
     // error estimate of adaptive stepping).
     this.history = [];
     this.dtNext = undefined;
+    // (the rest of STATE: no transient stepped, no solve to continue from, no set() to tell of)
+    this.stepped = false;
+    this.solvedV = undefined;
+    this.regriddedSteady = false;
+    this.jumpedT = undefined;
+    this.restarted = null;
 
     // Bulk reactions as flat participant lists: reactants with +ν, products with −ν.
     // Each has its rate constant at every node: its material's, or its profile's mean over the
@@ -976,60 +1006,34 @@ export class Solver {
     this.computeConcentrations();
   }
 
-  _snapshot() {
-    return {
-      u: Float64Array.from(this.u),
-      uLo: Float64Array.from(this.uLo),
-      cOld: Float64Array.from(this.cOld),
-      thOld: Float64Array.from(this.thOld),
-      th0Old: Float64Array.from(this.th0Old),
-      gamOld: Float64Array.from(this.gamOld),
-      gateOld: Float64Array.from(this.gateOld),
-      time: this.time,
-      lastDt: this.lastDt,
-      atSteady: this.atSteady,
-      contactDStart: this.contactDStart,
-      contactDOld: this.contactDOld,
-      contactDEnd: this.contactDEnd,
-      portQStart: this.portQStart,
-      portQOld: this.portQOld,
-      portQEnd: this.portQEnd,
-      boundaryIntake: Float64Array.from(this.boundaryIntake),
-      history: this.history.slice(),
-      termV: Float64Array.from(this.termV),
-      sourceTime: this.sourceTime,
-      coldStart: this.coldStart,
-      // (a steady solve's held stages set these: a failed solve() left the conservation ledger's
-      // reference and the next transient's step size changed; Fable round 3's steady.js review)
-      referenceAmounts: this.referenceAmounts.slice(),
-      dtNext: this.dtNext,
-    };
+  // A call's own diagnostics, which its solution reads (src/solution.js) to say why it failed:
+  // fresh at the start of every call that reports them (solve, step, advance). (Left from the
+  // last steady solve, a failed step() said "the steady system lost 16 of its ~16 digits", that
+  // solve's conditioning, after a rollback; a step's failure could repeat a solve's "no steady
+  // state" too. The state audit.)
+  _freshDiagnostics() {
+    this.violent = this.history.length === 0 && !this.stepped ? violentStart(this) : []; // (a start far from equilibrium)
+    this.unreached = null; // (a driven current no held voltage reaches: see _floatingContinuation)
+    this.charging = null; // (a driven current that only charges: see _solveSteadyAll)
+    this.drifted = null; // (an amount no row keeps, lost by a giant step: see _steadySteps)
+    this.settling = null; // (a ramp out of steps while still settling: see _steadySteps)
+    this.modelError = null; // (a statistics model's refusal: see newton)
+    this.conditioning = null; // (the worst cancellation a factorisation showed: see newton)
   }
 
-  _restore(s) {
-    this.u.set(s.u);
-    this.uLo.set(s.uLo);
-    this.cOld.set(s.cOld);
-    this.thOld.set(s.thOld);
-    this.th0Old.set(s.th0Old);
-    this.gamOld.set(s.gamOld);
-    this.gateOld.set(s.gateOld);
-    this.time = s.time;
-    this.lastDt = s.lastDt;
-    this.atSteady = s.atSteady;
-    this.contactDStart = s.contactDStart;
-    this.contactDOld = s.contactDOld;
-    this.contactDEnd = s.contactDEnd;
-    this.portQStart = s.portQStart;
-    this.portQOld = s.portQOld;
-    this.portQEnd = s.portQEnd;
-    this.boundaryIntake.set(s.boundaryIntake);
-    this.history = s.history.slice();
-    this.termV.set(s.termV);
-    this.sourceTime = s.sourceTime;
-    this.coldStart = s.coldStart;
-    this.referenceAmounts = s.referenceAmounts.slice();
-    this.dtNext = s.dtNext;
+  // The solver's state between calls (see STATE, at the head of this file): a copy of each, and
+  // back to it.
+  _snapshot() {
+    const snap = {};
+    for (const k of STATE) snap[k] = copyState(this[k]);
+    return snap;
+  }
+
+  _restore(snap) {
+    for (const k of STATE) {
+      if (IN_PLACE.has(k)) this[k].set(snap[k]);
+      else this[k] = copyState(snap[k]);
+    }
     this.computeConcentrations();
   }
 

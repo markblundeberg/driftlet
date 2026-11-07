@@ -42,6 +42,14 @@ function sameExceptDrives(a, b) {
   return true;
 }
 
+// Each terminal's drive (the contacts, then the ports), set in the model in place.
+function applyDrives(model, drives) {
+  model.terminals.forEach((t, k) => (t.drive = drives[k]));
+  model.contacts.left.drive = drives[0];
+  model.contacts.right.drive = drives[1];
+  model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
+}
+
 // A method's options: a name it doesn't take (a typo, dtmax for dtMax) is an error, not ignored.
 const options = (opts, method, allowed) => checkOptions(method, opts, allowed, SolverError);
 
@@ -213,10 +221,7 @@ export class Device {
     // they change. (Left for advance(), it was solved at the new drive, and the step response
     // was lost; Fable round 3's steady.js review.)
     this._settleRegrid();
-    this.model.terminals.forEach((t, k) => (t.drive = drives[k]));
-    this.model.contacts.left.drive = drives[0];
-    this.model.contacts.right.drive = drives[1];
-    this.model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
+    applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
   }
@@ -258,6 +263,7 @@ export class Device {
     const length = `dt is the step's length in s, a positive number (the device is at t = ${this.solver.time})`;
     if (typeof dt !== 'number' || dt < 0 || dt === Infinity) throw new SolverError(`step(${typeof dt === 'string' ? `'${dt}'` : dt}): ${length}${dt === Infinity ? '. For the long-time limit, solve() the steady state' : ''}`);
     if (!(dt > 0)) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` });
+    this.solver._freshDiagnostics();
     return makeSolution(this.solver, this.solver.advance(dt, opts));
   }
 
@@ -283,6 +289,7 @@ export class Device {
     // cell, then advance(), failed down to 1e-17 s). Its steady state on the new grid is what it
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
     this._settleRegrid();
+    this.solver._freshDiagnostics();
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
   }
 
@@ -355,7 +362,8 @@ export class Device {
    */
   _checkpoint() {
     const solver = this.solver;
-    return { def: this.def, model: this.model, solver, snap: solver._snapshot(), solvedV: solver.solvedV, referenceAmounts: solver.referenceAmounts.slice(), surfaceRef: solver.surfaceRef.slice() };
+    // (the drives too: a change of drive alone is made in place, in the model this checkpoint keeps)
+    return { def: this.def, model: this.model, solver, drives: this.model.terminals.map((t) => t.drive), snap: solver._snapshot() };
   }
 
   /**
@@ -364,16 +372,15 @@ export class Device {
    * @internal
    */
   _rollback(cp) {
-    if (this._solver === cp.solver) this._redefineDrives(cp.def); // only drives changed since: restore them exactly
-    else {
-      this.def = cp.def;
-      this.model = cp.model;
-      this._solver = cp.solver;
-    }
+    this.def = cp.def;
+    this.model = cp.model;
+    this._solver = cp.solver;
+    // The drives as they were (a drive changed since, then a rebuild, left the checkpoint's model
+    // driven at the new value while its definition said the old one), and the solver's own
+    // reading of them; then its state.
+    applyDrives(this.model, cp.drives);
+    cp.solver.redrive();
     cp.solver._restore(cp.snap);
-    cp.solver.solvedV = cp.solvedV;
-    cp.solver.referenceAmounts = cp.referenceAmounts.slice();
-    cp.solver.surfaceRef = cp.surfaceRef.slice();
   }
 
   /**

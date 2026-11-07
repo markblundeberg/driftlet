@@ -14,8 +14,9 @@
 //   s.jumpedT           [T before, T after] where set() changed T and no step has been taken
 //                       since (cleared by an accepted step or a converged solve), for the
 //                       first step's failure to name.
-//   s._snapshot() / s._restore(snap)  the whole time state (u, uLo, termV, the start-of-step
-//                       values, time, lastDt, history, the boundary intake, sourceTime).
+//   s._snapshot() / s._restore(snap)  the whole state between calls (STATE in src/solver.js: u,
+//                       uLo, termV, the start-of-step values, time, lastDt, history, the boundary
+//                       intake, sourceTime, and stepped, solvedV and jumpedT).
 //   s._assembleBookkeeping(dt), s.computeConcentrations(), s._accumulateBoundaryIntake(dt, c),
 //   s._terminalCurrent(), s._probes(probes), s.fastestTime(), s.terms (drives, breakpoints).
 //
@@ -343,14 +344,10 @@ export function integrate(s, tEnd, opts = {}) {
       clamped = true;
     }
     s.landing = atBreak ? tb : clamped ? tEnd : undefined;
-    const snap = s._snapshot(), wasStepped = s.stepped, wasSolvedV = s.solvedV;
-    // (and what a step sets of the steady solves' choices: a rejected first step left stepped set
-    // and solvedV cleared, a different continuation later; Fable round 4's review)
-    const back = () => {
-      s._restore(snap);
-      s.stepped = wasStepped;
-      s.solvedV = wasSolvedV;
-    };
+    // (the snapshot holds what a step sets of the steady solves' choices too: a rejected first
+    // step left stepped set and solvedV cleared, a different continuation later; Fable round 4)
+    const snap = s._snapshot();
+    const back = () => s._restore(snap);
     let err, p, half = null;
     if (s.history.length > 0) firstErrs.length = 0;
     if (s.history.length === 0) {

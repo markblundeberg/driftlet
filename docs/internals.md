@@ -100,7 +100,16 @@ By method, in file order:
 
 What stays in `src/solver.js` is the setup, the bookkeeping, the probes and snapshots, and the thin
 drivers that call the modules: about a thousand lines, with no contract of its own beyond this
-section.
+section and one list. `STATE`, at its head, names the solver's state between calls: every field a
+later call reads that an earlier one wrote (the unknowns, the start of the next step, the clock and
+the time steps' memory, whether the state is steady or stepped and where it was solved, what closed
+stretches conserve). `_snapshot()` and `_restore()` copy exactly these, for a failed solve, a
+rejected step and the live wrapper's rollback alike; every other field is structure, built with the
+solver, or scratch, written before it's read within a call. `test/state.test.js` holds every field
+a run writes to one of the three, and holds a failed or refused call, a read and a rollback to
+leave a device doing exactly what a twin that never made the call does. A new field that lives
+between calls goes in `STATE`. (Listed by hand at each place that needed them instead, a rollback
+kept whether the state was stepped, and its drives, from the attempt it undid.)
 
 ## Reviewing one module
 

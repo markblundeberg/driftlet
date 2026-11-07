@@ -30,9 +30,10 @@
 // solveSteady(opts) → { converged, steps, iterations, history, residual?, ramped? }
 //   opts: maxSteps (80: time steps per pseudo-transient ramp), tol (1e-11: the largest potential
 //   change, in thermal units, that ends a ramp of giant steps), continuation (false: Newton from
-//   here and the pseudo-transient ramp only). Sets this.violent (violentStart, where nothing has
-//   been stepped or solved), clears this.unreached, this.charging, this.drifted and this.settling, captures the
-//   laws, and
+//   here and the pseudo-transient ramp only). Starts the call's diagnostics fresh
+//   (this._freshDiagnostics(): this.violent, violentStart where nothing has been stepped or
+//   solved; this.unreached, charging, drifted, settling, modelError and conditioning cleared),
+//   captures the laws, and
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
 //   current that only charges a capacitance or feeds a conserved combination (a constraint):
@@ -151,7 +152,6 @@ import { sourceAt } from './device.js';
 import { chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
-import { violentStart } from './timeSteps.js';
 
 export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
@@ -196,15 +196,10 @@ export class SteadySolves {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
-    this.violent = this.history.length === 0 && !this.stepped ? violentStart(this) : []; // (for a failure to say: see src/timeSteps.js)
-    this.unreached = null; // (a driven current no held voltage reaches: see _floatingContinuation)
-    this.charging = null; // (a driven current that only charges: see _solveSteadyAll)
+    this._freshDiagnostics(); // (violent, unreached, charging, drifted, settling, modelError, conditioning: see src/solver.js)
     captureLaws(this);
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
-    this.drifted = null; // (an amount no row keeps, lost by a giant step: see _steadySteps)
-    this.settling = null; // (a ramp out of steps while still settling: see _steadySteps)
-    this.modelError = null; // (a statistics model's refusal, for the failure: see newton)
     // A solve that fails leaves where the state was solved, and whether it was stepped, as they
     // were (Device.solve restores the state): a floating continuation's held solves had set them,
     // and the next held solve ramped warm from a voltage the state was never at, and failed.

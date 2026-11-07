@@ -163,6 +163,13 @@ for live demos.
      (Fixed in 1.10: the error norm's floating terminals, `dt0` after a call, port traces, each
      face's production, `photogeneration()` toward −x, the return to level contacts,
      `impedance()` re-solving.)
+   - The state audit (7 Nov 2026): the solver's state between calls is one list (`STATE` in
+     src/solver.js), and test/state.test.js holds each field a run writes to it or to scratch,
+     and a failed, refused or read-only call and a rollback to leave a device doing what a twin
+     does, bit for bit. Still open: `step()` in src/timeSteps.js keeps its own list of what a
+     failed step puts back (the start-of-step arrays), a second hand list beside `STATE`; and a
+     `set()` of a drive to the value it already has still restarts the time steps' order (harmless,
+     a first-order step).
    - From Fable round 5 (6 Nov 2026), still open:
      - Any grid option (`ratio` alone, `minCells`) drops the default grading from hmin = L/1000:
        a uniform 8-cell grid, unwarned. Documented, but the docs invite tuning `ratio` alone;
@@ -172,9 +179,10 @@ for live demos.
      - Small acceptances: unused keys in `fixed` (a check broke face and port reactions, whose
        `fixed` is read through their sides), a bath material's temperature unwarned; a strictly neutral region's unbalanced `c0` refused
        at the first solve rather than at construction.
-     - After a failed `solve()`, a later `advance()` differs from a twin's at 2e-12 (something
-       outside the snapshot steers Newton); a regrid loses 7 ppm of a closed stretch's amount to
-       interpolation (documented).
+     - A regrid loses 7 ppm of a closed stretch's amount to interpolation (documented). (The
+       2e-12 by which an `advance()` after a failed `solve()` differed from its twin's was the
+       twin's: it lacked the two `set()` calls of drive around the solve, each of which restarts
+       the time steps' order. With them, bit for bit the same; the state audit, 7 Nov.)
    - From Fable round 4 (6 Nov 2026), still open:
      - `advance()` at a `tol` its error estimate can't reach now stops where a step can't move
        the clock, `converged: false` (it stalled at a standstill, `converged: true`). The floor is
