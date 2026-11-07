@@ -53,19 +53,22 @@ export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCel
  */
 export function buildGrid(regions, opts = {}) {
   if (!Array.isArray(regions) || regions.length === 0) throw new Error('grid needs at least one region');
+  // (a field given as undefined is not given: set({ grid: { minCells: undefined } }) took the
+  // default's place with undefined, and the cell count came out NaN, a TypeError)
+  const given = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v !== undefined));
   // A grid far past any demo's (most often a length given in µm as if in m) would only exhaust
   // memory: refuse it before building it. Each region needs at least length/hmax cells.
   const least = regions.map((reg) => {
-    const g = { ...DEFAULTS, ...opts, ...(reg.grid ?? {}) };
+    const g = { ...DEFAULTS, ...given(opts), ...given(reg.grid) };
     return reg.cells ? reg.cells.length : reg.length / Math.min(g.hmax ?? Infinity, reg.length / g.minCells);
   });
   const total = least.reduce((s, n) => s + n, 0);
   if (!(total <= MAX_CELLS)) {
-    const r = least.indexOf(Math.max(...least)), g = { ...opts, ...(regions[r].grid ?? {}) };
+    const r = least.indexOf(Math.max(...least)), g = { ...given(opts), ...given(regions[r].grid) };
     throw new RangeError(`at least ${total.toExponential(1)} cells, past the ${MAX_CELLS.toExponential(0)} a device may have: ${regions[r].name ?? `region ${r}`} is ${regions[r].length} m long at hmax ${g.hmax ?? '(none)'} m. Lengths are in metres (units.um(1) is 1e-6): check them, or raise hmax`);
   }
 
-  const perRegion = regions.map((reg) => reg.cells ?? gradedCells(reg.length, { ...opts, ...(reg.grid ?? {}) }));
+  const perRegion = regions.map((reg) => reg.cells ?? gradedCells(reg.length, { ...given(opts), ...given(reg.grid) }));
   const nNodes = perRegion.reduce((s, cells) => s + cells.length + 1, 0);
   const nSeg = nNodes - 1;
 

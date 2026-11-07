@@ -82,6 +82,17 @@ test('per-region grid options override device defaults', () => {
   assert.equal(g.regionEnd[1] - g.regionStart[1], 20);
 });
 
+// (a field given as undefined took its default's place: the cell count came out NaN, and the
+// device refused with a TypeError; set() of { minCells: undefined } is how a patch removes one)
+test('a grid field given as undefined is as if not given', () => {
+  assert.deepEqual(buildGrid([{ length: 1, grid: { minCells: undefined } }, { length: 1 }], { minCells: undefined, hmax: undefined }).x, buildGrid([{ length: 1 }, { length: 1 }]).x);
+  const def = { species: [{ name: 'X', z: 0, cRef: 1 }], materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } }, regions: [{ material: 'm', length: 1e-6 }], contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } }, grid: { minCells: 20 } };
+  const d = new Device(def);
+  assert.equal(d.grid.nNodes, 21);
+  d.set({ grid: { minCells: undefined } });
+  assert.equal(d.grid.nNodes, 9);
+});
+
 test('a grid far past any demo is refused before it is built: a length in µm given as m', () => {
   // 1 m at hmax 20 nm would be 5e7 cells, and exhaust memory long before the solver said a word.
   const t0 = Date.now();
