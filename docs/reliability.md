@@ -252,8 +252,8 @@ so a change that makes one worse shows.
   conductances 1e-24 of its own, or by neighbours conducting 1e20 times less) is solved directly
   through its balance summed over it, where its own fluxes cancel exactly
   ([islands](numerics.md#steady-state)): its current comes out right to ~1e-15, where it was
-  up to 16× off. A population held that weakly within a region, or fed by a reaction, isn't
-  covered, and its solve can still converge to the wrong level; the terminal currents then
+  up to 16× off. A region with reactions in it is summed with their rates; a population held that weakly
+  within a region, or fed by a port, isn't covered, and its solve can still converge to the wrong level; the terminal currents then
   don't add up, which is the thing to check.
 - **The impedance is resolved to about 1e-4 of |Z|** where its solves are hardest: the real
   part of a nearly ideal capacitor (a closed redox cell with almost none of one partner), 1e-7 of
@@ -272,5 +272,5 @@ so a change that makes one worse shows.
   its digits, or which current no voltage reaches. In these tests, every steady state and
   transient reported converged has passed `check()` and the invariants above.
 - What driftlet doesn't model at all (more than one dimension, cross-diffusion, heat, optics,
-  field-dependent mobility) is in the [README](../README.md#what-it-doesnt-do), and open
+  field-dependent mobility, ballistic transport) is in the [README](../README.md#what-it-doesnt-do), and open
   numerical work in the [roadmap](../ROADMAP.md).

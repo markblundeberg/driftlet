@@ -464,8 +464,8 @@ export function integrate(s, tEnd, opts = {}) {
     stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s, the state it reached refused by a statistics model: ${s.modelError}. The model doesn't hold there: a smaller concentration or drive, or a model for it (lattice for crowding).`;
   else if (failed && s.jumpedT && steps === 0)
     // (Fable round 3's convergence hunt: a Si diode solved at 150 K, set() to 500 K, failed at its
-    // first step at 1e-18 s, told to solve() from c0's layout. Its minority carriers, carried at
-    // e⁻⁸⁰ of the old equilibrium, must rise ~50 thermal units in the first instant.)
+    // first step at 1e-18 s, told to solve() from c0's layout. Its minority carriers, carried over at
+    // e⁻⁶⁸ of the new equilibrium, must rise ~68 thermal units in the first instant.)
     stopped = `${at}: the first step did not converge even when shortened to ${dt.toExponential(1)} s, from a state carried across set()'s jump in temperature (${s.jumpedT[0]} → ${s.jumpedT[1]} K): the concentrations carry over, and what the new temperature makes of them in the first instant (a minority carrier far below its new equilibrium) is more than a step can follow. Change T in smaller jumps, advancing a little after each (a Si diode from 150 K to 500 K went in jumps of 50 K), or solve() at the new temperature and advance from there.`;
   else if (failed && fromLayout && steps === 0)
     // (round 15's fuzzer: the pn template advanced from its c0, a step of 3e-24 s failing, 23 of 62

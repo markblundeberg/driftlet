@@ -224,8 +224,8 @@ for live demos.
        filling, which a pn junction's cold solve needs; the start could fill immobile states itself,
        node by node, from the carriers it lays out.
      - `advance()` fails at its first step right after a `set({ T, materials })` jump far in T
-       (150 → 500 K at −5 V; 150 → 300 K at 0 V): the minority carriers carry over at e⁻⁸⁰ of the
-       new equilibrium and must rise ~50 thermal units within the step, and Newton's divergence
+       (150 → 500 K at −5 V; 150 → 300 K at 0 V): the minority carriers carry over at e⁻⁶⁸ of the
+       new equilibrium (e⁻⁶⁹ at −5 V), so their levels must rise ~68 thermal units within the step, and Newton's divergence
        guard stops the climb (a guard that let shrinking updates go on rescued only one case of
        five). The failure says so now, and jumps of 50 K, or a `solve()` first, get there.
      - Demo pages at a phone's width: the membrane page's three dot-panel captions overprint, the

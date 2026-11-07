@@ -247,6 +247,9 @@ current. Within that:
   [PyBaMM](https://github.com/pybamm-team/PyBaMM).
 - **Field-dependent transport.** No high-field mobility, impact ionisation, field-enhanced
   dissociation (second Wien effect) or tunnelling.
+- **Drift–diffusion throughout.** No ballistic transport: across a layer not much wider than its
+  carriers' mean free path (~0.1 µm for electrons in GaAs), it overstates the current, whose
+  diffusion velocity D/W can't really pass the thermal one.
 - **Fitting.** It solves forward problems; parameter estimation is up to you.
 
 How it works numerically is in [numerics](docs/numerics.md).

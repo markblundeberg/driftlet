@@ -784,7 +784,7 @@ test('a floating terminal\'s voltage is in the error norm: an RC whose φ is hel
 
 // Fable round 3's convergence hunt: a Si diode solved at 150 K and set() to 500 K failed its
 // first step, told it was advancing from c0's layout and to solve() first, which it had. Its
-// minority carriers carry over at e⁻⁸⁰ of the new equilibrium; the failure now names the jump,
+// minority carriers carry over at e⁻⁶⁸ of the new equilibrium; the failure now names the jump,
 // and the two ways round it work.
 test("advance() right after a far jump in T: the failure names the jump, and smaller jumps or a solve() get there", () => {
   const Si = (T) => semiconductor('Si', { T });
