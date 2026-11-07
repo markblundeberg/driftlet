@@ -3,6 +3,33 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## 1.12.1 (2026-11-07)
+
+An audit for implicit state: what the solver remembers between calls is now one list (`STATE`
+in src/solver.js), and a test holds a failed solve, a refused call, a read and a rollback to
+leave a device doing, bit for bit, what a twin that never made the call does. With the last of
+round 5's small items.
+
+- The live wrapper's rollback left the drives of the change it undid: a drive changed, then a
+  rebuild, and the restored device stayed driven at the new value while its definition said the
+  old one. It also kept whether the state had been stepped. Both are restored now.
+- A failed `step()` or `advance()` could report an earlier steady solve's diagnostics as its
+  own reason (that solve's "the steady system lost 16 of its ~16 digits", or its "no steady
+  state"). Each call starts them fresh, and a failed step's warnings say "the step".
+- `step(dt)` took any dt: `step(-1)` stepped back to t = −1 and converged, and `step('1')` made
+  the clock the string `'-11'`. A negative, infinite or non-number dt is refused; NaN or 0 does
+  nothing and says so, as `advance()` does.
+- A grid field given as `undefined` (`set({ grid: { minCells: undefined } })`, how a patch removes
+  one) crashed the grid with a TypeError; it is as if not given now.
+- A rejected first step left the state marked as stepped and forgot where it had been solved, so
+  a later steady solve chose its continuation as if a step had been taken.
+- Refused, not ignored: an offset on a neutral species' equilibrium link, an empty `kf`, `srh` or
+  `auger` map, a neutral contact terminal, and a terminal beside a bath without a reference (that
+  bath's V is its φ).
+- `check()`'s conservation reads the stretches that reach a terminal too (a broken contact intake
+  passed); `describe()` gives a bath-fed region its Debye length from the bath, and so warns of
+  end cells coarser than it.
+
 ## 1.12.0 (2026-11-06)
 
 Fable 5.1 round 5: contract reviews of the definition's validation, the solver's setup, the kit's
