@@ -3,7 +3,9 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.14.0 (2026-11-09)
+
+A transient's trace now carries each terminal's charge, so the charge passed is read, not summed.
 
 - A transient's trace has each terminal's charge: `trace.charge` (the right contact's, toward
   +x, beside `trace.current`) and `trace.terminals[name].charge`, running totals of the charge
