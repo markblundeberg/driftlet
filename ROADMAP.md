@@ -333,15 +333,14 @@ for live demos.
      and 4.25e-15 on the other (true: ±3.59e-15), and with the fourth layer cold solves at −0.2,
      −0.1, 0.1 and 0.3 V and warm ones at 0.1 and 0.3 V miss too, each confirmed by a transient to
      1e18 s. All warned (since 4 Nov: the warning had passed a sum on one terminal as round-off).
-   - A trace's charging current under BDF2. A terminal held at a voltage passes its charging
-     current as BDF2's difference of the stored charge, which isn't the step's mean, so the
-     trace doesn't sum to the charge: across a double layer's RC charging (blocking gold
-     electrodes in 10 mM NaCl, a 5 mV step; the Fable 5.2 docs review, 9 Nov 2026) Σ I·dt came
-     22% short at the default `tol`, the current's sign wrong past 5.4 RC, 5% short at 1e-5,
-     1% at 1e-7, exact under backward Euler, while the stored charge agreed to 4e-5 in every
-     run. The docs say to read the charge itself. Candidate: report each step's mean current,
-     ΔQ over the step, so that a trace sums to the charge under either method (the terminals
-     must still agree with one another at each point: Kirchhoff in the trace).
+   - A decay's tail in a trace. `tol` is absolute, in thermal units, so a step of ΔV is followed
+     only to about tol·V_T/ΔV of itself: a double layer stepped by 5 to 250 mV erred in its
+     current by 3 to 8 × tol·V_T/ΔV of the peak, and at the default tol the 5 mV step's current
+     changed sign past 5.4 RC (the Fable 5.2 docs review, 9 Nov 2026). The docs give a tol for a
+     tail (e^−n·ΔV/(80 V_T), within 8% at all three). Candidate: an error control that also
+     weighs each terminal's stored charge against what it has passed, so that a small signal
+     isn't left to the user's tol (it would change every run's steps: measure the cost first).
+     (Its charge, Σ I·dt 22% short there, is `trace.charge` since 9 Nov, exact.)
    - Steady solves that depend on the order species and reactions are listed in. Of random
      reacting devices (round 11's fuzzer: ions, complexations, couples on metals, I = 0 and
      resistive terminals, k0 log-uniform 1e-25 to 1e3), 1.3% of the cells and ~10% of those with

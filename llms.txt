@@ -609,13 +609,14 @@ left reads −`voltage` against a reference on the right). It stops short at
 or a step that won't converge. `probes`, read at accepted steps (give `dtMax` to resolve them):
 `{ x, species }` (c, or `quantity: 'V'`), `{ x, quantity: 'phi' }`, and at a face `{ interface: f,
 species }` (what crosses by its links: a reaction's products aren't in it) or `{ interface: f, gate }`.
-The trace's `current` and `voltage` are the contacts'; `trace.terminals[name]` has `{ V, current }` for
-every terminal, ports included, as `sol.terminals`. Each point's current is what the step ending
-there passed, so a charge is Σ current·(the step ending there), not a trapezoid (which adds half the
-step after a drive's jump): exact for a current drive, or under `method: 'be'`; under BDF2 a
-held terminal's charging is first order that way (a double layer's RC step summed 22% short at
-the default tol, its tail's sign wrong past 5 RC; 5% short at `tol: 1e-5`), so read its stored
-charge, which is right throughout.
+The trace's `current`, `charge` and `voltage` are the contacts'; `trace.terminals[name]` has
+`{ V, current, charge }` for every terminal, ports included, as `sol.terminals`. `charge` is a
+running total of what the terminal passed into the device: the difference between two points is
+the charge passed between them, as the device stored it, under either method. Don't sum the
+currents: under BDF2 a point's current is the rate at the step's end (a double layer's RC step
+summed 22% short). `tol` is absolute, in thermal units, so a step of ΔV is followed to about
+tol·V_T/ΔV of itself, and a decay's current below that is noise of either sign: to read a tail
+at e^−n of its peak, give tol < e^−n·ΔV/(80 V_T) (1.6e-5 for 5 mV to 5 RC).
 
 - **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
   and test after each: a driven current held past what the device can pass fails to converge.

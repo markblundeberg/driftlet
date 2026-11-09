@@ -331,8 +331,11 @@
  * @property {boolean} steady whether this is a converged steady state (solve()), not a transient's
  * @property {boolean} [done] advance(): whether tEnd was reached (false if the frame budget ran out)
  * @property {number} [rejected] advance(): steps rejected by error control or Newton failure
- * @property {{ t: number[], current: number[], voltage: number[], probes?: number[][] }} [trace] advance():
- *   the right contact's current (A/m², toward +x) and V_right − V_left after each accepted step, and
+ * @property {{ t: number[], current: number[], charge: number[], voltage: number[],
+ *   terminals: Record<string, { V: number[], current: number[], charge: number[] }>, probes?: number[][] }} [trace] advance():
+ *   the right contact's current (A/m², toward +x), the charge it has passed (C/m², a running total:
+ *   the difference between two points is what passed between them) and V_right − V_left after each
+ *   accepted step; each terminal's V, current and charge into the device, by name; and
  *   each probe's reading: inside, interpolated between the nodes around its x (mol/m³ for quantity
  *   'c', V for 'V' or 'phi'); at a face, a species' flux through it (mol/(m²·s), toward +x) or a
  *   gate's fraction open

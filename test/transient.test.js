@@ -903,3 +903,39 @@ test('a rejected first step leaves the steady solves\' choices as they were', ()
   s.newton = newton;
   assert.deepEqual({ stepped: s.stepped, solvedV: s.solvedV && Array.from(s.solvedV) }, before);
 });
+
+test("a trace's charge is what the terminals passed: an RC double layer's stored charge exactly, under BDF2 as under backward Euler, where Σ I·dt of the trace falls 22% short", () => {
+  // Blocking gold electrodes across 2 µm of 10 mM NaCl, RC ≈ 1.5 µs, stepped 5 mV: the default
+  // tol's steps grow to several RC, and the trace's currents, BDF2's rates at each step's end,
+  // don't sum to the charge (0.78 of it); the trace's charge is the stored charge's change.
+  const RC = 1.47e-6, face = { phi: { type: 'capacitive', C: 1.0 }, zeroCharge: 0 };
+  const mk = () => new Device(build({
+    library: [aqueous(['Na+', 'Cl-']), metal('Au')],
+    stack: [ohmic(0, ['e-']), layer('Au', 1e-6), face, layer('water', 2e-6, { c0: { 'Na+': 10, 'Cl-': 10 } }), face, layer('Au', 1e-6), ohmic(0, ['e-'])],
+    grid: { hmin: 0.1e-9, hmax: 20e-9, ratio: 1.15 },
+  }));
+  for (const method of ['bdf2', 'be']) {
+    const dev = mk();
+    dev.solve();
+    const D0 = dev.solution().interfaces[1].D;
+    dev.set({ contacts: { right: { V: 0.005 } } });
+    // (in two calls: the second steps on from the first's history)
+    const a = dev.advance(3 * RC, { method }), b = dev.advance(20 * RC, { method });
+    const t = [...a.trace.t, ...b.trace.t], I = [...a.trace.current, ...b.trace.current];
+    const stored = b.interfaces[1].D - D0, P = b.trace.terminals;
+    let sum = 0;
+    for (let k = 0; k < t.length; k++) sum += I[k] * (t[k] - (k ? t[k - 1] : 0));
+    if (method === 'bdf2') assert.ok(sum / stored < 0.9, `Σ I·dt / stored = ${sum / stored}`);
+    assert.ok(Math.abs(b.trace.charge.at(-1) / stored - 1) < 1e-9, `${method}: trace.charge ${b.trace.charge.at(-1)}, stored ${stored}`);
+    assert.ok(Math.abs(P.right.charge.at(-1) + stored) < 1e-9 * Math.abs(stored), `${method}: right terminal ${P.right.charge.at(-1)}`);
+    assert.ok(Math.abs(P.left.charge.at(-1) + P.right.charge.at(-1)) < 1e-9 * Math.abs(stored), `${method}: Kirchhoff, ${P.left.charge.at(-1)} + ${P.right.charge.at(-1)}`);
+    assert.equal(P.left.charge.length, b.trace.t.length);
+    assert.equal(b.trace.charge.length, b.trace.t.length);
+  }
+  // Driven by a current, a terminal passes that current's charge, I·t, whatever the steps.
+  const dev = mk();
+  dev.solve();
+  dev.set({ contacts: { right: { I: -2 } } });
+  const r = dev.advance(5 * RC);
+  assert.ok(Math.abs(r.trace.terminals.right.charge.at(-1) - -2 * r.time) < 1e-9 * 2 * r.time, `${r.trace.terminals.right.charge.at(-1)} vs ${-2 * r.time}`);
+});

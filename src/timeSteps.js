@@ -15,15 +15,17 @@
 //                       since (cleared by an accepted step or a converged solve), for the
 //                       first step's failure to name.
 //   s._snapshot() / s._restore(snap)  the whole state between calls (STATE in src/solver.js: u,
-//                       uLo, termV, the start-of-step values, time, lastDt, history, the boundary
-//                       intake, sourceTime, and stepped, solvedV and jumpedT).
+//                       uLo, termV, termCharge, the start-of-step values, time, lastDt, history,
+//                       the boundary intake, sourceTime, and stepped, solvedV and jumpedT).
 //   s._assembleBookkeeping(dt), s.computeConcentrations(), s._accumulateBoundaryIntake(dt, c),
-//   s._terminalCurrent(), s._probes(probes), s.fastestTime(), s.terms (drives, breakpoints).
+//   s._terminalCurrent(), s._terminalCurrents(), s._probes(probes), s.fastestTime(), s.terms
+//   (drives, breakpoints).
 //
 // The state: u + uLo (Newton's unknowns, η and φ̂ in thermal units), termV (terminal voltages),
-// time. The history: s.history, the accepted steps before this one, newest first, at most 3,
-// each { t (its start), dt, u (its start state), V (its start's terminal voltages), c, th, th0,
-// gam, g (gates), D (contacts' D), Q (ports' charges) }: what BDF2 and the predictor need.
+// time, termCharge (each terminal's charge passed into the device in time steps). The history:
+// s.history, the accepted steps before this one, newest first, at most 3, each { t (its start),
+// dt, u (its start state), V (its start's terminal voltages), c, th, th0, gam, g (gates), D
+// (contacts' D), Q (ports' charges), P (termCharge) }: what BDF2 and the predictor need.
 //
 // step(s, dt, opts) → newton's result (+ bdf)
 //   From a cold start (s.coldStart, outside a steady solve), the faces between strictly neutral
@@ -36,7 +38,10 @@
 //   (s.sourceTime, s.sourceBefore). If Newton fails: once more with the islands' rows in
 //   throughout (a steady solve's dt = ∞ only), and once more with every circuit law read by its
 //   change (see src/lawRows.js), each from the step's start. Accepted: the history gains the
-//   step, s.time = tEnd, s.lastDt the effective dt, the boundary intake accumulates. Failed:
+//   step, s.time = tEnd, s.lastDt the effective dt, the boundary intake accumulates, and outside
+//   a steady solve each terminal's charge steps by its current as a stored charge does, P = P* +
+//   I·dt/a0 (P* from P as c* from c; backward Euler P_n + I·dt), so that a trace's charge is a
+//   stored charge's change exactly and Kirchhoff's sum holds in it as in the currents. Failed:
 //   all as before the step (u, uLo, termV, the start-of-step values, atSteady, the sources'
 //   time, the concentrations).
 //
@@ -164,8 +169,8 @@ export function step(s, dt, opts = {}) {
   const DN = { ...s.contactDEnd }, QN = Float64Array.from(s.portQEnd);
   if (opts.guess) setGuess(s, opts.guess); // start Newton from a predicted state
   let dtEff = dt;
+  const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
   if (bdf) {
-    const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
     const { cOld } = s;
     for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
     for (let k = 0; k < thN.length; k++) s.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
@@ -222,13 +227,24 @@ export function step(s, dt, opts = {}) {
   }
   result.bdf = bdf;
   if (result.converged) {
-    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN });
+    const PN = s.termCharge;
+    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN, P: PN });
     if (s.history.length > 3) s.history.length = 3;
     s.time = tEnd;
     s.lastDt = dtEff;
     s.contactDOld = s.contactDStart;
     s.portQOld = s.portQStart;
     s._accumulateBoundaryIntake(dtEff, cN, gamN);
+    // The charge each terminal passed: its current, which is BDF2's rate of its stored charge at
+    // the step's end, integrated by the same formula, P = P* + I dt/a0, so that a stored charge
+    // passed is the stored charge's change exactly (and Kirchhoff's sum holds in it as in I).
+    // Not Σ I·dt: that's a quadrature of the steps' end values, 22% short of an RC's charge at
+    // the default tol, whose steps grow to several RC (the trace of a 5 mV step; Fable 5.2's
+    // first read of the docs).
+    if (!s.steady && Number.isFinite(dtEff)) {
+      const I = s._terminalCurrents();
+      s.termCharge = PN.map((q, k) => (bdf ? b1 * q - b2 * prev.P[k] : q) + dtEff * I[k]);
+    }
     // (In time, the state is no longer the steady solve's that a continuation would start from.)
     if (!s.steady) {
       s.solvedV = undefined;
@@ -280,16 +296,18 @@ export function integrate(s, tEnd, opts = {}) {
   if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
   // (advance(Infinity) set the time to ∞, converged in no steps, and nothing ran after it)
   if (tEnd === Infinity || tEnd === -Infinity) throw new SolverError(`advance(${tEnd}): ${absolute}. For the long-time limit, solve() the steady state`);
-  if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
+  if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], charge: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [], charge: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
   const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
   const start = clock();
   const sample = s._probes(opts.probes);
   // (and every terminal's voltage and current into the device, by name, as sol.terminals)
-  const names = s.terms.map((t) => t.name), terminals = Object.fromEntries(names.map((nm) => [nm, { V: [], current: [] }]));
-  const trace = { t: [], current: [], voltage: [], terminals, ...(sample ? { probes: sample.out } : {}) };
-  const readTerminals = () => ({ V: Array.from(s.termV), current: s._terminalCurrents() });
-  const pushTerminals = (r) => names.forEach((nm, k) => (terminals[nm].V.push(r.V[k]), terminals[nm].current.push(r.current[k])));
+  // (and every terminal's voltage, current and charge passed into the device, by name, as
+  // sol.terminals, with the charge's running total: see step)
+  const names = s.terms.map((t) => t.name), terminals = Object.fromEntries(names.map((nm) => [nm, { V: [], current: [], charge: [] }]));
+  const trace = { t: [], current: [], charge: [], voltage: [], terminals, ...(sample ? { probes: sample.out } : {}) };
+  const readTerminals = () => ({ V: Array.from(s.termV), current: s._terminalCurrents(), charge: Array.from(s.termCharge) });
+  const pushTerminals = (r) => names.forEach((nm, k) => (terminals[nm].V.push(r.V[k]), terminals[nm].current.push(r.current[k]), terminals[nm].charge.push(r.charge[k])));
   let steps = 0, rejected = 0, iterations = 0, failed = false, stalled = null;
   s.modelError = null; // (a statistics model's refusal, for the failure: see newton)
   // Already there (an animation frame with no time to add): nothing to do, and the step size
@@ -434,12 +452,14 @@ export function integrate(s, tEnd, opts = {}) {
     if (half) {
       trace.t.push(half.t);
       trace.current.push(half.current);
+      trace.charge.push(-half.terminals.charge[1]);
       trace.voltage.push(half.voltage);
       pushTerminals(half.terminals);
       if (sample) sample.push(half.probes);
     }
     trace.t.push(s.time);
     trace.current.push(s._terminalCurrent());
+    trace.charge.push(-s.termCharge[1]);
     trace.voltage.push(s.termV[1] - s.termV[0]);
     pushTerminals(readTerminals());
     if (sample) sample.push(sample.read());

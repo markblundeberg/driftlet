@@ -3,6 +3,18 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A transient's trace has each terminal's charge: `trace.charge` (the right contact's, toward
+  +x, beside `trace.current`) and `trace.terminals[name].charge`, running totals of the charge
+  passed into the device, integrated as the steps integrate a stored charge. Before, the only
+  route was to sum current × step, which under BDF2 isn't the charge: a double layer's RC
+  charging after a 5 mV step summed 22% short at the default `tol`. Now the difference of two
+  points' charges is the stored charge's change, to 1e-9.
+- The docs say what `tol` means for a small signal (it is absolute, in thermal units, so a decay's
+  current below about tol·V_T/ΔV of its peak is noise, of either sign: at the default `tol` that
+  5 mV step's current changed sign past 5.4 RC) and give a `tol` for reading a tail.
+
 ## 1.13.0 (2026-11-09)
 
 Two silent wrong answers fixed, both in floating regions (a transistor's unconnected base), and

@@ -1309,8 +1309,9 @@ about, so that a search lands on a whole fact.
 |---|---|
 | `t` | the time the step ended at |
 | `current` | the right contact's, toward +x, as `sol.current` |
+| `charge` | the charge the right contact has passed, toward +x: a running total (below) |
 | `voltage` | the right contact's minus the left's: what a meter between the terminals reads, which at a bath is its reference's level, not $`\phi`$ |
-| `terminals[name]` | `{ V, current }` arrays for every terminal, the ports' too, as `sol.terminals` reads them (current into the device) |
+| `terminals[name]` | `{ V, current, charge }` arrays for every terminal, the ports' too, as `sol.terminals` reads them (current and charge into the device) |
 | `probes[k]` | probe k's readings |
 
 Notes:
@@ -1318,19 +1319,24 @@ Notes:
 - **`tEnd` is absolute.** A solution's `time` is where the device is, so a further dt is
   `advance(sol.time + dt)`. A NaN does nothing, and its `warnings` say so; `Infinity` is an
   error (the long-time limit is `solve()`).
-- **`tol` is local.** Over a long decay the errors add up, and a small current at the end of
-  one can be tens of percent off: tighten `tol` (1e-5, say) before fitting a time constant to a
-  tail.
+- **`tol` is absolute, in thermal units, and local.** Each step may err by `tol` ×
+  $`V_T`$ (25.7 mV at 298 K) in every potential, so a small signal is followed only to about
+  $`\mathrm{tol}\,V_T/\Delta V`$ of itself, and a current, a rate of change, worse: a decay's
+  tail below that is noise, of either sign. To read a tail at $`e^{-n}`$ of its peak, after a
+  step of $`\Delta V`$, give $`\mathrm{tol} < e^{-n}\,\Delta V/(80\,V_T)`$ (for 5 mV to 5 RC,
+  1.6e-5).
 - **The step size carries over between calls**, so an animation can call
   `advance(tNext, { budgetMs })` once per frame. A `dt0` given to a later call wins, say after
   a `set()` makes the first instants fast.
-- **A trace's charge is a sum, not a trapezoid.** Each point's current is what the step ending
-  there passed, so a charge is the sum of each point's current times that step. A point at a
-  jump has the value just before it, so a trapezoid adds half the step after each jump.
-- **The charge sum is exact for a current-driven terminal, and under backward Euler for any.**
-  Under BDF2 a terminal held at a voltage, or behind R, passes its charging current as BDF2's
-  difference of the stored charge, and the sum is first order. Read the charge itself there
-  (`plates`, a port's `charge`, an interface's `D`), or use `method: 'be'`.
+- **A trace's charge is in `charge`, not a sum of its currents.** `trace.charge` and each
+  `terminals[name].charge` are running totals (C/m², or C through a cross-section) of what the
+  terminal has passed into the device, integrated as the steps integrate a stored charge. The
+  difference between two points is what passed between them, a stored charge's change
+  exactly, under either method, and the terminals' charges sum to what the device stored. Only
+  differences mean anything: the total counts from the device's making, and a steady solve
+  passes none. Each point's current is the method's rate at the step's end: under BDF2 not
+  the step's mean, so a sum of current × step misses (a double layer's RC charging, 22%), and
+  a trapezoid adds half the step after each jump besides.
 - **`probes: [{ x, species, quantity, region }]`** read inside the device, as `trace.probes[k]`
   beside `trace.t`: a species' concentration (`quantity: 'c'`, the default, mol/m³) or species
   voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the nodes around
@@ -1345,9 +1351,13 @@ Notes:
 
 Measured (newest first; a new caveat goes here, with its date):
 
-- **The charge sum under BDF2**, a double layer's RC charging, a 5 mV step (9 Nov 2026): 22%
-  short at the default `tol`, the current's sign wrong past 5.4 RC; 5% short at `tol: 1e-5`,
-  1% at `1e-7`; exact under `'be'`. The stored charge agreed to 4e-5 in every run.
+- **A small step's tail** (9 Nov 2026): a double layer (blocking gold, 10 mM NaCl, RC = 1.5 µs)
+  stepped by 5, 50 and 250 mV erred in its current by 3 to 8 × $`\mathrm{tol}\,V_T/\Delta V`$
+  of the peak, against a run at `tol: 1e-6`; at the default `tol` the 5 mV step's current was
+  wrong in sign past 5.4 RC. At the `tol` above, it was within 8% to 3 and 5 RC at all three.
+- **The charge sum under BDF2**, the same 5 mV step (9 Nov 2026): Σ current × step came 22%
+  short at the default `tol`, 5% at `1e-5`, exact under `'be'`; `charge` equals the stored
+  charge to 1e-9 under either method (test/transient.test.js).
 - **A trapezoid of the trace** counted a 1 ms current pulse 2.8× over.
 
 ## Solutions

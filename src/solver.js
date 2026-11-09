@@ -35,7 +35,7 @@ export const STATE = [
   'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', // the start of the next step
   'contactDStart', 'contactDOld', 'contactDEnd', 'portQStart', 'portQOld', 'portQEnd',
   'time', 'lastDt', 'history', 'dtNext', 'sourceTime', // the clock, and the time steps' memory
-  'termV', // the terminals' voltages (floating ones are unknowns)
+  'termV', 'termCharge', // the terminals' voltages (floating ones are unknowns), and the charge each has passed
   'atSteady', 'stepped', 'solvedV', 'coldStart', // what the state is: steady, stepped, where solved, cold
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
@@ -359,6 +359,9 @@ export class Solver {
     this.termV = new Float64Array(this.terms.length);
     this.termVPrev = new Float64Array(this.terms.length);
     this.termI = new Float64Array(this.terms.length);
+    // The charge each terminal has passed into the device in time steps (C/m²), integrated as
+    // the steps integrate a stored charge (see step in src/timeSteps.js): a trace's charge.
+    this.termCharge = new Float64Array(this.terms.length);
     this.sourceTime = 0;
     this.sourceOverride = new Map(); // terminal → voltage, while a steady solve ramps it
     this.steady = false; // inside a steady solve: sources at the present time, not a step's end
