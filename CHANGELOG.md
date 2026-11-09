@@ -3,7 +3,26 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.13.0 (2026-11-09)
+
+Two silent wrong answers fixed, both in floating regions (a transistor's unconnected base), and
+reference electrodes: a bath can be read as an Ag/AgCl wire would read it.
+
+- A floating region whose carriers react in the bulk, such as a transistor's floating base
+  with band-to-band recombination, could converge at the wrong level with no warning: a GaAs
+  n/p⁺/n stack at 250 K put its base at −4e-10 V where it sits at −0.148 V, its currents 900
+  times too large. Its summed balance (the "islands", docs/numerics.md) now includes each node's
+  reaction rate, so it solves to the right level in either listing of the species. The stress
+  run's semi 158, a silicon device of that kind whose warm sweep and cold solve disagreed in the
+  sixth digit, now agrees.
+- A floating region with more than one layer between it and a contact (a floating base behind
+  an n/n⁺ collector, n/p⁺/n/n⁺) is solved: its summed balance now reaches through the layers
+  between to their bottleneck. A cold solve at 200 K and −0.2 V had left such a base at
+  0.0002 V where it sits at −0.1570 V, its currents 7000 times too large, with a warning, and a
+  sweep to that bias left it at 0 V with none; in a survey of 360 such solves, 61 were
+  wrong with no warning (a base 0.1 V off at 150 K; a few mV off at 300 K with the species
+  listed holes first). Now none is silent: the 57 still off (all with holes listed first below
+  300 K, or at 150 K) say so, and every as-listed solve from 200 K up is right.
 
 From a Fable 5.2 reader's first day with the docs (9 Nov 2026):
 
@@ -30,24 +49,6 @@ From a Fable 5.2 reader's first day with the docs (9 Nov 2026):
   across a double layer's RC charging it is 22% short (the stored charge is right; read that).
   Silicon's n_i from the kit's band data, 6.7e9 cm⁻³, now comes with its consequence (J₀ 2.1×
   low against the accepted 9.65e9) and how to match it.
-
-Fixes:
-
-- A floating region whose carriers react in the bulk, such as a transistor's floating base
-  with band-to-band recombination, could converge at the wrong level with no warning: a GaAs
-  n/p⁺/n stack at 250 K put its base at −4e-10 V where it sits at −0.148 V, its currents 900
-  times too large. Its summed balance (the "islands", docs/numerics.md) now includes each node's
-  reaction rate, so it solves to the right level in either listing of the species. The stress
-  run's semi 158, a silicon device of that kind whose warm sweep and cold solve disagreed in the
-  sixth digit, now agrees.
-- A floating region with more than one layer between it and a contact (a floating base behind
-  an n/n⁺ collector, n/p⁺/n/n⁺) is solved: its summed balance now reaches through the layers
-  between to their bottleneck. A cold solve at 200 K and −0.2 V had left such a base at
-  0.0002 V where it sits at −0.1570 V, its currents 7000 times too large, with a warning, and a
-  sweep to that bias left it at 0 V with none; in a survey of 360 such solves, 61 were
-  wrong with no warning (a base 0.1 V off at 150 K; a few mV off at 300 K with the species
-  listed holes first). Now none is silent: the 57 still off (all with holes listed first below
-  300 K, or at 150 K) say so, and every as-listed solve from 200 K up is right.
 
 ## 1.12.1 (2026-11-07)
 
