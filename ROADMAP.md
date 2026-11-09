@@ -272,14 +272,22 @@ for live demos.
      A/m², 1e-6 of the largest, the floating terminals' gaps and 1e-12 of what the species carry:
      numerics.md); and since 5 Nov the round is also asked for by each island's own balance, and
      a piece the round couldn't sum out, left unbalanced, is warned of.
-     Open, from a Fable 5.1 round (4–5 Nov, ~/.cache/driftlet-claude/fable1/): silent still,
-     the four-layer base at 200 K (summed at its face, its balance reads
-     noise; 0.16–0.26 V off). Warned, not solved: a base whose end piece has a port (a collector
-     contact carrying 1 mA/m²: 0.135 V off), and the four-layer base at 300 K swept to −0.3 V
-     (0.1 V off: the plain solve failed and the retry, its rows in from the start, satisfied a
-     row that reads noise; it had solved right before 5 Nov). Below the imbalance's 1e-40
-     mol/(m²·s) floor, silent: the three-layer base at 150 K (leaks 1e-42; 0.1 V off swept at
-     −0.3 V). All want the islands' cuts through interior pieces. (Fixed 7 Nov: a floating base whose
+     Open: warned, not solved, a base whose end piece has a port (a collector contact carrying
+     1 mA/m²: 0.135 V off). And a floating base with the species listed holes first, below
+     300 K (the three-layer base at 250 K, −0.3 V: 0.246 V off, its currents 5.1e-14 and
+     −6.3e-14 A/m², warned): its round walks the level down a thermal unit an update, as it
+     should, and midway (the sixth update there) the factorised matrix's plain solve returns
+     2e24 at a node of the emitter's minority holes between the cut and the junction, GMRES on
+     it doesn't converge, and the round is dropped. The same device listed electrons first
+     solves. It belongs with the listings item below. At 150 K (leaks 1e-42 mol/(m²·s)) a base
+     at −0.4 V is left 0.16 V short (its round stops partway down; why isn't traced), and some
+     end microvolts off;
+     both warned. (Fixed 9 Nov: a base behind further layers, n/p⁺/n/n⁺, silent at 200 K and
+     0.16 to 0.26 V off, and the three-layer base at 150 K, 0.1 V off under the imbalance's
+     floor: the sum reaches through the layers between, a layer it passes isn't summed itself,
+     each sum's row is its middle node's, and the imbalance is read against the cuts' fluxes;
+     numerics.md. A survey of 360 such solves, ~/.cache/driftlet-claude/base4/survey.mjs, had
+     61 silently off and has none.) (Fixed 7 Nov: a floating base whose
      piece has a bulk reaction, hunt A, GaAs at 250 K with band-to-band recombination, which
      converged silently at −4e-10 V where it's −0.1477: each node's rate is in the sum now, and
      a cut passes an end piece's reactions; numerics.md. Not covered: separateRates takes face
@@ -319,8 +327,8 @@ for live demos.
      Not covered: a base whose neighbour isn't the stretch's end piece. With a fourth layer
      (n/p⁺/n/n⁺) the island is still summed at that face, and cold solves at −0.4, −0.2, −0.1
      and 0.1 V miss Kirchhoff (−0.2 V: 3.29e-11 and −3.83e-11 A/m², where warm gives 1.96e-13);
-     they're warned now. Reaching through interior pieces would mean one island taking over
-     another's rows. Nor a neighbour that recombines, or has a port. Nor a contact passing holes
+     they were warned; since 9 Nov the sum reaches through the fourth layer, and they solve.
+     Nor a neighbour that has a port. Nor a contact passing holes
      only (n/p⁺/n behind ohmic(0, ['h+'])): from cold at 0.3 V it put −1e-20 A/m² on that terminal
      and 4.25e-15 on the other (true: ±3.59e-15), and with the fourth layer cold solves at −0.2,
      −0.1, 0.1 and 0.3 V and warm ones at 0.1 and 0.3 V miss too, each confirmed by a transient to

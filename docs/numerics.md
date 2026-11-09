@@ -954,12 +954,12 @@ the terms that cancel:
   where they're $`n_i^2/N`$ ~ 1e-5 per cm³ and conduct ~1e-24 of what they do at the junctions.
   Summed at the faces, the base's balance was a difference of terms 1e24 times larger than itself;
   its round was dropped, and a cold solve left the base at the emitter's level, its terminal
-  currents 3.3e-11 and −3.9e-11 A/m² (the stress run's semi 220). So where a face opens onto the
-  stretch's end piece, the one its contact holds, and nothing there adds to the species' balance
-  but its bulk reactions (dilute, without flow, mixing or a port, nor a reaction of it at the
-  face; the bulk reactions' rates are summed too, below), the sum reaches
-  past the face to that piece's least-conducting segment, if that conducts under 1e-6 of the
-  piece's first. That segment's Scharfetter–Gummel flux, with its exact derivatives, takes the
+  currents 3.3e-11 and −3.9e-11 A/m² (the stress run's semi 220). So where the stretch's open
+  end, the one a contact holds, is reached from a face through pieces in which nothing adds to
+  the species' balance but their bulk reactions (dilute, without flow, mixing or a port, nor a
+  reaction of it at a face crossed; the bulk reactions' rates are summed too, below), the sum
+  reaches past the face to the least-conducting segment on the way, if that conducts under 1e-6
+  of the first. That segment's Scharfetter–Gummel flux, with its exact derivatives, takes the
   place of the face's flux and the outside row. Every balance in between is in the sum, and still
   none is computed.
 
@@ -979,6 +979,40 @@ the terms that cancel:
   Newton as it walked the level (segments 38, 41, 47, 48 in turn), and the end piece's minority
   holes, held there by ~1e-24 of the junctions' conduction, took an update of 4e6 thermal units
   that ended the round.
+
+  The reach doesn't stop at the next face. Until 9 Nov it did unless the neighbour was the end
+  piece, and a base behind a fourth layer (n/p⁺/n/n⁺) was summed at the third layer's face: at
+  200 K and −0.2 V a cold solve left it at 0.0002 V where its leaks balance at −0.1570 (warned),
+  and a sweep to that bias at 0 V, its currents 7000 times too large, with nothing said. Three
+  things were wrong, found with a survey of 360 such solves (five stacks, 150 to 300 K, six
+  biases; cold, swept, and with the species listed in reverse) against the leaks' balance
+  computed from each solution's φ alone: 221 were off, 61 with nothing said.
+  - The sum now reaches through the layers between, to the first bottleneck outward: the least
+    conducting segment before the conductance has risen 1e6 times again, where another pool
+    would begin (a second base).
+  - A layer the sum passes through had a sum of its own, and with its reach extended the same
+    way, the same one. An island summed past its piece stands only if the row it replaces is in
+    the pool it sums (its node conducting within 1e-6 of the span's best), and of two that would
+    sum the same nodes, the more conductive stands; the others' rows stay their nodes' balances,
+    for that round. Without the first rule an n layer's sum, reaching through the base, replaced
+    a row 1e29 times less conductive than the base's: that node's own balance was lost in the
+    difference, the flux through it jumped 29-fold, and the base sat 12 mV off, converged and
+    balanced by every measure the solver had.
+  - Each sum's row was its piece's first node's, which is its left neighbour's outside row
+    (above), so a piece with an island to its right went without that row and read that face
+    raw. A base with its fourth layer on the right failed where its mirror image solved. The row
+    is the middle node's now.
+
+  The imbalance is measured against what crosses the cuts, where an island is cut: a cut face's
+  own flux is an unknown that round-off sets (1e25 times the leak, at a junction), and over it
+  a base 0.25 mV off, its leaks 18% apart, read 3.5e-8 and asked for no round. And a cut island
+  isn't under the 1e-40 mol/(m²·s) floor where what crosses it is over 1e-9 of its cuts'
+  conductance, which is a level difference driving it and not round-off, however small: at 150 K
+  these bases leak 1e-42. After all four, 57 of the 360 are off, and each says so: every one
+  with the species listed holes first below 300 K (the factorisation loses a mode midway through
+  the round's walk, the open item on listings in the roadmap) or at 150 K (the round stops
+  partway down its walk, or ends microvolts off). Every as-listed solve from 200 K up, cold or swept, is at its balance to
+  1e-5 V.
 
   Newton exact along such a level can be worse than Newton blind to it, far from the solution
   (cold at bias, a bipolar stack's floating base took 1e5 thermal units in its first update), so

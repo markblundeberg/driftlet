@@ -76,12 +76,18 @@
 //                    solveBordered) = 0, its ∂ the same sums of their
 //                    Jacobian rows (rowInto), gathered by column. A cut whose reach has a segment
 //                    conducting the species under 1e-6 of its first (∂N/∂η_L at the state) takes
-//                    the least: that face's flux and outside row are left out, and sign·N of the
+//                    the least of those before the conductance has risen 1e6 times again (the
+//                    first bottleneck outward: past it another pool begins): that face's flux and
+//                    outside row are left out, and sign·N of the
 //                    segment (its Scharfetter–Gummel flux, exactly as _segmentsDilute's) is in,
-//                    with its ∂ by both ends' η and φ̂, and vol·ν·r of the cut's `rxs` at each node
-//                    between the face and that segment. The segments cuts take are chosen once a
-//                    round (cutAt, cleared by Newton at a call's start and where it measures the
-//                    imbalance) and held through it. Islands that share a rate are
+//                    with its ∂ by both ends' η and φ̂, and vol·ν·r of each `span` piece's `rxs` at
+//                    each node between the face and that segment. The segments cuts take are chosen
+//                    once a round (chooseCuts: cutAt, cleared by Newton at a call's start and where
+//                    it measures the imbalance) and held through it, and with them the islands the
+//                    round leaves out (`absorbed`, their rows their nodes' balances): one summed
+//                    past its piece whose own node conducts under 1e-6 of the best in its span (its
+//                    row isn't in the pool it sums), and, most conductive first, one whose node a
+//                    standing island of its stretch already sums. Islands that share a rate are
 //                    then recombined (separateRates) so that each rate is in one pin only, the
 //                    fastest (k0) first: the same constraints, each still in its own row.
 //   circuit law      (time steps) terminal k's circuit row, where it reads by the change: F (S −
@@ -107,7 +113,9 @@
 //      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs.
 //   5. Nothing here writes the laws' structure (their parts, rows, nodes): only the workspace
 //      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference; an island's
-//      deep and cutAt, the segment each cut took or −1, bulkScale, Σ|vol·ν·r| over its rates,
+//      deep and cutAt, the segment each cut took or −1, absorbed, fluxScale, Σ|flux| over its
+//      faces not cut and its cuts' segments, cutSlope, Σ|∂N/∂η| over those segments, bulkScale,
+//      Σ|vol·ν·r| over its rates,
 //      and termSlope; idx and w grown where its row needs more room), the solver's maps lawRefs,
 //      chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s (islandRow,
 //      islandDr, linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
@@ -172,12 +180,13 @@ export function captureLocal(s) {
 }
 
 // The islands' summed balances (steady solves only): Σ A_f u over the faces into each, its
-// first node's row pinned in the factorised matrix and the sum bordered (solveBordered) like a
+// row (its middle node's) pinned in the factorised matrix and the sum bordered (solveBordered) like a
 // conserved amount's. The pieces of a flat stretch are left as they are (its rows are flatRows').
 function applyIslands(s) {
   const { u, res } = s, R = s.rix, out = [];
+  if (s.islands.some((isl) => !isl.cutAt)) chooseCuts(s);
   for (const isl of s.islands) {
-    if (s.flatStretches.includes(isl.stretch)) continue;
+    if (s.flatStretches.includes(isl.stretch) || isl.absorbed) continue;
     const b0 = Math.floor(isl.row / s.M), r0 = isl.row % s.M;
     if (s.loc[isl.row] < 0) continue;
     // Gathered by column (the faces' u, then each outside row's entries, which cancel those u
@@ -194,12 +203,14 @@ function applyIslands(s) {
     // held through it: re-chosen at each iterate, the summed nodes moved under Newton as it
     // walked the level (38, 41, 47, 48 in hunt A's base, listed in reverse), and an update of
     // 4e6 thermal units on the end piece's minority holes, held by nothing, ended the round.)
-    const deep = isl.cutAt ?? (isl.cutAt = (isl.cuts ?? []).map((cut) => bottleneck(s, isl, cut))), skipFace = new Set(), skipRow = new Set();
+    const deep = isl.cutAt, skipFace = new Set(), skipRow = new Set(), { grid } = s.model;
     isl.deep = deep;
     deep.forEach((sg, k) => sg >= 0 && (skipFace.add(isl.cuts[k].face), skipRow.add(isl.cuts[k].outside)));
+    let fluxScale = 0;
     isl.flux.forEach((o, j) => {
       if (s.loc[o] < 0 || skipFace.has(j)) return;
       t += isl.weight[j] * u[o];
+      fluxScale += Math.abs(isl.weight[j] * u[o]);
       add(R[o], isl.weight[j]);
     });
     for (const o of isl.outside) {
@@ -207,14 +218,20 @@ function applyIslands(s) {
       t += res[R[o]];
       rowInto(s, o, add);
     }
+    isl.cutSlope = 0;
     deep.forEach((sg, k) => {
-      if (sg >= 0) t += segmentInto(s, isl.stretch.species, sg, isl.cuts[k].region, isl.cuts[k].sign, add);
+      if (sg < 0) return;
+      const N = segmentInto(s, isl.stretch.species, sg, grid.nodeRegion[sg], isl.cuts[k].sign, add);
+      t += N;
+      fluxScale += Math.abs(N);
+      isl.cutSlope += Math.max(Math.abs(s.sg[2]), Math.abs(s.sg[3]));
     });
+    isl.fluxScale = fluxScale;
     // (its bulk reactions, node by node: the piece's own, and an end piece's out to the
     // bottleneck, the nodes between it and the face; each +vol·ν·r, as in the node's row)
     let bulkScale = 0;
     const bulkInto = (g, rx, nu) => {
-      const b = s.blockOfNode[g], w = s.model.grid.vol[g] * nu, dr = s.islandDr ?? (s.islandDr = new Float64Array(s.M));
+      const b = s.blockOfNode[g], w = grid.vol[g] * nu, dr = s.islandDr ?? (s.islandDr = new Float64Array(s.M));
       const r = s._bulkRateInto(rx, g, dr);
       t += w * r;
       bulkScale += Math.abs(w * r);
@@ -223,9 +240,12 @@ function applyIslands(s) {
     for (const [g, rx, nu] of isl.bulk ?? []) bulkInto(g, rx, nu);
     deep.forEach((sg, k) => {
       const cut = isl.cuts[k];
-      if (sg < 0 || cut.rxs.length === 0) return;
-      const g0 = cut.sign < 0 ? sg + 1 : s.model.grid.regionStart[cut.region], g1 = cut.sign < 0 ? s.model.grid.regionEnd[cut.region] : sg;
-      for (let g = g0; g <= g1; g++) for (const [rx, nu] of cut.rxs) bulkInto(g, rx, nu);
+      if (sg < 0) return;
+      for (const { region, rxs } of cut.span) {
+        if (rxs.length === 0) continue;
+        const g0 = cut.sign < 0 ? Math.max(sg + 1, grid.regionStart[region]) : grid.regionStart[region], g1 = cut.sign < 0 ? grid.regionEnd[region] : Math.min(sg, grid.regionEnd[region]);
+        for (let g = g0; g <= g1; g++) for (const [rx, nu] of rxs) bulkInto(g, rx, nu);
+      }
     });
     isl.bulkScale = bulkScale;
     // (a metal's: less what its floating contacts pass, I/(zF) each: I_set, or (V_src − V)/R,
@@ -273,16 +293,60 @@ function segmentFlux(s, i, sg, r) {
   return sgFlux(mat.D[i] / h, z[i] * (u[bR * M] - u[bL * M]), deta, c[sg * n + i], c[(sg + 1) * n + i], s.sg);
 }
 
-// Where a cut's end piece conducts the species least (∂N/∂η_L, its conductance at the state), if
-// that's under 1e-6 of its first segment's: the segment to sum the island out to, or −1.
+// Where the pieces a cut reaches through conduct the species least (∂N/∂η_L, the conductance at
+// the state), if that's under 1e-6 of the first segment's: the segment to sum the island out to,
+// or −1. The first such bottleneck outward: past one, where the conductance has risen 1e6 times
+// again, another pool begins (a second base, n/p⁺/n/p⁺/n), and its far side isn't this one's.
 function bottleneck(s, isl, cut) {
+  const { nodeRegion } = s.model.grid;
   let first = NaN, min = Infinity, at = -1;
   for (const sg of cut.reach) {
-    const G = segmentFlux(s, isl.stretch.species, sg, cut.region)[2];
+    const G = segmentFlux(s, isl.stretch.species, sg, nodeRegion[sg])[2];
     if (first !== first) first = G;
     if (G < min) [min, at] = [G, sg];
+    else if (min < 1e-6 * first && G > 1e6 * min) break;
   }
   return min < 1e-6 * first ? at : -1;
+}
+
+// Each island's cuts for a round, at the state it starts from (cutAt), and which islands the
+// round leaves out (absorbed): a piece whose first node another island's sum takes in, out to
+// its bottleneck, is part of that island's pool, and its own sum would be the same one (the n
+// layer between a floating base and a fourth layer: its holes' sum, reaching back through the
+// base, has the base's two bottlenecks). The island whose piece conducts most stands, the pool
+// itself; the rows of those it takes in stay their nodes' balances, as an end piece's do.
+function chooseCuts(s) {
+  const { nodeRegion } = s.model.grid, cutting = [];
+  for (const isl of s.islands) {
+    isl.cutAt = (isl.cuts ?? []).map((cut) => bottleneck(s, isl, cut));
+    isl.absorbed = false;
+    if (!isl.piece || s.flatStretches.includes(isl.stretch) || s.loc[isl.row] < 0) continue;
+    let [g0, g1] = isl.piece, peak = 0;
+    const G = (sg) => (nodeRegion[sg] === nodeRegion[sg + 1] ? segmentFlux(s, isl.stretch.species, sg, nodeRegion[sg])[2] : 0);
+    for (let sg = g0; sg < g1; sg++) peak = Math.max(peak, G(sg));
+    isl.cutAt.forEach((sg, k) => sg >= 0 && (isl.cuts[k].sign < 0 ? (g0 = sg + 1) : (g1 = sg)));
+    // (summed out past its piece, the row it replaces must be in the pool it sums: its node
+    // conducting within 1e-6 of the span's best. An n layer's holes beside a floating base,
+    // summed through the base to the far bottleneck, replaced a row 1e29 times less conductive
+    // than the base's; that node's own balance, left to the difference of the sum and the rest,
+    // was lost, and the flux through it jumped 29-fold, the base 12 mV off with nothing said.)
+    if (isl.cutAt.some((sg) => sg >= 0)) {
+      let best = 0;
+      for (let sg = g0; sg < g1; sg++) best = Math.max(best, G(sg));
+      if (Math.max(G(isl.node - 1), G(isl.node)) < 1e-6 * best) {
+        isl.absorbed = true;
+        continue;
+      }
+    }
+    cutting.push({ isl, g0, g1, peak });
+  }
+  cutting.sort((a, b) => b.peak - a.peak);
+  const kept = [];
+  for (const c of cutting) {
+    const g = c.isl.node;
+    if (kept.some((k) => k.isl.stretch === c.isl.stretch && g >= k.g0 && g <= k.g1)) c.isl.absorbed = true;
+    else kept.push(c);
+  }
 }
 
 // That segment's flux into an island's sum, sign·N (−1: the island to its right), its ∂ into

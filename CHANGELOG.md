@@ -12,6 +12,14 @@ major version.
   reaction rate, so it solves to the right level in either listing of the species. The stress
   run's semi 158, a silicon device of that kind whose warm sweep and cold solve disagreed in the
   sixth digit, now agrees.
+- A floating region with more than one layer between it and a contact (a floating base behind
+  an n/n⁺ collector, n/p⁺/n/n⁺) is solved: its summed balance now reaches through the layers
+  between to their bottleneck. A cold solve at 200 K and −0.2 V had left such a base at
+  0.0002 V where it sits at −0.1570 V, its currents 7000 times too large, with a warning, and a
+  sweep to that bias left it at 0 V with none; in a survey of 360 such solves, 61 were
+  wrong with no warning (a base 0.1 V off at 150 K; a few mV off at 300 K with the species
+  listed holes first). Now none is silent: the 57 still off (all with holes listed first below
+  300 K, or at 150 K) say so, and every as-listed solve from 200 K up is right.
 
 ## 1.12.1 (2026-11-07)
 

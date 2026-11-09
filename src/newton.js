@@ -52,8 +52,9 @@
 //      refining.
 //   8. Islands (s.steady and dt = Infinity, with islands): converged, each island's balance is
 //      assembled as its pin sums it (imbalance; s.islandImbalance, the largest |summed residual|
-//      over what crosses its faces and what its bulk reactions make or take, under 1e-40
-//      mol/(m²·s) left out), its cuts chosen at that state and held through the round that
+//      over what crosses its faces, or its cuts' segments where it's cut, and what its bulk
+//      reactions make or take; under 1e-40 mol/(m²·s) left out, unless it's cut and that's over
+//      1e-9 of the cuts' conductance, a drive and not round-off), its cuts chosen at that state and held through the round that
 //      follows (cutAt, cleared at the call's start: see applyIslands). Where that's over
 //      1e-6, or the terminal currents miss Kirchhoff by more than 1e-9 of the largest and
 //      1e-18 A/m², the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
@@ -608,8 +609,10 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
 }
 
 // How far the islands are from balanced at the state: each one's summed residual, as its pin
-// sums it (out to its bottlenecks), over the fluxes through its faces and its bulk reactions'
-// rates (each |vol·ν·r|); the largest. Assembled
+// sums it (out to its bottlenecks), over the fluxes through its faces, or through its cuts'
+// segments where it's cut (a cut face's own flux is an unknown that round-off sets, 1e25 times
+// the leak at a junction: over it, a base 0.25 mV off, its leaks 18% apart, read 3.5e-8), and
+// its bulk reactions' rates (each |vol·ν·r|); the largest. Assembled
 // with the rows in, then as it was. Unlike the terminals' sum, it doesn't depend on what else
 // the device carries, or on any floor: wrong levels read 0.5 to 1.5 (a floating base beside a
 // side port carrying 1 mA/m², the law sweep's F5 electrode beside a second electrode, a base at
@@ -623,14 +626,15 @@ function imbalance(s) {
   // equilibrium read 2e-50 through its one face, its whole balance. Not a floor that separates:
   // listed the other way round, the same right state read 7e-34, and a base at 150 K leaks
   // 2e-36. A round from a right state changes nothing, so the trigger can afford that; the
-  // warning can't, and reads only a round that failed, see solution.js.)
+  // warning can't, and reads only a round that failed, see solution.js. An island that's cut
+  // has a floor of its own: what crosses it over its cuts' conductance, ∂N/∂η, is the level
+  // difference that drives it, ~1e-16 at rest and of order 1 under bias, however small the
+  // leak; over 1e-9, it counts. A base at 150 K, leaking 1e-42, was 0.1 V off and silent.)
   const floor = 1e-40 * Math.max(s.model.grid.area[0], s.model.grid.area[s.model.grid.area.length - 1]);
   let worst = 0;
   for (const isl of s.pinnedIslands) {
-    let scale = 0;
-    isl.flux.forEach((o, j) => (scale += Math.abs(isl.weight[j] * s.u[o])));
-    scale += isl.bulkScale ?? 0;
-    if (scale > floor) worst = Math.max(worst, Math.abs(isl.res) / scale);
+    const scale = isl.fluxScale + (isl.bulkScale ?? 0);
+    if (scale > floor || (isl.cutSlope > 0 && scale > 1e-9 * isl.cutSlope)) worst = Math.max(worst, Math.abs(isl.res) / scale);
   }
   s.islandsOn = was;
   if (!was) s.assemble(Infinity);

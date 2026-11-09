@@ -58,22 +58,27 @@
 //                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
 //                  one region: nothing carries them between nodes) that no terminal feeds, and
 //                  surfaces. One law can have several entries, a row per set of nodes.
-//   islands[]      { stretch, row, flux, weight, outside, speed, bulk, currents?, z? }: a piece
+//   islands[]      { stretch, row, flux, weight, outside, speed, bulk, piece?, node?, currents?,
+//                  z? }: a piece
 //                  of a stretch between faces fed by nothing else, or only by its faces' and its
 //                  bulk reactions (none of its rows another law's), its balance summed over its
 //                  nodes (Σ weight·u over the `flux` rows, its faces' fluxes and −A ν over its
 //                  reactions' rates, plus vol·ν·r of each `bulk` entry [node, the solver's
-//                  reaction, ν], plus the `outside` rows' balances) in place of balance row `row`; and a metal
+//                  reaction, ν], plus the `outside` rows' balances) in place of balance row `row`,
+//                  its middle node's (`node`; `piece`: its first and last nodes), which is no
+//                  neighbour's `outside` row where the piece has three nodes or more; and a metal
 //                  reached only by floating contacts (`currents`, each passing I/(zF), its drive's)
 //                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
 //                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
-//                  `cuts`: for each face of a piece that opens onto the stretch's end piece, where
-//                  nothing but its bulk reactions adds to the species' balance (not a metal;
-//                  ideal, no flow, mixing or port there; an equilibrium link and no reaction of it
-//                  at the face), { face (its index in `flux`), sign (−1 left, +1 right), region,
-//                  outside (that face's outside row), reach (the region's segments, outward from
-//                  the face), rxs (its bulk reactions of the species, [the solver's reaction, ν]:
-//                  summed at each node between the face and the segment the cut takes) }.
+//                  `cuts`: for each face of a piece from which the stretch's open end is reached
+//                  through pieces where nothing but their bulk reactions adds to the species'
+//                  balance (none a metal; ideal, no flow, mixing or port there; an equilibrium
+//                  link and no reaction of it at each face crossed, the piece's own included),
+//                  { face (its index in `flux`), sign (−1 left, +1 right), outside (that face's
+//                  outside row), reach (those pieces' segments, outward from the face to the
+//                  contact), span ([{ region, rxs }] outward: each piece's bulk reactions of the
+//                  species, [the solver's reaction, ν], summed at each node between the face and
+//                  the segment the cut takes) }.
 //   timeLaws[]     time steps only: as constraints (no row, key or contacts), each for a terminal
 //                  behind a resistance that alone feeds it.
 //   contactLaw[t]  whether some constraint keeps contact t's charge.
@@ -749,7 +754,11 @@ export function findLaws(s) {
         });
       }
       if (rates.length === 0 && p0 === s0 && q1 === s1) continue; // (uncut, with nothing but its amount: a constraint's)
-      const row = blockOfNode[grid.regionStart[p0]] * M + 1 + i;
+      // (the row it takes is its middle node's: its first node's is its left neighbour's
+      // `outside` row, which that island then went without, and a base behind a fourth layer
+      // had its electrons' sum read one face raw)
+      const rowNode = (grid.regionStart[p0] + grid.regionEnd[q1]) >> 1;
+      const row = blockOfNode[rowNode] * M + 1 + i;
       // (a reactive piece: none of its rows another law's, since the sum stands for all of them)
       const rows = [];
       for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) rows.push(blockOfNode[g] * M + 1 + i);
@@ -773,28 +782,34 @@ export function findLaws(s) {
       // weakly than the face does: a floating p⁺ base's holes leak out through the n layers on
       // each side, ~1e-19 of what they conduct at the junctions, and the sum taken at the face
       // reads that leak as a difference of terms 1e24 times larger (the stress run's semi 220).
-      // So for each face into an end piece that adds nothing of its own but its bulk reactions
-      // (dilute, no flow, mixing, port, nor a reaction of the species at the face), its segments
-      // in order outward (`reach`): where one conducts far less than the first, applyIslands sums
-      // the balance out to it instead, with the reactions' rates at the nodes it passes (see
-      // lawRows.js).
+      // So for each face from which the open end is reached through pieces that add nothing of
+      // their own but their bulk reactions (dilute, no flow, mixing, port, nor a reaction of the
+      // species at a face crossed), their segments in order outward (`reach`): where one
+      // conducts far less than the first, applyIslands sums the balance out to it instead, with
+      // the reactions' rates at the nodes it passes (see lawRows.js).
       const cuts = [];
       faces.forEach(([f, sg, g], j) => {
-        const r = sg < 0 ? p0 - 1 : q1 + 1, reg = regions[r], mat = model.materials[reg.material], i0 = grid.regionStart[r], i1 = grid.regionEnd[r];
-        if (!(sg < 0 ? r === s0 && st.leftOpen : r === s1 && st.rightOpen)) return;
-        if (model.interfaces[f].links[i].type !== 'equilibrium' || model.interfaces[f].reactions.some((rx) => rx.part.some((p) => p.i === i))) return;
-        if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r)) return;
-        // (its bulk reactions of the species: summed node by node out to the bottleneck, as the
-        // piece's own are)
-        const rxs = [];
-        for (const rx of rxsIn[nodeMaterial[i0]]) {
-          let nu = 0;
-          for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
-          if (nu !== 0) rxs.push([rx, nu]);
+        if (!(sg < 0 ? st.leftOpen : st.rightOpen)) return;
+        // (outward through the pieces between this one and the end piece, each as plain as the
+        // end piece must be, and each face crossed as this one: a base behind a fourth layer,
+        // n/p⁺/n/n⁺, has its bottleneck in the third or the fourth)
+        const span = [], reach = [];
+        for (let r = sg < 0 ? p0 - 1 : q1 + 1, ff = f; sg < 0 ? r >= s0 : r <= s1; r += sg, ff += sg) {
+          const reg = regions[r], mat = model.materials[reg.material], i0 = grid.regionStart[r], i1 = grid.regionEnd[r];
+          if (model.interfaces[ff].links[i].type !== 'equilibrium' || model.interfaces[ff].reactions.some((rx) => rx.part.some((p) => p.i === i))) return;
+          if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r)) return;
+          // (its bulk reactions of the species: summed node by node out to the bottleneck, as the
+          // piece's own are)
+          const rxs = [];
+          for (const rx of rxsIn[nodeMaterial[i0]]) {
+            let nu = 0;
+            for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+            if (nu !== 0) rxs.push([rx, nu]);
+          }
+          span.push({ region: r, rxs });
+          for (let k = 0; k < i1 - i0; k++) reach.push(sg < 0 ? i1 - 1 - k : i0 + k);
         }
-        const reach = new Int32Array(i1 - i0);
-        for (let k = 0; k < reach.length; k++) reach[k] = sg < 0 ? i1 - 1 - k : i0 + k;
-        cuts.push({ face: j, sign: sg, region: r, outside: blockOfNode[g] * M + 1 + i, reach, rxs });
+        cuts.push({ face: j, sign: sg, outside: blockOfNode[g] * M + 1 + i, reach: Int32Array.from(reach), span });
       });
       islands.push({
         stretch: st,
@@ -805,6 +820,8 @@ export function findLaws(s) {
         bulk,
         outside,
         cuts,
+        piece: [grid.regionStart[p0], grid.regionEnd[q1]],
+        node: rowNode,
         idx: new Int32Array(faces.length + rates.length + 3 * M * outside.length + 4 * cuts.length),
         w: new Float64Array(faces.length + rates.length + 3 * M * outside.length + 4 * cuts.length),
         len: 0,

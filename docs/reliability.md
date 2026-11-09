@@ -252,7 +252,8 @@ so a change that makes one worse shows.
   conductances 1e-24 of its own, or by neighbours conducting 1e20 times less) is solved directly
   through its balance summed over it, where its own fluxes cancel exactly
   ([islands](numerics.md#steady-state)): its current comes out right to ~1e-15, where it was
-  up to 16× off. A region with reactions in it is summed with their rates; a population held that weakly
+  up to 16× off. A region with reactions in it is summed with their rates, and one behind further layers (a
+  base with a fourth layer beyond it) through them; a population held that weakly
   within a region, or fed by a port, isn't covered, and its solve can still converge to the wrong level; the terminal currents then
   don't add up, which is the thing to check.
 - **The impedance is resolved to about 1e-4 of |Z|** where its solves are hardest: the real

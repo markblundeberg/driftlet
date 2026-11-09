@@ -100,22 +100,28 @@ test('newton: a floating base, held only by its holes\' leaks through the n laye
 });
 
 test('a steady solve whose terminal currents don\'t add up says so', () => {
-  // A fourth layer beyond the floating base (n/p⁺/n/n⁺): its right neighbour isn't the stretch's
-  // end piece, so the base's island is summed at that face, and from cold at −0.2 V the currents
-  // were 3.29e-11 and −3.83e-11 A/m² (warm, 1.96e-13 both), converged with nothing said. Not
-  // warned: equilibrium's round-off (the law sweep's dropped rounds, 1e-18 to 2e-17 A/m² apart),
-  // and the three-layer base, which now solves.
+  // A floating base whose islands round fails stands at the plain solve's level, its currents
+  // apart: said. (Until 9 Nov the example was a fourth layer beyond the base, n/p⁺/n/n⁺, its
+  // right neighbour not the stretch's end piece: from cold at −0.2 V, 3.29e-11 and −3.83e-11
+  // A/m², where warm gave 1.96e-13 both. That one solves now, its sum reaching through the third
+  // layer. This one is the three-layer base at 250 K with its species listed e⁻ last: the plain
+  // factorisation loses a mode mid-round, 5.1e-14 and −6.3e-14 A/m², see ROADMAP.) Not warned:
+  // equilibrium's round-off (the law sweep's dropped rounds, 1e-18 to 2e-17 A/m² apart), and the
+  // bases that solve.
   const mat = 'GaAs', n = (N, L) => layer(mat, L, { donors: units.perCm3(N) });
-  const stack = (more) => [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, 600e-9), ...more, ohmic(0)];
-  const at = (more, V) => {
-    const d = new Device(build({ T: 300, library: [semiconductor(mat)], stack: stack(more) }));
+  const stack = (more) => [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, more.length ? 600e-9 : 900e-9), ...more, ohmic(0)];
+  const at = (more, V, T = 300, reversed = false) => {
+    const def = build({ T, library: [semiconductor(mat, { T })], stack: stack(more) });
+    if (reversed) def.species = [...def.species].reverse();
+    const d = new Device(def);
     d.set({ contacts: { right: { V } } });
     return d.solve();
   };
-  const off = at([n(4e17, 300e-9)], -0.2), { left, right } = off.terminals;
+  const off = at([], -0.3, 250, true), { left, right } = off.terminals;
   assert.ok(Math.abs(left.current + right.current) > 1e-3 * Math.abs(left.current), 'this device now solves: find another for this test');
   assert.ok(off.warnings.some((w) => w.includes("don't add up")), JSON.stringify(off.warnings));
   assert.deepEqual(at([], -0.3).warnings, []);
+  assert.deepEqual(at([n(4e17, 300e-9)], -0.2).warnings, []);
   const eq = new Device(device(choice(288), { charged: true })).solve();
   assert.ok(eq.converged && !eq.warnings.some((w) => w.includes("don't add up")));
 });
@@ -237,6 +243,48 @@ test('islands: the round is asked for by each island\'s own balance, not by what
   assert.ok(s.converged && Math.abs(s.V['h+'][mid] + 0.258546) < 1e-4, `200 K: the base at ${s.V['h+'][mid]} V`);
 });
 
+test('islands: a base behind further layers is summed out through them, to the first bottleneck either way', () => {
+  // A floating p⁺ base with a fourth layer beyond it (n/p⁺/n/n⁺, or n⁺/n/p⁺/n, or both): the
+  // holes' bottleneck can lie in the third layer or the fourth, and the base's sum, taken at the
+  // face of the third, read its leak as a difference of terms 1e24 larger. At 200 K, −0.2 V, a
+  // cold solve left the base at 0.0002 V where its leaks balance at −0.1570 (warned; a sweep there, at 0 V, unwarned), and in
+  // 61 of 360 such solves (five stacks, 150 to 300 K, six biases, cold, swept, and listed in
+  // reverse) nothing was said. The sum reaches through the layers between now; a layer it
+  // passes isn't summed itself; and each sum's row is its piece's middle node, not its left
+  // neighbour's outside row. The check is the solver's own in no part: the leaks' balance from
+  // the solution's φ alone (see the three-layer test above).
+  const mat = 'GaAs', n = (N, L) => layer(mat, L, { donors: units.perCm3(N) }), p = layer(mat, 200e-9, { acceptors: units.perCm3(5e18) });
+  const stacks = { right: [n(1e17, 400e-9), p, n(3e17, 600e-9), n(4e17, 300e-9)], left: [n(2e17, 200e-9), n(1e17, 400e-9), p, n(3e17, 900e-9)], both: [n(2e17, 200e-9), n(1e17, 400e-9), p, n(3e17, 600e-9), n(4e17, 300e-9)], lighter: [n(1e17, 400e-9), p, n(3e17, 600e-9), n(1e17, 300e-9)] };
+  const balanced = (s, def, T) => {
+    const hp = def.materials[mat].species['h+'], VT = (8.314462618 * T) / 96485.33212, { x, phi, region } = s, w = (g) => (phi[g] + hp.mu0 / 96485.33212) / VT;
+    const seg = (g) => {
+      const a = w(g), b = w(g + 1), dx = x[g + 1] - x[g];
+      return (Math.abs(a - b) < 1e-12 ? dx * Math.exp(a) : (dx * (Math.exp(b) - Math.exp(a))) / (b - a)) / hp.cRef;
+    };
+    const pr = def.regions.findIndex((r) => r.name === 'base'), mid = (region.indexOf(pr) + region.lastIndexOf(pr)) >> 1, Vh = s.V['h+'];
+    let IL = 0, IR = 0;
+    for (let g = 0; g < x.length - 1; g++) if (x[g + 1] > x[g]) g < mid ? (IL += seg(g)) : (IR += seg(g));
+    const vl = Vh[0] / VT, vr = Vh.at(-1) / VT, m = Math.max(vl, vr);
+    return { base: Vh[mid], level: VT * (m + Math.log((Math.exp(vl - m) / IL + Math.exp(vr - m) / IR) / (1 / IL + 1 / IR))) };
+  };
+  for (const [name, T, V] of [['right', 200, -0.2], ['right', 300, -0.4], ['left', 200, -0.3], ['both', 250, -0.2], ['both', 300, 0.3], ['lighter', 200, -0.4], ['lighter', 250, -0.1]]) {
+    const def = build({ T, library: [semiconductor(mat, { T })], stack: [ohmic(0), ...stacks[name].map((l) => (l === p ? { ...l, name: 'base' } : l)), ohmic(0)] });
+    const cold = new Device(def), swept = new Device(def);
+    cold.set({ contacts: { right: { V } } });
+    let w = swept.solve();
+    for (let k = 1; k <= 4; k++) {
+      swept.set({ contacts: { right: { V: (V * k) / 4 } } });
+      w = swept.solve();
+    }
+    for (const [how, s] of [['cold', cold.solve()], ['swept', w]]) {
+      const { base, level } = balanced(s, def, T), { left, right } = s.terminals, at = `${name}, ${T} K, ${V} V, ${how}`;
+      assert.ok(s.converged && !s.warnings.some((x) => /balance|add up/.test(x)), `${at}: ${s.warnings}`);
+      assert.ok(Math.abs(base - level) < 1e-6, `${at}: the base at ${base} V, its leaks balanced at ${level} V`);
+      assert.ok(Math.abs(left.current + right.current) < 1e-6 * Math.abs(left.current), `${at}: ${left.current} and ${right.current} A/m²`);
+    }
+  }
+});
+
 test('islands: a piece the round can\'t sum out, left unbalanced, is warned of', () => {
   // The floating base with a side port on its collector carrying 1 mA/m² (a collector contact):
   // the base's island is summed at its face (the port is in the end piece), the round fails, and
@@ -256,7 +304,11 @@ test('a terminal behind a small resistance reports what its fluxes carry, where 
   const at = (more, R) => new Device(build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0), n(1e17, 400e-9), layer(mat, 200e-9, { acceptors: units.perCm3(5e18) }), n(3e17, more ? 600e-9 : 900e-9), ...(more ? [n(4e17, 300e-9)] : []), ohmic({ V: -0.2, R })] })).solve();
   const three = at(false, 1e-10), { left, right } = three.terminals;
   assert.ok(Math.abs(left.current - 1.78864e-13) < 1e-17 && Math.abs(left.current + right.current) < 1e-6 * left.current && three.warnings.length === 0, JSON.stringify(three.terminals));
-  for (const R of [1e-10, 1e-8, 1e-6]) assert.ok(at(true, R).warnings.some((w) => w.includes("don't add up")), `four layers behind ${R} Ω·m²`);
+  // (that fourth layer solves since 9 Nov; behind each resistance its two readings agree, or it says so)
+  for (const R of [1e-10, 1e-8, 1e-6]) {
+    const four = at(true, R), t = four.terminals;
+    assert.ok(Math.abs(t.left.current + t.right.current) < 1e-4 * Math.abs(t.left.current) || four.warnings.some((w) => w.includes("don't add up") || w.includes("doesn't balance")), `four layers behind ${R} Ω·m²: ${t.left.current} and ${t.right.current} A/m², ${four.warnings}`);
+  }
 });
 
 test('islands: a round that leaves its island less balanced, or rows satisfied out of balance, is said so', () => {
