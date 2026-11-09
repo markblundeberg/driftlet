@@ -334,8 +334,8 @@ dev.solve(); // the rest at −65 mV, the gates at their values there
 const run = dev.advance(11e-3, { dtMax: 0.02e-3, probes: [{ interface: 0, species: 'Na+' }, { interface: 0, species: 'K+' }] });
 const [na, k] = run.trace.probes.map((N) => N.map((x) => -FARADAY * x)); // outward currents, A/m²
 const peak = na.indexOf(Math.min(...na)), EK = VT * Math.log(out['K+'] / inside['K+']);
-console.log(`I_Na peaks ${((run.trace.t[peak] - 1e-3) * 1e3).toFixed(2)} ms into the step, ${(na[peak] * 0.1).toFixed(2)} mA/cm²`); // 0.73 ms, −1.48
-console.log(`g_K after 10 ms: ${((k.at(-1) / (step - EK)) * 0.1).toFixed(2)} mS/cm²`); // 21.12: HH's 36 n∞⁴ is 21.5, which n nearly reaches by 10 ms
+console.log(`I_Na peaks ${((run.trace.t[peak] - 1e-3) * 1e3).toFixed(2)} ms into the step, ${(na[peak] * 0.1).toFixed(2)} mA/cm²`); // => 0.73 ms, −1.48
+console.log(`g_K after 10 ms: ${((k.at(-1) / (step - EK)) * 0.1).toFixed(2)} mS/cm²`); // => 21.10: HH's 36 n∞⁴ is 21.5, which n nearly reaches by 10 ms
 ```
 
 ## an action potential
@@ -375,7 +375,7 @@ for (let k = 1; k <= 300; k++) {
   const sol = axon.advance(k * 1e-4); // 0.1 ms at a time
   peak = Math.max(peak, sol.interfaces[0].V); // V_m, and sol.interfaces[0].gates = { m, h, n }
 }
-console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // +12.6: GHK's currents rectify; matched at rest, at positive V Na⁺'s conductance is lower and K⁺'s higher (linear: true gives +37.9, HH's own)
+console.log(`peak ${(peak * 1e3).toFixed(1)} mV`); // => 12.6: GHK's currents rectify; matched at rest, at positive V Na⁺'s conductance is lower and K⁺'s higher (linear: true gives +37.9, HH's own)
 ```
 
 ## an action potential travelling along an axon
@@ -417,5 +417,5 @@ const axon = new Device({
 axon.advance(30e-3); // settle to rest (no pump: start from the concentrations, not solve())
 const sol = axon.advance(34e-3, { dtMax: 5e-6, probes: [{ x: 0.02, quantity: 'phi' }, { x: 0.04, quantity: 'phi' }] });
 const { t, probes } = sol.trace, at = (v) => t[v.findIndex((x) => x > 0)]; // (φ inside, the outside's held at 0)
-console.log(`${(0.02 / (at(probes[1]) - at(probes[0]))).toFixed(1)} m/s`); // 18.8 here (finely resolved, 18.73; HH computed 18.8)
+console.log(`${(0.02 / (at(probes[1]) - at(probes[0]))).toFixed(1)} m/s`); // => 18.7 (finely resolved, 18.73; HH computed 18.8)
 ```

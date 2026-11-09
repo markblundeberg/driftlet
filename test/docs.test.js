@@ -6,6 +6,10 @@ import { dirname, join } from 'node:path';
 
 // Every ```js block in the README, the docs and the agent guide runs as a module against the
 // source, so examples can't rot. Blocks marked ```js nocheck are skipped (sketches, fragments).
+// A logging line's comment that starts `// =>` is a claim about what it prints, and is held to
+// it: each item listed (commas between; a bracketed remark, or anything after a colon or a
+// semicolon, is commentary) must appear in that line's output. (Two of the templates' numbers
+// had drifted from what they printed, 21.12 for 21.10 and 18.8 for 18.7, with nothing to notice.)
 // An ```html page's module script runs against a stub document: it must draw, and redraw when
 // its controls move.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -52,11 +56,24 @@ for (const file of files) {
   const text = readFileSync(join(root, file), 'utf8');
   const blocks = [...text.matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]);
   blocks.forEach((code, k) => {
-    test(`${file}: example ${k + 1} runs`, async () => {
-      const logs = [];
-      globalThis.__log = (...a) => logs.push(a);
-      await run(local(code).replaceAll('console.log(', '__log('));
+    test(`${file}: example ${k + 1} runs, and prints what its comments say`, async () => {
+      const logs = [], printed = new Map();
+      globalThis.__log = (i, ...a) => {
+        logs.push(a);
+        printed.set(i, `${printed.get(i) ?? ''}${a.map((v) => (typeof v === 'string' ? v : JSON.stringify(v))).join(' ')}\n`);
+      };
+      const lines = code.split('\n');
+      await run(local(lines.map((l, i) => l.replaceAll('console.log(', `__log(${i}, `)).join('\n')));
       for (const line of logs) for (const v of line) if (typeof v === 'number') assert.ok(Number.isFinite(v), `${file}: ${line}`);
+      lines.forEach((l, i) => {
+        const claim = /\/\/ => ?(.*)$/.exec(l)?.[1];
+        if (claim === undefined) return;
+        assert.ok(l.includes('console.log('), `${file}: a "// =>" comment belongs on the line that logs: ${l.trim()}`);
+        const items = claim.replace(/\([^)]*\)/g, '').split(/[:;]/)[0].split(',').map((x) => x.trim().replaceAll('−', '-')).filter(Boolean);
+        assert.ok(items.length > 0, `${file}: "// =>" with nothing to check: ${l.trim()}`);
+        const out = (printed.get(i) ?? '').replaceAll('−', '-');
+        for (const item of items) assert.ok(out.includes(item), `${file}: the comment says ${item}, the line printed ${JSON.stringify(out.trim())}: ${l.trim()}`);
+      });
     });
   });
   const pages = [...text.matchAll(/```html\n([\s\S]*?)```/g)].map((m) => m[1]);

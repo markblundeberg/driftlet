@@ -85,7 +85,7 @@ const dev = new Device(
 );
 
 const eq = dev.solve();
-console.log('built-in potential (V):', eq.phi[0] - eq.phi[eq.phi.length - 1]); // ≈ 0.795
+console.log('built-in potential (V):', eq.phi[0] - eq.phi[eq.phi.length - 1]); // => 0.7947
 
 dev.set({ contacts: { right: { V: 0.4 } } }); // p side at +0.4 V: forward bias
 const on = dev.solve(); // warm-started from the previous solution
@@ -111,7 +111,7 @@ const dev = new Device(
     library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 })], // epsr 0: no double layers resolved
     // Ag⁺ reaches the contacts and takes their level; NO₃⁻ doesn't, so it needs its amount.
     stack: [silver(0), layer('water', L, { c0: { 'NO3-': c0 } }), silver(0)],
-    grid: { hmin: 10e-9, hmax: 2e-6 }, // graded: fine where Ag⁺ depletes at the electrode
+    grid: { hmin: 10e-9, hmax: 0.5e-6 }, // graded: fine where Ag⁺ depletes at the electrode
   }),
 );
 const iLim = (4 * FARADAY * 1.648e-9 * c0) / L;
@@ -120,7 +120,7 @@ for (const V of [0.05, 0.1, 0.2, 0.4]) {
   const sol = dev.solve();
   // V > 0 raises Ag⁺'s level on the right: silver dissolves there and plates on the left, so the
   // current flows toward −x.
-  console.log(`${V} V: I/i_lim = ${(-sol.current / iLim).toFixed(4)}`); // ≈ tanh(V/4V_T): 0.451, 0.750, 0.961, 0.999
+  console.log(`${V} V: I/i_lim = ${(-sol.current / iLim).toFixed(3)}`); // => 0.451, 0.750, 0.960, 0.999: tanh(V/4V_T)
 }
 ```
 

@@ -133,7 +133,10 @@ takes its material's T.)
   [alignment guide](alignment.md)). It isn't used otherwise, since an alignment is never implied.
 - **Silicon's intrinsic concentration**: these $`N_c`$, $`N_v`$ and $`E_g`$ give $`n_i`$ = 6.7 × 10⁹ cm⁻³.
   Sze quotes 1.45 × 10¹⁰ (an older measurement), and the accepted value is 9.65 × 10⁹. The
-  library keeps the band data self-consistent rather than matching a quoted $`n_i`$. For Ge and
+  library keeps the band data self-consistent rather than matching a quoted $`n_i`$. What
+  follows $`n_i^2`$ carries the difference: against 9.65 × 10⁹, a diode's $`J_0`$ comes out 2.1
+  times low and a cell's open-circuit voltage 19 mV high. To match it, lower the gap by
+  $`2kT\ln(9.65/6.67)`$ = 19 meV (the material's `h+` `mu0`, in J/mol). For Ge and
   GaAs, the data reproduce the quoted $`n_i`$ (2.4 × 10¹³ and 1.79 × 10⁶) to within 10–15%.
 
 ### At other temperatures
@@ -227,7 +230,7 @@ const sol = dev.solve();
 // The wider gap keeps holes out of the n side: nearly all the current is electrons injected
 // into the GaAs.
 const { 'e-': e, 'h+': h } = sol.contacts.left.flux;
-console.log(sol.warnings.length, (e / -h).toExponential(1)); // 0, 2.5e+7
+console.log(sol.warnings.length, (e / -h).toExponential(1)); // => 0, 2.5e+7
 ```
 
 The face's link is `'equilibrium'` by default: μ̄ continuous across it, the diffusion theory of an

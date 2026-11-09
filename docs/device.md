@@ -1,8 +1,10 @@
 # Device reference
 
 A device is defined by one plain object (serialisable, so it can be posted to a Web Worker),
-passed to `new Device(def)`. Construction validates everything and throws a `DeviceError`
-naming the offending path (`contacts.left.species.Na+.offset: …`). A field that doesn't belong
+passed to `new Device(def)`. Construction validates the definition and throws a `DeviceError`
+naming the offending path (`contacts.left.species.Na+.offset: …`). (What depends on how the
+device is connected is found where the solve starts, and throws a `SolverError` from the first
+`solve()` or `advance()`, naming its path the same way: a species sealed in with no `c0`.) A field that doesn't belong
 where it's written (a typo, or a value in the wrong object) is an error too, never ignored. Physically meaningful
 choices are never defaulted silently: reference concentrations, standard potentials and
 interface alignments must all be given.
@@ -1225,8 +1227,10 @@ const now = dev.solution();                   // snapshot of the current state
   the step ending there passed, so the charge is the sum of each point's current times that step:
   exact for a current-driven terminal, and under backward Euler for any. Under BDF2 a terminal
   held at a voltage, or behind R, passes its charging current as BDF2's difference of the
-  stored charge, and that sum is first order (3% off at the default `tol` across an RC
-  charging): read the charge itself there (`plates`, a port's `charge`), or tighten `tol`. A
+  stored charge, and that sum is first order: across a double layer's RC charging (a 5 mV
+  step, 9 Nov 2026) it came 22% short at the default `tol`, the current's sign wrong past
+  5.4 RC, 5% short at `tol: 1e-5` and 1% at `1e-7`, while the stored charge agreed to 4e-5
+  in every run. Read the charge itself there (`plates`, a port's `charge`, an interface's `D`), or use `method: 'be'`. A
   point at a jump has the value just before it, so a trapezoid of the trace adds half the step
   after each jump (a 1 ms current pulse counted 2.8× over). With
   `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,

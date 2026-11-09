@@ -279,6 +279,6 @@ const dev = new Device({
 for (const V of [0.5, 0.4, 0.3]) {
   dev.set({ contacts: { right: { V } } });
   const sol = dev.solve();
-  console.log(`E = ${V} V: x = ${(sol.c['Li+'][5] / 30000).toFixed(4)}`); // 0.0200, 0.5000, 0.9800
+  console.log(`E = ${V} V: x = ${(sol.c['Li+'][5] / 30000).toFixed(4)}`); // => 0.0200, 0.5000, 0.9800
 }
 ```

@@ -8,8 +8,9 @@ electrochemical potential μ̄, coupled by Poisson's equation, reactions and int
 device in any field is built the same way, from the same pieces. It runs in a browser, a Web
 Worker or Node, from npm or a CDN.
 
-Every code block below runs in the test suite and prints its closed-form check. Skim the next
-two sections, then go to the template nearest your device:
+Every code block below runs in the test suite and prints its closed-form check; a number after
+`// =>` is what that line prints, which a test holds it to. Skim the next three sections, then
+go to the template nearest your device:
 
 - semiconductors: a pn junction (with an I–V sweep), a live page with a slider, a solar cell, a
   MOS capacitor, a pulse drifting along a bar (under Transients);
@@ -25,7 +26,8 @@ transference, a voltage clamp, an action potential, one travelling along an axon
 
 The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
 (signs and levels), visualization.md, alignment.md (band offsets), statistics.md (non-ideal
-materials, insertion hosts), data.md and reliability.md (what's validated, and the limits).
+materials, insertion hosts), data.md and reliability.md (what's validated, and the numerical
+limits).
 
 ## Imports
 
@@ -69,6 +71,23 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   transients, a grid twice as fine (a FAIL means refine) and the species listed in reverse (a FAIL
   means a solve converged somewhere that isn't steady: compare a long advance()).
 
+## What it won't do
+
+Say so to the person before building. Anything you add outside the solver (a breakdown voltage
+from the field, a tunnelling estimate) is a model on top of it: label it as one.
+
+- **No tunnelling, impact ionisation or high-field mobility.** A Zener, avalanche or tunnel
+  diode's reverse branch stays flat, with every check passing.
+- **No ballistic transport.** Across a layer not much wider than its carriers' mean free path
+  (~0.1 µm for electrons in GaAs), drift–diffusion overstates the current.
+- **One uniform temperature**, and no optics beyond a Beer–Lambert generation profile.
+- **1D only**: no MOSFET pinch-off, no porous battery electrode with diffusion inside its
+  particles (P2D).
+- **No cross-diffusion** (Stefan–Maxwell), and no fitting: it solves forward problems.
+
+What it does give such a model: every field of the solution. The electric field is −dφ/dx
+within one material (a face is two nodes at one x: don't difference across it).
+
 ## How a device is written
 
 - **`build({ T, library, stack, bulkReactions, ports, grid, geometry })`** (kit) reads a stack
@@ -84,7 +103,9 @@ From npm: `driftlet`, `driftlet/kit`, `driftlet/plot`. Every export is listed at
   (`Eg` and `chi` in eV, `Nc` and `Nv` in cm⁻³, `mun` and `mup` in cm²/(V·s), lightly doped: Si's fall to roughly 800 and 330 at 1e17 cm⁻³, so set D
   yourself for doped layers if currents must match measurements; `epsr`); in the
   material, `materials.Si.species['e-'].cRef` and `['h+'].cRef` are N_c and N_v in mol/m³ and
-  h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si. The
+  h⁺'s `mu0` is the gap (e⁻'s is 0), so n_i = √(N_c N_v) e^(−E_g/2RT), 6.7e9 cm⁻³ for Si at 300 K (the
+  band data's own; against the accepted 9.65e9, a diode's J₀ comes out 2.1× low and a cell's V_oc
+  19 mV high: to match it, lower the gap, `h+`'s `mu0`, by 19 meV). The
   material carries the T its data are for (`materials.Si.T`), and a device at another T warns
   (its default is 298.15 K, so say `T: 300`). An alloy starts from a relative's entry with your
   numbers put in (docs/data.md has AlGaAs from GaAs). A species it lacks is pushed into both lists
@@ -175,7 +196,7 @@ const dev = new Device({
 });
 const sol = dev.solve();
 const tK = D['K+'] / (D['K+'] + D['Cl-']), VT = (GAS_CONSTANT * 298.15) / FARADAY;
-console.log(`EMF ${(sol.terminals.right.V * 1e3).toFixed(3)} mV, 2t₊V_T ln 10 = ${(2 * tK * VT * Math.log(10) * 1e3).toFixed(3)} mV`); // 58.048, 58.047
+console.log(`EMF ${(sol.terminals.right.V * 1e3).toFixed(3)} mV, 2t₊V_T ln 10 = ${(2 * tK * VT * Math.log(10) * 1e3).toFixed(3)} mV`); // => 58.048, 58.047
 ```
 
 An ion-exchange membrane is a layer whose material has its ions slower, with a `fixedCharge` (−X·F
@@ -189,8 +210,8 @@ demo's page script is a worked example.
 ## Template: a semiconductor junction
 
 ```js
-import { Device, units } from 'driftlet';
-import { build, layer, ohmic, semiconductor, describe } from 'driftlet/kit';
+import { Device, units, FARADAY, GAS_CONSTANT, EPS0 } from 'driftlet';
+import { build, layer, ohmic, semiconductor, describe, check } from 'driftlet/kit';
 
 const def = build({
   T: 300, // the library's semiconductor data are for 300 K, unless semiconductor('Si', { T })
@@ -210,6 +231,15 @@ console.log(describe(def));
 const dev = new Device(def);
 const sol = dev.solve();
 console.log(sol.converged, `I = ${sol.current.toFixed(1)} A/m²`); // negative: toward −x, p to n
+// Shockley's law for a short diode: each side's minority carriers diffuse across its
+// quasi-neutral width, the layer less its share of the depletion region w. With the depletion
+// approximation's w it is good to a few per cent here.
+const si = def.materials.Si, e = si.species['e-'], h = si.species['h+'], VT = (GAS_CONSTANT * 300) / FARADAY;
+const ND = units.perCm3(1e17), NA = units.perCm3(1e16), ni2 = e.cRef * h.cRef * Math.exp(-h.mu0 / (GAS_CONSTANT * 300));
+const w = Math.sqrt(((2 * si.epsr * EPS0 * (VT * Math.log((ND * NA) / ni2) - 0.5)) / FARADAY) * (1 / ND + 1 / NA));
+const J = FARADAY * ni2 * (e.D / (NA * (1e-6 - (w * ND) / (ND + NA))) + h.D / (ND * (1e-6 - (w * NA) / (ND + NA)))) * Math.expm1(0.5 / VT);
+console.log(`into the p side ${sol.terminals.right.current.toFixed(1)} A/m², Shockley ${J.toFixed(1)}`); // => 858.7, 876.8
+console.log(check(dev, sol).text); // where each carrier went, and the same on a finer grid (check the solution while it's the device's state)
 // An I–V sweep: change the drive, solve again (warm-started).
 for (const V of [0, 0.2, 0.4, 0.6]) {
   dev.set({ contacts: { right: { V } } });
@@ -348,11 +378,11 @@ const Q = (Vg) => {
 };
 for (const Vg of [-2, -0.95, 0, 0.4, 2]) {
   const C = (Q(Vg + 0.01) - Q(Vg - 0.01)) / 0.02;
-  console.log(`V_G ${Vg} V: C/C_ox ${(C / Cox).toFixed(3)}`); // 0.949, 0.701 (flat band), 0.267, 0.375, 0.973
+  console.log(`V_G ${Vg} V: C/C_ox ${(C / Cox).toFixed(3)}`); // => 0.949, 0.701 (flat band), 0.267, 0.375, 0.973
 }
 // At flat band the silicon is a capacitor of ε/L_D, its Debye length's.
 const LD = Math.sqrt((11.9 * EPS0 * GAS_CONSTANT * 300) / (FARADAY * FARADAY * NA)); // (the kit's Si: ε 11.9)
-console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.9 * EPS0))).toFixed(3)}`); // 0.701
+console.log(`flat band, theory: ${(1 / (1 + (Cox * LD) / (11.9 * EPS0))).toFixed(3)}`); // => 0.701
 ```
 
 `dev.impedance([f], { terminal: 'left' })` (C = Im(1/Z)/ω, from `{ f, Z: { re, im } }`) gives
@@ -391,7 +421,7 @@ const sol = new Device(def).solve();
 const mid = sol.x.length >> 1;
 console.log(`I = ${sol.current.toFixed(2)} A/m²`);
 // The silver couple's redox level, and the SHE level, mid-cell (electron voltages).
-console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]); // ≈ 0.80 + (RT/F) ln(c/1 M)
+console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]); // => 0.6806: ≈ 0.80 + (RT/F) ln(c/1 M)
 ```
 
 ## Template: an electrode in a stirred solution, and a potential step
@@ -404,7 +434,8 @@ species, `bath(c, 'Cl-')`, is that ion's own level: a chlorine electrode's, 1.13
 wire, which cancels between two alike and is far off against a metal.) Against SHE, an
 electrode's potential is its electrons' V minus φ in the bulk (with the library's μ°), and
 `describe(def)` says where that sits. The solutions are ideal: a real 0.5 M KCl's activity
-coefficient moves the wire about 10 mV. The working electrode's current is positive when oxidising. The layer's resistance is in series
+coefficient moves the wire about 10 mV. The working electrode's current is positive when
+oxidising. The layer's resistance is in series
 (uncompensated IR: keep it thin, or the supporting salt strong); a 100:1 excess of a 1:1 salt
 still leaves the limiting current about 1% off pure diffusion, and migration counts for more with
 more charge: Cu²⁺ in 1 M H₂SO₄ (20:1) reads 3% above it, with no acid 2×.
@@ -556,6 +587,18 @@ console.log(check(dev, sol).text); // per compartment: Na⁺ leaks into the cyto
 Between two baths instead (the inside one `bath(inside, 'Cl-', { I: 0 })`: held composition, no
 current), V_m is GHK. Without the pump, a closed cell runs down to Donnan equilibrium.
 
+## Reading the result
+
+- **A terminal's current**: `sol.terminals[name].current`, into the device, A/m² (and its `V`).
+  Read currents there. `sol.current` is the same thing seen from the right contact, toward +x.
+- **Where the carriers went**: `sol.bulkReactions[k].total` is reaction k's net rate over the
+  device, mol/(m²·s) (× F for a current), and `.regions[r]` its part in each layer: an LED's or a
+  solar cell's recombination, layer by layer. A face's reactions are `sol.interfaces[f].rates`.
+- **What crosses a contact**: `sol.contacts.left.flux[name]`, mol/(m²·s) toward +x, per species.
+- **Profiles**: `sol.c[name]`, `sol.V[name]`, `sol.phi` on `sol.x`.
+- **All of it at once**: `check(dev, sol).text` prints each species' ledger (in at each
+  contact, made or used by each reaction), which is usually the answer to "where does it go?".
+
 ## Transients
 
 `advance(t, opts)` steps adaptively from the device's present state (its `c0`, or the steady
@@ -570,7 +613,9 @@ The trace's `current` and `voltage` are the contacts'; `trace.terminals[name]` h
 every terminal, ports included, as `sol.terminals`. Each point's current is what the step ending
 there passed, so a charge is Σ current·(the step ending there), not a trapezoid (which adds half the
 step after a drive's jump): exact for a current drive, or under `method: 'be'`; under BDF2 a
-held terminal's charging is first order that way (3% at the default tol), so read its stored charge.
+held terminal's charging is first order that way (a double layer's RC step summed 22% short at
+the default tol, its tail's sign wrong past 5 RC; 5% short at `tol: 1e-5`), so read its stored
+charge, which is right throughout.
 
 - **Events.** To stop at one (a cut-off voltage, a diode's storage time), advance in short calls
   and test after each: a driven current held past what the device can pass fails to converge.
@@ -608,7 +653,7 @@ const rest = dev.solve(); // the steady state at t = 0 (solve() doesn't advance 
 const run = dev.advance(10e-6, { dtMax: 20e-9, probes: [{ x: 1.525e-3, species: 'h+' }] });
 const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
 const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
-console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // ≈ 1950 for the 1900 put in: a spreading, decaying pulse peaks a little early
+console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // => 1952 (for the 1900 put in): a spreading, decaying pulse peaks a little early
 ```
 
 To start from a state rather than simulate how it got there (a packet already injected, a salt

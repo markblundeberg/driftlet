@@ -273,5 +273,5 @@ so a change that makes one worse shows.
   its digits, or which current no voltage reaches. In these tests, every steady state and
   transient reported converged has passed `check()` and the invariants above.
 - What driftlet doesn't model at all (more than one dimension, cross-diffusion, heat, optics,
-  field-dependent mobility, ballistic transport) is in the [README](../README.md#what-it-doesnt-do), and open
+  field-dependent mobility, impact ionisation, tunnelling, ballistic transport) is in the [README](../README.md#what-it-doesnt-do), and open
   numerical work in the [roadmap](../ROADMAP.md).

@@ -5,6 +5,34 @@ major version.
 
 ## Unreleased
 
+From a Fable 5.2 reader's first day with the docs (9 Nov 2026):
+
+- **Reference electrodes.** A bath can be read by an electrode's half-reaction:
+  `bath(c, AgAgCl, V)` puts the terminal where a silver–silver chloride wire would sit in the
+  bath, so a working electrode's `V` is its potential against that reference. `AgAgCl` is new
+  in the kit, beside `SHE` (μ°(AgCl) = −109.789 kJ/mol: E° = 0.2222 V with the kit's Cl⁻), and
+  any `half()` exchanging one of the bath's ions works. The docs had called a bath read by
+  `'Cl-'` "an Ag/AgCl reference": that is Cl⁻'s own level, a chlorine electrode's, 1.138 V
+  above the wire. Between two alike it makes no difference (the concentration cells are
+  unchanged); against a metal electrode it does, and the stirred-solution template in llms.txt
+  now uses the electrode itself.
+- `check(device, sol)` given a solution from before a later `set()`, solve or advance said
+  "FAIL grid … refine the grid", having compared it with the device as it now stood. It says
+  the solution isn't the device's present state, and compares nothing else.
+- llms.txt says what the library won't do (no tunnelling, impact ionisation, high-field
+  mobility or ballistic transport; one temperature; 1D), before a Zener diode is built on it.
+- Printed numbers in the docs' examples are now held to their comments (`// => 58.048`): a
+  test fails if a line stops printing what its comment says. Two had drifted (an HH potassium
+  conductance, 21.12 for 21.10; an axon's speed, 18.8 for 18.7 m/s), and the README's silver
+  cell printed 1.0001 of its limiting current where the comment said 0.999: grid error, and
+  its grid is now finer.
+- Corrected: summing a trace's current under BDF2 was said to be "3% off at the default tol";
+  across a double layer's RC charging it is 22% short (the stored charge is right; read that).
+  Silicon's n_i from the kit's band data, 6.7e9 cm⁻³, now comes with its consequence (J₀ 2.1×
+  low against the accepted 9.65e9) and how to match it.
+
+Fixes:
+
 - A floating region whose carriers react in the bulk, such as a transistor's floating base
   with band-to-band recombination, could converge at the wrong level with no warning: a GaAs
   n/p⁺/n stack at 250 K put its base at −4e-10 V where it sits at −0.148 V, its currents 900
