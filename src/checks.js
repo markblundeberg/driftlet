@@ -77,8 +77,20 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     details: { warnings },
   });
 
+  // A solution from before the device moved on (a set(), another solve, a further advance). The
+  // checks below solve the device as it stands, so they'd compare two different problems: a
+  // 0.5 V solution checked after set() to 0.4 V read "FAIL grid … refine the grid".
+  const moved = own ? null : movedOn(sol, device.solution());
+  if (moved) {
+    items.push({
+      name: 'solution',
+      ok: false,
+      summary: `not the device's present state (${moved}), and the checks compare with the device as it stands: check a solution before the device moves on, or check(device) for its present one`,
+    });
+  }
+
   // The rest checks a solution, which an unconverged or unsolved state isn't.
-  if (sol.converged && !unsolved) {
+  if (sol.converged && !unsolved && !moved) {
     const ledger = steady ? balance(device, sol) : null;
     // A reaction the steady state needs at equilibrium, left far from it (too slow to see: the
     // solution warns of it), isn't steady, however quietly its ledgers sum: "equilibrium" was
@@ -104,6 +116,19 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
 
 // The units of totals through the cross-section: per m² of a planar device, or whole.
 const unitsOf = (model) => (model.geometry.type === 'planar' ? { rate: 'mol/(m²·s)', current: 'A/m²', charge: 'C/m²', amount: 'mol/m²' } : { rate: 'mol/s', current: 'A', charge: 'C', amount: 'mol' });
+
+// How a solution differs from the device's present state, in words, or null if it is that state.
+function movedOn(sol, now) {
+  if (sol.x.length !== now.x.length) return `it has ${sol.x.length} nodes, the device ${now.x.length}`;
+  if (sol.time !== now.time) return `it is at t = ${sig(sol.time)} s, the device at ${sig(now.time)} s`;
+  for (const [name, t] of Object.entries(now.terminals)) {
+    const V = sol.terminals?.[name]?.V;
+    if (!(Math.abs(V - t.V) <= 1e-9 * Math.max(1, Math.abs(t.V)))) return `its terminal '${name}' is at ${sig(V)} V, the device's at ${sig(t.V)} V`;
+  }
+  let d = 0;
+  for (let g = 0; g < now.phi.length; g++) d = Math.max(d, Math.abs(sol.phi[g] - now.phi[g]));
+  return d > 1e-9 ? `its φ differs from the device's by up to ${sig(d)} V` : null;
+}
 
 // Each species' steady ledger: in through the terminals, made by the reactions. Rates in
 // mol/(m²·s) (mol/s if not planar), positive into the device or made.

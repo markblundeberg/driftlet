@@ -448,7 +448,10 @@ console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s
 ## Checking a result
 
 `check(device, sol, { refine, tol, order })` checks a solved device, and says what it compared, so a
-page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned.
+page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned,
+while it is still the device's state: the checks solve the device as it stands, so a solution
+from before a later `set()`, solve or advance fails as **solution**, "not the device's present
+state", with nothing else compared.
 
 - **converged**: the solve converged (`check(device)` on a device not solved or advanced since it was built or `set()` fails here: its state is a layout, not a solution).
 - **warnings**: the solution's warnings (unresolved double layers, steep profiles, a weakly held

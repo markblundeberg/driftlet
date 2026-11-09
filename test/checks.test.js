@@ -269,3 +269,42 @@ test('the grid check compares what each species brings in, and check() fails a d
   fresh.solve();
   assert.ok(check(fresh, undefined, { refine: false }).items.find((i) => i.name === 'converged').ok);
 });
+
+test("check() of a solution the device has moved on from says so, and doesn't blame the grid", () => {
+  // The checks solve the device as it stands. A 0.5 V solution checked after set() to 0.4 V was
+  // compared with 0.4 V's current: "FAIL grid … -858.71 → -18.654 A/m² … refine the grid", which
+  // sent a first-day user to their grid (the Fable 5.2 docs review, 9 Nov 2026).
+  const diode = () =>
+    new Device(
+      build({
+        T: 300,
+        library: [semiconductor('Si')],
+        stack: [ohmic(0), layer('Si', units.um(1), { donors: units.perCm3(1e17) }), layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }), ohmic(0.5)],
+        bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+        grid: { hmin: units.nm(1), hmax: units.nm(20) },
+      }),
+    );
+  const dev = diode(), at05 = dev.solve();
+  assert.ok(check(dev, at05).ok, 'its present state passes');
+  const said = (r) => r.items.find((i) => i.name === 'solution')?.summary ?? '';
+  dev.set({ contacts: { right: { V: 0.4 } } });
+  for (const when of ['set', 'solved']) {
+    const r = check(dev, at05);
+    assert.ok(!r.ok && /terminal 'right' is at 0\.5 V, the device's at 0\.4 V/.test(said(r)), `${when}: ${r.text}`);
+    assert.ok(!r.items.some((i) => i.name === 'grid' || i.name === 'balance'), `${when}: nothing else is compared`);
+    dev.solve();
+  }
+  assert.ok(check(dev, dev.solution()).ok && check(dev).ok, 'the present state, given or not');
+  // A transient's solution, once the device has advanced past it.
+  const early = dev.advance(1e-9);
+  assert.ok(check(dev, early).ok);
+  dev.advance(2e-9);
+  assert.match(said(check(dev, early)), /it is at t = 1\.00e-9 s, the device at 2\.00e-9 s/);
+  // A twin's solution is the same state: what's compared is the state, not the object.
+  const twin = diode();
+  twin.set({ contacts: { right: { V: 0.4 } } });
+  twin.solve();
+  const other = diode();
+  other.set({ contacts: { right: { V: 0.4 } } });
+  assert.ok(check(twin, other.solve()).ok);
+});
