@@ -157,7 +157,9 @@ reactions at its face.
   - one alone gives a selective contact.
 - **Baths** are a shorthand. From a neutral composition and a reference species (the ion a
   reversible reference electrode would sense, e.g. Cl⁻ for Ag/AgCl), driftlet works out every
-  species' equilibrium level.
+  species' equilibrium level. The reference electrode is one more rung of the ladder: its wire
+  sits a constant offset from its ion ($`-\mu^\circ_{\mathrm{AgCl}}/F`$ = 1.138 V below Cl⁻), and
+  the kit's `bath(c, AgAgCl)` makes V that wire's voltage.
 - **Gates and Stern layers** are capacitive $`\phi`$ laws to a conductor at the terminal voltage.
   Their `zeroCharge` is the value of $`V - \phi_{\mathrm{edge}}`$ at which the interface is
   uncharged. For an electrode in a solution with table $`\mu^\circ`$ (where $`V - \phi`$ reads

@@ -159,7 +159,7 @@ templates below write by hand (where a port spans a region, or no stack fits):
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';
 
-// A concentration cell: 100 mM KCl against 10 mM through a gap, read by Ag/AgCl electrodes.
+// A concentration cell: 100 mM KCl against 10 mM through a gap, read by a pair of Ag/AgCl electrodes.
 const D = { 'K+': 1.957e-9, 'Cl-': 2.032e-9 };
 const dev = new Device({
   T: 298.15,
@@ -168,7 +168,7 @@ const dev = new Device({
   regions: [{ name: 'gap', material: 'water', length: 100e-6, c0: { 'K+': 10, 'Cl-': 10 } }], // left to right
   // (interfaces: [...] would hold the faces between regions, one fewer than the regions)
   contacts: {
-    left: { V: 0, bath: { c: { 'K+': 100, 'Cl-': 100 }, reference: 'Cl-' } }, // V is Cl⁻'s level: an Ag/AgCl electrode's
+    left: { V: 0, bath: { c: { 'K+': 100, 'Cl-': 100 }, reference: 'Cl-' } }, // V is Cl⁻'s level: an Ag/AgCl wire's, less a constant the pair cancels
     right: { I: 0, bath: { c: { 'K+': 10, 'Cl-': 10 }, reference: 'Cl-' } }, // open circuit
   },
   grid: { hmin: 0.1e-6, hmax: 5e-6 },
@@ -396,19 +396,22 @@ console.log(level(sol, silver)[mid] - level(sol, SHE, { standard: true })[mid]);
 
 ## Template: an electrode in a stirred solution, and a potential step
 
-A working electrode, a stagnant layer, and the stirred bulk as a bath whose terminal is its
-reference species (Cl⁻: an Ag/AgCl reference). An electrode's potential against SHE is its
-electrons' V minus φ in the bulk (with the library's μ°), and a Cl⁻ terminal sits ~1.36 V above
-that, so an electrode held at 0 V beside it is strongly anodic: `describe(def)` says where SHE
-sits, and an offset of that much (`bath(c, 'Cl-', 0, { offset })`) makes the terminal read SHE.
-The working electrode's current is positive when oxidising. The layer's resistance is in series
+A working electrode, a stagnant layer, and the stirred bulk as a bath read by a reference
+electrode: `bath(c, AgAgCl)` puts the bath's terminal at the level of an Ag/AgCl wire dipped in
+it, so the working electrode's `V` is its potential against that reference, as a potentiostat
+sets it. (Any `half()` exchanging one of the bath's ions will do, the rest of it `fixed`. A bare
+species, `bath(c, 'Cl-')`, is that ion's own level: a chlorine electrode's, 1.138 V above the
+wire, which cancels between two alike and is far off against a metal.) Against SHE, an
+electrode's potential is its electrons' V minus φ in the bulk (with the library's μ°), and
+`describe(def)` says where that sits. The solutions are ideal: a real 0.5 M KCl's activity
+coefficient moves the wire about 10 mV. The working electrode's current is positive when oxidising. The layer's resistance is in series
 (uncompensated IR: keep it thin, or the supporting salt strong); a 100:1 excess of a 1:1 salt
 still leaves the limiting current about 1% off pure diffusion, and migration counts for more with
 more charge: Cu²⁺ in 1 M H₂SO₄ (20:1) reads 3% above it, with no acid 2×.
 
 ```js
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
-import { build, layer, ohmic, bath, half, aqueous, metal, IONS } from 'driftlet/kit';
+import { build, layer, ohmic, bath, half, aqueous, metal, AgAgCl, IONS } from 'driftlet/kit';
 
 const iron = half('Fe3+ + e- = Fe2+');
 const electrode = (drive) =>
@@ -419,24 +422,24 @@ const electrode = (drive) =>
       layer('Pt', 1e-6),
       { reactions: [{ ...iron, k0: 1e-3 }] }, // i₀ = F·k0 ≈ 96 A/m² at 1 M each; about 1 A/m² at these mM
       layer('water', 20e-6), // the stagnant layer
-      bath({ 'K+': 500, 'Cl-': 535, 'Fe3+': 5, 'Fe2+': 10 }, 'Cl-'), // the stirred bulk (neutral)
+      bath({ 'K+': 500, 'Cl-': 535, 'Fe3+': 5, 'Fe2+': 10 }, AgAgCl), // the stirred bulk (neutral), read by an Ag/AgCl wire in it
     ],
     grid: { hmin: 10e-9, hmax: 0.5e-6 },
   });
 // At rest (no current), the electrode sits at the couple's Nernst potential.
 const rest = new Device(electrode({ I: 0 })).solve();
-const vsSHE = (sol) => sol.V['e-'][0] - sol.phi.at(-1);
-const VT = (GAS_CONSTANT * 298.15) / FARADAY, Erest = vsSHE(rest);
-console.log(`rest ${Erest.toFixed(4)} V vs SHE; E° + V_T ln(c₃/c₂) = ${(0.769 + VT * Math.log(5 / 10)).toFixed(4)} V`);
-const drive = (E) => E - Erest + rest.terminals.left.V; // the terminal voltage for E vs SHE
+const VT = (GAS_CONSTANT * 298.15) / FARADAY, Erest = rest.terminals.left.V; // against the reference
+const Eref = 0.2222 - VT * Math.log(0.535); // the wire against SHE: E°(AgCl/Ag) − V_T ln a(Cl⁻)
+console.log(`rest ${Erest.toFixed(3)} V vs Ag/AgCl; E° + V_T ln(c₃/c₂) − E_ref = ${(0.769 + VT * Math.log(5 / 10) - Eref).toFixed(3)} V`); // => 0.513 V vs, 0.513 V
+console.log(`vs SHE ${(rest.V['e-'][0] - rest.phi.at(-1)).toFixed(3)} V`); // => 0.751
 // Steady, 0.2 V positive of rest: oxidising Fe²⁺. Its limiting current F·D·c/L is 35 A/m²; the
 // kinetics (i₀ ≈ 1 A/m²) still hold it to about half here.
-console.log(`anodic ${new Device(electrode(drive(Erest + 0.2))).solve().terminals.left.current.toFixed(2)} A/m²`); // 16.81
+console.log(`anodic ${new Device(electrode(Erest + 0.2)).solve().terminals.left.current.toFixed(2)} A/m²`); // => 16.81
 // A potential step from rest to 0.5 V positive: at first Fe²⁺ is depleted as at a plane,
 // Cottrell's F·c·√(D/πt), until the stagnant layer is crossed (L²/D ≈ 0.5 s).
-const dev = new Device(electrode(drive(Erest)));
+const dev = new Device(electrode(Erest));
 dev.solve();
-dev.set({ contacts: { left: { V: drive(Erest + 0.5) } } });
+dev.set({ contacts: { left: { V: Erest + 0.5 } } });
 const run = dev.advance(0.03, { dtMax: 1e-3 }); // run.trace: this call's accepted steps
 for (const t of [3e-3, 1e-2, 3e-2]) {
   const k = run.trace.t.findIndex((tk) => tk >= t);
@@ -450,7 +453,7 @@ being 2|to − from| over the scan rate: `solve()` it at `from` first, since the
 at t = 0, then `advance()` with a `dtMax` of a millivolt's worth of sweep, or the trace's points
 fall a few mV apart and miss the peaks. For a diffusion peak (Randles–Ševčík), the stagnant layer
 must be well past √(D·t_scan), a few hundred µm: the template's 20 µm gives a thin-layer wave.
-Its potential against the bath's terminal is −`trace.voltage` (that is V_right − V_left), and
+Its potential against the reference is −`trace.voltage` (that is V_right − V_left), and
 `trace.current` is anodic positive.
 
 ## Template: a battery particle discharging
@@ -704,7 +707,7 @@ those:
   `GAS_CONSTANT`, `EPS0`, `BOLTZMANN`, `ELEMENTARY_CHARGE`, `AVOGADRO` (there's no thermal-voltage
   constant: V_T = GAS_CONSTANT·T/FARADAY).
 - `driftlet/kit`:
-  - building: `build`, `combine`, `layer`, `ohmic`, `bath`, `half`, `level`, `SHE`,
+  - building: `build`, `combine`, `layer`, `ohmic`, `bath`, `half`, `level`, `SHE`, `AgAgCl`,
     `vacuumLevel`, `vacuumDipole`, `vacuumZeroCharge`, and the data library (`aqueous`,
     `semiconductor`, `metal`, `trap`, `IONS`, `SEMICONDUCTORS`, `METALS`, `H2O`, `WATER_EPSR`);
   - sources: `pulse`, `square`, `triangle`, `ramp`, `injector`, `recombination`,

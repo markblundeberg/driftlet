@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, DeviceError, FARADAY, units } from '../src/index.js';
-import { build, combine, layer, ohmic, bath, half, SHE, level } from '../src/kit.js';
+import { build, combine, layer, ohmic, bath, half, SHE, AgAgCl, level, aqueous, metal, IONS } from '../src/kit.js';
 import { parseEquation, stoichiometry } from '../src/equation.js';
 
 // The kit's stack: a device written left to right as it's drawn, built into the plain
@@ -228,4 +228,44 @@ test("bath() refuses its arguments out of order, rather than dropping the refere
 test('doping given per cm³ where mol/m³ is meant is refused, by the name it was given', () => {
   assert.throws(() => build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { donors: 1e16 }), ohmic(0)] }), /stack\[1\]\.donors: 1e\+16 mol\/m³ .* units\.perCm3\(1e\+16\)/);
   assert.ok(build({ T: 300, library: [Si], stack: [ohmic(0), layer('Si', 1e-6, { acceptors: units.perCm3(1e20) }), ohmic(0)] }));
+});
+
+test('a bath read by a reference electrode: platinum in Fe³⁺/Fe²⁺ against Ag/AgCl reads the difference of their Nernst potentials', () => {
+  // Three routes to one number. By hand, from the tables' μ°: E(Fe³⁺/Fe²⁺) − E(AgCl/Ag) at the
+  // bath's activities. By level(), which finds the wire's level in the solution from μ̄_Cl⁻ with
+  // none of bath()'s arithmetic. And the terminal itself. (Read by 'Cl-' alone, the terminal is
+  // a chlorine electrode's: −μ°(AgCl)/F = 1.1379 V above the wire, which the docs once called
+  // "an Ag/AgCl reference".)
+  const VT = (8.314462618 * 298.15) / FARADAY, cCl = 535;
+  const cell = (reference, opts) =>
+    build({
+      library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+      stack: [
+        ohmic({ I: 0 }, ['e-']),
+        layer('Pt', 1e-6),
+        { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-3 }] },
+        layer('water', 20e-6),
+        bath({ 'K+': 500, 'Cl-': cCl, 'Fe3+': 5, 'Fe2+': 10 }, reference, 0, opts),
+      ],
+      grid: { hmin: 10e-9, hmax: 0.5e-6 },
+    });
+  const muAgCl = AgAgCl.fixed['AgCl(s)'];
+  const EFe = (IONS['Fe3+'].mu0 - IONS['Fe2+'].mu0) / FARADAY + VT * Math.log(5 / 10);
+  const EAg = (muAgCl - IONS['Cl-'].mu0) / FARADAY - VT * Math.log(cCl / 1000);
+  assert.ok(Math.abs((muAgCl - IONS['Cl-'].mu0) / FARADAY - 0.2222) < 1e-4, 'E°(AgCl/Ag) on the kit\'s Cl⁻ is the textbook 0.2222 V');
+  assert.ok(Math.abs(Math.exp((muAgCl - IONS['Ag+'].mu0 - IONS['Cl-'].mu0) / (8.314462618 * 298.15)) / 1.77e-10 - 1) < 0.01, 'and K_sp on its Ag⁺ is 1.77e-10');
+  const written = half('Ag(s) + Cl- = AgCl(s) + e-', AgAgCl.fixed); // the same electrode, written as an oxidation
+  for (const [reference, opts, shift] of [[AgAgCl, {}, 0], [written, {}, 0], [AgAgCl, { offset: 0.1 }, 0.1], ['Cl-', {}, muAgCl / FARADAY]]) {
+    const sol = new Device(cell(reference, opts)).solve();
+    assert.ok(sol.converged);
+    const wire = level(sol, AgAgCl).at(-1);
+    assert.ok(Math.abs(wire - shift) < 1e-12, `the wire's level in the bath, against its terminal at 0: ${wire} for ${shift}`);
+    assert.ok(Math.abs(sol.terminals.left.V - (EFe - EAg + shift)) < 1e-6, `${sol.terminals.left.V} against ${EFe - EAg + shift}`);
+  }
+  // What it can't be read by says so: an electrode whose ion the bath lacks, or one with a
+  // participant of unstated μ.
+  assert.throws(() => bath({ 'K+': 1, 'Cl-': 1 }, SHE), /must exchange exactly one of the bath's species \(K\+, Cl-\); it has 'H\+'/);
+  assert.throws(() => bath({ 'K+': 1, 'Cl-': 1 }, half('AgCl(s) + e- = Ag(s) + Cl-')), /give the others' μ in half\(\)'s fixed/);
+  // An electrode of elements alone is its ion's own level: SHE in an acid is the H⁺ terminal.
+  assert.deepEqual(bath({ 'H+': 1, 'Cl-': 1 }, SHE).bath, { c: { 'H+': 1, 'Cl-': 1 }, reference: 'H+' });
 });

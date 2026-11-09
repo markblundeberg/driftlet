@@ -57,10 +57,15 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 - **Contacts** are the first and last items. `ohmic(drive, carriers)` holds each carrier in
   equilibrium with a metal at the terminal voltage (default `['e-', 'h+']`, an
   infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
-  a metal region). `bath(c, reference, drive, { offset, material })` is a bath whose terminal voltage is
-  the level of its `reference` species, as an electrode reversible to it would read (`offset`
-  places that species relative to the terminal voltage, its level at V + `offset`, e.g. to read a
-  solution's potentials against SHE). Every species a bath lists is held at its level there, so
+  a metal region). `bath(c, reference, drive, { offset, material })` is a bath read by a reference
+  electrode. Given the electrode's half-reaction (`AgAgCl`, or any `half()` that exchanges one of
+  the bath's ions, the rest of it `fixed`), the terminal voltage is that electrode's own: where
+  its wire would sit, dipped in the bath. Given a species (`'Cl-'`), it is that ion's level:
+  an electrode reversible to it whose other participants are elements in their standard states
+  (for Cl⁻ a chlorine electrode, −μ°(AgCl)/F = 1.138 V above an Ag/AgCl wire in the same bath),
+  which is all one between two alike and not against a metal. (`offset` places the reference
+  species relative to the terminal voltage, its level at V + `offset`, e.g. to read a
+  solution's potentials against SHE; it adds to a reference electrode's own.) Every species a bath lists is held at its level there, so
   one absent from the bulk (a product) is given as a trace, not 0. `bath(c, drive)`, without a reference, is a bath whose terminal voltage is its
   φ: an ideal salt bridge, the convention of membrane potentials, so that between two such baths
   V_right − V_left is the φ difference a voltage clamp sets. A drive is a voltage, a waveform, or
@@ -101,6 +106,9 @@ electrons by that couple would sit in equilibrium with the local composition: th
 level (`NaN` where a participant is absent; see [reading level diagrams](visualization.md)). With `{ standard: true }` every species
 is at its reference concentration instead. `SHE` is 2 H⁺ + 2 e⁻ ⇌ H₂ with
 $`\mu_{\mathrm{H_2}} = 0`$, so its standard level is $`\phi + \mu^\circ_{\mathrm{H}^+}/F`$.
+`AgAgCl` is AgCl(s) + e⁻ ⇌ Ag(s) + Cl⁻ with $`\mu^\circ_{\mathrm{AgCl}}`$ = −109.789 kJ/mol
+(see [data](data.md)): `level(sol, AgAgCl)` is where a silver–silver chloride wire would sit at
+each node, and `bath(c, AgAgCl)` a bath read by one.
 
 ```js
 import { Device } from 'driftlet';

@@ -700,10 +700,12 @@ e⁻ both held in a silver halide, its electron and hole densities follow from t
 neutrality, not from `c0` (so a different fixed charge changes them). Read them from the solution.
 
 **`bath`** (instead of `species` and `phi`): the outside phase is a neutral composition `c`
-held in place by a charged `reference` species (as for a reversible reference electrode, e.g.
-Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
+held in place by a charged `reference` species (the ion a reversible reference electrode
+senses, e.g. Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in equilibrium at the level its
 composition implies, and the $`\phi`$ law is `'bulk'`. An optional `offset` places the reference
-species relative to V. Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
+species relative to V: at 0, V is the ion's own level, and a real electrode's wire sits a
+constant from it, $`-\mu^\circ_{\mathrm{AgCl}}/F`$ = 1.138 V below Cl⁻'s for Ag/AgCl. Between two
+alike the constant cancels; against a metal electrode, give it (the kit's `bath(c, AgAgCl)` does). Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
 (no junction potential), the convention by which membrane potentials are $`\phi`$ differences.
 Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a voltage clamp. The bath is the end
 material at that composition (which then balances any fixed charge there, as an insertion host's

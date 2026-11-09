@@ -78,6 +78,11 @@ scaled by T/η moves nothing they show.
   states at 0. With these $`\mu^\circ`$, the electronic level of a standard hydrogen electrode in
   the solution is $`\phi`$ itself (see [conventions](conventions.md)), so $`V - \phi`$ reads against
   SHE.
+- **Silver chloride**, for the `AgAgCl` reference electrode: $`\mu^\circ`$ = −109.789 kJ/mol, the
+  same tables' $`\Delta_{\mathrm{f}} G^\circ`$ of AgCl(s). With the library's Cl⁻ it gives
+  $`E^\circ(\mathrm{AgCl/Ag})`$ = 0.2222 V (tables list 0.2223), and with its Ag⁺ a solubility
+  product of 1.77 × 10⁻¹⁰, which a test holds it to. In an ideal solution: a real electrode in
+  0.5 M KCl sits about 10 mV higher, by Cl⁻'s activity coefficient.
 - **Standard state**: the tables use 1 mol/kg, and the library uses 1 M. In dilute water at 25 °C
   they differ by 0.3%, about 7 J/mol in $`\mu^\circ`$.
 - **Iron**: Fe²⁺'s $`\Delta_{\mathrm{f}} G^\circ`$ gives $`E^\circ(\mathrm{Fe}^{2+}/\mathrm{Fe})`$ =

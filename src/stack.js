@@ -6,6 +6,7 @@
 
 import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
+import { parseEquation } from './equation.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -90,19 +91,48 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
 }
 
 /**
- * A bath: a neutral composition `c` (mol/m³) held at the contact. With a `reference`, the charged
- * species a reference electrode would sense (Cl⁻ for Ag/AgCl), its levels are referred to that
- * species, which is the terminal. Without one, `bath(c, drive, opts)`, the terminal voltage is the
- * bath's φ: an ideal salt bridge, the convention of membrane potentials.
+ * A bath: a neutral composition `c` (mol/m³) held at the contact, read in one of three ways.
+ * - By a reference electrode, given as its half-reaction (`AgAgCl`, or any `half()` exchanging
+ *   one of the bath's ions, the rest of it `fixed`): the terminal voltage is that electrode's
+ *   own, its electrons' level in equilibrium with the bath, as its wire would read.
+ * - By a reference species, a charged one: the terminal voltage is that species' level. That is
+ *   an electrode reversible to it whose other participants are elements in their standard states
+ *   (`'Cl-'` is a chlorine electrode, 1.36 V above SHE at 1 M; an Ag/AgCl wire sits 1.138 V
+ *   below it), which is all the same between two alike.
+ * - By nothing, `bath(c, drive, opts)`: the terminal voltage is the bath's φ, an ideal salt
+ *   bridge, the convention of membrane potentials.
  * @param {Record<string, number>} c
- * @param {string | number | object} [reference] the reference species, or the drive
+ * @param {string | { equation: string, fixed?: Record<string, number> } | number | object} [reference]
+ *   the reference electrode's half-reaction, the reference species, or the drive
  * @param {number | object} [drive]
  * @param {{ offset?: number, material?: string }} [opts] `offset`: where the reference species
- *   sits relative to the terminal voltage, V_ref = V + offset (V). `material`: the bath's own
- *   material (a solution against an ion exchanger), if not the end layer's
+ *   sits relative to the terminal voltage, V_ref = V + offset (V), added to a reference
+ *   electrode's own. `material`: the bath's own material (a solution against an ion exchanger),
+ *   if not the end layer's
  */
 export function bath(c, reference, d = 0, opts = {}) {
   if (!isObject(c)) fail(`bath: the composition comes first, as { species: mol/m³ } (got ${JSON.stringify(c)})`);
+  // A reference electrode: Σν·μ̄ = 0 over its half-reaction puts the one ion it exchanges at
+  // V − Σν·μ(fixed)/(ν_e·F) when its electrons are at V (the equation balanced as written:
+  // ν_e = ν_ion·z_ion). AgCl(s) + e⁻ ⇌ Ag(s) + Cl⁻: Cl⁻ sits −μ°(AgCl)/F = 1.138 V above the wire.
+  let electrode = 0;
+  if (isObject(reference) && typeof reference.equation === 'string') {
+    const terms = parseEquation(reference.equation, 'bath: the reference electrode');
+    const fixed = isObject(reference.fixed) ? reference.fixed : {};
+    const electrons = terms.filter((t) => t.name === 'e-');
+    const ions = terms.filter((t) => t.name !== 'e-' && fixed[t.name] === undefined);
+    if (electrons.length !== 1) fail(`bath: the reference electrode ${JSON.stringify(reference.equation)} needs electrons, 'e-', on exactly one side`);
+    if (ions.length !== 1 || c[ions[0].name] === undefined) {
+      fail(
+        `bath: the reference electrode ${JSON.stringify(reference.equation)} must exchange exactly one of the bath's species (${Object.keys(c).join(', ')}); ` +
+          `it has ${ions.length === 0 ? 'none' : ions.map((t) => `'${t.name}'`).join(' and ')} besides its electrons and its fixed participants (give the others' μ in half()'s fixed)`,
+      );
+    }
+    let sum = 0;
+    for (const t of terms) if (fixed[t.name] !== undefined) sum += t.nu * fixed[t.name];
+    electrode = -sum / (electrons[0].nu * FARADAY);
+    reference = ions[0].name;
+  }
   if (typeof reference !== 'string') {
     // bath(c, drive, opts): a third argument that isn't the options was put in the wrong place
     // (bath(c, { I: 0 }, 'Cl-') once built a bath without its reference, silently).
@@ -110,7 +140,9 @@ export function bath(c, reference, d = 0, opts = {}) {
     [d, opts] = [reference ?? 0, isObject(d) ? d : {}];
   }
   checkOptions('bath', opts, ['offset', 'material']);
-  const { offset, material } = opts;
+  const { material } = opts;
+  if (electrode !== 0 && opts.offset !== undefined && !Number.isFinite(opts.offset)) fail(`bath: offset must be a number of volts, got ${shown(opts.offset)}`);
+  const offset = electrode !== 0 ? electrode + (opts.offset ?? 0) : opts.offset;
   return {
     ...drive(d, 'bath'),
     bath: {

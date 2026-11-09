@@ -159,6 +159,14 @@ export function half(equation, fixed) {
 export const SHE = Object.freeze(half('2 H+ + 2 e- = H2', { H2: 0 }));
 
 /**
+ * A silver–silver chloride electrode, AgCl(s) + e⁻ ⇌ Ag(s) + Cl⁻, with μ°(AgCl) = −109.789 kJ/mol
+ * (Wagman et al. 1982, as the kit's ions) and the silver at 0. With the kit's Cl⁻ that is
+ * E° = 0.2222 V, and K_sp = 1.77e-10 with its Ag⁺. Needs `Cl-` among the species. As a bath's
+ * reference, `bath(c, AgAgCl, V)`, the terminal reads as that electrode's wire would in the bath.
+ */
+export const AgAgCl = Object.freeze(half('AgCl(s) + e- = Ag(s) + Cl-', { 'AgCl(s)': -109.789e3, 'Ag(s)': 0 }));
+
+/**
  * The electronic level a half-reaction implies at each node, as an electron voltage
  * V = −μ̄_e/F: where an electrode exchanging electrons by that reaction would sit in equilibrium
  * with the local composition (the couple's redox level). With `standard: true`, every
