@@ -1208,41 +1208,9 @@ const now = dev.solution();                   // snapshot of the current state
   drive's breakpoints (`advance()` does): a jump inside a step is first order under either
   method, and BDF2 restarts at a breakpoint a step begins on. dt is a duration: a negative,
   infinite or non-number one is refused, and a NaN or 0 does nothing and says so in `warnings`.
-- `advance(tEnd, opts)` integrates adaptively to `tEnd` with variable-step BDF2, controlling
-  the local error per step to `tol` (default 1e-3) in thermal units of every potential ($`\phi`$ and
-  each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step. That's local: over a long decay
-  the errors add up, and a small current at the end of one can be tens of percent off, so tighten
-  `tol` (1e-5, say) before fitting a time constant to a tail. It lands exactly on `tEnd`, an
-  absolute time (a solution's `time` is where the device is); a NaN does nothing, and its
-  `warnings` say so; `Infinity` is an error (the long-time limit is `solve()`). Options: `tol`,
-  `dt0` (first step), `dtMax`, `budgetMs` (return after this much wall time, with
-  `done: false`), `maxSteps`, `method`. The step size carries over between calls (a `dt0` given
-  to a later call wins, say after a `set()` makes the first instants fast), so an animation can
-  call `advance(tNext, { budgetMs })` once per frame. The solution adds `done`,
-  `rejected`, and a `trace` of terminal current and voltage after every accepted step (the
-  current is the right contact's, toward +x, as `sol.current`; the voltage is the right contact's
-  minus the left's: what a meter between the terminals reads, which at a bath is its reference
-  species' level, not $`\phi`$), and `trace.terminals[name]`, `{ V, current }` arrays for every
-  terminal, the ports' too, as `sol.terminals` reads them (current into the device). Each point's current is what
-  the step ending there passed, so the charge is the sum of each point's current times that step:
-  exact for a current-driven terminal, and under backward Euler for any. Under BDF2 a terminal
-  held at a voltage, or behind R, passes its charging current as BDF2's difference of the
-  stored charge, and that sum is first order: across a double layer's RC charging (a 5 mV
-  step, 9 Nov 2026) it came 22% short at the default `tol`, the current's sign wrong past
-  5.4 RC, 5% short at `tol: 1e-5` and 1% at `1e-7`, while the stored charge agreed to 4e-5
-  in every run. Read the charge itself there (`plates`, a port's `charge`, an interface's `D`), or use `method: 'be'`. A
-  point at a jump has the value just before it, so a trapezoid of the trace adds half the step
-  after each jump (a 1 ms current pulse counted 2.8× over). With
-  `probes: [{ x, species, quantity, region }]` the trace also reads inside the device,
-  as `trace.probes[k]` beside `trace.t`: a species' concentration (`quantity: 'c'`, the default,
-  mol/m³) or species voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the
-  nodes around `x` (at a face, the side where the species is; where both sides have it, `region`
-  says which). That's what a detector at `x` sees.
-  At a face, `{ interface: f, species }` reads a species' flux through it (mol/(m²·s), toward +x,
-  as `interfaces[f].N`): what crosses by its links, not what its reactions make or take (that is
-  `interfaces[f].made`, and shows in the flux of the segment beside the face, `sol.flux`), and
-  `{ interface: f, gate }` a gate's fraction open. Probes read at accepted steps, which grow
-  as a transient slows, so give `dtMax` to resolve a signal in time.
+- `advance(tEnd, opts)` integrates adaptively to the absolute time `tEnd`, with variable-step
+  BDF2 under error control, and returns the solution there with a `trace` of every accepted
+  step. Its options, its trace and its probes are under [advance()](#advancetend-opts) below.
 - `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
   it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
   device, its input impedance whether it's held or driven by a current (for a driven one, about
@@ -1319,6 +1287,68 @@ dev.set({ contacts: { right: { V: 0.05 } } });
 const run = dev.advance(1, { tol: 1e-3 }); // one second, adaptively
 console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.findIndex((t) => t >= 0.01)].toFixed(1)} A/m², I(1 s) = ${run.current.toFixed(2)} A/m²`);
 ```
+
+### advance(tEnd, opts)
+
+Adaptive, variable-step BDF2 from the device's present state to the absolute time `tEnd`,
+landing on it exactly. It returns the solution there, with `done` (whether `tEnd` was reached),
+`rejected` (steps) and a `trace` of this call's accepted steps. Each note below names what it is
+about, so that a search lands on a whole fact.
+
+| option | default | meaning |
+|---|---|---|
+| `tol` | 1e-3 | local error per step, in thermal units of every potential ($`\phi`$ and each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step |
+| `dt0` | the last call's step, else 1e-4 of the interval | the first step |
+| `dtMax` | none | the longest step, and so how finely `trace` and `probes` sample |
+| `budgetMs` | none | return after this much wall time, with `done: false` |
+| `maxSteps` | 100000 | stop there, with a warning saying so |
+| `method` | `'bdf2'` | or `'be'`, backward Euler |
+| `probes` | none | what to record inside the device at each accepted step (below) |
+
+| `trace` field | what it holds, per accepted step |
+|---|---|
+| `t` | the time the step ended at |
+| `current` | the right contact's, toward +x, as `sol.current` |
+| `voltage` | the right contact's minus the left's: what a meter between the terminals reads, which at a bath is its reference's level, not $`\phi`$ |
+| `terminals[name]` | `{ V, current }` arrays for every terminal, the ports' too, as `sol.terminals` reads them (current into the device) |
+| `probes[k]` | probe k's readings |
+
+Notes:
+
+- **`tEnd` is absolute.** A solution's `time` is where the device is, so a further dt is
+  `advance(sol.time + dt)`. A NaN does nothing, and its `warnings` say so; `Infinity` is an
+  error (the long-time limit is `solve()`).
+- **`tol` is local.** Over a long decay the errors add up, and a small current at the end of
+  one can be tens of percent off: tighten `tol` (1e-5, say) before fitting a time constant to a
+  tail.
+- **The step size carries over between calls**, so an animation can call
+  `advance(tNext, { budgetMs })` once per frame. A `dt0` given to a later call wins, say after
+  a `set()` makes the first instants fast.
+- **A trace's charge is a sum, not a trapezoid.** Each point's current is what the step ending
+  there passed, so a charge is the sum of each point's current times that step. A point at a
+  jump has the value just before it, so a trapezoid adds half the step after each jump.
+- **The charge sum is exact for a current-driven terminal, and under backward Euler for any.**
+  Under BDF2 a terminal held at a voltage, or behind R, passes its charging current as BDF2's
+  difference of the stored charge, and the sum is first order. Read the charge itself there
+  (`plates`, a port's `charge`, an interface's `D`), or use `method: 'be'`.
+- **`probes: [{ x, species, quantity, region }]`** read inside the device, as `trace.probes[k]`
+  beside `trace.t`: a species' concentration (`quantity: 'c'`, the default, mol/m³) or species
+  voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the nodes around
+  `x` (at a face, the side where the species is; where both sides have it, `region` says
+  which). That's what a detector at `x` sees.
+- **`probes: [{ interface: f, species }]`** read a species' flux through a face (mol/(m²·s),
+  toward +x, as `interfaces[f].N`): what crosses by its links, not what its reactions make or
+  take (that is `interfaces[f].made`, and shows in the flux of the segment beside the face,
+  `sol.flux`). `{ interface: f, gate }` reads a gate's fraction open.
+- **Probes read at accepted steps**, which grow as a transient slows: give `dtMax` to resolve a
+  signal in time.
+
+Measured (newest first; a new caveat goes here, with its date):
+
+- **The charge sum under BDF2**, a double layer's RC charging, a 5 mV step (9 Nov 2026): 22%
+  short at the default `tol`, the current's sign wrong past 5.4 RC; 5% short at `tol: 1e-5`,
+  1% at `1e-7`; exact under `'be'`. The stored charge agreed to 4e-5 in every run.
+- **A trapezoid of the trace** counted a 1 ms current pulse 2.8× over.
 
 ## Solutions
 
