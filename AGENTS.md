@@ -1,6 +1,7 @@
 # AGENTS.md: driftlet
 
-Guide for coding agents working in this repo.
+Guide for coding agents working in this repo: one preparing a pull request, or one changing a
+fork of driftlet for its own use.
 
 - **Start with the docs:** [README](README.md), [docs/conventions.md](docs/conventions.md),
   [docs/device.md](docs/device.md), [docs/statistics.md](docs/statistics.md),
@@ -19,16 +20,13 @@ Guide for coding agents working in this repo.
   The demos have a browser smoke test, `npm run smoke` (headless Chrome, also in CI): run it after
   touching a demo or anything they import. `npm run shots` retakes the screenshots (each page at
   a set state, on virtual time, so unchanged pages come out byte-identical).
-- **Commits:** small and logically scoped. End messages with the Co-Authored-By trailer only;
-  never a `Claude-Session:` line (a local commit-msg hook strips it as a backstop). Commit and
-  push freely. Releases: add a CHANGELOG.md entry, bump `version` in package.json (and the CDN
-  pins in the README and llms.txt, which a test checks), commit it as the bare version, tag it
-  annotated (`git tag -a vX.Y.Z -m X.Y.Z`; `--follow-tags` skips lightweight tags) and push with
-  `--follow-tags`. The release workflow stages it on npm through trusted
-  publishing, and it goes public only when the owner approves it with 2FA, so the owner decides
-  when. Primary branch is `master`.
-- **Hook setup after a fresh clone** (`.claude/` is gitignored, local infra):
-  `git config core.hooksPath .claude/hooks && chmod +x .claude/hooks/commit-msg`
+- **Contributing:** work on a branch and open a pull request against `master`; the owner reviews
+  it and cuts releases. Keep commits small and logically scoped. Before you open it, run
+  `npm test`, and `npm run smoke` if you touched a demo or anything one imports. CI also runs
+  `npm run bench -- --check` (its deterministic counters, matrix factorisations and the like,
+  against bench/baseline.json), `npm run types` with a strict check of the declarations, and
+  `npm run stress -- --check`. A CDN pin in the README and llms.txt follows `version` in
+  package.json, and a test checks it: leave both to the release.
 - **Background:** driftlet spins off the owner's ESBD web book (https://marklundeberg.com/esbd/,
   "electrochemical species band diagrams"), whose central idea is the species voltage `V_i =
   μ̄_i/(z_i F)`. driftlet doesn't require V_i (it's a display of μ̄_i, which also covers neutral
