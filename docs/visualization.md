@@ -16,6 +16,43 @@ have no band (a vacancy's level drifting out of flat as the ions lag a voltage s
 questions of equilibrium between species (an electrode against a redox couple). Bring them in
 there, as an extra tool, not in place of the band diagram.
 
+A silicon pn junction under 0.5 V of forward bias, drawn the familiar way:
+
+```js figure=pn-forward
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+import { bandDiagram } from 'driftlet/plot';
+
+const def = build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0),
+    layer('Si', units.um(1), { name: 'n', donors: units.perCm3(1e17) }),
+    layer('Si', units.um(1), { name: 'p', acceptors: units.perCm3(1e16) }),
+    ohmic(0.5), // the p side at +0.5 V: forward bias
+  ],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: units.nm(1), hmax: units.nm(20) },
+});
+const sol = new Device(def).solve();
+const svg = bandDiagram(sol, { energy: true }); // the figure below
+const g = sol.x.findIndex((x) => x >= units.um(1)); // at the junction
+console.log(`E_Fn − E_Fp = ${(sol.V['h+'][g] - sol.V['e-'][g]).toFixed(3)} eV`); // => 0.500
+```
+
+![Band diagram of a forward-biased silicon pn junction. The band edges E_c and E_v step up from the n side to the p side across the junction at 1 µm. The quasi-Fermi levels E_Fn and E_Fp run flat across the junction, 0.5 eV apart, and each bends to meet the other at the far contact.](figures/pn-forward.svg)
+
+The thin lines are the band edges and the thick ones the quasi-Fermi levels. Each carrier's level
+is flat where that carrier is plentiful, and both stay flat across the junction, 0.5 eV apart:
+that gap is the applied voltage, and it's what forward bias looks like on the diagram. Past the
+junction each is the minority carrier's level, and it bends to meet the other at the contact,
+which holds both carriers at the metal's Fermi level. (These layers are much thinner than a
+diffusion length, so the bend takes the whole neutral region and is steepest at the contact: a
+density falling in a straight line is a level falling as its logarithm.) The figure is the
+example's own output, as every figure on this page is: `npm run figures` draws them from the
+code above them, and the tests hold the two together.
+
 ## Electron levels
 
 ### The Fermi level
@@ -105,33 +142,60 @@ its tip sits, which is why practitioners correct for iR drop, use a Luggin capil
 supporting electrolyte to flatten the bulk. In a cell polarised from wall to wall there's no flat
 bulk and no single $`E`$, but the levels are all still there to read.
 
-For example, platinum at open circuit in a ferric/ferrous solution:
+For example, platinum passing an anodic current in a ferric/ferrous solution:
 
-```js
+```js figure=iron-electrode
 import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
 import { build, layer, ohmic, bath, half, level, aqueous, metal } from 'driftlet/kit';
+import { bandDiagram } from 'driftlet/plot';
 
-// Platinum at open circuit in 2 mM Fe³⁺ and 8 mM Fe²⁺, in 0.5 M KCl.
+// Platinum oxidising Fe²⁺ at 30 A/m², in 2 mM Fe³⁺ and 8 mM Fe²⁺ (in 0.5 M KCl) stirred 10 µm away.
 const iron = half('Fe3+ + e- = Fe2+');
 const def = build({
   library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
   stack: [
-    ohmic({ I: 0 }, ['e-']),
+    ohmic({ I: 30 }, ['e-']), // electrons taken out: anodic
     layer('Pt', 1e-6),
-    { reactions: [{ ...iron, k0: 1e-3, alpha: 0.5 }] },
+    { reactions: [{ ...iron, k0: 1e-2, alpha: 0.5 }] },
     layer('water', 10e-6),
     bath({ 'K+': 500, 'Cl-': 522, 'Fe3+': 2, 'Fe2+': 8 }, 'Cl-', 0),
   ],
   grid: { hmin: 10e-9, hmax: 0.5e-6 },
 });
 const sol = new Device(def).solve();
-const g = sol.x.length - 1; // in the bulk
+const svg = bandDiagram(sol, { // the figure below
+  species: ['e-'],
+  levels: [{ half: iron, label: 'V_{e⁻}(Fe³⁺/Fe²⁺)' }, { half: iron, standard: true, label: 'V°_{e⁻}(Fe³⁺/Fe²⁺)' }],
+});
+const redox = level(sol, iron), std = level(sol, iron, { standard: true });
+const face = redox.findIndex(Number.isFinite), bulk = sol.x.length - 1; // the solution's first node, and its last
 const fermi = sol.terminals.left.V; // the platinum's V_e⁻
-const she = sol.phi[g]; // V°_e⁻(SHE), with the library's data
-const E = fermi - she, Eeq = level(sol, iron)[g] - she, E0 = level(sol, iron, { standard: true })[g] - she;
-const VT = (GAS_CONSTANT * 298.15) / FARADAY;
-console.log(`E = ${E.toFixed(4)} V vs SHE, E_eq = ${Eeq.toFixed(4)} V, Nernst: ${(E0 + VT * Math.log(2 / 8)).toFixed(4)} V`);
+const she = sol.phi[bulk]; // V°_e⁻(SHE) in the bulk, with the library's data
+const mV = (v) => (1000 * v).toFixed(1), VT = (GAS_CONSTANT * 298.15) / FARADAY;
+console.log(`E = ${(fermi - she).toFixed(3)} V vs SHE, E_eq = ${(redox[bulk] - she).toFixed(3)} V, E° = ${(std[bulk] - she).toFixed(3)} V`); // => 0.881, 0.733, 0.769
+console.log(`step at the face ${mV(fermi - redox[face])} mV, face to bulk ${mV(redox[face] - redox[bulk])} mV`); // => 94.8, 53.1
+console.log(`bulk level − standard level ${mV(redox[bulk] - std[bulk])} mV, Nernst ${mV(VT * Math.log(2 / 8))} mV, ohmic drop ${mV(std[face] - std[bulk])} mV`); // => -35.6, -35.6, 0.2
 ```
+
+![Level diagram of a platinum electrode in a ferric/ferrous solution under anodic current. The platinum's Fermi level is a flat line 95 mV above the couple's redox level at the electrode's face. The redox level falls 53 mV from the face to the bulk, crossing its standard level, which is flat.](figures/iron-electrode.svg)
+
+Each number the example prints is a gap on the figure:
+
+- **The step at the platinum's face**, 95 mV from the couple's level up to the metal's Fermi
+  level, is the surface overpotential, which drives the reaction. The metal sits above the
+  couple's level, so the current is anodic.
+- **The thick dashed line's fall from the face to the bulk**, 53 mV, is concentration
+  polarisation: the reaction leaves more Fe³⁺ and less Fe²⁺ at the face than the bulk has.
+- **The thin dashed line is flat**, since 0.5 M KCl carries this current with 0.2 mV of ohmic
+  drop. Its gap from the thick dashed line is composition alone: in the bulk the couple's level
+  is 35.6 mV below its standard level, the Nernst term for 2 mM Fe³⁺ over 8 mM Fe²⁺.
+- **The potentials** are heights above the SHE's standard level ($`\phi`$ here), which lies 0.77 V
+  below the thin dashed line, off this plot (`phi: true` draws it). Read in the bulk, the
+  electrode is at $`E`$ = 0.881 V vs SHE and the couple's $`E_{\mathrm{eq}}`$ is 0.733 V. The
+  overpotential between them, 148 mV, is the first two gaps added.
+
+The axis's zero is only where the simulation was told to put it (the level of the bath's Cl⁻,
+which the bath's terminal reads); the gaps are what the figure says.
 
 A cell's voltage splits the same way along the electrons' path. It's the difference between
 the two terminals' $`V_{\mathrm{e}^-}`$: at open circuit, the gap between the two couples' levels;

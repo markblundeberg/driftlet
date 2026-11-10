@@ -19,7 +19,9 @@ fork of driftlet for its own use.
   (the validation suite). Use node's built-in test runner (`node --test`), no test dependencies.
   The demos have a browser smoke test, `npm run smoke` (headless Chrome, also in CI): run it after
   touching a demo or anything they import. `npm run shots` retakes the screenshots (each page at
-  a set state, on virtual time, so unchanged pages come out byte-identical).
+  a set state, on virtual time, so unchanged pages come out byte-identical). A figure in the docs
+  is drawn by the example above it (a block fenced ```` ```js figure=NAME ````, its picture at
+  docs/figures/NAME.svg): after changing one, `npm run figures` and look at what changed.
 - **Contributing:** work on a branch and open a pull request against `master`; the owner reviews
   it and cuts releases. Keep commits small and logically scoped. Before you open it, run
   `npm test`, and `npm run smoke` if you touched a demo or anything one imports. CI also runs

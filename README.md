@@ -299,6 +299,7 @@ npm run hard     # the corpus of once-hard cases against bench/hard.json
 npm run types    # TypeScript declarations from the JSDoc, into types/ (fetches TypeScript via npx)
 npm run smoke    # every demo in headless Chrome, every control to its extremes (CHROME=… to choose)
 npm run shots    # retake the demos' screenshots, each caught at a set state (tools/shots.js)
+npm run figures  # redraw the docs' figures from the examples above them (tools/figures.js)
 ```
 
 Design notes and plans: [reliability](docs/reliability.md), [numerics](docs/numerics.md), [conventions](docs/conventions.md),

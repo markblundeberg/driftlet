@@ -10,6 +10,11 @@ major version.
   `continuation`) documented for the first time; and in llms.txt, a cyclic voltammogram of a
   diffusing couple, held to Randles–Ševčík (0.5%) and a reversible wave's peak separation
   (58.0 mV against 57.7).
+- Docs: the first figures. "Reading level diagrams" had no level diagram; it now shows a
+  forward-biased pn junction's band diagram and an electrode under current (its overpotential,
+  concentration polarisation and Nernst term as gaps on the picture). Each is the output of the
+  example above it: a block fenced `js figure=NAME` draws docs/figures/NAME.svg (`npm run
+  figures`), and the docs test redraws it and holds the file to that.
 
 ## 1.14.0 (2026-11-09)
 

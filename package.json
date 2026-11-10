@@ -33,6 +33,7 @@
     "stress": "node bench/stress.js",
     "smoke": "node tools/smoke.js",
     "shots": "node tools/shots.js",
+    "figures": "node tools/figures.js",
     "lawsweep": "node tools/lawsweep.js",
     "fingerprint": "node tools/fingerprint.js",
     "prepublishOnly": "npm test && npm run types",

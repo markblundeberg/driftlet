@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { figureBlocks, drawFigure } from '../tools/figures.js';
 
 // Every ```js block in the README, the docs and the agent guide runs as a module against the
 // source, so examples can't rot. Blocks marked ```js nocheck are skipped (sketches, fragments).
@@ -11,7 +12,8 @@ import { dirname, join } from 'node:path';
 // semicolon, is commentary) must appear in that line's output. (Two of the templates' numbers
 // had drifted from what they printed, 21.12 for 21.10 and 18.8 for 18.7, with nothing to notice.)
 // An ```html page's module script runs against a stub document: it must draw, and redraw when
-// its controls move.
+// its controls move. A block fenced ```js figure=NAME also draws the picture shown under it,
+// docs/figures/NAME.svg, and the file is held to what the block draws (tools/figures.js).
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const entry = (name) => pathToFileURL(join(root, `src/${name}.js`)).href;
 const docs = existsSync(join(root, 'docs')) ? readdirSync(join(root, 'docs')) : [];
@@ -54,7 +56,7 @@ const until = async (cond, ms = 10000) => {
 
 for (const file of files) {
   const text = readFileSync(join(root, file), 'utf8');
-  const blocks = [...text.matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const blocks = [...text.matchAll(/```js(?: figure=[\w-]+)?\n([\s\S]*?)```/g)].map((m) => m[1]);
   blocks.forEach((code, k) => {
     test(`${file}: example ${k + 1} runs, and prints what its comments say`, async () => {
       const logs = [], printed = new Map();
@@ -100,6 +102,30 @@ for (const file of files) {
     });
   });
 }
+
+// Two drawings of one figure: the same text, and every number within `tol` (the coordinates are
+// rounded to 0.01 px, so a last-bit difference between two builds of Node can move one by a step).
+function sameDrawing(a, b, tol = 0.011) {
+  const number = /-?\d+(?:\.\d+)?/g;
+  if (a.replace(number, '#') !== b.replace(number, '#')) return false;
+  const na = a.match(number) ?? [], nb = b.match(number) ?? [];
+  return na.every((v, k) => Math.abs(v - nb[k]) <= tol);
+}
+const figures = figureBlocks();
+for (const block of figures) {
+  test(`${block.file}: figure ${block.name} is what its example draws, and the page shows it`, async () => {
+    const path = join(root, 'docs/figures', `${block.name}.svg`);
+    assert.ok(existsSync(path), `no docs/figures/${block.name}.svg: npm run figures`);
+    assert.ok(sameDrawing(readFileSync(path, 'utf8'), await drawFigure(block)), `docs/figures/${block.name}.svg isn't what its example in ${block.file} draws now: npm run figures, and look at what changed`);
+    assert.ok(readFileSync(join(root, block.file), 'utf8').includes(`](figures/${block.name}.svg)`), `${block.file} doesn't show figures/${block.name}.svg`);
+  });
+}
+test('every figure in docs/figures is drawn by one example', () => {
+  const names = figures.map((b) => b.name);
+  assert.deepEqual([...new Set(names)], names, 'two examples draw a figure of the same name');
+  const files = existsSync(join(root, 'docs/figures')) ? readdirSync(join(root, 'docs/figures')) : [];
+  assert.deepEqual(files.sort(), names.map((n) => `${n}.svg`).sort());
+});
 
 test('the agent guide pins the CDN version being released', () => {
   const pinned = new Set([...readFileSync(join(root, 'llms.txt'), 'utf8').matchAll(/driftlet@([^/]+)\//g)].map((m) => m[1]));
