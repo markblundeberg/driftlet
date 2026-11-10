@@ -1184,83 +1184,15 @@ const Z = dev.impedance([1, 10, 100, 1e3]);    // small-signal impedance about t
 const now = dev.solution();                   // snapshot of the current state
 ```
 
-- `solve()` finds the steady state from the current state without advancing time. If every
-  species is fed by a contact, it solves the steady equations directly. Otherwise conserved
-  amounts are kept exactly: blocked species, reactive moieties, and whatever a terminal driven
-  at no current is the only way into (a closed battery at open circuit keeps its charge, the
-  state of charge it holds when the solve begins; a gate left floating keeps the charge on its
-  capacitance). Driven at any other current, such a terminal only stores what comes in (a host
-  filling, a capacitor charging), which has no steady state, and the solve says so at once. If a direct solve fails at a
-  bias, it ramps the contacts' voltages from where they were last solved (the left one first,
-  where it moved), or from level terminals on a cold start; with generation reactions (below),
-  it ramps their rates up from nearly nothing. A terminal driven by a current (open circuit,
-  say) is held at a voltage instead, the voltage marched until the current crosses its target,
-  and floated from there. If 20 V either way brings no crossing (a current beyond the limiting
-  one), the solve fails with a warning giving the range of currents the held voltages passed. A
-  solve that fails reports the state it failed in, then leaves the device as it was before it.
-  A converged steady solve whose terminal currents don't add up, by more than they're known to, is
-  warned of (a floating terminal's current is its circuit's, exactly, and the device carries it
-  only to Newton's tolerance; behind a resistance small enough that the circuit's own reading is
-  the rougher, the fluxes' is reported). So is a floating region the solve couldn't balance. Part of the device is then held only weakly and may be at the
-  wrong level: check it against a long `advance()`, or a solve swept there in steps.
-- `step(dt, { method })` advances the transient by dt seconds, halving internally where Newton
-  needs it. `method` is `'be'` (backward Euler, the default) or `'bdf2'`. It doesn't land on a
-  drive's breakpoints (`advance()` does): a jump inside a step is first order under either
-  method, and BDF2 restarts at a breakpoint a step begins on. dt is a duration: a negative,
-  infinite or non-number one is refused, and a NaN or 0 does nothing and says so in `warnings`.
+- `solve(opts)` finds the steady state from the present one, without advancing time:
+  [solve()](#solveopts).
+- `step(dt, opts)` advances the transient by dt seconds: [step()](#stepdt-opts).
 - `advance(tEnd, opts)` integrates adaptively to the absolute time `tEnd`, with variable-step
   BDF2 under error control, and returns the solution there with a `trace` of every accepted
-  step. Its options, its trace and its probes are under [advance()](#advancetend-opts) below.
-- `impedance(frequencies, { terminal, profiles })` solves the steady state, then linearises about
-  it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one terminal (`'right'` by default), with I into the
-  device, its input impedance whether it's held or driven by a current (for a driven one, about
-  the state its drive holds: solve() it held, then set its I, solve(), then impedance()); the other terminals
-  keep their drives (held ones at AC ground, driven ones open), so at least one other must be held
-  for the current to return (with every other one driven, the impedance is infinite, and an error
-  says to measure at a driven one). A terminal behind a resistance can't be the one measured: the
-  resistance belongs to the external circuit. The grid must resolve how far the signal reaches,
-  and nothing warns of it: in a porous electrode, $`\sqrt{\kappa/(\omega C a)}`$ (cells of 2 µm
-  against a 3.4 µm depth put Z 7% off, falling as the cells do; at an electrode, the diffusion
-  length $`\sqrt{2D/\omega}`$ at the highest frequency, and coarser than that, a port's window
-  edges falling mid-cell moved a faradaic C 17%); and a double layer's capacitance wants cells
-  well inside its Debye length (0.1 M NaCl: hmin λ_D/2.4 read C_dl 2.1% low, 0.1 nm 0.5%, 0.05 nm
-  to 5e-4; the warning about unresolved double layers starts only at λ_D). `relError` is the
-  round-off's, not the grid's. The result is `{ f, Z: { re, im },
-  relError, warnings }`: `relError[k]`, each Z's estimated error relative to $`|Z|`$ (from
-  round-off in the current and the solves' residuals, and cautious: it can exceed the true error
-  many times), and the warnings, the steady state's and one where a Z isn't resolved (an error
-  over 1%: far below a capacitive device's relaxation, almost no current flows, and what does is
-  lost to round-off) or Re Z is under a tenth of its error, relError·|Z|. With `profiles: true`, `profiles[k]` holds
-  frequency k's complex profiles, `{ phi, mu: {name}, c: {name} }`, each `{ re, im }` at the
-  nodes (`NaN` where a quantity doesn't exist), per unit excitation: a volt, or an A/m² where the
-  terminal is driven by a current.
-- `set(patch)` merges plain objects deeply (arrays are replaced), except that a contact given `V`
-  or `I` drops the other (and given `I`, any series `R`): `{ contacts: { right: { I: 0 } } }`
-  switches it to open circuit, whether it was held or behind a resistance. Given `V` alone, a terminal
-  behind a resistance stays behind it: `{ V, R: undefined }` takes the resistance off (`R: 0` and
-  `null` are refused, and `undefined` doesn't survive JSON, so a worker's patch says it this way in
-  JavaScript). A patch that changes only the
-  terminals' drives (`V`, `I`, `R`) updates them in place, cheaply, keeping everything else.
-  Otherwise the device is rebuilt: the current state carries over while the species, regions
-  and terminals are unchanged (on a new grid, interpolated onto its nodes, so a floating gate
-  keeps its charge; `solution()` then shows that interpolation, unsolved, until the next
-  `solve()` or step; a steady state interpolated so is solved again on the new grid before the
-  next `advance()`, since interpolation leaves it slightly off a strictly neutral region's
-  neutrality), or restarts from the regions' `c0`. A change to a face's or port's unknowns
-  restarts it too: a reaction added or removed (the count, not its rates), gates, a surface, a
-  diffuse layer. Its clock carries on, and every solution says so in its `warnings` up to the
-  next steady solve (which keeps a closed region's restarted amounts). To switch a reaction off and keep
-  the state, keep it listed and make it negligible (`vmax: 1e-30`). A carried state keeps what it holds: a
-  stretch that was closed stays at its amount, and one that a change closes (or splits) keeps
-  what it holds at that moment. So a new `c0` doesn't apply to a carried state, but for a species
-  newly present (a region given a material that holds it), which starts from it; to start over
-  from `c0`, make a new `Device`. (A bath's composition is a contact's, not a `c0`: changing it
-  mid-run, `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.) Either way the time stepping restarts its
-  order, as after any discontinuity, but a carried state goes on at the step size an adaptive
-  transient had reached, so a page may change a rate constant or a diffusivity every frame.
-  To change the temperature, give the materials for it in the same patch,
-  `dev.set({ T: 350, materials: semiconductor('Si', { T: 350 }).materials })`: a `T` alone
-  changes kT but not the materials' data (a material that carries its `T` then warns).
+  step: [advance()](#advancetend-opts).
+- `impedance(frequencies, opts)` solves the steady state and linearises about it:
+  [impedance()](#impedancefrequencies-opts).
+- `set(patch)` changes the definition, keeping the state where it can: [set()](#setpatch).
 
 For example, a silver nitrate cell between silver electrodes: its impedance spectrum, then the
 current transient after a voltage step.
@@ -1287,6 +1219,62 @@ dev.set({ contacts: { right: { V: 0.05 } } });
 const run = dev.advance(1, { tol: 1e-3 }); // one second, adaptively
 console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.findIndex((t) => t >= 0.01)].toFixed(1)} A/m², I(1 s) = ${run.current.toFixed(2)} A/m²`);
 ```
+
+### solve(opts)
+
+The steady state (or equilibrium), from the present state, without advancing time. A solve that
+fails reports the state it failed in, then leaves the device as it was before it.
+
+| option | default | what it does |
+|---|---|---|
+| `maxSteps` | 80 | time steps per pseudo-transient ramp, where the steady equations can't be solved directly |
+| `tol` | 1e-11 | the largest potential change, in thermal units, that ends a ramp of giant steps |
+| `continuation` | `true` | `false`: Newton from here and the pseudo-transient ramp only, no ramp of the contacts' voltages |
+
+Notes:
+
+- **What it keeps.** If every species is fed by a contact, it solves the steady equations
+  directly. Otherwise conserved amounts are kept exactly: blocked species, reactive moieties,
+  and whatever a terminal driven at no current is the only way into (a closed battery at open
+  circuit keeps its charge, the state of charge it holds when the solve begins; a gate left
+  floating keeps the charge on its capacitance).
+- **A terminal that only stores has no steady state.** Driven at any other current, such a
+  terminal only stores what comes in (a host filling, a capacitor charging), and the solve says
+  so at once.
+- **Where a direct solve fails, it ramps.** At a bias, it ramps the contacts' voltages from where
+  they were last solved (the left one first, where it moved), or from level terminals on a cold
+  start; with generation reactions (below), it ramps their rates up from nearly nothing.
+- **A current drive is found by a march.** A terminal driven by a current (open circuit, say) is
+  held at a voltage instead, the voltage marched until the current crosses its target, and
+  floated from there. If 20 V either way brings no crossing (a current beyond the limiting one),
+  the solve fails with a warning giving the range of currents the held voltages passed.
+- **Out of steps while settling**, where something slow is relaxing (a reaction, a link), the
+  warning says so and gives the `maxSteps` that lets it finish.
+- **Converged, but warned.** A converged steady solve whose terminal currents don't add up, by
+  more than they're known to, is warned of (a floating terminal's current is its circuit's,
+  exactly, and the device carries it only to Newton's tolerance; behind a resistance small
+  enough that the circuit's own reading is the rougher, the fluxes' is reported). So is a
+  floating region the solve couldn't balance. Part of the device is then held only weakly and
+  may be at the wrong level: check it against a long `advance()`, or a solve swept there in
+  steps.
+
+### step(dt, opts)
+
+One transient step of dt seconds, halved internally where Newton needs it (`substeps` in the
+result says into how many pieces).
+
+| option | default | what it does |
+|---|---|---|
+| `method` | `'be'` | backward Euler, or `'bdf2'`: second order once a previous step exists |
+
+Notes:
+
+- **It doesn't land on a drive's breakpoints** (`advance()` does): a jump inside a step is first
+  order under either method, and BDF2 restarts at a breakpoint a step begins on.
+- **dt is a duration**: a negative, infinite or non-number one is refused, and a NaN or 0 does
+  nothing and says so in `warnings`.
+- **Its solution has no `trace`.** For the charge a terminal passes, read a stored charge (an
+  interface's `D`, a port's `charge`), or use `advance()`, whose trace has each terminal's.
 
 ### advance(tEnd, opts)
 
@@ -1359,6 +1347,88 @@ Measured (newest first; a new caveat goes here, with its date):
   short at the default `tol`, 5% at `1e-5`, exact under `'be'`; `charge` equals the stored
   charge to 1e-9 under either method (test/transient.test.js).
 - **A trapezoid of the trace** counted a 1 ms current pulse 2.8× over.
+
+### impedance(frequencies, opts)
+
+Solves the steady state, then linearises about it: $`Z(f) = \delta V/\delta I`$ in Ω·m² at one
+terminal, with I into the device.
+
+| option | default | what it does |
+|---|---|---|
+| `terminal` | `'right'` | the terminal measured: its input impedance, whether it's held or driven by a current |
+| `profiles` | `false` | `true`: each frequency's complex profiles too (below) |
+
+| result field | what it holds |
+|---|---|
+| `f` | the frequencies, Hz |
+| `Z` | `{ re, im }`, Ω·m² |
+| `relError` | each Z's estimated error relative to $`\lvert Z\rvert`$: the round-off's (in the current, and the solves' residuals), not the grid's, and cautious: it can exceed the true error many times |
+| `warnings` | the steady state's, and one where a Z isn't resolved or Re Z is under a tenth of its error, relError·$`\lvert Z\rvert`$ |
+| `profiles[k]` | with `profiles: true`, frequency k's `{ phi, mu: {name}, c: {name} }`, each `{ re, im }` at the nodes (`NaN` where a quantity doesn't exist), per unit excitation: a volt, or an A/m² where the terminal is driven by a current |
+
+Notes:
+
+- **The other terminals keep their drives**: held ones at AC ground, driven ones open. So at
+  least one other must be held for the current to return; with every other one driven, the
+  impedance is infinite, and an error says to measure at a driven one.
+- **A driven terminal is measured about the state its drive holds**: solve() it held, then set
+  its I, solve(), then impedance().
+- **A terminal behind a resistance can't be the one measured**: the resistance belongs to the
+  external circuit.
+- **The grid must resolve how far the signal reaches, and nothing warns of it.** In a porous
+  electrode, $`\sqrt{\kappa/(\omega C a)}`$; at an electrode, the diffusion length
+  $`\sqrt{2D/\omega}`$ at the highest frequency; and a double layer's capacitance wants cells
+  well inside its Debye length (the warning about unresolved double layers starts only at
+  $`\lambda_D`$).
+- **An unresolved Z** is one with an error over 1%: far below a capacitive device's relaxation,
+  almost no current flows, and what does is lost to round-off.
+
+Measured:
+
+- **A porous electrode's cells**: of 2 µm against a 3.4 µm depth, Z 7% off, falling as the cells
+  do.
+- **A port's window edges** falling mid-cell, on a grid coarser than the diffusion length, moved a
+  faradaic C 17%.
+- **A double layer's cells**, 0.1 M NaCl: hmin λ_D/2.4 read C_dl 2.1% low, 0.1 nm 0.5% low, 0.05
+  nm to 5e-4.
+
+### set(patch)
+
+Merges plain objects deeply into the definition (arrays are replaced; ports are patched by name,
+and an array of them replaces them all), keeping the state where it can.
+
+Notes:
+
+- **A contact given `V` or `I` drops the other** (and given `I`, any series `R`):
+  `{ contacts: { right: { I: 0 } } }` switches it to open circuit, whether it was held or behind a
+  resistance. Given `V` alone, a terminal behind a resistance stays behind it: `{ V, R: undefined }`
+  takes the resistance off (`R: 0` and `null` are refused, and `undefined` doesn't survive JSON,
+  so a worker's patch says it this way in JavaScript).
+- **Drives alone are cheap.** A patch that changes only the terminals' drives (`V`, `I`, `R`)
+  updates them in place, keeping everything else.
+- **Anything else rebuilds the device.** The state carries over while the species, regions and
+  terminals are unchanged; otherwise it restarts from the regions' `c0`. On a new grid it's
+  interpolated onto the nodes, so a floating gate keeps its charge; `solution()` then shows that
+  interpolation, unsolved, until the next `solve()` or step, and a steady state interpolated so
+  is solved again on the new grid before the next `advance()` (interpolation leaves it slightly
+  off a strictly neutral region's neutrality).
+- **A change to a face's or port's unknowns restarts it**: a reaction added or removed (the count,
+  not its rates), gates, a surface, a diffuse layer. Its clock carries on, and every solution
+  says so in its `warnings` up to the next steady solve (which keeps a closed region's restarted
+  amounts). To switch a reaction off and keep the state, keep it listed and make it negligible
+  (`vmax: 1e-30`).
+- **A carried state keeps what it holds**: a stretch that was closed stays at its amount, and one
+  that a change closes (or splits) keeps what it holds at that moment. So a new `c0` doesn't
+  apply to a carried state, except for a species newly present (a region given a material that
+  holds it), which starts from it; to start over from `c0`, make a new `Device`.
+- **A bath's composition is a contact's, not a `c0`**: changing it mid-run,
+  `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.
+- **The time stepping restarts its order**, as after any discontinuity, but a carried state goes
+  on at the step size an adaptive transient had reached, so a page may change a rate constant or
+  a diffusivity every frame.
+- **Temperature comes with its materials**:
+  `dev.set({ T: 350, materials: semiconductor('Si', { T: 350 }).materials })`. A `T` alone changes
+  kT but not the materials' data (a material that carries its `T` then warns).
 
 ## Solutions
 
