@@ -37,7 +37,8 @@
 //   node (conductor): its carrier's storage (a charged face's sheet, through that face's D).
 //   displacement: D = −ε V_T (φ̂_R − φ̂_L)/h toward +x, out of the left box and into the right;
 //     none where ε = 0 or φ is undefined at the segment's left node.
-//   Scharfetter–Gummel (dilute): N = −(D_i/h) B(Δ) c_L expm1(Δη), Δ = z Δφ̂ − Pe, Δη the
+//   Scharfetter–Gummel (dilute): N = −(D_i/h) B(Δ) c_L expm1(Δη), Δ = z Δφ̂ + Δ(μ°/RT − ln cRef) − Pe
+//     (the second term a graded region's, segShift; 0 elsewhere), Δη the
 //     compensated η_R − η_L − Pe, Pe = v h/D_i (advection at the region's velocity; flow is
 //     planar only, so h is the segment's length): exactly zero where μ̄ is level and v = 0, and
 //     exact in the cancellation of drift against diffusion. Past a drift Δ of SG_FAR (300), the
@@ -593,7 +594,7 @@ export class RegionTerms {
         const cL = c[s * n + i];
         const g = mat.D[i] / h;
         const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
-        const d = zi * (phiR - phiL) - pe;
+        const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe; // (segShift: a graded region's μ° and cRef)
         const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
         sgFlux(g, d, deta, cL, c[(s + 1) * n + i], sg);
         const N = sg[0], dNdd = sg[1];
@@ -673,7 +674,7 @@ export class RegionTerms {
     const cL = c[gL * n + i], cR = c[gR * n + i];
     const g = mat.D[i] / h;
     const pe = (vel * h) / mat.D[i];
-    const d = zi * (u[bR * M] - u[bL * M]) + ex[gR * n + i] - ex[gL * n + i] - pe;
+    const d = zi * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[gR * n + i] - ex[gL * n + i] - pe;
     const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
     const sg = sgFlux(g, d, deta, cL, cR, this.sg);
     const N = sg[0], dNdd = sg[1], gBcE1 = sg[3]; // (gBcE1 = g·B·c_L·e^{Δη})

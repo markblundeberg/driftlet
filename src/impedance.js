@@ -800,7 +800,7 @@ export class SmallSignal {
           }
           const zi = z[i], r1 = 1 + i, cL = c[s * n + i], g = mat.D[i] / h;
           const pe = (vel * h) / mat.D[i];
-          const d = zi * (phiR - phiL) - pe;
+          const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe;
           const sg = sgFlux(g, d, u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe, cL, c[(s + 1) * n + i], this.sg);
           const dNdd = sg[1];
           add(bL * M + r1, zi * F * sg[2], 0);

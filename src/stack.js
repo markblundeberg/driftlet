@@ -215,7 +215,7 @@ export function build(def) {
   }
 
   function region(item, path) {
-    checkOptions(path, item, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'donors', 'acceptors']);
+    checkOptions(path, item, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade', 'donors', 'acceptors']);
     const { donors, acceptors, ...r } = item;
     if (donors !== undefined || acceptors !== undefined) {
       if (r.fixedCharge !== undefined) fail(`${path}: give doping as donors and acceptors, or fixedCharge, not both`);

@@ -149,6 +149,66 @@ regions: [
   [conventions](conventions.md#transport)). A strongly mixed region is the local stand-in for a
   well-stirred bath.
 - `grid`: per-region override of the grid options (below).
+- `grade`: a graded region, whose species' standard chemical potential and reference
+  concentration vary within it: `{ 'e-': { mu0, cRef }, … }`, each a profile `{ x, values }`
+  against the device's x (J/mol and mol/m³; piecewise linear, constant beyond its ends), in place
+  of the material's values for that species. See [graded regions](#graded-regions).
+
+### Graded regions
+
+A graded band gap (an alloy whose composition changes across a layer), a density of states that
+changes with it, or an ion's solvation changing across a mixed solvent: one region whose
+species' $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ vary in x, rather than a stack of layers.
+
+```js
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+
+// A p layer whose gap widens by 0.28 eV across it: μ° raised 0.16 eV for e⁻ (E_c = μ°_e⁻ − Fφ,
+// per mole) and 0.12 eV for h⁺ (E_v = −(μ°_h⁺ + Fφ)).
+const si = semiconductor('Si'), mu0e = si.materials.Si.species['e-'].mu0, mu0h = si.materials.Si.species['h+'].mu0;
+const L = units.um(2);
+const def = build({
+  T: 300,
+  library: [si],
+  stack: [
+    ohmic(0),
+    layer('Si', L, {
+      acceptors: units.perCm3(1e17),
+      grade: {
+        'e-': { mu0: { x: [0, L], values: [mu0e, mu0e + units.eV(0.16)] } },
+        'h+': { mu0: { x: [0, L], values: [mu0h, mu0h + units.eV(0.12)] } },
+      },
+    }),
+    ohmic(0),
+  ],
+  grid: { hmin: units.nm(1), hmax: units.nm(20) },
+});
+const sol = new Device(def).solve();
+const end = sol.x.length - 1, Ec = (g) => -sol.Vstd['e-'][g], Ev = (g) => -sol.Vstd['h+'][g]; // eV
+// The holes, the majority, keep E_v flat (p = N_A throughout); the whole widening is E_c's: a
+// slope of 0.14 eV/µm that drives the minority electrons toward x = 0 (a quasi-field).
+console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0)).toFixed(4)} eV`); // => 0.2800, 0.0000
+```
+
+- **The values are each node's**: the profile is sampled at the nodes, and the
+  Scharfetter–Gummel flux along each segment drifts down the whole change in
+  $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ across it. So a level $`ar\mu`$ still
+  carries exactly nothing, and a linear $`\mu^\circ`$ gives the exact flux on any grid
+  (test/graded.test.js).
+- **What a grading means.** The $`\mu^\circ`$ are given against the region's $`\phi`$, which is
+  continuous across the region and obeys Poisson's equation there, so the split of a level's
+  slope between $`\mu^\circ`$ and $`\phi`$ is physical, not a gauge: moving every charged
+  species' $`\mu^\circ`$ by $`z_i F f(x)`$ together changes the field Gauss's law sees. How a
+  composition moves its levels against that potential (an electron affinity varying with
+  composition, say) is an input, as an alignment between materials is; nothing is defaulted.
+  Equivalently, a graded region is the limit of a staircase of thin uniform layers, each at its
+  middle's values, joined by faces with no dipole: the test suite checks a graded diode against
+  one (64 layers agree to 3e-5).
+- **Faces and contacts read the edge**: an alignment (`step`) beside a graded region is between
+  the standard levels at its edge, and a bath at a graded end is the material as it is there.
+- **Not yet graded**: $`\varepsilon`$ and $`D`$ (a region's own, uniform), and species with
+  non-ideal statistics (refused). `describe()` reports a region's material values.
 
 ## Interfaces
 

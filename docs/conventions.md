@@ -30,7 +30,10 @@ stricter than you may be used to.
    interface's alignment is independent, even when the same pair of materials meets twice
    (e.g. with different adsorbates). When vacuum-level estimates are all you have, helpers in
    `driftlet/kit` turn anchors and offsets into an alignment (see the
-   [alignment guide](alignment.md)).
+   [alignment guide](alignment.md)). A [graded region](device.md#graded-regions) is the same
+   thing spread out: within one region $`\phi`$ is continuous and obeys Poisson's equation, so
+   its freedom is a constant, not a function, and how a grading splits between the charged
+   species (beyond their neutral combinations) is the alignment along it: an input, just the same.
 4. **A work function belongs to a surface, not a material.**
 
 ## Electrochemical potential and its views

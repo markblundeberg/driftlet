@@ -88,7 +88,7 @@
 
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { sourceAt } from './device.js';
+import { gradedAt, sourceAt } from './device.js';
 import { profileAt, SolverError } from './solver.js';
 
 /**
@@ -117,7 +117,9 @@ export function initFromComposition(s) {
   let phiHat = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive' ? (s.termV[0] - leftPhi.zeroCharge) / s.VT : 0;
   for (let r = 0; r < regions.length; r++) {
     if (r > 0) phiHat += interfaces[r - 1].dipole / s.VT;
-    const reg = regions[r], mat = materials[reg.material];
+    // (a graded region's material as it is at each node: here at its start, below node by node)
+    const reg = regions[r], base = materials[reg.material], graded = reg.grade.some(Boolean);
+    let mat = graded ? gradedAt(base, reg, grid.x[grid.regionStart[r]]) : base;
     mode.fill(0);
     const profiled = reg.c0Profile.some((p) => p !== null);
     for (let i = 0; i < n; i++) {
@@ -250,6 +252,7 @@ export function initFromComposition(s) {
         }
       }
     } else if (!mat.phiFree && !responds && r === 0 && r + 1 < regions.length && materials[regions[r + 1].material].conductor) {
+      if (graded) mat = gradedAt(base, reg, grid.x[grid.regionEnd[r]]); // (the electrode's face is this region's end)
       // Likewise an electrode on the right, its level its contact's, where nothing on the left
       // sets φ̂ (the stack written the other way round started at φ̂ = 0, volts from the
       // electrode's level, and failed; Argon's review). Further in, φ̂ carried over from the left
@@ -346,7 +349,8 @@ export function initFromComposition(s) {
     if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
     if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
     for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
-      if (profiled) {
+      if (profiled || graded) {
+        if (graded) mat = gradedAt(base, reg, grid.x[g]);
         for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[g]);
         if (mustBalance) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
         if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
@@ -508,10 +512,11 @@ export function equilibrateFaces(s) {
   // in φ̂ across it (a Donnan potential), set by neutrality on one side; the other's follows,
   // the two nodes' charge summing to what it was, zero.
   for (let f = 0; f < interfaces.length; f++) {
-    const itf = interfaces[f], mL = materials[regions[f].material], mR = materials[regions[f + 1].material];
+    const itf = interfaces[f], gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
+    const mL = gradedAt(materials[regions[f].material], regions[f], grid.x[gL]), mR = gradedAt(materials[regions[f + 1].material], regions[f + 1], grid.x[gR]);
     const strict = (m) => m.epsr === 0 && !m.conductor && !m.phiFree && m.ideal;
     if (itf.phi.type !== 'neutral' || !strict(mL) || !strict(mR)) continue;
-    const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1], bL = s.blockOfNode[gL] * M, bR = s.blockOfNode[gR] * M;
+    const bL = s.blockOfNode[gL] * M, bR = s.blockOfNode[gR] * M;
     const pass = [];
     for (let i = 0; i < n; i++) if (itf.links[i].type === 'equilibrium' && mL.present[i] && mR.present[i]) pass.push(i);
     if (!pass.some((i) => z[i] !== 0)) continue;

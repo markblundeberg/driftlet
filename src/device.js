@@ -115,6 +115,26 @@ function profile(v, path, what, ok, okText) {
   return { x: Float64Array.from(v.x), values: Float64Array.from(v.values) };
 }
 
+// A region's material as it is at x: a graded region's μ° and cRef there (regions[r].grade), the
+// rest the material's. Faces and contacts read their regions this way at their own x, so an
+// alignment or a bath beside a graded region uses the levels at its edge. (The material itself
+// where nothing is graded.)
+export function gradedAt(mat, reg, x) {
+  if (!reg.grade?.some((gr) => gr)) return mat;
+  const at = ({ x: xs, values: v }) => {
+    if (x <= xs[0]) return v[0];
+    const k = xs.findIndex((xk) => xk >= x);
+    if (k < 0) return v[v.length - 1];
+    return v[k - 1] + ((v[k] - v[k - 1]) * (x - xs[k - 1])) / (xs[k] - xs[k - 1]);
+  };
+  const mu0 = Float64Array.from(mat.mu0), cRef = Float64Array.from(mat.cRef);
+  reg.grade.forEach((gr, i) => {
+    if (gr?.mu0) mu0[i] = at(gr.mu0);
+    if (gr?.cRef) cRef[i] = at(gr.cRef);
+  });
+  return { ...mat, mu0, cRef };
+}
+
 // SRH (trap-assisted) kinetics in place of mass action, for a reaction that consumes exactly one
 // negative and one positive species and makes none, e⁻ + h⁺ = 0:
 //   r = n p (1 − e^{−A/RT}) / (t_p (n + n₁) + t_n (p + p₁)),  p₁ = n p e^{−A/RT} / n₁,
@@ -259,7 +279,7 @@ export function normalizeDevice(def) {
   const regions = def.regions.map((reg, r) => {
     const path = `regions[${r}]`;
     need(isObject(reg), `${path} must be an object`);
-    fields(reg, path, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid']);
+    fields(reg, path, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade']);
     need(materialIndex.has(reg.material), `${path}.material: unknown material ${JSON.stringify(reg.material)}`);
     const length = positive(reg.length, `${path}.length`);
     const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
@@ -315,6 +335,29 @@ export function normalizeDevice(def) {
         c0[i] = v;
       }
     }
+    // A graded region: a species' μ° (J/mol) and cRef (mol/m³) as profiles { x, values } against
+    // the device's x, in place of the material's, sampled at each node. Ideal species only, in a
+    // region with concentrations (not a metal's).
+    const grade = new Array(nSpecies).fill(null);
+    if (reg.grade !== undefined) {
+      need(isObject(reg.grade), `${path}.grade must map species names to { mu0, cRef }, each a profile { x, values }`);
+      need(!mat.conductor, `${path}.grade: '${mat.name}' is a conductor, whose species have no concentrations to grade`);
+      for (const [sname, v] of Object.entries(reg.grade)) {
+        const at = `${path}.grade.${sname}`;
+        need(speciesIndex.has(sname), `${at}: unknown species '${sname}'${known(speciesIndex)}`);
+        const i = speciesIndex.get(sname);
+        need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
+        need(isObject(v), `${at} must be { mu0, cRef }, each a profile { x, values } against the device's x (only μ° and cRef can be graded so far)`);
+        fields(v, at, ['mu0', 'cRef']);
+        need(mat.modelOf[i] < 0, `${at}: '${sname}' has non-ideal statistics in '${mat.name}'; only ideal (dilute) species can be graded so far`);
+        const read = (key, what, ok, okText) => {
+          if (v[key] === undefined) return null;
+          need(isObject(v[key]), `${at}.${key} must be a profile { x, values } against the device's x (${what}), got ${shown(v[key])}`);
+          return profile(v[key], `${at}.${key}`, what, ok, okText);
+        };
+        grade[i] = { mu0: read('mu0', 'standard chemical potentials (J/mol)', () => true, 'finite'), cRef: read('cRef', 'reference concentrations (mol/m³)', (c) => c > 0, 'a concentration > 0 (mol/m³)') };
+      }
+    }
     return {
       name: reg.name ?? `region ${r}`,
       material: materialIndex.get(reg.material),
@@ -322,6 +365,7 @@ export function normalizeDevice(def) {
       fixedCharge,
       c0,
       c0Profile,
+      grade,
       background,
       velocity,
       mixing,
@@ -383,8 +427,8 @@ export function normalizeDevice(def) {
   need(isObject(cdefs), 'contacts must be an object with optional left and right');
   for (const k of Object.keys(cdefs)) need(k === 'left' || k === 'right', `contacts.${k}: expected only 'left' and 'right'`);
   const contacts = {
-    left: normalizeContact(cdefs.left, 'left', regions[0], materials, species, speciesIndex, RT),
-    right: normalizeContact(cdefs.right, 'right', regions[regions.length - 1], materials, species, speciesIndex, RT),
+    left: normalizeContact(cdefs.left, 'left', regions[0], materials, species, speciesIndex, RT, 0),
+    right: normalizeContact(cdefs.right, 'right', regions[regions.length - 1], materials, species, speciesIndex, RT, regions.reduce((sum, reg) => sum + reg.length, 0)),
   };
 
   // --- internal ports (outside phases attached over windows of interior nodes)
@@ -1223,7 +1267,8 @@ function checkAnchors(regions, materials, interfaces, contacts, species, ports =
 
 function normalizeInterface(idef, f, regions, materials, species, speciesIndex, RT) {
   const left = regions[f], right = regions[f + 1];
-  const matL = materials[left.material], matR = materials[right.material];
+  const xFace = regions.slice(0, f + 1).reduce((sum, reg) => sum + reg.length, 0);
+  const matL = gradedAt(materials[left.material], left, xFace), matR = gradedAt(materials[right.material], right, xFace);
   const where = `interfaces[${f}] (between ${left.name} [${matL.name}] and ${right.name} [${matR.name}])`;
   const same = left.material === right.material;
   if (idef === undefined || idef === null) idef = {};
@@ -1557,9 +1602,9 @@ function bathZeta(mat, cb, background) {
 // species (e.g. e⁻ at a metal); μ_M/(nF) for Mⁿ⁺ at a reversible M electrode (0 on table
 // conventions, E° being carried by the ion's μ°). It is never defaulted for the others. A fixed neutral species takes an absolute μ̄. A bath computes the offsets from
 // a composition, anchored through its reference species.
-function normalizeContact(cdef, side, region, materials, species, speciesIndex, RT) {
+function normalizeContact(cdef, side, region, materials, species, speciesIndex, RT, x) {
   const path = `contacts.${side}`;
-  const mat = materials[region.material];
+  const mat = gradedAt(materials[region.material], region, x);
   const links = species.map(() => ({ type: 'blocked' }));
   let phi = { type: 'neutral' };
   let terminal = null;

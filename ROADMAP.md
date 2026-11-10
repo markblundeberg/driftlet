@@ -565,9 +565,15 @@ for live demos.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
-- **Graded materials.** $`\mu^\circ(x)`$, $`c_{\mathrm{ref}}(x)`$, $`\varepsilon(x)`$, $`D(x)`$ varying
-  within a region, with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change across
-  each segment. $`\phi`$'s gauge freedom then becomes a continuous function.
+- **Graded materials.** Done (10 Nov 2026): a region's $`\mu^\circ(x)`$ and $`c_{\mathrm{ref}}(x)`$
+  (`regions[r].grade`), with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change
+  across each segment, checked against the exact flux down a linear $`\mu^\circ`$ and against
+  staircases of uniform layers (test/graded.test.js). (Not a continuous gauge freedom, as this
+  entry once said: $`\phi`$ obeys Poisson's equation within a region, so the split of a grading
+  between $`\mu^\circ`$ and $`\phi`$ is an input, the alignment along it.) Still to come:
+  $`\varepsilon(x)`$ and $`D(x)`$; graded species with non-ideal statistics; and in the kit, an
+  alloy between two library materials (a composition profile, with the alignment along it given
+  as at a face), and a graded-gap demo (a solar cell's back-surface field, or an HBT's base).
 - **More of the diffuse layer below the grid** (`interfaces[f].diffuse`, src/diffuse.js, done
   2026-10-25 for electrodes, charged faces, membranes' permeabilities and gates, crowding on the
   bulk's lattice, and a reactant's transport across the layer). Not yet: a contact's own (a

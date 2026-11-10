@@ -221,10 +221,22 @@ export class Solver {
       const mat = materials[reg.material];
       this.rhoFixed[g] = reg.fixedCharge;
       this.nodeMaterial[g] = reg.material;
+      const grade = reg.grade;
       for (let i = 0; i < n; i++) {
         this.present[g * n + i] = mat.present[i];
-        this.cRef[g * n + i] = mat.cRef[i];
-        this.mu0hat[g * n + i] = mat.mu0[i] / model.RT;
+        this.cRef[g * n + i] = grade?.[i]?.cRef ? profileAt(grade[i].cRef, grid.x[g]) : mat.cRef[i];
+        this.mu0hat[g * n + i] = (grade?.[i]?.mu0 ? profileAt(grade[i].mu0, grid.x[g]) : mat.mu0[i]) / model.RT;
+      }
+    }
+    // Along each segment, the change in μ°/RT − ln cRef that a graded region adds to the drift
+    // (segShift[s·n + i], segment s from node s to s + 1): Δ = zΔφ̂ + segShift in every
+    // Scharfetter–Gummel flux, so that c_R e^Δ = c_L e^{Δη} still holds and a level μ̄ carries
+    // exactly nothing. Exactly 0 in a region that isn't graded (its nodes' data are equal).
+    this.segShift = new Float64Array(Math.max(0, nNodes - 1) * n);
+    for (let g = 0; g + 1 < nNodes; g++) {
+      for (let i = 0; i < n; i++) {
+        const kL = g * n + i, kR = kL + n;
+        if (this.present[kL] && this.present[kR]) this.segShift[kL] = this.mu0hat[kR] - this.mu0hat[kL] - Math.log(this.cRef[kR] / this.cRef[kL]);
       }
     }
 
@@ -1104,7 +1116,7 @@ export class Solver {
         for (let i = 0; i < n; i++) {
           if (!mat.present[i] || mat.D[i] === 0) continue;
           const pe = (vel * h) / mat.D[i];
-          const d = z[i] * (u[bR * M] - u[bL * M]) + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
+          const d = z[i] * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
           const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]) - pe;
           out[i][s] = sgFlux(mat.D[i] / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
         }

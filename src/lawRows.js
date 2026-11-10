@@ -290,7 +290,7 @@ function segmentFlux(s, i, sg, r) {
   const { M, u, uLo, c, n, z } = s, { grid, regions, materials } = s.model, mat = materials[regions[r].material];
   const bL = sg + r, bR = bL + 1, h = grid.segLength[sg] / grid.segArea[sg];
   const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]);
-  return sgFlux(mat.D[i] / h, z[i] * (u[bR * M] - u[bL * M]), deta, c[sg * n + i], c[(sg + 1) * n + i], s.sg);
+  return sgFlux(mat.D[i] / h, z[i] * (u[bR * M] - u[bL * M]) + s.segShift[sg * n + i], deta, c[sg * n + i], c[(sg + 1) * n + i], s.sg);
 }
 
 // Where the pieces a cut reaches through conduct the species least (∂N/∂η_L, the conductance at

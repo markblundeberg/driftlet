@@ -71,6 +71,9 @@
  * @property {number} [velocity] imposed flow toward +x, m/s, carrying every mobile species
  * @property {number} [mixing] eddy (turbulent) mixing diffusivity, m²/s; current-free
  * @property {GridOptions} [grid]
+ * @property {Record<string, { mu0?: Profile, cRef?: Profile }>} [grade] a graded region: a
+ *   species' μ° (J/mol) and cRef (mol/m³) as profiles against the device's x, in place of the
+ *   material's (ideal species only)
  */
 
 /** @typedef {'pinned' | 'neutral' | { type: 'capacitive', C: number }} InterfacePhiLaw */

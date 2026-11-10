@@ -65,7 +65,7 @@ export function makeSolution(solver, result = {}) {
         continue;
       }
       cc[g] = c[k];
-      mus[g] = RT * solver.mu0hat[k] + z * F * phi[g];
+      mus[g] = RT * solver.mu0hat[k] + (z === 0 ? 0 : z * F * phi[g]); // (a neutral species' is μ° alone, even where φ is undefined)
       V[g] = z === 0 ? NaN : mu[g] / (z * F);
       Vs[g] = z === 0 ? NaN : mus[g] / (z * F);
     }
