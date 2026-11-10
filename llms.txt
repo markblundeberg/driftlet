@@ -487,6 +487,39 @@ must be well past √(D·t_scan), a few hundred µm: the template's 20 µm gives
 Its potential against the reference is −`trace.voltage` (that is V_right − V_left), and
 `trace.current` is anodic positive.
 
+```js
+import { Device, GAS_CONSTANT, FARADAY } from 'driftlet';
+import { build, layer, ohmic, bath, half, aqueous, metal, AgAgCl, IONS, triangle } from 'driftlet/kit';
+
+// Fe²⁺ alone (10 mM, a trace of Fe³⁺) in 1 M KCl, swept at 0.1 V/s 0.3 V either side of E°: fast
+// kinetics (k0 10: a rate constant of 1 cm/s), a stagnant layer five diffusion lengths deep.
+const c = 10, nu = 0.1, VT = (GAS_CONSTANT * 298.15) / FARADAY;
+const cell = (drive) => build({
+  library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 }), metal('Pt')],
+  stack: [
+    ohmic(drive, ['e-']), layer('Pt', 1e-6), { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 10 }] },
+    layer('water', 250e-6), bath({ 'K+': 1000, 'Cl-': 1000 + 2 * c + 3e-3, 'Fe3+': 1e-3, 'Fe2+': c }, AgAgCl),
+  ],
+  grid: { hmin: 10e-9, hmax: 2e-6 },
+});
+const E0 = 0.769 - (0.2222 - VT * Math.log(1.02)); // E° against the wire (E°(AgCl/Ag) at a(Cl⁻) = 1.02)
+const from = E0 - 0.3, to = E0 + 0.3, period = (2 * (to - from)) / nu;
+const dev = new Device(cell(from));
+dev.solve(); // at rest where the scan starts
+dev.set({ contacts: { left: { V: triangle({ from, to, period }) } } });
+const { trace } = dev.advance(period, { dtMax: 1e-3 / nu }); // a point a millivolt
+const E = trace.voltage.map((v) => -v), I = trace.current; // against the wire; anodic positive
+const ka = I.indexOf(Math.max(...I)), kc = I.indexOf(Math.min(...I));
+const D = IONS['Fe2+'].D, Ehalf = E0 + VT * Math.log(Math.sqrt(D / IONS['Fe3+'].D));
+console.log(`peak ${I[ka].toFixed(2)} A/m², Randles–Ševčík ${(0.4463 * FARADAY * c * Math.sqrt((nu * D) / VT)).toFixed(2)}`); // => 22.66, 22.78
+console.log(`at E½ + ${((E[ka] - Ehalf) * 1e3).toFixed(1)} mV; peaks ${((E[ka] - E[kc]) * 1e3).toFixed(1)} mV apart`); // => 28.7 mV, 58.0 mV
+```
+
+The peak is 0.5% under Randles–Ševčík, 0.2 mV past its 28.5 mV (1.109 RT/F), and the peaks are
+58.0 mV apart, against 57.7 for a reversible wave reversed 300 mV past E½ (by plain finite
+differences: Nicholson and Shain's case). The layer's iR is in each: 500 µm of it put the peaks
+59.9 mV apart.
+
 ## Template: a battery particle discharging
 
 A battery's insertion electrode is a material described by its OCV curve (docs/statistics.md):

@@ -3,6 +3,14 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Docs: device.md's `solve`, `step`, `impedance` and `set` each in the shape `advance()` has
+  (options table, named notes, what was measured), with `solve()`'s options (`maxSteps`, `tol`,
+  `continuation`) documented for the first time; and in llms.txt, a cyclic voltammogram of a
+  diffusing couple, held to Randles–Ševčík (0.5%) and a reversible wave's peak separation
+  (58.0 mV against 57.7).
+
 ## 1.14.0 (2026-11-09)
 
 A transient's trace now carries each terminal's charge, so the charge passed is read, not summed.
