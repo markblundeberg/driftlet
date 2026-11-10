@@ -265,6 +265,55 @@ to see:
   [Phys. Chem. Chem. Phys. 3, 1668 (2001)](https://doi.org/10.1039/b100180i)). The
   [impedance demo](https://markblundeberg.github.io/driftlet/demos/impedance.html) draws the voltages on those rails.
 
+Silver nitrate between two silver electrodes shows the first three in one picture:
+
+```js figure=silver-cell
+import { Device } from 'driftlet';
+import { build, layer, ohmic, half, aqueous, metal } from 'driftlet/kit';
+import { bandDiagram } from 'driftlet/plot';
+
+// 10 mM AgNO₃ between silver electrodes 20 µm apart, the right one at +0.2 V.
+const silver = half('Ag+ + e- = Ag(s)', { 'Ag(s)': 0 }); // μ of the element: 0 on table conventions
+const face = { reactions: [{ ...silver, k0: 1e-2, alpha: 0.5 }] };
+const def = build({
+  library: [aqueous(['Ag+', 'NO3-'], { epsr: 0 }), metal('Ag')], // epsr 0: no double layers resolved
+  stack: [
+    ohmic(0, ['e-']),
+    layer('Ag', 2e-6),
+    face,
+    layer('water', 20e-6, { c0: { 'Ag+': 10, 'NO3-': 10 } }),
+    face,
+    layer('Ag', 2e-6),
+    ohmic(0.2, ['e-']),
+  ],
+  grid: { hmin: 10e-9, hmax: 0.5e-6 },
+});
+const sol = new Device(def).solve();
+const svg = bandDiagram(sol); // the figure below
+const ag = sol.V['Ag+'], no3 = sol.V['NO3-'], std = sol.Vstd['Ag+'];
+const a = ag.findIndex(Number.isFinite), b = ag.findLastIndex(Number.isFinite); // the solution's two ends
+const mV = (v) => (1000 * v).toFixed(1);
+console.log(`end to end, NO₃⁻ ${mV(Math.abs(no3[b] - no3[a]))} mV, Ag⁺ ${mV(ag[b] - ag[a])} mV, its standard level ${mV(std[b] - std[a])} mV`); // => 0.0, 85.6, 42.8
+console.log(`steps: ${mV(ag[a] - sol.terminals.left.V)} mV at the left face, ${mV(sol.terminals.right.V - ag[b])} mV at the right`); // => 74.1, 40.3
+console.log(`V − V° of Ag⁺: ${mV(ag[a] - std[a])} mV at the left, ${mV(ag[b] - std[b])} mV at the right`); // => -147.8, -105.0
+```
+
+![Species voltages in a silver nitrate cell under 0.2 V. The silver electrodes' Fermi levels are flat lines at 0 V on the left and 0.2 V on the right. Between them the Ag⁺ line rises 86 mV from left to right, meeting each electrode with a step. The NO₃⁻ line is flat. The two thin standard-level lines rise together by 43 mV.](figures/silver-cell.svg)
+
+- **Nitrate's line is flat.** The electrodes block NO₃⁻, so in a steady state it carries no
+  current. A field pushes it one way and its own concentration gradient the other, and the flat
+  line says they cancel, without either being worked out.
+- **Silver ion's line falls 86 mV from right to left**, and Ag⁺ moves down it, carrying all the
+  current: silver dissolves at the right electrode and plates at the left.
+- **At each face, Ag⁺'s line meets the silver's Fermi level with a step.** The silver couple's
+  level is $`V_{\mathrm{Ag}^+}`$ itself, so the steps are the two overpotentials: 40 mV at the
+  right, where the metal sits above (silver dissolves), and 74 mV at the left, where it sits
+  below (silver plates; the step is larger there because the solution at that face is depleted
+  of Ag⁺, and the exchange is slower). The applied 0.2 V is the three added: 74 + 86 + 40.
+- **The thin lines rise together**, 43 mV: each is $`\phi`$ plus a constant, so they're one curve
+  drawn twice. Each thick line's distance from its thin one is its concentration term, the
+  same size for both ions and opposite in sign: 148 mV at the left face and 105 mV at the right.
+
 Different species' levels sit volts apart, because their $`\mu^\circ`$ differ by hundreds of
 kJ/mol. The gap between two species' lines carries a constant fixed by convention (below), so
 moving one species' lines up or down loses nothing. `traces()` does this with `shifts`, and marks
