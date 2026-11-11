@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { build, layer, bath, aqueous, particles } from '../src/kit.js';
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { build, layer, bath, aqueous, particles, vacuumZeroCharge } from '../src/kit.js';
 
 // The dots are a stochastic sample of a solution: in a long run each cell holds, on average, the
 // dots its concentration gives, and the dots crossing each boundary, net, are its flux. Seeded,
@@ -208,4 +208,40 @@ test('particles: a solution off a plane is refused (its fluxes are per device, t
   }).solve();
   assert.equal(sphere.geometry, 'spherical');
   assert.throws(() => particles(sphere), /planar device's solution, not a spherical one/);
+});
+
+test('a metal between two semiconductors that share its carrier: no dot crosses it inside the lattice', () => {
+  // (left out of the lattice, the metal let the cells either side become neighbours: the right
+  // side's dots drained into the left, its first cell 0.1 dots against 33.5 expected; Fable's review)
+  const Nc = units.perCm3(2.8e19), ND = units.perCm3(1e16);
+  const ohm = (V) => ({ V, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' });
+  const def = {
+    species: [{ name: 'e-', z: -1 }],
+    materials: { Si: { epsr: 11.7, species: { 'e-': { D: 36e-4, mu0: 0, cRef: Nc } } }, Au: { conductor: { species: 'e-', conductivity: 4e7 } } },
+    regions: [{ material: 'Si', length: 1e-6, fixedCharge: ND * FARADAY }, { material: 'Au', length: 50e-9 }, { material: 'Si', length: 1e-6, fixedCharge: ND * FARADAY }],
+    contacts: { left: ohm(0), right: ohm(0.05) },
+    grid: { hmin: 0.5e-9, hmax: 20e-9, ratio: 1.1 },
+  };
+  const zc = vacuumZeroCharge(def, 4.2, { material: 'Si', anchor: 'e-', offset: 4.05 });
+  def.interfaces = [{ phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }, { phi: { type: 'capacitive', C: 10 }, zeroCharge: zc }];
+  const sol = new Device(def).solve();
+  let seed = 7;
+  const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const sw = particles(sol, { dots: 400, cells: 30, random });
+  const metal = sw.cells.findIndex((c) => c.region === 1), first = metal + 1;
+  assert.ok(metal > 0 && sw.cells[first].region === 2);
+  const h = sw.cells[0].x1 - sw.cells[0].x0, dt = (0.05 * h * h) / 36e-4, steps = 4000;
+  let through = 0, mean = 0;
+  for (let k = 0; k < steps; k++) {
+    const before = new Map(sw.dots.map((d) => [d, d.cell]));
+    sw.step(dt);
+    for (const d of sw.dots) {
+      const b = before.get(d);
+      if (b !== undefined && (b < metal) !== (d.cell < metal)) through++;
+      if (d.cell === first) mean += 1 / steps;
+    }
+  }
+  assert.equal(through, 0);
+  const want = sw.expected('e-')[first];
+  assert.ok(Math.abs(mean / want - 1) < 0.25, `the first cell past the metal: ${mean} dots against ${want}`);
 });

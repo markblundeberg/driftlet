@@ -18,7 +18,7 @@
 import { FARADAY, EPS0, AVOGADRO } from './constants.js';
 import { fermiHalf, fermiMinusHalf } from './fermi.js';
 import { powi } from './pow.js';
-import { SolverError } from './solver.js';
+import { SolverError } from './errors.js';
 
 const MODEL_TYPES = ['ideal', 'fermi-dirac', 'lattice', 'redlich-kister', 'debye-huckel', 'insertion', 'custom'];
 
@@ -512,6 +512,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
     need(sdef !== null && typeof sdef === 'object' && !Array.isArray(sdef), `${sp} must be an object`);
     need(MODEL_TYPES.includes(sdef.type), `${sp}.type must be one of ${MODEL_TYPES.join(', ')}`);
     const allowed = {
+      ideal: [], // (missing, the documented type threw a TypeError: Fable's review)
       'fermi-dirac': ['order'],
       lattice: ['cMax'],
       'redlich-kister': ['cMax', 'A'],
@@ -519,7 +520,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
       insertion: ['cMax', 'A', 'ocv'],
       custom: ['evaluate'],
     }[sdef.type];
-    for (const k of Object.keys(sdef)) need(k === 'type' || k === 'species' || allowed.includes(k), `${sp}.${k}: not a field of a ${sdef.type} model (type, species, ${allowed.join(', ')})`);
+    for (const k of Object.keys(sdef)) need(k === 'type' || k === 'species' || allowed.includes(k), `${sp}.${k}: not a field of ${/^[aeiou]/.test(sdef.type) ? 'an' : 'a'} ${sdef.type} model (${['type', 'species', ...allowed].join(', ')})`);
     need(Array.isArray(sdef.species) && sdef.species.length > 0, `${sp}.species must be a non-empty array of species names`);
     const idx = sdef.species.map((name, a) => {
       need(speciesIndex.has(name), `${sp}.species[${a}]: unknown species ${JSON.stringify(name)}`);

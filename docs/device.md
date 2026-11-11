@@ -220,7 +220,9 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   the layers: 64 agree to 1.3e-4, with $`D`$ graded to 1e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
   match, is the same device (to 1e-9).
 - **Faces and contacts read the edge**: an alignment (`step`) beside a graded region is between
-  the standard levels at its edge, and a bath at a graded end is the material as it is there.
+  the standard levels at its edge, and a bath at a graded end is the material as it is there. A
+  port's bath can't list a species whose $`\mu^\circ`$ or $`c_{\mathrm{ref}}`$ is graded where the
+  port is (a composition outside gives no one level across the window): give its link the level.
 - **Not yet graded**: a non-ideal species' $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ (refused;
   its $`D`$ can be), a built-in $`D_{\mathrm{inhomog}}(x)`$ within a region, and kinetics (a
   reaction's rate constants are the material's). `describe()` reports a region's material values.

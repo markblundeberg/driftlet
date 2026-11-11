@@ -8,7 +8,7 @@ import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
 import { normalizeDrives } from './device.js';
-export { SolverError } from './solver.js';
+export { SolverError } from './errors.js';
 export * from './constants.js';
 
 // Whether two definitions differ only in their terminals' drives (V, I, R on the contacts and
@@ -101,10 +101,19 @@ export class Device {
       }
       patch = { ...patch, ports: old.map((p, k) => {
         const q = ports[p.name ?? `ports[${k}]`];
-        return q === undefined ? p : merge(p, redrive(q));
+        if (q === undefined) return p;
+        const m = merge(p, redrive(q));
+        for (const key of ['V', 'I']) if (q[key] !== undefined) m[key] = q[key]; // (whole: see below)
+        return m;
       }) };
     }
     const def = merge(this.def, patch);
+    // A drive is replaced whole, not merged: a waveform's keys are its own (merged, a ramp set
+    // over a triangle kept the triangle's repeat; Fable's review of the front door).
+    for (const side of ['left', 'right']) {
+      const c = patch?.contacts?.[side];
+      if (c && typeof c === 'object') for (const key of ['V', 'I']) if (c[key] !== undefined) def.contacts[side][key] = c[key];
+    }
     // Only the terminals' drives changed: update them in place, keeping the solver and its state
     // (a step in a source restarts the time stepping's order, as at any discontinuity).
     if (this._solver && sameExceptDrives(this.def, def)) {
@@ -122,13 +131,16 @@ export class Device {
     // The state carries over where the unknowns line up; on a new grid (the same regions, faces
     // and terminals), interpolated onto it. (Started cold instead, a floating gate lost its
     // charge to a refined grid.)
-    const sameUnknowns = old && old.u.length === solver.u.length && old.n === solver.n;
-    const regridded = old && !sameUnknowns && old.M === solver.M && old.n === solver.n && old.nFaces === solver.nFaces && old.terms.length === solver.terms.length && old.model.grid.regionStart.length === model.grid.regionStart.length;
+    // (The same species in the same order, not just as many: tested by count, a reordered list
+    // swapped two species' amounts; Fable's review.)
+    const sameSpecies = old && old.n === solver.n && old.model.species.every((sp, i) => sp.name === model.species[i].name && sp.z === model.species[i].z);
+    const sameUnknowns = sameSpecies && old.u.length === solver.u.length;
+    const regridded = old && !sameUnknowns && sameSpecies && old.M === solver.M && old.nFaces === solver.nFaces && old.terms.length === solver.terms.length && old.model.grid.regionStart.length === model.grid.regionStart.length;
     // A state that can't carry over restarts from c0. Say so in the next solution, where there
     // was a state to lose: a pump taken off a membrane's reactions restarted a closed cell from
     // its c0, converged and unwarned (Fable round 2's cold user).
     if (old && !sameUnknowns && !regridded && (old.time > 0 || old.atSteady || old.stepped || old.history.length > 0)) {
-      const why = old.n !== solver.n ? 'the species changed'
+      const why = !sameSpecies ? 'the species changed'
         : old.model.grid.regionStart.length !== model.grid.regionStart.length || old.nFaces !== solver.nFaces ? 'the regions or faces changed'
         : old.terms.length !== solver.terms.length ? 'the terminals changed'
         : "a face's or port's unknowns changed: its reactions, gates, surface or diffuse layers";
@@ -139,6 +151,13 @@ export class Device {
       solver.time = old.time;
       solver.sourceTime = old.sourceTime;
       solver._refreshSources();
+    }
+    // Each terminal's running charge carries on with the clock, by name (zeroed by a rebuild, a
+    // charge read across a set() that changed anything but a drive missed all that had passed:
+    // Fable's review; termCharge is in STATE, which this hand-written carry predates).
+    if (old) for (let k = 0; k < solver.terms.length; k++) {
+      const o = old.terms.findIndex((t) => t.name === solver.terms[k].name);
+      if (o >= 0) solver.termCharge[k] = old.termCharge[o];
     }
     if (sameUnknowns || regridded) {
       if (sameUnknowns) {

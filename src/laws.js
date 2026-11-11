@@ -36,8 +36,9 @@
 // Column spaces. A law's weights w are over C columns: stretches [0, S), electrode surfaces'
 // species [S, X) (column k is surface column k − S), electrodes' charges [X, C) (column k is
 // terminal carriers[k − X], counting its charge as Q/(zF), z = carrierZ). The rows a law can
-// take, v, are over S + T: stretch k's balance row (at its first node) [0, S), then terminal t's
-// circuit row, S + t.
+// take, v, are over S + T + the face surfaces' species: stretch k's balance row (at its first
+// node) [0, S), then terminal t's circuit row, S + t, then surface column j's own row, S + T + j
+// (an affinity may take one; a constraint can't; see findLaws).
 //
 // Output of findLaws(s): { constraints, affinities, localConstraints, islands, timeLaws,
 // contactLaw, carriers, conserved, unkept }:
@@ -184,8 +185,8 @@ export function chargeOnly({ model, terms }, k) {
 // steady state) feeds each stretch it links freely: a unit row. With `drives`, one driven by a
 // current feeds its charged species only as that current allows, in proportion to their
 // charges, so a combination weighted by z there is conserved while it passes none: a battery's
-// cathode, its electrons behind an open circuit, keeps its charge. Exact integer data, so plain
-// elimination will do. Returns the basis (each vector over the columns, w.own its free column),
+// cathode, its electrons behind an open circuit, keeps its charge. Small rational data (integer
+// stoichiometry, and 1/z where drives enter), so plain elimination with a 1e-9 tolerance will do. Returns the basis (each vector over the columns, w.own its free column),
 // with basis.carriers (the terminals with a charge column) and basis.skipped.
 export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = null } = {}) {
   const { model, n, z, stretches, stretchOf, terms, surfCols, surfColOf, rough } = s, S = stretches.length;
@@ -666,7 +667,7 @@ export function findLaws(s) {
   // ~1e-24 of its own conduction (a tiny conductance at the face, or a neighbour that barely
   // conducts): eliminated, the level is lost to round-off, and Newton settles at a wrong one with
   // nothing to show for it. In steady solves the piece's balance summed over its nodes, where
-  // the internal fluxes cancel exactly and the faces' alone are left, replaces its first node's
+  // the internal fluxes cancel exactly and the faces' alone are left, replaces its middle node's
   // (see lawRows.js, applyIslands), once the plain solves converge (see Solver.newton).
   const islands = [];
   const used = new Set([...constraints.map((cs) => cs.row).filter((o) => o >= 0), ...affinities.map((af) => af.row)]);

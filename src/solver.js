@@ -11,9 +11,12 @@ import { BlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, SG_FAR, sgFlux } from './bernoulli.js';
 import { BoundaryTerms } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, sourceAt } from './device.js';
+import { gradedAt, profileAt, sourceAt } from './device.js';
+export { profileAt }; // (its home is device.js: here for the importers that knew it here)
 import { diffuseScratch, diffuseUnits } from './diffuse.js';
-import { DeviceError } from './errors.js';
+import { DeviceError, SolverError } from './errors.js';
+export { SolverError }; // (its home is errors.js, beside DeviceError: imported from here, the modules this one imports
+// back made an import cycle that crashed whichever was loaded first; Fable's review)
 import { crossSection } from './grid.js';
 import { conservedMoieties, findLaws, noCurrent } from './laws.js';
 import { newton as newtonFn } from './newton.js';
@@ -26,9 +29,9 @@ import { initFromComposition as initFromCompositionFn } from './start.js';
 // The Solver's state between calls: every field a later call reads that an earlier call wrote,
 // and that a call which fails (or is rolled back) must leave as it was. _snapshot() copies these
 // and _restore() puts them back; nothing else does it by hand. Every other field is structure,
-// built with the solver, or scratch, written before it's read within each call (diagnostics too,
-// which a solution reads from the call just made), and test/state.test.js holds every field a run
-// writes to one of the three. (Listed by hand at each place that needed them, a rollback kept
+// built with the solver; scratch, written before it's read within each call (diagnostics too,
+// which a solution reads from the call just made); or LEARNED (below), and test/state.test.js holds
+// every field a run writes to one of the four. (Listed by hand at each place that needed them, a rollback kept
 // whether the state was stepped and where it was solved from the attempt it undid.)
 export const STATE = [
   'u', 'uLo', // Newton's unknowns
@@ -40,26 +43,17 @@ export const STATE = [
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
 ];
+// What Newton learns about the device, kept across calls and through a rollback on purpose: that it
+// loses a mode in a time step (lostMode, set for good), and how many convergences it has probed for
+// it (accepted). A device put back by _restore() still knows them, so its next call can take a
+// different, better path than a twin that never made the undone call (src/newton.js, point 7).
+export const LEARNED = ['lostMode', 'accepted'];
 // (Each value its own copy: typed arrays and the history array copied, the rest replaced whole.
 // Restored in place, the arrays the solver never replaces, which assembly reads by reference; the
 // others are replaced, since a step may alias them: portQOld = portQStart, filled in place, would
 // have filled both.)
 const copyState = (v) => (ArrayBuffer.isView(v) ? v.slice() : Array.isArray(v) ? v.slice() : v);
 const IN_PLACE = new Set(['u', 'uLo', 'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', 'termV', 'boundaryIntake']);
-
-// A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
-export function profileAt({ x, values: c }, at) {
-  if (at <= x[0]) return c[0];
-  const last = x.length - 1;
-  if (at >= x[last]) return c[last];
-  let lo = 0, hi = last;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (x[mid] <= at) lo = mid;
-    else hi = mid;
-  }
-  return c[lo] + ((c[hi] - c[lo]) * (at - x[lo])) / (x[hi] - x[lo]);
-}
 
 // A profile's mean over [a, b], exactly (its integral is piecewise quadratic).
 function profileMean(p, a, b) {
@@ -93,14 +87,6 @@ function profileMeanIn(p, a, b, A, Axs) {
   }
   const vol = A.integral(a, b);
   return vol > 0 ? s / vol : profileMean(p, a, b);
-}
-
-export class SolverError extends Error {
-  constructor(message, details) {
-    super(message);
-    this.name = 'SolverError';
-    this.details = details;
-  }
 }
 
 // The species a face's diffuse layer on that side (0 left, 1 right) passes to its reactions:

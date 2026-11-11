@@ -15,7 +15,7 @@ const code = (f) =>
   readFileSync(new URL(f, srcDir), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
-    .replace(/`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\])*'/g, "''");
+    .replace(/`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, "''"); // (double quotes too: an apostrophe in "the port's capacitance" opened a string, and the next edit to the file flipped every pairing after it)
 
 test('every import is a relative path to a .js file (what a browser and a CDN need)', () => {
   for (const f of sources) {

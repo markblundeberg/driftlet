@@ -117,3 +117,12 @@ test('a grid ratio with neither hmin nor hmax is warned of: the cells are unifor
   assert.equal(said({ hmin: 1e-9, hmax: 5e-8, ratio: 1.05 }).length, 0);
   assert.equal(said({ minCells: 40 }).length, 0);
 });
+
+test('a grid past the cell limit is refused before it is built, from hmin too; minCells is ≥ 1', () => {
+  // (the guard counted length/hmax: { ratio: 1, hmin: L/3e6 } built 3,000,001 nodes, and L/1e9 would
+  // have tried 1e9; minCells 0 gave one cell of NaN volume, accepted: Fable's review)
+  const t0 = Date.now();
+  assert.throws(() => gradedCells(1e-6, { ratio: 1, hmin: 1e-6 / 1e9 }), /more than 1e\+6 cells/);
+  assert.ok(Date.now() - t0 < 2000);
+  assert.throws(() => gradedCells(1e-6, { minCells: 0 }), /minCells must be ≥ 1/);
+});

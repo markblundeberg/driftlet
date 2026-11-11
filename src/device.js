@@ -121,12 +121,7 @@ function profile(v, path, what, ok, okText) {
 // material itself where nothing is graded.)
 export function gradedAt(mat, reg, x) {
   if (!isGraded(reg)) return mat;
-  const at = ({ x: xs, values: v }) => {
-    if (x <= xs[0]) return v[0];
-    const k = xs.findIndex((xk) => xk >= x);
-    if (k < 0) return v[v.length - 1];
-    return v[k - 1] + ((v[k] - v[k - 1]) * (x - xs[k - 1])) / (xs[k] - xs[k - 1]);
-  };
+  const at = (p) => profileAt(p, x); // (the nodes' reader too: one table, read the same at a face as at a node)
   const mu0 = Float64Array.from(mat.mu0), cRef = Float64Array.from(mat.cRef), D = Float64Array.from(mat.D);
   reg.grade.forEach((gr, i) => {
     if (gr?.mu0) mu0[i] = at(gr.mu0);
@@ -629,6 +624,20 @@ export function normalizeDevice(def) {
       `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node for its held level; widen it or refine the grid`,
     );
   });
+  // A node's level of a species is held by one port: held by two, the row the second replaced was
+  // the first's, the last listed won the level, and the other read a sum of level differences as
+  // its flux (−35 mol/(m²·s), converged and unwarned; Fable's review of the solver's assembly).
+  species.forEach((sp, i) => {
+    const holder = new Int32Array(grid.nNodes).fill(-1);
+    ports.forEach((port, k) => {
+      if (port.species[i]?.type !== 'equilibrium') return;
+      port.nodes.forEach((g, w) => {
+        if (!port.inside[w]) return;
+        need(holder[g] < 0, `ports[${k}]: its window overlaps ports[${holder[g]}]'s, and both hold ${sp.name}'s level; a node's level can be held at one value: hold it in one port, or move the windows apart`);
+        holder[g] = k;
+      });
+    });
+  });
   // A node's surface belongs to one electrode, and its gates to one membrane.
   const surfaced = new Int32Array(grid.nNodes).fill(-1);
   ports.forEach((port, k) => {
@@ -1086,6 +1095,9 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
       need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${reg.name} (material '${mat.name}'), so its level outside means nothing here`);
+      // (A composition outside gives a level through the window's μ° and cRef; graded, there's no
+      // one level for it to give, and the material's ungraded values were read: Fable's review.)
+      need(!reg.grade?.[i]?.mu0 && !reg.grade?.[i]?.cRef, `${path}.bath.c.${sname}: ${reg.name} grades '${sname}'s mu0 or cRef, so a composition outside gives no one level across the window; give its link the level instead (mu for a neutral species, or an offset)`);
       need(v !== 0, `${path}.bath.c.${sname}: a bath holds each species it lists at its level, and at 0 there is none (ln 0); a species absent from the bulk (a product, say) is a trace there, 1e-6 of the rest or so, so that it can leave`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
     }
@@ -1814,4 +1826,18 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(links[terminal].type !== 'blocked', `${path}.terminal: '${species[terminal].name}' is blocked at this contact`);
   }
   return { drive, species: links, phi, terminal, ...(she ? { she } : {}) };
+}
+
+// A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
+export function profileAt({ x, values: c }, at) {
+  if (at <= x[0]) return c[0];
+  const last = x.length - 1;
+  if (at >= x[last]) return c[last];
+  let lo = 0, hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (x[mid] <= at) lo = mid;
+    else hi = mid;
+  }
+  return c[lo] + ((c[hi] - c[lo]) * (at - x[lo])) / (x[hi] - x[lo]);
 }

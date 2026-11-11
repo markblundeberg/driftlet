@@ -96,7 +96,7 @@
 import { ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
-import { SolverError } from './solver.js';
+import { SolverError } from './errors.js';
 
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
 function complexSolve(Ar, Ai, K) {
@@ -227,9 +227,9 @@ function gmres(op, b, x, { m = 12, restarts = 8, tol = 1e-8 } = {}) {
 export class SmallSignal {
   /**
    * Small-signal impedance about the current (steady) state, seen at one terminal. Linearising
-   * gives (J + iωM)·δx + Σ B_k δV_k = rhs for the grid's rows, and (C_k + iωC′_k)·δx +
+   * gives (J + iωS)·δx + Σ B_k δV_k = rhs for the grid's rows, and (C_k + iωC′_k)·δx +
    * (∂I_k/∂V_k)·δV_k = δI_set,k for each floating terminal's circuit row, with J the steady
-   * Jacobian and M the storage part (from J(dt) = J + M/dt), B_k = ∂res/∂V_k and C_k = ∂I_k/∂x.
+   * Jacobian and S the storage part (from J(dt) = J + S/dt), B_k = ∂res/∂V_k and C_k = ∂I_k/∂x.
    * At the measured terminal, its voltage is perturbed (rhs = −B δV) and its current read, held
    * or driven by a current alike (one input impedance; see the contract). The other terminals
    * keep their drives: held ones at AC ground, driven ones at AC open circuit.
@@ -350,7 +350,6 @@ export class SmallSignal {
     const { sizes, offA, offB, offC, offX } = sys;
     const csys = new ComplexBlockTridiagonal(nB, sizes);
     const Nc = csys.size;
-    const rr = new Float64Array(Nc), ri = new Float64Array(Nc);
     const yr = new Float64Array(Nc), yi = new Float64Array(Nc);
     const Xr = fl.map(() => new Float64Array(Nc)), Xi = fl.map(() => new Float64Array(Nc));
     const xr = new Float64Array(N), xi = new Float64Array(N);
@@ -441,7 +440,7 @@ export class SmallSignal {
         jv(vr, vi, ar, ai);
         return precondition(ar, ai);
       };
-      const solve = (br, bi, outr, outi, k, sigma) => {
+      const solve = (outr, outi, k, sigma) => {
         const rhs = k >= 0 ? precondition(Bt[k].map((v) => -sigma * v), zero) : [new Float64Array(Nc), new Float64Array(Nc)];
         outr.set(rhs[0]);
         outi.set(rhs[1]);
@@ -451,16 +450,8 @@ export class SmallSignal {
       };
       let accuracy = 1e-14; // (relative, of the solves: the readouts' error is weighed with it)
       // y: the response with the floating terminals held; X_k: to a unit δV_k.
-      for (let j = 0; j < Nc; j++) {
-        rr[j] = -Bt[kT][j] * scale[j];
-        ri[j] = 0;
-      }
-      solve(rr, ri, yr, yi, kT, 1);
-      fl.forEach((k, a) => {
-        for (let j = 0; j < Nc; j++) rr[j] = Bt[k][j] * scale[j];
-        ri.fill(0);
-        solve(rr, ri, Xr[a], Xi[a], k, -1);
-      });
+      solve(yr, yi, kT, 1);
+      fl.forEach((k, a) => solve(Xr[a], Xi[a], k, -1));
       // Each unknown's round-off in its own row: |x_j| to ε Σ_k |A_jk x_k| / |A_jj|, A = J + iωS. A
       // metal's current unknown, G Δη to a huge G, is known only to ε G |δη| this way, which the
       // terms' round-off alone never saw (a platinum electrode's current read 20% off at 1 nHz,

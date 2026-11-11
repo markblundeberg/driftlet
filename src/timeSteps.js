@@ -2,6 +2,10 @@
 // BDF2), a step halved until it converges (advance), and adaptive stepping to a time with the
 // local error controlled (integrate).
 //
+// The names shift by one from the API's: Device.step(dt) calls advance here (a duration, halved
+// on failure), Device.advance(tEnd) calls integrate (an absolute time), and step here is a single
+// attempt. integrate's messages say advance(), the name its user called.
+//
 // CONTRACT
 //
 // These are functions of a Solver `s` (src/solver.js), which they read and write; its layout is
@@ -102,7 +106,7 @@
 // settled transient as the steady state's reference).
 
 import { nextBreakpoint, nearBreakpoint } from './device.js';
-import { SolverError } from './solver.js';
+import { SolverError } from './errors.js';
 import { equilibrateFaces } from './start.js';
 
 // Lagrange weights at x through the points s0, s1, s2.
@@ -210,7 +214,8 @@ export function step(s, dt, opts = {}) {
       const again = s.newton(dtEff, { ...opts, islands: true });
       result = { ...again, iterations: result.iterations + again.iterations };
     }
-    if (!result.converged && Number.isFinite(dtEff) && [...s.lawForm.values()].some((v) => !v)) {
+    const changeable = (cs) => Number.isFinite(cs.lambda) && cs.lambda !== 0; // (one that counts a current: λ set)
+    if (!result.converged && Number.isFinite(dtEff) && [...s.lawForm].some(([cs, v]) => !v && changeable(cs))) {
       // A terminal read by its flux whose response is lost to round-off (a floating gate's
       // charging, below its metal's G Δη): once more, read by the change (see circuitLaws in
       // src/lawRows.js).
@@ -218,7 +223,9 @@ export function step(s, dt, opts = {}) {
       s.uLo.set(s.uPrevLo);
       s.termV.set(s.termVPrev);
       if (opts.guess) setGuess(s, opts.guess);
-      for (const cs of s.lawForm.keys()) s.lawForm.set(cs, true);
+      // (not a law that counts no current, λ unset: read by its change, it would be NaN, as in
+      // the impedance's byChange)
+      for (const cs of s.lawForm.keys()) if (changeable(cs)) s.lawForm.set(cs, true);
       const again = s.newton(dtEff, opts);
       result = { ...again, iterations: result.iterations + again.iterations };
     }
@@ -301,7 +308,6 @@ export function integrate(s, tEnd, opts = {}) {
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
   const start = clock();
   const sample = s._probes(opts.probes);
-  // (and every terminal's voltage and current into the device, by name, as sol.terminals)
   // (and every terminal's voltage, current and charge passed into the device, by name, as
   // sol.terminals, with the charge's running total: see step)
   const names = s.terms.map((t) => t.name), terminals = Object.fromEntries(names.map((nm) => [nm, { V: [], current: [], charge: [] }]));

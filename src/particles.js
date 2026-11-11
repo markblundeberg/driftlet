@@ -76,7 +76,15 @@ export function particles(sol, { species, dots = 200, weight, cap = Infinity, ce
     lattice = [];
     sol.regions.forEach((_, r) => {
       const g0 = sol.region.indexOf(r), g1 = sol.region.lastIndexOf(r);
-      if (names.every((nm) => !(sol.c[nm][g0] >= 0))) return;
+      if (names.every((nm) => !(sol.c[nm][g0] >= 0))) {
+        // None of the species here (a metal): one empty cell, so the cells on either side each keep
+        // a face of their own. (Left out, they became neighbours across it, and the dots of the
+        // region past a metal hopped straight into the one before it: Fable's review.)
+        let w = 0;
+        for (let g = g0; g <= g1; g++) w += box[g];
+        lattice.push({ a: g0, b: g1, region: r, h: w });
+        return;
+      }
       const start = lattice.length;
       let a = g0, w = 0;
       for (let g = g0; g <= g1; g++) {

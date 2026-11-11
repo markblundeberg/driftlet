@@ -21,6 +21,7 @@ const MAX_CELLS = 1e6; // a live demo's grid has hundreds to thousands
 export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCells = DEFAULTS.minCells, hLeft, hRight } = {}) {
   if (!(length > 0)) throw new RangeError(`region length must be > 0, got ${length}`);
   if (!(ratio >= 1)) throw new RangeError(`grid ratio must be ≥ 1, got ${ratio}`);
+  if (!(minCells >= 1)) throw new RangeError(`grid minCells must be ≥ 1, got ${minCells}`); // (0 gave one cell of NaN volume, accepted)
   const cap = Math.min(hmax ?? length / minCells, length / minCells);
   let hl = Math.min(hLeft ?? hmin ?? cap, cap);
   let hr = Math.min(hRight ?? hmin ?? cap, cap);
@@ -30,6 +31,9 @@ export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCel
   let sum = 0;
   // The tolerance stops round-off in the running sum from adding a sliver cell.
   while (sum < length * (1 - 1e-12)) {
+    // (the guard in buildGrid counts length/hmax; at ratio 1 from a tiny hmin the count is
+    // length/hmin, and L/1e9 would have built a billion cells: Fable's review)
+    if (left.length + right.length >= MAX_CELLS) throw new RangeError(`more than ${MAX_CELLS.toExponential(0)} cells in a region ${length} m long from hmin ${Math.min(hl, hr).toExponential(1)} m at ratio ${ratio}: raise hmin or the ratio`);
     if (hl <= hr) {
       left.push(hl);
       sum += hl;

@@ -88,8 +88,8 @@
 
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, isGraded, sourceAt } from './device.js';
-import { profileAt, SolverError } from './solver.js';
+import { gradedAt, isGraded, profileAt, sourceAt } from './device.js';
+import { SolverError } from './errors.js';
 
 /**
  * Cold start. Each species takes its region's c0 where one is given (for a spectator, it fixes

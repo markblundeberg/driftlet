@@ -433,3 +433,20 @@ test('graded cRef: the degeneracy warning reads the graded band’s density of s
   assert.ok(!degenerate(new Device(def({ 'e-': { cRef: { x: [0, 2e-6], values: [0.5, 0.5] } } })).solve()));
   assert.ok(degenerate(new Device(def({ 'e-': { cRef: { x: [0, 2e-6], values: [0.5, 0.06] } } })).solve())); // (0.06 at the right end)
 });
+
+test('graded D: the time scales that size the steps see it, slowest and fastest', () => {
+  // (slowestTime sizes the giant steps a steady solve by time steps takes, 1e6·τ and on: a D
+  // graded far below the material's left them short by that ratio; Fable's smell review)
+  const dev = (values) => new Device(neutral({ grade: { A: { D: { x: [0, L], values } } }, muL: 0, muR: 0 }));
+  assert.equal(dev([D, 1e-19]).solver.slowestTime(), (L * L) / 1e-19);
+  const fast = dev([D, 10]).solver;
+  assert.ok(fast.fastestTime() < new Device(neutral({ mu0: 0, muL: 0, muR: 0 })).solver.fastestTime() / 1e9);
+});
+
+test('graded μ°: a port’s bath of a species graded where the port is, is refused', () => {
+  // (it read the material's ungraded μ°, holding c = 0.1 and 0.01 at the window's ends for c 1;
+  // Fable's review)
+  const def = neutral({ grade: { A: { mu0: { x: [0, L], values: [RT * Math.log(10), RT * Math.log(100)] } } }, muL: 0, muR: 0 });
+  def.ports = [{ region: 0, V: 0, bath: { c: { A: 1 } }, species: { A: 'equilibrium' } }];
+  assert.throws(() => new Device(def), /grades 'A's mu0 or cRef, so a composition outside gives no one level/);
+});

@@ -39,7 +39,10 @@ them is wrong: fix both, with a test, in the same commit.
 - `src/solver.js`: `Solver`, the numerical core (below).
 - The kit (`src/kit.js` and what it re-exports: stack, data, sources, channels, checks,
   describe, traces, live, recorder, particles, polarization, junction, devices) works on
-  definitions and solutions only, never on a solver's internals. `src/plot.js` draws
+  definitions and solutions, but for three that reach into a device's solver: `check()`
+  (src/checks.js: its state flags, `_warmFrom`, the floating terminals, and it sets `time`),
+  `polarization()` (the model's normalised reactions, `cRef`, `nodeConductor`) and `recorder()`
+  (`_probes`). A change to those internals is checked by their tests too. `src/plot.js` draws
   solutions.
 
 ## The solver's state
@@ -105,10 +108,12 @@ later call reads that an earlier one wrote (the unknowns, the start of the next 
 the time steps' memory, whether the state is steady or stepped and where it was solved, what closed
 stretches conserve). `_snapshot()` and `_restore()` copy exactly these, for a failed solve, a
 rejected step and the live wrapper's rollback alike; every other field is structure, built with the
-solver, or scratch, written before it's read within a call. `test/state.test.js` holds every field
-a run writes to one of the three, and holds a failed or refused call, a read and a rollback to
-leave a device doing exactly what a twin that never made the call does. A new field that lives
-between calls goes in `STATE`. (Listed by hand at each place that needed them instead, a rollback
+solver, scratch, written before it's read within a call, or `LEARNED`: what Newton learns about the
+device (that it loses a mode in a time step), kept across calls and through a rollback on purpose.
+`test/state.test.js` holds every field a run writes to one of the four, and holds a failed or
+refused call, a read and a rollback to leave a device doing exactly what a twin that never made the
+call does, but for what it learned: a twin that learned it too. A new field that lives between calls
+goes in `STATE`. (Listed by hand at each place that needed them instead, a rollback
 kept whether the state was stepped, and its drives, from the attempt it undid.)
 
 ## Reviewing one module

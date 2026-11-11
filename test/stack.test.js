@@ -269,3 +269,14 @@ test('a bath read by a reference electrode: platinum in Fe³⁺/Fe²⁺ against 
   // An electrode of elements alone is its ion's own level: SHE in an acid is the H⁺ terminal.
   assert.deepEqual(bath({ 'H+': 1, 'Cl-': 1 }, SHE).bath, { c: { 'H+': 1, 'Cl-': 1 }, reference: 'H+' });
 });
+
+test("bath: a reference electrode's half-reaction is held to its charge balance by build()", () => {
+  // (bath() takes ν_e = ν_ion·z_ion and can't check it: Cu²⁺ + e⁻ = Cu(s) put Cu²⁺ 0.0518 V where
+  // Cu²⁺ + 2e⁻ = Cu(s) gives 0.0259; Fable's review)
+  const lib = { species: [{ name: 'Cu2+', z: 2 }, { name: 'SO42-', z: -2 }], materials: { water: { epsr: 0, species: { 'Cu2+': { D: 7e-10 }, 'SO42-': { D: 1e-9 } } } } };
+  const def = (eq) => build({ library: [lib], stack: [bath({ 'Cu2+': 100, 'SO42-': 100 }, half(eq, { 'Cu(s)': 5000 })), layer('water', 1e-5), bath({ 'Cu2+': 100, 'SO42-': 100 }, 'SO42-')] });
+  assert.throws(() => def('Cu2+ + e- = Cu(s)'), /reference electrode "Cu2\+ \+ e- = Cu\(s\)" isn't charge-balanced \(1 Cu2\+ of charge 2 to 1 e-\)/);
+  const ok = def('Cu2+ + 2 e- = Cu(s)');
+  assert.ok(Math.abs(ok.contacts.left.bath.offset - 5000 / (2 * FARADAY)) < 1e-12, `${ok.contacts.left.bath.offset}`); // (0.0259 V)
+  assert.equal(JSON.stringify(ok).includes('Cu(s)'), false); // (the check's note isn't in the definition)
+});

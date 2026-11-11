@@ -24,7 +24,7 @@
 // A pin: a law too dense for the block matrix, { row, idx, w, len, res } (and `col`, see below).
 // Its row in s.sys is the identity with residual 0, and the law, Σ_j w_j δ[idx_j] = res, is
 // solved beside it by solveBordered: the pin's multiplier is free, so whatever else that row
-// holds (a terminal's termB entry, say) is absorbed by it. Not scaled by Solver._equilibrate,
+// holds (a terminal's termB entry, say) is absorbed by it. Not scaled by equilibrate() (src/newton.js),
 // which scales s.sys's rows, s.res and termB, and runs between assembly and the solve.
 //
 // The functions, and when each runs:
@@ -125,7 +125,7 @@
 import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { carrierZ, chargeOnly } from './laws.js';
-import { SolverError } from './solver.js';
+import { SolverError } from './errors.js';
 import { sgFlux } from './bernoulli.js';
 
 // The laws' rows at the end of an assembly (see the contract above).
@@ -468,9 +468,10 @@ function applyLocalConstraints(s) {
   }
 }
 
-// Conservation rows for the spectators (steady solves only): Σ v c_i = amount over the
-// stretch replaces the balance row of its first node, which in steady state is the negative
-// sum of the others. That row is dense, so it's kept aside: the factorised matrix gets a pin
+// Every constraint's row (steady solves only): a spectator's conserved amount, Σ v c_i = amount
+// over its stretch, and the other constraints and affinities in the rows findLaws gave them,
+// balance rows and circuit rows alike. A stretch's balance row (its first node's) is in steady
+// state the negative sum of the others. That row is dense, so it's kept aside: the factorised matrix gets a pin
 // (identity row) there instead, and solveBordered restores the constraint.
 function applyConstraints(s) {
   const { M, res } = s;
@@ -652,7 +653,7 @@ function circuitLaws(s, dt) {
 
 // Solve the full Newton system, J δ = rhs, with the extra unknowns and rows that don't fit the
 // block-tridiagonal matrix T: the floating terminals' voltages (with their circuit rows), and
-// the rows pinned in T: the spectators' conserved amounts (see applyConstraints) and the
+// the rows pinned in T: the constraints and affinities (see applyConstraints) and the
 // islands' summed balances (see applyIslands). By low-rank
 // updates of T (Woodbury): δ = y + Σ_q Q_q μ_q − Σ_k X_k δV_k with y = T⁻¹ rhs, Q_q = T⁻¹ e_q
 // (the response to a unit pin) and X_k = T⁻¹ B_k (to a unit change of V_k), then a small dense

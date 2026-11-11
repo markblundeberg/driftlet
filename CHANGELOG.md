@@ -33,6 +33,30 @@ major version.
   region it now reads the node's (an Al₀.₃GaAs emitter written as an alloy was flagged against
   GaAs's N_c).
 
+- Fixed, from a Fable review of the source as a visiting agent reads it (four reviewers, each a
+  quarter of src/), each with a test that failed first:
+  - `set()` that rebuilt the solver zeroed each terminal's running charge while the clock
+    carried on, so `trace.charge` read across a slider move that changed anything but a drive
+    was short by all that had passed. It carries on now, by terminal name.
+  - `set()` merged a new waveform into the old one: a ramp set over a triangle kept the
+    triangle's `repeat`. A drive (`V`, `I`) is now replaced whole.
+  - `set()` carried the state over wherever the species were as many, so reordering them
+    swapped their amounts. Now only where they're the same, in order.
+  - Two ports holding one species' level over the same nodes converged with the last one's level
+    and a nonsense flux (−35 mol/(m²·s)) read at the other: refused.
+  - `particles()` across a metal between two regions sharing its carrier drained the far
+    region's dots into the near one; the metal is an empty cell now.
+  - Statistics `{ type: 'ideal' }`, a documented type, threw a TypeError.
+  - A port's bath of a species whose μ° or cRef is graded in its region read the material's
+    ungraded values: refused. A bath's reference half-reaction that isn't charge-balanced gave a
+    wrong offset (by its ν_e): `build()` refuses it. `minCells: 0` gave a grid of NaN volume, and
+    a tiny `hmin` at ratio 1 could build a billion cells before the size guard saw them: both
+    refused.
+  - The time scale a steady solve's giant steps are sized by missed a graded D far below the
+    material's.
+  - Every module in src/ loads as the first import (five threw: an import cycle through
+    SolverError, which lives in errors.js now, still exported as before).
+
 ## 1.15.0 (2026-11-10)
 
 Graded regions: a band gap, a density of states or an ion's solvation can vary within one layer.

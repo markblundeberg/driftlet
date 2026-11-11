@@ -82,7 +82,8 @@
 //   4. refineSolve leaves the residual, the terminal terms, the pins' residuals, s.transformed and
 //      the factorised Jacobian as it found them, and the update as the plain solve gave it unless
 //      it returns true.
-//   5. Deterministic: the same state and options give the same iterates, bit for bit.
+//   5. Deterministic: the same state, LEARNED fields (src/solver.js) and options give the same
+//      iterates, bit for bit.
 // Also written: s.islandsOn (as asked, or on by 8), s.islandImbalance, s.islandsFailed and s.islandsWorse (8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
 // s.rowDiv; what an assembly writes, at the returned state where a probe or 6's check ran;
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
@@ -95,7 +96,7 @@
 // its comments.
 
 import { solveBordered } from './lawRows.js';
-import { SolverError } from './solver.js';
+import { SolverError } from './errors.js';
 
 // GMRES(m), restarted, for a real system op(x) = b, op already preconditioned; x holds the
 // starting guess and receives the answer. Returns whether it converged.
@@ -336,7 +337,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
   const { delta, res } = s;
   const deltaV = s.deltaV ?? (s.deltaV = new Float64Array(s.floating.length));
   const history = [], ownHistory = [];
-  // Refined solves (see _refine), once the plain ones stall.
+  // Refined solves (see refineSolve), once the plain ones stall.
   let refine = false, refined = 0, noRefine = false;
   // A device whose plain solves lose a mode (see refineSolve): its time steps refined throughout,
   // a convergence taken only on a refined update. A refinement that fails is tried again two
@@ -428,7 +429,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     pending = d;
     return true;
   };
-  const islandsOff = (it, result) => {
+  const startIslandsRound = (it, result) => {
     if (dt !== Infinity || !s.steady || s.islands.length === 0) return false;
     const off = (s.islandImbalance = imbalance(s));
     // A round that converged with an island less balanced than it began isn't kept: summed at a
@@ -446,8 +447,6 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     rounds++;
     return true;
   };
-  // A steady solve that fails: record how nearly singular the system was, and where; or, failing
-  // with the islands' rows in, go back to the solution without them.
   // The concentrations at the state Newton stops at, where a statistics model can refuse it (a
   // Debye–Hückel solution past its range, at the converged state of a transient: the error was
   // thrown from here, uncaught, out of solve() and advance()). Its message, for the failure.
@@ -461,6 +460,8 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       return err.message;
     }
   };
+  // A steady solve that fails: record how nearly singular the system was, and where; or, failing
+  // with the islands' rows in, go back to the solution without them.
   const fail = (r) => {
     if (kept) {
       s.u.set(kept.u);
@@ -572,7 +573,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       if (why) return fail({ converged: false, iterations: it, history, error: why });
       const done = { converged: true, iterations: it, history, residual: rmax };
       if (probed()) continue;
-      if (islandsOff(it, done)) continue;
+      if (startIslandsRound(it, done)) continue;
       if (worse) return fail({ converged: false, iterations: it, history });
       const refused = settle();
       if (refused) return fail({ converged: false, iterations: it, history, error: refused });
@@ -597,7 +598,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       if (why) return fail({ converged: false, iterations: it, history, error: why });
       const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
       if (probed()) continue;
-      if (islandsOff(it, done)) continue;
+      if (startIslandsRound(it, done)) continue;
       if (worse) return fail({ converged: false, iterations: it, history });
       const refused = settle();
       if (refused) return fail({ converged: false, iterations: it, history, error: refused });

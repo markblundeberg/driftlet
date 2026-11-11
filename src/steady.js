@@ -163,6 +163,7 @@ export class SteadySolves {
     for (const mat of this._usedMaterials()) {
       for (let i = 0; i < this.n; i++) if (mat.present[i] && mat.D[i] > 0) dMin = Math.min(dMin, mat.D[i]);
     }
+    for (const reg of model.regions) reg.grade?.forEach((gr) => gr?.D && (dMin = Math.min(dMin, ...gr.D.values))); // (a graded D's smallest, as fastestTime takes its largest)
     const L = model.grid.length;
     return Number.isFinite(dMin) ? (L * L) / dMin : 1;
   }
@@ -660,7 +661,7 @@ export class SteadySolves {
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
         steps += q.steps;
         iterations += q.iterations;
-        if (!q.converged) return { ...r, steps, iterations };
+        if (!q.converged) return { ...r, converged: false, steps, iterations }; // (said, not inherited from r: a caller may pass one that converged)
       }
       while (V !== target) {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;

@@ -577,3 +577,21 @@ test("a port's bath on coupled statistics: refused unless it lists all the coupl
   const s = mk(1000, { 'Na+': 1000, 'Cl-': 1000 }).solve();
   assert.ok(s.converged && Math.max(...s.phi.map(Math.abs)) < 1e-9, `φ ${Math.max(...s.phi.map(Math.abs))}`);
 });
+
+test('two ports holding one species over the same nodes are refused', () => {
+  // (the last listed won the level, and the other read −35 mol/(m²·s) as its flux, converged and
+  // unwarned: Fable's review of the solver's assembly, 10 Nov 2026)
+  const def = (ports) => ({
+    species: [{ name: 'X', z: 0, cRef: 1000 }],
+    materials: { m: { epsr: 10, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ name: 'm', material: 'm', length: 1e-6 }],
+    contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { phi: 'neutral' } },
+    ports,
+    grid: { hmin: 1e-8, hmax: 1e-8 },
+  });
+  const hold = (from, to, mu) => ({ region: 'm', from, to, V: 0, species: { X: { type: 'equilibrium', mu } } });
+  assert.throws(() => new Device(def([hold(0.4e-6, 0.6e-6, -1000), hold(0.5e-6, 0.7e-6, -2000)])), /ports\[1\]: its window overlaps ports\[0\]'s, and both hold X's level/);
+  // (apart, each holds its own)
+  const sol = new Device(def([hold(0.2e-6, 0.3e-6, -1000), hold(0.6e-6, 0.7e-6, -2000)])).solve();
+  assert.ok(sol.converged);
+});

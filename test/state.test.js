@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, units } from '../src/index.js';
-import { STATE } from '../src/solver.js';
+import { LEARNED, STATE } from '../src/solver.js';
 import { aqueous, metal, build, layer, ohmic, semiconductor, check } from '../src/kit.js';
 
 // --- four small devices: a port along a bar, an electrode's face reaction against a bath, a
@@ -111,7 +111,7 @@ const SCRATCH = new Set([
   // and charges the last assembly read
   'sys', 'res', 'delta', 'deltaV', 'rowDiv', 'sg', 'dA', 'dB', 'jL', 'jR', 'dWr', 'aWr', 'dWork', 'termB', 'termC', 'termDI', 'termDX', 'termRes', 'termI',
   'contactFlux', 'contactD', 'portFlux', 'portQ', 'qg', 'qgSlope', 'c', 'th', 'th0', 'gam', 'gate', 'ex', 'K', 'dK', 'zeta', 'scratch', 'lin', 'dtNow', 'transformed',
-  'chargePivots', 'accepted', 'sysRest', 'diffTerms', 'lostCandidate', 'lostMode', 'uPrev', 'uPrevLo', 'termVPrev', 'borderCols', 'islandRow', 'linRow',
+  'chargePivots', 'sysRest', 'diffTerms', 'lostCandidate', 'uPrev', 'uPrevLo', 'termVPrev', 'borderCols', 'islandRow', 'linRow',
   // a step's own: where it lands, its source reading, the laws read as changes this step
   'landing', 'sourceBefore', 'combining', 'lawForm', 'steady', 'sourceOverride',
   // the laws a steady solve captures as it begins (captureLaws), and its stages' bookkeeping
@@ -126,7 +126,7 @@ const SCRATCH = new Set([
   'violent', 'unreached', 'charging', 'drifted', 'settling', 'modelError', 'conditioning', 'islandImbalance', 'islandsFailed', 'islandsWorse',
 ]);
 
-test('every field a run writes is in STATE or is scratch; STATE names real fields', () => {
+test('every field a run writes is in STATE, LEARNED or scratch; STATE names real fields', () => {
   const stray = new Set();
   for (const [name, make] of Object.entries(devices)) {
     const d = new Device(make());
@@ -140,7 +140,7 @@ test('every field a run writes is in STATE or is scratch; STATE names real field
         before = fields(new Device(d.def).solver); // (a rebuild: against a solver fresh from its definition)
       }
       const after = fields(d.solver);
-      for (const [k, v] of after) if (before.get(k) !== v && !STATE.includes(k) && !SCRATCH.has(k)) stray.add(`${name}: ${k}`);
+      for (const [k, v] of after) if (before.get(k) !== v && !STATE.includes(k) && !SCRATCH.has(k) && !LEARNED.includes(k)) stray.add(`${name}: ${k}`);
       before = after;
     }
     for (const s of solvers) for (const k of STATE) assert.ok(k in s, `STATE names ${k}, which the solver doesn't have`);
@@ -151,10 +151,10 @@ test('every field a run writes is in STATE or is scratch; STATE names real field
   for (const op of [(x) => x.advance(1e-9), (x) => x.solve(), (x) => x.set({ contacts: { right: { V: -20 } } }).solve()]) {
     attempt(() => op(d));
     const after = fields(d.solver);
-    for (const [k, v] of after) if (before.get(k) !== v && !STATE.includes(k) && !SCRATCH.has(k)) stray.add(`dark cell: ${k}`);
+    for (const [k, v] of after) if (before.get(k) !== v && !STATE.includes(k) && !SCRATCH.has(k) && !LEARNED.includes(k)) stray.add(`dark cell: ${k}`);
     before = after;
   }
-  assert.deepEqual([...stray], [], 'fields written between calls that are neither in STATE (src/solver.js) nor scratch (here): which is each?');
+  assert.deepEqual([...stray], [], 'fields written between calls that are in none of STATE, LEARNED (src/solver.js) or scratch (here): which is each?');
 });
 
 // The twin: the same device put through the same calls, less the one under test.
@@ -208,4 +208,51 @@ test('a steady solve that fails deep in its continuations (no steady state) leav
     assert.deepEqual(stateOf(d.solver), was, `${prep.length} calls in`);
     assert.deepEqual(after(d, 'right'), after(twin, 'right'), `${prep.length} calls in: what the device does after the failed solve`);
   }
+});
+
+// set(), from Fable's code-smell review of the front door (10 Nov 2026): three silent wrong answers
+// where set() carries the state by hand.
+import { triangle, ramp } from '../src/kit.js';
+const pn = () => build({ library: [semiconductor('Si')], bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-7, tauP: 1e-7 } } }],
+  stack: [ohmic(0), layer('Si', 2e-6, { donors: units.perCm3(1e16) }), layer('Si', 2e-6, { acceptors: units.perCm3(1e16) }), ohmic(0.5)] });
+
+test('set: a rebuild carries each terminal’s running charge, as it carries the clock', () => {
+  // (zeroed, a charge read across a slider move that changed anything but a drive was short by
+  // all that had passed before it)
+  const dev = new Device(pn());
+  const I = dev.solve().terminals.right.current;
+  dev.advance(1e-6);
+  const D = dev.def.materials.Si.species['e-'].D;
+  dev.set({ materials: { Si: { species: { 'e-': { D: D * (1 + 1e-7) } } } } }); // (a rebuild, same unknowns)
+  const q = dev.advance(2e-6).trace.terminals.right.charge.at(-1);
+  assert.ok(Math.abs(q / (I * 2e-6) - 1) < 1e-4, `${q} vs ${I * 2e-6}`);
+  dev.set({ grid: { hmin: 1e-9, hmax: 5e-8 } }); // (and a regrid)
+  const after = dev.advance(3e-6), q3 = after.trace.terminals.right.charge.at(-1);
+  // (what passed since is the new grid's current times 1 µs, and a little more as the interpolated
+  // state settles on it, 0.6%: reset, the total would read a third of this)
+  assert.ok(Math.abs((q3 - q) / (after.terminals.right.current * 1e-6) - 1) < 1e-2, `${q3 - q} vs ${after.terminals.right.current * 1e-6}`);
+});
+
+test('set: a waveform replaces the old one whole', () => {
+  // (merged key by key, a ramp set over a triangle kept the triangle's repeat)
+  const dev = new Device(pn());
+  dev.set({ contacts: { right: { V: triangle({ from: 0, to: 0.2, period: 1 }) } } });
+  dev.set({ contacts: { right: { V: ramp({ from: 0, to: 0.2, duration: 1 }) } } });
+  assert.equal(dev.def.contacts.right.V.repeat, undefined);
+  assert.deepEqual(dev.def.contacts.right.V, ramp({ from: 0, to: 0.2, duration: 1 }));
+});
+
+test('set: the state carries over only where the species are the same, in the same order', () => {
+  // (tested by count, a reordered list swapped two species' amounts: A 5, B 1 where c0 had A 1, B 5)
+  const def = {
+    species: [{ name: 'A', z: 0 }, { name: 'B', z: 0 }],
+    materials: { m: { epsr: 0, species: { A: { D: 1e-9, mu0: 0, cRef: 1000 }, B: { D: 1e-9, mu0: 0, cRef: 1000 } } } },
+    regions: [{ material: 'm', length: 1e-6, c0: { A: 1, B: 5 } }],
+    contacts: { left: { species: {} }, right: { species: {} } },
+  };
+  const dev = new Device(def);
+  dev.solve();
+  dev.set({ species: [{ name: 'B', z: 0 }, { name: 'A', z: 0 }] });
+  const sol = dev.solve(), g = sol.x.length >> 1;
+  assert.ok(Math.abs(sol.c.A[g] - 1) < 1e-9 && Math.abs(sol.c.B[g] - 5) < 1e-9, `A ${sol.c.A[g]}, B ${sol.c.B[g]}`);
 });

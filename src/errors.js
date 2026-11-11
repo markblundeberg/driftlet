@@ -57,3 +57,12 @@ export function shown(v) {
     return String(v);
   }
 }
+
+// A problem found while solving (a solve that couldn't proceed, a bad call). Exported by index.js.
+export class SolverError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = 'SolverError';
+    this.details = details;
+  }
+}

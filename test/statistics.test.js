@@ -580,3 +580,16 @@ test("a contact's bath on an insertion host is refused, saying why (it said 'und
     contacts: { left: { V: 0, bath: { c: { 'Li+': 15000, 'e-': 15000 }, reference: 'Li+' } }, right: { V: 0.3, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
   }), /host at this end has no φ .* a bath can't set its levels/);
 });
+
+test("statistics: { type: 'ideal' } is accepted, and is the same as none", () => {
+  // (the documented type threw a TypeError before any check: Fable's review, 10 Nov 2026)
+  const def = (statistics) => ({
+    species: [{ name: 'X', z: 0, cRef: 1000 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } }, ...(statistics ? { statistics } : {}) } },
+    regions: [{ material: 'm', length: 1e-6 }],
+    contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { species: { X: { type: 'equilibrium', mu: -2500 } }, phi: 'neutral' } },
+  });
+  const plain = new Device(def()).solve(), ideal = new Device(def([{ type: 'ideal', species: ['X'] }])).solve();
+  assert.equal(ideal.contacts.left.flux.X, plain.contacts.left.flux.X);
+  assert.throws(() => new Device(def([{ type: 'ideal', species: ['X'], cMax: 1 }])), /cMax: not a field of an ideal model \(type, species\)/);
+});
