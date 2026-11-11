@@ -574,7 +574,7 @@ for live demos.
   inhomog page); driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, so within a region it's
   0 and the split of a grading between the charged species is an input. (26ff538 called this
   entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
-  doesn't.) A gradient's $`\mu^\circ`$ given in another gauge, one with a built-in polarization
+  doesn't.) A grading's $`\mu^\circ`$ given in another gauge, one with a built-in polarization
   $`P_0(x)`$ ($`D_{\mathrm{inhomog}}`$) inside the region, needs no knob of its own: Poisson sees
   only $`\rho_{\mathrm{fixed}} - \nabla\cdot P_0`$, so those $`\mu^\circ`$ as given, with
   $`-dP_0/dx`$ as fixed charge and each jump of $`P_0`$ as a face's `sheetCharge`, is the same
