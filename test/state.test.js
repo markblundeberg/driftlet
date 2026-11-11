@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, units } from '../src/index.js';
-import { LEARNED, STATE } from '../src/solver.js';
+import { CARRY, LEARNED, STATE } from '../src/solver.js';
 import { aqueous, metal, build, layer, ohmic, semiconductor, check } from '../src/kit.js';
 
 // --- four small devices: a port along a bar, an electrode's face reaction against a bath, a
@@ -255,4 +255,21 @@ test('set: the state carries over only where the species are the same, in the sa
   dev.set({ species: [{ name: 'B', z: 0 }, { name: 'A', z: 0 }] });
   const sol = dev.solve(), g = sol.x.length >> 1;
   assert.ok(Math.abs(sol.c.A[g] - 1) < 1e-9 && Math.abs(sol.c.B[g] - 5) < 1e-9, `A ${sol.c.A[g]}, B ${sol.c.B[g]}`);
+});
+
+test('set: every STATE field has a policy for a rebuild, and the kept ones are kept', () => {
+  // (set() carries the state by hand: a field added to STATE after it was written, a terminal's
+  // running charge, was dropped. CARRY in src/solver.js names what set() does with each.)
+  assert.deepEqual(Object.keys(CARRY).sort(), [...STATE].sort());
+  for (const [k, v] of Object.entries(CARRY)) assert.ok(['kept', 'rebased', 'restarted', 'set'].includes(v), `${k}: ${v}`);
+  const dev = new Device(pn());
+  dev.solve();
+  dev.advance(1e-6);
+  const old = dev.solver, D = dev.def.materials.Si.species['e-'].D;
+  const before = Object.fromEntries(STATE.map((k) => [k, canon(old[k])]));
+  dev.set({ materials: { Si: { species: { 'e-': { D: D * (1 + 1e-7) } } } } }); // (a rebuild, same unknowns)
+  assert.notEqual(dev.solver, old);
+  for (const k of STATE) if (CARRY[k] === 'kept') assert.equal(canon(dev.solver[k]), before[k], `${k} is marked kept, and set() changed it`);
+  // (a closed stretch keeps its amount, its intake folded in; an open one takes the state's)
+  old.referenceAmounts.forEach((a, j) => assert.equal(dev.solver.referenceAmounts[j], old.stretches[j].connected ? dev.solver.amount(dev.solver.stretches[j]) : a + old.boundaryIntake[j]));
 });

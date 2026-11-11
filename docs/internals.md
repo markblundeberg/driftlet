@@ -113,7 +113,8 @@ device (that it loses a mode in a time step), kept across calls and through a ro
 `test/state.test.js` holds every field a run writes to one of the four, and holds a failed or
 refused call, a read and a rollback to leave a device doing exactly what a twin that never made the
 call does, but for what it learned: a twin that learned it too. A new field that lives between calls
-goes in `STATE`. (Listed by hand at each place that needed them instead, a rollback
+goes in `STATE`, and in `CARRY`, which names what `Device.set()` does with each field when it
+rebuilds the solver (kept, rebased, restarted, or set by it): the test holds both. (Listed by hand at each place that needed them instead, a rollback
 kept whether the state was stepped, and its drives, from the attempt it undid.)
 
 ## Reviewing one module

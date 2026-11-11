@@ -129,7 +129,9 @@ export class Device {
     this.model = model;
     this._solver = solver;
     // The state carries over where the unknowns line up; on a new grid (the same regions, faces
-    // and terminals), interpolated onto it. (Started cold instead, a floating gate lost its
+    // and terminals), interpolated onto it. What happens to each STATE field is named in CARRY
+    // (src/solver.js), and test/state.test.js holds this code to it: a field added to STATE needs
+    // a line there, and a 'kept' one a line here. (Started cold instead, a floating gate lost its
     // charge to a refined grid.)
     // (The same species in the same order, not just as many: tested by count, a reordered list
     // swapped two species' amounts; Fable's review.)

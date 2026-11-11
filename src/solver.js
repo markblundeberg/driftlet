@@ -43,6 +43,26 @@ export const STATE = [
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
 ];
+// What Device.set() does with each STATE field when it rebuilds the solver (src/index.js), so a new
+// field gets a decision: 'kept' (the same value wherever the unknowns line up; a new grid
+// interpolates the unknowns), 'rebased' (kept, with what it accumulated folded in), 'restarted'
+// (begun afresh by the new solver, which is right for it), or 'set' (set() writes it, to say what it
+// did). test/state.test.js holds every STATE field to one, and every 'kept' one to its value across a
+// rebuild. (A terminal's running charge, added to STATE after set()'s hand-written carry, was zeroed
+// by it: Fable's review of the front door.)
+export const CARRY = {
+  u: 'kept', uLo: 'kept', // (carried as concentrations and φ instead where T, μ° or cRef changed)
+  cOld: 'restarted', thOld: 'restarted', th0Old: 'restarted', gamOld: 'restarted', gateOld: 'restarted', // (each step starts them from the state)
+  contactDStart: 'restarted', contactDOld: 'restarted', portQStart: 'restarted', portQOld: 'restarted', // (likewise, from the End values)
+  contactDEnd: 'kept', portQEnd: 'kept', // (where the ports are as many)
+  time: 'kept', sourceTime: 'kept', dtNext: 'kept',
+  lastDt: 'restarted', history: 'restarted', // (a change of the equations restarts the time steps' order)
+  termV: 'kept', termCharge: 'kept', // (by terminal name; a held terminal's V is its drive)
+  atSteady: 'restarted', stepped: 'kept', solvedV: 'kept', coldStart: 'kept', // (atSteady: regriddedSteady says it on a new grid)
+  regriddedSteady: 'set', jumpedT: 'set', restarted: 'set',
+  referenceAmounts: 'rebased', boundaryIntake: 'rebased', // (a closed stretch's amount, with its intake folded in; an open one's from the state)
+  surfaceRef: 'kept',
+};
 // What Newton learns about the device, kept across calls and through a rollback on purpose: that it
 // loses a mode in a time step (lostMode, set for good), and how many convergences it has probed for
 // it (accepted). A device put back by _restore() still knows them, so its next call can take a
