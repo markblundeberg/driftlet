@@ -214,8 +214,9 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   the convention where $`D_{\mathrm{inhomog}} = 0`$ there. In that convention the split
   between the charged species is fixed, and it's an input, as an alignment is at a face: how a
   composition moves each level is yours to give, and nothing is defaulted. (Values from another
-  convention, say against a mean inner potential, carry their own $`D_{\mathrm{inhomog}}`$:
-  fold it into the $`\mu^\circ`$ first.) The test suite checks both halves on a graded diode:
+  convention, say against a mean inner potential, carry their own $`D_{\mathrm{inhomog}}`$, which
+  enters $`D`$ as a built-in static polarization $`P_0(x)`$ would: fold it into the $`\mu^\circ`$
+  first, each $`\mu^\circ_i`$ moving by $`z_i F f`$ where $`\varepsilon f' = D_{\mathrm{inhomog}}`$.) The test suite checks both halves on a graded diode:
   it's the limit of a staircase of thin uniform layers joined with no dipole (second order in
   the layers: 64 agree to 1.3e-4, with $`D`$ graded to 1e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
   match, is the same device (to 1e-9).

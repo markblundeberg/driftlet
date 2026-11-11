@@ -574,8 +574,11 @@ for live demos.
   inhomog page); driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, so within a region it's
   0 and the split of a grading between the charged species is an input. (26ff538 called this
   entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
-  doesn't.) Still to come: a region's $`D_{\mathrm{inhomog}}(x)`$, for gradings given in another
-  convention; graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
+  doesn't.) A region's $`D_{\mathrm{inhomog}}(x)`$, for gradings given in another convention, is
+  left out unless a real use shows up (with the owner, 11 Nov): it changes only bookkeeping and
+  invites counting a grading twice. If it comes, it enters $`D`$ as a built-in static
+  polarization $`P_0(x)`$ would, to be set compatibly with the $`\mu^\circ(x)`$ convention.
+  Still to come: graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
   statistics; and a bowed alloy (values not linear in the composition). Done with it: the kit's
   `alloy()` (between two library materials, its alignment given as at a face) and a graded-base
   transistor demo (demos/hbt.html, its transit time held to Kroemer's formula).
