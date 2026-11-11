@@ -187,8 +187,10 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     if (r.x1 <= xs || r.x0 >= xe) return;
     const a = px(Math.max(r.x0, xs)), b = px(Math.min(r.x1, xe));
     if (k % 2 === 1) out.push(`<rect x="${r2(a)}" y="${pad.t}" width="${r2(b - a)}" height="${ph}" fill="var(--driftlet-band)"/>`);
-    // A region's own name where it was given one (not the default 'region k'), with its material.
-    const label = r.name && !/^region \d+$/.test(r.name) && r.name !== r.material ? `${r.name} (${r.material})` : r.material;
+    // A region's own name where it was given one (not the default 'region k'), with its material
+    // (a graded region's said so: an alloy layer's material is its one end).
+    const mat = r.graded ? `${r.material}, graded` : r.material;
+    const label = r.name && !/^region \d+$/.test(r.name) && r.name !== r.material ? `${r.name} (${mat})` : mat;
     const named = r.name && !/^region \d+$/.test(r.name) ? r.name : r.material;
     // Narrow, the name shortened rather than the material alone: at a phone's width a salt
     // bridge's band read "water" (Fable round 3's review of the demos).

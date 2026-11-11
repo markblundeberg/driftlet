@@ -23,6 +23,16 @@ major version.
 - Docs: a stray backspace in device.md (a `\bar` written through an unescaped string) is
   `\bar` again, and the docs test refuses control characters in the docs.
 
+- A demo: [a graded-base transistor](https://markblundeberg.github.io/driftlet/demos/hbt.html), AlGaAs/GaAs, built
+  with `alloy()`. Its base's quasi-field (E_c tilted, E_v flat) speeds the electrons across, or
+  slows them reversed, and the base transit time follows Kroemer's formula to within 0.4% across
+  the range (the demos test holds the page to it).
+- A solution's `regions[k]` says `graded: true` for a graded region, and the level diagrams label
+  it "(GaAs, graded)": an alloy layer's material is its one end.
+- The degeneracy warning compared electrons and holes with the material's cRef; in a graded
+  region it now reads the node's (an Al₀.₃GaAs emitter written as an alloy was flagged against
+  GaAs's N_c).
+
 ## 1.15.0 (2026-11-10)
 
 Graded regions: a band gap, a density of states or an ion's solvation can vary within one layer.

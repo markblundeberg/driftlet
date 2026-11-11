@@ -77,7 +77,7 @@ export function typeset(name, z) {
  *   insulator's), half-reaction levels, labels to use by trace id
  *   ({ 'V:e-': 'Fermi level' }), and display offsets per species (V), which move all of a
  *   species' lines together so that widely separated species can share one readable plot
- * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number }[],
+ * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number, graded?: boolean }[],
  *   faces: number[], range: [number, number] }}
  */
 export function traces(sol, { species, standard = true, phi = false, energy = false, levels = [], labels = {}, shifts = {} } = {}) {

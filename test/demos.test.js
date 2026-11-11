@@ -723,3 +723,33 @@ test('demos/axon.html: the spike against the space-clamped Hodgkin–Huxley equa
     assert.ok(Math.abs(up(ts, vs) - up(ode.t, ode.V)) < 40e-6, `${JSON.stringify(p)}: upstroke ${up(ts, vs)} vs ${up(ode.t, ode.V)}`);
   }
 });
+
+test("demos/hbt.html: the base transit time is Kroemer's, as the page says", async () => {
+  const { Device } = await import('../src/index.js');
+  const { sweep, hbt, transit, Dn, NA, tauN } = await pageTheory('hbt.html', ['sweep', 'hbt', 'transit', 'Dn', 'NA', 'tauN']);
+  for (const VBE of [0.95, 1.1, 1.25]) {
+    const pts = sweep(VBE);
+    for (const p of pts) {
+      // "within 0.4% across the whole range, slowed down as well as sped up, at every V_BE"
+      assert.ok(Math.abs(p.tau / p.theory - 1) < 0.004, `V_BE ${VBE}, grading ${p.g}: τ ${p.tau} vs Kroemer ${p.theory}`);
+      // "the base current is mostly the electrons recombining on the way across, Q/τ_n: from half
+      // of it … to 90%" (in the neutral base R = n/τ_n, so its share of J_B is β τ_B/τ_n)
+      const share = (p.beta * p.tau) / tauN;
+      assert.ok(share > 0.48 && share < 0.93, `V_BE ${VBE}, grading ${p.g}: recombination's share ${share}`);
+    }
+    assert.ok(pts.every((p, k) => k === 0 || (p.tau < pts[k - 1].tau && p.beta > pts[k - 1].beta)), 'τ falls and β rises with the grading');
+    // "the width … comes out 3 nm wider than the neutral base"
+    const flat = transit(new Device(hbt(0, VBE)).solve()), W = Math.sqrt(2 * Dn * flat.tau);
+    assert.ok(W - flat.width > 2e-9 && W - flat.width < 4e-9, `V_BE ${VBE}: fitted ${W}, neutral ${flat.width}`);
+  }
+  // "a slope of up to 1.2 meV/nm", and "about a Debye length (4 nm here)"
+  const sol = new Device(hbt(0.12, 1.1)).solve(), t = transit(sol);
+  const Ec = (x) => {
+    const g = sol.x.findIndex((v) => v >= x);
+    return -sol.Vstd['e-'][g];
+  };
+  const slope = (Ec(t.from + 10e-9) - Ec(t.to - 10e-9)) / (t.to - t.from - 20e-9) * 1e-9;
+  assert.ok(Math.abs(slope - 1.2e-3) < 0.1e-3, `E_c's slope ${slope} eV/nm`);
+  const LD = Math.sqrt((13.1 * 8.854e-12 * 0.025852) / (1.602e-19 * NA * 6.022e23));
+  assert.ok(Math.abs(LD - 4.2e-9) < 0.3e-9, `Debye length ${LD}`);
+});

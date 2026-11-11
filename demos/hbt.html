@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graded-base transistor</title>
+<meta name="description" content="An AlGaAs/GaAs transistor whose base narrows its gap toward the collector: a field only the electrons feel, and the base transit time against Kroemer's formula.">
+<meta property="og:title" content="Graded-base transistor · driftlet">
+<meta property="og:description" content="An AlGaAs/GaAs transistor whose base narrows its gap toward the collector: a field only the electrons feel, and the base transit time against Kroemer's formula.">
+<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/hbt.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/hbt.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Graded-base transistor</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 200" role="img" aria-label="An npn transistor seen at an angle: an n-type AlGaAs emitter, a thin p-type base shaded from darker to lighter, and an n-type GaAs collector between metal contacts, with a base contact on top; one source between emitter and base, another between emitter and collector; a red line runs along it from one contact to the other.">
+      <defs>
+        <linearGradient id="graded" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" style="stop-color: color-mix(in srgb, var(--c8) 34%, var(--panel))"/>
+          <stop offset="1" style="stop-color: color-mix(in srgb, var(--c8) 10%, var(--panel))"/>
+        </linearGradient>
+      </defs>
+      <rect x="30" y="104" width="10" height="54" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M30 104 l24 -13 h10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <rect x="40" y="104" width="100" height="54" fill="color-mix(in srgb, var(--c1) 22%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M40 104 l24 -13 h100 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 22%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <text x="90" y="176" text-anchor="middle">n-AlGaAs</text>
+      <rect x="140" y="104" width="40" height="54" fill="url(#graded)" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M140 104 l24 -13 h40 l-24 13 Z" fill="color-mix(in srgb, var(--c8) 20%, var(--panel))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <text x="160" y="176" text-anchor="middle">p⁺ base</text>
+      <rect x="180" y="104" width="110" height="54" fill="color-mix(in srgb, var(--c1) 12%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M180 104 l24 -13 h110 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--c1) 12%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <text x="235" y="176" text-anchor="middle">n-GaAs</text>
+      <rect x="290" y="104" width="10" height="54" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1"/>
+      <path d="M290 104 l24 -13 h10 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 96%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M300 104 l24 -13 v54 l-24 13 Z" fill="color-mix(in srgb, color-mix(in srgb, var(--muted) 55%, var(--panel)) 88%, var(--ink))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M163 97.5 l8 -4.4 h12 l-8 4.4 Z" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1" stroke-linejoin="round"/>
+      <path class="k-ink" d="M35 104 V22 H186 M214 22 H295 V104 M35 52 H86 M114 52 H173 V95"/>
+      <circle cx="35" cy="52" r="2.5" fill="var(--ink)"/>
+      <circle cx="100" cy="52" r="14" class="k-box"/><text x="100" y="56" text-anchor="middle">V<tspan font-size="9" dy="2">BE</tspan></text>
+      <circle cx="200" cy="22" r="14" class="k-box"/><text x="200" y="26" text-anchor="middle">V<tspan font-size="9" dy="2">CE</tspan></text>
+      <path class="k-cut" d="M36 131.0 H284"/><path class="k-cut-head" d="M293 131.0 L284 126.5 V135.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
+  <p>An npn transistor of AlGaAs and GaAs whose base is an alloy, its aluminium fraction falling toward the
+    collector, so its band gap narrows across it. The holes in the p-type base keep their band edge flat, so
+    the whole narrowing tilts the conduction band: a field that only the electrons feel, pushing them across
+    the base toward the collector. The grading sets how hard (or, reversed, how hard it holds them back), and
+    the base transit time is drawn against Kroemer's formula for it. (More about the model below.)</p>
+  <div class="controls">
+    <label>base grading <input id="grade" type="range" min="-0.12" max="0.12" step="0.01" value="0.08"><output id="gradeOut"></output></label>
+    <label>V<sub>BE</sub> <input id="vbe" type="range" min="0.95" max="1.25" step="0.01" value="1.1"><output id="vbeOut"></output></label>
+    <span class="readout" id="readout"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="tau"></canvas>
+    <div class="levels wide" id="levels"></div>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <h2>About this simulation</h2>
+  <p>The transistor is a stack of layers along one line: an n-type Al<sub>0.3</sub>Ga<sub>0.7</sub>As emitter
+    (5×10¹⁷ cm⁻³), graded over 30 nm to the base's starting composition; a p-type base 100 nm wide
+    (10¹⁸ cm⁻³), its aluminium fraction going linearly from x<sub>E</sub> at the emitter to x<sub>C</sub> at the
+    collector; and an n-type GaAs collector (10¹⁶ cm⁻³, on a 3×10¹⁷ subcollector), at 2 V. The base contact
+    is the one-dimensional idealisation of one: it holds the holes' level at V<sub>BE</sub> across the base,
+    as a base contact running along it would. Each layer of alloy is driftlet/kit's <code>alloy()</code>
+    between GaAs and Al<sub>0.3</sub>GaAs (the usual estimates: a gap of 1.424 + 1.247x eV, 62% of its
+    change in the conduction band, an electron mass of 0.067 + 0.083x), each value it changes going
+    linearly with the composition. The grading control is the gap's drop across the base, 1.247(x<sub>E</sub>
+    − x<sub>C</sub>) eV: positive narrows it toward the collector, negative widens it.</p>
+  <p>The band diagram is electron energy up. In the base the holes are the majority: their density is
+    the doping, so with the valence band's density of states the same throughout, E<sub>v</sub> stays level
+    with their quasi-Fermi level, flat, and the gap's narrowing all goes into E<sub>c</sub>, a slope of
+    up to 1.2 meV/nm. That slope is a quasi-field: it acts on the electrons alone, where an electric
+    field would push the holes too. (How much of the slope to call an electric field is a convention in a
+    graded material, since φ there isn't fixed by the physics; the band edges are.) The electrons the
+    emitter injects drift down it as they diffuse, so they cross faster, and fewer wait in the base.</p>
+  <p>The transit time is the base's charge over the current it carries, τ<sub>B</sub> = Q<sub>n</sub>/J<sub>C</sub>,
+    with Q<sub>n</sub> the electrons in the neutral base (where the holes are over half the doping). For a
+    quasi-field that drops the electrons' potential by η thermal voltages across a base of width W, Kroemer's
+    formula is τ<sub>B</sub> = (W²/D<sub>n</sub>)[1/η − (1 − e<sup>−η</sup>)/η²], which is W²/2D<sub>n</sub>
+    without grading. Here η is the conduction band's drop less the change in its density of states,
+    ΔE<sub>c</sub>/kT − ln(N<sub>c,E</sub>/N<sub>c,C</sub>) (the electron mass falls with the aluminium,
+    taking about 0.15 kT off η at the steepest grading). The width is the one fitted number: taken from
+    the ungraded transistor at the same V<sub>BE</sub>, it comes out 3 nm wider than the neutral base, as the
+    base's edges are spread over about a Debye length (4 nm here), and each graded point uses it scaled with
+    its own neutral width. The simulation follows the formula to within 0.4% across the whole range, slowed
+    down as well as sped up, at every V<sub>BE</sub> the slider reaches (the test suite holds the page to it).</p>
+  <p>The current gain β = J<sub>C</sub>/J<sub>B</sub> rises with the grading: the base current is mostly the
+    electrons recombining on the way across, Q<sub>n</sub>/τ<sub>n</sub> with a lifetime τ<sub>n</sub> of
+    0.5 ns (from half of it, at the most retarding grading and the lowest V<sub>BE</sub>, to 90% at the most
+    accelerating; the rest recombines in the emitter's junction), and there are fewer of them to recombine. What drift–diffusion leaves out matters in a real base this thin: an electron crosses
+    80 nm in under a picosecond, only a few times its momentum relaxation time (about 0.08 ps), so part of its trip is ballistic, and it leaves the
+    base at a saturated velocity rather than one set by its mobility. Real HBT bases are also doped well
+    past 10¹⁹ cm⁻³, where the holes are degenerate; 10¹⁸ keeps them within the Boltzmann statistics used
+    here.</p>
+</main>
+<script type="module">
+import { Device, units, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
+import { build, layer, alloy, ohmic, semiconductor, live } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { levels, profiles, showCode, fromQuery, sliceNotation } from './common.js';
+
+// The alloy's ends: GaAs from the library, and Al₀.₃GaAs from it (docs/data.md's estimates). The
+// electrons in the p-type base move at a minority carrier's mobility, 2000 cm²/(V·s), given to
+// both materials.
+const T = 300, VT = (GAS_CONSTANT * T) / FARADAY, X = 0.3;
+const gaas = semiconductor('GaAs', { T }), al = semiconductor('GaAs', { material: 'AlGaAs', T });
+const Dn = 2000e-4 * VT, mass = (x) => 0.067 + 0.083 * x;
+const m = al.materials.AlGaAs;
+m.species['h+'] = { ...m.species['h+'], mu0: units.eV(1.424 + 1.247 * X) };
+m.species['e-'] = { ...m.species['e-'], cRef: m.species['e-'].cRef * Math.pow(mass(X) / mass(0), 1.5) };
+m.epsr = 13.1 - 3 * X;
+for (const lib of [gaas, al]) lib.materials[Object.keys(lib.materials)[0]].species['e-'].D = Dn;
+// how the two line up: the conduction band 62% of the gap's change higher in Al₀.₃GaAs
+const step = { species: 'e-', value: units.eV(0.62 * 1.247 * X) };
+const WB = units.nm(100), NA = units.perCm3(1e18), tauN = 0.5e-9;
+
+// The device, as it's drawn. The grading g (eV) is the gap's drop across the base: positive,
+// the aluminium is at the emitter side (x_E = g/1.247); negative, at the collector side.
+const ends = (g) => (g >= 0 ? [g / 1.247, 0] : [0, -g / 1.247]);
+const hbt = (g, VBE) => {
+  const [xE, xC] = ends(g);
+  return build({
+    T,
+    library: [gaas, al],
+    stack: [
+      ohmic(0), // the emitter
+      alloy('GaAs', 'AlGaAs', units.nm(150), { name: 'emitter', fraction: [1, 1], step, donors: units.perCm3(5e17) }),
+      alloy('GaAs', 'AlGaAs', units.nm(30), { name: 'emitter grade', fraction: [1, xE / X], step, donors: units.perCm3(5e17) }),
+      alloy('GaAs', 'AlGaAs', WB, { name: 'base', fraction: [xE / X, xC / X], step, acceptors: NA }),
+      alloy('GaAs', 'AlGaAs', units.nm(10), { name: 'collector grade', fraction: [xC / X, 0], step, donors: units.perCm3(1e16) }),
+      layer('GaAs', units.nm(390), { name: 'collector', donors: units.perCm3(1e16) }),
+      layer('GaAs', units.nm(100), { name: 'subcollector', donors: units.perCm3(3e17) }),
+      ohmic(2), // the collector, at V_CE = 2 V
+    ],
+    // the base contact: the holes held at V_BE across the base
+    ports: [{ name: 'base', region: 'base', terminal: 'h+', species: { 'h+': 'equilibrium' }, V: VBE }],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { GaAs: 1 / (tauN * NA) } }], // (every layer is GaAs, graded)
+    grid: { hmin: units.nm(0.2), hmax: units.nm(5) },
+  });
+};
+
+// The base transit time τ_B = Q_n / J_C, Q_n the electrons in the neutral base (where p > N_A/2,
+// its edges interpolated between nodes), and the neutral base's width.
+function transit(sol) {
+  const p = sol.c['h+'], n = sol.c['e-'], x = sol.x, half = 0.5 * NA, base = sol.regions.findIndex((r) => r.name === 'base');
+  const gs = [];
+  x.forEach((_, g) => sol.region[g] === base && p[g] > half && gs.push(g));
+  const g0 = gs[0], g1 = gs[gs.length - 1];
+  const cross = (a, b) => {
+    const t = Math.log(half / p[a]) / Math.log(p[b] / p[a]);
+    return { x: x[a] + t * (x[b] - x[a]), n: Math.exp(Math.log(n[a]) + t * Math.log(n[b] / n[a])) };
+  };
+  const L = cross(g0 - 1, g0), R = cross(g1, g1 + 1);
+  let Q = ((L.n + n[g0]) / 2) * (x[g0] - L.x) + ((n[g1] + R.n) / 2) * (R.x - x[g1]);
+  for (let g = g0 + 1; g <= g1; g++) Q += ((n[g] + n[g - 1]) / 2) * (x[g] - x[g - 1]);
+  return { tau: Q / sol.flux['e-'][g1], width: R.x - L.x, from: L.x, to: R.x };
+}
+
+// Kroemer's formula, for a quasi-field that drops the electrons' potential by η kT across W.
+const kroemer = (W, eta) => (Math.abs(eta) < 1e-6 ? (W * W) / (2 * Dn) : ((W * W) / Dn) * (1 / eta - (1 - Math.exp(-eta)) / (eta * eta)));
+// η for a grading g over a width W of the base: the conduction band's drop (the whole gap's, with
+// E_v flat) less the change in ln N_c, both linear across the base's 100 nm.
+const Nc = (x) => gaas.materials.GaAs.species['e-'].cRef * (1 - x / X) + m.species['e-'].cRef * (x / X);
+const eta = (g, W) => {
+  const [xE, xC] = ends(g);
+  return (g / VT - Math.log(Nc(xE) / Nc(xC))) * (W / WB);
+};
+// The theory at V_BE: the width fitted on the ungraded transistor (τ₀ = W²/2D), then for each
+// grading scaled with its own neutral width.
+function theory(VBE, gs) {
+  const flat = transit(new Device(hbt(0, VBE)).solve());
+  const W0 = Math.sqrt(2 * Dn * flat.tau);
+  return (g, width) => {
+    const W = W0 * ((width ?? flat.width) / flat.width);
+    return kroemer(W, eta(g, W));
+  };
+}
+const gradings = Array.from({ length: 13 }, (_, k) => -0.12 + 0.02 * k);
+function sweep(VBE) {
+  const th = theory(VBE);
+  return gradings.map((g) => {
+    const sol = new Device(hbt(g, VBE)).solve(), t = transit(sol);
+    return { g, tau: t.tau, theory: th(g, t.width), beta: sol.terminals.right.current / sol.terminals.base.current };
+  });
+}
+// (All above runs without a page: the demos test runs it against what the page says.)
+
+const grade = document.getElementById('grade'), vbe = document.getElementById('vbe');
+fromQuery(grade);
+fromQuery(vbe);
+let points, th;
+function resweep() {
+  points = sweep(+vbe.value);
+  th = theory(+vbe.value);
+}
+resweep();
+
+const dev = live(hbt(+grade.value, +vbe.value), { onsolution: draw });
+const rebuild = () => dev.set(hbt(+grade.value, +vbe.value));
+grade.addEventListener('input', rebuild);
+vbe.addEventListener('input', rebuild);
+vbe.addEventListener('change', () => {
+  resweep();
+  rebuild();
+});
+
+const ps = (t) => `${(t * 1e12).toFixed(3)} ps`;
+function draw(sol, info) {
+  const g = +grade.value, VBE = sol.terminals.base.V, [xE, xC] = ends(g);
+  document.getElementById('gradeOut').textContent = `${g >= 0 ? '+' : '−'}${Math.abs(g * 1000).toFixed(0)} meV (Al ${xE.toFixed(3)} → ${xC.toFixed(3)})`;
+  document.getElementById('vbeOut').textContent = `${VBE.toFixed(2)} V`;
+  const t = transit(sol), want = th(g, t.width), JC = sol.terminals.right.current, JB = sol.terminals.base.current;
+  document.getElementById('readout').textContent =
+    `base transit time ${ps(t.tau)}, Kroemer ${ps(want)} · collector current ${(JC / 1e4).toExponential(2)} A/cm² · gain β ${(JC / JB).toFixed(0)} · solved in ${info.ms.toFixed(1)} ms` +
+    (info.failed ? ' · (no solution here)' : '');
+  const fine = Array.from({ length: 121 }, (_, k) => -0.12 + 0.002 * k);
+  chart(document.getElementById('tau'), {
+    xlabel: 'base grading, the gap’s drop across it (meV)', ylabel: 'base transit time τ_B (ps)', xlim: [-120, 120],
+    series: [
+      { x: fine.map((v) => v * 1000), y: fine.map((v) => th(v) * 1e12), color: colors[0], dash: [6, 4], width: 1.5, label: 'Kroemer, W from the ungraded base' },
+      { x: points.map((p) => p.g * 1000), y: points.map((p) => p.tau * 1e12), color: colors[2], marker: true, width: 0, label: 'simulated' },
+      { x: [g * 1000], y: [t.tau * 1e12], color: colors[3], marker: true, width: 0, label: 'now' },
+    ],
+  });
+  // the window around the base: the end of the emitter's grade to the start of the collector's depletion
+  const base = sol.regions.find((r) => r.name === 'base'), xlim = [base.x0 - units.nm(25), base.x1 + units.nm(25)];
+  levels(document.getElementById('levels'), sol, { energy: true, xlim, title: `bands and quasi-Fermi levels at V_BE = ${VBE.toFixed(2)} V` });
+  // (in units of a power of ten per cm³, so the axis reads 0 to a few)
+  const inBase = sol.c['e-'].filter((c, k) => sol.x[k] >= t.from && sol.x[k] <= t.to), top = Math.max(...inBase) * AVOGADRO * 1e-6;
+  const decade = Math.floor(Math.log10(top)), sup = String(decade).replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]);
+  profiles(document.getElementById('conc'), sol, {
+    species: ['e-'], xlim, range: [0, (1.15 * top) / 10 ** decade], scale: (AVOGADRO * 1e-6) / 10 ** decade,
+    title: 'the electrons crossing the base', ylabel: `electrons (10${sup} cm⁻³)`, labels: { 'e-': 'n' },
+  });
+}
+document.getElementById('slice').textContent = sliceNotation(hbt(0.08, 1.1), {
+  emitter: 'n‑AlGaAs', 'emitter grade': 'n‑AlGaAs', base: 'p⁺ base', 'collector grade': 'n‑GaAs', collector: 'n‑GaAs', subcollector: 'n⁺‑GaAs', left: 'emitter', right: 'collector',
+});
+showCode();
+</script>
+</body>
+</html>

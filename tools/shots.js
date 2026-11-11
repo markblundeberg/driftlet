@@ -15,6 +15,7 @@ import { findChrome, root, serve } from './serve.js';
 const SHOTS = {
   pn: { query: '', budget: 60000 },
   solar: { query: '', budget: 60000 },
+  hbt: { query: '', budget: 60000 },
   organic: { query: 'LX=25', budget: 60000 },
   perovskite: { query: 't=0.75', budget: 60000 },
   mos: { query: '', budget: 60000 },

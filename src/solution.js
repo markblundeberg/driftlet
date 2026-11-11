@@ -5,7 +5,7 @@
 // the voltage views are NaN for neutral species.
 
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt } from './device.js';
+import { gradedAt, isGraded } from './device.js';
 
 // A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
 // hydrated ions pack, beyond what a dilute layer describes.
@@ -24,7 +24,7 @@ export function makeSolution(solver, result = {}) {
     x: Float64Array.from(grid.x),
     region: Int32Array.from(grid.nodeRegion),
     species: species.map(({ name, z }) => ({ name, z })),
-    regions: model.regions.map((r, k) => ({ name: r.name, material: model.materials[r.material].name, x0: grid.x[grid.regionStart[k]], x1: grid.x[grid.regionEnd[k]] })),
+    regions: model.regions.map((r, k) => ({ name: r.name, material: model.materials[r.material].name, x0: grid.x[grid.regionStart[k]], x1: grid.x[grid.regionEnd[k]], ...(isGraded(r) ? { graded: true } : {}) })),
     phi,
     c: {},
     mu: {},
@@ -562,22 +562,23 @@ export function makeSolution(solver, result = {}) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
   }
-  // Electrons or holes above their band's effective density of states (the material's cRef)
-  // under Boltzmann statistics: degenerate, where those statistics no longer hold (a surface
-  // driven past what a reaction can take away piles holes up to 1e9 mol/m³ and still converges).
+  // Electrons or holes above their band's effective density of states (cRef at that node: the
+  // material's, or a graded region's) under Boltzmann statistics: degenerate, where those
+  // statistics no longer hold (a surface driven past what a reaction can take away piles holes
+  // up to 1e9 mol/m³ and still converges).
   model.regions.forEach((reg, r) => {
     const mat = model.materials[reg.material];
     if (mat.conductor) return;
     model.species.forEach((sp, i) => {
       if ((sp.name !== 'e-' && sp.name !== 'h+') || !mat.present[i] || mat.modelOf?.[i] >= 0) return;
-      let top = 0, at = NaN;
+      let worst = 0, top = 0, ref = NaN, at = NaN;
       for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
-        const c = solver.c[g * model.species.length + i];
-        if (c > top) [top, at] = [c, grid.x[g]];
+        const k = g * model.species.length + i, c = solver.c[k];
+        if (c / solver.cRef[k] > worst) [worst, top, ref, at] = [c / solver.cRef[k], c, solver.cRef[k], grid.x[g]];
       }
-      if (top > mat.cRef[i]) {
+      if (worst > 1) {
         sol.warnings.push(
-          `${reg.name}${stopped}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, above its cRef (${mat.cRef[i].toExponential(2)}, the band's effective density of states), where Boltzmann statistics no longer hold: ` +
+          `${reg.name}${stopped}: ${sp.name} reaches ${top.toExponential(2)} mol/m³ at x = ${at.toExponential(3)} m, above its cRef (${ref.toExponential(2)}, the band's effective density of states), where Boltzmann statistics no longer hold: ` +
             'give the material Fermi–Dirac statistics (docs/statistics.md), or ask whether this state is physical (a surface driven past what can carry its carriers away).',
         );
       }

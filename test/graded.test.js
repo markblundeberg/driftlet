@@ -424,3 +424,12 @@ test('alloy: what it refuses, and says why', () => {
   bad(alloy('GaAs', 'AlGaAs', 1e-6, { step }), /differ in T/, [lib[0], hot]);
   assert.throws(() => alloy('GaAs', 'AlGaAs', 1e-6, { step, grade: {} }), /writes the layer's grade itself/);
 });
+
+test('graded cRef: the degeneracy warning reads the graded band’s density of states', () => {
+  // n-type at 0.08 mol/m³, above the material's cRef for e⁻ (0.047) but below the graded one (0.5)
+  const def = (grade) => si(grade, { fixedCharge: FARADAY * 0.08 });
+  const degenerate = (sol) => sol.warnings.some((w) => /e- reaches .* above its cRef/.test(w));
+  assert.ok(degenerate(new Device(def(undefined)).solve()));
+  assert.ok(!degenerate(new Device(def({ 'e-': { cRef: { x: [0, 2e-6], values: [0.5, 0.5] } } })).solve()));
+  assert.ok(degenerate(new Device(def({ 'e-': { cRef: { x: [0, 2e-6], values: [0.5, 0.06] } } })).solve())); // (0.06 at the right end)
+});

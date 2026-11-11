@@ -576,9 +576,9 @@ for live demos.
   entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
   doesn't.) Still to come: a region's $`D_{\mathrm{inhomog}}(x)`$, for gradings given in another
   convention; graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
-  statistics; a bowed alloy (values not linear in the composition); and a graded-gap demo (an
-  HBT's base). The kit's `alloy()` (between two library materials, its alignment given as at a
-  face) is done.
+  statistics; and a bowed alloy (values not linear in the composition). Done with it: the kit's
+  `alloy()` (between two library materials, its alignment given as at a face) and a graded-base
+  transistor demo (demos/hbt.html, its transit time held to Kroemer's formula).
 - **More of the diffuse layer below the grid** (`interfaces[f].diffuse`, src/diffuse.js, done
   2026-10-25 for electrodes, charged faces, membranes' permeabilities and gates, crowding on the
   bulk's lattice, and a reactant's transport across the layer). Not yet: a contact's own (a

@@ -1510,7 +1510,7 @@ Notes:
 | Field | Contents |
 |---|---|
 | `x`, `region` | node positions and region index; each interface position appears twice (one node per side) |
-| `species`, `regions` | `{ name, z }` for each species; `{ name, material, x0, x1 }` for each region |
+| `species`, `regions` | `{ name, z }` for each species; `{ name, material, x0, x1 }` for each region (and `graded: true` for a [graded](#graded-regions) one) |
 | `phi` | bookkeeping $`\phi`$, V (`NaN` where undefined) |
 | `c[name]`, `mu[name]`, `muStd[name]` | concentration, $`\bar\mu`$, standard level $`\mu^\circ + zF\phi`$ (`NaN` where absent) |
 | `V[name]`, `Vstd[name]` | species voltage $`\bar\mu/(zF)`$ and standard level as a voltage (charged species) |
