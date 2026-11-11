@@ -574,14 +574,15 @@ for live demos.
   inhomog page); driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, so within a region it's
   0 and the split of a grading between the charged species is an input. (26ff538 called this
   entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
-  doesn't.) Planned, opt-in: a region's built-in static polarization, `grade.P0` (C/m², at
-  segment midpoints, default 0), so a grading can be given in its own gauge rather than folded
-  into $`\mu^\circ`$ by hand (the owner, 11 Nov: one gauge imposed is a restriction on
-  principle, if a minor one). Poisson sees only $`\rho_{\mathrm{fixed}} - \nabla\cdot P_0`$, so
-  its test is three forms of one device agreeing: $`P_0(x)`$; its bound charge as fixed charge
-  and face sheets; and every charged $`\mu^\circ_i`$ graded by $`z_iFf`$ with
-  $`\varepsilon f' = -P_0`$ (D the same in the first and third; the second's lacks $`P_0`$). With
-  it, `fixedCharge` as a profile (`{ x, values }`, as `c0` takes), for graded doping.
+  doesn't.) A gradient's $`\mu^\circ`$ given in another gauge, one with a built-in polarization
+  $`P_0(x)`$ ($`D_{\mathrm{inhomog}}`$) inside the region, needs no knob of its own: Poisson sees
+  only $`\rho_{\mathrm{fixed}} - \nabla\cdot P_0`$, so those $`\mu^\circ`$ as given, with
+  $`-dP_0/dx`$ as fixed charge and each jump of $`P_0`$ as a face's `sheetCharge`, is the same
+  device (every $`\bar\mu`$, $`\phi`$ and current; only $`D`$'s split of free and bound differs).
+  Planned (with the owner, 11 Nov): `fixedCharge` as a profile (`{ x, values }`, as `c0` takes),
+  which also covers graded doping; tested by that equivalence against the same device's
+  $`\mu^\circ`$ moved into this gauge ($`z_iFf`$ each, $`\varepsilon f' = -P_0`$), and against a
+  staircase of uniform layers.
   Still to come: graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
   statistics; and a bowed alloy (values not linear in the composition). Done with it: the kit's
   `alloy()` (between two library materials, its alignment given as at a face) and a graded-base
