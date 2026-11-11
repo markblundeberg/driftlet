@@ -3,6 +3,26 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Graded regions grade D and ε too: `grade['e-'].D` (m²/s) and `grade.epsr`, profiles against x
+  like μ° and cRef, taken at each segment's midpoint, where the flux and the displacement are.
+  Held to a series resistance (Δc/∫dx/D) and a series capacitance (ε₀/∫dx/ε_r, its impedance
+  too), each second order in the cell, and a diode with D graded is the limit of a staircase.
+  `sol.D` reads the profile; a D graded where the material's is 0, or an ε in a strictly neutral
+  material, is refused. A non-ideal species' D can now be graded (its μ° and cRef still can't).
+- In the kit, `alloy(from, to, length, { fraction, step | dipole })`: a layer between two library
+  materials, its composition a profile against the layer's own x, each value that differs going
+  linearly with it. The ends line up as at a face between them (a step or a dipole, no default),
+  folded into the far end's μ°: held at one end, the layer is that material lined up as the face
+  would line it up, to round-off.
+- The graded staircase test compared unlike things twice, and passed by their cancelling: its
+  layers had no recombination (kf is keyed by material), and its end layers held values half a
+  layer in from where the contact reads them. Both fixed; the error is now second order in the
+  layers, as it should be.
+- Docs: a stray backspace in device.md (a `\bar` written through an unescaped string) is
+  `\bar` again, and the docs test refuses control characters in the docs.
+
 ## 1.15.0 (2026-11-10)
 
 Graded regions: a band gap, a density of states or an ion's solvation can vary within one layer.

@@ -149,16 +149,18 @@ regions: [
   [conventions](conventions.md#transport)). A strongly mixed region is the local stand-in for a
   well-stirred bath.
 - `grid`: per-region override of the grid options (below).
-- `grade`: a graded region, whose species' standard chemical potential and reference
-  concentration vary within it: `{ 'e-': { mu0, cRef }, … }`, each a profile `{ x, values }`
-  against the device's x (J/mol and mol/m³; piecewise linear, constant beyond its ends), in place
-  of the material's values for that species. See [graded regions](#graded-regions).
+- `grade`: a graded region, whose species' standard chemical potential, reference
+  concentration and diffusion coefficient, and whose permittivity, vary within it:
+  `{ 'e-': { mu0, cRef, D }, …, epsr }`, each a profile `{ x, values }` against the device's x
+  (J/mol, mol/m³, m²/s, and $`\varepsilon_r`$; piecewise linear, constant beyond its ends), in
+  place of the material's values. See [graded regions](#graded-regions).
 
 ### Graded regions
 
 A graded band gap (an alloy whose composition changes across a layer), a density of states that
 changes with it, or an ion's solvation changing across a mixed solvent: one region whose
-species' $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ vary in x, rather than a stack of layers.
+species' $`\mu^\circ`$, $`c_{\mathrm{ref}}`$ and $`D`$, and whose $`\varepsilon_r`$, vary in x,
+rather than a stack of layers.
 
 ```js
 import { Device, units } from 'driftlet';
@@ -191,11 +193,16 @@ const end = sol.x.length - 1, Ec = (g) => -sol.Vstd['e-'][g], Ev = (g) => -sol.V
 console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0)).toFixed(4)} eV`); // => 0.2800, 0.0000
 ```
 
-- **The values are each node's**: the profile is sampled at the nodes, and the
+- **Where the values are taken**: $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ at the nodes, and the
   Scharfetter–Gummel flux along each segment drifts down the whole change in
-  $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ across it. So a level $`ar\mu`$ still
-  carries exactly nothing, and a linear $`\mu^\circ`$ gives the exact flux on any grid
-  (test/graded.test.js).
+  $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ across it. So a level $`\bar\mu`$ still
+  carries exactly nothing, and a linear $`\mu^\circ`$ gives the exact flux on any grid.
+  $`D`$ and $`\varepsilon_r`$ at each segment's midpoint, where its flux and displacement are:
+  second order in the cell, held to a series resistance ($`\Delta c / \int dx/D`$) and a series
+  capacitance ($`\varepsilon_0 / \int dx/\varepsilon_r`$) in test/graded.test.js. `sol.D` reads
+  the profile at the nodes. Grading leaves what a region is alone: a $`D`$ graded where the
+  material's is 0, or an $`\varepsilon_r`$ in a strictly neutral one, is refused. (A species
+  named `epsr` is still graded by that name; the permittivity then can't be.)
 - **What a grading means, and its gauge.** In a graded medium, how a level's slope splits
   between $`\mu^\circ`$ and $`\phi`$ is a convention: $`\phi \to \phi + f(x)`$ with every
   $`\mu^\circ_i \to \mu^\circ_i - z_i F f(x)`$ leaves every $`\bar\mu_i`$, band edge and flux as
@@ -209,13 +216,14 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   composition moves each level is yours to give, and nothing is defaulted. (Values from another
   convention, say against a mean inner potential, carry their own $`D_{\mathrm{inhomog}}`$:
   fold it into the $`\mu^\circ`$ first.) The test suite checks both halves on a graded diode:
-  it's the limit of a staircase of thin uniform layers joined with no dipole (64 layers agree to
-  3e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
+  it's the limit of a staircase of thin uniform layers joined with no dipole (second order in
+  the layers: 64 agree to 1.3e-4, with $`D`$ graded to 1e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
   match, is the same device (to 1e-9).
 - **Faces and contacts read the edge**: an alignment (`step`) beside a graded region is between
   the standard levels at its edge, and a bath at a graded end is the material as it is there.
-- **Not yet graded**: $`\varepsilon`$ and $`D`$ (a region's own, uniform), and species with
-  non-ideal statistics (refused). `describe()` reports a region's material values.
+- **Not yet graded**: a non-ideal species' $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ (refused;
+  its $`D`$ can be), a built-in $`D_{\mathrm{inhomog}}(x)`$ within a region, and kinetics (a
+  reaction's rate constants are the material's). `describe()` reports a region's material values.
 
 ## Interfaces
 

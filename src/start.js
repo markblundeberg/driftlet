@@ -88,7 +88,7 @@
 
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, sourceAt } from './device.js';
+import { gradedAt, isGraded, sourceAt } from './device.js';
 import { profileAt, SolverError } from './solver.js';
 
 /**
@@ -118,7 +118,7 @@ export function initFromComposition(s) {
   for (let r = 0; r < regions.length; r++) {
     if (r > 0) phiHat += interfaces[r - 1].dipole / s.VT;
     // (a graded region's material as it is at each node: here at its start, below node by node)
-    const reg = regions[r], base = materials[reg.material], graded = reg.grade.some(Boolean);
+    const reg = regions[r], base = materials[reg.material], graded = isGraded(reg);
     let mat = graded ? gradedAt(base, reg, grid.x[grid.regionStart[r]]) : base;
     mode.fill(0);
     const profiled = reg.c0Profile.some((p) => p !== null);

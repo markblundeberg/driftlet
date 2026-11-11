@@ -798,8 +798,8 @@ export class SmallSignal {
             }
             continue;
           }
-          const zi = z[i], r1 = 1 + i, cL = c[s * n + i], g = mat.D[i] / h;
-          const pe = (vel * h) / mat.D[i];
+          const zi = z[i], r1 = 1 + i, cL = c[s * n + i], Ds = this.segD[s * n + i], g = Ds / h;
+          const pe = (vel * h) / Ds;
           const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe;
           const sg = sgFlux(g, d, u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe, cL, c[(s + 1) * n + i], this.sg);
           const dNdd = sg[1];
@@ -811,7 +811,7 @@ export class SmallSignal {
           }
         }
         // The displacement toward +x, ε(φ_L − φ_R)/h (in φ̂ = φ/V_T).
-        const k = hasPhi ? (mat.epsr * EPS0 * this.VT) / h : 0;
+        const k = hasPhi ? (this.segEpsr[s] * EPS0 * this.VT) / h : 0;
         if (k > 0) {
           add(bL * M, 0, k);
           add(bR * M, 0, -k);

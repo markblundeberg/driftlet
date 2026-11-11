@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { alloy, build, layer, ohmic, semiconductor } from '../src/kit.js';
 
 // Graded regions: a species' μ° and cRef varying within a region, as profiles { x, values }
 // against the device's x (regions[r].grade). The flux along a segment drifts down the
@@ -73,6 +74,66 @@ test('graded μ°: the same flux as a staircase of uniform layers, in the limit 
   assert.ok(errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `second order in 1/n: ${errs}`); // (the midpoint rule's)
 });
 
+test('graded D: a neutral species through a D that varies is a series of resistances, N = Δc / ∫dx/D', () => {
+  // Uniform μ°, so no drift: N = −D(x) dc/dx is the same everywhere, and Δc = N ∫dx/D. D rises
+  // linearly 10-fold, ∫dx/D = L ln 10 / (D₁ − D₀); the grid's sum of h/D at the midpoints is
+  // second order in h.
+  const D0 = 1e-10, D1 = 1e-9, cL = cRef, cR = cRef * Math.exp(-1);
+  const want = (cL - cR) / ((L * Math.log(D1 / D0)) / (D1 - D0));
+  const grade = { A: { D: { x: [0, L], values: [D0, D1] } } };
+  const errs = [L / 20, L / 80, L / 320].map((h) => {
+    const sol = new Device(neutral({ grade, muL: 0, muR: -RT, grid: { hmin: h, hmax: h } })).solve();
+    assert.ok(sol.converged, sol.warnings.join('; '));
+    const N = sol.contacts.left.flux.A;
+    assert.ok(Math.abs(sol.flux.A[sol.x.length >> 1] / N - 1) < 1e-9); // (the same through every segment)
+    return Math.abs(N / want - 1);
+  });
+  assert.ok(errs[2] < 3e-5, `${errs}`); // (3.5e-3, 2.3e-4, 1.4e-5)
+  assert.ok(errs[1] < errs[0] / 12 && errs[2] < errs[1] / 12, `second order in h: ${errs}`);
+  // and sol.D reads the profile at each node
+  const sol = new Device(neutral({ grade, muL: 0, muR: -RT })).solve(), g = sol.x.length >> 1;
+  assert.ok(Math.abs(sol.D.A[g] / (D0 + ((D1 - D0) * sol.x[g]) / L) - 1) < 1e-12);
+});
+
+test('graded ε: a dielectric between two metals holds D = ε₀ ΔV / ∫dx/ε_r', () => {
+  // An insulator with no carriers, its ε_r rising linearly 3.9 → 25 across it, between two metal
+  // plates the displacement is the same through it, and the plates' charge is the series
+  // capacitance's, ε₀ / ∫dx/ε_r = ε₀ (e₁ − e₀) / (d ln(e₁/e₀)), times the voltage.
+  const d = 20e-9, e0 = 3.9, e1 = 25, dV = 0.3, EPS0 = 8.8541878128e-12;
+  // (the plates meet it through a Helmholtz layer each, C_H in series)
+  const CH = 100, face = { phi: { type: 'capacitive', C: CH }, zeroCharge: 0 };
+  const want = dV / ((d * Math.log(e1 / e0)) / (EPS0 * (e1 - e0)) + 2 / CH);
+  const def = (h, grade) => ({
+    T,
+    species: [{ name: 'e-', z: -1 }],
+    materials: { Al: { conductor: { species: 'e-', conductivity: 3.5e7 } }, ox: { epsr: e0, species: {} } },
+    regions: [
+      { material: 'Al', length: 50e-9 },
+      { material: 'ox', length: d, grade },
+      { material: 'Al', length: 50e-9 },
+    ],
+    interfaces: [face, face],
+    contacts: { left: { V: dV, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'neutral' } },
+    grid: { hmin: h, hmax: h },
+  });
+  const grade = { epsr: { x: [50e-9, 50e-9 + d], values: [e0, e1] } };
+  const errs = [d / 10, d / 40, d / 160].map((h) => {
+    const sol = new Device(def(h, grade)).solve();
+    assert.ok(sol.converged, sol.warnings.join('; '));
+    const D = sol.interfaces[0].D;
+    assert.ok(Math.abs(sol.interfaces[1].D / D - 1) < 1e-9, `${sol.interfaces[1].D} vs ${D}`);
+    return Math.abs(Math.abs(D) / want - 1);
+  });
+  assert.ok(errs[2] < 5e-5, `${errs}`); // (6.1e-3, 4.0e-4, 2.5e-5)
+  assert.ok(errs[1] < errs[0] / 12 && errs[2] < errs[1] / 12, `second order in h: ${errs}`);
+  // and its impedance at 1 kHz is that capacitance's, 1/(iωC)
+  const dev = new Device(def(d / 160, grade)), C = Math.abs(dev.solve().interfaces[0].D) / dV, Z = dev.impedance([1e3]).Z;
+  assert.ok(Math.abs(-1 / (2 * Math.PI * 1e3 * Z.im[0]) / C - 1) < 1e-6 && Math.abs(Z.re[0]) < 1e-6 * Math.abs(Z.im[0]), `Z (${Z.re[0]}, ${Z.im[0]}) for C ${C}`);
+  // (ungraded, the plain parallel plate's ε₀ε_r ΔV/d)
+  const flat = new Device(def(d / 10)).solve();
+  assert.ok(Math.abs(Math.abs(flat.interfaces[0].D) / (dV / (d / (EPS0 * e0) + 2 / CH)) - 1) < 1e-9, `${flat.interfaces[0].D}`);
+});
+
 // A graded-gap semiconductor: e⁻ and h⁺ with μ° and cRef graded at different rates, so the band
 // edges tilt by different amounts (the quasi-fields). At equilibrium the Fermi level is flat,
 // nothing flows, and n p = n_i²(x) at every node.
@@ -129,7 +190,9 @@ test('graded gap: a face beside a graded region aligns by the standard levels at
 test('grade: what it refuses, and says why', () => {
   const bad = (grade, msg) => assert.throws(() => new Device(neutral({ grade, muL: 0, muR: 0 })), (e) => e instanceof DeviceError && msg.test(e.message), JSON.stringify(grade));
   bad({ B: { mu0: { x: [0], values: [0] } } }, /grade\.B: unknown species/);
-  bad({ A: { D: { x: [0], values: [1e-9] } } }, /grade\.A.*D/);
+  bad({ A: { D: { x: [0, L], values: [1e-9, 0] } } }, /grade\.A\.D\.values\[1\] must be a diffusion coefficient > 0/);
+  bad({ epsr: { x: [0, L], values: [2, 3] } }, /grade\.epsr: 'm' is strictly neutral/);
+  bad({ A: { D: { x: [0], values: [1e-9] }, eps: 1 } }, /grade\.A.*eps/);
   bad({ A: { cRef: { x: [0, L], values: [1, 0] } } }, /grade\.A\.cRef\.values\[1\] must be a concentration > 0/);
   bad({ A: { mu0: 3 } }, /grade\.A\.mu0 must be a profile/);
   bad({ A: 'x' }, /grade\.A must be/);
@@ -139,11 +202,11 @@ test('grade: what it refuses, and says why', () => {
 // E_v falls). The other routes through the solver read the graded drift too: the impedance's
 // linearisation (its 1 Hz Z is the steady state's dV/dI) and a transient settling where the
 // steady solve goes.
-const diode = (V) => {
+const diode = (V, grade = gapFrom(1e-6)) => {
   const def = si(gap);
   def.regions = [
     { material: 's', length: 1e-6, name: 'n', fixedCharge: FARADAY * 0.166 },
-    { material: 's', length: 2e-6, name: 'p', fixedCharge: -FARADAY * 0.0166, grade: gapFrom(1e-6) },
+    { material: 's', length: 2e-6, name: 'p', fixedCharge: -FARADAY * 0.0166, grade },
   ];
   def.interfaces = [{ dipole: 0 }];
   def.contacts.right.V = V;
@@ -151,27 +214,43 @@ const diode = (V) => {
   return def;
 };
 
+// The same p layer with its permittivity and both carriers' diffusion coefficients graded too, as
+// an alloy's are (ε up 11.7 → 13, D_e⁻ down by half, D_h⁺ up by a third).
+const allFrom = (x0) => {
+  const g = gapFrom(x0), at = [x0, x0 + 2e-6];
+  g['e-'].D = { x: at, values: [3.6e-3, 1.8e-3] };
+  g['h+'].D = { x: at, values: [1.2e-3, 1.6e-3] };
+  g.epsr = { x: at, values: [11.7, 13] };
+  return g;
+};
+
 test('graded gap: the impedance at low frequency is the steady state’s dV/dI', () => {
   const V = 0.45, dV = 1e-4;
-  const I = (v) => new Device(diode(v)).solve().terminals.right.current;
-  const Rdc = (2 * dV) / (I(V + dV) - I(V - dV));
-  const Z = new Device(diode(V)).impedance([1e-3]);
-  assert.ok(Math.abs(Z.Z.re[0] / Rdc - 1) < 1e-5, `${Z.Z.re[0]} vs ${Rdc}`);
-  // (and grading moved it: the same diode ungraded differs)
+  const Rs = [gapFrom(1e-6), allFrom(1e-6)].map((grade) => {
+    const I = (v) => new Device(diode(v, grade)).solve().terminals.right.current;
+    const Rdc = (2 * dV) / (I(V + dV) - I(V - dV));
+    const Z = new Device(diode(V, grade)).impedance([1e-3]);
+    assert.ok(Math.abs(Z.Z.re[0] / Rdc - 1) < 1e-5, `${Z.Z.re[0]} vs ${Rdc}`);
+    return Rdc;
+  });
+  // (and grading moved it: the same diode ungraded differs, and grading ε and D too moves it again)
   const flat = diode(V);
   delete flat.regions[1].grade;
-  assert.ok(Math.abs(new Device(flat).impedance([1e-3]).Z.re[0] / Rdc - 1) > 0.05);
+  assert.ok(Math.abs(new Device(flat).impedance([1e-3]).Z.re[0] / Rs[0] - 1) > 0.05);
+  assert.ok(Math.abs(Rs[1] / Rs[0] - 1) > 0.05, `${Rs}`);
 });
 
 test('graded gap: a transient settles where the steady solve goes', () => {
   // (from equilibrium, as the docs advise: a junction started from its doping's layout is a
   // violent start, graded or not)
-  const dev = new Device(diode(0));
-  dev.solve();
-  dev.set({ contacts: { right: { V: 0.4 } } });
-  const settled = dev.advance(1e-2), steady = new Device(diode(0.4)).solve();
-  assert.ok(settled.done && settled.converged, settled.warnings.join('; '));
-  assert.ok(Math.abs(settled.terminals.right.current / steady.terminals.right.current - 1) < 1e-5, `${settled.terminals.right.current} vs ${steady.terminals.right.current}`);
+  for (const grade of [gapFrom(1e-6), allFrom(1e-6)]) {
+    const dev = new Device(diode(0, grade));
+    dev.solve();
+    dev.set({ contacts: { right: { V: 0.4 } } });
+    const settled = dev.advance(1e-2), steady = new Device(diode(0.4, grade)).solve();
+    assert.ok(settled.done && settled.converged, settled.warnings.join('; '));
+    assert.ok(Math.abs(settled.terminals.right.current / steady.terminals.right.current - 1) < 1e-5, `${settled.terminals.right.current} vs ${steady.terminals.right.current}`);
+  }
 });
 
 test('graded μ°: a closed box keeps the amount its c0 gives, and settles to c ∝ cRef e^{−μ°/RT}', () => {
@@ -198,33 +277,57 @@ test('graded μ°: a closed box keeps the amount its c0 gives, and settles to c 
   }
 });
 
+// A profile's value at x, piecewise linear (flat beyond its ends).
+const atX = ({ x: xs, values: v }, x) => {
+  if (x <= xs[0]) return v[0];
+  for (let q = 1; q < xs.length; q++) if (x <= xs[q]) return v[q - 1] + ((v[q] - v[q - 1]) * (x - xs[q - 1])) / (xs[q] - xs[q - 1]);
+  return v[v.length - 1];
+};
+// The diode's p layer graded between flat ends (a quarter micron each): a staircase's end layers
+// then hold the values its contact and its face read (with gradings that run to the ends, they
+// hold the values half a layer in, a first-order error in 1/k that isn't the graded region's).
+const rampFrom = (x0, what) => {
+  const at = [x0, x0 + 0.25e-6, x0 + 1.75e-6, x0 + 2e-6], two = (a, b) => ({ x: at, values: [a, a, b, b] });
+  const g = { 'e-': {}, 'h+': {} };
+  if (what.gap) Object.assign(g['e-'], { mu0: two(0, -15e3), cRef: two(0.047, 0.03) }), (g['h+'].mu0 = two(108e3, 120e3));
+  if (what.D) (g['e-'].D = two(3.6e-3, 1.8e-3)), (g['h+'].D = two(1.2e-3, 1.6e-3));
+  return g;
+};
+// The diode with its p layer as k uniform layers, each at its middle's values, joined by faces
+// with no dipole (φ and D continuous), recombining as the graded layer does; its current.
+const staircase = (V, grade, k, fine) => {
+  const def = diode(V), base = def.materials.s, x0 = 1e-6, w = 2e-6 / k;
+  def.regions = [def.regions[0]];
+  def.interfaces = [];
+  for (let j = 0; j < k; j++) {
+    const xm = x0 + (j + 0.5) * w, sp = structuredClone(base.species);
+    for (const [nm, gr] of Object.entries(grade)) for (const [f, p] of Object.entries(gr)) sp[nm][f] = atX(p, xm);
+    def.materials[`s${j}`] = { ...base, species: sp };
+    def.regions.push({ material: `s${j}`, length: w, fixedCharge: -FARADAY * 0.0166 });
+    def.interfaces.push({ dipole: 0 });
+  }
+  def.bulkReactions = [{ equation: 'e- + h+ = 0', kf: Object.fromEntries(Object.keys(def.materials).map((m) => [m, 1e8])) }];
+  const sol = new Device({ ...def, grid: fine }).solve();
+  assert.ok(sol.converged, sol.warnings.join('; '));
+  return sol.terminals.right.current;
+};
+
 test('graded gap: the diode is the limit of a staircase of uniform layers joined with no dipole', () => {
   // What a graded region means for charged species: μ° and cRef against the region's φ, with
-  // D = −ε∇φ (no built-in displacement inside a region). A staircase of thin uniform layers,
-  // each at its middle's values, joined by faces with no dipole (φ and D continuous), converges
-  // on it.
+  // D = −ε∇φ (no built-in displacement inside a region).
   // (on a grid fine enough that its own error, ~5e-4 at hmax 20 nm, doesn't hide the limit)
-  const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 };
-  const graded = new Device({ ...diode(V), grid: fine }).solve().terminals.right.current;
-  const at = (p, x) => p.values[0] + ((p.values[1] - p.values[0]) * (x - p.x[0])) / (p.x[1] - p.x[0]);
-  const errs = [4, 16, 64].map((k) => {
-    const def = diode(V), base = def.materials.s, x0 = 1e-6, w = 2e-6 / k;
-    def.regions = [def.regions[0]];
-    def.interfaces = [];
-    for (let j = 0; j < k; j++) {
-      const xm = x0 + (j + 0.5) * w, sp = structuredClone(base.species);
-      sp['e-'].mu0 = at(gap['e-'].mu0, xm - x0);
-      sp['e-'].cRef = at(gap['e-'].cRef, xm - x0);
-      sp['h+'].mu0 = at(gap['h+'].mu0, xm - x0);
-      def.materials[`s${j}`] = { ...base, species: sp };
-      def.regions.push({ material: `s${j}`, length: w, fixedCharge: -FARADAY * 0.0166 });
-      def.interfaces.push({ dipole: 0 });
-    }
-    const sol = new Device({ ...def, grid: fine }).solve();
-    assert.ok(sol.converged, sol.warnings.join('; '));
-    return Math.abs(sol.terminals.right.current / graded - 1);
-  });
-  assert.ok(errs[2] < 1e-4, `64 layers: ${errs}`); // (1.3e-2, 3.8e-4, 3.4e-5)
+  const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 }, grade = rampFrom(1e-6, { gap: true });
+  const graded = new Device({ ...diode(V, grade), grid: fine }).solve().terminals.right.current;
+  const errs = [4, 16, 64].map((k) => Math.abs(staircase(V, grade, k, fine) / graded - 1));
+  assert.ok(errs[2] < 3e-4, `64 layers: ${errs}`); // (1.8e-2, 1.5e-3, 1.3e-4)
+  assert.ok(errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `second order in 1/k: ${errs}`);
+});
+
+test('graded D: the diode is again the limit of a staircase, each layer at its middle’s D', () => {
+  const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 }, grade = rampFrom(1e-6, { D: true });
+  const graded = new Device({ ...diode(V, grade), grid: fine }).solve().terminals.right.current;
+  const errs = [4, 16, 64].map((k) => Math.abs(staircase(V, grade, k, fine) / graded - 1));
+  assert.ok(errs[2] < 1e-4, `64 layers: ${errs}`); // (7.5e-3, 3.3e-4, 8.5e-6)
   assert.ok(errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `converging: ${errs}`);
 });
 
@@ -258,4 +361,66 @@ test('graded gap: φ → φ + f with μ°_i → μ°_i − z_i F f is a symmetry
   const plain = stair(Array(k).fill(0)), shifted = stair(Array.from({ length: k }, (_, j) => 0.05 * Math.sin(j)));
   assert.ok(Math.abs(shifted.terminals.right.current / plain.terminals.right.current - 1) < 1e-9, `${shifted.terminals.right.current} vs ${plain.terminals.right.current}`);
   for (const g of [10, plain.x.length >> 1, plain.x.length - 10]) assert.ok(Math.abs(shifted.V['e-'][g] - plain.V['e-'][g]) < 1e-9 && Math.abs(shifted.Vstd['e-'][g] - plain.Vstd['e-'][g]) < 1e-9, `levels at node ${g}`);
+});
+
+// driftlet/kit's alloy(): a layer between two library materials, graded by composition.
+const algaas = (x, name = 'AlGaAs') => {
+  // docs/data.md's estimates: E_g = 1.424 + 1.247x eV, m_e = 0.067 + 0.083x
+  const lib = semiconductor('GaAs', { material: name, T: 300 }), m = lib.materials[name], VT = (GAS_CONSTANT * 300) / FARADAY;
+  m.species['h+'] = { ...m.species['h+'], mu0: units.eV(1.424 + 1.247 * x) };
+  m.species['e-'] = { ...m.species['e-'], D: 1000e-4 * VT, cRef: m.species['e-'].cRef * Math.pow((0.067 + 0.083 * x) / 0.067, 1.5) };
+  m.epsr = 13.1 - 3 * x;
+  return lib;
+};
+const dEc = 0.62 * 1.247 * 0.3; // eV, AlGaAs's conduction band above GaAs's
+
+test('alloy: held at one end, it is that material, lined up as a face would line it up', () => {
+  // n-AlGaAs | p-GaAs, joined by a face with a conduction-band step, against n-AlGaAs | an alloy
+  // from AlGaAs to GaAs held at fraction 1 throughout, given the same step: the alloy folds the
+  // face's dipole into GaAs's μ° (φ → φ + f with μ° → μ° − zFf), so it's the same device.
+  const lib = [semiconductor('GaAs', { T: 300 }), algaas(0.3)], kf = { GaAs: 1e8, AlGaAs: 1e8 };
+  const step = { species: 'e-', value: units.eV(-dEc) };
+  const def = (p) => build({ T: 300, library: lib, stack: [ohmic(0), layer('AlGaAs', 1e-6, { donors: units.perCm3(1e17) }), ...p, ohmic(1.0)], bulkReactions: [{ equation: 'e- + h+ = 0', kf }], grid: { hmin: 1e-9, hmax: 20e-9 } });
+  const faced = new Device(def([{ step }, layer('GaAs', 1e-6, { acceptors: units.perCm3(1e17) })])).solve();
+  const alloyed = new Device(def([alloy('AlGaAs', 'GaAs', 1e-6, { fraction: [1, 1], step, acceptors: units.perCm3(1e17) })])).solve();
+  assert.ok(faced.converged && alloyed.converged);
+  assert.ok(Math.abs(alloyed.current / faced.current - 1) < 1e-7, `${alloyed.current} vs ${faced.current}`);
+  // the same levels, and the same band edges (φ differs by the folded dipole on the right)
+  for (const g of [5, faced.x.length >> 1, faced.x.length - 5]) {
+    for (const nm of ['e-', 'h+']) assert.ok(Math.abs(alloyed.V[nm][g] - faced.V[nm][g]) < 1e-7 && Math.abs(alloyed.Vstd[nm][g] - faced.Vstd[nm][g]) < 1e-7, `${nm} at node ${g}`);
+  }
+  assert.ok(Math.abs(alloyed.phi[faced.x.length - 5] - faced.phi[faced.x.length - 5]) > 0.1); // (and φ's convention did move)
+});
+
+test('alloy: what build() writes, against the device’s x', () => {
+  const lib = [semiconductor('GaAs', { T: 300 }), algaas(0.3)];
+  const step = { species: 'e-', value: units.eV(dEc) };
+  const def = build({ T: 300, library: lib, stack: [ohmic(0), layer('GaAs', 0.5e-6), alloy('GaAs', 'AlGaAs', 1e-6, { step, fraction: { x: [0, 0.4e-6, 1e-6], values: [0, 0.5, 1] } }), ohmic(0)] });
+  const g = def.regions[1].grade, A = lib[0].materials.GaAs, B = lib[1].materials.AlGaAs;
+  assert.deepEqual(g['e-'].mu0.x, [0.5e-6, 0.9e-6, 1.5e-6]); // (the layer's knots, moved to where it starts)
+  // e⁻'s standard level rises by the step across it, half of it at the composition's midpoint
+  assert.ok(Math.abs(g['e-'].mu0.values[2] - g['e-'].mu0.values[0] - units.eV(dEc)) < 1e-9);
+  assert.ok(Math.abs(g['e-'].mu0.values[1] - g['e-'].mu0.values[0] - units.eV(dEc) / 2) < 1e-9);
+  // h⁺'s by the rest of the gap's widening: E_v = −(μ°_h⁺ + Fφ) falls by ΔE_g − ΔE_c
+  const dEg = B.species['h+'].mu0 - A.species['h+'].mu0 + B.species['e-'].mu0 - A.species['e-'].mu0;
+  assert.ok(Math.abs(g['h+'].mu0.values[2] - g['h+'].mu0.values[0] - (dEg - units.eV(dEc))) < 1e-6);
+  [A.epsr, (A.epsr + B.epsr) / 2, B.epsr].forEach((e, k) => assert.ok(Math.abs(g.epsr.values[k] - e) < 1e-12, `ε_r at knot ${k}`));
+  assert.equal(g['h+'].D, undefined); // (what doesn't differ isn't graded)
+  assert.equal(def.regions[1].material, 'GaAs');
+  assert.ok(new Device(def).solve().converged);
+});
+
+test('alloy: what it refuses, and says why', () => {
+  const lib = [semiconductor('GaAs', { T: 300 }), algaas(0.3)];
+  const bad = (item, msg, library = lib) => assert.throws(() => build({ T: 300, library, stack: [ohmic(0), item, ohmic(0)] }), (e) => e instanceof DeviceError && msg.test(e.message), msg.source);
+  const step = { species: 'e-', value: 0 };
+  bad(alloy('GaAs', 'AlGaAs', 1e-6), /there's no default: give step/);
+  bad(alloy('GaAs', 'AlGaAs', 1e-6, { step, dipole: 0 }), /step or dipole, not both/);
+  bad(alloy('GaAs', 'AlGaAs', 1e-6, { step, fraction: [0, 1.2] }), /between 0 \(GaAs\) and 1 \(AlGaAs\)/);
+  bad(alloy('GaAs', 'InAs', 1e-6, { step }), /no material 'InAs'/);
+  bad(alloy('GaAs', 'AlGaAs', 1e-6, { step: { species: 'x', value: 0 } }), /step must be \{ species, value \}/);
+  const hot = algaas(0.3);
+  hot.materials.AlGaAs.T = 350;
+  bad(alloy('GaAs', 'AlGaAs', 1e-6, { step }), /differ in T/, [lib[0], hot]);
+  assert.throws(() => alloy('GaAs', 'AlGaAs', 1e-6, { step, grade: {} }), /writes the layer's grade itself/);
 });

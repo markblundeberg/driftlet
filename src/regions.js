@@ -561,7 +561,7 @@ export class RegionTerms {
   // Displacement along a segment where φ is defined: D = −ε(φ_R − φ_L)/h into the two Gauss rows.
   _segmentDisplacement(s, bL, bR, mat, h) {
     const { M, u, res, sys, loc } = this, R = this.rix;
-    const k = this.phiUndefined[s] ? 0 : (mat.epsr * EPS0 * this.VT) / h; // ε = 0: no displacement
+    const k = this.phiUndefined[s] ? 0 : (this.segEpsr[s] * EPS0 * this.VT) / h; // ε = 0: no displacement (segEpsr: the material's, or a graded region's)
     if (k === 0) return;
     const D = -k * (u[bR * M] - u[bL * M]);
     const mL = sys.sizes[bL], mR = sys.sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
@@ -592,8 +592,8 @@ export class RegionTerms {
         if (!mat.present[i] || mat.D[i] === 0) continue;
         const r = 1 + i, zi = z[i];
         const cL = c[s * n + i];
-        const g = mat.D[i] / h;
-        const pe = (vel * h) / mat.D[i]; // advection: a Péclet shift of the drift potential
+        const Ds = this.segD[s * n + i], g = Ds / h; // (segD: the material's D, or a graded region's)
+        const pe = (vel * h) / Ds; // advection: a Péclet shift of the drift potential
         const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe; // (segShift: a graded region's μ° and cRef)
         const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
         sgFlux(g, d, deta, cL, c[(s + 1) * n + i], sg);
@@ -672,8 +672,8 @@ export class RegionTerms {
     const { n, M, u, uLo, c, z, K, ex, jL, jR } = this;
     const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n, r = 1 + i, zi = z[i];
     const cL = c[gL * n + i], cR = c[gR * n + i];
-    const g = mat.D[i] / h;
-    const pe = (vel * h) / mat.D[i];
+    const Ds = this.segD[s * n + i], g = Ds / h;
+    const pe = (vel * h) / Ds;
     const d = zi * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[gR * n + i] - ex[gL * n + i] - pe;
     const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
     const sg = sgFlux(g, d, deta, cL, cR, this.sg);

@@ -109,9 +109,11 @@ within one material (a face is two nodes at one x: don't difference across it).
   material carries the T its data are for (`materials.Si.T`), and a device at another T warns
   (its default is 298.15 K, so say `T: 300`). An alloy starts from a relative's entry with your
   numbers put in (docs/data.md has AlGaAs from GaAs). A graded layer (a gap or N_c varying in x)
-  is one region with `grade: { 'e-': { mu0, cRef }, 'h+': { mu0 } }`, each a profile `{ x,
-  values }` against the device's x; E_c = μ°_e⁻ − Fφ and E_v = −(μ°_h⁺ + Fφ) per mole, and how
-  a grading splits between e⁻ and h⁺ is yours to give, as an alignment is (docs/device.md). A species it lacks is pushed into both lists
+  is one region with `grade: { 'e-': { mu0, cRef, D }, 'h+': { mu0 }, epsr }`, each a profile
+  `{ x, values }` against the device's x, or between two library materials the kit's
+  `alloy(from, to, L, { fraction, step })`; E_c = μ°_e⁻ − Fφ and E_v = −(μ°_h⁺ + Fφ) per mole,
+  and how a grading splits between e⁻ and h⁺ is yours to give, as an alignment is
+  (docs/device.md). A species it lacks is pushed into both lists
   (`z: 0` for a neutral one): `lib.species.push({ name: 'A-', z: -1, cRef: 1000 })`,
   `lib.materials.water.species['A-'] = { D, mu0 }`. Only μ° differences within a reaction matter:
   for a redox couple μ°_red − μ°_ox = −F·E° (against SHE, the library's μ°_H⁺ being 0). An

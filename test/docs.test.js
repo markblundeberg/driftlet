@@ -142,3 +142,12 @@ test("the docs' inline math is $`…`$, which markdown's emphasis rules can't br
     });
   }
 });
+
+test('the docs hold no control characters (a \\b or \\v written through an unescaped string)', () => {
+  // (device.md once read "a level ␈ar\mu": a \bar passed through a Python string)
+  for (const file of [...files, 'ROADMAP.md', 'CHANGELOG.md', 'AGENTS.md']) {
+    readFileSync(join(root, file), 'utf8')
+      .split('\n')
+      .forEach((line, k) => assert.ok(!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line), `${file}:${k + 1}: a control character in: ${JSON.stringify(line)}`));
+  }
+});

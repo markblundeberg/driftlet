@@ -115,25 +115,29 @@ function profile(v, path, what, ok, okText) {
   return { x: Float64Array.from(v.x), values: Float64Array.from(v.values) };
 }
 
-// A region's material as it is at x: a graded region's μ° and cRef there (regions[r].grade), the
-// rest the material's. Faces and contacts read their regions this way at their own x, so an
-// alignment or a bath beside a graded region uses the levels at its edge. (The material itself
-// where nothing is graded.)
+// A region's material as it is at x: a graded region's μ°, cRef, D and ε there
+// (regions[r].grade), the rest the material's. Faces and contacts read their regions this way at
+// their own x, so an alignment or a bath beside a graded region uses the levels at its edge. (The
+// material itself where nothing is graded.)
 export function gradedAt(mat, reg, x) {
-  if (!reg.grade?.some((gr) => gr)) return mat;
+  if (!isGraded(reg)) return mat;
   const at = ({ x: xs, values: v }) => {
     if (x <= xs[0]) return v[0];
     const k = xs.findIndex((xk) => xk >= x);
     if (k < 0) return v[v.length - 1];
     return v[k - 1] + ((v[k] - v[k - 1]) * (x - xs[k - 1])) / (xs[k] - xs[k - 1]);
   };
-  const mu0 = Float64Array.from(mat.mu0), cRef = Float64Array.from(mat.cRef);
+  const mu0 = Float64Array.from(mat.mu0), cRef = Float64Array.from(mat.cRef), D = Float64Array.from(mat.D);
   reg.grade.forEach((gr, i) => {
     if (gr?.mu0) mu0[i] = at(gr.mu0);
     if (gr?.cRef) cRef[i] = at(gr.cRef);
+    if (gr?.D) D[i] = at(gr.D);
   });
-  return { ...mat, mu0, cRef };
+  return { ...mat, mu0, cRef, D, epsr: reg.gradeEpsr ? at(reg.gradeEpsr) : mat.epsr };
 }
+
+// Whether a (normalised) region grades anything.
+export const isGraded = (reg) => Boolean(reg.gradeEpsr || reg.grade?.some(Boolean));
 
 // SRH (trap-assisted) kinetics in place of mass action, for a reaction that consumes exactly one
 // negative and one positive species and makes none, e⁻ + h⁺ = 0:
@@ -335,27 +339,40 @@ export function normalizeDevice(def) {
         c0[i] = v;
       }
     }
-    // A graded region: a species' μ° (J/mol) and cRef (mol/m³) as profiles { x, values } against
-    // the device's x, in place of the material's, sampled at each node. Ideal species only, in a
-    // region with concentrations (not a metal's).
+    // A graded region: a species' μ° (J/mol), cRef (mol/m³) and D (m²/s) as profiles { x, values }
+    // against the device's x, in place of the material's, and the region's relative permittivity
+    // (grade.epsr). μ° and cRef are sampled at each node, D and ε at each segment's midpoint. μ°
+    // and cRef of ideal species only; nothing in a metal; nothing that would switch a species'
+    // motion or the region's electrostatics on or off (a D or ε graded where the material's is 0).
     const grade = new Array(nSpecies).fill(null);
+    let gradeEpsr = null;
     if (reg.grade !== undefined) {
-      need(isObject(reg.grade), `${path}.grade must map species names to { mu0, cRef }, each a profile { x, values }`);
+      need(isObject(reg.grade), `${path}.grade must map species names to { mu0, cRef, D } (each a profile { x, values }), and may give epsr, a profile`);
       need(!mat.conductor, `${path}.grade: '${mat.name}' is a conductor, whose species have no concentrations to grade`);
+      const read = (v, key, at, what, ok, okText) => {
+        if (v[key] === undefined) return null;
+        need(isObject(v[key]), `${at}.${key} must be a profile { x, values } against the device's x (${what}), got ${shown(v[key])}`);
+        return profile(v[key], `${at}.${key}`, what, ok, okText);
+      };
       for (const [sname, v] of Object.entries(reg.grade)) {
         const at = `${path}.grade.${sname}`;
-        need(speciesIndex.has(sname), `${at}: unknown species '${sname}'${known(speciesIndex)}`);
+        if (sname === 'epsr' && !speciesIndex.has('epsr')) {
+          need(mat.epsr > 0 && !mat.phiFree, `${at}: '${mat.name}' is strictly neutral (epsr 0), and a graded permittivity would make it otherwise; give the material an epsr > 0`);
+          gradeEpsr = read(reg.grade, 'epsr', path + '.grade', 'relative permittivities', (e) => e > 0, 'a relative permittivity > 0');
+          continue;
+        }
+        need(speciesIndex.has(sname), `${at}: unknown species '${sname}'${known(speciesIndex)} (or epsr, the permittivity)`);
         const i = speciesIndex.get(sname);
         need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
-        need(isObject(v), `${at} must be { mu0, cRef }, each a profile { x, values } against the device's x (only μ° and cRef can be graded so far)`);
-        fields(v, at, ['mu0', 'cRef']);
-        need(mat.modelOf[i] < 0, `${at}: '${sname}' has non-ideal statistics in '${mat.name}'; only ideal (dilute) species can be graded so far`);
-        const read = (key, what, ok, okText) => {
-          if (v[key] === undefined) return null;
-          need(isObject(v[key]), `${at}.${key} must be a profile { x, values } against the device's x (${what}), got ${shown(v[key])}`);
-          return profile(v[key], `${at}.${key}`, what, ok, okText);
+        need(isObject(v), `${at} must be { mu0, cRef, D }, each a profile { x, values } against the device's x`);
+        fields(v, at, ['mu0', 'cRef', 'D']);
+        need((v.mu0 === undefined && v.cRef === undefined) || mat.modelOf[i] < 0, `${at}: '${sname}' has non-ideal statistics in '${mat.name}'; only an ideal (dilute) species' mu0 and cRef can be graded so far (its D can)`);
+        need(v.D === undefined || mat.D[i] > 0, `${at}.D: '${sname}' doesn't move in '${mat.name}' (D 0), and a graded D would make it move; give the material a D > 0`);
+        grade[i] = {
+          mu0: read(v, 'mu0', at, 'standard chemical potentials (J/mol)', () => true, 'finite'),
+          cRef: read(v, 'cRef', at, 'reference concentrations (mol/m³)', (c) => c > 0, 'a concentration > 0 (mol/m³)'),
+          D: read(v, 'D', at, 'diffusion coefficients (m²/s)', (d) => d > 0, 'a diffusion coefficient > 0 (m²/s)'),
         };
-        grade[i] = { mu0: read('mu0', 'standard chemical potentials (J/mol)', () => true, 'finite'), cRef: read('cRef', 'reference concentrations (mol/m³)', (c) => c > 0, 'a concentration > 0 (mol/m³)') };
       }
     }
     return {
@@ -366,6 +383,7 @@ export function normalizeDevice(def) {
       c0,
       c0Profile,
       grade,
+      gradeEpsr,
       background,
       velocity,
       mixing,

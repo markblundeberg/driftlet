@@ -61,6 +61,98 @@ export function layer(material, length, more = {}) {
   return { material, length, ...more };
 }
 
+/**
+ * A layer that is an alloy between two materials of the library, its composition varying across
+ * it: `from` at fraction 0, `to` at 1. Every value that differs between them (each species' μ°,
+ * cRef and D, and ε_r) goes linearly with the fraction, as a graded region (`grade`) that
+ * `build()` writes, its profiles against the device's x. The layer is `from` otherwise, so the
+ * two must be the same material in all else (the same species, statistics and fields).
+ *
+ * The two ends' levels are each in their own material's φ anchoring, so how they line up is an
+ * alignment, given as at a face between them, and never defaulted: `step` (a charged species'
+ * standard level, to minus from, J/mol: for e⁻, the conduction-band offset) or `dipole` (φ's jump,
+ * V). Inside the layer φ is continuous and the alignment is folded into `to`'s μ°: μ°_i + z_i F
+ * dipole, the convention where the region has no built-in displacement (docs/device.md, "What a
+ * grading means, and its gauge").
+ * @param {string} from the material at fraction 0
+ * @param {string} to the material at fraction 1
+ * @param {number} length m
+ * @param {object} [more] `fraction`: a profile { x, values } against the layer's own x (0 at its
+ *   start), values in [0, 1], or [a, b] for a linear one across it (default [0, 1]); `step` or
+ *   `dipole`; and any field of a layer (name, donors, grid, …)
+ */
+export function alloy(from, to, length, more = {}) {
+  if (!isObject(more)) fail(`alloy('${from}', '${to}'): the options must be an object`);
+  const { fraction, step, dipole, ...rest } = more;
+  if (rest.grade !== undefined) fail(`alloy('${from}', '${to}'): it writes the layer's grade itself; for more grading, give the layer's grade by hand (layer(…, { grade }))`);
+  return { material: from, length, ...rest, alloy: { to, fraction, step, dipole } };
+}
+
+// An alloy layer's grade (see alloy()), its profiles against the device's x from x0, the layer's
+// start: each value that differs between the two materials, linear in the composition.
+function alloyGrade(item, x0, species, materials, path) {
+  const { to, fraction = [0, 1], step, dipole } = item.alloy, from = item.material, L = item.length;
+  const where = `${path} (alloy('${from}', '${to}'))`;
+  const A = materials[from], B = materials[to];
+  if (!isObject(A)) fail(`${where}: no material '${from}' in the library`);
+  if (!isObject(B)) fail(`${where}: no material '${to}' in the library`);
+  if (isObject(A.conductor) || isObject(B.conductor)) fail(`${where}: a conductor can't be an alloy's end (it has no concentrations to grade)`);
+  if (!(Number.isFinite(L) && L > 0)) fail(`${where}: the length must be a positive number of metres`);
+  // the composition, against the layer's own x
+  let fx;
+  if (Array.isArray(fraction) && fraction.length === 2 && fraction.every(Number.isFinite)) fx = { x: [0, L], values: fraction };
+  else if (isObject(fraction) && Array.isArray(fraction.x) && Array.isArray(fraction.values) && fraction.x.length === fraction.values.length && fraction.x.length > 0) fx = fraction;
+  else fail(`${where}.fraction must be [a, b] (linear across the layer) or a profile { x, values } against the layer's own x, got ${shown(fraction)}`);
+  if (!fx.values.every((f) => Number.isFinite(f) && f >= 0 && f <= 1)) fail(`${where}.fraction: compositions are between 0 (${from}) and 1 (${to}), got ${shown(fx.values)}`);
+  if (!fx.x.every((x, k) => Number.isFinite(x) && (k === 0 || x > fx.x[k - 1]))) fail(`${where}.fraction.x must increase`);
+  // the two materials alike in all but what's graded
+  const others = (m) => Object.keys(m).filter((k) => k !== 'species' && k !== 'epsr');
+  for (const k of new Set([...others(A), ...others(B)])) if (!same(A[k], B[k])) fail(`${where}: '${from}' and '${to}' differ in ${k} (${shown(A[k])}, ${shown(B[k])}); an alloy grades only each species' mu0, cRef and D, and epsr`);
+  const names = Object.keys(A.species ?? {}), namesB = Object.keys(B.species ?? {});
+  if (names.length !== namesB.length || !names.every((n) => namesB.includes(n))) fail(`${where}: '${from}' has species ${names.join(', ')} and '${to}' ${namesB.join(', ')}; an alloy's ends carry the same species`);
+  for (const n of names) {
+    const sa = A.species[n], sb = B.species[n];
+    for (const k of new Set([...Object.keys(sa), ...Object.keys(sb)])) {
+      if (['mu0', 'cRef', 'D'].includes(k)) continue;
+      if (!same(sa[k], sb[k])) fail(`${where}: species '${n}' differs in ${k} between '${from}' and '${to}'; an alloy grades only mu0, cRef and D`);
+    }
+  }
+  // the alignment, folded into the far end's μ°: μ°_i + z_i F (φ_to − φ_from)
+  const charged = names.filter((n) => (species.find((sp) => sp.name === n)?.z ?? 0) !== 0);
+  let d = 0;
+  if (step !== undefined && dipole !== undefined) fail(`${where}: give the alignment as step or dipole, not both`);
+  if (dipole !== undefined) {
+    if (!Number.isFinite(dipole)) fail(`${where}.dipole must be φ's jump from '${from}' to '${to}', in V`);
+    d = dipole;
+  } else if (step !== undefined) {
+    if (!isObject(step) || !charged.includes(step.species) || !Number.isFinite(step.value)) fail(`${where}.step must be { species, value }: a charged species of both (${charged.join(', ') || 'none'}) and its standard level's change from '${from}' to '${to}', J/mol`);
+    const z = species.find((sp) => sp.name === step.species).z;
+    d = (step.value - ((B.species[step.species].mu0 ?? 0) - (A.species[step.species].mu0 ?? 0))) / (z * FARADAY);
+  } else if (charged.length > 0) {
+    fail(`${where}: how '${from}' and '${to}' line up is an alignment, as at a face between them, and there's no default: give step: { species, value } (for e⁻, the conduction-band offset, J/mol) or dipole (V)`);
+  }
+  const fAt = (x) => {
+    const { x: xs, values: v } = fx;
+    if (x <= xs[0]) return v[0];
+    for (let k = 1; k < xs.length; k++) if (x <= xs[k]) return v[k - 1] + ((v[k] - v[k - 1]) * (x - xs[k - 1])) / (xs[k] - xs[k - 1]);
+    return v[v.length - 1];
+  };
+  // knots: the layer's ends and the composition's own (it's linear between them)
+  const knots = [...new Set([0, ...fx.x.filter((x) => x > 0 && x < L), L])].sort((a, b) => a - b);
+  const prof = (a, b) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => a + (b - a) * fAt(x)) });
+  const grade = {};
+  for (const n of names) {
+    const sa = A.species[n], sb = B.species[n], z = species.find((sp) => sp.name === n)?.z ?? 0, g = {};
+    const muA = sa.mu0 ?? 0, muB = (sb.mu0 ?? 0) + z * FARADAY * d;
+    if (muA !== muB) g.mu0 = prof(muA, muB);
+    if (sa.cRef !== sb.cRef) g.cRef = prof(sa.cRef, sb.cRef);
+    if (sa.D !== sb.D) g.D = prof(sa.D, sb.D);
+    if (Object.keys(g).length > 0) grade[n] = g;
+  }
+  if (A.epsr !== B.epsr) grade.epsr = prof(A.epsr, B.epsr);
+  return grade;
+}
+
 // A drive: a number is a held voltage, a waveform { t, values } a voltage waveform, and an
 // object with V, I or R is the drive itself.
 export function drive(d, path) {
@@ -186,6 +278,7 @@ export function build(def) {
   const at = (k) => `stack[${k}]`;
   const regions = [], interfaces = [];
   let pendingFace = null; // the face written since the last layer
+  let x0 = 0; // where the next layer starts (an alloy's grade is against the device's x)
   for (let k = 1; k < stack.length - 1; k++) {
     const item = stack[k];
     if (!isObject(item)) fail(`${at(k)} must be a layer (with a material) or a face (an interface's fields)`);
@@ -197,7 +290,8 @@ export function build(def) {
     }
     if (regions.length > 0) interfaces.push(pendingFace ? pendingFace.item : {});
     pendingFace = null;
-    regions.push(region(item, at(k)));
+    regions.push(region(item, at(k), x0));
+    x0 += item.length;
   }
   if (pendingFace) fail(`${at(pendingFace.k)}: a face after the last layer (the contact is the boundary there)`);
   if (regions.length === 0) fail('build.stack has no layers');
@@ -214,9 +308,13 @@ export function build(def) {
     fail(`${at(k)}: the contact holds ${lacks.map((s) => `'${s}'`).join(' and ')}, which its layer's material '${end.material}' doesn't have${hint}`);
   }
 
-  function region(item, path) {
-    checkOptions(path, item, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade', 'donors', 'acceptors']);
-    const { donors, acceptors, ...r } = item;
+  function region(item, path, x0) {
+    checkOptions(path, item, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade', 'donors', 'acceptors', 'alloy']);
+    const { donors, acceptors, alloy: al, ...r } = item;
+    if (al !== undefined) {
+      const grade = alloyGrade(item, x0, species, materials, path);
+      if (Object.keys(grade).length > 0) r.grade = grade;
+    }
     if (donors !== undefined || acceptors !== undefined) {
       if (r.fixedCharge !== undefined) fail(`${path}: give doping as donors and acceptors, or fixedCharge, not both`);
       for (const [k, v] of [['donors', donors], ['acceptors', acceptors]]) {

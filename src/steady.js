@@ -177,6 +177,7 @@ export class SteadySolves {
     for (const mat of this._usedMaterials()) {
       for (let i = 0; i < this.n; i++) if (mat.present[i]) dMax = Math.max(dMax, mat.D[i]);
     }
+    for (const reg of this.model.regions) reg.grade?.forEach((gr) => gr?.D && (dMax = Math.max(dMax, ...gr.D.values))); // (a graded D's largest)
     let h = Infinity;
     for (const s of this.model.grid.segLength) if (s > 0) h = Math.min(h, s);
     return dMax > 0 && Number.isFinite(h) ? (h * h) / dMax : this.slowestTime();

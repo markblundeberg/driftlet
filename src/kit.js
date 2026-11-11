@@ -5,7 +5,7 @@
 import { DeviceError } from './errors.js';
 import { FARADAY } from './constants.js';
 
-export { build, combine, layer, ohmic, bath } from './stack.js';
+export { build, combine, layer, alloy, ohmic, bath } from './stack.js';
 export { half, SHE, AgAgCl, level } from './equation.js';
 export { traces, speciesRole, typeset } from './traces.js';
 export { live } from './live.js';

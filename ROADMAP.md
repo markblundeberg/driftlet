@@ -565,19 +565,20 @@ for live demos.
 - **More statistics.** Gaussian and exponential densities of states (disordered and organic
   semiconductors), species occupying several lattice sites, several models on one species
   (e.g. crowding plus activity coefficients), and cross-model shared sites.
-- **Graded materials.** Done (10 Nov 2026): a region's $`\mu^\circ(x)`$ and $`c_{\mathrm{ref}}(x)`$
-  (`regions[r].grade`), with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change
+- **Graded materials.** Done (10 Nov 2026): a region's $`\mu^\circ(x)`$, $`c_{\mathrm{ref}}(x)`$,
+  $`D(x)`$ and $`\varepsilon(x)`$ (`regions[r].grade`), with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change
   across each segment, checked against the exact flux down a linear $`\mu^\circ`$ and against
-  staircases of uniform layers (test/graded.test.js). $`\phi`$'s gauge freedom is a continuous
+  staircases of uniform layers, and $`D`$ and $`\varepsilon`$ against a series resistance and
+  capacitance (test/graded.test.js). $`\phi`$'s gauge freedom is a continuous
   function there, with a built-in displacement $`D_{\mathrm{inhomog}}`$ moving to match (ESBD's
   inhomog page); driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, so within a region it's
   0 and the split of a grading between the charged species is an input. (26ff538 called this
   entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
   doesn't.) Still to come: a region's $`D_{\mathrm{inhomog}}(x)`$, for gradings given in another
-  convention;
-  $`\varepsilon(x)`$ and $`D(x)`$; graded species with non-ideal statistics; and in the kit, an
-  alloy between two library materials (a composition profile, with the alignment along it given
-  as at a face), and a graded-gap demo (a solar cell's back-surface field, or an HBT's base).
+  convention; graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
+  statistics; a bowed alloy (values not linear in the composition); and a graded-gap demo (an
+  HBT's base). The kit's `alloy()` (between two library materials, its alignment given as at a
+  face) is done.
 - **More of the diffuse layer below the grid** (`interfaces[f].diffuse`, src/diffuse.js, done
   2026-10-25 for electrodes, charged faces, membranes' permeabilities and gates, crowding on the
   bulk's lattice, and a reactant's transport across the layer). Not yet: a contact's own (a

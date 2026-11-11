@@ -5,6 +5,7 @@
 // the voltage views are NaN for neutral species.
 
 import { EPS0, FARADAY } from './constants.js';
+import { gradedAt } from './device.js';
 
 // A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
 // hydrated ions pack, beyond what a dilute layer describes.
@@ -86,8 +87,8 @@ export function makeSolution(solver, result = {}) {
   solver.segmentFluxes().forEach((J, i) => (sol.flux[species[i].name] = J));
   for (let i = 0; i < n; i++) {
     sol.D[species[i].name] = Float64Array.from(grid.nodeRegion, (r, g) => {
-      const mat = model.materials[model.regions[r].material];
-      return mat.conductor || !solver.present[g * n + i] ? NaN : mat.D[i];
+      const reg = model.regions[r], mat = model.materials[reg.material], Dg = reg.grade?.[i]?.D;
+      return mat.conductor || !solver.present[g * n + i] ? NaN : Dg ? gradedAt(mat, reg, grid.x[g]).D[i] : mat.D[i];
     });
   }
   solver._assembleBookkeeping(solver.lastDt);
@@ -454,7 +455,7 @@ export function makeSolution(solver, result = {}) {
   // restores the last good state, which is a solution: its warnings all stand.)
   const solved = !result.unsolved, stopped = solved ? '' : ' (in the state the unconverged solve stopped in)';
   const debye = (g) => {
-    const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
+    const reg = model.regions[grid.nodeRegion[g]], mat = reg.gradeEpsr ? gradedAt(model.materials[reg.material], reg, grid.x[g]) : model.materials[reg.material];
     const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics
     return mat.epsr > 0 && s2 > 0 ? Math.sqrt((mat.epsr * EPS0 * RT) / (F * F * s2)) : NaN;
   };
@@ -501,7 +502,8 @@ export function makeSolution(solver, result = {}) {
     let C = phi.C;
     if (phi.type === 'pinned') {
       const om = other < 0 ? null : model.materials[model.regions[grid.nodeRegion[other]].material];
-      C = !om || om.conductor ? Infinity : (om.epsr * EPS0) / debye(other);
+      const oReg = other < 0 ? null : model.regions[grid.nodeRegion[other]];
+      C = !om || om.conductor ? Infinity : ((oReg.gradeEpsr ? gradedAt(om, oReg, grid.x[other]).epsr : om.epsr) * EPS0) / debye(other);
     }
     if (!(C / (C + Cbox) > 0.02)) return;
     const lowers = Number.isFinite(C) ? `lowering the double-layer capacitance by ${((100 * C) / (C + Cbox)).toFixed(0)}%` : 'which alone sets its charge';

@@ -261,7 +261,8 @@ function naturalScales(device, sol, conductors = true) {
       if (!mat.present[i] || !(mat.D[i] > 0)) return;
       let cmax = 0;
       for (let g = 0; g < sol.x.length; g++) if (sol.region[g] === r && Number.isFinite(sol.c[sp.name][g])) cmax = Math.max(cmax, sol.c[sp.name][g]);
-      S = Math.max(S, (area[r] * mat.D[i] * cmax) / L);
+      const Dmax = reg.grade?.[i]?.D ? Math.max(...reg.grade[i].D.values) : mat.D[i];
+      S = Math.max(S, (area[r] * Dmax * cmax) / L);
     });
     solver.rxs.forEach((rx) => {
       const p = rx.sp.indexOf(i);

@@ -11,7 +11,7 @@ import { BlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, SG_FAR, sgFlux } from './bernoulli.js';
 import { BoundaryTerms } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { sourceAt } from './device.js';
+import { gradedAt, sourceAt } from './device.js';
 import { diffuseScratch, diffuseUnits } from './diffuse.js';
 import { DeviceError } from './errors.js';
 import { crossSection } from './grid.js';
@@ -201,7 +201,7 @@ export class Solver {
         const lat = itf.diffuse.lattice[side], drawSlot = new Int32Array(n).fill(-1);
         for (const i of drawSpecies(itf, side, species)) drawSlot[i] = level++;
         const draw = drawSlot.some((q) => q >= 0) ? Uint8Array.from(drawSlot, (q) => (q >= 0 ? 1 : 0)) : null;
-        const Dm = model.materials[regions[grid.nodeRegion[g]].material].D;
+        const Dm = gradedAt(model.materials[regions[grid.nodeRegion[g]].material], regions[grid.nodeRegion[g]], grid.x[g]).D; // (a graded region's at its edge)
         this.diffList.push({ f, side, g, b: this.blockOfNode[g], slot, o: this.blockOfFace[f] * M + slot, units: diffuseUnits(itf.diffuse.epsr * EPS0, model.RT, FARADAY), dl: diffuseScratch(n), lat, holds: Uint8Array.from(species, (sp, i) => (sp.z !== 0 || lat?.on[i] ? 1 : 0)), drawSlot, draw, Dm });
         slot++;
       }
@@ -237,6 +237,20 @@ export class Solver {
       for (let i = 0; i < n; i++) {
         const kL = g * n + i, kR = kL + n;
         if (this.present[kL] && this.present[kR]) this.segShift[kL] = this.mu0hat[kR] - this.mu0hat[kL] - Math.log(this.cRef[kR] / this.cRef[kL]);
+      }
+    }
+
+    // Along each segment of a region, its relative permittivity and each species' D: the
+    // material's, or a graded region's profiles at the segment's midpoint (segEpsr[s],
+    // segD[s·n + i]). The material's exactly where nothing is graded.
+    this.segEpsr = new Float64Array(Math.max(0, nNodes - 1));
+    this.segD = new Float64Array(Math.max(0, nNodes - 1) * n);
+    for (let r = 0; r < regions.length; r++) {
+      const reg = regions[r], mat = materials[reg.material];
+      for (let sg = grid.regionStart[r]; sg < grid.regionEnd[r]; sg++) {
+        const xm = (grid.x[sg] + grid.x[sg + 1]) / 2;
+        this.segEpsr[sg] = reg.gradeEpsr ? profileAt(reg.gradeEpsr, xm) : mat.epsr;
+        for (let i = 0; i < n; i++) this.segD[sg * n + i] = reg.grade?.[i]?.D ? profileAt(reg.grade[i].D, xm) : mat.D[i];
       }
     }
 
@@ -1115,10 +1129,10 @@ export class Solver {
         }
         for (let i = 0; i < n; i++) {
           if (!mat.present[i] || mat.D[i] === 0) continue;
-          const pe = (vel * h) / mat.D[i];
+          const Ds = this.segD[s * n + i], pe = (vel * h) / Ds;
           const d = z[i] * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
           const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]) - pe;
-          out[i][s] = sgFlux(mat.D[i] / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
+          out[i][s] = sgFlux(Ds / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
         }
         if (reg.mixing > 0) {
           // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic

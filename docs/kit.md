@@ -50,7 +50,19 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 ```
 
 - **Layers** are regions: anything with a `material`. `layer(material, length, more)` writes
-  one. Doping can be given as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`.
+  one. Doping can be given as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`. A
+  layer's `grade` passes through as written, its profiles against the device's x.
+- **Alloys**: `alloy(from, to, length, { fraction, step | dipole, … })` is a layer whose
+  composition goes from the library material `from` (fraction 0) toward `to` (1): `fraction` is
+  `[a, b]`, linear across it (default `[0, 1]`), or a profile `{ x, values }` against the layer's
+  own x, 0 at its start. Each value that differs between the two (each species' `mu0`, `cRef` and
+  `D`, and `epsr`) goes linearly with the fraction, as a [graded region](device.md#graded-regions)
+  that `build()` writes against the device's x; the two must be alike in all else. How the ends
+  line up is an alignment, as at a face between them, with no default: `step: { species, value }`
+  (for e⁻, the conduction-band offset, `to` minus `from`, J/mol) or `dipole` (V). It's folded into
+  `to`'s $`\mu^\circ`$, so held at fraction 1 the layer is `to`, lined up as that face would line
+  it up (to round-off, in the tests). A bowed gap (one not linear in the composition) is beyond
+  it: write the layer's `grade` by hand, or join alloys at intermediate materials.
 - **Faces** are anything else between layers: an interface's fields, exactly as in
   `interfaces[f]`. Two adjacent layers with no face between them get the default face, which
   between different materials is an error asking for the alignment, as always.
