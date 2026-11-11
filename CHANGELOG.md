@@ -3,7 +3,10 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.15.0 (2026-11-10)
+
+Graded regions: a band gap, a density of states or an ion's solvation can vary within one layer.
+And the docs have their first figures, each drawn by the example above it.
 
 - Graded regions: `regions[r].grade` gives a species' μ° and cRef as profiles against x, in
   place of its material's, so a band gap, a density of states or an ion's solvation can vary
