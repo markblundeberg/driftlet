@@ -1102,7 +1102,7 @@ export class Solver {
   // segment, between its pair of nodes, carries the face's flux; a conductor's, its carrier's.
   // These are the fluxes the balances add up (displacement aside), from the same formulas.
   segmentFluxes() {
-    const { model, n, M, u, uLo, c, z, ex } = this;
+    const { model, n, M, u, uLo, c, z } = this;
     const { grid, materials, regions, interfaces } = model;
     const out = Array.from({ length: n }, () => new Float64Array(grid.nNodes - 1));
     for (let r = 0; r < regions.length; r++) {
@@ -1115,10 +1115,7 @@ export class Solver {
         }
         for (let i = 0; i < n; i++) {
           if (!mat.present[i] || mat.D[i] === 0) continue;
-          const Ds = this.segD[s * n + i], pe = (vel * h) / Ds;
-          const d = z[i] * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[(s + 1) * n + i] - ex[s * n + i] - pe;
-          const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]) - pe;
-          out[i][s] = sgFlux(Ds / h, d, deta, c[s * n + i], c[(s + 1) * n + i], this.sg)[0];
+          out[i][s] = this._sgSegment(s, bL, i, h, vel)[0];
         }
         if (reg.mixing > 0) {
           // Eddy mixing (see _segmentMixing): −(D_mix/h) c̄_i (Δη_i − z_i q), c̄ the logarithmic

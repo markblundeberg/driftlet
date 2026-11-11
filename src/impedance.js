@@ -94,7 +94,6 @@
 // Boltzmann); the demos' EIS.
 
 import { ComplexBlockTridiagonal } from './blockTridiagonal.js';
-import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { SolverError } from './errors.js';
 
@@ -761,7 +760,7 @@ export class SmallSignal {
   // for non-ideal statistics) and the displacement's. Without ports it's the same through every cut; with them, only between a
   // contact and the nearest port's window (see _impedance).
   _currentCuts() {
-    const { model, n, M, u, uLo, c, z } = this, F = FARADAY;
+    const { model, n, M, z } = this, F = FARADAY;
     const { grid, materials, regions } = model;
     const cuts = [];
     for (let r = 0; r < regions.length; r++) {
@@ -777,7 +776,7 @@ export class SmallSignal {
           t[1] += d;
           terms.set(x, t);
         };
-        const phiL = u[bL * M], phiR = u[bR * M], hasPhi = !this.phiUndefined[s];
+        const hasPhi = !this.phiUndefined[s];
         for (let i = 0; i < n; i++) {
           if (z[i] === 0 || !mat.present[i] || mat.D[i] === 0) continue;
           if (!mat.ideal) {
@@ -789,10 +788,8 @@ export class SmallSignal {
             }
             continue;
           }
-          const zi = z[i], r1 = 1 + i, cL = c[s * n + i], Ds = this.segD[s * n + i], g = Ds / h;
-          const pe = (vel * h) / Ds;
-          const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe;
-          const sg = sgFlux(g, d, u[bR * M + r1] - u[bL * M + r1] + (uLo[bR * M + r1] - uLo[bL * M + r1]) - pe, cL, c[(s + 1) * n + i], this.sg);
+          const zi = z[i], r1 = 1 + i;
+          const sg = this._sgSegment(s, bL, i, h, vel);
           const dNdd = sg[1];
           add(bL * M + r1, zi * F * sg[2], 0);
           add(bR * M + r1, -zi * F * sg[3], 0);

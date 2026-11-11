@@ -126,7 +126,6 @@ import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { carrierZ, chargeOnly } from './laws.js';
 import { SolverError } from './errors.js';
-import { sgFlux } from './bernoulli.js';
 
 // The laws' rows at the end of an assembly (see the contract above).
 export function applyLaws(s, dt) {
@@ -284,13 +283,11 @@ function applyIslands(s) {
   return out;
 }
 
-// A dilute segment's flux of species i toward +x (Scharfetter–Gummel, as _segmentsDilute
-// assembles it: N, then ∂N/∂Δ, ∂/∂η_L, −∂/∂η_R, in s.sg), segment sg of region r.
+// A segment's flux of species i toward +x (Scharfetter–Gummel, as the assembly has it: N, then
+// ∂N/∂Δ, ∂/∂η_L, −∂/∂η_R, in s.sg), segment sg of region r.
 function segmentFlux(s, i, sg, r) {
-  const { M, u, uLo, c, n, z } = s, { grid } = s.model;
-  const bL = sg + r, bR = bL + 1, h = grid.segLength[sg] / grid.segArea[sg];
-  const deta = u[bR * M + 1 + i] - u[bL * M + 1 + i] + (uLo[bR * M + 1 + i] - uLo[bL * M + 1 + i]);
-  return sgFlux(s.segD[sg * n + i] / h, z[i] * (u[bR * M] - u[bL * M]) + s.segShift[sg * n + i], deta, c[sg * n + i], c[(sg + 1) * n + i], s.sg);
+  const { grid, regions } = s.model;
+  return s._sgSegment(sg, sg + r, i, grid.segLength[sg] / grid.segArea[sg], regions[r].velocity);
 }
 
 // Where the pieces a cut reaches through conduct the species least (∂N/∂η_L, the conductance at

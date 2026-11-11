@@ -574,6 +574,21 @@ export class RegionTerms {
     sys.B[sys.offB[bR] + pR * mR + pR] += k;
   }
 
+  // Species i's Scharfetter–Gummel flux along segment s (nodes s and s + 1, blocks bL and bL + 1;
+  // h its length over its cross-section), toward +x, into this.sg as sgFlux leaves it: the one
+  // place its arguments are put together, for every reader (the assembly, dilute and
+  // concentrated; the flux readout; the impedance; the laws' bottlenecks). The drift is the whole
+  // change in zφ̂ + μ°/RT − ln cRef (segShift, nonzero in a graded region) and in the excess
+  // potential (ex: 0 for ideal statistics, exactly), less a flow's Péclet shift; D is the
+  // segment's (segD: the material's, or a graded region's at its midpoint).
+  _sgSegment(s, bL, i, h, vel) {
+    const { n, M, u, uLo, c, z, ex } = this, bR = bL + 1, r = 1 + i, k = s * n + i;
+    const D = this.segD[k], pe = (vel * h) / D; // advection: a Péclet shift of the drift potential
+    const d = z[i] * (u[bR * M] - u[bL * M]) + this.segShift[k] + ex[k + n] - ex[k] - pe;
+    const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
+    return sgFlux(D / h, d, deta, c[k], c[k + n], this.sg);
+  }
+
   // Scharfetter–Gummel fluxes along a dilute region's segments (nodes g0…g1), written
   // by local index. The flux
   // N = g[B(Δ)c_L − B(−Δ)c_R] is rewritten with B(−Δ) = B(Δ)e^Δ and c_R e^Δ = c_L e^{Δη} as
@@ -587,16 +602,10 @@ export class RegionTerms {
     for (let s = g0; s < g1; s++) {
       const bL = s + region, bR = bL + 1, h = segLength[s] / segArea[s]; // (fluxes are totals through the cross-section)
       const mL = sizes[bL], mR = sizes[bR], pL = loc[bL * M], pR = loc[bR * M];
-      const phiL = u[bL * M], phiR = u[bR * M];
       for (let i = 0; i < n; i++) {
         if (!mat.present[i] || mat.D[i] === 0) continue;
         const r = 1 + i, zi = z[i];
-        const cL = c[s * n + i];
-        const Ds = this.segD[s * n + i], g = Ds / h; // (segD: the material's D, or a graded region's)
-        const pe = (vel * h) / Ds; // advection: a Péclet shift of the drift potential
-        const d = zi * (phiR - phiL) + this.segShift[s * n + i] - pe; // (segShift: a graded region's μ° and cRef)
-        const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-        sgFlux(g, d, deta, cL, c[(s + 1) * n + i], sg);
+        this._sgSegment(s, bL, i, h, vel);
         const N = sg[0], dNdd = sg[1];
         const dNdEtaL = sg[2];
         const dNdEtaR = -sg[3];
@@ -669,14 +678,10 @@ export class RegionTerms {
   // Species i's flux across segment s of a non-ideal region, toward +x, and its derivatives in
   // this.jL and this.jR (over the unknowns of the blocks bL and bR).
   _fluxConcentrated(s, bL, bR, mat, h, vel, i) {
-    const { n, M, u, uLo, c, z, K, ex, jL, jR } = this;
+    const { n, c, z, K, jL, jR } = this;
     const gL = s, gR = s + 1, KL = gL * n * n, KR = gR * n * n, r = 1 + i, zi = z[i];
-    const cL = c[gL * n + i], cR = c[gR * n + i];
-    const Ds = this.segD[s * n + i], g = Ds / h;
-    const pe = (vel * h) / Ds;
-    const d = zi * (u[bR * M] - u[bL * M]) + this.segShift[s * n + i] + ex[gR * n + i] - ex[gL * n + i] - pe;
-    const deta = u[bR * M + r] - u[bL * M + r] + (uLo[bR * M + r] - uLo[bL * M + r]) - pe;
-    const sg = sgFlux(g, d, deta, cL, cR, this.sg);
+    const cR = c[gR * n + i];
+    const sg = this._sgSegment(s, bL, i, h, vel);
     const N = sg[0], dNdd = sg[1], gBcE1 = sg[3]; // (gBcE1 = g·B·c_L·e^{Δη})
     // Left node: ∂N/∂ζ_Lj = −gE(B + B′)K_L,ij − dNdd·δ_ij, plus the direct η_L,i term.
     const fL = sg[4];
