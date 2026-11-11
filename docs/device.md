@@ -196,15 +196,22 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ across it. So a level $`ar\mu`$ still
   carries exactly nothing, and a linear $`\mu^\circ`$ gives the exact flux on any grid
   (test/graded.test.js).
-- **What a grading means.** The $`\mu^\circ`$ are given against the region's $`\phi`$, which is
-  continuous across the region and obeys Poisson's equation there, so the split of a level's
-  slope between $`\mu^\circ`$ and $`\phi`$ is physical, not a gauge: moving every charged
-  species' $`\mu^\circ`$ by $`z_i F f(x)`$ together changes the field Gauss's law sees. How a
-  composition moves its levels against that potential (an electron affinity varying with
-  composition, say) is an input, as an alignment between materials is; nothing is defaulted.
-  Equivalently, a graded region is the limit of a staircase of thin uniform layers, each at its
-  middle's values, joined by faces with no dipole: the test suite checks a graded diode against
-  one (64 layers agree to 3e-5).
+- **What a grading means, and its gauge.** In a graded medium, how a level's slope splits
+  between $`\mu^\circ`$ and $`\phi`$ is a convention: $`\phi \to \phi + f(x)`$ with every
+  $`\mu^\circ_i \to \mu^\circ_i - z_i F f(x)`$ leaves every $`\bar\mu_i`$, band edge and flux as
+  they were, if a built-in displacement $`D_{\mathrm{inhomog}}`$ in
+  $`D = -\varepsilon\nabla\phi + D_{\mathrm{inhomog}}`$ takes up $`\varepsilon f'`$ so that $`D`$
+  doesn't change (ESBD's [inhomogeneities and electrostatics](https://marklundeberg.com/esbd/inhomog/)).
+  driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, as their dipoles ($`\phi`$ steps, $`D`$
+  doesn't); within a region $`D = -\varepsilon\nabla\phi`$, so a grading's $`\mu^\circ`$ are in
+  the convention where $`D_{\mathrm{inhomog}} = 0`$ there. In that convention the split
+  between the charged species is fixed, and it's an input, as an alignment is at a face: how a
+  composition moves each level is yours to give, and nothing is defaulted. (Values from another
+  convention, say against a mean inner potential, carry their own $`D_{\mathrm{inhomog}}`$:
+  fold it into the $`\mu^\circ`$ first.) The test suite checks both halves on a graded diode:
+  it's the limit of a staircase of thin uniform layers joined with no dipole (64 layers agree to
+  3e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
+  match, is the same device (to 1e-9).
 - **Faces and contacts read the edge**: an alignment (`step`) beside a graded region is between
   the standard levels at its edge, and a bath at a graded end is the material as it is there.
 - **Not yet graded**: $`\varepsilon`$ and $`D`$ (a region's own, uniform), and species with

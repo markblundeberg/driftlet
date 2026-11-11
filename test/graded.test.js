@@ -199,10 +199,10 @@ test('graded μ°: a closed box keeps the amount its c0 gives, and settles to c 
 });
 
 test('graded gap: the diode is the limit of a staircase of uniform layers joined with no dipole', () => {
-  // What a graded region means for charged species: μ° and cRef given against the region's φ,
-  // the potential Gauss's law sees, continuous across the region. A staircase of thin uniform
-  // layers, each at its middle's values, joined by faces with no dipole (φ and D continuous),
-  // converges on it.
+  // What a graded region means for charged species: μ° and cRef against the region's φ, with
+  // D = −ε∇φ (no built-in displacement inside a region). A staircase of thin uniform layers,
+  // each at its middle's values, joined by faces with no dipole (φ and D continuous), converges
+  // on it.
   // (on a grid fine enough that its own error, ~5e-4 at hmax 20 nm, doesn't hide the limit)
   const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 };
   const graded = new Device({ ...diode(V), grid: fine }).solve().terminals.right.current;
@@ -226,4 +226,36 @@ test('graded gap: the diode is the limit of a staircase of uniform layers joined
   });
   assert.ok(errs[2] < 1e-4, `64 layers: ${errs}`); // (1.3e-2, 3.8e-4, 3.4e-5)
   assert.ok(errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `converging: ${errs}`);
+});
+
+test('graded gap: φ → φ + f with μ°_i → μ°_i − z_i F f is a symmetry where faces carry the dipoles', () => {
+  // The gauge freedom of a graded medium (ESBD's inhomog: a compensating built-in displacement
+  // D_inhomog absorbs any change of φ's convention). driftlet takes D_inhomog only at faces (a
+  // dipole: φ steps, D doesn't), so on a staircase it's exact: the same diode with each face given
+  // a dipole and each layer's μ° shifted to match carries the same current. Within one graded
+  // region there is no D_inhomog, which fixes the convention there (docs/device.md).
+  const V = 0.45, k = 16, fine = { hmin: 1e-9, hmax: 5e-9 };
+  const at = (p, x) => p.values[0] + ((p.values[1] - p.values[0]) * (x - p.x[0])) / (p.x[1] - p.x[0]);
+  const stair = (dipoles) => {
+    const def = diode(V), base = def.materials.s, x0 = 1e-6, w = 2e-6 / k;
+    def.regions = [def.regions[0]];
+    def.interfaces = [];
+    let f = 0; // φ's shift in this layer: the dipoles crossed so far, V
+    for (let j = 0; j < k; j++) {
+      f += dipoles[j];
+      const xm = x0 + (j + 0.5) * w, sp = structuredClone(base.species);
+      sp['e-'].mu0 = at(gap['e-'].mu0, xm - x0) + FARADAY * f; // μ° − zFf, z = −1
+      sp['e-'].cRef = at(gap['e-'].cRef, xm - x0);
+      sp['h+'].mu0 = at(gap['h+'].mu0, xm - x0) - FARADAY * f;
+      def.materials[`s${j}`] = { ...base, species: sp };
+      def.regions.push({ material: `s${j}`, length: w, fixedCharge: -FARADAY * 0.0166 });
+      def.interfaces.push({ dipole: dipoles[j] });
+    }
+    const sol = new Device({ ...def, grid: fine }).solve();
+    assert.ok(sol.converged, sol.warnings.join('; '));
+    return sol;
+  };
+  const plain = stair(Array(k).fill(0)), shifted = stair(Array.from({ length: k }, (_, j) => 0.05 * Math.sin(j)));
+  assert.ok(Math.abs(shifted.terminals.right.current / plain.terminals.right.current - 1) < 1e-9, `${shifted.terminals.right.current} vs ${plain.terminals.right.current}`);
+  for (const g of [10, plain.x.length >> 1, plain.x.length - 10]) assert.ok(Math.abs(shifted.V['e-'][g] - plain.V['e-'][g]) < 1e-9 && Math.abs(shifted.Vstd['e-'][g] - plain.Vstd['e-'][g]) < 1e-9, `levels at node ${g}`);
 });

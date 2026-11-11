@@ -10,7 +10,10 @@ major version.
   within one layer. Each segment's Scharfetter–Gummel flux drifts down the whole change in
   zφ̂ + μ°/RT − ln cRef, so a level μ̄ still carries exactly nothing, and a linear μ° gives the
   exact flux on any grid; a graded diode is the limit of a staircase of thin uniform layers
-  joined with no dipole (64 layers agree to 3e-5). Faces and contacts beside a graded region
+  joined with no dipole (64 layers agree to 3e-5). How a grading splits between the charged
+  species is a convention in the physics (a built-in displacement absorbs any other) and an
+  input in driftlet, which takes that displacement only at faces: the docs say which, and a test
+  checks the symmetry where faces carry it. Faces and contacts beside a graded region
   read its values at the edge; the start reads each node's. Not yet graded: ε, D, and species
   with non-ideal statistics (refused). In the kit, `layer()` passes `grade` through.
 - A neutral species' standard level `muStd` is its μ°, where it was NaN wherever φ is undefined.

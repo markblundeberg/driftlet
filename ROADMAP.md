@@ -568,9 +568,13 @@ for live demos.
 - **Graded materials.** Done (10 Nov 2026): a region's $`\mu^\circ(x)`$ and $`c_{\mathrm{ref}}(x)`$
   (`regions[r].grade`), with the full $`z\hat\phi + \mu^\circ/RT - \ln c_{\mathrm{ref}}`$ change
   across each segment, checked against the exact flux down a linear $`\mu^\circ`$ and against
-  staircases of uniform layers (test/graded.test.js). (Not a continuous gauge freedom, as this
-  entry once said: $`\phi`$ obeys Poisson's equation within a region, so the split of a grading
-  between $`\mu^\circ`$ and $`\phi`$ is an input, the alignment along it.) Still to come:
+  staircases of uniform layers (test/graded.test.js). $`\phi`$'s gauge freedom is a continuous
+  function there, with a built-in displacement $`D_{\mathrm{inhomog}}`$ moving to match (ESBD's
+  inhomog page); driftlet takes $`D_{\mathrm{inhomog}}`$ only at faces, so within a region it's
+  0 and the split of a grading between the charged species is an input. (26ff538 called this
+  entry's "continuous gauge freedom" wrong; it wasn't: the model fixes the gauge, the physics
+  doesn't.) Still to come: a region's $`D_{\mathrm{inhomog}}(x)`$, for gradings given in another
+  convention;
   $`\varepsilon(x)`$ and $`D(x)`$; graded species with non-ideal statistics; and in the kit, an
   alloy between two library materials (a composition profile, with the alignment along it given
   as at a face), and a graded-gap demo (a solar cell's back-surface field, or an HBT's base).

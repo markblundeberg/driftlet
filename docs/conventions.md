@@ -31,9 +31,11 @@ stricter than you may be used to.
    (e.g. with different adsorbates). When vacuum-level estimates are all you have, helpers in
    `driftlet/kit` turn anchors and offsets into an alignment (see the
    [alignment guide](alignment.md)). A [graded region](device.md#graded-regions) is the same
-   thing spread out: within one region $`\phi`$ is continuous and obeys Poisson's equation, so
-   its freedom is a constant, not a function, and how a grading splits between the charged
-   species (beyond their neutral combinations) is the alignment along it: an input, just the same.
+   thing spread out. Physically, $`\phi`$'s freedom there is a whole function, absorbed by a
+   built-in displacement as a face's dipole absorbs a step; driftlet takes that displacement
+   only at faces, so within a region its freedom is a constant, and how a grading splits
+   between the charged species (beyond their neutral combinations) is the alignment along it:
+   an input, just the same.
 4. **A work function belongs to a surface, not a material.**
 
 ## Electrochemical potential and its views
