@@ -91,7 +91,10 @@ By method, in file order:
 - **Newton** is `src/newton.js` (the iteration, its row scaling, the GMRES-refined solves, the
   islands' second round), which the Solver's own `newton` calls; `_factor` stays in the solver.
 - **Time steps** are `src/timeSteps.js` (`step`, `advance`, `integrate`, the predictor and the
-  error norm), which the Solver's own `step`, `advance` and `integrate` call; `_snapshot` /
+  error norm), which the Solver's own `step`, `advance` and `integrate` call. The public names
+  cross the internal ones: `Device.step(dt)` is `Solver.advance(dt)` (one step, halved until it
+  converges), and `Device.advance(tEnd)` is `Solver.integrate(tEnd)` (adaptive steps to tEnd);
+  `Solver.step` is a single backward-Euler or BDF2 step, which both call; `_snapshot` /
   `_restore`, `_warmFrom` and `_probes`, which the API uses too, stay in the solver.
 - **Small signal** is `src/impedance.js` (`impedance` and its helpers: the current cuts, the
   regions' uniform shift, the profiles; the complex GMRES and small dense solve), methods of the

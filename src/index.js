@@ -133,7 +133,7 @@ export class Device {
     const model = normalizeDevice(def);
     const solver = this._solver ? new Solver(model) : null;
     // A regridded steady state not yet solved on its grid stands for the steady state at the old
-    // definition: solve it there first (see advance), or the flag that says so is lost with the
+    // definition: solve it there first (see Device.advance), or the flag that says so is lost with the
     // old solver, and the next transient stepped from the interpolated state (a second set()
     // after set({ grid }): 23.7 A/m² where 68.8 is right; Fable's re-check).
     this._settleRegrid();
@@ -189,7 +189,7 @@ export class Device {
         // (a new T, or materials' μ° and c_ref: carry the concentrations and φ, not their scaled
         // potentials)
         if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
-        // (a jump in T, for a transient's first step to name if it fails: see advance)
+        // (a jump in T, for a transient's first step to name if it fails: see integrate in src/timeSteps.js)
         if (old.model.T !== model.T || old.jumpedT) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
         if (solver.jumpedT?.[0] === solver.jumpedT?.[1]) solver.jumpedT = undefined; // (back where it was solved: no jump to blame)
         // A species newly present at a node (a region's material changed to one that holds it)
@@ -210,7 +210,7 @@ export class Device {
         for (let g = 0; g < solver.nNodes; g++) if (solver.surfAt[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
       } else {
         solver._warmFrom(old);
-        solver.regriddedSteady = old.atSteady; // (see advance)
+        solver.regriddedSteady = old.atSteady; // (see Device.advance)
       }
       solver.computeConcentrations();
       solver.time = old.time;
@@ -276,7 +276,7 @@ export class Device {
   // them in place. (Validated before anything changes.)
   _redefineDrives(def) {
     const drives = normalizeDrives(def, this.model);
-    // A regridded steady state stands for the old drives' (see advance): solve it now, before
+    // A regridded steady state stands for the old drives' (see Device.advance): solve it now, before
     // they change. (Left for advance(), it was solved at the new drive, and the step response
     // was lost; Fable round 3's steady.js review.)
     this._settleRegrid();
@@ -301,8 +301,8 @@ export class Device {
     const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
     else {
-      this.solver.regriddedSteady = false; // (solved on the new grid already: see advance)
-      this.solver.jumpedT = undefined; // (solved at the new temperature: see advance)
+      this.solver.regriddedSteady = false; // (solved on the new grid already: see Device.advance)
+      this.solver.jumpedT = undefined; // (solved at the new temperature: see integrate in src/timeSteps.js)
     }
     return sol;
   }
@@ -356,7 +356,7 @@ export class Device {
     return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
   }
 
-  // A steady state carried onto a new grid, solved there (once; see advance).
+  // A steady state carried onto a new grid, solved there (once; see Device.advance).
   _settleRegrid() {
     if (!this._solver?.regriddedSteady) return;
     this._solver.regriddedSteady = false;

@@ -12,7 +12,8 @@
 // it stands (held or floating: a floating one's sets the levels it feeds) and s.time (the
 // drives' sources), and calls s.contactEta, s.portEta, s._surfaceStart, s._portRate, s._gateVoltage.
 //
-// In order:
+// In order, but for step 2, which is last (the state is marked cold after steps 3–9, and
+// equilibrateFaces runs from the first time step, after all of them; a code-smell review):
 //   1. Each region, left to right, each species present in it:
 //      - its c0 (or c0Profile) where given: an amount, mode 2, the starting state even where a
 //        contact feeds the species;

@@ -2,11 +2,14 @@
 //
 // A definition is a plain, serialisable object (so it can be posted to a Worker). This module
 // checks it thoroughly and turns it into an internal model with index-based lookups. Every
-// problem is a DeviceError whose message names the offending path. There are no silent
+// problem found here is a DeviceError whose message names the offending path; what depends on
+// how the device is connected (a sealed species with no c0, a c0 that isn't neutral at ε = 0)
+// is found where the solve starts (src/start.js) and is a SolverError from the first solve() or
+// advance(), naming its path the same way (docs/device.md says so too). There are no silent
 // defaults for physically meaningful choices: interface alignments, reference concentrations
 // and standard potentials must all be given.
 
-import { buildGrid, applyGeometry, crossSection } from './grid.js';
+import { DEFAULTS as GRID_DEFAULTS, buildGrid, applyGeometry, crossSection, defaultSpacing } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics, withCRef } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
@@ -397,7 +400,7 @@ export function normalizeDevice(def) {
       mixing,
       // With no grid options at all, each region is graded toward its ends: fine where profiles
       // are steep (double layers, depleted electrodes), coarse inside.
-      grid: reg.grid ?? (def.grid === undefined ? { hmin: length / 1000, hmax: length / 20 } : undefined),
+      grid: reg.grid ?? (def.grid === undefined ? defaultSpacing(length) : undefined),
       cells: mat.conductor ? [length] : undefined,
     };
   });
@@ -410,7 +413,7 @@ export function normalizeDevice(def) {
     const g = { ...(def.grid ?? {}), ...(def.regions[r].grid ?? {}) };
     if (g.ratio === undefined || g.hmin !== undefined || g.hmax !== undefined || g.hLeft !== undefined || g.hRight !== undefined) return;
     warnings.push(
-      `regions[${r}].grid: ratio grades between hmin and hmax, and neither is given, so the cells are uniform, ${(reg.length / (g.minCells ?? 8)).toExponential(1)} m (length/minCells); ` +
+      `regions[${r}].grid: ratio grades between hmin and hmax, and neither is given, so the cells are uniform, ${(reg.length / (g.minCells ?? GRID_DEFAULTS.minCells)).toExponential(1)} m (length/minCells); ` +
         'the default grading (hmin = length/1000, hmax = length/20) applies only with no grid options at all: give hmin and hmax to grade',
     );
   });

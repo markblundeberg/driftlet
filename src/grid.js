@@ -9,7 +9,11 @@
 // `hmax`, then is scaled so the cells fill the region exactly. A region may instead give its
 // cell widths outright (`cells`), as a metal region does: one cell, exact for Ohm's law.
 
-const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
+// The defaults, here only: device.js and check() read them (check()'s grid twice as fine is
+// twice these; written out in each, a change to one would refine another grid quietly).
+export const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
+// A region given no grid options at all: fine at its ends, coarse inside.
+export const defaultSpacing = (length) => ({ hmin: length / 1000, hmax: length / 20 });
 const MAX_CELLS = 1e6; // a live demo's grid has hundreds to thousands
 
 /**
@@ -18,7 +22,7 @@ const MAX_CELLS = 1e6; // a live demo's grid has hundreds to thousands
  * @param {import('./types.js').GridOptions} [opts]
  * @returns {number[]} widths summing to `length`
  */
-export function gradedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCells = DEFAULTS.minCells, hLeft, hRight } = {}) {
+export function taperedCells(length, { hmin, hmax, ratio = DEFAULTS.ratio, minCells = DEFAULTS.minCells, hLeft, hRight } = {}) {
   if (!(length > 0)) throw new RangeError(`region length must be > 0, got ${length}`);
   if (!(ratio >= 1)) throw new RangeError(`grid ratio must be ≥ 1, got ${ratio}`);
   if (!(minCells >= 1)) throw new RangeError(`grid minCells must be ≥ 1, got ${minCells}`); // (0 gave one cell of NaN volume, accepted)
@@ -79,7 +83,7 @@ export function buildGrid(regions, opts = {}) {
     throw new RangeError(`at least ${total.toExponential(1)} cells, past the ${MAX_CELLS.toExponential(0)} a device may have: ${regions[r].name ?? `region ${r}`} is ${regions[r].length} m long at hmax ${g.hmax ?? '(none)'} m. Lengths are in metres (units.um(1) is 1e-6): check them, or raise hmax`);
   }
 
-  const perRegion = regions.map((reg) => reg.cells ?? gradedCells(reg.length, { ...given(opts), ...given(reg.grid) }));
+  const perRegion = regions.map((reg) => reg.cells ?? taperedCells(reg.length, { ...given(opts), ...given(reg.grid) }));
   const nNodes = perRegion.reduce((s, cells) => s + cells.length + 1, 0);
   const nSeg = nNodes - 1;
 

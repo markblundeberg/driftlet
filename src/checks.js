@@ -5,6 +5,7 @@
 import { Device } from './index.js';
 import { FARADAY } from './constants.js';
 import { fixedAt } from './device.js';
+import { DEFAULTS, defaultSpacing } from './grid.js';
 import { unitWarnings } from './describe.js';
 import { checkOptions } from './errors.js';
 
@@ -12,7 +13,8 @@ const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs
 
 /**
  * @typedef {object} CheckItem
- * @property {string} name what was checked: 'converged', 'warnings', 'balance', 'conservation' or 'grid'
+ * @property {string} name what was checked: 'solution' (that it's the device's state), 'converged',
+ *   'warnings', 'balance', 'conservation', 'grid' or 'order' (the species listed in reverse)
  * @property {boolean | null} ok whether it passed (null: look at it, a warning or a check that
  *   couldn't be made)
  * @property {string} summary one line
@@ -307,8 +309,8 @@ function gridCheck(device, sol, tol, gross) {
     regions: def.regions.map((reg, r) => {
       if (model.materials[model.regions[r].material].conductor) return reg;
       const g = { ...(def.grid ?? {}), ...(reg.grid ?? {}) };
-      if (def.grid === undefined && reg.grid === undefined) Object.assign(g, { hmin: reg.length / 1000, hmax: reg.length / 20 });
-      const out = { ratio: Math.sqrt(g.ratio ?? 1.2), minCells: 2 * (g.minCells ?? 8) };
+      if (def.grid === undefined && reg.grid === undefined) Object.assign(g, defaultSpacing(reg.length));
+      const out = { ratio: Math.sqrt(g.ratio ?? DEFAULTS.ratio), minCells: 2 * (g.minCells ?? DEFAULTS.minCells) };
       if (g.hmin !== undefined) out.hmin = g.hmin / 2;
       if (g.hmax !== undefined) out.hmax = g.hmax / 2;
       if (g.hLeft !== undefined) out.hLeft = g.hLeft / 2;

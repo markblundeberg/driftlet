@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGrid, gradedCells } from '../src/grid.js';
+import { buildGrid, taperedCells } from '../src/grid.js';
 import { Device } from '../src/index.js';
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 
 test('graded cells fill the region exactly and grade from both ends', () => {
   const L = 1e-3, hmin = 1e-9, hmax = 1e-5, ratio = 1.2;
-  const cells = gradedCells(L, { hmin, hmax, ratio });
+  const cells = taperedCells(L, { hmin, hmax, ratio });
   assert.ok(Math.abs(sum(cells) - L) < 1e-15 * cells.length);
   // Scaling to fit shrinks cells a little, never grows them.
   assert.ok(cells[0] <= hmin * (1 + 1e-12) && cells[0] > 0.5 * hmin);
@@ -22,22 +22,22 @@ test('graded cells fill the region exactly and grade from both ends', () => {
 });
 
 test('uniform when no hmin is given, with at least minCells cells', () => {
-  const cells = gradedCells(2, { minCells: 10 });
+  const cells = taperedCells(2, { minCells: 10 });
   assert.equal(cells.length, 10);
   for (const h of cells) assert.ok(Math.abs(h - 0.2) < 1e-15);
 });
 
 test('one-sided refinement', () => {
-  const cells = gradedCells(1, { hLeft: 1e-6, hRight: 0.1, hmax: 0.1, ratio: 1.3 });
+  const cells = taperedCells(1, { hLeft: 1e-6, hRight: 0.1, hmax: 0.1, ratio: 1.3 });
   assert.ok(cells[0] < 2e-6);
   assert.ok(cells.at(-1) > 0.05);
   assert.ok(Math.abs(sum(cells) - 1) < 1e-14);
 });
 
 test('rejects bad inputs', () => {
-  assert.throws(() => gradedCells(0, {}), RangeError);
-  assert.throws(() => gradedCells(1, { ratio: 0.9 }), RangeError);
-  assert.throws(() => gradedCells(1, { hmin: -1 }), RangeError);
+  assert.throws(() => taperedCells(0, {}), RangeError);
+  assert.throws(() => taperedCells(1, { ratio: 0.9 }), RangeError);
+  assert.throws(() => taperedCells(1, { hmin: -1 }), RangeError);
 });
 
 test('device grid doubles nodes at every region boundary', () => {
@@ -122,9 +122,9 @@ test('a grid past the cell limit is refused before it is built, from hmin too; m
   // (the guard counted length/hmax: { ratio: 1, hmin: L/3e6 } built 3,000,001 nodes, and L/1e9 would
   // have tried 1e9; minCells 0 gave one cell of NaN volume, accepted: Fable's review)
   const t0 = Date.now();
-  assert.throws(() => gradedCells(1e-6, { ratio: 1, hmin: 1e-6 / 1e9 }), /more than 1e\+6 cells/);
+  assert.throws(() => taperedCells(1e-6, { ratio: 1, hmin: 1e-6 / 1e9 }), /more than 1e\+6 cells/);
   assert.ok(Date.now() - t0 < 2000);
-  assert.throws(() => gradedCells(1e-6, { minCells: 0 }), /minCells must be ≥ 1/);
+  assert.throws(() => taperedCells(1e-6, { minCells: 0 }), /minCells must be ≥ 1/);
   // A device's options, each a positive number: NaN reached the cell guard, whose message then
   // failed with a TypeError's text (a smell review's helper).
   const dev = (grid, regionGrid) => new Device({ species: [{ name: 'X', z: 0, cRef: 1 }], materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } }, regions: [{ material: 'm', length: 1e-6, grid: regionGrid }], contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { phi: 'neutral' } }, grid });

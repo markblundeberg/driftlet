@@ -42,6 +42,7 @@
  *   Fermi level), and φ is undefined inside
  * @property {number} [T] the temperature its data are for (K): a device at another temperature
  *   warns (semiconductor() sets it)
+ * @property {number} [mu0T] the temperature its species' μ° are for (K), where it differs from T
  */
 
 /**
