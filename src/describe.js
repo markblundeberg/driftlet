@@ -2,7 +2,7 @@
 // look like unit slips (a D in cm²/s, a μ° in eV, a capacitance in µF/cm²) and for double layers
 // the grid won't resolve. Heuristics only: a warning is a prompt to check, never an error.
 
-import { fixedAt, normalizeDevice } from './device.js';
+import { fixedAt, normalizeDevice, profileAt } from './device.js';
 import { EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -202,8 +202,13 @@ export function describe(def) {
         zzc = Math.max(zzc, z2);
       }
     }
-    const Dmax = Math.max(0, ...species.map((sp, i) => (mat.present[i] && sp.z !== 0 ? mat.D[i] : 0)));
-    const Dmin = Math.min(...species.map((sp, i) => (mat.present[i] && mat.D[i] > 0 ? mat.D[i] : Infinity)));
+    // (a graded D's values over the region in place of its material's)
+    const Ds = (i) => {
+      const p = reg.grade?.[i]?.D;
+      return p ? [profileAt(p, grid.x[a]), profileAt(p, grid.x[b]), ...Array.from(p.values).filter((_, k) => p.x[k] > grid.x[a] && p.x[k] < grid.x[b])] : [mat.D[i]];
+    };
+    const Dmax = Math.max(0, ...species.flatMap((sp, i) => (mat.present[i] && sp.z !== 0 ? Ds(i) : [0])));
+    const Dmin = Math.min(...species.flatMap((sp, i) => (mat.present[i] ? Ds(i).filter((d) => d > 0) : [])));
     if (mat.epsr > 0 && zzc > 0) {
       const lambda = Math.sqrt((mat.epsr * EPS0 * RT) / (FARADAY * FARADAY * zzc));
       // Double layers form at faces that aren't neutral, and at gate or pinned contacts.

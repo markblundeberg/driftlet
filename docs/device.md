@@ -263,7 +263,9 @@ interfaces: [
 There is no default: omitting it is an error. When vacuum-level estimates are all you have,
 `vacuumDipole` from `driftlet/kit` turns them into a `dipole` (see the
 [alignment guide](alignment.md)). A face between regions of the same material
-defaults to no dipole.
+defaults to no dipole, even where gradings leave their edges at different levels: that step is
+then the alignment, given by the gradings rather than written (a 0.2 eV band step passes
+silently), so give the face a `dipole` or `step` where that isn't meant.
 
 **Electrostatic law** `phi`:
 - `'pinned'`: $`\phi`$ jumps by the alignment. The default, and exact when the grid resolves the
@@ -793,7 +795,9 @@ senses, e.g. Cl⁻ for Ag/AgCl), which is the terminal. Every bath species is in
 composition implies, and the $`\phi`$ law is `'bulk'`. An optional `offset` places the reference
 species relative to V: at 0, V is the ion's own level, and a real electrode's wire sits a
 constant from it, $`-\mu^\circ_{\mathrm{AgCl}}/F`$ = 1.138 V below Cl⁻'s for Ag/AgCl. Between two
-alike the constant cancels; against a metal electrode, give it (the kit's `bath(c, AgAgCl)` does). Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
+alike the constant cancels; against a metal electrode, give it (the kit's `bath(c, AgAgCl)` does,
+and writes the electrode's half-reaction as `electrode`, which is checked to balance against the
+reference's charge, since the offset assumes it does). Without a `reference`, V is the bath's own $`\phi`$: an ideal salt bridge
 (no junction potential), the convention by which membrane potentials are $`\phi`$ differences.
 Between two such baths, a held $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is a voltage clamp. The bath is the end
 material at that composition (which then balances any fixed charge there, as an insertion host's
@@ -1481,7 +1485,11 @@ Measured:
 ### set(patch)
 
 Merges plain objects deeply into the definition (arrays are replaced; ports are patched by name,
-and an array of them replaces them all), keeping the state where it can.
+and an array of them replaces them all), keeping the state where it can. A few things are replaced
+whole rather than merged, since their keys are their own: a drive (`V`, `I`: a waveform), a
+contact the kit wrote (`ohmic()`, `bath()`: `set({ contacts: { left: bath(c, 'Cl-') } })` is that
+contact, with nothing left of an Ag/AgCl bath before it), and a link or a φ law given with its
+`type`.
 
 Notes:
 
@@ -1493,11 +1501,16 @@ Notes:
 - **Drives alone are cheap.** A patch that changes only the terminals' drives (`V`, `I`, `R`)
   updates them in place, keeping everything else.
 - **Anything else rebuilds the device.** The state carries over while the species, regions and
-  terminals are unchanged; otherwise it restarts from the regions' `c0`. On a new grid it's
-  interpolated onto the nodes, so a floating gate keeps its charge; `solution()` then shows that
-  interpolation, unsolved, until the next `solve()` or step, and a steady state interpolated so
-  is solved again on the new grid before the next `advance()` (interpolation leaves it slightly
-  off a strictly neutral region's neutrality).
+  terminals are unchanged (in the same order: regions reordered restart); otherwise it restarts
+  from the regions' `c0`. What's carried is physical, the concentrations and φ, so a new `T` or
+  μ° in the same patch moves none of them. On a new grid it's interpolated onto the nodes, each
+  species along the profile Scharfetter–Gummel takes within each old cell, so a floating gate
+  keeps its charge, a closed region its amount exactly, and a transient goes on as it was;
+  `solution()` then shows that interpolation, unsolved, until the next `solve()` or step, and a
+  steady state interpolated so is solved again on the new grid before the next `step()`,
+  `advance()` or rebuild (interpolation leaves it slightly off a strictly neutral region's
+  neutrality). A device nothing has solved or stepped has no state of its own: a patch's `c0`
+  is its start.
 - **A change to a face's or port's unknowns restarts it**: a reaction added or removed (the count,
   not its rates), gates, a surface, a diffuse layer. Its clock carries on, and every solution
   says so in its `warnings` up to the next steady solve (which keeps a closed region's restarted

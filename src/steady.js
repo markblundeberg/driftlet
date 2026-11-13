@@ -117,8 +117,8 @@
 //                            drive is put back, the local constraints' references are taken from
 //                            the state again (captureLocal), which redrive() zeroed.
 //
-// Also: slowestTime() = L²/D_min over the species present with D > 0 in the materials some
-// region is made of (1 where none), fastestTime() = h_min²/D_max over the same (slowestTime where
+// Also: slowestTime() = L²/D_min over the species present with D > 0 in each region (a graded
+// D's values over its region in place of its material's; 1 where none), fastestTime() = h_min²/D_max over the same (slowestTime where
 // there's no such cell); _directSteady(): no law unkept and every
 // stretch connected or conserved; stuckReactions(): after a steady solve, each reaction that
 // alone changes a combination nothing feeds and whose affinity keeps one sign, over 1e-6, wherever
@@ -148,7 +148,7 @@
 // continuations) and test/generation.test.js; the devices that needed each stage are named in its
 // comments.
 
-import { sourceAt } from './device.js';
+import { profileAt, sourceAt } from './device.js';
 import { chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
@@ -158,27 +158,34 @@ export class SteadySolves {
   // (Of the materials some region is made of: one defined but unused, its D = 1e-22, made a
   // giant step 1e7 times longer, too long to keep a fast species' amount: see _steadySteps.)
   slowestTime() {
-    const { model } = this;
-    let dMin = Infinity;
-    for (const mat of this._usedMaterials()) {
-      for (let i = 0; i < this.n; i++) if (mat.present[i] && mat.D[i] > 0) dMin = Math.min(dMin, mat.D[i]);
-    }
-    for (const reg of model.regions) reg.grade?.forEach((gr) => gr?.D && (dMin = Math.min(dMin, ...gr.D.values))); // (a graded D's smallest, as fastestTime takes its largest)
-    const L = model.grid.length;
+    const [dMin] = this._dRange();
+    const L = this.model.grid.length;
     return Number.isFinite(dMin) ? (L * L) / dMin : 1;
   }
 
-  _usedMaterials() {
-    return [...new Set(this.model.regions.map((reg) => reg.material))].map((m) => this.model.materials[m]);
+  // The smallest and largest D > 0 of a species present in some region: a graded D's values over
+  // its region in place of its material's, which the grading replaces there (counted too, a
+  // material's 1e-22 the grade replaced everywhere made the slowest time 1e12 s for 0.1 s;
+  // Fable's re-check).
+  _dRange() {
+    const { model, n } = this, grid = model.grid;
+    let dMin = Infinity, dMax = 0;
+    const see = (d) => d > 0 && ((dMin = Math.min(dMin, d)), (dMax = Math.max(dMax, d)));
+    model.regions.forEach((reg, r) => {
+      const mat = model.materials[reg.material], a = grid.x[grid.regionStart[r]], b = grid.x[grid.regionEnd[r]];
+      for (let i = 0; i < n; i++) {
+        if (!mat.present[i]) continue;
+        const p = reg.grade?.[i]?.D;
+        if (!p) see(mat.D[i]);
+        else [profileAt(p, a), profileAt(p, b), ...Array.from(p.values).filter((_, k) => p.x[k] > a && p.x[k] < b)].forEach(see);
+      }
+    });
+    return [dMin, dMax];
   }
 
   // The fastest diffusion time: across the smallest cell, at the largest D.
   fastestTime() {
-    let dMax = 0;
-    for (const mat of this._usedMaterials()) {
-      for (let i = 0; i < this.n; i++) if (mat.present[i]) dMax = Math.max(dMax, mat.D[i]);
-    }
-    for (const reg of this.model.regions) reg.grade?.forEach((gr) => gr?.D && (dMax = Math.max(dMax, ...gr.D.values))); // (a graded D's largest)
+    const [, dMax] = this._dRange();
     let h = Infinity;
     for (const s of this.model.grid.segLength) if (s > 0) h = Math.min(h, s);
     return dMax > 0 && Number.isFinite(h) ? (h * h) / dMax : this.slowestTime();

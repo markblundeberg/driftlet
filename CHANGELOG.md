@@ -5,6 +5,28 @@ major version.
 
 ## Unreleased
 
+- `set()`, from a Fable re-check of what it carries (each converged and unwarned before):
+  - a new grid with a new `T` or μ° in the same patch moved every concentration (a closed amount
+    lost 82%): what's carried is physical, and a closed region keeps its amount exactly on any grid
+    (it ratcheted down 0.012% at each regrid, and a transient kept the loss);
+  - on a new grid each species follows the profile Scharfetter–Gummel takes within each old cell
+    (interpolated linearly in its level, a depleted face's neighbour came out at the geometric mean,
+    and a regridded transient's next current read a third of itself);
+  - a regridded steady state is solved on its grid before another rebuild and before `step()`, not
+    only before `advance()` (stepped unsolved, 23.7 A/m² where 68.8 is right);
+  - ports reordered keep their own charges (by name), regions reordered restart and say so, a
+    restart's warning survives a further rebuild, and a patch's `c0` is the start of a device
+    nothing has solved;
+  - a contact the kit wrote (`ohmic()`, `bath()`), and a link or a φ law given with its `type`,
+    replaces the old one whole (merged, `bath(c, 'Cl-')` kept an Ag/AgCl bath's 1.138 V offset).
+- `bath(c, half)` writes the half-reaction as `bath.electrode`, which the device checks against
+  the reference's charge: under a symbol only `build()` read, an unbalanced one in a plain
+  definition set a wrong offset.
+- Graded regions, from a Fable review of them: a grading the cells don't follow is warned of
+  (μ° and cRef against the chord the flux takes, D and ε against the cell's series value; a 2 nm
+  barrier no node landed on passed 4853× too much, unwarned), as is a profile that misses its region
+  (one written in the layer's own x graded nothing); a graded ε under Debye–Hückel statistics that
+  read the material's ε is refused.
 - `fixedCharge` can be a profile `{ x, values }` against the device's x (graded doping), read
   at each node, and the kit's `donors` and `acceptors` can each be one. It's the limit of a
   staircase of uniformly doped layers (64 agree to 2e-5), and it carries another convention's

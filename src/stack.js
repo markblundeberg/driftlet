@@ -7,7 +7,8 @@
 import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
 import { profileAt } from './device.js';
-import { parseEquation } from './equation.js';
+import { markWhole } from './merge.js';
+import { electrodeUnbalanced, parseEquation } from './equation.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -180,7 +181,7 @@ export function ohmic(d = 0, carriers = ['e-', 'h+']) {
   if (!Array.isArray(carriers) || carriers.length === 0) fail('ohmic: carriers must be a non-empty list of species names');
   const species = {};
   carriers.forEach((name, k) => (species[name] = k === 0 ? 'equilibrium' : { type: 'equilibrium', offset: 0 }));
-  return { ...drive(d, 'ohmic'), terminal: carriers[0], species, phi: 'bulk' };
+  return markWhole({ ...drive(d, 'ohmic'), terminal: carriers[0], species, phi: 'bulk' });
 }
 
 /**
@@ -237,21 +238,21 @@ export function bath(c, reference, d = 0, opts = {}) {
   const { material } = opts;
   if (electrode !== 0 && opts.offset !== undefined && !Number.isFinite(opts.offset)) fail(`bath: offset must be a number of volts, got ${shown(opts.offset)}`);
   const offset = electrode !== 0 ? electrode + (opts.offset ?? 0) : opts.offset;
-  const out = {
+  const out = markWhole({
     ...drive(d, 'bath'),
     bath: {
       c: { ...c },
       ...(typeof reference === 'string' ? { reference } : {}),
       ...(offset === undefined ? {} : { offset }),
       ...(material === undefined ? {} : { material }),
+      // (its half-reaction, for the device to check it balances against the ion's charge, which
+      // only the device knows: under a symbol, read by build() alone, a bath in a plain
+      // definition went unchecked; Fable's re-check)
+      ...(balance ? { electrode: balance.equation } : {}),
     },
-  };
-  // (for build(), which knows the ion's charge, to check the equation balances: under a symbol,
-  // which no definition carries on)
-  if (balance) out[REFERENCE] = balance;
+  }); // (set() with it replaces a contact whole: merged into an Ag/AgCl bath, bath(c, 'Cl-') kept the old electrode's 1.138 V offset; Fable's re-check)
   return out;
 }
-const REFERENCE = Symbol('bath reference');
 
 const STACK_FIELDS = ['T', 'library', 'species', 'materials', 'stack', 'bulkReactions', 'ports', 'grid', 'geometry'];
 
@@ -305,8 +306,8 @@ export function build(def) {
   // A bath's reference electrode, balanced as written: its offset assumes ν_e = ν_ion·z_ion (unbalanced,
   // Cu²⁺ + e⁻ = Cu(s) read 0.0518 V where Cu²⁺ + 2e⁻ = Cu(s) reads 0.0259; Fable's review).
   for (const k of [0, stack.length - 1]) {
-    const ref = stack[k][REFERENCE], z = ref && species.find((sp) => sp.name === ref.ion)?.z;
-    if (ref && z !== undefined && Math.abs(ref.nuIon * z - ref.nuE) > 1e-12) fail(`${at(k)}: the bath's reference electrode ${JSON.stringify(ref.equation)} isn't charge-balanced (${Math.abs(ref.nuIon)} ${ref.ion} of charge ${z} to ${Math.abs(ref.nuE)} e-): balance it as written`);
+    const why = electrodeUnbalanced(stack[k].bath, species);
+    if (why) fail(`${at(k)}: ${why}`);
   }
   // A contact holding a carrier its layer lacks: most often ohmic()'s default on a metal.
   for (const [k, end] of [[0, regions[0]], [stack.length - 1, regions[regions.length - 1]]]) {

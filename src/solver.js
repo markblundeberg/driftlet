@@ -51,10 +51,10 @@ export const STATE = [
 // rebuild. (A terminal's running charge, added to STATE after set()'s hand-written carry, was zeroed
 // by it: Fable's review of the front door.)
 export const CARRY = {
-  u: 'kept', uLo: 'kept', // (carried as concentrations and φ instead where T, μ° or cRef changed)
+  u: 'kept', uLo: 'kept', // (carried as concentrations and φ instead where T, μ° or cRef changed; on a new grid, along each old cell's profile: _warmFrom)
   cOld: 'restarted', thOld: 'restarted', th0Old: 'restarted', gamOld: 'restarted', gateOld: 'restarted', // (each step starts them from the state)
   contactDStart: 'restarted', contactDOld: 'restarted', portQStart: 'restarted', portQOld: 'restarted', // (likewise, from the End values)
-  contactDEnd: 'kept', portQEnd: 'kept', // (where the ports are as many)
+  contactDEnd: 'kept', portQEnd: 'kept', // (each port's by name, where every port is still there)
   time: 'kept', sourceTime: 'kept', dtNext: 'kept',
   lastDt: 'restarted', history: 'restarted', // (a change of the equations restarts the time steps' order)
   termV: 'kept', termCharge: 'kept', // (by terminal name; a held terminal's V is its drive)
@@ -1008,23 +1008,51 @@ export class Solver {
   }
 
   // Start from another solver's state for the same device on another grid (a refined one): each
-  // node's unknowns interpolated linearly in x within its region, each face's copied, and the
-  // terminals' voltages. A warm start for a steady solve; nothing else is carried over.
+  // node's unknowns interpolated within its region, each face's copied, and the terminals'
+  // voltages by name. A species' concentration between two old nodes follows the profile
+  // Scharfetter–Gummel takes within that cell, c e^θ linear in e^{Δθ t} (θ = μ°/RT + z φ̂ − ln
+  // c_ref, linear across it): exact for a steady cell, flat in η where it's at equilibrium (a
+  // double layer), linear in c where diffusion carries it. (Linear in η, it was the geometric
+  // mean beside a depleted face, Fe²⁺ at 0.041 between 0.0034 and 0.50 where 0.25 is right, and
+  // a regridded transient's next current read a third of itself; Fable's re-check.) And what's
+  // carried is physical, as in _carryAcross, so a new T or μ° in the same set() moves no
+  // concentration (interpolated as potentials over RT, a closed amount lost 82% to set({ T: 310,
+  // grid })). Non-ideal species: their η linear, converted as _carryAcross does (a warm start).
   _warmFrom(src) {
-    const { M, u, uLo } = this, grid = this.model.grid, sg = src.model.grid;
+    const { n, M, u, uLo, z } = this, grid = this.model.grid, sg = src.model.grid, r = src.model.RT / this.model.RT;
     if (src.M !== M || sg.regionStart.length !== grid.regionStart.length) throw new Error('_warmFrom: a different device');
     const value = (b, k) => src.u[b * M + k] + src.uLo[b * M + k];
-    for (let r = 0; r < grid.regionStart.length; r++) {
-      let a = sg.regionStart[r];
-      for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
+    const theta = (sv, g, i, phiHat) => sv.mu0hat[g * n + i] + z[i] * phiHat - Math.log(sv.cRef[g * n + i]);
+    for (let reg = 0; reg < grid.regionStart.length; reg++) {
+      let a = sg.regionStart[reg];
+      const mat = this.model.materials[this.model.regions[reg].material];
+      for (let g = grid.regionStart[reg]; g <= grid.regionEnd[reg]; g++) {
         const x = grid.x[g];
-        while (a + 1 < sg.regionEnd[r] && sg.x[a + 1] < x) a++;
-        const b = Math.min(a + 1, sg.regionEnd[r]), h = sg.x[b] - sg.x[a];
+        while (a + 1 < sg.regionEnd[reg] && sg.x[a + 1] < x) a++;
+        const b = Math.min(a + 1, sg.regionEnd[reg]), h = sg.x[b] - sg.x[a];
         const w = h > 0 ? Math.min(1, Math.max(0, (x - sg.x[a]) / h)) : 0;
         const ba = src.blockOfNode[a], bb = src.blockOfNode[b], bg = this.blockOfNode[g];
         for (let k = 0; k < M; k++) {
-          u[bg * M + k] = (1 - w) * value(ba, k) + w * value(bb, k);
+          u[bg * M + k] = ((1 - w) * value(ba, k) + w * value(bb, k)) * (k === 0 ? r : 1);
           uLo[bg * M + k] = 0;
+        }
+        const pa = value(ba, 0), pb = value(bb, 0), phiHat = u[bg * M];
+        for (let i = 0; i < n; i++) {
+          const o = bg * M + 1 + i;
+          if (this.nodeConductor[g] === i || !this.present[g * n + i] || !src.present[a * n + i] || !src.present[b * n + i]) {
+            u[o] *= r; // (a metal's carrier: its level in volts)
+            continue;
+          }
+          const ea = value(ba, 1 + i), eb = value(bb, 1 + i), ta = theta(src, a, i, pa), tb = theta(src, b, i, pb), dt = tb - ta;
+          let eta = (1 - w) * ea + w * eb;
+          if (mat.modelOf[i] < 0) {
+            // e^η = (1 − s) e^{η_a} + s e^{η_b}, s = (e^{Δθ w} − 1)/(e^{Δθ} − 1), each side scaled to stay finite
+            const s = Math.abs(dt) < 1e-9 ? w : dt > 0 ? (Math.exp(dt * (w - 1)) * -Math.expm1(-dt * w)) / -Math.expm1(-dt) : Math.expm1(dt * w) / Math.expm1(dt);
+            const m = Math.max(ea, eb);
+            eta = m + Math.log((1 - s) * Math.exp(ea - m) + s * Math.exp(eb - m));
+          }
+          // ln c relative to the old θ there, on the new solver's θ
+          u[o] = eta - ((1 - w) * ta + w * tb) + theta(this, g, i, phiHat);
         }
       }
     }
@@ -1034,7 +1062,11 @@ export class Solver {
         uLo[this.blockOfFace[f] * M + k] = 0;
       }
     }
-    this.termV.set(src.termV);
+    for (const d of this.diffList) u[d.o] *= r; // (a diffuse layer's drop, in volts)
+    for (let k = 0; k < this.terms.length; k++) {
+      const o = src.terms.findIndex((t) => t.name === this.terms[k].name);
+      if (o >= 0) this.termV[k] = src.termV[o];
+    }
     this.solvedV = src.solvedV;
     this.coldStart = src.coldStart;
     this.time = src.time;

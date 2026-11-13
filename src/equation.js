@@ -206,3 +206,17 @@ export function level(sol, halfReaction, { standard = false } = {}) {
   }
   return V;
 }
+
+// A bath's reference electrode (bath.electrode, its half-reaction as bath() writes it), checked
+// against its ion's charge: the offset assumes ν_e = ν_ion·z_ion, so an unbalanced one reads a
+// wrong offset (Cu²⁺ + e⁻ = Cu(s) read 0.0518 V where Cu²⁺ + 2e⁻ = Cu(s) reads 0.0259; Fable's
+// review). What's wrong, or null.
+export function electrodeUnbalanced(bath, species) {
+  if (!bath || typeof bath !== 'object' || bath.electrode === undefined) return null;
+  if (typeof bath.electrode !== 'string' || typeof bath.reference !== 'string') return `bath.electrode is the reference electrode's half-reaction, a string, with bath.reference its ion (as bath(c, half) writes them), got ${JSON.stringify(bath.electrode)}`;
+  const terms = parseEquation(bath.electrode, 'bath.electrode'), e = terms.find((t) => t.name === 'e-'), ion = terms.find((t) => t.name === bath.reference);
+  if (!e || !ion) return `bath.electrode ${JSON.stringify(bath.electrode)} must exchange e- and the bath's reference species '${bath.reference}'`;
+  const z = species.find((sp) => sp.name === bath.reference)?.z;
+  if (z === undefined || Math.abs(ion.nu * z - e.nu) <= 1e-12) return null;
+  return `the bath's reference electrode ${JSON.stringify(bath.electrode)} isn't charge-balanced (${Math.abs(ion.nu)} ${bath.reference} of charge ${z} to ${Math.abs(e.nu)} e-): balance it as written`;
+}

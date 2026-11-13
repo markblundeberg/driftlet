@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, units } from '../src/index.js';
 import { CARRY, LEARNED, STATE } from '../src/solver.js';
-import { aqueous, metal, build, layer, ohmic, semiconductor, check } from '../src/kit.js';
+import { AgAgCl, aqueous, bath, metal, build, layer, ohmic, semiconductor, check } from '../src/kit.js';
 
 // --- four small devices: a port along a bar, an electrode's face reaction against a bath, a
 // capacitive port, a diode
@@ -262,14 +262,162 @@ test('set: every STATE field has a policy for a rebuild, and the kept ones are k
   // running charge, was dropped. CARRY in src/solver.js names what set() does with each.)
   assert.deepEqual(Object.keys(CARRY).sort(), [...STATE].sort());
   for (const [k, v] of Object.entries(CARRY)) assert.ok(['kept', 'rebased', 'restarted', 'set'].includes(v), `${k}: ${v}`);
-  const dev = new Device(pn());
-  dev.solve();
-  dev.advance(1e-6);
-  const old = dev.solver, D = dev.def.materials.Si.species['e-'].D;
-  const before = Object.fromEntries(STATE.map((k) => [k, canon(old[k])]));
-  dev.set({ materials: { Si: { species: { 'e-': { D: D * (1 + 1e-7) } } } } }); // (a rebuild, same unknowns)
-  assert.notEqual(dev.solver, old);
-  for (const k of STATE) if (CARRY[k] === 'kept') assert.equal(canon(dev.solver[k]), before[k], `${k} is marked kept, and set() changed it`);
-  // (a closed stretch keeps its amount, its intake folded in; an open one takes the state's)
-  old.referenceAmounts.forEach((a, j) => assert.equal(dev.solver.referenceAmounts[j], old.stretches[j].connected ? dev.solver.amount(dev.solver.stretches[j]) : a + old.boundaryIntake[j]));
+  // On three states that between them give every kept field a value of its own: a diode
+  // stepped; the same solved (solvedV); an electrode with an adsorbate (surfaceRef), floating
+  // (a floating terminal's termV). (On the first alone, removing solvedV, termV's floating carry or
+  // surfaceRef from set() passed; Fable's re-check.)
+  const salt = { 'K+': 100, 'Cl-': 100 };
+  const sorbing = () => build({
+    library: [aqueous(['K+', 'Cl-'], { epsr: 0 }), metal('Pt')],
+    stack: [ohmic(0.6, ['e-']), layer('Pt', 1e-6), { surface: { Clads: { mu0: 58e3, capacity: 2e-5, theta0: 0.1 } }, reactions: [{ equation: 'Cl- = Clads + e-', k0: 1e-3, alpha: 0.5 }] }, layer('water', 10e-6, { c0: salt }), bath(salt, 'Cl-')],
+    grid: { hmin: 1e-8, hmax: 0.5e-6 },
+  });
+  const cases = [
+    [pn, (d) => d.solve() && d.advance(1e-6), { materials: { Si: { species: { 'e-': { D: 0.0036 * (1 + 1e-7) } } } } }],
+    [pn, (d) => d.solve(), { materials: { Si: { species: { 'e-': { D: 0.0036 * (1 + 1e-7) } } } } }],
+    [sorbing, (d) => d.solve() && d.set({ contacts: { left: { I: 0 } } }).advance(1e-6), { materials: { water: { species: { 'K+': { D: 1.957e-9 * (1 + 1e-7) } } } } }],
+  ];
+  for (const [make, run, patch] of cases) {
+    const dev = new Device(make());
+    run(dev);
+    const old = dev.solver, before = Object.fromEntries(STATE.map((k) => [k, canon(old[k])]));
+    dev.set(patch); // (a rebuild, same unknowns)
+    assert.notEqual(dev.solver, old);
+    for (const k of STATE) {
+      if (CARRY[k] !== 'kept') continue;
+      assert.equal(canon(dev.solver[k]), before[k], `${k} is marked kept, and set() changed it`);
+    }
+    // (a closed stretch keeps its amount, its intake folded in; an open one takes the state's)
+    old.referenceAmounts.forEach((a, j) => assert.equal(dev.solver.referenceAmounts[j], old.stretches[j].connected ? dev.solver.amount(dev.solver.stretches[j]) : a + old.boundaryIntake[j]));
+  }
+});
+
+// --- set() across a new grid, and what it carries: from Fable's re-check of CARRY (12 Nov 2026).
+// A silver cell, Ag | AgNO₃ | Ag, its NO₃⁻ closed (c0·L = 2e-4 mol/m²): i_lim tanh(V/4V_T) is
+// its current, 143.743 A/m² at 0.05 V and 298.15 K, 138.989 at 310 K.
+const silver = (grid, extra = {}) => {
+  const links = { terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' };
+  return {
+    species: [{ name: 'Ag+', z: 1, cRef: 1000 }, { name: 'NO3-', z: -1, cRef: 1000 }],
+    materials: { water: { epsr: 78.5, species: { 'Ag+': { D: 1.65e-9, mu0: 77.1e3 }, 'NO3-': { D: 1.9e-9, mu0: -111.3e3 } } } },
+    regions: [{ material: 'water', length: 20e-6, c0: { 'NO3-': 10 } }],
+    contacts: { left: { V: 0, ...links }, right: { V: 0.05, ...links } },
+    grid,
+    ...extra,
+  };
+};
+const coarse = { hmin: 0.2e-9, hmax: 400e-9, ratio: 1.15 }, fine = { hmin: 0.2e-9, hmax: 100e-9, ratio: 1.15 };
+const no3 = (sol) => sol.conservation.find((q) => q.species === 'NO3-').amount;
+
+test('set: a new grid with a new T or μ° in the same set() carries concentrations, and keeps a closed amount', () => {
+  // (Interpolated as potentials over RT, set({ T: 310, grid }) lost 82% of the NO₃⁻, and a μ°
+  // change 99%: 24.98 and 1.506 A/m², converged and unwarned.)
+  for (const [patch, I] of [[{ T: 310 }, 138.989], [{ materials: { water: { species: { 'NO3-': { mu0: -100e3 } } } } }, 143.743]]) {
+    const d = new Device(silver(coarse));
+    d.solve();
+    const s = d.set({ ...patch, grid: fine }).solve();
+    assert.ok(s.converged && Math.abs(no3(s) / 2e-4 - 1) < 1e-9 && Math.abs(s.terminals.right.current / I - 1) < 1e-5, `${JSON.stringify(patch)}: ${no3(s)}, ${s.terminals.right.current}`);
+  }
+});
+
+test('set: a closed amount is the same on every grid, through many regrids', () => {
+  // (Read off the interpolated state, it ratcheted down at each, −0.47% over 60.)
+  const d = new Device(silver(coarse));
+  d.solve();
+  let s;
+  for (let k = 0; k < 12; k++) s = d.set({ grid: { ...coarse, hmax: (k % 2 ? 400e-9 : 150e-9) * (1 + k / 50) } }).solve();
+  const fresh = new Device(silver(d.def.grid)).solve();
+  assert.ok(Math.abs(no3(s) / no3(fresh) - 1) < 1e-12 && Math.abs(s.terminals.right.current / fresh.terminals.right.current - 1) < 1e-9, `${no3(s)} vs ${no3(fresh)}`);
+});
+
+test('set: a regridded state follows each old cell’s profile, and a transient keeps its closed amount', () => {
+  // The electrode stepped 0.02 → 0.04 V, refined 2× at t = 10 µs: interpolated linearly in η, Fe²⁺
+  // beside the face came out at the geometric mean (0.041 between 0.0034 and 0.50), and the next
+  // current read 22.24 A/m² where the same grid gives 69.06.
+  const run = (regrid) => {
+    const d = new Device(devices.electrode());
+    d.solve();
+    d.set({ contacts: { left: { V: 0.04 } } }).advance(1e-5);
+    if (regrid) d.set({ grid: { hmax: 0.25e-6 } });
+    return d.advance(1.1e-5).terminals.left.current;
+  };
+  const same = run(false), moved = run(true);
+  assert.ok(Math.abs(moved / same - 1) < 1e-3, `${moved} vs ${same}`); // (69.062 vs 69.060)
+  const d = new Device(silver(coarse));
+  d.solve();
+  d.set({ contacts: { right: { V: 0.3 } } }).advance(2e-3);
+  d.set({ grid: fine });
+  const s = d.advance(4e-3);
+  assert.ok(Math.abs(no3(s) / 2e-4 - 1) < 1e-12, `${no3(s)}`); // (−0.019% before: the transient keeps what it's given)
+});
+
+test('set: a regridded steady state is solved there before another rebuild, and before step()', () => {
+  // (Its flag went with the old solver: a second set() then stepped the interpolated state,
+  // 23.7 A/m² where 68.8 is right; step() never settled it, 27.0.)
+  const steady = new Device(devices.electrode()).solve().terminals.left.current;
+  const twice = new Device(devices.electrode());
+  twice.solve();
+  twice.set({ grid: { hmax: 0.25e-6 } }).set({ materials: { water: { species: { 'K+': { D: 1.957e-9 * (1 + 1e-9) } } } } });
+  const stepped = new Device(devices.electrode());
+  stepped.solve();
+  stepped.set({ grid: { hmax: 0.25e-6 } });
+  for (const I of [twice.advance(1e-5).terminals.left.current, stepped.step(1e-5).terminals.left.current]) assert.ok(Math.abs(I / steady - 1) < 1e-3, `${I} vs ${steady}`);
+});
+
+test('set: ports reordered keep their own charges; regions reordered restart, and say so', () => {
+  const def = devices.capacitor();
+  def.ports = [{ name: 'a', region: 'bar', from: 1e-6, to: 3e-6, V: 0, area: 1e6, capacitance: { C: 0.2 } }, { name: 'b', region: 'bar', from: 6e-6, to: 8e-6, V: 0.05, area: 1e6, capacitance: { C: 0.05 } }];
+  const passed = (swap) => {
+    const d = new Device(structuredClone(def));
+    d.solve();
+    d.set({ contacts: { left: { V: 0.02 } } }).advance(1e-5);
+    const q0 = Object.fromEntries(d.solver.terms.map((t, k) => [t.name, d.solver.termCharge[k]]));
+    d.set({ ports: swap ? [d.def.ports[1], d.def.ports[0]] : [{ ...d.def.ports[0], area: 1e6 * (1 + 1e-12) }, d.def.ports[1]] }).advance(2e-5);
+    return Object.fromEntries(d.solver.terms.map((t, k) => [t.name, d.solver.termCharge[k] - q0[t.name]]));
+  };
+  const kept = passed(false), swapped = passed(true);
+  // (by index, 'b' read +0.0233 C/m² and 'a' −0.0238, where −1.0e-6 and −4.5e-4 are right)
+  for (const p of ['a', 'b']) assert.ok(Math.abs(swapped[p] / kept[p] - 1) < 1e-6, `${p}: ${swapped[p]} vs ${kept[p]}`);
+  // Two closed compartments of A⁻, 'poor' (10) and 'rich' (50), swapped: carried by place,
+  // 'rich' read 10 and 'poor' 50, unwarned.
+  const sp = (D) => ({ D, mu0: 0, cRef: 1000 }), sealed = { V: 0, terminal: 'Cl-', species: { 'K+': 'blocked', 'Cl-': 'equilibrium', 'A-': 'blocked' }, phi: 'bulk' };
+  const poor = { name: 'poor', material: 'gel', length: 5e-6, c0: { 'K+': 110, 'Cl-': 100, 'A-': 10 } }, rich = { name: 'rich', material: 'gel', length: 5e-6, c0: { 'K+': 150, 'Cl-': 100, 'A-': 50 } };
+  const gel = (regions) => ({
+    species: [{ name: 'K+', z: 1 }, { name: 'Cl-', z: -1 }, { name: 'A-', z: -1 }],
+    materials: { gel: { epsr: 0, species: { 'K+': sp(1e-9), 'Cl-': sp(1e-9), 'A-': sp(1e-10) } } },
+    regions, interfaces: [{ species: { 'A-': 'blocked' }, phi: 'neutral' }], contacts: { left: sealed, right: sealed }, grid: { minCells: 20 },
+  });
+  const d = new Device(gel([poor, rich]));
+  d.solve();
+  const s = d.set({ regions: [rich, poor] }).solve(), A = (r) => s.c['A-'][s.region.indexOf(r) + 3];
+  assert.ok(Math.abs(A(0) - 50) < 1e-6 && Math.abs(A(1) - 10) < 1e-6 && s.warnings.some((w) => w.includes('the regions were reordered')), `${A(0)}, ${A(1)}: ${s.warnings}`);
+});
+
+test('set: a restart is said through a further rebuild; a c0 given before anything ran is the start', () => {
+  const d = new Device(devices.port());
+  d.solve();
+  d.set({ species: [{ name: 'Li+', z: 1, cRef: 1000 }, { name: 'X', z: 0, cRef: 1000 }], materials: { solid: { species: { X: { D: 1e-11, mu0: 0 } } } }, regions: [{ ...d.def.regions[0], c0: { X: 1 } }] });
+  d.set({ materials: { solid: { species: { 'Li+': { D: 2e-11 } } } } });
+  assert.ok(d.solution().warnings.some((w) => w.includes("the state couldn't carry over (the species changed)")));
+  // (after a bare solution(), the old c0 was carried as if it were a state: 143.74 A/m², not 287.49)
+  const e = new Device(silver(fine));
+  e.solution();
+  const s = e.set({ regions: [{ ...e.def.regions[0], c0: { 'NO3-': 20 } }] }).solve();
+  assert.ok(Math.abs(s.terminals.right.current / 287.486 - 1) < 1e-5, `${s.terminals.right.current}`);
+});
+
+test('set: a contact the kit wrote, a link or a φ law given with its type, replaces the old one whole', () => {
+  // (Merged, bath(c, 'Cl-') over an Ag/AgCl bath kept its 1.138 V offset: −6863.6 A/m² where a
+  // fresh device reads −340.06; a velocity link over an equilibrium one kept its offset.)
+  const c = { 'K+': 100, 'Cl-': 100 }, aq = aqueous(['K+', 'Cl-']);
+  const cell = (left) => build({ library: [aq], stack: [left, layer('water', 10e-6), bath(c, 'Cl-', 0.01)], grid: { hmax: 0.5e-6 } });
+  const d = new Device(cell(bath(c, AgAgCl)));
+  d.solve();
+  const I = d.set({ contacts: { left: bath(c, 'Cl-') } }).solve().terminals.left.current, fresh = new Device(cell(bath(c, 'Cl-'))).solve().terminals.left.current;
+  assert.ok(Math.abs(I / fresh - 1) < 1e-9 && d.def.contacts.left.bath.offset === undefined, `${I} vs ${fresh}`);
+  const e = new Device(devices.diode());
+  e.set({ contacts: { right: { species: { 'e-': { type: 'equilibrium', offset: 0.2 } }, phi: { type: 'capacitive', C: 0.1 }, zeroCharge: 0 } } });
+  e.set({ contacts: { right: { species: { 'e-': { type: 'velocity', v: 1e5 } }, phi: { type: 'pinned' } } } });
+  assert.deepEqual(e.def.contacts.right.species['e-'], { type: 'velocity', v: 1e5 });
+  assert.deepEqual(e.def.contacts.right.phi, { type: 'pinned' });
 });

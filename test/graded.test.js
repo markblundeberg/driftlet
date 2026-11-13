@@ -531,6 +531,12 @@ test('graded D: the time scales that size the steps see it, slowest and fastest'
   assert.equal(dev([D, 1e-19]).solver.slowestTime(), (L * L) / 1e-19);
   const fast = dev([D, 10]).solver;
   assert.ok(fast.fastestTime() < new Device(neutral({ mu0: 0, muL: 0, muR: 0 })).solver.fastestTime() / 1e9);
+  // The material's own D, where a grading replaces it everywhere, isn't counted (a material's
+  // 1e-22 made the slowest time 1e12 s for 0.1 s, and describe() said so; Fable's re-check).
+  const def = neutral({ grade: { A: { D: { x: [0, L], values: [D, 2 * D] } } }, muL: 0, muR: 0 });
+  def.materials.m.species.A.D = 1e-22;
+  assert.equal(new Device(def).solver.slowestTime(), (L * L) / D);
+  assert.match(describe(def), /diffusion across region 0: L²\/D up to 100 ms/);
 });
 
 test('graded μ°: a port’s bath of a species graded where the port is, is refused', () => {
@@ -539,4 +545,47 @@ test('graded μ°: a port’s bath of a species graded where the port is, is ref
   const def = neutral({ grade: { A: { mu0: { x: [0, L], values: [RT * Math.log(10), RT * Math.log(100)] } } }, muL: 0, muR: 0 });
   def.ports = [{ region: 0, V: 0, bath: { c: { A: 1 } }, species: { A: 'equilibrium' } }];
   assert.throws(() => new Device(def), /grades 'A's mu0 or cRef, so a composition outside gives no one level/);
+});
+
+// A grading the grid doesn't follow, or one that misses its region: from Fable's review of graded
+// regions (12 Nov 2026). Each was converged and unwarned.
+test('graded: a grading the cells miss, or a profile that misses its region, is warned of; a resolved one is not', () => {
+  const unresolved = (sol) => sol.warnings.some((w) => /grade: the grid doesn't resolve the grading/.test(w));
+  // A μ° spike 20 RT high and 2 nm wide in the middle of 10 µm: no node on it, the flux was
+  // 4853× the exact one (D·cRef(1 − e⁻¹)/∫e^{μ°/RT}dx). With a region boundary at each side,
+  // which the grid grades toward, it's resolved.
+  const spike = { x: [0, 4.999e-6, 5e-6, 5.001e-6, L], values: [0, 0, 20 * RT, 0, 0] };
+  const s = new Device(neutral({ muL: 0, muR: -RT, grade: { A: { mu0: spike } } })).solve();
+  assert.ok(unresolved(s), s.warnings.join('; '));
+  const sharp = neutral({ muL: 0, muR: -RT });
+  sharp.regions = [[0, 4.999e-6], [4.999e-6, 5.001e-6], [5.001e-6, L]].map(([a, b]) => ({ material: 'm', length: b - a, grade: { A: { mu0: spike } } }));
+  sharp.interfaces = [{}, {}];
+  sharp.grid = { hmin: 1e-11, hmax: 0.5e-6, ratio: 1.2 };
+  assert.ok(!unresolved(new Device(sharp).solve()));
+  // cRef linear across six decades: the flux takes ln cRef as linear in each cell (0.094 of
+  // exact on the default grid).
+  const fall = new Device(neutral({ muL: 0, muR: -RT, grade: { A: { cRef: { x: [0, L], values: [1000, 1e-3] } } } })).solve();
+  assert.ok(unresolved(fall));
+  // A gentle grading on the default grid isn't flagged.
+  assert.ok(!unresolved(new Device(neutral({ mu0: 5 * RT, muL: 0, muR: -RT })).solve()));
+  // A profile written from the layer's own left end, for a layer that starts at 10 µm: constant
+  // beyond its ends, it graded nothing (4.9× off).
+  const two = neutral({ muL: 0, muR: -RT });
+  two.regions = [{ material: 'm', length: L }, { material: 'm', length: L, grade: { A: { mu0: { x: [0, L], values: [0, 5 * RT] } } } }];
+  two.interfaces = [{}];
+  assert.ok(new Device(two).solve().warnings.some((w) => /regions\[1\]\.grade \(A\.mu0\): the profile runs from x = 0\.00e\+0 to 1\.00e-5 m, but region 1 is from 1\.00e-5/.test(w)));
+});
+
+test('graded ε under Debye–Hückel that reads the material’s ε is refused', () => {
+  // (Poisson took the graded ε and the activities the material's: ln γ the same at both ends.)
+  const def = {
+    T,
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { w: { epsr: 78.4, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } }, statistics: [{ type: 'debye-huckel', species: ['K+', 'Cl-'], a: 4e-10 }] } },
+    regions: [{ material: 'w', length: 1e-6, grade: { epsr: { x: [0, 1e-6], values: [78.4, 20] } } }],
+    contacts: { left: { bath: { c: { 'K+': 100, 'Cl-': 100 } } }, right: { bath: { c: { 'K+': 100, 'Cl-': 100 } } } },
+  };
+  assert.throws(() => new Device(def), /grade\.epsr: 'w' has Debye–Hückel statistics, which read the material's epsr; give them their own/);
+  def.materials.w.statistics[0].epsr = 78.4;
+  assert.ok(new Device(def));
 });

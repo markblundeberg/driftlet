@@ -10,7 +10,7 @@ import { buildGrid, applyGeometry, crossSection } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
-import { stoichiometry as equationStoichiometry, faceSides, parseEquation } from './equation.js';
+import { stoichiometry as equationStoichiometry, electrodeUnbalanced, faceSides, parseEquation } from './equation.js';
 import { mhcIntegral } from './marcus.js';
 
 export { DeviceError };
@@ -359,6 +359,10 @@ export function normalizeDevice(def) {
         const at = `${path}.grade.${sname}`;
         if (sname === 'epsr' && !speciesIndex.has('epsr')) {
           need(mat.epsr > 0 && !mat.phiFree, `${at}: '${mat.name}' is strictly neutral (epsr 0), and a graded permittivity would make it otherwise; give the material an epsr > 0`);
+          // (Debye–Hückel reads the material's ε unless given its own: graded, Poisson's ε and the
+          // activities' would part; Fable's review of graded regions)
+          const stats = def.materials?.[mat.name]?.statistics;
+          need(!(Array.isArray(stats) ? stats : [stats]).some((sd) => sd?.type === 'debye-huckel' && sd.epsr === undefined), `${at}: '${mat.name}' has Debye–Hückel statistics, which read the material's epsr; give them their own (statistics: [{ type: 'debye-huckel', epsr, … }]) to grade the region's`);
           gradeEpsr = read(reg.grade, 'epsr', path + '.grade', 'relative permittivities', (e) => e > 0, 'a relative permittivity > 0');
           continue;
         }
@@ -543,6 +547,68 @@ export function normalizeDevice(def) {
         `(at x = ${miss.x.toExponential(2)} m, nodes ${miss.h.toExponential(1)} m apart miss it by ${Math.round(100 * miss.off)}% of its range), ` +
         `so the start isn't the one given; cells of about ${miss.want.toExponential(0)} m there would resolve it (hmax, or a region boundary there to grade toward)`,
     );
+  });
+  // A grading the cells under it don't follow is another device's, silently: μ° and cRef are read
+  // at the nodes, and the flux takes w = μ°/RT − ln cRef as linear between them; D and ε are read
+  // at each segment's midpoint, for a series resistance or capacitance. A barrier thinner than a
+  // cell that no node lands on isn't there at all (a 20 RT spike 2 nm wide passed 4853× too much,
+  // an AlGaAs barrier in one alloy() 168×), and a cRef falling by decades across a cell is solved
+  // as an exponential. Warned past 5% in a cell. And a profile that misses its region, most often
+  // one written from the layer's own left end, grades nothing (a profile is constant beyond its
+  // ends). (Both found by Fable's review of graded regions, its trial fix the pattern here.)
+  regions.forEach((reg, r) => {
+    if (!isGraded(reg)) return;
+    const mat = materials[reg.material], g0 = grid.regionStart[r], g1 = grid.regionEnd[r], a = grid.x[g0], b = grid.x[g1];
+    const profs = [];
+    reg.grade.forEach((gr, i) => gr && ['mu0', 'cRef', 'D'].forEach((k) => gr[k] && profs.push([`${species[i].name}.${k}`, gr[k]])));
+    if (reg.gradeEpsr) profs.push(['epsr', reg.gradeEpsr]);
+    const missed = profs.filter(([, pr]) => {
+      if (pr.values.every((v) => v === pr.values[0])) return false;
+      const lo = pr.x[0], hi = pr.x[pr.x.length - 1];
+      return hi <= a || lo >= b || (a > 0 && lo === 0 && Math.abs(hi - reg.length) <= 1e-9 * reg.length);
+    });
+    if (missed.length > 0) {
+      const [, pr] = missed[0];
+      warnings.push(
+        `regions[${r}].grade (${missed.map(([nm]) => nm).join(', ')}): the profile runs from x = ${pr.x[0].toExponential(2)} to ${pr.x[pr.x.length - 1].toExponential(2)} m, but ${reg.name} is from ${a.toExponential(2)} to ${b.toExponential(2)} m, ` +
+          "so the region isn't graded as written (a profile is constant beyond its ends). Its x is the device's, from its left end, not the layer's own.",
+      );
+    }
+    const knotsIn = (list, xl, xr) => [...new Set(list.flatMap((pr) => (pr ? Array.from(pr.x).filter((t) => t > xl && t < xr) : [])))];
+    let worst = null;
+    const note = (what, x, h, off) => {
+      if (off > Math.log(1.05) && !(off <= worst?.off)) worst = { what, x, h, off };
+    };
+    for (let g = g0; g < g1; g++) {
+      const xl = grid.x[g], xr = grid.x[g + 1], h = xr - xl, xm = (xl + xr) / 2;
+      if (!(h > 0)) continue;
+      reg.grade.forEach((gr, i) => {
+        if (!gr || !(gr.mu0 || gr.cRef)) return;
+        const w = (t) => (gr.mu0 ? profileAt(gr.mu0, t) : mat.mu0[i]) / RT - Math.log(gr.cRef ? profileAt(gr.cRef, t) : mat.cRef[i]);
+        const wl = w(xl), wr = w(xr);
+        for (const t of [xm, ...knotsIn([gr.mu0, gr.cRef], xl, xr)]) note(`${species[i].name}'s mu0 and cRef`, t, h, Math.abs(w(t) - (wl + ((wr - wl) * (t - xl)) / h)));
+      });
+      // (the midpoint's value against the profile's harmonic mean over the segment: exact for a
+      // piecewise-linear profile, ∫dx/(p + q x))
+      const series = (nm, pr) => {
+        const cuts = [xl, ...knotsIn([pr], xl, xr).sort((p, q) => p - q), xr];
+        let inv = 0;
+        for (let k = 1; k < cuts.length; k++) {
+          const p = profileAt(pr, cuts[k - 1]), q = profileAt(pr, cuts[k]);
+          inv += (cuts[k] - cuts[k - 1]) * (Math.abs(p / q - 1) < 1e-6 ? 2 / (p + q) : Math.log(p / q) / (p - q));
+        }
+        note(nm, xm, h, Math.abs(Math.log(h / inv / profileAt(pr, xm))));
+      };
+      reg.grade.forEach((gr, i) => gr?.D && series(`${species[i].name}'s D`, gr.D));
+      if (reg.gradeEpsr) series('epsr', reg.gradeEpsr);
+    }
+    if (worst) {
+      warnings.push(
+        `regions[${r}].grade: the grid doesn't resolve the grading of ${worst.what} (at x = ${worst.x.toExponential(2)} m, a cell ${worst.h.toExponential(1)} m wide takes it for a profile ` +
+          `${worst.off > 3 ? `e^${worst.off.toFixed(1)}×` : `${Math.round(100 * Math.expm1(worst.off))}%`} off there), so what's solved is another grading than the one given: ` +
+          'finer cells there (hmax; a region boundary at a sharp feature, for the grid to grade toward), or check(dev, sol) for what it costs. (A cRef falling by decades is better graded through mu0.)',
+      );
+    }
   });
   // A rate-constant profile (absorbed light) that lies, in part, where its material isn't: it acts
   // only at that material's nodes, so the rest is lost. Light written from its layer's left end
@@ -1734,7 +1800,9 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(cdef.phi === undefined && cdef.zeroCharge === undefined, `${path}: a bath sets the end's φ law itself ('bulk': the end at the bath's composition), so give no phi or zeroCharge beside it`);
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
-    fields(bath, `${path}.bath`, ['c', 'reference', 'offset', 'material']);
+    fields(bath, `${path}.bath`, ['c', 'reference', 'offset', 'material', 'electrode']);
+    const unbalanced = electrodeUnbalanced(bath, species);
+    need(!unbalanced, `${path}: ${unbalanced}`);
     // The bath is the end material at that composition (balancing any fixed charge there), unless
     // it names a material of its own: a solution outside an ion exchanger, a doped or host region,
     // whose levels it sets there through a Donnan step at the end node.
