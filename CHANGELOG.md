@@ -3,6 +3,12 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- Bowed alloys: `alloy(from, to, length, { bow: { 'h+': { mu0: C }, epsr: C } })` takes a value
+  as (1 − f)a + fb − Cf(1 − f), a band gap's bowing split between its band edges as you give it;
+  each straight piece of the composition sampled at 32 points (the midpoint exact).
+
 ## 1.16.0 (2026-11-13)
 
 Graded regions grade diffusivity and permittivity too, the kit builds alloys, and fixed charge can

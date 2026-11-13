@@ -500,6 +500,26 @@ test('alloy: what build() writes, against the device’s x', () => {
   assert.ok(new Device(def).solve().converged);
 });
 
+test('alloy: a bowed value, less bow·f(1 − f), the ends unmoved', () => {
+  // E_g(x) = (1 − x)E_A + x E_B − C x(1 − x): a band gap's bowing, split between its band edges
+  // as the alignment is (here all of it in the valence band's, h⁺'s μ°), and the permittivity's.
+  const lib = [semiconductor('GaAs', { T: 300 }), algaas(0.3)], step = { species: 'e-', value: units.eV(dEc) }, C = units.eV(0.4);
+  const at = (bow) => build({ T: 300, library: lib, stack: [ohmic(0), layer('GaAs', 0.5e-6), alloy('GaAs', 'AlGaAs', 1e-6, { step, bow }), ohmic(0)] }).regions[1].grade;
+  const plain = at(undefined), bowed = at({ 'h+': { mu0: C }, epsr: 0.5 }), mu = bowed['h+'].mu0, n = mu.x.length;
+  assert.equal(n, 33);
+  const lin = (p, x) => p.values[0] + ((p.values.at(-1) - p.values[0]) * (x - p.x[0])) / (p.x.at(-1) - p.x[0]);
+  assert.ok(Math.abs(mu.values[0] - plain['h+'].mu0.values[0]) < 1e-9 && Math.abs(mu.values[n - 1] - plain['h+'].mu0.values.at(-1)) < 1e-9);
+  assert.ok(Math.abs(mu.values[16] - (lin(plain['h+'].mu0, mu.x[16]) - C / 4)) < 1e-9, `${mu.values[16]}`); // (f = 1/2: C/4 below the line)
+  assert.ok(Math.abs(bowed.epsr.values[8] - (lin(plain.epsr, bowed.epsr.x[8]) - 0.5 * 0.25 * 0.75)) < 1e-12);
+  assert.ok(Math.abs(bowed['e-'].mu0.values[16] - lin(plain['e-'].mu0, bowed['e-'].mu0.x[16])) < 1e-9); // (e⁻'s unbowed)
+  const dev = new Device(build({ T: 300, library: lib, stack: [ohmic(0), layer('GaAs', 0.5e-6), alloy('GaAs', 'AlGaAs', 1e-6, { step, bow: { 'h+': { mu0: C } } }), ohmic(0)] })), s = dev.solve();
+  assert.ok(s.converged && !s.warnings.some((w) => w.includes("doesn't resolve the grading")), s.warnings.join('; '));
+  const refuse = (bow, re) => assert.throws(() => at(bow), re);
+  refuse({ 'h+': { cRef: 2 } }, /bow\.h\+ must be \{ mu0 \}/);
+  refuse({ X: { mu0: 1 } }, /bow\.X: no species 'X'/);
+  refuse(3, /bow must be/);
+});
+
 test('alloy: what it refuses, and says why', () => {
   const lib = [semiconductor('GaAs', { T: 300 }), algaas(0.3)];
   const bad = (item, msg, library = lib) => assert.throws(() => build({ T: 300, library, stack: [ohmic(0), item, ohmic(0)] }), (e) => e instanceof DeviceError && msg.test(e.message), msg.source);

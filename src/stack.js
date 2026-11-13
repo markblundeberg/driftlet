@@ -81,19 +81,22 @@ export function layer(material, length, more = {}) {
  * @param {number} length m
  * @param {object} [more] `fraction`: a profile { x, values } against the layer's own x (0 at its
  *   start), values in [0, 1], or [a, b] for a linear one across it (default [0, 1]); `step` or
- *   `dipole`; and any field of a layer (name, donors, grid, …)
+ *   `dipole`; `bow`, { [species]: { mu0 }, epsr }, each value less bow·f(1 − f) (a band gap's
+ *   bowing, split between its band edges as you give it); and any field of a layer (name,
+ *   donors, grid, …)
  */
 export function alloy(from, to, length, more = {}) {
   if (!isObject(more)) fail(`alloy('${from}', '${to}'): the options must be an object`);
-  const { fraction, step, dipole, ...rest } = more;
+  const { fraction, step, dipole, bow, ...rest } = more;
   if (rest.grade !== undefined) fail(`alloy('${from}', '${to}'): it writes the layer's grade itself; for more grading, give the layer's grade by hand (layer(…, { grade }))`);
-  return { material: from, length, ...rest, alloy: { to, fraction, step, dipole } };
+  return { material: from, length, ...rest, alloy: { to, fraction, step, dipole, bow } };
 }
 
 // An alloy layer's grade (see alloy()), its profiles against the device's x from x0, the layer's
-// start: each value that differs between the two materials, linear in the composition.
+// start: each value that differs between the two materials, linear in the composition, less a
+// bowing term bow·f(1 − f) where one is given (a species' mu0, J/mol, or epsr).
 function alloyGrade(item, x0, species, materials, path) {
-  const { to, fraction = [0, 1], step, dipole } = item.alloy, from = item.material, L = item.length;
+  const { to, fraction = [0, 1], step, dipole, bow = {} } = item.alloy, from = item.material, L = item.length;
   const where = `${path} (alloy('${from}', '${to}'))`;
   const A = materials[from], B = materials[to];
   if (!isObject(A)) fail(`${where}: no material '${from}' in the library`);
@@ -133,25 +136,39 @@ function alloyGrade(item, x0, species, materials, path) {
   } else if (charged.length > 0) {
     fail(`${where}: how '${from}' and '${to}' line up is an alignment, as at a face between them, and there's no default: give step: { species, value } (for e⁻, the conduction-band offset, J/mol) or dipole (V)`);
   }
+  // bowing: { [species]: { mu0 }, epsr }, each subtracted as bow·f(1 − f)
+  if (!isObject(bow)) fail(`${where}.bow must be { [species]: { mu0 }, epsr }: each value's bowing, subtracted as bow·f(1 − f) at composition f`);
+  for (const [k, v] of Object.entries(bow)) {
+    if (k === 'epsr') {
+      if (!Number.isFinite(v)) fail(`${where}.bow.epsr must be a number (the permittivity's bowing)`);
+      continue;
+    }
+    if (!names.includes(k)) fail(`${where}.bow.${k}: no species '${k}' in '${from}' and '${to}' (or epsr, the permittivity)`);
+    if (!isObject(v) || Object.keys(v).some((q) => q !== 'mu0') || !Number.isFinite(v.mu0)) fail(`${where}.bow.${k} must be { mu0 }, its standard level's bowing in J/mol (a band gap's bowing split between its band edges, as an alignment is)`);
+  }
   const fAt = (x) => {
     const { x: xs, values: v } = fx;
     if (x <= xs[0]) return v[0];
     for (let k = 1; k < xs.length; k++) if (x <= xs[k]) return v[k - 1] + ((v[k] - v[k - 1]) * (x - xs[k - 1])) / (xs[k] - xs[k - 1]);
     return v[v.length - 1];
   };
-  // knots: the layer's ends and the composition's own (it's linear between them)
-  const knots = [...new Set([0, ...fx.x.filter((x) => x > 0 && x < L), L])].sort((a, b) => a - b);
-  const prof = (a, b) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => a + (b - a) * fAt(x)) });
+  // knots: the layer's ends and the composition's own (it's linear between them); with bowing,
+  // each piece in 32, so that the chords miss the parabola by at most bow/4096 of its value
+  const corners = [...new Set([0, ...fx.x.filter((x) => x > 0 && x < L), L])].sort((a, b) => a - b);
+  const bowed = Object.keys(bow).length > 0;
+  const knots = bowed ? corners.flatMap((x, k) => (k === 0 ? [x] : Array.from({ length: 32 }, (_, j) => corners[k - 1] + ((x - corners[k - 1]) * (j + 1)) / 32))) : corners;
+  const prof = (a, b, c = 0) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => { const f = fAt(x); return a + (b - a) * f - c * f * (1 - f); }) });
   const grade = {};
   for (const n of names) {
     const sa = A.species[n], sb = B.species[n], z = species.find((sp) => sp.name === n)?.z ?? 0, g = {};
     const muA = sa.mu0 ?? 0, muB = (sb.mu0 ?? 0) + z * FARADAY * d;
-    if (muA !== muB) g.mu0 = prof(muA, muB);
+    const c = bow[n]?.mu0 ?? 0;
+    if (muA !== muB || c !== 0) g.mu0 = prof(muA, muB, c);
     if (sa.cRef !== sb.cRef) g.cRef = prof(sa.cRef, sb.cRef);
     if (sa.D !== sb.D) g.D = prof(sa.D, sb.D);
     if (Object.keys(g).length > 0) grade[n] = g;
   }
-  if (A.epsr !== B.epsr) grade.epsr = prof(A.epsr, B.epsr);
+  if (A.epsr !== B.epsr || (bow.epsr ?? 0) !== 0) grade.epsr = prof(A.epsr, B.epsr, bow.epsr ?? 0);
   return grade;
 }
 

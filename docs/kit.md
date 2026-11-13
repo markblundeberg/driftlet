@@ -65,8 +65,11 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   charged species' offset follows from the two materials' $`\mu^\circ`$ (the valence band's from
   the gaps). It's folded into
   `to`'s $`\mu^\circ`$, so held at fraction 1 the layer is `to`, lined up as that face would line
-  it up (to round-off, in the tests). A bowed gap (one not linear in the composition) is beyond
-  it: write the layer's `grade` by hand, or join alloys at intermediate materials.
+  it up (to round-off, in the tests). A bowed value, $`(1-f)\,a + f\,b - C f(1-f)`$, takes
+  `bow: { 'h+': { mu0: C }, epsr: C }` (J/mol for a μ°): a band gap's bowing goes to its band
+  edges as you split it, as an alignment does (all on h⁺'s μ° bows the valence band alone). Each
+  straight piece of the composition is then sampled at 32 points. Anything else not linear in the
+  composition (cRef, D) is a `grade` written by hand, or alloys joined at intermediate materials.
 - **Faces** are anything else between layers: an interface's fields, exactly as in
   `interfaces[f]`. Two adjacent layers with no face between them get the default face, which
   between different materials is an error asking for the alignment, as always.
