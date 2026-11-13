@@ -122,6 +122,24 @@ function drawSpecies(itf, side, species) {
 }
 
 export class Solver {
+  // The constructor builds, in this order, each part reading what the ones before it set (moved
+  // out of order, a part reads undefined; a code-smell review's map of it):
+  //   1. sizes: n, M (slots per block, from the busiest face's reactions, gates and diffuse
+  //      layers and the ports' surfaces and gates), nNodes, nFaces, nB; the layout, blockOfNode
+  //      and blockOfFace.
+  //   2. surfaces (surfAt, surfCols, θ) and gates (gatePort, gateList: slots from M and the
+  //      blocks); diffuse layers (diffList, diffAt: slots after the gates).
+  //   3. per-node material data (present, cRef, mu0hat, rhoFixed) and per-segment (segShift,
+  //      segD, segEpsr); phiUndefined; the unknowns u + uLo; metal nodes (nodeConductor,
+  //      sheetFace).
+  //   4. _activeSlots(): which slots are unknowns, and the block matrix sys (from phiUndefined,
+  //      diffList, gatePort and the metal nodes); K, ex and work vectors; bookkeeping arrays.
+  //   5. terminals (terms, termV, floating; termB and termC, sized by sys), _refreshSources(), the
+  //      floating ones' start; the time steps' history.
+  //   6. bulk reactions (rxs, rxsIn) and electrode areas; the boxes bookkeeping reads (need), the
+  //      neutral nodes (chargeNode), lateStorage, portHeldEnd.
+  //   7. _findStretches(): the stretches, and through _laws() the steady system's laws, which
+  //      read all of the above; then the start (initFromComposition) and the reference amounts.
   constructor(model) {
     this.model = model;
     const { grid, species, materials, regions, contacts } = model;
@@ -541,7 +559,7 @@ export class Solver {
     this.bookkeepingFaces = [];
     for (let f = 0; f < nFaces; f++) if (need[grid.regionEnd[f]] || need[grid.regionStart[f + 1]]) this.bookkeepingFaces.push(f);
 
-    this._findStretches();
+    this._findStretches(); // (and the laws: it ends with _laws())
     this.initFromComposition();
     this.referenceAmounts = this.stretches.map((st) => this.amount(st));
     // And what each surface species held then (a conserved combination through one counts it).
