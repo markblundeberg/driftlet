@@ -1,5 +1,5 @@
 // The preload of tools/fingerprint.js: a fixed clock, and a hash of the solver's state after each
-// public solve, appended to FINGERPRINT_OUT/<test file>.txt.
+// public solve, and of each Solution a Device returns, appended to FINGERPRINT_OUT/<test file>.txt.
 import { appendFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
@@ -27,6 +27,18 @@ for (const m of ['solveSteady', 'advance', 'integrate', 'impedance']) {
       throw e;
     }
     appendFileSync(out, `${m} ${hash(this, r)}\n`);
+    return r;
+  };
+}
+// And what the Device hands its caller: each Solution (and impedance's result) whole, its
+// warnings and every field, so a change to how solutions are made (makeSolution) is held too.
+const { Device } = await import(pathToFileURL(`${process.env.FINGERPRINT_SRC}/index.js`).href);
+const hashOut = (r) => createHash('sha1').update(JSON.stringify(r, (k, v) => (ArrayBuffer.isView(v) ? Array.from(v) : v)) ?? '').digest('hex').slice(0, 16);
+for (const m of ['solve', 'step', 'advance', 'impedance', 'solution']) {
+  const orig = Device.prototype[m];
+  Device.prototype[m] = function (...a) {
+    const r = orig.apply(this, a);
+    appendFileSync(out, `Device.${m} ${hashOut(r)}\n`);
     return r;
   };
 }

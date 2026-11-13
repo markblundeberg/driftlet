@@ -12,6 +12,37 @@ import { fixedAt, gradedAt, isGraded } from './device.js';
 const DIFFUSE_CROWDED = 5000;
 
 export function makeSolution(solver, result = {}) {
+  const { model } = solver;
+  const { sol, heldGap } = solutionFields(solver, result);
+  sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
+  // (a set() that couldn't carry the state over: said in every solution up to and including the
+  // next converged steady solve, which still keeps a closed region's restarted amounts)
+  if (solver.restarted) {
+    sol.warnings.push(solver.restarted);
+    if (result.converged && sol.steady) solver.restarted = null;
+  }
+  coverageWarnings(sol);
+  terminalSumWarnings(sol, solver, result, heldGap);
+  failureWarnings(sol, solver, result);
+  // The warnings below judge a solution's accuracy (its grid, its double layers). Of the state a
+  // steady solve gave up in, which isn't a solution, they say nothing useful (a driven current
+  // it couldn't pass leaves the device at ±26 V, where depletion reaches the contacts), so they're
+  // left out there; the two about the state itself (degenerate carriers, a species denser than
+  // any material) stay, as possible causes, and say they're of that state. (A failed time step
+  // restores the last good state, which is a solution: its warnings all stand.)
+  const solved = !result.unsolved, stopped = solved ? '' : ' (in the state the unconverged solve stopped in)';
+  if (solved) resolutionWarnings(sol, solver);
+  stateWarnings(sol, solver, stopped);
+  if (solved) contactCutoffWarnings(sol, solver);
+  if (solved) steepProfileWarnings(sol, solver);
+  sol.conservation = conservation(solver);
+  return sol;
+}
+
+// The fields: each species' c, μ̄ and levels, the fluxes, contacts, ports, terminals, faces,
+// bulk reactions and the total charge. (heldGap: what floating terminals' fluxes miss of their
+// circuits' currents, the scale terminalSumWarnings reads a sum against.)
+function solutionFields(solver, result) {
   const { model, n, M, u, c, VT } = solver;
   const { grid, species, contacts, interfaces } = model;
   const nNodes = grid.nNodes;
@@ -275,16 +306,10 @@ export function makeSolution(solver, result = {}) {
   interfaces.forEach((itf, f) => (q += itf.sheetCharge * grid.area[grid.regionEnd[f]]));
   solver.diffList.forEach((d) => (q += d.dl.q * grid.area[d.g])); // (the diffuse layers', held below the grid)
   sol.charge = q;
+  return { sol, heldGap };
+}
 
-  // Resolution warnings: where the model resolves a double layer (dipole or capacitive faces,
-  // gate contacts), check the local Debye length against the adjacent cell.
-  sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
-  // (a set() that couldn't carry the state over: said in every solution up to and including the
-  // next converged steady solve, which still keeps a closed region's restarted amounts)
-  if (solver.restarted) {
-    sol.warnings.push(solver.restarted);
-    if (result.converged && sol.steady) solver.restarted = null;
-  }
+function coverageWarnings(sol) {
   // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
   // and Newton loses them (a transient can stall there).
   // (A face's surface too: Argon's review of 1.6.1 found it unwatched.)
@@ -306,6 +331,10 @@ export function makeSolution(solver, result = {}) {
       );
     }
   });
+}
+
+function terminalSumWarnings(sol, solver, result, heldGap) {
+  const { model } = solver, { species } = model, F = FARADAY;
   // A steady state's terminal currents add up to zero (charge is kept): where they don't, by more
   // than they're known to, part of the device may sit at the wrong level. (The floating bases
   // solved wrong missed by 3% to 15% of their current, 2e-15 to 3e-10 A/m², with no terminal
@@ -349,6 +378,11 @@ export function makeSolution(solver, result = {}) {
       );
     }
   }
+}
+
+// What a failed solve says of why it failed: the first cause found, each one's remedy.
+function failureWarnings(sol, solver, result) {
+  const { model } = solver;
   const cond = solver.conditioning, un = solver.unreached, ch = solver.charging, lost = result.unsolved ? solver.drifted : null; // (a failed steady solve's: see Device.solve)
   // (what failed: a steady solve, or a time step; a failed step() was said to be "the solve")
   const what = result.unsolved ? 'the solve' : 'the step', system = result.unsolved ? 'the steady system' : "the time step's system";
@@ -423,42 +457,50 @@ export function makeSolution(solver, result = {}) {
               : '')),
     );
   }
-  if (result.converged === false && !result.stopped && !un && !ch && solver.violent?.length > 0) {
+  // Why a failed solve failed, where none of the causes above was named: each message below
+  // stands alone, but a violent start may be said beside one of those (lost, slow, conditioning).
+  const failed = result.converged === false && !result.stopped && !un && !ch;
+  const unexplained = failed && !lost && slow.length === 0 && !(cond && cond.digits > 12);
+  if (failed && solver.violent?.length > 0) {
     // A cold start far from where a floating double layer's neighbours balance (an electrode's
     // reactions with its starting coverages, an ion link): Newton has to cross that gap at once.
     sol.warnings.push(
       `${what} did not converge from a start far from equilibrium: ${solver.violent.join('; ')}, its double layer uncharged. ` +
         'Hold that terminal at a voltage first, solve(), then let it float (set its I: 0): it keeps the state the held one gave it.',
     );
-  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.modelError) {
+  } else if (unexplained && solver.modelError) {
     sol.warnings.push(
       `${what} did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
         'The model doesn\'t hold there: a smaller concentration or drive, or a model for it (lattice for crowding).',
     );
-  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12) && solver.settling) {
+  } else if (unexplained && solver.settling) {
     const { maxSteps, ratio, motion, tol } = solver.settling, more = Math.ceil(Math.log(tol / motion) / Math.log(ratio));
     sol.warnings.push(
       `the solve ran out of time steps (maxSteps ${maxSteps}) while still settling: each step moved the state ${ratio.toFixed(2)} as far as the one before, the last ${motion.toExponential(1)} thermal units, against the ${tol} that ends a ramp. ` +
         `Something slow is relaxing (a reaction, a link): solve({ maxSteps: ${maxSteps + (Number.isFinite(more) && more > 0 ? more + 10 : maxSteps)} }) lets it finish.`,
     );
-  } else if (result.converged === false && !result.stopped && !un && !ch && !lost && slow.length === 0 && !(cond && cond.digits > 12)) {
+  } else if (unexplained) {
     sol.warnings.push(
       `${what} did not converge, and nothing specific showed why. ` +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',
     );
   }
-  // The warnings below judge a solution's accuracy (its grid, its double layers). Of the state a
-  // steady solve gave up in, which isn't a solution, they say nothing useful (a driven current
-  // it couldn't pass leaves the device at ±26 V, where depletion reaches the contacts), so they're
-  // left out there; the two about the state itself (degenerate carriers, a species denser than
-  // any material) stay, as possible causes, and say they're of that state. (A failed time step
-  // restores the last good state, which is a solution: its warnings all stand.)
-  const solved = !result.unsolved, stopped = solved ? '' : ' (in the state the unconverged solve stopped in)';
-  const debye = (g) => {
+}
+
+// The Debye length at node g (NaN where there's no screening or no ε).
+function debyeLength(solver, g) {
+  const { model } = solver, { grid } = model, RT = model.RT, F = FARADAY;
     const reg = model.regions[grid.nodeRegion[g]], mat = reg.gradeEpsr ? gradedAt(model.materials[reg.material], reg, grid.x[g]) : model.materials[reg.material];
     const s2 = solver.screening(g); // zᵀKz: Σ z² c for ideal statistics
     return mat.epsr > 0 && s2 > 0 ? Math.sqrt((mat.epsr * EPS0 * RT) / (F * F * s2)) : NaN;
-  };
+}
+
+// Whether the grid resolves each double layer: at faces and at contacts that hold charge.
+function resolutionWarnings(sol, solver) {
+  const { model } = solver, { grid, species, contacts, interfaces } = model, nNodes = grid.nNodes, RT = model.RT, F = FARADAY, VT = solver.VT;
+  const debye = (g) => debyeLength(solver, g);
+  // Where the model resolves a double layer (dipole or capacitive faces,
+  // gate contacts), check the local Debye length against the adjacent cell.
   const check = (g, h, where) => {
     const lam = debye(g);
     if (lam < h) {
@@ -516,7 +558,7 @@ export function makeSolution(solver, result = {}) {
     );
   };
   interfaces.forEach((itf, f) => {
-    if (itf.phi.type === 'neutral' || !solved) return;
+    if (itf.phi.type === 'neutral') return;
     const gL = grid.regionEnd[f], gR = grid.regionStart[f + 1];
     check(gL, grid.segLength[gL - 1], `interfaces[${f}] (left side)`);
     check(gR, grid.segLength[gR], `interfaces[${f}] (right side)`);
@@ -554,14 +596,20 @@ export function makeSolution(solver, result = {}) {
     }
   });
   const resolves = (ct) => ct.phi.type === 'capacitive' || ct.phi.type === 'pinned';
-  if (solved && resolves(contacts.left)) {
+  if (resolves(contacts.left)) {
     check(0, grid.segLength[0], 'contacts.left');
     boxed(0, grid.segLength[0], contacts.left.phi, -1, 'contacts.left');
   }
-  if (solved && resolves(contacts.right)) {
+  if (resolves(contacts.right)) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
   }
+}
+
+// Of the state itself (degenerate carriers, a reaction left out of equilibrium, a species denser
+// than any material): said of a failed solve's state too, as possible causes.
+function stateWarnings(sol, solver, stopped) {
+  const { model } = solver, { grid } = model;
   // Electrons or holes above their band's effective density of states (cRef at that node: the
   // material's, or a graded region's) under Boltzmann statistics: degenerate, where those
   // statistics no longer hold (a surface driven past what a reaction can take away piles holes
@@ -616,12 +664,17 @@ export function makeSolution(solver, result = {}) {
       }
     });
   });
+}
+
+function contactCutoffWarnings(sol, solver) {
+  const { model } = solver, { grid, species, contacts, interfaces } = model, nNodes = grid.nNodes, RT = model.RT, F = FARADAY, VT = solver.VT;
+  const debye = (g) => debyeLength(solver, g);
   // A contact that holds its end neutral ('bulk': a bath, an ohmic contact) cuts off any space
   // charge reaching it: a double layer longer than its region. The charge it cuts off is about
   // ρ λ_D at the node beside it; against the region's own space charge (half Σ|ρ| over it, the
   // two signs of a double layer), warn past 1e-3.
   for (const side of ['left', 'right']) {
-    if (contacts[side].phi.type !== 'bulk' || !solved) continue;
+    if (contacts[side].phi.type !== 'bulk') continue;
     const r = side === 'left' ? 0 : model.regions.length - 1, a = grid.regionStart[r], b = grid.regionEnd[r];
     const mat = model.materials[model.regions[r].material];
     if (!(mat.epsr > 0) || mat.conductor || b - a < 3) continue;
@@ -651,14 +704,17 @@ export function makeSolution(solver, result = {}) {
       );
     }
   }
+}
 
+function steepProfileWarnings(sol, solver) {
+  const { model } = solver, { grid, species, contacts, interfaces } = model, nNodes = grid.nNodes, RT = model.RT, F = FARADAY, VT = solver.VT;
   // Steep profiles carrying current: Scharfetter–Gummel takes the field as uniform across each
   // cell, which fails where it isn't, as at an electrode where a species is nearly depleted (there
   // φ̂ ≈ ln c, and on a coarse cell the flux comes out too large: by (1+r)ln(1/r)/(2(1−r)) for
   // a concentration ratio r across it). Flag a region's end cell whose field is well above its
   // neighbour's while its concentration changes steeply, for species carrying the current. (A
   // pn depletion region's field changes smoothly from cell to cell, which SG handles.)
-  if (solved && Number.isFinite(sol.current)) {
+  if (Number.isFinite(sol.current)) {
     const share = species.map((sp, i) =>
       Math.max(Math.abs(sp.z * (sol.contacts.left.flux[sp.name] ?? 0)), Math.abs(sp.z * (sol.contacts.right.flux[sp.name] ?? 0))),
     );
@@ -701,11 +757,14 @@ export function makeSolution(solver, result = {}) {
       }
     });
   }
+}
 
+function conservation(solver) {
+  const { species } = solver.model;
   // Conservation bookkeeping for each species stretch.
   // Amount now vs the reference amount plus what came in through the contacts. The drift is
   // relative to the larger of the two; NaN where a reaction also makes or consumes it.
-  sol.conservation = solver.stretches.map((st, k) => {
+  return solver.stretches.map((st, k) => {
     const amount = solver.amount(st);
     const reference = solver.referenceAmounts[k];
     const intake = solver.boundaryIntake[k];
@@ -723,6 +782,5 @@ export function makeSolution(solver, result = {}) {
       drift: st.reactive ? NaN : (amount - expected) / scale,
     };
   });
-
-  return sol;
 }
+

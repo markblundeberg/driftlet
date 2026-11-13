@@ -1,7 +1,7 @@
 // Fingerprints of every solve in the test suite, for a change meant to change nothing (a module
 // moved, a refactor): each test file runs with a preload that hashes the solver's whole state
 // (u, uLo, termV, and what the call returned) after every solveSteady, advance, integrate and
-// impedance, one line per call. Two runs, before and after, should match line for line. Wall
+// impedance, and each Solution a Device returns whole (warnings and every field), one line per call. Two runs, before and after, should match line for line. Wall
 // time is replaced by a clock that ticks 0.1 ms per reading (about a step's), so a run that
 // stops on its budget (budgetMs) stops at the same step every time.
 //
