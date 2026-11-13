@@ -230,29 +230,37 @@ export function initFromComposition(s) {
     // Each amount-given species' ζ (its activity's ln), for a balance below: no level-fixed charged
     // species responding, they don't depend on φ̂ (a non-ideal model's from its statistics).
     const activity = (i) => (mat.ideal ? Math.log(cFix[i] / mat.cRef[i]) : zeta[i]);
+    // φ̂ where the first of an electrode's reactions that can be balanced is at equilibrium: its
+    // participants on this region's side (`inside`) at their amounts, the metal's at levelOf(p)
+    // (NaN where it has none), its surface species at their starting coverages (a face's in
+    // rx.surf, a port's in part with side 2); or ph where none can be. (Written out for each
+    // kind of electrode before, a face's coverage fix made in one copy at a time; a code-smell
+    // review.)
+    const balanced = (reactions, surface, inside, levelOf, ph) => {
+      const bare = 1 - surface.reduce((t, sp) => t + sp.theta0, 0);
+      const lnSurf = (q) => surface[q].mu0 / model.RT + Math.log(surface[q].theta0 / bare);
+      for (const rx of reactions) {
+        let a = rx.fixedA, slope = 0;
+        for (const q of rx.surf ?? []) a -= q.nu * lnSurf(q.s);
+        for (const p of rx.part) {
+          if (p.side === 2) a -= p.nu * lnSurf(p.s);
+          else if (p.side !== inside) a -= p.nu * levelOf(p);
+          else if (mode[p.i] === 2) {
+            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
+            slope += p.nu * z[p.i];
+          } else slope = NaN;
+        }
+        if (slope !== 0 && Number.isFinite(slope) && Number.isFinite(a)) return a / slope; // a − slope·φ̂ = 0
+      }
+      return ph;
+    };
     if (!mat.phiFree && !responds && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
     if (!mat.phiFree && !responds && r > 0 && materials[regions[r - 1].material].conductor) {
       // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
       // that takes a species from this side at equilibrium (the electrode at its open-circuit
       // level), rather than φ carried over from the metal, which can be volts away.
       const bn = s.blockOfNode[grid.regionEnd[r - 1]];
-      // (the face's surface species at their starting coverages, as an electrode port's are below)
-      const surf = interfaces[r - 1].surface ?? [], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
-      for (const rx of interfaces[r - 1].reactions) {
-        let a = rx.fixedA, slope = 0;
-        for (const q of rx.surf ?? []) a -= q.nu * (surf[q.s].mu0 / model.RT + Math.log(surf[q.s].theta0 / bare));
-        for (const p of rx.part) {
-          if (p.side === 0) a -= p.nu * u[bn * M + 1 + p.i];
-          else if (mode[p.i] === 2) {
-            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
-            slope += p.nu * z[p.i];
-          } else slope = NaN;
-        }
-        if (slope !== 0 && Number.isFinite(slope)) {
-          phiHat = a / slope; // a − slope·φ̂ = 0
-          break;
-        }
-      }
+      phiHat = balanced(interfaces[r - 1].reactions, interfaces[r - 1].surface ?? [], 1, (p) => u[bn * M + 1 + p.i], phiHat);
     } else if (!mat.phiFree && !responds && r === 0 && r + 1 < regions.length && materials[regions[r + 1].material].conductor) {
       if (graded) mat = gradedAt(base, reg, grid.x[grid.regionEnd[r]]); // (the electrode's face is this region's end)
       // Likewise an electrode on the right, its level its contact's, where nothing on the left
@@ -261,46 +269,17 @@ export function initFromComposition(s) {
       // is kept: a Daniell cell's KCl bridge balanced against its copper instead started with a
       // jump at the junction, and a 1 µs step failed to settle.
       // (its carrier at its contact's level, the metal fed by the right contact)
-      const surf = interfaces[r].surface ?? [], bare = 1 - surf.reduce((t, sp) => t + sp.theta0, 0);
-      for (const rx of interfaces[r].reactions) {
-        let a = rx.fixedA, slope = 0;
-        for (const q of rx.surf ?? []) a -= q.nu * (surf[q.s].mu0 / model.RT + Math.log(surf[q.s].theta0 / bare));
-        for (const p of rx.part) {
-          const st = p.side === 1 ? s.stretches[s.stretchOf[(r + 1) * n + p.i]] : null;
-          if (p.side === 1) a -= p.nu * (st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN);
-          else if (mode[p.i] === 2) {
-            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
-            slope += p.nu * z[p.i];
-          } else slope = NaN;
-        }
-        if (slope !== 0 && Number.isFinite(slope) && Number.isFinite(a)) {
-          phiHat = a / slope;
-          break;
-        }
-      }
+      const fed = (p) => {
+        const st = s.stretches[s.stretchOf[(r + 1) * n + p.i]];
+        return st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN;
+      };
+      phiHat = balanced(interfaces[r].reactions, interfaces[r].surface ?? [], 0, fed, phiHat);
     }
     const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
     if (!mat.phiFree && !responds && electrode) {
       // Nor here, but an electrode spread through it does: start with the port's first reaction
       // that can be balanced at equilibrium with the port's level (the electrode at open circuit).
-      const bare = 1 - electrode.surface.reduce((t, sp) => t + sp.theta0, 0);
-      for (const rx of electrode.reactions) {
-        let a = rx.fixedA, slope = 0;
-        for (const p of rx.part) {
-          if (p.side === 1) a -= p.nu * s.portEta(electrode, p.i);
-          else if (p.side === 2) {
-            const sp = electrode.surface[p.s]; // (at its starting coverage)
-            a -= p.nu * (sp.mu0 / model.RT + Math.log(sp.theta0 / bare));
-          } else if (mode[p.i] === 2) {
-            a -= p.nu * (activity(p.i) + mat.mu0[p.i] / model.RT);
-            slope += p.nu * z[p.i];
-          } else slope = NaN;
-        }
-        if (slope !== 0 && Number.isFinite(slope)) {
-          phiHat = a / slope;
-          break;
-        }
-      }
+      phiHat = balanced(electrode.reactions, electrode.surface, 0, (p) => s.portEta(electrode, p.i), phiHat);
     }
     const neutralPhi = (ph) => {
       let lo = ph - 1, hi = ph + 1;
