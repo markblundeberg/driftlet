@@ -16,8 +16,10 @@ const fail = (message) => {
  * Each electrode reaction's rate at a face (a metal's) or at one spot of an electrode port, with
  * the composition beside it as in `sol` and the metal's carrier at each level in `V` (in the
  * terminals' convention, V = μ̄/(zF); against SHE, subtract φ for the usual tables' ions). The
- * rates are the solver's own law, so at the electrode's actual level they are
- * `sol.interfaces[f].rates` (or `sol.ports[k].rates` at that node).
+ * rates are the solver's law, written again here from the normalised reaction (the tests hold the
+ * two together, so at the electrode's actual level they are `sol.interfaces[f].rates`, or
+ * `sol.ports[k].rates` at that node): a new kind of kinetics needs a branch here too, and one it
+ * lacks is refused rather than read as Butler–Volmer.
  * @param {import('./index.js').Device} device
  * @param {object} sol a solution of it
  * @param {{ face: number } | { port: string | number, x?: number }} where a face's index, or a port
@@ -77,6 +79,7 @@ export function polarization(device, sol, where, V, opts = {}) {
   // its prefactor apart from them too, so a surface can be held or re-equilibrated at each V.
   const parts = reactions.map((rx, k) => {
     if (rx.srh) fail('polarization: SRH kinetics has no electrode level');
+    if (!rx.vmax && !rx.mhc && !(rx.alpha >= 0)) fail('polarization: a kind of kinetics it has no branch for (Butler–Volmer, saturating and Marcus–Hush–Chidsey it has)');
     let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's P and Q apart)
     const surf = [];
     // (a face's surface species are rx.surf, a port's side-2 participants: the same from here on)
