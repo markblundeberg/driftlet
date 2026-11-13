@@ -64,7 +64,8 @@
  * @property {string} material material name
  * @property {number} length m
  * @property {string} [name]
- * @property {number} [fixedCharge] immobile charge density, C/m³
+ * @property {number | Profile} [fixedCharge] immobile charge density, C/m³ (doping, ionomer): a
+ *   number, or a profile against the device's x (m), piecewise linear (graded doping)
  * @property {Record<string, number | Profile>} [c0] initial concentrations,
  *   mol/m³ (required for species not connected to a contact: it fixes the amount they conserve);
  *   or a profile against the device's x (m), piecewise linear; either is the starting state

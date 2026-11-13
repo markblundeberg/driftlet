@@ -281,7 +281,12 @@ export function normalizeDevice(def) {
     fields(reg, path, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade']);
     need(materialIndex.has(reg.material), `${path}.material: unknown material ${JSON.stringify(reg.material)}`);
     const length = positive(reg.length, `${path}.length`);
-    const fixedCharge = reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
+    // Fixed charge (C/m³): a number, or a profile { x, values } against the device's x (graded
+    // doping), read at each node with fixedAt. A profiled region's fixedCharge is NaN, so a reader
+    // that skips fixedAt shows it rather than reading a wrong number.
+    const fixedProfile = isObject(reg.fixedCharge) ? profile(reg.fixedCharge, `${path}.fixedCharge`, 'charge densities (C/m³)', () => true, 'finite (C/m³)') : null;
+    const fixedCharge = fixedProfile ? NaN : reg.fixedCharge === undefined ? 0 : finite(reg.fixedCharge, `${path}.fixedCharge`);
+    const anyFixed = fixedProfile ? fixedProfile.values.some((q) => q !== 0) : fixedCharge !== 0;
     // Imposed flow (m/s, toward +x) carrying every mobile species, and eddy mixing (m²/s).
     const velocity = reg.velocity === undefined ? 0 : finite(reg.velocity, `${path}.velocity`);
     const mixing = reg.mixing === undefined ? 0 : nonNegative(reg.mixing, `${path}.mixing`);
@@ -291,7 +296,7 @@ export function normalizeDevice(def) {
     }
     const mat = materials[materialIndex.get(reg.material)];
     if (mat.conductor) {
-      need(fixedCharge === 0, `${path}.fixedCharge: a conductor region is neutral in bulk`);
+      need(!anyFixed, `${path}.fixedCharge: a conductor region is neutral in bulk`);
       need(reg.c0 === undefined, `${path}.c0: a conductor region has no composition to give, only its carrier's level`);
       need(velocity === 0 && mixing === 0, `${path}: a conductor region has no flow or mixing, only conduction`);
       // Nothing is stored inside a metal (its charge is on its faces), so its Fermi level is
@@ -300,12 +305,13 @@ export function normalizeDevice(def) {
     }
     if (mat.epsr === 0) {
       need(
-        species.some((sp, i) => mat.present[i] && sp.z !== 0) || fixedCharge === 0,
+        species.some((sp, i) => mat.present[i] && sp.z !== 0) || !anyFixed,
         `${path}: material '${mat.name}' has ε = 0 (strictly neutral) but no mobile charged species to neutralise the fixed charge`,
       );
     }
     // An insertion host's fixed charge is balanced by its own background carriers.
     const host = mat.models.find((md) => md.type === 'insertion');
+    need(!host || !fixedProfile, `${path}.fixedCharge: in an insertion host the fixed charge sets its background carriers, which are uniform; give a number, not a profile`);
     const background = host ? -fixedCharge / (species[host.carrier].z * FARADAY) : 0;
     if (host) {
       need(
@@ -375,6 +381,7 @@ export function normalizeDevice(def) {
       material: materialIndex.get(reg.material),
       length,
       fixedCharge,
+      fixedProfile,
       c0,
       c0Profile,
       grade,
@@ -521,6 +528,13 @@ export function normalizeDevice(def) {
   // A starting profile steeper than the cells under it starts as something else, silently: a
   // liquid junction's potential then looks as if it grows while the junction forms.
   regions.forEach((reg, r) => {
+    const offQ = reg.fixedProfile && unresolved(reg.fixedProfile, grid, r);
+    if (offQ?.off) {
+      warnings.push(
+        `regions[${r}].fixedCharge: the grid doesn't resolve the profile (at x = ${offQ.x.toExponential(2)} m, nodes ${offQ.h.toExponential(1)} m apart ` +
+          `miss it by ${Math.round(100 * offQ.off)}% of its range), so the device isn't the one given; cells of about ${offQ.want.toExponential(0)} m there would resolve it (hmax, or a region boundary there to grade toward)`,
+      );
+    }
     const missed = reg.c0Profile.map((p, i) => p && { i, ...unresolved(p, grid, r) }).filter((m) => m && m.off);
     if (missed.length === 0) return;
     const miss = missed.reduce((a, m) => (m.off > a.off ? m : a));
@@ -1744,7 +1758,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(bath.c[species[r].name] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);
     need(byPhi || cdef.terminal === undefined || terminal === r, `${path}.terminal must be the bath's reference species`);
     terminal = byPhi && terminal !== null ? terminal : r;
-    const fixed = own ? 0 : region.fixedCharge / FARADAY;
+    const fixed = own ? 0 : fixedAt(region, x) / FARADAY;
     let charge = fixed, scale = Math.abs(charge);
     const cb = new Float64Array(species.length);
     for (const [sname, v] of Object.entries(bath.c)) {
@@ -1810,7 +1824,7 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     // ohmic(V, ['h+']) on one failed with "nothing specific showed why" (round 16's cold agent).
     if (!mat.conductor && !mat.phiFree && !mat.models.some((md) => md.type === 'insertion')) {
       const signs = new Set(species.flatMap((sp, i) => (mat.present[i] && sp.z !== 0 ? [Math.sign(sp.z)] : [])));
-      const fixed = Math.sign(region.fixedCharge ?? 0);
+      const fixed = Math.sign(fixedAt(region, x));
       if (signs.size === 1 && !(fixed !== 0 && !signs.has(fixed))) {
         const [only] = signs;
         throw new DeviceError(
@@ -1829,6 +1843,9 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
 }
 
 // A profile's value at x (c0, kf): piecewise linear, constant beyond its ends.
+// A region's fixed charge at x (C/m³): its profile there, or its one value.
+export const fixedAt = (reg, x) => (reg.fixedProfile ? profileAt(reg.fixedProfile, x) : (reg.fixedCharge ?? 0));
+
 export function profileAt({ x, values: c }, at) {
   if (at <= x[0]) return c[0];
   const last = x.length - 1;

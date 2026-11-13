@@ -579,11 +579,10 @@ for live demos.
   only $`\rho_{\mathrm{fixed}} - \nabla\cdot P_0`$, so those $`\mu^\circ`$ as given, with
   $`-dP_0/dx`$ as fixed charge and each jump of $`P_0`$ as a face's `sheetCharge`, is the same
   device (every $`\bar\mu`$, $`\phi`$ and current; only $`D`$'s split of free and bound differs).
-  Planned (with the owner, 11 Nov): `fixedCharge` as a profile (`{ x, values }`, as `c0` takes),
-  which also covers graded doping; tested by that equivalence against the same device's
-  $`\mu^\circ`$ moved into this gauge ($`z_iFf`$ each, $`\varepsilon f' = -P_0`$), and against a
-  staircase of uniform layers.
-  Still to come: graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
+  Done 12 Nov (planned with the owner on the 11th): `fixedCharge` as a profile (`{ x, values }`), which also
+  covers graded doping; held to that equivalence (the plain diode against its μ° moved by
+  $`z_iFf`$ with $`-\varepsilon f''`$ as fixed charge, second order in the cell) and to a
+  staircase of uniformly doped layers. Still to come: graded $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ for species with non-ideal
   statistics; and a bowed alloy (values not linear in the composition). Done with it: the kit's
   `alloy()` (between two library materials, its alignment given as at a face) and a graded-base
   transistor demo (demos/hbt.html, its transit time held to Kroemer's formula).

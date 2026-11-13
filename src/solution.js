@@ -5,7 +5,7 @@
 // the voltage views are NaN for neutral species.
 
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, isGraded } from './device.js';
+import { fixedAt, gradedAt, isGraded } from './device.js';
 
 // A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
 // hydrated ions pack, beyond what a dilute layer describes.
@@ -625,9 +625,9 @@ export function makeSolution(solver, result = {}) {
     const r = side === 'left' ? 0 : model.regions.length - 1, a = grid.regionStart[r], b = grid.regionEnd[r];
     const mat = model.materials[model.regions[r].material];
     if (!(mat.epsr > 0) || mat.conductor || b - a < 3) continue;
-    const n = model.species.length, fixed = model.regions[r].fixedCharge ?? 0;
+    const n = model.species.length, fixed = (g) => fixedAt(model.regions[r], grid.x[g]);
     const rho = (g) => {
-      let q = fixed;
+      let q = fixed(g);
       for (let i = 0; i < n; i++) if (solver.c[g * n + i] > 0) q += F * model.species[i].z * solver.c[g * n + i];
       return q;
     };
@@ -635,7 +635,7 @@ export function makeSolution(solver, result = {}) {
     // a quasi-neutral layer split off a junction's holds almost no space charge, so the ratio
     // below alone would read its round-off as a cut-off layer)
     const gross = (g) => {
-      let q = Math.abs(fixed);
+      let q = Math.abs(fixed(g));
       for (let i = 0; i < n; i++) if (solver.c[g * n + i] > 0) q += F * Math.abs(model.species[i].z) * solver.c[g * n + i];
       return q;
     };

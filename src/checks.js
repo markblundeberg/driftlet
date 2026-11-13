@@ -4,6 +4,7 @@
 
 import { Device } from './index.js';
 import { FARADAY } from './constants.js';
+import { fixedAt } from './device.js';
 import { unitWarnings } from './describe.js';
 import { checkOptions } from './errors.js';
 
@@ -385,7 +386,7 @@ function gridCheck(device, sol, tol, gross) {
     let q = 0, v = 0;
     for (let g = 0; g < sol.x.length; g++) {
       if (sol.region[g] !== r) continue;
-      let a = Math.abs(model.regions[r].fixedCharge ?? 0);
+      let a = Math.abs(fixedAt(model.regions[r], sol.x[g]));
       for (const sp of model.species) if (Number.isFinite(sol.c[sp.name][g])) a += FARADAY * Math.abs(sp.z * sol.c[sp.name][g]);
       q = Math.max(q, a);
       v += model.grid.vol[g];
@@ -471,7 +472,7 @@ function orderCheck(device, sol, gross) {
 
 // Charge density at a node of region r, C/m³: the species plus the region's fixed charge.
 function rho(s, g, model, r) {
-  let q = model.regions[r].fixedCharge ?? 0;
+  let q = fixedAt(model.regions[r], s.x[g]);
   for (const sp of model.species) {
     const c = s.c[sp.name][g];
     if (Number.isFinite(c)) q += FARADAY * sp.z * c;

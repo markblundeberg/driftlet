@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, DeviceError, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
-import { alloy, build, layer, ohmic, semiconductor } from '../src/kit.js';
+import { Device, DeviceError, EPS0, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
+import { alloy, build, describe, layer, ohmic, semiconductor } from '../src/kit.js';
 
 // Graded regions: a species' μ° and cRef varying within a region, as profiles { x, values }
 // against the device's x (regions[r].grade). The flux along a segment drifts down the
@@ -361,6 +361,96 @@ test('graded gap: φ → φ + f with μ°_i → μ°_i − z_i F f is a symmetry
   const plain = stair(Array(k).fill(0)), shifted = stair(Array.from({ length: k }, (_, j) => 0.05 * Math.sin(j)));
   assert.ok(Math.abs(shifted.terminals.right.current / plain.terminals.right.current - 1) < 1e-9, `${shifted.terminals.right.current} vs ${plain.terminals.right.current}`);
   for (const g of [10, plain.x.length >> 1, plain.x.length - 10]) assert.ok(Math.abs(shifted.V['e-'][g] - plain.V['e-'][g]) < 1e-9 && Math.abs(shifted.Vstd['e-'][g] - plain.Vstd['e-'][g]) < 1e-9, `levels at node ${g}`);
+});
+
+// Graded doping: fixedCharge as a profile. The diode's p layer with its acceptors falling 100×
+// across it, exponentially between flat ends (a drift transistor's base: Kroemer, 1954), against
+// a staircase of uniform layers each at its middle's doping.
+const dopedFrom = (x0) => {
+  const xs = [x0, ...Array.from({ length: 31 }, (_, j) => x0 + 0.25e-6 + (j * 1.5e-6) / 30), x0 + 2e-6];
+  return { x: xs, values: xs.map((x) => -FARADAY * 0.166 * Math.exp(Math.log(0.01) * Math.min(1, Math.max(0, (x - x0 - 0.25e-6) / 1.5e-6)))) };
+};
+const dopedDiode = (V, fixed, grid) => {
+  const def = diode(V, {});
+  def.regions[1].fixedCharge = fixed;
+  return grid ? { ...def, grid } : def;
+};
+test('graded doping: fixedCharge as a profile is the limit of a staircase of uniformly doped layers', () => {
+  const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 }, prof = dopedFrom(1e-6);
+  const graded = new Device(dopedDiode(V, prof, fine)).solve();
+  assert.ok(graded.converged, graded.warnings.join('; '));
+  const stair = (k) => {
+    const def = dopedDiode(V, 0, fine), w = 2e-6 / k;
+    def.regions = [def.regions[0], ...Array.from({ length: k }, (_, j) => ({ material: 's', length: w, fixedCharge: atX(prof, 1e-6 + (j + 0.5) * w) }))];
+    def.interfaces = def.regions.slice(1).map(() => ({ dipole: 0 }));
+    const sol = new Device(def).solve();
+    assert.ok(sol.converged, sol.warnings.join('; '));
+    return sol.terminals.right.current;
+  };
+  const errs = [4, 16, 64].map((k) => Math.abs(stair(k) / graded.terminals.right.current - 1));
+  assert.ok(errs[2] < 1e-4, `64 layers: ${errs}`); // (9.0e-2, 3.2e-3, 1.9e-5)
+  assert.ok(errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `second order in 1/k: ${errs}`);
+});
+
+test('graded doping: another gauge’s built-in polarization P0(x) is its bound charge, −dP0/dx, as fixed charge', () => {
+  // φ → φ + f with each μ°_i → μ°_i − z_i F f is the same device where a built-in displacement
+  // D_inhomog = ε f′ (a static polarization P0) takes up the change (ESBD's inhomog). driftlet
+  // has no D_inhomog inside a region, but Poisson's equation sees only ρ − dP0/dx, so the same
+  // device in that gauge is its μ° shifted and −(ε f′)′ added to its fixed charge (and a face's
+  // sheetCharge where P0 jumps; none here). Every level and current is
+  // the plain diode's, φ shifted by f, to the grid's second order (the box's second difference of
+  // f against f″): exact in the limit, so a reader of the profile anywhere else fails it.
+  const V = 0.45, x0 = 1e-6, W = 2e-6, A = 0.1, eps = 11.7 * EPS0, q0 = -FARADAY * 0.0166;
+  // f = A sin⁴(π(x − x0)/W): f, f′ and f″ all 0 at both ends, so the n side, the face and the
+  // contact see nothing (a 'bulk' contact holds its end neutral with the fixed charge counted, so
+  // a bound charge reaching it moves the contact: true neutrality for a real polarization, and
+  // not a gauge's).
+  const xs = Array.from({ length: 4001 }, (_, j) => x0 + (j * W) / 4000), u = (x) => (Math.PI * (x - x0)) / W, k2 = (Math.PI / W) ** 2;
+  const f = (x) => A * Math.sin(u(x)) ** 4, f2 = (x) => 4 * A * k2 * Math.sin(u(x)) ** 2 * (3 * Math.cos(u(x)) ** 2 - Math.sin(u(x)) ** 2);
+  const prof = (fn) => ({ x: xs, values: xs.map(fn) }), muE = prof((x) => FARADAY * f(x));
+  const run = (h) => {
+    const grid = { hmin: h / 10, hmax: h };
+    const plain = new Device({ ...diode(V, {}), grid }).solve();
+    const def = { ...diode(V, { 'e-': { mu0: muE }, 'h+': { mu0: prof((x) => 108e3 - FARADAY * f(x)) } }), grid };
+    def.regions[1].fixedCharge = prof((x) => q0 - eps * f2(x));
+    const shifted = new Device(def).solve();
+    assert.ok(plain.converged && shifted.converged, shifted.warnings.join('; '));
+    let dphi = 0, dV = 0;
+    for (let g = 0; g < plain.x.length; g++) {
+      const shift = plain.x[g] > x0 ? atX(muE, plain.x[g]) / FARADAY : 0; // (f as the profile gives it)
+      dphi = Math.max(dphi, Math.abs(shifted.phi[g] - plain.phi[g] - shift));
+      for (const sp of ['e-', 'h+']) dV = Math.max(dV, Math.abs(shifted.V[sp][g] - plain.V[sp][g]));
+    }
+    return [dphi, dV, Math.abs(shifted.terminals.right.current / plain.terminals.right.current - 1)];
+  };
+  const coarse = run(10e-9), fine = run(5e-9);
+  assert.ok(fine[0] < 4e-7 && fine[1] < 6e-8 && fine[2] < 3e-7, `φ − f, levels (V), current: ${fine}`); // (2.1e-7 V, 3.3e-8 V, 1.2e-7)
+  // (falling 4× a halving from here: 5.1e-8, 7.6e-9, 3.1e-8 at 2.5 nm; 1.4e-8, 1.9e-9, 8.0e-9 at 1.25 nm)
+  for (let k = 0; k < 3; k++) assert.ok(fine[k] < coarse[k] / 2.5, `second order: ${coarse} → ${fine}`);
+});
+
+test('graded doping: what build() writes from donor and acceptor profiles, and what is refused, warned of and described', () => {
+  // Their difference on both profiles' points (exact: each is linear between its points, and
+  // constant beyond its ends).
+  const lib = semiconductor('Si', { T: 300 }), si1 = (opts, grid) => build({ T: 300, library: [lib], stack: [ohmic(0), layer('Si', 1e-6, opts), ohmic(0)], ...(grid ? { grid } : {}) });
+  const def = si1({ donors: { x: [0, 1e-6], values: [2, 1] }, acceptors: { x: [0.5e-6, 1e-6], values: [0.5, 1.5] } });
+  assert.deepEqual(def.regions[0].fixedCharge.x, [0, 0.5e-6, 1e-6]);
+  def.regions[0].fixedCharge.values.forEach((q, k) => assert.ok(Math.abs(q / FARADAY - [1.5, 1, -0.5][k]) < 1e-12, `${k}: ${q / FARADAY}`));
+  assert.match(describe(def), /fixed charge graded, donor-like 9\.0\de\+17 cm⁻³ to acceptor-like 3\.0\de\+17 cm⁻³/);
+  assert.throws(() => si1({ donors: { x: [1e-6, 0], values: [1, 2] } }), /donors\.x must be finite and strictly increasing/);
+  assert.throws(() => si1({ acceptors: { x: [0, 1e-6], values: [1, -1] } }), /acceptors must be a concentration ≥ 0.*at each point of its profile/);
+  // A step the cells can't follow is warned of, as a starting profile's is.
+  assert.match(describe(si1({ donors: { x: [0.5e-6, 0.5e-6 + 1e-10], values: [1, 100] } }, { hmax: 1e-7 })), /regions\[0\]\.fixedCharge: the grid doesn't resolve the profile/);
+  // A metal holds no bulk charge; an insertion host's fixed charge sets its background, which is uniform.
+  const metal = { species: [{ name: 'e-', z: -1 }], materials: { Al: { conductor: { species: 'e-', conductivity: 3.5e7 } } }, regions: [{ material: 'Al', length: 1e-6, fixedCharge: { x: [0, 1e-6], values: [0, 1] } }], contacts: { left: { V: 0 }, right: { V: 0 } } };
+  assert.throws(() => new Device(metal), /fixedCharge: a conductor region is neutral in bulk/);
+  const host = {
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 2e4 }, 'e-': { D: 1e-4, mu0: 0, cRef: 2e4 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 2e4, A: [0] }] } },
+    regions: [{ material: 'host', length: 1e-6, fixedCharge: { x: [0, 1e-6], values: [-1, -2] }, c0: { 'Li+': 1e4, 'e-': 1e4 } }],
+    contacts: { left: { phi: 'neutral' }, right: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' } },
+  };
+  assert.throws(() => new Device(host), /insertion host the fixed charge sets its background carriers, which are uniform/);
 });
 
 // driftlet/kit's alloy(): a layer between two library materials, graded by composition.

@@ -88,7 +88,7 @@
 
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, isGraded, profileAt, sourceAt } from './device.js';
+import { fixedAt, gradedAt, isGraded, profileAt, sourceAt } from './device.js';
 import { SolverError } from './errors.js';
 
 /**
@@ -121,7 +121,8 @@ export function initFromComposition(s) {
     const reg = regions[r], base = materials[reg.material], graded = isGraded(reg);
     let mat = graded ? gradedAt(base, reg, grid.x[grid.regionStart[r]]) : base;
     mode.fill(0);
-    const profiled = reg.c0Profile.some((p) => p !== null);
+    const profiled = reg.c0Profile.some((p) => p !== null) || reg.fixedProfile !== null;
+    let qFixed = fixedAt(reg, grid.x[grid.regionStart[r]]) / FARADAY; // (mol/m³; per node where it's a profile)
     for (let i = 0; i < n; i++) {
       if (!mat.present[i]) continue;
       const st = s.stretches[s.stretchOf[r * n + i]];
@@ -192,12 +193,12 @@ export function initFromComposition(s) {
           refused = true;
         }
         if (!refused) {
-          let q = reg.fixedCharge / FARADAY;
+          let q = qFixed;
           for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * cc[i];
           return q;
         }
       }
-      let q = reg.fixedCharge / FARADAY;
+      let q = qFixed;
       for (let i = 0; i < n; i++) {
         if (mode[i] === 2) q += z[i] * cFix[i];
         else if (mode[i] === 1 && z[i] !== 0) {
@@ -211,7 +212,7 @@ export function initFromComposition(s) {
     const mustBalance = !responds && !mat.conductor && !mat.phiFree && mat.epsr === 0;
     const checkNeutral = (where) => {
       // Strictly neutral, with every charged species' amount given: its c0 must be neutral.
-      let q = reg.fixedCharge / FARADAY, scale = Math.abs(q);
+      let q = qFixed, scale = Math.abs(q);
       for (let i = 0; i < n; i++) {
         if (mode[i] !== 2 || z[i] === 0) continue;
         q += z[i] * cFix[i];
@@ -351,6 +352,7 @@ export function initFromComposition(s) {
     for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
       if (profiled || graded) {
         if (graded) mat = gradedAt(base, reg, grid.x[g]);
+        qFixed = fixedAt(reg, grid.x[g]) / FARADAY;
         for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[g]);
         if (mustBalance) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
         if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
@@ -523,7 +525,7 @@ export function equilibrateFaces(s) {
     const RT = model.RT, vL = grid.vol[gL], vR = grid.vol[gR];
     const conc = (m, b, i) => m.cRef[i] * Math.exp(u[b + 1 + i] - m.mu0[i] / RT - z[i] * u[b]);
     const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
-    let qOther = regions[f].fixedCharge / FARADAY; // (the left node's charge from all it doesn't share)
+    let qOther = fixedAt(regions[f], grid.x[gL]) / FARADAY; // (the left node's charge from all it doesn't share)
     for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
     // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
     const split = (D) =>

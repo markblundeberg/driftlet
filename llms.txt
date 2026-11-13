@@ -93,7 +93,9 @@ within one material (a face is two nodes at one x: don't difference across it).
 - **`build({ T, library, stack, bulkReactions, ports, grid, geometry })`** (kit) reads a stack
   left to right: its first and last items are the contacts, `layer(material, length, opts)`s
   are regions (give one a `name` to refer to it), and any other object between two layers is
-  the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works.
+  the face between them. `ohmic()`, `bath()` and the like write contacts; a plain object works
+  (a neutral species, which `bath()` can't reference, is held by `{ phi: 'neutral', species: { X:
+  { type: 'equilibrium', mu } } }`, `mu` absolute: μ° + RT ln(c/cRef) at that end).
 - **The library** is pieces with `species` and `materials`: `semiconductor('Si')` (Si, Ge, GaAs, at
   300 K; `semiconductor('Si', { T: 350 })` moves them, 150–500 K, for a device at that `T`),
   `aqueous(names)` (H⁺ Li⁺ Na⁺ K⁺ Ag⁺ Cu²⁺ Zn²⁺ Fe²⁺ Fe³⁺ OH⁻ Cl⁻ NO₃⁻ SO₄²⁻ ClO₄⁻ in water, at 25

@@ -6,6 +6,7 @@
 
 import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
+import { profileAt } from './device.js';
 import { parseEquation } from './equation.js';
 
 const fail = (message) => {
@@ -329,13 +330,25 @@ export function build(def) {
     }
     if (donors !== undefined || acceptors !== undefined) {
       if (r.fixedCharge !== undefined) fail(`${path}: give doping as donors and acceptors, or fixedCharge, not both`);
+      // Each a number or a profile { x, values } against the device's x (graded doping).
+      const isProfile = (v) => isObject(v) && Array.isArray(v.x) && Array.isArray(v.values) && v.x.length === v.values.length && v.x.length > 0;
       for (const [k, v] of [['donors', donors], ['acceptors', acceptors]]) {
-        if (v !== undefined && !(Number.isFinite(v) && v >= 0)) fail(`${path}.${k} must be a concentration ≥ 0 (mol/m³)`);
-        // Over 1e5 mol/m³ (6e22 cm⁻³, more than a crystal has atoms) it's a count per cm³ given as
-        // mol/m³; describe() caught it, but named fixedCharge, which the user hadn't written.
-        if (v > 1e5) fail(`${path}.${k}: ${v.toExponential()} mol/m³ is ${(v * 6.02214076e17).toPrecision(2)} cm⁻³, more than a crystal has atoms; ${k} is mol/m³: for ${v.toExponential()} cm⁻³, units.perCm3(${v.toExponential()})`);
+        if (v === undefined) continue;
+        if (isObject(v) && !isProfile(v)) fail(`${path}.${k} must be a concentration ≥ 0 (mol/m³) or a profile { x, values } (two arrays of the same length, x the device's, m)`);
+        if (isProfile(v) && !v.x.every((t, j) => Number.isFinite(t) && (j === 0 || t > v.x[j - 1]))) fail(`${path}.${k}.x must be finite and strictly increasing (m, the device's x)`);
+        for (const c of isProfile(v) ? v.values : [v]) {
+          if (!(Number.isFinite(c) && c >= 0)) fail(`${path}.${k} must be a concentration ≥ 0 (mol/m³)${isProfile(v) ? ' at each point of its profile' : ''}`);
+          // Over 1e5 mol/m³ (6e22 cm⁻³, more than a crystal has atoms) it's a count per cm³ given as
+          // mol/m³; describe() caught it, but named fixedCharge, which the user hadn't written.
+          if (c > 1e5) fail(`${path}.${k}: ${c.toExponential()} mol/m³ is ${(c * 6.02214076e17).toPrecision(2)} cm⁻³, more than a crystal has atoms; ${k} is mol/m³: for ${c.toExponential()} cm⁻³, units.perCm3(${c.toExponential()})`);
+        }
       }
-      r.fixedCharge = ((donors ?? 0) - (acceptors ?? 0)) * FARADAY;
+      if (isProfile(donors) || isProfile(acceptors)) {
+        // Their difference, on both profiles' points: exact, each being linear between its points.
+        const at = (v, t) => (v === undefined ? 0 : isProfile(v) ? profileAt(v, t) : v);
+        const xs = [...new Set([donors, acceptors].flatMap((v) => (isProfile(v) ? v.x : [])))].sort((a, b) => a - b);
+        r.fixedCharge = { x: xs, values: xs.map((t) => (at(donors, t) - at(acceptors, t)) * FARADAY) };
+      } else r.fixedCharge = ((donors ?? 0) - (acceptors ?? 0)) * FARADAY;
     }
     return r;
   }

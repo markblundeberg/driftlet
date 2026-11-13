@@ -11,7 +11,7 @@ import { BlockTridiagonal } from './blockTridiagonal.js';
 import { bernoulli, SG_FAR, sgFlux } from './bernoulli.js';
 import { BoundaryTerms } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
-import { gradedAt, profileAt, sourceAt } from './device.js';
+import { fixedAt, gradedAt, profileAt, sourceAt } from './device.js';
 export { profileAt }; // (its home is device.js: here for the importers that knew it here)
 import { diffuseScratch, diffuseUnits } from './diffuse.js';
 import { DeviceError, SolverError } from './errors.js';
@@ -225,7 +225,7 @@ export class Solver {
     for (let g = 0; g < nNodes; g++) {
       const reg = regions[grid.nodeRegion[g]];
       const mat = materials[reg.material];
-      this.rhoFixed[g] = reg.fixedCharge;
+      this.rhoFixed[g] = fixedAt(reg, grid.x[g]);
       this.nodeMaterial[g] = reg.material;
       const grade = reg.grade;
       for (let i = 0; i < n; i++) {

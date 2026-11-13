@@ -50,7 +50,9 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
 ```
 
 - **Layers** are regions: anything with a `material`. `layer(material, length, more)` writes
-  one. Doping can be given as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`. A
+  one. Doping can be given as `donors` and `acceptors` (mol/m³) in place of `fixedCharge`, each a
+  number or a profile `{ x, values }` against the device's x (graded doping: their difference is
+  written as a `fixedCharge` profile on both profiles' points). A
   layer's `grade` passes through as written, its profiles against the device's x.
 - **Alloys**: `alloy(from, to, length, { fraction, step | dipole, … })` is a layer whose
   composition goes from the library material `from` (fraction 0) toward `to` (1): `fraction` is
@@ -59,7 +61,9 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   `D`, and `epsr`) goes linearly with the fraction, as a [graded region](device.md#graded-regions)
   that `build()` writes against the device's x; the two must be alike in all else. How the ends
   line up is an alignment, as at a face between them, with no default: `step: { species, value }`
-  (for e⁻, the conduction-band offset, `to` minus `from`, J/mol) or `dipole` (V). It's folded into
+  (for e⁻, the conduction-band offset, `to` minus `from`, J/mol) or `dipole` (V); every other
+  charged species' offset follows from the two materials' $`\mu^\circ`$ (the valence band's from
+  the gaps). It's folded into
   `to`'s $`\mu^\circ`$, so held at fraction 1 the layer is `to`, lined up as that face would line
   it up (to round-off, in the tests). A bowed gap (one not linear in the composition) is beyond
   it: write the layer's `grade` by hand, or join alloys at intermediate materials.
@@ -68,8 +72,8 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   between different materials is an error asking for the alignment, as always.
 - **Contacts** are the first and last items. `ohmic(drive, carriers)` holds each carrier in
   equilibrium with a metal at the terminal voltage (default `['e-', 'h+']`, an
-  infinite-recombination contact; `['e-']` alone is selective, and is the current collector on
-  a metal region). `bath(c, reference, drive, { offset, material })` is a bath read by a reference
+  infinite-recombination contact, so a bias across a doped bar drives its majority carriers too;
+  `['e-']` alone is selective, and is the current collector on a metal region). `bath(c, reference, drive, { offset, material })` is a bath read by a reference
   electrode. Given the electrode's half-reaction (`AgAgCl`, or any `half()` that exchanges one of
   the bath's ions, the rest of it `fixed`), the terminal voltage is that electrode's own: where
   its wire would sit, dipped in the bath. Given a species (`'Cl-'`), it is that ion's level:

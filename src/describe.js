@@ -2,7 +2,7 @@
 // look like unit slips (a D in cm²/s, a μ° in eV, a capacitance in µF/cm²) and for double layers
 // the grid won't resolve. Heuristics only: a warning is a prompt to check, never an error.
 
-import { normalizeDevice } from './device.js';
+import { fixedAt, normalizeDevice } from './device.js';
 import { EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from './constants.js';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -77,7 +77,8 @@ export function unitWarnings(def) {
     const path = `regions[${r}]`;
     if (reg.length > 1) warn(`${path}.length`, `${num(reg.length)} m is over a metre; lengths are m (units.um, units.nm)`);
     if (reg.length > 0 && reg.length < 1e-10) warn(`${path}.length`, `${num(reg.length)} m is less than an atom; lengths are m`);
-    if (Math.abs(reg.fixedCharge) > 1e10) warn(`${path}.fixedCharge`, `${num(reg.fixedCharge)} C/m³ is over 6e22 cm⁻³ of charge; fixedCharge is C/m³ (units.perCm3(N) * FARADAY)`);
+    const qMax = isObject(reg.fixedCharge) && Array.isArray(reg.fixedCharge.values) ? Math.max(...reg.fixedCharge.values.map(Math.abs)) : Math.abs(reg.fixedCharge);
+    if (qMax > 1e10) warn(`${path}.fixedCharge`, `${num(qMax)} C/m³ is over 6e22 cm⁻³ of charge; fixedCharge is C/m³ (units.perCm3(N) * FARADAY)`);
     for (const [sname, c] of Object.entries(reg.c0 ?? {})) {
       if (!isObject(c)) {
         conc(`${path}.c0.${sname}`, c);
@@ -164,13 +165,16 @@ export function describe(def) {
     const parts = [mat.epsr > 0 ? `εr ${mat.epsr}` : 'strictly neutral (ε = 0)'];
     // (donors and acceptors where there are electrons; an ion exchanger's charge in mol/m³)
     const doped = species.some((sp, i) => mat.present[i] && (sp.name === 'e-' || sp.name === 'h+'));
-    if (reg.fixedCharge !== 0) {
-      const X = Math.abs(reg.fixedCharge) / FARADAY;
-      parts.push(doped ? `fixed charge ${reg.fixedCharge > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(X)}` : `fixed charge ${reg.fixedCharge > 0 ? '+' : '−'}${num(X)} mol/m³`);
-    }
+    // (a profile by its values at the region's two ends)
+    const fixedText = (Q) => {
+      const X = Math.abs(Q) / FARADAY;
+      return Q === 0 ? '0' : doped ? `${Q > 0 ? 'donor-like' : 'acceptor-like'} ${perCm3(X)}` : `${Q > 0 ? '+' : '−'}${num(X)} mol/m³`;
+    };
+    if (reg.fixedProfile) parts.push(`fixed charge graded, ${fixedText(fixedAt(reg, grid.x[a]))} to ${fixedText(fixedAt(reg, grid.x[b]))}`);
+    else if (reg.fixedCharge !== 0) parts.push(`fixed charge ${fixedText(reg.fixedCharge)}`);
     // The screening concentration: Σ z²c from the initial composition, plus the carriers that
     // balance the fixed charge (doping), which c0 doesn't list.
-    let zzc = 0, q = reg.fixedCharge / FARADAY; // q: the charge c0 leaves unbalanced
+    let zzc = 0, q = (reg.fixedProfile ? reg.fixedProfile.values.reduce((m, v) => (Math.abs(v) > Math.abs(m) ? v : m), 0) : reg.fixedCharge) / FARADAY; // q: the charge c0 leaves unbalanced (a profile's largest)
     species.forEach((sp, i) => {
       if (!mat.present[i]) return;
       const c = Number.isFinite(reg.c0[i]) ? reg.c0[i] : reg.c0Profile[i] ? Math.max(...reg.c0Profile[i].values) : 0;

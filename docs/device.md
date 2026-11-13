@@ -105,8 +105,11 @@ regions: [
 ]
 ```
 
-- `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. In an insertion
-  host it's balanced by background electronic carriers.
+- `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. Or a profile
+  `{ x: [...], values: [...] }` against the device's x, piecewise linear (graded doping), read
+  at each node; the grid's resolution of it is checked as a starting profile's is. A `'bulk'`
+  contact holds its end neutral with the fixed charge there counted. In an insertion host it's
+  balanced by background electronic carriers, and must be a number.
 - `c0`: initial concentrations, mol/m³: the starting state of each species given. Species
   connected to a contact don't need it (without it, they start from that contact's level: the
   left contact's if the species reaches it, else the right's, else a port's). Any
@@ -215,8 +218,13 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   between the charged species is fixed, and it's an input, as an alignment is at a face: how a
   composition moves each level is yours to give, and nothing is defaulted. (Values from another
   convention, say against a mean inner potential, carry their own $`D_{\mathrm{inhomog}}`$, which
-  enters $`D`$ as a built-in static polarization $`P_0(x)`$ would: fold it into the $`\mu^\circ`$
-  first, each $`\mu^\circ_i`$ moving by $`z_i F f`$ where $`\varepsilon f' = D_{\mathrm{inhomog}}`$.) The test suite checks both halves on a graded diode:
+  enters $`D`$ as a built-in static polarization $`P_0(x)`$ would. Either fold it into the
+  $`\mu^\circ`$, each $`\mu^\circ_i`$ moving by $`z_i F f`$ where $`\varepsilon f' = D_{\mathrm{inhomog}}`$,
+  or keep those $`\mu^\circ`$ and give its bound charge: Poisson's equation sees only
+  $`\rho - \nabla\cdot P_0`$, so $`-dP_0/dx`$ as a `fixedCharge` profile, and each jump of
+  $`P_0`$ at a face as its `sheetCharge` ($`P_0`$ on the left minus on the right), is the same
+  device, $`\phi`$ in that convention. A real polarization, a polar crystal's, goes in the same
+  way: GaN's at an AlGaN face is a `sheetCharge`, a graded one a `fixedCharge` profile.) The test suite checks both halves on a graded diode:
   it's the limit of a staircase of thin uniform layers joined with no dipole (second order in
   the layers: 64 agree to 1.3e-4, with $`D`$ graded to 1e-5), and a staircase whose faces carry dipoles, with each layer's $`\mu^\circ`$ shifted to
   match, is the same device (to 1e-9).

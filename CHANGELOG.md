@@ -5,6 +5,13 @@ major version.
 
 ## Unreleased
 
+- `fixedCharge` can be a profile `{ x, values }` against the device's x (graded doping), read
+  at each node, and the kit's `donors` and `acceptors` can each be one. It's the limit of a
+  staircase of uniformly doped layers (64 agree to 2e-5), and it carries another convention's
+  built-in polarization: a diode written with every μ° moved by z·F·f and −ε f″ as
+  fixed charge is the plain diode, φ shifted by f, to the cell's second order (docs/device.md,
+  the gauge). Refused in an insertion host (its background is uniform) and a metal; a profile
+  the grid can't follow is warned of.
 - Graded regions grade D and ε too: `grade['e-'].D` (m²/s) and `grade.epsr`, profiles against x
   like μ° and cRef, taken at each segment's midpoint, where the flux and the displacement are.
   Held to a series resistance (Δc/∫dx/D) and a series capacitance (ε₀/∫dx/ε_r, its impedance
