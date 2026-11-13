@@ -3,7 +3,12 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.16.0 (2026-11-13)
+
+Graded regions grade diffusivity and permittivity too, the kit builds alloys, and fixed charge can
+be a profile: graded doping, or another convention's built-in polarization. A graded-base
+transistor demo. And fixes from two Fable reviews: what `set()` carries onto a new grid, gradings
+the grid doesn't follow, and a port holding a level up to a face.
 
 - `set()`, from a Fable re-check of what it carries (each converged and unwarned before):
   - a new grid with a new `T` or μ° in the same patch moved every concentration (a closed amount
