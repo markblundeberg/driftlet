@@ -462,7 +462,9 @@ export class BoundaryTerms {
     const dL = this.dA.fill(0), dR = this.dB.fill(0); // ∂ ln(prefactor)/∂slot, per side
     // Beside a diffuse layer (src/diffuse.js), a participant reacts at the plane, where its
     // concentration is c e^{−z s}/D(s) (its μ̄ level through the layer; D = 1 unless the layer is
-    // crowded): dS[side] = ∂ ln(prefactor)/∂s, and a crowded D's ∂/∂c_j into the side's slots.
+    // crowded): dS[side] = ∂ ln(prefactor)/∂s while the prefactor is built, and every kinetics
+    // below leaves it ∂rate/∂s, as it leaves dL, dR and dW; and a crowded D's ∂/∂c_j into the
+    // side's slots. (A new kinetics: return the same, ∂rate over every slot.)
     const dla = this.diffAt[f], dS = [0, 0];
     const layer = (p) => (dla[p.side] < 0 ? null : this.diffList[dla[p.side]]), atPlane = (p) => layer(p) && (this.z[p.i] !== 0 || layer(p).lat?.on[p.i]);
     // A drawn participant's level at the plane is w below its edge node's (_diffuseDraws): its c
@@ -487,7 +489,9 @@ export class BoundaryTerms {
     let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
     // A surface species of the face's (rx.surf), at its coverage θ_s at the node beside the face on
     // side surfaceSide, slot 1 + n + s there: in the affinity by its η, in the prefactor as θ_s^e (and
-    // the bare sites as θ₀^sites), with ∂ln θ_s/∂η_x = δ_sx − θ_x into that side's d.
+    // the bare sites as θ₀^sites), with ∂ln θ_s/∂η_x = δ_sx − θ_x into that side's d. (Only
+    // Butler–Volmer and Marcus–Hush–Chidsey take a surface: device.js refuses vmax, K and SRH there,
+    // so the saturating and SRH branches below never see one.)
     const sSide = this.model.interfaces[f].surfaceSide, gS = sSide ? gR : gL, bS = sSide ? bR : bL, dSf = sSide ? dR : dL;
     const surfLn = (wt, s) => {
       dSf[1 + n + s] += wt;
@@ -545,6 +549,8 @@ export class BoundaryTerms {
         dR[s] *= rate;
         dW[s] = rate * dW[s] + rx.vmax * S * back * aW[s];
       }
+      dS[0] *= rate;
+      dS[1] *= rate;
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= rx.vmax * S * back * p.nu;
     } else if (rx.srh) {
       // SRH, with n and p each at its own side's edge node.
@@ -606,14 +612,15 @@ export class BoundaryTerms {
         dR[s] *= rate;
         dW[s] = rate * dW[s] + pref * gp * aW[s];
       }
+      dS[0] *= rate;
+      dS[1] *= rate;
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= pref * gp * p.nu;
       for (const p of rx.surf) dSf[1 + n + p.s] -= pref * gp * p.nu;
     }
     const slot = 1 + n + k, o = bf * M + slot;
     res[R[o]] = u[o] - rate;
     this._j(bf, slot, bf, slot, 1);
-    // (dS is ∂ ln(prefactor)/∂s, except for Marcus–Hush–Chidsey's, which is ∂rate/∂s already)
-    for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -(rx.mhc ? 1 : rate) * dS[sd]);
+    for (const sd of [0, 1]) if (dS[sd] !== 0) this._j(bf, slot, bf, this.diffList[dla[sd]].slot, -dS[sd]);
     if (!rx.srh) for (let q = 0; q < M; q++) if (dW[q] !== 0) this._j(bf, slot, bf, q, -dW[q]);
     for (let s = 0; s < M; s++) {
       if (dL[s] !== 0) this._j(bf, slot, bL, s, -dL[s]);
