@@ -1076,11 +1076,11 @@ export class BoundaryTerms {
     const link = ct.phi, Dstart = sgn * this.contactDStart[side];
     // (In a steady solve, what a law in this circuit row counts of D_in: see applyConstraints in
     // src/lawRows.js.)
-    const q = !dyn && this.steady && this.contactLaw[k] ? (this.contactQ[k] ??= { row: new Float64Array(this.sys.size + 1), D: 0, dV: 0 }) : null;
-    if (q) {
-      q.row.fill(0);
-      q.D = 0;
-      q.dV = 0;
+    const captured = !dyn && this.steady && this.contactLaw[k] ? (this.contactQ[k] ??= { row: new Float64Array(this.sys.size + 1), D: 0, dV: 0 }) : null;
+    if (captured) {
+      captured.row.fill(0);
+      captured.D = 0;
+      captured.dV = 0;
     }
     if (this.phiUndefined[g]) {
       this.contactD[side] = 0;
@@ -1091,7 +1091,7 @@ export class BoundaryTerms {
       this._j(b, 0, b, 0, Ac * link.C * VT);
       B[R[b * M]] += -Ac * link.C;
       this.contactD[side] = sgn * Din;
-      if (q && this.loc[b * M] >= 0) [q.D, q.row[R[b * M]], q.dV] = [Din, -Ac * link.C * VT, Ac * link.C];
+      if (captured && this.loc[b * M] >= 0) [captured.D, captured.row[R[b * M]], captured.dV] = [Din, -Ac * link.C * VT, Ac * link.C];
       // Its current, the charging (D_in − D_in at the step's start)/dt; or, steady at no current,
       // the charge it keeps in place of that (see captureLaws in src/lawRows.js).
       const rate = dyn ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
@@ -1104,9 +1104,9 @@ export class BoundaryTerms {
       // The Poisson residual is the outside's charge, D_in.
       const Din = res[R[b * M]];
       this.contactD[side] = sgn * Din;
-      if (q) {
-        q.D = Din;
-        this._captureRow(b, 0, 1, q.row);
+      if (captured) {
+        captured.D = Din;
+        this._captureRow(b, 0, 1, captured.row);
       }
       if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
