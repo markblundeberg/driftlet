@@ -46,6 +46,42 @@ them is wrong: fix both, with a test, in the same commit.
   (`_probes`). A change to those internals is checked by their tests too. `src/plot.js` draws
   solutions.
 
+## The model
+
+What `normalizeDevice` returns, which every later stage reads (listed from real models, 13 Nov
+2026; species, materials and regions are by index from here on):
+
+- **Top level**: `T`, `RT`, `species` ({ name, z }), `materials`, `regions`, `interfaces` (one per
+  face, `interfaces[f]` between `regions[f]` and `regions[f + 1]`), `reactions` (the bulk ones),
+  `contacts` ({ left, right }), `ports`, `terminals` (the two contacts, then the ports), `surfaces`,
+  `grid`, `geometry`, `warnings`. (`F`, `speciesIndex` and `materialIndex` are there and read
+  nowhere.)
+- **materials[m]**: `name`, `epsr`, and per species index `present`, `D`, `mu0`, `cRef`; `dataT`,
+  `mu0T`; the statistics' `models` and `modelOf` (each species' model index, −1 for ideal),
+  `ideal`, `phiFree`. A position in a graded region reads it through `gradedAt(mat, reg, x)`.
+- **regions[r]**: `name`, `material` (an index), `length`, `fixedCharge` (NaN where
+  `fixedProfile` is given: read it through `fixedAt(reg, x)`), `c0` and `c0Profile` per species,
+  `grade` (per species { mu0, cRef, D } profiles or null) and `gradeEpsr`, `background`,
+  `velocity`, `mixing`, `grid`, `cells`.
+- **interfaces[f]**: `phi` ({ type, … }), `dipole`, `zeroCharge`, `sheetCharge`, `links` (per
+  species { type, … }), `reactions`, `gates`, `conductor`, `diffuse`, `surface`, `surfaceSide`,
+  `surfaceOf`.
+- **Reactions come in three layouts.** A bulk reaction: `reactants` and `products`, each ν > 0,
+  with `fixedA`, `kf` per material (1 stands for "runs here" under SRH or Auger), `kfProfile`,
+  `generation`. A face reaction: `part` [{ i, nu, side }] with ν > 0 made, and its surface species
+  apart as `surf` [{ s, nu }]. A port reaction: `part` too, but its surface species are entries of
+  `part` with `side: 2` and no `i`. Which keys a reaction has says its kinetics (`srh`, `vmax`
+  and `K`, `mhc`, sites as `sites`/`bare`/`m`/`fills`). A consumer of face and port reactions
+  both reconciles them by hand (polarization.js does).
+- **contacts.left/right**: `drive`, `species` (per species link { type, offset, … }), `phi`,
+  `terminal`, `passes`. **ports[k]**: `name`, `region`, `from`, `to`, `drive`, `terminal`,
+  `species`, `passes`, `reactions`, `area`, `surface`, `capacitance`, `gates`, and from the grid
+  `nodes`, `fill`, `inside`, `lo`, `hi`, `surfaceOf`. **terminals[k]**: `name`, `kind`
+  ('contact' or 'port'), `side` or `index`, `drive` ({ kind: 'V' or 'I', src, R }).
+- **Set after the records are built**: `passes` on contacts and ports, a port's window (`nodes`
+  … `inside`) and `surfaceOf`, once the grid exists; and the drives, rewritten in place by
+  `Device.set()` when only they change.
+
 ## The solver's state
 
 - **Blocks.** One per grid node and one per face between regions: node g is block
