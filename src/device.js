@@ -371,7 +371,7 @@ export function normalizeDevice(def) {
         need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
         need(isObject(v), `${at} must be { mu0, cRef, D }, each a profile { x, values } against the device's x`);
         fields(v, at, ['mu0', 'cRef', 'D']);
-        need((v.mu0 === undefined && v.cRef === undefined) || mat.modelOf[i] < 0, `${at}: '${sname}' has non-ideal statistics in '${mat.name}'; only an ideal (dilute) species' mu0 and cRef can be graded so far (its D can)`);
+        need(v.cRef === undefined || mat.modelOf[i] < 0, `${at}.cRef: '${sname}' has non-ideal statistics in '${mat.name}'; only an ideal (dilute) species' cRef can be graded so far (its mu0 and D can)`);
         need(v.D === undefined || mat.D[i] > 0, `${at}.D: '${sname}' doesn't move in '${mat.name}' (D 0), and a graded D would make it move; give the material a D > 0`);
         grade[i] = {
           mu0: read(v, 'mu0', at, 'standard chemical potentials (J/mol)', () => true, 'finite'),

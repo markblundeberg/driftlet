@@ -453,6 +453,44 @@ test('graded doping: what build() writes from donor and acceptor profiles, and w
   assert.throws(() => new Device(host), /insertion host the fixed charge sets its background carriers, which are uniform/);
 });
 
+test('graded μ° under Fermi–Dirac statistics: the diode is the limit of a staircase of uniform layers', () => {
+  // Every model reads ζ = η − μ°/RT − zφ̂ at the node's own μ°, so a graded μ° needs nothing of
+  // the statistics; its cRef still does (refused). Both carriers Fermi–Dirac: the n side
+  // degenerate (n ≈ 10 N_c), the p side's holes at half their N_v.
+  const V = 0.45, fine = { hmin: 1e-9, hmax: 5e-9 }, x0 = 1e-6, at = [x0, x0 + 0.25e-6, x0 + 1.75e-6, x0 + 2e-6], two = (a, b) => ({ x: at, values: [a, a, b, b] });
+  const grade = { 'e-': { mu0: two(0, -15e3) }, 'h+': { mu0: two(108e3, 120e3) } };
+  const fd = () => {
+    const def = diode(V, grade);
+    def.materials.s.statistics = [{ type: 'fermi-dirac', species: ['e-'] }, { type: 'fermi-dirac', species: ['h+'] }];
+    def.regions[0].fixedCharge = FARADAY * 0.5;
+    return { ...def, grid: fine };
+  };
+  const graded = new Device(fd()).solve();
+  assert.ok(graded.converged, graded.warnings.join('; '));
+  const stair = (k) => {
+    const def = fd(), base = def.materials.s, w = 2e-6 / k;
+    def.regions = [def.regions[0]];
+    def.interfaces = [];
+    for (let j = 0; j < k; j++) {
+      const xm = x0 + (j + 0.5) * w, m = structuredClone(base);
+      m.species['e-'].mu0 = atX(grade['e-'].mu0, xm);
+      m.species['h+'].mu0 = atX(grade['h+'].mu0, xm);
+      def.materials[`s${j}`] = m;
+      def.regions.push({ material: `s${j}`, length: w, fixedCharge: -FARADAY * 0.0166 });
+      def.interfaces.push({ dipole: 0 });
+    }
+    def.bulkReactions = [{ equation: 'e- + h+ = 0', kf: Object.fromEntries(Object.keys(def.materials).map((m) => [m, 1e8])) }];
+    const sol = new Device(def).solve();
+    assert.ok(sol.converged, sol.warnings.join('; '));
+    return sol.terminals.right.current;
+  };
+  const errs = [4, 16, 64].map((k) => Math.abs(stair(k) / graded.terminals.right.current - 1));
+  assert.ok(errs[2] < 1e-3 && errs[1] < errs[0] / 8 && errs[2] < errs[1] / 8, `second order in 1/k: ${errs}`); // (4.1e-2, 4.4e-3, 3.4e-4)
+  const def = fd();
+  def.regions[1].grade = { 'e-': { cRef: two(0.047, 0.03) } };
+  assert.throws(() => new Device(def), /grade\.e-\.cRef: 'e-' has non-ideal statistics in 's'; only an ideal \(dilute\) species' cRef can be graded so far/);
+});
+
 // driftlet/kit's alloy(): a layer between two library materials, graded by composition.
 const algaas = (x, name = 'AlGaAs') => {
   // docs/data.md's estimates: E_g = 1.424 + 1.247x eV, m_e = 0.067 + 0.083x

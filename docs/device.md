@@ -232,9 +232,10 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   the standard levels at its edge, and a bath at a graded end is the material as it is there. A
   port's bath can't list a species whose $`\mu^\circ`$ or $`c_{\mathrm{ref}}`$ is graded where the
   port is (a composition outside gives no one level across the window): give its link the level.
-- **Not yet graded**: a non-ideal species' $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ (refused;
-  its $`D`$ can be), a built-in $`D_{\mathrm{inhomog}}(x)`$ within a region, and kinetics (a
-  reaction's rate constants are the material's). `describe()` reports a region's material values.
+- **Not yet graded**: a non-ideal species' $`c_{\mathrm{ref}}`$ (refused; its $`\mu^\circ`$ and
+  $`D`$ can be, the $`\mu^\circ`$ held to a staircase of Fermi–Dirac layers), a built-in
+  $`D_{\mathrm{inhomog}}(x)`$ within a region (another convention's polarization is fixed charge:
+  above), and kinetics (a reaction's rate constants are the material's). `describe()` reports a region's material values.
 
 ## Interfaces
 
