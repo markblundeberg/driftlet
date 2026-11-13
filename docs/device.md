@@ -887,7 +887,9 @@ ports: [{
 The window holds exactly `to − from` of exchange, electrode and capacitance however the grid
 falls: each node whose box reaches into it takes the part of its box inside. A held level
 (`'equilibrium'`) holds the nodes inside the window, so it needs one there. A window of no width
-is the node at that point, its whole box.
+is the node at that point, its whole box. Where the window reaches its region's end at a face that
+carries the species in equilibrium, the level is held there through the face: at the next
+region's first node, the same level by the link (the port's flux counts it all).
 
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance

@@ -595,3 +595,29 @@ test('two ports holding one species over the same nodes are refused', () => {
   const sol = new Device(def([hold(0.2e-6, 0.3e-6, -1000), hold(0.6e-6, 0.7e-6, -2000)])).solve();
   assert.ok(sol.converged);
 });
+
+// A held window whose last node is a region's, beside a face that links the species in
+// equilibrium: every such solve failed, steady or transient, where a window from the next
+// region's first node solved (the block solver found no pivot for the face's flux, whose column
+// had lost its row in the window's last node). From Fable's re-check, 12 Nov 2026.
+test('a port holding a level up to a face: the next region carries it, and the port reads every flux', () => {
+  const RT = GAS_CONSTANT * 298.15, D = 1e-9, h = 1e-8, Lr = 1e-6, c = (mu) => 1000 * Math.exp(mu / RT);
+  const def = (right) => ({
+    species: [{ name: 'X', z: 0, cRef: 1000 }],
+    materials: { m: { epsr: 10, species: { X: { D, mu0: 0 } } } },
+    regions: [{ name: 'a', material: 'm', length: Lr }, { name: 'b', material: 'm', length: Lr }],
+    contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right },
+    ports: [{ name: 'p', region: 'a', from: 0.9e-6, to: 1.0e-6, V: 0, species: { X: { type: 'equilibrium', mu: -1000 } } }],
+    grid: { hmin: h, hmax: h },
+  });
+  const inL = (D * (c(0) - c(-1000))) / 0.9e-6, outR = (D * (c(-1000) - c(-3000))) / Lr;
+  const closed = new Device(def({ phi: 'neutral' })).solve();
+  assert.ok(closed.converged && Math.abs(closed.contacts.left.flux.X / inL - 1) < 1e-12 && Math.abs(closed.ports[0].flux.X / -inL - 1) < 1e-12, `${closed.contacts.left.flux.X} vs ${inL}`);
+  // Open on the right: region b starts at the held level, and the port passes what it takes in
+  // less what leaves on the right.
+  const d = new Device(def({ species: { X: { type: 'equilibrium', mu: -3000 } }, phi: 'neutral' })), open = d.solve();
+  assert.ok(open.converged && Math.abs(open.contacts.right.flux.X / outR - 1) < 1e-12, `${open.contacts.right.flux.X} vs ${outR}`);
+  assert.ok(Math.abs(open.ports[0].flux.X - (outR - inL)) < 1e-12 * inL, `${open.ports[0].flux.X} vs ${outR - inL}`);
+  d.set({ ports: { p: { species: { X: { type: 'equilibrium', mu: -500 } } } } });
+  assert.ok(d.advance(1e-4).converged);
+});

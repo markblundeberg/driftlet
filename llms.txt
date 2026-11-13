@@ -137,6 +137,8 @@ within one material (a face is two nodes at one x: don't difference across it).
   through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon
   (`capacitance`, `gates`). A BJT's base contact is a port on a narrow window of the base,
   `{ region: 'base', from, to, V, terminal: 'h+', species: { 'h+': 'equilibrium' } }`.
+  Without one the base floats, at the level where its holes' leaks net to zero: an open-base
+  transistor, a valid device with very little current.
 - **Drives.** A terminal is held at a voltage `V`, driven by a current `I` (open circuit is
   `I: 0`), or behind a resistance `{ V, R }`; in `build()`, the same object goes where the
   voltage would (`ohmic({ I: 0 }, ['e-'])`, `ohmic({ V: 1, R: 1e3 }, ['e-'])`), and `set()` may

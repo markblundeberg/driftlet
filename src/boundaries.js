@@ -719,6 +719,23 @@ export class BoundaryTerms {
           if (!port.inside[w]) continue; // (a held level holds the nodes inside the window)
           // a device end node's level is its contact's business, where the contact links it
           if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
+          // and a region's last node, where an equilibrium link carries the species across the face
+          // on its right, is held at the next region's first node instead: the same level through
+          // the link, and every residual still the port's. (Held itself, its row lost the face's
+          // flux, whose column then had no row in the face's block: the block solver's forward
+          // sweep found no pivot, and every such solve failed; the mirror case solved. Fable's
+          // re-check.)
+          const rg = this.model.grid.nodeRegion[g];
+          if (g === this.model.grid.regionEnd[rg] && rg < this.nFaces && this.model.interfaces[rg].links[i].type === 'equilibrium') {
+            const gh = this.model.grid.regionStart[rg + 1], bh = this.blockOfNode[gh], oh = bh * M + r;
+            flux[i] += res[R[oh]];
+            this._captureRow(bh, r, zF, C, k);
+            this._replaceRow(bh, r);
+            this._j(bh, r, bh, r, 1);
+            res[R[oh]] = -(target - u[oh] - uLo[oh]);
+            B[R[oh]] += -z[i] / VT;
+            continue;
+          }
           flux[i] += res[R[o]];
           this._captureRow(b, r, zF, C, k);
           this._replaceRow(b, r); // (other ports' terms in the row too)

@@ -433,7 +433,10 @@ export class Solver {
     this.jumpedT = undefined;
     this.restarted = null;
 
-    // Bulk reactions as flat participant lists: reactants with +ν, products with −ν.
+    // Bulk reactions as flat participant lists: reactants with +ν, products with −ν. (Note the
+    // sign: ν > 0 is consumed here, where a face's or port's p.nu > 0 is made, boundaries.js. A
+    // rate law moved from one family to the other is otherwise the reverse reaction, with a
+    // Jacobian that still checks; a code-smell review.)
     // Each has its rate constant at every node: its material's, or its profile's mean over the
     // node's box, so that what a sharply varying profile (strongly absorbed light) generates
     // in all is exact on any grid.
@@ -477,6 +480,8 @@ export class Solver {
     const need = new Uint8Array(nNodes);
     need[0] = need[nNodes - 1] = 1;
     for (const port of model.ports) for (const g of port.nodes) need[g] = 1;
+    // (and the next region's first node, where a held window's last node is a face's: _port holds it there)
+    for (const port of model.ports) for (const g of port.nodes) if (grid.regionEnd[grid.nodeRegion[g]] === g && grid.nodeRegion[g] < nFaces) need[g + 1] = 1;
     // Nodes of strictly neutral (ε = 0) regions that stay neutral, where φ is defined: interior
     // ones, and edges at neutral faces (a capacitive or pinned face's edge node holds the face's
     // charge), away from the contacts and from ports that hold a level (which replaces a balance

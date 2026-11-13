@@ -19,6 +19,10 @@ major version.
     nothing has solved;
   - a contact the kit wrote (`ohmic()`, `bath()`), and a link or a φ law given with its `type`,
     replaces the old one whole (merged, `bath(c, 'Cl-')` kept an Ag/AgCl bath's 1.138 V offset).
+- A port holding a level over its region's last node, beside a face that links the species in
+  equilibrium, failed every solve, steady and transient (the block solver found no pivot for the
+  face's flux); it's held through the face now, at the next region's first node, and the port reads
+  every flux (a Fable re-check's helper; the mirror case always solved).
 - `bath(c, half)` writes the half-reaction as `bath.electrode`, which the device checks against
   the reference's charge: under a symbol only `build()` read, an unbalanced one in a plain
   definition set a wrong offset.
