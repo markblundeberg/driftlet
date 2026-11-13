@@ -7,7 +7,8 @@ major version.
 
 - Bowed alloys: `alloy(from, to, length, { bow: { 'h+': { mu0: C }, epsr: C } })` takes a value
   as (1 − f)a + fb − Cf(1 − f), a band gap's bowing split between its band edges as you give it;
-  each straight piece of the composition sampled at 32 points (the midpoint exact).
+  each straight piece of the composition sampled at 128 points (the midpoint exact, the chords
+  within C/131072).
 - A species with non-ideal statistics can have its μ° graded, and a Fermi–Dirac one its cRef (a
   degenerate carrier in a graded alloy, whose N_c changes with the composition): every model reads
   ζ at the node's own μ°, and a Fermi–Dirac c = c_ref 𝓕(ζ) scales exactly with the node's c_ref.

@@ -68,7 +68,7 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   it up (to round-off, in the tests). A bowed value, $`(1-f)\,a + f\,b - C f(1-f)`$, takes
   `bow: { 'h+': { mu0: C }, epsr: C }` (J/mol for a μ°): a band gap's bowing goes to its band
   edges as you split it, as an alignment does (all on h⁺'s μ° bows the valence band alone). Each
-  straight piece of the composition is then sampled at 32 points. Anything else not linear in the
+  straight piece of the composition is then sampled at 128 points (its chords within C/131072). Anything else not linear in the
   composition (cRef, D) is a `grade` written by hand, or alloys joined at intermediate materials.
 - **Faces** are anything else between layers: an interface's fields, exactly as in
   `interfaces[f]`. Two adjacent layers with no face between them get the default face, which
@@ -476,6 +476,7 @@ console.log(describe(def)); // … warnings: materials.Si.species.e-.D: 36 m²/s
 
 `check(device, sol, { refine, tol, order })` checks a solved device, and says what it compared, so a
 page can show that its numbers hold up. Pass the solution `solve()` or `advance()` returned,
+with the Device that returned it (`check(new Device(def), sol)` is another device, at its start),
 while it is still the device's state: the checks solve the device as it stands, so a solution
 from before a later `set()`, solve or advance fails as **solution**, "not the device's present
 state", with nothing else compared.

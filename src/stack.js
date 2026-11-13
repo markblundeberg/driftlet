@@ -153,10 +153,11 @@ function alloyGrade(item, x0, species, materials, path) {
     return v[v.length - 1];
   };
   // knots: the layer's ends and the composition's own (it's linear between them); with bowing,
-  // each piece in 32, so that the chords miss the parabola by at most bow/4096 of its value
+  // each piece in 128, so that the chords miss the parabola by at most bow/131072 (at 32, by
+  // bow/8192: 73 µeV at 0.6 eV, an equilibrium density 0.28% short; round 20's cold user)
   const corners = [...new Set([0, ...fx.x.filter((x) => x > 0 && x < L), L])].sort((a, b) => a - b);
   const bowed = Object.keys(bow).length > 0;
-  const knots = bowed ? corners.flatMap((x, k) => (k === 0 ? [x] : Array.from({ length: 32 }, (_, j) => corners[k - 1] + ((x - corners[k - 1]) * (j + 1)) / 32))) : corners;
+  const knots = bowed ? corners.flatMap((x, k) => (k === 0 ? [x] : Array.from({ length: 128 }, (_, j) => corners[k - 1] + ((x - corners[k - 1]) * (j + 1)) / 128))) : corners;
   const prof = (a, b, c = 0) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => { const f = fAt(x); return a + (b - a) * f - c * f * (1 - f); }) });
   const grade = {};
   for (const n of names) {
