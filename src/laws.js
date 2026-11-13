@@ -329,11 +329,40 @@ export function findLaws(s) {
   // the state holds when a solve begins (see lawRows.js, captureLaws), and has no steady state at
   // any other current.
   const driven = (st) => terms.flatMap((t, k) => (t.drive.kind === 'I' && feeds(k, st) ? [k] : []));
+  // λ = w/z on what a terminal passes: the first part, in order, whose stretch passes it (by the
+  // test given) and is charged. (One rule, written four times before.)
+  const lambdaOn = (parts, passes) => parts.map((p) => (passes(stretches[p.stretch]) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
+  // The slots a law's sum can touch: its stretches' nodes, its surfaces' and its carriers'.
+  const workspaceSize = (parts, surface, carriers) => {
+    let nn = parts.reduce((m, p) => m + stretches[p.stretch].nodes[1] - stretches[p.stretch].nodes[0] + 1, 0);
+    for (const p of surface) nn += model.surfaces[surfCols[p.col][0]].nodes.length * model.surfaces[surfCols[p.col][0]].species.length;
+    for (const p of carriers) nn += model.ports[p.k - 2].nodes.length;
+    return nn;
+  };
+  // What a species is in the face reactions of faces f0..f1 whose side counts (inside(region)):
+  // each one's rate slot, −ν A, and its rate constant. [slot, −ν A, k0]
+  const faceRates = (i, f0, f1, inside) => {
+    const rates = [];
+    for (let f = Math.max(0, f0); f <= Math.min(model.interfaces.length - 1, f1); f++) {
+      model.interfaces[f].reactions.forEach((rx, k) => {
+        let nu = 0;
+        for (const p of rx.part) if (p.i === i && inside(f + p.side)) nu += p.nu;
+        if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
+      });
+    }
+    return rates;
+  };
+  // A bulk reaction's net ν of species i: consumed > 0 (the bulk family's sign, not a face's).
+  const bulkNu = (rx, i) => {
+    let nu = 0;
+    for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+    return nu;
+  };
   const add = (parts, rowStretch, surface = [], circuit = -1, carriers = []) => {
     const st = stretches[rowStretch];
     // (the terminal's weight in it, w/z on what that feeds: the amount changes by λ I/F)
-    const own = carriers.find((p) => p.k === circuit);
-    const lambda = circuit < 0 ? 0 : ((own && own.w / carrierZ(s, circuit)) || parts.map((p) => (driven(stretches[p.stretch]).includes(circuit) ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0));
+    const ownCarrier = carriers.find((p) => p.k === circuit);
+    const lambda = circuit < 0 ? 0 : (ownCarrier && ownCarrier.w / carrierZ(s, circuit)) || lambdaOn(parts, (st) => driven(st).includes(circuit));
     // In a circuit row, what passes through that terminal's capacitance is kept too, λ Q/F, as
     // its current counts dQ/dt: a port or contact at no current that passes K⁺ and charges keeps
     // n_K + Q/F. (Its K⁺ alone held, a membrane port's voltage settled 7 mV from the transient's.)
@@ -342,11 +371,9 @@ export function findLaws(s) {
     // Every contact driven by a current that feeds it and holds a charge, D_in, kept beside the
     // ions it passes at its own λ (two contacts at no current passing K⁺, one a capacitor: its
     // charge was left out where the law took the other's row).
-    const lam = (t) => parts.map((p) => (driven(stretches[p.stretch]).includes(t) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
+    const lam = (t) => lambdaOn(parts, (st) => driven(st).includes(t));
     const contacts = circuit < 0 ? [] : [0, 1].filter((t) => lam(t) && contactCharges(s, t)).map((t) => ({ t, lambda: lam(t) }));
-    let nn = parts.reduce((m, p) => m + stretches[p.stretch].nodes[1] - stretches[p.stretch].nodes[0] + 1, 0);
-    for (const p of surface) nn += model.surfaces[surfCols[p.col][0]].nodes.length * model.surfaces[surfCols[p.col][0]].species.length;
-    for (const p of carriers) nn += model.ports[p.k - 2].nodes.length;
+    const nn = workspaceSize(parts, surface, carriers);
     for (const p of parts) conserved.add(p.stretch);
     constraints.push({
       parts,
@@ -401,6 +428,14 @@ export function findLaws(s) {
   // rows, left S's own row saying nothing new, and Ox⁺ + Red + S was lost.) A port's surface
   // spreads over its window, a row per node: not a column here.
   const V = S + T + surfCols.length;
+  // A row's weights with the rows already chosen taken off (in place).
+  const eliminated = (v) => {
+    for (const [col, row] of chosen) {
+      const f = v[col];
+      if (f !== 0) for (let j = 0; j < V; j++) v[j] -= f * row[j];
+    }
+    return v;
+  };
   const faceSurface = (j) => model.surfaces[surfCols[j][0]].face >= 0;
   const rowsOf = (w) => {
     const v = new Float64Array(V);
@@ -472,11 +507,7 @@ export function findLaws(s) {
     const itf = model.interfaces[f], surfOwn = rx.surf.map((p) => ({ j: surfColOf[itf.surfaceOf] + p.s, p })).sort((a, b) => (itf.surface[a.p.s].name < itf.surface[b.p.s].name ? -1 : 1));
     pick: for (const pass of ['surface', 'stretch']) {
       for (const w of tries) {
-        const v = rowsOf(w);
-        for (const [col, row] of chosen) {
-          const fc = v[col];
-          if (fc !== 0) for (let j = 0; j < V; j++) v[j] -= fc * row[j];
-        }
+        const v = eliminated(rowsOf(w));
         const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
         if (!(scale > 1e-9)) continue;
         if (pass === 'surface') {
@@ -492,8 +523,8 @@ export function findLaws(s) {
         // put the electrode at 602 V.)
         const ok = (j) => j !== undefined && j >= 0 && j < S && Math.abs(v[j]) > 1e-9 * scale && !conductor(stretches[j]) && terms.every((_, t) => !feeds(t, stretches[j]));
         // (One of its own species first, then weight 1, the largest, and by name.)
-        const own = (k) => rx.part.some((p) => p.i === stretches[k].species && stretchOf[(f + p.side) * n + p.i] === k);
-        const key = (k) => [own(k) ? 0 : 1, Math.abs(v[k]) === 1 ? 0 : 1, -Math.abs(v[k]), model.species[stretches[k].species].name, stretches[k].regions[0]];
+        const atFace = (k) => rx.part.some((p) => p.i === stretches[k].species && stretchOf[(f + p.side) * n + p.i] === k);
+        const key = (k) => [atFace(k) ? 0 : 1, Math.abs(v[k]) === 1 ? 0 : 1, -Math.abs(v[k]), model.species[stretches[k].species].name, stretches[k].regions[0]];
         const less = (a, b) => { const ka = key(a), kb = key(b); for (let j = 0; j < ka.length; j++) if (ka[j] !== kb[j]) return ka[j] < kb[j]; return false; };
         const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
         if (col < 0) continue;
@@ -509,7 +540,7 @@ export function findLaws(s) {
   // have its multiple taken off. (Two laws through K⁺ at a capacitor at I = 0, K⁺ − L⁻ and K⁺ + KL
   // under K⁺ + L⁻ = KL: the second took KL's balance row without the charge, keeping n_K + n_KL,
   // which the transient moves 15×, and the solve failed.)
-  const lamOf = (w, t) => (contactCharges(s, t) ? (stretches.map((st, k) => (w[k] !== 0 && z[st.species] !== 0 && driven(st).includes(t) ? w[k] / z[st.species] : 0)).find((x) => x !== 0) ?? 0) : 0);
+  const lamOf = (w, t) => (contactCharges(s, t) ? (lambdaOn(stretches.flatMap((_, k) => (w[k] !== 0 ? [{ stretch: k, w: w[k] }] : [])), (st) => driven(st).includes(t)) ?? 0) : 0);
   const heldContact = new Map(); // (contact → the law that keeps its charge)
   const unkept = [];
   const reduce = (w, c, f) => {
@@ -539,11 +570,7 @@ export function findLaws(s) {
     // DROP: a spectator's own amount: added above where it moves, node by node below where it's
     // still.
     if (parts.length === 1 && surface.length === 0 && stretches[parts[0].stretch].spectator) continue;
-    const v = rowsOf(w);
-    for (const [col, row] of chosen) {
-      const f = v[col];
-      if (f !== 0) for (let j = 0; j < V; j++) v[j] -= f * row[j];
-    }
+    const v = eliminated(rowsOf(w));
     const scale = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
     // DROP: no row of its own left once those already chosen are taken off: of still stretches
     // alone (kept node by node, below), or said by the laws already kept.
@@ -578,7 +605,7 @@ export function findLaws(s) {
   // that only turn into each other). At each node its weighted sum stays what it was, a row local
   // to that node's block, in place of one of their balances.
   const localConstraints = [];
-  const span = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
+  const nodesIn = ([g0, g1]) => Array.from({ length: g1 - g0 + 1 }, (_, j) => g0 + j);
   const picked = new Map(); // (node → the rows chosen there: [slot, the reduced weights by slot])
   const affinityRows = new Set(affinities.map((af) => af.row));
   for (const w of laws) {
@@ -588,13 +615,13 @@ export function findLaws(s) {
     // several nodes carries it between them too. Kept here as well, S⁺ that a port at I = 0
     // links was held twice, and the port's I = 0 lost: the solve settled at 0 V for −1.42 V.)
     if (parts.some((k) => isStretch(k) && terms.some((_, t) => feeds(t, stretches[k])))) continue;
-    const sets = parts.map((k) => (isSurface(k) ? model.surfaces[surfCols[k - S][0]].nodes : still(s, stretches[k]) ? span(stretches[k].nodes) : null));
+    const sets = parts.map((k) => (isSurface(k) ? model.surfaces[surfCols[k - S][0]].nodes : still(s, stretches[k]) ? nodesIn(stretches[k].nodes) : null));
     if (sets.includes(null)) continue; // (through a moving stretch: above)
     // Its nodes: the immobile stretches', side by side, with any surface's window among them (a
     // surface's term only where it is: an immobile S that adsorbs on an electrode spread over
     // part of its region keeps S + Γaθ there and S alone elsewhere; required to match, that law
     // was lost, and a floating electrode's coverage drifted). Or a surface's alone.
-    const own = parts.filter(isStretch), base = own.length > 0 ? sets[parts.indexOf(own[0])] : sets[0];
+    const stretchParts = parts.filter(isStretch), base = stretchParts.length > 0 ? sets[parts.indexOf(stretchParts[0])] : sets[0];
     const same = (set) => set.length === base.length && set.every((g, j) => g === base[j]);
     // UNKEPT: immobile stretches over different nodes, or a surface outside them: a face
     // reaction joining the two nodes of a face, whose sum it keeps and neither alone.
@@ -602,7 +629,7 @@ export function findLaws(s) {
       unkept.push(w);
       continue;
     }
-    for (const k of own) conserved.add(k);
+    for (const k of stretchParts) conserved.add(k);
     const slot = (k) => (isStretch(k) ? 1 + stretches[k].species : 1 + n + surfCols[k - S][1]);
     // Its row at each node, chosen by elimination as the constraints' are: its weights over the
     // slots there (a surface's only where it is) reduced by the rows already chosen there, then
@@ -611,7 +638,7 @@ export function findLaws(s) {
     // there, by those before it, is left out there. (Both given the same row, immobile S⁺ with
     // S⁺ + A(ads) + e⁻ = B(ads): A − S⁺ and B + S⁺ took S⁺'s, one was lost, and θ_A settled at 1
     // for the transient's 0.3.)
-    const rowPart = own.length > 0 ? (own.includes(w.own) ? w.own : own[0]) : parts.includes(w.own) ? w.own : parts[0];
+    const rowPart = stretchParts.length > 0 ? (stretchParts.includes(w.own) ? w.own : stretchParts[0]) : parts.includes(w.own) ? w.own : parts[0];
     const rowsAt = new Map(); // (slot → its nodes)
     for (const g of base) {
       const v = new Map();
@@ -658,7 +685,7 @@ export function findLaws(s) {
     if (st.leftOpen) touched.add(0);
     if (st.rightOpen) touched.add(nNodes - 1);
     for (const lc of localConstraints) if (lc.row === 1 + i) for (const g of lc.nodes) touched.add(g);
-    const free = span(st.nodes).filter((g) => !touched.has(g));
+    const free = nodesIn(st.nodes).filter((g) => !touched.has(g));
     if (free.length > 0) localConstraints.push({ parts: [{ i, w: 1 }], row: 1 + i, nodes: free, reference: new Float64Array(free.length) });
   }
   // Islands: the pieces of a stretch between its faces. One that nothing else feeds (no
@@ -686,17 +713,10 @@ export function findLaws(s) {
     const ends = [];
     if (st.leftOpen) ends.push(['left', 0]);
     if (st.rightOpen) ends.push(['right', 1]);
-    const driven = ends.every(([side, k]) => floating.includes(k) && model.contacts[side].species[i].type === 'equilibrium');
-    if (!driven) continue;
+    const allFloat = ends.every(([side, k]) => floating.includes(k) && model.contacts[side].species[i].type === 'equilibrium');
+    if (!allFloat) continue;
     if (model.ports.some((port) => port.region >= s0 && port.region <= s1)) continue;
-    const rates = [];
-    for (let f = Math.max(0, s0 - 1); f <= Math.min(model.interfaces.length - 1, s1); f++) {
-      model.interfaces[f].reactions.forEach((rx, k) => {
-        let nu = 0;
-        for (const p of rx.part) if (p.i === i && f + p.side >= s0 && f + p.side <= s1) nu += p.nu;
-        if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
-      });
-    }
+    const rates = faceRates(i, s0 - 1, s1, (r) => r >= s0 && r <= s1);
     if (rates.length === 0) continue;
     const g0 = grid.regionStart[s0], g1 = grid.regionEnd[s1], rows = [];
     for (let g = g0; g <= g1; g++) rows.push(blockOfNode[g] * M + 1 + i);
@@ -737,8 +757,7 @@ export function findLaws(s) {
       const bulk = [];
       for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) {
         for (const rx of rxsIn[nodeMaterial[g]]) {
-          let nu = 0;
-          for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+          const nu = bulkNu(rx, i);
           if (nu !== 0) bulk.push([g, rx, nu]);
         }
       }
@@ -746,14 +765,7 @@ export function findLaws(s) {
       // takes −A ν r: those enter the sum exactly too. (F5's closed pool of B⁻ beside the metal
       // above, fed and drained at ~1e-21 mol/(m²·s) against diffusion whose every flux is a
       // difference of terms ~5e-3: its level was lost to round-off as the metal's was.)
-      const rates = [];
-      for (let f = Math.max(0, p0 - 1); f <= Math.min(model.interfaces.length - 1, q1); f++) {
-        model.interfaces[f].reactions.forEach((rx, k) => {
-          let nu = 0;
-          for (const p of rx.part) if (p.i === i && inside(f + p.side)) nu += p.nu;
-          if (nu !== 0) rates.push([blockOfFace[f] * M + 1 + n + k, -nu * grid.area[grid.regionEnd[f]], rx.k0 ?? rx.vmax ?? 0]);
-        });
-      }
+      const rates = faceRates(i, p0 - 1, q1, inside);
       if (rates.length === 0 && p0 === s0 && q1 === s1) continue; // (uncut, with nothing but its amount: a constraint's)
       // (the row it takes is its middle node's: its first node's is its left neighbour's
       // `outside` row, which that island then went without, and a base behind a fourth layer
@@ -803,8 +815,7 @@ export function findLaws(s) {
           // piece's own are)
           const rxs = [];
           for (const rx of rxsIn[nodeMaterial[i0]]) {
-            let nu = 0;
-            for (let p = 0; p < rx.sp.length; p++) if (rx.sp[p] === i) nu += rx.nu[p];
+            const nu = bulkNu(rx, i);
             if (nu !== 0) rxs.push([rx, nu]);
           }
           span.push({ region: r, rxs });
@@ -856,11 +867,9 @@ export function findLaws(s) {
       // of K⁺ failed every step.)
       if (k < 2 && contactCharges(s, k)) continue;
       const zk = k >= 2 ? carrierZ(s, k) : 0;
-      const lambda = carriers.find((p) => p.k === k)?.w / zk || parts.map((p) => (feeds(k, stretches[p.stretch]) && z[stretches[p.stretch].species] !== 0 ? p.w / z[stretches[p.stretch].species] : 0)).find((x) => x !== 0);
+      const lambda = carriers.find((p) => p.k === k)?.w / zk || lambdaOn(parts, (st) => feeds(k, st));
       if (!lambda) continue;
-      let nn = parts.reduce((m, p) => m + stretches[p.stretch].nodes[1] - stretches[p.stretch].nodes[0] + 1, 0);
-      for (const p of surface) nn += model.surfaces[surfCols[p.col][0]].nodes.length * model.surfaces[surfCols[p.col][0]].species.length;
-      for (const p of carriers) nn += model.ports[p.k - 2].nodes.length;
+      const nn = workspaceSize(parts, surface, carriers);
       timeLaws.push({ parts, surface, carriers, terminals: [k], circuit: k, lambda, idx: new Int32Array(nn * M), w: new Float64Array(nn * M), len: 0 });
     }
   }
