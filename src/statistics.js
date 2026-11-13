@@ -183,6 +183,8 @@ function fermiDiracModel(idx, cRef, order) {
   return {
     type: 'fermi-dirac',
     idx,
+    cRef, // (its species' reference densities: c = c_ref 𝓕(ζ), so a node's own c_ref scales c and K exactly)
+    order,
     evaluate(zeta, c, K) {
       K.fill(0);
       for (let a = 0; a < k; a++) {
@@ -477,6 +479,13 @@ function choleskyOk(K, k) {
  * Validate a material's `statistics` list and build its models.
  * @returns {{ models: object[], modelOf: Int32Array, warnings: string[], phiFree: boolean }}
  */
+// A model at other reference concentrations (cRefAll, indexed by species): a Fermi–Dirac model
+// rebuilt at them (a graded region's, at x); any other model as it is (no other may be graded).
+export function withCRef(md, cRefAll) {
+  if (md.type !== 'fermi-dirac' || md.idx.every((i, a) => cRefAll[i] === md.cRef[a])) return md;
+  return fermiDiracModel(md.idx, Float64Array.from(md.idx, (i) => cRefAll[i]), md.order);
+}
+
 export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
   const { need, finite, positive } = h;
   const n = species.length;

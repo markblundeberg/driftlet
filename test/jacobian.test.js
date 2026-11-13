@@ -364,6 +364,20 @@ const devices = {
       grid: { hmin: units.nm(2), hmax: units.nm(50), ratio: 1.3 },
     });
   },
+  // A degenerate n⁺ side whose N_c is graded (a Fermi–Dirac cRef, scaled at each node): K's rows
+  // by the node's c_ref over the material's model's.
+  'graded Fermi–Dirac cRef in a degenerate pn diode': () => {
+    const si = semiconductor('Si');
+    si.materials.Si.statistics = [{ type: 'fermi-dirac', species: ['e-'] }, { type: 'fermi-dirac', species: ['h+'] }];
+    const Nc = si.materials.Si.species['e-'].cRef, Nv = si.materials.Si.species['h+'].cRef;
+    return build({
+      T: 300,
+      library: [si],
+      stack: [ohmic(0.6), layer('Si', units.um(1), { donors: units.perCm3(1e19), grade: { 'e-': { cRef: { x: [0, units.um(1)], values: [Nc, 0.4 * Nc] } }, 'h+': { mu0: { x: [0, units.um(1)], values: [si.materials.Si.species['h+'].mu0, si.materials.Si.species['h+'].mu0 + 3000] }, cRef: { x: [0, units.um(1)], values: [Nv, 2 * Nv] } } } }), { dipole: 0 }, layer('Si', units.um(2), { acceptors: units.perCm3(1e17) }), ohmic(0)],
+      bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }],
+      grid: { hmin: units.nm(2), hmax: units.nm(50), ratio: 1.3 },
+    });
+  },
   // The same, lit: photogeneration's vol·G in the hole rows, far above their derivatives there.
   'Auger in a degenerate pn diode, lit': () => {
     const si = semiconductor('Si');

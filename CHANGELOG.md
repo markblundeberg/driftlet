@@ -8,9 +8,11 @@ major version.
 - Bowed alloys: `alloy(from, to, length, { bow: { 'h+': { mu0: C }, epsr: C } })` takes a value
   as (1 − f)a + fb − Cf(1 − f), a band gap's bowing split between its band edges as you give it;
   each straight piece of the composition sampled at 32 points (the midpoint exact).
-- A species with non-ideal statistics can have its μ° graded (a Fermi–Dirac carrier in a graded
-  alloy): every model reads ζ at the node's own μ°, and the diode is the limit of a staircase of
-  Fermi–Dirac layers, second order. Its cRef still can't be.
+- A species with non-ideal statistics can have its μ° graded, and a Fermi–Dirac one its cRef (a
+  degenerate carrier in a graded alloy, whose N_c changes with the composition): every model reads
+  ζ at the node's own μ°, and a Fermi–Dirac c = c_ref 𝓕(ζ) scales exactly with the node's c_ref.
+  The diode is the limit of a staircase of Fermi–Dirac layers, second order. A cRef under the
+  other models is still refused.
 - Refusals that said the wrong thing: a grid option that isn't a positive number (`minCells: NaN`
   surfaced as a TypeError's text), and a reference electrode with a charged species among its
   fixed participants (it said "isn't charge-balanced").

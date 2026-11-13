@@ -8,7 +8,7 @@
 
 import { buildGrid, applyGeometry, crossSection } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
-import { normalizeStatistics } from './statistics.js';
+import { normalizeStatistics, withCRef } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
 import { stoichiometry as equationStoichiometry, electrodeUnbalanced, faceSides, parseEquation } from './equation.js';
 import { mhcIntegral } from './marcus.js';
@@ -128,7 +128,9 @@ export function gradedAt(mat, reg, x) {
     if (gr?.cRef) cRef[i] = at(gr.cRef);
     if (gr?.D) D[i] = at(gr.D);
   });
-  return { ...mat, mu0, cRef, D, epsr: reg.gradeEpsr ? at(reg.gradeEpsr) : mat.epsr };
+  // (a Fermi–Dirac model at the local cRef, where that's graded: the only model that may be)
+  const models = reg.grade.some((gr, i) => gr?.cRef && mat.modelOf[i] >= 0) ? mat.models.map((md) => withCRef(md, cRef)) : mat.models;
+  return { ...mat, mu0, cRef, D, models, epsr: reg.gradeEpsr ? at(reg.gradeEpsr) : mat.epsr };
 }
 
 // Whether a (normalised) region grades anything.
@@ -371,7 +373,7 @@ export function normalizeDevice(def) {
         need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
         need(isObject(v), `${at} must be { mu0, cRef, D }, each a profile { x, values } against the device's x`);
         fields(v, at, ['mu0', 'cRef', 'D']);
-        need(v.cRef === undefined || mat.modelOf[i] < 0, `${at}.cRef: '${sname}' has non-ideal statistics in '${mat.name}'; only an ideal (dilute) species' cRef can be graded so far (its mu0 and D can)`);
+        need(v.cRef === undefined || mat.modelOf[i] < 0 || mat.models[mat.modelOf[i]].type === 'fermi-dirac', `${at}.cRef: '${sname}' has ${mat.models[mat.modelOf[i]]?.type} statistics in '${mat.name}'; only an ideal or Fermi–Dirac species' cRef can be graded so far (its mu0 and D can)`);
         need(v.D === undefined || mat.D[i] > 0, `${at}.D: '${sname}' doesn't move in '${mat.name}' (D 0), and a graded D would make it move; give the material a D > 0`);
         grade[i] = {
           mu0: read(v, 'mu0', at, 'standard chemical potentials (J/mol)', () => true, 'finite'),

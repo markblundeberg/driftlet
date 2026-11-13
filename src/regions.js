@@ -199,6 +199,7 @@ export class RegionTerms {
       const w = this._work(md), idx = md.idx, k = idx.length;
       for (let a = 0; a < k; a++) w.z[a] = zeta[idx[a]];
       md.evaluate(w.z, w.c, w.K, this.background[g]);
+      if (md.cRef) scaleToNode(md, w.c, w.K, this.cRef, g * n);
       for (let a = 0; a < k; a++) {
         const i = idx[a], ci = w.c[a];
         c[g * n + i] = ci;
@@ -228,6 +229,7 @@ export class RegionTerms {
           for (let a = 0; a < k; a++) w.zp[a] = zeta[idx[a]];
           w.zp[r] += sgn * STAT_STEP;
           md.evaluate(w.zp, w.cp, Kx, this.background[g]);
+          if (md.cRef) scaleToNode(md, w.cp, Kx, this.cRef, g * n);
         }
         for (let a = 0; a < k; a++) {
           for (let q = 0; q < k; q++) dK[o + (idx[a] * n + idx[q]) * n + idx[r]] = (w.Kp[a * k + q] - w.Km[a * k + q]) / (2 * STAT_STEP);
@@ -1050,4 +1052,17 @@ export class RegionTerms {
     d[0] -= this.z[i] * Cx;
   }
 
+}
+
+// A Fermi–Dirac model's c and K at a node whose cRef (a graded region's) isn't its material's:
+// c = c_ref 𝓕(ζ) scales exactly, each species' row of c and K by the node's c_ref over the
+// model's. (Where they're equal, nothing moves: x·1 is x.)
+function scaleToNode(md, c, K, cRef, base) {
+  const k = md.idx.length;
+  for (let a = 0; a < k; a++) {
+    const f = cRef[base + md.idx[a]] / md.cRef[a];
+    if (f === 1) continue;
+    c[a] *= f;
+    for (let q = 0; q < k; q++) K[a * k + q] *= f;
+  }
 }
