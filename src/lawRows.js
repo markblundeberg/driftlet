@@ -10,8 +10,8 @@
 // Solver._laws() set them from findLaws: s.constraints, affinities, localConstraints, islands,
 // timeLaws, contactLaw, and s.flatStretches, each meaning what src/laws.js's contract says. The
 // solver's own helpers they call: s._j(rb, r, cb, c, v) adds v at row (rb, r), column (cb, c) of
-// the block matrix s.sys; s._replaceRow(b, r) zeroes that row (all three blocks, and its terms in
-// difference form, s.lin); s._dc(g, i, d) puts ∂c_i/∂(slot) at node g into d; s._solveLinear(rhs,
+// the block matrix s.sys; s._replaceRow(b, r) clears that row (all three blocks, its terms in
+// difference form, s.lin, its terminal terms, termB, and its residual); s._dc(g, i, d) puts ∂c_i/∂(slot) at node g into d; s._solveLinear(rhs,
 // out) solves the factorised s.sys; s._assembleBookkeeping(dt) sets the terminals' charges and
 // currents (portQ, contactD, termI); s.amount(st), s.surfaceAmount(col) a stretch's or surface
 // column's amount.
@@ -99,9 +99,9 @@
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. A row is replaced only where its slot is active (loc ≥ 0), and every entry a row held
-//      before is gone: _replaceRow clears the three blocks and s.lin's; a row that isn't a pin
-//      (a flat stretch's, a local constraint's) also has its termB entries cleared, where a
-//      terminal's ∂/∂V was in it (a port reaction's, in the slots it touches).
+//      before is gone: _replaceRow clears the three blocks, s.lin's, its termB entries (where a
+//      terminal's ∂/∂V was in it: a port reaction's, in the slots it touches) and its residual,
+//      pins included.
 //   2. Each law's residual and its derivatives are of the same function of the state: every
 //      term in amount (lawAmount, and the rows above) has its ∂ in idx/w, dV or the block row,
 //      and none is counted twice (a metal's carriers by its charged face's D, not its η).
@@ -274,7 +274,6 @@ function applyIslands(s) {
     isl.len = len;
     isl.res = t;
     s._replaceRow(b0, r0);
-    for (const B of s.termB) B[R[isl.row]] = 0;
     s._j(b0, r0, b0, r0, 1);
     res[R[isl.row]] = 0;
     out.push(isl);
@@ -444,8 +443,7 @@ function applyLocalConstraints(s) {
     lc.nodes.forEach((g, j) => {
       const b = s.blockOfNode[g];
       if (s.loc[b * M + lc.row] < 0) return;
-      s._replaceRow(b, lc.row);
-      for (const B of s.termB) B[s.rix[b * M + lc.row]] = 0; // (a port reaction's ∂/∂V, where one touched this slot)
+      s._replaceRow(b, lc.row); // (a port reaction's ∂/∂V too, where one touched this slot)
       let t = 0;
       for (const { i, q, k, w } of lc.parts) {
         if (i !== undefined) {
@@ -763,8 +761,7 @@ function flatRows(s) {
     for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
       const b = s.blockOfNode[g], o = b * M + 1 + i;
       if (s.loc[o] < 0) continue;
-      s._replaceRow(b, 1 + i);
-      for (const B of s.termB) B[R[o]] = 0; // (the row's old terminal terms: the end node's own link)
+      s._replaceRow(b, 1 + i); // (the row's old terminal terms too: the end node's own link)
       s._j(b, 1 + i, b, 1 + i, 1);
       res[R[o]] = u[o] - hi + (uLo[o] - lo); // (the big terms first: hi + lo rounds to hi)
       if (open && z[i] !== 0) s.termB[k][R[o]] += -z[i] / VT;
@@ -776,7 +773,6 @@ function flatRows(s) {
       const b = s.blockOfFace[f], o = b * M + 1 + i;
       if (s.loc[o] < 0) continue;
       s._replaceRow(b, 1 + i);
-      for (const B of s.termB) B[R[o]] = 0;
       s._j(b, 1 + i, b, 1 + i, 1);
       res[R[o]] = u[o] + uLo[o];
     }

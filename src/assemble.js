@@ -140,11 +140,16 @@ export class Assembly {
     if (this.transformed) this._chargeRows(dt);
   }
 
-  // Zero one row of the Jacobian (all three blocks), ready to be replaced.
+  // Clear one row, ready to be replaced: the Jacobian's (all three blocks, and the kept-aside
+  // linear terms), its terms in every terminal's column, and its residual. (Done by hand before,
+  // the terminal terms were cleared at seven of nine callers; a code-smell review.)
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
     if (l < 0) return;
-    if (this.lin) this.lin.kill(this.rix[b * this.M + rs]);
+    const R = this.rix[b * this.M + rs];
+    if (this.lin) this.lin.kill(R);
+    for (const Bk of this.termB) Bk[R] = 0;
+    this.res[R] = 0;
     const { sys, nB } = this, sz = sys.sizes, m = sz[b];
     sys.B.fill(0, sys.offB[b] + l * m, sys.offB[b] + (l + 1) * m);
     if (b > 0) sys.A.fill(0, sys.offA[b] + l * sz[b - 1], sys.offA[b] + (l + 1) * sz[b - 1]);

@@ -12,7 +12,7 @@
 // --driftlet-redox-1 …, --driftlet-ink, …) with light and dark defaults of no specificity, so any
 // rule on the page restyles them.
 
-import { traces } from './traces.js';
+import { TRACES_OPTIONS, traces } from './traces.js';
 import { powi } from './pow.js';
 import { DeviceError, checkOptions } from './errors.js';
 
@@ -137,6 +137,9 @@ let counter = 0;
 // Ids unique on a page, even with two copies of this module loaded (a CDN one and a local one).
 const instance = Math.random().toString(36).slice(2, 8);
 
+// (bandDiagram takes these too, with traces')
+const LEVELCHART_OPTIONS = ['width', 'height', 'ylabel', 'range', 'xlim', 'title', 'ytick'];
+
 /**
  * Line chart of level-diagram traces as an SVG string.
  * @param {ReturnType<typeof traces>} tr from `traces()`
@@ -146,7 +149,7 @@ const instance = Math.random().toString(36).slice(2, 8);
  * @returns {string}
  */
 export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title, ytick = fmt } = {}) {
-  checkOptions('levelChart', arguments[1], ['width', 'height', 'ylabel', 'range', 'xlim', 'title', 'ytick']);
+  checkOptions('levelChart', arguments[1], LEVELCHART_OPTIONS);
   const id = `driftlet-plot-${instance}-${++counter}`;
   const { x, series, regions } = tr;
   const xs = xlim ? xlim[0] : x[0], xe = xlim ? xlim[1] : x[x.length - 1];
@@ -281,7 +284,7 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
  * @returns {string}
  */
 export function bandDiagram(sol, opts = {}) {
-  checkOptions('bandDiagram', arguments[1], ['width', 'height', 'ylabel', 'range', 'xlim', 'title', 'ytick', 'species', 'standard', 'phi', 'energy', 'levels', 'labels', 'shifts']);
+  checkOptions('bandDiagram', arguments[1], [...LEVELCHART_OPTIONS, ...TRACES_OPTIONS]);
   const { width, height, ylabel = opts.energy ? 'electron energy (eV)' : undefined, range, xlim, title, ytick, ...pick } = opts;
   return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title, ytick });
 }

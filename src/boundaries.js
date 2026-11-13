@@ -721,8 +721,7 @@ export class BoundaryTerms {
           if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
           flux[i] += res[R[o]];
           this._captureRow(b, r, zF, C, k);
-          this._replaceRow(b, r);
-          for (const Bk of this.termB) Bk[R[o]] = 0; // (other ports' terms in the row replaced)
+          this._replaceRow(b, r); // (other ports' terms in the row too)
           this._j(b, r, b, r, 1);
           res[R[o]] = -deta;
           B[R[o]] += -z[i] / VT;
@@ -1042,8 +1041,7 @@ export class BoundaryTerms {
       const link = ct.species[i];
       if (link.type !== 'equilibrium') continue;
       const o = b * M + 1 + i;
-      this._replaceRow(b, 1 + i);
-      for (const Bk of this.termB) Bk[R[o]] = 0; // (a port's terms in the row replaced)
+      this._replaceRow(b, 1 + i); // (a port's terms in the row too)
       this._j(b, 1 + i, b, 1 + i, 1);
       res[R[o]] = u[o] - this.contactEta(side, i) + uLo[o]; // (the big terms first: u + uLo rounds to u)
       if (z[i] !== 0) B[R[o]] += -z[i] / VT;
@@ -1094,7 +1092,6 @@ export class BoundaryTerms {
         this._captureRow(b, 0, 1, C, k);
       }
       this._replaceRow(b, 0);
-      for (const Bk of this.termB) Bk[R[b * M]] = 0;
       if (link.type === 'pinned') {
         // φ_edge = V_t − zeroCharge (the C → ∞ limit).
         this._j(b, 0, b, 0, 1);

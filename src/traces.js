@@ -60,6 +60,9 @@ export function typeset(name, z) {
   return formula + [...charge].map((c) => (c === '+' ? '⁺' : c === '-' ? '⁻' : SUP[+c])).join('');
 }
 
+// (bandDiagram takes these too: one list)
+export const TRACES_OPTIONS = ['species', 'standard', 'phi', 'energy', 'levels', 'labels', 'shifts'];
+
 /**
  * The level diagram of a solution as traces: per charged species, its voltage V_i (`level`) and
  * its standard level V°_i (`standard`, the band edge for e⁻ and h⁺), optionally φ and
@@ -81,7 +84,7 @@ export function typeset(name, z) {
  *   faces: number[], range: [number, number] }}
  */
 export function traces(sol, { species, standard = true, phi = false, energy = false, levels = [], labels = {}, shifts = {} } = {}) {
-  checkOptions('traces', arguments[1], ['species', 'standard', 'phi', 'energy', 'levels', 'labels', 'shifts']);
+  checkOptions('traces', arguments[1], TRACES_OPTIONS);
   if (!Array.isArray(levels)) throw new DeviceError("traces: levels must be a list, [{ half }, …], of the half-reactions whose levels to draw");
   const names = Object.keys(sol.V);
   const role = (name) => speciesRole(sol, name).role;

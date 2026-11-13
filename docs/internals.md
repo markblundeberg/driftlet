@@ -27,6 +27,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
+| `src/dense.js` | header: small dense solves (partial pivoting), for statistics, junction and polarization |
 | `src/solver.js` | no: setup, bookkeeping and drivers, described below |
 
 ## From a definition to a solution

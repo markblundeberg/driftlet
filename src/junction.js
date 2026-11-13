@@ -5,6 +5,7 @@
 
 import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
+import { solveDense } from './dense.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -133,7 +134,7 @@ export function planck(left, right, ions, { T = 298.15, steps = 4000 } = {}) {
       const rp = residual(Jp).r;
       Jac.push(Array.from(rp, (v, i) => (v - r[i]) / dJ));
     }
-    const step = solveDense(Jac, r, n);
+    const step = solveDense(Jac, r, { byColumns: true });
     let lambda = 1, next;
     for (;;) {
       const Jn = J.map((v, k) => v - lambda * step[k]);
@@ -148,25 +149,4 @@ export function planck(left, right, ions, { T = 298.15, steps = 4000 } = {}) {
   }
   if (!(Math.max(...r.map(Math.abs)) < 1e-8)) fail('planck: the shooting did not converge');
   return ((GAS_CONSTANT * T) / FARADAY) * psi;
-}
-
-// Solves Σ_k A[k][i] x_k = b_i (A given column by column), by Gaussian elimination with pivoting.
-function solveDense(cols, b, n) {
-  const M = Array.from({ length: n }, (_, i) => [...cols.map((col) => col[i]), b[i]]);
-  for (let p = 0; p < n; p++) {
-    let best = p;
-    for (let i = p + 1; i < n; i++) if (Math.abs(M[i][p]) > Math.abs(M[best][p])) best = i;
-    [M[p], M[best]] = [M[best], M[p]];
-    for (let i = p + 1; i < n; i++) {
-      const f = M[i][p] / M[p][p];
-      for (let j = p; j <= n; j++) M[i][j] -= f * M[p][j];
-    }
-  }
-  const x = new Array(n).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
-    let s = M[i][n];
-    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
-    x[i] = s / M[i][i];
-  }
-  return x;
 }

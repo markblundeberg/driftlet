@@ -6,6 +6,7 @@ import { DeviceError, checkOptions } from './errors.js';
 import { FARADAY } from './constants.js';
 import { mhcRate } from './marcus.js';
 import { powi, powr } from './pow.js';
+import { solveDense } from './dense.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -201,7 +202,7 @@ function surfaceEquilibrium(parts, surface, held) {
   return (v) => {
     const P = new Float64Array(X);
     if (k > 0) {
-      const y = solveSmall(gram, rows.map(({ pt }) => pt.base + pt.s * v));
+      const y = solveDense(gram, rows.map(({ pt }) => pt.base + pt.s * v));
       rows.forEach(({ r }, j) => {
         for (let x = 0; x < X; x++) P[x] += y[j] * r[x];
       });
@@ -213,7 +214,7 @@ function surfaceEquilibrium(parts, surface, held) {
       const lnA = lnAOf(P, t), Z = lse(lnA), th = lnA.map((l) => Math.exp(l - Z));
       const m = free.map((n) => dot(n, th)), g = m.map((x, j) => x - target[j]);
       const H = free.map((a, i) => free.map((b, j) => a.reduce((s, ax, x) => s + ax * b[x] * th[x], 0) - m[i] * m[j]));
-      const step = solveSmall(H, g.map((x) => -x));
+      const step = solveDense(H, g.map((x) => -x));
       if (Math.max(...step.map(Math.abs)) < 1e-12) break; // (Newton's step, near quadratic here)
       let lam = 1, tn, fn;
       for (;;) {
@@ -227,25 +228,4 @@ function surfaceEquilibrium(parts, surface, held) {
     const lnA = lnAOf(P, t);
     return { lnA, bare: Math.exp(-lse(lnA)) };
   };
-}
-
-// A small dense system A x = b, by Gaussian elimination with partial pivoting.
-function solveSmall(A, b) {
-  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
-  for (let c = 0; c < n; c++) {
-    let p = c;
-    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
-    [M[c], M[p]] = [M[p], M[c]];
-    for (let r = c + 1; r < n; r++) {
-      const f = M[r][c] / M[c][c];
-      for (let j = c; j <= n; j++) M[r][j] -= f * M[c][j];
-    }
-  }
-  const x = new Array(n).fill(0);
-  for (let r = n - 1; r >= 0; r--) {
-    let s = M[r][n];
-    for (let j = r + 1; j < n; j++) s -= M[r][j] * x[j];
-    x[r] = s / M[r][r];
-  }
-  return x;
 }

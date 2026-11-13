@@ -19,6 +19,7 @@ import { FARADAY, EPS0, AVOGADRO } from './constants.js';
 import { fermiHalf, fermiMinusHalf } from './fermi.js';
 import { powi } from './pow.js';
 import { SolverError } from './errors.js';
+import { solveFlat } from './dense.js';
 
 const MODEL_TYPES = ['ideal', 'fermi-dirac', 'lattice', 'redlich-kister', 'debye-huckel', 'insertion', 'custom'];
 
@@ -442,7 +443,7 @@ function customModel(idx, fn, fail) {
           for (let q = 0; q < m; q++) J[p * m + q] = KK[f[p] * k + f[q]];
         }
         if (near && it > 0) return;
-        denseSolve(J, r, dz, m);
+        solveFlat(J, r, dz, m);
         let mx = 0;
         for (let p = 0; p < m; p++) mx = Math.max(mx, Math.abs(dz[p]));
         const scale = mx > 2 ? 2 / mx : 1;
@@ -471,28 +472,6 @@ function choleskyOk(K, k) {
   return true;
 }
 
-// Gaussian elimination with partial pivoting (small dense systems).
-function denseSolve(A, b, x, m) {
-  const M = Float64Array.from(A.subarray(0, m * m)), v = Float64Array.from(b.subarray(0, m));
-  for (let c = 0; c < m; c++) {
-    let p = c;
-    for (let r = c + 1; r < m; r++) if (Math.abs(M[r * m + c]) > Math.abs(M[p * m + c])) p = r;
-    if (p !== c) {
-      for (let q = 0; q < m; q++) [M[c * m + q], M[p * m + q]] = [M[p * m + q], M[c * m + q]];
-      [v[c], v[p]] = [v[p], v[c]];
-    }
-    for (let r = c + 1; r < m; r++) {
-      const f = M[r * m + c] / M[c * m + c];
-      for (let q = c; q < m; q++) M[r * m + q] -= f * M[c * m + q];
-      v[r] -= f * v[c];
-    }
-  }
-  for (let r = m - 1; r >= 0; r--) {
-    let s = v[r];
-    for (let q = r + 1; q < m; q++) s -= M[r * m + q] * x[q];
-    x[r] = s / M[r * m + r];
-  }
-}
 
 /**
  * Validate a material's `statistics` list and build its models.
