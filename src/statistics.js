@@ -606,7 +606,6 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
     }
     models.push(model);
   });
-  // Which ζ positions the models' species occupy, and remap modelOf to the kept models.
   const charged = species.map((s, i) => mat.present[i] && s.z !== 0);
   const inCombination = (i) => modelOf[i] >= 0 && models[modelOf[i]].type === 'insertion';
   // Strictly neutral, and every charged species in a neutral combination: nothing depends on φ.

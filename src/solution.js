@@ -525,7 +525,7 @@ function resolutionWarnings(sol, solver) {
   // GHK fluxes 1% off at hmin 5 nm, and worse as the grid is refined).
   const boxed = (g, h, phi, other, where, sigma = 0, reacting = [], crossing = []) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
-    if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined?.[g]) return;
+    if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined[g]) return;
     const s2 = solver.screening(g), Cbox = (F * F * s2 * h) / (2 * RT);
     if (!(s2 > 0)) return;
     const pick = (list) => list.filter((i) => species[i].z !== 0).reduce((a, i) => (a < 0 || Math.abs(species[i].z) > Math.abs(species[a].z) ? i : a), -1);

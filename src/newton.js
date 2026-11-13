@@ -477,6 +477,21 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     if (dt === Infinity) noteConditioning(s);
     return r;
   };
+  // Converged (by its tolerance, or as far as round-off allows): unless something says it isn't
+  // solved, a probe or the islands' round asks for more (AGAIN), or the state is refused, the
+  // result. (One body for both ways of converging; written out twice before, a code-smell review.)
+  const AGAIN = Symbol('again');
+  const accept = (it, rmax, roundoff) => {
+    const why = unsolved();
+    if (why) return fail({ converged: false, iterations: it, history, error: why });
+    const done = { converged: true, iterations: it, history, residual: rmax, ...(roundoff ? { roundoff: true } : {}) };
+    if (probed()) return AGAIN;
+    if (startIslandsRound(it, done)) return AGAIN;
+    if (worse) return fail({ converged: false, iterations: it, history });
+    const refused = settle();
+    if (refused) return fail({ converged: false, iterations: it, history, error: refused });
+    return done;
+  };
   for (let it = 1; it <= maxIter; it++) {
     // (An island's leak is exponential in its level: from above, Newton walks it down by about
     // a thermal unit an update, steadily, before it converges. Those updates are progress, so
@@ -569,15 +584,9 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     const trusted = !lost() || lastRefined || failures >= 3;
     const contracted = dt !== Infinity && !lost() && it >= 2 && step < 1e-6 && theta < 0.1 && (theta / (1 - theta)) * step < tol;
     if (alpha === 1 && trusted && (step < tol || contracted)) {
-      const why = unsolved();
-      if (why) return fail({ converged: false, iterations: it, history, error: why });
-      const done = { converged: true, iterations: it, history, residual: rmax };
-      if (probed()) continue;
-      if (startIslandsRound(it, done)) continue;
-      if (worse) return fail({ converged: false, iterations: it, history });
-      const refused = settle();
-      if (refused) return fail({ converged: false, iterations: it, history, error: refused });
-      return done;
+      const r = accept(it, rmax, false);
+      if (r !== AGAIN) return r;
+      continue;
     }
     // Converged as far as round-off allows: the updates are already tiny (below 1e-6 thermal
     // units, ~26 nV) and have stopped shrinking. A badly conditioned system's floor can sit
@@ -594,15 +603,9 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     if (refine) refined++;
     else if (!noRefine && alpha === 1 && it >= 3 && step > 0.25 * p1 && (step < 1e-4 || (step > p1 && p1 > p2))) refine = true;
     if (alpha === 1 && trusted && it >= 4 && (!refine || refined >= 1 || noRefine) && step < floor && p1 < floor && step > 0.25 * p1 && p1 > 0.25 * p2) {
-      const why = unsolved();
-      if (why) return fail({ converged: false, iterations: it, history, error: why });
-      const done = { converged: true, iterations: it, history, residual: rmax, roundoff: true };
-      if (probed()) continue;
-      if (startIslandsRound(it, done)) continue;
-      if (worse) return fail({ converged: false, iterations: it, history });
-      const refused = settle();
-      if (refused) return fail({ converged: false, iterations: it, history, error: refused });
-      return done;
+      const r = accept(it, rmax, true);
+      if (r !== AGAIN) return r;
+      continue;
     }
   }
   const refused = settle();

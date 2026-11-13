@@ -157,6 +157,20 @@ export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
   // (Of the materials some region is made of: one defined but unused, its D = 1e-22, made a
   // giant step 1e7 times longer, too long to keep a fast species' amount: see _steadySteps.)
+  // The levels a steady solve's stages save and put back: u, uLo and the terminals' voltages
+  // (the rest of STATE they leave alone), and the concentrations recomputed from them. (Written
+  // out by hand five times before; a code-smell review.)
+  _levels() {
+    return [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
+  }
+
+  _putLevels([u, uLo, termV]) {
+    this.u.set(u);
+    this.uLo.set(uLo);
+    this.termV.set(termV);
+    this.computeConcentrations();
+  }
+
   slowestTime() {
     const [dMin] = this._dRange();
     const L = this.model.grid.length;
@@ -273,12 +287,9 @@ export class SteadySolves {
     const was = this.solvedV;
     const canContinue = allowed && held(dl) && held(dr) && (target !== level || (was != null && (was[0] !== level || was[1] !== target)));
     const direct = this._directSteady();
-    const u0 = Float64Array.from(this.u), u0Lo = Float64Array.from(this.uLo), v0 = Float64Array.from(this.termV);
+    const start0 = this._levels();
     const restart = () => {
-      this.u.set(u0);
-      this.uLo.set(u0Lo);
-      this.termV.set(v0);
-      this.computeConcentrations();
+      this._putLevels(start0);
     };
     const solved = (q) => {
       if (q.converged) {
@@ -311,8 +322,8 @@ export class SteadySolves {
       // GaAs taken warm through T at 0.3 V failed 17 of 56 jumps against 1.9.0's 4; Fable round
       // 3's hunter, on its re-check.)
       if (this.stepped) {
-        u0.set(this.u);
-        u0Lo.set(this.uLo);
+        start0[0].set(this.u);
+        start0[1].set(this.uLo);
       }
       const q = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
       if (q.converged) return solved(after(q, r));
@@ -327,7 +338,7 @@ export class SteadySolves {
       restart();
       this.dimmer = false;
       const g = this._generationContinuation(opts, r);
-      if (this.dimmer) dimmer = [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
+      if (this.dimmer) dimmer = this._levels();
       if (g.converged) return solved(g);
       r = g;
     }
@@ -410,10 +421,7 @@ export class SteadySolves {
     if (!dimmer) restart();
     else {
       // (where it was left, not where a floating continuation since left the state)
-      this.u.set(dimmer[0]);
-      this.uLo.set(dimmer[1]);
-      this.termV.set(dimmer[2]);
-      this.computeConcentrations();
+      this._putLevels(dimmer);
     }
     return after(this._steadySteps(opts), r);
   }
@@ -555,12 +563,9 @@ export class SteadySolves {
       const I = -this.terms.reduce((t, tm, j) => (j === k ? t : t + sourceAt(tm.drive.src, this.time)), 0);
       return V - I * d.R;
     };
-    const start = [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
+    const start = this._levels();
     const restore = () => {
-      this.u.set(start[0]);
-      this.uLo.set(start[1]);
-      this.termV.set(start[2]);
-      this.computeConcentrations();
+      this._putLevels(start);
     };
     // One terminal behind R, the rest not all driven by currents (so its current isn't known):
     // its crossing with the load line, (V_src − V)/R, by held solves, as an open circuit's is
@@ -616,7 +621,7 @@ export class SteadySolves {
       this.dimmer = true; // (the state is now a solution under dimmer light: a better start than cold)
       while (s < 1) {
         const next = Math.min(1, s * factor);
-        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
+        const before = this._levels();
         this.generationScale = next;
         q = this._steadySteps(sub);
         steps += q.steps;
@@ -626,10 +631,7 @@ export class SteadySolves {
           s = next;
           factor = Math.min(100, factor * factor);
         } else {
-          this.u.set(u1);
-          this.uLo.set(u1Lo);
-          this.termV.set(v1);
-          this.computeConcentrations();
+          this._putLevels(before);
           factor = Math.sqrt(factor);
           if (factor < 1.5) return { converged: false, steps, iterations, history }; // (crawling: time steps do better)
         }
@@ -672,7 +674,7 @@ export class SteadySolves {
       }
       while (V !== target) {
         const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
-        const u1 = Float64Array.from(this.u), u1Lo = Float64Array.from(this.uLo), v1 = Float64Array.from(this.termV);
+        const before = this._levels();
         this.sourceOverride.set(k, next);
         q = this._steadySteps(sub);
         steps += q.steps;
@@ -682,10 +684,7 @@ export class SteadySolves {
           V = next;
           dV *= 1.5;
         } else {
-          this.u.set(u1);
-          this.uLo.set(u1Lo);
-          this.termV.set(v1);
-          this.computeConcentrations();
+          this._putLevels(before);
           dV /= 4;
           if (Math.abs(dV) < 1e-6 * Math.abs(target - level)) return { converged: false, steps, iterations, history };
         }
