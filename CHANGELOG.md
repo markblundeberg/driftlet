@@ -8,6 +8,9 @@ major version.
 - Bowed alloys: `alloy(from, to, length, { bow: { 'h+': { mu0: C }, epsr: C } })` takes a value
   as (1 − f)a + fb − Cf(1 − f), a band gap's bowing split between its band edges as you give it;
   each straight piece of the composition sampled at 32 points (the midpoint exact).
+- Refusals that said the wrong thing: a grid option that isn't a positive number (`minCells: NaN`
+  surfaced as a TypeError's text), and a reference electrode with a charged species among its
+  fixed participants (it said "isn't charge-balanced").
 
 ## 1.16.0 (2026-11-13)
 

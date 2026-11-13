@@ -62,6 +62,13 @@ export function buildGrid(regions, opts = {}) {
   const given = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v !== undefined));
   // A grid far past any demo's (most often a length given in µm as if in m) would only exhaust
   // memory: refuse it before building it. Each region needs at least length/hmax cells.
+  // Each option a positive number (NaN reached the guard below as a cell count of NaN, and its
+  // message failed with a TypeError of its own; a smell review's helper).
+  regions.forEach((reg, r) => {
+    for (const [k, v] of Object.entries({ ...given(opts), ...given(reg.grid) })) {
+      if (typeof v !== 'number' || !(v > 0) || v === Infinity) throw new RangeError(`${reg.grid?.[k] !== undefined ? `regions[${r}].grid.` : ''}${k} must be a positive number${k === 'minCells' ? ' of cells' : k === 'ratio' ? ' (≥ 1)' : ' of metres'}, got ${typeof v === 'number' ? v : JSON.stringify(v)}`);
+    }
+  });
   const least = regions.map((reg) => {
     const g = { ...DEFAULTS, ...given(opts), ...given(reg.grid) };
     return reg.cells ? reg.cells.length : reg.length / Math.min(g.hmax ?? Infinity, reg.length / g.minCells);

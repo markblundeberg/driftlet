@@ -284,4 +284,8 @@ test("bath: a reference electrode's half-reaction is held to its charge balance,
   plain.contacts.left = { ...bath({ 'Cu2+': 100, 'SO42-': 100 }, half('Cu2+ + e- = Cu(s)', { 'Cu(s)': 5000 })) };
   assert.throws(() => new Device(plain), /contacts\.left: the bath's reference electrode "Cu2\+ \+ e- = Cu\(s\)" isn't charge-balanced/);
   assert.ok(new Device(JSON.parse(JSON.stringify(ok))));
+  // A charged species among its fixed participants balances the equation but not the offset,
+  // which counts the ion's charge alone: named as that (it read "isn't charge-balanced").
+  const acid = { species: [...lib.species, { name: 'H+', z: 1 }], materials: { water: { epsr: 0, species: { ...lib.materials.water.species, 'H+': { D: 9e-9, mu0: 0, cRef: 1000 } } } } };
+  assert.throws(() => build({ library: [acid], stack: [bath({ 'Cu2+': 100, 'SO42-': 100 }, half('Cu2+ + 2 H+ + 4 e- = CuH2(s)', { 'CuH2(s)': 0, 'H+': 0 })), layer('water', 1e-5), bath({ 'Cu2+': 100, 'SO42-': 100 }, 'SO42-')] }), /has H\+, a charged species, among its fixed participants/);
 });

@@ -125,4 +125,10 @@ test('a grid past the cell limit is refused before it is built, from hmin too; m
   assert.throws(() => gradedCells(1e-6, { ratio: 1, hmin: 1e-6 / 1e9 }), /more than 1e\+6 cells/);
   assert.ok(Date.now() - t0 < 2000);
   assert.throws(() => gradedCells(1e-6, { minCells: 0 }), /minCells must be ≥ 1/);
+  // A device's options, each a positive number: NaN reached the cell guard, whose message then
+  // failed with a TypeError's text (a smell review's helper).
+  const dev = (grid, regionGrid) => new Device({ species: [{ name: 'X', z: 0, cRef: 1 }], materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } }, regions: [{ material: 'm', length: 1e-6, grid: regionGrid }], contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { phi: 'neutral' } }, grid });
+  assert.throws(() => dev({ minCells: NaN }), /grid: minCells must be a positive number of cells, got NaN/);
+  assert.throws(() => dev({}, { hmax: -1 }), /regions\[0\]\.grid\.hmax must be a positive number of metres, got -1/);
+  assert.throws(() => dev({ ratio: '2' }), /ratio must be a positive number \(≥ 1\), got "2"/);
 });

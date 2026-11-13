@@ -216,6 +216,10 @@ export function electrodeUnbalanced(bath, species) {
   if (typeof bath.electrode !== 'string' || typeof bath.reference !== 'string') return `bath.electrode is the reference electrode's half-reaction, a string, with bath.reference its ion (as bath(c, half) writes them), got ${JSON.stringify(bath.electrode)}`;
   const terms = parseEquation(bath.electrode, 'bath.electrode'), e = terms.find((t) => t.name === 'e-'), ion = terms.find((t) => t.name === bath.reference);
   if (!e || !ion) return `bath.electrode ${JSON.stringify(bath.electrode)} must exchange e- and the bath's reference species '${bath.reference}'`;
+  // (its other participants are fixed, so neutral: a charged one among them, H⁺ in Cu²⁺ + 2H⁺ +
+  // 4e⁻ = CuH₂(s), balances the equation but not the offset, which counts the ion's charge alone)
+  const other = terms.find((t) => t.name !== 'e-' && t.name !== bath.reference && (species.find((sp) => sp.name === t.name)?.z ?? 0) !== 0);
+  if (other) return `the bath's reference electrode ${JSON.stringify(bath.electrode)} has ${other.name}, a charged species, among its fixed participants: they must be neutral (solids, gases, the solvent), the electrons balancing ${bath.reference} alone`;
   const z = species.find((sp) => sp.name === bath.reference)?.z;
   if (z === undefined || Math.abs(ion.nu * z - e.nu) <= 1e-12) return null;
   return `the bath's reference electrode ${JSON.stringify(bath.electrode)} isn't charge-balanced (${Math.abs(ion.nu)} ${bath.reference} of charge ${z} to ${Math.abs(e.nu)} e-): balance it as written`;
