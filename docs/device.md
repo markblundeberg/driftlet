@@ -1504,10 +1504,12 @@ Notes:
   so a worker's patch says it this way in JavaScript).
 - **Drives alone are cheap.** A patch that changes only the terminals' drives (`V`, `I`, `R`)
   updates them in place, keeping everything else.
-- **Anything else rebuilds the device.** The state carries over while the species, regions and
+- **Anything else rebuilds the device**, and a patch that also changes a drive is the rebuild,
+  then the drive change, as two `set()`s are. The state carries over while the species, regions and
   terminals are unchanged (in the same order: regions reordered restart); otherwise it restarts
-  from the regions' `c0`. What's carried is physical, the concentrations and φ, so a new `T` or
-  μ° in the same patch moves none of them. On a new grid it's interpolated onto the nodes, each
+  from the regions' `c0`. What's carried is physical, the concentrations and φ, so a new `T`, μ°
+  or statistics (a lattice's `cMax`) in the same patch moves none of them, and a plate or port at
+  no current keeps its charge through a new capacitance. On a new grid it's interpolated onto the nodes, each
   species along the profile Scharfetter–Gummel takes within each old cell, so a floating gate
   keeps its charge, a closed region its amount exactly, and a transient goes on as it was;
   `solution()` then shows that interpolation, unsolved, until the next `solve()` or step, and a

@@ -421,3 +421,56 @@ test('set: a contact the kit wrote, a link or a φ law given with its type, repl
   assert.deepEqual(e.def.contacts.right.species['e-'], { type: 'velocity', v: 1e5 });
   assert.deepEqual(e.def.contacts.right.phi, { type: 'pinned' });
 });
+
+// Three wrong answers of set() from Sol's review (17 Nov 2026), each passing silently before.
+test('a grid and a drive changed in one set() step as the two set()s do', () => {
+  const make = () => new Device(build({
+    T: 300, library: [semiconductor('Si')],
+    stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: 1e-9, hmax: 20e-9 },
+  }));
+  const grid = { hmin: 0.5e-9, hmax: 20e-9 }, contacts = { right: { V: 0.5 } };
+  const one = make(), two = make();
+  one.solve();
+  two.solve();
+  one.set({ grid, contacts });
+  two.set({ grid });
+  two.set({ contacts });
+  const a = one.advance(1e-12), b = two.advance(1e-12);
+  assert.ok(a.converged && b.converged);
+  // (in one set(), the regrid was settled at the new bias: −859 A/m², the step's response lost)
+  assert.ok(Math.abs(a.current / b.current - 1) < 1e-9, `${a.current} vs ${b.current}`);
+  assert.ok(Math.abs(b.current) > 1e7);
+});
+
+test("a floating plate keeps its charge through a change of its capacitance", () => {
+  const d = new Device({
+    species: [{ name: 'X', z: 0 }], materials: { oxide: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } } },
+    regions: [{ material: 'oxide', length: 10e-9, c0: { X: 1 } }],
+    contacts: { left: { V: 1, zeroCharge: 0, phi: { type: 'capacitive', C: 0.01 } }, right: { V: 0, zeroCharge: 0, phi: 'pinned' } },
+    grid: { minCells: 8 },
+  });
+  const q = d.solve().plates.left.charge;
+  d.set({ contacts: { left: { I: 0 } } });
+  d.set({ contacts: { left: { phi: { C: 0.02 } } } });
+  const s = d.solve();
+  assert.ok(s.converged);
+  // (it doubled with C, at no current)
+  assert.ok(Math.abs(s.plates.left.charge / q - 1) < 1e-9, `${s.plates.left.charge} vs ${q}`);
+});
+
+test("a closed film keeps its amount through a change of its lattice's capacity", () => {
+  const def = (cMax) => ({
+    species: [{ name: 'X', z: 0 }],
+    materials: { film: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['X'], cMax }] } },
+    regions: [{ material: 'film', length: 1e-6, c0: { X: 50 } }],
+    grid: { minCells: 8 },
+  });
+  const d = new Device(def(100)), was = d.solve().conservation[0].amount;
+  d.set({ materials: { film: { statistics: [{ type: 'lattice', species: ['X'], cMax: 200 }] } } });
+  const s = d.step(1e-6);
+  assert.ok(s.converged);
+  // (the same ζ under the new capacity: 66.7 mol/m³ where 50 was, a third more of a closed amount)
+  assert.ok(Math.abs(s.conservation[0].amount / was - 1) < 1e-9, `${s.conservation[0].amount} vs ${was}`);
+});

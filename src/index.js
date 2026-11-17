@@ -14,21 +14,23 @@ const keepWhole = (from, to) => (from[WHOLE] ? markWhole(to) : to);
 export { SolverError } from './errors.js';
 export * from './constants.js';
 
+// Whether two definitions are the same (or, with `terminal`, the same but for a terminal's
+// drive). Functions (custom statistics) compare by identity.
+const DRIVE = new Set(['V', 'I', 'R']);
+const eq = (x, y, terminal) => {
+  if (x === y) return true;
+  if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
+  if (Array.isArray(x) !== Array.isArray(y)) return false;
+  const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+  for (const k of keys) {
+    if (terminal && DRIVE.has(k)) continue;
+    if (!eq(x[k], y[k], false)) return false;
+  }
+  return true;
+};
 // Whether two definitions differ only in their terminals' drives (V, I, R on the contacts and
-// ports). Functions (custom statistics) compare by identity.
+// ports).
 function sameExceptDrives(a, b) {
-  const drive = new Set(['V', 'I', 'R']);
-  const eq = (x, y, terminal) => {
-    if (x === y) return true;
-    if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
-    if (Array.isArray(x) !== Array.isArray(y)) return false;
-    const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
-    for (const k of keys) {
-      if (terminal && drive.has(k)) continue;
-      if (!eq(x[k], y[k], false)) return false;
-    }
-    return true;
-  };
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const k of keys) {
     if (k === 'contacts') {
@@ -43,6 +45,17 @@ function sameExceptDrives(a, b) {
     } else if (!eq(a[k], b[k], false)) return false;
   }
   return true;
+}
+
+// def with each terminal's drive (V, I, R) as `from` has it: the contacts by side, the ports by
+// name (a port new in def keeps its own).
+function withDrives(def, from) {
+  const take = (to, src) => (src ? keepWhole(to, { ...to, V: src.V, I: src.I, R: src.R }) : to);
+  const portName = (p, k) => p.name ?? `ports[${k}]`;
+  const out = { ...def, contacts: { ...def.contacts } };
+  for (const side of ['left', 'right']) if (def.contacts?.[side]) out.contacts[side] = take(def.contacts[side], from.contacts?.[side]);
+  if (def.ports) out.ports = def.ports.map((p, k) => take(p, (from.ports ?? []).find((q, j) => portName(q, j) === portName(p, k))));
+  return out;
 }
 
 // Each terminal's drive (the contacts, then the ports), set in the model in place.
@@ -130,7 +143,23 @@ export class Device {
     }
     // A rebuild. Everything that can fail (validation, building the solver) happens before the
     // device changes, so a change that fails leaves it as it was.
-    const model = normalizeDevice(def);
+    // A rebuild that also changes a drive is the rebuild, then the drive change, as two set()s
+    // are: the carried state stands for the old drives (a grid refined and a bias stepped in one
+    // set() settled the regrid at the new bias, and the step's response was lost: −859 A/m² where
+    // −2.0e7 is right; Sol's review). Where the old drives don't fit the new device, in one.
+    let model = normalizeDevice(def), built = def, then = null;
+    if (this._solver) {
+      const atOld = withDrives(def, this.def);
+      if (!eq(atOld, def, false)) {
+        try {
+          const m = normalizeDevice(atOld);
+          normalizeDrives(def, m);
+          [model, built, then] = [m, atOld, def];
+        } catch (err) {
+          if (!(err instanceof DeviceError)) throw err;
+        }
+      }
+    }
     const solver = this._solver ? new Solver(model) : null;
     // A regridded steady state not yet solved on its grid stands for the steady state at the old
     // definition: solve it there first (see Device.advance), or the flag that says so is lost with the
@@ -140,7 +169,7 @@ export class Device {
     // A solver nothing has solved or stepped holds only its c0, which the new definition's c0
     // replaces (a c0 patch after a bare solution() was otherwise ignored).
     const old = this._solver && (this._touched || this._solver.restarted) ? this._solver : null;
-    this.def = def;
+    this.def = built;
     this.model = model;
     this._solver = solver;
     // The state carries over where the unknowns line up; on a new grid (the same regions, faces
@@ -208,6 +237,7 @@ export class Device {
         // starting coverages, not at whatever its slots held.
         const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());
         for (let g = 0; g < solver.nNodes; g++) if (solver.surfAt[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
+        solver._matchConcentrations(old);
       } else {
         solver._warmFrom(old);
         solver.regriddedSteady = old.atSteady; // (see Device.advance)
@@ -269,6 +299,7 @@ export class Device {
         return o >= 0 ? old.surfaceRef[o] : solver.surfaceAmount(j);
       });
     }
+    if (then) this._redefineDrives(then);
     return this;
   }
 

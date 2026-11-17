@@ -14,6 +14,11 @@ major version.
   ζ at the node's own μ°, and a Fermi–Dirac c = c_ref 𝓕(ζ) scales exactly with the node's c_ref.
   The diode is the limit of a staircase of Fermi–Dirac layers, second order. A cRef under the
   other models is still refused.
+- Three silent wrong answers of `set()`, found by a first review from OpenAI's GPT-6.2 Sol: a grid and a
+  drive changed in one patch settled the regridded state at the new drive, losing a step's
+  response (−859 A/m² where −2.0e7 is right; now as two `set()`s); a floating plate's charge
+  doubled with its capacitance at the next `solve()`; and a lattice's new `cMax` read the old
+  levels as other concentrations, a third more of a closed amount at the next step.
 - Refusals that said the wrong thing: a grid option that isn't a positive number (`minCells: NaN`
   surfaced as a TypeError's text), and a reference electrode with a charged species among its
   fixed participants (it said "isn't charge-balanced").

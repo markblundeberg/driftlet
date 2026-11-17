@@ -145,9 +145,13 @@ export function captureLaws(s) {
   // A terminal at no current that passes current only by charging a capacitance keeps its charge.
   s.chargeRefs.clear();
   const charged = s.floating.filter((k) => s.terms[k].drive.kind === 'I' && chargeOnly(s, k));
+  // (The charges the last solve or step ended with, where there are some: read off the state
+  // again under a set() that changed a capacitance, a floating plate's charge doubled with its
+  // C, at no current; Sol's review. Otherwise they're the same numbers.)
+  const D = () => s.contactDEnd ?? s.contactD, Q = () => s.portQEnd ?? s.portQ;
   if (charged.length > 0) {
     s._assembleBookkeeping(Infinity);
-    for (const k of charged) s.chargeRefs.set(k, k >= 2 ? s.portQ[k - 2] : k === 0 ? s.contactD.left : -s.contactD.right);
+    for (const k of charged) s.chargeRefs.set(k, k >= 2 ? Q()[k - 2] : k === 0 ? D().left : -D().right);
   }
   s.lawRefs.clear();
   if (s.constraints.some((cs) => cs.contacts.length > 0 || cs.carriers.some(({ k }) => s.model.ports[k - 2].capacitance)) && charged.length === 0) s._assembleBookkeeping(Infinity);
@@ -156,8 +160,8 @@ export function captureLaws(s) {
     let a = 0;
     for (const { stretch, w } of cs.parts) a += w * s.amount(s.stretches[stretch]);
     for (const { col, w } of cs.surface) a += w * s.surfaceAmount(col);
-    for (const { k, w } of cs.carriers) if (s.model.ports[k - 2].capacitance) a += (w * s.portQ[k - 2]) / (carrierZ(s, k) * FARADAY);
-    for (const { t, lambda } of cs.contacts) a += (lambda * (t === 0 ? s.contactD.left : -s.contactD.right)) / FARADAY;
+    for (const { k, w } of cs.carriers) if (s.model.ports[k - 2].capacitance) a += (w * Q()[k - 2]) / (carrierZ(s, k) * FARADAY);
+    for (const { t, lambda } of cs.contacts) a += (lambda * (t === 0 ? D().left : -D().right)) / FARADAY;
     s.lawRefs.set(cs.key, a);
   }
 }

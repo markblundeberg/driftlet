@@ -166,6 +166,39 @@ export class RegionTerms {
     if (this.diffList.length > 0) this._diffuseLayers();
   }
 
+  // After a carry onto other statistics (a lattice's capacity, another model, a non-ideal μ° or
+  // c_ref), each non-ideal node's species put back at the concentrations the old state held:
+  // the same ζ is another c under another model (a site capacity doubled, a closed film's 50
+  // mol/m³ read 66.7 at the next step's start; Sol's review). Where the new model reads the same
+  // c, nothing moves.
+  _matchConcentrations(src) {
+    const { n, M, u, uLo, z } = this;
+    for (let g = 0; g < this.nNodes; g++) {
+      if (this.nodeIdeal[g] || this.nodeConductor[g] >= 0) continue;
+      const b = this.blockOfNode[g], phiHat = u[b * M];
+      for (const md of this.model.materials[this.nodeMaterial[g]].models) {
+        const w = this._work(md), idx = md.idx, k = idx.length;
+        let moved = false;
+        for (let a = 0; a < k; a++) {
+          const q = g * n + idx[a];
+          w.z[a] = u[b * M + 1 + idx[a]] + uLo[b * M + 1 + idx[a]] - this.mu0hat[q] - z[idx[a]] * phiHat;
+          w.fixed[a] = this.present[q] && src.present[q] && src.c[q] > 0 ? 1 : 0;
+          w.t[a] = w.fixed[a] ? src.c[q] * (md.cRef ? md.cRef[a] / this.cRef[q] : 1) : 0; // (in the model's own c_ref: see scaleToNode)
+        }
+        md.evaluate(w.z, w.c, w.K, this.background[g]);
+        for (let a = 0; a < k; a++) if (w.fixed[a] && Math.abs(w.c[a] - w.t[a]) > 1e-12 * w.t[a]) moved = true;
+        if (!moved) continue;
+        md.invert(w.z, w.fixed, w.t, this.background[g]);
+        for (let a = 0; a < k; a++) {
+          if (!w.fixed[a]) continue;
+          const i = idx[a];
+          u[b * M + 1 + i] = w.z[a] + this.mu0hat[g * n + i] + z[i] * phiHat;
+          uLo[b * M + 1 + i] = 0;
+        }
+      }
+    }
+  }
+
   _work(md) {
     let w = this.scratch.get(md);
     if (!w) {
