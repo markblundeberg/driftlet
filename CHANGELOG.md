@@ -3,7 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.17.0 (2026-11-17)
+
+`set()` carries a solved state by what each value means, rewritten after two outside reading
+passes (OpenAI's GPT-6.2 Astra) found 82 faults between them, most of them silent wrong answers, in
+the old carry and in the first rewrite; graded statistics (a non-ideal μ°, a Fermi–Dirac c_ref)
+and bowed alloys; and three wrong answers of `set()` from a review by GPT-6.2 Sol.
+
 
 - Bowed alloys: `alloy(from, to, length, { bow: { 'h+': { mu0: C }, epsr: C } })` takes a value
   as (1 − f)a + fb − Cf(1 − f), a band gap's bowing split between its band edges as you give it;
@@ -24,10 +30,12 @@ major version.
   mesh of the same node count copied values to the wrong places, a closed film losing 41%; removing
   a reaction brought back the starting mixture). Each has a test in test/carry.test.js. Regions
   reordered, and a face's reaction taken away, now carry their state where they restarted.
-  A second Astra pass read the rewrite and listed 46 more; 44 were confirmed, and all but three are
+  A second Astra pass read the rewrite and listed 46 more; 44 were confirmed, and all but four are
   fixed (left: an insertion host's background changed with both its populations closed; a lattice's
   cMax lowered below the old c0 refused though the live state fits; ε set to 0 on the same mesh,
-  whose first step fails loudly). Fixed: species
+  whose first step fails loudly); and a region with a profile (graded doping, a graded μ°) resized
+  mid-run keeps its profile in metres while its carried state is stretched to the new length.
+  Fixed: species
   matched by name in any order; a strictly neutral node keeps the net charge it held (a port's
   spread countercharge included: zeroed, a refined sealed axon fired an action potential), fixed
   charge counted in C/m³; amounts held region by region (a resized or reshaped region keeps its
