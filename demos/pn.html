@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pn junction</title>
+<title>Silicon pn junction: interactive band diagram and I–V curve in JavaScript · driftlet</title>
 <meta name="description" content="Quasi-Fermi levels and band edges under bias; the I–V curve against Shockley, short diode to long.">
 <meta property="og:title" content="pn junction · driftlet">
 <meta property="og:description" content="Quasi-Fermi levels and band edges under bias; the I–V curve against Shockley, short diode to long.">
-<meta property="og:image" content="https://markblundeberg.github.io/driftlet/demos/screenshots/pn.png">
+<meta property="og:image" content="https://marklundeberg.com/driftlet/demos/screenshots/pn.png">
 <meta property="og:image:width" content="1000">
 <meta property="og:image:height" content="640">
-<meta property="og:url" content="https://markblundeberg.github.io/driftlet/demos/pn.html">
+<meta property="og:url" content="https://marklundeberg.com/driftlet/demos/pn.html">
+<link rel="canonical" href="https://marklundeberg.com/driftlet/demos/pn.html">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -44,7 +45,8 @@
   <p>A silicon pn diode between metal contacts, with electrons and holes simulated as ordinary species: its
     current–voltage curve against Shockley's law, and the band diagram and carrier densities at the bias you
     choose. The lifetime takes it from a short diode, whose carriers recombine at the contacts, to a long one,
-    whose carriers recombine inside. (More about the model below.)</p>
+    whose carriers recombine inside. (More about the model below.) To build one of your own, start from
+    <a href="starter.html">a one-file page with a bias slider</a>.</p>
   <div class="controls">
     <label>bias V <input id="V" type="range" min="-1" max="0.7" step="0.01" value="0.3"><output id="Vout"></output></label>
     <label>lifetime <input id="tau" type="range" min="-10.2" max="-6.2" step="0.25" value="-6.2"><output id="tauOut"></output></label>

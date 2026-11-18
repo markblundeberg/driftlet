@@ -753,3 +753,10 @@ test("demos/hbt.html: the base transit time is Kroemer's, as the page says", asy
   const LD = Math.sqrt((13.1 * 8.854e-12 * 0.025852) / (1.602e-19 * NA * 6.022e23));
   assert.ok(Math.abs(LD - 4.2e-9) < 0.3e-9, `Debye length ${LD}`);
 });
+
+// The site's sitemap (sitemap.xml, served at marklundeberg.com/driftlet/) lists every demo page.
+test('the sitemap lists every demo page', () => {
+  const map = readFileSync(join(root, 'sitemap.xml'), 'utf8');
+  const listed = [...map.matchAll(/<loc>https:\/\/marklundeberg\.com\/driftlet\/demos\/([^<]*)<\/loc>/g)].map((m) => m[1] || 'index.html');
+  assert.deepEqual(listed.sort(), readdirSync(demos).filter((f) => f.endsWith('.html')).sort());
+});

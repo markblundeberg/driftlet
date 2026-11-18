@@ -133,6 +133,22 @@ test('the agent guide pins the CDN version being released', () => {
   if (pkg.version !== '0.0.0') assert.deepEqual([...pinned], [pkg.version]);
 });
 
+// The starter page (demos/starter.html) is the agent guide's slider template, shown and running:
+// its listing is the template word for word, and its live script is the template's, imports aside.
+test("the starter page is the agent guide's slider template", () => {
+  const llms = readFileSync(join(root, 'llms.txt'), 'utf8');
+  const block = /## Template: a live page with a slider[\s\S]*?```html\n([\s\S]*?)```/.exec(llms)[1];
+  const page = readFileSync(join(root, 'demos/starter.html'), 'utf8');
+  const shown = /<pre class="recipe" id="recipe"><code>([\s\S]*?)<\/code><\/pre>/.exec(page)[1]
+    .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+  assert.equal(shown, block, 'the listing on demos/starter.html differs from llms.txt');
+  const running = /<script type="module">\n([\s\S]*?)<\/script>/.exec(page)[1];
+  const script = /<script type="module">\n([\s\S]*?)<\/script>/.exec(block)[1];
+  const toLocal = (code) => code.replaceAll(/'https:\/\/cdn\.jsdelivr\.net\/npm\/driftlet@[^/]+\/src\/(\w+)\.js'/g, "'../src/$1.js'");
+  assert.equal(running, toLocal(script), 'the script running on demos/starter.html differs from llms.txt');
+  for (const id of ['V', 'readout', 'figure']) assert.ok(page.includes(`id="${id}"`), `no #${id} on the page`);
+});
+
 test("the docs' inline math is $`…`$, which markdown's emphasis rules can't break", () => {
   for (const file of [...docs.filter((f) => f.endsWith('.md')).map((f) => `docs/${f}`), 'ROADMAP.md', 'CHANGELOG.md']) {
     const prose = readFileSync(join(root, file), 'utf8').replace(/```[\s\S]*?```/g, '');

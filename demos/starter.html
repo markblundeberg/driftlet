@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a live pn junction band diagram in JavaScript: a one-file starter · driftlet</title>
+<meta name="description" content="A complete single-file web page to copy: a silicon pn junction solved live by driftlet as you drag a bias slider, with its band diagram, from a pinned CDN import and no build step.">
+<meta property="og:title" content="A one-file starter · driftlet">
+<meta property="og:description" content="A complete single-file web page to copy: a silicon pn junction solved live by driftlet as you drag a bias slider, with its band diagram, from a pinned CDN import and no build step.">
+<meta property="og:url" content="https://marklundeberg.com/driftlet/demos/starter.html">
+<link rel="canonical" href="https://marklundeberg.com/driftlet/demos/starter.html">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<style>
+  #run { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  #run svg { max-width: 100%; height: auto; }
+  #run label { margin-right: 12px; }
+  pre.recipe { overflow-x: auto; font: 13px/1.5 var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+</style>
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A one-file starter: a pn junction with a bias slider</h1>
+  <p>This is the smallest complete page that uses driftlet: a silicon pn junction, solved as you drag the
+    slider, with its band diagram drawn energy-up (band edges and the electron and hole quasi-Fermi levels).
+    Each slider position is a full self-consistent drift–diffusion solve (Poisson with electron and hole
+    transport and recombination), run in the browser. The page loads driftlet from a pinned CDN URL, with
+    no install and no build step. Copy the source below into a file, open it, and change the device.</p>
+  <div id="run">
+<label>bias <input id="V" type="range" min="-0.5" max="0.7" step="0.01" value="0"></label>
+<span id="readout"></span>
+<div id="figure"></div>
+  </div>
+  <h2>Checks before you build on it</h2>
+  <p>At 0 V the potential step across the junction, <code>sol.phi[0] - sol.phi.at(-1)</code>, is 0.795 V.
+    That is the textbook (kT/q)·ln(N<sub>A</sub>N<sub>D</sub>/n<sub>i</sub>²), with
+    n<sub>i</sub> = √(N<sub>c</sub>N<sub>v</sub>)·e<sup>−E<sub>g</sub>/2kT</sup> = 6.7×10⁹ cm⁻³ from the same
+    band data. (The often-quoted n<sub>i</sub> = 1×10¹⁰ cm⁻³ would give 0.774 V.) <code>sol.current</code>
+    is along +x, and here n is on the left, so forward current, p to n, comes out negative: the readout
+    flips its sign. A failed solve keeps the last good solution and sets <code>info.failed</code>.</p>
+  <h2>The whole page</h2>
+  <pre class="recipe" id="recipe"><code>&lt;!doctype html&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;title&gt;pn junction&lt;/title&gt;
+&lt;label&gt;bias &lt;input id="V" type="range" min="-0.5" max="0.7" step="0.01" value="0"&gt;&lt;/label&gt;
+&lt;span id="readout"&gt;&lt;/span&gt;
+&lt;div id="figure"&gt;&lt;/div&gt;
+&lt;script type="module"&gt;
+import { units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.17.0/src/index.js';
+import { build, layer, ohmic, semiconductor, live } from 'https://cdn.jsdelivr.net/npm/driftlet@1.17.0/src/kit.js';
+import { bandDiagram } from 'https://cdn.jsdelivr.net/npm/driftlet@1.17.0/src/plot.js';
+
+const def = build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: 1e-9, hmax: 20e-9 },
+});
+const slider = document.getElementById('V');
+const dev = live(def, {
+  onsolution(sol, info) {
+    document.getElementById('figure').innerHTML = bandDiagram(sol, { energy: true, range: [-1.2, 1.7], title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
+    document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${(-sol.current).toExponential(2)} A/m², p to n`; // sol.current is along +x, and n is on the left
+  },
+});
+slider.addEventListener('input', () =&gt; dev.set({ contacts: { right: { V: +slider.value } } }));
+&lt;/script&gt;
+</code></pre>
+  <p>Next: <a href="https://github.com/markblundeberg/driftlet/blob/master/llms.txt">the guide for coding
+    agents</a> has templates for a solar cell, a MOS capacitor, an electrochemical cell, a battery particle
+    and a cell membrane; <a href="./">the demos</a> show their whole scripts at the bottom of each page; and
+    <a href="https://github.com/markblundeberg/driftlet/blob/master/docs/device.md">the device reference</a>
+    has every option.</p>
+</main>
+<script type="module">
+import { units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor, live } from '../src/kit.js';
+import { bandDiagram } from '../src/plot.js';
+
+const def = build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [ohmic(0), layer('Si', 1e-6, { donors: units.perCm3(1e17) }), layer('Si', 1e-6, { acceptors: units.perCm3(1e16) }), ohmic(0)],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: 1e-9, hmax: 20e-9 },
+});
+const slider = document.getElementById('V');
+const dev = live(def, {
+  onsolution(sol, info) {
+    document.getElementById('figure').innerHTML = bandDiagram(sol, { energy: true, range: [-1.2, 1.7], title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
+    document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${(-sol.current).toExponential(2)} A/m², p to n`; // sol.current is along +x, and n is on the left
+  },
+});
+slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
+</script>
+</body>
+</html>

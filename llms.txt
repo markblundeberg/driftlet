@@ -293,12 +293,16 @@ const slider = document.getElementById('V');
 const dev = live(def, {
   onsolution(sol, info) {
     document.getElementById('figure').innerHTML = bandDiagram(sol, { energy: true, range: [-1.2, 1.7], title: `V = ${sol.terminals.right.V.toFixed(2)} V` });
-    document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${sol.current.toExponential(2)} A/m²`;
+    document.getElementById('readout').textContent = info.failed ? 'no solution here' : `I = ${(-sol.current).toExponential(2)} A/m², p to n`; // sol.current is along +x, and n is on the left
   },
 });
 slider.addEventListener('input', () => dev.set({ contacts: { right: { V: +slider.value } } }));
 </script>
 ```
+
+At 0 V, `sol.phi[0] - sol.phi.at(-1)` is 0.795 V: (kT/q) ln(N_A N_D/n_i²), with n_i = 6.7×10⁹ cm⁻³ from
+the same band data (√(N_c N_v) e^(−E_g/2kT); the often-quoted 1×10¹⁰ cm⁻³ would give 0.774 V). The page,
+running: https://marklundeberg.com/driftlet/demos/starter.html
 
 To draw in your own style, `traces(sol, opts)` (kit, the same options) gives the lines as data;
 see "Reading level diagrams" below.

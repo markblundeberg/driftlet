@@ -224,7 +224,7 @@ depletion range, gives back the doping from the slope and the flat band from the
 kT/q. Start the fit several kT/q above the flat band, where the electrons' tail no longer bends the
 line. Past about $`2\phi_F`$ of depletion, holes gather at the face in a steady state (inversion; an
 ohmic contact on the electrons alone keeps them out, as a sweep too fast for them would): keep the
-fit below it. The [Mott–Schottky demo](https://markblundeberg.github.io/driftlet/demos/mott-schottky.html)
+fit below it. The [Mott–Schottky demo](https://marklundeberg.com/driftlet/demos/mott-schottky.html)
 shows where the line bends or misleads.
 
 ```js

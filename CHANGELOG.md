@@ -3,6 +3,15 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A one-file starter page, [demos/starter.html](https://marklundeberg.com/driftlet/demos/starter.html):
+  the agent guide's slider template, running, with its whole source as text and a check to compare
+  against (the built-in potential, 0.795 V); a test holds it to llms.txt word for word. The
+  template's readout now gives the current p to n. Links point at marklundeberg.com/driftlet (the
+  github.io address redirects there), each demo page names itself as canonical, titles say what
+  each page is, and a sitemap lists them. From ChatGPT's notes on building a demo with driftlet.
+
 ## 1.17.0 (2026-11-17)
 
 `set()` carries a solved state by what each value means, rewritten after two outside reading

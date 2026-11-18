@@ -1,7 +1,7 @@
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://markblundeberg.github.io/driftlet/docs/logo-dark.svg">
-    <img alt="driftlet" src="https://markblundeberg.github.io/driftlet/docs/logo.svg" width="300">
+    <source media="(prefers-color-scheme: dark)" srcset="https://marklundeberg.com/driftlet/docs/logo-dark.svg">
+    <img alt="driftlet" src="https://marklundeberg.com/driftlet/docs/logo.svg" width="300">
   </picture>
 </h1>
 
@@ -13,7 +13,7 @@ junctions and solar cells, electrochemical cells and batteries, double layers, m
 nerves. It's a JavaScript library with no dependencies, fast enough to solve live in a
 web page as you drag a slider.
 
-[Live demos](https://markblundeberg.github.io/driftlet/demos/) · [npm](https://www.npmjs.com/package/driftlet) ·
+[Live demos](https://marklundeberg.com/driftlet/demos/) · [one-file starter](https://marklundeberg.com/driftlet/demos/starter.html) · [npm](https://www.npmjs.com/package/driftlet) ·
 [reading level diagrams](docs/visualization.md) · [device reference](docs/device.md) ·
 [agent guide](llms.txt)
 
@@ -57,8 +57,9 @@ import { bandDiagram } from 'driftlet/plot';    // a level diagram as an SVG str
 
 Or straight from a CDN in a page, pinned to a version:
 `https://cdn.jsdelivr.net/npm/driftlet@1.17.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
-TypeScript declarations ship in the package. Writing a demo with an LLM agent? Point it at
-[`llms.txt`](llms.txt).
+TypeScript declarations ship in the package. A whole page to copy, running:
+[a pn junction with a bias slider](https://marklundeberg.com/driftlet/demos/starter.html), in one file. Writing a demo with an LLM
+agent? Point it at [`llms.txt`](llms.txt).
 
 ## A semiconductor junction
 
@@ -138,22 +139,22 @@ and curated devices with reference results: IonMonger's perovskite cell, with it
 Live pages in [`demos/`](demos/), each building its device with `driftlet/kit`, solving it in the
 browser as you move the controls, and showing its whole script as a worked example. Most draw the
 closed-form theory alongside, as a check. They're live at
-[markblundeberg.github.io/driftlet/demos](https://markblundeberg.github.io/driftlet/demos/); to run
+[marklundeberg.com/driftlet/demos](https://marklundeberg.com/driftlet/demos/); to run
 them locally, serve the repository root (e.g. `python3 -m http.server`) and open `/demos/`.
 
 | | | |
 |---|---|---|
-| [![pn junction](demos/screenshots/pn.png)](https://markblundeberg.github.io/driftlet/demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](https://markblundeberg.github.io/driftlet/demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](https://markblundeberg.github.io/driftlet/demos/mos.html) |
+| [![pn junction](demos/screenshots/pn.png)](https://marklundeberg.com/driftlet/demos/pn.html) | [![solar cell](demos/screenshots/solar.png)](https://marklundeberg.com/driftlet/demos/solar.html) | [![MOS capacitor](demos/screenshots/mos.png)](https://marklundeberg.com/driftlet/demos/mos.html) |
 | **pn junction**: quasi-Fermi levels under bias; I–V against Shockley | **Solar cell**: J<sub>sc</sub> and V<sub>oc</sub> against collection theory | **MOS capacitor**: band bending; C–V at any frequency, low to high |
-| [![cyclic voltammetry](demos/screenshots/redox.png)](https://markblundeberg.github.io/driftlet/demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](https://markblundeberg.github.io/driftlet/demos/daniell.html) | [![saturation](demos/screenshots/saturation.png)](https://markblundeberg.github.io/driftlet/demos/saturation.html) |
+| [![cyclic voltammetry](demos/screenshots/redox.png)](https://marklundeberg.com/driftlet/demos/redox.html) | [![Daniell cell](demos/screenshots/daniell.png)](https://marklundeberg.com/driftlet/demos/daniell.html) | [![saturation](demos/screenshots/saturation.png)](https://marklundeberg.com/driftlet/demos/saturation.html) |
 | **Cyclic voltammetry**: a Fermi level against a redox level | **Daniell cell**: a real salt bridge, leaking, ion by ion | **Saturation**: Ag \| AgNO₃ \| Ag up to its limiting current, and a thin-film transistor pinching off, against the charge-sheet model |
-| [![impedance](demos/screenshots/impedance.png)](https://markblundeberg.github.io/driftlet/demos/impedance.html) | [![ion-exchange membrane](demos/screenshots/membrane.png)](https://markblundeberg.github.io/driftlet/demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](https://markblundeberg.github.io/driftlet/demos/double-layer.html) |
+| [![impedance](demos/screenshots/impedance.png)](https://marklundeberg.com/driftlet/demos/impedance.html) | [![ion-exchange membrane](demos/screenshots/membrane.png)](https://marklundeberg.com/driftlet/demos/membrane.html) | [![double layer](demos/screenshots/double-layer.png)](https://marklundeberg.com/driftlet/demos/double-layer.html) |
 | **Impedance**: the Warburg arc, and the cell's small-signal response inside | **Ion-exchange membrane**: Donnan steps, ion by ion, against TMS theory | **Double layer**: dilute vs crowded ions, against closed forms |
-| [![insertion host](demos/screenshots/insertion.png)](https://markblundeberg.github.io/driftlet/demos/insertion.html) | [![organic solar cell](demos/screenshots/organic.png)](https://markblundeberg.github.io/driftlet/demos/organic.html) | [![perovskite hysteresis](demos/screenshots/perovskite.png)](https://markblundeberg.github.io/driftlet/demos/perovskite.html) |
+| [![insertion host](demos/screenshots/insertion.png)](https://marklundeberg.com/driftlet/demos/insertion.html) | [![organic solar cell](demos/screenshots/organic.png)](https://marklundeberg.com/driftlet/demos/organic.html) | [![perovskite hysteresis](demos/screenshots/perovskite.png)](https://marklundeberg.com/driftlet/demos/perovskite.html) |
 | **Intercalation host**: cycling between cutoffs against the OCV | **Organic solar cell**: excitons diffusing to a donor/acceptor interface, against theory | **Perovskite hysteresis**: mobile ions and scan rate, against IonMonger |
-| [![charged nanochannel](demos/screenshots/channel.png)](https://markblundeberg.github.io/driftlet/demos/channel.html) | [![resting potential](demos/screenshots/cell.png)](https://markblundeberg.github.io/driftlet/demos/cell.html) | [![liquid junctions](demos/screenshots/junction.png)](https://markblundeberg.github.io/driftlet/demos/junction.html) |
+| [![charged nanochannel](demos/screenshots/channel.png)](https://marklundeberg.com/driftlet/demos/channel.html) | [![resting potential](demos/screenshots/cell.png)](https://marklundeberg.com/driftlet/demos/cell.html) | [![liquid junctions](demos/screenshots/junction.png)](https://marklundeberg.com/driftlet/demos/junction.html) |
 | **Charged nanochannel**: selectivity, overlapping Donnan layers and rectification, against Teorell–Meyer–Sievers | **Resting potential**: leaks and the Na⁺/K⁺ pump, against Mullins–Noda; the run-down to Donnan | **Liquid junctions**: a patch pipette's against Henderson, Planck and LJPcalc; a charged frit |
-| [![action potential](demos/screenshots/axon.png)](https://markblundeberg.github.io/driftlet/demos/axon.html) | [![propagation](demos/screenshots/propagation.png)](https://markblundeberg.github.io/driftlet/demos/propagation.html) | [![myelin](demos/screenshots/myelin.png)](https://markblundeberg.github.io/driftlet/demos/myelin.html) |
+| [![action potential](demos/screenshots/axon.png)](https://marklundeberg.com/driftlet/demos/axon.html) | [![propagation](demos/screenshots/propagation.png)](https://marklundeberg.com/driftlet/demos/propagation.html) | [![myelin](demos/screenshots/myelin.png)](https://marklundeberg.com/driftlet/demos/myelin.html) |
 | **Action potential**: Hodgkin and Huxley's gated channels, each ion's driving force through the spike, against the HH equations | **Propagation**: a spike travelling along an axon at HH's speed, out of the ions' drift; which ions carry it | **Myelin**: saltatory conduction, node to node, against a compartmental cable; a race with a bare axon |
 
 ## Is it for your problem?
@@ -163,14 +164,14 @@ The same equations go by different names in different fields. If your problem is
 
 | If you work on | you may call it | start from |
 |---|---|---|
-| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions, graded alloys and doping, transistors | the [first example](#a-semiconductor-junction); [pn](https://markblundeberg.github.io/driftlet/demos/pn.html), [MOS](https://markblundeberg.github.io/driftlet/demos/mos.html), [thin-film transistor](https://markblundeberg.github.io/driftlet/demos/saturation.html#transistor) and [graded-base transistor](https://markblundeberg.github.io/driftlet/demos/hbt.html) demos |
-| Solar cells | photogeneration, Beer–Lambert, radiative and SRH recombination, excitons, mobile ions | [solar](https://markblundeberg.github.io/driftlet/demos/solar.html), [organic](https://markblundeberg.github.io/driftlet/demos/organic.html) and [perovskite](https://markblundeberg.github.io/driftlet/demos/perovskite.html) demos |
-| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer and Marcus–Hush–Chidsey kinetics, Warburg, Randles circuits, cyclic voltammetry, chronoamperometry (Cottrell), chronopotentiometry (Sand), rotating disks (Levich, Koutecký–Levich), salt bridges, liquid junctions, mixed potentials and corrosion (Evans diagrams), semiconductor electrodes (Mott–Schottky) | the [second example](#an-electrochemical-cell); [cyclic voltammetry](https://markblundeberg.github.io/driftlet/demos/redox.html), [potential and current step](https://markblundeberg.github.io/driftlet/demos/steps.html), [rotating disk](https://markblundeberg.github.io/driftlet/demos/rde.html), [Randles-circuit](https://markblundeberg.github.io/driftlet/demos/randles.html), [corrosion](https://markblundeberg.github.io/driftlet/demos/corrosion.html), [lithium-plating](https://markblundeberg.github.io/driftlet/demos/lithium.html), [tethered-ferrocene](https://markblundeberg.github.io/driftlet/demos/chidsey.html), [hydrogen-evolution](https://markblundeberg.github.io/driftlet/demos/hydrogen.html), [Mott–Schottky](https://markblundeberg.github.io/driftlet/demos/mott-schottky.html), [Daniell cell](https://markblundeberg.github.io/driftlet/demos/daniell.html), [limiting current](https://markblundeberg.github.io/driftlet/demos/saturation.html), [impedance](https://markblundeberg.github.io/driftlet/demos/impedance.html), [liquid-junction](https://markblundeberg.github.io/driftlet/demos/junction.html) and [Frumkin-effect](https://markblundeberg.github.io/driftlet/demos/frumkin.html) demos |
-| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion](https://markblundeberg.github.io/driftlet/demos/insertion.html) demo |
-| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman), the Frumkin correction | [double-layer](https://markblundeberg.github.io/driftlet/demos/double-layer.html) and [Frumkin-effect](https://markblundeberg.github.io/driftlet/demos/frumkin.html) demos |
-| Membranes, nanofluidics | Donnan, ion exchange, Teorell–Meyer–Sievers, charged nanochannels and pores | [membrane](https://markblundeberg.github.io/driftlet/demos/membrane.html) and [nanochannel](https://markblundeberg.github.io/driftlet/demos/channel.html) demos |
+| Semiconductor devices | drift–diffusion, van Roosbroeck, quasi-Fermi levels, Scharfetter–Gummel; pn, Schottky, MOS, heterojunctions, graded alloys and doping, transistors | the [first example](#a-semiconductor-junction); [pn](https://marklundeberg.com/driftlet/demos/pn.html), [MOS](https://marklundeberg.com/driftlet/demos/mos.html), [thin-film transistor](https://marklundeberg.com/driftlet/demos/saturation.html#transistor) and [graded-base transistor](https://marklundeberg.com/driftlet/demos/hbt.html) demos |
+| Solar cells | photogeneration, Beer–Lambert, radiative and SRH recombination, excitons, mobile ions | [solar](https://marklundeberg.com/driftlet/demos/solar.html), [organic](https://marklundeberg.com/driftlet/demos/organic.html) and [perovskite](https://marklundeberg.com/driftlet/demos/perovskite.html) demos |
+| Electrochemistry, corrosion | Nernst–Planck, concentration polarization, limiting current, Butler–Volmer and Marcus–Hush–Chidsey kinetics, Warburg, Randles circuits, cyclic voltammetry, chronoamperometry (Cottrell), chronopotentiometry (Sand), rotating disks (Levich, Koutecký–Levich), salt bridges, liquid junctions, mixed potentials and corrosion (Evans diagrams), semiconductor electrodes (Mott–Schottky) | the [second example](#an-electrochemical-cell); [cyclic voltammetry](https://marklundeberg.com/driftlet/demos/redox.html), [potential and current step](https://marklundeberg.com/driftlet/demos/steps.html), [rotating disk](https://marklundeberg.com/driftlet/demos/rde.html), [Randles-circuit](https://marklundeberg.com/driftlet/demos/randles.html), [corrosion](https://marklundeberg.com/driftlet/demos/corrosion.html), [lithium-plating](https://marklundeberg.com/driftlet/demos/lithium.html), [tethered-ferrocene](https://marklundeberg.com/driftlet/demos/chidsey.html), [hydrogen-evolution](https://marklundeberg.com/driftlet/demos/hydrogen.html), [Mott–Schottky](https://marklundeberg.com/driftlet/demos/mott-schottky.html), [Daniell cell](https://marklundeberg.com/driftlet/demos/daniell.html), [limiting current](https://marklundeberg.com/driftlet/demos/saturation.html), [impedance](https://marklundeberg.com/driftlet/demos/impedance.html), [liquid-junction](https://marklundeberg.com/driftlet/demos/junction.html) and [Frumkin-effect](https://marklundeberg.com/driftlet/demos/frumkin.html) demos |
+| Batteries, intercalation | OCV, insertion hosts, chemical diffusion | [insertion](https://marklundeberg.com/driftlet/demos/insertion.html) demo |
+| Double layers, colloids | Poisson–Boltzmann, Gouy–Chapman–Stern, Debye screening, crowding (Bikerman), the Frumkin correction | [double-layer](https://marklundeberg.com/driftlet/demos/double-layer.html) and [Frumkin-effect](https://marklundeberg.com/driftlet/demos/frumkin.html) demos |
+| Membranes, nanofluidics | Donnan, ion exchange, Teorell–Meyer–Sievers, charged nanochannels and pores | [membrane](https://marklundeberg.com/driftlet/demos/membrane.html) and [nanochannel](https://marklundeberg.com/driftlet/demos/channel.html) demos |
 | Solid-state ionics | mixed ionic–electronic conduction, defect chemistry, mobile ions | [`statistics`](test/statistics.test.js) and [`reactions`](test/reactions.test.js) tests |
-| Cell physiology, neuroscience | resting potential, Nernst, Goldman–Hodgkin–Katz, the Na⁺/K⁺ pump, patch pipettes, Hodgkin–Huxley, action potentials, the cable equation, myelin | [resting-potential](https://markblundeberg.github.io/driftlet/demos/cell.html), [action-potential](https://markblundeberg.github.io/driftlet/demos/axon.html), [propagation](https://markblundeberg.github.io/driftlet/demos/propagation.html) and [myelin](https://markblundeberg.github.io/driftlet/demos/myelin.html) demos |
+| Cell physiology, neuroscience | resting potential, Nernst, Goldman–Hodgkin–Katz, the Na⁺/K⁺ pump, patch pipettes, Hodgkin–Huxley, action potentials, the cable equation, myelin | [resting-potential](https://marklundeberg.com/driftlet/demos/cell.html), [action-potential](https://marklundeberg.com/driftlet/demos/axon.html), [propagation](https://marklundeberg.com/driftlet/demos/propagation.html) and [myelin](https://marklundeberg.com/driftlet/demos/myelin.html) demos |
 
 The tests are worked setups, each with its analytic check, so they double as recipes; the
 [validation table](docs/reliability.md#the-validation-table) lists them all.

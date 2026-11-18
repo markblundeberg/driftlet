@@ -61,7 +61,7 @@
     "physics",
     "simulation"
   ],
-  "homepage": "https://markblundeberg.github.io/driftlet/demos/",
+  "homepage": "https://marklundeberg.com/driftlet/demos/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/markblundeberg/driftlet.git"
