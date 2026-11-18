@@ -234,6 +234,7 @@ export function step(s, dt, opts = {}) {
   }
   result.bdf = bdf;
   if (result.converged) {
+    s.jumpedT = undefined; // (a step taken from the jump: a later failure isn't its; Astra's review)
     const PN = s.termCharge;
     s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN, P: PN });
     if (s.history.length > 3) s.history.length = 3;

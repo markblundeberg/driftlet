@@ -3,7 +3,8 @@
 import { normalizeDevice, DeviceError } from './device.js';
 import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
-import { markWhole, merge, WHOLE } from './merge.js';
+import { deepEqual, markWhole, merge, WHOLE } from './merge.js';
+import { carryState } from './carry.js';
 import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
@@ -47,15 +48,28 @@ function sameExceptDrives(a, b) {
   return true;
 }
 
-// def with each terminal's drive (V, I, R) as `from` has it: the contacts by side, the ports by
-// name (a port new in def keeps its own).
-function withDrives(def, from) {
-  const take = (to, src) => (src ? keepWhole(to, { ...to, V: src.V, I: src.I, R: src.R }) : to);
-  const portName = (p, k) => p.name ?? `ports[${k}]`;
-  const out = { ...def, contacts: { ...def.contacts } };
-  for (const side of ['left', 'right']) if (def.contacts?.[side]) out.contacts[side] = take(def.contacts[side], from.contacts?.[side]);
-  if (def.ports) out.ports = def.ports.map((p, k) => take(p, (from.ports ?? []).find((q, j) => portName(q, j) === portName(p, k))));
-  return out;
+// A definition's contacts as the drive-only path can take them: absent, or a plain object (an
+// array or a number goes through a rebuild, which refuses it; Astra's review).
+const plainContacts = (def) => def.contacts === undefined || (typeof def.contacts === 'object' && def.contacts !== null && !Array.isArray(def.contacts));
+
+// A state that can't carry over (the species changed): the device restarts from its regions' c0,
+// at the sources then, the clock carrying on, its terminals' running charges by name; said in
+// every solution up to the next steady solve.
+function restartFrom(old, s) {
+  s.restarted = `set(): the state couldn't carry over (the species changed), so the device restarted from its regions' c0 at t = ${old.time} (the clock carries on): what follows is from there, not from the state before set(). (Said in every solution up to the next steady solve, which keeps a closed region's restarted amounts.)`;
+  // (The clock carries on, so a run's next advance(t) is still at t: it read 0, and an
+  // advance(20.001) after a change at t = 20 ran 20 s from c0. And its start is at the sources
+  // then: built at t = 0's, a ramped contact restarted 50 mV off; Astra's review.)
+  s.time = old.time;
+  s.sourceTime = old.sourceTime;
+  s._refreshSources();
+  s.initFromComposition();
+  s.referenceAmounts = s.stretches.map((st) => s.amount(st));
+  s.surfaceRef = Float64Array.from(s.surfCols, (_, j) => s.surfaceAmount(j));
+  s.terms.forEach((t, k) => {
+    const o = old.terms.findIndex((u) => u.name === t.name);
+    if (o >= 0) s.termCharge[k] = old.termCharge[o];
+  });
 }
 
 // Each terminal's drive (the contacts, then the ports), set in the model in place.
@@ -95,8 +109,9 @@ export class Device {
    * Change part of the definition (deep-merged). A contact given V or I drops the other (and
    * given I, any series R), so `{ contacts: { right: { I: 0 } } }` switches it to open circuit. Ports are patched by name,
    * `{ ports: { gate: { V: 0.2 } } }` (an array replaces them all). A change to the terminals'
-   * drives alone (V, I, R) is applied in place, cheaply. Otherwise the device is rebuilt, keeping the current state as
-   * the warm start when the grid and species are unchanged (else restarting from the regions' c0).
+   * drives alone (V, I, R) is applied in place, cheaply. Otherwise the device is rebuilt, carrying the current state
+   * over by what each value means (src/carry.js): onto a new grid, through new statistics, μ° or T; a change of the
+   * species restarts it from the regions' c0.
    * @param {object} patch a partial device definition, merged into the current one
    * @returns {this}
    */
@@ -121,6 +136,9 @@ export class Device {
         if (q === undefined) return p;
         const m = merge(p, redrive(q));
         for (const key of ['V', 'I']) if (q[key] !== undefined) m[key] = q[key]; // (whole: see below)
+        // (and a link given with its type, as at a contact: merged, a conductance link kept its
+        // offset over one given without, and the port's current halved; Astra's review)
+        for (const [name, link] of Object.entries(q.species ?? {})) if (link && typeof link === 'object' && 'type' in link) m.species = { ...m.species, [name]: link };
         return m;
       }) };
     }
@@ -135,172 +153,73 @@ export class Device {
       for (const [name, link] of Object.entries(c?.species ?? {})) if (link && typeof link === 'object' && 'type' in link) def.contacts[side].species[name] = link;
       if (c?.phi && typeof c.phi === 'object' && 'type' in c.phi) def.contacts[side].phi = c.phi;
     }
+    // Nothing changed (a page resending its drives every frame): nothing to do. (Redriven, a
+    // transient's BDF2 history was cleared and a steady state forgot it was one; Astra's review.)
+    if (deepEqual(def, this.def)) return this;
+    // A regridded steady state not yet solved on its grid stands for the steady state at the old
+    // definition: solve it there first (see Device.advance).
+    this._settleRegrid();
+    // A solver nothing has solved or stepped holds only its start, which the new definition's
+    // replaces. (Kept, a drive patch after a bare solution() kept the old drive's cold start, and
+    // the first step read −73846 A/m² where 26154 is right; Astra's review.)
+    const live = this._solver && (this._touched || this._solver.restarted) ? this._solver : null;
     // Only the terminals' drives changed: update them in place, keeping the solver and its state
     // (a step in a source restarts the time stepping's order, as at any discontinuity).
-    if (this._solver && sameExceptDrives(this.def, def)) {
+    if (live && sameExceptDrives(this.def, def) && plainContacts(def)) {
       this._redefineDrives(def);
       return this;
     }
-    // A rebuild. Everything that can fail (validation, building the solver) happens before the
-    // device changes, so a change that fails leaves it as it was.
-    // A rebuild that also changes a drive is the rebuild, then the drive change, as two set()s
-    // are: the carried state stands for the old drives (a grid refined and a bias stepped in one
-    // set() settled the regrid at the new bias, and the step's response was lost: −859 A/m² where
-    // −2.0e7 is right; Sol's review). Where the old drives don't fit the new device, in one.
-    let model = normalizeDevice(def), built = def, then = null;
-    if (this._solver) {
-      const atOld = withDrives(def, this.def);
-      if (!eq(atOld, def, false)) {
+    // A rebuild, carrying the state by what each value means (src/carry.js). It changes the device
+    // only once it has all succeeded: a change that fails leaves it as it was.
+    const was = { def: this.def, model: this.model, solver: this._solver };
+    try {
+      // A new grid and anything else, on a steady state: the new grid first, the steady state
+      // solved again there (the state it stands for), then the rest, as two set()s are. (In one,
+      // the regrid was settled at the new definition, and the change's transient lost: a bias
+      // stepped, −859 A/m² where −2.0e7 is right, Sol's review; a contact's level, a midpoint at 5
+      // where 1 is right, Astra's.)
+      const mid = { ...this.def, grid: def.grid };
+      if (live?.atSteady && !deepEqual(this.def.grid, def.grid) && !deepEqual(mid, def)) {
+        let ok = true;
         try {
-          const m = normalizeDevice(atOld);
-          normalizeDrives(def, m);
-          [model, built, then] = [m, atOld, def];
+          normalizeDevice(mid);
         } catch (err) {
           if (!(err instanceof DeviceError)) throw err;
+          ok = false; // (the new grid doesn't fit the old device: in one)
+        }
+        if (ok) {
+          this._rebuild(mid, live);
+          this._settleRegrid();
+          if (sameExceptDrives(mid, def) && plainContacts(def)) this._redefineDrives(def);
+          else this._rebuild(def, this._solver);
+          return this;
         }
       }
+      this._rebuild(def, live);
+    } catch (err) {
+      this.def = was.def;
+      this.model = was.model;
+      this._solver = was.solver;
+      throw err;
     }
+    return this;
+  }
+
+  // Rebuild at def, carrying old's state (src/carry.js); a device with no state of its own just
+  // takes the new definition.
+  _rebuild(def, old) {
+    const model = normalizeDevice(def);
     const solver = this._solver ? new Solver(model) : null;
-    // A regridded steady state not yet solved on its grid stands for the steady state at the old
-    // definition: solve it there first (see Device.advance), or the flag that says so is lost with the
-    // old solver, and the next transient stepped from the interpolated state (a second set()
-    // after set({ grid }): 23.7 A/m² where 68.8 is right; Fable's re-check).
-    this._settleRegrid();
-    // A solver nothing has solved or stepped holds only its c0, which the new definition's c0
-    // replaces (a c0 patch after a bare solution() was otherwise ignored).
-    const old = this._solver && (this._touched || this._solver.restarted) ? this._solver : null;
-    this.def = built;
+    if (old) {
+      // The same species (by name and charge, in any order) carry over; other species restart
+      // the device from its regions' c0.
+      const key = (m) => m.species.map((sp) => `${sp.name}:${sp.z}`).sort().join('\u0000');
+      if (key(old.model) === key(model)) carryState(old, solver, { oldDef: this.def, newDef: def, pure: deepEqual({ ...this.def, grid: undefined }, { ...def, grid: undefined }) });
+      else restartFrom(old, solver);
+    }
+    this.def = def;
     this.model = model;
     this._solver = solver;
-    // The state carries over where the unknowns line up; on a new grid (the same regions, faces
-    // and terminals), interpolated onto it. What happens to each STATE field is named in CARRY
-    // (src/solver.js), and test/state.test.js holds this code to it: a field added to STATE needs
-    // a line there, and a 'kept' one a line here. (Started cold instead, a floating gate lost its
-    // charge to a refined grid.)
-    // (The same species in the same order, not just as many: tested by count, a reordered list
-    // swapped two species' amounts; Fable's review.)
-    const sameSpecies = old && old.n === solver.n && old.model.species.every((sp, i) => sp.name === model.species[i].name && sp.z === model.species[i].z);
-    // (and regions not reordered: the same names at other places swapped two closed
-    // compartments' contents; a renamed region carries by place)
-    const names = (m) => m.regions.map((rg) => rg.name), was = old ? names(old.model) : [], now = names(model);
-    const reordered = old && was.length === now.length && was.some((nm, k) => nm !== now[k]) && [...was].sort().join('\u0000') === [...now].sort().join('\u0000');
-    const sameUnknowns = sameSpecies && !reordered && old.u.length === solver.u.length;
-    const regridded = old && !sameUnknowns && sameSpecies && !reordered && old.M === solver.M && old.nFaces === solver.nFaces && old.terms.length === solver.terms.length && old.model.grid.regionStart.length === model.grid.regionStart.length;
-    // A state that can't carry over restarts from c0. Say so in the next solution, where there
-    // was a state to lose: a pump taken off a membrane's reactions restarted a closed cell from
-    // its c0, converged and unwarned (Fable round 2's cold user).
-    if (old && !sameUnknowns && !regridded) {
-      const why = !sameSpecies ? 'the species changed'
-        : reordered ? 'the regions were reordered'
-        : old.model.grid.regionStart.length !== model.grid.regionStart.length || old.nFaces !== solver.nFaces ? 'the regions or faces changed'
-        : old.terms.length !== solver.terms.length ? 'the terminals changed'
-        : "a face's or port's unknowns changed: its reactions, gates, surface or diffuse layers";
-      solver.restarted = `set(): the state couldn't carry over (${why}), so the device restarted from its regions' c0 at t = ${old.time} (the clock carries on): what follows is from there, not from the state before set(). ` +
-        'To switch a reaction off and keep the state, keep it listed and make it negligible (k0 or vmax tiny). (Said in every solution up to the next steady solve, which keeps a closed region\'s restarted amounts.)';
-      // The clock carries on, so a run's next advance(t) is still at t (it read 0, and an
-      // advance(20.001) after a change at t = 20 ran 20 s from c0).
-      solver.time = old.time;
-      solver.sourceTime = old.sourceTime;
-      solver._refreshSources();
-    } else if (old?.restarted) solver.restarted = old.restarted; // (said until a steady solve, through further set()s)
-    // Each terminal's running charge carries on with the clock, by name (zeroed by a rebuild, a
-    // charge read across a set() that changed anything but a drive missed all that had passed:
-    // Fable's review; termCharge is in STATE, which this hand-written carry predates).
-    if (old) for (let k = 0; k < solver.terms.length; k++) {
-      const o = old.terms.findIndex((t) => t.name === solver.terms[k].name);
-      if (o >= 0) solver.termCharge[k] = old.termCharge[o];
-    }
-    if (sameUnknowns || regridded) {
-      if (sameUnknowns) {
-        const fresh = Float64Array.from(solver.u); // (its own start, from the new c0)
-        solver.u.set(old.u);
-        solver.uLo.set(old.uLo);
-        // (a new T, or materials' μ° and c_ref: carry the concentrations and φ, not their scaled
-        // potentials)
-        if (old.model.RT !== model.RT || old.mu0hat.some((m, k) => m !== solver.mu0hat[k]) || old.cRef.some((c, k) => c !== solver.cRef[k])) solver._carryAcross(old);
-        // (a jump in T, for a transient's first step to name if it fails: see integrate in src/timeSteps.js)
-        if (old.model.T !== model.T || old.jumpedT) solver.jumpedT = [old.jumpedT?.[0] ?? old.model.T, model.T];
-        if (solver.jumpedT?.[0] === solver.jumpedT?.[1]) solver.jumpedT = undefined; // (back where it was solved: no jump to blame)
-        // A species newly present at a node (a region's material changed to one that holds it)
-        // starts from the new c0: its slot held nothing the old solver solved for, and a closed
-        // stretch then kept that stale amount for good (X at 133 mol/m³ where c0 said 7; Fable
-        // round 5's review of src/solver.js).
-        for (let g = 0; g < solver.nNodes; g++) {
-          for (let i = 0; i < solver.n; i++) {
-            if (!solver.present[g * solver.n + i] || old.present[g * old.n + i]) continue;
-            const o = solver.blockOfNode[g] * solver.M + 1 + i;
-            solver.u[o] = fresh[o];
-            solver.uLo[o] = 0;
-          }
-        }
-        // A node newly on an electrode's surface (a window moved, a surface added) starts at its
-        // starting coverages, not at whatever its slots held.
-        const surfaceAt = (sv, g) => (sv.surfAt[g] < 0 ? '' : sv.model.surfaces[sv.surfAt[g]].species.map((sp) => sp.name).join());
-        for (let g = 0; g < solver.nNodes; g++) if (solver.surfAt[g] >= 0 && surfaceAt(solver, g) !== surfaceAt(old, g)) solver._surfaceStart(g);
-        solver._matchConcentrations(old);
-      } else {
-        solver._warmFrom(old);
-        solver.regriddedSteady = old.atSteady; // (see Device.advance)
-      }
-      solver.computeConcentrations();
-      solver.time = old.time;
-      // Held sources read at the same time as before, and an adaptive transient goes on at the
-      // step size it had reached (its order restarts, as at any change of the equations).
-      solver.sourceTime = old.sourceTime;
-      solver._refreshSources();
-      solver.dtNext = old.dtNext;
-      solver.coldStart = old.coldStart; // (a carried state is as cold as it was: see equilibrateFaces)
-      solver.stepped = old.stepped; // (and as stepped: a transient's state retries from the layout; see src/steady.js)
-      solver.contactDEnd = old.contactDEnd;
-      // (each port's by name: swapped by index, two capacitive ports read each other's charge)
-      const portOf = model.ports.map((p) => old.model.ports.findIndex((q) => q.name === p.name));
-      if (old.portQEnd && portOf.every((o) => o >= 0)) solver.portQEnd = Float64Array.from(portOf, (o) => old.portQEnd[o]);
-      solver.solvedV = old.solvedV; // where the carried-over state was solved (for continuation)
-      // Floating terminals keep their voltages (a good start), by name.
-      for (const k of solver.floating) {
-        const o = old.terms.findIndex((t) => t.name === solver.terms[k].name);
-        if (o >= 0) solver.termV[k] = old.termV[o];
-      }
-      // What each stretch conserves from here: a stretch that was closed and still is (same
-      // species, same regions, same boxes) keeps its amount; any other (newly closed, split,
-      // merged, open, or with its boxes resized by a new grid or geometry) starts from what the
-      // carried state holds.
-      const key = (st) => `${st.species}:${st.regions[0]}-${st.regions[1]}`;
-      const before = new Map(old.stretches.map((st, k) => [key(st), k]));
-      const va = old.model.grid.vol, vb = model.grid.vol, sameBoxes = va.length === vb.length && va.every((v, g) => v === vb[g]);
-      // (a new grid over the same regions and geometry holds the same amounts: read off the
-      // interpolated state instead, a closed one ratcheted down at each regrid, −0.47% over 60;
-      // Fable's re-check)
-      const sameSpace = sameBoxes || (old.model.regions.every((rg, k) => rg.length === model.regions[k].length) && JSON.stringify(old.model.geometry) === JSON.stringify(model.geometry));
-      solver.referenceAmounts = solver.stretches.map((st) => {
-        const k = before.get(key(st));
-        return sameSpace && k !== undefined && !old.stretches[k].connected && !st.connected ? old.referenceAmounts[k] + old.boundaryIntake[k] : solver.amount(st);
-      });
-      solver.boundaryIntake.fill(0);
-      // ...and on a new grid, a closed stretch's state holds exactly that amount: the
-      // interpolation keeps it only to its own error, which a transient would keep for good
-      // (−0.02% at a refinement 4× mid-run; a steady solve restores it).
-      if (regridded && sameSpace) solver.stretches.forEach((st, j) => {
-        const k = before.get(key(st));
-        if (k === undefined || old.stretches[k].connected || st.connected) return;
-        const have = solver.amount(st), want = solver.referenceAmounts[j], shift = Math.log(want / have);
-        if (!Number.isFinite(shift) || shift === 0) return;
-        for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (solver.nodeConductor[g] < 0) solver.u[solver.blockOfNode[g] * solver.M + 1 + st.species] += shift;
-        solver.computeConcentrations();
-      });
-      // Each surface's reference likewise: kept where its window and the boxes are unchanged.
-      const sameSurface = (j) => {
-        const [k, q] = solver.surfCols[j], o = old.surfCols.findIndex(([kk, qq]) => old.model.surfaces[kk].name === model.surfaces[k].name && qq === q);
-        const a = old.model.surfaces[old.surfCols[o]?.[0]], b = model.surfaces[k];
-        return o >= 0 && a.species[q].name === b.species[q].name && a.nodes.length === b.nodes.length && a.nodes.every((g, w) => g === b.nodes[w]) ? o : -1;
-      };
-      solver.surfaceRef = Float64Array.from(solver.surfCols, (_, j) => {
-        const o = sameBoxes ? sameSurface(j) : -1;
-        return o >= 0 ? old.surfaceRef[o] : solver.surfaceAmount(j);
-      });
-    }
-    if (then) this._redefineDrives(then);
-    return this;
   }
 
   // The definition def, which differs from the current one only in the terminals' drives: set
@@ -322,7 +241,6 @@ export class Device {
    * @returns {Solution}
    */
   solve(opts) {
-    this._touched = true;
     options(opts, 'solve', ['maxSteps', 'tol', 'continuation']);
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
@@ -332,6 +250,7 @@ export class Device {
     const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
     else {
+      this._touched = true;
       this.solver.regriddedSteady = false; // (solved on the new grid already: see Device.advance)
       this.solver.jumpedT = undefined; // (solved at the new temperature: see integrate in src/timeSteps.js)
     }
@@ -347,7 +266,6 @@ export class Device {
    * @returns {Solution}
    */
   step(dt, opts) {
-    this._touched = true;
     options(opts, 'step', ['method']);
     // dt is a duration. Unchecked, step(-1) stepped back to t = −1 and converged, and step('1')
     // made the clock the string '-11' (the state audit). As advance() does with its tEnd, a NaN
@@ -357,7 +275,7 @@ export class Device {
     if (!(dt > 0)) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` });
     this._settleRegrid(); // (as advance() does: stepped unsolved, 27 A/m² where 68.8 is right)
     this.solver._freshDiagnostics();
-    return makeSolution(this.solver, this.solver.advance(dt, opts));
+    return this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)));
   }
 
   /**
@@ -375,7 +293,6 @@ export class Device {
    * @returns {Solution}
    */
   advance(tEnd, opts) {
-    this._touched = true;
     options(opts, 'advance', ['tol', 'dt0', 'dtMax', 'budgetMs', 'maxSteps', 'method', 'probes']);
     // A steady state interpolated onto a new grid isn't quite one there (a strictly neutral
     // region's interpolated levels miss neutrality), and a transient's first short steps can't
@@ -384,15 +301,32 @@ export class Device {
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
     this._settleRegrid();
     this.solver._freshDiagnostics();
-    return makeSolution(this.solver, this.solver.integrate(tEnd, opts));
+    return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)));
+  }
+
+  // A call that moved the clock has a state of its own to carry through set(). (Marked before it
+  // ran, a step(0), a refused step or a failed first solve made c0 a "state" that a c0 patch
+  // then couldn't replace; Astra's review.)
+  _touching(call) {
+    const t0 = this.solver.time;
+    const out = call();
+    if (this.solver.time !== t0) this._touched = true;
+    return out;
   }
 
   // A steady state carried onto a new grid, solved there (once; see Device.advance).
+  // (A settle that fails leaves the interpolated state, and says so in the next solutions: it
+  // was dropped silently, the flag cleared before the snapshot that restored it; Astra's review.)
   _settleRegrid() {
-    if (!this._solver?.regriddedSteady) return;
-    this._solver.regriddedSteady = false;
-    const snap = this._solver._snapshot();
-    if (!this._solver.solveSteady().converged) this._solver._restore(snap);
+    const s = this._solver;
+    if (!s?.regriddedSteady) return;
+    const snap = s._snapshot();
+    if (s.solveSteady().converged) s.regriddedSteady = false;
+    else {
+      s._restore(snap);
+      s.regriddedSteady = false;
+      s.restarted = 'set(): the steady state carried onto the new grid could not be solved again there, so what follows goes on from the interpolated state. (Said in every solution up to the next steady solve.)';
+    }
   }
 
   /**
@@ -405,7 +339,6 @@ export class Device {
    * @returns {import('./types.js').ImpedanceResult}
    */
   impedance(frequencies, opts) {
-    this._touched = true;
     options(opts, 'impedance', ['terminal', 'profiles']);
     // The steady state, solved again even where the device holds one: the solve from there also
     // polishes it, and taken as it stood after a solve(), a stress electrode's Z at 1 µHz came
@@ -422,6 +355,7 @@ export class Device {
       this.solver._restore(snap);
       throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
     }
+    this._touched = true; // (solved: a state of its own)
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
     const out = this.solver.impedance(frequencies, opts);
@@ -458,7 +392,7 @@ export class Device {
   _checkpoint() {
     const solver = this.solver;
     // (the drives too: a change of drive alone is made in place, in the model this checkpoint keeps)
-    return { def: this.def, model: this.model, solver, drives: this.model.terminals.map((t) => t.drive), snap: solver._snapshot() };
+    return { def: this.def, model: this.model, solver, touched: this._touched, drives: this.model.terminals.map((t) => t.drive), snap: solver._snapshot() };
   }
 
   /**
@@ -470,6 +404,7 @@ export class Device {
     this.def = cp.def;
     this.model = cp.model;
     this._solver = cp.solver;
+    this._touched = cp.touched;
     // The drives as they were (a drive changed since, then a rebuild, left the checkpoint's model
     // driven at the new value while its definition said the old one), and the solver's own
     // reading of them; then its state.

@@ -7,6 +7,7 @@ import { FARADAY } from './constants.js';
 import { fixedAt } from './device.js';
 import { DEFAULTS, defaultSpacing } from './grid.js';
 import { unitWarnings } from './describe.js';
+import { carryState } from './carry.js';
 import { checkOptions } from './errors.js';
 
 const sig = (v, p = 3) => (v === 0 || !Number.isFinite(v) ? String(v) : Math.abs(v) >= 1e4 || Math.abs(v) < 1e-2 ? v.toExponential(p - 1) : String(+v.toPrecision(p)));
@@ -322,7 +323,7 @@ function gridCheck(device, sol, tol, gross) {
   let other, otherGrid;
   try {
     const dev = new Device(fine);
-    dev.solver._warmFrom(device.solver);
+    carryState(device.solver, dev.solver, { oldDef: device.def, newDef: fine });
     other = dev.solve();
     otherGrid = dev.model.grid;
     if (!other.converged) {

@@ -1504,28 +1504,45 @@ Notes:
   so a worker's patch says it this way in JavaScript).
 - **Drives alone are cheap.** A patch that changes only the terminals' drives (`V`, `I`, `R`)
   updates them in place, keeping everything else.
-- **Anything else rebuilds the device**, and a patch that also changes a drive is the rebuild,
-  then the drive change, as two `set()`s are. The state carries over while the species, regions and
-  terminals are unchanged (in the same order: regions reordered restart); otherwise it restarts
-  from the regions' `c0`. What's carried is physical, the concentrations and φ, so a new `T`, μ°
-  or statistics (a lattice's `cMax`) in the same patch moves none of them, and a plate or port at
-  no current keeps its charge through a new capacitance. On a new grid it's interpolated onto the nodes, each
-  species along the profile Scharfetter–Gummel takes within each old cell, so a floating gate
-  keeps its charge, a closed region its amount exactly, and a transient goes on as it was;
-  `solution()` then shows that interpolation, unsolved, until the next `solve()` or step, and a
-  steady state interpolated so is solved again on the new grid before the next `step()`,
-  `advance()` or rebuild (interpolation leaves it slightly off a strictly neutral region's
-  neutrality). A device nothing has solved or stepped has no state of its own: a patch's `c0`
+- **Anything else rebuilds the device**, carrying the state over by what each value means: a
+  region by its name (by place where it has none, or was renamed: as many regions as before, the
+  same index; a name given twice counts as none), a node by where it sits along its region, a
+  species by its name, a face by the regions on its two sides, a face's reaction by its
+  stoichiometry, a gate or a surface species by its name, a surface by its port (or face), a
+  terminal by its name. What has no match starts from its own start (its region's `c0`, a gate at
+  rest, a coverage at `theta0`), and a region that had a state and gets none says so in the next
+  solutions. A node that nothing changed is carried bit for bit. A change of the species (by name
+  and charge) restarts the device from its regions' `c0`, its clock carrying on.
+- **What's carried is physical**: concentrations, φ, coverages, gates, a face's fluxes and rates,
+  a double layer's charge, a metal's current. Each is written back through the new definition, so
+  a new `T`, μ°, `cRef` or statistics (a lattice's `cMax`, a model added or taken away) moves no
+  concentration; a double layer whose law changed (`T`, its ε) keeps its charge, its drop
+  adjusting; a surface whose capacity changed keeps its adsorbed amount (its new sites empty; refused where
+  it no longer fits: a change of capacity mid-run is a modelling convenience, a slider, not a
+  process, and a roughened electrode is its area); a
+  plate or port at no current keeps its charge through a new capacitance, and across a new
+  geometry a contact's charge is scaled by its area.
+- **On a new grid** each species follows the profile Scharfetter–Gummel takes within each old cell
+  (its drift, grading, flow and cross-section included, in logarithms), coverages and gates
+  linearly within their own window (a window moved at the same width carries them with it; one
+  widened keeps them where they were, its new part at its start). A node is placed by its fraction
+  of its region's length, so a region resized upstream doesn't shift the one after it. A strictly
+  neutral region is put back to neutrality, and each closed amount, the surfaces' too, is held
+  exactly; `solution()` shows that state, unsolved, until the next `solve()` or step.
+- **A steady state stands for its definition.** A grid patch alone on a steady state is solved
+  again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
+  solutions if that fails); a grid patch together with anything else is the new grid first, solved,
+  then the rest, as two `set()`s are, so the change's transient isn't lost.
+- **A carried state keeps what it holds**: a stretch closed on its own keeps its amount exactly;
+  one closed only in a combination (bound by a reaction to another), newly closed, split, merged,
+  or regridded takes what the old state held over its regions. So a new `c0` doesn't apply to a
+  carried state, except for a species newly present (a region given a material that holds it, a
+  region with no old match), which starts from it; to start over from `c0`, make a new `Device`.
+  A device nothing has solved or stepped has no state of its own: a patch's `c0` (and its drives)
   is its start.
-- **A change to a face's or port's unknowns restarts it**: a reaction added or removed (the count,
-  not its rates), gates, a surface, a diffuse layer. Its clock carries on, and every solution
-  says so in its `warnings` up to the next steady solve (which keeps a closed region's restarted
-  amounts). To switch a reaction off and keep the state, keep it listed and make it negligible
-  (`vmax: 1e-30`).
-- **A carried state keeps what it holds**: a stretch that was closed stays at its amount, and one
-  that a change closes (or splits) keeps what it holds at that moment. So a new `c0` doesn't
-  apply to a carried state, except for a species newly present (a region given a material that
-  holds it), which starts from it; to start over from `c0`, make a new `Device`.
+- **Nothing changed, nothing happens**: a patch that leaves the definition as it was (a page
+  resending its drives) keeps everything, the time steps' history and a steady state's standing
+  included. And a patch that fails leaves the device as it was.
 - **A bath's composition is a contact's, not a `c0`**: changing it mid-run,
   `set({ contacts: { right: { bath: { c } } } })`, is a step in the sample.
 - **The time stepping restarts its order**, as after any discontinuity, but a carried state goes

@@ -36,12 +36,15 @@ them is wrong: fix both, with a test, in the same commit.
   normalised `model` (species, materials, regions, interfaces, contacts, ports, terminals, the
   grid from `src/grid.js`). Every later stage reads the model and never the definition.
 - `src/index.js`: `Device`, the public object. It holds the model, builds a `Solver` on first
-  use, and turns solver states into `Solution`s (`src/solution.js`).
+  use, and turns solver states into `Solution`s (`src/solution.js`). `set()` rebuilds through
+  `src/carry.js`, which carries a solved state onto the new solver by what each value means (its
+  contract at its head: a region by name, a node by its place in its region, values through
+  physical quantities, closed amounts held).
 - `src/solver.js`: `Solver`, the numerical core (below).
 - The kit (`src/kit.js` and what it re-exports: stack, data, sources, channels, checks,
   describe, traces, live, recorder, particles, polarization, junction, devices) works on
   definitions and solutions, but for three that reach into a device's solver: `check()`
-  (src/checks.js: its state flags, `_warmFrom`, the floating terminals, and it sets `time`),
+  (src/checks.js: its state flags, `carryState`, the floating terminals, and it sets `time`),
   `polarization()` (the model's normalised reactions, `cRef`, `nodeConductor`) and `recorder()`
   (`_probes`). A change to those internals is checked by their tests too. `src/plot.js` draws
   solutions.
@@ -131,7 +134,7 @@ By method, in file order:
   cross the internal ones: `Device.step(dt)` is `Solver.advance(dt)` (one step, halved until it
   converges), and `Device.advance(tEnd)` is `Solver.integrate(tEnd)` (adaptive steps to tEnd);
   `Solver.step` is a single backward-Euler or BDF2 step, which both call; `_snapshot` /
-  `_restore`, `_warmFrom` and `_probes`, which the API uses too, stay in the solver.
+  `_restore` and `_probes`, which the API uses too, stay in the solver.
 - **Small signal** is `src/impedance.js` (`impedance` and its helpers: the current cuts, the
   regions' uniform shift, the profiles; the complex GMRES and small dense solve), methods of the
   Solver like the assembly's.

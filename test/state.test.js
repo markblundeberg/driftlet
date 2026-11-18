@@ -287,8 +287,14 @@ test('set: every STATE field has a policy for a rebuild, and the kept ones are k
       if (CARRY[k] !== 'kept') continue;
       assert.equal(canon(dev.solver[k]), before[k], `${k} is marked kept, and set() changed it`);
     }
-    // (a closed stretch keeps its amount, its intake folded in; an open one takes the state's)
-    old.referenceAmounts.forEach((a, j) => assert.equal(dev.solver.referenceAmounts[j], old.stretches[j].connected ? dev.solver.amount(dev.solver.stretches[j]) : a + old.boundaryIntake[j]));
+    // (a stretch closed on its own keeps its amount, its intake folded in; one closed only in a
+    // combination takes what the old state held of it, where its own reference is stale; an open
+    // one takes the state's. And each surface species what the old surface held.)
+    old.referenceAmounts.forEach((a, j) => {
+      const st = old.stretches[j], want = st.connected ? dev.solver.amount(dev.solver.stretches[j]) : st.spectator ? a + old.boundaryIntake[j] : old.amount(st);
+      assert.equal(dev.solver.referenceAmounts[j], want);
+    });
+    old.surfaceRef.forEach((_, j) => assert.equal(dev.solver.surfaceRef[j], old.surfaceAmount(j)));
   }
 });
 
@@ -364,7 +370,7 @@ test('set: a regridded steady state is solved there before another rebuild, and 
   for (const I of [twice.advance(1e-5).terminals.left.current, stepped.step(1e-5).terminals.left.current]) assert.ok(Math.abs(I / steady - 1) < 1e-3, `${I} vs ${steady}`);
 });
 
-test('set: ports reordered keep their own charges; regions reordered restart, and say so', () => {
+test('set: ports reordered keep their own charges; regions reordered keep their own state, by name', () => {
   const def = devices.capacitor();
   def.ports = [{ name: 'a', region: 'bar', from: 1e-6, to: 3e-6, V: 0, area: 1e6, capacitance: { C: 0.2 } }, { name: 'b', region: 'bar', from: 6e-6, to: 8e-6, V: 0.05, area: 1e6, capacitance: { C: 0.05 } }];
   const passed = (swap) => {
@@ -379,7 +385,7 @@ test('set: ports reordered keep their own charges; regions reordered restart, an
   // (by index, 'b' read +0.0233 C/m² and 'a' −0.0238, where −1.0e-6 and −4.5e-4 are right)
   for (const p of ['a', 'b']) assert.ok(Math.abs(swapped[p] / kept[p] - 1) < 1e-6, `${p}: ${swapped[p]} vs ${kept[p]}`);
   // Two closed compartments of A⁻, 'poor' (10) and 'rich' (50), swapped: carried by place,
-  // 'rich' read 10 and 'poor' 50, unwarned.
+  // 'rich' read 10 and 'poor' 50, unwarned. Each now carries its own, by name.
   const sp = (D) => ({ D, mu0: 0, cRef: 1000 }), sealed = { V: 0, terminal: 'Cl-', species: { 'K+': 'blocked', 'Cl-': 'equilibrium', 'A-': 'blocked' }, phi: 'bulk' };
   const poor = { name: 'poor', material: 'gel', length: 5e-6, c0: { 'K+': 110, 'Cl-': 100, 'A-': 10 } }, rich = { name: 'rich', material: 'gel', length: 5e-6, c0: { 'K+': 150, 'Cl-': 100, 'A-': 50 } };
   const gel = (regions) => ({
@@ -390,7 +396,7 @@ test('set: ports reordered keep their own charges; regions reordered restart, an
   const d = new Device(gel([poor, rich]));
   d.solve();
   const s = d.set({ regions: [rich, poor] }).solve(), A = (r) => s.c['A-'][s.region.indexOf(r) + 3];
-  assert.ok(Math.abs(A(0) - 50) < 1e-6 && Math.abs(A(1) - 10) < 1e-6 && s.warnings.some((w) => w.includes('the regions were reordered')), `${A(0)}, ${A(1)}: ${s.warnings}`);
+  assert.ok(Math.abs(A(0) - 50) < 1e-6 && Math.abs(A(1) - 10) < 1e-6 && !s.warnings.some((w) => w.includes('set()')), `${A(0)}, ${A(1)}: ${s.warnings}`);
 });
 
 test('set: a restart is said through a further rebuild; a c0 given before anything ran is the start', () => {

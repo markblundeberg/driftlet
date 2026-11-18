@@ -13,7 +13,20 @@ const DIFFUSE_CROWDED = 5000;
 
 export function makeSolution(solver, result = {}) {
   const { model } = solver;
-  const { sol, heldGap } = solutionFields(solver, result);
+  // (A transient's state is as its last step saw the sources: from within the step, before any
+  // jump at its end. Read after it, an advance() landing on a waveform's step read the plate at
+  // the new voltage and 72214 A/m² where nothing had flowed; Astra's review. Continuous, the two
+  // are the same; and the solver is left reading them as it did, its held voltages too.)
+  const before = solver.sourceBefore;
+  if (!solver.atSteady && Number.isFinite(solver.lastDt) && solver.time > 0) solver.sourceBefore = true;
+  let fields;
+  try {
+    fields = solutionFields(solver, result);
+  } finally {
+    solver.sourceBefore = before;
+    solver._refreshSources();
+  }
+  const { sol, heldGap } = fields;
   sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
   // (a set() that couldn't carry the state over: said in every solution up to and including the
   // next converged steady solve, which still keeps a closed region's restarted amounts)
@@ -122,6 +135,10 @@ function solutionFields(solver, result) {
       return mat.conductor || !solver.present[g * n + i] ? NaN : Dg ? gradedAt(mat, reg, grid.x[g]).D[i] : mat.D[i];
     });
   }
+  // (A transient's state is as its last step saw the sources: from within the step, before any
+  // jump at its end. Read after it, an advance() landing on a waveform's step read the plate at
+  // the new voltage and 72214 A/m² where nothing had flowed; Astra's review. Continuous, the two
+  // are the same.)
   solver._assembleBookkeeping(solver.lastDt);
   sol.contacts = {};
   sol.plates = {};

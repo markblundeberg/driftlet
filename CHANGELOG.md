@@ -14,6 +14,21 @@ major version.
   ζ at the node's own μ°, and a Fermi–Dirac c = c_ref 𝓕(ζ) scales exactly with the node's c_ref.
   The diode is the limit of a staircase of Fermi–Dirac layers, second order. A cRef under the
   other models is still refused.
+- `set()` carries a solved state by what each value means (src/carry.js), where it took shortcuts
+  (equal lengths, slot positions, absolute x, ideal identities, per-stretch references): a region
+  by name, a node by its place along its region, values through physical quantities (statistics,
+  μ°, T, a double layer's charge, a surface's adsorbed amount), each closed amount held, a strictly
+  neutral region neutral, a regrid with another change done as two. An outside reading pass by
+  OpenAI's GPT-6.2 Astra listed 39 places where it went wrong; 38 were confirmed, most silent, some
+  kept through a steady solve (a closed species newly present read 133 where its c0 was 7; a mirrored
+  mesh of the same node count copied values to the wrong places, a closed film losing 41%; removing
+  a reaction brought back the starting mixture). Each has a test in test/carry.test.js. Regions
+  reordered, and a face's reaction taken away, now carry their state where they restarted.
+  Also: a patch that changes nothing does nothing (it cleared the time steps' history); a call that
+  did nothing no longer makes c0 a state; an `advance()` landing on a waveform's jump reads the
+  state as the step saw it (it read 72214 A/m² where nothing flowed); a failed settle of a regrid
+  says so; a named port patch replaces a link given with its type whole; a cell with a double layer
+  at a driven current steps after a change of T (it couldn't, at 0.1 K).
 - Three silent wrong answers of `set()`, found by a first review from OpenAI's GPT-6.2 Sol: a grid and a
   drive changed in one patch settled the regridded state at the new drive, losing a step's
   response (−859 A/m² where −2.0e7 is right; now as two `set()`s); a floating plate's charge

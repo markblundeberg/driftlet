@@ -148,6 +148,9 @@ within one material (a face is two nodes at one x: don't difference across it).
   start })` or `triangle({ from, to, period })` (out and back each period from t = 0: a cyclic
   voltammogram, in terminal volts). `dev.set({ contacts: { right: { V } } })` changes a drive
   and keeps the state as a warm start; ports are patched by name, `{ ports: { gate: { V } } }`.
+  Any other patch rebuilds the device and carries the state over by what it means (regions by
+  name, nodes by their place, concentrations through a new T or statistics, closed amounts
+  exactly; docs/device.md, "set(patch)").
 - **Reactions** are equations: `{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }`, a coefficient
   written with its space (`2 e-`). A participant that isn't a species (solid silver) is fixed by
   its μ: `fixed: { 'Ag(s)': 0 }`. A bulk reaction's forward rate is `kf · Π c_reactants`

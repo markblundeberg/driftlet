@@ -15,3 +15,15 @@ export function merge(base, patch) {
   for (const [k, v] of Object.entries(patch)) out[k] = isPlainObject(v) && isPlainObject(base[k]) && !v[WHOLE] ? merge(base[k], v) : v;
   return out;
 }
+
+// Whether two definitions' values are the same: plain objects and arrays by their contents (typed
+// arrays too), anything else (numbers, strings, functions) by identity.
+export function deepEqual(x, y) {
+  if (x === y) return true;
+  if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
+  if (ArrayBuffer.isView(x) || ArrayBuffer.isView(y)) return ArrayBuffer.isView(x) && ArrayBuffer.isView(y) && x.length === y.length && x.every((v, k) => v === y[k]);
+  if (Array.isArray(x) !== Array.isArray(y)) return false;
+  const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+  for (const k of keys) if (!deepEqual(x[k], y[k])) return false;
+  return true;
+}
