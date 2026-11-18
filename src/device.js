@@ -1057,7 +1057,10 @@ export function normalizeDrives(def, model) {
 export function sourceAt(src, t, before = false) {
   if (src.value !== undefined) return src.value;
   const { t: ts, values: vs, repeat } = src, n = ts.length;
-  if (before) t -= 8 * Number.EPSILON * Math.max(Math.abs(t), ts[n - 1] - ts[0], 1e-300); // just before: a few ulps
+  // just before: a few ulps of t (of the period, for a repeating one, which t is reduced by). (Of
+  // the whole span, a waveform held 'forever' by a last knot at 1e12 s read 1.8 ms before t, and
+  // hid a jump that long; Astra's second pass.)
+  if (before) t -= 8 * Number.EPSILON * Math.max(Math.abs(t), repeat ? ts[n - 1] - ts[0] : 0, 1e-300);
   if (repeat) {
     const T = ts[n - 1] - ts[0];
     t = ts[0] + ((((t - ts[0]) % T) + T) % T);

@@ -24,11 +24,26 @@ major version.
   mesh of the same node count copied values to the wrong places, a closed film losing 41%; removing
   a reaction brought back the starting mixture). Each has a test in test/carry.test.js. Regions
   reordered, and a face's reaction taken away, now carry their state where they restarted.
+  A second Astra pass read the rewrite and listed 46 more; 44 were confirmed, and all but three are
+  fixed (left: an insertion host's background changed with both its populations closed; a lattice's
+  cMax lowered below the old c0 refused though the live state fits; ε set to 0 on the same mesh,
+  whose first step fails loudly). Fixed: species
+  matched by name in any order; a strictly neutral node keeps the net charge it held (a port's
+  spread countercharge included: zeroed, a refined sealed axon fired an action potential), fixed
+  charge counted in C/m³; amounts held region by region (a resized or reshaped region keeps its
+  concentrations, its amount scaling with its volume; a fresh region adds its own start), the state
+  put at them all together, a species scaled with the others held; a double layer's charge held
+  through the rest; a floating capacitor's charge kept, its voltage found; a terminal's stored and
+  passed charges scaled one way with its area; per-region grids treated as grids; a face's slots
+  carried only where both solvers solve them; a metal turned semiconductor restarts and says so;
+  the caller's definition copied, not aliased; a refused patch settles nothing; a state that
+  comes out non-finite refused.
   Also: a patch that changes nothing does nothing (it cleared the time steps' history); a call that
   did nothing no longer makes c0 a state; an `advance()` landing on a waveform's jump reads the
   state as the step saw it (it read 72214 A/m² where nothing flowed); a failed settle of a regrid
   says so; a named port patch replaces a link given with its type whole; a cell with a double layer
-  at a driven current steps after a change of T (it couldn't, at 0.1 K).
+  at a driven current steps after a change of T (it couldn't, at 0.1 K); a waveform held 'forever' by
+  a far last knot read 1.8 ms before t (the before-jump read now backs off by t's own ulps).
 - Three silent wrong answers of `set()`, found by a first review from OpenAI's GPT-6.2 Sol: a grid and a
   drive changed in one patch settled the regridded state at the new drive, losing a step's
   response (−859 A/m² where −2.0e7 is right; now as two `set()`s); a floating plate's charge

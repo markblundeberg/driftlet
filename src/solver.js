@@ -1038,7 +1038,7 @@ export class Solver {
   // it carried that flux's round-off, G Δη with G huge: a gate behind R read 1.5e-4 off wherever
   // Newton stopped an update early, and below ~1e-16 A/m², nothing but noise.
   passedCurrent(k) {
-    const d = this.terms[k].drive, src = sourceAt(d.src, this.time, !this.atSteady);
+    const d = this.terms[k].drive, src = sourceAt(d.src, this.time, this.stepped); // (as the solution reads it: src/solution.js)
     return d.kind === 'I' ? src : (src - this.termV[k]) / d.R;
   }
 

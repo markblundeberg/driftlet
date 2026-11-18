@@ -1507,8 +1507,8 @@ Notes:
 - **Anything else rebuilds the device**, carrying the state over by what each value means: a
   region by its name (by place where it has none, or was renamed: as many regions as before, the
   same index; a name given twice counts as none), a node by where it sits along its region, a
-  species by its name, a face by the regions on its two sides, a face's reaction by its
-  stoichiometry, a gate or a surface species by its name, a surface by its port (or face), a
+  species by its name, a face by the regions on its two sides (in order: a device mirrored has new faces,
+  which start at rest), a face's reaction by its participants, a gate or a surface species by its name, a surface by its port (or face), a
   terminal by its name. What has no match starts from its own start (its region's `c0`, a gate at
   rest, a coverage at `theta0`), and a region that had a state and gets none says so in the next
   solutions. A node that nothing changed is carried bit for bit. A change of the species (by name
@@ -1520,22 +1520,28 @@ Notes:
   adjusting; a surface whose capacity changed keeps its adsorbed amount (its new sites empty; refused where
   it no longer fits: a change of capacity mid-run is a modelling convenience, a slider, not a
   process, and a roughened electrode is its area); a
-  plate or port at no current keeps its charge through a new capacitance, and across a new
-  geometry a contact's charge is scaled by its area.
+  plate or port at no current keeps its charge through a new capacitance (its voltage moving), and
+  across a new geometry a terminal's stored and passed charges scale with its area (a contact's,
+  a port's electrode), so the terminals' charges still add up.
 - **On a new grid** each species follows the profile Scharfetter–Gummel takes within each old cell
   (its drift, grading, flow and cross-section included, in logarithms), coverages and gates
   linearly within their own window (a window moved at the same width carries them with it; one
   widened keeps them where they were, its new part at its start). A node is placed by its fraction
   of its region's length, so a region resized upstream doesn't shift the one after it. A strictly
-  neutral region is put back to neutrality, and each closed amount, the surfaces' too, is held
-  exactly; `solution()` shows that state, unsolved, until the next `solve()` or step.
+  neutral region keeps the net charge it held, and each closed amount, the surfaces' too, is held
+  exactly; `solution()` shows that state, unsolved, until the next `solve()` or step. (A capacitor's
+  charge differs between two grids by their discretisation; the first step after a regrid passes
+  that difference, a brief current carrying a charge of order the grids' difference.)
 - **A steady state stands for its definition.** A grid patch alone on a steady state is solved
   again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
   solutions if that fails); a grid patch together with anything else is the new grid first, solved,
   then the rest, as two `set()`s are, so the change's transient isn't lost.
-- **A carried state keeps what it holds**: a stretch closed on its own keeps its amount exactly;
-  one closed only in a combination (bound by a reaction to another), newly closed, split, merged,
-  or regridded takes what the old state held over its regions. So a new `c0` doesn't apply to a
+- **A carried state keeps what it holds, in moles**: a stretch closed on its own keeps its amount
+  exactly; any other takes what the old state held over its regions, region by region (a region
+  resized, or put in a new geometry, keeps its concentrations, its amount scaling with its volume;
+  a fresh region, or one newly holding a species, adds its own start), each held exactly through
+  the interpolation. A surface keeps its adsorbed moles where its window and electrode are
+  unchanged; a window resized keeps its coverages where they were. So a new `c0` doesn't apply to a
   carried state, except for a species newly present (a region given a material that holds it, a
   region with no old match), which starts from it; to start over from `c0`, make a new `Device`.
   A device nothing has solved or stepped has no state of its own: a patch's `c0` (and its drives)

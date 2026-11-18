@@ -18,7 +18,7 @@ export function makeSolution(solver, result = {}) {
   // the new voltage and 72214 A/m² where nothing had flowed; Astra's review. Continuous, the two
   // are the same; and the solver is left reading them as it did, its held voltages too.)
   const before = solver.sourceBefore;
-  if (!solver.atSteady && Number.isFinite(solver.lastDt) && solver.time > 0) solver.sourceBefore = true;
+  if (solver.stepped && solver.time > 0) solver.sourceBefore = true; // (stepped: the last call was a step, as set() carries it)
   let fields;
   try {
     fields = solutionFields(solver, result);

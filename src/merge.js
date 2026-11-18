@@ -23,7 +23,20 @@ export function deepEqual(x, y) {
   if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
   if (ArrayBuffer.isView(x) || ArrayBuffer.isView(y)) return ArrayBuffer.isView(x) && ArrayBuffer.isView(y) && x.length === y.length && x.every((v, k) => v === y[k]);
   if (Array.isArray(x) !== Array.isArray(y)) return false;
+  if (Array.isArray(x) && x.length !== y.length) return false; // (holes and a trailing undefined count: Astra's second pass)
   const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
   for (const k of keys) if (!deepEqual(x[k], y[k])) return false;
   return true;
+}
+
+// A definition's own copy: plain objects and arrays copied all the way down (a WHOLE mark kept),
+// anything else (functions, typed arrays, numbers) as it is. Kept by reference, a caller who edited
+// the object it had passed and set() it again was told nothing changed, and the edit leaked in at
+// the next rebuild (Astra's second pass).
+export function ownCopy(v) {
+  if (Array.isArray(v)) return v.map(ownCopy);
+  if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v) || Object.getPrototypeOf(v) !== Object.prototype) return v;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) out[k] = ownCopy(x);
+  return v[WHOLE] ? markWhole(out) : out;
 }

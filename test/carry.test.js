@@ -6,7 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT } from '../src/index.js';
-import { aqueous, bath, build, half, hodgkinHuxley, layer, metal, ohmic, pulse } from '../src/kit.js';
+import { aqueous, bath, build, half, hodgkinHuxley, layer, metal, ohmic, pulse, semiconductor } from '../src/kit.js';
+import { sgInterpolate } from '../src/carry.js';
 import { gateRate } from '../src/boundaries.js';
 
 const rel = (a, b) => Math.abs(a / b - 1);
@@ -266,7 +267,8 @@ test('carry: a terminal added keeps every other terminal’s charge', () => {
   one.set({ ports: [a2, b] });
   split.set({ ports: [a2] }).set({ ports: [a2, b] });
   const s = one.advance(1e-4 + 1e-9), t = split.advance(1e-4 + 1e-9);
-  assert.ok(s.converged && rel(Qa(s), q0) < 1e-9 && rel(s.terminals.a.V, t.terminals.a.V) < 1e-9, `Q_a ${Qa(s)} vs ${q0}, V_a ${s.terminals.a.V} vs ${t.terminals.a.V}`);
+  // (V to 1e-7: the window's boxes are put back to neutrality once on one route, twice on the other)
+  assert.ok(s.converged && rel(Qa(s), q0) < 1e-9 && rel(s.terminals.a.V, t.terminals.a.V) < 1e-7, `Q_a ${Qa(s)} vs ${q0}, V_a ${s.terminals.a.V} vs ${t.terminals.a.V}`);
   const p = { name: 'p', region: 'ox', from: 4e-9, to: 6e-9, V: 0, area: 1e6, capacitance: { C: 1e-6 } };
   const d = new Device(oxide());
   d.solve();
@@ -650,4 +652,521 @@ test('carry: a diffuse-layer face at a driven current steps after a small change
   const a = run(0.1), b = run(0);
   assert.ok(a.converged, a.warnings[0]);
   assert.ok(Math.abs(a.terminals.left.V - b.terminals.left.V) < 1e-3, `${a.terminals.left.V} vs ${b.terminals.left.V}`); // (0.1 K moves it by ~RT/F · 0.1/298)
+});
+
+// --- Astra's second pass (17 Nov 2026): ~45 more wrong answers in set(), confirmed by helpers'
+// scripts (~/.cache/driftlet-claude/astra2-chase/verify). Each test is one family, its pointer
+// number first; the old number is in its comment, the right one from a second route.
+// Needs, beyond the imports above:
+//   import { sgInterpolate } from '../src/carry.js';
+//   import { semiconductor } from '../src/kit.js';   (add to the kit import)
+
+// A peaked closed profile over a region of length Ld: ∫ = 13.375 Ld/1 (trapezoids on eight cells).
+const peak = (Ld) => ({ X: { x: [0, Ld / 8, Ld / 4, Ld], values: [1, 100, 1, 1] } });
+
+test('carry: 1 · a strictly neutral region with fixed charge, regridded, keeps its ions finite and its closed totals', () => {
+  // (Neutrality was put back with ρ_fixed in C/m³ added to z·c in mol/m³: every inserted Li⁺ node
+  // read Infinity and φ −2479 V; a closed K⁺ against −10 C/m³ of fixed charge lost 9.84% of itself
+  // at the next step, kept through 10 ms.)
+  const d = new Device({ ...bar(), ports: [] });
+  d.solve();
+  const s = d.set({ grid: { hmax: 0.125e-6 } }).solution(), f = new Device({ ...bar(), ports: [], grid: { hmax: 0.125e-6 } }).solve();
+  assert.equal(s.x.length, f.x.length);
+  const off = worst(s.c['Li+'], (c, g) => rel(c, f.c['Li+'][g]));
+  assert.ok(off < 1e-12, `Li⁺: worst |c/fresh − 1| ${off}`);
+  const sp = (D) => ({ D, mu0: 0, cRef: 1000 }), rho = -10;
+  const gel = (cells) => ({
+    species: [{ name: 'K+', z: 1 }, { name: 'Cl-', z: -1 }],
+    materials: { gel: { epsr: 0, species: { 'K+': sp(1e-9), 'Cl-': sp(2e-9) } } },
+    regions: [{ material: 'gel', length: 10e-6, fixedCharge: rho, c0: { 'K+': 100 - rho / FARADAY, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, terminal: 'Cl-', species: { 'Cl-': 'equilibrium', 'K+': 'blocked' }, phi: 'bulk' }, right: {} }, grid: { minCells: cells },
+  });
+  const run = (refine) => {
+    const e = new Device(gel(16));
+    e.solve();
+    e.set({ contacts: { left: { V: 0.01 } } }).step(1e-4);
+    if (refine) e.set({ grid: { minCells: 32 } });
+    return amounts(e.step(1e-6))['K+'];
+  };
+  const k = run(true), twin = run(false);
+  assert.ok(rel(k, twin) < 1e-12, `closed K⁺ ${k} vs ${twin} unrefined`);
+});
+
+test('carry: 2 · species reordered keep their own concentrations and fluxes', () => {
+  // (Node slots and face fluxes were copied by index: X read 7 and Y 2; an open X held at 1 and 10
+  // read 3 3 3 with no flux, where 1 … 10 carries −0.009.)
+  const d = new Device(film({ species: ['X', 'Y'], c0: { X: 2, Y: 7 } }));
+  d.solve();
+  const s = d.set({ species: [...d.def.species].reverse() }).solution();
+  assert.ok(rel(s.c.X[3], 2) < 1e-12 && rel(s.c.Y[3], 7) < 1e-12, `X ${s.c.X[3]}, Y ${s.c.Y[3]}`);
+  const h = held();
+  h.left.species.Y = h.right.species.Y = 'blocked';
+  const e = new Device(film({ T: 300, species: ['X', 'Y'], c0: { X: 1, Y: 3 }, contacts: h }));
+  const t0 = e.solve(), t = e.set({ species: [...e.def.species].reverse() }).solution();
+  assert.ok(rel(t.flux.X[4], t0.flux.X[4]) < 1e-9 && worst(t.c.Y, (c) => rel(c, 3)) < 1e-12 && worst(t.c.X, (c, g) => rel(c, t0.c.X[g])) < 1e-12, `flux X ${t.flux.X[4]} vs ${t0.flux.X[4]}`);
+});
+
+test('carry: 3 · a coarsening onto old nodes keeps the amount, and a nested one is settled', () => {
+  // (Dyadic lengths: every new node an old one, so the carry skipped the amounts: 13.375 → 1, −92.5%,
+  // its reference kept, until a solve(); and the nested 8 → 4 coarsening of a steady state wasn't
+  // solved again: the first step's inflow 1.147484e-6 where the 4-cell steady state gives 1.147358e-6.)
+  const one = { material: 'film', length: 1, c0: peak(1) };
+  const d = new Device(film({ regions: [one] }));
+  const a0 = amounts(d.step(1e-12)).X, s = d.set({ grid: { minCells: 4 } }).solution(), c = s.conservation[0];
+  assert.ok(rel(a0, 13.375) < 1e-12 && rel(c.amount, a0) < 1e-12 && rel(c.reference, a0) < 1e-12, `${a0} → ${c.amount} (ref ${c.reference})`);
+  const RT = GAS_CONSTANT * 300, end = (muX) => ({ V: 0, phi: 'pinned', zeroCharge: 0, species: { X: { type: 'equilibrium', mu: muX }, Y: { type: 'equilibrium', mu: 0 } } });
+  const XY = (cells) => ({
+    ...film({ T: 300, cells, species: ['X', 'Y'], c0: { X: 1, Y: 1 }, contacts: { left: end(RT * Math.log(10)), right: end(0) } }),
+    regions: [{ material: 'film', length: 1, c0: { X: 1, Y: 1 } }], bulkReactions: [{ equation: 'X = Y', kf: { film: 1e-6 } }],
+  });
+  const e = new Device(XY(8));
+  e.solve();
+  const t = new Device(XY(4));
+  t.solve();
+  const J = e.set({ grid: { minCells: 4 } }).step(1e-3).contacts.left.flux.X, Jt = t.step(1e-3).contacts.left.flux.X;
+  assert.ok(rel(J, Jt) < 1e-9, `${J} vs ${Jt} solved on 4`);
+});
+
+test('carry: 4, 13 · a face made neutral or blocked keeps no old displacement or flux', () => {
+  // (The face's inactive slots were copied: made neutral, its old D −1.77e-5 C/m² stayed in Gauss's
+  // law for good, the films' field 5e5 V/m where a neutral face leaves them flat; made blocked, its
+  // N.X read −0.0045 after a converged solve, where the segment flux reads 0.)
+  const two = (face, contacts) => film({ T: 300, c0: { X: 1 }, regions: ['a', 'b'].map((name) => ({ name, material: 'film', length: L, c0: { X: 1 } })), interfaces: [face], contacts });
+  const pins = { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } }, right: { V: 1, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } } };
+  const d = new Device(two({ phi: 'pinned', dipole: 0 }, pins));
+  d.solve();
+  const s = d.set({ interfaces: [{ phi: 'neutral' }] }).solve(), f = new Device(two({ phi: 'neutral' }, pins)).solve();
+  const off = worst(s.phi, (p, g) => Math.abs(p - f.phi[g]));
+  assert.ok(s.converged && off < 1e-9, `neutral face: max |φ − fresh| ${off} V`);
+  const e = new Device(two({ species: { X: 'equilibrium' } }, held()));
+  assert.ok(e.solve().interfaces[0].N.X < -1e-3);
+  for (const t of [e.set({ interfaces: [{ species: { X: 'blocked' } }] }).solution(), e.solve()]) {
+    assert.ok(t.interfaces[0].N.X === 0 && t.flux.X[e.grid.regionEnd[0]] === 0, `blocked face: N.X ${t.interfaces[0].N.X}`);
+  }
+});
+
+test('carry: 6 · one fresh region in a stretch keeps the matched regions’ amounts', () => {
+  // (Any fresh region dropped every target in its stretch: A coarsened 8 → 5 with B appended held
+  // 1.592e-5 mol/m² where A's 1.3375e-5 and B's 7e-6 make 2.0375e-5, and took that as its reference.)
+  const A = { name: 'A', material: 'film', length: L, c0: peak(L) }, B = { name: 'B', material: 'film', length: L, c0: { X: 7 } };
+  const d = new Device(film({ regions: [A] }));
+  const a0 = amounts(d.step(1e-12)).X;
+  const c = d.set({ grid: { minCells: 5 }, regions: [A, B] }).solution().conservation[0];
+  const e = new Device(film({ regions: [A] }));
+  e.step(1e-12);
+  const split = e.set({ regions: [A, B] }).set({ grid: { minCells: 5 } }).solution().conservation[0].amount;
+  assert.ok(rel(c.amount, a0 + 7 * L) < 1e-12 && rel(c.reference, a0 + 7 * L) < 1e-12 && rel(split, a0 + 7 * L) < 1e-12, `${c.amount} (ref ${c.reference}), split ${split}, want ${a0 + 7 * L}`);
+});
+
+test('carry: 7 · a Debye–Hückel law reading ε from its material moves no concentration when ε changes', () => {
+  // (The node was copied bit for bit, its activity read under the new ε: K⁺ and Cl⁻ 10 → 10.570 of
+  // a closed 10, kept through 1 ms, where ε given in the law itself kept 10.)
+  const salt = (epsr, inLaw) => ({
+    species: [{ name: 'K+', z: 1 }, { name: 'Cl-', z: -1 }],
+    materials: { w: { epsr, species: { 'K+': { D: 1e-9, cRef: 10, mu0: 0 }, 'Cl-': { D: 1e-9, cRef: 10, mu0: 0 } }, statistics: [{ type: 'debye-huckel', species: ['K+', 'Cl-'], a: 4e-10, ...(inLaw ? { epsr } : {}) }] } },
+    regions: [{ material: 'w', length: 1e-6, c0: { 'K+': 10, 'Cl-': 10 } }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { 'K+': 'blocked', 'Cl-': 'blocked' } }, right: { phi: 'neutral', species: { 'K+': 'blocked', 'Cl-': 'blocked' } } },
+    grid: { minCells: 8 },
+  });
+  for (const inLaw of [false, true]) {
+    const d = new Device(salt(80, inLaw));
+    d.solve();
+    d.set({ materials: { w: salt(60, inLaw).materials.w } });
+    for (const s of [d.solution(), d.advance(1e-3)]) for (const k of ['K+', 'Cl-']) assert.ok(worst(s.c[k], (c) => rel(c, 10)) < 1e-12, `${inLaw ? 'ε in the law' : 'ε from the material'} ${k}: ${s.c[k][4]}`);
+  }
+});
+
+test('carry: 8 · a strictly neutral region regridded keeps a port’s countercharge', () => {
+  // (Neutrality ignored the port's spread charge aσ: 1832 C/m³ unbalanced at the new nodes, the
+  // port discharged in one step, Q −6.9e-11 where −3.6626e-3 stays; the axon refined fired a spike
+  // to +37.5 mV within 0.2 ms where its untouched twin sits at −65 mV.)
+  const def = (hmax) => ({
+    ...bar(), species: [...bar().species, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { solid: { epsr: 0, species: { 'Li+': { D: 1e-11, mu0: 0 }, 'Cl-': { D: 1e-11, mu0: 0 } } } },
+    regions: [{ name: 'bar', material: 'solid', length: 10e-6, c0: { 'Li+': 100, 'Cl-': 100 } }], grid: { hmax },
+  });
+  const d = new Device(def(0.25e-6)), f = new Device(def(0.125e-6));
+  for (const e of [d, f]) e.solve(), e.step(1e-12);
+  const q = d.set({ grid: { hmax: 0.125e-6 } }).step(1e-12).ports[0].charge, qf = f.step(1e-12).ports[0].charge;
+  assert.ok(rel(q, qf) < 1e-6, `port Q ${q} vs fresh fine ${qf}`);
+  const a = new Device(axon(3e-3)), t = new Device(axon(3e-3));
+  a.advance(5e-3), t.advance(5e-3);
+  a.set({ grid: { hmin: 1e-4, hmax: 1e-4 } });
+  const s = a.advance(5.1e-3), u = t.advance(5.1e-3);
+  assert.ok(rel(s.ports[0].charge, u.ports[0].charge) < 1e-3 && Math.max(...s.phi) < -60 * mV, `axon: Q ${s.ports[0].charge} vs ${u.ports[0].charge}, max φ ${Math.max(...s.phi)}`);
+});
+
+test('carry: 9 · a sphere’s or cylinder’s centre (r0 = 0) carries its charges without NaN', () => {
+  // (Its stored charges were scaled by the area ratio 0/0: the centre's running charge and its
+  // next current read NaN after set({ T }).)
+  for (const type of ['spherical', 'cylindrical']) {
+    const def = (T) => film({ T, c0: { X: 1 }, geometry: { type, r0: 0 } });
+    const d = new Device(def(300));
+    d.solve();
+    const I = d.set({ T: 310 }).step(1e-9).terminals.left.current, f = new Device(def(310));
+    f.solve();
+    assert.ok(Number.isFinite(I) && Math.abs(I - f.step(1e-9).terminals.left.current) < 1e-12, `${type}: ${I}`);
+  }
+});
+
+test('carry: 10 · a double layer’s charge is held after the amounts are put back', () => {
+  // (Its drop was found for the old charge, then the closed ions were rescaled at the edge, which
+  // moved it: q −0.066199 → −0.066204 C/m² under the face's old D, and the first 1 ps passed
+  // 4.66e6 A/m² where the next passes 8.30e3.)
+  const d = new Device(kcl(0.8));
+  d.solve();
+  const q0 = d.step(1e-9).interfaces[0].diffuse.right.charge;
+  const s = d.set({ interfaces: d.def.interfaces.map((i) => (i.diffuse ? { ...i, diffuse: { epsr: 313.6 } } : i)) }).solution();
+  const q = s.interfaces[0].diffuse.right.charge, I1 = d.step(1e-12).current, I2 = d.step(1e-12).current;
+  assert.ok(rel(q, q0) < 1e-12 && rel(I1, I2) < 1e-3, `q ${q} vs ${q0}; first current ${I1}, next ${I2}`);
+});
+
+test('carry: 11 · a diffuse layer removed puts its excess back in the bulk', () => {
+  // (Only new layers were visited: the removed layers' excess went missing, each closed ion 0.99960
+  // of its 1e-3 mol/m² until a solve().)
+  const d = new Device(kcl(0.8));
+  d.solve();
+  d.step(1e-9);
+  d.set({ interfaces: d.def.interfaces.map(({ diffuse, ...rest }) => rest) });
+  for (const s of [d.solution(), d.step(1e-9)]) for (const k of ['K+', 'Cl-']) assert.ok(rel(inventory(d, s, k), 1e-3) < 1e-9, `${k}: ${inventory(d, s, k)}`);
+});
+
+test('carry: 12 · a waveform held “forever” by a far last knot still reads its near jump', () => {
+  // (The before-side read backed off 8 ulps of the whole span, 1.8 ms for a knot at 1e12 s: at 2 µs,
+  // 1 µs past a 0 → 1 V jump, the step and the snapshot read 0 V and no charge.)
+  const at2us = (tLast) => {
+    const d = new Device(oxide({ t: [0, 1e-6, 1e-6, tLast], values: [0, 0, 1, 1] }));
+    d.solve();
+    const s = d.step(2e-6);
+    return [s.terminals.left.V, s.plates.left.charge, d.solution().terminals.left.V];
+  };
+  const far = at2us(1e12), near = at2us(1);
+  assert.ok(far.every((v, k) => v === near[k]) && near[0] === 1, `${far} vs ${near}`);
+});
+
+test('carry: 14, 21d · species sharing sites keep each amount in either listing order', () => {
+  // (Corrected one at a time, a later species moved the earlier ones: on a lattice 98.5% full, X
+  // −9.15e-7 of itself listed first, Y +9.07e-7 listed first; two adsorbates on one window, S1
+  // −2.29% listed first, exact listed second.)
+  const prof = (a, b, c) => ({ x: [0, L / 2, L], values: [a, b, c] });
+  for (const order of [['X', 'Y'], ['Y', 'X']]) {
+    const d = new Device(film({ species: order, cells: 4, c0: { X: prof(99, 98, 99), Y: prof(0.99, 1.99, 0.99) }, statistics: lattice(order, 100) }));
+    const was = amounts(d.step(1e-16)), now = amounts(d.set({ grid: { minCells: 5 } }).solution());
+    for (const k of order) assert.ok(rel(now[k], was[k]) < 1e-12, `${order} ${k}: ${now[k] / was[k] - 1}`);
+  }
+  const want = { S1: [0.1, 0.1, 0.1, 0.75, 0.1, 0.1, 0.1], S2: [0.895, 0.895, 0.895, 0.05, 0.895, 0.895, 0.895] };
+  for (const order of [['S1', 'S2'], ['S2', 'S1']]) {
+    const port = { ...adsorbing('p', 0.1e-6, 0.4e-6, 0), surface: Object.fromEntries(order.map((nm) => [nm, { mu0: 2000, capacity: 1e-5, theta0: 0.1 }])), reactions: order.map((nm) => ({ equation: `A+ + e- = ${nm}`, k0: 1e-4, alpha: 0.5 })) };
+    const d = new Device(surfaced([port]));
+    d.step(1e-15);
+    const s = d.solver, sf = s.model.surfaces[0];
+    sf.nodes.forEach((g, w) => {
+      const b = s.blockOfNode[g], bare = 1 - want.S1[w] - want.S2[w];
+      sf.species.forEach((sp, q) => ((s.u[b * s.M + 1 + s.n + q] = sp.mu0 / s.model.RT + Math.log(want[sp.name][w] / bare)), (s.uLo[b * s.M + 1 + s.n + q] = 0)));
+    });
+    s.computeConcentrations();
+    const amt = (v) => Object.fromEntries(v.surfCols.map(([k, q], j) => [v.model.surfaces[k].species[q].name, v.surfaceAmount(j)]));
+    const before = amt(s), after = amt(d.set({ grid: { hmin: 70e-9, hmax: 70e-9 } }).solver);
+    for (const k of order) assert.ok(rel(after[k], before[k]) < 1e-12, `${order} ${k}: ${after[k] / before[k] - 1}`);
+  }
+});
+
+test('carry: 16 · a per-region grid settles and redrives like a top-level one', () => {
+  // (regions[].grid wasn't a grid change to set(): 4 → 16 cells of a solved double layer wasn't solved
+  // again, the first 0.1 ns passed 9.24e6 A/m² where nothing flows; with a bias step in the same
+  // patch, 2.15e6 where refine, solve, redrive gives −7.09e6.)
+  const def = (regionGrid, grid, V = 0.1) => ({
+    T: 300, species: [{ name: 'A+', z: 1, cRef: 1000 }, { name: 'B-', z: -1, cRef: 1000 }],
+    materials: { w: { epsr: 80, species: { 'A+': { D: 1e-9, mu0: 0 }, 'B-': { D: 1e-9, mu0: 0 } } } },
+    regions: [{ name: 'e', material: 'w', length: 100e-9, c0: { 'A+': 1, 'B-': 1 }, ...(regionGrid ? { grid: regionGrid } : {}) }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { 'A+': 'blocked', 'B-': 'blocked' } }, right: { V, phi: 'pinned', zeroCharge: 0, species: { 'A+': 'blocked', 'B-': 'blocked' } } },
+    grid,
+  });
+  const run = (perRegion, patch = {}) => {
+    const d = new Device(perRegion ? def({ minCells: 4 }, {}) : def(undefined, { minCells: 4 }));
+    d.solve();
+    d.set({ ...(perRegion ? { regions: [{ ...d.def.regions[0], grid: { minCells: 16 } }] } : { grid: { minCells: 16 } }), ...patch });
+    return d.step(1e-10);
+  };
+  const a = run(true), b = run(false);
+  assert.ok(Math.abs(a.contacts.right.current - b.contacts.right.current) < 1e-3 && worst(a.phi, (p, g) => Math.abs(p - b.phi[g])) < 1e-12, `${a.contacts.right.current} vs ${b.contacts.right.current}`);
+  const bias = { contacts: { right: { V: 0.2 } } }, c = run(true, bias), e = new Device(def(undefined, { minCells: 4 }));
+  e.solve();
+  e.set({ grid: { minCells: 16 } }).solve();
+  const I = e.set(bias).step(1e-10).contacts.right.current;
+  assert.ok(rel(c.contacts.right.current, I) < 1e-9, `with a bias step: ${c.contacts.right.current} vs ${I} refined, solved, redriven`);
+});
+
+test('carry: 17, 18 · a floating capacitor keeps its charge through a change of C, with or without a new geometry', () => {
+  // (Its old voltage was kept and read under the new C: the plate's snapshot charge doubled, 2.615e-3
+  // → 5.231e-3 C/m², until a step; the port's too; and with a new cross-section in the same patch the
+  // doubled charge was kept for good, −0.014648 C where geometry and C apart give −0.0073238.)
+  const d = new Device(oxide());
+  d.solve();
+  const q = d.set({ contacts: { left: { I: 0 } } }).solve().plates.left.charge;
+  const s = d.set({ contacts: { left: { phi: { C: 0.02 } } } }).solution(), Cs = 1 / (1 / 0.02 + 10e-9 / (4 * 8.8541878128e-12));
+  assert.ok(rel(s.plates.left.charge, q) < 1e-9 && rel(s.terminals.left.V, q / Cs) < 1e-9, `plate ${s.plates.left.charge} vs ${q}, V ${s.terminals.left.V} vs Q/C ${q / Cs}`);
+  const floated = () => {
+    const b = new Device(bar());
+    b.solve();
+    b.set({ ports: { a: { I: 0 } } }).solve();
+    return b;
+  };
+  const C = { ports: { a: { capacitance: { C: 0.4 } } } }, geometry = { area: { x: [0, 10e-6], values: [2, 2] } };
+  const b = floated(), qa = b.solution().ports[0].charge;
+  assert.ok(rel(b.set(C).solution().ports[0].charge, qa) < 1e-6, `port ${b.solution().ports[0].charge} vs ${qa}`);
+  const one = floated().set({ geometry, ...C }).solve().ports[0].charge, two = floated().set({ geometry });
+  two.solve();
+  const split = two.set(C).solve().ports[0].charge;
+  assert.ok(rel(one, split) < 1e-9 && rel(split, 2 * qa) < 1e-8, `together ${one}, apart ${split}, 2·Q ${2 * qa}`);
+});
+
+test('carry: 22 · a region restarted mid-ramp starts at the sources of now', () => {
+  // (Built at t = 0's sources: the fresh films started at φ 0 beside a plate held at 0.1 V, and the
+  // next 1 ps passed 4.3e-7 A/m² where a device built at 0.1 V passes 2.6e8.)
+  const two = { regions: ['a', 'b'].map((name) => ({ name, material: 'oxide', length: 5e-9, c0: { X: 1 } })), interfaces: [{ species: { X: 'equilibrium' }, dipole: 0 }] };
+  const d = new Device(oxide({ t: [0, 1e-6], values: [0, 0.1] }));
+  d.solve();
+  d.advance(1e-6);
+  const s = d.set(two).solution(), f = new Device({ ...oxide(0.1), ...two });
+  assert.ok(worst(s.phi, (p, g) => Math.abs(p - f.solution().phi[g])) < 1e-12, `start φ ${s.phi[0]} vs ${f.solution().phi[0]}`);
+  const I = d.step(1e-12).terminals.left.current, If = f.step(1e-12).terminals.left.current;
+  assert.ok(rel(I, If) < 1e-6, `${I} vs ${If}`);
+});
+
+test('carry: 23 · held → floating, or rebuilt, at a waveform’s landing reads the side before the jump', () => {
+  // (A rebuild reset the last step's length, so the snapshot read the jump's far side: V 1 and a
+  // plate of 0.01 C/m² where nothing had flowed; switched to I = 0 there, it started floating at 1 V.)
+  const tj = 1e-6, wave = { t: [0, tj, tj, 1], values: [0, 0, 1, 1] };
+  const landed = (t = tj) => {
+    const d = new Device(oxide(wave));
+    d.solve();
+    d.advance(t);
+    return d;
+  };
+  const twin = landed(tj * (1 - 1e-9)).set({ contacts: { left: { I: 0 } } }).solution();
+  for (const [tag, patch] of [['floated', { contacts: { left: { I: 0 } } }], ['rebuilt', { materials: { oxide: { species: { X: { D: 2e-9 } } } } }]]) {
+    const s = landed().set(patch).solution();
+    assert.ok(Math.abs(s.terminals.left.V - twin.terminals.left.V) < 1e-9 && Math.abs(s.plates.left.charge - twin.plates.left.charge) < 1e-11, `${tag}: V ${s.terminals.left.V}, plate ${s.plates.left.charge}`);
+  }
+});
+
+test('carry: 25 · a face’s reactions are matched by everything that takes part', () => {
+  // (Keyed by mobile participants and order alone, two pathways Fc + ClO₄⁻ = FcClO₄ or FcB + e⁻
+  // swapped rates when listed the other way, 1.57e-7 ↔ 5.73e-6, until a step; the first removed,
+  // the second inherited its rate.)
+  const R1 = { equation: 'Fc + ClO4- = FcClO4 + e-', k0: 1e-6, alpha: 0.5 }, R2 = { equation: 'Fc + ClO4- = FcB + e-', k0: 1e-4, alpha: 0.5 };
+  const surface = { Fc: Fc(), FcClO4, FcB: { mu0: -5e3, capacity: 1e-6, theta0: 0.1 } };
+  const run = (patch) => {
+    const d = new Device(tethered(0, { surface, reactions: [R1, R2] }));
+    d.solve();
+    d.set({ contacts: { left: { V: 0.25 } } }).advance(1e-4);
+    if (patch) d.set(patch(d));
+    const s = d.solution();
+    return Object.fromEntries(d.def.interfaces[0].reactions.map((r, k) => [r.equation, s.interfaces[0].rates[k]]));
+  };
+  const unused = (d) => ({ ...d.def.materials, unused: { epsr: 1, species: {} } }); // (a rebuild, no physics)
+  const same = run((d) => ({ materials: unused(d), interfaces: [{ ...d.def.interfaces[0], reactions: [R1, R2] }] }));
+  const swapped = run((d) => ({ materials: unused(d), interfaces: [{ ...d.def.interfaces[0], reactions: [R2, R1] }] }));
+  for (const r of [R1, R2]) assert.ok(rel(swapped[r.equation], same[r.equation]) < 1e-12, `${r.equation}: ${swapped[r.equation]} vs ${same[r.equation]}`);
+  const { FcClO4: _, ...rest } = surface, removed = run(() => ({ interfaces: [{ surface: rest, reactions: [R2] }] }));
+  assert.ok(rel(removed[R2.equation], same[R2.equation]) < 1e-12, `R2 alone ${removed[R2.equation]} vs ${same[R2.equation]}`);
+});
+
+test('carry: 26 · a metal turned semiconductor starts over, and says so', () => {
+  // (The metal's flux slot was read as φ̂: the silicon started at φ 0 with n 46.5 mol/m³ where its
+  // own start has 0.166, no warning, and every step failed.)
+  const lib = [semiconductor('Si'), metal('Au')], Nd = 1e23 / 6.02214076e23; // (1e17 cm⁻³)
+  const si = build({ T: 300, library: lib, stack: [ohmic(0), layer('Si', 1e-6, { donors: Nd }), ohmic(0.01)], grid: { minCells: 16 } });
+  const d = new Device(build({ T: 300, library: lib, stack: [ohmic(0, ['e-']), layer('Au', 1e-6), ohmic(1e-9, ['e-'])], grid: { minCells: 16 } }));
+  d.solve();
+  const s = d.set({ materials: si.materials, regions: si.regions, contacts: si.contacts }).solution(), f = new Device(si).solution();
+  assert.ok(worst(s.phi, (p, g) => Math.abs(p - f.phi[g])) < 1e-12 && worst(s.c['e-'], (c, g) => rel(c, f.c['e-'][g])) < 1e-12, `φ ${s.phi[8]} vs ${f.phi[8]}`);
+  assert.ok(s.warnings.some((w) => w.includes('metal')), `${s.warnings}`);
+  assert.ok(d.step(1e-15).converged);
+});
+
+test('carry: 27b · a clamped port window widened without a regrid keeps its charge', () => {
+  // (The new part's charge was saved but its old part's taken as the whole: the membrane gave up
+  // three quarters of its charge in 0.1 ms, Q 0.0078 where a device built with the wide window holds
+  // 0.0330, φ −30.9 mV where it sits at −65.4.)
+  const d = new Device(axon(3e-3)), w = new Device(axon(6e-3));
+  d.advance(5e-3), w.advance(5e-3);
+  d.set({ ports: { membrane: { to: 6e-3 } } });
+  const s = d.advance(5.1e-3), t = w.advance(5.1e-3);
+  assert.ok(rel(s.ports[0].charge, t.ports[0].charge) < 3e-3 && Math.abs(s.phi[10] - t.phi[10]) < 1 * mV, `Q ${s.ports[0].charge} vs ${t.ports[0].charge}, φ ${s.phi[10]} vs ${t.phi[10]}`);
+});
+
+test('carry: 30 · an immobile species or an eddy-mixed one is refined linearly', () => {
+  // (Both were interpolated along the molecular drift: an immobile graded Y⁺ in 2.3 V read 1.976e-3
+  // where its fixed profile has 1.5e-3, its first half's amount +7.0%, kept by solve(); a tracer
+  // mixed at 100 D, 1.204 where the fine steady state has 1.455, first outflow −1.174 for −0.712.)
+  const imm = (cells) => ({
+    T: 300, species: [{ name: 'Y', z: 1 }], materials: { d: { epsr: 4, species: { Y: { D: 0, cRef: 1, mu0: 0 } } } },
+    regions: [{ material: 'd', length: L, c0: { Y: { x: [0, L], values: [1e-3, 9e-3] } } }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { Y: 'blocked' } }, right: { V: 1, phi: 'pinned', zeroCharge: 0, species: { Y: 'blocked' } } },
+    grid: { minCells: cells },
+  });
+  const d = new Device(imm(8));
+  d.solve();
+  const s = d.set({ grid: { minCells: 16 } }).solution(), off = worst(s.x, (x, g) => rel(s.c.Y[g], 1e-3 + (8e-3 * x) / L));
+  assert.ok(off < 1e-12, `immobile: worst |c/c0 − 1| ${off}`);
+  const RT = RT300, open = { left: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } }, right: { phi: 'neutral', species: { X: { type: 'equilibrium', mu: RT * Math.log(9) } } } };
+  const flow = (cells) => ({ ...film({ cells, c0: { X: 1 }, contacts: open }), T: 300, regions: [{ material: 'film', length: L, velocity: 0.02, c0: { X: 1 }, mixing: 1e-7 }] });
+  const e = new Device(flow(8)), f = new Device(flow(16));
+  e.solve();
+  e.step(1e-12);
+  const t = e.set({ grid: { minCells: 16 } }).solution(), u = f.solve(), mixOff = worst(t.c.X, (c, g) => rel(c, u.c.X[g]));
+  const J = e.step(1e-9).contacts.right.flux.X, Jf = f.step(1e-9).contacts.right.flux.X;
+  assert.ok(mixOff < 1e-3 && rel(J, Jf) < 1e-3, `mixed: worst |c/fine − 1| ${mixOff}, outflow ${J} vs ${Jf}`); // (8 cells' steady state against 16's: ~2e-4)
+});
+
+test('carry: 31 · an underflowed concentration stays 0, a full surface stays full', () => {
+  // (A carried 0 took the new start's level: X behind a 2000 RT step read 1 after a 0.01 K change,
+  // where 0 holds, and the next step failed; a surface at θ = 1 to the last bit was refused for
+  // holding more than its sites.)
+  const RT = GAS_CONSTANT * 300;
+  const two = (T) => ({
+    T, species: [{ name: 'X', z: 0 }],
+    materials: { a: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } }, b: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 2000 * RT } } } },
+    regions: [{ name: 'a', material: 'a', length: L, c0: { X: 1 } }, { name: 'b', material: 'b', length: L, c0: { X: 1 } }],
+    interfaces: [{ species: { X: 'equilibrium' }, dipole: 0 }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: { type: 'equilibrium', mu: 0 } } }, right: { V: 0, phi: 'pinned', zeroCharge: 0 } },
+    grid: { minCells: 4 },
+  });
+  const d = new Device(two(300));
+  d.solve();
+  const inB = (s) => Array.from(s.c.X).filter((_, g) => s.region[g] === 1);
+  const s = d.set({ T: 300.01, materials: two(300.01).materials }).solution(), t = d.step(1e-9);
+  assert.ok(inB(s).every((c) => c === 0) && t.converged && inB(t).every((c) => c === 0), `X in b ${inB(s)}`);
+  const e = new Device(surfaced([{ ...adsorbing('p', 0.1e-6, 0.4e-6, 0), surface: { S: { mu0: -200e3, capacity: 1e-5, theta0: 0.5 } } }]));
+  e.solve();
+  assert.equal(theta(e.solution(), 'p')[0], 1);
+  assert.equal(theta(e.set({ T: 298.2 }).solution(), 'p')[0], 1);
+});
+
+test('carry: 33, 34 · terminals’ charges scale with area one way, and still sum to nothing', () => {
+  // (A restart kept the running charge per m² while a carry scaled it: species + 3 m² in one patch,
+  // the next charge 1.046e-3 C where geometry then species gives 1.569e-3; and contacts' charges were
+  // scaled where a port's wasn't, the terminals' sum −0.0398 C where a closed device passes 0.)
+  const geometry = { area: { x: [0, 10e-9], values: [3, 3] } };
+  const withY = (def) => ({ species: [...def.species, { name: 'Y', z: 0 }], materials: { oxide: { species: { Y: { D: 1e-9, cRef: 1, mu0: 0 } } } }, regions: [{ ...def.regions[0], c0: { X: 1, Y: 1 } }] });
+  const charged = () => {
+    const d = new Device(oxide(0));
+    d.solve();
+    d.set({ contacts: { left: { V: 0.1 } } }).advance(1e-6);
+    return d;
+  };
+  const next = (d) => d.advance(d.solution().time + 1e-9).trace.terminals.left.charge.at(-1);
+  const a = charged(), b = charged();
+  a.set({ ...withY(a.def), geometry });
+  b.set({ geometry }).set(withY(b.def));
+  const qa = next(a), qb = next(b);
+  assert.ok(rel(qa, qb) < 1e-9, `one patch ${qa} vs geometry then species ${qb}`);
+  const d = new Device(bar());
+  d.solve();
+  d.set({ ports: { a: { V: 0.1 } } }).advance(1e-3);
+  const tr = d.set({ geometry: { area: { x: [0, 10e-6], values: [3, 3] } } }).advance(1e-3 + 1e-6).trace.terminals;
+  const [l, r, p] = ['left', 'right', 'a'].map((k) => tr[k].charge.at(-1));
+  assert.ok(Math.abs(l + r + p) < 1e-9 * Math.abs(l) && Math.abs(l) > 0.05, `left ${l} + right ${r} + port ${p} = ${l + r + p}`);
+});
+
+test('carry: 36 · the device keeps a copy of the caller’s definition', () => {
+  // (Kept by reference: an edit to it in place, then set() with it, compared equal to itself and did
+  // nothing, D 1e-9 where 3e-9 is given; an edit with no set() came in at the next unrelated rebuild.)
+  const f = film({ T: 300, contacts: held() }), d = new Device(f);
+  d.solve();
+  f.materials.film.species.X.D = 3e-9;
+  assert.equal(d.set({ materials: f.materials }).solve().D.X[0], 3e-9);
+  const g = film({ T: 300, contacts: held() }), e = new Device(g);
+  e.solve();
+  g.materials.film.species.X.D = 5e-9;
+  assert.equal(e.set({ grid: { minCells: 9 } }).solve().D.X[0], 1e-9);
+});
+
+test('carry: 37 · a current read at t = 0 before any step is the drive at t = 0', () => {
+  // (A jump 0 → 1 A/m² at t = 0 on an untouched device: solution() read 0 while the circuit row drove
+  // 1, and a constant 1 read 1.)
+  const read = (I) => {
+    const d = new Device(oxide());
+    return d.set({ contacts: { left: { I } } }).solution().terminals.left.current;
+  };
+  const jump = read({ t: [-1, 0, 0, 1], values: [0, 0, 1, 1] });
+  assert.ok(jump === read(1) && jump === 1, `${jump}`);
+});
+
+test('carry: 38 · the SG weight keeps a small positive fraction', () => {
+  // (Formed through 1 − w, w = 1e-17 rounded away: sgInterpolate(1, 1e20, 1, 1e-17) read 1 where
+  // e^{−dw}(c_a + s(c_b e^d − c_a)), s = expm1(dw)/expm1(d), gives 1582.98; at 1e-16, +11%.)
+  const ref = (ca, cb, d, w) => Math.exp(-d * w) * (ca + (Math.expm1(d * w) / Math.expm1(d)) * (cb * Math.exp(d) - ca));
+  for (const w of [1e-17, 1e-16, 1e-12]) assert.ok(rel(sgInterpolate(1, 1e20, 1, w), ref(1, 1e20, 1, w)) < 1e-12, `w ${w}: ${sgInterpolate(1, 1e20, 1, w)} vs ${ref(1, 1e20, 1, w)}`);
+});
+
+test('carry: 40 · rescaling a closed species leaves an open partner on its lattice where it was', () => {
+  // (X rescaled on sites it shares with Y, held by a contact: Y read 30.20 far from the peak where
+  // it was 30, its amount −4.3%, in either listing.)
+  const RT = GAS_CONSTANT * 298.15, prof = (...v) => ({ x: v.map((_, k) => (k * L) / (v.length - 1)), values: v });
+  for (const order of [['X', 'Y'], ['Y', 'X']]) {
+    const d = new Device(film({
+      species: order, statistics: lattice(order, 100), c0: { X: prof(5, 90, 5, 5, 5, 5, 5, 5, 5), Y: prof(30, 5, 30, 30, 30, 30, 30, 30, 30) },
+      contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { Y: { type: 'equilibrium', mu: RT * Math.log(30 / 65) }, X: 'blocked' } }, right: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked', Y: 'blocked' } } },
+    }));
+    const x0 = amounts(d.step(1e-12)).X, s = d.set({ grid: { minCells: 5 } }).solution();
+    const off = worst(s.x, (x, g) => (x >= 0.4 * L ? rel(s.c.Y[g], 30) : 0));
+    assert.ok(off < 1e-9 && rel(amounts(s).X, x0) < 1e-12, `${order}: worst |Y/30 − 1| past the peak ${off}`);
+  }
+});
+
+test('carry: 41 · impedance settles a pending regrid, and a call that takes no step doesn’t', () => {
+  // (impedance() solved the steady state but left the regrid pending, so the next drive patch solved
+  // it again; advance(now) took no step yet settled it, the device then calling itself steady.)
+  const regridded = () => {
+    const d = new Device(oxide());
+    d.solve();
+    return d.set({ grid: { minCells: 13 } });
+  };
+  const d = regridded();
+  d.impedance([10]);
+  let solves = 0;
+  const f = d.solver.solveSteady.bind(d.solver);
+  d.solver.solveSteady = (...a) => (solves++, f(...a));
+  d.set({ contacts: { right: { V: 0.01 } } });
+  assert.ok(!d.solver.regriddedSteady && solves === 0, `pending ${d.solver.regriddedSteady}, solves ${solves}`);
+  const e = regridded(), twin = regridded();
+  e.advance(e.solution().time);
+  assert.ok(e.solver.regriddedSteady && e.solution().steady === twin.solution().steady, `pending ${e.solver.regriddedSteady}, steady ${e.solution().steady}`);
+});
+
+test('carry: 42 · keys that join names can’t collide', () => {
+  // (Joined with ':' and NUL: port 'a:b' gate 'c' and port 'a' gate 'b:c' were one gate, its window's
+  // edge n 0.257 where 0.054 is right; species A, B and one named 'A:0\0B' looked the same, so the
+  // new one took A's 2 where its c0 says 5.)
+  const gated = (names) => {
+    const def = axon(6e-3), [p] = def.ports, { n } = p.gates;
+    const port = ([pn, gn], from, to, V) => ({ ...p, name: pn, from, to, V, gates: { [gn]: n }, species: { 'K+': { ...p.species['K+'], gates: { [gn]: 4 } } } });
+    const d = new Device({ ...def, ports: [port(names[0], 0, 2.1e-3, 0), port(names[1], 2.2e-3, 6e-3, -0.09)] });
+    d.advance(2e-3);
+    d.set({ grid: { hmin: 1.5e-4, hmax: 1.5e-4 } });
+    return d.solver.gateList.map((gt) => d.solver.u[gt.o]);
+  };
+  const a = gated([['a:b', 'c'], ['a', 'b:c']]), b = gated([['p', 'c'], ['q', 'd']]);
+  assert.ok(a.length === b.length && worst(a, (v, k) => Math.abs(v - b[k])) === 0, `worst gate difference ${worst(a, (v, k) => Math.abs(v - b[k]))}`);
+  const sp = (species, c0) => ({ ...film({ T: 300, species: [], c0 }), species, materials: { film: { epsr: 4, species: Object.fromEntries(species.map((s) => [s.name, { D: 1e-9, cRef: 1, mu0: 0 }])) } } });
+  const d = new Device(sp([{ name: 'A', z: 0 }, { name: 'B', z: 0 }], { A: 2, B: 7 }));
+  d.solve();
+  const nul = 'A:0\u0000B';
+  d._rebuild(sp([{ name: nul, z: 0 }], { [nul]: 5 }), d._solver); // (set() can't drop material film's A and B)
+  assert.equal(d.solution().c[nul][3], 5);
+});
+
+test('carry: 45 · holes or trailing undefined in a patched array are refused as the constructor refuses them', () => {
+  // (Arrays were compared by their keys alone, so new Array(2) equalled []: the patch returned as a
+  // no-op, the definition kept, where new Device() refuses it.)
+  const r = film().regions[0];
+  for (const [base, patch, msg] of [[{ interfaces: [] }, { interfaces: new Array(2) }, /interfaces has 2 entries/], [{ interfaces: [] }, { interfaces: [undefined] }, /interfaces has 1 entries/], [{}, { regions: [r, undefined] }, /regions\[1\] must be an object/]]) {
+    assert.throws(() => new Device(film({ ...base, ...patch })), msg);
+    const d = new Device(film(base));
+    d.solve();
+    assert.throws(() => d.set(patch), msg);
+  }
 });

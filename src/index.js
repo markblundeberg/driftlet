@@ -3,12 +3,12 @@
 import { normalizeDevice, DeviceError } from './device.js';
 import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
-import { deepEqual, markWhole, merge, WHOLE } from './merge.js';
-import { carryState } from './carry.js';
+import { deepEqual, markWhole, merge, ownCopy, WHOLE } from './merge.js';
+import { carryState, carryTermCharges } from './carry.js';
 import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
-import { normalizeDrives } from './device.js';
+import { normalizeDrives, sourceAt } from './device.js';
 
 // (a contact the kit wrote stays whole through set()'s own copies of it: see merge.js)
 const keepWhole = (from, to) => (from[WHOLE] ? markWhole(to) : to);
@@ -22,6 +22,7 @@ const eq = (x, y, terminal) => {
   if (x === y) return true;
   if (typeof x !== 'object' || typeof y !== 'object' || x === null || y === null) return false;
   if (Array.isArray(x) !== Array.isArray(y)) return false;
+  if (Array.isArray(x) && x.length !== y.length) return false; // (holes and a trailing undefined count)
   const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
   for (const k of keys) {
     if (terminal && DRIVE.has(k)) continue;
@@ -48,6 +49,28 @@ function sameExceptDrives(a, b) {
   return true;
 }
 
+// A definition's grid: the device's, and each region's own (grid, cells); def with `from`'s, where
+// they have as many regions; and def without any. (Read off def.grid alone, a grid given per region
+// missed the regrid's settle and the two-step patch: a bias step's first current the wrong sign;
+// Astra's second pass.)
+const REGION_GRID = ['grid', 'cells'];
+const gridOf = (d) => ({ grid: d.grid, regions: (d.regions ?? []).map((r) => REGION_GRID.map((k) => r?.[k])) });
+function withGridOf(d, from) {
+  const out = { ...d, grid: from.grid };
+  if (out.grid === undefined) delete out.grid;
+  if (!Array.isArray(d.regions) || !Array.isArray(from.regions) || d.regions.length !== from.regions.length) return null;
+  out.regions = d.regions.map((r, k) => {
+    const o = { ...r };
+    for (const key of REGION_GRID) {
+      if (from.regions[k]?.[key] === undefined) delete o[key];
+      else o[key] = from.regions[k][key];
+    }
+    return o;
+  });
+  return out;
+}
+const withoutGrid = (d) => ({ ...d, grid: undefined, regions: (d.regions ?? []).map((r) => (r && typeof r === 'object' ? { ...r, grid: undefined, cells: undefined } : r)) });
+
 // A definition's contacts as the drive-only path can take them: absent, or a plain object (an
 // array or a number goes through a rebuild, which refuses it; Astra's review).
 const plainContacts = (def) => def.contacts === undefined || (typeof def.contacts === 'object' && def.contacts !== null && !Array.isArray(def.contacts));
@@ -66,10 +89,7 @@ function restartFrom(old, s) {
   s.initFromComposition();
   s.referenceAmounts = s.stretches.map((st) => s.amount(st));
   s.surfaceRef = Float64Array.from(s.surfCols, (_, j) => s.surfaceAmount(j));
-  s.terms.forEach((t, k) => {
-    const o = old.terms.findIndex((u) => u.name === t.name);
-    if (o >= 0) s.termCharge[k] = old.termCharge[o];
-  });
+  carryTermCharges(old, s); // (by name, scaled as the carry scales them: one rule; Astra's second pass)
 }
 
 // Each terminal's drive (the contacts, then the ports), set in the model in place.
@@ -89,8 +109,8 @@ const options = (opts, method, allowed) => checkOptions(method, opts, allowed, S
 export class Device {
   /** @param {DeviceDefinition} def plain, serialisable device definition (see docs/device.md) */
   constructor(def) {
-    this.def = def;
     this.model = normalizeDevice(def);
+    this.def = ownCopy(def); // (its own: a caller's later edits to def reach it only through set())
     this._solver = null;
     this._touched = false; // (solved or stepped: a state of its own to carry through set())
   }
@@ -142,7 +162,7 @@ export class Device {
         return m;
       }) };
     }
-    const def = merge(this.def, patch);
+    const def = ownCopy(merge(this.def, patch)); // (its own: see ownCopy)
     // A drive is replaced whole, not merged: a waveform's keys are its own (merged, a ramp set
     // over a triangle kept the triangle's repeat; Fable's review of the front door).
     // Likewise a link or a φ law given with its type: a velocity link set over an equilibrium one
@@ -157,7 +177,9 @@ export class Device {
     // transient's BDF2 history was cleared and a steady state forgot it was one; Astra's review.)
     if (deepEqual(def, this.def)) return this;
     // A regridded steady state not yet solved on its grid stands for the steady state at the old
-    // definition: solve it there first (see Device.advance).
+    // definition: solve it there first (see Device.advance); once the patch is known to be valid
+    // (refused, it settled the earlier change and left the device not as it was; Astra's second pass).
+    if (this._solver?.regriddedSteady) normalizeDevice(def);
     this._settleRegrid();
     // A solver nothing has solved or stepped holds only its start, which the new definition's
     // replaces. (Kept, a drive patch after a bare solution() kept the old drive's cold start, and
@@ -178,8 +200,8 @@ export class Device {
       // the regrid was settled at the new definition, and the change's transient lost: a bias
       // stepped, −859 A/m² where −2.0e7 is right, Sol's review; a contact's level, a midpoint at 5
       // where 1 is right, Astra's.)
-      const mid = { ...this.def, grid: def.grid };
-      if (live?.atSteady && !deepEqual(this.def.grid, def.grid) && !deepEqual(mid, def)) {
+      const mid = withGridOf(this.def, def);
+      if (live?.atSteady && mid && !deepEqual(gridOf(this.def), gridOf(def)) && !deepEqual(mid, def)) {
         let ok = true;
         try {
           normalizeDevice(mid);
@@ -211,10 +233,17 @@ export class Device {
     const model = normalizeDevice(def);
     const solver = this._solver ? new Solver(model) : null;
     if (old) {
+      // Its own start at the sources then, not at t = 0's: what nothing carries starts from there
+      // (a floating port added mid-ramp started at the ramp's first voltage, and kept it; Astra's
+      // second pass).
+      solver.time = old.time;
+      solver.sourceTime = old.sourceTime;
+      solver._refreshSources();
+      solver.initFromComposition();
       // The same species (by name and charge, in any order) carry over; other species restart
       // the device from its regions' c0.
-      const key = (m) => m.species.map((sp) => `${sp.name}:${sp.z}`).sort().join('\u0000');
-      if (key(old.model) === key(model)) carryState(old, solver, { oldDef: this.def, newDef: def, pure: deepEqual({ ...this.def, grid: undefined }, { ...def, grid: undefined }) });
+      const key = (m) => JSON.stringify(m.species.map((sp) => [sp.name, sp.z]).sort());
+      if (key(old.model) === key(model)) carryState(old, solver, { oldDef: this.def, newDef: def, pure: deepEqual(withoutGrid(this.def), withoutGrid(def)) });
       else restartFrom(old, solver);
     }
     this.def = def;
@@ -226,6 +255,10 @@ export class Device {
   // them in place. (Validated before anything changes.)
   _redefineDrives(def) {
     const drives = normalizeDrives(def, this.model);
+    // (a held terminal set floating starts at the voltage the state was solved at, the source as
+    // the last step saw it: at a waveform's landing, read after the jump, it started 1 V off;
+    // Astra's second pass)
+    const s = this._solver, seen = s ? s.terms.map((t) => (t.drive.kind === 'V' && !(t.drive.R > 0) ? sourceAt(t.drive.src, s.time, s.stepped) : NaN)) : [];
     // A regridded steady state stands for the old drives' (see Device.advance): solve it now, before
     // they change. (Left for advance(), it was solved at the new drive, and the step response
     // was lost; Fable round 3's steady.js review.)
@@ -233,6 +266,9 @@ export class Device {
     applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
+    s.terms.forEach((t, k) => {
+      if (Number.isFinite(seen[k]) && s.floating.includes(k)) s.termV[k] = seen[k];
+    });
   }
 
   /**
@@ -299,7 +335,7 @@ export class Device {
     // close that gap: storage resists it (Fable round 2's cold user: set({ grid }) on a solved
     // cell, then advance(), failed down to 1e-17 s). Its steady state on the new grid is what it
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
-    this._settleRegrid();
+    if (tEnd > this.solver.time) this._settleRegrid(); // (an advance to now takes no step: nothing to settle for)
     this.solver._freshDiagnostics();
     return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)));
   }
@@ -356,6 +392,7 @@ export class Device {
       throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
     }
     this._touched = true; // (solved: a state of its own)
+    this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
     const out = this.solver.impedance(frequencies, opts);
