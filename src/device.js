@@ -1852,15 +1852,17 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     need(own || !mat.phiFree, `${path}.bath: ${mat.name} at this end has no φ (an insertion host: its ion and carrier have only their combination's level), so a bath can't set its levels; hold it with 'bulk' or 'neutral' links (an equilibrium link at a contact's V), or name a solution outside it with bath.material`);
     need(bm && !bm.conductor && !bm.phiFree, `${path}.bath.material: ${JSON.stringify(bath.material)} is not a material with ions in it (one of ${materials.filter((m) => !m.conductor).map((m) => m.name).join(', ')})`);
     // Without a reference, V is the bath's φ (an ideal salt bridge: the membrane potential's
-    // convention), and the terminal is the first charged species in it.
+    // convention), and the terminal is the first charged species in it that the end holds (only
+    // a placeholder: the terminal is linked, and the cold start reads such a contact by φ; the
+    // first listed alone refused a bath outside a cation exchanger or took it by the order of
+    // def.species; Astra's third pass).
     const byPhi = bath.reference === undefined;
     if (byPhi) need(bath.offset === undefined, `${path}.bath.offset: an offset places the reference species, and this bath has none (its V is its φ)`);
     // (a terminal named there was kept and meant nothing: V is the bath's φ; the review)
     if (byPhi) need(cdef.terminal === undefined, `${path}.terminal: a bath without a reference has its φ as its terminal voltage; to read V as a species' level, give the bath that species as its reference`);
     else need(speciesIndex.has(bath.reference), `${path}.bath.reference: unknown species ${JSON.stringify(bath.reference)}${known(speciesIndex)}`);
-    const r = byPhi
-      ? species.findIndex((sp) => sp.z !== 0 && bath.c[sp.name] > 0)
-      : speciesIndex.get(bath.reference);
+    const inBath = (sp) => sp.z !== 0 && bath.c[sp.name] > 0, held = species.findIndex((sp, i) => inBath(sp) && mat.present[i]);
+    const r = byPhi ? (held >= 0 ? held : species.findIndex(inBath)) : speciesIndex.get(bath.reference);
     need(r >= 0, `${path}.bath: the bath needs a charged species`);
     need(species[r].z !== 0, `${path}.bath.reference: the reference species must be charged`);
     need(bath.c[species[r].name] !== undefined, `${path}.bath.reference: '${bath.reference}' must be in the bath`);

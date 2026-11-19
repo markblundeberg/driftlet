@@ -116,7 +116,9 @@ regions: [
   other species (blocked everywhere, or only made and consumed by
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's
-  material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero.
+  material. In a strictly neutral region, $`\sum z \cdot c_0`$ must be zero, but under a held
+  port's capacitance (a capacitance through a window, below), whose charge balances it there:
+  $`\phi`$ starts where $`\rho + a\sigma = 0`$, as the solve has it.
   Where two strictly neutral regions meet at a face that holds ions in equilibrium and their
   `c0` leaves it out of equilibrium (a different fixed charge or immobile ion on each side), the
   two nodes at the face start a transient in it, as the face reaches it at $`t = 0^+`$: the ions
@@ -965,7 +967,7 @@ region's species there, and the electrons it takes or gives are the port's curre
 voltage, the port is a potentiostat. At `I: 0` (or with nothing else to carry current), the
 reactions settle at the mixed potential, the corrosion potential where anodic and cathodic
 currents cancel over the window, while each node can be a net anode or a net cathode; a floating
-one starts there, for the start's composition (with a double layer, it starts uncharged and
+one starts there (with any conductance or exchange links it has passing their share), for the start's composition (with a double layer, it starts uncharged and
 charges toward it). A floating double layer that starts far from the equilibrium of a path
 beside it (an ion link whose outside level was set for the charged steady state, a fast
 reaction) closes the gap in the first instant, which a transient may not be able to follow: it
@@ -1059,8 +1061,11 @@ it (counter-ions in, co-ions out). The port passes the charging current, $`d(\in
 none in a steady state. `zeroCharge` is in the frame a contact's is (see the capacitive contact
 above): $`V - \phi`$ at zero charge, with $`\phi`$ the device's own, which a bath or contact sets
 (beside a bath referenced to Cl⁻, with the library's μ°, it sits near −1.4 V). Omitted, it's 0, so
-a port held at V = 0 there starts charged by 1.4 V; to start it uncharged, give `zeroCharge` = V −
-φ at its window (`sol.phi` after a solve). Capacitances on overlapping windows add (a channel's
+a port held at V = 0 there holds the charge of 1.4 V at rest; to have it uncharged, give `zeroCharge` = V −
+φ at its window (`sol.phi` after a solve). In a strictly neutral region a held one starts with
+that charge, its ions balancing it ($`\phi`$ starts where $`\rho + a\sigma = 0`$); where
+$`\varepsilon > 0`$ the cold start leaves it unbalanced, and the first step moves $`\phi`$ to
+undo it, the ions then bringing it back. Capacitances on overlapping windows add (a channel's
 top and bottom gates). A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
 follows it, and `solve()` refuses (there's no steady state, as for a gate contact driven by one).
 

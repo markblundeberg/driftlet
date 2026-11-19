@@ -234,8 +234,7 @@ for live demos.
    - Starts needlessly far from where the physics goes (a cold review of `src/start.js`; each
      the first step absorbs, listed under Known in its contract): the gauge from the left; an
      insertion host's shift moving contact-held levels (a two-host battery 137 mV from both held
-     contacts; behind a Cu collector at I = 0 it starts at 0 V for 4.09); a species held by a
-     port taking the right contact's level; a contact-fed carrier given a c0 (a resistor at rest
+     contacts; behind a Cu collector at I = 0 it starts at 0 V for 4.09); a contact-fed carrier given a c0 (a resistor at rest
      0.2 V off both contacts, 17× the steps); a terminal behind R at 0 V; a reaction with a
      neutral level-held participant passed over beside an electrode (0.68 V off). Their common
      shape: the start's gauge and levels should come from what holds them, not from the left.

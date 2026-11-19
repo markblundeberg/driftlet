@@ -10,7 +10,8 @@
 // the model (regions' c0 and c0Profile, materials, interfaces, contacts, ports), the stretches
 // (s.stretches, s.stretchOf), the terminals (s.terms, s.floating), every terminal's voltage as
 // it stands (held or floating: a floating one's sets the levels it feeds) and s.time (the
-// drives' sources), and calls s.contactEta, s.portEta, s._surfaceStart, s._portRate, s._gateVoltage.
+// drives' sources), and calls s.contactEta, s.portEta, s._surfaceStart, s._portRate,
+// s._gateVoltage, s._open.
 //
 // In order, but for step 2, which is last (the state is marked cold after steps 3–9, and
 // equilibrateFaces runs from the first time step, after all of them; a code-smell review):
@@ -21,16 +22,21 @@
 //        reaction on its left face that takes it, else at the running φ̂ (level, mode 1);
 //      - else not fed by a contact: c0 is required (an error without it);
 //      - else at the level of what feeds it: the left contact's where its stretch reaches the
-//        left end, else the right's (whether its stretch reaches it or not: see Known), else its
-//        first linked port's; a contact's link held or exchanged at a rate (conductance,
-//        exchange) alike; fed by none of them (reactions only), from c0, required.
+//        left end, else the right's where it reaches the right end, else its first linked
+//        port's; a contact's link held or exchanged at a rate (conductance, exchange) alike; fed
+//        by none of them (reactions only), from c0, required.
 //      φ̂ runs from the left: a pinned or capacitive left contact's (V − zeroCharge)/V_T, else 0,
 //      plus each face's dipole. In a region where a level-fixed charged species responds to φ̂,
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
 //      through the region has a reaction that can balance, the φ̂ that balances it, each species
-//      in it at its activity (a non-ideal material's from its statistics) and each surface species
-//      at its starting coverage (a face's or the port's) (the neutrality is by
+//      in it at its activity where the electrode is (a c0 profile's at the region's end for a
+//      metal on its right, at the window's middle for a port; a non-ideal material's from its
+//      statistics) and each surface species at its starting coverage (a face's or the port's).
+//      In a strictly neutral region, a held port's capacitance through its window counts in
+//      each node's neutrality there, ρ + aσ = 0 with σ = C (V − zeroCharge − V_T φ̂) as the
+//      solve has it (not at an end box whose φ its contact sets), so φ̂ there responds even
+//      where no level-fixed species does, and is chosen node by node (the neutrality is by
 //      bisection; a trial a non-ideal model refuses counts its ideal charge, which has the sign
 //      there). Where
 //      neutrality is out of reach (c0's amounts leave a charge no held level balances): in a
@@ -38,8 +44,8 @@
 //      that fails from it to say why); otherwise the φ̂ nearest the running one, toward less
 //      charge, where the charge is at most ε V_T/(F L²) (L the region's length: what it holds with
 //      a thermal voltage across it), or where it stops falling (a fixed charge). A strictly
-//      neutral region (ε = 0) with every charged species' amount given must have a neutral c0:
-//      an error otherwise. A non-ideal material's composition comes from its statistics
+//      neutral region (ε = 0) with every charged species' amount given must have a neutral c0
+//      outside such a window: an error otherwise. A non-ideal material's composition comes from its statistics
 //      (materialAt).
 //   2. Marks the state cold (s.coldStart). equilibrateFaces(s), which the first time step from it
 //      calls (src/timeSteps.js) and a steady solve doesn't: a face between two strictly neutral
@@ -49,29 +55,35 @@
 //      in φ̂ between them the one unknown), everything else at them unchanged in concentration;
 //      s.coldStart false. A solve that converges, a warm start and a carried state set it as
 //      their state is.
-//   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ so that its first
-//      charged species shared with a neighbour across a face starts at that neighbour's level.
+//   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ
+//      so that its first charged species shared with a neighbour that the face between them
+//      passes (by a link or a reaction taking it across; else its first shared) starts at that
+//      neighbour's level.
 //   4. A floating contact facing a held one: V = the held V + the difference between the two
 //      terminal species' levels beside each (where both are equilibrium links of charged
-//      species).
+//      species; a bath without a reference by the φ beside it, its V being its φ).
 //   5. Electrode surfaces at their θ₀ (s._surfaceStart); concentrations computed.
 //   6. Floating double layers start uncharged: a capacitive contact at zeroCharge + V_T·φ̂
 //      beside it; a port with a capacitance at zeroCharge + its window's mean V_T·φ̂ (by
-//      volume·area, where φ is defined).
+//      volume·area, over the boxes whose charge it holds: where φ is defined, and not an end box
+//      whose φ its contact sets).
 //   7. A floating port linked to its carrier, with no reactions or capacitance: at the carrier's
 //      level across its window, relative to a held contact's (where there is one).
 //   8. Gates at α/(α + β) at the starting voltage across them.
-//   9. A floating port with reactions and no capacitance: at the voltage where its reactions
-//      pass the current it's driven at, or behind a resistance (V_src − V)/R, by bisection.
+//   9. A floating port with reactions and no capacitance: at the voltage where its reactions and
+//      its conductance and exchange links pass the current it's driven at, or behind a
+//      resistance (V_src − V)/R, by bisection; where none within ±1 kV does, at the V it had.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. A species given by its amount starts at c0 (or its profile) at every node; at a face
 //      equilibrated by step 2 (a transient's first step), its amount over the two nodes is kept.
 //   2. A species given by its level starts at the level of what feeds it, as step 1 orders them.
 //   3. Where a level-fixed charged species responds, each node starts neutral (Σ z c + the fixed
-//      charge = 0) to the bisection's tolerance, unless neutrality is out of reach (step 1: then
-//      its charge at most ε V_T/(F L²), or the least φ̂ gives, to the bisection's tolerance); a
-//      strictly neutral region given by amounts is neutral by its c0, checked.
+//      charge = 0, plus aσ/F under a held capacitance in a strictly neutral region) to the
+//      bisection's tolerance, unless neutrality is out of reach (step 1: then its charge at most
+//      ε V_T/(F L²), or the least φ̂ gives, to the bisection's tolerance); a strictly neutral
+//      region given by amounts is neutral by its c0, checked (with its aσ under such a window,
+//      which φ̂ then sets).
 //   4. Steps 2 and 3 change no concentration but as they say: step 3 is a gauge (φ̂ and each η by
 //      z·Δ), step 2 moves the passing species between a face's two nodes only.
 //   5. Each floating terminal's V is set by the last of steps 4, 6, 7, 9 that applies to it;
@@ -82,9 +94,11 @@
 // runs from the left, so behind a closed or floating left end the start sits away from a right
 // contact's level (55 RT for a bath referenced to Cl⁻), as does a c0 given for a contact-fed
 // carrier (φ̂ then from the left's own start); an insertion host's shift moves contact-held
-// levels in it too; a species whose stretch doesn't reach the right contact can still take its
-// level; a terminal behind a resistance starts at 0 V; and the φ̂ beside an electrode passes
-// over a reaction with a neutral level-held participant. Each the first step absorbs.
+// levels in it too; a terminal behind a resistance starts at 0 V; and the φ̂ beside an electrode passes
+// over a reaction with a neutral level-held participant. Each the first step absorbs. Where
+// ε > 0, a held port's capacitance through its window is left out of the neutrality, so the
+// first step moves φ̂ to discharge it and the ions charge it again (a gated Li⁺ bar with εr = 1:
+// 0.28 C/m² cold, 0.0035 after 1 ps, back to 0.28 by diffusion; Astra's third pass).
 // Tests: every test (each device starts here); test/transient.test.js on what a start must be.
 
 import { gateRate } from './boundaries.js';
@@ -116,6 +130,23 @@ export function initFromComposition(s) {
   // φ̂ runs from the left: from a pinned (or gated) left contact's φ at its zero charge, else 0.
   const leftPhi = model.contacts.left.phi;
   let phiHat = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive' ? (s.termV[0] - leftPhi.zeroCharge) / s.VT : 0;
+  // A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
+  // so that aσ = capB − capA V_T φ̂. In a strictly neutral region it's part of each node's
+  // neutrality, ρ + aσ = 0: without it, a region of P⁺ alone under a gate was refused for the
+  // charge the gate balances, and a level-fed one started off it, its first 1 ps step jumping
+  // the gate's charge from 0.28 to 0.0035 C/m² (Astra's third pass). Not at an end box whose φ
+  // its contact sets, as _portCapacitance has it.
+  const capA = new Float64Array(grid.nNodes), capB = new Float64Array(grid.nNodes);
+  const setsPhi = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
+  model.ports.forEach((port, k) => {
+    if (!port.capacitance || s.floating.includes(2 + k)) return;
+    port.nodes.forEach((g, w) => {
+      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === grid.nNodes - 1 && setsPhi('right'))) return;
+      const aC = s.portArea[k][w] * port.capacitance.C;
+      capA[g] += aC;
+      capB[g] += aC * (s.termV[2 + k] - port.capacitance.zeroCharge);
+    });
+  });
   for (let r = 0; r < regions.length; r++) {
     if (r > 0) phiHat += interfaces[r - 1].dipole / s.VT;
     // (a graded region's material as it is at each node: here at its start, below node by node)
@@ -123,6 +154,9 @@ export function initFromComposition(s) {
     let mat = graded ? gradedAt(base, reg, grid.x[grid.regionStart[r]]) : base;
     mode.fill(0);
     const profiled = reg.c0Profile.some((p) => p !== null) || reg.fixedProfile !== null;
+    let capped = false; // (a held capacitance in a strictly neutral region: then node by node)
+    if (base.epsr === 0 && !base.conductor && !base.phiFree) for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) if (capA[g] > 0) capped = true;
+    let aC = 0, aCV = 0; // (capA, capB at the node, where capped)
     let qFixed = fixedAt(reg, grid.x[grid.regionStart[r]]) / FARADAY; // (mol/m³; per node where it's a profile)
     for (let i = 0; i < n; i++) {
       if (!mat.present[i]) continue;
@@ -162,8 +196,11 @@ export function initFromComposition(s) {
         mode[i] = 2;
         cFix[i] = reg.c0[i];
       } else {
-        const left = st.regions[0] === 0 ? held('left', i) : NaN;
-        eta[i] = Number.isFinite(left) ? left : held('right', i);
+        // (a contact's only where the stretch reaches it: a species held by a port behind a
+        // blocked face took the right contact's level, 2.63 for the port's 1, and kept it for
+        // ~c/k of the exchange, an early transient made up; Astra's third pass)
+        const left = st.leftOpen ? held('left', i) : NaN;
+        eta[i] = Number.isFinite(left) ? left : st.rightOpen ? held('right', i) : NaN;
         if (!Number.isFinite(eta[i]) && st.linked.length > 0) eta[i] = s.portEta(model.ports[st.linked[0]], i);
         mode[i] = 1;
         if (!Number.isFinite(eta[i])) {
@@ -194,12 +231,12 @@ export function initFromComposition(s) {
           refused = true;
         }
         if (!refused) {
-          let q = qFixed;
+          let q = qFixed + (aCV - aC * s.VT * ph) / FARADAY;
           for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * cc[i];
           return q;
         }
       }
-      let q = qFixed;
+      let q = qFixed + (aCV - aC * s.VT * ph) / FARADAY;
       for (let i = 0; i < n; i++) {
         if (mode[i] === 2) q += z[i] * cFix[i];
         else if (mode[i] === 1 && z[i] !== 0) {
@@ -226,7 +263,7 @@ export function initFromComposition(s) {
         );
       }
     };
-    if (mustBalance && !profiled) checkNeutral('');
+    if (mustBalance && !profiled && !capped) checkNeutral('');
     // Each amount-given species' ζ (its activity's ln), for a balance below: no level-fixed charged
     // species responding, they don't depend on φ̂ (a non-ideal model's from its statistics).
     const activity = (i) => (mat.ideal ? Math.log(cFix[i] / mat.cRef[i]) : zeta[i]);
@@ -254,6 +291,19 @@ export function initFromComposition(s) {
       }
       return ph;
     };
+    // The same, with the amounts where the electrode is (a c0 profile's there), not at the
+    // region's start (a metal on the right of a salt ramped 10 to 90 mM started 2.2 RT from its
+    // equilibrium, the mirror device at it, and a window at the far end passing 8e-4
+    // mol/(m²·s) cold; Astra's third pass).
+    const balancedAt = (x, reactions, surface, inside, levelOf, ph) => {
+      if (!reg.c0Profile.some((p) => p)) return balanced(reactions, surface, inside, levelOf, ph);
+      const keep = [cFix.slice(), zeta.slice(), cc.slice()];
+      for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], x);
+      if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, ph, zeta, cc);
+      const out = balanced(reactions, surface, inside, levelOf, ph);
+      [cFix, zeta, cc].forEach((a, k) => a.set(keep[k]));
+      return out;
+    };
     if (!mat.phiFree && !responds && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
     if (!mat.phiFree && !responds && r > 0 && materials[regions[r - 1].material].conductor) {
       // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
@@ -273,13 +323,15 @@ export function initFromComposition(s) {
         const st = s.stretches[s.stretchOf[(r + 1) * n + p.i]];
         return st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN;
       };
-      phiHat = balanced(interfaces[r].reactions, interfaces[r].surface ?? [], 0, fed, phiHat);
+      phiHat = balancedAt(grid.x[grid.regionEnd[r]], interfaces[r].reactions, interfaces[r].surface ?? [], 0, fed, phiHat);
     }
     const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
     if (!mat.phiFree && !responds && electrode) {
       // Nor here, but an electrode spread through it does: start with the port's first reaction
-      // that can be balanced at equilibrium with the port's level (the electrode at open circuit).
-      phiHat = balanced(electrode.reactions, electrode.surface, 0, (p) => s.portEta(electrode, p.i), phiHat);
+      // that can be balanced at equilibrium with the port's level (the electrode at open circuit),
+      // at its window's middle.
+      const mid = 0.5 * (grid.x[electrode.nodes[0]] + grid.x[electrode.nodes[electrode.nodes.length - 1]]);
+      phiHat = balancedAt(mid, electrode.reactions, electrode.surface, 0, (p) => s.portEta(electrode, p.i), phiHat);
     }
     const neutralPhi = (ph) => {
       let lo = ph - 1, hi = ph + 1;
@@ -330,12 +382,13 @@ export function initFromComposition(s) {
     if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
     if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
     for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
-      if (profiled || graded) {
+      if (profiled || graded || capped) {
         if (graded) mat = gradedAt(base, reg, grid.x[g]);
         qFixed = fixedAt(reg, grid.x[g]) / FARADAY;
+        if (capped) [aC, aCV] = [capA[g], capB[g]];
         for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[g]);
-        if (mustBalance) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
-        if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
+        if (mustBalance && !(aC > 0)) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
+        if (!mat.phiFree && (responds || aC > 0)) phiHat = neutralPhi(phiHat);
         if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       }
       const b = s.blockOfNode[g];
@@ -365,7 +418,14 @@ export function initFromComposition(s) {
       if (gOut < 0) continue;
       const other = materials[regions[nr].material];
       if (other.phiFree || other.conductor) continue;
-      const i = z.findIndex((zi, j) => zi !== 0 && mat.present[j] && other.present[j]);
+      // (the first the face passes, by a link or a reaction that takes it from one side to the
+      // other, else the first shared: with e⁻ listed first and blocked at the face, a host beside
+      // a mixed conductor started its Li⁺ 0.4 V out of equilibrium, and its wire at 0 V for the
+      // 0.4 V it starts at in the other order; Astra's third pass)
+      const itf = interfaces[Math.min(r, nr)], shared = (j) => z[j] !== 0 && mat.present[j] && other.present[j];
+      const passes = (j) => itf.links[j].type !== 'blocked' || itf.reactions.some((rx) => rx.part.some((p) => p.i === j && p.side === 0) && rx.part.some((p) => p.i === j && p.side === 1));
+      let i = z.findIndex((_, j) => shared(j) && passes(j));
+      if (i < 0) i = z.findIndex((_, j) => shared(j));
       if (i < 0) continue;
       const d = (u[s.blockOfNode[gOut] * M + 1 + i] - u[s.blockOfNode[gIn] * M + 1 + i]) / z[i];
       if (!Number.isFinite(d)) continue;
@@ -382,9 +442,12 @@ export function initFromComposition(s) {
   // contact (c0 sets them, and φ was chosen for neutrality, not to match either contact), so
   // that a transient's first reading means something.
   const level = (side) => {
-    const ct = model.contacts[side], i = ct.terminal;
+    const ct = model.contacts[side], i = ct.terminal, g = side === 'left' ? 0 : grid.nNodes - 1, b = s.blockOfNode[g];
+    // A bath without a reference: its V is its φ, so the end's φ, not its terminal's level (the
+    // first listed of its species: a salt whose c0 differs from the bath's read the floating end
+    // at +56 or −56 mV by the order of def.species, the first step at 0; Astra's third pass).
+    if (ct.she && !ct.she.reference && !s.phiUndefined[g]) return s.VT * u[b * M];
     if (i === null || ct.species[i].type !== 'equilibrium' || z[i] === 0) return NaN;
-    const b = s.blockOfNode[side === 'left' ? 0 : grid.nNodes - 1];
     return (s.VT * u[b * M + 1 + i]) / z[i] - ct.species[i].offset;
   };
   for (const k of s.floating) {
@@ -409,9 +472,12 @@ export function initFromComposition(s) {
       continue;
     }
     if (!port?.capacitance) continue;
+    // (over the boxes whose charge it holds: an end box whose φ its contact sets is the
+    // contact's, as _portCapacitance has it; counted, a port beside a pinned end started with an
+    // O(h) charge, 0.0087 C/m² on two cells; Astra's third pass)
     let w = 0, sum = 0;
     port.nodes.forEach((g, j) => {
-      if (s.phiUndefined[g]) return;
+      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === s.nNodes - 1 && setsPhi('right'))) return;
       const a = s.model.grid.vol[g] * s.portArea[t.index][j];
       w += a;
       sum += a * s.VT * u[s.blockOfNode[g] * M];
@@ -457,12 +523,31 @@ export function initFromComposition(s) {
         for (const p of rx.part) if (p.side === 0) q += p.nu * z[p.i];
         port.nodes.forEach((g, w) => (I += q * FARADAY * s.model.grid.vol[g] * s.portArea[t.index][w] * s._portRate(port, rx, g)));
       });
+      // and what its links to the region's species pass, as the port's terms have it (left out, a
+      // floating electrode with a conductance beside its reaction started passing 20 A/m² where
+      // it was set to none; Astra's third pass)
+      for (let i = 0; i < n; i++) {
+        const link = port.species[i];
+        if (z[i] === 0 || (link.type !== 'conductance' && link.type !== 'exchange')) continue;
+        const kk = link.type === 'conductance' ? (link.G * s.VT) / (z[i] * z[i] * FARADAY) : link.k, gated = link.gates ?? [], q0 = 1 + n + port.surface.length;
+        port.nodes.forEach((g, w) => {
+          const b = s.blockOfNode[g], open = gated.length ? s._open(gated, (q) => u[b * M + q0 + q]) : 1;
+          I += z[i] * FARADAY * s.model.grid.vol[g] * port.fill[w] * kk * open * (s.portEta(port, i) - u[b * M + 1 + i]);
+        });
+      }
       return I;
     };
-    // Current into the device rises with V (oxidation); bracket, then bisect.
-    let lo = s.termV[k] - 1, hi = s.termV[k] + 1;
+    // Current into the device rises with V (oxidation); bracket, then bisect. Where no V passes
+    // it (a drive beyond what the reactions and links can carry), it stays where it was: a
+    // search run out to its bound had started an MHC electrode set beyond its plateau at 1457 V.
+    const V0 = s.termV[k];
+    let lo = V0 - 1, hi = V0 + 1;
     while (current(lo) > want(lo) && lo > -1e3) lo -= 2 * (hi - lo);
     while (current(hi) < want(hi) && hi < 1e3) hi += 2 * (hi - lo);
+    if (!(current(lo) <= want(lo) && current(hi) >= want(hi))) {
+      s.termV[k] = V0;
+      continue;
+    }
     for (let it = 0; it < 200 && hi - lo > 1e-12; it++) {
       const m = 0.5 * (lo + hi);
       if (current(m) < want(m)) lo = m;
