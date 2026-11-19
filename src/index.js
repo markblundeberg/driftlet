@@ -270,8 +270,12 @@ export class Device {
     this._settleRegrid();
     // (and is read at the voltages it was solved at, until a step or a solve moves it: read at
     // the new ones, a patch from 0 to 0.05 V read a plate charge of 1e-2 C/m² and 1e4 A/m² that
-    // never flowed; Sol's third review. A step from it is the step response.)
-    s.readV = s.readV ?? Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
+    // never flowed; Sol's third review. A step from it is the step response.) A floating terminal
+    // likewise passes what its old drive said: read at the new one, a capacitive plate set from
+    // I: 0 to 2 read 2 A/m² flowing at no step, its terminals no longer summing to zero, without a
+    // word (Sol's fourth pass).
+    if (!s.readV) s.readI = Float64Array.from(s.terms, (t, k) => (s.floating.includes(k) ? s.passedCurrent(k) : NaN));
+    s.readV = s.readV ??Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
     applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
