@@ -32,7 +32,8 @@
 //   same input impedance), its circuit row out of the small system, its current read as a held
 //   one's (with its circuit law's change where it has one); its profiles then scaled by Z, per
 //   unit current. A floating terminal that alone feeds
-//   a conserved combination (a circuit law: a constraint or time law with its circuit row) has
+//   a conserved combination (a circuit law: a constraint or time law with its circuit row; alone
+//   in the small signal, so not one the measured terminal feeds too, whose change is theirs) has
 //   its current read by that combination's change at every frequency, iω F δS/λ plus what a
 //   resistance passes: at dt = 1e-30 every circuit law with a current to count (λ set) reads by
 //   the change (this.lawForm), and
@@ -291,7 +292,12 @@ export class SmallSignal {
     // round-off of G Δη (a gate behind 1 kΩ·m², measured at the back contact: Re Z = −2.7).
     // (A law that counts no current, λ unset, as for a terminal at no current that feeds
     // nothing, can't be read by its change: forced to, a closed Fe³⁺/Fe²⁺ cell's Z was NaN.)
-    const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0;
+    // (Nor one the measured terminal feeds too, unless it's that terminal's own: measured as if
+    // held, it passes the small signal into the same combination, and the change is theirs
+    // together. Read by it, a contact at I = 0 sharing K⁺ with a membrane port at I = 0 was held
+    // to δI = 0, which AC-shorted it: the port's Im Z 37× too small at 1 kHz, relError 1e-13.
+    // The other feeders, driven, pass none: δI = 0. Sol's fourth pass.)
+    const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0 && !(cs.circuit !== kT && cs.terminals?.includes(kT));
     this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, byChange(cs)]));
     this.assemble(dts);
     for (const cs of [...this.constraints, ...this.timeLaws]) {
