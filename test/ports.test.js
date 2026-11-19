@@ -52,7 +52,7 @@ test('a held port level: a neutral species pinned in a window, fed by diffusion 
     materials: { m: { epsr: 10, species: { X: { D: Dx, mu0: 0 } } } },
     regions: [{ name: 'm', material: 'm', length: Lx }],
     contacts: { left: { species: { X: { type: 'equilibrium', mu: RT * Math.log(cL / 1000) } }, phi: 'neutral' }, right: { phi: 'neutral' } },
-    ports: [{ region: 'm', from: Lx / 2, V: 0, species: { X: { type: 'equilibrium', mu: RT * Math.log(cP / 1000) } } }],
+    ports: [{ region: 'm', from: Lx / 2, species: { X: { type: 'equilibrium', mu: RT * Math.log(cP / 1000) } } }],
     grid: { hmin: Lx / 100, hmax: Lx / 100 },
   }).solve();
   assert.ok(sol.converged);
@@ -589,7 +589,7 @@ test('two ports holding one species over the same nodes are refused', () => {
     ports,
     grid: { hmin: 1e-8, hmax: 1e-8 },
   });
-  const hold = (from, to, mu) => ({ region: 'm', from, to, V: 0, species: { X: { type: 'equilibrium', mu } } });
+  const hold = (from, to, mu) => ({ region: 'm', from, to, species: { X: { type: 'equilibrium', mu } } });
   assert.throws(() => new Device(def([hold(0.4e-6, 0.6e-6, -1000), hold(0.5e-6, 0.7e-6, -2000)])), /ports\[1\]: its window overlaps ports\[0\]'s, and both hold X's level/);
   // (apart, each holds its own)
   const sol = new Device(def([hold(0.2e-6, 0.3e-6, -1000), hold(0.6e-6, 0.7e-6, -2000)])).solve();
@@ -607,7 +607,7 @@ test('a port holding a level up to a face: the next region carries it, and the p
     materials: { m: { epsr: 10, species: { X: { D, mu0: 0 } } } },
     regions: [{ name: 'a', material: 'm', length: Lr }, { name: 'b', material: 'm', length: Lr }],
     contacts: { left: { species: { X: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right },
-    ports: [{ name: 'p', region: 'a', from: 0.9e-6, to: 1.0e-6, V: 0, species: { X: { type: 'equilibrium', mu: -1000 } } }],
+    ports: [{ name: 'p', region: 'a', from: 0.9e-6, to: 1.0e-6, species: { X: { type: 'equilibrium', mu: -1000 } } }],
     grid: { hmin: h, hmax: h },
   });
   const inL = (D * (c(0) - c(-1000))) / 0.9e-6, outR = (D * (c(-1000) - c(-3000))) / Lr;

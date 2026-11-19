@@ -14,6 +14,9 @@
 export const DEFAULTS = Object.freeze({ ratio: 1.2, minCells: 8 });
 // A region given no grid options at all: fine at its ends, coarse inside.
 export const defaultSpacing = (length) => ({ hmin: length / 1000, hmax: length / 20 });
+// Whether grid options give any (a field given as undefined is not given): `grid: {}` turned the
+// default grading off, 8 uniform cells for 54 graded ones, unwarned (Astra's third pass).
+export const gridGiven = (o) => o !== null && typeof o === 'object' && Object.values(o).some((v) => v !== undefined);
 const MAX_CELLS = 1e6; // a live demo's grid has hundreds to thousands
 
 /**
@@ -149,12 +152,20 @@ export function crossSection(geometry) {
   const { type } = geometry;
   if (type === 'spherical' || type === 'cylindrical') {
     const r0 = geometry.r0, sph = type === 'spherical';
-    const sq = (x) => (r0 + x) * (r0 + x), cube = (x) => (r0 + x) * (r0 + x) * (r0 + x);
+    // ∫A dx and ∫dx/A from a to b, in the shell's thickness h = b − a and inner radius r: the
+    // differences of cubes, squares and reciprocals cancelled, a thin shell far from the centre
+    // came out of round-off (a nm shell at 1e6 m 37% off, one at 1e16 m of no volume; Astra's
+    // third pass).
     return {
-      at: (x) => (sph ? 4 * Math.PI * sq(x) : 2 * Math.PI * (r0 + x)),
-      // ∫A dx and ∫dx/A from a to b
-      integral: (a, b) => (sph ? (4 * Math.PI * (cube(b) - cube(a))) / 3 : Math.PI * (sq(b) - sq(a))),
-      resistance: (a, b) => (sph ? (1 / (r0 + a) - 1 / (r0 + b)) / (4 * Math.PI) : Math.log((r0 + b) / (r0 + a)) / (2 * Math.PI)),
+      at: (x) => (sph ? 4 * Math.PI * (r0 + x) * (r0 + x) : 2 * Math.PI * (r0 + x)),
+      integral: (a, b) => {
+        const r = r0 + a, h = b - a;
+        return sph ? 4 * Math.PI * h * (r * r + r * h + (h * h) / 3) : Math.PI * h * (2 * r + h);
+      },
+      resistance: (a, b) => {
+        const r = r0 + a, h = b - a;
+        return sph ? h / (4 * Math.PI * r * (r0 + b)) : Math.log1p(h / r) / (2 * Math.PI);
+      },
     };
   }
   const xs = geometry.x, vs = geometry.values, last = xs.length - 1;

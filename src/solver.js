@@ -75,21 +75,18 @@ export const LEARNED = ['lostMode', 'accepted'];
 const copyState = (v) => (ArrayBuffer.isView(v) ? v.slice() : Array.isArray(v) ? v.slice() : v);
 const IN_PLACE = new Set(['u', 'uLo', 'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', 'termV', 'boundaryIntake']);
 
-// A profile's mean over [a, b], exactly (its integral is piecewise quadratic).
+// A profile's mean over [a, b], exactly (it's linear between its points): summed over [a, b]
+// alone, split at the points inside. (As the difference of two integrals from the table's first
+// point, a constant table starting at −1e16 m averaged to 0 over a µm box; Astra's third pass.)
 function profileMean(p, a, b) {
   if (!(b > a)) return profileAt(p, a);
-  const { x, values: v } = p, last = x.length - 1;
-  // ∫ from x[0] to t.
-  const integral = (t) => {
-    if (t <= x[0]) return v[0] * (t - x[0]);
-    let sum = 0;
-    for (let k = 0; k < last; k++) {
-      if (t <= x[k + 1]) return sum + ((v[k] + profileAt(p, t)) / 2) * (t - x[k]);
-      sum += ((v[k] + v[k + 1]) / 2) * (x[k + 1] - x[k]);
-    }
-    return sum + v[last] * (t - x[last]);
-  };
-  return (integral(b) - integral(a)) / (b - a);
+  let s = 0, lo = a, at = profileAt(p, a);
+  for (const t of [...p.x.filter((v) => v > a && v < b), b]) {
+    const next = profileAt(p, t);
+    s += ((at + next) / 2) * (t - lo);
+    (lo = t), (at = next);
+  }
+  return s / (b - a);
 }
 
 // The same mean weighted by a cross-section A (crossSection in src/grid.js), ∫A p dx / ∫A dx: a

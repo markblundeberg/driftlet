@@ -182,7 +182,7 @@ test('an electrode at open circuit with a fast couple and a slow one, fed throug
     materials: { water, water2: water, M: { conductor: { species: 'e-', conductivity: 1523338.8768275294 } } },
     regions: [{ name: 'M1', material: 'M', length: 1e-6 }, { name: 'water', material: 'water', length: 1e-6, c0 }, { name: 'water2', material: 'water2', length: 1e-6, c0 }],
     interfaces: [
-      { reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1, fixed: { 'S00B(s)': 0 } }, { equation: 'B- = e- + S00B(s)', k0: 1e-20, fixed: { 'S00B(s)': -4108 } }] },
+      { reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1 }, { equation: 'B- = e- + S00B(s)', k0: 1e-20, fixed: { 'S00B(s)': -4108 } }] },
       { species: { 'B-': 'blocked' }, reactions: [{ equation: 'B-(left) = B-(right)', k0: 1e-17 }] },
     ],
     contacts: { left: { I: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.3, bath: { c: { 'B-': 21.62350860406672, 'C2+': 10.81175430203336 }, reference: 'B-' } } },

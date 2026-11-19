@@ -5,7 +5,7 @@
 import { Device } from './index.js';
 import { FARADAY } from './constants.js';
 import { fixedAt } from './device.js';
-import { DEFAULTS, defaultSpacing } from './grid.js';
+import { DEFAULTS, defaultSpacing, gridGiven } from './grid.js';
 import { unitWarnings } from './describe.js';
 import { carryState } from './carry.js';
 import { checkOptions } from './errors.js';
@@ -309,8 +309,9 @@ function gridCheck(device, sol, tol, gross) {
     ...def,
     regions: def.regions.map((reg, r) => {
       if (model.materials[model.regions[r].material].conductor) return reg;
-      const g = { ...(def.grid ?? {}), ...(reg.grid ?? {}) };
-      if (def.grid === undefined && reg.grid === undefined) Object.assign(g, defaultSpacing(reg.length));
+      const defined = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v !== undefined)); // (as buildGrid reads them)
+      const g = { ...defined(def.grid), ...defined(reg.grid) };
+      if (!gridGiven(def.grid) && !gridGiven(reg.grid)) Object.assign(g, defaultSpacing(reg.length));
       const out = { ratio: Math.sqrt(g.ratio ?? DEFAULTS.ratio), minCells: 2 * (g.minCells ?? DEFAULTS.minCells) };
       if (g.hmin !== undefined) out.hmin = g.hmin / 2;
       if (g.hmax !== undefined) out.hmax = g.hmax / 2;

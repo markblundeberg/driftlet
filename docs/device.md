@@ -37,7 +37,7 @@ species: [
 ]
 ```
 
-`z` is any integer, including 0 for neutral species. A species can be absent from some
+`z` is any integer up to 1e6 in size, including 0 for neutral species. A species can be absent from some
 materials; its outputs are `NaN` there.
 
 ## Materials
@@ -105,6 +105,7 @@ regions: [
 ]
 ```
 
+- `name`: optional, a string: a port can name its region by it, and `set()` carries a region's state by it.
 - `fixedCharge`: immobile charge density (doping, ionomer), C/m³. Default 0. Or a profile
   `{ x: [...], values: [...] }` against the device's x, piecewise linear (graded doping), read
   at each node; the grid's resolution of it is checked as a starting profile's is. A `'bulk'`
@@ -137,7 +138,12 @@ regions: [
   under it, the start is the profile sampled at the nodes, something else, and every solution
   warns of it with the cells that would resolve it (grade toward it, or put a region boundary
   there).
-  For a spectator, the profile's integral is the amount it conserves. Where nothing else sets
+  For a spectator, the amount it conserves is the start's: the profile at each node times the
+  node's box. That's the profile's integral where it's linear across each box in a planar device,
+  and off by the cells' second order elsewhere: a sphere's 1 → 2 ramp on 8 cells holds 1.1e-3 more of it,
+  on 64 cells 1.7e-5 (the start is sampled at the nodes, not averaged over their boxes, so that a
+  c0 profile balancing a fixedCharge profile, which the solver reads at the nodes, starts neutral
+  node by node). Where nothing else sets
   $`\phi`$ at the start, a region beside an electrode starts with the electrode's first reaction at
   equilibrium (the electrode at its open-circuit level); otherwise $`\phi`$ carries over from the
   left.
@@ -686,7 +692,7 @@ bulkReactions: [
 `equation`, or `nu` with signed stoichiometric coefficients ($`\nu < 0`$ consumed, $`\nu > 0`$ produced by
 the forward reaction); a participant on both sides of an equation is an error (give the net
 reaction). Participants that aren't species are fixed-activity neutrals, given by their $`\mu`$ in
-`fixed` (J/mol). Charge must balance. The rate is mass action,
+`fixed` (J/mol), and `fixed` names nothing else (a species, or a name the reaction doesn't have, is an error). Charge must balance. The rate is mass action,
 $`r = k_f \prod_{\nu<0} c^{|\nu|} (1 - e^{-A/RT})`$ with $`A = -\sum \nu\bar\mu`$ the affinity. That's
 $`k_f \prod c_R - k_b \prod c_P`$, with $`k_b`$ fixed by the standard potentials, so equilibrium is exactly
 $`A = 0`$ (under non-ideal statistics too: the prefactor is in concentrations, the affinity in
@@ -877,8 +883,8 @@ any combination:
 
 ```js nocheck
 ports: [{
-  name: 'channel',
-  region: 'Si',              // name or index
+  name: 'channel',           // a string (as a region's name is)
+  region: 'Si',              // its name, or its index (a number)
   from: 495e-9, to: 500e-9,  // window, m from the region's left end (default: the whole region)
   V: 0,                      // or I, or V and R (see terminals)
   terminal: 'e-',            // the species whose level V is
@@ -889,7 +895,7 @@ ports: [{
 The window holds exactly `to − from` of exchange, electrode and capacitance however the grid
 falls: each node whose box reaches into it takes the part of its box inside. A held level
 (`'equilibrium'`) holds the nodes inside the window, so it needs one there. A window of no width
-is the node at that point, its whole box. Where the window reaches its region's end at a face that
+is the node at that point, its whole box (`to` equal to `from`: one merely narrow holds what its width does). Where the window reaches its region's end at a face that
 carries the species in equilibrium, the level is held there through the face: at the next
 region's first node, the same level by the link (the port's flux counts it all).
 
@@ -911,7 +917,7 @@ species: {
 Links and offsets are those of contacts, per volume instead of per area: 0 by default only for
 the terminal species, and an absolute `mu` for neutral species. A held (`'equilibrium'`) level
 leaves the device's two end nodes to their contacts. A port that exchanges only neutral species
-carries no current, so its voltage means nothing: give it no drive.
+carries no current, so its voltage means nothing: give it no drive (`V`, `R` or `I`) and no `terminal`.
 
 A port driven by a current floats to whatever voltage delivers it: with a conductance `G` per
 volume over a window of width $`w`$, about $`I/(G w)`$ above the window's level for that species. So
@@ -1061,7 +1067,11 @@ above): $`V - \phi`$ at zero charge, with $`\phi`$ the device's own, which a bat
 (beside a bath referenced to Cl⁻, with the library's μ°, it sits near −1.4 V). Omitted, it's 0, so
 a port held at V = 0 there starts charged by 1.4 V; to start it uncharged, give `zeroCharge` = V −
 φ at its window (`sol.phi` after a solve). Capacitances on overlapping windows add (a channel's
-top and bottom gates). A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
+top and bottom gates). At an end whose contact sets $`\phi`$ (`'pinned'` or `'bulk'`), the end node's box is the
+contact's: the port holds no capacitance there (its `sigma` reads 0 there, and its charge and charging
+current leave that box out; the contact holds that charge), so a window reaching that end acts half a
+cell shorter there (across a region pinned at both ends, by one cell: 12.5% of its charge on 8
+uniform cells, 0.1% on the default grading). Grade the cells toward that end, or end the window short of it. A capacitance alone, driven by a current, only charges: it starts uncharged, `advance()`
 follows it, and `solve()` refuses (there's no steady state, as for a gate contact driven by one).
 
 ```js nocheck
@@ -1196,7 +1206,7 @@ advance it, `advance()` and `step()` do.
 ## Grid
 
 `{ hmin, hmax, ratio = 1.2, minCells = 8 }`, per device, overridable per region. With no grid
-options at all, each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length; given any,
+options at all (`grid: {}`, or options set to `undefined`, give none), each region is graded from `hmin` = 1/1000 to `hmax` = 1/20 of its length; given any,
 those defaults are off, so `ratio` or `minCells` alone give uniform cells of length/`minCells` (a
 `ratio` with neither `hmin` nor `hmax` is warned of). Cells grow
 geometrically from `hmin` at both ends of each region up to `hmax`, scaled to fit exactly

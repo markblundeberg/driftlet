@@ -8,11 +8,14 @@ export const WHOLE = Symbol.for('driftlet.whole');
 export const markWhole = (o) => Object.defineProperty(o, WHOLE, { value: true });
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
+// A key set as the object's own: assigned, '__proto__' (a species' name, a JSON key) set the
+// prototype instead, and the key was gone from the copy (Astra's third pass).
+const put = (o, k, v) => (k === '__proto__' ? Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true }) : (o[k] = v));
 
 export function merge(base, patch) {
   if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
   const out = { ...base };
-  for (const [k, v] of Object.entries(patch)) out[k] = isPlainObject(v) && isPlainObject(base[k]) && !v[WHOLE] ? merge(base[k], v) : v;
+  for (const [k, v] of Object.entries(patch)) put(out, k, isPlainObject(v) && Object.hasOwn(base, k) && isPlainObject(base[k]) && !v[WHOLE] ? merge(base[k], v) : v);
   return out;
 }
 
@@ -37,6 +40,6 @@ export function ownCopy(v) {
   if (Array.isArray(v)) return v.map(ownCopy);
   if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v) || Object.getPrototypeOf(v) !== Object.prototype) return v;
   const out = {};
-  for (const [k, x] of Object.entries(v)) out[k] = ownCopy(x);
+  for (const [k, x] of Object.entries(v)) put(out, k, ownCopy(x));
   return v[WHOLE] ? markWhole(out) : out;
 }
