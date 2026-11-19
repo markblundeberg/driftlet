@@ -214,7 +214,10 @@ export function level(sol, halfReaction, { standard = false } = {}) {
 export function electrodeUnbalanced(bath, species) {
   if (!bath || typeof bath !== 'object' || bath.electrode === undefined) return null;
   if (typeof bath.electrode !== 'string' || typeof bath.reference !== 'string') return `bath.electrode is the reference electrode's half-reaction, a string, with bath.reference its ion (as bath(c, half) writes them), got ${JSON.stringify(bath.electrode)}`;
-  const terms = parseEquation(bath.electrode, 'bath.electrode'), e = terms.find((t) => t.name === 'e-'), ion = terms.find((t) => t.name === bath.reference);
+  // (each participant's ν summed over its terms: by its first, M⁺ + e⁻ + e⁻ = M(s) passed and
+  // M⁺ + M⁺ + 2 e⁻ = M₂(s) was refused; Astra's third pass)
+  const terms = Object.entries(stoichiometry(bath.electrode, 'bath.electrode')).map(([name, nu]) => ({ name, nu }));
+  const e = terms.find((t) => t.name === 'e-'), ion = terms.find((t) => t.name === bath.reference);
   if (!e || !ion) return `bath.electrode ${JSON.stringify(bath.electrode)} must exchange e- and the bath's reference species '${bath.reference}'`;
   // (its other participants are fixed, so neutral: a charged one among them, H⁺ in Cu²⁺ + 2H⁺ +
   // 4e⁻ = CuH₂(s), balances the equation but not the offset, which counts the ion's charge alone)

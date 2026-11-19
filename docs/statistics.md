@@ -41,7 +41,7 @@ materials: {
 ```
 
 `statistics` is a list of models, each naming the species it covers. A species belongs to at
-most one model.
+most one model, `ideal` among them.
 
 | Model | Species | $`c(\zeta)`$ | Parameters |
 |---|---|---|---|

@@ -8,7 +8,7 @@ import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
 import { profileAt } from './device.js';
 import { markWhole } from './merge.js';
-import { electrodeUnbalanced, parseEquation } from './equation.js';
+import { electrodeUnbalanced, stoichiometry } from './equation.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -229,7 +229,9 @@ export function bath(c, reference, d = 0, opts = {}) {
   // ν_e = ν_ion·z_ion). AgCl(s) + e⁻ ⇌ Ag(s) + Cl⁻: Cl⁻ sits −μ°(AgCl)/F = 1.138 V above the wire.
   let electrode = 0, balance = null;
   if (isObject(reference) && typeof reference.equation === 'string') {
-    const terms = parseEquation(reference.equation, 'bath: the reference electrode');
+    // (each participant once, its ν summed: repeated, M⁺ + M⁺ + 2 e⁻ = M₂(s) was said to have
+    // 'M+' and 'M+', and M⁺ + e⁻ + e⁻ = M(s) to need electrons on one side; Astra's third pass)
+    const terms = Object.entries(stoichiometry(reference.equation, 'bath: the reference electrode')).map(([name, nu]) => ({ name, nu }));
     const fixed = isObject(reference.fixed) ? reference.fixed : {};
     const electrons = terms.filter((t) => t.name === 'e-');
     const ions = terms.filter((t) => t.name !== 'e-' && fixed[t.name] === undefined);

@@ -230,11 +230,14 @@ console.log(`E_c rises ${(Ec(end) - Ec(0)).toFixed(4)} eV, E_v ${(Ev(end) - Ev(0
   match, is the same device (to 1e-9).
 - **Faces and contacts read the edge**: an alignment (`step`) beside a graded region is between
   the standard levels at its edge, and a bath at a graded end is the material as it is there. A
-  port's bath can't list a species whose $`\mu^\circ`$ or $`c_{\mathrm{ref}}`$ is graded where the
-  port is (a composition outside gives no one level across the window): give its link the level.
+  port's bath reads $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ in its window; where a species' vary across
+  the window, a composition outside gives it no one level, so its link must give the level
+  itself (`mu`, or an `offset`).
 - **Not yet graded**: the $`c_{\mathrm{ref}}`$ of a species under lattice, Debye–Hückel or
   insertion statistics (refused; its $`\mu^\circ`$ and $`D`$ can be, and a Fermi–Dirac species'
-  $`c_{\mathrm{ref}}`$ too, both held to a staircase of Fermi–Dirac layers), a built-in
+  $`c_{\mathrm{ref}}`$ too, both held to a staircase of Fermi–Dirac layers), the $`\mu^\circ`$ of an
+  insertion host's ion or carrier under an `ocv` table (refused: the table sets their level
+  absolutely, and a staircase of layers with other $`\mu^\circ`$ reads the same table), a built-in
   $`D_{\mathrm{inhomog}}(x)`$ within a region (another convention's polarization is fixed charge:
   above), and kinetics (a reaction's rate constants are the material's). `describe()` reports a region's material values.
 
@@ -420,7 +423,7 @@ level but its reactions, and below an exchange current of ~1e-5 A/m² it can't t
 the face a capacitance (`phi: { type: 'capacitive', C }`), as a real electrode has.
 
 **Marcus–Hush–Chidsey kinetics** replaces `alpha` with `lambda`, the reorganization energy (J/mol;
-`units.eV(0.5)` for 0.5 eV), for one electron to or from a metal (its carrier with $`\nu = \pm 1`$):
+`units.eV(0.5)` for 0.5 eV), for one electron to or from a metal (its carrier with $`|\nu z| = 1`$):
 
 ```js nocheck
 { equation: 'Fe3+ + e- = Fe2+', k0: 1e-4, lambda: units.eV(0.5) }
@@ -457,7 +460,7 @@ at equilibrium: k0 already holds the activation energy λ/4 there.
 
 **Interface recombination through traps** (SRH at a face) replaces `k0` and `alpha` with
 `srh: { vn, vp, n1 }`, on a reaction consuming one negative and one positive species and making
-none, such as `'e-(left) + h+(right) = 0'`:
+none, with no fixed participants, such as `'e-(left) + h+(right) = 0'`:
 
 ```math
 r = \frac{n\,p\,(1 - e^{-A/RT})}{(n + n_1)/v_p + (p + p_1)/v_n}, \qquad p_1 = \frac{n\,p\,e^{-A/RT}}{n_1}
@@ -696,7 +699,7 @@ those materials.
 
 **SRH (trap-assisted) recombination** replaces `kf` with `srh`, a map from material names to
 `{ tauN, tauP, n1 }`, on a reaction consuming one negative and one positive species and making
-none (`'e- + h+ = 0'`):
+none, with no fixed participants (`'e- + h+ = 0'`):
 $`r = n p (1 - e^{-A/RT}) / (\tau_p (n + n_1) + \tau_n (p + p_1))`$, with lifetimes in s and $`n_1`$ as
 for [interface SRH](#interfaces) (default the intrinsic level). It's what explicit trap species reduce to when
 the traps are few and fast, without them. Where their charge matters, write them out: two
@@ -784,7 +787,8 @@ contacts: {
   equilibrium with the outside level, and with any statistics it keeps the flux's sign that of
   the level difference (though it isn't then $`v\,(c_{\mathrm{eq}} - c)`$, which saturates). It lies between `'blocked'` (v → 0) and
   `'equilibrium'` (v → ∞): a contact's surface recombination velocity, or thermionic emission
-  over a Schottky barrier (below).
+  over a Schottky barrier (below). Not for a conductor's carrier, whose excess density is zero in
+  its bulk: link it `'equilibrium'`, or by a `conductance` for a contact resistance.
 - `'blocked'`: no flux.
 
 A contact holding several species in equilibrium fixes the composition at its end: with Ag⁺ and
@@ -1107,8 +1111,10 @@ cylinder of radius a has $`2/a`$ of membrane (`area`). Give the port the outside
 level there follows from the composition, $`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$ against
 it, as an `offset` would give it. (Only the linked ions' levels are taken, so the bath needn't list
 or balance the rest, except where the window's statistics couple species, a lattice's or
-Debye–Hückel's: there one ion's level depends on the others', and the bath lists them all. An
-insertion host takes no bath: its ion and carrier have only their combination's level.) A conductance link's current is then $`G\,(V_{i,out} - V_i)`$, which is
+Debye–Hückel's: there one ion's level depends on the others', and the bath lists them all;
+Fermi–Dirac bands are each on their own. An insertion host takes no bath: its ion and carrier
+have only their combination's level. Nor does a conductor, which has no $`\mu^\circ`$ or
+$`c_{\mathrm{ref}}`$: link its carrier.) A conductance link's current is then $`G\,(V_{i,out} - V_i)`$, which is
 $`g\,a_m (E_i - V_m)`$: Hodgkin and Huxley's linear channel, with $`E_i`$ the Nernst potential at the
 inside's concentration there. The kit's `hodgkinHuxley({ T, area })` writes their links so:
 
@@ -1251,7 +1257,9 @@ Gauss's law, without writing them out. The finite volumes integrate over shells,
 is exact as in a slab. Each segment's transport is weighted by its length over $`\int dx/A`$, which
 makes steady diffusion between two nodes exact for any $`A(x)`$ (the $`1/r`$ and $`\ln r`$ profiles
 on any grid). Where $`A`$ vanishes at an end (a sphere's centre, `r0: 0`), the segment takes $`A`$ at
-its middle, and nothing passes the end. Only an end may have $`A = 0`$. Flow (`velocity`) is for
+its middle, and nothing passes the end, so a contact there holds no level or $`\phi`$ (an
+equilibrium link, a bath, or a pinned, bulk or capacitive law is refused): leave it out. Only an
+end may have $`A = 0`$. Flow (`velocity`) is for
 planar devices.
 
 With a cross-section, the solution's currents, contact and port fluxes, terminal currents and
