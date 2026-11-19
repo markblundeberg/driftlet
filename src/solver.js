@@ -283,7 +283,7 @@ export class Solver {
     // φ is undefined in a conductor or an insertion host, and in a charge-free region (no
     // charged species) unless its electrostatic cluster, the regions joined to it by faces that
     // aren't neutral, reaches something that fixes φ: a region with charged species, a gate or
-    // pinned contact, or a face that isn't neutral to a conductor or to a strictly neutral region
+    // pinned contact, a port's capacitance, or a face that isn't neutral to a conductor or to a strictly neutral region
     // with ions. (Else φ there is a free constant.)
     this.phiUndefined = new Uint8Array(nNodes);
     const charged = (mat) => species.some((sp, i) => mat.present[i] && sp.z !== 0);
@@ -296,6 +296,11 @@ export class Solver {
       while (r1 + 1 < regions.length && model.interfaces[r1].phi.type !== 'neutral' && !free(r1 + 1)) r1++;
       let anchor = (r0 === 0 && pins(contacts.left)) || (r1 === regions.length - 1 && pins(contacts.right));
       for (let r = r0; r <= r1; r++) if (charged(materials[regions[r].material])) anchor = true;
+      // A port's capacitance, where its electrode is: a gate electrode on a dielectric. (Left
+      // out, two gates at 0 and 1 V on a charge-free layer left φ NaN and each gate's charge 0,
+      // where ±0.5 is right, unwarned; and a capacitive face between two such layers was made
+      // neutral. Astra's third pass.)
+      for (const port of model.ports) if (port.capacitance && port.region >= r0 && port.region <= r1 && port.active.some((a) => a)) anchor = true;
       // A neighbour across a face that isn't neutral: a conductor (a gate), or a strictly neutral
       // region whose ions fix its φ.
       const fixes = (r) => materials[regions[r].material].conductor || (!materials[regions[r].material].phiFree && charged(materials[regions[r].material]));
@@ -491,6 +496,13 @@ export class Solver {
 
     // The bulk reactions running in each material.
     this.rxsIn = materials.map((_, m) => this.rxs.filter((rx) => rx.kf[m] > 0));
+    // And whether each runs in each region (runsIn[q][x]): somewhere there its rate constant isn't
+    // 0. (By material, a profile 0 over a whole layer still made its species reactive there: a
+    // sealed one's amount, kept by nothing, left the steady system singular; Astra's third pass.)
+    this.runsIn = regions.map((_, q) => Uint8Array.from(this.rxs, (rx) => {
+      for (let g = grid.regionStart[q]; g <= grid.regionEnd[q]; g++) if (rx.kfNode[g] > 0) return 1;
+      return 0;
+    }));
 
     // The boxes whose residuals the bookkeeping reads (contact and port fluxes: the end nodes and
     // every port's window), with the segments and faces that touch them, per region. After each
@@ -513,7 +525,7 @@ export class Solver {
     this.closedEnd = { left: closed('left'), right: closed('right') };
     held[0] = this.closedEnd.left ? 0 : 1;
     held[nNodes - 1] = this.closedEnd.right ? 0 : 1;
-    for (const port of model.ports) if (port.species.some((l) => l.type === 'equilibrium')) port.nodes.forEach((g, w) => port.inside[w] && (held[g] = 1));
+    for (const port of model.ports) for (const nodes of port.held) for (const g of nodes) held[g] = 1; // (the rows its levels replace: port.held, src/device.js)
     this.chargeNode = new Uint8Array(nNodes);
     const neutralFace = (f) => (f === -1 ? this.closedEnd.left : f === model.interfaces.length ? this.closedEnd.right : model.interfaces[f].phi.type === 'neutral');
     regions.forEach((reg, r) => {
@@ -543,10 +555,7 @@ export class Solver {
     this.portHeldEnd = new Uint8Array(2 * n);
     model.ports.forEach((port) => {
       [0, nNodes - 1].forEach((g, k) => {
-        const w = port.nodes.indexOf(g);
-        if (w < 0 || !port.inside[w]) return;
-        const ct = contacts[k === 0 ? 'left' : 'right'];
-        for (let i = 0; i < n; i++) if (port.species[i].type === 'equilibrium' && ct.species[i].type === 'blocked') this.portHeldEnd[k * n + i] = 1;
+        for (let i = 0; i < n; i++) if (port.held[i].includes(g)) this.portHeldEnd[k * n + i] = 1; // (held only where its contact blocks it)
       });
     });
     this.combining = false;
@@ -653,10 +662,9 @@ export class Solver {
         }
         for (let q = r0; q <= r; q++) {
           this.stretchOf[q * n + i] = this.stretches.length;
-          const m = regions[q].material;
-          for (const rx of model.reactions) {
-            if (rx.kf[m] > 0 && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
-          }
+          model.reactions.forEach((rx, x) => {
+            if (this.runsIn[q][x] && [...rx.reactants, ...rx.products].some((p) => p.i === i)) reactive = true;
+          });
         }
         const inside = (port) => port.region >= r0 && port.region <= r;
         const linked = model.ports.flatMap((port, k) => (inside(port) && port.species[i].type !== 'blocked' ? [k] : []));
@@ -728,7 +736,7 @@ export class Solver {
     const join = (ks) => ks.forEach((k) => (group[root(k)] = root(ks[0])));
     const rxns = []; // [stretches, A/RT at the contact's levels, as a function of the side]
     regions.forEach((reg, q) => {
-      for (const rx of this.rxsIn[reg.material]) {
+      for (const rx of this.rxs.filter((_, x) => this.runsIn[q][x])) {
         const ks = rx.sp.map((i) => this.stretchOf[q * n + i]);
         join(ks);
         rxns.push([ks, (side) => rx.sp.reduce((a, i, p) => a + rx.nu[p] * this.contactEta(side, i), rx.fixedA)]);
@@ -817,8 +825,8 @@ export class Solver {
   // What src/laws.js reads (see its contract): the device's structure, never the state.
   _structure() {
     const { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating } = this;
-    const { blockOfNode, blockOfFace, rxsIn, nodeMaterial, phiUndefined } = this;
-    return { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating, blockOfNode, blockOfFace, rxsIn, nodeMaterial, phiUndefined };
+    const { blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined } = this;
+    return { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating, blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined };
   }
 
   // An electrode surface at its starting coverages at node g: η = μ°/RT + ln(θ/θ₀).

@@ -27,9 +27,13 @@
 //                        model.surfaces's (a port's or a face's); surfColOf[surface] its first column
 //   terms, floating      terminals (0 left, 1 right, 2 + k port k) with their drives as they are
 //                        now; the terminals whose voltage is an unknown
-//   blockOfNode, blockOfFace, rxsIn, nodeMaterial, phiUndefined
-//                        the block layout (row o = block·M + slot), bulk reactions by material,
+//   blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined
+//                        the block layout (row o = block·M + slot), bulk reactions by material
+//                        (each with its rate constant at every node, kfNode), whether each runs
+//                        in each region (runsIn[region][reaction]: kfNode > 0 at some node there),
 //                        each node's material, nodes with no φ
+//   (and from the model, a port's ports[k].held[i], the nodes whose level of species i it holds,
+//   and .active, where its electrode has area: src/device.js)
 // (The small predicates below, moves … chargeOnly, read only the fields they destructure; the
 // solver also calls them on itself.)
 //
@@ -58,7 +62,9 @@
 //                  g of `nodes`, Σ w c_i + Σ w Γ a θ_q (a surface's only where surface k is), as it
 //                  was, in place of slot `row` of g's block. Only of still stretches (D = 0 in
 //                  one region: nothing carries them between nodes) that no terminal feeds, and
-//                  surfaces. One law can have several entries, a row per set of nodes.
+//                  surfaces; and of any still stretch, at the nodes where nothing couples it (no
+//                  bulk reaction whose kfNode there is > 0, face reaction, port acting there,
+//                  portNodes, or open contact). One law can have several entries, a row per set of nodes.
 //   islands[]      { stretch, row, flux, weight, outside, speed, bulk, piece?, node?, currents?,
 //                  z? }: a piece
 //                  of a stretch between faces fed by nothing else, or only by its faces' and its
@@ -161,6 +167,16 @@ export function feeds(k, st) {
   return k === 0 ? st.leftOpen : k === 1 ? st.rightOpen : st.linked.includes(k - 2);
 }
 
+// The nodes where a port acts on species i: those whose level of it it holds (port.held[i],
+// src/device.js), every node of its window for an exchange or a conductance, and for a reaction of
+// it, the nodes where its electrode is (port.active: some area there).
+export function portNodes(port, i) {
+  const out = new Set(port.held[i]), link = port.species[i].type;
+  if (link === 'exchange' || link === 'conductance') for (const g of port.nodes) out.add(g);
+  if (port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))) port.nodes.forEach((g, w) => port.active[w] && out.add(g));
+  return [...out];
+}
+
 // Whether a terminal is driven by a current held at zero throughout (no resistance).
 export function noCurrent(t) {
   return t.drive.kind === 'I' && !(t.drive.R > 0) && t.drive.src.value === 0;
@@ -228,8 +244,8 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
     }
   });
   model.regions.forEach((reg, q) => {
-    for (const rx of model.reactions) {
-      if (!(rx.kf[reg.material] > 0)) continue;
+    for (const [x, rx] of model.reactions.entries()) {
+      if (!s.runsIn[q][x]) continue;
       const row = new Float64Array(C);
       for (const p of rx.reactants) row[stretchOf[q * n + p.i]] -= p.nu;
       for (const p of rx.products) row[stretchOf[q * n + p.i]] += p.nu;
@@ -672,16 +688,19 @@ export function findLaws(s) {
   // linking it) keeps its concentration: its balance there is 0 = 0 in a steady state, which
   // holds nothing, and a charged one's level stayed where it was while φ moved (S⁺ beside a face
   // that makes it, the bath moved 0.2 V: S⁺ fell to e^{−0.2/V_T} of itself away from the face).
+  // Touched means coupled, not listed: a bulk reaction where its rate constant there isn't 0 (a
+  // profile 0 over half the layer left X⁺ there alternating ±25% about its level), and a port only
+  // at the nodes it acts on (portNodes: an equilibrium port's fringe nodes, outside what it holds,
+  // let S⁺ fall 7× there; an electrode's where it has no area let S⁺ follow its bath, 0.7 to 49
+  // where it stays at 0.5). (Astra's third pass.)
   for (const st of stretches) {
     if (!still(s, st)) continue;
     const i = st.species, touched = new Set();
-    for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (rxsIn[nodeMaterial[g]].some((rx) => rx.sp.includes(i))) touched.add(g);
+    for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (rxsIn[nodeMaterial[g]].some((rx) => rx.sp.includes(i) && rx.kfNode[g] > 0)) touched.add(g);
     model.interfaces.forEach((itf, f) => {
       for (const rx of itf.reactions) for (const p of rx.part) if (p.i === i) touched.add(p.side === 0 ? grid.regionEnd[f] : grid.regionStart[f + 1]);
     });
-    for (const port of model.ports) {
-      if (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))) for (const g of port.nodes) touched.add(g);
-    }
+    for (const port of model.ports) for (const g of portNodes(port, i)) touched.add(g);
     if (st.leftOpen) touched.add(0);
     if (st.rightOpen) touched.add(nNodes - 1);
     for (const lc of localConstraints) if (lc.row === 1 + i) for (const g of lc.nodes) touched.add(g);
@@ -749,7 +768,10 @@ export function findLaws(s) {
       q0 = q1 + 1;
       if ((p0 === s0 && st.leftOpen) || (q1 === s1 && st.rightOpen)) continue;
       const inside = (q) => q >= p0 && q <= q1;
-      if (model.ports.some((port) => inside(port.region) && (port.species[i].type !== 'blocked' || port.reactions.some((rx) => rx.part.some((p) => p.side === 0 && p.i === i))))) continue;
+      // (by the nodes a port acts on, not its region: a level held at a's last node is held across
+      // the face at b's first, and b, taken for an island, failed its steady solves; Astra's third pass)
+      const ga = grid.regionStart[p0], gb = grid.regionEnd[q1];
+      if (model.ports.some((port) => portNodes(port, i).some((g) => g >= ga && g <= gb))) continue;
       // Its bulk reactions of the species, node by node: each rate is computed directly (r =
       // P(1 − e^{−a})), so it enters the sum as exactly as a face's (a floating p⁺ base whose
       // carriers recombine, Fable 5.1's hunt A: with no island, a cold solve left it 0.148 V off
@@ -788,7 +810,7 @@ export function findLaws(s) {
       if (q1 < s1) faces.push([q1, 1, grid.regionStart[q1 + 1]]);
       for (const [f, , g] of faces) {
         if (model.interfaces[f].links[i].type !== 'equilibrium' || g === 0 || g === nNodes - 1) continue;
-        if (model.ports.some((port) => port.nodes.includes(g))) continue;
+        if (model.ports.some((port) => port.nodes.includes(g) || port.held[i].includes(g))) continue; // (a level held across the face is a row the port took)
         outside.push(blockOfNode[g] * M + 1 + i);
       }
       // Past a face, the stretch's end piece (its contact holds it) can hold the piece far more
@@ -810,7 +832,7 @@ export function findLaws(s) {
         for (let r = sg < 0 ? p0 - 1 : q1 + 1, ff = f; sg < 0 ? r >= s0 : r <= s1; r += sg, ff += sg) {
           const reg = regions[r], mat = model.materials[reg.material], i0 = grid.regionStart[r], i1 = grid.regionEnd[r];
           if (model.interfaces[ff].links[i].type !== 'equilibrium' || model.interfaces[ff].reactions.some((rx) => rx.part.some((p) => p.i === i))) return;
-          if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r)) return;
+          if (mat.conductor || !mat.ideal || reg.velocity !== 0 || reg.mixing > 0 || model.ports.some((port) => port.region === r || port.held[i].some((g) => g >= i0 && g <= i1))) return;
           // (its bulk reactions of the species: summed node by node out to the bottleneck, as the
           // piece's own are)
           const rxs = [];

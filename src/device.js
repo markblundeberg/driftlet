@@ -497,12 +497,6 @@ export function normalizeDevice(def) {
     );
   });
 
-  // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
-  // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.
-  // Regions are coupled across a face by a non-neutral φ law or by any charged species that
-  // crosses; a contact anchors its cluster through a gate, a reaction, or a connected ion.
-  checkAnchors(regions, materials, interfaces, contacts, species, ports);
-
   // --- terminals: the two contacts and every port, each held at a voltage or driven by a current
   const terminals = [
     { name: 'left', kind: 'contact', side: 'left', drive: contacts.left.drive },
@@ -704,10 +698,36 @@ export function normalizeDevice(def) {
     port.lo = Float64Array.from(lo);
     port.hi = Float64Array.from(hi);
     port.inside = Uint8Array.from(inside);
+    // (and where its electrode is: an area profile, ≥ 0 and piecewise linear, that is 0 over a
+    // node's part of the window puts none there, at its ends and every knot between)
+    const none = (p, l, h) => profileAt(p, l) === 0 && profileAt(p, h) === 0 && p.x.every((x, j) => !(x > l && x < h) || p.values[j] === 0);
+    port.active = Uint8Array.from(port.nodes, (g, w) => (port.area?.x && none(port.area, port.lo[w], port.hi[w]) ? 0 : 1));
     need(
       !port.species.some((l) => l.type === 'equilibrium') || inside.some((v) => v),
       `ports[${k}]: the window [${port.from}, ${port.to}] m holds no grid node for its held level; widen it or refine the grid`,
     );
+  });
+  // The nodes whose level of each species a port holds (port.held[i]), found once, here, for the
+  // check below, src/boundaries.js (whose rows they replace), src/solver.js and src/laws.js alike:
+  // the nodes inside its window, but a device end node whose contact links the species (the
+  // contact's business), and with a region's last node, where an equilibrium link carries the
+  // species across the face on its right, held at the next region's first node instead (see _port
+  // in src/boundaries.js). (Each reader had applied these on its own, or not: two ports either side
+  // of a face held one row, the last listed won it, and the other reported the level difference as
+  // its flux, 0.97 mol/(m²·s) out of a closed device; Sol's and Astra's third passes.)
+  ports.forEach((port) => {
+    port.held = species.map((sp, i) => {
+      const out = [];
+      if (port.species[i].type === 'equilibrium') {
+        port.nodes.forEach((g, w) => {
+          if (!port.inside[w]) return;
+          if ((g === 0 && contacts.left.species[i].type !== 'blocked') || (g === grid.nNodes - 1 && contacts.right.species[i].type !== 'blocked')) return;
+          const r = grid.nodeRegion[g];
+          out.push(g === grid.regionEnd[r] && r < interfaces.length && interfaces[r].links[i].type === 'equilibrium' ? grid.regionStart[r + 1] : g);
+        });
+      }
+      return Int32Array.from(out);
+    });
   });
   // A node's level of a species is held by one port: held by two, the row the second replaced was
   // the first's, the last listed won the level, and the other read a sum of level differences as
@@ -715,14 +735,48 @@ export function normalizeDevice(def) {
   species.forEach((sp, i) => {
     const holder = new Int32Array(grid.nNodes).fill(-1);
     ports.forEach((port, k) => {
-      if (port.species[i]?.type !== 'equilibrium') return;
-      port.nodes.forEach((g, w) => {
-        if (!port.inside[w]) return;
-        need(holder[g] < 0, `ports[${k}]: its window overlaps ports[${holder[g]}]'s, and both hold ${sp.name}'s level; a node's level can be held at one value: hold it in one port, or move the windows apart`);
+      for (const g of port.held[i]) {
+        const j = holder[g];
+        need(
+          j < 0,
+          ports[j]?.region === port.region
+            ? `ports[${k}]: its window overlaps ports[${j}]'s, and both hold ${sp.name}'s level; a node's level can be held at one value: hold it in one port, or move the windows apart`
+            : `ports[${k}]: it and ports[${j}] hold ${sp.name}'s level on either side of the face at x = ${grid.x[g].toPrecision(4)} m, which an equilibrium link carries ${sp.name} across, so both hold the one level there; hold it in one port, move a window back from the face, or link ${sp.name} across it otherwise`,
+        );
         holder[g] = k;
-      });
+      }
     });
   });
+  // What a port acts on, now that its window is known: the levels it holds (port.held), its
+  // exchanges, its electrode where it has area (port.active), its capacitance there but in an end
+  // box whose contact sets φ (left to the contact: _portCapacitance, src/boundaries.js). One that
+  // acts on nothing is refused, and one passes current only through what acts. (A capacitance of
+  // no area, or only in a pinned end's box, or a level held only at an end its contact links,
+  // passed for the held terminal a current returns through, and every solve failed "from the
+  // starting state"; Astra's third pass.)
+  const setsPhi = (g) => (g === 0 && ['pinned', 'bulk'].includes(contacts.left.phi.type)) || (g === grid.nNodes - 1 && ['pinned', 'bulk'].includes(contacts.right.phi.type));
+  ports.forEach((port, k) => {
+    const acts = (l, i) => l.type === 'exchange' || l.type === 'conductance' || port.held[i].length > 0;
+    const electrode = port.active.some((a) => a);
+    const reacts = port.reactions.length > 0 && electrode, charges = port.capacitance !== null && port.nodes.some((g, w) => port.active[w] && !setsPhi(g));
+    const why = [
+      port.area && !electrode ? `its electrode's area is 0 throughout its window` : null,
+      port.capacitance && electrode && !charges ? `its capacitance is only in the box of an end node whose contact sets φ` : null,
+      port.species.some((l, i) => l.type === 'equilibrium' && port.held[i].length === 0) ? `the level it holds is at a device end node, which its contact links` : null,
+    ].filter(Boolean);
+    need(reacts || charges || port.species.some(acts), `ports[${k}]: it acts on no node of the device (${why.join('; ')}); widen or move its window, or leave it out`);
+    port.passes = reacts || charges || port.species.some((l, i) => species[i].z !== 0 && acts(l, i));
+    need(port.passes || port.drive.kind === 'V', `ports[${k}].I: this port passes no current (${why.length > 0 ? why.join('; ') : 'it exchanges only neutral species'}), so give it no drive`);
+  });
+  checkLevel(terminals.map((t) => t.drive), terminals.map((t) => (t.kind === 'port' ? ports[t.index] : contacts[t.side])));
+  // Every electrostatically coupled cluster of regions needs an anchor, or its φ (and every
+  // charged level with it) floats: shifting φ by s and each η_i by z_i s changes nothing.
+  // Regions are coupled across a face by a non-neutral φ law or by any charged species that
+  // crosses; a contact anchors its cluster through a gate, a reaction, or a connected ion, and a
+  // port held at a voltage through what it passes. (After the windows: what a port passes is
+  // known only then.) What the ports' drives decide is checked again when only they change.
+  const anchoring = checkAnchors(regions, materials, interfaces, contacts, species, ports);
+  checkPortAnchors(anchoring, ports.map((port) => port.drive), regions);
   // A node's surface belongs to one electrode, and its gates to one membrane.
   const surfaced = new Int32Array(grid.nNodes).fill(-1);
   ports.forEach((port, k) => {
@@ -748,7 +802,7 @@ export function normalizeDevice(def) {
   });
 
   return {
-    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry, surfaces,
+    T, RT, F: FARADAY, species, speciesIndex, materials, materialIndex, regions, interfaces, reactions, contacts, terminals, grid, warnings, ports, geometry, surfaces, anchoring,
   };
 }
 
@@ -1047,6 +1101,7 @@ export function normalizeDrives(def, model) {
   }
   model.ports.forEach((port, k) => need(port.passes || drives[2 + k].kind === 'V', `ports[${k}].I: this port passes no current (it exchanges only neutral species), so give it no drive`));
   checkLevel(drives, [model.contacts.left, model.contacts.right, ...model.ports]);
+  checkPortAnchors(model.anchoring, drives.slice(2), model.regions);
   return drives;
 }
 
@@ -1379,17 +1434,22 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
   });
 }
 
+// Returns the clusters that only ports anchor, for checkPortAnchors: [{ region, ports }], a region
+// of each that needs an anchor, and the ports there that pass current (port.passes, set with the
+// windows), any of which anchors it held at a voltage.
 function checkAnchors(regions, materials, interfaces, contacts, species, ports = []) {
   const nR = regions.length;
   const parent = Array.from({ length: nR }, (_, r) => r);
   const find = (r) => (parent[r] === r ? r : (parent[r] = find(parent[r])));
   interfaces.forEach((itf, f) => {
-    // (a reaction moving charge across the face couples the two sides too)
-    const charged = (rx, side) => rx.part.some((p) => p.side === side && species[p.i].z !== 0);
+    // (a reaction moving charge across the face couples the two sides too; one that moves none,
+    // Σ ν z = 0 on each side, couples nothing: P + N on each side passed for a coupling, and the far
+    // side's φ floated, its solves failing with nothing specific shown; Astra's third pass)
+    const moves = (rx) => rx.part.reduce((t, p) => (p.side === 0 ? t + p.nu * species[p.i].z : t), 0) !== 0;
     const coupled =
       itf.phi.type !== 'neutral' ||
       itf.links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0) ||
-      itf.reactions.some((rx) => charged(rx, 0) && charged(rx, 1));
+      itf.reactions.some(moves);
     if (coupled) parent[find(f)] = find(f + 1);
   });
   const anchors = (ct) =>
@@ -1399,18 +1459,41 @@ function checkAnchors(regions, materials, interfaces, contacts, species, ports =
   const anchored = new Set();
   if (anchors(contacts.left)) anchored.add(find(0));
   if (anchors(contacts.right)) anchored.add(find(nR - 1));
-  for (const port of ports) if (port.reactions.length > 0 || port.capacitance || port.species.some((l, i) => l.type !== 'blocked' && species[i].z !== 0)) anchored.add(find(port.region));
+  // A port anchors its cluster through what it passes, but only held at a voltage: driven by a
+  // current, its voltage floats with the cluster's φ (a port at I: 0, the only one on a region,
+  // was taken for its anchor, and a steady solve settled at the cold start's gauge; Astra's third
+  // pass). Which it is, the drives say: checkPortAnchors, again when only they change.
+  const byPorts = new Map();
+  ports.forEach((port, k) => port.passes && byPorts.set(find(port.region), [...(byPorts.get(find(port.region)) ?? []), k]));
+  const out = [];
   for (let r = 0; r < nR; r++) {
     const mat = materials[regions[r].material];
     const charged = species.some((sp, i) => mat.present[i] && sp.z !== 0);
-    if (!charged) continue; // nothing responds to φ there; it is simply not reported
+    // (and a dielectric holding a port's capacitance, whose φ that defines: see src/solver.js)
+    const gated = !mat.conductor && !mat.phiFree && mat.epsr > 0 && ports.some((p) => p.region === r && p.capacitance && p.active.some((a) => a));
+    if (!charged && !gated) continue; // nothing responds to φ there; it is simply not reported
+    const root = find(r);
+    if (anchored.has(root)) continue;
     need(
-      anchored.has(find(r)),
-      nR === 1 || anchored.size === 0
+      byPorts.has(root),
+      nR === 1 || (anchored.size === 0 && byPorts.size === 0)
         ? 'device has no electrostatic anchor: every species is blocked at both ends and no contact has a ' +
             'capacitive (gate) link, so the potential is undetermined. Add a gate or connect a species.'
         : `regions[${r}] (${regions[r].name}) is electrostatically floating: it is cut off by neutral interfaces ` +
             'with no charged species crossing, and nothing anchors its potential.',
+    );
+    if (!out.some((a) => find(a.region) === root)) out.push({ region: r, ports: byPorts.get(root) });
+  }
+  return out;
+}
+
+// The clusters only ports anchor (checkAnchors): each needs one of them held at a voltage.
+function checkPortAnchors(anchoring, drives, regions) {
+  for (const { region: r, ports } of anchoring) {
+    need(
+      ports.some((k) => drives[k].kind === 'V'),
+      `regions[${r}] (${regions[r].name}) is anchored electrostatically only by ${ports.map((k) => `ports[${k}]`).join(', ')}, driven by a current, which holds no level: ` +
+        "the region's φ, its levels and the port's voltage would float together. Hold one at a voltage V (behind a resistance R if need be), or anchor the region otherwise",
     );
   }
 }

@@ -57,8 +57,9 @@ What `normalizeDevice` returns, which every later stage reads (listed from real 
 - **Top level**: `T`, `RT`, `species` ({ name, z }), `materials`, `regions`, `interfaces` (one per
   face, `interfaces[f]` between `regions[f]` and `regions[f + 1]`), `reactions` (the bulk ones),
   `contacts` ({ left, right }), `ports`, `terminals` (the two contacts, then the ports), `surfaces`,
-  `grid`, `geometry`, `warnings`. (`F`, `speciesIndex` and `materialIndex` are there and read
-  nowhere.)
+  `grid`, `geometry`, `warnings`, `anchoring` (the parts of the device only ports anchor, each
+  { region, ports }, for the drives' check: one of those ports held at a voltage). (`F`,
+  `speciesIndex` and `materialIndex` are there and read nowhere.)
 - **materials[m]**: `name`, `epsr`, and per species index `present`, `D`, `mu0`, `cRef`; `dataT`,
   `mu0T`; the statistics' `models` and `modelOf` (each species' model index, −1 for ideal),
   `ideal`, `phiFree`. A position in a graded region reads it through `gradedAt(mat, reg, x)`.
@@ -79,10 +80,13 @@ What `normalizeDevice` returns, which every later stage reads (listed from real 
 - **contacts.left/right**: `drive`, `species` (per species link { type, offset, … }), `phi`,
   `terminal`, `passes`. **ports[k]**: `name`, `region`, `from`, `to`, `drive`, `terminal`,
   `species`, `passes`, `reactions`, `area`, `surface`, `capacitance`, `gates`, and from the grid
-  `nodes`, `fill`, `inside`, `lo`, `hi`, `surfaceOf`. **terminals[k]**: `name`, `kind`
+  `nodes`, `fill`, `inside`, `lo`, `hi`, `active` (per window node: its electrode has area there),
+  `held` (per species, the nodes whose level the port holds: what boundaries.js, the solver and
+  laws.js all read), `surfaceOf`. **terminals[k]**: `name`, `kind`
   ('contact' or 'port'), `side` or `index`, `drive` ({ kind: 'V' or 'I', src, R }).
-- **Set after the records are built**: `passes` on contacts and ports, a port's window (`nodes`
-  … `inside`) and `surfaceOf`, once the grid exists; and the drives, rewritten in place by
+- **Set after the records are built**: `passes` on contacts and ports (a port's again once its
+  window is known: what acts there), a port's window (`nodes` … `held`) and `surfaceOf`, once
+  the grid exists; and the drives, rewritten in place by
   `Device.set()` when only they change.
 
 ## The solver's state
