@@ -490,14 +490,25 @@ for live demos.
        numbers to check against.
      - **Failure messages that prescribe the next step** (continuation, a smaller first step), as
        the lost-digits warning already does.
-   - If a 2.0 ever renames anything: an optional `version` field in definitions, and errors that
-     name the renames ("`foo` became `bar` in 2.0"), since agents copy old definitions long after
-     the API moves on. (None since 1.0's freeze.)
    - Done: worked examples: the Daniell cell's voltage ledger, and the electrode pages (Frumkin,
      potential steps, the rotating disk, Randles, corrosion, lithium plating, Chidsey's
      monolayer, hydrogen evolution), each checked against theory solved apart from the solver in
      the page's own script (test/demos.test.js). A ledger's division is specific to its
      device family, so it belongs in a worked example, not the library.
+
+## 2.0
+
+What a major version would clean up. Anything 1.x keeps only for compatibility goes here when it
+is kept, so it isn't forgotten; when keeping something would take a contortion, the answer is a
+2.0, not the contortion. With no known users yet (no issues, no dependents), a 2.0 is cheap: cut
+one when this list is worth it.
+
+- Refuse the 1.17 defaults that 1.18 still accepts on fields that mean nothing there: `V: 0` on a
+  port that passes no current, and `fixedCharge`, `velocity` or `mixing` of 0 on a conductor.
+- Frozen species as a named switch, replacing the D → 1e-40 idiom (additive in 1.x; 2.0 can refuse
+  the idiom).
+- With any rename: an optional `version` field in definitions, and errors that name the renames
+  ("`foo` became `bar` in 2.0"), since agents copy old definitions long after the API moves on.
 
 ## Later
 
