@@ -9,7 +9,7 @@
 // defaults for physically meaningful choices: interface alignments, reference concentrations
 // and standard potentials must all be given.
 
-import { DEFAULTS as GRID_DEFAULTS, buildGrid, applyGeometry, crossSection, defaultSpacing } from './grid.js';
+import { DEFAULTS as GRID_DEFAULTS, buildGrid, applyGeometry, crossSection, defaultSpacing, gridGiven } from './grid.js';
 import { FARADAY, GAS_CONSTANT } from './constants.js';
 import { normalizeStatistics, withCRef } from './statistics.js';
 import { DeviceError, shown } from './errors.js';
@@ -48,6 +48,23 @@ function fields(obj, path, allowed) {
   for (const [k, v] of Object.entries(obj)) {
     need(v === undefined || allowed.includes(k), `${path}.${k}: not a field here (${allowed.join(', ')})`);
   }
+}
+
+// An array of the definition's has no holes: forEach and map skip them, so a hole in a waveform's
+// values was accepted as NaN, one in species split the indices ("not present in any material"),
+// and one in regions or ports was a TypeError (Astra's third pass).
+function dense(a, path) {
+  for (let k = 0; k < a.length; k++) need(k in a, `${path}[${k}] is a hole (an empty slot, as in [1, , 2]): give an entry there or close it up`);
+  return a;
+}
+
+// A name given by the definition (a region's, a port's): a string, so that it can't be confused
+// with an index, nor two names with each other (a region named 0 took a port's region: 0 for index
+// 0; ports named 1 and '1' were both accepted, and set({ ports: { 1: … } }) edited both; Astra's
+// third pass).
+function nameOf(v, path) {
+  need(v === undefined || (typeof v === 'string' && v.length > 0), `${path} must be a non-empty string, got ${shown(v)}`);
+  return v;
 }
 
 function finite(v, path) {
@@ -106,11 +123,12 @@ function unresolved(p, grid, r) {
 // A profile against the device's x: { x, values }, piecewise linear between its points and
 // constant beyond its ends (read with profileAt).
 function profile(v, path, what, ok, okText) {
+  const form = `${path} must be a profile { x, values }: two arrays of the same length, positions (m, the device's x) and ${what}`;
+  need(isObject(v), `${form}, got ${shown(v)}`);
   fields(v, path, ['x', 'values']);
-  need(
-    Array.isArray(v.x) && Array.isArray(v.values) && v.x.length > 0 && v.x.length === v.values.length,
-    `${path} must be a profile { x, values }: two arrays of the same length, positions (m, the device's x) and ${what}`,
-  );
+  need(Array.isArray(v.x) && Array.isArray(v.values) && v.x.length > 0 && v.x.length === v.values.length, form);
+  dense(v.x, `${path}.x`);
+  dense(v.values, `${path}.values`);
   v.x.forEach((xk, k) => {
     need(isFiniteNumber(xk) && (k === 0 || xk > v.x[k - 1]), `${path}.x must be finite and strictly increasing, but x[${k}] is ${shown(xk)}`);
   });
@@ -203,6 +221,7 @@ export function normalizeDevice(def) {
 
   // --- species
   need(Array.isArray(def.species) && def.species.length > 0, 'species must be a non-empty array');
+  dense(def.species, 'species');
   const species = [];
   const speciesIndex = new Map();
   def.species.forEach((sp, i) => {
@@ -212,6 +231,9 @@ export function normalizeDevice(def) {
     need(typeof sp.name === 'string' && sp.name.length > 0, `${path}.name must be a non-empty string`);
     need(!speciesIndex.has(sp.name), `${path}.name: duplicate species '${sp.name}'`);
     need(Number.isInteger(sp.z), `${path}.z (charge number) must be an integer, got ${shown(sp.z)}`);
+    // (the solver keeps z as a 32-bit integer: 2³² reached it as 0, 2³¹ as −2³¹; Astra's third
+    // pass. A million is far past any ion's or polyelectrolyte's.)
+    need(Math.abs(sp.z) <= 1e6, `${path}.z (charge number) must be at most 1e6 in size, got ${shown(sp.z)}`);
     const cRef = sp.cRef === undefined ? undefined : positive(sp.cRef, `${path}.cRef`);
     speciesIndex.set(sp.name, i);
     species.push({ name: sp.name, z: sp.z, cRef });
@@ -258,7 +280,7 @@ export function normalizeDevice(def) {
       cRef[i] = positive(c, `${spath}.cRef`);
     }
     const m = { name: mname, epsr, present, D, mu0, cRef, dataT, mu0T };
-    const st = normalizeStatistics({ ...m, statistics: mat.statistics }, path, species, speciesIndex, RT, { need, finite, positive });
+    const st = normalizeStatistics({ ...m, statistics: mat.statistics }, path, species, speciesIndex, RT, { need, finite, positive, dense });
     m.models = st.models;
     m.modelOf = st.modelOf;
     m.ideal = st.models.length === 0;
@@ -268,6 +290,8 @@ export function normalizeDevice(def) {
     materials.push(m);
   }
   // (an electrode's carrier can live outside the device: a reacting port's terminal species)
+  need(def.ports === undefined || Array.isArray(def.ports), 'ports must be an array');
+  dense(def.ports ?? [], 'ports');
   const outside = (sp) => (def.ports ?? []).some((p) => p?.terminal === sp.name && Array.isArray(p.reactions) && p.reactions.length > 0);
   species.forEach((sp, i) => {
     const reacting = (def.ports ?? []).some((p) => Array.isArray(p?.reactions) && p.reactions.length > 0);
@@ -282,10 +306,12 @@ export function normalizeDevice(def) {
 
   // --- regions
   need(Array.isArray(def.regions) && def.regions.length > 0, 'regions must be a non-empty array');
+  dense(def.regions, 'regions');
   const regions = def.regions.map((reg, r) => {
     const path = `regions[${r}]`;
     need(isObject(reg), `${path} must be an object`);
     fields(reg, path, ['name', 'material', 'length', 'fixedCharge', 'c0', 'velocity', 'mixing', 'grid', 'grade']);
+    nameOf(reg.name, `${path}.name`);
     need(materialIndex.has(reg.material), `${path}.material: unknown material ${JSON.stringify(reg.material)}`);
     const length = positive(reg.length, `${path}.length`);
     // Fixed charge (C/m³): a number, or a profile { x, values } against the device's x (graded
@@ -303,9 +329,11 @@ export function normalizeDevice(def) {
     }
     const mat = materials[materialIndex.get(reg.material)];
     if (mat.conductor) {
-      need(!anyFixed, `${path}.fixedCharge: a conductor region is neutral in bulk`);
+      // (by presence, not effect: a fixedCharge of 0, or velocity: 0, says the writer took the
+      // region for something else, and passed; Astra's third pass)
+      need(reg.fixedCharge === undefined || reg.fixedCharge === 0, `${path}.fixedCharge: a conductor region is neutral in bulk, so it takes no fixed charge`); // (0, the default, as 1.17 took it)
       need(reg.c0 === undefined, `${path}.c0: a conductor region has no composition to give, only its carrier's level`);
-      need(velocity === 0 && mixing === 0, `${path}: a conductor region has no flow or mixing, only conduction`);
+      need([undefined, 0].includes(reg.velocity) && [undefined, 0].includes(reg.mixing), `${path}.${![undefined, 0].includes(reg.velocity) ? 'velocity' : 'mixing'}: a conductor region has no flow or mixing, only conduction`); // (0 accepted, as 1.17 took it)
       // Nothing is stored inside a metal (its charge is on its faces), so its Fermi level is
       // exactly linear across it, and one cell is exact.
       need(reg.grid === undefined, `${path}.grid: a conductor region is a single cell (exact for Ohm's law), so it takes no grid options`);
@@ -349,9 +377,10 @@ export function normalizeDevice(def) {
     }
     // A graded region: a species' μ° (J/mol), cRef (mol/m³) and D (m²/s) as profiles { x, values }
     // against the device's x, in place of the material's, and the region's relative permittivity
-    // (grade.epsr). μ° and cRef are sampled at each node, D and ε at each segment's midpoint. μ°
-    // and cRef of ideal species only; nothing in a metal; nothing that would switch a species'
-    // motion or the region's electrostatics on or off (a D or ε graded where the material's is 0).
+    // (grade.epsr). μ° and cRef are sampled at each node, D and ε at each segment's midpoint. A
+    // cRef of an ideal or Fermi–Dirac species only (μ° and D under the statistics the checks below
+    // let through); nothing in a metal; nothing that would switch a species' motion or the
+    // region's electrostatics on or off (a D or ε graded where the material's is 0).
     const grade = new Array(nSpecies).fill(null);
     let gradeEpsr = null;
     if (reg.grade !== undefined) {
@@ -409,7 +438,7 @@ export function normalizeDevice(def) {
       mixing,
       // With no grid options at all, each region is graded toward its ends: fine where profiles
       // are steep (double layers, depleted electrodes), coarse inside.
-      grid: reg.grid ?? (def.grid === undefined ? defaultSpacing(length) : undefined),
+      grid: gridGiven(reg.grid) ? reg.grid : gridGiven(def.grid) ? undefined : defaultSpacing(length),
       cells: mat.conductor ? [length] : undefined,
     };
   });
@@ -419,7 +448,8 @@ export function normalizeDevice(def) {
   // default was 1 nm at the ends, unwarned (Fable round 5's review of src/device.js).
   regions.forEach((reg, r) => {
     if (reg.cells) return;
-    const g = { ...(def.grid ?? {}), ...(def.regions[r].grid ?? {}) };
+    const defined = (o) => Object.fromEntries(Object.entries(isObject(o) ? o : {}).filter(([, v]) => v !== undefined));
+    const g = { ...defined(def.grid), ...defined(def.regions[r].grid) };
     if (g.ratio === undefined || g.hmin !== undefined || g.hmax !== undefined || g.hLeft !== undefined || g.hRight !== undefined) return;
     warnings.push(
       `regions[${r}].grid: ratio grades between hmin and hmax, and neither is given, so the cells are uniform, ${(reg.length / (g.minCells ?? GRID_DEFAULTS.minCells)).toExponential(1)} m (length/minCells); ` +
@@ -456,6 +486,7 @@ export function normalizeDevice(def) {
 
   // --- bulk reactions
   need(def.bulkReactions === undefined || Array.isArray(def.bulkReactions), 'bulkReactions must be an array');
+  dense(def.bulkReactions ?? [], 'bulkReactions');
   const reactions = (def.bulkReactions ?? []).map((rdef, k) =>
     normalizeReaction(rdef, `bulkReactions[${k}]`, species, speciesIndex, materials, materialIndex, regions, RT),
   );
@@ -470,7 +501,6 @@ export function normalizeDevice(def) {
   };
 
   // --- internal ports (outside phases attached over windows of interior nodes)
-  need(def.ports === undefined || Array.isArray(def.ports), 'ports must be an array');
   const ports = (def.ports ?? []).map((pdef, k) => normalizePort(pdef, `ports[${k}]`, regions, materials, species, speciesIndex, RT));
 
   // A material whose D and ε are for the device's T but whose μ° aren't (aqueous(names, { T })):
@@ -570,10 +600,15 @@ export function normalizeDevice(def) {
     const profs = [];
     reg.grade.forEach((gr, i) => gr && ['mu0', 'cRef', 'D'].forEach((k) => gr[k] && profs.push([`${species[i].name}.${k}`, gr[k]])));
     if (reg.gradeEpsr) profs.push(['epsr', reg.gradeEpsr]);
+    // (One that grades nothing of its region: flat across it, though not everywhere. Read from
+    // where it lies alone, a table on [0, length] was taken for one in the layer's own x, and a
+    // region on [0.1, 1.1] graded as written by the device's [0, 1] was warned of; Astra's third
+    // pass. A layer's-own table that overlaps its region grades part of it, and can't be told
+    // from a device's: not warned.)
     const missed = profs.filter(([, pr]) => {
       if (pr.values.every((v) => v === pr.values[0])) return false;
-      const lo = pr.x[0], hi = pr.x[pr.x.length - 1];
-      return hi <= a || lo >= b || (a > 0 && lo === 0 && Math.abs(hi - reg.length) <= 1e-9 * reg.length);
+      const v0 = profileAt(pr, a);
+      return profileAt(pr, b) === v0 && pr.x.every((t, k) => !(t > a && t < b) || pr.values[k] === v0);
     });
     if (missed.length > 0) {
       const [, pr] = missed[0];
@@ -643,6 +678,17 @@ export function normalizeDevice(def) {
       // and that tail over another material isn't light lost; nor is a table of one value, "the
       // same wherever the material is". Both warned falsely at first: the re-check.)
       if (!pr || pr.values.every((v) => v === pr.values[0])) return;
+      // (and one that is zero over all of the material, a pulse of light written past the device's
+      // end, runs nowhere: it passed the test below, which reads only the table's span on the
+      // device, unwarned; Astra's third pass)
+      const where = regions.flatMap((reg, r) => (reg.material === m ? [[grid.x[grid.regionStart[r]], grid.x[grid.regionEnd[r]]]] : []));
+      if (where.length > 0 && !(where.reduce((s, [a, b]) => s + integ(pr, a, b), 0) > 0)) {
+        warnings.push(
+          `bulkReactions[${k}].kf.${materials[m].name}: the profile (from x = ${pr.x[0].toExponential(2)} to ${pr.x[pr.x.length - 1].toExponential(2)} m) is zero wherever ${materials[m].name} is, so the reaction runs nowhere. ` +
+            `Its x is the device's (from its left end, 0 to ${grid.length.toExponential(2)} m), not a layer's.`,
+        );
+        return;
+      }
       const lo = Math.max(grid.x[0], pr.x[0]), hi = Math.min(grid.x[grid.nNodes - 1], pr.x[pr.x.length - 1]);
       if (!(hi > lo)) return;
       const all = integ(pr, lo, hi);
@@ -690,20 +736,22 @@ export function normalizeDevice(def) {
   // reach into it, each with the part of its box inside (fill, by length) and that part's ends
   // (lo, hi), so a window holds to − from of electrode, capacitance or exchange however the grid
   // falls. A held level holds the nodes inside the window (inside). A window of no width is the
-  // node there, its whole box.
+  // node there, its whole box: only one given so, to === from (by a round-off tolerance, a window
+  // 5.6e-16 m wide held a whole box, 0.25 m of exchange; Astra's third pass). The tolerance only
+  // matches nodes, and drops a box's sliver of round-off (one 1e-3 of a window narrower still).
   const Acs = geometry.type !== 'planar' ? crossSection(geometry) : null;
   ports.forEach((port, k) => {
     const nodes = [], fill = [], lo = [], hi = [], inside = [];
     const r0 = grid.regionStart[port.region], r1 = grid.regionEnd[port.region], x0 = grid.x[r0];
-    const tol = 1e-15 * port.span, a = x0 + port.from, b = x0 + port.to;
+    const tol = 1e-15 * port.span, a = x0 + port.from, b = x0 + port.to, point = port.to === port.from, sliver = Math.min(tol, 1e-3 * (b - a));
     for (let g = r0; g <= r1; g++) {
       const x = grid.x[g], bl = g > r0 ? x - grid.segLength[g - 1] / 2 : x, br = g < r1 ? x + grid.segLength[g] / 2 : x;
       const isIn = x >= a - tol && x <= b + tol;
       const l = Math.max(bl, a), h = Math.min(br, b);
-      if (b - a <= tol ? !isIn : !(h - l > tol)) continue;
+      if (point ? !isIn : !(h - l > sliver)) continue;
       nodes.push(g);
       inside.push(isIn ? 1 : 0);
-      if (b - a <= tol) {
+      if (point) {
         fill.push(1);
         lo.push(bl);
         hi.push(br);
@@ -840,6 +888,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
   const nu = rdef.nu ?? equationStoichiometry(rdef.equation, `${path}.equation`);
   const st = stoichiometry(nu, rdef.equation === undefined ? `${path}.nu` : `${path}.equation`, rdef.fixed, `${path}.fixed`, species, speciesIndex, RT);
   need(st.list.length > 0, `${path}: no mobile participants`);
+  checkFixed(rdef.fixed, `${path}.fixed`, st.used, speciesIndex);
   need(st.charge === 0, `${path}: charge is not balanced (Σ ν z = ${st.charge})`);
   // SRH kinetics instead: srh maps material names to { tauN, tauP, n1 }; or Auger: auger maps
   // them to { Cn, Cp }.
@@ -913,7 +962,7 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
   fixed ??= {};
   need(isObject(map), `${path} must map participants to signed stoichiometric coefficients (ν < 0 consumed)`);
   need(isObject(fixed), `${fixedPath} must map fixed-activity participants to their μ (J/mol)`);
-  const list = [];
+  const list = [], used = [];
   let fixedA = 0, charge = 0, nFixed = 0;
   for (const [name, nu] of Object.entries(map)) {
     need(Number.isInteger(nu) && nu !== 0, `${path}.${name} must be a non-zero integer, got ${shown(nu)}`);
@@ -923,15 +972,31 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
       charge += nu * species[i].z;
     } else {
       need(
-        fixed[name] !== undefined,
+        Object.hasOwn(fixed, name) && fixed[name] !== undefined,
         `${path}.${name}: not a species, so give its μ in ${fixedPath} (fixed-activity participants are neutral)` +
           (/^\d+\D/.test(name) ? `; if ${name.match(/^\d+/)[0]} is a coefficient, put a space after it` : ''),
       );
       fixedA -= (nu * finite(fixed[name], `${fixedPath}.${name}`)) / RT;
       nFixed++;
+      used.push(name);
     }
   }
-  return { list, fixedA, charge, nFixed };
+  return { list, fixedA, charge, nFixed, used };
+}
+
+// Every entry of a reaction's fixed is one of its fixed participants (used, the names its
+// stoichiometry took from fixed): one it doesn't name (a misspelling), or a species (whose level is
+// the device's, so its entry is ignored), was accepted and meant nothing (Astra's third pass).
+function checkFixed(fixed, fixedPath, used, speciesIndex) {
+  for (const [name, mu] of Object.entries(fixed ?? {})) {
+    if (mu === undefined || used.includes(name)) continue;
+    need(
+      false,
+      speciesIndex.has(name)
+        ? `${fixedPath}.${name}: '${name}' is a species of the device, whose level is its own, so a μ for it here would be ignored; fixed is for participants that aren't species (a solid, the solvent, a gas at a set pressure)`
+        : `${fixedPath}.${name}: not a participant of the reaction; fixed gives the μ of each participant that isn't a species`,
+    );
+  }
 }
 
 // Reactions at a face, Butler–Volmer, with participants on either side (signed stoichiometry
@@ -955,6 +1020,7 @@ function stoichiometry(map, path, fixed, fixedPath, species, speciesIndex, RT) {
 // an equation (or on either side's map), as at an electrode port.
 function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, RT, surface = [], surfaceSide = -1) {
   need(idef.reactions === undefined || Array.isArray(idef.reactions), `${where}.reactions must be an array`);
+  dense(idef.reactions ?? [], `${where}.reactions`);
   const onSurface = (name) => surface.findIndex((sp) => sp.name === name);
   return (idef.reactions ?? []).map((rdef, k) => {
     const rpath = `${where}.reactions[${k}]`;
@@ -980,7 +1046,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
         }
       }
     }
-    const part = [];
+    const part = [], used = [];
     let fixedA = 0, charge = 0, nFixed = 0;
     for (const [key, mat] of [['left', matL], ['right', matR]]) {
       const st = stoichiometry(sides[key], rdef.equation === undefined ? `${rpath}.${key}` : `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
@@ -991,7 +1057,9 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       fixedA += st.fixedA;
       charge += st.charge;
       nFixed += st.nFixed;
+      used.push(...st.used);
     }
+    checkFixed(rdef.fixed, `${rpath}.fixed`, used, speciesIndex);
     need(part.length > 0 || surf.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
     need(surf.length === 0 || (rdef.vmax === undefined && rdef.K === undefined && rdef.srh === undefined), `${rpath}: a reaction of the face's surface is Butler–Volmer or Marcus–Hush–Chidsey`);
@@ -1086,6 +1154,8 @@ function normalizeSource(v, path) {
   need(isObject(v), `${path} must be a number or a waveform { t: [...], values: [...], repeat }`);
   fields(v, path, ['t', 'values', 'repeat']);
   need(Array.isArray(v.t) && Array.isArray(v.values) && v.t.length >= 1 && v.t.length === v.values.length, `${path}: t and values need the same length, at least 1`);
+  dense(v.t, `${path}.t`);
+  dense(v.values, `${path}.values`);
   v.t.forEach((t, k) => {
     finite(t, `${path}.t[${k}]`);
     need(k === 0 || t >= v.t[k - 1], `${path}.t must not decrease`);
@@ -1124,7 +1194,9 @@ export function normalizeDrives(def, model) {
   for (const [k, side] of [[0, 'left'], [1, 'right']]) {
     need(model.contacts[side].passes || drives[k].kind === 'V', `contacts.${side}.I: this contact passes no current (no linked species, no gate)`);
   }
-  model.ports.forEach((port, k) => need(port.passes || drives[2 + k].kind === 'V', `ports[${k}].I: this port passes no current (it exchanges only neutral species), so give it no drive`));
+  model.ports.forEach((port, k) => {
+    for (const key of ['I', 'V', 'R']) need(port.passes || def.ports[k]?.[key] === undefined || (key === 'V' && def.ports[k].V === 0), `ports[${k}].${key}: this port passes no current (it exchanges only neutral species), so it has no voltage: give it no drive`);
+  });
   checkLevel(drives, [model.contacts.left, model.contacts.right, ...model.ports]);
   checkPortAnchors(model.anchoring, drives.slice(2), model.regions);
   return drives;
@@ -1236,7 +1308,10 @@ function normalizeGeometry(g) {
   }
   fields(g, 'geometry', ['type', 'r0']);
   need(['planar', 'spherical', 'cylindrical'].includes(g.type), "geometry.type must be 'planar', 'spherical' or 'cylindrical'");
-  if (g.type === 'planar') return { type: 'planar' };
+  if (g.type === 'planar') {
+    need(g.r0 === undefined, "geometry.r0: a planar device has no centre; r0 is for 'spherical' or 'cylindrical'"); // (taken silently before; Astra's third pass)
+    return { type: 'planar' };
+  }
   const r0 = g.r0 === undefined ? 0 : nonNegative(g.r0, 'geometry.r0 (m, the radius at x = 0)');
   return { type: g.type, r0 };
 }
@@ -1252,6 +1327,7 @@ function normalizeGeometry(g) {
 function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT) {
   need(isObject(pdef), `${path} must be an object`);
   fields(pdef, path, ['name', 'region', 'from', 'to', 'V', 'I', 'R', 'terminal', 'species', 'reactions', 'area', 'surface', 'capacitance', 'gates', 'bath']);
+  nameOf(pdef.name, `${path}.name`);
   let r;
   if (Number.isInteger(pdef.region)) r = pdef.region;
   else {
@@ -1371,10 +1447,14 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   // One that exchanges only neutral species (an O₂ supply) carries no current, so its voltage is
   // nobody's business: it can't be driven by one.
   const passes = reactions.length > 0 || capacitance !== null || links.some((l, i) => l.type !== 'blocked' && species[i].z !== 0);
-  need(passes || drive.kind === 'V', `${path}.I: this port passes no current (it exchanges only neutral species), so give it no drive`);
+  // (nor a V, R or terminal: accepted, they meant nothing, and said the writer took it for
+  // something else; Astra's third pass. V: 0, the default, means nothing either way, and 1.17
+  // took it: accepted still, as working code.)
+  for (const key of ['I', 'V', 'R', 'terminal']) need(passes || pdef[key] === undefined || (key === 'V' && pdef.V === 0), `${path}.${key}: this port passes no current (it exchanges only neutral species), so it has no voltage: give it no ${key === 'terminal' ? 'terminal' : 'drive'}`);
   let area = null;
   if (reactions.length > 0 || capacitance !== null) {
     need(pdef.area !== undefined, `${path}.area: give the electrode's area per volume of the window (m²/m³, e.g. 1/h for a film of thickness h on it), a number or a profile`);
+    need(typeof pdef.area === 'number' || isObject(pdef.area), `${path}.area must be the electrode's area per volume (m²/m³), a number or a profile { x, values }, got ${shown(pdef.area)}`);
     area = typeof pdef.area === 'number' ? { value: positive(pdef.area, `${path}.area (m²/m³)`) } : profile(pdef.area, `${path}.area`, 'areas per volume (m²/m³)', (a) => a >= 0, 'an area per volume ≥ 0');
   } else need(pdef.area === undefined, `${path}.area: only an electrode (a port with reactions or a capacitance) has an area`);
   need(surface.length === 0 || reactions.length > 0, `${path}.surface: only an electrode (a port with reactions) has a surface`);
@@ -1419,6 +1499,7 @@ function electrodeSurface(pdef, path, speciesIndex) {
 // electrode: part side 0 for the region's species, side 1 for the carrier.
 function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, surface = []) {
   need(pdef.reactions === undefined || Array.isArray(pdef.reactions), `${path}.reactions must be an array`);
+  dense(pdef.reactions ?? [], `${path}.reactions`);
   const list = pdef.reactions ?? [];
   if (list.length === 0) return [];
   need(!mat.conductor, `${path}.reactions: a port on a conductor is a wire; reactions belong on a face, or on a port in the solution`);
@@ -1450,12 +1531,15 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
       else if (name === carrier) electrode[name] = nu;
       else outside[name] = nu;
     }
+    const used = [];
     for (const [map, side, index] of [[sides.left, 0, speciesIndex], [electrode, 1, speciesIndex], [outside, 1, new Map()]]) {
       const st = stoichiometry(map, `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, index, RT);
       for (const { i, nu } of st.list) part.push({ i, nu, side });
       fixedA += st.fixedA;
       charge += st.charge;
+      used.push(...st.used);
     }
+    checkFixed(rdef.fixed, `${rpath}.fixed`, used, speciesIndex);
     need(part.some((p) => p.side === 1), `${rpath}: no '${carrier}' from the electrode takes part`);
     need(part.some((p) => p.side === 0 || p.side === 2), `${rpath}: no species of the port's region or its surface takes part`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
@@ -1559,7 +1643,9 @@ function normalizeInterface(idef, f, regions, materials, species, speciesIndex, 
   // Electrostatic law across the face. 'pinned': φ jumps by the alignment (exact when the grid
   // resolves the double layers). 'neutral': no charge at the face (D = 0) and a free jump, the
   // macroscopic limit; the alignment then drops out. 'capacitive': a Helmholtz layer,
-  // D = C (Δφ − dipole). Between two ε = 0 (strictly neutral) materials the default is neutral.
+  // D = −C (Δφ − dipole), D toward +x and Δφ = φ_R − φ_L, as src/boundaries.js and the docs have
+  // it (this said +C; Astra's third pass). Between two ε = 0 (strictly neutral) materials the
+  // default is neutral.
   if (matL.conductor || matR.conductor) return normalizeConductorInterface(idef, where, matL, matR, species, speciesIndex, RT);
   need(idef.surface === undefined, `${where}.surface: a surface is an electrode's, at a face with a metal on one side`);
   fields(idef, where, ['phi', 'dipole', 'step', 'sheetCharge', 'species', 'reactions', 'gates', 'diffuse']);
@@ -2052,6 +2138,8 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     phi = { type: 'bulk' };
   }
 
+  // (with no φ law, a closed contact took it and was neutral, as if it weren't there; Astra's third pass)
+  need(cdef.zeroCharge === undefined || cdef.phi !== undefined || cdef.bath !== undefined, `${path}.zeroCharge: only a capacitive or pinned φ law takes an alignment, and this contact gives no phi (it is then 'neutral')`);
   if (cdef.phi !== undefined) {
     const raw = typeof cdef.phi === 'string' ? { type: cdef.phi } : cdef.phi;
     need(isObject(raw), `${path}.phi must be a link type string or an object with a type`);

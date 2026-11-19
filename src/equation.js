@@ -53,8 +53,11 @@ export function parseEquation(text, path = 'equation') {
  * @returns {Record<string, number>}
  */
 export function stoichiometry(text, path = 'equation') {
-  const nu = {};
-  const side = {};
+  // (null prototypes: a species named like a property of Object.prototype read it, 'toString = X'
+  // said toString was on both sides, and '__proto__' set the prototype and was dropped; Astra's
+  // third pass)
+  const nu = Object.create(null);
+  const side = Object.create(null);
   for (const t of parseEquation(text, path)) {
     if (side[t.name] !== undefined && side[t.name] !== Math.sign(t.nu)) {
       fail(`${path}: '${t.name}' appears on both sides of ${JSON.stringify(text)}; give the net reaction`);
@@ -62,7 +65,7 @@ export function stoichiometry(text, path = 'equation') {
     side[t.name] = Math.sign(t.nu);
     nu[t.name] = (nu[t.name] ?? 0) + t.nu;
   }
-  return nu;
+  return { ...nu }; // (a plain object, its keys its own: '__proto__' among them, by the spread)
 }
 
 /**
@@ -78,9 +81,11 @@ export function stoichiometry(text, path = 'equation') {
  * @returns {{ left: Record<string, number>, right: Record<string, number> }}
  */
 export function faceSides(terms, left, right, fixed, path) {
-  const sides = { left: {}, right: {} };
+  // (null prototypes, as in stoichiometry: '__proto__ = X' at a face lost its left side and ran as
+  // 0 = X, the total falling from 2 to 1.67, converged; Astra's third pass)
+  const sides = { left: Object.create(null), right: Object.create(null) };
   const fixedSide = right.conductor && !left.conductor ? 'right' : 'left';
-  const signs = {};
+  const signs = Object.create(null);
   const put = (side, name, nu) => {
     const key = `${side}:${name}`;
     if (signs[key] !== undefined && signs[key] !== Math.sign(nu)) fail(`${path}: '${name}' (${side}) appears on both sides of the equation; give the net reaction`);
@@ -90,7 +95,7 @@ export function faceSides(terms, left, right, fixed, path) {
   for (const t of terms) {
     // (a species the side holds is that species, given in fixed or not, as for bulk reactions)
     const inL = left.holds(t.name), inR = right.holds(t.name);
-    if (!inL && !inR && fixed?.[t.name] !== undefined) {
+    if (!inL && !inR && fixed && Object.hasOwn(fixed, t.name) && fixed[t.name] !== undefined) {
       put(fixedSide, t.name, t.nu);
       continue;
     }
@@ -128,7 +133,7 @@ export function faceSides(terms, left, right, fixed, path) {
         (/^\d+\D/.test(t.name) ? `; if ${t.name.match(/^\d+/)[0]} is a coefficient, put a space after it` : ''),
     );
   }
-  return sides;
+  return { left: { ...sides.left }, right: { ...sides.right } };
 }
 
 /**

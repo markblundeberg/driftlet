@@ -89,8 +89,10 @@ test('a grid field given as undefined is as if not given', () => {
   const def = { species: [{ name: 'X', z: 0, cRef: 1 }], materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } }, regions: [{ material: 'm', length: 1e-6 }], contacts: { left: { phi: 'neutral' }, right: { phi: 'neutral' } }, grid: { minCells: 20 } };
   const d = new Device(def);
   assert.equal(d.grid.nNodes, 21);
+  // (no option left given: the default grading, as with no grid at all; it was 8 uniform cells,
+  // the default turned off by an object of no options; Astra's third pass)
   d.set({ grid: { minCells: undefined } });
-  assert.equal(d.grid.nNodes, 9);
+  assert.equal(d.grid.nNodes, new Device({ ...def, grid: undefined }).grid.nNodes);
 });
 
 test('a grid far past any demo is refused before it is built: a length in µm given as m', () => {

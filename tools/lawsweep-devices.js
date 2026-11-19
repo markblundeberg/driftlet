@@ -165,7 +165,7 @@ function device3(c) {
   const water = { epsr: 0, species: { 'B-': { D: 1e-9, mu0: 0 }, 'C2+': { D: 1e-9, mu0: 0 } } };
   const c0 = { 'B-': 474.7252163975241, 'C2+': 237.36260819876205 };
   const species = [{ name: 'e-', z: -1 }, { name: 'B-', z: -1, cRef: 1000 }, { name: 'C2+', z: 2, cRef: 1000 }];
-  const reactions = [{ equation: 'B- = C2+ + 3 e-', k0: c.fast, fixed: { 'S(s)': 0 } }];
+  const reactions = [{ equation: 'B- = C2+ + 3 e-', k0: c.fast }];
   if (c.slow !== 'none') reactions.push({ equation: 'B- = e- + S(s)', k0: c.slow, fixed: { 'S(s)': -4108 } });
   const face = c.face === 'equilibrium' ? {} : { species: { 'B-': 'blocked' }, reactions: [{ equation: 'B-(left) = B-(right)', k0: c.face }] };
   const drive = { I0: { I: 0 }, I: { I: 2e-16 }, R: { V: 0.2, R: 1e12 } }[c.drive];

@@ -487,7 +487,7 @@ export function withCRef(md, cRefAll) {
 }
 
 export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
-  const { need, finite, positive } = h;
+  const { need, finite, positive, dense } = h;
   const n = species.length;
   const modelOf = new Int32Array(n).fill(-1);
   // (claimed apart from modelOf, which an ideal model leaves at −1: [ideal, lattice] was accepted
@@ -497,6 +497,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
   const warnings = [];
   const list = mat.statistics ?? [];
   need(Array.isArray(list), `${path}.statistics must be an array of statistics models`);
+  dense(list, `${path}.statistics`);
   list.forEach((sdef, m) => {
     const sp = `${path}.statistics[${m}]`;
     const fail = (msg) => need(false, `${sp}: ${msg}`);
@@ -513,6 +514,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
     }[sdef.type];
     for (const k of Object.keys(sdef)) need(k === 'type' || k === 'species' || allowed.includes(k), `${sp}.${k}: not a field of ${/^[aeiou]/.test(sdef.type) ? 'an' : 'a'} ${sdef.type} model (${['type', 'species', ...allowed].join(', ')})`);
     need(Array.isArray(sdef.species) && sdef.species.length > 0, `${sp}.species must be a non-empty array of species names`);
+    dense(sdef.species, `${sp}.species`);
     const idx = sdef.species.map((name, a) => {
       need(speciesIndex.has(name), `${sp}.species[${a}]: unknown species ${JSON.stringify(name)}`);
       const i = speciesIndex.get(name);
@@ -543,7 +545,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
         const cMax = positive(sdef.cMax, `${sp}.cMax`);
         const A = sdef.A ?? [];
         need(Array.isArray(A), `${sp}.A must be an array of Redlich–Kister coefficients (J/mol)`);
-        A.forEach((v, q) => finite(v, `${sp}.A[${q}]`));
+        dense(A, `${sp}.A`).forEach((v, q) => finite(v, `${sp}.A[${q}]`));
         model = redlichKisterModel(idx, cRef, cMax, redlichKisterOccupancy(A, cMax, cRef[0], RT, fail));
         break;
       }
@@ -580,6 +582,8 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
           need(t !== null && typeof t === 'object' && Array.isArray(t.x) && Array.isArray(t.E), `${sp}.ocv must be { x: [...], E: [...], muRef }`);
           for (const k of Object.keys(t)) need(['x', 'E', 'muRef'].includes(k), `${sp}.ocv.${k}: not a field (x, E, muRef)`);
           need(t.x.length >= 2 && t.x.length === t.E.length, `${sp}.ocv: x and E need the same length, at least 2`);
+          dense(t.x, `${sp}.ocv.x`);
+          dense(t.E, `${sp}.ocv.E`);
           t.x.forEach((v, q) => {
             finite(v, `${sp}.ocv.x[${q}]`);
             need(v > 0 && v < 1, `${sp}.ocv.x[${q}] must be a site fraction in (0, 1)`);
@@ -596,7 +600,7 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
         } else {
           const A = sdef.A ?? [];
           need(Array.isArray(A), `${sp}.A must be an array of Redlich–Kister coefficients (J/mol)`);
-          A.forEach((v, q) => finite(v, `${sp}.A[${q}]`));
+          dense(A, `${sp}.A`).forEach((v, q) => finite(v, `${sp}.A[${q}]`));
           occ = redlichKisterOccupancy(A, cMax, cRef[0], RT, fail);
         }
         model = insertionModel(idx, nu, cMax, occ);

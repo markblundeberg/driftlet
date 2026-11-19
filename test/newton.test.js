@@ -228,7 +228,7 @@ test('islands: the round is asked for by each island\'s own balance, not by what
   // states read under 3e-9.
   const def = device({ family: 2, fast: 1, slow: 1e-20, face: 1e-17, drive: 'I0', reversed: false });
   const alone = new Device(def).solve();
-  def.ports = [{ name: 'aux', region: 'water2', from: 0.5e-6, to: 1e-6, I: 1e-3, terminal: 'e-', area: 1e3, reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1, fixed: { 'S(s)': 0 } }] }];
+  def.ports = [{ name: 'aux', region: 'water2', from: 0.5e-6, to: 1e-6, I: 1e-3, terminal: 'e-', area: 1e3, reactions: [{ equation: 'B- = C2+ + 3 e-', k0: 1 }] }];
   const beside = new Device(def).solve();
   assert.ok(Math.abs(alone.terminals.left.V - 0.195442) < 1e-5, `alone: ${alone.terminals.left.V}`);
   assert.ok(Math.abs(beside.terminals.left.V - alone.terminals.left.V) < 1e-6 && beside.warnings.length === 0, `beside: ${beside.terminals.left.V} V, ${beside.warnings}`);
