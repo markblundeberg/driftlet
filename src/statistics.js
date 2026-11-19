@@ -490,6 +490,9 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
   const { need, finite, positive } = h;
   const n = species.length;
   const modelOf = new Int32Array(n).fill(-1);
+  // (claimed apart from modelOf, which an ideal model leaves at −1: [ideal, lattice] was accepted
+  // and [lattice, ideal] refused, one species in two models by order; Astra's third pass)
+  const claimed = new Uint8Array(n);
   const models = [];
   const warnings = [];
   const list = mat.statistics ?? [];
@@ -514,7 +517,8 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
       need(speciesIndex.has(name), `${sp}.species[${a}]: unknown species ${JSON.stringify(name)}`);
       const i = speciesIndex.get(name);
       need(mat.present[i], `${sp}.species[${a}]: '${name}' is absent from this material`);
-      need(modelOf[i] === -1, `${sp}.species[${a}]: '${name}' already belongs to another statistics model`);
+      need(!claimed[i], `${sp}.species[${a}]: '${name}' already belongs to another statistics model`);
+      claimed[i] = 1;
       modelOf[i] = models.length;
       return i;
     });

@@ -144,15 +144,17 @@ export const isGraded = (reg) => Boolean(reg.gradeEpsr || reg.grade?.some(Boolea
 //   r = n p (1 − e^{−A/RT}) / (t_p (n + n₁) + t_n (p + p₁)),  p₁ = n p e^{−A/RT} / n₁,
 // with t = τ (s) in the bulk, 1/v (m/s) at a face, and n₁ the negative species' concentration
 // with its level at the trap (default n_i, a midgap trap). p₁ from the state keeps detailed
-// balance exact, whatever lies between the two (a band offset, a φ jump).
-function srhLaw(sdef, path, list, species, timeKeys) {
+// balance exact, whatever lies between the two (a band offset, a φ jump). Nothing else takes part,
+// a fixed participant neither: 'e- + h+ = S' with S fixed at 5 kJ/mol was accepted, its np at
+// e^(μ_S/RT) n_i² and the midgap n₁ moving with μ_S (Astra's third pass).
+function srhLaw(sdef, path, list, species, timeKeys, nFixed) {
   const [kn, kp] = timeKeys;
   need(isObject(sdef), `${path} must be { ${kn}, ${kp}, n1 }`);
   fields(sdef, path, [kn, kp, 'n1']);
   const reactants = list.filter((p) => p.nu < 0);
   need(
-    list.length === 2 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
-    `${path}: SRH kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0'`,
+    list.length === 2 && nFixed === 0 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
+    `${path}: SRH kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0' (no fixed participants either)`,
   );
   const neg = species[list[0].i].z < 0 ? list[0] : list[1], pos = neg === list[0] ? list[1] : list[0];
   const time = (key) => {
@@ -167,14 +169,14 @@ function srhLaw(sdef, path, list, species, timeKeys) {
 //   r = (C_n n + C_p p) n p (1 − e^{−A/RT}),
 // C_n and C_p in m⁶/(mol²·s) (units.cm6PerS converts the usual cm⁶/s). That's
 // (C_n n + C_p p)(n p − n_i²) for Boltzmann carriers; the affinity keeps equilibrium exact under
-// any statistics.
-function augerLaw(adef, path, list, species) {
+// any statistics. Nothing else takes part, as for SRH.
+function augerLaw(adef, path, list, species, nFixed) {
   need(isObject(adef), `${path} must be { Cn, Cp }`);
   fields(adef, path, ['Cn', 'Cp']);
   const reactants = list.filter((p) => p.nu < 0);
   need(
-    list.length === 2 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
-    `${path}: Auger kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0'`,
+    list.length === 2 && nFixed === 0 && reactants.length === 2 && reactants.every((p) => p.nu === -1) && species[list[0].i].z * species[list[1].i].z < 0,
+    `${path}: Auger kinetics needs a reaction consuming one negative and one positive species and making none, such as 'e- + h+ = 0' (no fixed participants either)`,
   );
   const neg = species[list[0].i].z < 0 ? list[0] : list[1], pos = neg === list[0] ? list[1] : list[0];
   const cn = nonNegative(adef.Cn ?? 0, `${path}.Cn`), cp = nonNegative(adef.Cp ?? 0, `${path}.Cp`);
@@ -376,7 +378,14 @@ export function normalizeDevice(def) {
         need(mat.present[i], `${at}: '${sname}' is absent from material '${mat.name}'`);
         need(isObject(v), `${at} must be { mu0, cRef, D }, each a profile { x, values } against the device's x`);
         fields(v, at, ['mu0', 'cRef', 'D']);
-        need(v.cRef === undefined || mat.modelOf[i] < 0 || mat.models[mat.modelOf[i]].type === 'fermi-dirac', `${at}.cRef: '${sname}' has ${mat.models[mat.modelOf[i]]?.type} statistics in '${mat.name}'; only an ideal or Fermi–Dirac species' cRef can be graded so far (its mu0 and D can)`);
+        // An OCV table is absolute (μ_ion + ν μ_carrier = muRef − zFE(x)), compiled against the
+        // material's μ°, which it leaves pure gauge: a staircase of layers of other μ° reads the same
+        // table, and a μ° graded over it read the table shifted by Δμ°/F, 104 mV per 10 kJ/mol
+        // (Astra's third pass). Give the region a material whose table is the one there.
+        const stats = def.materials?.[mat.name]?.statistics;
+        const table = (Array.isArray(stats) ? stats : [stats]).some((sd) => sd?.type === 'insertion' && sd.ocv !== undefined && Array.isArray(sd.species) && sd.species.includes(sname));
+        need(v.mu0 === undefined || !table, `${at}.mu0: '${sname}' is in an insertion host whose OCV table in '${mat.name}' sets its level absolutely, which a graded μ° would shift; give the region a material with the table it has there (or the host Redlich–Kister A in place of a table)`);
+        need(v.cRef === undefined || mat.modelOf[i] < 0 || mat.models[mat.modelOf[i]].type === 'fermi-dirac', `${at}.cRef: '${sname}' has ${mat.models[mat.modelOf[i]]?.type} statistics in '${mat.name}'; only an ideal or Fermi–Dirac species' cRef can be graded so far (its ${table ? '' : 'mu0 and '}D can)`);
         need(v.D === undefined || mat.D[i] > 0, `${at}.D: '${sname}' doesn't move in '${mat.name}' (D 0), and a graded D would make it move; give the material a D > 0`);
         grade[i] = {
           mu0: read(v, 'mu0', at, 'standard chemical potentials (J/mol)', () => true, 'finite'),
@@ -669,6 +678,19 @@ export function normalizeDevice(def) {
     grid.area.every((a, g) => a > 0 || g === 0 || g === grid.nNodes - 1) && (geometry.type !== 'profile' || geometry.values.every((a, k) => a > 0 || !inside(geometry.x[k]))),
     'geometry: the cross-section vanishes inside the device; only an end may have A = 0',
   );
+  // An end of no cross-section (a sphere's centre, a cylinder's axis) is a point, and nothing passes
+  // it; a level or φ held there all the same passed what the end box made: 1.08 mol/s into a sphere's
+  // centre on 4 cells, 0.016 on 256, converged and unwarned (Astra's third pass).
+  for (const side of ['left', 'right']) {
+    if (grid.area[side === 'left' ? 0 : grid.nNodes - 1] > 0) continue;
+    const c = contacts[side], held = c.species.findIndex((l) => l.type === 'equilibrium');
+    const what = held >= 0 ? `holds '${species[held].name}'s level` : c.phi.type !== 'neutral' ? `holds φ there ('${c.phi.type}')` : '';
+    need(
+      !what,
+      `contacts.${side}: the cross-section is zero at this end (a sphere's centre or a cylinder's axis), a point that nothing passes, yet the contact ${what}, ` +
+        "which passes only what the mesh makes of it. Leave the contact out (the centre is then closed), or put the electrode at a radius: geometry's r0 > 0",
+    );
+  }
 
   // Port windows, [from, to] of the region's left end: the nodes of the port's region whose boxes
   // reach into it, each with the part of its box inside (fill, by length) and that part's ends
@@ -778,7 +800,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
     for (const [mname, v] of Object.entries(rdef.auger)) {
       need(materialIndex.has(mname), `${path}.auger.${mname}: unknown material`);
       const m = materialIndex.get(mname);
-      auger[m] = augerLaw(v, `${path}.auger.${mname}`, st.list, species);
+      auger[m] = augerLaw(v, `${path}.auger.${mname}`, st.list, species, st.nFixed);
       for (const { i } of st.list) need(materials[m].present[i], `${path}.auger.${mname}: '${species[i].name}' is absent from material '${mname}'`);
       kf[m] = 1; // (runs here)
     }
@@ -792,7 +814,7 @@ function normalizeReaction(rdef, path, species, speciesIndex, materials, materia
     for (const [mname, v] of Object.entries(rdef.srh)) {
       need(materialIndex.has(mname), `${path}.srh.${mname}: unknown material`);
       const m = materialIndex.get(mname);
-      srh[m] = srhLaw(v, `${path}.srh.${mname}`, st.list, species, ['tauN', 'tauP']);
+      srh[m] = srhLaw(v, `${path}.srh.${mname}`, st.list, species, ['tauN', 'tauP'], st.nFixed);
       for (const { i } of st.list) need(materials[m].present[i], `${path}.srh.${mname}: '${species[i].name}' is absent from material '${mname}'`);
       kf[m] = 1; // (runs here)
     }
@@ -905,7 +927,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       }
     }
     const part = [];
-    let fixedA = 0, charge = 0;
+    let fixedA = 0, charge = 0, nFixed = 0;
     for (const [key, mat] of [['left', matL], ['right', matR]]) {
       const st = stoichiometry(sides[key], rdef.equation === undefined ? `${rpath}.${key}` : `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
       for (const { i, nu } of st.list) {
@@ -914,6 +936,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       }
       fixedA += st.fixedA;
       charge += st.charge;
+      nFixed += st.nFixed;
     }
     need(part.length > 0 || surf.length > 0, `${rpath}: no species participate`);
     need(charge === 0, `${rpath}: charge is not balanced (Σ ν z = ${charge})`);
@@ -940,7 +963,7 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
     }
     if (rdef.srh !== undefined) {
       need(rdef.k0 === undefined && rdef.alpha === undefined && rdef.lambda === undefined, `${rpath}: give srh or k0 (and alpha or lambda), not both`);
-      const srh = srhLaw(rdef.srh, `${rpath}.srh`, part, species, ['vn', 'vp']);
+      const srh = srhLaw(rdef.srh, `${rpath}.srh`, part, species, ['vn', 'vp'], nFixed);
       for (const p of part) {
         const mat = p.side ? matR : matL;
         need(!mat.conductor, `${rpath}.srh: SRH kinetics is for carriers in semiconductors, not a metal's ${species[p.i].name}`);
@@ -958,7 +981,9 @@ function normalizeFaceReactions(idef, where, matL, matR, species, speciesIndex, 
       const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
       need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV, units.eV(0.5) for 0.5 eV`);
       const metal = part.filter((p) => (p.side ? matR : matL).conductor);
-      need(metal.length === 1 && Math.abs(metal[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from a metal, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      // (one charge, |ν z| = 1: counted by ν, a carrier B²⁻ moved two charges through one electron's
+      // Fermi-level integral; Astra's third pass)
+      need(metal.length === 1 && Math.abs(metal[0].nu * species[metal[0].i].z) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from a metal, its carrier with |ν z| = 1 (for more, write the rate-determining one-electron step)`);
       // (and to or from a molecule or ion, not a band: the metal's carrier, or an opposite one, on the other side is band-to-band transfer)
       need(!part.some((p) => p !== metal[0] && (p.i === metal[0].i || Math.abs(species[p.i].z) === 1 && /^[eh][+-]$/.test(species[p.i].name))), `${rpath}: Marcus–Hush–Chidsey kinetics is for an electron to or from a molecule or ion, not between a metal's band and a semiconductor's`);
       return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, ...onSites };
@@ -1210,14 +1235,15 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
   if (pdef.bath !== undefined) {
     need(isObject(pdef.bath) && isObject(pdef.bath.c), `${path}.bath must be { c: { species: concentration } }`);
     fields(pdef.bath, `${path}.bath`, ['c']);
+    // (a conductor's μ° = 0 and cRef = 1 are placeholders: a bath of e⁻ at 100 held Au's wire at
+    // VT·ln 100 = −0.118 V from the port's V, passing 0.118 A/m² between two grounded terminals;
+    // Astra's third pass)
+    need(!mat.conductor, `${path}.bath: ${reg.name ?? 'its region'} (${mat.name}) is a conductor, which has no μ° or cRef for a composition outside to set its carrier's level by; link its carrier instead (an offset from the port's V, 0 for the terminal)`);
     const cb = new Float64Array(species.length);
     for (const [sname, v] of Object.entries(pdef.bath.c)) {
       need(speciesIndex.has(sname), `${path}.bath.c.${sname}: unknown species '${sname}'${known(speciesIndex)}`);
       const i = speciesIndex.get(sname);
       need(mat.present[i], `${path}.bath.c.${sname}: '${sname}' is absent from ${reg.name} (material '${mat.name}'), so its level outside means nothing here`);
-      // (A composition outside gives a level through the window's μ° and cRef; graded, there's no
-      // one level for it to give, and the material's ungraded values were read: Fable's review.)
-      need(!reg.grade?.[i]?.mu0 && !reg.grade?.[i]?.cRef, `${path}.bath.c.${sname}: ${reg.name} grades '${sname}'s mu0 or cRef, so a composition outside gives no one level across the window; give its link the level instead (mu for a neutral species, or an offset)`);
       need(v !== 0, `${path}.bath.c.${sname}: a bath holds each species it lists at its level, and at 0 there is none (ln 0); a species absent from the bulk (a product, say) is a trace there, 1e-6 of the rest or so, so that it can leave`);
       cb[i] = positive(v, `${path}.bath.c.${sname}`);
     }
@@ -1231,10 +1257,28 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
       const names = md.idx.map((i) => species[i].name), listed = md.idx.filter((i) => cb[i] > 0);
       if (listed.length === 0) continue;
       need(md.type !== 'insertion', `${path}.bath: ${names.join(' and ')} in ${here} are an insertion host's ion and carrier, which have only their combination's level, not one each that a bath could set; hold the host at a contact`);
-      need(md.idx.length === 1 || listed.length === md.idx.length, `${path}.bath: ${names.join(', ')} share ${md.type} statistics in ${here}, so each one's level depends on the others' concentrations: list them all in the bath (it lists ${listed.map((i) => species[i].name).join(', ')})`);
+      // (Fermi–Dirac bands declared together are still each on its own, diagonal: a bath listing
+      // one was refused as if they were coupled, and accepted with them declared apart; Astra's third pass)
+      need(md.idx.length === 1 || md.type === 'fermi-dirac' || listed.length === md.idx.length, `${path}.bath: ${names.join(', ')} share ${md.type} statistics in ${here}, so each one's level depends on the others' concentrations: list them all in the bath (it lists ${listed.map((i) => species[i].name).join(', ')})`);
     }
-    const zb = bathZeta(mat, cb, reg.background);
-    bathLevel = (i) => (cb[i] > 0 ? mat.mu0[i] + RT * zb[i] : undefined); // μ̄ − zFφ outside
+    // A composition outside gives a level through the window's μ° and cRef, graded ones as they
+    // are there; where one varies across the window, there's no one level for it to give (the
+    // material's ungraded values were read: Fable's review), so a link that takes its level from
+    // the bath is refused then. (Refused for any grade at all, a constant one, or one beyond the
+    // window, or of a species whose link gives its own level: Astra's third pass.) A species'
+    // ζ outside reads only its own cRef (only an ideal or Fermi–Dirac one's is graded), and no μ°.
+    const x0 = regions.slice(0, r).reduce((sum, q) => sum + q.length, 0), a = x0 + from, b = x0 + to;
+    const flat = (p) => !p || [b, ...p.x.filter((x) => x > a && x < b)].every((x) => profileAt(p, x) === profileAt(p, a));
+    const wm = gradedAt(mat, reg, a);
+    const zb = bathZeta(wm, cb, reg.background);
+    bathLevel = (i, lpath) => {
+      if (!(cb[i] > 0)) return undefined;
+      need(
+        flat(reg.grade[i]?.mu0) && flat(reg.grade[i]?.cRef),
+        `${lpath}: ${reg.name} grades '${species[i].name}'s mu0 or cRef, so a composition outside gives no one level across the window; give its link the level instead (mu for a neutral species, or an offset)`,
+      );
+      return wm.mu0[i] + RT * zb[i]; // μ̄ − zFφ outside
+    };
   }
   const links = species.map(() => ({ type: 'blocked' }));
   for (const [sname, raw] of Object.entries(pdef.species ?? {})) {
@@ -1250,7 +1294,7 @@ function normalizePort(pdef, path, regions, materials, species, speciesIndex, RT
     const z = species[i].z;
     // The outside level: an offset from V for charged species, an absolute μ for neutral ones.
     let level;
-    const fromBath = bathLevel?.(i);
+    const fromBath = link.mu === undefined && link.offset === undefined ? bathLevel?.(i, lpath) : undefined;
     if (z === 0) {
       need(link.type !== 'conductance', `${lpath}: a neutral species exchanges by { type: 'exchange', k, mu }`);
       need(link.offset === undefined, `${lpath}.offset: a neutral species is held at its μ, not by an offset from a voltage`);
@@ -1340,14 +1384,19 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
     const part = [];
     let fixedA = 0, charge = 0;
     // The electrode's side: its carrier, and its surface species (side 2, neutral, by index s).
-    const electrode = {};
+    // Anything else there is a fixed-activity participant, by its μ in fixed, though a species of
+    // another material bears its name: taken as that species, side 1 took a Y in `fixed` as the
+    // electrode's carrier, 'P+ = Y' passing current with no e⁻ and its 9000 J/mol dropped, and
+    // 'P+ + e- = Y' failing on a NaN level (Astra's third pass).
+    const electrode = {}, outside = {};
     for (const [name, nu] of Object.entries(sides.right)) {
       const s = onSurface(name);
       if (s >= 0) part.push({ s, nu, side: 2 });
-      else electrode[name] = nu;
+      else if (name === carrier) electrode[name] = nu;
+      else outside[name] = nu;
     }
-    for (const [map, side] of [[sides.left, 0], [electrode, 1]]) {
-      const st = stoichiometry(map, `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, speciesIndex, RT);
+    for (const [map, side, index] of [[sides.left, 0, speciesIndex], [electrode, 1, speciesIndex], [outside, 1, new Map()]]) {
+      const st = stoichiometry(map, `${rpath}.equation`, rdef.fixed, `${rpath}.fixed`, species, index, RT);
       for (const { i, nu } of st.list) part.push({ i, nu, side });
       fixedA += st.fixedA;
       charge += st.charge;
@@ -1370,7 +1419,7 @@ function portReactions(pdef, path, mat, terminal, species, speciesIndex, RT, sur
       const lam = positive(rdef.lambda, `${rpath}.lambda (the reorganization energy, J/mol; eV(…) converts)`) / RT;
       need(lam <= 1000, `${rpath}.lambda is ${shown(lam)} RT, past what the rate can be computed for (≤ 1000 RT); reorganization energies are 0.2 to 2 eV, units.eV(0.5) for 0.5 eV`);
       const e = part.filter((p) => p.side === 1);
-      need(e.length === 1 && Math.abs(e[0].nu) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from the electrode, its carrier with ν = ±1 (for more, write the rate-determining one-electron step)`);
+      need(e.length === 1 && Math.abs(e[0].nu * species[e[0].i].z) === 1, `${rpath}: Marcus–Hush–Chidsey kinetics is one electron to or from the electrode, its carrier with |ν z| = 1 (for more, write the rate-determining one-electron step)`);
       // (and to or from a molecule or ion in the region, not a band: an electron or hole there is band-to-band transfer)
       need(!part.some((p) => p.side === 0 && (p.i === e[0].i || (Math.abs(species[p.i].z) === 1 && /^[eh][+-]$/.test(species[p.i].name)))), `${rpath}: Marcus–Hush–Chidsey kinetics is for an electron to or from a molecule or ion, not between a metal's band and a semiconductor's`);
       return { part, fixedA, k0, mhc: { lam, I0: mhcIntegral(lam, 0).I }, bare, m, fills };
@@ -1796,6 +1845,12 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
         // with the outside level (thermionic emission over a barrier, a contact's surface
         // recombination velocity), v c (e^((μ̄_out − μ̄)/RT) − 1) for any statistics.
         const v = positive(link.v, `${lpath}.v (m/s)`);
+        // (A conductor's c is its carrier's excess, zero in the bulk, so v·c·(…) passed nothing at
+        // any v, even 1e30 m/s: converged, current 0, unwarned; Astra's third pass)
+        need(
+          mat.conductor?.i !== i,
+          `${lpath}: a velocity link is for a carrier with a density to pass at a rate, and '${mat.name}' is a conductor, whose carrier's excess is zero in its bulk, so it passed nothing at any v. Link it 'equilibrium', or by { type: 'conductance', G } for a contact resistance`,
+        );
         if (species[i].z === 0) {
           need(link.offset === undefined, `${lpath}: a neutral species' outside level is its mu (J/mol), not an offset`);
           links[i] = { type: 'velocity', v, mu: finite(link.mu, `${lpath}.mu (the outside μ, J/mol)`) };
@@ -1836,8 +1891,10 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
   if (cdef.bath !== undefined) {
     need(cdef.species === undefined, `${path}: give either bath or species links, not both`);
     // (a phi beside a bath overrode its 'bulk': pinned at a zeroCharge, the end was no longer at
-    // the bath's composition, Na⁺ 2.5e-19 for 100; Fable round 5's review of src/device.js)
-    need(cdef.phi === undefined && cdef.zeroCharge === undefined, `${path}: a bath sets the end's φ law itself ('bulk': the end at the bath's composition), so give no phi or zeroCharge beside it`);
+    // the bath's composition, Na⁺ 2.5e-19 for 100; Fable round 5's review of src/device.js). (Not
+    // "at the bath's composition": a sealed species sharing a lattice's sites keeps the end's
+    // levels the bath's and its concentrations not, P at 0.4 for a bath's 1; Astra's third pass.)
+    need(cdef.phi === undefined && cdef.zeroCharge === undefined, `${path}: a bath sets the end's φ law itself ('bulk': the end neutral, each species the bath lists at the level its composition gives), so give no phi or zeroCharge beside it`);
     const bath = cdef.bath;
     need(isObject(bath) && isObject(bath.c), `${path}.bath must be { c: { species: concentration }, reference }`);
     fields(bath, `${path}.bath`, ['c', 'reference', 'offset', 'material', 'electrode']);
@@ -1849,7 +1906,13 @@ function normalizeContact(cdef, side, region, materials, species, speciesIndex, 
     const own = bath.material !== undefined;
     const bm = own ? materials.find((m) => m.name === bath.material) : mat;
     // (an end region that is itself φ-free, an insertion host, said "undefined is not a material")
-    need(own || !mat.phiFree, `${path}.bath: ${mat.name} at this end has no φ (an insertion host: its ion and carrier have only their combination's level), so a bath can't set its levels; hold it with 'bulk' or 'neutral' links (an equilibrium link at a contact's V), or name a solution outside it with bath.material`);
+    // (and a conductor was called an insertion host there; Astra's third pass)
+    need(
+      own || !mat.phiFree,
+      mat.conductor
+        ? `${path}.bath: ${mat.name} at this end is a conductor, which has no φ, μ° or cRef for a bath to set its carrier's level by; link its carrier, species: { '${species[mat.conductor.i].name}': 'equilibrium' }, with phi 'neutral'`
+        : `${path}.bath: ${mat.name} at this end has no φ (an insertion host: its ion and carrier have only their combination's level), so a bath can't set its levels; hold it with 'bulk' or 'neutral' links (an equilibrium link at a contact's V), or name a solution outside it with bath.material`,
+    );
     need(bm && !bm.conductor && !bm.phiFree, `${path}.bath.material: ${JSON.stringify(bath.material)} is not a material with ions in it (one of ${materials.filter((m) => !m.conductor).map((m) => m.name).join(', ')})`);
     // Without a reference, V is the bath's φ (an ideal salt bridge: the membrane potential's
     // convention), and the terminal is the first charged species in it that the end holds (only
