@@ -13,7 +13,7 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
  * Record a device's transient. Frames are whole solutions: at the start, then at each of
  * `times` (or every `every` seconds from the start), which `advance()` lands on exactly; with
  * neither, at the end of each `advance()` call. The trace (`t`, `current`, `voltage`,
- * `terminals`, and `probes` if given) runs from the start through every accepted step of every call.
+ * `terminals` with each one's V, current and charge passed, and `probes` if given) runs from the start through every accepted step of every call.
  * @param {import('./index.js').Device} device
  * @param {{ every?: number, times?: number[], probes?: ({ x: number, species?: string, quantity?: 'c' | 'V' | 'phi', region?: string | number } | { interface: number, species?: string, gate?: string })[] }} [opts]
  */
@@ -24,6 +24,10 @@ export function recorder(device, opts = {}) {
   if (every !== undefined && !(every > 0 && Number.isFinite(every))) fail('recorder: every must be a time > 0 (s)');
   if (times !== undefined && !(Array.isArray(times) && times.every(Number.isFinite))) fail('recorder: times must be an array of times (s)');
   const first = device.solution();
+  // (and each terminal's charge passed, joined up as advance()'s traces give it, from the running
+  // total the device carries: summed back from the currents, an RC's charge came out 22% short;
+  // the pieces' charges were in the frames' own traces only; Sol's third review)
+  const startCharge = (nm) => device.solver.termCharge[device.solver.terms.findIndex((t) => t.name === nm)];
   const t0 = first.time;
   const schedule = times ? [...times].filter((t) => t > t0).sort((a, b) => a - b) : null;
   const scheduled = schedule !== null || every !== undefined;
@@ -31,7 +35,7 @@ export function recorder(device, opts = {}) {
   const due = () => (schedule ? schedule[next] : every !== undefined ? t0 + next * every : undefined);
 
   const trace = { t: [first.time], current: [first.current], voltage: [first.terminals.right.V - first.terminals.left.V],
-    terminals: Object.fromEntries(Object.entries(first.terminals).map(([nm, r]) => [nm, { V: [r.V], current: [r.current] }])) };
+    terminals: Object.fromEntries(Object.entries(first.terminals).map(([nm, r]) => [nm, { V: [r.V], current: [r.current], charge: [startCharge(nm)] }])) };
   if (probes) trace.probes = device.solver._probes(probes).read().map((v) => [v]); // the start's readings
   const frames = [first];
 
@@ -59,6 +63,7 @@ export function recorder(device, opts = {}) {
         for (const nm in trace.terminals) {
           trace.terminals[nm].V.push(tr.terminals[nm].V[k]);
           trace.terminals[nm].current.push(tr.terminals[nm].current[k]);
+          trace.terminals[nm].charge.push(tr.terminals[nm].charge[k]);
         }
         if (probes) tr.probes.forEach((p, j) => trace.probes[j].push(p[k]));
       }

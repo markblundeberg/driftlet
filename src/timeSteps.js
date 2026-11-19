@@ -150,7 +150,10 @@ export function advance(s, dt, opts, depth = 0) {
  */
 export function step(s, dt, opts = {}) {
   // A transient's first step from a cold start begins at its t = 0⁺ (see equilibrateFaces).
-  if (s.coldStart && !s.steady) equilibrateFaces(s);
+  // (A failed step puts back the state from before it: a failed cold one left the projection,
+  // and coldStart cleared, behind; Sol's third review.)
+  const cold = s.coldStart && !s.steady ? { u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV), contactDEnd: s.contactDEnd, portQEnd: s.portQEnd, unbalanced: s.unbalanced } : null;
+  if (cold) equilibrateFaces(s);
   // What the step overwrites before Newton runs, for a failed one to put back: the Solution read
   // after it takes its contacts' fluxes against the start-of-step values (a host emptied by its
   // current read its contact's Li⁺ flux 8× off at the same state).
@@ -175,16 +178,19 @@ export function step(s, dt, opts = {}) {
   const DN = { ...s.contactDEnd }, QN = Float64Array.from(s.portQEnd);
   if (opts.guess) setGuess(s, opts.guess); // start Newton from a predicted state
   let dtEff = dt;
-  const a0 = (1 + 2 * w) / (1 + w), b1 = (1 + w) / a0, b2 = (w * w) / (1 + w) / a0;
+  const a0 = (1 + 2 * w) / (1 + w), b2 = (w * w) / (1 + w) / a0;
+  // (As x_n + b2 (x_n − x_{n−1}), which is b1 x_n − b2 x_{n−1} since b1 − b2 = 1: exact on a
+  // state at rest, where that form drifted by ε a step, 3.7e-11 of a closed film's amount over
+  // 81,000 steps and ε·|P| of a terminal's charge a step; Sol's third review.)
   if (bdf) {
     const { cOld } = s;
-    for (let k = 0; k < cOld.length; k++) cOld[k] = b1 * cN[k] - b2 * prev.c[k];
-    for (let k = 0; k < thN.length; k++) s.thOld[k] = b1 * thN[k] - b2 * prev.th[k];
-    for (let k = 0; k < th0N.length; k++) s.th0Old[k] = b1 * th0N[k] - b2 * prev.th0[k];
-    for (let k = 0; k < gamN.length; k++) s.gamOld[k] = b1 * gamN[k] - b2 * prev.gam[k];
-    for (let k = 0; k < gN.length; k++) s.gateOld[k] = b1 * gN[k] - b2 * prev.g[k];
-    s.contactDStart = { left: b1 * DN.left - b2 * prev.D.left, right: b1 * DN.right - b2 * prev.D.right };
-    s.portQStart = QN.map((q, k) => b1 * q - b2 * prev.Q[k]);
+    for (let k = 0; k < cOld.length; k++) cOld[k] = cN[k] + b2 * (cN[k] - prev.c[k]);
+    for (let k = 0; k < thN.length; k++) s.thOld[k] = thN[k] + b2 * (thN[k] - prev.th[k]);
+    for (let k = 0; k < th0N.length; k++) s.th0Old[k] = th0N[k] + b2 * (th0N[k] - prev.th0[k]);
+    for (let k = 0; k < gamN.length; k++) s.gamOld[k] = gamN[k] + b2 * (gamN[k] - prev.gam[k]);
+    for (let k = 0; k < gN.length; k++) s.gateOld[k] = gN[k] + b2 * (gN[k] - prev.g[k]);
+    s.contactDStart = { left: DN.left + b2 * (DN.left - prev.D.left), right: DN.right + b2 * (DN.right - prev.D.right) };
+    s.portQStart = QN.map((q, k) => q + b2 * (q - prev.Q[k]));
     dtEff = dt / a0;
   } else {
     s.cOld.set(cN);
@@ -241,6 +247,7 @@ export function step(s, dt, opts = {}) {
   result.bdf = bdf;
   if (result.converged) {
     s.jumpedT = undefined; // (a step taken from the jump: a later failure isn't its; Astra's review)
+    s.readV = undefined; // (a step taken at the new drives: see Device's _redefineDrives)
     const PN = s.termCharge;
     s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN, P: PN });
     if (s.history.length > 3) s.history.length = 3;
@@ -266,7 +273,7 @@ export function step(s, dt, opts = {}) {
     }
     if (!s.steady && Number.isFinite(dtEff)) {
       const I = s._terminalCurrents();
-      s.termCharge = PN.map((q, k) => (bdf ? b1 * q - b2 * prev.P[k] : q) + dtEff * I[k]);
+      s.termCharge = PN.map((q, k) => (bdf ? q + b2 * (q - prev.P[k]) : q) + dtEff * I[k]);
     }
   } else {
     s.u.set(s.uPrev);
@@ -281,10 +288,31 @@ export function step(s, dt, opts = {}) {
     s.portQStart = was.portQStart;
     s.atSteady = was.atSteady;
     s.sourceTime = s.steady ? s.steadyAt : s.time;
+    if (cold) {
+      s.u.set(cold.u);
+      s.uLo.set(cold.uLo);
+      s.termV.set(cold.termV);
+      s.contactDEnd = cold.contactDEnd;
+      s.portQEnd = cold.portQEnd;
+      s.unbalanced = cold.unbalanced;
+      s.coldStart = true;
+    }
     s.computeConcentrations();
   }
   s.sourceBefore = false;
   return result;
+}
+
+// The first step's two quadratures of what each terminal driven by a current passed, full step
+// against two halves, relative to the halves' (as a tol in thermal units bounds a potential's).
+function chargeError(s, P0, PFull) {
+  let e = 0;
+  for (const k of s.floating) {
+    if (s.terms[k].drive.kind !== 'I') continue;
+    const half = s.termCharge[k] - P0[k], full = PFull[k] - P0[k];
+    if (full !== half) e = Math.max(e, Math.abs(full - half) / Math.max(Math.abs(half), Number.MIN_VALUE));
+  }
+  return e;
 }
 
 // Newton's unknowns set to a guess (e.g. extrapolated from the history). Only its unknowns: the
@@ -359,7 +387,12 @@ export function integrate(s, tEnd, opts = {}) {
   // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
   const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), s.fastestTime() * 1e-2);
   const pred = new Float64Array(s.u.length), guess = new Float64Array(s.u.length), predV = new Float64Array(s.termV.length);
-  const firstErrs = []; // the first step's error at each size tried (see below)
+  // The first step's error at each size tried (see below), kept on the solver across calls: a
+  // first step cut across an animation's frames is seen to stall as in one call (it wasn't, and a
+  // heavy device's first step took 134 one-attempt frames where one call took 30, against
+  // docs/kit.md's "step for step"; Sol's third review). Cleared by an accepted step, and by
+  // set() (a redrive, or a rebuilt solver).
+  const firstErrs = (s.firstErrs ??= []);
   const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
   while (s.time < tEnd) {
     if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
@@ -395,10 +428,11 @@ export function integrate(s, tEnd, opts = {}) {
     if (s.history.length > 0) firstErrs.length = 0;
     if (s.history.length === 0) {
       // First step: backward Euler, checked against two half steps (whose result is kept).
+      const P0 = Float64Array.from(s.termCharge);
       const full = s.step(h);
       iterations += full.iterations;
       if (full.converged) {
-        const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV);
+        const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV), PFull = Float64Array.from(s.termCharge);
         back();
         const a = s.step(h / 2);
         // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
@@ -406,7 +440,11 @@ export function integrate(s, tEnd, opts = {}) {
         const b = a.converged ? s.step(h / 2) : a;
         iterations += a.iterations + (b === a ? 0 : b.iterations);
         if (b.converged) {
-          err = errorNorm(s, uFull, vFull);
+          // (and the charge a terminal driven by a current passes, relative: nothing in the state
+          // need feel it on a resistive path, where the pair's two quadratures of a current ramp
+          // agree at the step's end, err 0, and a ramp's charge came out 50% high; Sol's third
+          // review. BDF2 integrates a ramp exactly after.)
+          err = Math.max(errorNorm(s, uFull, vFull), chargeError(s, P0, PFull));
           p = 1;
         }
       }
@@ -437,8 +475,7 @@ export function integrate(s, tEnd, opts = {}) {
     // of any length errs alike, down to the grid's own diffusion time, below Newton's reach.
     // Three tries in a row, each within a factor 2 of the last, say so: the error is the
     // jump's, not the step's. Take the step (backward Euler damps it as it should); the next is
-    // sized from its error as any other. (Counted within one call: under a frame's budget, a
-    // first step cut across calls isn't seen to stall.)
+    // sized from its error as any other. (Counted across calls: see firstErrs above.)
     if (half && err > tol) firstErrs.push(err);
     const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e > 0.5 * a[j - 1] && e < 2 * a[j - 1]));
     if (err > tol && !jump) {

@@ -4,7 +4,7 @@
 
 import { Device } from './index.js';
 import { FARADAY } from './constants.js';
-import { fixedAt } from './device.js';
+import { fixedAt, sourceAt } from './device.js';
 import { DEFAULTS, defaultSpacing } from './grid.js';
 import { unitWarnings } from './describe.js';
 import { carryState } from './carry.js';
@@ -84,7 +84,9 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
   // A solution from before the device moved on (a set(), another solve, a further advance). The
   // checks below solve the device as it stands, so they'd compare two different problems: a
   // 0.5 V solution checked after set() to 0.4 V read "FAIL grid … refine the grid".
-  const moved = own ? null : movedOn(sol, device.solution());
+  // (against the device's drives: after a set() of drives alone, its solution reads the state at
+  // the voltages it was solved at, until a step or solve moves it, but it stands at the new ones)
+  const moved = own ? null : movedOn(sol, atDrives(device));
   if (moved) {
     items.push({
       name: 'solution',
@@ -120,6 +122,17 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
 
 // The units of totals through the cross-section: per m² of a planar device, or whole.
 const unitsOf = (model) => (model.geometry.type === 'planar' ? { rate: 'mol/(m²·s)', current: 'A/m²', charge: 'C/m²', amount: 'mol/m²' } : { rate: 'mol/s', current: 'A', charge: 'C', amount: 'mol' });
+
+// The device's present solution, its held terminals at their drives (see makeSolution's readV).
+function atDrives(device) {
+  const now = device.solution(), s = device.solver;
+  if (!s.readV) return now;
+  const terminals = { ...now.terminals };
+  s.terms.forEach((t, k) => {
+    if (t.drive.kind === 'V' && !(t.drive.R > 0)) terminals[t.name] = { ...terminals[t.name], V: sourceAt(t.drive.src, s.time, s.stepped) };
+  });
+  return { ...now, terminals };
+}
 
 // How a solution differs from the device's present state, in words, or null if it is that state.
 function movedOn(sol, now) {

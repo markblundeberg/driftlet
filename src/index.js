@@ -268,6 +268,10 @@ export class Device {
     // they change. (Left for advance(), it was solved at the new drive, and the step response
     // was lost; Fable round 3's steady.js review.)
     this._settleRegrid();
+    // (and is read at the voltages it was solved at, until a step or a solve moves it: read at
+    // the new ones, a patch from 0 to 0.05 V read a plate charge of 1e-2 C/m² and 1e4 A/m² that
+    // never flowed; Sol's third review. A step from it is the step response.)
+    s.readV = s.readV ?? Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
     applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
@@ -287,6 +291,7 @@ export class Device {
     // device with no steady state (a host filling at a current) can still advance() from there.
     const snap = this.solver._snapshot();
     const result = this.solver.solveSteady(opts);
+    if (result.converged) this.solver.readV = undefined; // (solved at its drives, and read so: see _redefineDrives)
     // (a failed solve's state isn't a solution: its accuracy warnings are left out)
     const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
     if (!sol.converged) this.solver._restore(snap);
@@ -354,9 +359,22 @@ export class Device {
   // A call that moved the clock has a state of its own to carry through set(). (Marked before it
   // ran, a step(0), a refused step or a failed first solve made c0 a "state" that a c0 patch
   // then couldn't replace; Astra's review.)
+  // A call that throws (a statistics model of the user's that throws an Error, not a refusal)
+  // leaves the state as it found it, then throws: left at the refused trial, a later call
+  // converged 0.7% off in its amounts, or the device couldn't be read or set() at all (Sol's
+  // third review).
   _touching(call) {
-    const t0 = this.solver.time;
-    const out = call();
+    const t0 = this.solver.time, snap = this.solver._snapshot();
+    let out;
+    try {
+      out = call();
+    } catch (e) {
+      this.solver._restore(snap);
+      this.solver.sourceBefore = false;
+      this.solver.landing = undefined;
+      this.solver.combining = false;
+      throw e;
+    }
     if (this.solver.time !== t0) this._touched = true;
     return out;
   }

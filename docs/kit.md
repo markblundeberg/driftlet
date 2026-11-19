@@ -306,14 +306,14 @@ console.log(`Henderson ${(1000 * henderson(pipette, bath, ions)).toFixed(2)} mV,
 ## Recording a transient
 
 `recorder(device, { every, times, probes })` runs a transient in pieces and keeps what a demo
-needs to show it: `trace`, the terminal current and voltage (each terminal's in `trace.terminals`,
-and the probes' readings) at every
+needs to show it: `trace`, the terminal current and voltage (each terminal's voltage, current and
+charge passed in `trace.terminals`, and the probes' readings) at every
 accepted step from the start, joined up across calls; and `frames`, whole solutions to scrub back
 through or draw side by side. Frames are kept at the start, then at each of `times` or every
 `every` seconds, which the stepping lands on exactly; with neither, at the end of each call.
 Its `advance(tEnd, opts)` takes `Device.advance()`'s options, so an animation calls it once per
 frame with a `budgetMs` (`done` says whether it got there), and a run in budgets is step for
-step the run made in one go. `frame(t)` is the frame at or just before t.
+step the run made in one go (a first step cut across calls included). `frame(t)` is the frame at or just before t.
 
 ```js
 import { Device } from 'driftlet';

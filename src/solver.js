@@ -42,6 +42,7 @@ export const STATE = [
   'atSteady', 'stepped', 'solvedV', 'coldStart', // what the state is: steady, stepped, where solved, cold
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
+  'readV', // the held voltages the state was solved at, after a set() of drives alone and until it moves (see makeSolution)
 ];
 // What Device.set() does with each STATE field when it rebuilds the solver (src/index.js), so a new
 // field gets a decision: 'kept' (the same value wherever the unknowns line up; a new grid
@@ -62,12 +63,15 @@ export const CARRY = {
   regriddedSteady: 'set', jumpedT: 'set', restarted: 'set',
   referenceAmounts: 'rebased', boundaryIntake: 'rebased', // (a closed stretch's amount, with its intake folded in; an open one's from the state)
   surfaceRef: 'rebased', // (what the old state held, where its surface is still there: src/carry.js)
+  readV: 'restarted', // (a rebuild's state is read at its own drives)
 };
 // What Newton learns about the device, kept across calls and through a rollback on purpose: that it
 // loses a mode in a time step (lostMode, set for good), and how many convergences it has probed for
 // it (accepted). A device put back by _restore() still knows them, so its next call can take a
 // different, better path than a twin that never made the undone call (src/newton.js, point 7).
-export const LEARNED = ['lostMode', 'accepted'];
+// And what the time stepper has tried of a first step, firstErrs (src/timeSteps.js: a first step
+// cut across calls stalls as in one; a rejected try is undone, its error kept, which is the point).
+export const LEARNED = ['lostMode', 'accepted', 'firstErrs'];
 // (Each value its own copy: typed arrays and the history array copied, the rest replaced whole.
 // Restored in place, the arrays the solver never replaces, which assembly reads by reference; the
 // others are replaced, since a step may alias them: portQOld = portQStart, filled in place, would
@@ -868,6 +872,7 @@ export class Solver {
     if (this.drivenKey !== driven) this._laws();
     this._refreshSources();
     this.history = [];
+    this.firstErrs = []; // (a new drive's first step: see integrate in src/timeSteps.js)
   }
 
   // How each terminal is driven, as far as the laws care (see src/laws.js): by a voltage or a current,
@@ -1057,24 +1062,29 @@ export class Solver {
   // this state: for each point of a trace. (A port's current was in a solution only, so a trace
   // of a port-driven device had only the contacts'; Fable round 2's cold user.)
   _terminalCurrents() {
-    return this.terms.map((t, k) => {
-      if (this.floating.includes(k)) return this.passedCurrent(k);
-      if (k === 1) return -this._terminalCurrent();
-      const dt = this.lastDt, flux = k === 0 ? this.contactFlux.left : this.portFlux[k - 2];
-      let I = 0;
-      for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * flux[i];
-      const stored = k === 0 ? this.contactD.left - this.contactDOld.left : this.model.ports[k - 2].capacitance ? this.portQ[k - 2] - this.portQOld[k - 2] : 0;
-      return I + (Number.isFinite(dt) ? stored / dt : 0);
-    });
+    return this.terms.map((t, k) => this._currentInto(k));
+  }
+
+  // Terminal k's current into the device: what its circuit says it passes where it floats, and
+  // what its contact or port's fluxes and displacement read otherwise. (Where the two agree
+  // within passedRoundoff, the reading, as the solution takes it: behind a resistance so small
+  // that I·R was below V's round-off, the trace read 0 where 1e9 A/m² passed, and the terminals'
+  // charges broke Kirchhoff by 1e7 C/m²; Sol's third review.)
+  _currentInto(k) {
+    const dt = this.lastDt, flux = k === 0 ? this.contactFlux.left : k === 1 ? this.contactFlux.right : this.portFlux[k - 2];
+    let I = 0;
+    for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * flux[i];
+    const stored = k === 0 ? this.contactD.left - this.contactDOld.left : k === 1 ? this.contactD.right - this.contactDOld.right : this.model.ports[k - 2].capacitance ? this.portQ[k - 2] - this.portQOld[k - 2] : 0;
+    I += Number.isFinite(dt) ? stored / dt : 0;
+    const read = k === 1 ? -I : I; // (the right contact's fluxes are toward +x, out of the device)
+    if (!this.floating.includes(k)) return read;
+    const passed = this.passedCurrent(k);
+    return Math.abs(read - passed) <= this.passedRoundoff(k) ? read : passed;
   }
 
   // Terminal current toward +x at the right contact, from the last assembly at this state.
   _terminalCurrent() {
-    if (this.floating.includes(1)) return -this.passedCurrent(1);
-    let I = 0;
-    for (let i = 0; i < this.n; i++) I += FARADAY * this.z[i] * this.contactFlux.right[i];
-    const dt = this.lastDt;
-    return I + (Number.isFinite(dt) ? (this.contactD.right - this.contactDOld.right) / dt : 0);
+    return -this._currentInto(1);
   }
 
   // Each species' flux toward +x across every segment, at the current state (concentrations
@@ -1165,6 +1175,10 @@ export class Solver {
     const driven = new Map();
     for (const cs of this.constraints) {
       if (cs.circuit < 0 || this.terms[cs.circuit].drive.kind !== 'I' || cs.parts.length !== 1 || cs.surface.length || cs.carriers.length) continue;
+      // (Not where another of its terminals passes a current too, as circuitLaws: the intake is
+      // theirs together. Read as the one's alone, a contact and a port driven at ±1 A/m² into one
+      // stretch showed a leak of I·dt/F a step, and check() failed it; Sol's third review.)
+      if (cs.terminals?.some((t) => t !== cs.circuit && sourceAt(this.terms[t].drive.src, this.sourceTime, this.sourceBefore) !== 0)) continue;
       driven.set(cs.parts[0].stretch, (cs.lambda * sourceAt(this.terms[cs.circuit].drive.src, this.sourceTime, this.sourceBefore)) / (cs.parts[0].w * FARADAY));
     }
     this.stretches.forEach((st, k) => {

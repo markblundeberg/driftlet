@@ -19,10 +19,15 @@ export function makeSolution(solver, result = {}) {
   // are the same; and the solver is left reading them as it did, its held voltages too.)
   const before = solver.sourceBefore;
   if (solver.stepped && solver.time > 0) solver.sourceBefore = true; // (stepped: the last call was a step, as set() carries it)
+  // (After a set() of drives alone, the held terminals at the voltages the state was solved at:
+  // see Device's _redefineDrives.)
+  const read = solver.readV ? solver.terms.flatMap((t, k) => (t.drive.kind === 'V' && !(t.drive.R > 0) && !solver.sourceOverride.has(k) ? [k] : [])) : [];
+  for (const k of read) solver.sourceOverride.set(k, solver.readV[k]);
   let fields;
   try {
     fields = solutionFields(solver, result);
   } finally {
+    for (const k of read) solver.sourceOverride.delete(k);
     solver.sourceBefore = before;
     solver._refreshSources();
   }

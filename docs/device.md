@@ -1374,8 +1374,10 @@ Notes:
 
 Adaptive, variable-step BDF2 from the device's present state to the absolute time `tEnd`,
 landing on it exactly. It returns the solution there, with `done` (whether `tEnd` was reached),
-`rejected` (steps) and a `trace` of this call's accepted steps. Each note below names what it is
-about, so that a search lands on a whole fact.
+`rejected` (steps) and a `trace` of this call's accepted steps. (A first step, from a start or
+after a breakpoint, is taken as two halves: it counts once in `steps`, and both halves are rows of
+the trace, the first's carrying what passed in it.) Each note below names what it is about, so
+that a search lands on a whole fact.
 
 | option | default | meaning |
 |---|---|---|

@@ -27,6 +27,18 @@ major version.
   - advance() refuses a negative or zero dtMax, a tol that isn't positive and a fractional
     maxSteps (a negative dtMax ran the clock backwards and converged), and step() a dt below the
     time's resolution; a repeating waveform whose period is below it is an error, not a hang.
+  - The passed charge of a terminal driven by a current ramp, on a resistive path, came out up to
+    50% high from a long first step (its two quadratures agree at the step's end there, error 0):
+    the first step's error now counts that charge too (1–4% more work where a drive ramps).
+  - The terminals' traced currents and charges read a resistance's I·R where it was below the
+    voltages' round-off (0 where 1e9 A/m² passed); the conservation ledger took one of two terminals
+    driven by currents into one stretch as the only one (a leak, and check() failed it); a solution
+    read right after a set() of drives alone read the state at the new voltages (a plate charge and
+    current that never flowed), and now reads it as solved until a step or a solve moves it.
+  - A call that throws (a user's statistics model throwing an Error) leaves the device as it found
+    it; a failed cold step puts back the t = 0⁺ projection; BDF2's history is written exact on a
+    state at rest (it drifted by ε a step); a first step cut across an animation's frames is seen
+    to stall as in one call; the recorder joins each terminal's charge passed.
   - set() copied a patch's drive, link and φ law only after putting the caller's own objects in,
     and the constructor normalized the caller's definition before copying it, so an edit to one
     afterwards reached the model halfway (from Astra's pass over the definition's normalization).

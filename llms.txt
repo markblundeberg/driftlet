@@ -703,7 +703,7 @@ const rest = dev.solve(); // the steady state at t = 0 (solve() doesn't advance 
 const run = dev.advance(10e-6, { dtMax: 20e-9, probes: [{ x: 1.525e-3, species: 'h+' }] });
 const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
 const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
-console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // => 1952 (for the 1900 put in): a spreading, decaying pulse peaks a little early
+console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // => 1951 (for the 1900 put in): a spreading, decaying pulse peaks a little early
 ```
 
 To start from a state rather than simulate how it got there (a packet already injected, a salt
