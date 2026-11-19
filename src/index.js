@@ -289,11 +289,20 @@ export class Device {
     options(opts, 'solve', ['maxSteps', 'tol', 'continuation']);
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
+    // (And one that throws, as _touching does for the transients: a custom statistics that threw
+    // mid-solve left the state moved and the clock at 44000 s, and solution() threw after it;
+    // Astra's fourth pass.)
     const snap = this.solver._snapshot();
-    const result = this.solver.solveSteady(opts);
-    if (result.converged) this.solver.readV = undefined; // (solved at its drives, and read so: see _redefineDrives)
-    // (a failed solve's state isn't a solution: its accuracy warnings are left out)
-    const sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
+    let result, sol;
+    try {
+      result = this.solver.solveSteady(opts);
+      if (result.converged) this.solver.readV = undefined; // (solved at its drives, and read so: see _redefineDrives)
+      // (a failed solve's state isn't a solution: its accuracy warnings are left out)
+      sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });
+    } catch (e) {
+      this.solver._restore(snap);
+      throw e;
+    }
     if (!sol.converged) this.solver._restore(snap);
     else {
       this._touched = true;

@@ -783,6 +783,15 @@ function flatRows(s) {
   }
 }
 
+// The face-block slot of a face reaction's participant's level at a diffuse layer's plane (its w,
+// above its edge node's level), as _faceReaction reads it; −1 where it reacts at its node.
+export function planeSlot(s, f, p) {
+  const d = s.diffAt[f][p.side];
+  if (d < 0) return -1;
+  const L = s.diffList[d];
+  return s.z[p.i] !== 0 || L.lat?.on[p.i] ? L.drawSlot[p.i] : -1;
+}
+
 // Steady solves: each reaction that alone changes a combination (see src/laws.js) held at its
 // equilibrium, a = fixedA − Σ ν η = 0, in place of one of that combination's balance rows (a pin,
 // like an amount's).
@@ -796,7 +805,15 @@ function applyAffinities(s) {
     const gL = grid.regionEnd[af.f], gR = grid.regionStart[af.f + 1];
     let hi = af.rx.fixedA, lo = 0, len = 0;
     const sSide = s.model.interfaces[af.f].surfaceSide;
-    const terms = [...af.rx.part.map((p) => [s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu]), ...af.rx.surf.map((p) => [s.blockOfNode[sSide ? gR : gL] * M + 1 + s.n + p.s, p.nu])];
+    // (A participant drawn through a diffuse layer reacts at the plane, its level w above its edge
+    // node's, in the face block's slot: the kinetics' affinity counts it, and the pin held the
+    // edge's instead, a couple behind a crowded layer off by the draw, 3× in its current, converged
+    // and unwarned; Astra's fourth pass, and Sol's.)
+    const bf = s.blockOfFace[af.f];
+    const terms = [...af.rx.part.flatMap((p) => {
+      const q = planeSlot(s, af.f, p);
+      return q < 0 ? [[s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu]] : [[s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu], [bf * M + q, p.nu]];
+    }), ...af.rx.surf.map((p) => [s.blockOfNode[sSide ? gR : gL] * M + 1 + s.n + p.s, p.nu])];
     for (const [o, nu] of terms) {
       hi -= nu * u[o];
       lo -= nu * uLo[o];

@@ -219,13 +219,14 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
   const isStretch = (k) => k < S, isSurface = (k) => k >= S && k < X;
   // (With `skip`, a reaction left out: the combinations that it alone changes come out too, and
   // its own rows, over the columns, are handed back as `basis.skipped`.)
-  const rows = [], skipped = [];
+  const rows = [], skipped = [], byRx = [];
   model.interfaces.forEach((itf, f) => {
     for (const rx of itf.reactions) {
       const row = new Float64Array(C);
       for (const p of rx.part) row[stretchOf[(f + p.side) * n + p.i]] += p.nu;
       for (const p of rx.surf) row[S + surfColOf[itf.surfaceOf] + p.s] += p.nu; // (its surface's species)
       (rx === skip ? skipped : rows).push(row);
+      byRx.push([row, rx]);
     }
   });
   // An electrode surface's species are columns too, after the stretches (S + j for surface
@@ -241,6 +242,7 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
         else if (carriers.includes(k + 2)) row[X + carriers.indexOf(k + 2)] += p.nu;
       }
       if (rx !== skip) rows.push(row);
+      byRx.push([row, rx]);
     }
   });
   model.regions.forEach((reg, q) => {
@@ -250,8 +252,27 @@ export function conservedMoieties(s, { drives = false, alsoCurrent = [], skip = 
       for (const p of rx.reactants) row[stretchOf[q * n + p.i]] -= p.nu;
       for (const p of rx.products) row[stretchOf[q * n + p.i]] += p.nu;
       (rx === skip ? skipped : rows).push(row);
+      byRx.push([row, rx]);
     }
   });
+  // (And with it every reaction that is the same one again: its row a multiple λ of a skipped
+  // row and its fixed affinity λ times that one's, so at equilibrium wherever the skipped one is.
+  // Left in, a channel split in two at half the rate each was what changed the combination, neither
+  // was, and a frozen pair converged 111 mV off, unwarned; Astra's fourth pass.)
+  if (skip) {
+    const mates = (r0, a0, row, a) => {
+      const k = r0.findIndex((x) => x !== 0);
+      if (k < 0) return false;
+      const lam = row[k] / r0[k];
+      return lam !== 0 && row.every((x, j) => Math.abs(x - lam * r0[j]) <= 1e-9) && Math.abs((a ?? 0) - lam * (a0 ?? 0)) <= 1e-9 * (1 + Math.abs(a ?? 0));
+    };
+    const own = byRx.filter(([, rx]) => rx === skip);
+    for (const [row, rx] of byRx) {
+      if (rx === skip || !own.some(([r0, rx0]) => mates(r0, rx0.fixedA, row, rx.fixedA))) continue;
+      rows.splice(rows.indexOf(row), 1);
+      skipped.push(row);
+    }
+  }
   const unit = (k) => {
     const row = new Float64Array(C);
     row[k] = 1;
@@ -531,7 +552,7 @@ export function findLaws(s) {
           if (!sj) continue;
           const col = S + T + sj.j;
           chosen.push([col, v.map((x) => x / v[col])]);
-          affinities.push({ rx, f, row: blockOfNode[model.surfaces[itf.surfaceOf].nodes[0]] * M + 1 + n + sj.p.s, idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
+          affinities.push({ rx, f, row: blockOfNode[model.surfaces[itf.surfaceOf].nodes[0]] * M + 1 + n + sj.p.s, idx: new Int32Array(2 * rx.part.length + rx.surf.length), w: new Float64Array(2 * rx.part.length + rx.surf.length), len: 0, res: 0 });
           break pick;
         }
         // (Never a metal's carriers, nor a stretch a terminal feeds, even at no current: their rows
@@ -545,7 +566,7 @@ export function findLaws(s) {
         const col = [...Array(S).keys()].filter(ok).reduce((b, k) => (b < 0 || less(k, b) ? k : b), -1);
         if (col < 0) continue;
         chosen.push([col, v.map((x) => x / v[col])]);
-        affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(rx.part.length + rx.surf.length), w: new Float64Array(rx.part.length + rx.surf.length), len: 0, res: 0 });
+        affinities.push({ rx, f, row: rowOf(col), idx: new Int32Array(2 * rx.part.length + rx.surf.length), w: new Float64Array(2 * rx.part.length + rx.surf.length), len: 0, res: 0 });
         break pick;
       }
     }

@@ -134,7 +134,8 @@ side's $`\phi`$ to that level through a capacitance (see the
 [device reference](device.md#faces-next-to-a-conductor)).
 
 A face between a strictly neutral ($`\varepsilon = 0`$) material and one with $`\varepsilon > 0`$,
-such as an electrode and an electrolyte, is naturally `pinned`. The neutral side holds the
+such as a strictly neutral electrolyte against a semiconductor, is naturally `pinned` (an electrode is a
+conductor, above). The neutral side holds the
 surface charge, and the alignment plays the role of a potential of zero charge or work function.
 
 ## Contacts and terminals

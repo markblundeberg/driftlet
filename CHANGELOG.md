@@ -9,6 +9,22 @@ major version.
   change was merged into the old contact rather than replacing it, as `Device.set()` does: the mark
   saying so is a symbol, which a worker's message drops. A bath swapped from Ag/AgCl to bare Cl⁻
   kept its 1.14 V offset there, silently. The marks now travel beside the message.
+- A steady solve's reaction pinned at equilibrium at a face with a diffuse layer was held at the edge's
+  levels, where its kinetics react at the plane: a closed couple beside a reaction drawing O⁺ across a
+  crowded layer settled off by the draw, its face current 3× off, converged and unwarned. The pin
+  now reads the plane's level, as the kinetics do. (OpenAI's GPT-6.2 Astra and Sol, fourth passes,
+  each found it.)
+- The steady solve's check for reactions too slow to resolve (left where the solve began, which a
+  warning says) missed three cases: a port reaction less than RT off (its affinities were truncated
+  to integers), a reaction split into identical channels (each was what the other's check left in),
+  and an immobile species under a port that acts only on other species. Each now warns as a single
+  reaction does.
+- Currents that balance into one conserved pool (+1 A/m² of K⁺ in at a contact, −1 out at a port) were
+  refused as charging, "no steady state"; the solve now finds the one the transient settles to. A net
+  feed is still refused.
+- A `solve()` that throws (a custom statistics' table ending mid-solve) leaves the device as it was,
+  as `step()` and `advance()` do: it had left the state moved, the clock at the last trial step, and
+  `solution()` throwing.
 
 ## 1.18.0 (2026-11-19)
 

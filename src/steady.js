@@ -150,7 +150,7 @@
 
 import { profileAt, sourceAt } from './device.js';
 import { chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
-import { captureLaws, captureLocal } from './lawRows.js';
+import { captureLaws, captureLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
 
 export class SteadySolves {
@@ -246,7 +246,24 @@ export class SteadySolves {
     for (const k of this.floating) {
       const I = sourceAt(this.terms[k].drive.src, this.time);
       if (this.terms[k].drive.kind !== 'I' || I === 0) continue;
-      const laws = this.constraints.filter((cs) => cs.terminals.includes(k));
+      // (A law fed by several terminals charges only if their currents' net feed into it isn't
+      // zero, Σ λ_t I_t, λ_t = w/z on what t feeds: +1 A/m² in at one terminal and −1 out at
+      // another, each passing K⁺ into one pool, was refused as charging, where the transient
+      // settles; Astra's fourth pass. An electrode's charge column, as before.)
+      const net = (cs) => {
+        if (cs.carriers?.length) return true;
+        let sum = 0, size = 0;
+        for (const t of cs.terminals) {
+          if (this.terms[t].drive.kind !== 'I') continue;
+          const p = cs.parts.find((q) => feeds(t, this.stretches[q.stretch]) && this.z[this.stretches[q.stretch].species] !== 0);
+          if (!p) return true;
+          const x = (p.w / this.z[this.stretches[p.stretch].species]) * sourceAt(this.terms[t].drive.src, this.time);
+          sum += x;
+          size += Math.abs(x);
+        }
+        return Math.abs(sum) > 1e-12 * size;
+      };
+      const laws = this.constraints.filter((cs) => cs.terminals.includes(k) && net(cs));
       if (laws.length === 0 && !chargeOnly(this, k)) continue;
       const what = laws.flatMap((cs) => [
         ...cs.parts.map(({ stretch }) => {
@@ -697,7 +714,22 @@ export class SteadySolves {
     }
   }
 
-  _steadySteps({ maxSteps = 80, tol = 1e-11 } = {}) {
+  // (Its clock, history and step put back on a throw too, as on a return: a throw from a custom
+  // statistics inside a step left the clock at 44000 s, and the next advance() did nothing;
+  // Astra's fourth pass.)
+  _steadySteps(opts) {
+    const time = this.time;
+    try {
+      return this._stepsToSteady(opts);
+    } catch (e) {
+      this.time = time;
+      this.history = [];
+      this.dtNext = undefined;
+      throw e;
+    }
+  }
+
+  _stepsToSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
     const time = this.time;
     const tau = this.slowestTime();
     const direct = this._directSteady();
@@ -919,7 +951,8 @@ export class SteadySolves {
         // converged, unwarned; Fable round 3's review of src/steady.js)
         if ((direct && this.affinities.some((af) => af.rx === rx)) || !needed(rx)) return;
         const gS = itf.surfaceSide ? gR : gL;
-        report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * eta(p.side ? gR : gL, 1 + p.i), rx.fixedA))]);
+        const bf = this.blockOfFace[f], w = (p) => { const s = planeSlot(this, f, p); return s < 0 ? 0 : u[bf * M + s] + uLo[bf * M + s]; }; // (at a layer's plane)
+        report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * (eta(p.side ? gR : gL, 1 + p.i) + w(p)), rx.fixedA))]);
       });
     });
     // Where a participant can't move (D = 0, inside a region without flow or mixing, away from its
@@ -928,13 +961,21 @@ export class SteadySolves {
     // way in one region and the other way in the next (Y immobile in the second), the sum of a
     // frozen reaction's rates over the device was balanced and its affinities of both signs: it
     // passed for steady (Fable round 3's review of src/steady.js).
-    const inPort = new Uint8Array(this.nNodes);
-    for (const port of model.ports) for (const g of port.nodes) inPort[g] = 1;
+    // (A port moves a species at its nodes only if it links it or reacts it: an electron-only port
+    // over the region switched the check off for every species there, and an immobile Y left 50×
+    // off converged unwarned; Astra's fourth pass.)
+    const inPort = new Uint8Array(this.nNodes * n);
+    for (const port of model.ports) {
+      for (let i = 0; i < n; i++) {
+        if ((port.species[i]?.type ?? 'blocked') === 'blocked' && !port.reactions.some((r) => r.part.some((p) => p.side === 0 && p.i === i))) continue;
+        for (const g of port.nodes) inPort[g * n + i] = 1;
+      }
+    }
     const held = (x, g) => {
       const reg = model.regions[grid.nodeRegion[g]], mat = model.materials[reg.material];
-      if (inPort[g] || reg.velocity !== 0 || reg.mixing !== 0 || g === grid.regionStart[grid.nodeRegion[g]] || g === grid.regionEnd[grid.nodeRegion[g]]) return false;
+      if (reg.velocity !== 0 || reg.mixing !== 0 || g === grid.regionStart[grid.nodeRegion[g]] || g === grid.regionEnd[grid.nodeRegion[g]]) return false;
       const rx = this.rxs[x];
-      return Array.from(rx.sp).some((i) => !(mat.D[i] > 0) && this.rxs.every((o, y) => y === x || !(o.kfNode[g] > 0) || !o.sp.includes(i)));
+      return Array.from(rx.sp).some((i) => !inPort[g * n + i] && !(mat.D[i] > 0) && this.rxs.every((o, y) => y === x || !(o.kfNode[g] > 0) || !o.sp.includes(i)));
     };
     model.reactions.forEach((mrx, x) => {
       // (Generations too: what's classed as one, made from or turned into fixed reservoirs only,
@@ -958,7 +999,7 @@ export class SteadySolves {
         if (!needed(rx)) return;
         let aV = rx.fixedA;
         for (const p of rx.part) if (p.side === 1) aV -= p.nu * this.portEta(port, p.i);
-        report(`ports[${k}].reactions[${q}]`, port.nodes.map((g) => rx.part.reduce((a, p) => (p.side === 1 ? a : a - p.nu * eta(g, p.side === 2 ? 1 + n + p.s : 1 + p.i)), aV)));
+        report(`ports[${k}].reactions[${q}]`, Array.from(port.nodes, (g) => rx.part.reduce((a, p) => (p.side === 1 ? a : a - p.nu * eta(g, p.side === 2 ? 1 + n + p.s : 1 + p.i)), aV)));
       });
     });
     return out;
