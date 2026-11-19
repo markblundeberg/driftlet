@@ -414,7 +414,11 @@ export class Device {
     // out non-passive, Re Z −2.3e3 of 1.6e6 (stress echem 133). (A steady solve that fails leaves
     // the device as it was, as solve() does: a dark cell driven past saturation was left at a held
     // stage's 26.9 V, and the advance() the error suggests went on from there; Fable round 3's
-    // steady.js review.)
+    // steady.js review.) What the arguments alone refuse is refused first, and any later refusal
+    // (a frequency where the linearised system is singular) leaves it as it was too: a refused
+    // call that had solved the steady state took a pending step response with it, 3420 A/m² of
+    // a plate set to 0.1 V read 0 at the next step (Sol's fourth pass).
+    this.solver.impedanceArgs(frequencies, opts?.terminal);
     const snap = this.solver._snapshot();
     const steady = this.solver.solveSteady();
     if (!steady.converged) {
@@ -424,11 +428,17 @@ export class Device {
       this.solver._restore(snap);
       throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
     }
-    this._touched = true; // (solved: a state of its own)
     this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
-    const out = this.solver.impedance(frequencies, opts);
+    let out;
+    try {
+      out = this.solver.impedance(frequencies, opts);
+    } catch (err) {
+      this.solver._restore(snap);
+      throw err;
+    }
+    this._touched = true; // (solved: a state of its own)
     // Where the current a frequency carries is lost to round-off (far below the device's slowest
     // relaxation, or read as a small difference of large terms), Z is said to be unresolved: an
     // electrolyte between blocking electrodes at 1e-4 Hz read Re Z 1e4 times too large, and a

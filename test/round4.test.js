@@ -18,6 +18,14 @@ const sharedK = (left, mem) => {
     grid: { hmin: 5e-8, hmax: 5e-8 },
   });
 };
+// A neutral film between a pinned contact and a capacitive plate, the plate driven as given.
+const plate = (right) => new Device({
+  species: [{ name: 'X', z: 0 }],
+  materials: { f: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } } },
+  regions: [{ name: 'a', material: 'f', length: 1e-6, c0: { X: 1 } }],
+  contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } }, right: { ...right, phi: { type: 'capacitive', C: 1e-3 }, zeroCharge: 0, species: { X: 'blocked' } } },
+  grid: { minCells: 8 },
+});
 const near = (a, b, q, tol) => Math.hypot(a.Z.re[q] - b.Z.re[q], a.Z.im[q] - b.Z.im[q]) / Math.hypot(b.Z.re[q], b.Z.im[q]) < tol;
 
 test('a current-driven terminal measured where another shares its conserved law: the held twin\'s Z', () => {
@@ -40,13 +48,6 @@ test('a solution read after a set() of a floating terminal\'s drive alone: what 
   // (Read at the new drive, a capacitive plate set from I: 0 to 2 A/m² read 2 A/m² flowing at no
   // step, the plate uncharged and the terminals summing to −2, without a word; behind 10 Ω·m², a
   // source set from 0 to 0.5 V read 0.05 A/m². Held terminals were read as solved already.)
-  const plate = (right) => new Device({
-    species: [{ name: 'X', z: 0 }],
-    materials: { f: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } } },
-    regions: [{ name: 'a', material: 'f', length: 1e-6, c0: { X: 1 } }],
-    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } }, right: { ...right, phi: { type: 'capacitive', C: 1e-3 }, zeroCharge: 0, species: { X: 'blocked' } } },
-    grid: { minCells: 8 },
-  });
   const sum = (s) => Object.values(s.terminals).reduce((t, x) => t + x.current, 0);
   for (const [from, to] of [[{ I: 0 }, { I: 2 }], [{ V: 0, R: 10 }, { V: 0.5 }]]) {
     const d = plate(from);
@@ -64,4 +65,19 @@ test('a solution read after a set() of a floating terminal\'s drive alone: what 
   d.set({ ports: { mem: { I: 1e-3 } } });
   assert.ok(d.solution().terminals.mem.current === 0);
   assert.equal(d.step(1e-9).terminals.mem.current, 1e-3);
+});
+
+test('a refused impedance() leaves a pending step response as it was', () => {
+  // (Each solved the steady state at the new drive before refusing: the next step read 0 where
+  // the plate's charging current was 3420 A/m².)
+  for (const bad of [[[0], {}], [[1], { terminal: 'nope' }], [[NaN], {}], [[1, -1], {}]]) {
+    const d = plate({ V: 0 }), twin = plate({ V: 0 });
+    for (const x of [d, twin]) {
+      x.solve();
+      x.set({ contacts: { right: { V: 0.1 } } });
+    }
+    assert.throws(() => d.impedance(...bad), /impedance: (frequencies|no terminal)/);
+    const a = d.step(1e-9).terminals.right.current, b = twin.step(1e-9).terminals.right.current;
+    assert.ok(b > 3e3 && a === b, `${JSON.stringify(bad)}: ${a} A/m², its twin ${b}`);
+  }
 });

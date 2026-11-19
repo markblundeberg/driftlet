@@ -23,7 +23,9 @@
 //   frequency.
 //   Throws a SolverError where the terminal doesn't exist, has a series resistance, or every
 //   other terminal is driven by a current (no return path: Z infinite), where a frequency
-//   isn't positive and finite, or where the linearised system is singular at one.
+//   isn't positive and finite (these by impedanceArgs(frequencies, terminal) → its index, which
+//   Device.impedance asks before its steady solve), or where the linearised system is singular
+//   at one.
 //   Linearised about the present state: (J + iωS)·δx + Σ_k B_k δV_k = 0 for the grid's rows and,
 //   for each floating terminal k (driven by a current), (C_k + iωC′_k)·δx + (DI_k + iωDI′_k) δV_k
 //   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J the steady Jacobian (dt = ∞) and S, C′, DI′,
@@ -246,12 +248,14 @@ export class SmallSignal {
     }
   }
 
-  _impedance(frequencies, { profiles = false, terminal = 'right' } = {}) {
-    const { M, nB, sys, VT } = this;
+  // What impedance() refuses of its arguments alone, before anything is solved: Device.impedance
+  // asks first, as a steady solve would take a pending transient's state (a refused call left a
+  // plate's step response of 3420 A/m² at 0; Sol's fourth pass). Returns the terminal's index.
+  impedanceArgs(frequencies, terminal = 'right') {
     const kT = this.terms.findIndex((t) => t.name === terminal);
     if (kT < 0) throw new SolverError(`impedance: no terminal named '${terminal}' (${this.terms.map((t) => t.name).join(', ')})`);
-    const dT = this.terms[kT].drive;
-    if (dT.R > 0) throw new SolverError(`impedance: terminal '${terminal}' has a series resistance; that belongs to the external circuit`);
+    for (const f of Array.from(frequencies)) if (!(2 * Math.PI * f > 0 && Number.isFinite(2 * Math.PI * f))) throw new SolverError('impedance: frequencies must be positive and finite');
+    if (this.terms[kT].drive.R > 0) throw new SolverError(`impedance: terminal '${terminal}' has a series resistance; that belongs to the external circuit`);
     // A small signal returns through the terminals held at a voltage: with every other one driven
     // by a current (held open), none comes back, and the impedance is infinite (else round-off).
     const others = this.terms.filter((t, k) => k !== kT);
@@ -261,6 +265,13 @@ export class SmallSignal {
           `its impedance is infinite. Measure at one of those instead (impedance(f, { terminal: '${others[0].name}' }), its voltage against '${terminal}'), or hold one of them at a voltage`,
       );
     }
+    return kT;
+  }
+
+  _impedance(frequencies, { profiles = false, terminal = 'right' } = {}) {
+    const { M, nB, sys, VT } = this;
+    const kT = this.impedanceArgs(frequencies, terminal);
+    const dT = this.terms[kT].drive, others = this.terms.filter((t, k) => k !== kT);
     // Z is the device's input impedance at kT, the same whether its voltage is perturbed and its
     // current read or the other way round. A terminal driven by a current is measured as if held
     // (δV = 1, Z = 1/δI) to read that current as a held one's is (cuts, Kirchhoff, a circuit law's
