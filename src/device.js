@@ -1050,6 +1050,24 @@ export function normalizeDrives(def, model) {
   return drives;
 }
 
+// A repeating source's cycles, as every reader here counts them: cycle c starts at ts[0] + c·T
+// and its knots are at ts[k] + c·T, computed so, the last being the next cycle's start. (Reduced
+// by %, a time landed on an edge read the wrong side of it: (0.5 % 0.1) is 0.0999…98, so a square
+// wave of period 0.1 s read 1183 of its first 2000 landed edges from before them; Sol's third
+// review.) A period below the time's resolution can't be stepped through: an error.
+const PASSED = 64 * Number.EPSILON; // a breakpoint within this of t, relative, is at t (round-off)
+function cycleAt(ts0, T, t) {
+  let c = Math.floor((t - ts0) / T);
+  for (let j = 0; j < 4 && ts0 + c * T > t; j++) c--;
+  for (let j = 0; j < 4 && ts0 + (c + 1) * T <= t; j++) c++;
+  return c;
+}
+function resolvable(T, t) {
+  if (!(T > 1024 * Number.EPSILON * Math.abs(t))) {
+    throw new DeviceError(`a repeating waveform's period, ${T} s, is below the time's resolution at t = ${t} s, so its edges can't be stepped to; drive it without repeat, or at its average`);
+  }
+}
+
 /**
  * A source's value at time t (s). At a step (two points at one time) it's the value after the
  * step; with `before`, the limit from earlier times, as a time step ending at t sees it.
@@ -1057,56 +1075,70 @@ export function normalizeDrives(def, model) {
 export function sourceAt(src, t, before = false) {
   if (src.value !== undefined) return src.value;
   const { t: ts, values: vs, repeat } = src, n = ts.length;
-  // just before: a few ulps of t (of the period, for a repeating one, which t is reduced by). (Of
-  // the whole span, a waveform held 'forever' by a last knot at 1e12 s read 1.8 ms before t, and
-  // hid a jump that long; Astra's second pass.)
+  // just before: a few ulps of t (of the period, for a repeating one). (Of the whole span, a
+  // waveform held 'forever' by a last knot at 1e12 s read 1.8 ms before t, and hid a jump that
+  // long; Astra's second pass.)
   if (before) t -= 8 * Number.EPSILON * Math.max(Math.abs(t), repeat ? ts[n - 1] - ts[0] : 0, 1e-300);
+  let at = (k) => ts[k];
   if (repeat) {
-    const T = ts[n - 1] - ts[0];
-    t = ts[0] + ((((t - ts[0]) % T) + T) % T);
+    const T = ts[n - 1] - ts[0], c = cycleAt(ts[0], T, t);
+    at = (k) => (k === n - 1 ? ts[0] + (c + 1) * T : ts[k] + c * T); // (at(0) ≤ t < at(n − 1))
   }
-  if (t < ts[0]) return vs[0];
-  if (t >= ts[n - 1]) return vs[n - 1];
+  if (t < at(0)) return vs[0];
+  if (t >= at(n - 1)) return repeat ? vs[0] : vs[n - 1]; // (repeating: only past the resolution)
   let k = 0;
-  while (ts[k] < t) k++;
-  if (ts[k] === t) {
-    while (k + 1 < n && ts[k + 1] === t) k++; // after a step
+  while (at(k) < t) k++;
+  if (at(k) === t) {
+    while (k + 1 < n && at(k + 1) === t) k++; // after a step
     return vs[k];
   }
-  const w = (t - ts[k - 1]) / (ts[k] - ts[k - 1]);
+  const w = (t - at(k - 1)) / (at(k) - at(k - 1));
   return vs[k - 1] + w * (vs[k] - vs[k - 1]);
 }
 
 /**
- * Whether a source has a breakpoint within round-off of time t: one nextBreakpoint() counts as
- * passed (within 1e-12 of t, relative), so a time step from t starts across it.
+ * Whether a source has a breakpoint within 1e-12 of time t, relative: one nextBreakpoint() may
+ * count as passed, so a time step from t may start across it (and the order restarts).
  */
 export function nearBreakpoint(src, t) {
   if (src.value !== undefined) return false;
-  const { t: ts, repeat } = src, n = ts.length;
-  const T = repeat ? ts[n - 1] - ts[0] : 0, w = 1e-12 * Math.max(Math.abs(t), T) + 1e-300;
+  const { t: ts, repeat } = src, n = ts.length, w = 1e-12 * Math.abs(t) + 1e-300;
   if (!repeat) return ts.some((tb) => Math.abs(tb - t) <= w);
-  const cycle = Math.floor((t - ts[0]) / T);
-  for (let c = cycle - 1; c <= cycle + 1; c++) for (let k = 0; k < n; k++) if (Math.abs(ts[k] + c * T - t) <= w) return true;
-  return false;
+  const T = ts[n - 1] - ts[0], cycle = cycleAt(ts[0], T, t);
+  for (let c = cycle - 1; c <= cycle + 1; c++) for (let k = 0; k < n - 1; k++) if (Math.abs(ts[k] + c * T - t) <= w) return true;
+  return Math.abs(ts[0] + (cycle + 2) * T - t) <= w;
 }
 
-/** The first breakpoint of a source strictly after time t (Infinity if none). */
+// A source's breakpoints after time t0, in order (two at most are wanted).
+function* breaksAfter(src, t0) {
+  const { t: ts, repeat } = src, n = ts.length;
+  if (!repeat) {
+    for (let k = 0; k < n; k++) if (ts[k] > t0) yield ts[k];
+    return;
+  }
+  const T = ts[n - 1] - ts[0];
+  for (let c = cycleAt(ts[0], T, t0); ; c++) for (let k = 0; k < n - 1; k++) if (ts[k] + c * T > t0) yield ts[k] + c * T;
+}
+
+/**
+ * The next breakpoint of a source after time t that a step from t should land on (Infinity if
+ * none). One within round-off (64 ε of t) is passed. One within 1e-12 of t is passed too, and
+ * stepped across, where the next is a thousand times further: a step that short (1e-13 s at 1 s)
+ * can't be taken in a strictly neutral device, and crossing it errs by that hair's charge alone.
+ * (Counted passed regardless, as it was, a pulse narrower than 1e-12 of t was skipped whole, and
+ * every edge of a repeating one whose period was: a 1 µs square wave at t = 2e6 s was never landed
+ * on; Sol's third review. Known: a lone pulse narrower than that is crossed, its charge lost.)
+ */
 export function nextBreakpoint(src, t) {
   if (src.value !== undefined) return Infinity;
   const { t: ts, repeat } = src, n = ts.length;
-  if (!repeat) {
-    for (let k = 0; k < n; k++) if (ts[k] > t + 1e-12 * Math.abs(t) + 1e-300) return ts[k]; // (t·(1 + ε) is below t for t < 0)
-    return Infinity;
-  }
-  const T = ts[n - 1] - ts[0], cycle = Math.floor((t - ts[0]) / T);
-  for (let c = cycle; c <= cycle + 1; c++) {
-    for (let k = 0; k < n; k++) {
-      const tb = ts[k] + c * T;
-      if (tb > t + 1e-12 * Math.max(Math.abs(t), T)) return tb;
-    }
-  }
-  return Infinity;
+  if (repeat) resolvable(ts[n - 1] - ts[0], t);
+  const it = breaksAfter(src, t + PASSED * Math.abs(t) + 1e-300);
+  const b1 = it.next().value ?? Infinity;
+  if (!(b1 - t <= 1e-12 * Math.abs(t))) return b1;
+  let b2 = it.next().value ?? Infinity;
+  while (b2 === b1) b2 = it.next().value ?? Infinity; // (a step's two knots)
+  return b2 - b1 >= 1000 * (b1 - t) ? b2 : b1;
 }
 
 // The device's cross-section A(x): planar (the default, A = 1 m², so currents read as densities),

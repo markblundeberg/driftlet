@@ -109,8 +109,11 @@ const options = (opts, method, allowed) => checkOptions(method, opts, allowed, S
 export class Device {
   /** @param {DeviceDefinition} def plain, serialisable device definition (see docs/device.md) */
   constructor(def) {
-    this.model = normalizeDevice(def);
-    this.def = ownCopy(def); // (its own: a caller's later edits to def reach it only through set())
+    // (its own, copied before it's read: normalized from the caller's, a statistics model kept
+    // the caller's arrays, and an edit to one after construction made a hybrid of two models;
+    // Astra's third pass)
+    this.def = ownCopy(def); // (a caller's later edits to def reach it only through set())
+    this.model = normalizeDevice(this.def);
     this._solver = null;
     this._touched = false; // (solved or stepped: a state of its own to carry through set())
   }
@@ -169,9 +172,11 @@ export class Device {
     // kept its offset, a pinned φ over a capacitive one its C (Fable's re-check). (A contact the kit wrote replaces the old one whole: merge's WHOLE.)
     for (const side of ['left', 'right']) {
       const c = patch?.contacts?.[side];
-      if (c && typeof c === 'object') for (const key of ['V', 'I']) if (c[key] !== undefined) def.contacts[side][key] = c[key];
-      for (const [name, link] of Object.entries(c?.species ?? {})) if (link && typeof link === 'object' && 'type' in link) def.contacts[side].species[name] = link;
-      if (c?.phi && typeof c.phi === 'object' && 'type' in c.phi) def.contacts[side].phi = c.phi;
+      // (copies: the patch's own objects put in, a caller's later edit to one made the next set()
+      // of the same value a no-op and leaked in at an unrelated rebuild; Astra's third pass)
+      if (c && typeof c === 'object') for (const key of ['V', 'I']) if (c[key] !== undefined) def.contacts[side][key] = ownCopy(c[key]);
+      for (const [name, link] of Object.entries(c?.species ?? {})) if (link && typeof link === 'object' && 'type' in link) def.contacts[side].species[name] = ownCopy(link);
+      if (c?.phi && typeof c.phi === 'object' && 'type' in c.phi) def.contacts[side].phi = ownCopy(c.phi);
     }
     // Nothing changed (a page resending its drives every frame): nothing to do. (Redriven, a
     // transient's BDF2 history was cleared and a steady state forgot it was one; Astra's review.)
@@ -309,6 +314,9 @@ export class Device {
     const length = `dt is the step's length in s, a positive number (the device is at t = ${this.solver.time})`;
     if (typeof dt !== 'number' || dt < 0 || dt === Infinity) throw new SolverError(`step(${typeof dt === 'string' ? `'${dt}'` : dt}): ${length}${dt === Infinity ? '. For the long-time limit, solve() the steady state' : ''}`);
     if (!(dt > 0)) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` });
+    // A step too short to move the clock (1e-17 s at t = 1 s) can't be taken: it posted charge
+    // while the time stood still (Sol's third review).
+    if (this.solver.time + dt === this.solver.time) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: it's below the time's resolution at t = ${this.solver.time} s` });
     this._settleRegrid(); // (as advance() does: stepped unsolved, 27 A/m² where 68.8 is right)
     this.solver._freshDiagnostics();
     return this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)));
@@ -335,7 +343,10 @@ export class Device {
     // close that gap: storage resists it (Fable round 2's cold user: set({ grid }) on a solved
     // cell, then advance(), failed down to 1e-17 s). Its steady state on the new grid is what it
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
-    if (tEnd > this.solver.time) this._settleRegrid(); // (an advance to now takes no step: nothing to settle for)
+    // (an advance to now takes no step: nothing to settle for; nor does a tEnd that isn't a number,
+    // which integrate refuses: checked first, advance('1') settled the regrid before it threw;
+    // Sol's third review)
+    if (typeof tEnd === 'number' && tEnd > this.solver.time) this._settleRegrid();
     this.solver._freshDiagnostics();
     return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)));
   }

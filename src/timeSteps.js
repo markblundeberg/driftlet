@@ -34,7 +34,7 @@
 // step(s, dt, opts) → newton's result (+ bdf)
 //   From a cold start (s.coldStart, outside a steady solve), the faces between strictly neutral
 //   regions first set to their t = 0⁺ equilibrium (equilibrateFaces, src/start.js).
-//   One step from s.time to tEnd = s.time + dt (or s.landing exactly, where it's within 1e-9·dt
+//   One step from s.time to tEnd = s.time + dt (or s.landing exactly, where it's within 1e-9·dt or 4 ulps
 //   of that). Backward Euler; BDF2 when opts.method is 'bdf2', a previous step exists and the
 //   ratio ω = dt/dt_prev ≤ 2: then c* = b1·c_n − b2·c_{n−1} (b1 = (1+ω)/a0, b2 = ω²/((1+ω)a0),
 //   a0 = (1+2ω)/(1+ω)) for every stored quantity, and the step is solved as backward Euler of
@@ -74,9 +74,9 @@
 //   - A first step whose error doesn't shrink as it's cut (three tries within a factor 2 of
 //     each other): a jump at a boundary, self-similar in x/√t, so taken anyway.
 //   - Steps land exactly on the sources' breakpoints (and the history is cleared there: the
-//     slope jumps) and on tEnd; within round-off of tEnd (1e-10 of it and 1e-9 of the
+//     slope jumps) and on tEnd; within round-off of tEnd (1e-12 of it and 1e-9 of the
 //     interval) the time snaps to it. A step that ends, or a call that starts, within
-//     round-off of a breakpoint (1e-12 of the time, where nextBreakpoint() counts it passed)
+//     round-off of a breakpoint (1e-12 of the time, where nextBreakpoint() may count it passed)
 //     clears the history too: the next step crosses that breakpoint unlanded.
 //
 // Invariants (each says what a reviewer should be able to check here):
@@ -123,7 +123,9 @@ export function advance(s, dt, opts, depth = 0) {
   // At a source's breakpoint, BDF2's history spans the kink in what it stores, and a current
   // switched on there lost I·dt/2 of charge for good (Fable round 4's review of this module):
   // the order restarts there, as integrate's does.
-  if (depth === 0 && s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
+  // At every depth: a half that starts on the breakpoint, after its first half failed and its
+  // second converged, crossed it with BDF2 and lost a third of its charge (Sol's third review).
+  if (s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
   const r = s.step(dt, opts);
   if (r.converged || depth >= 30) return { ...r, substeps: 1 };
   const a = s.advance(dt / 2, opts, depth + 1);
@@ -195,7 +197,11 @@ export function step(s, dt, opts = {}) {
   }
   // Implicit: sources at the step's end, as seen from within the step (before any jump there).
   // A step landing on a breakpoint ends on it exactly.
-  const tEnd = s.landing !== undefined && Math.abs(s.time + dt - s.landing) <= 1e-9 * dt ? s.landing : s.time + dt;
+  // (Within a few ulps too: at 1e-9 of a short step, below an ulp of the time, a startup pair's
+  // second half ended an ulp off its target, and the call then snapped the clock past the
+  // sources' time; Sol's third review.)
+  const near = s.landing !== undefined && Math.abs(s.time + dt - s.landing) <= Math.max(1e-9 * dt, 4 * Number.EPSILON * Math.abs(s.landing));
+  const tEnd = near ? s.landing : s.time + dt;
   s.sourceTime = s.steady ? s.steadyAt : tEnd;
   s.sourceBefore = !s.steady;
   s.combining = true;
@@ -249,14 +255,18 @@ export function step(s, dt, opts = {}) {
     // Not Σ I·dt: that's a quadrature of the steps' end values, 22% short of an RC's charge at
     // the default tol, whose steps grow to several RC (the trace of a 5 mV step; Fable 5.2's
     // first read of the docs).
-    if (!s.steady && Number.isFinite(dtEff)) {
-      const I = s._terminalCurrents();
-      s.termCharge = PN.map((q, k) => (bdf ? b1 * q - b2 * prev.P[k] : q) + dtEff * I[k]);
-    }
-    // (In time, the state is no longer the steady solve's that a continuation would start from.)
+    // (In time, the state is no longer the steady solve's that a continuation would start from;
+    // and stepped before the currents are read: a current-driven terminal's current is its
+    // drive's from within the step, the before side of a jump at tEnd, as the step solved it.
+    // Read after, a first fixed step onto a current's edge posted the far side's I·dt for good;
+    // Sol's third review.)
     if (!s.steady) {
       s.solvedV = undefined;
       s.stepped = true;
+    }
+    if (!s.steady && Number.isFinite(dtEff)) {
+      const I = s._terminalCurrents();
+      s.termCharge = PN.map((q, k) => (bdf ? b1 * q - b2 * prev.P[k] : q) + dtEff * I[k]);
     }
   } else {
     s.u.set(s.uPrev);
@@ -306,6 +316,11 @@ export function integrate(s, tEnd, opts = {}) {
   if (tEnd === Infinity || tEnd === -Infinity) throw new SolverError(`advance(${tEnd}): ${absolute}. For the long-time limit, solve() the steady state`);
   if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], charge: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [], charge: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
   const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
+  // (a negative dtMax ran the clock backwards and converged; a NaN tol stepped by NaN; Sol's
+  // third review)
+  if (!(tol > 0 && tol < Infinity)) throw new SolverError(`advance(): tol is the local error allowed per step, in thermal units, a positive number; got ${tol}`);
+  if (!(dtMax > 0)) throw new SolverError(`advance(): dtMax is the longest step, in s, a positive number; got ${dtMax}`);
+  if (!(Number.isInteger(maxSteps) && maxSteps >= 0)) throw new SolverError(`advance(): maxSteps is a whole number ≥ 0; got ${maxSteps}`);
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
   const start = clock();
   const sample = s._probes(opts.probes);
@@ -353,7 +368,10 @@ export function integrate(s, tEnd, opts = {}) {
     // strictly neutral device, fails outright. Round-off of the time and negligible beside the
     // interval asked for: by the time alone, a GITT pulse of 0.01 s at t = 1e9 s was skipped
     // whole (the time moved, nothing else did), and from 1e10 s 17% of a pulse train's charge.
-    if (tEnd - s.time <= 1e-10 * Math.abs(tEnd) && tEnd - s.time <= 1e-9 * (tEnd - t0)) {
+    // Within 1e-12 of the time, a step's reach in a strictly neutral device: at 1e-10, the tail
+    // after an edge (5e-6 s at 1e5 s) went with the current through it, for good (Sol's third
+    // review); a hair's charge is what's lost now.
+    if (tEnd - s.time <= 1e-12 * Math.abs(tEnd) && tEnd - s.time <= 1e-9 * (tEnd - t0)) {
       s.time = tEnd;
       break;
     }

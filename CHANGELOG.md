@@ -12,6 +12,25 @@ major version.
   github.io address redirects there), each demo page names itself as canonical, titles say what
   each page is, and a sitemap lists them. From ChatGPT's notes on building a demo with driftlet.
 
+- Time steps and waveforms, from a reading pass by GPT-6.2 Sol over the time stepper (each fault
+  confirmed by a probe against a second route before it was fixed; tests in test/round3.test.js):
+  - A repeating waveform read the wrong side of an edge a step had landed on, in about half its
+    cycles (the time reduced by %: (0.5 % 0.1) is 0.0999…98), so a solve() or impedance() there
+    used the wrong drive. Cycles are now counted as the breakpoints are.
+  - Edges within 1e-12 of the time counted as passed, so a pulse narrower than that was skipped,
+    and late in a long run every edge of a fast repeating wave (a 1 µs square wave at 2e6 s).
+    Only an edge that close with the next a thousand times further is stepped across now.
+  - The first fixed step onto a current's edge posted the far side's I·dt to the terminal's
+    passed charge; a retried half step starting on an edge crossed it by BDF2, a third of its
+    charge lost; a call ending a short tail after an edge (5e-6 s at 1e5 s) snapped the clock past
+    it, the current through it lost; a startup pair's second half could end an ulp off its target.
+  - advance() refuses a negative or zero dtMax, a tol that isn't positive and a fractional
+    maxSteps (a negative dtMax ran the clock backwards and converged), and step() a dt below the
+    time's resolution; a repeating waveform whose period is below it is an error, not a hang.
+  - set() copied a patch's drive, link and φ law only after putting the caller's own objects in,
+    and the constructor normalized the caller's definition before copying it, so an edit to one
+    afterwards reached the model halfway (from Astra's pass over the definition's normalization).
+
 ## 1.17.0 (2026-11-17)
 
 `set()` carries a solved state by what each value means, rewritten after two outside reading
