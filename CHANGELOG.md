@@ -3,7 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.18.0 (2026-11-19)
+
+A one-file starter page for agents, and about 70 faults fixed from two more outside reading passes
+by OpenAI's GPT-6.2 (Astra over how a definition becomes the model and the cold start, Sol over the
+time stepper), most of them silent wrong answers. Some definitions 1.17 accepted with a field it
+ignored are now refused by name; the harmless defaults it accepted still work. 50 regression tests
+in test/round3.test.js.
 
 - A one-file starter page, [demos/starter.html](https://marklundeberg.com/driftlet/demos/starter.html):
   the agent guide's slider template, running, with its whole source as text and a check to compare

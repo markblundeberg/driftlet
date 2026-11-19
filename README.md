@@ -56,7 +56,7 @@ import { bandDiagram } from 'driftlet/plot';    // a level diagram as an SVG str
 ```
 
 Or straight from a CDN in a page, pinned to a version:
-`https://cdn.jsdelivr.net/npm/driftlet@1.17.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
+`https://cdn.jsdelivr.net/npm/driftlet@1.18.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
 TypeScript declarations ship in the package. A whole page to copy, running:
 [a pn junction with a bias slider](https://marklundeberg.com/driftlet/demos/starter.html), in one file. Writing a demo with an LLM
 agent? Point it at [`llms.txt`](llms.txt).
