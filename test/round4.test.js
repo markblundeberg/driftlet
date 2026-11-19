@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device } from '../src/index.js';
+import { Device, EPS0, SolverError } from '../src/index.js';
+import { complexSolve } from '../src/impedance.js';
 import { aqueous, build, layer } from '../src/kit.js';
 
 // Faults found in the impedance and the readout by an outside reading pass (OpenAI's Sol, its
@@ -80,4 +81,40 @@ test('a refused impedance() leaves a pending step response as it was', () => {
     const a = d.step(1e-9).terminals.right.current, b = twin.step(1e-9).terminals.right.current;
     assert.ok(b > 3e3 && a === b, `${JSON.stringify(bad)}: ${a} A/m², its twin ${b}`);
   }
+});
+
+test('a terminal no small-signal current returns through is refused, not read as NaN', () => {
+  // (A dielectric up to a neutral contact passes nothing: Z came out NaN, with a warning that it
+  // was round-off.)
+  const d = new Device({
+    species: [{ name: 'X', z: 0 }],
+    materials: { f: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } } },
+    regions: [{ name: 'a', material: 'f', length: 1e-6, c0: { X: 1 } }],
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } }, right: {} },
+    grid: { minCells: 8 },
+  });
+  for (const terminal of ['left', 'right']) assert.throws(() => d.impedance([1, 1e6], { terminal }), new RegExp(`no current returns through '${terminal}' at 1 Hz`));
+});
+
+test('a plate\'s impedance at an absurd frequency, and a singular small system refused', () => {
+  // (Divided by c² + d², which overflowed: at 1e160 Hz Z read 0, and behind 0.4 Ω·m², NaN; a zero
+  // pivot gave NaN for every floating terminal's δV.)
+  const both = (R) => new Device({
+    species: [{ name: 'X', z: 0 }],
+    materials: { f: { epsr: 4, species: { X: { D: 1e-9, cRef: 1, mu0: 0 } } } },
+    regions: [{ name: 'a', material: 'f', length: 1e-6, c0: { X: 1 } }],
+    contacts: { left: { V: 0, ...(R ? { R } : {}), phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } }, right: { V: 0, phi: 'pinned', zeroCharge: 0, species: { X: 'blocked' } } },
+    grid: { minCells: 8 },
+  });
+  const C = (4 * EPS0) / 1e-6;
+  for (const f of [1e160, 1e300]) {
+    for (const R of [0, 0.4]) {
+      const z = both(R).impedance([f]), im = -1 / (2 * Math.PI * f * C);
+      assert.ok(Math.abs(z.Z.re[0] - R) < 1e-12 && Math.abs(z.Z.im[0] / im - 1) < 1e-12, `${f} Hz, R ${R}: ${z.Z.re[0]} ${z.Z.im[0]}i, expected ${R} ${im}i`);
+    }
+  }
+  const zero = () => [[Float64Array.from([0, 0, 1]), Float64Array.from([0, 0, 1])], [new Float64Array(3), new Float64Array(3)]];
+  assert.throws(() => complexSolve(...zero(), 2, 1), (e) => e instanceof SolverError && /singular at 1 Hz/.test(e.message));
+  const rank1 = [[Float64Array.from([1, 2, 1]), Float64Array.from([2, 4, 3])], [new Float64Array(3), new Float64Array(3)]];
+  assert.throws(() => complexSolve(...rank1, 2, 1), SolverError);
 });

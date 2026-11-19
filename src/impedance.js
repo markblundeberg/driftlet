@@ -24,8 +24,8 @@
 //   Throws a SolverError where the terminal doesn't exist, has a series resistance, or every
 //   other terminal is driven by a current (no return path: Z infinite), where a frequency
 //   isn't positive and finite (these by impedanceArgs(frequencies, terminal) → its index, which
-//   Device.impedance asks before its steady solve), or where the linearised system is singular
-//   at one.
+//   Device.impedance asks before its steady solve), where the linearised system is singular
+//   at one, or where the current read there is exactly 0 (no current returns: Z infinite).
 //   Linearised about the present state: (J + iωS)·δx + Σ_k B_k δV_k = 0 for the grid's rows and,
 //   for each floating terminal k (driven by a current), (C_k + iωC′_k)·δx + (DI_k + iωDI′_k) δV_k
 //   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J the steady Jacobian (dt = ∞) and S, C′, DI′,
@@ -100,16 +100,31 @@ import { ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { EPS0, FARADAY } from './constants.js';
 import { SolverError } from './errors.js';
 
+// (a + ib)/(c + id) by Smith's scaling, which neither overflows nor underflows where the
+// quotient doesn't: by c² + d², a plate's admittance at 1e160 Hz read Z = 0 and, behind 0.4 Ω·m²,
+// NaN (Sol's fourth pass).
+export function cdiv(a, b, c, d) {
+  if (Math.abs(c) >= Math.abs(d)) {
+    const r = d / c, den = c + d * r;
+    return [(a + b * r) / den, (b - a * r) / den];
+  }
+  const r = c / d, den = c * r + d;
+  return [(a * r + b) / den, (b * r - a) / den];
+}
+
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
-function complexSolve(Ar, Ai, K) {
+// Throws a SolverError on a zero pivot (singular: it divided by 0, and every δV was NaN), the
+// frequency f for its message.
+export function complexSolve(Ar, Ai, K, f) {
   for (let col = 0; col < K; col++) {
     let p = col;
     for (let r = col + 1; r < K; r++) if (Math.hypot(Ar[r][col], Ai[r][col]) > Math.hypot(Ar[p][col], Ai[p][col])) p = r;
     [Ar[col], Ar[p]] = [Ar[p], Ar[col]];
     [Ai[col], Ai[p]] = [Ai[p], Ai[col]];
-    const dr = Ar[col][col], di = Ai[col][col], d2 = dr * dr + di * di;
+    const dr = Ar[col][col], di = Ai[col][col];
+    if (dr === 0 && di === 0) throw new SolverError(`impedance: the floating terminals' circuit rows are singular at ${f} Hz (a pivot of 0): their voltages are held by nothing there. See the steady state's warnings (solve()).`);
     for (let r = col + 1; r < K; r++) {
-      const fr = (Ar[r][col] * dr + Ai[r][col] * di) / d2, fi = (Ai[r][col] * dr - Ar[r][col] * di) / d2;
+      const [fr, fi] = cdiv(Ar[r][col], Ai[r][col], dr, di);
       for (let k = col; k <= K; k++) {
         const ur = Ar[col][k], ui = Ai[col][k];
         Ar[r][k] -= fr * ur - fi * ui;
@@ -124,9 +139,7 @@ function complexSolve(Ar, Ai, K) {
       vr -= Ar[r][k] * re[k] - Ai[r][k] * im[k];
       vi -= Ar[r][k] * im[k] + Ai[r][k] * re[k];
     }
-    const dr = Ar[r][r], di = Ai[r][r], d2 = dr * dr + di * di;
-    re[r] = (vr * dr + vi * di) / d2;
-    im[r] = (vi * dr - vr * di) / d2;
+    [re[r], im[r]] = cdiv(vr, vi, Ar[r][r], Ai[r][r]);
   }
   return { re, im };
 }
@@ -557,7 +570,7 @@ export class SmallSignal {
         Ar[a][K] = -yre - DX[k][kT];
         Ai[a][K] = -yim - w * DXs[k][kT];
       });
-      const dV = complexSolve(Ar, Ai, K);
+      const dV = complexSolve(Ar, Ai, K, f);
       // δx = y − Σ X_k δV_k
       for (let j = 0; j < Nc; j++) {
         let re = yr[j], im = yi[j];
@@ -683,10 +696,17 @@ export class SmallSignal {
             }
           }
         }
+        // (None at all: nothing that carries a charge links kT to a terminal that returns it, a
+        // dielectric up to a neutral contact. Read as Z, it was NaN, called round-off; Sol's
+        // fourth pass.)
+        if (Ir === 0 && Ii === 0) {
+          throw new SolverError(
+            `impedance: no current returns through '${terminal}' at ${f} Hz: its small-signal current is exactly 0, so it is open there and its impedance is infinite. ` +
+              'Nothing that carries a charge (a charged species, or a displacement current to a contact that holds φ) links it to a terminal held at a voltage',
+          );
+        }
         out.relError[q] = err / Math.hypot(Ir, Ii);
-        const d2 = Ir * Ir + Ii * Ii; // Z = 1/δI
-        Zr = Ir / d2;
-        Zi = -Ii / d2;
+        [Zr, Zi] = cdiv(1, 0, Ir, Ii); // Z = 1/δI
       }
       // (profiles per unit excitation: for a terminal driven by a current, per A/m², δx·Z)
       if (profiles && dT.kind === 'I') {
