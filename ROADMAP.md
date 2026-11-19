@@ -510,6 +510,42 @@ one when this list is worth it.
 - With any rename: an optional `version` field in definitions, and errors that name the renames
   ("`foo` became `bar` in 2.0"), since agents copy old definitions long after the API moves on.
 
+From a fresh-eyes read of the docs and types (19 Nov 2026; its report and probes in the maintainer's
+notes), ranked by how much each trips an agent writing its first device:
+
+- **One sign rule for terminal readings.** `terminals`, `ports[k]`, `trace.terminals` and the I
+  drives are into the device; `sol.current`, `contacts.*.current/flux`, `trace.current/charge` are
+  toward +x; `terminalVoltage` and `trace.voltage` are two names for V_right − V_left. The pn template
+  reads one current twice with opposite signs. What belongs to a terminal is into the device, what
+  belongs to a place in x is toward +x; drop the duplicates that `terminals` already hold.
+- **Grid options keep their own defaults.** Given any grid option, the graded defaults are all off,
+  so `{ hmax }` alone makes the end cells 50× coarser, unwarned (a 1.4% limiting-current overshoot at
+  an electrode, by device.md). Each option left out should keep its default.
+- **`bath()` takes an options object** (`bath(c, { reference, V | I | R, offset, material })`): the
+  second argument is today a reference, a half-reaction or a drive, and one ordering once built a
+  bath without its reference, silently.
+- **One x frame.** A port's `from`/`to` (and `alloy`'s fraction) are metres into the region, every
+  profile (a port's own `area` among them) is device x. Device x throughout, or a key that names its
+  frame (`window`).
+- **Names that don't collide:** `D` is a diffusivity in `sol.D` and a displacement at faces, contacts
+  and plates; a face's flux is `N`; `charge` is stored in `sol.charge` but passed in `trace.charge`.
+  `displacement`, `flux`, `passed`.
+- **`advance(tEnd)` reads as a duration.** `advanceTo(t)` can come in 1.x; 2.0 drops the old name.
+- **A changed `c0` in a `set()` patch is refused** (today accepted and ignored on a carried state; a
+  warning is the 1.x half), pointing to a new Device.
+- **`set()`'s merge-or-replace rule is visible in the data**, not a hidden mark on kit contacts.
+- **A port's `zeroCharge` is required**, as at faces and contacts (the docs' first page promises
+  alignments are never defaulted; a port's 0 is worth 1.4 V of charge), and sits where theirs does.
+- Smaller: `check(dev)` rather than `check(dev, sol)` with two things that must agree; ports
+  addressed one way (by name) in the definition, `set()` and the solution; one shape for reaction
+  results, `oneWay` (not `forward`) for a one-way rate; T required, or taken from the materials when
+  they agree (298.15 K beside 300 K semiconductor data); `'neutral'` as a φ law renamed for what it
+  says (`'uncharged'`); the device's internals private, with `dev.time` added in 1.x for the demos
+  that read `dev.solver.time`; units in the data tables' keys (`SEMICONDUCTORS` is in eV and cm⁻³);
+  `grade: { species, epsr }`; `ocv: { x, values }`; a conductor port's `G` under its own key (S/m²,
+  not S/m³); `solve()`'s ramp options named apart from `advance()`'s (`tol`, `maxSteps` mean
+  different things in each).
+
 ## Later
 
 - A sub-grid diffuse layer's draw from everything that crosses it: an ion with a permeability link
