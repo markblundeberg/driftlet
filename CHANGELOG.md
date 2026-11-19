@@ -3,6 +3,13 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- In a page using `live(def, { worker: true })`, a contact the kit wrote (`bath()`, `ohmic()`) in a
+  change was merged into the old contact rather than replacing it, as `Device.set()` does: the mark
+  saying so is a symbol, which a worker's message drops. A bath swapped from Ag/AgCl to bare Cl⁻
+  kept its 1.14 V offset there, silently. The marks now travel beside the message.
+
 ## 1.18.0 (2026-11-19)
 
 A one-file starter page for agents, and about 70 faults fixed from two more outside reading passes

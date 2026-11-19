@@ -5,7 +5,7 @@
 // Web Worker, keeping the page responsive.
 
 import { Device } from './index.js';
-import { merge } from './merge.js';
+import { merge, wholePaths } from './merge.js';
 import { checkOptions } from './errors.js';
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
@@ -194,13 +194,13 @@ function workerEngine(def, worker, maxRamp) {
   };
   w.onmessage = (e) => queue.shift()?.(e.data);
   w.onerror = (e) => failAll(`the worker failed: ${e?.message ?? e}`);
-  w.postMessage({ type: 'init', def, maxRamp });
+  w.postMessage({ type: 'init', def, whole: wholePaths(def), maxRamp });
   return {
     run(patches) {
       return new Promise((resolve) => {
         queue.push(resolve);
         try {
-          w.postMessage({ type: 'update', patches });
+          w.postMessage({ type: 'update', patches, whole: wholePaths(patches) });
         } catch (e) {
           // A change that can't be posted (a function, such as custom statistics).
           queue.pop();

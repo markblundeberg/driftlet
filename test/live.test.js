@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { Device, units } from '../src/index.js';
-import { build, layer, ohmic, live } from '../src/kit.js';
+import { AgAgCl, aqueous, bath, build, layer, ohmic, live } from '../src/kit.js';
 import { Session } from '../src/live.js';
 
 // The live wrapper: changes merged while a solve runs, warm starts, ramps from the last good
@@ -91,6 +91,37 @@ test('in a worker, the same solutions', async () => {
     assert.deepEqual(Array.from(a.solution.phi), Array.from(b.solution.phi));
   }
   await there.close();
+});
+
+// A contact the kit wrote replaces the old one whole; posted to a worker, the mark saying so (a
+// symbol) was dropped, and a bath swapped from Ag/AgCl to bare Cl⁻ kept its 1.14 V offset there.
+test('in a worker, a kit contact in a change replaces the old one whole, as here', async () => {
+  const url = new URL('./fixtures/web-worker.js', import.meta.url);
+  const nodeWorker = () => {
+    const w = new Worker(url);
+    return {
+      set onmessage(fn) {
+        w.on('message', (data) => fn({ data }));
+      },
+      postMessage: (m) => w.postMessage(m),
+      terminate: () => w.terminate(),
+    };
+  };
+  const def = build({
+    library: [aqueous(['K+', 'Cl-'], { epsr: 0 })],
+    stack: [bath({ 'K+': 100, 'Cl-': 100 }, AgAgCl), layer('water', 100e-6), bath({ 'K+': 10, 'Cl-': 10 }, 'Cl-', { I: 0 })],
+    grid: { hmin: 1e-6, hmax: 5e-6 },
+  });
+  const there = live(def, { worker: nodeWorker });
+  const here = live(def);
+  const swap = { contacts: { left: bath({ 'K+': 100, 'Cl-': 100 }, 'Cl-') } };
+  try {
+    const [a, b] = await Promise.all([there.set(swap), here.set(swap)]);
+    assert.ok(Math.abs(b.solution.terminals.right.V - 0.058) < 1e-3, `here ${b.solution.terminals.right.V}`);
+    assert.equal(a.solution.terminals.right.V, b.solution.terminals.right.V); // (was 1.196 V there)
+  } finally {
+    await there.close();
+  }
 });
 
 // Each failure resolves, and leaves the device exactly as it was (found in review).

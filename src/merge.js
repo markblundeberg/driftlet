@@ -12,6 +12,24 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
 // prototype instead, and the key was gone from the copy (Astra's third pass).
 const put = (o, k, v) => (k === '__proto__' ? Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true }) : (o[k] = v));
 
+// The WHOLE marks in a value, as paths of keys, and the marks put back: a structured clone
+// (postMessage to a worker) drops a symbol, and live's worker merged the kit's contact it should
+// have replaced, a bath swapped from Ag/AgCl to bare Cl⁻ keeping its 1.14 V offset (a fresh-eyes
+// sweep). So live's worker engine sends the paths beside what it posts.
+export function wholePaths(v, at = [], out = []) {
+  if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v)) return out;
+  if (v[WHOLE]) out.push(at);
+  for (const [k, x] of Object.entries(v)) wholePaths(x, [...at, k], out);
+  return out;
+}
+export function markPaths(v, paths = []) {
+  for (const p of paths) {
+    const o = p.reduce((o, k) => (o !== null && typeof o === 'object' ? o[k] : undefined), v);
+    if (o !== null && typeof o === 'object' && !o[WHOLE]) markWhole(o);
+  }
+  return v;
+}
+
 export function merge(base, patch) {
   if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
   const out = { ...base };
