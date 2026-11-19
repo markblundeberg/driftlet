@@ -53,9 +53,10 @@
 // its held levels, then each port's held levels; the left contact, the right; each floating
 // terminal's circuit row.
 //   port k (terminal 2 + k, _port), at each node of its window: an equilibrium link holds η at
-//     the port's level (portEta) at the nodes inside the window (port.inside), replacing the
-//     balance row, whose residual just before is the flux it passes (not at a device end node
-//     whose contact links that species); conductance
+//     the port's level (portEta) at the nodes it holds (port.held[i], src/device.js: those inside
+//     the window, but a device end node whose contact links that species, and a region's last
+//     node, where an equilibrium link carries it across the face, moved to the next region's
+//     first), replacing the balance row, whose residual just before is the flux it passes; conductance
 //     and exchange links supply vol·fill·k(η_out − η), k = G V_T/(z² F) or the link's k (gated as at
 //     a face); reactions (_portReaction) as at a face against the electrode's carrier at the
 //     port's level, explicit (no unknown), −vol·area·ν·rate into the region's species' rows,
@@ -155,12 +156,20 @@ export class BoundaryTerms {
       }
       pref *= powr(act, p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     }
+    const th0 = this._bare(port, g);
     if (rx.mhc) {
-      const l0 = Math.log(this.th0[g]);
+      const l0 = Math.log(th0);
       return mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, a).rate;
     }
-    if (rx.sites) pref *= powr(this.th0[g], rx.sites);
+    if (rx.sites) pref *= powr(th0, rx.sites);
     return pref * bvFactor(a, rx.alpha).g;
+  }
+
+  // The bare fraction of a port's electrode at node g: its own surface's θ₀, or 1 for a port with
+  // none. (Read from the node, a bare-metal reaction in a window overlapping another port's film
+  // ran at that film's θ₀, half its rate at θ = 0.5 and 1e-5 of it near full; Astra's third pass.)
+  _bare(port, g) {
+    return port.surfaceOf < 0 ? 1 : this.th0[g];
   }
 
   // A face: its flux node's rows are the interface laws (φ law, species links, reactions), and
@@ -719,38 +728,28 @@ export class BoundaryTerms {
       const link = port.species[i];
       if (link.type === 'blocked' || (link.type === 'equilibrium') !== holds) continue;
       const r = 1 + i, target = this.portEta(port, i), zF = z[i] * F;
-      for (let w = 0; w < port.nodes.length; w++) {
-        const g = port.nodes[w], b = this.blockOfNode[g], o = b * M + r, v = vol[g] * port.fill[w];
-        const deta = target - u[o] - uLo[o]; // (μ̄_out − μ̄)/RT
-        if (link.type === 'equilibrium') {
-          if (!port.inside[w]) continue; // (a held level holds the nodes inside the window)
-          // a device end node's level is its contact's business, where the contact links it
-          if ((g === 0 && this.model.contacts.left.species[i].type !== 'blocked') || (g === this.nNodes - 1 && this.model.contacts.right.species[i].type !== 'blocked')) continue;
-          // and a region's last node, where an equilibrium link carries the species across the face
-          // on its right, is held at the next region's first node instead: the same level through
-          // the link, and every residual still the port's. (Held itself, its row lost the face's
-          // flux, whose column then had no row in the face's block: the block solver's forward
-          // sweep found no pivot, and every such solve failed; the mirror case solved. Fable's
-          // re-check.)
-          const rg = this.model.grid.nodeRegion[g];
-          if (g === this.model.grid.regionEnd[rg] && rg < this.nFaces && this.model.interfaces[rg].links[i].type === 'equilibrium') {
-            const gh = this.model.grid.regionStart[rg + 1], bh = this.blockOfNode[gh], oh = bh * M + r;
-            flux[i] += res[R[oh]];
-            this._captureRow(bh, r, zF, C, k);
-            this._replaceRow(bh, r);
-            this._j(bh, r, bh, r, 1);
-            res[R[oh]] = -(target - u[oh] - uLo[oh]);
-            B[R[oh]] += -z[i] / VT;
-            continue;
-          }
+      if (link.type === 'equilibrium') {
+        // At the nodes it holds (port.held, src/device.js): those inside the window, but a device
+        // end node whose contact links the species (the contact's business), and with a region's
+        // last node, where an equilibrium link carries the species across the face on its right,
+        // held at the next region's first node instead: the same level through the link, and every
+        // residual still the port's. (Held itself, its row lost the face's flux, whose column then
+        // had no row in the face's block: the block solver's forward sweep found no pivot, and
+        // every such solve failed; the mirror case solved. Fable's re-check.)
+        for (const g of port.held[i]) {
+          const b = this.blockOfNode[g], o = b * M + r;
           flux[i] += res[R[o]];
           this._captureRow(b, r, zF, C, k);
           this._replaceRow(b, r); // (other ports' terms in the row too)
           this._j(b, r, b, r, 1);
-          res[R[o]] = -deta;
+          res[R[o]] = -(target - u[o] - uLo[o]); // (μ̄_out − μ̄)/RT
           B[R[o]] += -z[i] / VT;
-          continue;
         }
+        continue;
+      }
+      for (let w = 0; w < port.nodes.length; w++) {
+        const g = port.nodes[w], b = this.blockOfNode[g], o = b * M + r, v = vol[g] * port.fill[w];
+        const deta = target - u[o] - uLo[o]; // (μ̄_out − μ̄)/RT
         // conductance: s = G V_T (η_out − η)/(z² F); exchange: s = k (η_out − η). Gated, G times
         // Π x^p, the gates at this node (each taken in [0, 1]).
         const kk0 = link.type === 'conductance' ? (link.G * VT) / (z[i] * z[i] * F) : link.k;
@@ -823,7 +822,7 @@ export class BoundaryTerms {
       if (rx.sites) {
         // the bare sites its transition state holds: θ₀ = 1 − Σθ, with ∂ln θ₀/∂η_s = −θ_s
         for (let x = 0; x < surf.length; x++) d[1 + n + x] -= rx.sites * th[g * nSurf + x];
-        pref *= powr(this.th0[g], rx.sites);
+        pref *= powr(this._bare(port, g), rx.sites);
       }
       const { g: bv, gp } = bvFactor(aHi + aLo, al);
       const rate = pref * bv;
@@ -864,7 +863,7 @@ export class BoundaryTerms {
       if (p.nu < 0) lnP -= p.nu * l;
       else lnQ += p.nu * l;
     }
-    const l0 = Math.log(this.th0[g]);
+    const l0 = Math.log(this._bare(port, g));
     const { rate, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, aHi + aLo);
     rates[w] = rate;
     // ∂ ln θ_s/∂η_x = δ_sx − θ_x; ∂ ln θ₀/∂η_x = −θ_x

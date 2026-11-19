@@ -897,7 +897,11 @@ falls: each node whose box reaches into it takes the part of its box inside. A h
 (`'equilibrium'`) holds the nodes inside the window, so it needs one there. A window of no width
 is the node at that point, its whole box. Where the window reaches its region's end at a face that
 carries the species in equilibrium, the level is held there through the face: at the next
-region's first node, the same level by the link (the port's flux counts it all).
+region's first node, the same level by the link (the port's flux counts it all). So a node's
+level is held by one port: two windows that both hold it there, overlapping or on either side of
+such a face, are refused. A port that acts on no node at all (an electrode whose `area` is 0
+throughout its window, a capacitance only in the box of an end node whose contact sets φ, a level
+held only at a device end its contact links) is refused too.
 
 On a [conductor region](#materials), a port is a wire to the whole conductor: it takes no window,
 only the conductor's carrier, and a conductance link's `G` is per area (S/m², a resistance
@@ -1187,7 +1191,11 @@ ports: [{ name: 'ref', I: 0, ... },  // a reference electrode: no current, its v
 
 At least one terminal must be held at a voltage, or the device's overall level floats, and if
 one is driven by a current, a held one must pass current (a closed end held at a voltage fixes
-nothing). In
+nothing). Each part of the device cut off from the rest electrostatically (by neutral faces that
+nothing charged crosses, nor a reaction moving charge) needs an anchor of its own, and a port
+anchors one only held at a voltage: driven by a current (a reference electrode at `I: 0`), its
+voltage floats with that part's φ, so it reads the part's level only where something else holds
+it. In
 steady state the terminal currents sum to zero. A contact can be driven by a current only if
 something passes it (a linked species, or a gate's displacement).
 
