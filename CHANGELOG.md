@@ -43,6 +43,49 @@ major version.
     and the constructor normalized the caller's definition before copying it, so an edit to one
     afterwards reached the model halfway (from Astra's pass over the definition's normalization).
 
+- The definition's normalization and the cold start, from a reading pass by GPT-6.2 Astra (47
+  pointers, each settled by a probe; tests in test/round3.test.js). Silent wrong answers:
+  - Two ports holding a level either side of a face that carries the species in equilibrium held
+    one solver row: the last listed won, the other reported the level difference as its flux.
+    Refused now; one there alone solves steady (it was singular).
+  - An immobile species drifted with φ in a steady solve where nothing acts on it but a node was
+    counted as touched: an equilibrium port's fringe nodes, an electrode's nodes of zero area, a
+    rate profile's zero (by up to 100×, or ±25% odd–even). It keeps its amount there now.
+  - A port without a surface, overlapping another's film, reacted at that film's bare fraction.
+  - Capacitive ports on a dielectric didn't anchor φ (φ NaN, charges 0).
+  - A contact at a zero-area end (a sphere's centre, a cylinder's axis) holding a level or φ passed
+    a flux the mesh made (1.08 mol/s on 4 cells): refused.
+  - A reacting port took a declared species named in `fixed` as its electrode carrier; a port bath
+    on a conductor made up V_T·ln c; a μ° grade on an OCV-table insertion species shifted the
+    absolute table by Δμ°/F: each refused or resolved now.
+  - A species named `__proto__` dropped out of a face equation; a region named 0 was taken for index
+    0, ports named 1 and '1' both edited by one set(); |z| past 2³¹ reached the solver as 0.
+  - A thin spherical or cylindrical shell far from the centre had its volume and area off (37% for a
+    nm shell at 1e6 m); a constant rate profile from far off read 0; `grid: {}` dropped the default
+    grading to 8 uniform cells.
+- The cold start: a bath without a reference read its floating voltage by its first-listed ion
+  (±56 mV by species order), and was refused in one order; a floating capacitance beside a pinned
+  end started charged; an electrode at the far end of a c0 profile started balanced with the salt at
+  the near end; a floating electrode's start left out its port's links (20 A/m² at I: 0); a species
+  held by a port behind a blocked face took the right contact's level and kept it ~c/k; an
+  insertion host's wire started at the open circuit only in one species order; a strictly neutral
+  region under a held capacitance was refused, or snapped in its first step: ρ + aσ = 0 now.
+- Refused now, each with its path: a port driven by a current as a region's only anchor (at
+  construction and by set()); a face reaction that moves no charge across counted as coupling the
+  sides; a port that acts on no node; a velocity link on a conductor's carrier; MHC with |ν z| ≠ 1;
+  a species in two statistics models in either order (ideal among them); SRH or Auger with fixed
+  participants; a bath electrode's repeated terms counted once (accepted where they balance); a
+  malformed definition (ports not an array, a port area not a number or profile, a hole in any
+  array: a waveform's hole had been NaN); a non-string region or port name; a field where it means
+  nothing (zeroCharge with no φ law, a voltage, R or terminal on a port that passes no current, an
+  entry of `fixed` the reaction doesn't use, r0 on a planar device, fixed charge or flow in a
+  conductor), where 1.17's defaults (V: 0, 0) are still accepted.
+- Accepted now: a port bath under a μ° grade that doesn't vary across its window, or one listing
+  one of several Fermi–Dirac bands declared together; a port window narrower than a box holds its
+  width (a point only when to === from). Warned now: a rate profile zero wherever its material is.
+  docs: the amount a spectator's c0 profile conserves on a radial grid, and that a port capacitance
+  leaves out a pinned or bulk end's box.
+
 ## 1.17.0 (2026-11-17)
 
 `set()` carries a solved state by what each value means, rewritten after two outside reading
