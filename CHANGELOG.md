@@ -5,6 +5,26 @@ major version.
 
 ## Unreleased
 
+- A reacting group at one contact is held flat only where its affinity there is round-off of its
+  terms, not anywhere below 1e-9 RT. Held flat, every box reacted with no flux between them: Y = Z held
+  5e-10 RT apart at kf 1e10 reacted 16× what the contact passed, sent Y out through a blocked end, and
+  passed `check()`. Resolved, the total now matches the continuum's kf·d₀·ℓ·tanh(L/ℓ) to 6e-5. (Round
+  8: Astra re-read the steady solve with round 4's brief, and helpers settled each pointer.)
+- Opposed currents through one closed pool solve steady: two electrode ports cycling Fe²⁺/Fe³⁺ at
+  ±1 mA/m² had been refused at zero steps as "charging" the Fe³⁺; they now match a long transient to
+  1e-12 V. A real net feed is still refused, and the message names the other terminals.
+- A steady solve keeps each node's immobile inventory through all its stages: a cold retry followed by
+  a held solve had re-captured it from the layout (Q 5 → 1, converged, unwarned).
+- Slow processes a steady solve leaves where it began are warned of in more places, as the docs
+  promised: any reaction off equilibrium in a part of the device no contact, port, flow or fixed
+  reservoir reaches (a slow cycle U ⇌ V ⇌ W ⇌ U; a closed pool beside another at equilibrium); rate-link
+  contacts pushing both ways, by their summed rates; a face permeability whose levels stay apart where
+  nothing passes; a gate behind a huge R away from its source. Where the steady system is solved
+  directly, a contact's intake is read from its link's own law, so two very slow exchange contacts no
+  longer certify any uniform level.
+- On a nearly full lattice, coupled spectators are put back to their amounts in either species order
+  (the renormaliser ends with a joint Newton; one order had left Q 7e-5 high). The docs state the
+  1e-12 net-feed allowance.
 - **A terminal's charge on a flow-through path is in the time steps' error control.** A slow cyclic
   voltammogram after a rest read its charge 52% high at the first vertex, and its cycle's net charge
   with the wrong sign; a resistor's voltage ramp read 0.75 C/m² for 0.5; a backward-Euler current ramp
