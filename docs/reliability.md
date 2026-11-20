@@ -254,8 +254,14 @@ so a change that makes one worse shows.
   ([islands](numerics.md#steady-state)): its current comes out right to ~1e-15, where it was
   up to 16× off. A region with reactions in it is summed with their rates, and one behind further layers (a
   base with a fourth layer beyond it) through them; a population held that weakly
-  within a region, or fed by a port, isn't covered, and its solve can still converge to the wrong level; the terminal currents then
-  don't add up, which is the thing to check.
+  within a region isn't covered, and its solve can still converge to the wrong level; the terminal currents then
+  don't add up, which is the thing to check. A species fed only at rates (a port's channels, a
+  contact's conductance: no equilibrium link anywhere to hold its level) is checked as a whole: a
+  converged steady state takes in none of it on balance, to 1e-6 thermal units of what its links
+  respond with, and a root that doesn't is refused, the solve going on to its next stage (a
+  myelinated axon's Na⁺, sealed in by its channels' h gates at +0.42 V, had converged cold at
+  2e10 mol/m³, 35 thermal units from where they balance, its terminal currents off by only 6e-8
+  of the largest).
 - **The impedance is resolved to about 1e-4 of |Z|** where its solves are hardest: the real
   part of a nearly ideal capacitor (a closed redox cell with almost none of one partner), 1e-7 of
   |Z|, can come out slightly negative. Its DC limit matches the steady dI/dV in every stress case.

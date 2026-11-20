@@ -114,7 +114,8 @@
 //      feeds, nor a circuit row.
 //   4. A charge is kept only in a circuit row (its pin there carries the voltage it depends on):
 //      an electrode's, at weight w/z on its carrier column, and a contact's (D_in, no column), at
-//      λ = w/z on what it passes. The first law through each takes a circuit row (the first
+//      λ = w/z on what it passes (none, at λ = 0, in a law the terminal passes none of). The
+//      first law through each takes a circuit row (the first
 //      terminal's in order whose v is left), and the laws after it have its multiple taken off.
 //      One with a charge left and no circuit row is unkept.
 //   5. Every basis vector of conservedMoieties(s, { drives: true }) is accounted for: a
@@ -126,7 +127,8 @@
 //      the same solution.
 //   7. Nothing in `s` is written.
 // Tests: test/laws.test.js (one device per law once dropped); tools/lawsweep.js (810 devices,
-// solve() against a settled advance()).
+// solve() against a settled advance()); test/round7-solve.test.js (a circuit row taken by a law
+// its terminal passes none of).
 
 import { sourceAt } from './device.js';
 
@@ -408,12 +410,17 @@ export function findLaws(s) {
     const st = stretches[rowStretch];
     // (the terminal's weight in it, w/z on what that feeds: the amount changes by λ I/F)
     const ownCarrier = carriers.find((p) => p.k === circuit);
-    const lambda = circuit < 0 ? 0 : (ownCarrier && ownCarrier.w / carrierZ(s, circuit)) || lambdaOn(parts, (st) => driven(st).includes(circuit));
+    // (0 where the terminal passes none of it: λ had been undefined there)
+    const lambda = circuit < 0 ? 0 : (ownCarrier && ownCarrier.w / carrierZ(s, circuit)) || lambdaOn(parts, (st) => driven(st).includes(circuit)) || 0;
     // In a circuit row, what passes through that terminal's capacitance is kept too, λ Q/F, as
     // its current counts dQ/dt: a port or contact at no current that passes K⁺ and charges keeps
     // n_K + Q/F. (Its K⁺ alone held, a membrane port's voltage settled 7 mV from the transient's.)
     // A port's charge, as an electrode's carrier; a contact's, its displacement D_in, below.
-    if (circuit >= 2 && model.ports[circuit - 2].capacitance && !carriers.some((p) => p.k === circuit)) carriers = [...carriers, { k: circuit, w: lambda * carrierZ(s, circuit) }];
+    // Where it passes none (a porous Fe³⁺/Fe²⁺ electrode at I = 0 with a double layer, whose
+    // circuit row the total iron took: it turns one into the other and passes neither), its
+    // charge isn't in the law: carried at weight undefined·z, NaN, it failed every steady solve
+    // with a non-finite update from the start, at rest (the echem combos' case 65).
+    if (circuit >= 2 && lambda !== 0 && model.ports[circuit - 2].capacitance && !carriers.some((p) => p.k === circuit)) carriers = [...carriers, { k: circuit, w: lambda * carrierZ(s, circuit) }];
     // Every contact driven by a current that feeds it and holds a charge, D_in, kept beside the
     // ions it passes at its own λ (two contacts at no current passing K⁺, one a capacitor: its
     // charge was left out where the law took the other's row).

@@ -56,8 +56,9 @@
 //      resistance (_resistanceContinuation): one whose current Kirchhoff doesn't give, held at
 //      voltages marched to its load line's crossing (_floatingContinuation with a line); else, or
 //      where that fails, each held (at its source voltage, or where every other terminal is
-//      driven by a current at V_src − I R, Kirchhoff's I), then the resistances put back and the
-//      steady system solved from there (and where that fails for one terminal held by
+//      driven by a current at V_src − I R, Kirchhoff's I; from a cold start not stepped, the start
+//      laid out again for the held drive, initFromComposition), then the resistances put back and
+//      the steady system solved from there (and where that fails for one terminal held by
 //      Kirchhoff, its load line); a terminal driven by a current, not bound (_bound), held at
 //      voltages instead (_floatingContinuation); a port held at a voltage across a capacitance,
 //      ramped from its zeroCharge (_continuation, cold there, with the contacts held level where
@@ -156,8 +157,8 @@
 //      closed combination, slower than that, isn't waited out: the solve fails or converges where
 //      it began, and stuckReactions names it (Solution's warnings, both ways).
 // Tests: every Device.solve goes through here; test/steady.test.js (the stages, the laws, the
-// continuations) and test/generation.test.js; the devices that needed each stage are named in its
-// comments.
+// continuations), test/generation.test.js and test/round7-solve.test.js (behind R, cold); the
+// devices that needed each stage are named in its comments.
 
 import { profileAt, sourceAt } from './device.js';
 import { DeviceError } from './errors.js';
@@ -647,6 +648,15 @@ export class SteadySolves {
       const held = ks.map(at);
       ks.forEach((k, j) => (this.terms[k].drive = { ...this.terms[k].drive, src: { value: held[j] }, R: 0 }));
       this.redrive();
+      // From the layout, the layout at the held drive: the one a cold start lays out behind R
+      // has the terminal at its held neighbour's voltage, its metal's carriers at that level (a
+      // closed Cu | Zn cell held at its open circuit, −1.126 V, behind 1e-4 Ω·m², with Stern
+      // layers: held there from the zinc laid out at 0 V, the solve failed, where the same cell
+      // without R converged cold; the echem combos' case 38).
+      if (this.coldStart && !this.stepped) {
+        this._refreshSources();
+        this.initFromComposition();
+      }
       const q = this._steadyFromHere(opts);
       steps += q.steps ?? 0;
       iterations += q.iterations ?? 0;
