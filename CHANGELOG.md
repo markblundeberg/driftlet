@@ -5,6 +5,27 @@ major version.
 
 ## Unreleased
 
+- **A terminal's charge on a flow-through path is in the time steps' error control.** A slow cyclic
+  voltammogram after a rest read its charge 52% high at the first vertex, and its cycle's net charge
+  with the wrong sign; a resistor's voltage ramp read 0.75 C/m² for 0.5; a backward-Euler current ramp
+  read 26% high. The step pair and the later steps (against a predictor, as for the potentials) now
+  check every terminal's passed charge, where only floating current-driven terminals' had been
+  checked (round 3's fix of the 50% ramp, which reached only that case). The CV now reads 0.07% off at
+  the default tolerance. It costs steps where a charge passes through without being stored (that CV:
+  152 steps, was 15; Haynes–Shockley weak +6% factorisations, the bench re-baselined), and the docs
+  now say which charges are exact (stored ones) and which a quadrature held to the tolerance.
+  (Round 7: Sol re-read the time integrator, and found this.)
+- The first-step jump exemption counts a try only when its step shrank, and leaves out a stiff gate's
+  error: a Hodgkin–Huxley clamp's first step after an edge to −120 mV had been taken at 88× the
+  tolerance, m 0.442 where 0.271 is exact (a Na⁺ tail current ~4× high for 40 µs), and repeated
+  budgeted calls with one `dt0` could accept a step at 7e5× it.
+- A solution read a few ulps past a current's edge reports the current the state passed (it had read
+  the drive's value after the edge: 501 of 2800 frames of a square wave stepped by half periods).
+- The running terminal charge is summed compensated, so a small current after a large passed charge
+  still adds up; a long step after one below 1e-12 of it no longer breaks the next call ("non-finite
+  update"); late clocks: a step that can't move the clock isn't taken, two trace rows no longer land
+  at one time, a pulse inside a fixed step at 1e9 s is warned of, a 1e16 s period's left limit reads
+  right, and `step()` refuses a t + dt past the largest time.
 - `impedance()` rolls the device back when its steady solve throws (a user's statistics model, say),
   as it already did when that solve failed or the linear solve threw: left half-solved, a pending step
   response came out different (the next `advance()` took 106 steps where a twin that never called took
