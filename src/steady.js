@@ -33,6 +33,8 @@
 //   here and the pseudo-transient ramp only). Starts the call's diagnostics fresh
 //   (this._freshDiagnostics(): this.violent, violentStart where nothing has been stepped or
 //   solved; this.unreached, charging, drifted, settling, modelError and conditioning cleared),
+//   finds the laws again where how a terminal is driven, read at this.time, has changed since
+//   they were found (this._lawsNow: a waveform current zero now and not then, or the reverse),
 //   captures the laws, and
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
@@ -79,12 +81,14 @@
 //   device past 1e12·tau); on a direct device,
 //   once dt ≥ tau, a step at ∞ is tried once a decade of dt, the state kept where it fails. Past
 //   giant (not direct), dt grows ×10 a step to 1e6·giant. Converged where a step at ∞ converged,
-//   or, not direct, where a step of dt ≥ giant moved the potentials under tol (finished by one
+//   or, not direct, where a step of dt ≥ giant moved the potentials and the floating terminals' voltages (termV − termVPrev) under tol (finished by one
 //   step of exactly giant where dt had grown past it, which must converge too). Not direct,
 //   before each step of dt ≥ giant and the finishing one, each spectator's amount restored
-//   (_renormalizeSpectators). Not direct, with unkept laws: after each step of dt ≥ giant, each
+//   (_renormalizeSpectators: in turn, again while a shift by Newton, a coupled statistics', left
+//   one off by over 1e-12, fifty passes at most). Not direct, with unkept laws: after each step of dt ≥ giant, each
 //   unkept combination of stretches' and surfaces' amounts (_unkeptAmounts) must be within 1e-6
-//   of its size (Σ |w·amount|) of what it was when the call began, else the step is put back
+//   of its size (Σ |w·amount|) of what it was when solveSteady began (this.solveAmounts; when
+//   the call began, called alone), else the step is put back
 //   (_restore) and counts as failed (`drifted` in its history entry; this.drifted names the
 //   combination's parts); the finishing step, failing that, ends the call unconverged. (A
 //   combination through an electrode's or a contact's charge isn't checked.) On return, whatever
@@ -103,17 +107,21 @@
 //   _continuation(k, from, to)  contact k's voltage through sourceOverride (the other's held
 //                            too, where given), in steps of an eighth of the span, ×1.5 on
 //                            success, ÷4 on a failure, giving up below 1e-6 of the span. Cold
-//                            (not warm), first solved at `from`: failing, again from a cold start
-//                            laid out there, then with the light ramped where there's
+//                            (not warm), first solved at `from`: failing, with no law unkept,
+//                            again from a cold start laid out there, then with the light ramped where there's
 //                            generation. The overrides are cleared on return.
 //   _floatingContinuation    the terminal held at voltages (its drive replaced, then put back):
 //                            marched from its voltage (or 0) in steps from 20 mV, ×1.5, toward
-//                            the target current (both ways, to ±20 V), the crossing bisected to
-//                            0.1 mV, then floated from the nearer end. Floated and failing, the
+//                            the target current (both ways, to ±20 V; a held solve that fails
+//                            retried at a quarter of the stride from the last converged one, to
+//                            1 mV), the crossing bisected to 0.1 mV, then floated from the
+//                            nearer end. Floated and failing, the
 //                            held solve whose current is within 1e-10 of the target (by regula
-//                            falsi, Illinois, from the bracket; the scale is the largest current
-//                            seen) is returned as converged, its drive put back. No crossing:
-//                            this.unreached says what the held voltages passed. Each time its
+//                            falsi, Illinois, from the bracket; the scale is the larger of the
+//                            target and the bracket's ends' currents) is returned as converged, its drive put back. No crossing:
+//                            this.unreached says what the held voltages passed, where both ways
+//                            showed a limit: reached ±20 V, or stopped by failing held solves
+//                            after the current had turned away from the target. Each time its
 //                            drive is put back, the local constraints' references are taken from
 //                            the state again (captureLocal), which redrive() zeroed.
 //
@@ -122,7 +130,10 @@
 // there's no such cell); _directSteady(): no law unkept and every
 // stretch connected or conserved; stuckReactions(): after a steady solve, each reaction that
 // alone changes a combination nothing feeds and whose affinity keeps one sign, over 1e-6, wherever
-// it acts, { where, affinity } (the smallest); and each bulk reaction out of equilibrium, over
+// it acts, { where, affinity } (the smallest); each neutral species fed only by contacts' rate
+// links (exchange, velocity), unreacted, with no port or flow, whose links all push it one way
+// by over 1e-6 (η outside − η at the contact), { where: the links, affinity }; and each bulk
+// reaction out of equilibrium, over
 // 1e-6, at a node where it alone changes a participant that can't move, { where, affinity (the
 // largest there), immobile: how many nodes } (see its comment).
 //
@@ -149,6 +160,7 @@
 // comments.
 
 import { profileAt, sourceAt } from './device.js';
+import { DeviceError } from './errors.js';
 import { chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
@@ -220,7 +232,10 @@ export class SteadySolves {
   // a change of drive).
   solveSteady(opts = {}) {
     this._freshDiagnostics(); // (violent, unreached, charging, drifted, settling, modelError, conditioning: see src/solver.js)
+    this._lawsNow(); // (a waveform's current, zero or not at this time: see noCurrent in src/laws.js)
     captureLaws(this);
+    this.computeConcentrations();
+    this.solveAmounts = this._columnAmounts(); // (what the giant steps keep of an unkept amount: see _steadySteps)
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
     // A solve that fails leaves where the state was solved, and whether it was stepped, as they
@@ -235,6 +250,7 @@ export class SteadySolves {
       return r;
     } finally {
       this.steady = false;
+      this.solveAmounts = null;
     }
   }
 
@@ -440,7 +456,9 @@ export class SteadySolves {
       // (where it was left, not where a floating continuation since left the state)
       this._putLevels(dimmer);
     }
-    return after(this._steadySteps(opts), r);
+    // (solved() too: without it, a stepped state solved here stayed `stepped`, and its solution read
+    // a waveform's voltage from before the step it had stepped onto, 0.1 V for 0; Astra's fourth pass)
+    return solved(after(this._steadySteps(opts), r));
   }
 
   // Whether terminal k, driven by a current, feeds a combination that it alone can change, or
@@ -493,25 +511,48 @@ export class SteadySolves {
       // March, the step growing: up where the current is below its target, since raising a
       // terminal's voltage raises the current into a passive device (the other way, from the
       // start again, if 20 V brings no crossing).
+      // (A held solve that fails is retried at a quarter of the stride, warm from the last that
+      // converged, to 1 mV: ending the march there, one failed sample of an iron couple at
+      // 3.12 V sent it the other way to −23 V, and the solve failed claiming a limiting current
+      // where 3.38 V passes it; Astra's fourth pass.)
       const start = Va, f0 = fa;
+      // (Each way that shows a limit: marched to ±20 V, or stopped by its held solves after its
+      // current had turned away from the target, past an extremum. Stopped while still nearing
+      // it, a march says nothing of a limit.)
+      let limited = 0;
       [Vb, fb] = [Va, fa];
       for (const dir of [fa < 0 ? 1 : -1, fa < 0 ? -1 : 1]) {
         [Va, fa] = [start, f0];
         if (dir !== (f0 < 0 ? 1 : -1)) hold(start); // (back to the start, for a warm march)
-        let dV = 0.02;
-        Vb = Va + dir * dV;
-        fb = hold(Vb);
-        while (Number.isFinite(fb) && Math.sign(fb) === Math.sign(fa) && fa !== 0 && Math.abs(Vb - start) < 20) {
-          [Va, fa] = [Vb, fb];
-          dV *= 1.5;
+        let dV = 0.02, nearest = Math.abs(fa);
+        for (;;) {
+          const before = this._levels();
           Vb = Va + dir * dV;
           fb = hold(Vb);
+          if (!Number.isFinite(fb)) {
+            this._putLevels(before);
+            dV /= 4;
+            if (dV < 1e-3) {
+              if (Math.abs(fa) > nearest) limited++;
+              break;
+            }
+            continue;
+          }
+          if (Math.sign(fb) !== Math.sign(fa) || fa === 0) break;
+          if (Math.abs(Vb - start) >= 20) {
+            limited++;
+            break;
+          }
+          [Va, fa] = [Vb, fb];
+          nearest = Math.min(nearest, Math.abs(fa));
+          dV *= 1.5;
         }
         if (Number.isFinite(fb) && (Math.sign(fb) !== Math.sign(fa) || fa === 0)) break;
       }
       if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) {
-        // What the held voltages passed, at the two extremes reached.
-        if (seen.length > 1 && !line) {
+        // What the held voltages passed, at the two extremes reached: only where both ways showed
+        // a limit.
+        if (seen.length > 1 && !line && limited === 2) {
           seen.sort((a, b) => a[0] - b[0]);
           this.unreached = { terminal: this.terms[k].name, target, low: seen[0], high: seen.at(-1) };
         }
@@ -536,9 +577,11 @@ export class SteadySolves {
     // Floated, the system can lose what held it doesn't (a closed redox cell driven near its
     // limit: its bordered row 33 digits short), but a current-driven steady state is the held
     // one at the voltage that passes the target: found by held solves, by regula falsi
-    // (Illinois) within the bracket, to 1e-10 of the target, or at open circuit of the largest
-    // current the march saw (a target of 0 is never met exactly).
-    const scale = Math.max(line ? 0 : Math.abs(target), ...seen.map(([, I]) => Math.abs(I)));
+    // (Illinois) within the bracket, to 1e-10 of the target, or at open circuit of the larger
+    // current at the bracket's ends (a target of 0 is never met exactly). (Of every current the
+    // march saw, 7e9 A/m² at its far end, −5.3e-7 was accepted for a target of +1e-12; Astra's
+    // fourth pass.)
+    const scale = Math.max(line ? 0 : Math.abs(target), Math.abs(fa + want(Va)), Math.abs(fb + want(Vb)));
     try {
       let side = 0;
       for (let it = 0; it < 60; it++) {
@@ -674,7 +717,9 @@ export class SteadySolves {
       let q;
       if (!warm) {
         q = this._steadySteps(opts);
-        if (!q.converged) {
+        // (Not where an amount no row keeps is there to lose: laid out from c0, a closed Y + Z went
+        // from the state's 1e-5 to c0's 1.03e-6; Astra's fourth pass.)
+        if (!q.converged && this.unkept.length === 0) {
           // A cold device's start was laid out for the target (a set() before the first solve
           // builds it there): lay it out again, level.
           steps += q.steps;
@@ -690,7 +735,9 @@ export class SteadySolves {
         if (!q.converged) return { ...r, converged: false, steps, iterations }; // (said, not inherited from r: a caller may pass one that converged)
       }
       while (V !== target) {
-        const next = Math.abs(target - V) <= Math.abs(dV) ? target : V + dV;
+        // (and the target where the stride no longer moves V: a span of 5e-324 V, its eighth 0,
+        // ramped without end; Astra's fourth pass)
+        const next = Math.abs(target - V) <= Math.abs(dV) || V + dV === V ? target : V + dV;
         const before = this._levels();
         this.sourceOverride.set(k, next);
         q = this._steadySteps(sub);
@@ -734,6 +781,14 @@ export class SteadySolves {
     const tau = this.slowestTime();
     const direct = this._directSteady();
     const giant = direct ? Infinity : 1e6 * tau;
+    // (A giant step that overflows is a steady solve without the storage term that keeps what no
+    // row does: a species at D = 1e-315 made it ∞, and the solve converged with 18% of Y + Z lost;
+    // Astra's fourth pass.)
+    if (!direct && !(giant < Infinity)) {
+      const [dMin] = this._dRange(), { species, materials } = this.model;
+      const slow = materials.flatMap((mat) => species.flatMap((sp, i) => (mat.present[i] && mat.D[i] === dMin ? [`materials.${mat.name}.species['${sp.name}'].D`] : [])));
+      throw new DeviceError(`${slow[0] ?? 'a graded D'}: ${dMin} m²/s makes the steady solve's giant time step (1e6 of the slowest diffusion time, L²/D) overflow, and without it nothing keeps the amounts no row of the steady system holds. Make that species immobile (D: 0), or give it a D the device can wait out (above ~1e-290 m²/s).`);
+    }
     let dt = giant, grow = 10; // (after a failure, dt grows by less, then back up to ×10)
     let triedDirect = 0;
     let totalIter = 0, steps = 0, converged = false;
@@ -743,7 +798,10 @@ export class SteadySolves {
     // anywhere along it: a closed Y + Z, Y still in part of its stretch, converged 1e8× too large.
     // So each such amount is checked after every step of dt ≥ giant, and a step that moved it
     // fails.
-    const unkept = !direct && this.unkept.length > 0 ? this._unkeptAmounts() : null;
+    // (From when the public solve began, not this call: a continuation's cold retry laid Y + Z out
+    // again from c0, and the next calls each took that as theirs, keeping 1.03e-6 for 1e-5; Astra's
+    // fourth pass.)
+    const unkept = !direct && this.unkept.length > 0 ? this._unkeptAmounts(this.solveAmounts ?? undefined) : null;
     const drifted = () => {
       const now = this._unkeptAmounts(), lost = now.findIndex(([a], j) => !(Math.abs(a - unkept[j][0]) <= 1e-6 * unkept[j][1]));
       if (lost >= 0) this.drifted = now[lost][2];
@@ -796,7 +854,10 @@ export class SteadySolves {
         }
         this._restore(snap);
       }
-      const motion = dt >= giant ? maxPotentialStep(this, this._diff()) : NaN;
+      // (the floating terminals' motion over the step too, not Newton's last update to them: a
+      // gate behind R ~1e18 Ω·m², its RC 6e5 s, moved 0.26 VT in its one giant step, its last
+      // update 3e-15, and was accepted far from its source's 1 V; Astra's fourth pass)
+      const motion = dt >= giant ? maxPotentialStep(this, this._diff(), Float64Array.from(this.floating, (k) => this.termV[k] - this.termVPrev[k])) : NaN;
       if (dt >= giant) motions.push(motion);
       if (dt >= giant && motion < tol) {
         converged = true;
@@ -840,15 +901,16 @@ export class SteadySolves {
   }
 
   // The amounts no row keeps (unkept) that are of stretches and surfaces alone: each as [its value,
-  // the sum of its parts' sizes, the names of its parts].
-  _unkeptAmounts() {
-    const S = this.stretches.length, X = S + this.surfCols.length, { species, ports } = this.model;
+  // the sum of its parts' sizes, the names of its parts], from the columns' amounts (now, or as
+  // _columnAmounts took them before).
+  _unkeptAmounts(cols = this._columnAmounts()) {
+    const S = this.stretches.length, X = S + this.surfCols.length, { species } = this.model;
     return this.unkept.filter((w) => w.every((x, k) => k < X || x === 0)).map((w) => {
       let a = 0, size = 0;
       const names = [];
       w.forEach((x, k) => {
         if (x === 0) return;
-        const v = x * (k < S ? this.amount(this.stretches[k]) : this.surfaceAmount(k - S));
+        const v = x * cols[k];
         a += v;
         size += Math.abs(v);
         names.push(k < S ? species[this.stretches[k].species].name : this.model.surfaces[this.surfCols[k - S][0]].species[this.surfCols[k - S][1]].name);
@@ -857,16 +919,25 @@ export class SteadySolves {
     });
   }
 
+  // Each stretch's amount and each surface column's, in column order (laws.js's [0, X)).
+  _columnAmounts() {
+    const S = this.stretches.length;
+    return Float64Array.from({ length: S + this.surfCols.length }, (_, k) => (k < S ? this.amount(this.stretches[k]) : this.surfaceAmount(k - S)));
+  }
+
   // Huge steps pin each conserved amount only through a tiny storage term, so round-off can let
   // it creep. Shift each spectator's level uniformly to restore its amount exactly (in one step
   // for ideal statistics, where c ∝ e^η; by Newton on the shift otherwise).
+  // (Swept again while a shift by Newton left another off: species sharing a lattice's sites
+  // move each other's amounts, and in one pass B, listed before A, was left 4.5% off after A's
+  // shift; Astra's fourth pass. An ideal one's shift moves only its own: one pass, as before.)
   _renormalizeSpectators() {
     const { n, M, u } = this;
-    let changed = false;
-    this.stretches.forEach((st, k) => {
-      // A floating conductor holds its charge on its faces, not as an amount: the huge steps keep
-      // it, and there's nothing here to shift.
-      if (!st.spectator || this.model.materials[this.model.regions[st.regions[0]].material].conductor) return;
+    let changed = false, coupled = false;
+    // (A floating conductor holds its charge on its faces, not as an amount: the huge steps keep
+    // it, and there's nothing here to shift.)
+    const spectators = this.stretches.flatMap((st, k) => (st.spectator && !this.model.materials[this.model.regions[st.regions[0]].material].conductor ? [k] : []));
+    const sweep = (st, k) => {
       const want = this.referenceAmounts[k];
       // (one shift of η scales an ideal stretch's amount exactly, but not what a diffuse layer
       // at its edge holds, whose excess isn't proportional to c: iterate there too)
@@ -902,9 +973,18 @@ export class SteadySolves {
         }
         for (let g = st.nodes[0]; g <= st.nodes[1]; g++) u[this.blockOfNode[g] * M + 1 + st.species] += shift;
         changed = true;
-        if (!ideal) this.computeConcentrations();
+        if (!ideal) {
+          coupled = true;
+          this.computeConcentrations();
+        }
       }
-    });
+    };
+    for (let pass = 0; pass < 50; pass++) {
+      coupled = false;
+      for (const k of spectators) sweep(this.stretches[k], k);
+      if (!coupled) break;
+      if (spectators.every((k) => !(Math.abs(this.amount(this.stretches[k]) - this.referenceAmounts[k]) > 1e-12 * Math.abs(this.referenceAmounts[k])))) break;
+    }
     if (changed) this.computeConcentrations();
   }
 
@@ -931,7 +1011,7 @@ export class SteadySolves {
   // only caught here if that couldn't be arranged; by giant steps, it's checked like the rest.)
   stuckReactions() {
     const { n, M, u, uLo, model } = this, grid = model.grid, S = this.stretches.length, X = S + this.surfCols.length, out = [], direct = this._directSteady();
-    const passes = (k) => !noCurrent(this.terms[k]);
+    const passes = (k) => !noCurrent(this.terms[k], this.time);
     const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && this.terms.some((t, j) => t.drive.kind === 'I' && passes(j) && feeds(j, this.stretches[k])))));
     const needed = (rx) => {
       const basis = conservedMoieties(this._structure(), { drives: true, skip: rx });
@@ -1002,6 +1082,19 @@ export class SteadySolves {
         report(`ports[${k}].reactions[${q}]`, Array.from(port.nodes, (g) => rx.part.reduce((a, p) => (p.side === 1 ? a : a - p.nu * eta(g, p.side === 2 ? 1 + n + p.s : 1 + p.i)), aV)));
       });
     });
+    // A neutral species that nothing makes or uses, in regions without flow, fed only by contacts'
+    // rate links (exchange, velocity): a steady state has no net flow through them, so not all of
+    // them can push it the same way. A link too slow for the giant steps (an exchange at
+    // k ≤ 1e-23 mol/(m²·s)) left it at its c0, 0.69 RT from the reservoir, converged, unwarned
+    // (Astra's fourth pass). Its affinity: η outside − η at the contact's node.
+    for (const st of this.stretches) {
+      const i = st.species, [r0, r1] = st.regions;
+      if (this.z[i] !== 0 || st.reactive || st.linked.length > 0 || !(st.leftOpen || st.rightOpen)) continue;
+      if (model.regions.slice(r0, r1 + 1).some((reg) => reg.velocity !== 0)) continue;
+      const sides = [...(st.leftOpen ? ['left'] : []), ...(st.rightOpen ? ['right'] : [])], links = sides.map((side) => model.contacts[side].species[i]);
+      if (!links.every((l) => l.type === 'exchange' || l.type === 'velocity')) continue;
+      report(sides.map((side) => `contacts.${side}.species['${model.species[i].name}']`).join(', '), sides.map((side, j) => (links[j].type === 'exchange' ? links[j].mu / model.RT : this.contactEta(side, i)) - eta(side === 'left' ? 0 : this.nNodes - 1, 1 + i)));
+    }
     return out;
   }
 }

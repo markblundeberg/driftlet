@@ -89,7 +89,10 @@
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
 // its message); s.modelError, the message of a SolverError a statistics model threw at a state
 // Newton reached (in the assembly, or computing the concentrations where it stops), which fails
-// the call rather than leaving it (cleared by solveSteady and integrate, for their failures).
+// the call rather than leaving it (cleared by solveSteady and integrate, for their failures);
+// s.newtonError, the reason the last failed iteration gave ('diverging', a singular border, a
+// refused state…), for a failure nothing more specific explains (cleared with modelError; the
+// generic "nothing specific showed why" had dropped it; Astra's fourth pass).
 // Tests: every solve and step goes through here; test/newton.test.js (the islands round, the
 // residual check's failure) and the MOS gate step in test/ports.test.js (a lost mode, to 1e-6);
 // test/jacobian.test.js checks the system it solves. The devices that needed each branch are in
@@ -475,6 +478,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       return { ...kept.result, iterations: r.iterations, history };
     }
     if (dt === Infinity) noteConditioning(s);
+    if (r.error) s.newtonError = r.error; // (its reason, for a failure nothing more specific explains)
     return r;
   };
   // Converged (by its tolerance, or as far as round-off allows): unless something says it isn't

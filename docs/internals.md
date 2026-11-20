@@ -153,7 +153,7 @@ drivers that call the modules: about a thousand lines, with no contract of its o
 section and one list. `STATE`, at its head, names the solver's state between calls: every field a
 later call reads that an earlier one wrote (the unknowns, the start of the next step, the clock and
 the time steps' memory, whether the state is steady or stepped and where it was solved, what closed
-stretches conserve). `_snapshot()` and `_restore()` copy exactly these, for a failed solve, a
+stretches conserve, whether its floating pieces balance). `_snapshot()` and `_restore()` copy exactly these, for a failed solve, a
 rejected step and the live wrapper's rollback alike; every other field is structure, built with the
 solver, scratch, written before it's read within a call, or `LEARNED`: what Newton learns about the
 device (that it loses a mode in a time step), kept across calls and through a rollback on purpose.

@@ -360,6 +360,7 @@ export function integrate(s, tEnd, opts = {}) {
   const pushTerminals = (r) => names.forEach((nm, k) => (terminals[nm].V.push(r.V[k]), terminals[nm].current.push(r.current[k]), terminals[nm].charge.push(r.charge[k])));
   let steps = 0, rejected = 0, iterations = 0, failed = false, stalled = null;
   s.modelError = null; // (a statistics model's refusal, for the failure: see newton)
+  s.newtonError = null; // (and Newton's own reason)
   // Already there (an animation frame with no time to add): nothing to do, and the step size
   // carried to the next call stays as it was. A time already passed, or reached again outside
   // an animation, is most likely advance(dt) read as a duration: say so.
@@ -555,7 +556,7 @@ export function integrate(s, tEnd, opts = {}) {
     stopped = `${at}: the first step did not converge even when shortened to ${dt.toExponential(1)} s, from the starting state, which is c0's layout rather than a solution (a junction's depletion not yet formed, say). For a transient from equilibrium, solve() first at the starting drives, then change what the experiment changes, then advance().`;
   else if (stalled)
     stopped = `${at}: the error control cut the step to ${dt.toExponential(1)} s, below the time's own resolution at t = ${s.time.toPrecision(3)} s, without bringing the local error estimate (${stalled.err.toExponential(1)} in thermal units) under tol (${tol}). Early in a run that's a floor under the estimate, the precision the steps are solved to (about 1e-7 on steps far shorter than a device's dielectric relaxation, with ε > 0): loosen tol (${Math.min(1e-3, 10 * stalled.err).toExponential(0)} or more, say). Late in a long one, advance by intervals nearer the device's time scales.`;
-  else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
+  else if (failed) stopped = `${at}: a step did not converge even when shortened to ${dt.toExponential(1)} s${s.newtonError ? ` (Newton's last try: ${s.newtonError})` : ''}. Look for: a host or surface driven to its limit (emptied or filled at its surface by a current it can no longer pass); an electrode at open circuit held only by a slow reaction, with no double-layer capacitance to keep its level (give its face one: phi capacitive); a drive's jump too big for one step (ramp it); a driven current the device cannot keep passing (a diode's reverse recovery past its storage time: stop there); or a device the steady solves also find hard.`;
   else if (s.time < tEnd && steps + rejected >= maxSteps) stopped = `${at}: maxSteps (${maxSteps}) used up (${rejected} of them rejected). Call again to go on, or loosen tol.`;
   return { converged: !failed, done: s.time >= tEnd, steps, rejected, iterations, trace, ...(stopped ? { stopped } : {}) };
 }
