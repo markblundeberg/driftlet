@@ -105,11 +105,15 @@ Two optional transport terms describe a moving fluid:
     $`\bar\mu`$), so double layers at rest are untouched.
   - The projection removes any current ($`z^\mathsf{T} P = 0`$). Eddies move neutral fluid, so
     they mix salt and stir concentration gradients but conduct nothing.
-  - Since $`K\nabla\zeta = \nabla c`$, it's $`-D_{\mathrm{mix}} \nabla c`$ for every species in a
-    neutral solution, under any statistics: eddies carry parcels of fluid, so they mix
-    concentration, not activity. (Molecular diffusion differs on purpose: a molecule's own random
-    walk is driven by the thermodynamic force, so its mobility is $`D c`$, above.) For a neutral
-    dilute species it's $`-D_{\mathrm{mix}} \nabla c`$ anywhere. For a binary salt it adds
+  - Since $`K\nabla\zeta = \nabla c`$, it's
+    $`-D_{\mathrm{mix}} [\nabla c - K z\, (z^\mathsf{T}\nabla c)/(z^\mathsf{T} K z)]`$, which is
+    $`-D_{\mathrm{mix}} \nabla c`$ for every species in a neutral solution whose fixed charge is
+    uniform ($`\sum_i z_i \nabla c_i = 0`$), under any statistics: eddies carry parcels of fluid, so
+    they mix concentration, not activity. (Molecular diffusion differs on purpose: a molecule's own
+    random walk is driven by the thermodynamic force, so its mobility is $`D c`$, above.) Where the
+    fixed charge is graded, the ions' $`-D_{\mathrm{mix}} \nabla c`$ would carry a current, and the
+    projection takes it out. For a neutral dilute species it's $`-D_{\mathrm{mix}} \nabla c`$
+    anywhere. For a binary salt it adds
     $`D_{\mathrm{mix}}`$ to the salt's ambipolar diffusivity and leaves diffusion potentials
     unchanged.
 

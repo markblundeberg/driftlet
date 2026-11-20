@@ -331,9 +331,9 @@ test("a port's Marcus–Hush–Chidsey derivatives against differences of its ra
       port.nodes.forEach((g) => {
         let dCode = null, dV = null;
         const orig = s._portMhc;
-        s._portMhc = function (pt, r, gg, b, sA, ww, aV, daV, q, rates, flux, kk) {
+        s._portMhc = function (pt, r, gg, b, sA, ww, aV, aVLo, daV, q, rates, flux, kk) {
           const before = this.termDI[kk];
-          orig.call(this, pt, r, gg, b, sA, ww, aV, daV, q, rates, flux, kk);
+          orig.call(this, pt, r, gg, b, sA, ww, aV, aVLo, daV, q, rates, flux, kk);
           if (r === rx && gg === g) [dCode, dV] = [Float64Array.from(this.dA), (this.termDI[kk] - before) / (q * FARADAY * sA)];
         };
         s.assemble(1e-4);

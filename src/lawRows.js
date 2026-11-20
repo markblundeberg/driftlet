@@ -126,6 +126,7 @@ import { FARADAY } from './constants.js';
 import { sourceAt } from './device.js';
 import { carrierZ, chargeOnly } from './laws.js';
 import { SolverError } from './errors.js';
+import { addTerm } from './sum.js';
 
 // The laws' rows at the end of an assembly (see the contract above).
 export function applyLaws(s, dt) {
@@ -803,7 +804,10 @@ function applyAffinities(s) {
     s._j(b0, r0, b0, r0, 1);
     res[s.rix[af.row]] = 0;
     const gL = grid.regionEnd[af.f], gR = grid.regionStart[af.f + 1];
-    let hi = af.rx.fixedA, lo = 0, len = 0;
+    let len = 0;
+    const acc = s.afAcc ?? (s.afAcc = new Float64Array(2)); // (summed compensated, as the kinetics are: src/sum.js)
+    acc[0] = af.rx.fixedA;
+    acc[1] = 0;
     const sSide = s.model.interfaces[af.f].surfaceSide;
     // (A participant drawn through a diffuse layer reacts at the plane, its level w above its edge
     // node's, in the face block's slot: the kinetics' affinity counts it, and the pin held the
@@ -815,13 +819,12 @@ function applyAffinities(s) {
       return q < 0 ? [[s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu]] : [[s.blockOfNode[p.side ? gR : gL] * M + 1 + p.i, p.nu], [bf * M + q, p.nu]];
     }), ...af.rx.surf.map((p) => [s.blockOfNode[sSide ? gR : gL] * M + 1 + s.n + p.s, p.nu])];
     for (const [o, nu] of terms) {
-      hi -= nu * u[o];
-      lo -= nu * uLo[o];
+      addTerm(acc, -nu, u[o], uLo[o]);
       if (s.loc[o] < 0) continue;
       af.idx[len] = s.rix[o];
       af.w[len++] = -nu;
     }
     af.len = len;
-    af.res = hi + lo;
+    af.res = acc[0] + acc[1];
   }
 }

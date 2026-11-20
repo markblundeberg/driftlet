@@ -342,13 +342,15 @@ function solutionFields(solver, result) {
 
 function coverageWarnings(sol) {
   // A surface covered almost completely: its coverages' η barely move anything below ~1e-10 bare,
-  // and Newton loses them (a transient can stall there).
+  // and far below, Newton loses them (a transient stalled at 4e-19 bare until the dominant
+  // species' storage took its 1 − θ from the small coverages; it fills to ~1e-36 since, and
+  // stalls by 1e-41: round 4, B13).
   // (A face's surface too: Argon's review of 1.6.1 found it unwatched.)
   sol.interfaces.forEach((itf, f) => {
     if (itf.bare !== undefined && itf.bare < 1e-10) {
       sol.warnings.push(
         `interfaces[${f}]: its surface is covered to a bare fraction of ${itf.bare.toExponential(1)}. ` +
-          'Below ~1e-10 the coverage barely affects anything and the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
+          'Below ~1e-10 the coverage barely affects anything, and below ~1e-35 the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
       );
     }
   });
@@ -358,7 +360,7 @@ function coverageWarnings(sol) {
     if (min < 1e-10) {
       sol.warnings.push(
         `ports ${p.name}: its surface is covered to a bare fraction of ${min.toExponential(1)} at x = ${p.x[p.bare.indexOf(min)].toExponential(3)} m. ` +
-          'Below ~1e-10 the coverage barely affects anything and the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
+          'Below ~1e-10 the coverage barely affects anything, and below ~1e-35 the solver struggles with it; a passive metal blocks to 1e-3–1e-6, so make the film less stable (raise its μ°).',
       );
     }
   });

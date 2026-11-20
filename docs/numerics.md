@@ -197,8 +197,9 @@ exactly like an extra potential, taken linear along the segment as $`\phi`$ is, 
 holds with $`\Delta = z(\hat\phi_R - \hat\phi_L) + \mathrm{ex}_R - \mathrm{ex}_L`$. That's the
 excess-chemical-potential generalisation of Scharfetter–Gummel: still exactly zero at
 equilibrium, since the expm1 factor is untouched. It's exact for a single diffusing species on
-a lattice (whose excess is proportional to its grand potential, linear in $`x`$ at steady state)
-and second order otherwise. Its Jacobian couples each flux to every species at both nodes through
+a lattice with no field along it (neutral, or where $`\phi`$ is level: its excess is then
+proportional to its grand potential, linear in $`x`$ at steady state) and second order otherwise,
+a lattice species in a field included (one cell across $`\Delta\hat\phi = 1`$ is 5% off). Its Jacobian couples each flux to every species at both nodes through
 $`K`$, which fills the blocks but keeps them tridiagonal.
 
 ## Interfaces: doubled nodes plus a flux node
@@ -416,8 +417,11 @@ $`G/L`$ per volume, so each node gets half.
 ## Bulk reactions
 
 $`r = k_f \prod c_R^\nu \cdot (-\mathrm{expm1}(-a))`$, with $`a = A/RT`$ computed from the
-compensated $`\eta`$. That's mass action with the reverse rate implied by the standard potentials:
-exactly zero at $`A = 0`$, and free of cancellation near equilibrium. Sources enter each balance as
+compensated $`\eta`$ and summed compensated too (src/sum.js: each $`\eta`$ carries its
+$`\mu^\circ/RT`$, which can be tens while a fast reaction's $`a`$ is its rate over $`k_f`$, so a plain
+sum's rounding would set that rate by the order the equation is written in). That's mass action
+with the reverse rate implied by the standard potentials (for ideal statistics; under others, by
+the activities too): exactly zero at $`A = 0`$, and free of cancellation near equilibrium. Sources enter each balance as
 $`\nu \cdot r`$, with one $`r`$ per reaction per node, so every moiety (a combination that no reaction
 changes) telescopes exactly.
 

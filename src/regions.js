@@ -90,6 +90,9 @@
 import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { powi } from './pow.js';
+import { addTerm } from './sum.js';
+
+const AFF = new Float64Array(2); // addTerm's accumulator, scratch for _bulkAffinity
 
 // The logarithmic mean of a and b = a·e^l, a·f(l) with f = expm1(l)/l, into cb[k], with
 // ∂/∂a = f − f′ and ∂/∂b = a f′/b into dLa[k] and dLb[k].
@@ -535,23 +538,18 @@ export class RegionTerms {
   // with ∂rate/∂slot over g's block into dr (length M; filled whole). An island's sum takes the
   // same terms (lawRows.js, applyIslands), so its rows and the nodes' are of one function.
   _bulkRateInto(rx, g, dr) {
-    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    const { n, M, c } = this;
     const law = rx.srh?.[this.nodeMaterial[g]];
     if (law) {
       // SRH: dr is ∂rate/∂slot directly, from its sensitivities to ln n, ln p, a and the excesses.
-      let aHi = rx.fixedA, aLo = 0;
-      for (let p = 0; p < rx.sp.length; p++) {
-        aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
-        aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
-      }
-      const { rate, Cn, Cp, Ca, Cxn, Cxp } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law));
+      const { rate, Cn, Cp, Ca, Cxn, Cxp } = this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], this._bulkAffinity(rx, g), ...this._srhDegen(g, g, law));
       dr.fill(0);
       this._srhInto(g, law.n.i, Cn, Cxn, dr);
       this._srhInto(g, law.p.i, Cp, Cxp, dr);
       for (let p = 0; p < rx.sp.length; p++) dr[1 + rx.sp[p]] += Ca * rx.nu[p];
       return rate;
     }
-    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g], aHi = rx.fixedA, aLo = 0;
+    let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     dr.fill(0); // ∂ ln P / ∂slot
     // Participants: reactants with ν > 0, then products with ν < 0.
     for (let p = 0; p < rx.sp.length; p++) {
@@ -561,8 +559,6 @@ export class RegionTerms {
         P *= nu === 1 ? ci : powi(ci, nu);
         this._dlnc(g, i, nu, dr);
       }
-      aHi += nu * u[b * M + 1 + i];
-      aLo += nu * uLo[b * M + 1 + i];
     }
     const ag = rx.auger?.[this.nodeMaterial[g]];
     if (ag) {
@@ -574,7 +570,7 @@ export class RegionTerms {
         this._dlnc(g, ag.p.i, tp / K, dr);
       }
     }
-    const a = aHi + aLo;
+    const a = this._bulkAffinity(rx, g);
     const f = -Math.expm1(-a); // 1 − e^{−a}
     const rate = P * f;
     const Pd = P * (1 - f); // P·df/da, df/da = e^{−a}
@@ -968,32 +964,34 @@ export class RegionTerms {
     d[0] = -this._Kz(g, k);
   }
 
+  // A bulk reaction's affinity at node g, a = fixedA + Σ ν η, compensated (src/sum.js): its
+  // participants' μ°/RT can be tens apart from a, and a plain sum's rounding then set a fast
+  // reaction's rate by the order its equation was written in (round 4, B6).
+  _bulkAffinity(rx, g) {
+    const { M, u, uLo } = this, o = this.blockOfNode[g] * M + 1;
+    AFF[0] = rx.fixedA;
+    AFF[1] = 0;
+    for (let p = 0; p < rx.sp.length; p++) addTerm(AFF, rx.nu[p], u[o + rx.sp[p]], uLo[o + rx.sp[p]]);
+    return AFF[0] + AFF[1];
+  }
+
   // A bulk reaction's rate at node g (mol/(m³·s), forward), as assembled: for the solution.
   bulkRate(rx, g) {
-    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
-    let aHi = rx.fixedA, aLo = 0;
-    for (let p = 0; p < rx.sp.length; p++) {
-      aHi += rx.nu[p] * u[b * M + 1 + rx.sp[p]];
-      aLo += rx.nu[p] * uLo[b * M + 1 + rx.sp[p]];
-    }
+    const { n, c } = this, a = this._bulkAffinity(rx, g);
     const law = rx.srh?.[this.nodeMaterial[g]];
-    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], aHi + aLo, ...this._srhDegen(g, g, law)).rate;
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).rate;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
     P *= this._augerFactor(rx, g);
-    return P * -Math.expm1(-(aHi + aLo));
+    return P * -Math.expm1(-a);
   }
 
   // A bulk reaction's forward one-way rate at node g (mol/(m³·s)); its backward one is that
   // times e^{−a}, so their difference is bulkRate's.
   bulkForward(rx, g) {
-    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
+    const { n, c } = this;
     const law = rx.srh?.[this.nodeMaterial[g]];
-    if (law) {
-      let a = rx.fixedA;
-      for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
-      return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).forward;
-    }
+    if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], this._bulkAffinity(rx, g), ...this._srhDegen(g, g, law)).forward;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];
     for (let p = 0; p < rx.sp.length; p++) if (rx.nu[p] > 0) P *= rx.nu[p] === 1 ? c[g * n + rx.sp[p]] : powi(c[g * n + rx.sp[p]], rx.nu[p]);
     P *= this._augerFactor(rx, g);
@@ -1003,9 +1001,7 @@ export class RegionTerms {
   // The larger of a bulk reaction's two one-way rates at node g (mol/(m³·s)): the scale its net
   // rate is read against (in equilibrium the net rate is their round-off).
   bulkOneWay(rx, g) {
-    const { n, M, u, uLo, c } = this, b = this.blockOfNode[g];
-    let a = rx.fixedA;
-    for (let p = 0; p < rx.sp.length; p++) a += rx.nu[p] * (u[b * M + 1 + rx.sp[p]] + uLo[b * M + 1 + rx.sp[p]]);
+    const { n, c } = this, a = this._bulkAffinity(rx, g);
     const law = rx.srh?.[this.nodeMaterial[g]];
     if (law) return this._srhRate(law, c[g * n + law.n.i], c[g * n + law.p.i], a, ...this._srhDegen(g, g, law)).oneWay;
     let P = rx.generation ? rx.kfNode[g] * this.generationScale : rx.kfNode[g];

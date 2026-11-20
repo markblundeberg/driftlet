@@ -28,6 +28,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
 | `src/dense.js` | header: small dense solves (partial pivoting), for statistics, junction and polarization |
+| `src/sum.js` | header: an affinity's compensated sum, for every reaction's rate (bulk, face, port) |
 | `src/solver.js` | no: setup, bookkeeping and drivers, described below |
 
 ## From a definition to a solution

@@ -265,8 +265,8 @@ so a change that makes one worse shows.
   depends on the grid, and in a sharp junction between very different solutions can stop a
   transient; the solution warns. So does a steep profile on too coarse a cell.
 - **A surface covered to a bare fraction below ~1e-10** barely affects anything any more, and
-  the solver struggles with it (the hard corpus's passivating drop without a double layer stops
-  partway through its hour); the solution warns, and suggests a less stable film.
+  far below that the solver struggles with it (a fill transient stalls near 1e-40); the solution
+  warns, and suggests a less stable film.
 - **Currents below ~0.1 nA/m²** (a GaAs junction's leakage without recombination) aren't resolved
   between solves; such a current is zero for any practical purpose.
 - **A failed solve says so:** `converged: false`, with a warning naming where the system lost

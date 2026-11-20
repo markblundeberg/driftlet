@@ -39,6 +39,19 @@ major version.
 - Species and ports named like JavaScript's built-in object properties (`'__proto__'`,
   `'constructor'`) are ordinary keys of every map a solution returns: `__proto__` was missing from
   them, and ν of `'constructor'` in `bulkReactions` came out NaN.
+- A reaction's affinity is summed compensated (src/sum.js) wherever a rate or a pin reads it (bulk,
+  face, port, Marcus–Hush–Chidsey, the steady pin, the readouts): participants with μ°/RT of ±40 had
+  made a fast reaction's flux depend on the order its equation was written in (5e-4 at kf 1e14,
+  converged and unwarned; now 1e-15, and 6e-12 from the analytic limit).
+- A surface filled almost completely (bare fraction below about 1e-16) no longer stalls a transient:
+  the dominant species' storage takes its 1 − θ from the small coverages, and fills complete to about
+  1e-36. The coverage warning says so.
+- A velocity contact's flux is exact for a small drive (`expm1`; it was 4e-9 off at a drive of 1e-8).
+- A first step that fails from c0's layout also names a species started far below what the first
+  instant makes of it.
+- Docs: the flux scheme is exact on a lattice only with no field along it; eddy mixing is −D_mix∇c
+  only with uniform fixed charge; the face invariants' exception for equilibrium links; k_b fixed by
+  the standard potentials only for ideal statistics.
 - Docs: `conservation`'s intake counts ports as well as contacts, integrated as the steps
   integrate; `bulkReactions`' `total` is mol/s through a cross-section when the device isn't
   planar, and `rate` is NaN only where the material doesn't run the reaction; `sol.current` is the
