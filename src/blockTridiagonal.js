@@ -13,7 +13,13 @@
 // Within each diagonal block, LU uses partial pivoting, so zero diagonal entries (such as a
 // slot that carries an interface flux instead of a value) are fine. There is no pivoting
 // *between* blocks: that is the usual block Thomas trade-off, safe for the diagonally
-// dominant-ish systems that finite-volume assembly produces.
+// dominant-ish systems that finite-volume assembly produces. What it can't survive is a mode
+// held only by the blocks after it: eliminated from the left, a closed strictly neutral region's
+// φ is free until the face beyond it (the face's unknowns are fluxes, so the blocks before it
+// alone leave the level undetermined), and a whole pivot column cancels to round-off there. With
+// `bothWays`, a factorisation from the left that loses a column that way is done from the right
+// too (a copy of the system with its blocks in reverse order), and that one kept where it loses
+// nothing: a device and its mirror image are then factorised the same way round (see factor).
 
 // Offsets of every block and vector segment for block sizes `sizes`.
 function layout(n, m, name) {
@@ -82,6 +88,17 @@ export class BlockTridiagonal {
     this.staticPivots = false;
     /** How many pivots the last factor() replaced. */
     this.perturbedPivots = 0;
+    /**
+     * Where the factorisation from the left loses a column to round-off (or a block is
+     * singular), factorise from the right as well, and keep that one where it loses nothing (see
+     * factor; with staticPivots, which is where columns are looked at).
+     */
+    this.bothWays = false;
+    /** How many of the last factor()'s pivot columns cancelled to round-off (see factor). */
+    this.lostColumns = 0;
+    /** Whether the last factor() kept the factorisation from the right (solve() then uses it). */
+    this.fromRight = false;
+    this._rev = null; // (the system with its blocks in reverse order, made when first needed)
   }
 
   /** Zero all of A, B, C (ready for fresh assembly). */
@@ -95,13 +112,73 @@ export class BlockTridiagonal {
   /**
    * Factorise the current A, B, C. A, B, C are left untouched.
    * Throws if a diagonal block is exactly singular (unless `staticPivots`).
+   * With `bothWays`, where the factorisation from the left lost a column (lostColumns: a
+   * pivot's every candidate cancelled to 1e-18 of the magnitudes it was formed from, so that the
+   * blocks up to it are singular to working precision) or met a singular block, the system is
+   * factorised from the right too, and that one kept (fromRight) where it loses nothing: no
+   * column, no perturbed pivot, every pivot ratio at least 1e-12 (or the other failed).
+   * minPivotRatio, perturbedPivots, lostColumns and singularBlock are then the kept one's (its
+   * blocks numbered as here). A pivot that's small but formed from small entries (a population
+   * held weakly, which no direction holds better) leaves the left one standing, its perturbed
+   * pivots turning on the refined solves (src/newton.js) such a population needs: kept by pivot
+   * ratio alone, the right one had a floating MOS gate's inversion layer drift 9e-8 V from rest
+   * over 1e7 s.
    */
   factor() {
+    this.fromRight = false;
+    let failed = null;
+    try {
+      this._factorFromLeft();
+    } catch (err) {
+      if (!this.bothWays) throw err;
+      failed = err;
+    }
+    if (!this.bothWays || (!failed && !(this.lostColumns > 0))) return;
+    // Eliminated from the left, a mode that only the blocks after it hold (a closed region's
+    // level behind a face, whose unknowns are fluxes) leaves a pivot of round-off, which then
+    // scales all that follows: a device solved, its mirror image
+    // refused (round 9's mirror property: a reacting solution with its bath on the right, pivot
+    // ratio 3e-40 where the other way round has 7e-4, and Newton's first update 1e29 thermal
+    // units).
+    const rev = this._reversed();
+    try {
+      rev.factor();
+    } catch (err) {
+      if (failed) throw failed;
+      return;
+    }
+    if (!failed && !(rev.lostColumns === 0 && rev.perturbedPivots === 0 && rev.minPivotRatio >= 1e-12)) return;
+    this.fromRight = true;
+    this.factored = true;
+    this.minPivotRatio = rev.minPivotRatio;
+    this.perturbedPivots = rev.perturbedPivots;
+    this.lostColumns = rev.lostColumns;
+    this.singularBlock = -1;
+  }
+
+  // The same system with its blocks in reverse order (block i as n − 1 − i: B as it is, A and C
+  // swapped), copied in; its storage made on first use.
+  _reversed() {
+    const { n, A, B, C, sizes, offA, offB, offC } = this;
+    const rev = (this._rev ??= new BlockTridiagonal(n, this.m ?? Array.from(sizes).reverse()));
+    rev.staticPivots = this.staticPivots;
+    for (let i = 0; i < n; i++) {
+      const j = n - 1 - i;
+      rev.B.set(B.subarray(offB[i], offB[i + 1]), rev.offB[j]);
+      rev.A.set(C.subarray(offC[i], offC[i + 1]), rev.offA[j]); // (m_i × m_{i+1}: rev's A at j)
+      rev.C.set(A.subarray(offA[i], offA[i + 1]), rev.offC[j]); // (m_i × m_{i−1}: rev's C at j)
+    }
+    return rev;
+  }
+
+  // From the left: the block Thomas factorisation itself.
+  _factorFromLeft() {
     const { n, A, B, C, sizes, offA, offB, offC, offX } = this;
     const lu = this._lu, piv = this._piv, cp = this._cp, tmp = this._tmp;
     let minRatio = Infinity;
     this.singularBlock = -1;
     this.perturbedPivots = 0;
+    this.lostColumns = 0;
 
     for (let i = 0; i < n; i++) {
       const m = sizes[i], o = offB[i];
@@ -179,11 +256,15 @@ export class BlockTridiagonal {
     if (maxEntry === 0) return 0;
     let minPivot = Infinity;
     for (let k = 0; k < m; k++) {
-      let best = k, bestVal = Math.abs(lu[o + k * m + k]);
+      let best = k, bestVal = Math.abs(lu[o + k * m + k]), col = S[k * m + k];
       for (let r = k + 1; r < m; r++) {
         const v = Math.abs(lu[o + r * m + k]);
         if (v > bestVal) { best = r; bestVal = v; }
+        if (S[r * m + k] > col) col = S[r * m + k];
       }
+      // (every candidate round-off against what the column was formed from: the blocks so far
+      // singular, whichever row the pivot is taken from; see factor)
+      if (bestVal <= 1e-18 * col) this.lostColumns++;
       piv[offX[i] + k] = best;
       if (best !== k) {
         for (let c = 0; c < m; c++) {
@@ -224,6 +305,14 @@ export class BlockTridiagonal {
    */
   solve(rhs, out = new Float64Array(this.size)) {
     if (!this.factored) throw new Error('BlockTridiagonal: call factor() before solve()');
+    if (this.fromRight) {
+      // (through the reversed copy: rhs into its order, its solution back into ours)
+      const rev = this._rev, { n, offX } = this, v = (this._revVec ??= new Float64Array(this.size));
+      for (let i = 0; i < n; i++) v.set(rhs.subarray(offX[i], offX[i + 1]), rev.offX[n - 1 - i]);
+      rev.solve(v, v);
+      for (let i = 0; i < n; i++) out.set(v.subarray(rev.offX[n - 1 - i], rev.offX[n - i]), offX[i]);
+      return out;
+    }
     const { n, A, sizes, offA, offB, offC, offX } = this;
     const lu = this._lu, piv = this._piv, cp = this._cp, y = this._y;
 
@@ -263,6 +352,10 @@ export class BlockTridiagonal {
    * @returns {{ digits: number, block: number }}
    */
   cancellation() {
+    if (this.fromRight && this.factored) {
+      const { digits, block } = this._rev.cancellation();
+      return { digits, block: block < 0 ? -1 : this.n - 1 - block };
+    }
     if (!this.factored && !(this.singularBlock >= 0)) throw new Error('BlockTridiagonal: call factor() before cancellation()');
     const { A, B, sizes, offA, offB, offC } = this, cp = this._cp;
     const n = this.factored ? this.n : this.singularBlock + 1;
