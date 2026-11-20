@@ -16,7 +16,7 @@
 //   noop       a set() that changes nothing physical, mid-transient, changes nothing after
 //   split      advance(t) in one call and in several ends at the same state, to its tolerance
 //   charge     the charge each terminal passes over a slow ramp after a rest, in one default
-//              advance(), is what a run with its steps capped passes, to 1%
+//              advance(), is what a run with its steps capped passes, to 3%
 //   dcZ        the impedance at low frequency is the steady dI/dV at plan.V (unique only)
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   stale      check() refuses a solution of the device before a set()
@@ -334,7 +334,14 @@ const props = {
       const e = Math.abs(one.q[n] - q) / gross;
       if (e > worst) (worst = e), (at = `${n}: ${one.q[n].toExponential(4)} vs ${q.toExponential(4)} C/m² (${one.a.steps} steps vs ${ref.a.steps})`);
     }
-    return worst <= 1e-2 || worst * gross < 1e-12 ? '' : `charge passed over a slow ramp after a rest, default advance() vs steps capped: ${(100 * worst).toFixed(1)}% (${at})`;
+    // (3%: a diode's stored charge at the default tol came 1.8% off, falling under 1% at 1e-4, as
+    // the potentials' tolerance allows; the flow-through faults were 5 to 90%. And no finer than
+    // 1e-6 of the run's peak current over the ramp: a membrane's 2e-11 C/m² at a current near zero
+    // is noise.)
+    // (a closed cell peaking at 3e-13 A/m², a full cell at open circuit at 1.6e-20: nothing passes)
+    if (peak(ref.a) < 1e-9) return skip(`nothing passes (peak ${peak(ref.a).toExponential(1)} A/m²)`);
+    const floor = Math.max(1e-12, 1e-6 * peak(ref.a) * 20 * c.plan.slow);
+    return worst <= 3e-2 || worst * gross < floor ? '' : `charge passed over a slow ramp after a rest, default advance() vs steps capped: ${(100 * worst).toFixed(1)}% (${at})`;
   },
 
   dcZ(c) {
