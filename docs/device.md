@@ -1169,7 +1169,7 @@ Each solution's `ports[k]`, as the port has them:
 | `name`, `V` | the port's name and voltage |
 | `flux[name]`, `current` | what it brings into the device: each species (mol/(m²·s)) and the current (A/m², the charging current included), totals through a [cross-section](#geometry) |
 | `x[j]`, `area[j]` | with reactions or a capacitance: the window's node j (m) and the electrode's area per volume there (m²/m³) |
-| `rates[q][j]` | reaction q's forward rate at node j, mol/(m²·s) of electrode (reaction first, then node) |
+| `rates[q][j]` | reaction q's net rate at node j, forward positive (forward less backward, not a one-way rate), mol/(m²·s) of electrode (reaction first, then node) |
 | `coverage[name][j]`, `bare[j]` | with a surface: each species' coverage θ, and the bare fraction θ₀ to full precision |
 | `sigma[j]`, `charge` | with a capacitance: σ per area of electrode (C/m²), and the total the port's side holds |
 | `gates[name][j]`, `Vm[j]` | with gates: each gate's fraction open, and the voltage across the capacitance that they follow (V) |
@@ -1602,20 +1602,20 @@ Notes:
 | `V[name]`, `Vstd[name]` | species voltage $`\bar\mu/(zF)`$ and standard level as a voltage (charged species) |
 | `flux[name]` | flux toward +x across each segment, between nodes `g` and `g + 1` (a face's across its pair of nodes), mol/(m²·s) (mol/s through a cross-section): the fluxes the balances add up |
 | `D[name]` | diffusivity at each node, m²/s (`NaN` where absent, or in a metal) |
-| `current`, `terminalVoltage` | current toward +x through the device (A/m², or A through a [cross-section](#geometry)) and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
+| `current`, `terminalVoltage` | the right contact's current toward +x (A/m², or A through a [cross-section](#geometry)), the device's where no port passes one (with ports the two contacts' differ by theirs: read `terminals`), and $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ |
 | `terminals[name]` | `{ V, current }` for each terminal (contacts and ports), current into the device |
 | `contacts.left/right` | `{ V, flux: {name}, D, current, links: {name} }` at each contact, flux and current toward +x (out of the device at the right contact; `terminals` give it into the device); `links` names how each species that crosses it does (`'equilibrium'`, `'velocity'`, …) |
 | `plates.left/right` | charge on a gate or Stern plate, where the contact is capacitive |
 | `ports[k]` | `{ name, V, flux: {name}, current }`: what each internal port brings into the device (an electrode's `flux` is of what its reactions make and use in the solution, its carrier's being outside); an electrode's rates, coverages and charge [as well](#what-a-solution-reports) |
 | `interfaces[f]` | `{ left, right, dipole, sheetCharge, D, N: {name}, rates, links: {name} }`, and `V` (φ_right − φ_left between its planes) where both sides are one material or it has gates: the names of the regions the face joins, what crosses it by its links, each face reaction's rate (mol/(m²·s)), and how each species that crosses it does; where it has reactions, `made: { left, right, surface }`, what they make of each species on each side and on its surface (mol/(m²·s), negative for what they take), so that in steady state the segment into the face carries N − made.left and the one out of it N + made.right; with a [surface](#a-faces-surface-a-tethered-couple-adsorbates), `coverage: {name}` and `bare`; for those crossing by permeability, `oneWay: { name: [toward +x, toward −x] }`, the one-way fluxes whose difference is `N` (Ussing's unidirectional fluxes) |
-| `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` where it doesn't run), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
+| `bulkReactions[k]` | `{ rate, forward, nu, regions, total }`: each bulk reaction's net forward rate at every node (mol/(m³·s), `NaN` at the nodes of a material it doesn't run in, `0` where a `kf` profile is 0), its one-way forward rate (the backward is `forward − rate`), what one forward reaction makes of each species (`nu`, negative for what it consumes), and integrated over each region and the device (mol/(m²·s), or mol/s through a [cross-section](#geometry)), as the balances count it: a charge-balance check is J = F(generation − recombination), which the kit's `check()` does for every species |
 | `charge` | total charge in the device, C/m² (C through a cross-section): its regions' space charge and its faces' sheet charges, not the charge on a capacitive contact's or port's plates, so under a gate's bias it's the gate's opposite |
-| `conservation` | per species stretch: amount, reference, intake through contacts, and drift, relative: (amount − reference − intake) over the largest of them |
+| `conservation` | per species stretch: amount, reference, intake through its contacts and ports (integrated over time as the steps integrate the balances: under BDF2, by its own quadrature), and drift, relative: (amount − reference − intake) over the largest of them |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, a material's data for another temperature, and for a failed solve, why (a driven current it can't pass, where the system is nearly singular). A failed steady solve's state isn't a solution, so the warnings about a solution's accuracy (the grid, double layers, space charge reaching a contact) are left out of it |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step, and `probes` if asked |
 
 A stretch is a run of regions in which a species is present and connected. Its `drift`
-compares its amount with the reference amount plus everything that came in through the
-contacts. It's `NaN` where a reaction also makes or consumes the species.
+compares its amount with the reference amount plus everything that came in through its
+contacts and ports. It's `NaN` where a reaction also makes or consumes the species.

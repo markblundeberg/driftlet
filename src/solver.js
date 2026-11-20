@@ -545,11 +545,15 @@ export class Solver {
     // Read from the box's balance, both come with round-off ∝ c/dt that cancels only roughly,
     // which on short steps swamps the flux (a floating bath on a dilute side rattled). So there,
     // on a transient step, the ions' storage goes in only after the contact has read its current,
-    // and the box's charge isn't counted as displacement (see _contact).
+    // and the box's charge isn't counted as displacement (see _contact). Not where a capacitive
+    // port's window puts its charge in the box (a 'neutral' law; under 'bulk' the port leaves the
+    // node out): there the ions' storage is its charging, which the contact passes, and left out,
+    // 5 A/m² of K⁺ charging a gate went through a contact driven at I = 0 (Sol's fourth pass).
     this.lateStorage = new Uint8Array(nNodes);
     [0, nNodes - 1].forEach((g, k) => {
       const mat = materials[regions[grid.nodeRegion[g]].material], law = contacts[k === 0 ? 'left' : 'right'].phi.type;
-      if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
+      const charging = law === 'neutral' && model.ports.some((port) => port.capacitance && port.nodes.includes(g));
+      if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !charging && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
     });
     // An end node's species held by a port (its contact blocks it, so the level is the port's):
     // its row is the port's, storage and all, and the contact passes none of it.

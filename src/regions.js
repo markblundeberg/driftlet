@@ -765,8 +765,10 @@ export class RegionTerms {
     let S = 0, Q = 0;
     for (const k of on) {
       const a = c[gL * n + k], b = c[gR * n + k];
-      // l = ln(c_R/c_L), from the compensated potentials (statistics ideal at both ends)
-      const l = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]) - z[k] * (u[bR * M] - u[bL * M]);
+      // l = ln(c_R/c_L), from the compensated potentials (statistics ideal at both ends), less a
+      // graded region's segShift as in _sgSegment: without it c̄ isn't the two ends' log mean, and
+      // a 2 RT grade in μ° moved the contact flux ±12% by orientation on 8 cells (Sol's fourth pass)
+      const l = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]) - z[k] * (u[bR * M] - u[bL * M]) - this.segShift[s * n + k];
       logMean(a, b, l, cb, dLa, dLb, k);
       de[k] = u[bR * M + 1 + k] - u[bL * M + 1 + k] + (uLo[bR * M + 1 + k] - uLo[bL * M + 1 + k]);
       S += z[k] * z[k] * cb[k];

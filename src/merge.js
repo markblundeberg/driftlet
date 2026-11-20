@@ -10,7 +10,7 @@ export const markWhole = (o) => Object.defineProperty(o, WHOLE, { value: true })
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
 // A key set as the object's own: assigned, '__proto__' (a species' name, a JSON key) set the
 // prototype instead, and the key was gone from the copy (Astra's third pass).
-const put = (o, k, v) => (k === '__proto__' ? Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true }) : (o[k] = v));
+export const put = (o, k, v) => (k === '__proto__' ? Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true }) : (o[k] = v));
 
 // The WHOLE marks in a value, as paths of keys, and the marks put back: a structured clone
 // (postMessage to a worker) drops a symbol, and live's worker merged the kit's contact it should

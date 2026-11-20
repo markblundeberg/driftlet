@@ -197,7 +197,9 @@ in a solution is a potential against SHE. A metal's $`V - \phi_{\mathrm{edge}}`$
   state they sum to zero. $`V \cdot I`$ is the electrical work done through it; an outside phase
   that exchanges several species also trades chemical free energy through its offsets.
 - **`current` is positive toward +x** through the device (into it at the left, out at the
-  right). A forward-biased pn junction with its p side on the right carries negative current.
+  right): the right contact's, which is the device's where no port passes a current (with ports,
+  read `terminals`). A forward-biased pn junction with its p side on the right carries negative
+  current.
 - `terminalVoltage` is $`V_{\mathrm{right}} - V_{\mathrm{left}}`$.
 
 ## Units

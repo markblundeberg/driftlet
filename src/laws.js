@@ -74,9 +74,9 @@
 //                  reaction, ν], plus the `outside` rows' balances) in place of balance row `row`,
 //                  its middle node's (`node`; `piece`: its first and last nodes), which is no
 //                  neighbour's `outside` row where the piece has three nodes or more; and a metal
-//                  reached only by floating contacts (`currents`, each passing I/(zF), its drive's)
-//                  and fed by its faces' reactions, the sum of its rates in place of a row no contact
-//                  holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
+//                  (a stretch whose every region is one) reached only by floating contacts
+//                  (`currents`, each passing I/(zF), its drive's) and fed by its faces' reactions,
+//                  the sum of its rates in place of a row no contact holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
 //                  `cuts`: for each face of a piece from which the stretch's open end is reached
 //                  through pieces where nothing but their bulk reactions adds to the species'
 //                  balance (none a metal; ideal, no flow, mixing or port there; an equilibrium
@@ -747,8 +747,13 @@ export function findLaws(s) {
   // round 11's F5, a floating Pt whose fast couple (k0 = 1) had to run at 1.6e-21 mol/(m²·s)
   // against a slow one, was left 3e-18 off its electron balance, and settled 80 mV off. Pinned
   // like an island's, the response is the metal's uniform shift, which the fast couple feels.
+  // (Every region of the stretch a metal: an e⁻ stretch from a metal linked in equilibrium into
+  // a semiconductor was taken for one by its first region, and its sum, which has no bulk entries,
+  // left out the semiconductor's recombination: driven at the current of −10 mV, it settled at
+  // −33.9 mV, where its mirror, which no island sums, was right; Sol's fourth pass)
+  const allMetal = (st) => regions.slice(st.regions[0], st.regions[1] + 1).every((reg) => materials[reg.material].conductor);
   for (const st of stretches) {
-    if (!conductor(st)) continue;
+    if (!allMetal(st)) continue;
     const i = st.species, [s0, s1] = st.regions;
     const ends = [];
     if (st.leftOpen) ends.push(['left', 0]);

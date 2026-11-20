@@ -6,6 +6,7 @@
 
 import { EPS0, FARADAY } from './constants.js';
 import { fixedAt, gradedAt, isGraded } from './device.js';
+import { put } from './merge.js';
 
 // A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
 // hydrated ions pack, beyond what a dilute layer describes.
@@ -119,11 +120,13 @@ function solutionFields(solver, result) {
       V[g] = z === 0 ? NaN : mu[g] / (z * F);
       Vs[g] = z === 0 ? NaN : mus[g] / (z * F);
     }
-    sol.c[name] = cc;
-    sol.mu[name] = mu;
-    sol.muStd[name] = mus;
-    sol.V[name] = V;
-    sol.Vstd[name] = Vs;
+    // (each name as the map's own key, by put: assigned, a species named '__proto__' set the
+    // map's prototype and was missing from it; Sol's fourth pass)
+    put(sol.c, name, cc);
+    put(sol.mu, name, mu);
+    put(sol.muStd, name, mus);
+    put(sol.V, name, V);
+    put(sol.Vstd, name, Vs);
   }
 
   // Contacts: fluxes and displacement at the final state (re-evaluated from the balance rows of
@@ -133,12 +136,16 @@ function solutionFields(solver, result) {
   // its pair of nodes), and its diffusivity at each node (NaN where it's absent or in a metal).
   sol.flux = {};
   sol.D = {};
-  solver.segmentFluxes().forEach((J, i) => (sol.flux[species[i].name] = J));
+  solver.segmentFluxes().forEach((J, i) => put(sol.flux, species[i].name, J));
   for (let i = 0; i < n; i++) {
-    sol.D[species[i].name] = Float64Array.from(grid.nodeRegion, (r, g) => {
-      const reg = model.regions[r], mat = model.materials[reg.material], Dg = reg.grade?.[i]?.D;
-      return mat.conductor || !solver.present[g * n + i] ? NaN : Dg ? gradedAt(mat, reg, grid.x[g]).D[i] : mat.D[i];
-    });
+    put(
+      sol.D,
+      species[i].name,
+      Float64Array.from(grid.nodeRegion, (r, g) => {
+        const reg = model.regions[r], mat = model.materials[reg.material], Dg = reg.grade?.[i]?.D;
+        return mat.conductor || !solver.present[g * n + i] ? NaN : Dg ? gradedAt(mat, reg, grid.x[g]).D[i] : mat.D[i];
+      }),
+    );
   }
   // (A transient's state is as its last step saw the sources: from within the step, before any
   // jump at its end. Read after it, an advance() landing on a waveform's step read the plate at
@@ -152,7 +159,7 @@ function solutionFields(solver, result) {
     const flux = {};
     let conduction = 0;
     for (let i = 0; i < n; i++) {
-      flux[species[i].name] = solver.contactFlux[side][i];
+      put(flux, species[i].name, solver.contactFlux[side][i]);
       conduction += F * species[i].z * solver.contactFlux[side][i];
     }
     const D = solver.contactD[side];
@@ -176,7 +183,7 @@ function solutionFields(solver, result) {
     const flux = {};
     let current = 0;
     for (let i = 0; i < n; i++) {
-      flux[species[i].name] = solver.portFlux[k][i];
+      put(flux, species[i].name, solver.portFlux[k][i]);
       current += F * species[i].z * solver.portFlux[k][i];
     }
     const out = { name: port.name, V: solver.termV[2 + k], flux, current };
@@ -202,7 +209,7 @@ function solutionFields(solver, result) {
     }
     if (port.reactions.length > 0) {
       // An electrode spread through the window: each reaction's rate at its nodes.
-      out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), forward
+      out.rates = solver.portRates[k].map((r) => Float64Array.from(r)); // mol/(m²·s), net: forward less backward
       // its surface: each species' coverage θ at each node of the window
       if (port.surface.length > 0) {
         out.coverage = Object.fromEntries(port.surface.map((sp, q) => [sp.name, Float64Array.from(port.nodes, (g) => solver.th[g * solver.nSurf + q])]));
@@ -236,22 +243,23 @@ function solutionFields(solver, result) {
   sol.terminals = {};
   model.terminals.forEach((t, k) => {
     const current = t.kind === 'port' ? sol.ports[t.index].current : t.side === 'left' ? sol.contacts.left.current : -sol.contacts.right.current;
-    sol.terminals[t.name] = { V: solver.termV[k], current };
+    put(sol.terminals, t.name, { V: solver.termV[k], current });
   });
 
   // Interfaces: dipole and the fluxes carried by each flux node.
   sol.interfaces = interfaces.map((itf, f) => {
     const b = solver.blockOfFace[f];
     const N = {};
-    for (let i = 0; i < n; i++) N[species[i].name] = u[b * M + 1 + i];
-    const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), forward
+    for (let i = 0; i < n; i++) put(N, species[i].name, u[b * M + 1 + i]);
+    const rates = itf.reactions.map((_, k) => u[b * M + 1 + n + k]); // mol/(m²·s), net: forward less backward
     const out = { left: model.regions[f].name, right: model.regions[f + 1].name, dipole: itf.dipole, sheetCharge: itf.sheetCharge, D: u[b * M], N, rates };
     // What its reactions make of each species on each side (and on its surface), mol/(m²·s),
     // negative for what they take: N is the links' alone (Fable round 2's cold user).
     if (itf.reactions.length > 0) {
       const made = { left: {}, right: {} };
       itf.reactions.forEach((rx, k) => {
-        const add = (where, name, nu) => ((made[where] ??= {})[name] = (made[where][name] ?? 0) + nu * rates[k]);
+        // (by own keys: a species named 'constructor' read Object's and made NaN)
+        const add = (where, name, nu) => put((made[where] ??= {}), name, (Object.hasOwn(made[where], name) ? made[where][name] : 0) + nu * rates[k]);
         for (const p of rx.part) add(p.side ? 'right' : 'left', species[p.i].name, p.nu);
         for (const p of rx.surf ?? []) add('surface', itf.surface[p.s].name, p.nu);
       });
@@ -277,11 +285,11 @@ function solutionFields(solver, result) {
       const dl = solver.diffList[d], sd = u[dl.o], excess = {}, plane = {}, draw = {};
       for (let i = 0; i < n; i++) {
         if (!solver.present[dl.g * n + i]) continue;
-        excess[species[i].name] = solver.gam[d * n + i];
+        put(excess, species[i].name, solver.gam[d * n + i]);
         // (crowded: over D; drawn by a reaction, times e^w, its level there below the edge's)
         const w = dl.drawSlot[i] < 0 ? 0 : u[solver.blockOfFace[f] * solver.M + dl.drawSlot[i]];
-        plane[species[i].name] = (c[dl.g * n + i] * Math.exp(-species[i].z * sd + w)) / (dl.holds[i] ? dl.dl.D : 1);
-        if (dl.drawSlot[i] >= 0) draw[species[i].name] = model.RT * w;
+        put(plane, species[i].name, (c[dl.g * n + i] * Math.exp(-species[i].z * sd + w)) / (dl.holds[i] ? dl.dl.D : 1));
+        if (dl.drawSlot[i] >= 0) put(draw, species[i].name, model.RT * w);
       }
       (out.diffuse ??= {})[side ? 'right' : 'left'] = { psi: solver.VT * sd, charge: dl.dl.q, excess, plane, draw };
     });
@@ -296,8 +304,9 @@ function solutionFields(solver, result) {
     return out;
   });
 
-  // Bulk reactions: each one's forward rate at every node (mol/(m³·s), NaN where it doesn't run),
-  // and integrated over each region and the device (mol/(m²·s)), by the nodes' control volumes,
+  // Bulk reactions: each one's net forward rate at every node (mol/(m³·s), NaN at the nodes of a
+  // material it doesn't run in, 0 where a kf profile is 0), and integrated over each region and the
+  // device (mol/(m²·s), or mol/s through a cross-section), by the nodes' control volumes,
   // just as the balances count it.
   sol.bulkReactions = solver.rxs.map((rx) => {
     const rate = new Float64Array(nNodes).fill(NaN), forward = new Float64Array(nNodes).fill(NaN), regions = model.regions.map(() => 0);
@@ -314,7 +323,7 @@ function solutionFields(solver, result) {
     // Its two one-way rates are forward and forward − rate; what each makes of each species, per
     // forward reaction: ν, negative for what it consumes.
     const nu = {};
-    rx.sp.forEach((i, p) => (nu[species[i].name] = (nu[species[i].name] ?? 0) - rx.nu[p]));
+    rx.sp.forEach((i, p) => put(nu, species[i].name, (Object.hasOwn(nu, species[i].name) ? nu[species[i].name] : 0) - rx.nu[p]));
     return { rate, forward, nu, regions, total };
   });
 
@@ -784,7 +793,8 @@ function steepProfileWarnings(sol, solver) {
 function conservation(solver) {
   const { species } = solver.model;
   // Conservation bookkeeping for each species stretch.
-  // Amount now vs the reference amount plus what came in through the contacts. The drift is
+  // Amount now vs the reference amount plus what came in through its contacts and ports (as the
+  // steps integrate it: under BDF2, its quadrature). The drift is
   // relative to the larger of the two; NaN where a reaction also makes or consumes it.
   return solver.stretches.map((st, k) => {
     const amount = solver.amount(st);
