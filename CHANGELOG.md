@@ -5,6 +5,25 @@ major version.
 
 ## Unreleased
 
+- `check()` knows which state of which device a solution is of: one from before any `set()` (a
+  material's included) fails as "solution", as does the device's own state after a `set()` until it's
+  solved. It had passed a wire's old current, 60× the re-solved one, and a cold layout that was no
+  solution; copies and twins are compared by their numbers, which no longer miss a change hidden behind
+  a metal's NaN φ. Its grid check reads each terminal's current and region's charge against itself
+  (a doubled 1 µA/m² port current beside 3.8 A/m² passed), counts diffuse-layer charge, and reads
+  floating voltages against the span of the terminals' (the verdict had depended on where 0 V was); a
+  current that changes can fail the order check; a NaN term fails, not vanishes; electrode surface
+  species have ledgers; a refinement that fails from a state with a history is "?", not a cold
+  comparison blaming the grid. (Astra's fifth pass.)
+- `polarization()` refuses a solution of another definition (after a k0 change it was 10× off,
+  silently; after a regrid, NaN); gives the solved rates bit for bit at the solved level; reads a second
+  conductor's carrier at activity 1 (it was NaN); and with `surface: 'equilibrium'`, the equilibrated
+  steps carry the rates the surface balance asks of them (Volmer listed first gave 0 for a solved
+  0.19 A/m²), marked `equilibrated: true`.
+- `planck()`'s steps are graded toward the dilute side and shot from it, right to under 1e-5 µV from 1:1
+  to 1e12:1 either way: 100 mM against 0.1 mM was −274 mV for −73.6, silently. It checks itself against
+  half its steps. `planck()` and `henderson()` drop neutral solutes and validate T and steps; `henderson()`
+  stays finite and exact to 1e17:1.
 - The kit's builders, from Astra's fifth pass: `half()` refuses a fixed μ for `e-`, and `bath()` a
   reference electrode carrying one (summed into the offset, it moved the terminal 1 V, silently);
   `bath(c, undefined, drive, opts)` keeps its options (its `material` was dropped: an end concentration

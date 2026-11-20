@@ -46,8 +46,11 @@ them is wrong: fix both, with a test, in the same commit.
   describe, traces, live, recorder, particles, polarization, junction, devices) works on
   definitions and solutions, but for three that reach into a device's solver: `check()`
   (src/checks.js: its state flags, `carryState`, the floating terminals, and it sets `time`),
-  `polarization()` (the model's normalised reactions, `cRef`, `nodeConductor`) and `recorder()`
-  (`_probes`). A change to those internals is checked by their tests too. `src/plot.js` draws
+  `polarization()` (the model's normalised reactions, `cRef`, `nodeConductor`, and of the present
+  state `u`, `uLo`, `blockOfNode`, `M`, `VT`) and `recorder()` (`_probes`). Both of the first two
+  ask `Device._stateOf(sol)` which state a solution is of: each solution carries a mark (a
+  non-enumerable symbol) of its device, definition and state, which `set()`, a solve or a step
+  that moves the state, and `_rollback` change (src/index.js). A change to those internals is checked by their tests too. `src/plot.js` draws
   solutions.
 
 ## The model
