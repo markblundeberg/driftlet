@@ -159,7 +159,19 @@ function movedOn(sol, now) {
     if (Number.isNaN(a) && Number.isNaN(b)) continue;
     d = Math.max(d, Math.abs(a - b) || (a === b ? 0 : Infinity));
   }
-  return d > 1e-9 ? `its φ differs from the device's by up to ${sig(d)} V` : null;
+  if (d > 1e-9) return `its φ differs from the device's by up to ${sig(d)} V`;
+  // And each species' concentration: where φ is undefined throughout (neutral species alone), φ
+  // compared nothing, and a copy from before a set() of a reaction's kf passed (Neon's review, 4.4).
+  for (const [name, c] of Object.entries(now.c ?? {})) {
+    const was = sol.c?.[name];
+    if (!was) continue;
+    for (let g = 0; g < c.length; g++) {
+      const a = was[g], b = c[g];
+      if (Number.isNaN(a) && Number.isNaN(b)) continue;
+      if (!(Math.abs(a - b) <= 1e-9 * Math.max(Math.abs(a), Math.abs(b)) + 1e-300)) return `its ${name} differs from the device's (${a.toPrecision(6)} against ${b.toPrecision(6)} at node ${g})`;
+    }
+  }
+  return null;
 }
 
 // Each species' steady ledger: in through the terminals, made by the reactions. Rates in
@@ -446,15 +458,24 @@ function gridCheck(device, sol, tol, gross) {
     diffs.push({ what: `${t.name} current`, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), 1e-6 * gross, floorI), unit: unitsOf(model).current });
   }
   const floorN = floorI / FARADAY;
+  // Which species a reaction touches (bulk, at a face, at a port): their fluxes are what the
+  // reactions turn over, compared as they are; a spectator's against what it could carry too.
+  const reacts = new Set();
+  for (const rx of device.solver.rxs ?? []) for (const i of rx.sp) reacts.add(i);
+  for (const host of [...model.interfaces, ...model.ports]) for (const rx of host.reactions ?? []) for (const p of rx.part ?? []) reacts.add(p.i);
   for (const side of ['left', 'right']) {
     const fa = sol.contacts?.[side]?.flux ?? {}, fb = other.contacts?.[side]?.flux ?? {};
     for (const sp of model.species) {
-      if (sp.z !== 0) continue; // (the charged ones' are in the currents)
-      const a = fa[sp.name], b = fb[sp.name];
-      if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floorN)) continue;
-      // (against 1e-3 of what the species could carry, too: a spectator's 1e-5 of it, unresolved in a
-      // thin reaction layer, failed a device whose current was right to 1e-3; the re-check)
-      const scale = Math.max(Math.abs(a), Math.abs(b), 1e-3 * (natural[model.species.indexOf(sp)] || 0));
+      // (The charged ones too, not only through the currents: where they cancel (ambipolar flow,
+      // open circuit, a symmetric cell), nothing compared moved, and a lit n⁺-Si slab's
+      // collected holes 5% off, a salt reacting at its contacts 38× off, passed; Neon's review, 4.2.)
+      const a = fa[sp.name], b = fb[sp.name], i = model.species.indexOf(sp);
+      const floor = sp.z === 0 ? floorN : Math.max(floorN, (1e-6 * gross) / (FARADAY * Math.abs(sp.z)));
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floor)) continue;
+      // (a spectator's against 1e-3 of what it could carry, too: its 1e-5 of it, unresolved in a
+      // thin reaction layer, failed a device whose current was right to 1e-3; the re-check. Not
+      // a species a reaction turns over: a reactant's flux 12.7% off read as 4.7e-3; Neon 4.3.)
+      const scale = Math.max(Math.abs(a), Math.abs(b), floor, reacts.has(i) ? 0 : 1e-3 * (natural[i] || 0));
       diffs.push({ what: `${sp.name} in at the ${side} contact`, a, b, rel: Math.abs(b - a) / scale, unit: model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s' });
     }
   }

@@ -53,6 +53,14 @@ major version.
   density is beyond a double's range is refused, saying so, where the solve failed on a singular
   block (1.2); and a face's t = 0⁺ split is found in logs, where a partition beyond e^709 gave NaN
   and left the face unequilibrated (1.4).
+- `check()` sees more (Neon's first review, 4.2–4.4). Its grid item compares what every species
+  brings in at the contacts, the charged ones too, not only the currents: where those cancel
+  (ambipolar flow, open circuit, a symmetric cell) nothing it compared moved, and a lit n⁺-Si slab
+  between two contacts at 0 V, its collected holes 5% off, passed, as did a salt reacting at its
+  contacts on 4 cells, 38× off. A species a reaction turns over is compared as it is, not against
+  1e-3 of what it could carry (a reactant's flux 12.7% off read as 4.7e-3). And a solution of
+  neutral species alone, copied before a set(), is known as stale by its concentrations (φ, which
+  the test compared, is undefined there).
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.

@@ -1,9 +1,9 @@
 // Neon's first review (20 Nov 2026), area 1: the cold start (src/start.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, FARADAY } from '../src/index.js';
+import { Device, FARADAY, GAS_CONSTANT, units } from '../src/index.js';
 import { equilibrateFaces } from '../src/start.js';
-import { build, layer, metal, ohmic, check, aqueous } from '../src/kit.js';
+import { build, layer, metal, ohmic, check, aqueous, semiconductor } from '../src/kit.js';
 
 // Two strictly neutral solutions meeting at a face that passes both ions, sealed, one or both
 // under a held gate. The face's t = 0⁺ equilibrium (equilibrateFaces) left the gate's charge out
@@ -175,4 +175,51 @@ test("a face between strictly neutral solutions finds its t = 0⁺ where an ion'
     const after = vol[gL] * s.c[gL * 3 + i] + vol[gR] * s.c[gR * 3 + i];
     assert.ok(Math.abs(after / before[i] - 1) < 1e-12, `species ${i}: amount ${before[i]} → ${after}`);
   }
+});
+
+// Area 4: what check() compares (src/checks.js).
+test("check()'s grid item compares each species' flux, so a grid too coarse where the currents cancel fails it (Neon 4.2)", () => {
+  // (A uniformly lit n⁺-Si slab between two ohmic contacts at 0 V: I = 0 by symmetry, each carrier
+  // leaving both ends. On 0.5–2 µm cells the holes collected are 5.0% off the resolved 8.371e-4
+  // mol/(m²·s), and the grid item compared the current alone, ~1e-10 of nothing: ok.)
+  const slab = (grid) =>
+    build({
+      T: 300, library: [semiconductor('Si')],
+      stack: [ohmic(0), layer('Si', 20e-6, { donors: units.perCm3(1e19) }), ohmic(0)],
+      bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }, { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: 1e3 } }],
+      grid,
+    });
+  const d = new Device(slab({ hmin: 5e-7, hmax: 2e-6 }));
+  assert.match(check(d, d.solve()).text, /FAIL grid: .* h\+ in at the (left|right) contact/);
+});
+
+test("check()'s grid item compares a reactant's flux as it is, not against what it could carry (Neon 4.3)", () => {
+  // (A against a flow, A = B to a held product: 12.7% off on 4 cells, a 9.2% change read against
+  // 1e-3 of D c/L as 4.7e-3, ok; the floor is for spectators.)
+  const RT = GAS_CONSTANT * 298.15;
+  const d = new Device({
+    species: [{ name: 'A', z: 0 }],
+    materials: { w: { epsr: 0, species: { A: { D: 1e-9, mu0: 0, cRef: 1000 } } } },
+    regions: [{ material: 'w', length: 10e-6, velocity: -5e-4, c0: { A: 1000 } }],
+    contacts: { left: { species: { A: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { species: {}, phi: 'neutral' } },
+    bulkReactions: [{ equation: 'A = B', fixed: { B: -6 * RT * Math.log(10) }, kf: { w: 2.5e-3 } }],
+    grid: { minCells: 4 },
+  });
+  assert.match(check(d, d.solve()).text, /FAIL grid: .* A in at the left contact/);
+});
+
+test("check() knows a copy of a solution of neutral species alone from before a set() (Neon 4.4)", () => {
+  // (φ is undefined throughout, and the stale-state test compared φ alone: a copy from before kf
+  // doubled, its flux half the device's, passed with refine: false)
+  const def = {
+    species: [{ name: 'A', z: 0 }],
+    materials: { w: { epsr: 0, species: { A: { D: 1e-9, mu0: 0, cRef: 1000 } } } },
+    regions: [{ material: 'w', length: 10e-6, velocity: -5e-4, c0: { A: 1000 } }],
+    contacts: { left: { species: { A: { type: 'equilibrium', mu: 0 } }, phi: 'neutral' }, right: { species: {}, phi: 'neutral' } },
+    bulkReactions: [{ equation: 'A = B', fixed: { B: -34000 }, kf: { w: 2.5e-3 } }],
+  };
+  const d = new Device(def), old = structuredClone(d.solve());
+  d.set({ bulkReactions: [{ ...def.bulkReactions[0], kf: { w: 5e-3 } }] });
+  d.solve();
+  assert.match(check(d, old, { refine: false }).text, /FAIL solution: not the device's present state \(its A differs/);
 });

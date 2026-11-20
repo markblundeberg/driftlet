@@ -563,7 +563,8 @@ slip past.
 - **grid**, in a steady state (unless `refine: false`): the device solved again on a grid twice
   as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
   from this solution interpolated onto it. Every terminal's current (ports' too), what each
-  neutral species brings in at the contacts, each floating terminal's voltage (an open-circuit
+  species brings in at the contacts (the charged ones too, so a grid too coarse where the
+  currents cancel, at open circuit or by symmetry, still shows), each floating terminal's voltage (an open-circuit
   voltage, relative to the span of the terminals' voltages or the thermal voltage, whichever is
   larger, so it doesn't matter where 0 V is), each region's charge (with what its faces' diffuse
   layers hold) and each diffuse layer's must agree to `tol` (relative, each against itself, the
@@ -572,7 +573,10 @@ slip past.
   this grid's own error (about ¾ of it); with nothing to compare it's `?`, and so it is where the
   finer grid can't be solved from this state and the state has a history (a transient, a floating
   terminal, a closed stretch) that a solve from cold would lose. Where an error doesn't shrink as the grid's
-  steps halve (a port's window falling between nodes), this can't see it. It costs one more solve, so run it once, not on every
+  steps halve (a port's window falling between nodes), this can't see it; nor where the grid is
+  far coarser than what it should resolve while what it compares hardly depends on that (a binary
+  salt reacting at its contacts, at open circuit on 4 cells: its voltage, set by the end
+  concentrations, moved 4e-5 on halving while 22% off, though its fluxes, now compared, fail). It costs one more solve, so run it once, not on every
   slider move. In a transient it's `?`, not checked: the answer there depends on the whole run
   (and on drives set along the way), so run it again yourself on a grid twice as fine.
 
