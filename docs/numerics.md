@@ -1054,6 +1054,20 @@ All four move a weakly held level as a whole, where a factorisation can't: an am
 affinity's or an island's pin by a shift it solves for, a flat level by holding every node to one. What the
 factorisation still loses elsewhere, Newton's refined solves recover ([Newton](#newton)).
 
+None of them sums a species fed only at rates, through a port's links or a contact's, with no
+equilibrium link anywhere to hold its level: an axon's Na⁺, which only its nodes' channels let in
+and out. Its level can go where its links all but stop, and its rows can't see that it isn't steady.
+A myelinated axon with a K⁺ electrode at one end converged cold at φ = +0.42 V. Its Na⁺ and Cl⁻ were
+at 2e10 mol/m³, the h gates shut to 1.7e-12, and Na⁺ was leaking out through them at 2.7e-15
+mol/(m²·s), every row solved to 1e-23 of its largest term. Since each link's rate is a law of
+its own, the check is exact: a steady state's net intake of such a species is zero. It's read
+against that intake's response to a uniform shift of the species' η, the level difference
+that drives it: each open contact's link by its law's slope, the ports' by the shift itself. A
+contact's reading comes from its end box, which a shift only scales. Right states read 1e-13
+thermal units or less (the suite, and 1800 cases of the combos families); the axon read 35. Over
+1e-6, Newton's convergence is refused, saying so, and the solve's stages go on: there the
+retry with smaller updates found the axon's rest, −8.2 mV, each channel's ion at its bath's level.
+
 ### Reaching it
 
 A solve that fails falls back stage by stage:
