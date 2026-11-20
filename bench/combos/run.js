@@ -175,7 +175,9 @@ const props = {
     const b = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
     if (!converged(b)) return skip('a fresh device at plan.V failed');
     const dd = diff(a, b);
-    return within(dd, { mu: 1e-6, I: 1e-6, V: 1e-6 }) ? '' : `after ${log.join(', ')}, vs fresh: ${fmt(dd)}`;
+    // (1e-9 A/m² of currents read as small differences of large terms: a lit thin-film transistor's
+    // 8e-10 read 1e-10 after a history, its levels the same to 2e-15 RT)
+    return within(dd, { mu: 1e-6, I: 1e-6, Iabs: 1e-9, V: 1e-6 }) ? '' : `after ${log.join(', ')}, vs fresh: ${fmt(dd)}`;
   },
 
   rollback(c, r) {
