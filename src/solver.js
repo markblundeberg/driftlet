@@ -1025,7 +1025,9 @@ export class Solver {
     const at = (q, g) => {
       if (q.quantity === 'phi') return this.phiUndefined[g] ? NaN : this.VT * (this.u[this.blockOfNode[g] * M] + this.uLo[this.blockOfNode[g] * M]);
       if (!this.present[g * n + q.i]) return NaN;
-      if (q.quantity === 'c') return this.c[g * n + q.i];
+      // (none in a metal, which has a level but no concentration of its own, as the solution says:
+      // it read 0; Astra's fifth pass)
+      if (q.quantity === 'c') return this.nodeConductor[g] >= 0 ? NaN : this.c[g * n + q.i];
       const o = this.blockOfNode[g] * M + 1 + q.i;
       return (this.VT * (this.u[o] + this.uLo[o])) / this.z[q.i];
     };

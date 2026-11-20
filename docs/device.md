@@ -1459,7 +1459,8 @@ Notes:
   beside `trace.t`: a species' concentration (`quantity: 'c'`, the default, mol/m³) or species
   voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the nodes around
   `x` (at a face, the side where the species is; where both sides have it, `region` says
-  which). That's what a detector at `x` sees.
+  which). That's what a detector at `x` sees. A concentration in a metal reads NaN, as `sol.c`
+  does there (a metal has a level, `'V'`, but no concentration of its own).
 - **`probes: [{ interface: f, species }]`** read a species' flux through a face (mol/(m²·s),
   toward +x, as `interfaces[f].N`): what crosses by its links, not what its reactions make or
   take (that is `interfaces[f].made`, and shows in the flux of the segment beside the face,
