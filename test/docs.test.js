@@ -149,6 +149,23 @@ test("the starter page is the agent guide's slider template", () => {
   for (const id of ['V', 'readout', 'figure']) assert.ok(page.includes(`id="${id}"`), `no #${id} on the page`);
 });
 
+// Each recipe page beside the starter (demos/*-starter.html) shows, as a page to copy, exactly the
+// script it runs, imports aside, at the CDN version being released.
+for (const name of readdirSync(join(root, 'demos')).filter((f) => f.endsWith('-starter.html'))) {
+  test(`demos/${name}: its listing is the script it runs`, () => {
+    const page = readFileSync(join(root, 'demos', name), 'utf8');
+    const shown = /<pre class="recipe" id="recipe"><code>([\s\S]*?)<\/code><\/pre>/.exec(page)[1]
+      .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+    const running = /<script type="module">\n([\s\S]*?)<\/script>/.exec(page)[1];
+    const script = /<script type="module">\n([\s\S]*?)<\/script>/.exec(shown)[1];
+    const toLocal = (code) => code.replaceAll(/'https:\/\/cdn\.jsdelivr\.net\/npm\/driftlet@[^/]+\/src\/(\w+)\.js'/g, "'../src/$1.js'");
+    assert.equal(running, toLocal(script), `the script running on demos/${name} differs from its listing`);
+    const pins = new Set([...shown.matchAll(/driftlet@([^/]+)\//g)].map((m) => m[1]));
+    if (pkg.version !== '0.0.0') assert.deepEqual([...pins], [pkg.version], 'its CDN pin is the version being released');
+    for (const id of [...shown.matchAll(/id="(\w+)"/g)].map((m) => m[1])) assert.ok(page.includes(`id="${id}"`), `no #${id} on the page`);
+  });
+}
+
 test("the docs' inline math is $`…`$, which markdown's emphasis rules can't break", () => {
   for (const file of [...docs.filter((f) => f.endsWith('.md')).map((f) => `docs/${f}`), 'ROADMAP.md', 'CHANGELOG.md']) {
     const prose = readFileSync(join(root, file), 'utf8').replace(/```[\s\S]*?```/g, '');

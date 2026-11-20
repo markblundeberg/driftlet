@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build an interactive electric double layer simulation in JavaScript: a one-file starter · driftlet</title>
+<meta name="description" content="A complete single-file web page to copy: the electric double layer at an electrode in a salt solution, solved live by driftlet (Poisson–Nernst–Planck) as you drag the electrode potential, with ion crowding one switch away and checked against Gouy–Chapman and Kilic–Bazant–Ajdari.">
+<meta property="og:title" content="An electric double layer in one file · driftlet">
+<meta property="og:description" content="A complete single-file web page to copy: the electric double layer at an electrode in a salt solution, solved live by driftlet (Poisson–Nernst–Planck) as you drag the electrode potential, with ion crowding one switch away and checked against Gouy–Chapman and Kilic–Bazant–Ajdari.">
+<meta property="og:url" content="https://marklundeberg.com/driftlet/demos/double-layer-starter.html">
+<link rel="canonical" href="https://marklundeberg.com/driftlet/demos/double-layer-starter.html">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<style>
+  #run { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  #run svg { max-width: 100%; height: auto; }
+  #run label { margin-right: 12px; }
+  pre.recipe { overflow-x: auto; font: 13px/1.5 var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+</style>
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A one-file starter: the electric double layer at an electrode</h1>
+  <p>A blocking electrode in 0.1 M NaCl, solved as you drag its potential: Poisson's equation with both
+    ions' drift and diffusion (Poisson–Nernst–Planck), self-consistent at every slider position, in the
+    browser. The plot shows each ion's concentration against distance from the electrode. Gouy–Chapman's
+    formula is this same model with ideal ions, and it already puts 4.9 M of counter-ions at the wall at
+    0.1 V, more than fits; tick <em>ions take space</em> and they sit on a lattice instead, capped at 4.8 M,
+    with the layer growing outward. That switch is one line of the definition, and so is the next thing
+    you might want: a Stern layer, a reaction at the electrode, the layer charging in time, or its
+    impedance. The page loads driftlet from a pinned CDN URL, with no install and no build step.</p>
+  <div id="run">
+<label>electrode potential ψ <input id="psi" type="range" min="-0.3" max="0.3" step="0.01" value="0.1"></label>
+<label><input id="crowd" type="checkbox"> ions take space (0.7 nm each)</label>
+<div id="readout"></div>
+<div id="figure"></div>
+  </div>
+  <h2>Checks before you build on it</h2>
+  <p>At ψ = 0.1 V, measured from the solution's own potential, the electrode holds 0.1272 C/m²
+    (<code>sol.contacts.left.D</code>), Gouy–Chapman's √(8εRTc)·sinh(Fψ/2RT) to 0.04%; with crowding, 0.1063
+    C/m², Kilic, Bazant and Ajdari's closed form for a lattice gas to 0.05%. The rest is the grid. A positive
+    ψ charges the electrode positive and draws Cl⁻ to it. ψ is set as the electrode's V less the bulk's φ,
+    which the first solve reads (<code>d.bulk</code>): the electrode's V alone is against the bath's
+    reference, not the solution.</p>
+  <h2>The whole page</h2>
+  <pre class="recipe" id="recipe"><code>&lt;!doctype html&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;title&gt;electric double layer&lt;/title&gt;
+&lt;label&gt;electrode potential ψ &lt;input id="psi" type="range" min="-0.3" max="0.3" step="0.01" value="0.1"&gt;&lt;/label&gt;
+&lt;label&gt;&lt;input id="crowd" type="checkbox"&gt; ions take space (0.7 nm each)&lt;/label&gt;
+&lt;div id="readout"&gt;&lt;/div&gt;
+&lt;div id="figure"&gt;&lt;/div&gt;
+&lt;script type="module"&gt;
+import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from 'https://cdn.jsdelivr.net/npm/driftlet@1.18.0/src/index.js';
+import { build, layer, bath, aqueous, WATER_EPSR } from 'https://cdn.jsdelivr.net/npm/driftlet@1.18.0/src/kit.js';
+
+// 0.1 M NaCl against a blocking electrode: Poisson with both ions' Nernst–Planck transport, solved at each ψ.
+const c = 100; // mol/m³
+const RT = GAS_CONSTANT * 298.15, eps = WATER_EPSR * EPS0;
+const debye = Math.sqrt((eps * RT) / (2 * FARADAY * FARADAY * c)); // 0.96 nm
+const cMax = 1 / ((0.7e-9) ** 3 * AVOGADRO); // one ion per (0.7 nm)³: 4.8 M
+const device = (crowded) =&gt; {
+  const water = aqueous(['Na+', 'Cl-']);
+  if (crowded) water.materials.water.statistics = [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax }];
+  const d = new Device(build({
+    library: [water],
+    stack: [
+      { V: 0, phi: 'pinned', zeroCharge: 0 }, // the electrode: φ at its face is its V, and no ion crosses
+      layer('water', 30 * debye),
+      bath({ 'Na+': c, 'Cl-': c }, 'Cl-'), // the bulk solution
+    ],
+    grid: { hmin: debye / 1e4, hmax: debye / 3, ratio: 1.08 },
+  }));
+  d.bulk = d.solve().phi.at(-1); // the solution's own potential, which ψ is measured from
+  return d;
+};
+const devices = { ideal: device(false), crowded: device(true) };
+const solveAt = (d, psi) =&gt; (d.set({ contacts: { left: { V: d.bulk + psi } } }), d.solve());
+
+// Theory to check against: Gouy–Chapman for ideal ions, Kilic–Bazant–Ajdari for ions on a lattice.
+const gouyChapman = (psi) =&gt; Math.sqrt(8 * eps * RT * c) * Math.sinh((FARADAY * psi) / (2 * RT));
+const kilicBazantAjdari = (psi) =&gt; {
+  const nu = (2 * c) / cMax;
+  return Math.sign(psi) * 2 * FARADAY * c * debye * Math.sqrt((2 / nu) * Math.log(1 + 2 * nu * Math.sinh((FARADAY * psi) / (2 * RT)) ** 2));
+};
+
+// The page: the ions' concentrations against distance from the electrode, in Debye lengths.
+function plot(sol) {
+  const W = 640, H = 300, L = 6 * debye, X = (x) =&gt; 60 + (x / L) * 560, Y = (M) =&gt; 20 + ((1 - Math.log10(M)) / 4) * 240;
+  const line = (name, color) =&gt; `&lt;polyline fill="none" stroke="${color}" stroke-width="2" points="${Array.from(sol.x, (x, k) =&gt; [x, sol.c[name][k] / 1000]).filter(([x, M]) =&gt; x &lt;= L &amp;&amp; M &gt;= 1e-3).map(([x, M]) =&gt; `${X(x).toFixed(1)},${Y(Math.min(10, M)).toFixed(1)}`).join(' ')}"/&gt;`;
+  const ticks = [10, 1, 0.1, 0.01, 0.001].map((M) =&gt; `&lt;text x="54" y="${Y(M) + 4}" text-anchor="end" font-size="12"&gt;${M} M&lt;/text&gt;&lt;line x1="60" x2="620" y1="${Y(M)}" y2="${Y(M)}" stroke="#ddd"/&gt;`).join('');
+  const xs = [0, 1, 2, 3, 4, 5, 6].map((k) =&gt; `&lt;text x="${X(k * debye)}" y="${H - 18}" text-anchor="middle" font-size="12"&gt;${k}&lt;/text&gt;`).join('');
+  return `&lt;svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="sans-serif"&gt;${ticks}${xs}&lt;text x="340" y="${H - 2}" text-anchor="middle" font-size="12"&gt;distance from the electrode (Debye lengths)&lt;/text&gt;${line('Na+', '#c0392b')}${line('Cl-', '#2471a3')}&lt;text x="600" y="40" text-anchor="end" font-size="13" fill="#c0392b"&gt;Na⁺&lt;/text&gt;&lt;text x="600" y="58" text-anchor="end" font-size="13" fill="#2471a3"&gt;Cl⁻&lt;/text&gt;&lt;/svg&gt;`;
+}
+function update() {
+  const psi = +document.getElementById('psi').value, crowded = document.getElementById('crowd').checked;
+  const sol = solveAt(crowded ? devices.crowded : devices.ideal, psi);
+  const sigma = sol.contacts.left.D; // the electrode's charge per area, C/m²
+  const theory = crowded ? ['Kilic–Bazant–Ajdari', kilicBazantAjdari(psi)] : ['Gouy–Chapman', gouyChapman(psi)];
+  const wall = sol.c[psi &gt;= 0 ? 'Cl-' : 'Na+'][0] / 1000;
+  document.getElementById('readout').textContent = sol.converged
+    ? `ψ = ${psi.toFixed(2)} V: electrode charge ${sigma.toFixed(4)} C/m² (${theory[0]}: ${theory[1].toFixed(4)}), counter-ions at the wall ${wall.toPrecision(3)} M`
+    : 'no solution here';
+  document.getElementById('figure').innerHTML = plot(sol);
+}
+document.getElementById('psi').addEventListener('input', update);
+document.getElementById('crowd').addEventListener('change', update);
+update();
+&lt;/script&gt;
+</code></pre>
+  <p>Next: <a href="double-layer.html">the double-layer demo</a> sweeps the whole charge curve against
+    both theories; <a href="frumkin.html">the Frumkin demo</a> puts a reaction at this electrode;
+    <a href="starter.html">the pn junction starter</a> is the same idea for a semiconductor; and
+    <a href="https://github.com/markblundeberg/driftlet/blob/master/llms.txt">the guide for coding agents</a>
+    has templates for the rest.</p>
+</main>
+<script type="module">
+import { Device, EPS0, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
+import { build, layer, bath, aqueous, WATER_EPSR } from '../src/kit.js';
+
+// 0.1 M NaCl against a blocking electrode: Poisson with both ions' Nernst–Planck transport, solved at each ψ.
+const c = 100; // mol/m³
+const RT = GAS_CONSTANT * 298.15, eps = WATER_EPSR * EPS0;
+const debye = Math.sqrt((eps * RT) / (2 * FARADAY * FARADAY * c)); // 0.96 nm
+const cMax = 1 / ((0.7e-9) ** 3 * AVOGADRO); // one ion per (0.7 nm)³: 4.8 M
+const device = (crowded) => {
+  const water = aqueous(['Na+', 'Cl-']);
+  if (crowded) water.materials.water.statistics = [{ type: 'lattice', species: ['Na+', 'Cl-'], cMax }];
+  const d = new Device(build({
+    library: [water],
+    stack: [
+      { V: 0, phi: 'pinned', zeroCharge: 0 }, // the electrode: φ at its face is its V, and no ion crosses
+      layer('water', 30 * debye),
+      bath({ 'Na+': c, 'Cl-': c }, 'Cl-'), // the bulk solution
+    ],
+    grid: { hmin: debye / 1e4, hmax: debye / 3, ratio: 1.08 },
+  }));
+  d.bulk = d.solve().phi.at(-1); // the solution's own potential, which ψ is measured from
+  return d;
+};
+const devices = { ideal: device(false), crowded: device(true) };
+const solveAt = (d, psi) => (d.set({ contacts: { left: { V: d.bulk + psi } } }), d.solve());
+
+// Theory to check against: Gouy–Chapman for ideal ions, Kilic–Bazant–Ajdari for ions on a lattice.
+const gouyChapman = (psi) => Math.sqrt(8 * eps * RT * c) * Math.sinh((FARADAY * psi) / (2 * RT));
+const kilicBazantAjdari = (psi) => {
+  const nu = (2 * c) / cMax;
+  return Math.sign(psi) * 2 * FARADAY * c * debye * Math.sqrt((2 / nu) * Math.log(1 + 2 * nu * Math.sinh((FARADAY * psi) / (2 * RT)) ** 2));
+};
+
+// The page: the ions' concentrations against distance from the electrode, in Debye lengths.
+function plot(sol) {
+  const W = 640, H = 300, L = 6 * debye, X = (x) => 60 + (x / L) * 560, Y = (M) => 20 + ((1 - Math.log10(M)) / 4) * 240;
+  const line = (name, color) => `<polyline fill="none" stroke="${color}" stroke-width="2" points="${Array.from(sol.x, (x, k) => [x, sol.c[name][k] / 1000]).filter(([x, M]) => x <= L && M >= 1e-3).map(([x, M]) => `${X(x).toFixed(1)},${Y(Math.min(10, M)).toFixed(1)}`).join(' ')}"/>`;
+  const ticks = [10, 1, 0.1, 0.01, 0.001].map((M) => `<text x="54" y="${Y(M) + 4}" text-anchor="end" font-size="12">${M} M</text><line x1="60" x2="620" y1="${Y(M)}" y2="${Y(M)}" stroke="#ddd"/>`).join('');
+  const xs = [0, 1, 2, 3, 4, 5, 6].map((k) => `<text x="${X(k * debye)}" y="${H - 18}" text-anchor="middle" font-size="12">${k}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="sans-serif">${ticks}${xs}<text x="340" y="${H - 2}" text-anchor="middle" font-size="12">distance from the electrode (Debye lengths)</text>${line('Na+', '#c0392b')}${line('Cl-', '#2471a3')}<text x="600" y="40" text-anchor="end" font-size="13" fill="#c0392b">Na⁺</text><text x="600" y="58" text-anchor="end" font-size="13" fill="#2471a3">Cl⁻</text></svg>`;
+}
+function update() {
+  const psi = +document.getElementById('psi').value, crowded = document.getElementById('crowd').checked;
+  const sol = solveAt(crowded ? devices.crowded : devices.ideal, psi);
+  const sigma = sol.contacts.left.D; // the electrode's charge per area, C/m²
+  const theory = crowded ? ['Kilic–Bazant–Ajdari', kilicBazantAjdari(psi)] : ['Gouy–Chapman', gouyChapman(psi)];
+  const wall = sol.c[psi >= 0 ? 'Cl-' : 'Na+'][0] / 1000;
+  document.getElementById('readout').textContent = sol.converged
+    ? `ψ = ${psi.toFixed(2)} V: electrode charge ${sigma.toFixed(4)} C/m² (${theory[0]}: ${theory[1].toFixed(4)}), counter-ions at the wall ${wall.toPrecision(3)} M`
+    : 'no solution here';
+  document.getElementById('figure').innerHTML = plot(sol);
+}
+document.getElementById('psi').addEventListener('input', update);
+document.getElementById('crowd').addEventListener('change', update);
+update();
+</script>
+</body>
+</html>

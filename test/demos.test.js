@@ -760,3 +760,43 @@ test('the sitemap lists every demo page', () => {
   const listed = [...map.matchAll(/<loc>https:\/\/marklundeberg\.com\/driftlet\/demos\/([^<]*)<\/loc>/g)].map((m) => m[1] || 'index.html');
   assert.deepEqual(listed.sort(), readdirSync(demos).filter((f) => f.endsWith('.html')).sort());
 });
+
+test('demos/double-layer-starter.html: its checks hold, as the page says', async () => {
+  const html = readFileSync(join(demos, 'double-layer-starter.html'), 'utf8');
+  const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
+  const at = (path) => pathToFileURL(join(root, path)).href;
+  const head = script.slice(0, script.indexOf('// The page:')).replaceAll("'../src/", `'${at('src/')}`);
+  assert.ok(head.length > 1000 && !/document\./.test(head), 'the page-free part of its script');
+  const { devices, solveAt, gouyChapman, kilicBazantAjdari } = await import(`data:text/javascript;base64,${Buffer.from(`${head}\nexport { devices, solveAt, gouyChapman, kilicBazantAjdari };`).toString('base64')}`);
+  // "At ψ = 0.1 V ... 0.1272 C/m², Gouy–Chapman's ... to 0.04%; with crowding, 0.1063 C/m², ... to 0.05%"
+  const ideal = solveAt(devices.ideal, 0.1), crowded = solveAt(devices.crowded, 0.1);
+  assert.ok(ideal.converged && crowded.converged);
+  assert.equal(ideal.contacts.left.D.toFixed(4), '0.1272');
+  assert.equal(crowded.contacts.left.D.toFixed(4), '0.1063');
+  assert.ok(Math.abs(ideal.contacts.left.D / gouyChapman(0.1) - 1) < 5e-4);
+  assert.ok(Math.abs(crowded.contacts.left.D / kilicBazantAjdari(0.1) - 1) < 6e-4);
+  // "positive ψ charges the electrode positive and draws Cl⁻"; "4.9 M of counter-ions at the wall at 0.1 V"; "capped at 4.8 M"
+  assert.ok(ideal.c['Cl-'][0] > ideal.c['Na+'][0]);
+  assert.equal((ideal.c['Cl-'][0] / 1000).toFixed(1), '4.9');
+  const full = solveAt(devices.crowded, 0.3);
+  assert.ok(full.c['Cl-'][0] / 1000 < 4.85 && full.c['Cl-'][0] / 1000 > 4.8);
+});
+
+test('demos/solar-starter.html: its checks hold, as the page says', async () => {
+  const html = readFileSync(join(demos, 'solar-starter.html'), 'utf8');
+  const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
+  const at = (path) => pathToFileURL(join(root, path)).href;
+  const head = script.slice(0, script.indexOf('// The page:')).replaceAll("'../src/", `'${at('src/')}`);
+  assert.ok(head.length > 1000 && !/document\./.test(head), 'the page-free part of its script');
+  const { curve, openCircuit, dark, volts } = await import(`data:text/javascript;base64,${Buffer.from(`${head}\nexport { curve, openCircuit, dark, volts };`).toString('base64')}`);
+  // "At G = 50 ... J_sc = 18.47 mA/cm² and V_oc = 0.5613 V ... superposition ... 0.5617 V, 0.3 mV away"
+  const light = curve(50), Jsc = light[0], Voc = openCircuit(50), superposed = openCircuit(0, Jsc * 10);
+  assert.equal(Jsc.toFixed(2), '18.47');
+  assert.equal(Voc.toFixed(4), '0.5613');
+  assert.equal(superposed.toFixed(4), '0.5617');
+  // "the curves part by a few tenths of a percent near the maximum-power point"
+  const k = volts.findIndex((V) => Math.abs(V - 0.5) < 1e-9);
+  assert.ok(Math.abs((dark[k] + Jsc) / light[k] - 1) < 6e-3);
+  // "J_sc is 38% of the F·G·(101 µm) the light makes"
+  assert.equal(Math.round((Jsc * 10) / (96485.33212 * 50 * 101e-6) * 100), 38);
+});

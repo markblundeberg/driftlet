@@ -5,6 +5,13 @@ major version.
 
 ## Unreleased
 
+- Two more one-file starters beside the pn junction's, each a running page with its whole source to
+  copy and a check stated and tested: [the electric double layer at an
+  electrode](https://marklundeberg.com/driftlet/demos/double-layer-starter.html) (its charge against
+  Gouy–Chapman, and with ions that take space against Kilic–Bazant–Ajdari), and [a solar cell's I–V
+  curve](https://marklundeberg.com/driftlet/demos/solar-starter.html) (V_oc against the superposition
+  principle, to 0.3 mV). Each is titled for what someone asks an assistant to build: in a blind test,
+  ChatGPT found driftlet when asked for a library, but wrote its own solver when asked for a demo.
 - In a page using `live(def, { worker: true })`, a contact the kit wrote (`bath()`, `ohmic()`) in a
   change was merged into the old contact rather than replacing it, as `Device.set()` does: the mark
   saying so is a symbol, which a worker's message drops. A bath swapped from Ag/AgCl to bare Cl⁻

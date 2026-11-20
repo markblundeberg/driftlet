@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build an interactive solar cell I–V curve simulation in JavaScript: a one-file starter · driftlet</title>
+<meta name="description" content="A complete single-file web page to copy: a silicon solar cell's I–V curve, solved live by driftlet (drift–diffusion with recombination) as you change the light, with J_sc, V_oc and the fill factor, checked against the superposition principle.">
+<meta property="og:title" content="A solar cell's I–V curve in one file · driftlet">
+<meta property="og:description" content="A complete single-file web page to copy: a silicon solar cell's I–V curve, solved live by driftlet (drift–diffusion with recombination) as you change the light, with J_sc, V_oc and the fill factor, checked against the superposition principle.">
+<meta property="og:url" content="https://marklundeberg.com/driftlet/demos/solar-starter.html">
+<link rel="canonical" href="https://marklundeberg.com/driftlet/demos/solar-starter.html">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<style>
+  #run { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  #run svg { max-width: 100%; height: auto; }
+  #run label { margin-right: 12px; }
+  pre.recipe { overflow-x: auto; font: 13px/1.5 var(--mono); font-variation-settings: 'MONO' 1, 'CASL' 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+</style>
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>A one-file starter: a solar cell's I–V curve</h1>
+  <p>A silicon n⁺p cell under light, its I–V curve recomputed as you move the slider. Every point is a full
+    self-consistent drift–diffusion solve, with electrons and holes recombining (a 0.6 µs lifetime in the
+    base, a 48 µm diffusion length) and an ohmic back contact that takes the carriers that reach it, in the
+    browser. So the short-circuit current, the open-circuit voltage and the fill factor come out of the
+    device, not out of the ideal-diode equation: change the lifetime, the base's thickness or its doping in
+    one line, or let the light be absorbed with depth (<code>photogeneration()</code>), and they follow.
+    The dashed curve is the dark curve moved up by J<sub>sc</sub>. The page loads driftlet from a pinned CDN
+    URL, with no install and no build step.</p>
+  <div id="run">
+<label>light: generation G <input id="G" type="range" min="5" max="100" step="5" value="50"></label>
+<span id="Gout"></span>
+<div id="readout"></div>
+<div id="figure"></div>
+  </div>
+  <h2>Checks before you build on it</h2>
+  <p>At G = 50 mol/(m³·s) the cell gives J<sub>sc</sub> = 18.47 mA/cm² and V<sub>oc</sub> = 0.5613 V. The
+    superposition principle, that the lit curve is the dark curve shifted by J<sub>sc</sub>, puts
+    V<sub>oc</sub> where the dark cell passes J<sub>sc</sub>: 0.5617 V, 0.3 mV away (the page drives the dark
+    cell at that current to find it). It holds this well because the base stays in low injection; the
+    curves part by a few tenths of a percent near the maximum-power point. J<sub>sc</sub> is 38% of the
+    F·G·(101 µm) the light makes, since the base is twice the diffusion length and its back contact
+    recombines what reaches it. <code>sol.current</code> is along +x, toward the p side on the right, which is
+    where the photocurrent flows, so it's the current delivered as it stands. The fill factor is read at the
+    20 mV sweep points.</p>
+  <h2>The whole page</h2>
+  <pre class="recipe" id="recipe"><code>&lt;!doctype html&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;title&gt;solar cell I–V&lt;/title&gt;
+&lt;label&gt;light: generation G &lt;input id="G" type="range" min="5" max="100" step="5" value="50"&gt;&lt;/label&gt;
+&lt;span id="Gout"&gt;&lt;/span&gt;
+&lt;div id="readout"&gt;&lt;/div&gt;
+&lt;div id="figure"&gt;&lt;/div&gt;
+&lt;script type="module"&gt;
+import { Device, units } from 'https://cdn.jsdelivr.net/npm/driftlet@1.18.0/src/index.js';
+import { build, layer, ohmic, semiconductor } from 'https://cdn.jsdelivr.net/npm/driftlet@1.18.0/src/kit.js';
+
+// A silicon n⁺p cell, its electrons and holes drifting, diffusing and recombining (τ ≈ 0.6 µs in the
+// p base) under light that makes pairs uniformly at G mol/(m³·s). Every point is a self-consistent solve.
+const cell = (G) =&gt; build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0),
+    layer('Si', units.um(1), { name: 'n', donors: units.perCm3(1e18) }),
+    layer('Si', units.um(100), { name: 'p', acceptors: units.perCm3(1e16) }),
+    ohmic(0),
+  ],
+  bulkReactions: [
+    { equation: 'e- + h+ = 0', kf: { Si: 1e8 } },
+    { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G } },
+  ],
+  grid: { hmin: units.nm(1), hmax: units.um(1) },
+});
+const volts = Array.from({ length: 36 }, (_, k) =&gt; k * 0.02);
+// The current delivered, in mA/cm²: sol.current is along +x, out at the p side, where the photocurrent goes.
+const curve = (G) =&gt; {
+  const d = new Device(cell(G));
+  return volts.map((V) =&gt; (d.set({ contacts: { right: { V } } }), d.solve().current / 10));
+};
+const openCircuit = (G, I = 0) =&gt; {
+  const d = new Device(cell(G));
+  d.set({ contacts: { right: { I } } });
+  return d.solve().terminals.right.V;
+};
+const dark = curve(0);
+
+// The page: the I–V curve in the light, and the dark curve shifted by the short-circuit current.
+function plot(light, Jsc, Voc) {
+  const W = 640, H = 300, X = (V) =&gt; 60 + (V / 0.7) * 560, Y = (J) =&gt; 20 + ((25 - J) / 30) * 240;
+  const line = (J, color, dash = '') =&gt; `&lt;polyline fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="${dash}" points="${volts.map((V, k) =&gt; [V, J[k]]).filter(([, j]) =&gt; j &gt; -5 &amp;&amp; j &lt; 25).map(([V, j]) =&gt; `${X(V).toFixed(1)},${Y(j).toFixed(1)}`).join(' ')}"/&gt;`;
+  const grid = [-5, 0, 5, 10, 15, 20, 25].map((j) =&gt; `&lt;line x1="60" x2="620" y1="${Y(j)}" y2="${Y(j)}" stroke="${j ? '#ddd' : '#888'}"/&gt;&lt;text x="54" y="${Y(j) + 4}" text-anchor="end" font-size="12"&gt;${j}&lt;/text&gt;`).join('');
+  const xs = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7].map((V) =&gt; `&lt;text x="${X(V)}" y="${H - 18}" text-anchor="middle" font-size="12"&gt;${V}&lt;/text&gt;`).join('');
+  return `&lt;svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="sans-serif"&gt;${grid}${xs}&lt;text x="340" y="${H - 2}" text-anchor="middle" font-size="12"&gt;voltage (V)&lt;/text&gt;&lt;text x="14" y="150" font-size="12" transform="rotate(-90 14 150)" text-anchor="middle"&gt;current (mA/cm²)&lt;/text&gt;${line(light, '#c0392b')}${line(dark.map((j) =&gt; j + Jsc), '#333', '5 4')}&lt;circle cx="${X(Voc)}" cy="${Y(0)}" r="4" fill="#c0392b"/&gt;&lt;text x="610" y="40" text-anchor="end" font-size="13" fill="#c0392b"&gt;in the light&lt;/text&gt;&lt;text x="610" y="58" text-anchor="end" font-size="13" fill="#333"&gt;dark + J_sc (dashed)&lt;/text&gt;&lt;/svg&gt;`;
+}
+function update() {
+  const G = +document.getElementById('G').value;
+  document.getElementById('Gout').textContent = `${G} mol/(m³·s)`;
+  const light = curve(G), Jsc = light[0], Voc = openCircuit(G);
+  const mpp = Math.max(...volts.map((V, k) =&gt; V * light[k])); // mW/cm²
+  const superposed = openCircuit(0, Jsc * 10); // the dark cell, driven at J_sc: where superposition puts V_oc
+  document.getElementById('readout').textContent =
+    `J_sc = ${Jsc.toFixed(2)} mA/cm², V_oc = ${Voc.toFixed(4)} V (superposition: ${superposed.toFixed(4)} V), fill factor ${(mpp / (Jsc * Voc)).toFixed(3)}, P_max = ${mpp.toFixed(2)} mW/cm²`;
+  document.getElementById('figure').innerHTML = plot(light, Jsc, Voc);
+}
+document.getElementById('G').addEventListener('input', update);
+update();
+&lt;/script&gt;
+</code></pre>
+  <p>Next: <a href="solar.html">the solar cell demo</a> has light absorbed with depth, band diagrams and
+    the efficiency's limits; <a href="perovskite.html">the perovskite demo</a> adds moving ions and their
+    hysteresis; <a href="starter.html">the pn junction starter</a> shows the band diagram itself; and
+    <a href="https://github.com/markblundeberg/driftlet/blob/master/llms.txt">the guide for coding agents</a>
+    has templates for the rest.</p>
+</main>
+<script type="module">
+import { Device, units } from '../src/index.js';
+import { build, layer, ohmic, semiconductor } from '../src/kit.js';
+
+// A silicon n⁺p cell, its electrons and holes drifting, diffusing and recombining (τ ≈ 0.6 µs in the
+// p base) under light that makes pairs uniformly at G mol/(m³·s). Every point is a self-consistent solve.
+const cell = (G) => build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0),
+    layer('Si', units.um(1), { name: 'n', donors: units.perCm3(1e18) }),
+    layer('Si', units.um(100), { name: 'p', acceptors: units.perCm3(1e16) }),
+    ohmic(0),
+  ],
+  bulkReactions: [
+    { equation: 'e- + h+ = 0', kf: { Si: 1e8 } },
+    { equation: 'photon = e- + h+', fixed: { photon: units.eV(3) }, kf: { Si: G } },
+  ],
+  grid: { hmin: units.nm(1), hmax: units.um(1) },
+});
+const volts = Array.from({ length: 36 }, (_, k) => k * 0.02);
+// The current delivered, in mA/cm²: sol.current is along +x, out at the p side, where the photocurrent goes.
+const curve = (G) => {
+  const d = new Device(cell(G));
+  return volts.map((V) => (d.set({ contacts: { right: { V } } }), d.solve().current / 10));
+};
+const openCircuit = (G, I = 0) => {
+  const d = new Device(cell(G));
+  d.set({ contacts: { right: { I } } });
+  return d.solve().terminals.right.V;
+};
+const dark = curve(0);
+
+// The page: the I–V curve in the light, and the dark curve shifted by the short-circuit current.
+function plot(light, Jsc, Voc) {
+  const W = 640, H = 300, X = (V) => 60 + (V / 0.7) * 560, Y = (J) => 20 + ((25 - J) / 30) * 240;
+  const line = (J, color, dash = '') => `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="${dash}" points="${volts.map((V, k) => [V, J[k]]).filter(([, j]) => j > -5 && j < 25).map(([V, j]) => `${X(V).toFixed(1)},${Y(j).toFixed(1)}`).join(' ')}"/>`;
+  const grid = [-5, 0, 5, 10, 15, 20, 25].map((j) => `<line x1="60" x2="620" y1="${Y(j)}" y2="${Y(j)}" stroke="${j ? '#ddd' : '#888'}"/><text x="54" y="${Y(j) + 4}" text-anchor="end" font-size="12">${j}</text>`).join('');
+  const xs = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7].map((V) => `<text x="${X(V)}" y="${H - 18}" text-anchor="middle" font-size="12">${V}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="sans-serif">${grid}${xs}<text x="340" y="${H - 2}" text-anchor="middle" font-size="12">voltage (V)</text><text x="14" y="150" font-size="12" transform="rotate(-90 14 150)" text-anchor="middle">current (mA/cm²)</text>${line(light, '#c0392b')}${line(dark.map((j) => j + Jsc), '#333', '5 4')}<circle cx="${X(Voc)}" cy="${Y(0)}" r="4" fill="#c0392b"/><text x="610" y="40" text-anchor="end" font-size="13" fill="#c0392b">in the light</text><text x="610" y="58" text-anchor="end" font-size="13" fill="#333">dark + J_sc (dashed)</text></svg>`;
+}
+function update() {
+  const G = +document.getElementById('G').value;
+  document.getElementById('Gout').textContent = `${G} mol/(m³·s)`;
+  const light = curve(G), Jsc = light[0], Voc = openCircuit(G);
+  const mpp = Math.max(...volts.map((V, k) => V * light[k])); // mW/cm²
+  const superposed = openCircuit(0, Jsc * 10); // the dark cell, driven at J_sc: where superposition puts V_oc
+  document.getElementById('readout').textContent =
+    `J_sc = ${Jsc.toFixed(2)} mA/cm², V_oc = ${Voc.toFixed(4)} V (superposition: ${superposed.toFixed(4)} V), fill factor ${(mpp / (Jsc * Voc)).toFixed(3)}, P_max = ${mpp.toFixed(2)} mW/cm²`;
+  document.getElementById('figure').innerHTML = plot(light, Jsc, Voc);
+}
+document.getElementById('G').addEventListener('input', update);
+update();
+</script>
+</body>
+</html>
