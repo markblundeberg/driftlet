@@ -5,21 +5,24 @@
 // Web Worker, keeping the page responsive.
 
 import { Device } from './index.js';
-import { merge, wholePaths } from './merge.js';
+import { markWhole, ownCopy, wholePaths, WHOLE } from './merge.js';
 import { checkOptions } from './errors.js';
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v);
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // A point on the way from definition a to b (0 ≤ s ≤ 1): every finite number that differs is
-// interpolated, everything else is b's.
+// interpolated, everything else is b's. (As (1 − s)a + sb, which is b at s = 1: a + s(b − a)
+// rounded 0.05 → 1e-18 to 0. And an object the kit marked whole stays marked: a plain copy
+// merged onto the old contact, a series R removed from it survived the ramp, and the device
+// read 1.7e-8 V at a contact set to 0.01; Astra's fifth pass.)
 export function between(a, b, s) {
-  if (typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b)) return a + s * (b - a);
+  if (typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b)) return (1 - s) * a + s * b;
   if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) return b.map((v, k) => between(a[k], v, s));
   if (isPlainObject(a) && isPlainObject(b)) {
     const out = {};
     for (const k of Object.keys(b)) out[k] = k in a ? between(a[k], b[k], s) : b[k];
-    return out;
+    return b[WHOLE] ? markWhole(out) : out;
   }
   return b;
 }
@@ -67,7 +70,7 @@ export class Session {
         const from = this.good.cp.def;
         for (let k = 1; k <= n; k++) {
           try {
-            this.device.set(between(from, target, k / n));
+            this.device.set(k === n ? target : between(from, target, k / n)); // (the last step the target itself)
           } catch {
             stuck = true; // (and sol, a converged step short of the target, isn't the answer)
             break ramping;
@@ -88,7 +91,9 @@ export class Session {
         return done(sol, { failed: false });
       }
       if (this.good) this.device._rollback(this.good.cp);
-      return done(this.good?.sol ?? sol, { failed: true, warnings: sol.warnings });
+      // (the last good solution, or none: never the unconverged try, which ready and onsolution
+      // were given when the first solve failed; Astra's fifth pass)
+      return done(this.good?.sol ?? null, { failed: true, warnings: sol.warnings });
     } catch (e) {
       // Something the definition's checks can't see, found while building or solving.
       if (this.good) this.device._rollback(this.good.cp);
@@ -105,7 +110,8 @@ export class Session {
  *   and solved once, and all their promises resolve with that solution
  * @property {Promise<{ solution: object | null, info: object }>} ready the first solve
  * @property {object | null} solution the last good solution
- * @property {() => void} close stop the worker, if any
+ * @property {() => void} close stop the worker, if any (what it still owed resolves failed, as
+ *   does any set() after)
  */
 
 /**
@@ -130,6 +136,9 @@ export function live(def, { worker = false, onsolution, maxRamp = 32 } = {}) {
   const api = {
     solution: null,
     set(patch) {
+      // (copied now, functions kept: held while a solve ran, a patch the caller edited after
+      // set() was solved at the edited value; Astra's fifth pass)
+      patch = ownCopy(patch);
       const p = new Promise((resolve) => pending.push({ patch, resolve }));
       if (!busy) pump();
       return p;
@@ -146,9 +155,12 @@ export function live(def, { worker = false, onsolution, maxRamp = 32 } = {}) {
       .catch((e) => ({ solution: api.solution, errors: [], info: { ms: 0, ramp: 0, failed: true, error: String(e?.message ?? e) } }))
       .then((res) => {
         if (res.solution && !res.info.failed) api.solution = res.solution;
+        // (an engine's own failure, a change it couldn't post or a closed worker, answers with the
+        // last good solution too; onsolution is told only of what a solve gave)
+        const solution = res.solution ?? api.solution;
         batch.forEach((b, k) => {
           const own = res.errors?.[k];
-          b.resolve({ solution: res.solution, info: own ? { ...res.info, failed: true, error: own } : res.info });
+          b.resolve({ solution, info: own ? { ...res.info, failed: true, error: own } : res.info });
         });
         busy = false;
         pump();
@@ -189,26 +201,61 @@ function localEngine(def, maxRamp) {
 function workerEngine(def, worker, maxRamp) {
   const w = typeof worker === 'function' ? worker() : startWorker();
   const queue = [];
+  let closed = false;
+  const failed = (message) => ({ solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error: message } });
   const failAll = (message) => {
-    while (queue.length) queue.shift()({ solution: null, errors: [], info: { ms: 0, ramp: 0, failed: true, error: message } });
+    while (queue.length) queue.shift()(failed(message));
   };
   w.onmessage = (e) => queue.shift()?.(e.data);
   w.onerror = (e) => failAll(`the worker failed: ${e?.message ?? e}`);
   w.postMessage({ type: 'init', def, whole: wholePaths(def), maxRamp });
+  const post = (patches) => w.postMessage({ type: 'update', patches, whole: wholePaths(patches) });
   return {
     run(patches) {
       return new Promise((resolve) => {
+        if (closed) return resolve(failed('the live device was closed'));
         queue.push(resolve);
         try {
-          w.postMessage({ type: 'update', patches, whole: wholePaths(patches) });
+          post(patches);
         } catch (e) {
-          // A change that can't be posted (a function, such as custom statistics).
+          // A change that can't be posted (a function, such as custom statistics): it alone is
+          // refused, and the others are posted without it. (All refused, a valid change made
+          // with it was lost for good, and the next set({}) solved at the old value; Astra's
+          // fifth pass.)
           queue.pop();
-          resolve({ solution: null, errors: patches.map(() => `can't be sent to a worker: ${e.message}`), info: { ms: 0, ramp: 0, failed: true } });
+          const refuse = (err) => resolve({ solution: null, errors: patches.map(() => `can't be sent to a worker: ${err.message}`), info: { ms: 0, ramp: 0, failed: true } });
+          if (typeof structuredClone !== 'function') return refuse(e);
+          const why = patches.map((p) => {
+            try {
+              structuredClone(p); // (as postMessage clones it)
+              return undefined;
+            } catch (err) {
+              return `can't be sent to a worker: ${err.message}`;
+            }
+          });
+          const ok = patches.filter((_, k) => !why[k]);
+          if (ok.length === 0 || ok.length === patches.length) return refuse(e);
+          queue.push((res) => {
+            let j = 0;
+            resolve({ ...res, errors: why.map((own) => own ?? res.errors?.[j++]) });
+          });
+          try {
+            post(ok);
+          } catch (err) {
+            queue.pop();
+            refuse(err);
+          }
         }
       });
     },
-    close: () => w.terminate(),
+    // (and every promise still owed settled, failed: a solve under way when the worker was
+    // stopped left ready and set() pending for ever; Astra's fifth pass)
+    close() {
+      closed = true;
+      const out = w.terminate();
+      failAll('the live device was closed');
+      return out;
+    },
   };
 }
 

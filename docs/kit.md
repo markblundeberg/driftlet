@@ -313,7 +313,12 @@ through or draw side by side. Frames are kept at the start, then at each of `tim
 `every` seconds, which the stepping lands on exactly; with neither, at the end of each call.
 Its `advance(tEnd, opts)` takes `Device.advance()`'s options, so an animation calls it once per
 frame with a `budgetMs` (`done` says whether it got there), and a run in budgets is step for
-step the run made in one go (a first step cut across calls included). `frame(t)` is the frame at or just before t.
+step the run made in one go (a first step cut across calls included): its `dt0` is the call's
+first step, its `maxSteps` the call's limit over all its pieces, and the solution it returns
+counts the call's `steps`. Probes are given to `recorder()`, not to `advance()`, and the
+recorder refuses to go on once the device's terminals change (a port added or removed): make
+a new one then. Frames already passed when it's called (the device advanced on its own) are
+skipped. `frame(t)` is the frame at or just before t.
 
 ```js
 import { Device } from 'driftlet';
@@ -563,13 +568,15 @@ slider.oninput = () => dev.set({ contacts: { right: { V: +slider.value } } });
   thread, each solve is its own task, so the page paints and takes input in between.
 - A change that fails from the warm start is ramped to from the last good state, in more and
   more steps (every number that differs is interpolated), then tried from scratch. If all of
-  that fails, the last good solution stays, with `info.failed` and the solver's `warnings`.
-  An invalid change does the same, with `info.error`. `info.ramp` says how many ramp steps were
+  that fails, the last good solution stays (none, `null`, if nothing has converged yet), with
+  `info.failed` and the solver's `warnings`. An invalid change does the same, with `info.error`. `info.ramp` says how many ramp steps were
   needed, `info.ms` how long it took.
 - `set()` returns a promise of `{ solution, info }`, and `ready` is the first solve's.
   `solution` is always the last good one.
 - `worker: true` solves in a Web Worker (a module worker), keeping the page responsive however
-  long a solve takes. It works with the library loaded from a CDN too.
+  long a solve takes. It works with the library loaded from a CDN too. A change that can't be
+  sent to a worker (a function, as custom statistics hold) is refused alone. `close()` stops
+  the worker, and every promise still owed resolves failed, as does any `set()` after it.
 
 ```js
 import { units } from 'driftlet';
