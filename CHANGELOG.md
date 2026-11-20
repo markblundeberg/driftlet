@@ -11,6 +11,19 @@ major version.
   233). The steady settle after a regrid is guarded the same way (no fault was shown there: the next
   call re-settled). Found by `bench/combos`, a new harness that combines features at random and
   compares two routes to one answer (see its README).
+- `set()` across a new cross-section keeps a capacitive port's charge per area of electrode, node by
+  node, through the solver's own sum. It had been one ratio of areas over every window node, which
+  counted an end node a `'bulk'` or pinned contact holds and assumed a uniform σ: the charge carried
+  1.9% off, the first 1 ns step read +5.59e5 A/m² where −1.08e-2 is right, and the gap stayed in the
+  running charge. A floating port's voltage now holds its charge on the final carried state (it
+  jumped 43 mV on the first step).
+- `set()` that resizes or reshapes a region keeps its concentrations, as its contract says: the amount
+  scales node by node, and a diffuse layer keeps its excess per area. One volume ratio for both had
+  moved a 10%-longer 1 mM KCl film's bulk by 6.0e-3, and a polarised bar given a flared cross-section
+  by 2.2e-2.
+- `set()` that turns a metal region into a non-metal (or back) starts it from its `c0`, as its solution
+  says: the metal's sheet charge had been put on its new ions (K⁺ 100.10, Cl⁻ 99.90 at the edge).
+  (These three from an inventory of the quantities computed in more than one place; ROADMAP, "2.0".)
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
