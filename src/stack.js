@@ -176,7 +176,16 @@ function alloyGrade(item, x0, species, materials, path) {
   // bow/8192: 73 µeV at 0.6 eV, an equilibrium density 0.28% short; round 20's cold user)
   const corners = [...new Set([0, ...fx.x.filter((x) => x > 0 && x < L), L])].sort((a, b) => a - b);
   const bowed = Object.keys(bow).length > 0;
-  const knots = bowed ? corners.flatMap((x, k) => (k === 0 ? [x] : Array.from({ length: 128 }, (_, j) => corners[k - 1] + ((x - corners[k - 1]) * (j + 1)) / 128))) : corners;
+  // Each piece ends on its corner exactly, and a knot that doesn't pass the last is left out: a
+  // piece under 128 ulps can't be split (a fraction's last knot an ulp short of the layer's end, as
+  // a profile rescaled by (L·x)/x can be, had a piece of 128 knots all at L, and new Device refused
+  // grade.e-.mu0.x, a field the user never wrote; the semi family's case 205).
+  const knots = [];
+  const push = (x) => (knots.length === 0 || x > knots[knots.length - 1]) && knots.push(x);
+  for (let k = 0; k < corners.length; k++) {
+    if (k > 0 && bowed) for (let j = 1; j < 128; j++) push(corners[k - 1] + ((corners[k] - corners[k - 1]) * j) / 128);
+    push(corners[k]);
+  }
   const prof = (a, b, c = 0) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => { const f = fAt(x); return a + (b - a) * f - c * f * (1 - f); }) });
   const grade = {};
   for (const n of names) {

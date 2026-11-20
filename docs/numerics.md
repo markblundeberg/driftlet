@@ -1135,6 +1135,19 @@ tests or stress cases the others pass).
   drift is its summed residual. Converging to 1e-10 in $`\eta`$ makes that ~1e-15 per step in
   practice; but over steps of 1e10 s, the residual times $`dt`$ adds up, which is why a terminal
   at no current reads its current there by what it keeps ([terminals](#terminals)).
+- **Kept node by node, by its change.** Still species that only turn into each other conserve
+  their weighted sum at each node (a trap's two states, $`X^+ + X^0`$). Each one's balance sums
+  its storage, $`\mathrm{vol}\,X/dt`$, with the rates that fill and empty it, which nearly cancel
+  (under light, the capture rates run at the generation rate $`R`$), and its round-off,
+  $`\varepsilon R\,\mathrm{vol}`$, buries the storage once $`dt`$ passes $`X/(\varepsilon R)`$: the
+  balances then say only that the rates balance, as a steady state's do, and the total floats
+  on round-off. A lit trap's total drifted 3.5e-7 by 1e6 s, and 38% by 1e10 s, the current
+  50,000× off. So on a time step one of the balances is replaced by the sum, written from the
+  concentrations' changes, $`\sum_i (w_i/w_k)\,\mathrm{vol}\,(c_i - c_i^*)/dt`$, with the rates
+  left out, since they cancel exactly: the same equations, and the total kept to round-off. (Its
+  row is a steady solve's local constraint's; at a strictly neutral node whose
+  [charge rows](#strictly-neutral-materials-and-unresolved-double-layers) pivot on that species, another
+  of the combination's species takes it.) Not yet a surface's coverages.
 - **Reported.** Every solution's `conservation` lists each species stretch: its amount, its
   reference, what came in through its contacts and ports (integrated as the steps integrate the
   balances: under BDF2, by its quadrature, not a rectangle rule of the fluxes), and the resulting

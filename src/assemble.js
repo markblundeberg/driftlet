@@ -37,6 +37,8 @@
 //   6. applyLaws(dt) (src/lawRows.js): rows the laws take in place of the rows above.
 //   7. On a time step with strictly neutral nodes (combining), _chargeRows: those nodes' rows
 //      and unknowns transformed (transformed = true; Newton maps the update back).
+//   8. On a time step (transformed), localStepRows (src/lawRows.js): each node-local conserved
+//      combination of still species (a trap's states) by its change, in place of one balance.
 //
 // What it writes:
 //   res (compact): each active row's residual as above; sys: its Jacobian, ∂res/∂(unknowns),
@@ -76,7 +78,7 @@
 
 import { BlockTridiagonal } from './blockTridiagonal.js';
 import { DifferenceTerms } from './difference.js';
-import { applyLaws, snapFlat } from './lawRows.js';
+import { applyLaws, localStepRows, snapFlat } from './lawRows.js';
 
 export class Assembly {
   // Add ∂(row rb, slot rs)/∂(block cb, slot cs) to the Jacobian (nothing if either slot isn't
@@ -138,6 +140,9 @@ export class Assembly {
     applyLaws(this, dt);
     this.transformed = this.combining && dt !== Infinity;
     if (this.transformed) this._chargeRows(dt);
+    // A time step's node-local conserved combinations by their change (after the charge rows,
+    // which combine the balances as they are).
+    if (this.transformed && this.localConstraints.length > 0) localStepRows(this, dt);
   }
 
   // Clear one row, ready to be replaced: the Jacobian's (all three blocks, and the kept-aside
