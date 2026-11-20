@@ -775,9 +775,13 @@ export class Solver {
     // A face's surface species join what reacts through them. (Joined through the stretches
     // alone, Red in Ox⁺ + e⁻ = S, S = Red stood alone at its bath's level, and was held flat at
     // 1000 mol/m³ up to the face while S = Red carried the current, 1.6× too much.) The check
-    // below leaves the surface's terms out, which only makes it stricter: where every reaction
-    // balances at the contact's levels without them, the whole group, coverages and all, can sit
-    // at equilibrium with that one contact, where a steady state with one reservoir sits.
+    // below asks whether some levels of the group's surface species balance every reaction in
+    // it at once, the contact's levels given (each reaction's affinity linear in them): then
+    // the whole group, coverages and all, can sit at equilibrium with that one contact, where
+    // a steady state with one reservoir sits. (It once left the surface's terms out, and with
+    // them every reaction among surface species alone: A = S, S = F with F held 25 kJ/mol
+    // below A was held flat, no flux, while each step turned A into F at 9.9e-3 mol/(m²·s);
+    // Neon's review, 2.1.)
     const surfNode = new Map(); // ('f:s' → a node after the stretches')
     const surfOf = (f, q) => {
       const key = `${f}:${q}`;
@@ -788,9 +792,11 @@ export class Solver {
       for (const rx of itf.reactions) {
         const ks = rx.part.map((p) => this.stretchOf[(f + p.side) * n + p.i]);
         if (ks.some((k) => k < 0)) continue;
-        const all = [...ks, ...rx.surf.map((p) => surfOf(f, p.s))];
-        if (all.length > 0) join(all);
-        rxns.push([ks, (side) => affinity(side, rx.fixedA, rx.part.map((p) => [p.i, -p.nu]))]); // (a face's ν: products +, so − Σ ν η)
+        const surf = rx.surf.map((p) => [surfOf(f, p.s), -p.nu]);
+        const all = [...ks, ...surf.map(([g]) => g)];
+        if (all.length === 0) continue;
+        join(all);
+        rxns.push([all, (side) => affinity(side, rx.fixedA, rx.part.map((p) => [p.i, -p.nu])), surf]); // (a face's ν: products +, so − Σ ν η)
       }
     });
     const groups = new Map();
@@ -807,8 +813,32 @@ export class Solver {
       // held 5e-10 RT apart at the left, blocked at the right, at kf 1e10 reacted 16× the
       // contact's intake and passed Y through the blocked end; at 1e-15 RT apart, still 16×
       // (Astra's re-read of the steady solve, round 8).
-      const balanced = ([A, t]) => Math.abs(A) <= 1e-13 * t;
-      if (!rxns.every(([rk, A]) => !rk.some((k) => ks.includes(k)) || balanced(A(side)))) continue;
+      // Each of the group's reactions: A/RT at the contact's levels plus Σ ν' η_s over its
+      // surface species, whose levels are free. Eliminated by rows (largest coefficient first),
+      // what's left with no surface terms must balance.
+      const r0 = root(ks[0]);
+      const rows = rxns.filter(([all]) => root(all[0]) === r0).map(([, A, surf = []]) => {
+        const [a, t] = A(side), co = new Map();
+        for (const [g, nu] of surf) co.set(g, (co.get(g) ?? 0) + nu);
+        return { a, t, co };
+      });
+      for (let k = 0; k < rows.length; k++) {
+        let best = 0, col = -1;
+        for (const [g, v] of rows[k].co) if (Math.abs(v) > best) [best, col] = [Math.abs(v), g];
+        if (col < 0 || best <= 1e-12) continue; // (round-off left by the rows above isn't a level)
+        const pr = rows[k], pv = pr.co.get(col);
+        for (let j = k + 1; j < rows.length; j++) {
+          const w = (rows[j].co.get(col) ?? 0) / pv;
+          if (w === 0) continue;
+          for (const [g, v] of pr.co) rows[j].co.set(g, (rows[j].co.get(g) ?? 0) - w * v);
+          rows[j].co.delete(col);
+          rows[j].a -= w * pr.a;
+          rows[j].t += Math.abs(w) * pr.t;
+        }
+        pr.pivot = true;
+      }
+      const balanced = (row) => row.pivot || (Math.abs(row.a) <= 1e-13 * row.t && [...row.co.values()].every((v) => Math.abs(v) <= 1e-12));
+      if (!rows.every(balanced)) continue;
       this.flatStretches.push(...sts);
     }
     this._laws();

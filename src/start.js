@@ -58,8 +58,10 @@
 //      calls (src/timeSteps.js) and a steady solve doesn't: a face between two strictly neutral
 //      ideal regions, its φ type neutral, whose links hold some charged species in equilibrium,
 //      its two nodes set to that equilibrium, its t = 0⁺ (each passing species' μ̄ equal across
-//      it, the left node neutral, each passing species' amount over the two nodes kept; the jump
-//      in φ̂ between them the one unknown), everything else at them unchanged in concentration;
+//      it, each node neutral with a held gate's aσ counted in it, each passing species' amount
+//      over the two nodes kept, and so the gates' charge over them; the jump in φ̂ between them
+//      the one unknown, the left node's φ̂ moving with it only where the right node is gated),
+//      everything else at them unchanged in concentration;
 //      s.coldStart false. A solve that converges, a warm start and a carried state set it as
 //      their state is.
 //   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ
@@ -164,17 +166,8 @@ export function initFromComposition(s) {
   // charge the gate balances, and a level-fed one started off it, its first 1 ps step jumping
   // the gate's charge from 0.28 to 0.0035 C/m² (Astra's third pass). Not at an end box whose φ
   // its contact sets, as _portCapacitance has it.
-  const capA = new Float64Array(grid.nNodes), capB = new Float64Array(grid.nNodes);
+  const { capA, capB } = heldCapacitance(s);
   const setsPhi = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
-  model.ports.forEach((port, k) => {
-    if (!port.capacitance || s.floating.includes(2 + k)) return;
-    port.nodes.forEach((g, w) => {
-      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === grid.nNodes - 1 && setsPhi('right'))) return;
-      const aC = s.portArea[k][w] * port.capacitance.C;
-      capA[g] += aC;
-      capB[g] += aC * (s.termV[2 + k] - port.capacitance.zeroCharge);
-    });
-  });
   for (let r = 0; r < regions.length; r++) {
     if (r > 0) phiHat += interfaces[r - 1].dipole / s.VT;
     // (a graded region's material as it is at each node: here at its start, below node by node)
@@ -632,6 +625,7 @@ export function equilibrateFaces(s) {
   const { regions, interfaces, materials } = model;
   const grid = model.grid;
   s.coldStart = false;
+  const { capA, capB } = heldCapacitance(s);
   // Two strictly neutral regions meeting at a face whose links hold ions in equilibrium: where
   // c0 leaves the two sides out of it (a different fixed charge or immobile ion on each, so
   // c₊c₋ differs across it), the face reaches it at t = 0⁺, before anything diffuses, and a
@@ -654,14 +648,21 @@ export function equilibrateFaces(s) {
     const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
     let qOther = fixedAt(regions[f], grid.x[gL]) / FARADAY; // (the left node's charge from all it doesn't share)
     for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
+    // A held gate on either node: its charge is part of that node's neutrality, ρ + aσ = 0. The
+    // ions' total over the two nodes is kept, so the gates' is too: vL·aC_L·φ̂_L + vR·aC_R·φ̂_R
+    // stays as it was, φ̂_L moving with the jump where the right node is gated, and with the left
+    // node neutral the right one is. (The ions alone balanced, a gated left node gave up its
+    // gate's counter-ions to the ungated right one, and the first step lost them; Neon's review, 1.1.)
+    const aL = capA[gL], aR = capA[gR], S = vL * aL + vR * aR, phiL0 = u[bL], D0 = u[bR] - u[bL];
+    const phiLAt = (D) => (S > 0 ? phiL0 - ((vR * aR) / S) * (D - D0) : phiL0); // (falls as D rises)
+    const gateL = (D) => (capB[gL] - aL * s.VT * phiLAt(D)) / FARADAY; // (aσ/F at the left node: rises with D)
     // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
     const split = (D) =>
       pass.map((i, j) => {
         const K = (mL.cRef[i] / mR.cRef[i]) * Math.exp((mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D), cR = amount[j] / (vL * K + vR);
         return [K * cR, cR];
       });
-    const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther); // (increasing in D)
-    const D0 = u[bR] - u[bL];
+    const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther + gateL(D)); // (increasing in D)
     let lo = D0 - 1, hi = D0 + 1;
     while (qL(lo) > 0 && lo > D0 - 1e3) lo -= 2 * (hi - lo);
     while (qL(hi) < 0 && hi < D0 + 1e3) hi += 2 * (hi - lo);
@@ -673,6 +674,9 @@ export function equilibrateFaces(s) {
     }
     const D = 0.5 * (lo + hi), cs = split(D);
     const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
+    const dL = phiLAt(D) - phiL0; // (the left node's φ̂, moved where a gate on the right asks it: what it doesn't share kept)
+    u[bL] += dL;
+    for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i)) u[bL + 1 + i] += z[i] * dL;
     u[bR] = u[bL] + D;
     for (let i = 0; i < n; i++) if (mR.present[i] && !pass.includes(i)) u[bR + 1 + i] = Math.log(keep[i] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
     pass.forEach((i, j) => {
@@ -681,6 +685,25 @@ export function equilibrateFaces(s) {
     });
   }
   s.computeConcentrations();
+}
+
+// A held port's capacitance through its window, per node: capA = aC (F/m³) and capB = aC (V −
+// zeroCharge), so that aσ = capB − capA V_T φ̂. Not at an end box whose φ its contact sets, as
+// _portCapacitance has it, nor a floating port's (its V is the start's to find).
+function heldCapacitance(s) {
+  const { model } = s, grid = model.grid;
+  const capA = new Float64Array(grid.nNodes), capB = new Float64Array(grid.nNodes);
+  const setsPhi = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
+  model.ports.forEach((port, k) => {
+    if (!port.capacitance || s.floating.includes(2 + k)) return;
+    port.nodes.forEach((g, w) => {
+      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === grid.nNodes - 1 && setsPhi('right'))) return;
+      const aC = s.portArea[k][w] * port.capacitance.C;
+      capA[g] += aC;
+      capB[g] += aC * (s.termV[2 + k] - port.capacitance.zeroCharge);
+    });
+  });
+  return { capA, capB };
 }
 
 // A non-ideal material's composition at φ̂ = ph: level-fixed species (mode 1) at their η,

@@ -27,6 +27,20 @@ major version.
   capacity (4.2302 asked of 4.2289 sites) where a fresh solve on the finer grid holds 4.2112. There,
   a species' odds of a site are scaled instead. (Astra's ninth pass, from new bench/combos families
   crossing fields.)
+- A sealed cell with a held gate on a strictly neutral solution keeps its ions through its first
+  time step. At a face between two such solutions the start sets the face's t = 0⁺ equilibrium
+  (ions shared between its two nodes), balancing the ions alone: under a gate a node's neutrality
+  includes the gate's charge, so a gated node gave its counter-ions to the ungated node beside it,
+  and the first step, holding that node neutral, dropped them from its Na⁺ balance: 5.2e-3 of the
+  ions, 0.0603 C/m² onto the gate, with no warning (check() alone failed it). The gates now count,
+  and every node starts neutral with them. (Neon's first review, 1.1.)
+- A steady solve no longer stops a catalytic face that turns a solution species into a held
+  product through a surface species. A group of species reaching one contact, reacting only among
+  themselves, is held at that contact's levels when its reactions balance there; the check left
+  out the reactions among surface species alone, and the surface's terms in the others, so A = S,
+  S = F with F held 25 kJ/mol below A solved to no flux, A flat at its bath's level, and no warning,
+  while a transient settled at 9.78e-3 mol/(m²·s). It now asks whether some coverages balance every
+  reaction at once. (Neon's first review, 2.1.)
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.
