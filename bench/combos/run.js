@@ -13,6 +13,7 @@
 //   rollback   a call that throws partway (a fault injected into the linear solves) leaves the
 //              device as it was: what it does next is what a twin that never made the call does,
 //              to the last bit
+//   noop       a set() that changes nothing physical, mid-transient, changes nothing after
 //   split      advance(t) in one call and in several ends at the same state, to its tolerance
 //   charge     the charge each terminal passes over a slow ramp after a rest, in one default
 //              advance(), is what a run with its steps capped passes, to 1%
@@ -222,6 +223,44 @@ const props = {
       if (!within(dd, { mu: 1e-12, I: 1e-12, Iabs: 0, V: 1e-12 })) return `after ${op} threw at linear solve ${at} of ${calls}, then ${k === 1 ? 'advance' : 'solve'}: ${fmt(dd)}`;
     }
     return '';
+  },
+
+  noop(c, r) {
+    // Mid-transient, a set() that changes nothing physical: the same drive again, a material's D
+    // given as it is, a drive moved and moved back before any step. The device goes on as a twin
+    // that was never patched does, to the last bit.
+    const make = () => {
+      const d = new Device(clone(c.def));
+      if (!converged(d.solve())) return null;
+      d.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+      d.advance(c.plan.slow / 3, { maxSteps: 3000 });
+      return d;
+    };
+    const D = make(), T = make();
+    if (!D) return skip('no steady state at the drives');
+    const kind = r.pick(['same drive', 'same D', 'there and back']);
+    if (kind === 'same drive') D.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    else if (kind === 'same D') {
+      const leaves = [];
+      for (const [m, mat] of Object.entries(c.def.materials ?? {})) for (const [sp, v] of Object.entries(mat.species ?? {})) if (typeof v.D === 'number') leaves.push([m, sp, v.D]);
+      if (!leaves.length) return skip('no D to give again');
+      const [m, sp, Dv] = r.pick(leaves);
+      D.set({ materials: { [m]: { species: { [sp]: { D: Dv } } } } });
+    } else {
+      D.set(driveAt(c.plan, c.plan.V - c.plan.dV));
+      D.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    }
+    const [x0, y0] = [D.solution(), T.solution()];
+    const d0 = diff(x0, y0);
+    if (!within(d0, { mu: 0, I: 0, Iabs: 0, V: 0 })) return `${kind}: solution() right after: ${fmt(d0)}`;
+    const t1 = T.solution().time + c.plan.slow;
+    const [x, y] = [D.advance(t1, { maxSteps: 3000 }), T.advance(t1, { maxSteps: 3000 })];
+    if (kind !== 'there and back' && x.steps !== y.steps) return `${kind}: the next advance took ${x.steps} steps, the twin's ${y.steps}`;
+    const d1 = diff(x, y);
+    // (a drive moved restarts the time steps' order, as any discontinuity does, so there and
+    // back costs a first-order step: equal to the transient's tolerance, not to the bit)
+    const tol = kind === 'there and back' ? { mu: 1e-4, I: 1e-4, Iabs: 1e-10, V: 1e-6 } : { mu: 0, I: 0, Iabs: 0, V: 0 };
+    return within(d1, tol) ? '' : `${kind}: after the next advance: ${fmt(d1)}`;
   },
 
   split(c, r) {
