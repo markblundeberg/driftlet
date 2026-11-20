@@ -21,10 +21,11 @@
 //      - else a conductor's carrier away from the contacts: at equilibrium with the first
 //        reaction on its left face that takes it, else at the running φ̂ (level, mode 1);
 //      - else not fed by a contact: c0 is required (an error without it);
-//      - else at the level of what feeds it: the left contact's where its stretch reaches the
-//        left end, else the right's where it reaches the right end, else its first linked
-//        port's; a contact's link held or exchanged at a rate (conductance, exchange) alike; fed
-//        by none of them (reactions only), from c0, required.
+//      - else at the level of what feeds it: a contact's where its stretch reaches that end, the
+//        left one's where it reaches both, but the right one's there where the right contact
+//        alone has φ 'bulk'; else its first linked port's; a contact's link held or exchanged at
+//        a rate (conductance, exchange) alike; fed by none of them (reactions only), from c0,
+//        required.
 //      φ̂ runs from the left: a pinned or capacitive left contact's (V − zeroCharge)/V_T, else 0,
 //      plus each face's dipole. In a region where a level-fixed charged species responds to φ̂,
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
@@ -134,6 +135,8 @@ export function initFromComposition(s) {
     if (l.type !== 'conductance' && l.type !== 'exchange') return s.contactEta(side, i);
     return z[i] === 0 ? l.mu / model.RT : (z[i] * (s.termV[side === 'left' ? 0 : 1] + l.offset)) / s.VT;
   };
+  // Which contact's level a species fed at both ends starts at (see below).
+  const anchorSide = model.contacts.right.phi.type === 'bulk' && model.contacts.left.phi.type !== 'bulk' ? 'right' : 'left';
   s.unbalanced = []; // (strictly neutral regions whose start can't be neutral: see neutralPhi)
   s.uLo.fill(0);
   const eta = new Float64Array(n), cFix = new Float64Array(n), mode = new Int8Array(n); // 1 level, 2 amount
@@ -224,8 +227,16 @@ export function initFromComposition(s) {
         // (a contact's only where the stretch reaches it: a species held by a port behind a
         // blocked face took the right contact's level, 2.63 for the port's 1, and kept it for
         // ~c/k of the exchange, an early transient made up; Astra's third pass)
-        const left = st.leftOpen ? held('left', i) : NaN;
-        eta[i] = Number.isFinite(left) ? left : st.rightOpen ? held('right', i) : NaN;
+        // Fed at both ends, from the end that's plain neutral bulk at its contact's levels (an ohmic
+        // contact, a bath), where only one is: a pinned or gated end is a barrier or a double layer,
+        // the region beyond it at the other end's levels. Taken from the left whatever the ends,
+        // an illuminated GaAs | InGaAs junction solved cold with its Schottky contact on the right,
+        // and with it on the left started the GaAs's electrons at the Schottky's level, 59 thermal
+        // units from their own ohmic contact's, and was refused (round 9's mirror property).
+        const first = anchorSide === 'right' ? ['right', st.rightOpen] : ['left', st.leftOpen];
+        const second = anchorSide === 'right' ? ['left', st.leftOpen] : ['right', st.rightOpen];
+        const a = first[1] ? held(first[0], i) : NaN;
+        eta[i] = Number.isFinite(a) ? a : second[1] ? held(second[0], i) : NaN;
         if (!Number.isFinite(eta[i]) && st.linked.length > 0) eta[i] = s.portEta(model.ports[st.linked[0]], i);
         mode[i] = 1;
         if (!Number.isFinite(eta[i])) {

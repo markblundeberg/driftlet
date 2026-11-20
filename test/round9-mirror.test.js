@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device } from '../src/index.js';
-import { check } from '../src/kit.js';
+import { check, photogeneration } from '../src/kit.js';
 import { BlockTridiagonal } from '../src/blockTridiagonal.js';
 
 // A bath feeding two strictly neutral compartments; free Na⁺ blocked at the face between them,
@@ -87,6 +87,59 @@ test('three compartments behind two walls solve cold with the bath on either sid
       assert.ok(Math.abs(a - b) <= 1e-9 * Math.abs(a) + 1e-15, `${sp} at node ${g}: ${a} and ${b}`);
     }
   }
+  assert.ok(check(d1, s1, { refine: false }).ok);
+});
+
+// An illuminated GaAs | InGaAs junction at 1.26 V, its p⁺⁺ InGaAs (2.6e6 mol/m³ of acceptors)
+// under a Schottky contact. Its electrons, fed at both contacts, started at the left one's level:
+// the ohmic contact's one way round, the Schottky's the other, which put the n-GaAs's majority
+// electrons 59 thermal units from their own contact's, and every stage failed (converged false,
+// "e- is 5e-30 of the ions around it"; 13.1156 A/m² one way round, and swept in steps the other).
+const heterojunction = (mirror) => {
+  const T = 250, a = 4.448900286002634e-6, b = 2.017149735360538e-7, L = a + b;
+  const material = (epsr, D, cRef, gap) => ({
+    epsr, T, statistics: [{ type: 'fermi-dirac', species: ['e-', 'h+'] }],
+    species: { 'e-': { D, cRef, mu0: 0 }, 'h+': { D: 0.0012637277018236297, cRef: 8.842504073566548, mu0: gap } },
+  });
+  const light = (name, from, to, alpha, flux) => {
+    const p = photogeneration({ material: name, from, to, alpha, flux, toward: '-x', mu: 197419.5853017973 });
+    if (mirror) for (const [k, q] of Object.entries(p.kf)) p.kf[k] = { x: q.x.map((x) => L - x).reverse(), values: q.values.toReversed() };
+    return p;
+  };
+  const regions = [
+    { name: 'L0', material: 'GaAs', length: a, fixedCharge: 58.3553010055335, grid: { hmin: 1.3111918794227338e-9, hmax: 1.1651713375267704e-7, ratio: 1.1635630321037025 } },
+    { name: 'L1', material: 'InGaAs', length: b, fixedCharge: -2562727.9411785407, grid: { hmin: 4.2516720611230977e-10, hmax: 6.576976361266066e-9, ratio: 1.117986361719668 } },
+  ];
+  const ohmic = { V: 0, terminal: 'e-', phi: 'bulk', species: { 'e-': 'equilibrium' } };
+  const schottky = { V: 1.261495271930471, terminal: 'e-', phi: 'pinned', zeroCharge: 0.2, species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } } };
+  return {
+    T, species: [{ name: 'e-', z: -1 }, { name: 'h+', z: 1 }],
+    materials: { GaAs: material(13.1, 0.021974199818470205, 0.5937109877966112, 139528.38602781133), InGaAs: material(13.373618681187509, 0.02668992654355304, 0.4902889732754558, 127560.11116220352) },
+    regions: mirror ? regions.toReversed() : regions,
+    interfaces: [{ dipole: (mirror ? -1 : 1) * 0.03852239768405745, species: { 'e-': { type: 'conductance', G: 90918.76664624119 }, 'h+': 'equilibrium' } }],
+    contacts: mirror ? { left: schottky, right: ohmic } : { left: ohmic, right: schottky },
+    bulkReactions: [
+      { equation: 'e- + h+ = 0', srh: { GaAs: { tauN: 1e-7, tauP: 1e-7 }, InGaAs: { tauN: 1e-7, tauP: 1e-7 } } },
+      light('InGaAs', a, L, 6624626.256063667, 0.000044612612231850685),
+      light('GaAs', 0, a, 196270.9093873603, 0.000011725081843796341),
+    ],
+  };
+};
+
+test("a carrier fed at both ends starts at the ohmic contact's level, on either side (semi 20)", () => {
+  // The start itself: the GaAs's electrons at the ohmic contact's level (η = 0 at 0 V), however
+  // the device is written.
+  for (const mirror of [false, true]) {
+    const d = new Device(heterojunction(mirror)), sv = d.solver;
+    sv.initFromComposition();
+    const g = mirror ? sv.nNodes - 1 : 0;
+    assert.ok(Math.abs(sv.u[sv.blockOfNode[g] * sv.M + 1]) < 1e-12, `mirror ${mirror}: η_e ${sv.u[sv.blockOfNode[g] * sv.M + 1]}`);
+  }
+  const s0 = new Device(heterojunction(false)).solve(), d1 = new Device(heterojunction(true)), s1 = d1.solve();
+  assert.equal(s0.converged, true);
+  assert.equal(s1.converged, true, s1.warnings.join('; '));
+  const I0 = s0.terminals.right.current, I1 = s1.terminals.left.current;
+  assert.ok(Math.abs(I0 - 13.115641536) < 1e-6 && Math.abs(I1 / I0 - 1) < 1e-9, `${I0} and ${I1}`);
   assert.ok(check(d1, s1, { refine: false }).ok);
 });
 
