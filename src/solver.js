@@ -752,12 +752,20 @@ export class Solver {
     // GaAs with ~1e-4 electrons per cm³ couldn't carry the inversion layer's level with it.
     const group = this.stretches.map((_, k) => k), root = (k) => (group[k] === k ? k : (group[k] = root(group[k])));
     const join = (ks) => ks.forEach((k) => (group[root(k)] = root(ks[0])));
-    const rxns = []; // [stretches, A/RT at the contact's levels, as a function of the side]
+    // A/RT at the contact's levels, with the size of what it sums, |fixedA| + Σ |ν| × each η's
+    // own pieces (|z|(|V| + |offset|)/VT, or |μ|/RT): the scale of its round-off.
+    const termV = (side) => this.termV[side === 'left' ? 0 : 1];
+    const etaSize = (side, i) => {
+      const link = model.contacts[side].species[i];
+      return this.z[i] === 0 ? Math.abs(link.mu / model.RT) : (Math.abs(this.z[i]) * (Math.abs(termV(side)) + Math.abs(link.offset))) / this.VT;
+    };
+    const affinity = (side, fixedA, terms) => terms.reduce(([a, t], [i, nu]) => [a + nu * this.contactEta(side, i), t + Math.abs(nu) * etaSize(side, i)], [fixedA, Math.abs(fixedA)]);
+    const rxns = []; // [stretches, [A/RT, its scale] as a function of the side]
     regions.forEach((reg, q) => {
       for (const rx of this.rxs.filter((_, x) => this.runsIn[q][x])) {
         const ks = rx.sp.map((i) => this.stretchOf[q * n + i]);
         join(ks);
-        rxns.push([ks, (side) => rx.sp.reduce((a, i, p) => a + rx.nu[p] * this.contactEta(side, i), rx.fixedA)]);
+        rxns.push([ks, (side) => affinity(side, rx.fixedA, Array.from(rx.sp, (i, p) => [i, rx.nu[p]]))]);
       }
     });
     // A face's surface species join what reacts through them. (Joined through the stretches
@@ -778,7 +786,7 @@ export class Solver {
         if (ks.some((k) => k < 0)) continue;
         const all = [...ks, ...rx.surf.map((p) => surfOf(f, p.s))];
         if (all.length > 0) join(all);
-        rxns.push([ks, (side) => rx.part.reduce((a, p) => a - p.nu * this.contactEta(side, p.i), rx.fixedA)]); // (a face's ν: products +, so − Σ ν η)
+        rxns.push([ks, (side) => affinity(side, rx.fixedA, rx.part.map((p) => [p.i, -p.nu]))]); // (a face's ν: products +, so − Σ ν η)
       }
     });
     const groups = new Map();
@@ -790,7 +798,13 @@ export class Solver {
     for (const ks of groups.values()) {
       const sts = ks.map((k) => this.stretches[k]), side = sts[0].leftOpen ? 'left' : 'right';
       if (!sts.every((st) => plain(st) && st.leftOpen !== st.rightOpen && (side === 'left' ? st.leftOpen : st.rightOpen))) continue;
-      if (!rxns.every(([rk, A]) => !rk.some((k) => ks.includes(k)) || Math.abs(A(side)) < 1e-9)) continue;
+      // Balanced means to the round-off of the affinity's terms, not to a set 1e-9 RT: flat rows
+      // replace every balance, so each box reacts at kf c A with no flux between them. Y = Z
+      // held 5e-10 RT apart at the left, blocked at the right, at kf 1e10 reacted 16× the
+      // contact's intake and passed Y through the blocked end; at 1e-15 RT apart, still 16×
+      // (Astra's re-read of the steady solve, round 8).
+      const balanced = ([A, t]) => Math.abs(A) <= 1e-13 * t;
+      if (!rxns.every(([rk, A]) => !rk.some((k) => ks.includes(k)) || balanced(A(side)))) continue;
       this.flatStretches.push(...sts);
     }
     this._laws();

@@ -1370,7 +1370,11 @@ Notes:
   floating keeps the charge on its capacitance).
 - **A terminal that only stores has no steady state.** Driven at any other current, such a
   terminal only stores what comes in (a host filling, a capacitor charging), and the solve says
-  so at once.
+  so at once. Where several terminals driven by currents feed one closed pool (two electrodes
+  cycling one redox couple, a contact and a port passing K⁺ in and out), it's their net feed that
+  stores, each current weighted by what it carries into the pool; a net feed under 1e-12 of the
+  currents feeding it is taken as zero, and the pool keeps what it holds (any larger one is
+  refused, as storing).
 - **Where a direct solve fails, it ramps.** At a bias, it ramps the contacts' voltages from where
   they were last solved (the left one first, where it moved), or from level terminals on a cold
   start; with generation reactions (below), it ramps their rates up from nearly nothing.

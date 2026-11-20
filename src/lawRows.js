@@ -35,7 +35,9 @@
 //                    has such a terminal only at I = 0: Solver._solveSteadyAll stops at any
 //                    other.) Calls _assembleBookkeeping where it needs the charges.
 //   captureLocal(s)  when a steady solve's steady system begins (Solver._steadyFromHere): each
-//                    local constraint's reference[j], its sum at node nodes[j] now.
+//                    local constraint's reference[j], its sum at node nodes[j] now; within a
+//                    steady solve (s.localKept, set by keepLocal(s) in Solver.solveSteady and
+//                    cleared on its return), the sum the solve began with there.
 //   snapFlat(s)      in a steady assembly (dt = ∞), before the concentrations: each flat
 //                    stretch's level (u and uLo) set at every node to its first node's.
 //   applyLaws(s, dt) at the end of Solver.assemble(dt), after every kernel and the terminals:
@@ -184,11 +186,20 @@ export function captureLaws(s) {
 }
 
 // Each local constraint's weighted sum at each node, as the state holds it now: what a steady
-// solve keeps.
+// solve keeps. Within one (s.localKept, which keepLocal sets), the sums it began with, wherever
+// the same combination sits at the same node: a nested stage re-captured them from a state the
+// solve had laid out. A cold retry after a step laid out c0 = 1 where an immobile Q held 5;
+// the resistance's continuation re-captured 1 and returned Q = 1, converged, unwarned (Astra's
+// re-read of the steady solve, round 8).
 export function captureLocal(s) {
   const { n, c, th, nSurf } = s;
   for (const lc of s.localConstraints) {
     lc.nodes.forEach((g, j) => {
+      const kept = s.localKept?.get(localKey(lc, g));
+      if (kept !== undefined) {
+        lc.reference[j] = kept;
+        return;
+      }
       let t = 0;
       for (const { i, q, k, w } of lc.parts) {
         if (i !== undefined) t += w * c[g * n + i];
@@ -198,6 +209,15 @@ export function captureLocal(s) {
     });
   }
 }
+
+// The local constraints' sums at the start of a steady solve, by combination and node, for
+// captureLocal to hold through its stages (a redrive() finds the laws again, references zeroed).
+export function keepLocal(s) {
+  captureLocal(s);
+  s.localKept = new Map(s.localConstraints.flatMap((lc) => lc.nodes.map((g, j) => [localKey(lc, g), lc.reference[j]])));
+}
+
+const localKey = (lc, g) => `${g}|${lc.row}|${lc.parts.map(({ i, q, k, w }) => (i !== undefined ? `${i}:${w}` : `${k}.${q}:${w}`)).join()}`;
 
 // The islands' summed balances (steady solves only): Σ A_f u over the faces into each, its
 // row (its middle node's) pinned in the factorised matrix and the sum bordered (solveBordered) like a

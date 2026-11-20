@@ -112,7 +112,8 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     const stuck = steady ? solver.stuckReactions() : [];
     if (ledger && stuck.length > 0) {
       ledger.ok = false;
-      ledger.summary = `not a steady state: ${stuck.map((s) => `${s.where} is ${s.immobile === undefined ? '' : 'up to '}${sig(s.affinity * solver.VT * 1e3)} mV of affinity from equilibrium${s.immobile === undefined ? '' : ` where a participant can't move`}`).join(', ')}, too slow for the solve to see (see the warnings); its ledgers say only that nothing moves fast enough to count`;
+      const how = (s) => (s.charging ? ` ${sig(s.affinity * solver.VT * 1e3)} mV from its source, which a terminal that only charges reaches in a steady state` : s.face ? ` ${sig(s.affinity * solver.VT * 1e3)} mV apart across the face, where nothing passes in a steady state` : s.links !== undefined ? ` ${sig(s.affinity * solver.VT * 1e3)} mV from where its rate links balance` : ` ${s.immobile === undefined && s.closed === undefined ? '' : 'up to '}${sig(s.affinity * solver.VT * 1e3)} mV of affinity from equilibrium${s.immobile !== undefined ? ` where a participant can't move` : s.closed !== undefined ? ' where no reservoir reaches' : ''}`);
+      ledger.summary = `not a steady state: ${stuck.map((s) => `${s.where} is${how(s)}`).join(', ')}, too slow for the solve to see (see the warnings); its ledgers say only that nothing moves fast enough to count`;
     }
     items.push(ledger ?? conservation(sol, Math.max(...device.model.grid.area)));
     if (steady && refine) items.push(gridCheck(device, sol, tol, ledger.details.gross));

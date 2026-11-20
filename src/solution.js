@@ -431,12 +431,17 @@ function failureWarnings(sol, solver, result) {
   // A failed solve with a reaction that a steady state needs at equilibrium, left far from it (see
   // stuckReactions): one too slow for the steady solve's time steps, which reach ~1e12 of the
   // slowest diffusion time (Y = Z at kf 1e-10/s failed with nothing said).
-  const slow = result.unsolved && !ch && !un && !lost ? solver.stuckReactions() : [];
+  // (a reaction's own checks: a failed state, the start's, needn't be near equilibrium anywhere)
+  const slow = result.unsolved && !ch && !un && !lost ? solver.stuckReactions({ all: false }) : [];
   if (result.converged === false && ch) {
     const A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     sol.warnings.push(
       `${ch.terminal}: driven at ${ch.current.toPrecision(3)} ${A}, it has no steady state: ` +
-        (ch.what.length > 0 ? `what it feeds (${ch.what.join(', ')}) is closed but for it, so it only stores what comes in (a host filling, a surface's couple turning over)` : 'it passes current only by charging its capacitance') +
+        (ch.what.length > 0
+          ? ch.others?.length > 0
+            ? `what it feeds (${ch.what.join(', ')}) is closed but for it and ${ch.others.join(', ')}, whose currents into it don't balance, so it only stores what comes in`
+            : `what it feeds (${ch.what.join(', ')}) is closed but for it, so it only stores what comes in (a host filling, a surface's couple turning over)`
+          : 'it passes current only by charging its capacitance') +
         '. advance() in time instead; at no current, a steady solve keeps the charge it holds.',
     );
   } else if (result.converged === false && un) {
@@ -677,12 +682,26 @@ function stateWarnings(sol, solver, stopped) {
   });
   // A reaction a steady state needs at equilibrium, left out of it (see stuckReactions).
   if (sol.steady) {
-    for (const { where, affinity, immobile } of solver.stuckReactions()) {
+    for (const { where, affinity, immobile, closed, links, face, charging } of solver.stuckReactions()) {
+      if (charging) {
+        sol.warnings.push(
+          `${where}: ${(affinity * solver.VT * 1e3).toPrecision(3)} mV from its source, though it passes current only by charging, so a steady state has it at its source: its RC time is too long for the solve to resolve, and it was left near where the solve began. This is not a steady state: advance() in time, or lower its R.`,
+        );
+        continue;
+      }
+      const mV = (affinity * solver.VT * 1e3).toPrecision(3), at = where.startsWith('interfaces') ? 'at its face' : `at ${closed} node${closed === 1 ? '' : 's'}`;
+      const what = face
+        ? `${where}: its levels across the face are ${mV} mV apart, yet nothing makes or uses it there and at most one end lets it in, so a steady state passes none through the face and needs them level. `
+        : links !== undefined
+          ? `${where}: held by these rate links alone, its level is ${mV} mV from where their rates balance, yet nothing else makes or uses it, so a steady state needs them to balance. `
+          : closed !== undefined
+            ? `${where}: out of equilibrium by up to ${mV} mV of affinity ${at}, in a part of the device that no contact, port, flow or fixed reservoir reaches, so a steady state needs equilibrium there. `
+            : immobile === undefined
+              ? `${where}: out of equilibrium by ${mV} mV of affinity wherever it acts, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium. `
+              : `${where}: out of equilibrium by up to ${mV} mV of affinity at ${immobile} node${immobile === 1 ? '' : 's'} where it alone changes a participant that can't move, so a steady state needs it at equilibrium there. `;
       sol.warnings.push(
-        (immobile === undefined
-          ? `${where}: out of equilibrium by ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity wherever it acts, yet nothing else makes or uses what it changes, so a steady state needs it at equilibrium. `
-          : `${where}: out of equilibrium by up to ${(affinity * solver.VT * 1e3).toPrecision(3)} mV of affinity at ${immobile} node${immobile === 1 ? '' : 's'} where it alone changes a participant that can't move, so a steady state needs it at equilibrium there. `) +
-          'Its rate is too small for the solve to resolve, and it was left where the solve began: this is not a steady state. Raise its rate constant (the steady state does not depend on it), or advance() in time to see how slowly it gets there.',
+        what +
+          `Its rate is too small for the solve to resolve, and it was left where the solve began: this is not a steady state. Raise its rate constant${where.includes('species[') ? ' (the link\'s k, v, P or G)' : ''} (the steady state does not depend on it), or advance() in time to see how slowly it gets there.`,
       );
     }
   }

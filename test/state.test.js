@@ -115,7 +115,7 @@ const SCRATCH = new Set([
   // a step's own: where it lands, its source reading, the laws read as changes this step
   'landing', 'sourceBefore', 'combining', 'lawForm', 'steady', 'sourceOverride',
   // the laws a steady solve captures as it begins (captureLaws), and its stages' bookkeeping
-  'lawRefs', 'chargeRefs', 'pins', 'pinnedIslands', 'islandsOn', 'steadyAt', 'carried', 'generationScale', 'dimmer', 'solveAmounts',
+  'lawRefs', 'chargeRefs', 'pins', 'pinnedIslands', 'islandsOn', 'steadyAt', 'carried', 'generationScale', 'dimmer', 'solveAmounts', 'localKept',
   // derived from the drives: the laws and constraints, rebuilt by redrive() (_laws)
   'constraints', 'islands', 'localConstraints', 'affinities', 'carriers', 'contactLaw', 'contactQ', 'floating', 'drivenKey',
   'stretches', 'flatStretches', // (each stretch's conserved flag)

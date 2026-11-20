@@ -35,7 +35,8 @@
 //   solved; this.unreached, charging, drifted, settling, modelError and conditioning cleared),
 //   finds the laws again where how a terminal is driven, read at this.time, has changed since
 //   they were found (this._lawsNow: a waveform current zero now and not then, or the reverse),
-//   captures the laws, and
+//   captures the laws and the local constraints' sums (keepLocal: each stage holds those the
+//   solve began with, a cold layout's or a redrive()'s notwithstanding), and
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
 //   current that only charges a capacitance or feeds a conserved combination (a constraint):
@@ -123,8 +124,9 @@
 //                            this.unreached says what the held voltages passed, where both ways
 //                            showed a limit: reached ±20 V, or stopped by failing held solves
 //                            after the current had turned away from the target. Each time its
-//                            drive is put back, the local constraints' references are taken from
-//                            the state again (captureLocal), which redrive() zeroed.
+//                            drive is put back, the local constraints' references are put back
+//                            as the solve began (captureLocal, from this.localKept), which
+//                            redrive() zeroed.
 //
 // Also: slowestTime() = L²/D_min over the species present with D > 0 in each region (a graded
 // D's values over its region in place of its material's; 1 where none), fastestTime() = h_min²/D_max over the same (slowestTime where
@@ -133,10 +135,18 @@
 // alone changes a combination nothing feeds and whose affinity keeps one sign, over 1e-6, wherever
 // it acts, { where, affinity } (the smallest); each neutral species fed only by contacts' rate
 // links (exchange, velocity), unreacted, with no port or flow, whose links all push it one way
-// by over 1e-6 (η outside − η at the contact), { where: the links, affinity }; and each bulk
-// reaction out of equilibrium, over
-// 1e-6, at a node where it alone changes a participant that can't move, { where, affinity (the
-// largest there), immobile: how many nodes } (see its comment).
+// by over 1e-6 (η outside − η at the contact), { where: the links, affinity }, or whose links'
+// summed rates over their slope put it over 1e-6 from where they balance, { where, affinity,
+// links: how many }; each bulk reaction out of equilibrium, over 1e-6, at a node where it alone
+// changes a participant that can't move, { where, affinity (the largest there), immobile: how
+// many nodes } (see its comment); each bulk or face reaction out of equilibrium, over 1e-6, in a
+// part no contact, port, flow or fixed participant (fixedA ≠ 0, or a generation) reaches,
+// { where, affinity (the largest), closed: how many nodes }; each face's permeability or
+// conductance in a stretch nothing makes or uses, with no port and at most one end open, whose
+// levels differ by over 1e-6, { where, affinity, face: true }; and each terminal behind a
+// resistance that passes current only by charging, over 1e-6 V_T from its source, { where: the
+// terminal, affinity: (V − V_src)/V_T, charging: true }. With { all: false } (a failed solve's
+// warning), the one-sign and immobile kinds only.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Converged: the state solves the steady equations as step(∞) solved them; or, not direct,
@@ -161,9 +171,10 @@
 // devices that needed each stage are named in its comments.
 
 import { profileAt, sourceAt } from './device.js';
+import { solveFlat } from './dense.js';
 import { DeviceError } from './errors.js';
-import { chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
-import { captureLaws, captureLocal, planeSlot } from './lawRows.js';
+import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
+import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
 
 export class SteadySolves {
@@ -236,6 +247,7 @@ export class SteadySolves {
     this._lawsNow(); // (a waveform's current, zero or not at this time: see noCurrent in src/laws.js)
     captureLaws(this);
     this.computeConcentrations();
+    keepLocal(this); // (what each node's immobile combinations hold now, through every stage)
     this.solveAmounts = this._columnAmounts(); // (what the giant steps keep of an unkept amount: see _steadySteps)
     this.steady = true; // (the steady system's rows; sources at the present time)
     this.steadyAt = this.time; // (which a pseudo-transient's steps don't move on)
@@ -252,6 +264,7 @@ export class SteadySolves {
     } finally {
       this.steady = false;
       this.solveAmounts = null;
+      this.localKept = null;
     }
   }
 
@@ -266,12 +279,21 @@ export class SteadySolves {
       // (A law fed by several terminals charges only if their currents' net feed into it isn't
       // zero, Σ λ_t I_t, λ_t = w/z on what t feeds: +1 A/m² in at one terminal and −1 out at
       // another, each passing K⁺ into one pool, was refused as charging, where the transient
-      // settles; Astra's fourth pass. An electrode's charge column, as before.)
+      // settles; Astra's fourth pass. An electrode's current enters through its charge column,
+      // at λ = w/z there: two ports running Fe²⁺ = Fe³⁺ + e⁻ at ±1 mA/m², what one makes the
+      // other takes, were refused at zero steps as charging the closed Fe³⁺; Astra's re-read of
+      // the steady solve, round 8. A capacitance alone still charges: its column is all it feeds.)
       const net = (cs) => {
-        if (cs.carriers?.length) return true;
         let sum = 0, size = 0;
         for (const t of cs.terminals) {
           if (this.terms[t].drive.kind !== 'I') continue;
+          const cr = cs.carriers?.find((q) => q.k === t);
+          if (cr) {
+            const x = (cr.w / carrierZ(this, t)) * sourceAt(this.terms[t].drive.src, this.time);
+            sum += x;
+            size += Math.abs(x);
+            continue;
+          }
           const p = cs.parts.find((q) => feeds(t, this.stretches[q.stretch]) && this.z[this.stretches[q.stretch].species] !== 0);
           if (!p) return true;
           const x = (p.w / this.z[this.stretches[p.stretch].species]) * sourceAt(this.terms[t].drive.src, this.time);
@@ -293,7 +315,9 @@ export class SteadySolves {
           return `${sf.species[slot].name} on ${sf.face >= 0 ? `interfaces[${sf.face}]` : `ports ${sf.name}`}`;
         }),
       ]);
-      this.charging = { terminal: this.terms[k].name, current: I, what };
+      // (and the other terminals driven by currents into the same pool, whose net feed it is)
+      const others = [...new Set(laws.flatMap((cs) => cs.terminals))].filter((t) => t !== k && this.terms[t].drive.kind === 'I').map((t) => this.terms[t].name);
+      this.charging = { terminal: this.terms[k].name, current: I, what, others };
       return { converged: false, steps: 0, iterations: 0, history: [] };
     }
     const r = this._steadyFromHere(opts);
@@ -308,7 +332,7 @@ export class SteadySolves {
   _steadyFromHere(opts) {
     this.conditioning = null;
     this.computeConcentrations();
-    captureLocal(this); // immobile combinations keep, node by node, what they hold now
+    captureLocal(this); // immobile combinations keep, node by node, what they held as the solve began
     this.sourceTime = this.time;
     // Continuation applies where the right terminal is held at a voltage, against a held left one.
     const [dl, dr] = [this.terms[0].drive, this.terms[1].drive];
@@ -989,11 +1013,52 @@ export class SteadySolves {
         }
       }
     };
+    const kept = () => spectators.every((k) => !(Math.abs(this.amount(this.stretches[k]) - this.referenceAmounts[k]) > 1e-12 * Math.abs(this.referenceAmounts[k])));
     for (let pass = 0; pass < 50; pass++) {
       coupled = false;
       for (const k of spectators) sweep(this.stretches[k], k);
       if (!coupled) break;
-      if (spectators.every((k) => !(Math.abs(this.amount(this.stretches[k]) - this.referenceAmounts[k]) > 1e-12 * Math.abs(this.referenceAmounts[k])))) break;
+      if (kept()) break;
+    }
+    // Coupled tightly, the sweeps creep: P and Q filling a lattice to 4.999 of its 10 sites each
+    // move each other almost one for one, and after the 50 passes Q, swept first, was still
+    // 7.0e-5 high (P first: exact). Then a joint Newton on every spectator's shift at once
+    // (Astra's re-read of the steady solve, round 8).
+    if (coupled && !kept()) {
+      const m = spectators.length, J = new Float64Array(m * m), r = new Float64Array(m), x = new Float64Array(m);
+      const t = this.dV2 ?? (this.dV2 = new Float64Array(M)), sts = spectators.map((k) => this.stretches[k]);
+      const within = (st, g) => g >= st.nodes[0] && g <= st.nodes[1];
+      for (let it = 0; it < 30 && !kept(); it++) {
+        J.fill(0);
+        sts.forEach((st, a) => {
+          r[a] = this.referenceAmounts[spectators[a]] - this.amount(st);
+          // (∂ amount_a / ∂ shift_b: Σ vol ∂c_a/∂η_b over the nodes they share, and a diffuse
+          // layer's Σ_j ∂Γ_a/∂c_j ∂c_j/∂η_b at its edge node, as the sweep reads its own)
+          for (let g = st.nodes[0]; g <= st.nodes[1]; g++) {
+            this._dc(g, st.species, t);
+            sts.forEach((sb, b) => {
+              if (within(sb, g)) J[a * m + b] += this.model.grid.vol[g] * t[1 + sb.species];
+            });
+          }
+          this.diffList.forEach((dl) => {
+            if (!within(st, dl.g)) return;
+            for (let j = 0; j < n; j++) {
+              const gj = dl.dl.dgdc[st.species * n + j];
+              if (gj === 0 || !this.present[dl.g * n + j]) continue;
+              this._dc(dl.g, j, t);
+              sts.forEach((sb, b) => {
+                if (within(sb, dl.g)) J[a * m + b] += this.model.grid.area[dl.g] * gj * t[1 + sb.species];
+              });
+            }
+          });
+        });
+        solveFlat(J, r, x, m);
+        if (!x.subarray(0, m).every(Number.isFinite)) break;
+        sts.forEach((st, b) => {
+          for (let g = st.nodes[0]; g <= st.nodes[1]; g++) u[this.blockOfNode[g] * M + 1 + st.species] += x[b];
+        });
+        this.computeConcentrations();
+      }
     }
     if (changed) this.computeConcentrations();
   }
@@ -1019,8 +1084,43 @@ export class SteadySolves {
   // port's slow couple at its starting composition, each converged without a word. (A face
   // reaction stands on its affinity where the steady system is solved directly, so there it's
   // only caught here if that couldn't be arranged; by giant steps, it's checked like the rest.)
-  stuckReactions() {
+  stuckReactions({ all = true } = {}) {
     const { n, M, u, uLo, model } = this, grid = model.grid, S = this.stretches.length, X = S + this.surfCols.length, out = [], direct = this._directSteady();
+    // Where no reservoir reaches (no contact, port or flow brings any of it in, and no reaction
+    // trades with a fixed participant: fixedA = 0), a steady state is equilibrium: Σ η_i (∇·J_i
+    // − Σ ν r) = 0 over such a part, by parts, is its dissipation, Σ J·(−∇η) + Σ r a, each term
+    // ≥ 0, so each is 0. So every reaction in it is at equilibrium wherever it acts, and every
+    // face's link passes nothing. The checks of a reaction alone (needed, below) missed two: a
+    // cycle U = V = W = U, any two spanning what the third changes, at kf 1e-32 left at its c0
+    // (1, 2, 9; its equilibrium 4, 4, 4); and P = Q in two pools across a blocked face, one at
+    // equilibrium hiding the other at 1.9 RT (Astra's re-read of the steady solve, round 8).
+    // (Groups: the stretches, joined by what reacts them, a face's surface species too.)
+    const group = this.stretches.map((_, k) => k), root = (k) => (group[k] === k ? k : (group[k] = root(group[k])));
+    const join = (ks) => ks.forEach((k) => (group[root(k)] = root(ks[0])));
+    const surfNode = new Map(), surfOf = (f, q) => surfNode.get(`${f}:${q}`) ?? surfNode.set(`${f}:${q}`, group.push(group.length) - 1).get(`${f}:${q}`);
+    const opens = [];
+    this.stretches.forEach((st, k) => {
+      if (st.leftOpen || st.rightOpen || st.ports.length > 0 || model.regions.slice(st.regions[0], st.regions[1] + 1).some((reg) => reg.velocity !== 0)) opens.push(k);
+    });
+    model.regions.forEach((reg, q) => this.rxs.forEach((rx, x) => {
+      if (!this.runsIn[q][x]) return;
+      const ks = Array.from(rx.sp, (i) => this.stretchOf[q * n + i]);
+      join(ks);
+      if (rx.fixedA !== 0 || model.reactions[x].generation) opens.push(ks[0]);
+    }));
+    const faceNodes = (f, rx) => [...rx.part.map((p) => this.stretchOf[(f + p.side) * n + p.i]), ...rx.surf.map((p) => surfOf(f, p.s))];
+    model.interfaces.forEach((itf, f) => itf.reactions.forEach((rx) => {
+      const ks = faceNodes(f, rx).filter((k) => k >= 0);
+      if (ks.length === 0) return;
+      join(ks);
+      if (rx.fixedA !== 0 || ks.length < rx.part.length + rx.surf.length) opens.push(ks[0]);
+    }));
+    const open = new Set(opens.map(root));
+    const closed = (k) => all && k >= 0 && !open.has(root(k));
+    const shut = (where, as) => {
+      const off = as.filter((a) => Math.abs(a) > 1e-6);
+      if (off.length > 0) out.push({ where, affinity: off.reduce((m, a) => (Math.abs(a) > Math.abs(m) ? a : m)), closed: off.length });
+    };
     const passes = (k) => !noCurrent(this.terms[k], this.time);
     const fed = (w) => w.some((x, k) => x !== 0 && ((k >= X && passes(this.carriers[k - X])) || (k < S && this.terms.some((t, j) => t.drive.kind === 'I' && passes(j) && feeds(j, this.stretches[k])))));
     const needed = (rx) => {
@@ -1039,10 +1139,12 @@ export class SteadySolves {
         // (an affinity row holds it at equilibrium only where the steady system is solved
         // directly; by giant steps, it's never enforced: a face reaction at 1e-30 left its c0,
         // converged, unwarned; Fable round 3's review of src/steady.js)
-        if ((direct && this.affinities.some((af) => af.rx === rx)) || !needed(rx)) return;
         const gS = itf.surfaceSide ? gR : gL;
         const bf = this.blockOfFace[f], w = (p) => { const s = planeSlot(this, f, p); return s < 0 ? 0 : u[bf * M + s] + uLo[bf * M + s]; }; // (at a layer's plane)
-        report(`interfaces[${f}].reactions[${q}]`, [rx.surf.reduce((a, p) => a - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((a, p) => a - p.nu * (eta(p.side ? gR : gL, 1 + p.i) + w(p)), rx.fixedA))]);
+        const a = rx.surf.reduce((t, p) => t - p.nu * eta(gS, 1 + n + p.s), rx.part.reduce((t, p) => t - p.nu * (eta(p.side ? gR : gL, 1 + p.i) + w(p)), rx.fixedA));
+        const where = `interfaces[${f}].reactions[${q}]`;
+        if (!(direct && this.affinities.some((af) => af.rx === rx)) && needed(rx) && report(where, [a])) return;
+        if (closed(faceNodes(f, rx)[0] ?? -1)) shut(where, [a]);
       });
     });
     // Where a participant can't move (D = 0, inside a region without flow or mixing, away from its
@@ -1073,16 +1175,18 @@ export class SteadySolves {
       // frozen one passed for steady at 4.6 RT of affinity, check() saying "equilibrium" (Fable
       // round 5). Light that's balanced by recombination isn't alone in what it changes.)
       const rx = this.rxs[x];
-      const as = [], own = [];
+      const as = [], own = [], inClosed = [];
       for (let g = 0; g < this.nNodes; g++) {
         if (!(rx.kfNode[g] > 0 || rx.srh?.[this.nodeMaterial[g]])) continue;
         const a = rx.sp.reduce((t, i, p) => t + rx.nu[p] * eta(g, 1 + i), rx.fixedA);
         as.push(a);
         if (held(x, g)) own.push(a);
+        if (closed(this.stretchOf[grid.nodeRegion[g] * n + rx.sp[0]])) inClosed.push(a);
       }
       if (needed(mrx) && report(`bulkReactions[${x}]`, as)) return;
       const off = own.filter((a) => Math.abs(a) > 1e-6);
       if (off.length > 0) out.push({ where: `bulkReactions[${x}]`, affinity: off.reduce((m, a) => (Math.abs(a) > Math.abs(m) ? a : m)), immobile: off.length });
+      else shut(`bulkReactions[${x}]`, inClosed);
     });
     model.ports.forEach((port, k) => {
       port.reactions.forEach((rx, q) => {
@@ -1103,7 +1207,47 @@ export class SteadySolves {
       if (model.regions.slice(r0, r1 + 1).some((reg) => reg.velocity !== 0)) continue;
       const sides = [...(st.leftOpen ? ['left'] : []), ...(st.rightOpen ? ['right'] : [])], links = sides.map((side) => model.contacts[side].species[i]);
       if (!links.every((l) => l.type === 'exchange' || l.type === 'velocity')) continue;
-      report(sides.map((side) => `contacts.${side}.species['${model.species[i].name}']`).join(', '), sides.map((side, j) => (links[j].type === 'exchange' ? links[j].mu / model.RT : this.contactEta(side, i)) - eta(side === 'left' ? 0 : this.nNodes - 1, 1 + i)));
+      const where = sides.map((side) => `contacts.${side}.species['${model.species[i].name}']`).join(', ');
+      const as = sides.map((side, j) => (links[j].type === 'exchange' ? links[j].mu / model.RT : this.contactEta(side, i)) - eta(side === 'left' ? 0 : this.nNodes - 1, 1 + i));
+      if (report(where, as) || !all) continue;
+      // Pushing both ways, their rates summed, against their slope (as rateHeld does where the
+      // steady system is solved directly): two exchange contacts at k = 1e-32 toward 0.5 and 8,
+      // on giant steps, left W at its c0 of 1 or 3 unwarned, the two through-fluxes 3× apart
+      // (Astra's re-read of the steady solve, round 8).
+      let q = 0, slope = 0;
+      sides.forEach((side, j) => {
+        const g = side === 'left' ? 0 : this.nNodes - 1, A = grid.area[g], l = links[j], x = Math.min(as[j], 700);
+        const [r, d] = l.type === 'exchange' ? [l.k * x, l.k] : [l.v * this.c[g * n + i] * Math.expm1(x), l.v * this.c[g * n + i] * Math.exp(x)];
+        q += A * r;
+        slope += A * d;
+      });
+      if (Math.abs(q / slope) > 1e-6) out.push({ where, affinity: q / slope, links: sides.length });
+    }
+    // A face's rate link (a permeability, a conductance) inside a stretch that nothing makes or
+    // uses, with no port and at most one end open: its flux is zero everywhere in a steady
+    // state, so each such face's levels meet. W at 1 and 7 in two closed halves behind
+    // P = 1e-35 m/s was taken as steady from its first giant step (4 and 4 at any P > 0;
+    // Astra's re-read of the steady solve, round 8).
+    for (const st of this.stretches) {
+      if (!all || st.reactive || st.ports.length > 0 || (st.leftOpen && st.rightOpen)) continue;
+      const i = st.species;
+      for (let f = st.regions[0]; f < st.regions[1]; f++) {
+        const type = model.interfaces[f].links[i].type;
+        if (type !== 'permeability' && type !== 'conductance') continue;
+        const d = eta(grid.regionStart[f + 1], 1 + i) - eta(grid.regionEnd[f], 1 + i);
+        if (Math.abs(d) > 1e-6) out.push({ where: `interfaces[${f}].species['${model.species[i].name}']`, affinity: d, face: true });
+      }
+    }
+    // A terminal behind a resistance that passes current only by charging (a gate, a capacitive
+    // contact with no ions through it): a steady state passes none, so it sits at its source. An
+    // RC too long for the giant steps (R = 1e30 Ω·m², C = 1 µF/m²) moved it less than their
+    // tolerance and was taken as steady at −0.18 V for a 1 V source (Astra's re-read of the steady
+    // solve, round 8). Its affinity: (V − V_src)/V_T.
+    for (const k of this.floating) {
+      const d = this.terms[k].drive;
+      if (!all || d.kind !== 'V' || !(d.R > 0) || !chargeOnly(this, k)) continue;
+      const off = (this.termV[k] - sourceAt(d.src, this.time)) / this.VT;
+      if (Math.abs(off) > 1e-6) out.push({ where: this.terms[k].name, affinity: off, charging: true });
     }
     return out;
   }
