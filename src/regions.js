@@ -44,7 +44,8 @@
 //     exact in the cancellation of drift against diffusion. Past a drift Δ of SG_FAR (300), the
 //     same flux from the downstream end, g B(−Δ) c_R expm1(−Δη) (sgFlux in src/bernoulli.js):
 //     B(Δ) and expm1(Δη) underflow and overflow there, toward −x at a large Péclet number.
-//   concentrated: the same with Δ = zΔφ̂ + Δex − Pe, and c_L, ex through K at both ends.
+//   concentrated: the same with Δ = zΔφ̂ + Δ(μ°/RT − ln cRef) + Δex − Pe (segShift and the
+//     excess both), and c_L, ex through K at both ends.
 //   conductor: the flux J in slot 0 of the segment's left node, its row η_R − η_L + J/g = 0,
 //     g = σRT/(z²F²h) (Ohm's law), and J out of the left node's carrier balance, into the right's.
 //   eddy mixing: N = −(D_mix/h) P̄ Δη, P̄ = K̄ − (K̄z)(K̄z)ᵀ/(zᵀK̄z) over the mobile species: no
@@ -55,7 +56,7 @@
 //   bulk reaction at a node: rate r = P(1 − e^{−a}), a = fixedA + Σ ν η (reactants ν > 0,
 //     products ν < 0; compensated), P = k_f Π c^ν over reactants (times generationScale for a
 //     generation; times C_n n + C_p p where the material has an Auger law, _augerFactor); or SRH (_srhRate) where the material has an SRH law, its derivatives through
-//     ln c and the excess potentials ex = ζ − ln c (_srhInto: exact for any statistics, the
+//     ln c and the excess potentials ex = ζ − ln(c/cRef) (_srhInto: exact for any statistics, the
 //     carriers' coupled or not). vol·ν·r in each
 //     participant's row. bulkRate, bulkForward and bulkOneWay read the same rate, its forward
 //     one-way part, and the larger one-way part, at the present state.
@@ -1065,7 +1066,7 @@ export class RegionTerms {
     return [this.nodeIdeal[gn] ? 0 : this.ex[gn * this.n + law.n.i], this.nodeIdeal[gq] ? 0 : this.ex[gq * this.n + law.p.i]];
   }
 
-  // Add C·∂(ln c_i) + Cx·∂(ex_i) at node g into d, over its slots: ex_i = ζ_i − ln c_i (0 where
+  // Add C·∂(ln c_i) + Cx·∂(ex_i) at node g into d, over its slots: ex_i = ζ_i − ln(c_i/cRef_i) (0 where
   // the statistics are ideal), ζ_i = η_i − μ°_i/RT − z_i φ̂.
   _srhInto(g, i, C, Cx, d) {
     if (this.nodeIdeal[g] || Cx === 0) return this._dlnc(g, i, C, d);

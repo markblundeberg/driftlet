@@ -191,7 +191,7 @@ full Jacobian, including the dependence of $`\bar P`$ on both ends, keeps Newton
 $`K_L`$ and $`K_R`$ that needs $`\partial K/\partial\zeta`$, which the statistics models don't give, so
 it's taken by central differences of the model (a step of 1e-5, accurate to about 1e-10).
 
-With non-ideal statistics, $`\ln c = \zeta - \mathrm{ex}`$, where the excess
+With non-ideal statistics, $`\ln(c/c_{\mathrm{ref}}) = \zeta - \mathrm{ex}`$, where the excess
 $`\mathrm{ex} = \zeta - \ln(c/c_{\mathrm{ref}})`$ is zero for ideal statistics. The excess enters
 exactly like an extra potential, taken linear along the segment as $`\phi`$ is, so the same formula
 holds with $`\Delta = z(\hat\phi_R - \hat\phi_L) + \mathrm{ex}_R - \mathrm{ex}_L`$. That's the

@@ -56,9 +56,10 @@ c_i = c_{\mathrm{ref},i} \cdot e^{\zeta_i}, \quad\text{i.e.}\quad \bar\mu_i = \m
 
 with $`c_{\mathrm{ref},i}`$ the reference concentration that $`\mu^\circ_i`$ refers to. Non-ideal
 statistics (degenerate carriers, crowding, intercalation hosts, activity coefficients) are chosen
-per material; see [statistics](statistics.md). They all reduce to the ideal form in the dilute
-limit, so $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ mean the same thing in every model: the dilute
-(Henry's-law) reference.
+per material; see [statistics](statistics.md). They reduce to the ideal form in the dilute limit
+(all of a model's species dilute together; an OCV table sets its own dilute end), so
+$`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ mean the same thing in every model: the dilute (Henry's-law)
+reference.
 
 The API speaks $`\bar\mu`$ in J/mol (`units.eV` converts per-particle energies). Two voltage views
 are provided for charged species (what they show, and why they're drawn, is in
@@ -105,17 +106,23 @@ Two optional transport terms describe a moving fluid:
     $`\bar\mu`$), so double layers at rest are untouched.
   - The projection removes any current ($`z^\mathsf{T} P = 0`$). Eddies move neutral fluid, so
     they mix salt and stir concentration gradients but conduct nothing.
-  - Since $`K\nabla\zeta = \nabla c`$, it's
+  - Where $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ are uniform, $`K\nabla\zeta = \nabla c`$, so it's
     $`-D_{\mathrm{mix}} [\nabla c - K z\, (z^\mathsf{T}\nabla c)/(z^\mathsf{T} K z)]`$, which is
     $`-D_{\mathrm{mix}} \nabla c`$ for every species in a neutral solution whose fixed charge is
-    uniform ($`\sum_i z_i \nabla c_i = 0`$), under any statistics: eddies carry parcels of fluid, so
-    they mix concentration, not activity. (Molecular diffusion differs on purpose: a molecule's own
-    random walk is driven by the thermodynamic force, so its mobility is $`D c`$, above.) Where the
-    fixed charge is graded, the ions' $`-D_{\mathrm{mix}} \nabla c`$ would carry a current, and the
-    projection takes it out. For a neutral dilute species it's $`-D_{\mathrm{mix}} \nabla c`$
-    anywhere. For a binary salt it adds
-    $`D_{\mathrm{mix}}`$ to the salt's ambipolar diffusivity and leaves diffusion potentials
-    unchanged.
+    uniform ($`\sum_i z_i \nabla c_i = 0`$), under any statistics whose species all move: eddies
+    carry parcels of fluid, so they mix concentration, not activity. (Molecular diffusion differs on
+    purpose: a molecule's own random walk is driven by the thermodynamic force, so its mobility is
+    $`D c`$, above.) Where the fixed charge is graded, the ions' $`-D_{\mathrm{mix}} \nabla c`$ would
+    carry a current, and the projection takes it out. For a neutral dilute species it's
+    $`-D_{\mathrm{mix}} \nabla c`$ wherever its $`\mu^\circ`$ and $`c_{\mathrm{ref}}`$ are uniform. For a
+    binary salt it adds $`D_{\mathrm{mix}}`$ to the salt's ambipolar diffusivity and leaves diffusion
+    potentials unchanged.
+  - Two cases break that identity, and the law stays the one in $`\nabla\bar\mu`$ above: in a
+    region that grades $`\mu^\circ`$ or $`c_{\mathrm{ref}}`$, a uniform $`c`$ across the grade is still
+    mixed down its level ($`-(D_{\mathrm{mix}}/RT)\, c\nabla\bar\mu`$ for a dilute species); and $`P`$
+    is built over the mobile species alone, so on a lattice shared with an immobile species, the
+    immobile one's gradient gives a mobile one a $`\nabla c`$ at a level $`\bar\mu`$, which mixing
+    leaves alone.
 
 ## Materials, regions, interfaces
 

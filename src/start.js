@@ -291,17 +291,20 @@ export function initFromComposition(s) {
       }
       return ph;
     };
-    // The same, with the amounts where the electrode is (a c0 profile's there), not at the
-    // region's start (a metal on the right of a salt ramped 10 to 90 mM started 2.2 RT from its
-    // equilibrium, the mirror device at it, and a window at the far end passing 8e-4
-    // mol/(m²·s) cold; Astra's third pass).
+    // The same, with the amounts and the material where the electrode is (a c0 profile's there, a
+    // graded region's μ° and c_ref there), not at the region's start (a metal on the right of a salt
+    // ramped 10 to 90 mM started 2.2 RT from its equilibrium, the mirror device at it, and a window
+    // at the far end passing 8e-4 mol/(m²·s) cold; Astra's third pass. A port mid-film in a region
+    // graded in c_ref started 0.6 RT off, its first transient's current made up; Sol's fifth pass).
     const balancedAt = (x, reactions, surface, inside, levelOf, ph) => {
-      if (!reg.c0Profile.some((p) => p)) return balanced(reactions, surface, inside, levelOf, ph);
-      const keep = [cFix.slice(), zeta.slice(), cc.slice()];
+      if (!graded && !reg.c0Profile.some((p) => p)) return balanced(reactions, surface, inside, levelOf, ph);
+      const keep = [cFix.slice(), zeta.slice(), cc.slice()], keepMat = mat;
+      if (graded) mat = gradedAt(base, reg, x);
       for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], x);
       if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, ph, zeta, cc);
       const out = balanced(reactions, surface, inside, levelOf, ph);
       [cFix, zeta, cc].forEach((a, k) => a.set(keep[k]));
+      mat = keepMat;
       return out;
     };
     if (!mat.phiFree && !responds && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);

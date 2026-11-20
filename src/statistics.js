@@ -6,8 +6,10 @@
 // the Jacobian K = ∂c/∂ζ (the chemical capacitance matrix per volume is F²K/RT). K is the Hessian of a
 // convex potential, so it's symmetric and positive definite; semidefinite for an insertion host,
 // whose ion and carrier respond only as their neutral combination (K rank one). Ideal (dilute) statistics are
-// c = c_ref e^ζ, K = diag(c), and every model here reduces to them in the dilute limit, so μ°
-// and c_ref keep one meaning (the dilute, Henry's-law reference) whatever the model.
+// c = c_ref e^ζ, K = diag(c), and every model here reduces to them in the dilute limit (its
+// species all dilute together: one dilute on a lattice others half fill sees the free sites, in
+// Debye–Hückel the others' γ), so μ° and c_ref keep one meaning (the dilute, Henry's-law
+// reference) whatever the model; but for an OCV table, which sets its own dilute end.
 //
 // A model object covers `idx` (device species indices, k of them) and provides
 //   evaluate(zeta, c, K, bg)       fill c (k) and K (k×k, row-major) at ζ (k)
@@ -109,7 +111,7 @@ function redlichKisterOccupancy(A, cMax, cRef, RT, fail) {
 // Tabulated ζ(x), as ζ = ln(x/(1−x)) + r(x): the residual r (the non-ideality) is a
 // shape-preserving cubic (PCHIP) through the data, continued linearly beyond the ends. Ideal
 // and regular-solution tables are reproduced exactly, and x stays within (0, 1) for any ζ.
-function tableOccupancy(xs, zs, fail) {
+function tableOccupancy(xs, zs, fail, slopeText) {
   const N = xs.length;
   const logit = (x) => Math.log(x / (1 - x));
   const rs = xs.map((x, k) => zs[k] - logit(x));
@@ -154,15 +156,31 @@ function tableOccupancy(xs, zs, fail) {
     const x = logistic(y), q = r(x);
     return { v: y + q.v, d: 1 + x * logistic(-y) * q.d };
   };
-  let rmin = Infinity, rmax = -Infinity;
+  // The bracket for x(ζ) holds every r the curve takes: PCHIP stays within its knots' hull, so the
+  // knots' own r, and its linear ends reach theirs at x = 0 and 1, both on the grid below. (Seeded
+  // from the grid alone, a knot at x = 1e-8 with r 0.1 above any the grid saw had its filling
+  // clipped at the bracket's edge, x e^0.1 there, 2.6 mV off on a device; Sol's fifth pass.)
+  let rmin = Math.min(...rs), rmax = Math.max(...rs);
+  const flat = (at) =>
+    fail(`ocv: near x = ${at} the curve is flat or rising against the ideal-solution slope, ${slopeText} ln(x/(1−x)), as on a two-phase plateau (not supported): more points alone won't help; give it some of that slope, adding −a ${slopeText} ln(x/(1−x)) to E (a = 0.1 passes at points 0.01 apart, less with points closer near the ends; docs/statistics.md)`);
   for (let k = 0; k <= 4000; k++) {
     const x = k / 4000;
     const q = r(x);
-    if (x > 0 && x < 1 && !(1 + x * (1 - x) * q.d > 1e-9)) {
-      fail(`ocv: near x = ${x.toFixed(3)} the curve is flat or rising against the ideal-solution slope, (RT/F) ln(x/(1−x)), as on a two-phase plateau (not supported): more points alone won't help; give it some of that slope, adding −a (RT/F) ln(x/(1−x)) to E (a = 0.1 passes at points 0.01 apart, less with points closer near the ends; docs/statistics.md)`);
-    }
+    if (x > 0 && x < 1 && !(1 + x * (1 - x) * q.d > 1e-9)) flat(x.toFixed(3));
     rmin = Math.min(rmin, q.v);
     rmax = Math.max(rmax, q.v);
+  }
+  // And inside each interval between knots, which the grid steps over where they're closer than
+  // its 2.5e-4: at eighths and where r′ (quadratic in t) is least. (Knots 1.6e-4 apart, E strictly
+  // falling, gave a ζ(x) that turned back across a third of the interval; Sol's fifth pass.)
+  for (let k = 0; k < N - 1; k++) {
+    const qa = 3 * (2 * rs[k] + h[k] * d[k] - 2 * rs[k + 1] + h[k] * d[k + 1]), qb = -6 * rs[k] - 4 * h[k] * d[k] + 6 * rs[k + 1] - 2 * h[k] * d[k + 1];
+    const ts = [1, 2, 3, 4, 5, 6, 7].map((j) => j / 8);
+    if (qa > 0 && -qb / (2 * qa) > 0 && -qb / (2 * qa) < 1) ts.push(-qb / (2 * qa));
+    for (const t of ts) {
+      const x = xs[k] + t * h[k];
+      if (!(1 + x * (1 - x) * r(x).d > 1e-9)) flat(x.toPrecision(6));
+    }
   }
   return {
     zeta: (x) => logit(x) + r(x).v,
@@ -205,25 +223,39 @@ function fermiDiracModel(idx, cRef, order) {
   };
 }
 
+// A site fraction read from a concentration that rounds to full (1 to a few ulps) is full to
+// round-off: just below 1, at the least ζ that rounds back to it. (A bar held 40 RT up holds c =
+// c_max exactly, and a set() of its μ° was refused, "exceeds the site density"; Sol's fifth pass.)
+const FULL = 1 + 8 * Number.EPSILON;
+const fill = (x) => (x < 1 ? x : x < FULL ? 1 - Number.EPSILON / 2 : NaN);
+
 function latticeModel(idx, cRef, cMax) {
   const k = idx.length;
   const lref = cRef.map((c) => Math.log(c / cMax));
+  const rest = new Float64Array(k);
   return {
     type: 'lattice',
     idx,
     cMax, // (read by a face's diffuse layer beside it, which crowds on the same sites: src/diffuse.js)
-    // c_a = c_max w_a / (1 + Σ w), w_a = (c_ref,a / c_max) e^{ζ_a}; K = diag(c) − c cᵀ/c_max.
+    // c_a = c_max w_a / (1 + Σ w), w_a = (c_ref,a / c_max) e^{ζ_a}; K = diag(c) − c cᵀ/c_max, its
+    // diagonal as c_a (S − w_a)/S, S = 1 + Σ w, with S − w_a summed without the difference (at a
+    // saturated species, c_a − c_a²/c_max rounded to 0 and lost the vacancy's share; Sol's fifth pass).
     evaluate(zeta, c, K) {
       let m = 0;
       for (let a = 0; a < k; a++) m = Math.max(m, zeta[a] + lref[a]);
-      let S = Math.exp(-m);
+      const e = Math.exp(-m);
+      let S = e;
       for (let a = 0; a < k; a++) {
         c[a] = Math.exp(zeta[a] + lref[a] - m);
         S += c[a];
       }
+      for (let a = 0; a < k; a++) {
+        rest[a] = e;
+        for (let b = 0; b < k; b++) if (b !== a) rest[a] += c[b];
+      }
       for (let a = 0; a < k; a++) c[a] *= cMax / S;
       for (let a = 0; a < k; a++) {
-        for (let b = 0; b < k; b++) K[a * k + b] = (a === b ? c[a] : 0) - (c[a] * c[b]) / cMax;
+        for (let b = 0; b < k; b++) K[a * k + b] = a === b ? (c[a] * rest[a]) / S : -(c[a] * c[b]) / cMax;
       }
     },
     invert(zeta, fixed, target) {
@@ -232,11 +264,12 @@ function latticeModel(idx, cRef, cMax) {
         if (fixed[a]) T += target[a] / cMax;
         else m = Math.max(m, zeta[a] + lref[a]);
       }
-      if (!(T < 1)) throw new SolverError(`lattice: concentrations exceed the site density ${cMax}`);
+      const full = fill(T);
+      if (!(full < 1)) throw new SolverError(`lattice: concentrations exceed the site density ${cMax}`);
       let s = Math.exp(-m);
       for (let a = 0; a < k; a++) if (!fixed[a]) s += Math.exp(zeta[a] + lref[a] - m);
       const ln1W = m + Math.log(s); // ln(1 + Σ_unfixed w)
-      for (let a = 0; a < k; a++) if (fixed[a]) zeta[a] = Math.log(target[a] / cRef[a]) + ln1W - Math.log1p(-T);
+      for (let a = 0; a < k; a++) if (fixed[a]) zeta[a] = Math.log(target[a] / cRef[a]) + ln1W - Math.log1p(-full);
     },
   };
 }
@@ -253,7 +286,7 @@ function redlichKisterModel(idx, cRef, cMax, occ) {
     },
     invert(zeta, fixed, target) {
       if (!fixed[0]) return;
-      const x = target[0] / cMax;
+      const x = fill(target[0] / cMax);
       if (!(x > 0 && x < 1)) throw new SolverError(`redlich-kister: concentration ${target[0]} is outside (0, c_max)`);
       zeta[0] = occ.zeta(x);
     },
@@ -378,7 +411,7 @@ function insertionModel(idx, nu, cMax, occ) {
     },
     invert(zeta, fixed, target, bg) {
       if (fixed[0]) {
-        const x = target[0] / cMax;
+        const x = fill(target[0] / cMax);
         if (!(x > 0 && x < 1)) throw new SolverError(`insertion: concentration ${target[0]} is outside (0, c_max)`);
         const zc = occ.zeta(x);
         if (fixed[1] && Math.abs(target[1] - (nu * target[0] + bg)) > 1e-9 * target[1]) {
@@ -386,7 +419,7 @@ function insertionModel(idx, nu, cMax, occ) {
         }
         zeta[0] = zc - nu * zeta[1];
       } else if (fixed[1]) {
-        const x = (target[1] - bg) / (nu * cMax);
+        const x = fill((target[1] - bg) / (nu * cMax));
         if (!(x > 0 && x < 1)) throw new SolverError(`insertion: carrier concentration ${target[1]} is outside the host's range`);
         zeta[1] = (occ.zeta(x) - zeta[0]) / nu;
       }
@@ -560,6 +593,17 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
               'with ε > 0 resolves single-ion potentials; this mixes the two. Prefer it in ε = 0 materials.',
           );
         }
+        // The theory's ionic strength runs over every ion in the solution, but a model sees only its
+        // own species' c (each model maps its ζ to its c and K, and a species is in one model), so an
+        // ion left out of it is left out of κ: 10 mM NaCl in 90 mM KNO₃ as two groups, or with KNO₃
+        // ideal, was 7.7 mV from the one group's, the textbook value (Sol's fifth pass).
+        const left = species.filter((ion, i) => mat.present[i] && ion.z !== 0 && !idx.includes(i)).map((ion) => `'${ion.name}'`);
+        if (left.length > 0) {
+          warnings.push(
+            `${sp}: Debye–Hückel's ionic strength runs over every ion in the solution, but this model's κ counts only its own species, ` +
+              `and ${left.join(', ')} ${left.length > 1 ? 'are' : 'is'} charged, in this material, and left out of it: list every ion of the solution in one debye-huckel model.`,
+          );
+        }
         model = debyeHuckelModel(idx, cRef, idx.map((i) => species[i].z), epsr, a, RT);
         break;
       }
@@ -589,14 +633,16 @@ export function normalizeStatistics(mat, path, species, speciesIndex, RT, h) {
             need(v > 0 && v < 1, `${sp}.ocv.x[${q}] must be a site fraction in (0, 1)`);
             need(q === 0 || v > t.x[q - 1], `${sp}.ocv.x must be strictly increasing`);
           });
+          // (ζ_comb = (muRef − z F E − μ°)/RT rises with x: −zE does, E falling for a cation and rising
+          // for an anion; an anion host's physical table was refused; Sol's fifth pass)
           t.E.forEach((v, q) => {
             finite(v, `${sp}.ocv.E[${q}]`);
-            need(q === 0 || v < t.E[q - 1], `${sp}.ocv.E must be strictly decreasing with x (plateaus are phase separation, not yet supported)`);
+            need(q === 0 || zi * v < zi * t.E[q - 1], `${sp}.ocv.E must be strictly ${zi > 0 ? 'decreasing' : 'increasing'} with x for an ion of charge ${zi} (plateaus are phase separation, not yet supported)`);
           });
           const muRef = finite(t.muRef, `${sp}.ocv.muRef (the combination's chemical potential in the reference electrode, J/mol)`);
           // μ_ion + ν μ_carrier = muRef − z_ion F E, and ζ_comb = that minus the standard potentials.
           const mu0 = mat.mu0[ion] + nu * mat.mu0[car];
-          occ = tableOccupancy(t.x, t.E.map((E) => (muRef - zi * FARADAY * E - mu0) / RT), fail);
+          occ = tableOccupancy(t.x, t.E.map((E) => (muRef - zi * FARADAY * E - mu0) / RT), fail, zi === 1 ? '(RT/F)' : `(RT/(${zi}F))`);
         } else {
           const A = sdef.A ?? [];
           need(Array.isArray(A), `${sp}.A must be an array of Redlich–Kister coefficients (J/mol)`);

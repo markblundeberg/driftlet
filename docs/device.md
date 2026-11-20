@@ -1130,7 +1130,10 @@ outside held by the port: an axon's, with x running along the axon. Per volume o
 cylinder of radius a has $`2/a`$ of membrane (`area`). Give the port the outside's composition as a
 `bath`: its V is then the outside's $`\phi`$ (held at 0, with `zeroCharge: 0`), and each linked ion's
 level there follows from the composition, $`(\mu^\circ + RT\ln(c_{out}/c_{\mathrm{ref}}))/(zF)`$ against
-it, as an `offset` would give it. (Only the linked ions' levels are taken, so the bath needn't list
+it for an ideal ion, as an `offset` would give it; through the window's statistics otherwise,
+$`(\mu^\circ + RT\zeta(c_{out}))/(zF)`$, a single species' model as well (Fermi–Dirac, Langmuir: half
+full with `cRef = cMax`, its $`\zeta`$ is 0, not $`\ln\tfrac12`$). (Only the linked ions' levels are
+taken, so the bath needn't list
 or balance the rest, except where the window's statistics couple species, a lattice's or
 Debye–Hückel's: there one ion's level depends on the others', and the bath lists them all;
 Fermi–Dirac bands are each on their own. An insertion host takes no bath: its ion and carrier

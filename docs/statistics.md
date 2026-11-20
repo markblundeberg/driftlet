@@ -14,11 +14,18 @@ filling of a finite set of sites, activity coefficients, and intercalation hosts
 
 Three rules hold for every model:
 
-- **The dilute limit is ideal.** Every model tends to $`c_{\mathrm{ref}} \cdot e^\zeta`$ as $`c \to 0`$,
-  so `mu0` and `cRef` keep one meaning (the dilute, Henry's-law reference state) whatever the
-  statistics. Changing a material's statistics changes only its non-dilute behaviour.
+- **The dilute limit is ideal.** Every model tends to $`c_{\mathrm{ref}} \cdot e^\zeta`$ as its
+  species all go dilute together (an insertion host's ion in its combination's $`\zeta`$), so
+  `mu0` and `cRef` keep one meaning (the dilute, Henry's-law reference state) whatever the
+  statistics. Changing a material's statistics changes only its non-dilute behaviour. Two
+  exceptions: an OCV table sets its own dilute end
+  ([below](#insertion-hosts-neutral-combination-statistics)), and a custom model's is your
+  function's. And one species dilute among others that aren't still feels them: on a shared
+  lattice its $`c/(c_{\mathrm{ref}} e^\zeta)`$ tends to the fraction of sites the others leave free,
+  and in Debye–Hückel to $`1/\gamma`$ at their ionic strength.
 - **The Jacobian is a chemical capacitance.** $`K = \partial c/\partial\zeta`$ is the Hessian of a
-  convex potential (the grand potential density $`P(\zeta)`$, with $`c = \partial P/\partial\zeta`$),
+  convex potential (the pressure over RT, $`P(\zeta)`$, with $`c = \partial P/\partial\zeta`$: minus the
+  grand potential density, $`\Omega/V = -RT\,P`$, so $`P = c_{\mathrm{ref}} e^\zeta`$ for an ideal species),
   so it's symmetric and positive definite (semidefinite for an [insertion host](#insertion-hosts-neutral-combination-statistics), whose
   ion and carrier respond only as their neutral combination). $`F^2 K/RT`$ is the chemical capacitance matrix per
   volume (F/m³; $`F^2 c/RT`$ for ideal statistics). Models whose free energy isn't convex (a miscibility gap) are refused, because they
@@ -104,14 +111,21 @@ literature, $`\mu = \mu^\circ_{1/2} + RT \ln(x/(1-x)) + \Omega(1-2x)`$, correspo
 
 Extended Debye–Hückel activity coefficients for dilute electrolytes:
 $`\ln\gamma_i = -z_i^2 \ell_B \kappa / (2(1 + \kappa a))`$, with the Bjerrum length
-$`\ell_B = e^2/(4\pi\varepsilon kT)`$ and $`\kappa^2 = F^2 \sum z^2 c / (\varepsilon RT)`$ from the
-solvent permittivity `epsr` (which defaults to the material's, if that's non-zero) and a
-distance of closest approach `a` (default 0, the limiting law). It stops being convex at high
+$`\ell_B = e^2/(4\pi\varepsilon kT)`$ and $`\kappa^2 = F^2 \sum z^2 c / (\varepsilon RT)`$, the sum over
+the model's own species, from the solvent permittivity `epsr` (which defaults to the material's,
+if that's non-zero) and a distance of closest approach `a` (default 0, the limiting law). It stops being convex at high
 ionic strength, and the solver then reports a failure. It goes on a material's `statistics`, as
 any model does; with `aqueous()`, on the piece it returns: `lib.materials.water.statistics =
 [{ type: 'debye-huckel', species: ['H+', 'Cl-'], a: 4.5e-10 }]`. `a` is an ion size (a few
 ångström: tabulated per ion, as Kielland's sizes, or fitted to measured γ±), and it matters:
 in 10 mM HCl, 4.5 Å against the limiting law moves a concentration cell's voltage by 0.6 mV.
+One `a` serves the whole model, a mean size for its ions.
+
+In the theory, κ's sum runs over every ion in the solution, so **list them all in one model**: a
+model sees only its own species, so an ion left out of it (in another `debye-huckel` model, or
+ideal) is left out of κ too, and the solution warns. 10 mM NaCl in 90 mM KNO₃ as two models, one
+per salt, puts NaCl's $`(\bar\mu_{\mathrm{Na^+}} + \bar\mu_{\mathrm{Cl^-}})/F`$ 7.7 mV from the one
+model's, which is the textbook value at the mixture's ionic strength.
 
 Single-ion activity coefficients are a convention: only neutral combinations (the mean
 activity $`\gamma_\pm`$) are measurable. In a strictly neutral ($`\varepsilon = 0`$) material only
@@ -124,7 +138,8 @@ In an intercalation host, an inserted ion enters together with its compensating 
 carrier, e.g. $`\mathrm{Li}^+ + \mathrm{e}^-`$. Only their neutral combination has a well-defined
 chemical potential, $`\mu_{\mathrm{Li}} = \bar\mu_{\mathrm{Li}^+} + \bar\mu_{\mathrm{e}^-}`$, and the
 host's composition depends on nothing else. That's what an OCV curve measures, and the mutual
-chemical capacitance of the pair is set by its slope: $`F c_{\max}/(\mathrm{d}E/\mathrm{d}x)`$, in magnitude.
+chemical capacitance of the pair is set by its slope: $`\lvert z\rvert F c_{\max}/\lvert\mathrm{d}E/\mathrm{d}x\rvert`$ per
+volume, for an ion of charge $`z`$.
 
 The `insertion` model describes exactly this, in a strictly neutral host (`epsr: 0`) whose
 only charged species are the pair `[ion, carrier]`. For an ion of charge $`z`$ and a carrier of
@@ -152,7 +167,8 @@ statistics: [{
 The table gives the open-circuit voltage $`E(x)`$ of the host against a reference electrode in
 which the combination has chemical potential `muRef` (J/mol), so that
 $`\mu_{\mathrm{ion}} + \nu \mu_{\mathrm{carrier}} = \mathtt{muRef} - z F E(x)`$. Against Li metal,
-on the usual table convention, `muRef` is 0. $`x`$ must increase and $`E`$ must strictly decrease.
+on the usual table convention, `muRef` is 0. $`x`$ must increase and $`-zE`$ must too: $`E`$
+strictly falls for a cation, rises for an anion.
 A flat plateau means phase separation, which isn't supported yet. The table is read as
 $`\zeta = \ln(x/(1-x)) + r(x)`$: the residual $`r`$, the host's non-ideality, is a shape-preserving
 cubic between points and continues linearly beyond them. Ideal and regular-solution curves are
@@ -160,8 +176,10 @@ therefore reproduced exactly, and $`x`$ stays within $`(0, 1)`$ at any potential
 curve is checked for monotonicity at construction. A curve far flatter than the ideal term near
 an end (E falling by millivolts over the last few percent of x) can fail that check however
 many points it has, since r then changes as steeply as the logarithm: give the ends some of the
-ideal slope: adding −a (RT/F) ln(x/(1−x)) to E, with a = 0.1 at points 0.01 apart (less with points
-closer together near the ends), passes.
+ideal slope: adding −a (RT/(zF)) ln(x/(1−x)) to E, with a = 0.1 at points 0.01 apart (less with points
+closer together near the ends), passes. The check also reads inside each interval between
+points, so a nearly flat stretch whose few close points step the residual too steeply between
+them is refused even where every point's $`E`$ is in order.
 
 With `A` instead, the curve is the isotherm's, against a reference where the combination's
 chemical potential is 0, with $`g`$ the excess chemical potential ($`\Omega(1-2x)`$ for `A: [Ω]`):
@@ -185,10 +203,19 @@ either: the table sets the filling at every level, its dilute end included. It s
 reaction's rate at the host's face or port, through its $`c/c_{\mathrm{ref}}`$ (kinetics, not
 thermodynamics).
 
-The ion's `D` is its dilute-limit coefficient, as everywhere: the chemical diffusivity, $`D`$
-times the thermodynamic factor, follows from the OCV's slope (with the carrier far faster than
-the ion, as usual; else the two combine as $`D_i D_e/(D_i + D_e)`$, ambipolar diffusion). For an ideal-solution curve,
-$`E = E^\circ - (RT/F)\ln(x/(1-x))`$, it's $`D/(1-x)`$, so a host filling toward $`x = 1`$
+The ion's `D` is its dilute-limit coefficient, as everywhere: the chemical diffusivity follows
+from the OCV's slope. At no current the carrier moves ν per ion, and the two combine as
+ambipolar diffusion,
+
+```math
+\tilde D = \left[\frac{1}{D_{\mathrm{ion}}} + \frac{\nu^2 s}{D_{\mathrm{carrier}}\,(\nu s + \text{background})}\right]^{-1} s\,\frac{\mathrm{d}\zeta_{\mathrm{comb}}}{\mathrm{d}s},
+```
+
+which is the ion's $`D`$ times the thermodynamic factor $`s\,\mathrm{d}\zeta_{\mathrm{comb}}/\mathrm{d}s`$ with
+the carrier far faster, as usual, or with background carriers far outnumbering the ion's own
+($`D_{\mathrm{ion}} D_{\mathrm{carrier}}/(D_{\mathrm{ion}} + D_{\mathrm{carrier}})`$ for ν = 1 and no
+background; a third of a common $`D`$ for ν = 2). For an ideal-solution curve,
+$`E = E^\circ - (RT/(zF))\ln(x/(1-x))`$, with the carrier fast, it's $`D/(1-x)`$, so a host filling toward $`x = 1`$
 diffuses ever faster, and a $`D`$ measured mid-range isn't the one to give. (A constant chemical
 diffusivity isn't expressible.) A host that only stores what comes in, filling at a constant
 current through its collector, has no steady state: `advance()` it from its `c0`. At no
@@ -230,7 +257,7 @@ plain data, so it can't be posted to a Web Worker. Build it inside the worker in
 
 ## Transport with non-ideal statistics
 
-The flux law is $`N = -(D c/RT)\nabla\bar\mu`$ for every model. Writing $`\ln c = \zeta - \mathrm{ex}`$
+The flux law is $`N = -(D c/RT)\nabla\bar\mu`$ for every model. Writing $`\ln(c/c_{\mathrm{ref}}) = \zeta - \mathrm{ex}`$
 with the excess $`\mathrm{ex} = \zeta - \ln(c/c_{\mathrm{ref}})`$ (zero for ideal statistics), the
 excess acts like an extra potential. The Scharfetter–Gummel flux keeps its form with
 $`\Delta = z\Delta\hat\phi + \Delta\mathrm{ex}`$ (see [numerics](numerics.md#fluxes)), so it's still
