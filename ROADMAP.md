@@ -512,6 +512,54 @@ one when this list is worth it.
 - With any rename: an optional `version` field in definitions, and errors that name the renames
   ("`foo` became `bar` in 2.0"), since agents copy old definitions long after the API moves on.
 
+### The shape: simpler and harder to break
+
+The API list below is the easy half. The other half is internal: 2.0 is the time to reshape the code
+so whole classes of fault can't happen, rather than fixing them one review at a time. Notes for
+that, not a plan yet.
+
+**Where the faults come from.** The outside reviews of November 2026 (rounds 3–6, about a hundred
+confirmed faults fixed, many of them silent wrong answers) sort into four sources, roughly by size:
+
+1. **Features meeting features.** The biggest pile: a port turning off the immobile check of a
+   species it doesn't touch, a floating gate behind a resistance, a Hodgkin–Huxley leak on the gated
+   ion, kit builders merging their arguments the wrong way round. Every physics feature has its
+   analytic test, but tests rarely put two features together, and the pairs grow with the square of
+   the feature count.
+2. **State that goes stale.** `Device` is a single mutable object holding many caches, and every
+   method that changes it has to remember to invalidate, snapshot or roll each one back. A new
+   feature adds a path that forgets one: check() passing a solution from before a `set()`, a refused
+   `impedance()` using up the pending transient, a throw inside `solve()` leaving the clock moved,
+   island flags left out of the snapshot. The 1.19 solution stamp turned one "remember to" into a
+   mechanism.
+3. **One law written twice.** The steady solver and the time stepper each assemble some boundary and
+   interface terms their own way, and the copies drift: the steady pin read the edge levels where the
+   other path used the plane (a current 3× off), the collinear-reaction skip lived in two files, and
+   the start ignored grades that the regions applied.
+4. **Numerical traps.** Integer arrays, sums losing digits, fixed-step quadrature, round-off cut-offs.
+   These are tricky in any code; the fixes (compensated sums, graded grids, self-checks) are now
+   shared helpers.
+
+**Directions.**
+
+- **One state, one transaction.** Everything that changes the device (`set`, `solve`, `step`,
+  `advance`, `impedance`, …) runs as begin, then commit or roll back, over one plain state object.
+  Caches are derived from it and stamped, never invalidated by hand, and a solution knows which
+  state it came from.
+- **One definition per law.** The steady and transient paths, the start and the readout all get
+  their face, port and pin terms from a single assembly (the lawRows contract, extended), so a law
+  can't mean two things.
+- **Normalize once.** Everything after normalization reads only the canonical model, never the raw
+  definition; the kit returns plain, deep-copied data.
+- **Invariants as the gate.** Before any of this, a randomized suite of properties that hold for any
+  device: a steady solve agrees with a long time-stepped run; Z at low frequency agrees with dV/dI
+  from two steady solves; one `advance(t)` agrees with many small ones; a definition's key and
+  listing order don't change the answer; check() refuses any stale solution. This suite covers the
+  combinations (source 1) that reviews only sample, and it is what proves a refactor kept the
+  physics.
+- **What each feature costs.** An honest audit of what the demos and docs use. Something rarely used
+  that touches every path is a candidate to move out of the core.
+
 From a fresh-eyes read of the docs and types (19 Nov 2026; its report and probes in the maintainer's
 notes), ranked by how much each trips an agent writing its first device:
 
