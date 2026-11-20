@@ -60,7 +60,8 @@
 //   its own row, ε Σ_k |A_jk x_k| / |A_jj| (a metal's current unknown, G Δη to a huge G: a
 //   bound, cautious where the coupled system pins it better); for a contact, also across
 //   each cut (_currentCuts: a segment's linearised total current, conduction and displacement,
-//   between that contact and the nearest port's window where there are ports), the reading with
+//   between that contact and the nearest window of a port that can pass a charge, any region but
+//   a metal's), the reading with
 //   the least error taken; and where every other terminal floats, by Kirchhoff, Σ δV_k/R_k over
 //   those behind a resistance, its error ((ε + the solves' residual)·|δV_k| + δV_k's own)/R_k;
 //   each reading also takes on the δV's errors through its own dependence on them. With no
@@ -343,8 +344,11 @@ export class SmallSignal {
     const DXs = this.termDX.map((v, k) => v.map((x, j) => (x - DX[k][j]) * dts));
     // Where the measured contact's current may be read across a segment: anywhere without
     // ports; with them, only between it and the nearest window (a port's exchange takes current
-    // in or out along it). Never for a port's own terminal.
-    const allCuts = this._currentCuts(), windows = this.model.ports.flatMap((p) => Array.from(p.nodes));
+    // in or out along it). Never for a port's own terminal. (Only a port that can pass a charge
+    // counts: a link of a charged species, a reaction or a capacitance. A neutral tracer's
+    // exchange took the cuts from 632 to 15; Sol's fourth pass.)
+    const { species } = this.model, charged = (p) => p.capacitance || p.reactions.length > 0 || species.some((_, i) => this.z[i] !== 0 && p.species[i].type !== 'blocked');
+    const allCuts = this._currentCuts(), windows = this.model.ports.filter(charged).flatMap((p) => Array.from(p.nodes));
     const lo = windows.length ? Math.min(...windows) : Infinity, hi = windows.length ? Math.max(...windows) : -Infinity;
     const cutsOf = (k) => allCuts.filter((cut) => (k === 0 ? cut.s + 1 <= lo : cut.s >= hi));
     const cuts = kT < 2 ? cutsOf(kT) : null;
@@ -888,7 +892,10 @@ export class SmallSignal {
     const cuts = [];
     for (let r = 0; r < regions.length; r++) {
       const reg = regions[r], mat = materials[reg.material];
-      if (mat.conductor || reg.mixing > 0) continue;
+      // (A mixing region's too: eddy mixing carries no current, Σ z_i N_i = 0 term by term in
+      // _segmentMixing, so the cut is still the total current. Left out, mixing: 1e-30 took
+      // every cut away, relError to 50; Sol's fourth pass.)
+      if (mat.conductor) continue;
       const vel = reg.velocity;
       for (let s = grid.regionStart[r]; s < grid.regionEnd[r]; s++) {
         const bL = s + r, bR = bL + 1, h = grid.segLength[s] / grid.segArea[s];

@@ -187,3 +187,34 @@ test('a GMRES left above its tolerance, where relError doesn\'t show it, is warn
   assert.equal(z.warnings.filter((w) => /stopped short of its tolerance at 0\.001 Hz \(1 of 2/.test(w)).length, 1);
   assert.equal(new Device(redox({ I: 0 })).impedance([1e-3, 1]).warnings.filter((w) => /stopped short/.test(w)).length, 0);
 });
+
+test('a port that passes no charge, and eddy mixing, leave the current cuts as they were', () => {
+  // (Each cut is the total current only where nothing takes current in or out: a neutral
+  // tracer's exchange counted as a window anyway, and a mixing region's cuts were left out,
+  // though mixing carries none. With mixing: 1e-30 every cut was gone, relError 50 at 10 nHz.)
+  const withPort = (d, from, to) => {
+    d.species.push({ name: 'N', z: 0, cRef: 1000 });
+    d.materials.water.species.N = { D: 1e-9, mu0: 0 };
+    const w = d.regions.find((r) => r.material === 'water');
+    w.c0 = { ...w.c0, N: 1 };
+    d.ports = [{ name: 'tracer', region: d.regions.indexOf(w), from, to, V: 0, species: { N: { type: 'exchange', k: 1e-3, mu: 0 } } }];
+    return d;
+  };
+  const withMixing = (d) => {
+    d.regions.find((r) => r.material === 'water').mixing = 1e-30;
+    return d;
+  };
+  const fs = [1e-8, 1e-4];
+  // (held at the voltage it has at no current, measured at either end)
+  const held = (make) => new Device(make(redox({ V: new Device(make(redox({ I: 0 }))).solve().terminals.right.V })));
+  for (const terminal of ['left', 'right']) {
+    const plain = held((d) => d).impedance(fs, { terminal });
+    for (const [tag, make] of [['tracer by the bath', (d) => withPort(d, 9.0e-6, 9.5e-6)], ['tracer by the Pt', (d) => withPort(d, 0.1e-6, 0.5e-6)], ['mixing', withMixing]]) {
+      const z = held(make).impedance(fs, { terminal });
+      fs.forEach((f, q) => {
+        assert.ok(z.relError[q] < 3 * plain.relError[q], `${tag}, ${terminal}, ${f} Hz: relError ${z.relError[q]}, plain ${plain.relError[q]}`);
+        assert.ok(Math.hypot(z.Z.re[q] - plain.Z.re[q], z.Z.im[q] - plain.Z.im[q]) < 1e-6 * Math.hypot(plain.Z.re[q], plain.Z.im[q]), `${tag}, ${terminal}, ${f} Hz`);
+      });
+    }
+  }
+});
