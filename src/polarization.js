@@ -7,6 +7,7 @@ import { FARADAY } from './constants.js';
 import { mhcRate } from './marcus.js';
 import { powi, powr } from './pow.js';
 import { solveDense } from './dense.js';
+import { addTerm } from './sum.js';
 
 const fail = (message) => {
   throw new DeviceError(message);
@@ -29,9 +30,11 @@ const fail = (message) => {
  *   in `sol` (the default: this instant's curves), or in equilibrium at each V (the steady-state
  *   curve, with a passive film's active–passive peak): each reaction with surface species at zero
  *   affinity, as far as they're independent (those making one from the solution alone first), and
- *   the totals they leave fixed kept as in `sol` (a tethered couple's)
+ *   the totals they leave fixed kept as in `sol` (a tethered couple's). Those reactions are
+ *   `equilibrated`, their rates what the surface's steady balance asks of them, given the others'
+ *   (the others limit the rate: a quasi-equilibrium curve)
  * @returns {{ V: Float64Array, current: Float64Array, bare?: Float64Array, coverage?: Record<string, Float64Array>, reactions: { equation: string, level: number,
- *   rate: Float64Array, current: Float64Array }[] }} per reaction: its equilibrium level here (where
+ *   rate: Float64Array, current: Float64Array, equilibrated?: boolean }[] }} per reaction: its equilibrium level here (where
  *   its rate is zero; NaN for a chemical step, which takes no electron from the metal and passes no current), its rate (mol/(m²·s) of electrode, forward) and its current (A/m², anodic
  *   positive: into the solution); and their sum, with the surface's bare fraction and coverages
  *   at each V where there is one
@@ -39,6 +42,14 @@ const fail = (message) => {
 export function polarization(device, sol, where, V, opts = {}) {
   checkOptions('polarization', arguments[4], ['surface']);
   const model = device.model, { species, grid, RT } = model, solver = device.solver;
+  // The solution's composition with the device's present kinetics: a solution from before a set()
+  // that rebuilt the device is of another definition (k0 set 10× after it, the curve read 10× the
+  // rates that composition had, and after a regrid its nodes were another grid's, NaN), so it's
+  // refused. (A later solve or step is fine: a recorded run's frames each have their curve.) A copy
+  // without its mark is held to the grid alone. (Astra's fifth pass)
+  const state = device._stateOf?.(sol);
+  const stale = state && !state.definition ? state.moved : sol?.x?.length !== grid.nNodes ? `it has ${sol?.x?.length} nodes, the device ${grid.nNodes}` : null;
+  if (stale) fail(`polarization: sol isn't of the device's present definition (${stale}): solve() the device as it now stands and pass that solution`);
   const Vs = Float64Array.from(typeof V === 'number' ? [V] : V);
   let reactions, nodeOf, carrier, names, surface = null; // (an electrode port's coverages at the spot)
   let atPlane = () => null;
@@ -77,27 +88,44 @@ export function polarization(device, sol, where, V, opts = {}) {
 
   // Each reaction as a = base + s·V − Σ ν_s ln a_s (the surface species' activities apart), with
   // its prefactor apart from them too, so a surface can be held or re-equilibrated at each V.
+  // (The affinity summed as the solver sums it: compensated, base + baseLo; of the device's present
+  // state, each level as the solver holds it, η = u + uLo, not μ̄/RT from the solution's doubles;
+  // the carrier's as z·V/V_T; and the Butler–Volmer factor by expm1. Summed plainly from the
+  // solution's μ̄, an iron port's fast couple, k0 1e4, read 0.56 off the solved rate and at 1e5
+  // read 0, its rate a remainder near equilibrium below the doubles' rounding; now it's the solved
+  // rate to the last bit at every k0. Astra's fifth pass.)
+  const acc = new Float64Array(2), exact = state?.moved === null;
   const parts = reactions.map((rx, k) => {
     if (rx.srh) fail('polarization: SRH kinetics has no electrode level');
     if (!rx.vmax && !rx.mhc && !(rx.alpha >= 0)) fail('polarization: a kind of kinetics it has no branch for (Butler–Volmer, saturating and Marcus–Hush–Chidsey it has)');
-    let base = rx.fixedA, s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's P and Q apart)
-    const surf = [];
+    let s = 0, q = 0, pref = rx.vmax ? rx.vmax : rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's P and Q apart)
+    acc[0] = rx.fixedA;
+    acc[1] = 0;
+    const surf = [], carriers = [];
     // (a face's surface species are rx.surf, a port's side-2 participants: the same from here on)
     const all = [...rx.part, ...(rx.surf ?? []).map((p) => ({ ...p, side: 2 }))];
     all.forEach((p, x) => {
       if (p.side === 2) {
         // a surface species: μ = μ° + RT ln a, a = θ/θ₀
-        base -= (p.nu * surface.sp[p.s].mu0) / RT;
+        addTerm(acc, -p.nu, surface.sp[p.s].mu0 / RT, 0);
         surf.push({ s: p.s, nu: p.nu, e: p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha });
         return;
       }
       if (p.side === carrier.side && p.i === carrier.i) {
         s -= (p.nu * species[p.i].z * FARADAY) / RT;
+        carriers.push({ nu: p.nu, z: species[p.i].z });
         return;
       }
       const g = nodeOf(p), name = species[p.i].name, pl = atPlane(p, name);
-      base -= (p.nu * (sol.mu[name][g] + (pl ? pl.dmu : 0))) / RT;
+      if (exact) {
+        const o = solver.blockOfNode[g] * solver.M + 1 + p.i;
+        addTerm(acc, -p.nu, solver.u[o], solver.uLo[o]);
+      } else addTerm(acc, -p.nu, sol.mu[name][g] / RT, 0);
+      if (pl) addTerm(acc, -p.nu, pl.dmu / RT, 0);
       q += p.side === carrier.side ? 0 : p.nu * species[p.i].z; // charge the forward reaction puts into the solution
+      // (Another conductor's carrier, the far metal's electrons at a metal–metal face, has activity 1,
+      // as in the solver: read from its c, NaN in a metal, every rate was NaN; Astra's fifth pass.)
+      if (solver.nodeConductor[g] === p.i && !rx.vmax) return;
       const c = pl ? pl.c : sol.c[name][g];
       if (rx.vmax) {
         if (p.nu < 0) pref *= powi(c / (c + rx.K[x]), -p.nu);
@@ -109,7 +137,8 @@ export function polarization(device, sol, where, V, opts = {}) {
     });
     // (A chemical step, s = 0, 2 H = H₂ beside H⁺ + e⁻ = H: no current and no level, its rate at the
     // composition held, or with the coverages re-equilibrated at each V. Once refused.)
-    return { rx, k, base, s, q, pref, surf, lnP, lnQ };
+    const base = acc[0] + acc[1], baseLo = acc[1] - (base - acc[0]);
+    return { rx, k, base, baseLo, s, carriers, q, pref, surf, lnP, lnQ };
   });
   // The surface's activities (ln a) and bare fraction at a level: held as `sol` has them, or in
   // equilibrium there.
@@ -121,14 +150,18 @@ export function polarization(device, sol, where, V, opts = {}) {
     return equilibrium ? equilibrium(v) : { lnA: held, bare: surface.bare };
   };
   const at = Array.from(Vs, (v) => surfaceAt(v));
-  const out = parts.map(({ rx, k, base, s, q, pref, surf, lnP, lnQ }) => {
+  const out = parts.map(({ rx, k, base, baseLo, s, carriers, q, pref, surf, lnP, lnQ }) => {
     const rate = Float64Array.from(Vs, (v, j) => {
       const { lnA, bare } = at[j];
-      let a = base + s * v, p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
+      let p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
+      acc[0] = base;
+      acc[1] = baseLo;
+      for (const cr of carriers) addTerm(acc, -cr.nu, (cr.z * v) / solver.VT, 0); // (as the solver's portEta, its rounding too)
       for (const u of surf) {
-        a -= u.nu * lnA[u.s];
+        addTerm(acc, -u.nu, lnA[u.s], 0);
         p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
       }
+      const a = acc[0] + acc[1];
       if (rx.mhc) {
         // (a surface species at θ = θ₀ a, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
         let sP = lnP, sQ = lnQ;
@@ -140,12 +173,39 @@ export function polarization(device, sol, where, V, opts = {}) {
         }
         return mhcRate(rx.mhc, rx.k0, sP, sQ, a).rate;
       }
-      return rx.vmax ? p * -Math.expm1(-a) : p * (Math.exp(rx.alpha * a) - Math.exp(-(1 - rx.alpha) * a));
+      if (rx.vmax) return p * -Math.expm1(-a);
+      // (e^{αa} − e^{−(1−α)a} as e^{−(1−α)a}·expm1(a), as the solver's bvFactor; far out, the plain difference)
+      const e = Math.exp(-(1 - rx.alpha) * a);
+      return p * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - e : e * Math.expm1(a));
     });
     // (its level with the surface as held)
     const aHeld = surf.reduce((t, u) => t - u.nu * (held ? held[u.s] : 0), base);
-    return { equation: names?.[k]?.equation ?? `reaction ${k}`, level: s === 0 ? NaN : -aHeld / s, rate, current: rate.map((r) => q * FARADAY * r) };
+    return { equation: names?.[k]?.equation ?? `reaction ${k}`, level: s === 0 ? NaN : -aHeld / s, rate, q };
   });
+  // A step held at equilibrium isn't idle: at the steady state its rate is what the surface's
+  // balance asks of it, every surface species made as fast as it's used, Σ ν r = 0, with the other
+  // steps' rates as their kinetics give them. Read off its own law (zero affinity), it was 0: with
+  // Volmer and Tafel, Volmer listed first, the curve was 0 where the solve passed 0.192 A/m², and
+  // the equilibrated step's current is the whole current (Astra's fifth pass). The steps the
+  // equilibrium rests on are independent rows, so their rates follow from the rows' Gram matrix,
+  // as the coverages do; what the others make or use has no part along the free directions (each
+  // reaction's ν is orthogonal to them), so it balances exactly.
+  if (equilibrium && equilibrium.rows.length > 0) {
+    const { rows, gram } = equilibrium, X = surface.sp.length, equilibrated = rows.map((r) => r.pt.k);
+    for (let j = 0; j < Vs.length; j++) {
+      const made = new Float64Array(X); // what the other steps make of each surface species
+      parts.forEach((pt, k) => {
+        if (!equilibrated.includes(k)) for (const u of pt.surf) made[u.s] += u.nu * out[k].rate[j];
+      });
+      const y = solveDense(gram, rows.map(({ r }) => -r.reduce((t, x, s) => t + x * made[s], 0)));
+      rows.forEach(({ pt }, m) => (out[pt.k].rate[j] = y[m]));
+    }
+    for (const k of equilibrated) out[k].equilibrated = true;
+  }
+  for (const r of out) {
+    r.current = r.rate.map((x) => r.q * FARADAY * x);
+    delete r.q;
+  }
   const current = new Float64Array(Vs.length);
   for (const r of out) for (let j = 0; j < Vs.length; j++) current[j] += r.current[j];
   const coverage = surface && Object.fromEntries(surface.sp.map((sp, x) => [sp.name, Float64Array.from(at, ({ lnA, bare }) => bare * Math.exp(lnA[x]))]));
@@ -196,13 +256,14 @@ function surfaceEquilibrium(parts, surface, held) {
   // (the rows' Gram matrix, for the particular solution P = Rᵀ (R Rᵀ)⁻¹ b, the one with no free part)
   const gram = rows.map((a) => rows.map((b) => dot(a.r, b.r)));
   const theta = surface.theta, target = free.map((n) => dot(n, theta));
+  // (the rows and their Gram matrix, for the equilibrated steps' rates: see polarization)
   let t = free.map((n) => dot(n, held.map((l) => (Number.isFinite(l) ? l : 0))));
   const lnAOf = (P, t) => P.map((p, x) => free.reduce((s, n, j) => s + t[j] * n[x], p));
   const lse = (lnA) => {
     const m = Math.max(0, ...lnA);
     return m + Math.log(lnA.reduce((s, l) => s + Math.exp(l - m), Math.exp(-m)));
   };
-  return (v) => {
+  const at = (v) => {
     const P = new Float64Array(X);
     if (k > 0) {
       const y = solveDense(gram, rows.map(({ pt }) => pt.base + pt.s * v));
@@ -231,4 +292,5 @@ function surfaceEquilibrium(parts, surface, held) {
     const lnA = lnAOf(P, t);
     return { lnA, bare: Math.exp(-lse(lnA)) };
   };
+  return Object.assign(at, { rows, gram });
 }

@@ -100,6 +100,17 @@ function applyDrives(model, drives) {
   model.ports.forEach((p, k) => (p.drive = drives[2 + k]));
 }
 
+// Which state of which device a solution is of, for check() and polarization(): every set(),
+// and every solve or step that moves the state, gives the device a new mark, and each solution
+// carries the mark of the state it was made from (non-enumerable, so a copy carries none and is
+// compared by its numbers). Compared by its numbers alone, a solution from before a set() of a
+// material passed as the present state: φ is NaN in a metal, which masked every node after it,
+// and a current 60× the device's passed check() (Astra's fifth pass). The marks are counted across
+// devices, so another device's solution is told apart (a twin's, of the same definition, is
+// compared by its numbers, as a copy is).
+const MARK = Symbol('driftlet.state');
+let marks = 0;
+
 // A method's options: a name it doesn't take (a typo, dtmax for dtMax) is an error, not ignored.
 const options = (opts, method, allowed) => checkOptions(method, opts, allowed, SolverError);
 
@@ -116,6 +127,46 @@ export class Device {
     this.model = normalizeDevice(this.def);
     this._solver = null;
     this._touched = false; // (solved or stepped: a state of its own to carry through set())
+    // (def: the definition's mark, which a set() that rebuilds changes, and source the definition
+    // itself, for another device's solution; state: the state's, which any set() and every solve
+    // or step changes; solved: whether that state is a solution, not a layout or a state set() has
+    // since changed the equations of; by: what last moved it)
+    this._mark = { device: ++marks, def: ++marks, source: this.def, state: ++marks, solved: false, by: 'built' };
+  }
+
+  // The state moved (by a set(), a solve or a step): a new mark. (A rebuild's new model is a new
+  // definition too.)
+  _moved(by, solved, rebuilt = false) {
+    this._mark = { device: this._mark.device, def: rebuilt ? ++marks : this._mark.def, source: this.def, state: ++marks, solved, by };
+  }
+
+  // A solution marked as of the present state (of: 0 for a state the device didn't keep).
+  _marked(sol, of = this._mark) {
+    Object.defineProperty(sol, MARK, { value: of, configurable: true });
+    return sol;
+  }
+
+  /**
+   * Which state of this device a solution is of, by its mark: undefined for a solution without
+   * one (a copy, `{ ...sol }`, or one sent from a worker) or a twin's (another device's, of the
+   * same definition), for the caller to compare by its numbers; otherwise `moved`, why it isn't
+   * the present state (null if it is), `unsolved`, why the present state isn't a solution (null
+   * if it is), and `definition`, whether it is of the present definition (a later solve or step
+   * leaves that, a set() that rebuilds doesn't).
+   * @param {object} sol
+   * @returns {{ moved: string | null, unsolved: string | null, definition: boolean } | undefined}
+   * @internal
+   */
+  _stateOf(sol) {
+    const m = sol?.[MARK], now = this._mark;
+    if (m === undefined) return undefined;
+    const unsolved = now.solved ? null : now.by === 'built' ? 'the device holds its starting layout, never solved or advanced' : `the device's state hasn't been solved since a ${now.by} changed its equations`;
+    if (m === 0) return { moved: "it's the state a solve gave up in, which the device didn't keep", unsolved, definition: false };
+    // (another device's, of the same definition: a twin's state, compared by its numbers)
+    if (m.device !== now.device) return deepEqual(m.source, this.def) ? undefined : { moved: "it is another device's, of another definition: check a solution with the device that returned it", unsolved, definition: false };
+    const definition = m.def === now.def;
+    const moved = m.state === now.state ? null : definition ? `the device has moved on since it was made, most recently by a ${now.by}` : 'the device has been set() to a new definition since it was made';
+    return { moved, unsolved, definition };
   }
 
   /** The solver, built on first use (so construction only validates the definition). */
@@ -194,11 +245,12 @@ export class Device {
     // (a step in a source restarts the time stepping's order, as at any discontinuity).
     if (live && sameExceptDrives(this.def, def) && plainContacts(def)) {
       this._redefineDrives(def);
+      this._moved('set()', false);
       return this;
     }
     // A rebuild, carrying the state by what each value means (src/carry.js). It changes the device
     // only once it has all succeeded: a change that fails leaves it as it was.
-    const was = { def: this.def, model: this.model, solver: this._solver };
+    const was = { def: this.def, model: this.model, solver: this._solver, mark: this._mark };
     try {
       // A new grid and anything else, on a steady state: the new grid first, the steady state
       // solved again there (the state it stands for), then the rest, as two set()s are. (In one,
@@ -219,6 +271,7 @@ export class Device {
           this._settleRegrid();
           if (sameExceptDrives(mid, def) && plainContacts(def)) this._redefineDrives(def);
           else this._rebuild(def, this._solver);
+          this._moved('set()', false, true);
           return this;
         }
       }
@@ -227,8 +280,10 @@ export class Device {
       this.def = was.def;
       this.model = was.model;
       this._solver = was.solver;
+      this._mark = was.mark;
       throw err;
     }
+    this._moved('set()', false, true);
     return this;
   }
 
@@ -312,13 +367,16 @@ export class Device {
       this.solver._restore(snap);
       throw e;
     }
-    if (!sol.converged) this.solver._restore(snap);
-    else {
+    if (!sol.converged) {
+      this.solver._restore(snap);
+      return this._marked(sol, 0);
+    } else {
+      this._moved('solve()', true);
       this._touched = true;
       this.solver.regriddedSteady = false; // (solved on the new grid already: see Device.advance)
       this.solver.jumpedT = undefined; // (solved at the new temperature: see integrate in src/timeSteps.js)
     }
-    return sol;
+    return this._marked(sol);
   }
 
   /**
@@ -336,13 +394,13 @@ export class Device {
     // (an animation's first frame) or 0 does nothing, and says so.
     const length = `dt is the step's length in s, a positive number (the device is at t = ${this.solver.time})`;
     if (typeof dt !== 'number' || dt < 0 || dt === Infinity) throw new SolverError(`step(${typeof dt === 'string' ? `'${dt}'` : dt}): ${length}${dt === Infinity ? '. For the long-time limit, solve() the steady state' : ''}`);
-    if (!(dt > 0)) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` });
+    if (!(dt > 0)) return this._marked(makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` }));
     // A step too short to move the clock (1e-17 s at t = 1 s) can't be taken: it posted charge
     // while the time stood still (Sol's third review).
-    if (this.solver.time + dt === this.solver.time) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: it's below the time's resolution at t = ${this.solver.time} s` });
+    if (this.solver.time + dt === this.solver.time) return this._marked(makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: it's below the time's resolution at t = ${this.solver.time} s` }));
     this._settleRegrid(); // (as advance() does: stepped unsolved, 27 A/m² where 68.8 is right)
     this.solver._freshDiagnostics();
-    return this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)));
+    return this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)), 'step()');
   }
 
   /**
@@ -371,7 +429,7 @@ export class Device {
     // Sol's third review)
     if (typeof tEnd === 'number' && tEnd > this.solver.time) this._settleRegrid();
     this.solver._freshDiagnostics();
-    return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)));
+    return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)), 'advance()');
   }
 
   // A call that moved the clock has a state of its own to carry through set(). (Marked before it
@@ -381,7 +439,9 @@ export class Device {
   // leaves the state as it found it, then throws: left at the refused trial, a later call
   // converged 0.7% off in its amounts, or the device couldn't be read or set() at all (Sol's
   // third review).
-  _touching(call) {
+  // (Its steps, accepted, are solutions of the device as it stands: its state is solved, and its
+  // solution marked so. A call that took none left the state as it was, and its solution is of it.)
+  _touching(call, by) {
     const t0 = this.solver.time, snap = this.solver._snapshot();
     let out;
     try {
@@ -393,8 +453,11 @@ export class Device {
       this.solver.combining = false;
       throw e;
     }
-    if (this.solver.time !== t0) this._touched = true;
-    return out;
+    if (this.solver.time !== t0) {
+      this._touched = true;
+      this._moved(by, true);
+    }
+    return this._marked(out);
   }
 
   // A steady state carried onto a new grid, solved there (once; see Device.advance).
@@ -404,8 +467,10 @@ export class Device {
     const s = this._solver;
     if (!s?.regriddedSteady) return;
     const snap = s._snapshot();
-    if (s.solveSteady().converged) s.regriddedSteady = false;
-    else {
+    if (s.solveSteady().converged) {
+      s.regriddedSteady = false;
+      this._moved('solve()', true); // (the steady state there: see Device.advance)
+    } else {
       s._restore(snap);
       s.regriddedSteady = false;
       s.restarted = 'set(): the steady state carried onto the new grid could not be solved again there, so what follows goes on from the interpolated state. (Said in every solution up to the next steady solve.)';
@@ -453,6 +518,7 @@ export class Device {
       throw err;
     }
     this._touched = true; // (solved: a state of its own)
+    this._moved('impedance()', true); // (its steady state solved again)
     // Where the current a frequency carries is lost to round-off (far below the device's slowest
     // relaxation, or read as a small difference of large terms), Z is said to be unresolved: an
     // electrolyte between blocking electrodes at 1e-4 Hz read Re Z 1e4 times too large, and a
@@ -489,7 +555,7 @@ export class Device {
   _checkpoint() {
     const solver = this.solver;
     // (the drives too: a change of drive alone is made in place, in the model this checkpoint keeps)
-    return { def: this.def, model: this.model, solver, touched: this._touched, drives: this.model.terminals.map((t) => t.drive), snap: solver._snapshot() };
+    return { def: this.def, model: this.model, solver, touched: this._touched, mark: this._mark, drives: this.model.terminals.map((t) => t.drive), snap: solver._snapshot() };
   }
 
   /**
@@ -502,6 +568,7 @@ export class Device {
     this.model = cp.model;
     this._solver = cp.solver;
     this._touched = cp.touched;
+    this._mark = cp.mark; // (the state as it was, and the solutions of it are of the present state again)
     // The drives as they were (a drive changed since, then a rebuild, left the checkpoint's model
     // driven at the new value while its definition said the old one), and the solver's own
     // reading of them; then its state.
@@ -515,6 +582,6 @@ export class Device {
    * @returns {Solution}
    */
   solution() {
-    return makeSolution(this.solver);
+    return this._marked(makeSolution(this.solver));
   }
 }

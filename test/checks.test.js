@@ -55,7 +55,9 @@ test('check(): the grid check finds a coarse grid, and its change estimates the 
   const grid = item(report, 'grid');
   assert.equal(grid.ok, false);
   assert.equal(report.ok, false);
-  assert.match(grid.summary, /largest change is region 0 \(Si\) charge, .* over 0\.01: refine the grid/);
+  // (each region's charge against itself: the two sides' are equal and opposite, and change alike
+  // to 4e-9, so either can be the largest)
+  assert.match(grid.summary, /largest change is region [01] \(Si\) charge, .* over 0\.01: refine the grid/);
   // Against a grid 16 times as fine, as good as exact here: the coarse grid's error, and the change.
   const charge0 = (s) => grid.details.diffs.find((d) => /region 0/.test(d.what)) && s;
   const exact = new Device(solar(0.5, { hmin: units.nm(1) / 16, hmax: units.um(1) / 16, ratio: 1.2 ** (1 / 16) })).solve();

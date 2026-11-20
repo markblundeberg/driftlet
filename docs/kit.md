@@ -183,6 +183,12 @@ the SHE level (`sol.phi` with the usual tables' ions).
 
 The example above ends with the left electrode's curve.
 
+`sol` is read with the device's present kinetics, so it must be a solution of the device as it is
+defined now: one from before a `set()` that rebuilt the device (a changed k0, a new grid) is
+refused. A later solve or step is fine (each frame of a recorded run has its curve). Of the
+device's present state, its levels are read as the solver holds them, so at the solved level the
+rates are the solution's to the last bit, a fast couple's near-equilibrium remainder too.
+
 An electrode's surface (a face's or a port's) is held too by default. With `{ surface: 'equilibrium' }`
 (a fifth argument) its coverages are re-equilibrated at each V instead: the steady-state curve,
 where a passive film's active–passive peak shows (`curve.bare` and `curve.coverage` give the bare
@@ -190,6 +196,12 @@ fraction and each species' coverage along it). Each reaction with surface specie
 equilibrium there, as far as they're independent (where two would set one species, the first that
 makes it from the solution alone does), and what they leave free keeps its amount from `sol`: a
 tethered couple's total $`\theta_R + \theta_O`$, with only its ratio set by V, or a species no reaction touches.
+Those reactions come back `equilibrated: true`. At equilibrium they aren't idle: at the steady
+state each surface species is made as fast as it's used, so an equilibrated step's rate is what
+that balance asks of it, given the others' rates from their kinetics. The others limit the
+current, and the curve is the quasi-equilibrium one: with Volmer (`H+ + e- = H(ads)`) listed
+before Tafel (`2 H(ads) = H2`), Volmer is equilibrated and passes twice Tafel's rate, the
+Tafel-limited curve; listed the other way, Tafel is, and Volmer limits.
 
 Concentrations are held, so these are the curves of that instant (for a mixed potential, the
 kinetic picture). Away from the actual level the composition beside the electrode would change,
@@ -286,7 +298,13 @@ potential $`\phi_R - \phi_L`$ (V) between two neutral solutions (mol/m³ by ion)
   a closed form, exact for one salt, and what JPCalc and most electrophysiology corrections use.
 - **Planck's** is the steady state of diffusion through a zone held between the two solutions,
   electroneutral and carrying no current, solved by shooting on the Nernst–Planck equations. It's
-  exact for that junction, and equal to driftlet's own steady state between two baths.
+  exact for that junction, and equal to driftlet's own steady state between two baths. Its steps
+  (`steps`, 4000 by default) are graded toward the dilute side, where the field goes as 1/Σz²c,
+  and it shoots from there: one salt against the closed form, it's right to well under a µV from
+  1:1 to 1e12:1 either way round. It checks itself against half its steps, and says so if they
+  differ by more than a µV.
+
+A neutral solute carries no current and feels no field, so it has no part in either: it's left out.
 
 A junction growing freely from first contact is neither: simulate it, as a transient from a
 `c0` step. For one salt all three agree; for mixtures they differ by up to a millivolt or so.
@@ -479,9 +497,13 @@ page can show that its numbers hold up. Pass the solution `solve()` or `advance(
 with the Device that returned it (`check(new Device(def), sol)` is another device, at its start),
 while it is still the device's state: the checks solve the device as it stands, so a solution
 from before a later `set()`, solve or advance fails as **solution**, "not the device's present
-state", with nothing else compared.
+state", with nothing else compared. Each solution knows which state of which device it's of, so
+this holds for any change, a material's included. A copy (`{ ...sol }`, or a solution sent from
+a worker) doesn't, and neither does another device's of the same definition: they're compared by
+their numbers (nodes, time, the terminals' voltages, φ), which a change of a material alone can
+slip past.
 
-- **converged**: the solve converged (`check(device)` on a device not solved or advanced since it was built or `set()` fails here: its state is a layout, not a solution).
+- **converged**: the solve converged (`check(device)`, or `check(device, device.solution())`, on a device not solved or advanced since it was built or `set()` fails here: its state is a layout, or a state whose equations `set()` has changed, not a solution).
 - **warnings**: the solution's warnings (unresolved double layers, steep profiles, a weakly held
   part, a material's data for another temperature) and the definition's likely unit slips. They're heuristics, so they're marked `?`, a
   prompt to look, and don't fail the check.
@@ -497,12 +519,18 @@ state", with nothing else compared.
   (in equilibrium, flows only of round-off against what it could carry) isn't listed. Where none
   is left, it says "equilibrium" only if no flow comes within ε of what it could carry; otherwise
   it names the largest, which may be round-off or a real flow too small to check this way (a
-  reverse diode's 1 µA/m², 4e-15 of what its holes could carry).
+  reverse diode's 1 µA/m², 4e-15 of what its holes could carry), and beside ledgers that do
+  balance it names that one too. An electrode's surface species (at a face, or over a port's
+  window) has a ledger of its own, what its reactions make and use. A term that isn't a number
+  (NaN or ∞) fails the item.
 - **conservation**, in a transient: every unreacting stretch, closed or reaching a terminal,
-  keeps what it held plus what came in (through its terminals, for the latter).
+  keeps what it held plus what came in (through its terminals, for the latter). An amount or
+  intake that isn't a number fails it.
 - **order**, in a steady state (unless `refine: false` or `order: false`): the device solved from
   its definition twice, its species listed as given and in reverse. The same physics must give
-  the same steady state, each terminal's voltage and current and each species' amount; where it
+  the same steady state, each terminal's voltage (to a µV of the span of the terminals' voltages,
+  or of the thermal voltage) and current (to a millionth of itself, where anything flows) and each
+  species' amount; where it
   doesn't, one of the two solves converged somewhere that isn't steady, without noticing, or the
   device has more than one steady state, which Newton picks by its path (an unstable one too:
   see [numerics](numerics.md#steady-state) for kicking a state to test it).
@@ -513,9 +541,14 @@ state", with nothing else compared.
   as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
   from this solution interpolated onto it. Every terminal's current (ports' too), what each
   neutral species brings in at the contacts, each floating terminal's voltage (an open-circuit
-  voltage) and each region's charge must agree to `tol` (relative; default 1e-2, about what a plot shows; a
+  voltage, relative to the span of the terminals' voltages or the thermal voltage, whichever is
+  larger, so it doesn't matter where 0 V is), each region's charge (with what its faces' diffuse
+  layers hold) and each diffuse layer's must agree to `tol` (relative, each against itself, the
+  largest current or charge a floor under the small ones; default 1e-2, about what a plot shows; a
   benchmark wants 1e-3 or less). The discretisation is second order, so the change estimates
-  this grid's own error (about ¾ of it); with nothing to compare it's `?`. Where an error doesn't shrink as the grid's
+  this grid's own error (about ¾ of it); with nothing to compare it's `?`, and so it is where the
+  finer grid can't be solved from this state and the state has a history (a transient, a floating
+  terminal, a closed stretch) that a solve from cold would lose. Where an error doesn't shrink as the grid's
   steps halve (a port's window falling between nodes), this can't see it. It costs one more solve, so run it once, not on every
   slider move. In a transient it's `?`, not checked: the answer there depends on the whole run
   (and on drives set along the way), so run it again yourself on a grid twice as fine.
