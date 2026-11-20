@@ -39,6 +39,29 @@ major version.
 - Species and ports named like JavaScript's built-in object properties (`'__proto__'`,
   `'constructor'`) are ordinary keys of every map a solution returns: `__proto__` was missing from
   them, and ν of `'constructor'` in `bulkReactions` came out NaN.
+- `impedance()` measured at a current-driven terminal that shares a conserved law with another
+  current-driven terminal read that other terminal's row by the law's change, holding its small
+  signal to 0, an AC short: a membrane port's Im Z came out 37× too small at 1 kHz, silently. It now
+  equals the held twin's, and a sine through the transient's.
+- A floating terminal's δV in `impedance()` carries an error estimate from the readings it was solved
+  from, and the floating responses are split into their regions' shifts and the rest: a gate behind
+  1e4 Ω·m², measured at the back contact at 1 nHz, read Re Z − R = −5.4 for 2869, and a Pt island
+  behind a bath's 1 Ω·m² read 0.3% off, both at relError of 1e-9 or below; both are right to 1e-7
+  now (the ROADMAP's Known item, rewritten).
+- A solution read right after a `set()` of a floating terminal's drive, with no step, reported the new
+  drive's current as flowing (a plate set to 2 A/m² read 2 A/m², its terminals summing to −2): it now
+  reads what the state was solved at, until a step or solve moves it.
+- A refused `impedance()` (a bad terminal name, a frequency of 0 or NaN) solved the steady state
+  first, losing a pending step response: its arguments are checked first, and a later throw leaves
+  the device as it was.
+- `impedance()` where no small-signal current returns (a dielectric up to a neutral contact) throws
+  "no current returns" instead of NaN with a round-off warning; its complex divisions are scaled
+  (Smith's), and a singular floating-terminal system throws. It warns where its iterative solve
+  stopped short by more than relError shows, and its profiles are those of the reading Z kept (the
+  docs now say the profiles don't resolve the current where the response is nearly a uniform shift).
+- A port that passes no charge (a neutral tracer's exchange) no longer limits where a contact's
+  current is read in `impedance()`, and mixing regions keep their cuts: both only added error (up to
+  relError 52).
 - A reaction's affinity is summed compensated (src/sum.js) wherever a rate or a pin reads it (bulk,
   face, port, Marcus–Hush–Chidsey, the steady pin, the readouts): participants with μ°/RT of ±40 had
   made a fast reaction's flux depend on the order its equation was written in (5e-4 at kf 1e14,

@@ -227,7 +227,10 @@ function solutionFields(solver, result) {
   let heldGap = 0;
   if (sol.converged) {
     for (const k of solver.floating) {
-      const I = solver.passedCurrent(k);
+      // (after a set() of drives alone, what it passed at the drives the state was solved at;
+      // one held then, set floating, passes what its fluxes say: see Device's _redefineDrives)
+      const I = solver.readV ? solver.readI?.[k] : solver.passedCurrent(k);
+      if (!Number.isFinite(I)) continue;
       const read = k === 0 ? sol.contacts.left : k === 1 ? sol.contacts.right : sol.ports[k - 2];
       const passed = k === 1 ? -I : I; // (the right contact's current is toward +x, out of the device)
       const gap = Math.abs(read.current - passed);

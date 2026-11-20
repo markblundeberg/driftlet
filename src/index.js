@@ -270,7 +270,11 @@ export class Device {
     this._settleRegrid();
     // (and is read at the voltages it was solved at, until a step or a solve moves it: read at
     // the new ones, a patch from 0 to 0.05 V read a plate charge of 1e-2 C/m² and 1e4 A/m² that
-    // never flowed; Sol's third review. A step from it is the step response.)
+    // never flowed; Sol's third review. A step from it is the step response.) A floating terminal
+    // likewise passes what its old drive said: read at the new one, a capacitive plate set from
+    // I: 0 to 2 read 2 A/m² flowing at no step, its terminals no longer summing to zero, without a
+    // word (Sol's fourth pass).
+    if (!s.readV) s.readI = Float64Array.from(s.terms, (t, k) => (s.floating.includes(k) ? s.passedCurrent(k) : NaN));
     s.readV = s.readV ?? Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
     applyDrives(this.model, drives);
     this.def = def;
@@ -419,7 +423,11 @@ export class Device {
     // out non-passive, Re Z −2.3e3 of 1.6e6 (stress echem 133). (A steady solve that fails leaves
     // the device as it was, as solve() does: a dark cell driven past saturation was left at a held
     // stage's 26.9 V, and the advance() the error suggests went on from there; Fable round 3's
-    // steady.js review.)
+    // steady.js review.) What the arguments alone refuse is refused first, and any later refusal
+    // (a frequency where the linearised system is singular) leaves it as it was too: a refused
+    // call that had solved the steady state took a pending step response with it, 3420 A/m² of
+    // a plate set to 0.1 V read 0 at the next step (Sol's fourth pass).
+    this.solver.impedanceArgs(frequencies, opts?.terminal);
     const snap = this.solver._snapshot();
     const steady = this.solver.solveSteady();
     if (!steady.converged) {
@@ -429,11 +437,17 @@ export class Device {
       this.solver._restore(snap);
       throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
     }
-    this._touched = true; // (solved: a state of its own)
     this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
-    const out = this.solver.impedance(frequencies, opts);
+    let out, unconverged;
+    try {
+      ({ unconverged, ...out } = this.solver.impedance(frequencies, opts));
+    } catch (err) {
+      this.solver._restore(snap);
+      throw err;
+    }
+    this._touched = true; // (solved: a state of its own)
     // Where the current a frequency carries is lost to round-off (far below the device's slowest
     // relaxation, or read as a small difference of large terms), Z is said to be unresolved: an
     // electrolyte between blocking electrodes at 1e-4 Hz read Re Z 1e4 times too large, and a
@@ -455,6 +469,9 @@ export class Device {
     }
     if (rough.length > 0) {
       warnings.push(`impedance: Re Z isn't resolved at ${g(rough[0])}${rough.length > 1 ? `…${g(rough.at(-1))}` : ''} Hz (${rough.length} of ${out.f.length} frequencies): it's under a tenth of its estimated error, relError·|Z| (a cautious estimate), so there read it only as small next to Im Z.`);
+    }
+    if (unconverged.length > 0) {
+      warnings.push(`impedance: the iterative solve stopped short of its tolerance at ${g(unconverged[0])}${unconverged.length > 1 ? `…${g(unconverged.at(-1))}` : ''} Hz (${unconverged.length} of ${out.f.length} frequencies), by more than relError there allows for: Z there may be less accurate than relError says.`);
     }
     return { ...out, warnings };
   }

@@ -43,6 +43,7 @@ export const STATE = [
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
   'readV', // the held voltages the state was solved at, after a set() of drives alone and until it moves (see makeSolution)
+  'readI', // with readV, what each floating terminal passed at the drives the state was solved at (NaN where it was held)
 ];
 // What Device.set() does with each STATE field when it rebuilds the solver (src/index.js), so a new
 // field gets a decision: 'kept' (the same value wherever the unknowns line up; a new grid
@@ -64,6 +65,7 @@ export const CARRY = {
   referenceAmounts: 'rebased', boundaryIntake: 'rebased', // (a closed stretch's amount, with its intake folded in; an open one's from the state)
   surfaceRef: 'rebased', // (what the old state held, where its surface is still there: src/carry.js)
   readV: 'restarted', // (a rebuild's state is read at its own drives)
+  readI: 'restarted', // (read only with readV)
 };
 // What Newton learns about the device, kept across calls and through a rollback on purpose: that it
 // loses a mode in a time step (lostMode, set for good), and how many convergences it has probed for
@@ -456,6 +458,7 @@ export class Solver {
     this.regriddedSteady = false;
     this.jumpedT = undefined;
     this.restarted = null;
+    this.readI = undefined;
 
     // Bulk reactions as flat participant lists: reactants with +ν, products with −ν. (Note the
     // sign: ν > 0 is consumed here, where a face's or port's p.nu > 0 is made, boundaries.js. A
