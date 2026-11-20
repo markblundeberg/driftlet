@@ -25,6 +25,24 @@ major version.
 - On a nearly full lattice, coupled spectators are put back to their amounts in either species order
   (the renormaliser ends with a joint Newton; one order had left Q 7e-5 high). The docs state the
   1e-12 net-feed allowance.
+- A steady solve's stages roll back through the one rollback (the whole solver state), not by hand
+  through the levels alone: a stage that failed after finite steps had left its capacitors' charges
+  behind, and the next stage stored against them (a floating plate's Fe³⁺ + Q/F off by up to 0.58%,
+  0.16 mV, unwarned). Five hand-written save sites are gone.
+- A Newton call whose islands round fails returns its earlier solution only through the checks every
+  converged return passes: that path had skipped the rate-held check and, forced, brought back the
+  myelinated axon's false root (+0.42 V) as converged. A refusal in the round's own assembly fails the
+  call instead of escaping the solve. `impedance()` rolls the device back when a readout of its steady
+  state throws (the readouts had sat outside its restore).
+- The floating march claims a limiting current only where the current stopped nearing its target;
+  where it was still nearing it at ±20 V, the warning says so and where its pace would pass it (an
+  ohmic resistor driven at 100 V's current had been refused as past "a limiting current"). The
+  warning's range is the currents actually passed (a peak between the extremes had read "0 to 0"),
+  and a start that passes the target exactly is taken.
+- Newton's residual check also reads the rows the bordered solve holds (conserved amounts, affinities,
+  circuit rows), each against its own response (nothing caught so far: the largest over the suite and
+  `bench/combos` is 1e-11 thermal units). A ramp whose stride underflows ends, and giant steps stay
+  finite near overflow.
 - **A terminal's charge on a flow-through path is in the time steps' error control.** A slow cyclic
   voltammogram after a rest read its charge 52% high at the first vertex, and its cycle's net charge
   with the wrong sign; a resistor's voltage ramp read 0.75 C/m² for 0.5; a backward-Euler current ramp
