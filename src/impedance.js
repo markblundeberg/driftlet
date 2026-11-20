@@ -65,8 +65,8 @@
 //   the least error taken; and where every other terminal floats, by Kirchhoff, Σ δV_k/R_k over
 //   those behind a resistance, its error ((ε + the solves' residual)·|δV_k| + δV_k's own)/R_k;
 //   each reading also takes on the δV's errors through its own dependence on them. With no
-//   floating terminal, cuts, and that error over 1% of the current, or with floating terminals,
-//   that error over 1% of either part of it: y (and each X_k) split into each region's uniform
+//   floating terminal, cuts, and that error over 1% of the current, or with floating terminals
+//   always: y (and each X_k) split into each region's uniform
 //   shift (_regionShift) and a remainder solved to GMRES's floor, the shift's effect taken only
 //   at the rows it can touch (_regionEdgeRows; a metal's carriers shifted, its current unknown
 //   not), the floating terminals' readings and δV taken again from those parts, and that reading
@@ -762,11 +762,13 @@ export class SmallSignal {
         // current the slope of levels uniform to 1e-14, more than a double can hold. (A port's
         // exchange sees the shift: its window's rows are kept with the edges'.) So does a MOS
         // capacitor's back contact, its channel held by a port. Unresolved: the estimate past 1% of
-        // the current; with floating terminals, past 1% of either part of it, which their
-        // responses' shifts can each take (a floating bath's region read in a cut, a gate's metal
-        // by its law's change: Sol's fourth pass).
+        // the current. With floating terminals, always: each X_k is nearly its terminal's region
+        // shifted, which its readings take apart (a floating bath's region read in a cut, a gate's
+        // metal by its law's change), at no cost the tests could see. (Split only where a part of
+        // the current was past 1%, a gate behind 1e6 Ω·m² at 10 nHz read Re Z − R 2219 for 2869,
+        // inside its estimate; Sol's fourth pass.)
         const { Ir, Ii, err } = best;
-        if (K === 0 ? cuts && err > 1e-2 * Math.hypot(Ir, Ii) : !(err <= 1e-2 * Math.min(Math.abs(Ir), Math.abs(Ii)))) {
+        if (K > 0 || (cuts && err > 1e-2 * Math.hypot(Ir, Ii))) {
           const r2 = floating(split(yr, yi, kT, 1), fl.map((k, b) => split(Xr[b], Xi[b], k, -1)));
           if (r2.err < err) best = r2;
         }

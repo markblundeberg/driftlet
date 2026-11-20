@@ -212,9 +212,9 @@ for live demos.
        gate contact resolves to 1e-6. (A floating terminal's δV now carries its readings' error,
        and the floating responses are split too where a reading is unresolved: the Pt island
        behind a bath's 1 Ω·m², once 0.3% off at relError 5e-12, reads Z − R within 4e-10 of the
-       held device, and behind 1 kΩ·m² within 2e-7 at relError 4e-6; Sol's fourth pass. Where R
-       is most of Re Z, Re Z − R keeps only the digits R leaves it: a gate behind 1e6 Ω·m² at
-       10 nHz read 2219 for 2869, inside its relError·|Z| of 4e3.)
+       held device, and behind 1 kΩ·m² within 2e-7 at relError 4e-6; a MOS gate behind 1e3–1e6
+       Ω·m², read at the back contact, Re Z − R within 2e-7 of the held gate's 2869 at 10 nHz–1 mHz;
+       Sol's fourth pass.)
      - `stuckReactions` now checks a bulk reaction node by node where it alone changes a
        participant that can't move; a port's reaction out of equilibrium both ways across its
        window, with an immobile surface species, is still checked only for one sign.

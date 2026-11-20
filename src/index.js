@@ -275,7 +275,7 @@ export class Device {
     // I: 0 to 2 read 2 A/m² flowing at no step, its terminals no longer summing to zero, without a
     // word (Sol's fourth pass).
     if (!s.readV) s.readI = Float64Array.from(s.terms, (t, k) => (s.floating.includes(k) ? s.passedCurrent(k) : NaN));
-    s.readV = s.readV ??Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
+    s.readV = s.readV ?? Float64Array.from(s.termV, (v, k) => (Number.isFinite(seen[k]) ? seen[k] : v)); // (a held one as the last step saw its source)
     applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
