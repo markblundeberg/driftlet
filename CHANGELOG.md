@@ -40,6 +40,14 @@ major version.
 - `advance()` checks its arguments before solving a pending regrid, so a refused call leaves the
   device as it was; `step()` and `advance()` refuse a `method` other than `'bdf2'` or `'be'`
   (`{ method: 'rk4' }` ran backward Euler, silently).
+- Time steps keep a trap's per-node total (any still species that only turn into each other) to
+  round-off. Under light, the capture rates' round-off buried each state's storage once steps passed
+  X/(εR), and the total floated: a lit trap's totals drifted 3.5e-7 by 1e6 s, and a lit thin-film
+  transistor stepped on from its steady state drifted 38% by 1e10 s, its current −2.3e-3 → −116 A/m²,
+  unwarned. Each step now keeps the sum by its change in place of one balance, as steady solves
+  already did. (Found by `bench/combos`'s semiconductor family.)
+- `alloy()` with a `bow` no longer writes a grade that `new Device` refuses (`grade.e-.mu0.x … strictly
+  increasing`) when a fraction knot sits within round-off of the layer's end.
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
