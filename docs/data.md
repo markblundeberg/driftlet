@@ -73,8 +73,9 @@ scaled by T/η moves nothing they show.
 | SO42- | −2 | 1.065 | −744.53 |
 | ClO4- | −1 | 1.792 | −8.52 |
 
-- **D**: diffusivities at infinite dilution, from the CRC Handbook of Chemistry and Physics,
-  "Ionic conductivity and diffusion at infinite dilution". They're limiting values, so at
+- **D**: diffusivities at infinite dilution, from the CRC Handbook of Chemistry and Physics
+  (97th ed., 2016), "Ionic Conductivity and Diffusion at Infinite Dilution" (P. Vanýsek, pp.
+  5-75–5-76), whose conductivities are per equivalent (½Cu²⁺). They're limiting values, so at
   real concentrations ions move slower: at 1 M, KCl conducts about 25% below its limiting value,
   so a supporting electrolyte's resistance comes out that much low.
 - **$`\mu^\circ`$**: standard Gibbs energies of formation, from Wagman et al., "The NBS tables of

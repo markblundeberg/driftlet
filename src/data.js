@@ -14,7 +14,8 @@ const freeze = (table) => Object.freeze(Object.fromEntries(Object.entries(table)
 
 /**
  * Aqueous ions at 25 °C. D: diffusivity at infinite dilution, m²/s (CRC Handbook of Chemistry
- * and Physics, "Ionic conductivity and diffusion at infinite dilution"). mu0: standard Gibbs
+ * and Physics, 97th ed., 2016, "Ionic Conductivity and Diffusion at Infinite Dilution", P. Vanýsek,
+ * pp. 5-75–5-76). mu0: standard Gibbs
  * energy of formation, J/mol, the usual table convention with ΔfG°(H⁺) = 0 (Wagman et al., "The
  * NBS tables of chemical thermodynamic properties", J. Phys. Chem. Ref. Data 11, Suppl. 2, 1982),
  * on the 1 mol/kg standard state, used here with c_ref = 1000 mol/m³ (1 M). NO₃⁻'s is the value
