@@ -291,6 +291,11 @@ export class Device {
    */
   solve(opts) {
     options(opts, 'solve', ['maxSteps', 'tol', 'continuation']);
+    // (as advance() checks its own: tol NaN with maxSteps Infinity stepped without end, a NaN
+    // motion never under tol; Astra's fourth pass)
+    const { tol, maxSteps } = opts ?? {};
+    if (tol !== undefined && !(tol > 0 && tol < Infinity)) throw new SolverError(`solve(): tol is the largest potential change, in thermal units, that ends a ramp of giant steps, a positive number; got ${tol}`);
+    if (maxSteps !== undefined && !(Number.isInteger(maxSteps) && maxSteps >= 1)) throw new SolverError(`solve(): maxSteps is the time steps per pseudo-transient ramp, a whole number ≥ 1; got ${maxSteps}`);
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
     // (And one that throws, as _touching does for the transients: a custom statistics that threw

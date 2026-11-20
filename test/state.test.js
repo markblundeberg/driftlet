@@ -115,7 +115,7 @@ const SCRATCH = new Set([
   // a step's own: where it lands, its source reading, the laws read as changes this step
   'landing', 'sourceBefore', 'combining', 'lawForm', 'steady', 'sourceOverride',
   // the laws a steady solve captures as it begins (captureLaws), and its stages' bookkeeping
-  'lawRefs', 'chargeRefs', 'pins', 'pinnedIslands', 'islandsOn', 'steadyAt', 'carried', 'generationScale', 'dimmer',
+  'lawRefs', 'chargeRefs', 'pins', 'pinnedIslands', 'islandsOn', 'steadyAt', 'carried', 'generationScale', 'dimmer', 'solveAmounts',
   // derived from the drives: the laws and constraints, rebuilt by redrive() (_laws)
   'constraints', 'islands', 'localConstraints', 'affinities', 'carriers', 'contactLaw', 'contactQ', 'floating', 'drivenKey',
   'stretches', 'flatStretches', // (each stretch's conserved flag)
@@ -123,7 +123,7 @@ const SCRATCH = new Set([
   // rollback from the checkpoint's)
   'terms',
   // what a call's solution reads of how it went (diagnostics): set by the call, read just after it
-  'violent', 'unreached', 'charging', 'drifted', 'settling', 'modelError', 'conditioning', 'islandImbalance', 'islandsFailed', 'islandsWorse',
+  'violent', 'unreached', 'charging', 'drifted', 'settling', 'modelError', 'conditioning', 'newtonError',
 ]);
 
 test('every field a run writes is in STATE, LEARNED or scratch; STATE names real fields', () => {

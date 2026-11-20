@@ -27,6 +27,8 @@
 //                        model.surfaces's (a port's or a face's); surfColOf[surface] its first column
 //   terms, floating      terminals (0 left, 1 right, 2 + k port k) with their drives as they are
 //                        now; the terminals whose voltage is an unknown
+//   time                 the clock, whose sources a steady solve reads (only noCurrent reads it:
+//                        a current that is zero then passes nothing; Solver._drivenKey keys it)
 //   blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined
 //                        the block layout (row o = block·M + slot), bulk reactions by material
 //                        (each with its rate constant at every node, kfNode), whether each runs
@@ -124,6 +126,8 @@
 // Tests: test/laws.test.js (one device per law once dropped); tools/lawsweep.js (810 devices,
 // solve() against a settled advance()).
 
+import { sourceAt } from './device.js';
+
 // Whether a stretch's species moves through it (mobile in every region, or a metal's carrier),
 // or stays still: D = 0 in its one region, so nothing carries it between nodes (trap states,
 // conserved node by node). A stretch over two regions is joined by a face that passes it, which
@@ -177,9 +181,12 @@ export function portNodes(port, i) {
   return [...out];
 }
 
-// Whether a terminal is driven by a current held at zero throughout (no resistance).
-export function noCurrent(t) {
-  return t.drive.kind === 'I' && !(t.drive.R > 0) && t.drive.src.value === 0;
+// Whether a terminal is driven by a current that is zero at time t (no resistance): the steady
+// solve's time, whose sources it reads. (A waveform too: a pulse not yet begun, 0 at the solve,
+// read as passing current gave its reaction's affinity row to another, and an open-circuit
+// electrode feeding a closed Ag⁺ pool settled 78 mV off; Astra's fourth pass.)
+export function noCurrent(t, time) {
+  return t.drive.kind === 'I' && !(t.drive.R > 0) && sourceAt(t.drive.src, time) === 0;
 }
 
 // Whether terminal k passes current only by charging a capacitance: no charged species through
@@ -525,7 +532,7 @@ export function findLaws(s) {
     // passes. Silver's, e⁻ + Fe²⁺ with the electrons fed, or Ag⁺ + AgNO₃, which nothing is.
     // A current held at zero passes nothing: an electrode at open circuit feeding a closed
     // pool of Ag⁺ beside a slow Fe³⁺/Fe²⁺ couple settled 78 mV off, its iron not stationary.)
-    const passes = (k) => !noCurrent(terms[k]);
+    const passes = (k) => !noCurrent(terms[k], s.time);
     const fed = (w) => w.some((x, k) => x !== 0 && ((isCarrier(k) && passes(carriersOf[k - X])) || (isStretch(k) && driven(stretches[k]).some(passes))));
     // Any of the combinations it alone changes will do, with any conserved amount added (whose
     // summed balance is zero too): one of them needs a row of its own left to take. (Silver's,

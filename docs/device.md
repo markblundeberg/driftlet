@@ -1354,8 +1354,8 @@ fails reports the state it failed in, then leaves the device as it was before it
 
 | option | default | what it does |
 |---|---|---|
-| `maxSteps` | 80 | time steps per pseudo-transient ramp, where the steady equations can't be solved directly |
-| `tol` | 1e-11 | the largest potential change, in thermal units, that ends a ramp of giant steps |
+| `maxSteps` | 80 | time steps per pseudo-transient ramp, where the steady equations can't be solved directly (a whole number ≥ 1) |
+| `tol` | 1e-11 | the largest potential change, in thermal units, that ends a ramp of giant steps (a positive number) |
 | `continuation` | `true` | `false`: Newton from here and the pseudo-transient ramp only, no ramp of the contacts' voltages |
 
 Notes:
@@ -1372,9 +1372,10 @@ Notes:
   they were last solved (the left one first, where it moved), or from level terminals on a cold
   start; with generation reactions (below), it ramps their rates up from nearly nothing.
 - **A current drive is found by a march.** A terminal driven by a current (open circuit, say) is
-  held at a voltage instead, the voltage marched until the current crosses its target, and
-  floated from there. If 20 V either way brings no crossing (a current beyond the limiting one),
-  the solve fails with a warning giving the range of currents the held voltages passed.
+  held at a voltage instead, the voltage marched until the current crosses its target (in
+  shorter strides past a held solve that fails), and floated from there. If 20 V either way
+  brings no crossing (a current beyond the limiting one), the solve fails with a warning giving
+  the range of currents the held voltages passed.
 - **Out of steps while settling**, where something slow is relaxing (a reaction, a link), the
   warning says so and gives the `maxSteps` that lets it finish.
 - **Converged, but warned.** A converged steady solve whose terminal currents don't add up, by

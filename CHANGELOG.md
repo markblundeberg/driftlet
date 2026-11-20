@@ -25,6 +25,23 @@ major version.
 - A `solve()` that throws (a custom statistics' table ending mid-solve) leaves the device as it was,
   as `step()` and `advance()` do: it had left the state moved, the clock at the last trial step, and
   `solution()` throwing.
+- A steady solve reads a waveform current that is zero at the solve's time as passing nothing, as a
+  constant 0 is: a pulse not yet begun left an open-circuit electrode's slow couple beside a closed
+  Ag⁺ pool 78 mV off equilibrium, warned only generically.
+- Giant steps (the steady solve of a device that can't be solved directly) accept a state only once
+  the floating terminals have stopped moving too (a gate behind 1e18 Ω·m² was left at −6 mV for
+  1 V); keep an amount no law holds from when the solve began, through every stage (a cold retry
+  lost 90% of a closed Y + Z unnoticed); and warn of a contact link too slow to resolve, as of a
+  stuck reaction.
+- The open-circuit march steps past a held solve that fails, and claims a limiting current only
+  where it showed one (one failed sample said "no steady state passes the driven current" and
+  suggested a sign slip); the held-current fallback meets a small target to 1e-10 of it.
+- A failed solve's rollback keeps its floating-region warning; a failure names Newton's own reason
+  where nothing more specific applies; a terminal current missing Kirchhoff beside another
+  terminal's real current is no longer taken for round-off.
+- `solve()` refuses a tol that isn't positive and finite and a maxSteps that isn't a whole number
+  ≥ 1 (a NaN tol with maxSteps Infinity hung), and a device whose giant step overflows (D ≲ 1e-300),
+  naming the species. Spectators sharing a lattice are renormalised in any listing order.
 - Eddy mixing in a graded region weighted its mixing by a mean concentration that left the grade
   out, so the answer depended on which way the device faced: under a 2 RT grade of μ°, the contact
   flux on 8 cells was −6.65e-3 one way and −5.30e-3 mirrored, silently, and disagreed with

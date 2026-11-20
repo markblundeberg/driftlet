@@ -44,6 +44,11 @@ export const STATE = [
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
   'readV', // the held voltages the state was solved at, after a set() of drives alone and until it moves (see makeSolution)
   'readI', // with readV, what each floating terminal passed at the drives the state was solved at (NaN where it was held)
+  // whether the state's floating pieces balance (newton's islands' round, src/newton.js), which its
+  // solution warns of: of the state, not the call (as scratch, a failed solve's restore kept them
+  // from the attempt it undid, and the restored state, 0.135 V off, lost its warning; Astra's
+  // fourth pass)
+  'islandImbalance', 'islandsFailed', 'islandsWorse',
 ];
 // What Device.set() does with each STATE field when it rebuilds the solver (src/index.js), so a new
 // field gets a decision: 'kept' (the same value wherever the unknowns line up; a new grid
@@ -66,6 +71,7 @@ export const CARRY = {
   surfaceRef: 'rebased', // (what the old state held, where its surface is still there: src/carry.js)
   readV: 'restarted', // (a rebuild's state is read at its own drives)
   readI: 'restarted', // (read only with readV)
+  islandImbalance: 'restarted', islandsFailed: 'restarted', islandsWorse: 'restarted', // (a rebuild's islands are its own: the next solve says)
 };
 // What Newton learns about the device, kept across calls and through a rollback on purpose: that it
 // loses a mode in a time step (lostMode, set for good), and how many convergences it has probed for
@@ -459,6 +465,9 @@ export class Solver {
     this.jumpedT = undefined;
     this.restarted = null;
     this.readI = undefined;
+    this.islandImbalance = 0;
+    this.islandsFailed = false;
+    this.islandsWorse = false;
 
     // Bulk reactions as flat participant lists: reactants with +ν, products with −ν. (Note the
     // sign: ν > 0 is consumed here, where a face's or port's p.nu > 0 is made, boundaries.js. A
@@ -832,9 +841,9 @@ export class Solver {
 
   // What src/laws.js reads (see its contract): the device's structure, never the state.
   _structure() {
-    const { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating } = this;
+    const { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating, time } = this;
     const { blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined } = this;
-    return { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating, blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined };
+    return { model, n, M, z, nNodes, stretches, stretchOf, flatStretches, rough, surfCols, surfColOf, terms, floating, time, blockOfNode, blockOfFace, rxsIn, runsIn, nodeMaterial, phiUndefined };
   }
 
   // An electrode surface at its starting coverages at node g: η = μ°/RT + ln(θ/θ₀).
@@ -888,10 +897,19 @@ export class Solver {
   }
 
   // How each terminal is driven, as far as the laws care (see src/laws.js): by a voltage or a current,
-  // behind a resistance or not, and a current that's held at zero throughout (which feeds a
-  // combination nothing, so a reaction's affinity may stand in for its summed balance).
+  // behind a resistance or not, and a current that's zero now (which feeds a combination nothing,
+  // so a reaction's affinity may stand in for its summed balance). A waveform's changes with the
+  // clock: solveSteady keys it again at its own time, and finds the laws again where it changed.
   _drivenKey() {
-    return this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}${noCurrent(t) ? '0' : ''}`).join();
+    return this.terms.map((t) => `${t.drive.kind}${t.drive.R > 0 ? 'R' : ''}${noCurrent(t, this.time) ? '0' : ''}`).join();
+  }
+
+  // The laws again where how the terminals are driven, read now, has changed since they were found.
+  _lawsNow() {
+    const key = this._drivenKey();
+    if (key === this.drivenKey) return;
+    this.drivenKey = key;
+    this._laws();
   }
 
   // Held terminals take their sources' values at sourceTime (a floating one keeps its voltage,
@@ -1031,6 +1049,7 @@ export class Solver {
     this.settling = null; // (a ramp out of steps while still settling: see _steadySteps)
     this.modelError = null; // (a statistics model's refusal: see newton)
     this.conditioning = null; // (the worst cancellation a factorisation showed: see newton)
+    this.newtonError = null; // (why Newton last failed, its own words: see newton)
   }
 
   // The solver's state between calls (see STATE, at the head of this file): a copy of each, and

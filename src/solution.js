@@ -392,8 +392,11 @@ function terminalSumWarnings(sol, solver, result, heldGap) {
     // the whole of one terminal's current, every other's ~0, is that terminal's round-off: a
     // battery electrode at rest, its electrons' current read at 1.2e-13 A/m² beside Li⁺'s 0, in
     // docs/statistics.md. Where there are islands, a wrong level reads the same way: a holes-only
-    // contact's floating base, −1e-20 and 4.25e-15.)
-    const roundoff = solver.islands.length === 0 && Math.abs(sum) > 0.5 * mx;
+    // contact's floating base, −1e-20 and 4.25e-15.) Every other's ~0 indeed: a sum over half the
+    // largest passed, and a resistor's contact read 1.01 to 1e6 times its current off, beside the
+    // other's true 1.4e8 A/m², went unwarned (Astra's fourth pass, by injection).
+    const others = I.reduce((a, [, t]) => a + Math.abs(t.current), 0) - mx;
+    const roundoff = solver.islands.length === 0 && others <= 1e-9 * mx;
     const missed = Math.abs(sum) > 1e-6 * mx && Math.abs(sum) > heldGap + 1e-12 * gross && !roundoff;
     if (missed && Math.abs(sum) > 1e-15 * area) {
       sol.warnings.push(
@@ -516,8 +519,9 @@ function failureWarnings(sol, solver, result) {
         `Something slow is relaxing (a reaction, a link): solve({ maxSteps: ${maxSteps + (Number.isFinite(more) && more > 0 ? more + 10 : maxSteps)} }) lets it finish.`,
     );
   } else if (unexplained) {
+    // (with Newton's own reason where it gave one: a singular border, 'diverging'; Astra's fourth pass)
     sol.warnings.push(
-      `${what} did not converge, and nothing specific showed why. ` +
+      `${what} did not converge${solver.newtonError ? ` (Newton's last try: ${solver.newtonError})` : ''}, and nothing more specific showed why. ` +
         'Check the definition with describe() (from driftlet/kit); approach this state in smaller steps (a sweep, or advance() in time); or refine the grid.',
     );
   }
