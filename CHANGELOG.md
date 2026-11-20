@@ -5,6 +5,17 @@ major version.
 
 ## Unreleased
 
+- `live()`: a ramp after a failed warm solve keeps a kit contact whole and ends on the target itself:
+  a series R removed from the contact survived it (1.7e-8 V at a contact set to 0.01, reported as a
+  success, and kept as the last good state), and a value ramped to 1e-18 landed at 0. `set()` copies its
+  patch; when nothing has converged, `ready` resolves with no solution rather than the unconverged
+  try; in a worker, a change that can't be sent is refused alone (valid changes beside it were lost),
+  and `close()` settles every promise still owed. (OpenAI's GPT-6.2 Astra, a fifth pass, over the kit.)
+- `recorder()`: a frame due where `advance()` ends, but for round-off (every 0.1, advance(0.3)), is kept,
+  and `frame(t)` finds it; probes given to `advance()` are refused (the returned trace held another
+  probe's values), as is going on after the device's terminals change; a call's `dt0` is its first step
+  and its `maxSteps` covers all its pieces; frames already passed are skipped, not duplicated. A
+  concentration probe in a metal reads NaN, as `sol.c` does.
 - An OCV table gives its own filling near a knot that falls between the construction grid's points
   (it was up to 10.5% off, 2.6 mV on a device, converged and unwarned); a table whose interpolated
   curve turns back between two close knots is refused; an anion host's table (z < 0) takes E rising
