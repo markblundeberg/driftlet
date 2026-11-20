@@ -615,6 +615,20 @@ notes), ranked by how much each trips an agent writing its first device:
 
 ## Later
 
+- **Open from Neon's first review (20 Nov 2026).** The cold start still sweeps left to right: a
+  metal away from the contacts takes its level from its left face's reaction only, so one whose
+  only reaction is on its right face starts at the running φ̂ (1.6, item 2). A start that finds its
+  anchors first (held contacts, held electrodes, gates, responding regions) and runs outward from
+  them would make every such case symmetric by construction, where each has been patched as found
+  (round 9's mirror, Neon 1.3 and 1.5). And a time step's charge rows assume the step starts
+  neutral at an ungated node: the pivot species' storage is left out there, so a start that isn't
+  neutral there loses the difference from that species, unseen (how Neon 1.1 lost its ions).
+  Taking the old charge into that storage at every node, as gated nodes have it, broke 37 tests:
+  understand what relies on the present form before changing it. And advance()'s diagnosis of a
+  stop at the time's resolution (the error estimate's floor, "loosen tol", or a step as short as
+  the device needs) turns on round-off: a start moved by 1e-11 V turned the one into the other in
+  test/transient.test.js's floor case.
+
 - **Open from bench/combos and round 7 (20 Nov 2026; repros in the maintainer's notes).** A floating
   metal contact (behind R or driven) whose metal meets a face reaction should start at its open-circuit
   level, where its face reactions pass the drive's current, as a port's start does: that needs a

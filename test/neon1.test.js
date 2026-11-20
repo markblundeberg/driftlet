@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY } from '../src/index.js';
 import { equilibrateFaces } from '../src/start.js';
-import { build, layer, metal, ohmic, check } from '../src/kit.js';
+import { build, layer, metal, ohmic, check, aqueous } from '../src/kit.js';
 
 // Two strictly neutral solutions meeting at a face that passes both ions, sealed, one or both
 // under a held gate. The face's t = 0⁺ equilibrium (equilibrateFaces) left the gate's charge out
@@ -76,4 +76,103 @@ test('a catalytic face, A = S then S = F to a held product: the steady solve car
   const eq = new Device(cell(0)); // (at F's own level the group is at equilibrium: still held flat)
   assert.deepEqual(eq.solver.flatStretches.map((st) => st.species), [0]);
   assert.equal(eq.solve().interfaces[0].rates[1], 0);
+});
+
+// Area 1's cold start, written another way round (Neon 1.3, 1.5): φ̂ ran from the left, set by the
+// first thing there that set it, and a stack mirrored, or its ports listed in another order,
+// started volts away and was refused where the other converged.
+const fe = (() => {
+  const lib = aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 });
+  lib.species.push({ name: 'e-', z: -1 });
+  return lib;
+})();
+const couple = { equation: 'Fe3+ + e- = Fe2+', k0: 1e-2, alpha: 0.5 };
+const solA = layer('water', 1e-6, { name: 'A', c0: { 'Fe3+': 1, 'Fe2+': 1, 'Cl-': 5 } });
+const solB = layer('water', 1e-6, { name: 'B', c0: { 'Fe3+': 2, 'Fe2+': 1, 'Cl-': 8 } });
+const coldPhi = (def, region) => {
+  const d = new Device(def), s = d.solution(), g = d.grid.regionStart[def.regions.findIndex((r) => r.name === region)];
+  return s.phi[g];
+};
+
+test('a held electrode in one solution and a floating one beside it: the start is the held one\'s, whichever is listed first (Neon 1.3)', () => {
+  const we = { name: 'we', region: 'A', from: 0, to: 0.4e-6, V: 5, terminal: 'e-', area: 1e4, reactions: [couple] };
+  const sense = { name: 'sense', region: 'A', from: 0.6e-6, to: 1e-6, I: 0, terminal: 'e-', area: 1e4, reactions: [couple] };
+  const cell = (ports) => build({ T: 298.15, library: [fe], stack: [{}, solA, {}], ports, grid: { minCells: 10 } });
+  const [a, b] = [cell([we, sense]), cell([sense, we])];
+  assert.ok(Math.abs(coldPhi(a, 'A') - coldPhi(b, 'A')) < 1e-9, `cold φ ${coldPhi(a, 'A')}, listed the other way ${coldPhi(b, 'A')} V`);
+  const s = new Device(b).solve();
+  assert.ok(s.converged && Math.abs(s.terminals.sense.V - 5) < 1e-6, `[sense, we]: ${s.converged}, sense at ${s.terminals.sense.V} V`);
+});
+
+test('an electrode held in the second of two solutions sets the first one\'s start too, as mirrored (Neon 1.3)', () => {
+  const port = { name: 'we', region: 'B', V: 10, terminal: 'e-', area: 1e4, reactions: [couple] };
+  const ab = build({ T: 298.15, library: [fe], stack: [{}, solA, solB, {}], ports: [port], grid: { minCells: 10 } });
+  const ba = build({ T: 298.15, library: [fe], stack: [{}, solB, solA, {}], ports: [port], grid: { minCells: 10 } });
+  assert.ok(Math.abs(coldPhi(ab, 'A') - coldPhi(ba, 'A')) < 1e-9, `cold φ in A ${coldPhi(ab, 'A')}, mirrored ${coldPhi(ba, 'A')} V`);
+  assert.ok(new Device(ab).solve().converged);
+});
+
+test('a floating gated contact sets no level: the electrode across the cell sets the start, as mirrored (Neon 1.3)', () => {
+  const cap = { I: 0, phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 };
+  const face = { reactions: [couple] };
+  const pt = layer('Pt', 1e-7);
+  const one = build({ T: 298.15, library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 }), metal('Pt')], stack: [cap, solA, solB, face, pt, ohmic(2, ['e-'])], grid: { minCells: 10 } });
+  const two = build({ T: 298.15, library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 0 }), metal('Pt')], stack: [ohmic(2, ['e-']), pt, face, solB, solA, cap], grid: { minCells: 10 } });
+  assert.ok(Math.abs(coldPhi(one, 'A') - coldPhi(two, 'A')) < 1e-9, `cold φ in A ${coldPhi(one, 'A')}, mirrored ${coldPhi(two, 'A')} V`);
+});
+
+test('a gate over part of a strictly neutral solution sets the whole region\'s start, either side of it (Neon 1.5)', () => {
+  const cell = (from, to) => ({
+    species: [{ name: 'Na+', z: 1 }, { name: 'Cl-', z: -1 }],
+    materials: { aq: { epsr: 0, species: { 'Na+': { D: 1.33e-9, cRef: 1000, mu0: 0 }, 'Cl-': { D: 2.03e-9, cRef: 1000, mu0: 0 } } } },
+    regions: [{ name: 'a', material: 'aq', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }],
+    contacts: { left: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked' } }, right: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked' } } },
+    ports: [{ name: 'g', region: 'a', from, to, V: 2, area: 1e6, capacitance: { C: 1 } }],
+    grid: { minCells: 10, hmax: 1e-7 },
+  });
+  for (const [from, to] of [[0.2e-6, 0.5e-6], [0.5e-6, 0.8e-6]]) {
+    const phi = new Device(cell(from, to)).solution().phi;
+    assert.ok(phi.every((p) => Math.abs(p - 2) < 1e-9), `gate on [${from}, ${to}]: cold φ ${[...phi].map((p) => p.toFixed(3))}`);
+  }
+});
+
+test('a hole-only layer with 20 V across it starts with finite densities, and a contact whose own density is beyond any number is refused, saying why (Neon 1.2)', () => {
+  // (the start's neutrality search clamps its exponents at ±700: the charge was flat there, read as
+  // a fixed charge's floor, and the search stopped on its first step, starting at c = ∞)
+  const layerOf = (contacts) => ({
+    species: [{ name: 'h+', z: 1 }],
+    materials: { d: { epsr: 10, species: { 'h+': { D: 1e-5, cRef: 10, mu0: 0 } } } },
+    regions: [{ name: 'a', material: 'd', length: 200e-9 }],
+    contacts,
+    grid: { minCells: 40 },
+  });
+  const fed = new Device(layerOf({ left: { V: 0, phi: 'pinned', zeroCharge: 0, species: { 'h+': 'blocked' } }, right: { V: 20, terminal: 'h+', phi: 'pinned', zeroCharge: 0, species: { 'h+': 'equilibrium' } } }));
+  assert.ok(fed.solution().c['h+'].every(Number.isFinite));
+  assert.ok(fed.solve().converged);
+  const absurd = new Device(layerOf({ left: { V: 20, terminal: 'h+', phi: 'pinned', zeroCharge: 20, species: { 'h+': 'equilibrium' } }, right: { phi: 'neutral', species: { 'h+': 'blocked' } } }));
+  assert.throws(() => absurd.solution(), /contacts\.left: holds h\+ at cRef·e\^7\d\d at its end, beyond any density/);
+});
+
+test("a face between strictly neutral solutions finds its t = 0⁺ where an ion's partition is beyond a double's range (Neon 1.4)", () => {
+  // (K = e^(Δμ°/RT + z D) overflowed, K·c_R was ∞·0 = NaN, and the face was left as c0 had it)
+  const sp = (m) => ({ 'Na+': { D: 1.33e-9, cRef: 1000, mu0: m }, 'Cl-': { D: 2.03e-9, cRef: 1000, mu0: 0 } });
+  const d = new Device({
+    species: [{ name: 'Na+', z: 1 }, { name: 'Cl-', z: -1 }, { name: 'A-', z: -1 }],
+    materials: { L: { epsr: 0, species: { ...sp(0), 'A-': { D: 0, cRef: 1000, mu0: 0 } } }, R: { epsr: 0, species: sp(2e6) } },
+    regions: [{ name: 'L', material: 'L', length: 1e-6, c0: { 'Na+': 20, 'Cl-': 10, 'A-': 10 } }, { name: 'R', material: 'R', length: 1e-6, c0: { 'Na+': 10, 'Cl-': 10 } }],
+    interfaces: [{ phi: 'neutral', species: { 'Na+': 'equilibrium', 'Cl-': 'equilibrium', 'A-': 'blocked' } }],
+    contacts: { left: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked', 'A-': 'blocked' } }, right: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked' } } },
+    ports: [{ name: 'g', region: 'R', V: 0, area: 1e6, capacitance: { C: 1 } }],
+    grid: { minCells: 8 },
+  });
+  d.solution();
+  const s = d.solver, M = s.M, gL = d.grid.regionEnd[0], gR = d.grid.regionStart[1], bL = s.blockOfNode[gL] * M, bR = s.blockOfNode[gR] * M;
+  const vol = d.grid.vol, before = [0, 1].map((i) => vol[gL] * s.c[gL * 3 + i] + vol[gR] * s.c[gR * 3 + i]);
+  equilibrateFaces(s);
+  assert.ok(s.u.every(Number.isFinite));
+  for (const i of [0, 1]) {
+    assert.ok(Math.abs(s.u[bL + 1 + i] - s.u[bR + 1 + i]) < 1e-6, `species ${i}: η ${s.u[bL + 1 + i]} | ${s.u[bR + 1 + i]}, not equal across the face`);
+    const after = vol[gL] * s.c[gL * 3 + i] + vol[gR] * s.c[gR * 3 + i];
+    assert.ok(Math.abs(after / before[i] - 1) < 1e-12, `species ${i}: amount ${before[i]} → ${after}`);
+  }
 });

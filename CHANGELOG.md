@@ -41,6 +41,18 @@ major version.
   S = F with F held 25 kJ/mol below A solved to no flux, A flat at its bath's level, and no warning,
   while a transient settled at 9.78e-3 mol/(m²·s). It now asks whether some coverages balance every
   reaction at once. (Neon's first review, 2.1.)
+- The cold start no longer depends on which way round a cell is written, or the order its ports
+  are listed in, in four more ways (Neon's first review, 1.3 and 1.5): a held electrode in a
+  solution counts before a floating one listed first (at 5 V the floating one's 0 V had the
+  solve refused, where the other order solved in one iteration); a held electrode in a second
+  solution moves the first, which nothing set, with it (refused at 10 V, its mirror image solving
+  in 7); a floating gated contact sets no level; and a gate over part of a strictly neutral
+  solution sets the whole region's start, not only the part after it. Also: a hole-only layer
+  with 20 V across it starts at finite densities (the start's neutrality search took its clamped
+  exponents for a fixed charge's floor, and started at c = ∞), and a pinned contact whose own
+  density is beyond a double's range is refused, saying so, where the solve failed on a singular
+  block (1.2); and a face's t = 0⁺ split is found in logs, where a partition beyond e^709 gave NaN
+  and left the face unequilibrated (1.4).
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.

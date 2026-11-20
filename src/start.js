@@ -23,10 +23,11 @@
 //      - else not fed by a contact: c0 is required (an error without it);
 //      - else at the level of what feeds it: a contact's where its stretch reaches that end, the
 //        left one's where it reaches both, but the right one's there where the right contact
-//        alone has φ 'bulk'; else its first linked port's; a contact's link held or exchanged at
+//        alone has φ 'bulk'; else a linked port's, a held one before a floating one; a contact's link held or exchanged at
 //        a rate (conductance, exchange) alike; fed by none of them (reactions only), from c0,
 //        required.
-//      φ̂ runs from the left: a pinned or capacitive left contact's (V − zeroCharge)/V_T, else 0,
+//      φ̂ runs from the left: a held (not floating) pinned or capacitive left contact's
+//      (V − zeroCharge)/V_T, else 0,
 //      plus each face's dipole. In a region where a level-fixed charged species responds to φ̂,
 //      φ̂ is chosen for neutrality (a bisection; node by node where a profile varies);
 //      otherwise it's the running φ̂, or where a conductor on the left or an electrode spread
@@ -37,15 +38,19 @@
 //      A conductor on the right counts where the conductor on the left balances nothing: in the
 //      first region, or further in where nothing has set φ̂ yet (a pinned or capacitive left
 //      contact, a region's neutrality or capacitance, an electrode's balance), and then the
-//      regions before it that took the running φ̂ are moved with it (φ̂ and each η by z·Δ). A
-//      floating port's electrode counts only where nothing has set φ̂ (its V, found in step 9 or
-//      6, is not known yet).
+//      regions before it that took the running φ̂ are moved with it (φ̂ and each η by z·Δ); so,
+//      likewise, where a held electrode spread through a region is the first to set it. Of a
+//      region's electrodes, a held one counts before a floating one, whatever order lists them;
+//      a floating port's electrode counts only where nothing has set φ̂ (its V, found in step 9
+//      or 6, is not known yet). A pinned, held contact whose own density, cRef e^(η − μ°/RT −
+//      z φ̂_edge), is beyond e^700 is refused (SolverError).
 //      In a strictly neutral region, a held port's capacitance through its window counts in
 //      each node's neutrality there, ρ + aσ = 0 with σ = C (V − zeroCharge − V_T φ̂) as the
 //      solve has it (not at an end box whose φ its contact sets), so φ̂ there responds even
 //      where no level-fixed species does, and is chosen node by node (the neutrality is by
 //      bisection; a trial a non-ideal model refuses counts its ideal charge, which has the sign
-//      there). Where
+//      there); where nothing else in the region responds, the nodes outside the window take
+//      the window's φ̂, as does what follows. Where
 //      neutrality is out of reach (c0's amounts leave a charge no held level balances): in a
 //      strictly neutral region the running φ̂, the region noted in s.unbalanced (for a transient
 //      that fails from it to say why); otherwise the φ̂ nearest the running one, toward less
@@ -140,16 +145,40 @@ export function initFromComposition(s) {
   // Which contact's level a species fed at both ends starts at (see below).
   const anchorSide = model.contacts.right.phi.type === 'bulk' && model.contacts.left.phi.type !== 'bulk' ? 'right' : 'left';
   s.unbalanced = []; // (strictly neutral regions whose start can't be neutral: see neutralPhi)
+  // A pinned contact's densities, cRef e^(η − μ°/RT − z φ̂_edge), φ̂_edge = (V − zeroCharge)/V_T:
+  // beyond e^700, past what a double holds, the definition can't be solved, and says so here
+  // (zeroCharge = V had put a hole contact at 10·e^778 mol/m³, and the solve failed on a
+  // singular block without a word why; Neon's review, 1.2).
+  for (const [side, k, g] of [['left', 0, 0], ['right', 1, grid.nNodes - 1]]) {
+    const ph = model.contacts[side].phi;
+    if (ph.type !== 'pinned' || s.floating.includes(k)) continue;
+    const mat = gradedAt(materials[regions[grid.nodeRegion[g]].material], regions[grid.nodeRegion[g]], grid.x[g]);
+    for (let i = 0; i < n; i++) {
+      if (!mat.present[i] || z[i] === 0) continue;
+      const ex = s.contactEta(side, i) - mat.mu0[i] / model.RT - (z[i] * (s.termV[k] - ph.zeroCharge)) / s.VT;
+      if (ex > 700) {
+        throw new SolverError(
+          `contacts.${side}: holds ${species[i].name} at cRef·e^${ex.toFixed(0)} at its end, beyond any density (a double holds e^709): ` +
+            `its level is ${((s.VT * ex) / z[i]).toPrecision(4)} V from its band at φ_edge = V − zeroCharge = ${(s.termV[k] - ph.zeroCharge).toPrecision(4)} V. ` +
+            'zeroCharge is V − φ_edge at zero charge (a barrier, a pzc): check it against the band offsets',
+        );
+      }
+    }
+  }
   s.uLo.fill(0);
   const eta = new Float64Array(n), cFix = new Float64Array(n), mode = new Int8Array(n); // 1 level, 2 amount
   // φ̂ runs from the left: from a pinned (or gated) left contact's φ at its zero charge, else 0.
   const leftPhi = model.contacts.left.phi;
-  let phiHat = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive' ? (s.termV[0] - leftPhi.zeroCharge) / s.VT : 0;
+  // (Not a floating one, whose V is the start's to find, below: its 0 V as it stands set φ̂, and a
+  // cell between a floating gated contact and a platinum held at 2 V started 0.79 V off the
+  // platinum's couple, its mirror image at it; Neon's review, 1.3.)
+  const leftSets = (leftPhi.type === 'pinned' || leftPhi.type === 'capacitive') && !s.floating.includes(0);
+  let phiHat = leftSets ? (s.termV[0] - leftPhi.zeroCharge) / s.VT : 0;
   // Whether anything has set φ̂ yet (a pinned or capacitive left contact, a region's neutrality,
   // an electrode's balance), and the regions before that, which took the running φ̂: 0 behind a
   // bath or an ohmic metal, whatever their voltages, a gauge of its own. Where an electrode on
   // the right is the first thing to set it, those regions move with it (see below).
-  let phiSet = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive';
+  let phiSet = leftSets;
   const unset = [];
   const shiftUnset = (d) => {
     for (const q of unset) {
@@ -230,7 +259,9 @@ export function initFromComposition(s) {
         const second = anchorSide === 'right' ? ['left', st.leftOpen] : ['right', st.rightOpen];
         const a = first[1] ? held(first[0], i) : NaN;
         eta[i] = Number.isFinite(a) ? a : second[1] ? held(second[0], i) : NaN;
-        if (!Number.isFinite(eta[i]) && st.linked.length > 0) eta[i] = s.portEta(model.ports[st.linked[0]], i);
+        // (a held port's level before a floating one's, whatever order lists them)
+        const port = [...st.linked].sort((a, b) => s.floating.includes(2 + a) - s.floating.includes(2 + b))[0];
+        if (!Number.isFinite(eta[i]) && port !== undefined) eta[i] = s.portEta(model.ports[port], i);
         mode[i] = 1;
         if (!Number.isFinite(eta[i])) {
           // Fed only through reactions (no level held at a contact): start from c0.
@@ -246,6 +277,7 @@ export function initFromComposition(s) {
     }
     // Net charge (mol/m³) at trial φ̂; decreasing in φ̂ wherever a level-fixed ion responds.
     const zeta = new Float64Array(n), cc = new Float64Array(n);
+    let clamped = false; // (whether charge() just clamped an exponent: its value then a plateau, not a floor)
     const charge = (ph) => {
       if (!mat.ideal) {
         // A model can refuse a trial φ̂ far out, where one ion is many orders denser than the rest
@@ -266,10 +298,12 @@ export function initFromComposition(s) {
         }
       }
       let q = qFixed + (aCV - aC * s.VT * ph) / FARADAY;
+      clamped = false;
       for (let i = 0; i < n; i++) {
         if (mode[i] === 2) q += z[i] * cFix[i];
         else if (mode[i] === 1 && z[i] !== 0) {
-          const ex = Math.min(700, Math.max(-700, eta[i] - mat.mu0[i] / model.RT - z[i] * ph));
+          const raw = eta[i] - mat.mu0[i] / model.RT - z[i] * ph, ex = Math.min(700, Math.max(-700, raw));
+          if (ex !== raw) clamped = true;
           q += z[i] * mat.cRef[i] * Math.exp(ex);
         }
       }
@@ -365,13 +399,16 @@ export function initFromComposition(s) {
       // (its carrier at its contact's level, the metal fed by the right contact)
       const fed = (p) => {
         const st = s.stretches[s.stretchOf[(r + 1) * n + p.i]];
-        return st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN;
+        return st?.rightOpen && st.contactFed ? held('right', p.i) : NaN; // (held: a conductance or exchange link's level too)
       };
       const was = phiHat;
       phiHat = balancedAt(grid.x[grid.regionEnd[r]], interfaces[r].reactions, interfaces[r].surface ?? [], 0, fed, phiHat);
       if (hit && !phiSet) shiftUnset(phiHat - was);
     }
-    const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
+    // (A held one before a floating one, whatever order lists them: the first listed, floating at
+    // its 0 V, started a solution 2 V from the held electrode's couple, and at 5 V was refused,
+    // where listed the other way it solved in one iteration; Neon's review, 1.3.)
+    const electrode = model.ports.filter((port) => port.region === r && port.reactions.length > 0).sort((a, b) => s.floating.includes(2 + model.ports.indexOf(a)) - s.floating.includes(2 + model.ports.indexOf(b)))[0];
     // (A floating one's voltage is the start's to find, below, from this φ̂: where something has
     // set φ̂ already, its V as it stands, 0 V, doesn't override it. It did, and a porous Fe³⁺/Fe²⁺
     // electrode at I = 0 beside a zinc moved the solution's φ̂ from the zinc's 0.827 V to
@@ -384,7 +421,13 @@ export function initFromComposition(s) {
       // that can be balanced at equilibrium with the port's level (the electrode at open circuit),
       // at its window's middle.
       const mid = 0.5 * (grid.x[electrode.nodes[0]] + grid.x[electrode.nodes[electrode.nodes.length - 1]]);
+      const was = phiHat;
       phiHat = balancedAt(mid, electrode.reactions, electrode.surface, 0, (p) => s.portEta(electrode, p.i), phiHat);
+      // (and the regions before that nothing set move with it, as for an electrode on the right:
+      // two solutions with the electrode in the second started the first at φ̂ = 0, 1.2 V from
+      // the couple's level, and at 10 V were refused, where the mirror image solved in 7; Neon's
+      // review, 1.3)
+      if (hit && !phiSet) shiftUnset(phiHat - was);
     }
     if (hit || (!mat.phiFree && (responds || capped))) phiSet = true;
     else if (!phiSet && !mat.phiFree) unset.push(r);
@@ -422,7 +465,10 @@ export function initFromComposition(s) {
             }
             return b;
           }
-          if (!(qb < qa * (1 - 1e-9))) return a; // (a fixed charge: as little as it gets)
+          // (a fixed charge: as little as it gets; but not where the charge is clamped flat, beyond
+          // e^700: a hole-only layer with 20 V across it, fed at its band's level, stopped there,
+          // on the first step, and started at c = ∞; Neon's review, 1.2)
+          if (!(qb < qa * (1 - 1e-9)) && !clamped) return a;
           [a, qa] = [b, qb];
         }
         return a;
@@ -435,6 +481,20 @@ export function initFromComposition(s) {
       return 0.5 * (lo + hi);
     };
     if (!mat.phiFree && responds) phiHat = neutralPhi(phiHat);
+    // A held gate over part of a region where nothing responds: its window's neutrality sets φ̂,
+    // and the nodes either side of it take that (nothing else sets theirs), as does what follows.
+    // (Taken node by node, the nodes before the window kept the running φ̂ and those after it the
+    // gate's, 2 V apart, which side by which way the stack was written; Neon's review, 1.5.)
+    let phiGate = NaN;
+    if (capped && !responds && !mat.phiFree) {
+      const gw = grid.regionStart[r] + capA.subarray(grid.regionStart[r], grid.regionEnd[r] + 1).findIndex((a) => a > 0);
+      if (graded) mat = gradedAt(base, reg, grid.x[gw]);
+      qFixed = fixedAt(reg, grid.x[gw]) / FARADAY;
+      [aC, aCV] = [capA[gw], capB[gw]];
+      for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[gw]);
+      phiGate = neutralPhi(phiHat); // (the window's own nodes still find theirs from the running φ̂, below)
+      [aC, aCV] = [0, 0];
+    }
     if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
     for (let g = grid.regionStart[r]; g <= grid.regionEnd[r]; g++) {
       if (profiled || graded || capped) {
@@ -444,15 +504,19 @@ export function initFromComposition(s) {
         for (let i = 0; i < n; i++) if (reg.c0Profile[i]) cFix[i] = profileAt(reg.c0Profile[i], grid.x[g]);
         if (mustBalance && !(aC > 0)) checkNeutral(` at x = ${grid.x[g].toPrecision(4)} m`);
         if (!mat.phiFree && (responds || aC > 0)) phiHat = neutralPhi(phiHat);
-        if (!mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
       }
+      // (outside a gate's window, its φ̂; but not at an end box whose φ its contact sets or gates)
+      const own = (side) => setsPhi(side) || model.contacts[side].phi.type === 'capacitive';
+      const ends = (g === 0 && own('left')) || (g === grid.nNodes - 1 && own('right'));
+      const ph = Number.isFinite(phiGate) && !(aC > 0) && !ends && Math.abs(phiGate - phiHat) > 1e-6 ? phiGate : phiHat; // (within round-off, the running one)
+      if ((profiled || graded || capped) && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, ph, zeta, cc);
       const b = s.blockOfNode[g];
-      u[b * M] = mat.conductor ? 0 : phiHat; // a metal's slot 0 is its segment flux
+      u[b * M] = mat.conductor ? 0 : ph; // a metal's slot 0 is its segment flux
       for (let i = 0; i < n; i++) {
         if (mode[i] === 1) u[b * M + 1 + i] = eta[i];
         else if (mode[i] === 2) {
           const zt = mat.ideal ? Math.log(cFix[i] / mat.cRef[i]) : zeta[i];
-          u[b * M + 1 + i] = zt + mat.mu0[i] / model.RT + z[i] * phiHat;
+          u[b * M + 1 + i] = zt + mat.mu0[i] / model.RT + z[i] * ph;
         }
       }
     }
@@ -656,12 +720,17 @@ export function equilibrateFaces(s) {
     const aL = capA[gL], aR = capA[gR], S = vL * aL + vR * aR, phiL0 = u[bL], D0 = u[bR] - u[bL];
     const phiLAt = (D) => (S > 0 ? phiL0 - ((vR * aR) / S) * (D - D0) : phiL0); // (falls as D rises)
     const gateL = (D) => (capB[gL] - aL * s.VT * phiLAt(D)) / FARADAY; // (aσ/F at the left node: rises with D)
-    // At a jump D = φ̂_R − φ̂_L: c_L/c_R = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the amount fixing both.
-    const split = (D) =>
+    // At a jump D = φ̂_R − φ̂_L: c_L/c_R = K = (cRef_L/cRef_R)·exp((μ°_R − μ°_L)/RT + z D), the
+    // amount fixing both; in logs, ln c = ln amount − ln(v_L + v_R/K) and so on, so that a K
+    // beyond a double's range (a divalent ion as the bracket widens) gives c → 0, not ∞·0 = NaN,
+    // which had ended the search and left the face as c0 had it (Neon's review, 1.4).
+    const lae = (a, b) => Math.max(a, b) + Math.log1p(Math.exp(-Math.abs(a - b))); // ln(e^a + e^b)
+    const lnSplit = (D) =>
       pass.map((i, j) => {
-        const K = (mL.cRef[i] / mR.cRef[i]) * Math.exp((mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D), cR = amount[j] / (vL * K + vR);
-        return [K * cR, cR];
+        const lnK = Math.log(mL.cRef[i] / mR.cRef[i]) + (mR.mu0[i] - mL.mu0[i]) / RT + z[i] * D, lnA = Math.log(amount[j]);
+        return [lnA - lae(Math.log(vL), Math.log(vR) - lnK), lnA - lae(Math.log(vL) + lnK, Math.log(vR))];
       });
+    const split = (D) => lnSplit(D).map(([a, b]) => [Math.exp(a), Math.exp(b)]);
     const qL = (D) => split(D).reduce((q, [cL], j) => q + z[pass[j]] * cL, qOther + gateL(D)); // (increasing in D)
     let lo = D0 - 1, hi = D0 + 1;
     while (qL(lo) > 0 && lo > D0 - 1e3) lo -= 2 * (hi - lo);
@@ -672,7 +741,7 @@ export function equilibrateFaces(s) {
       if (qL(m) < 0) lo = m;
       else hi = m;
     }
-    const D = 0.5 * (lo + hi), cs = split(D);
+    const D = 0.5 * (lo + hi), cs = lnSplit(D); // (ln c_L, ln c_R)
     const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
     const dL = phiLAt(D) - phiL0; // (the left node's φ̂, moved where a gate on the right asks it: what it doesn't share kept)
     u[bL] += dL;
@@ -680,8 +749,9 @@ export function equilibrateFaces(s) {
     u[bR] = u[bL] + D;
     for (let i = 0; i < n; i++) if (mR.present[i] && !pass.includes(i)) u[bR + 1 + i] = Math.log(keep[i] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
     pass.forEach((i, j) => {
-      u[bL + 1 + i] = Math.log(cs[j][0] / mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
-      u[bR + 1 + i] = Math.log(cs[j][1] / mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
+      if (!(amount[j] > 0)) return; // (nothing of it at either node: its levels as they were)
+      u[bL + 1 + i] = cs[j][0] - Math.log(mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
+      u[bR + 1 + i] = cs[j][1] - Math.log(mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
     });
   }
   s.computeConcentrations();

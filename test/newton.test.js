@@ -35,7 +35,9 @@ test('newton: a call with the islands\' rows in from the start keeps them', () =
   // step()'s second try (islands: true) converges at its 59th iteration; the islands round ran
   // there as if the rows had just gone in, into maxIter, and came back with s.islandsOn false on
   // a state solved with them in.
-  const dev = new Device(device(choice(200), { charged: true }));
+  // (Device 200 was the case; since the cold start reads a held electrode before a floating one
+  // (Neon 1.3) it solves without the second try; 609's converges at its 31st.)
+  const dev = new Device(device(choice(609), { charged: true }));
   const calls = steadyCalls(dev), sol = dev.solve();
   assert.ok(sol.converged);
   const asked = calls.filter((c) => c.asked);
