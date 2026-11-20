@@ -5,6 +5,12 @@ major version.
 
 ## Unreleased
 
+- bench/combos crosses fields: three families from Astra's ninth pass (a mixed ionic–electronic
+  film under light, doped Si against an electrolyte, a gated film whose dopant has two valence
+  states on shared sites), and three properties from Sol's (gauge: every voltage shifted by a
+  constant; scale: lengths stretched with D and ε to match; mirror, opt-in: the device reflected).
+  Gauge and scale held on all 240 devices tried. Mirror found three devices that solve cold one way
+  round and refuse, with a warning, reflected; they're being chased.
 - A lattice nearly full, its grid refined, keeps its amount within its sites: set() restored each
   species' amount by multiplying its concentrations, which at a node near capacity asked for more
   than the sites hold, so a gated film's dopant refined from 12 to 24 cells was refused as over

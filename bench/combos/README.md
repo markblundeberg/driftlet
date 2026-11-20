@@ -32,3 +32,21 @@ answer.
 Check a family with `node bench/combos/try.js NAME 40` before fuzzing with it. Nearly every case
 should build, solve cold, pass check() and solve at `plan.V`. A family whose devices fail cold
 only finds the cold start's known limits.
+
+## Symmetry properties
+
+`gauge` shifts every applied voltage by the same amount. It compares concentrations,
+terminal currents, and the electrochemical levels after subtracting the charge times that
+voltage shift. `scale` dilates the length at fixed time, concentration and voltage. It changes
+transport and electrostatic coefficients together, then compares the mapped steady state and
+terminal currents.
+
+`mirror` compares steady states on reflected grids. It swaps contact roles and maps the signs
+of directional inputs. A terminal current defined into the device retains its sign at the
+swapped contact. Radial geometry, a face with charge fixed to its right plate, and meshes
+that do not reflect node for node are skipped. The property is opt-in while reflected cold
+solves can refuse cases that solve in the original orientation.
+
+```sh
+node bench/combos/run.js --n 30 --only mirror,gauge,scale
+```
