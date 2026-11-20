@@ -26,7 +26,7 @@ fork of driftlet for its own use.
   it and cuts releases. Keep commits small and logically scoped. Before you open it, run
   `npm test`, and `npm run smoke` if you touched a demo or anything one imports. CI also runs
   `npm run bench -- --check` (its deterministic counters, matrix factorisations and the like,
-  against bench/baseline.json), `npm run types` with a strict check of the declarations, and
+  against bench/baseline.json), `npm run types` with a strict check of the declarations,
   `npm run stress -- --check`, and `npm run combos -- --n 8` (bench/combos: random devices whose
   features combine, through properties that compare two routes to one answer). A CDN pin in the README and llms.txt follows `version` in
   package.json, and a test checks it: leave both to the release.
