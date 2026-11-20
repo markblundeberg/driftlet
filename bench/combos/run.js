@@ -14,6 +14,8 @@
 //              device as it was: what it does next is what a twin that never made the call does,
 //              to the last bit
 //   split      advance(t) in one call and in several ends at the same state, to its tolerance
+//   charge     the charge each terminal passes over a slow ramp after a rest, in one default
+//              advance(), is what a run with its steps capped passes, to 1%
 //   dcZ        the impedance at low frequency is the steady dI/dV at plan.V (unique only)
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   stale      check() refuses a solution of the device before a set()
@@ -243,6 +245,42 @@ const props = {
     const dd = diff(one, many);
     // (tol 1e-6 per step, local: a few hundred steps' worth)
     return within(dd, { mu: 1e-3, I: 1e-3, Iabs: 1e-9, V: 1e-4 }) ? '' : `one advance vs pieces: ${fmt(dd)}`;
+  },
+
+  charge(c) {
+    // A rest long enough that the step size carried out of it is large, then a slow ramp of the
+    // drive: the charge each terminal passes, in one default advance(), against the same run with
+    // its steps capped. (A flow-through path's charge was out of the error control: a CV after a
+    // rest read 52% high at its vertex; round 7, Sol's re-read of the time integrator.)
+    if (!isTerminalContact(c.plan)) return skip('drive is a port');
+    const run = (opts) => {
+      const d = new Device(clone(c.def));
+      if (!converged(d.solve())) return null;
+      d.set(driveAt(c.plan, c.plan.V)); // (resting at plan.V: the ramp starts there)
+      d.advance(100 * c.plan.slow, { budgetMs: 5000 });
+      const t0 = d.solution().time, ramp = 20 * c.plan.slow;
+      if (!(t0 >= 100 * c.plan.slow * (1 - 1e-9))) return { failed: 'rest too slow' };
+      d.set(driveAt(c.plan, { t: [t0, t0 + ramp], values: [0, c.plan.dV].map((v, k) => (k ? c.plan.V + v : c.plan.V)) }));
+      // (the running totals the trace reads, as the solver holds them before the ramp)
+      const names = d.solver.terms.map((t) => t.name), before = Float64Array.from(d.solver.termCharge);
+      const a = d.advance(t0 + ramp, { budgetMs: 20000, maxSteps: 40000, ...opts(ramp) });
+      if (!a.converged || !a.done) return { failed: `stopped at t = ${a.time.toPrecision(3)}` };
+      const q = {};
+      names.forEach((n, k) => (q[n] = a.trace.terminals[n].charge.at(-1) - before[k]));
+      return { q, a };
+    };
+    const one = run(() => ({}));
+    if (!one) return skip('no steady state at the drives');
+    if (one.failed) return skip(one.failed);
+    const ref = run((ramp) => ({ dtMax: ramp / 400, tol: 1e-6 }));
+    if (ref.failed) return skip(`reference ${ref.failed}`);
+    let worst = 0, at = '';
+    const gross = Math.max(1e-300, ...Object.values(ref.q).map(Math.abs));
+    for (const [n, q] of Object.entries(ref.q)) {
+      const e = Math.abs(one.q[n] - q) / gross;
+      if (e > worst) (worst = e), (at = `${n}: ${one.q[n].toExponential(4)} vs ${q.toExponential(4)} C/m² (${one.a.steps} steps vs ${ref.a.steps})`);
+    }
+    return worst <= 1e-2 || worst * gross < 1e-12 ? '' : `charge passed over a slow ramp after a rest, default advance() vs steps capped: ${(100 * worst).toFixed(1)}% (${at})`;
   },
 
   dcZ(c) {
