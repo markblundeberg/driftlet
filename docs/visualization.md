@@ -213,7 +213,9 @@ under load, less each electrode's overpotential and the solution's share. The
 | thin, dotted, grey | $`\phi`$, on request: across an insulator, or as the SHE's level (below) |
 
 Electrons are steel blue, cations (and holes) warm colours, anions cool colours, and redox levels
-blue-violet.
+blue-violet. Where two solid lines of one weight lie on each other everywhere in view, as E_Fn and
+E_Fp do at equilibrium, the one drawn later is dashed over the other, so the level shows both
+colours in turn rather than hiding one.
 
 ## Species voltages for every charged species
 

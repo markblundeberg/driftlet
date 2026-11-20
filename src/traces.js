@@ -11,6 +11,25 @@ const finite = (a) => {
 };
 
 /**
+ * A plot range from the extremes of what's drawn, padded 6%; null where nothing finite is.
+ * A spread under a part in 10¹² of the values is rounding, not a profile, so it's drawn flat,
+ * ±0.5 about it: two equal baths' levels came out one ulp apart, and an axis an ulp wide stalled
+ * the tick loop (round 6's plot chase).
+ * @param {number} lo
+ * @param {number} hi
+ * @returns {[number, number] | null}
+ */
+export function padded(lo, hi) {
+  if (!(Number.isFinite(lo) && Number.isFinite(hi) && hi >= lo)) return null;
+  if (hi - lo <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi))) {
+    const mid = (lo + hi) / 2;
+    return [mid - 0.5, mid + 0.5];
+  }
+  const pad = 0.06 * (hi - lo);
+  return [lo - pad, hi + pad];
+}
+
+/**
  * One line of a level diagram.
  * @typedef {object} Trace
  * @property {string} id e.g. 'V:e-', 'Vstd:e-', 'phi', 'level:0'
@@ -25,7 +44,8 @@ const finite = (a) => {
  *   level's place among the distinct half-reactions asked for (a couple's level and standard
  *   level share one)
  * @property {number} [shift] a display offset added to all of a species' lines, V
- * @property {Float64Array} y V, NaN where undefined (a break in the line)
+ * @property {Float64Array} y V (or eV, with `energy`), NaN where undefined (a break in the line);
+ *   a copy, so a page may edit it in place
  */
 
 /**
@@ -37,7 +57,8 @@ const finite = (a) => {
  */
 export function speciesRole(sol, name) {
   const z = Object.fromEntries(sol.species.map((sp) => [sp.name, sp.z]));
-  if (!(name in z)) throw new DeviceError(`speciesRole: no species '${name}' in the solution`);
+  // (own keys: a species named 'constructor' read Object's; round 6's plot chase)
+  if (!Object.hasOwn(z, name)) throw new DeviceError(`speciesRole: no species '${name}' in the solution`);
   if (z[name] === 0) throw new DeviceError(`speciesRole: '${name}' is neutral, with no role in level diagrams (draw it muted, or in a colour of your own)`);
   const role = (n) => (n === 'e-' ? 'electron' : z[n] > 0 ? 'cation' : 'anion');
   const charged = sol.species.filter((sp) => sp.z !== 0).map((sp) => sp.name);
@@ -81,7 +102,9 @@ export const TRACES_OPTIONS = ['species', 'standard', 'phi', 'energy', 'levels',
  *   ({ 'V:e-': 'Fermi level' }), and display offsets per species (V), which move all of a
  *   species' lines together so that widely separated species can share one readable plot
  * @returns {{ x: Float64Array, series: Trace[], regions: { name: string, material: string, x0: number, x1: number, graded?: boolean }[],
- *   faces: number[], range: [number, number] }}
+ *   faces: number[], range: [number, number], energy: boolean }}
+ *   with `energy` saying what the lines are, electron energies (eV) or voltages (V), for the
+ *   axis's title (levelChart's default ylabel follows it)
  */
 export function traces(sol, { species, standard = true, phi = false, energy = false, levels = [], labels = {}, shifts = {} } = {}) {
   checkOptions('traces', arguments[1], TRACES_OPTIONS);
@@ -97,15 +120,19 @@ export function traces(sol, { species, standard = true, phi = false, energy = fa
     }
   }
   const sign = energy ? -1 : 1, unit = energy ? 'eV' : 'V';
-  const bipolar = names.includes('h+');
+  // E_Fn beside holes that are there: a metal-only device whose kit library also carried a
+  // semiconductor has an h+ of no values, and its one Fermi level read E_Fn (round 6's plot chase).
+  const bipolar = Object.hasOwn(sol.V, 'h+') && finite(sol.V['h+']);
   const energyLabels = { 'V:e-': bipolar ? 'E_{Fn}' : 'E_F', 'Vstd:e-': 'E_c', 'V:h+': 'E_{Fp}', 'Vstd:h+': 'E_v' };
   const zOf = Object.fromEntries(sol.species.map((sp) => [sp.name, sp.z]));
-  const pretty = (name) => (name in zOf ? typeset(name, zOf[name]) : name);
+  const pretty = (name) => (Object.hasOwn(zOf, name) ? typeset(name, zOf[name]) : name);
   const series = [];
   for (const name of shown) {
     if (!names.includes(name)) throw new DeviceError(`traces: no charged species '${name}' in the solution`);
-    const shift = shifts[name] ?? 0;
-    const at = (y) => (shift || energy ? Float64Array.from(y, (v) => sign * v + shift) : y);
+    const shift = (Object.hasOwn(shifts, name) ? shifts[name] : undefined) ?? 0;
+    // Always a copy: an unshifted trace was the solution's own array, so a page converting a
+    // trace to mV in place converted the solution, and every later figure (round 6's plot chase).
+    const at = (y) => Float64Array.from(y, (v) => sign * v + shift);
     const common = { species: name, role: role(name), slot: slotOf(name), ...(shift ? { shift } : {}) };
     if (finite(sol.V[name])) series.push({ id: `V:${name}`, label: energy ? energyLabels[`V:${name}`] : `V_{${pretty(name)}}`, kind: 'level', ...common, y: at(sol.V[name]) });
     if (standard && finite(sol.Vstd[name])) series.push({ id: `Vstd:${name}`, label: energy ? energyLabels[`Vstd:${name}`] : `V°_{${pretty(name)}}`, kind: 'standard', ...common, y: at(sol.Vstd[name]) });
@@ -115,33 +142,44 @@ export function traces(sol, { species, standard = true, phi = false, energy = fa
     for (const name of phi) if (!known.includes(name)) throw new DeviceError(`traces: no region or material '${name}' to draw φ in (${[...new Set(known)].join(', ')})`);
     const inside = sol.regions.map((r) => phi.includes(r.name) || phi.includes(r.material));
     series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: Float64Array.from(sol.phi, (v, g) => (inside[sol.region[g]] ? sign * v : NaN)) });
-  } else if (phi) series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: energy ? Float64Array.from(sol.phi, (v) => -v) : sol.phi });
+  } else if (phi) series.push({ id: 'phi', label: energy ? '−qφ' : 'φ', kind: 'phi', role: 'phi', slot: 0, y: Float64Array.from(sol.phi, (v) => sign * v) });
   for (const lv of levels) if (typeof lv?.half?.equation !== 'string') throw new DeviceError('traces: each of levels is { half, label, standard }, its half a half() (as { half: half(\'Fe3+ + e- = Fe2+\') })');
-  const couples = [...new Set(levels.map((lv) => lv.half.equation))];
+  // A couple is its equation and its fixed μ: the hydrogen couple at two H₂ pressures is two
+  // levels, which shared a colour and a label (round 6's plot chase). Where two share an
+  // equation, their labels give the fixed μ.
+  const fixedOf = (lv) => Object.entries(lv.half.fixed ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const keyOf = (lv) => `${lv.half.equation}\u0000${JSON.stringify(fixedOf(lv))}`;
+  const couples = [...new Set(levels.map(keyOf))];
+  const shared = (lv) => couples.some((c) => c !== keyOf(lv) && c.startsWith(`${lv.half.equation}\u0000`));
+  const kJ = (mu) => `${+(mu / 1e3).toPrecision(6)} kJ/mol`;
   levels.forEach((lv, k) => {
-    const y = energy ? Float64Array.from(level(sol, lv.half, { standard: lv.standard }), (v) => -v) : level(sol, lv.half, { standard: lv.standard });
+    const y = Float64Array.from(level(sol, lv.half, { standard: lv.standard }), (v) => sign * v);
+    const which = shared(lv) && fixedOf(lv).length ? ` (${fixedOf(lv).map(([n, mu]) => `μ_{${pretty(n)}} = ${kJ(mu)}`).join(', ')})` : '';
+    // On the energy-up chart a standard level is drawn at −qV°, so it's an energy there, E°, as
+    // E_c and E_F beside it are: a 'V°' named a voltage at the opposite sign (round 6's plot chase).
+    const std = lv.standard ? (energy ? 'E° ' : 'V° ') : '';
     series.push({
       id: `level:${k}`,
-      label: lv.label ?? `${lv.standard ? 'V° ' : ''}${lv.half.equation.split(' ').map(pretty).join(' ')}`,
+      label: lv.label ?? `${std}${lv.half.equation.split(' ').map(pretty).join(' ')}${which}`,
       kind: lv.standard ? 'redox-standard' : 'redox',
       role: 'redox',
-      slot: couples.indexOf(lv.half.equation),
+      slot: couples.indexOf(keyOf(lv)),
       y,
     });
   });
   for (const s of series) {
-    if (labels[s.id] !== undefined) s.label = labels[s.id];
+    if (Object.hasOwn(labels, s.id) && labels[s.id] !== undefined) s.label = labels[s.id];
     if (s.shift) s.label += ` ⌇${s.shift > 0 ? '+' : '−'}${Math.abs(s.shift)} ${unit}`;
   }
+  // (finite values only: one ±∞ made the range infinite, and the ticks over it never ended)
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
     for (const v of s.y) {
+      if (!Number.isFinite(v)) continue;
       if (v < lo) lo = v;
       if (v > hi) hi = v;
     }
   }
-  if (!(hi > lo)) [lo, hi] = Number.isFinite(lo) ? [lo - 0.5, lo + 0.5] : [-1, 1];
-  const pad = 0.06 * (hi - lo);
   const regions = sol.regions.map((r) => ({ ...r }));
-  return { x: sol.x, series, regions, faces: regions.slice(1).map((r) => r.x0), range: [lo - pad, hi + pad] };
+  return { x: Float64Array.from(sol.x), series, regions, faces: regions.slice(1).map((r) => r.x0), range: padded(lo, hi) ?? [-1, 1], energy: !!energy };
 }

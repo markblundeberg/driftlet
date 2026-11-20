@@ -7,12 +7,13 @@
 // V°_i thin solid ones, in the species' colour; redox levels are thick dashed lines and their
 // standard levels thin dashed ones; φ is thin, dotted and grey. Electrons are steel blue, cations
 // (holes too) warm colours, anions cool ones, redox levels blue-violets; each colour follows its
-// species. A species drawn with a display offset carries a ⌇ mark. The colours are CSS custom
-// properties (--driftlet-electron, --driftlet-cation-1 …, --driftlet-anion-1 …,
-// --driftlet-redox-1 …, --driftlet-ink, …) with light and dark defaults of no specificity, so any
-// rule on the page restyles them.
+// species. A species drawn with a display offset carries a ⌇ mark. A solid line lying on another
+// of its weight everywhere in view (E_Fn and E_Fp at equilibrium) is dashed over it, so that
+// both colours show. The colours are CSS custom properties (--driftlet-electron,
+// --driftlet-cation-1 …, --driftlet-anion-1 …, --driftlet-redox-1 …, --driftlet-ink, …) with light
+// and dark defaults of no specificity, so any rule on the page restyles them.
 
-import { TRACES_OPTIONS, traces } from './traces.js';
+import { TRACES_OPTIONS, padded, traces } from './traces.js';
 import { powi } from './pow.js';
 import { DeviceError, checkOptions } from './errors.js';
 
@@ -88,30 +89,62 @@ const rich = (label, font) => {
 // Its width in characters, for layout.
 const span = (label) => labelParts(label).reduce((n, p) => n + (p.sub ? 0.75 : 1) * [...p.text].length, 0);
 
+// Round ticks over [a, b], about n of them, with the step they're spaced by. Each tick is
+// counted from the first rather than summed, and the loop is capped and must advance: over a
+// range one ulp wide `t += step` added nothing, and over ±∞ there was no end (round 6's plot
+// chase).
 function ticks(a, b, n) {
+  if (!(Number.isFinite(a) && Number.isFinite(b) && b > a)) return { values: [], step: NaN };
   const step0 = (b - a) / n;
   const mag = powi(10, Math.floor(Math.log10(step0)));
   const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= step0) ?? 10 * mag;
-  const out = [];
-  for (let t = Math.ceil(a / step) * step; t <= b + 1e-9 * step; t += step) out.push(Math.abs(t) < 1e-9 * step ? 0 : t);
-  return out;
+  const values = [], first = Math.ceil(a / step);
+  for (let k = 0; k <= 4 * n; k++) {
+    const t = (first + k) * step;
+    if (!(t <= b + 1e-9 * step)) break;
+    const v = Math.abs(t) < 1e-9 * step ? 0 : t;
+    if (values.length && !(v > values[values.length - 1])) continue;
+    values.push(v);
+  }
+  return { values, step };
 }
-const fmt = (v) => String(+v.toPrecision(4));
+// Tick labels with the decimals their step needs (0.05: two), trailing zeros dropped. Four
+// significant digits wrote 10985 nm as "10990", a label 5 nm from its tick on a 20 nm axis,
+// and [1, 1.00004] as 1, 1, 1, 1 (round 6's plot chase).
+const tickFormat = (step) => {
+  const d = Number.isFinite(step) ? Math.min(20, Math.max(0, -Math.floor(Math.log10(step) + 1e-9))) : 0;
+  return (v) => String(+v.toFixed(d));
+};
 
-// The range of the lines within [xs, xe], padded.
+// The range of what's drawn within [xs, xe], padded: the nodes inside the window and the lines'
+// values where they cross its edges, so a line leaving through an edge stays in the frame (a
+// zoom fitted to the nodes alone let it out). Drawn traces are fitted whether or not they're
+// zoomed: an edited trace's cached range left its plot empty (round 6's plot chase).
 function fit(tr, xs, xe) {
+  const { x } = tr;
   let lo = Infinity, hi = -Infinity;
+  const take = (v) => {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  };
   for (const s of tr.series) {
-    for (let g = 0; g < tr.x.length; g++) {
-      if (tr.x[g] < xs || tr.x[g] > xe || !Number.isFinite(s.y[g])) continue;
-      lo = Math.min(lo, s.y[g]);
-      hi = Math.max(hi, s.y[g]);
+    const y = s.y;
+    for (let g = 0; g < x.length; g++) {
+      if (!Number.isFinite(y[g])) continue;
+      if (x[g] >= xs && x[g] <= xe) take(y[g]);
+      if (g > 0 && Number.isFinite(y[g - 1])) {
+        for (const e of [xs, xe]) if (x[g - 1] < e && e < x[g]) take(y[g - 1] + ((y[g] - y[g - 1]) * (e - x[g - 1])) / (x[g] - x[g - 1]));
+      }
     }
   }
-  if (!(hi > lo)) return tr.range;
-  const pad = 0.06 * (hi - lo);
-  return [lo - pad, hi + pad];
+  const fitted = padded(lo, hi);
+  if (!fitted) return validRange(tr.range) ? tr.range : [-1, 1];
+  // Flat in view: the suggested range where it still holds the line (the context of the whole
+  // device), else a volt about it.
+  if (hi - lo <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi)) && validRange(tr.range) && tr.range[0] < lo && hi < tr.range[1]) return tr.range;
+  return fitted;
 }
+const validRange = (r) => Array.isArray(r) && r.length === 2 && Number.isFinite(r[0]) && Number.isFinite(r[1]) && r[1] > r[0];
 
 // Length unit for the x axis, from the device's extent.
 function lengthUnit(L) {
@@ -144,16 +177,23 @@ const LEVELCHART_OPTIONS = ['width', 'height', 'ylabel', 'range', 'xlim', 'title
  * Line chart of level-diagram traces as an SVG string.
  * @param {ReturnType<typeof traces>} tr from `traces()`
  * @param {{ width?: number, height?: number, ylabel?: string, range?: [number, number], xlim?: [number, number], title?: string, ytick?: (v: number) => string }} [opts]
- *   `xlim` (m) zooms into part of the device; the range then fits what's shown. `ytick` writes
- *   the y axis's tick labels, say as powers of ten for lines that are log₁₀ of something
+ *   Without `range`, the range fits what's drawn (edited lines too). `xlim` (m) zooms into part
+ *   of the device; the range then fits what's shown. `ylabel` defaults to the traces' own
+ *   quantity, 'electron energy (eV)' for `traces(sol, { energy: true })` and 'voltage (V)'
+ *   otherwise. `ytick` writes the y axis's tick labels, say as powers of ten for lines that are
+ *   log₁₀ of something
  * @returns {string}
  */
-export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V)', range, xlim, title, ytick = fmt } = {}) {
+export function levelChart(tr, { width = 640, height = 360, ylabel = tr?.energy ? 'electron energy (eV)' : 'voltage (V)', range, xlim, title, ytick } = {}) {
   checkOptions('levelChart', arguments[1], LEVELCHART_OPTIONS);
+  // (a range over ±∞ ran the tick loop without end; round 6's plot chase)
+  const asText = (r) => (Array.isArray(r) ? `[${r.join(', ')}]` : String(r));
+  if (range !== undefined && !validRange(range)) throw new DeviceError(`levelChart: range must be [lo, hi], finite, with lo < hi; got ${asText(range)}`);
+  if (xlim !== undefined && !validRange(xlim)) throw new DeviceError(`levelChart: xlim must be [x0, x1] in m, finite, with x0 < x1; got ${asText(xlim)}`);
   const id = `driftlet-plot-${instance}-${++counter}`;
   const { x, series, regions } = tr;
   const xs = xlim ? xlim[0] : x[0], xe = xlim ? xlim[1] : x[x.length - 1];
-  const [y0, y1] = range ?? (xlim ? fit(tr, xs, xe) : tr.range);
+  const [y0, y1] = range ?? fit(tr, xs, xe);
   const unit = lengthUnit(xe - xs);
 
   // Legend entries, flowed into rows above the plot.
@@ -202,12 +242,14 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
     if (shown) out.push(`<text x="${r2((a + b) / 2)}" y="${pad.t - 5}" text-anchor="middle" fill="var(--driftlet-muted)">${esc(shown)}</text>`);
   });
   // Grid and axes.
-  for (const t of ticks(y0, y1, 5)) {
+  const yt = ticks(y0, y1, 5), ylab = ytick ?? tickFormat(yt.step);
+  for (const t of yt.values) {
     out.push(`<line x1="${pad.l}" x2="${pad.l + pw}" y1="${r2(py(t))}" y2="${r2(py(t))}" stroke="var(--driftlet-grid)"/>`);
-    out.push(`<text x="${pad.l - 6}" y="${r2(py(t) + 4)}" text-anchor="end" fill="var(--driftlet-muted)">${esc(ytick(t))}</text>`);
+    out.push(`<text x="${pad.l - 6}" y="${r2(py(t) + 4)}" text-anchor="end" fill="var(--driftlet-muted)">${esc(ylab(t))}</text>`);
   }
-  for (const t of ticks(xs * unit.scale, xe * unit.scale, 6)) {
-    out.push(`<text x="${r2(px(t / unit.scale))}" y="${pad.t + ph + 16}" text-anchor="middle" fill="var(--driftlet-muted)">${fmt(t)}</text>`);
+  const xt = ticks(xs * unit.scale, xe * unit.scale, 6), xlab = tickFormat(xt.step);
+  for (const t of xt.values) {
+    out.push(`<text x="${r2(px(t / unit.scale))}" y="${pad.t + ph + 16}" text-anchor="middle" fill="var(--driftlet-muted)">${xlab(t)}</text>`);
   }
   // The faces, dotted lines across; where they crowd (under 6 px apart: a myelinated axon's 40
   // nodes at a phone's width hid its levels), ticks along the bottom instead.
@@ -232,6 +274,23 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   };
   // Thin lines first, so the thick ones the carriers feel sit on top.
   const order = [...series].sort((a, b) => (STROKE[a.kind]?.width ?? 2) - (STROKE[b.kind]?.width ?? 2));
+  // A solid line lying within a pixel of one already drawn (same weight, another colour)
+  // everywhere in view would hide it: at equilibrium E_Fp covered E_Fn, and pn.html's legend
+  // showed a blue swatch with no blue line (round 6's plot chase). It's drawn dashed over the
+  // other instead, so the two colours alternate along the one level. Where they part, as under
+  // bias, both are solid.
+  const tol = (0.75 * (y1 - y0)) / ph;
+  const covers = (s, e) => {
+    let n = 0;
+    for (let g = 0; g < x.length; g++) {
+      if (!Number.isFinite(s.y[g]) || x[g] < xs || x[g] > xe) continue;
+      if (!(Math.abs(s.y[g] - e.y[g]) <= tol)) return false;
+      n++;
+    }
+    return n > 0;
+  };
+  const solid = (s) => !(STROKE[s.kind] ?? STROKE.level).dash;
+  const drawn = [];
   const marks = [];
   for (const s of order) {
     let d = '', pen = false;
@@ -244,7 +303,12 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
       d += `${pen ? 'L' : 'M'}${r2(px(x[g]))} ${r2(py(v))}`;
       pen = true;
     }
-    if (d) out.push(`<path d="${d}" ${stroke(s)}><title>${esc(plain(s.label))}</title></path>`);
+    const width = (STROKE[s.kind] ?? STROKE.level).width;
+    const over = solid(s) && drawn.some((e) => solid(e) && (STROKE[e.kind] ?? STROKE.level).width === width && colour(e) !== colour(s) && covers(s, e));
+    if (d) {
+      out.push(`<path d="${d}" ${stroke(s)}${over ? ' stroke-dasharray="7 7"' : ''}><title>${esc(plain(s.label))}</title></path>`);
+      drawn.push(s);
+    }
     // A species drawn with a display offset: a small zigzag across its V_i, near the left.
     if (s.shift && s.kind === 'level') {
       const g = [...x.keys()].find((k) => x[k] >= xs + 0.04 * (xe - xs) && Number.isFinite(s.y[k]) && s.y[k] >= y0 && s.y[k] <= y1);
@@ -257,7 +321,10 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
   }
   out.push(`</g>`);
   if (series.some((s) => s.shift)) {
-    out.push(`<text x="${pad.l + pw - 6}" y="${pad.t + ph - 6}" text-anchor="end" fill="var(--driftlet-muted)">⌇ = per-species offset</text>`);
+    // With no legend, the note gives the offset, which was otherwise only in a tooltip (round
+    // 6's plot chase).
+    const lone = series.length === 1 ? ` (${series[0].shift > 0 ? '+' : '−'}${Math.abs(series[0].shift)} ${tr.energy ? 'eV' : 'V'})` : '';
+    out.push(`<text x="${pad.l + pw - 6}" y="${pad.t + ph - 6}" text-anchor="end" fill="var(--driftlet-muted)">⌇ = per-species offset${lone}</text>`);
   }
   out.push(`<rect x="${pad.l}" y="${pad.t}" width="${pw}" height="${ph}" fill="none" stroke="var(--driftlet-face)"/>`);
 
@@ -285,6 +352,6 @@ export function levelChart(tr, { width = 640, height = 360, ylabel = 'voltage (V
  */
 export function bandDiagram(sol, opts = {}) {
   checkOptions('bandDiagram', arguments[1], [...LEVELCHART_OPTIONS, ...TRACES_OPTIONS]);
-  const { width, height, ylabel = opts.energy ? 'electron energy (eV)' : undefined, range, xlim, title, ytick, ...pick } = opts;
+  const { width, height, ylabel, range, xlim, title, ytick, ...pick } = opts;
   return levelChart(traces(sol, pick), { width, height, ylabel, range, xlim, title, ytick });
 }
