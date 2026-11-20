@@ -113,7 +113,7 @@ export class BlockTridiagonal {
    * Factorise the current A, B, C. A, B, C are left untouched.
    * Throws if a diagonal block is exactly singular (unless `staticPivots`).
    * With `bothWays`, where the factorisation from the left lost a column (lostColumns: a
-   * pivot's every candidate cancelled to 1e-18 of the magnitudes it was formed from, so that the
+   * pivot's every candidate cancelled to 1e-15 of the magnitudes it was formed from, so that the
    * blocks up to it are singular to working precision) or met a singular block, the system is
    * factorised from the right too, and that one kept (fromRight) where it loses nothing: no
    * column, no perturbed pivot, every pivot ratio at least 1e-12 (or the other failed).
@@ -201,6 +201,7 @@ export class BlockTridiagonal {
           }
         }
       }
+      const perturbedBefore = this.perturbedPivots;
       let ratio = luFactor(lu, o, piv, offX[i], m, this);
       // A pivot far below the entries it's formed from may be round-off alone (the level of a
       // region that only the blocks after it hold): its value, 7e-32 or 3e-16 or 0 as the
@@ -209,7 +210,11 @@ export class BlockTridiagonal {
       // cancellation), a pivot 1e-18 of them, all its digits lost, is perturbed like one that
       // cancelled to exactly nothing. (At 1e-15 it can still hold a digit Newton needs: a port's
       // steady solve wandered instead of converging.)
-      if (this.staticPivots && ratio < 1e-12) ratio = this._noisyPivots(i);
+      // (the block redone from scratch: its pivots counted there, not twice; Neon's review, 3.1)
+      if (this.staticPivots && ratio < 1e-12) {
+        this.perturbedPivots = perturbedBefore;
+        ratio = this._noisyPivots(i);
+      }
       if (!(ratio > 0)) {
         this.factored = false;
         this.singularBlock = i;
@@ -263,8 +268,14 @@ export class BlockTridiagonal {
         if (S[r * m + k] > col) col = S[r * m + k];
       }
       // (every candidate round-off against what the column was formed from: the blocks so far
-      // singular, whichever row the pivot is taken from; see factor)
-      if (bestVal <= 1e-18 * col) this.lostColumns++;
+      // singular, whichever row the pivot is taken from; see factor. Counted from 1e-15, not the
+      // 1e-18 below which a pivot is perturbed: a closed compartment's level lost to round-off
+      // left pivots 2e-17 to 6e-15 of their terms, solves of backward error up to 0.24, and the
+      // other way round was never tried, a mirrored membrane cell taking 112 factorisations for
+      // the 104 written the other way (Neon's review, 3.1). Not higher: from 1e-14 a floating MOS
+      // gate's inversion layer, a population held weakly, counts as lost, and the right one kept
+      // lets it drift; see factor.)
+      if (bestVal <= 1e-15 * col) this.lostColumns++;
       piv[offX[i] + k] = best;
       if (best !== k) {
         for (let c = 0; c < m; c++) {

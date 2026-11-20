@@ -116,8 +116,13 @@
 //      an electrode's, at weight w/z on its carrier column, and a contact's (D_in, no column), at
 //      λ = w/z on what it passes (none, at λ = 0, in a law the terminal passes none of). The
 //      first law through each takes a circuit row (the first
-//      terminal's in order whose v is left), and the laws after it have its multiple taken off.
-//      One with a charge left and no circuit row is unkept.
+//      terminal's in order whose v is left), and the laws after it have its multiple taken off,
+//      by the circuit row it took: a law that holds another port's charge too, and took another
+//      terminal's row, isn't recorded under that port. That can't change which rows are chosen
+//      (the choice is linear, and a law's row already taken is eliminated whatever multiple of
+//      it remains), only whether a law with a charge left is unkept (Neon's review, 2.3: a film
+//      with three floating ports whose couples share an electron cycle chose the same rows
+//      either way). One with a charge left and no circuit row is unkept.
 //   5. Every basis vector of conservedMoieties(s, { drives: true }) is accounted for: a
 //      spectator's own amount, a constraint, local constraints node by node, unkept, or dropped
 //      for one of the reasons marked DROP in findLaws. Each DROP states why nothing is lost.

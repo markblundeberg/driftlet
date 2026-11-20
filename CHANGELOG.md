@@ -61,6 +61,15 @@ major version.
   1e-3 of what it could carry (a reactant's flux 12.7% off read as 4.7e-3). And a solution of
   neutral species alone, copied before a set(), is known as stale by its concentrations (φ, which
   the test compared, is undefined there).
+- Three more from Neon's first review. A closed trace beside an abundant species keeps its amount
+  where the abundant one's starting profile dips at its region's left end: the stretches' starting
+  amounts, which order the conserved basis, read a profile there alone, and a trace's amount came
+  out 2.7% off with no warning, or the solve failed (2.4). A law of several species on one lattice
+  beside diffuse layers has room for each layer each species reaches: on 1–3 cells it threw "needs
+  104 entries, its workspace holds 100" (2.2). And the block factorisation tries the other way
+  round where a column is lost to plain round-off (1e-17 to 1e-15 of its terms), not only below
+  1e-18: written with its closed compartment first, a membrane cell's solves were quiet at a
+  backward error of 0.24, and it took 112 factorisations for the 104 written the other way (3.1).
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.

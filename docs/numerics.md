@@ -557,7 +557,11 @@ which cost four assemblies per product.
   column then cancels to round-off (2.5e-33 of the 0.78 it was formed from), whichever row the
   pivot is taken from, and every block after it inherits the noise (the next one's entries reach
   4e32); the same device written the other way round factorises with pivot ratios of 1e-3. So
-  where the factorisation from the left loses a column like that, the system is factorised from
+  where the factorisation from the left loses a column like that (every candidate below 1e-15
+  of what it was formed from: a level lost to plain round-off sits at 1e-17 to 6e-15, not at the
+  1e-18 that perturbs a pivot, and a mirrored membrane cell's solves were quiet at a backward
+  error of 0.24 below that; Neon's review. Not above it: at 1e-14 a floating MOS gate's inversion
+  layer counted as lost, and the factorisation from the right, kept, let it drift), the system is factorised from
   the right too (its blocks reversed), and that one kept where it loses nothing (no column, no
   perturbed pivot, every pivot ratio at least 1e-12): a device and its mirror image are then
   factorised the same way round. (Two reacting solutions with their bath on the right were

@@ -185,3 +185,17 @@ test('BlockTridiagonal factorises from the right where the left leaves a pivot o
   // and the cancellation it reports is the kept factorisation's
   assert.ok(two.cancellation().digits < 6);
 });
+
+test('a closed compartment written first costs the factorisations it costs written last: its level lost to round-off is seen (Neon 3.1)', () => {
+  // (lostColumns counted pivots below 1e-18 of their terms; a level lost to plain round-off sits
+  // at 1e-17 to 1e-15, so the factorisation from the right was never tried, the kept one's solves
+  // were quiet at a backward error up to 0.24, and Newton took more factorisations to absorb them)
+  const counts = [false, true].map((mirror) => {
+    const d = new Device(membrane21(mirror)), sys = d.solver.sys, factor = sys.factor.bind(sys);
+    let n = 0;
+    sys.factor = () => (n++, factor());
+    assert.ok(d.solve().converged);
+    return n;
+  });
+  assert.ok(counts[1] <= 1.05 * counts[0], `factorisations: ${counts[0]} as written, ${counts[1]} mirrored`);
+});

@@ -223,3 +223,42 @@ test("check() knows a copy of a solution of neutral species alone from before a 
   d.solve();
   assert.match(check(d, old, { refine: false }).text, /FAIL solution: not the device's present state \(its A differs/);
 });
+
+test("a closed trace beside an abundant species whose starting profile dips at the region's left end keeps its amount (Neon 2.4)", () => {
+  // (the stretches' starting amounts, which order the conserved basis, read a profile at its
+  // region's left end: B, 1000 mol/m³ but for a dip to 1e-12 at x = 0, counted as 1e-18 mol/m²,
+  // so A − B and B + C were kept, and A + C, 2e-17 mol/m², came out 2.7% off with no warning;
+  // at a 1e-8 trace the solve failed. The mirror image was exact.)
+  const names = ['A', 'B', 'C'], L = 1e-6;
+  const lib = { species: names.map((name) => ({ name, z: 0, cRef: 1000 })), materials: { film: { epsr: 0, species: Object.fromEntries(names.map((s) => [s, { D: 1e-9, mu0: 0 }])) } } };
+  for (const trace of [1e-11, 1e-8]) {
+    const B = { x: [0, L / 10, L], values: [1e-12, 1000, 1000] };
+    const d = new Device(build({ library: [lib], stack: [{}, layer('film', L, { c0: { A: trace, C: trace, B } }), {}], bulkReactions: [{ equation: 'A + B = C', kf: { film: 1e3 } }] }));
+    const s = d.solve(), amount = (sp) => s.c[sp].reduce((t, c, g) => t + d.grid.vol[g] * c, 0);
+    assert.ok(s.converged, `trace ${trace}`);
+    const AC = amount('A') + amount('C');
+    assert.ok(Math.abs(AC / (2 * trace * L) - 1) < 1e-9, `trace ${trace}: A + C ${AC}, started ${2 * trace * L} mol/m²`);
+  }
+});
+
+test('a law of several species on one lattice, beside diffuse layers, on a coarse grid: room for every layer each part reaches (Neon 2.2)', () => {
+  // (each law's derivative had room for each layer once; lawAmount writes each layer once per
+  // part that reaches it: Pt | four interconverting cations and Cl⁻ on one lattice | Pt, Stern and
+  // diffuse layers, threw "needs 104 entries, its workspace holds 100" on 1 to 3 cells)
+  const names = ['A+', 'B+', 'C+', 'D+', 'Cl-'];
+  const el = {
+    species: names.map((name) => ({ name, z: name === 'Cl-' ? -1 : 1, cRef: 1000 })),
+    materials: { el: { epsr: 0, statistics: [{ type: 'lattice', species: names, cMax: 5000 }], species: Object.fromEntries(names.map((s) => [s, { D: 1e-9, mu0: 0 }])) } },
+  };
+  const c0 = { 'A+': 100, 'B+': 100, 'C+': 100, 'D+': 100, 'Cl-': 400 };
+  const stern = { phi: { type: 'capacitive', C: 0.2 }, diffuse: { epsr: 78 }, zeroCharge: 0, species: Object.fromEntries(names.map((s) => [s, 'blocked'])) };
+  for (const cells of [1, 2, 3]) {
+    const def = build({
+      library: [el, metal('Pt')],
+      stack: [ohmic(0.1, ['e-']), layer('Pt', 1e-7), stern, layer('el', 1e-6, { c0 }), stern, layer('Pt', 1e-7), ohmic(0, ['e-'])],
+      bulkReactions: [{ equation: 'A+ = B+', kf: { el: 1 } }, { equation: 'B+ = C+', kf: { el: 1 } }, { equation: 'C+ = D+', kf: { el: 1 } }],
+      grid: { minCells: cells },
+    });
+    assert.ok(new Device(def).solve().converged, `${cells} cells`);
+  }
+});

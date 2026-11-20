@@ -846,13 +846,21 @@ export class Solver {
 
   // A stretch's amount from its regions' starting concentrations (c0), per unit area, before
   // any state exists: Infinity where one isn't given (set by a level, or doping), to order it last.
+  // (A profile integrated over its region's nodes, by trapezoids: read at the region's left end,
+  // a profile dipping to 1e-12 there made a 1000 mol/m³ species the trace, the basis kept the
+  // trace's partner apart from it, and a closed trace's amount came out 2.7% off, unwarned, where
+  // the mirror image was exact; Neon's review, 2.4.)
   _roughAmount(st) {
     const { regions, grid } = this.model;
     let t = 0;
     for (let q = st.regions[0]; q <= st.regions[1]; q++) {
-      const reg = regions[q], c0 = reg.c0Profile[st.species] ? profileAt(reg.c0Profile[st.species], grid.x[grid.regionStart[q]]) : reg.c0[st.species];
-      if (!(c0 >= 0)) return Infinity;
-      t += c0 * (grid.x[grid.regionEnd[q]] - grid.x[grid.regionStart[q]]);
+      const reg = regions[q], prof = reg.c0Profile[st.species];
+      if (!prof) {
+        if (!(reg.c0[st.species] >= 0)) return Infinity;
+        t += reg.c0[st.species] * (grid.x[grid.regionEnd[q]] - grid.x[grid.regionStart[q]]);
+        continue;
+      }
+      for (let g = grid.regionStart[q]; g < grid.regionEnd[q]; g++) t += 0.5 * (profileAt(prof, grid.x[g]) + profileAt(prof, grid.x[g + 1])) * (grid.x[g + 1] - grid.x[g]);
     }
     return t;
   }
@@ -871,10 +879,18 @@ export class Solver {
     this.carriers = found.carriers;
     this.unkept = found.unkept; // (laws no row here can keep: see _directSteady)
     // (room in each law's derivative for the diffuse layers' excesses, which src/laws.js, reading
-    // the structure alone, doesn't count: each layer's drop and its edge node's slots)
+    // the structure alone, doesn't count: for each of its parts and each layer that holds the
+    // part's species within its stretch, the layer's drop and its edge node's n + 1 slots, as
+    // lawAmount writes them. Counted once per layer, a law of four species on one lattice beside
+    // two layers needed 104 entries where 100 were kept; Neon's review, 2.2.)
     if (this.diffList.length > 0) {
-      const more = this.diffList.length * (this.M + 1);
       for (const cs of [...this.constraints, ...this.timeLaws]) {
+        let more = 0;
+        for (const { stretch } of cs.parts ?? []) {
+          const st = this.stretches[stretch];
+          for (const dl of this.diffList) if (dl.g >= st.nodes[0] && dl.g <= st.nodes[1] && dl.holds[st.species]) more += this.n + 2;
+        }
+        if (more === 0) continue;
         const idx = new Int32Array(cs.idx.length + more), w = new Float64Array(cs.w.length + more);
         idx.set(cs.idx);
         w.set(cs.w);
