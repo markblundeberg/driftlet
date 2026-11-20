@@ -945,6 +945,15 @@ export class BoundaryTerms {
     return p * powi(xq, p - 1) * others;
   }
 
+  // Whether a port's capacitance holds charge at node g: not at an end node whose φ its contact sets
+  // (left to the contact), nor where φ is undefined. (One rule, which the carry reads too: its own
+  // node set, every node of the window, carried a port's charge 1.9% off across a new geometry,
+  // and the first step read the gap as 5.6e5 A/m²; the inventory of duplicated quantities.)
+  _portHolds(g) {
+    const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
+    return !((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]);
+  }
+
   // A capacitance spread through a port's window: per area of electrode, σ = C (V − zeroCharge − φ)
   // on the port's side, so each node's charge balance (its φ row) gains vol·a·σ, and the port
   // passes the charging current d(Σ vol·a·σ)/dt (none in a steady state). An end node whose φ its
@@ -952,13 +961,12 @@ export class BoundaryTerms {
   _portCapacitance(port, k, dt) {
     const { M, u, uLo, res, VT } = this, R = this.rix, vol = this.model.grid.vol, area = this.portArea[k - 2];
     const { C: Cs, zeroCharge } = port.capacitance, V = this.termV[k], B = this.termB[k], Ct = this.termC[k];
-    const sets = (side) => ['pinned', 'bulk'].includes(this.model.contacts[side].phi.type);
     // Its current, the charging (Q − Q at the step's start)/dt; or, steady at no current, the
     // charge it keeps in place of that (see captureLaws in src/lawRows.js).
     const rate = Number.isFinite(dt) ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
     let Q = 0, dQdV = 0;
     port.nodes.forEach((g, w) => {
-      if ((g === 0 && sets('left')) || (g === this.nNodes - 1 && sets('right')) || this.phiUndefined[g]) return;
+      if (!this._portHolds(g)) return;
       const b = this.blockOfNode[g], s = vol[g] * area[w] * Cs;
       const q = s * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));
       this.qg[g] += area[w] * Cs * (V - zeroCharge - VT * (u[b * M] + uLo[b * M]));

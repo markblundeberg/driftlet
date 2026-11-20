@@ -24,13 +24,15 @@
 //   4. A node that nothing changed (the same place, to a few ulps; material data, statistics, T)
 //      is copied bit for bit, low parts and all.
 //   5. Amounts: each stretch's, region by region, what the old state held over a region matched to
-//      one that held it (scaled by the region's volume where resized or reshaped: concentrations
-//      kept), its own start's where nothing carries; a stretch closed on its own over the same space keeps its reference
+//      one that held it (where resized or reshaped, concentrations kept: its volume's part scaled
+//      node by node, a diffuse layer's excess by its plane's area), its own start's where nothing carries; a stretch closed on its own over the same space keeps its reference
 //      exactly. The state is put at those amounts (a species scaled, the others held) unless a held
 //      terminal sets its level; a surface's carried nodes likewise where its window and electrode are
 //      unchanged, refused where the sites can't hold it. A strictly neutral node whose concentrations moved keeps the net charge the old
 //      state held there (ions, fixed charge, a port's spread charge). Terminals' running charges
-//      and stored charges scale with their area (a contact's, a port's electrode).
+//      and stored charges scale with their area (a contact's, a port's electrode where its
+//      capacitance holds charge); a port's stored charge, node by node (its σ per area kept), and a
+//      floating one's voltage holds it on the final state.
 //
 // carryState(old, s, { oldDef, newDef, pure }) writes s's state (and its clock, terminals and
 // references); it changes nothing else, so a set() that throws from here leaves the device as it
@@ -215,13 +217,16 @@ export function carryState(old, s, { oldDef, newDef, pure = false }) {
       const tolX = 4 * Number.EPSILON * Math.max(Math.abs(ng.x[g]), Math.abs(og.x[a]), Math.abs(og.x[b]), L);
       if (L === Lo) for (const k of [a, b]) if (Math.abs(og.x[k] - xo0 - (ng.x[g] - x0)) <= tolX) at = k;
       if (at >= 0) (a = b = at), (w = wx = 0);
-      netAt[g] = (1 - wx) * netOf(a) + wx * netOf(b);
       const bg = s.blockOfNode[g], ba = old.blockOfNode[a], bb = old.blockOfNode[b];
-      // (a metal made a semiconductor, or back: nothing physical carries; its own start, and said)
+      // (a metal made a semiconductor, or back: nothing physical carries; its own start, and said,
+      // its old net charge too: kept, a Pt made water had the metal's sheet charge put on its new
+      // ions, K⁺ 100.10 / Cl⁻ 99.90 at its edge, while the solution said it started from its c0;
+      // the inventory of duplicated quantities)
       if ((s.nodeConductor[g] >= 0) !== (old.nodeConductor[a] >= 0) || (s.nodeConductor[g] >= 0) !== (old.nodeConductor[b] >= 0)) {
         kindChanged.add(r);
         continue;
       }
+      netAt[g] = (1 - wx) * netOf(a) + wx * netOf(b);
       let exact = at >= 0 && sameT && statsSame(old.nodeMaterial[a], s.nodeMaterial[g]) && old.nodeConductor[a] === s.nodeConductor[g] && old.nodeIdeal[a] === s.nodeIdeal[g] && old.background[a] === s.background[g];
       if (exact) for (let i = 0; i < n && exact; i++) {
         const ko = a * n + sp[i], kn = g * n + i;
@@ -453,7 +458,7 @@ function carryRest(old, s, info, { pure }) {
   s.regriddedSteady = !!old.atSteady && pure && !allCopied;
   // Terminals by name: a floating one's voltage, each one's running charge; a contact's or port's
   // charge at the end of the last solve or step (a contact's per area: scaled by the contact's
-  // area where the geometry changed; a port's, the same geometry only).
+  // area where the geometry changed; a port's per area of electrode, node by node).
   // (a contact of no area, a sphere's centre, holds no charge to scale: NaN there poisoned the state)
   const ratio = (k) => {
     const a = k === 0 ? og.area[0] : og.area[og.nNodes - 1], b = k === 0 ? ng.area[0] : ng.area[ng.nNodes - 1];
@@ -482,15 +487,21 @@ function carryRest(old, s, info, { pure }) {
     s.contactDEnd = { left: ownL ? s.contactD.left : old.contactDEnd.left * ratio(0), right: ownR ? s.contactD.right : old.contactDEnd.right * ratio(1) };
     info.ownCharge = { left: ownL, right: ownR, ports: s.model.ports.map(() => true) };
     s.portQEnd = Float64Array.from(s.portQ);
-    // (each port's by name, a total: scaled with its electrode's area; kept only in one geometry, a
-    // charge read at the new C and the old V stayed for good; Astra's second pass)
+    // (each port's by name, a total: kept only in one geometry, a charge read at the new C and the
+    // old V stayed for good; Astra's second pass)
+    info.perNode = [];
     if (old.portQEnd) s.model.ports.forEach((p, k) => {
       const o = old.model.ports.findIndex((q) => q.name === p.name);
       // (in the same geometry, the charge it held: a window widened over the same nodes adds
-      // uncharged membrane, its voltage moving if it floats; a new geometry scales it with the area)
+      // uncharged membrane, its voltage moving if it floats; a new geometry keeps it per area of
+      // electrode, node by node: see portChargeAcross)
       const op = old.model.ports[o];
       const same = o >= 0 && !freshAt(p.region) && (driven(2 + k) || (deepEqual(op.capacitance, p.capacitance) && op.from === p.from && op.to === p.to && deepEqual(op.area, p.area)));
-      if (same) (s.portQEnd[k] = old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k))), (info.ownCharge.ports[k] = false);
+      if (!same) return;
+      info.ownCharge.ports[k] = false;
+      // (a capacitance taken away or added under a current drive holds none to spread: its old total, 0)
+      if (sameGeometry || !op.capacitance || !p.capacitance) s.portQEnd[k] = old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k));
+      else (s.portQEnd[k] = portChargeAcross(old, s, o, k)), info.perNode.push([o, k]);
     });
   }
   // A floating plate or port at no current keeps its charge: its voltage is what holds it there
@@ -517,6 +528,10 @@ function carryRest(old, s, info, { pure }) {
     neutralize(s, neutralNodes(), netAt, moved);
     let off = holdDiffuse(s, layers, moved);
     off = Math.max(off, rescaleAll(s, targets.filter((t) => t.rescale), moved));
+    // (a floating port's voltage again, as neutrality moved the φ under it: held once, before, a
+    // port over a bar made 1 → 3 kept 9e-9 C/m² off what it held, and the first step drove that
+    // through the bar, its voltage jumping 0.58 mV in 1 ns, 58 mV in 10 ps; the inventory's item 1)
+    off = Math.max(off, holdFloatingCharges(s, moved));
     if (off < 1e-13) break;
   }
   neutralize(s, neutralNodes(), netAt, moved);
@@ -539,6 +554,9 @@ function carryRest(old, s, info, { pure }) {
     if (info.ownCharge.left) s.contactDEnd.left = s.contactD.left;
     if (info.ownCharge.right) s.contactDEnd.right = s.contactD.right;
     info.ownCharge.ports.forEach((own, k) => own && (s.portQEnd[k] = s.portQ[k]));
+    // (a held port's charge across a new geometry, from the final state too: its φ moved since; a
+    // floating one's voltage was set to hold what it held, above, and stays)
+    for (const [o, k] of info.perNode) if (s.terms[2 + k].drive.kind !== 'I') s.portQEnd[k] = portChargeAcross(old, s, o, k);
   }
   // (a carried state that isn't finite is refused, the device left as it was: a crowded double layer
   // whose ε fell twentyfold came back NaN and converged, unwarned; Astra's second pass)
@@ -564,18 +582,34 @@ function carryRest(old, s, info, { pure }) {
   } else if (old.restarted) s.restarted = old.restarted;
 }
 
-// A port's electrode area in all (Σ box · area per volume over its window), old over new: what a
-// port's total charge scales by with the state per area. (1 where either has none.)
+// A port's electrode area where its capacitance holds charge (Σ box · area per volume over the
+// nodes Solver._portHolds keeps), new over old: what its running charge scales by. (1 where either
+// has none.)
 function portArea(sv, k) {
   const port = sv.model.ports[k], a = sv.portArea?.[k];
   if (!port || !a) return 0;
   let t = 0;
-  port.nodes.forEach((g, w) => (t += sv.model.grid.vol[g] * a[w]));
+  port.nodes.forEach((g, w) => sv._portHolds(g) && (t += sv.model.grid.vol[g] * a[w]));
   return t;
 }
 export function portRatio(old, s, o, k) {
   const a = portArea(old, o), b = portArea(s, k);
   return a > 0 && b > 0 ? b / a : 1;
+}
+
+// A port's stored charge across a new geometry: what it held per area of electrode, node by node,
+// over the new electrode, read through Solver._portCapacitance's own sum (s.portQ, at the carried
+// state and s's V, C and zeroCharge, as last assembled). σ is linear in V, so at the old port's
+// C_o, zeroCharge z_o and V_o it's (C_o/C) s.portQ + C_o (V_o − z_o − V + z) A, A the new electrode
+// (portArea), plus what the old one held beyond its state's own charge (a drive changed since its
+// last step), spread evenly per area. (One ratio of areas for it all was exact only for a uniform σ:
+// a bar's area made 1 → 3 carried 1.9% off, the first 1 ns step reading +5.59e5 A/m² where −1.08e-2
+// is right; the inventory of duplicated quantities.)
+function portChargeAcross(old, s, o, k) {
+  const po = old.model.ports[o].capacitance, pn = s.model.ports[k].capacitance;
+  const Ao = portArea(old, o), An = portArea(s, k);
+  const held = Ao > 0 ? ((old.portQEnd[o] - old.portQ[o]) * An) / Ao : 0;
+  return (po.C / pn.C) * s.portQ[k] + po.C * (old.termV[2 + o] - po.zeroCharge - s.termV[2 + k] + pn.zeroCharge) * An + held;
 }
 
 // A terminal's running charge, by name, scaled as its stored charge is (a contact's by its area, a
@@ -597,15 +631,17 @@ export function carryTermCharges(old, s) {
 
 // Each floating terminal at no current that stores charge (a capacitive contact's plate, a port's
 // spread capacitance): its voltage set so the state holds the charge it ended with (linear in V).
+// Returns how far off the worst was, relative to its charge or a thermal volt's worth of it.
 function holdFloatingCharges(s, moved) {
-  if (!s.contactDEnd && !s.portQEnd) return;
+  if (!s.contactDEnd && !s.portQEnd) return 0;
   // (driven by a current and holding a capacitance's charge, which can't jump: a capacitive
   // contact's plate, a port's spread capacitance; ionic leaks beside it don't change that)
   const stores = (k) => (k >= 2 ? !!s.model.ports[k - 2].capacitance : s.model.contacts[k === 0 ? 'left' : 'right'].phi.type === 'capacitive');
   const held = s.floating.filter((k) => s.terms[k].drive.kind === 'I' && stores(k));
-  if (held.length === 0) return;
+  if (held.length === 0) return 0;
   const charge = (k) => (k >= 2 ? s.portQ[k - 2] : k === 0 ? s.contactD.left : -s.contactD.right);
   const want = (k) => (k >= 2 ? s.portQEnd?.[k - 2] : k === 0 ? s.contactDEnd?.left : -s.contactDEnd?.right);
+  let worst = 0;
   for (const k of held) {
     const target = want(k);
     if (!Number.isFinite(target)) continue;
@@ -614,12 +650,14 @@ function holdFloatingCharges(s, moved) {
     s.termV[k] = V0 + dV;
     s._assembleBookkeeping(Infinity);
     const slope = (charge(k) - q0) / dV;
+    worst = Math.max(worst, Math.abs(target - q0) / (Math.abs(target) + Math.abs(slope) * s.VT));
     s.termV[k] = Math.abs(slope) > 0 && Math.abs(target - q0) > 1e-14 * Math.abs(target) ? V0 + (target - q0) / slope : V0;
     // (a port's voltage moved: its spread charge moved in every box of its window, which a strictly
     // neutral region then balances)
     if (s.termV[k] !== V0 && k >= 2) for (const g of s.model.ports[k - 2].nodes) moved[g] = 1;
   }
   s._assembleBookkeeping(Infinity);
+  return worst;
 }
 
 // What the old state held of species i over solver sv's region q (its faces' diffuse layers'
@@ -642,6 +680,39 @@ function regionVolume(sv, q) {
   return v;
 }
 
+// What old region q held of species oi, carried onto new region r resized or in a new geometry,
+// concentrations kept: its volume's part, Σ box·c, scaled node by node, by Σ box·c over Σ box̂·c at
+// the carried c, box̂ a new box measured where it sits in the old region (its fraction along it) in
+// the old cross-section; and each diffuse layer's, Γ per area, by its plane's area. (One ratio of
+// volumes for both was exact only for a uniform c and no layer: a 10% longer KCl film beside two
+// diffuse layers moved its bulk by 6.0e-3 relative at 1 mM, the layers' excess spread through it;
+// a bar's area made 1 → 3 moved its concentrations 3e-5, the first step reading the φ that moved
+// with them as a port's charging; the inventory of duplicated quantities.)
+function resizedAmount(old, s, info, r, q, i, oi) {
+  const og = old.model.grid, ng = s.model.grid, n = s.n, geo = old.model.geometry;
+  const A = geo && geo.type !== 'planar' ? crossSection(geo) : null;
+  const L = s.model.regions[r].length, Lo = old.model.regions[q].length;
+  const x0 = ng.x[ng.regionStart[r]], xo0 = og.x[og.regionStart[q]], toOld = (x) => xo0 + (L > 0 ? ((x - x0) / L) * Lo : 0);
+  let bulk = 0, held = 0, num = 0, den = 0;
+  for (let g = og.regionStart[q]; g <= og.regionEnd[q]; g++) bulk += og.vol[g] * old.c[g * old.n + oi];
+  for (let g = ng.regionStart[r]; g <= ng.regionEnd[r]; g++) {
+    // (its box as applyGeometry draws it, src/grid.js, mapped into the old region)
+    const lo = g > ng.regionStart[r] ? ng.x[g] - ng.segLength[g - 1] / 2 : ng.x[g], hi = g < ng.regionEnd[r] ? ng.x[g] + ng.segLength[g] / 2 : ng.x[g];
+    const a = toOld(lo), b = toOld(hi), c = s.present[g * n + i] ? s.c[g * n + i] : 0;
+    num += ng.vol[g] * c;
+    den += (b > a ? (A ? A.integral(a, b) : b - a) : 0) * c;
+  }
+  const scale = num > 0 && den > 0 ? num / den : regionVolume(s, r) / regionVolume(old, q);
+  old.diffList.forEach((od, k) => {
+    if (od.g < og.regionStart[q] || od.g > og.regionEnd[q]) return;
+    const d = s.diffList.find((e) => info.map[e.f] === od.f && info.map[e.f + 1] === od.f + 1 && e.side === od.side);
+    const amt = og.area[od.g] * old.gam[k * old.n + oi];
+    // (a layer gone, its excess spread through the region as before)
+    held += d && og.area[od.g] > 0 ? amt * (ng.area[d.g] / og.area[od.g]) : amt * scale;
+  });
+  return bulk * scale + held;
+}
+
 // Each new stretch: its amount from here, want, region by region: what the old state held over a
 // region matched to one that held the species (scaled by its volume where resized or reshaped), its own start's
 // elsewhere (a fresh region, one newly holding it); whether that amount is to be written into the
@@ -662,7 +733,10 @@ function stretchTargets(old, s, info) {
       const carried = oi >= 0 && q >= 0 && !info.kindChanged.has(r) && old.model.materials[old.model.regions[q].material].present[oi];
       // (a region resized or in a new geometry keeps its concentrations: its amount scales with
       // its volume; a planar device's amounts are per m², so moles kept would have meant nothing)
-      want += carried ? regionAmount(old, q, oi) * (regionVolume(s, r) / regionVolume(old, q)) : regionAmount(s, r, st.species);
+      const resized = carried && (!sameGeometry || old.model.regions[q].length !== s.model.regions[r].length);
+      if (!carried) want += regionAmount(s, r, st.species);
+      else if (!resized) want += regionAmount(old, q, oi) * (regionVolume(s, r) / regionVolume(old, q));
+      else want += resizedAmount(old, s, info, r, q, st.species, oi);
       if (!carried || old.model.regions[q].length !== s.model.regions[r].length) same = false;
     }
     const fedHeld = (st.leftOpen && held(0)) || (st.rightOpen && held(1)) || st.linked.some((k) => held(2 + k));

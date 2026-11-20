@@ -1570,7 +1570,8 @@ Notes:
   process, and a roughened electrode is its area); a
   plate or port at no current keeps its charge through a new capacitance (its voltage moving), and
   across a new geometry a terminal's stored and passed charges scale with its area (a contact's,
-  a port's electrode), so the terminals' charges still add up.
+  a port's electrode; a port's stored charge node by node, its charge per area of electrode kept
+  where the cross-section varies), so the terminals' charges still add up.
 - **On a new grid** each species follows the profile Scharfetter–Gummel takes within each old cell
   (its drift, grading, flow and cross-section included, in logarithms), coverages and gates
   linearly within their own window (a window moved at the same width carries them with it; one
@@ -1586,7 +1587,8 @@ Notes:
   then the rest, as two `set()`s are, so the change's transient isn't lost.
 - **A carried state keeps what it holds, in moles**: a stretch closed on its own keeps its amount
   exactly; any other takes what the old state held over its regions, region by region (a region
-  resized, or put in a new geometry, keeps its concentrations, its amount scaling with its volume;
+  resized, or put in a new geometry, keeps its concentrations, its amount scaling with its volume
+  node by node, and a double layer beside it its excess per area;
   a fresh region, or one newly holding a species, adds its own start), each held exactly through
   the interpolation. A surface keeps its adsorbed moles where its window and electrode are
   unchanged; a window resized keeps its coverages where they were. So a new `c0` doesn't apply to a
