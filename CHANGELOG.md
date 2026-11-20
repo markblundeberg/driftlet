@@ -24,6 +24,22 @@ major version.
 - `set()` that turns a metal region into a non-metal (or back) starts it from its `c0`, as its solution
   says: the metal's sheet charge had been put on its new ions (K⁺ 100.10, Cl⁻ 99.90 at the edge).
   (These three from an inventory of the quantities computed in more than one place; ROADMAP, "2.0".)
+- Gate fractions stay in [0, 1] under BDF2: its extrapolated start for a gate is held to that range.
+  Fixed steps of 0.1 ms on a +50 → −100 mV clamp took m to −0.027, where the exact relaxation is at
+  7.7e-4; the accuracy is otherwise unchanged. (Round 7: Sol re-read the time integrator, and helpers
+  settled each pointer.)
+- The conservation ledger no longer counts a capacitive contact's charging as the ions it takes in: a
+  plate passing K⁺ at 1 A/m² showed 21× the intake, and `check()` failed a good run.
+- Two `set()`s of a drive with no step between no longer leave a floating plate at the voltage of the
+  first, which never acted (0.05 V and 0.01 C/m² that never passed).
+- Reading a solution no longer moves a held terminal's voltage to the far side of an edge, and a
+  rebuild that releases a terminal at an edge floats it from where the state was solved.
+- A failed `step()` puts back the whole state, its "floating region doesn't balance" warning and the
+  sources' time with it (it had its own restore, which missed both); an `advance()` that takes no
+  step (`maxSteps: 0`) leaves the time steps' memory and step size as they were.
+- `advance()` checks its arguments before solving a pending regrid, so a refused call leaves the
+  device as it was; `step()` and `advance()` refuse a `method` other than `'bdf2'` or `'be'`
+  (`{ method: 'rk4' }` ran backward Euler, silently).
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
