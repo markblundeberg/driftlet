@@ -452,7 +452,7 @@ export class Device {
   /**
    * Adaptive transient to time tEnd (s): variable-step BDF2 with local error control. With
    * `budgetMs`, it returns after that much wall time even if tEnd isn't reached (`done` says
-   * which), so an animation can call it once per frame; the step size carries over. `probes`
+   * which; each call makes at least one attempt), so an animation can call it once per frame; the step size carries over. `probes`
    * read a species (or φ) at points inside the device after every accepted step, into
    * `trace.probes` (one array per probe, alongside `trace.t`): what a detector at x sees. At a
    * face, `{ interface, species }` reads a species' flux through it (mol/(m²·s), toward +x), and

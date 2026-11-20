@@ -5,6 +5,9 @@ major version.
 
 ## Unreleased
 
+- `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
+  (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
+  calling it once a frame stayed at t = 0, `done` false each frame and no warning.
 - A fourth starter page, [demos/charging-starter.html](https://marklundeberg.com/driftlet/demos/charging-starter.html):
   a double layer charging after a voltage step, in time, against the RC time λL/D̄ of Bazant, Thornton
   and Ajdari, with the slower charging and salt uptake of a large step. The demo index now names what

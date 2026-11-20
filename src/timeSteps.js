@@ -531,7 +531,10 @@ export function integrate(s, tEnd, opts = {}) {
   const area = Math.max(...s.model.grid.area), quiet = (T) => area * (1e-12 + 1e-15 * T);
   const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
   while (s.time < tEnd) {
-    if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
+    // A frame's budget stops a call only after its first attempt: a budget spent before it (a
+    // small one, or a call whose setup outran it) stopped every call short with nothing done, and
+    // an animation calling once a frame never moved, done false each time and no warning.
+    if (steps + rejected >= maxSteps || (steps + rejected > 0 && clock() - start > budgetMs)) break;
     // Within round-off of the end (a target a hair past a breakpoint just landed on, say):
     // snap to it rather than attempt a step of ~1e-13 s, which can't be resolved and, in a
     // strictly neutral device, fails outright. Round-off of the time and negligible beside the

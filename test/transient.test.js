@@ -187,6 +187,17 @@ test('adaptive advance: error control, exact landing, traces, and frame budgets'
   }
   assert.ok(sol.done && sol.time === T && frames > 1);
   assert.ok(Math.abs(sol.plates.left.charge / ref - 1) < 2e-2);
+
+  // A budget spent before the first attempt still moves the clock: each call makes one, so an
+  // animation whose frame budget is smaller than a call's setup still runs (it stalled at t = 0).
+  const slow = chargingIsland();
+  let t = 0;
+  for (let k = 0; k < 5; k++) {
+    const s = slow.advance(T, { budgetMs: -1 });
+    assert.ok(s.converged && s.steps + s.rejected >= 1 && s.time >= t, `call ${k}: ${s.steps} steps, ${s.rejected} rejected`);
+    t = s.time;
+  }
+  assert.ok(t > 0, 'five calls moved the clock');
 });
 
 test('a jump in a strictly neutral cell: advance() finds its first step (longer, not shorter, steps help there)', async () => {

@@ -1431,7 +1431,7 @@ that a search lands on a whole fact.
 | `tol` | 1e-3 | local error per step, in thermal units of every potential ($`\phi`$ and each $`\bar\mu/RT`$): roughly 0.1% in concentrations per step |
 | `dt0` | the last call's step, else 1e-4 of the interval | the first step |
 | `dtMax` | none | the longest step, and so how finely `trace` and `probes` sample |
-| `budgetMs` | none | return after this much wall time, with `done: false` |
+| `budgetMs` | none | return after this much wall time, with `done: false` (each call makes at least one attempt) |
 | `maxSteps` | 100000 | stop there, with a warning saying so |
 | `method` | `'bdf2'` | or `'be'`, backward Euler |
 | `probes` | none | what to record inside the device at each accepted step (below) |
