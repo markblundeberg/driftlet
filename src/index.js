@@ -489,7 +489,14 @@ export class Device {
     const s = this._solver;
     if (!s?.regriddedSteady) return;
     const snap = s._snapshot();
-    if (s.solveSteady().converged) {
+    let settled;
+    try {
+      settled = s.solveSteady().converged;
+    } catch (err) {
+      s._restore(snap); // (a throw, as impedance()'s: rolled back, the regrid still to settle)
+      throw err;
+    }
+    if (settled) {
       s.regriddedSteady = false;
       this._moved('solve()', true); // (the steady state there: see Device.advance)
     } else {
@@ -521,7 +528,16 @@ export class Device {
     // a plate set to 0.1 V read 0 at the next step (Sol's fourth pass).
     this.solver.impedanceArgs(frequencies, opts?.terminal);
     const snap = this.solver._snapshot();
-    const steady = this.solver.solveSteady();
+    // (a throw inside the steady solve, a user's statistics say, is rolled back too: outside the
+    // try, it left the device at the half-solved state, its next advance 106 steps where a twin
+    // that never called took 233; bench/combos rollback)
+    let steady;
+    try {
+      steady = this.solver.solveSteady();
+    } catch (err) {
+      this.solver._restore(snap);
+      throw err;
+    }
     if (!steady.converged) {
       // (with why, as solve() would say it: a terminal driven past what any steady state passes,
       // say, where advance() is the way; Fable round 2's cold user, charging a battery)

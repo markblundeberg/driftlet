@@ -5,6 +5,12 @@ major version.
 
 ## Unreleased
 
+- `impedance()` rolls the device back when its steady solve throws (a user's statistics model, say),
+  as it already did when that solve failed or the linear solve threw: left half-solved, a pending step
+  response came out different (the next `advance()` took 106 steps where a twin that never called took
+  233). The steady settle after a regrid is guarded the same way (no fault was shown there: the next
+  call re-settled). Found by `bench/combos`, a new harness that combines features at random and
+  compares two routes to one answer (see its README).
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
