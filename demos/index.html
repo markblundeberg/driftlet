@@ -24,15 +24,17 @@
     <h1><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/logo-dark.svg"><img src="../docs/logo.svg" alt="driftlet" width="269" height="74"></picture></h1>
     <p class="tagline">Charged species drifting and diffusing through one-dimensional devices, solved as continuous fields, live in your browser.</p>
   </header>
-  <p>driftlet is a small JavaScript library with no dependencies. A pn junction, a battery and a nerve look like
-    different subjects, but to driftlet they're one problem with a different cast: electrons and holes, or ions,
+  <p>driftlet is a small JavaScript library with no dependencies: a drift–diffusion solver for
+    semiconductors and a Poisson–Nernst–Planck solver for ions, in steady state, in time and as
+    impedance. A pn junction, a battery and a nerve look like different subjects, but to driftlet they're one problem with a different cast: electrons and holes, or ions,
     each a continuous concentration drifting and diffusing down its own electrochemical potential, reacting, and crossing interfaces.</p>
   <p>Each page builds its device with <code>driftlet/kit</code>, solves it as you move the controls, and draws
     what you'd measure (an I–V curve, a voltammogram, a discharge), mostly against closed-form theory as a check.
     Beneath it are the level diagrams and profiles across the device, on one x axis. Every page shows its whole
     script at the bottom, as a worked example to copy, and the starters are the smallest whole pages, each in
     one file: <a href="starter.html">a pn junction and a bias slider</a>,
-    <a href="double-layer-starter.html">an electrode's double layer and its potential</a>, and
+    <a href="double-layer-starter.html">an electrode's double layer and its potential</a>,
+    <a href="charging-starter.html">that double layer charging after a voltage step</a>, and
     <a href="solar-starter.html">a solar cell's I–V curve in the light</a>. The stamp on a card names what its page is drawn against
     (✓), or what the test suite checks it against.</p>
 

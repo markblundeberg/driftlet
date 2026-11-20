@@ -782,6 +782,59 @@ test('demos/double-layer-starter.html: its checks hold, as the page says', async
   assert.ok(full.c['Cl-'][0] / 1000 < 4.85 && full.c['Cl-'][0] / 1000 > 4.8);
 });
 
+test('demos/charging-starter.html: its checks hold, as the page says', async () => {
+  const html = readFileSync(join(demos, 'charging-starter.html'), 'utf8');
+  const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
+  const at = (path) => pathToFileURL(join(root, path)).href;
+  const head = script.slice(0, script.indexOf('// The page:')).replaceAll("'../src/", `'${at('src/')}`);
+  assert.ok(head.length > 1000 && !/document\./.test(head), 'the page-free part of its script');
+  const { device, stepTo, tau, debye, bulk, gouyChapman, RT } = await import(`data:text/javascript;base64,${Buffer.from(`${head}\nexport { device, stepTo, tau, debye, bulk, gouyChapman, RT };`).toString('base64')}`);
+  const F = 96485.33212;
+  // The page's clock: 0.01 τ to 1000 τ, 25 points a decade. Returns the charge's fraction of its final value at each.
+  const play = (psi, until = 1000, look = () => {}) => {
+    const step = stepTo(psi), pts = [];
+    for (let k = 0; k < 126 && 10 ** (-2 + k / 25) <= until * 1.0001; k++) {
+      const sol = device.advance(step.t0 + tau * 10 ** (-2 + k / 25), { tol: 1e-5 });
+      assert.ok(sol.converged, `ψ ${psi}: unconverged at step ${k}`);
+      pts.push([(sol.time - step.t0) / tau, (sol.contacts.left.D - step.D0) / step.Q]);
+      look(sol, pts.at(-1)[0]);
+    }
+    return { step, pts };
+  };
+  const reach = (pts, u) => {
+    const k = pts.findIndex(([, q]) => q >= u), [t0, q0] = pts[k - 1], [t1, q1] = pts[k];
+    return t0 + ((u - q0) / (q1 - q0)) * (t1 - t0);
+  };
+  // "After a 5 mV step, the charge still to come falls as e^(−t/τ) from τ to 3 τ, with τ within 0.2% of λL/D̄ = 16 ns"
+  assert.equal((tau * 1e9).toFixed(0), '16');
+  let early;
+  const small = play(0.005, 1000, (sol) => { if (!early) early = sol; });
+  const left = (t) => 1 - small.pts[small.pts.findIndex(([s]) => s >= t)][1], when = (t) => small.pts[small.pts.findIndex(([s]) => s >= t)][0];
+  const fitted = (when(3) - when(1)) / Math.log(left(1) / left(3));
+  assert.ok(Math.abs(fitted - 1) < 2e-3, `τ fitted ${fitted} of λL/D̄`);
+  // "Every step settles on the steady state, whose charge is Gouy–Chapman's to 0.04%"
+  for (const psi of [0.005, 0.1, 0.2]) assert.ok(Math.abs(stepTo(psi).Q / gouyChapman(psi) - 1) < 5e-4, `ψ ${psi}`);
+  assert.ok(Math.abs(small.pts.at(-1)[1] - 1) < 1e-4, 'settled by 1000 τ');
+  // "φ halfway across is still 0.49 ψ at 0.01 τ"
+  const mid = early.x.findIndex((x) => x >= 15 * debye);
+  assert.equal(((early.phi[mid] - bulk) / 0.005).toFixed(2), '0.49');
+  // "63% of the charge comes at 2.6 τ for 0.1 V and 32 τ for 0.2 V"; "cosh(Fψ/2RT), 25-fold at 0.2 V"
+  const t1 = reach(play(0.1).pts, 1 - Math.exp(-1));
+  assert.equal(t1.toFixed(1), '2.6', `0.1 V: 63% at ${t1} τ`);
+  let salt;
+  const big = play(0.2, 1000, (sol, t) => {
+    if (salt === undefined && t >= 10 * (1 - 1e-9)) {
+      const k = sol.x.findIndex((x) => x >= 5 * debye);
+      salt = (sol.c['Na+'][k] + sol.c['Cl-'][k]) / 200;
+    }
+  });
+  const t2 = reach(big.pts, 1 - Math.exp(-1));
+  assert.equal(t2.toFixed(0), '32', `0.2 V: 63% at ${t2} τ`);
+  assert.equal(Math.cosh((F * 0.2) / (2 * RT)).toFixed(0), '25');
+  // "at 0.2 V the salt five Debye lengths out is down to 43% of the bulk's at 10 τ"
+  assert.equal(salt.toFixed(2), '0.43');
+});
+
 test('demos/solar-starter.html: its checks hold, as the page says', async () => {
   const html = readFileSync(join(demos, 'solar-starter.html'), 'utf8');
   const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];

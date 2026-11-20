@@ -15,7 +15,7 @@ web page as you drag a slider.
 
 [Live demos](https://marklundeberg.com/driftlet/demos/) · [one-file starter](https://marklundeberg.com/driftlet/demos/starter.html) · [npm](https://www.npmjs.com/package/driftlet) ·
 [reading level diagrams](docs/visualization.md) · [device reference](docs/device.md) ·
-[agent guide](llms.txt)
+[agent guide](llms.txt) · [changelog](CHANGELOG.md)
 
 **One kind of physics.** Those look like different subjects, but underneath they're the same
 one. Each is a cast of species (electrons, holes, ions, neutral molecules) that drift and
@@ -59,7 +59,8 @@ Or straight from a CDN in a page, pinned to a version:
 `https://cdn.jsdelivr.net/npm/driftlet@1.19.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
 TypeScript declarations ship in the package. Whole pages to copy, running, each in one file:
 [a pn junction with a bias slider](https://marklundeberg.com/driftlet/demos/starter.html),
-[an electrode's double layer, with ions that take space](https://marklundeberg.com/driftlet/demos/double-layer-starter.html), and
+[an electrode's double layer, with ions that take space](https://marklundeberg.com/driftlet/demos/double-layer-starter.html),
+[that double layer charging after a voltage step](https://marklundeberg.com/driftlet/demos/charging-starter.html), and
 [a solar cell's I–V curve](https://marklundeberg.com/driftlet/demos/solar-starter.html). Writing a demo with an LLM
 agent? Point it at [`llms.txt`](llms.txt).
 

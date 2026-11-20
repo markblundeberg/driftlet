@@ -3,6 +3,15 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A fourth starter page, [demos/charging-starter.html](https://marklundeberg.com/driftlet/demos/charging-starter.html):
+  a double layer charging after a voltage step, in time, against the RC time λL/D̄ of Bazant, Thornton
+  and Ajdari, with the slower charging and salt uptake of a large step. The demo index now names what
+  driftlet is (drift–diffusion and Poisson–Nernst–Planck), and the README links the changelog. (From
+  a blind test: asked for time-dependent ion transport in JavaScript, ChatGPT reached for a general ODE
+  integrator first, and read the version from an old pinned README.)
+
 ## 1.19.0 (2026-11-20)
 
 Two more starter pages, a fix for `live()` in a Web Worker, and the faults found by five more
