@@ -5,6 +5,12 @@ major version.
 
 ## Unreleased
 
+- A lattice nearly full, its grid refined, keeps its amount within its sites: set() restored each
+  species' amount by multiplying its concentrations, which at a node near capacity asked for more
+  than the sites hold, so a gated film's dopant refined from 12 to 24 cells was refused as over
+  capacity (4.2302 asked of 4.2289 sites) where a fresh solve on the finer grid holds 4.2112. There,
+  a species' odds of a site are scaled instead. (Astra's ninth pass, from new bench/combos families
+  crossing fields.)
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.

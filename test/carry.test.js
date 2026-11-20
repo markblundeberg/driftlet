@@ -1170,3 +1170,37 @@ test('carry: 45 · holes or trailing undefined in a patched array are refused as
     assert.throws(() => d.set(patch), msg);
   }
 });
+
+test('a near-full lattice refined keeps its amount and fits its sites (Astra, ninth pass)', () => {
+  // A gated film's dopant in two valence states on shared sites, 99.6% full at the peak. Refined, the
+  // amount was restored by multiplying Ox⁺ (4.2302 asked of 4.2289 sites) and set() refused it; a fresh
+  // solve on the finer grid holds 4.2112. Now its odds are scaled, and the carried state solves to it.
+  const L = 1.1438352041877807e-7, n = 0.34338815638381825, total = 0.7365310063519617, fraction = 0.6550324019044638;
+  const cMax = 4.228913112594661, RT = 300 * GAS_CONSTANT, ox = total * fraction, red = total - ox, mu0 = RT * Math.log1p(-total / cMax);
+  const def = (cells) => ({
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Ox+', z: 1 }, { name: 'Red', z: 0 }],
+    materials: {
+      film: {
+        epsr: 25.545087549835443,
+        species: { 'e-': { D: 1.2272493014945945e-6, mu0: RT * Math.log(50), cRef: n * 50 }, 'Ox+': { D: 2.2801449272726107e-13, mu0, cRef: ox }, Red: { D: 3.878570472044756e-13, mu0, cRef: red } },
+        statistics: [{ type: 'lattice', species: ['Ox+', 'Red'], cMax }],
+      },
+    },
+    regions: [{ material: 'film', length: L, fixedCharge: FARADAY * (n - ox), c0: { 'e-': n, 'Ox+': ox, Red: red } }],
+    contacts: {
+      left: { V: 0, phi: 'pinned', zeroCharge: 0, terminal: 'e-', species: { 'e-': 'equilibrium', Red: { type: 'equilibrium', mu: 0 } } },
+      right: { V: -0.1926582992170006, phi: 'pinned', zeroCharge: 0 },
+    },
+    bulkReactions: [{ equation: 'Ox+ + e- = Red', kf: { film: 199343.51796813446 } }],
+    grid: { hmax: L / cells },
+  });
+  const coarse = new Device(def(12));
+  assert.ok(coarse.solve().converged);
+  coarse.set({ grid: { hmax: L / 24 } });
+  const carried = coarse.solve(), fresh = new Device(def(24)).solve();
+  assert.ok(carried.converged && fresh.converged);
+  const peak = (s) => Math.max(...s.c.Red.map((v, k) => v + s.c['Ox+'][k]));
+  assert.ok(peak(fresh) < cMax && Math.abs(peak(carried) - peak(fresh)) < 1e-12, `${peak(carried)} vs ${peak(fresh)}`);
+  assert.ok(carried.c['Ox+'].every((v, k) => Math.abs(v - fresh.c['Ox+'][k]) < 1e-12 * cMax));
+});

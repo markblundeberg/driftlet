@@ -621,9 +621,13 @@ notes), ranked by how much each trips an agent writing its first device:
   face-rate evaluator for the start (Stern and diffuse layers, MHC, surfaces). A bulk bath on the left
   could set the running φ̂ itself, making the start gauge-covariant without an electrode on the right.
   Newton's islands round accepts a state after two rounds with an island still 7.7e-5 out of balance,
-  unwarned. A fast reaction balance among mobile species may lose its conserved total on long steps as
-  traps did (they had no per-node row; mobile combinations have none to fall back on): probe it.
-  check() has no ledger for a trap's per-node totals (it needs a reference carried through set()).
+  unwarned. A reaction balance among mobile species loses its conserved total on long steps as traps
+  did (they had no per-node row; a mobile combination has none to fall back on, since its row would
+  need the fluxes assembled apart from the rates): measured by Astra's ninth pass, a sealed film whose
+  dopant light ionizes (Red = Ox⁺ + e⁻, neither crossing a terminal) gained 1.8e-8 of its total in a
+  day and lost 12 ppm in a year on a warning-free grid, converged and passing check(); steps capped
+  at 60 s cut it 20-fold, and in the dark it's zero. check() has no ledger for such a closed moiety,
+  nor for a trap's per-node totals (it needs a reference carried through set()).
 
 - A sub-grid diffuse layer's draw from everything that crosses it: an ion with a permeability link
   and a face reaction at once is drawn by the reactions alone, its channel at the undrawn plane

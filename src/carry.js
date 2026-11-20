@@ -781,7 +781,22 @@ function rescaleAll(s, list, moved) {
           if (md) {
             const ion = md.idx[0], ce = s.c[g * n + i], ci = s.c[g * n + ion], bg = s.background[g], nu = ci > 0 ? (ce - bg) / ci : 0;
             if (nu > 0) tgt[g * n + ion] = (f[j] * ce - bg) / nu;
-          } else tgt[g * n + i] *= f[j];
+          } else {
+            // On a lattice, a species scaled up past (nearly) the room the others leave it has its
+            // odds scaled instead, c/(room − c) by the factor: never past the sites, and the rest of
+            // the stretch takes up what that node can't over the next rounds. (Multiplied, a
+            // near-full lattice refined was refused as over its capacity though the amount fitted:
+            // 4.2302 asked of 4.2289 sites where a fresh solve on the finer grid held 4.2112; Astra's
+            // ninth pass. Odds everywhere moved a node near full too slowly to converge in 40 rounds.)
+            const lat = s.model.materials[s.nodeMaterial[g]].models.find((m) => m.type === 'lattice' && m.idx.includes(i));
+            const ci = s.c[g * n + i];
+            let room = lat?.cMax;
+            if (lat) for (const b of lat.idx) if (b !== i) room -= s.c[g * n + b];
+            if (lat && f[j] > 1 && ci < room && ci * f[j] > room * (1 - 1e-3)) {
+              const odds = (f[j] * ci) / (room - ci);
+              tgt[g * n + i] = (room * odds) / (1 + odds);
+            } else tgt[g * n + i] *= f[j];
+          }
           inv.add(g);
         }
       }
