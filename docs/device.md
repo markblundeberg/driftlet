@@ -1377,8 +1377,11 @@ Notes:
 - **A current drive is found by a march.** A terminal driven by a current (open circuit, say) is
   held at a voltage instead, the voltage marched until the current crosses its target (in
   shorter strides past a held solve that fails), and floated from there. If 20 V either way
-  brings no crossing (a current beyond the limiting one), the solve fails with a warning giving
-  the range of currents the held voltages passed.
+  brings no crossing, the solve fails with a warning giving the ranges of voltages and currents
+  the held solves passed, and why: past a limiting current, where the current stopped nearing
+  its target, or a crossing further out than 20 V, where it was still nearing it at 20 V at a pace
+  that would get there (an ohmic drop of more than 20 V, say, with where that pace passes it:
+  solve it held near there, then drive it).
 - **Out of steps while settling**, where something slow is relaxing (a reaction, a link), the
   warning says so and gives the `maxSteps` that lets it finish.
 - **Converged, but warned.** A converged steady solve whose terminal currents don't add up, by

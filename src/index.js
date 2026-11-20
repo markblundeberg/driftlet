@@ -558,25 +558,21 @@ export class Device {
     // (a throw inside the steady solve, a user's statistics say, is rolled back too: outside the
     // try, it left the device at the half-solved state, its next advance 106 steps where a twin
     // that never called took 233; bench/combos rollback)
-    let steady;
+    // (And the readouts made of the steady state, failed or solved, are inside it too: a throw
+    // from one left the device at the steady state it had moved to, u 2.46 off, its next advance
+    // −7.4e-7 A/m² where a twin's was 4.0e-6; Astra's A27, round 8.)
+    let steady, warnings, out, unconverged;
     try {
       steady = this.solver.solveSteady();
-    } catch (err) {
-      this.solver._restore(snap);
-      throw err;
-    }
-    if (!steady.converged) {
-      // (with why, as solve() would say it: a terminal driven past what any steady state passes,
-      // say, where advance() is the way; Fable round 2's cold user, charging a battery)
-      const why = makeSolution(this.solver, { ...steady, unsolved: true }).warnings;
-      this.solver._restore(snap);
-      throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
-    }
-    this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
-    // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
-    const { warnings } = makeSolution(this.solver, steady);
-    let out, unconverged;
-    try {
+      if (!steady.converged) {
+        // (with why, as solve() would say it: a terminal driven past what any steady state passes,
+        // say, where advance() is the way; Fable round 2's cold user, charging a battery)
+        const why = makeSolution(this.solver, { ...steady, unsolved: true }).warnings;
+        throw new SolverError(`impedance: the steady state did not converge${why.length > 0 ? `: ${why[0].replace(/\.$/, '')}` : ''}. An impedance is about a steady state; about a transient one, drive a small sine with advance() and fit it`, { warnings: why });
+      }
+      this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
+      // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
+      ({ warnings } = makeSolution(this.solver, steady));
       ({ unconverged, ...out } = this.solver.impedance(frequencies, opts));
     } catch (err) {
       this.solver._restore(snap);

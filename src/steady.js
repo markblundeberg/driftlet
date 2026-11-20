@@ -43,8 +43,8 @@
 //   this.atSteady = converged. Not converged: this.solvedV and this.stepped as before the call.
 //
 // _steadyFromHere(opts): in stages until one converges, each from the state the solve began in
-// (u, uLo and termV, put back between stages, the concentrations recomputed) unless it says
-// otherwise. A continuation applies with continuation not off; canContinue: both contacts held
+// (the whole of STATE, put back between stages by _restore, and this.carried with it) unless it
+// says otherwise. A continuation applies with continuation not off; canContinue: both contacts held
 // at voltages (not behind a resistance) that differ.
 //   1. Newton from here (_steadySteps): a single step (maxSteps 1) where canContinue or there's
 //      generation, and the device can be solved directly (_directSteady); else the
@@ -68,8 +68,7 @@
 //      moved, else from level contacts, a cold start.
 //   3. The pseudo-transient ramp: after the contact's ramp fails, from the start; otherwise only
 //      where stage 1 was a single step, from the dimmer light's solution where the generation
-//      ramp got past its first solve (u, uLo and termV as that ramp left them), else from the
-//      start.
+//      ramp got past its first solve (the state as that ramp left it), else from the start.
 //   Converged (but by _floatingContinuation): this.solvedV = [termV[0], termV[1]], the contacts'
 //   own voltages at the solution (driven by a current or behind a resistance too), this.stepped =
 //   false. (By _floatingContinuation: as its last held solve set them.)
@@ -81,7 +80,7 @@
 //   (×2 after a failure, growing by ×1.5 to ×10 a step; past 1e6·tau, giant, or on a direct
 //   device past 1e12·tau); on a direct device,
 //   once dt ≥ tau, a step at ∞ is tried once a decade of dt, the state kept where it fails. Past
-//   giant (not direct), dt grows ×10 a step to 1e6·giant. Converged where a step at ∞ converged,
+//   giant (not direct), dt grows ×10 a step to 1e6·giant (Number.MAX_VALUE at most). Converged where a step at ∞ converged,
 //   or, not direct, where a step of dt ≥ giant moved the potentials and the floating terminals' voltages (termV − termVPrev) under tol (finished by one
 //   step of exactly giant where dt had grown past it, which must converge too). Not direct,
 //   before each step of dt ≥ giant and the finishing one, each spectator's amount restored
@@ -99,30 +98,38 @@
 //   each smaller than the one before, by ratios under 0.95 within 0.2 of each other: this.settling = { maxSteps, ratio, motion, tol }, which the
 //   Solution's failure says (with the maxSteps that would finish).
 //
-// The continuations (each warm from the last converged solve; a solve that fails puts back
-// u, uLo and termV and takes a smaller step):
+// The continuations (each warm from the last converged solve; a solve that fails puts back the
+// state, as between stages, and takes a smaller step):
 //   _generationContinuation  generationScale from 1e-30 up to 1, by a factor of 100 at most
 //                            (squared after a success, its square root after a failure, giving
 //                            up below 1.5); fails if the first, at 1e-30, does; this.dimmer once
 //                            it converges. generationScale is 1 again on return.
 //   _continuation(k, from, to)  contact k's voltage through sourceOverride (the other's held
 //                            too, where given), in steps of an eighth of the span, ×1.5 on
-//                            success, ÷4 on a failure, giving up below 1e-6 of the span. Cold
+//                            success, ÷4 on a failure, giving up below 1e-6 of the span (or
+//                            at a stride of 0, where that millionth underflows). Cold
 //                            (not warm), first solved at `from`: failing, with no law unkept,
 //                            again from a cold start laid out there, then with the light ramped where there's
 //                            generation. The overrides are cleared on return.
 //   _floatingContinuation    the terminal held at voltages (its drive replaced, then put back):
 //                            marched from its voltage (or 0) in steps from 20 mV, ×1.5, toward
-//                            the target current (both ways, to ±20 V; a held solve that fails
+//                            the target current (not at all where the start passes it exactly;
+//                            both ways, to ±20 V; a held solve that fails
 //                            retried at a quarter of the stride from the last converged one, to
 //                            1 mV), the crossing bisected to 0.1 mV, then floated from the
 //                            nearer end. Floated and failing, the
 //                            held solve whose current is within 1e-10 of the target (by regula
 //                            falsi, Illinois, from the bracket; the scale is the larger of the
-//                            target and the bracket's ends' currents) is returned as converged, its drive put back. No crossing:
-//                            this.unreached says what the held voltages passed, where both ways
-//                            showed a limit: reached ±20 V, or stopped by failing held solves
-//                            after the current had turned away from the target. Each time its
+//                            target and the bracket's ends' currents; an end that passes it
+//                            exactly, that end) is returned as converged, its drive put back. No
+//                            crossing: this.unreached = { terminal, target, V: [lo, hi], I: [lo,
+//                            hi], nearing }, the ranges of the voltages held and the currents
+//                            they passed, where each way showed a limit (reached ±20 V no
+//                            nearer the target, to a part in 1e6, than before, or stopped by
+//                            failing held solves after the current had turned away from it) or
+//                            reached ±20 V still nearing it at a pace that, kept up, passes it
+//                            within ten times as far again (nearing: { at: that voltage, guess:
+//                            where that pace passes it }, else null; one way at most). Each time its
 //                            drive is put back, the local constraints' references are taken from
 //                            the state again (captureLocal), which redrive() zeroed.
 //
@@ -146,9 +153,10 @@
 //   2. On return: this.time, every terminal's drive, sourceOverride, generationScale and
 //      this.steady as before the call; the history empty, but where the call stopped at once
 //      (this.charging) before any step.
-//   3. A stage that fails leaves no trace in the next one's start: u, uLo and termV are put back
-//      (the concentrations recomputed); only stage 1's cold start, on a stepped state, moves the
-//      start, and stage 3 may begin from the generation ramp's solution.
+//   3. A stage that fails leaves no trace in the next one's start: the whole of STATE is put back
+//      (the capacitors' charges with the levels; the concentrations recomputed); only stage 1's
+//      cold start, on a stepped state, moves the start (its u and uLo), and stage 3 may begin
+//      from the generation ramp's solution.
 //   4. Deterministic: the same state and options give the same result, bit for bit. The state
 //      here is more than u, uLo, termV and time: this.solvedV, this.stepped, whether the history
 //      is empty (this.violent) and the drives, all of which choose the stages.
@@ -157,7 +165,8 @@
 //      closed combination, slower than that, isn't waited out: the solve fails or converges where
 //      it began, and stuckReactions names it (Solution's warnings, both ways).
 // Tests: every Device.solve goes through here; test/steady.test.js (the stages, the laws, the
-// continuations), test/generation.test.js and test/round7-solve.test.js (behind R, cold); the
+// continuations), test/generation.test.js, test/round7-solve.test.js (behind R, cold) and
+// test/round8-deep.test.js (a stage's rollback, the march's claims, absurd spans); the
 // devices that needed each stage are named in its comments.
 
 import { profileAt, sourceAt } from './device.js';
@@ -170,18 +179,20 @@ export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
   // (Of the materials some region is made of: one defined but unused, its D = 1e-22, made a
   // giant step 1e7 times longer, too long to keep a fast species' amount: see _steadySteps.)
-  // The levels a steady solve's stages save and put back: u, uLo and the terminals' voltages
-  // (the rest of STATE they leave alone), and the concentrations recomputed from them. (Written
-  // out by hand five times before; a code-smell review.)
+  // What a steady solve's stages save and put back: the whole of STATE, by the one rollback
+  // (_snapshot/_restore, the concentrations recomputed), and with it this.carried, the call's own
+  // say of whether the state is the solved one it began from. (As u, uLo and termV alone, a
+  // stage that failed after finite steps left its capacitors' charges, contactDEnd and portQEnd,
+  // beside the levels put back, and the next stage's steps stored against them: a floating
+  // plate's Fe³⁺ + Q/F 0.58% off, 0.16 mV, unwarned; Astra's A16, round 8. Written out by hand
+  // five times before that; a code-smell review.)
   _levels() {
-    return [Float64Array.from(this.u), Float64Array.from(this.uLo), Float64Array.from(this.termV)];
+    return { snap: this._snapshot(), carried: this.carried };
   }
 
-  _putLevels([u, uLo, termV]) {
-    this.u.set(u);
-    this.uLo.set(uLo);
-    this.termV.set(termV);
-    this.computeConcentrations();
+  _putLevels({ snap, carried }) {
+    this._restore(snap);
+    this.carried = carried;
   }
 
   slowestTime() {
@@ -356,8 +367,8 @@ export class SteadySolves {
       // GaAs taken warm through T at 0.3 V failed 17 of 56 jumps against 1.9.0's 4; Fable round
       // 3's hunter, on its re-check.)
       if (this.stepped) {
-        start0[0].set(this.u);
-        start0[1].set(this.uLo);
+        start0.snap.u.set(this.u);
+        start0.snap.uLo.set(this.uLo);
       }
       const q = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
       if (q.converged) return solved(after(q, r));
@@ -517,12 +528,17 @@ export class SteadySolves {
       // 3.12 V sent it the other way to −23 V, and the solve failed claiming a limiting current
       // where 3.38 V passes it; Astra's fourth pass.)
       const start = Va, f0 = fa;
-      // (Each way that shows a limit: marched to ±20 V, or stopped by its held solves after its
-      // current had turned away from the target, past an extremum. Stopped while still nearing
-      // it, a march says nothing of a limit.)
-      let limited = 0;
+      // (Each way that shows a limit: marched to ±20 V with its current no nearer the target
+      // than before, or stopped by its held solves after its current had turned away from the
+      // target, past an extremum. Stopped while still nearing it, a march says nothing of a
+      // limit; nor does one at ±20 V still nearing it, which says only that the voltage that
+      // passes it, if any, is further out: an ohmic resistor driven at 100 V's current was
+      // refused as "a limiting current"; Astra's A25, round 8.)
+      let limited = 0, nearing = null;
       [Vb, fb] = [Va, fa];
-      for (const dir of [fa < 0 ? 1 : -1, fa < 0 ? -1 : 1]) {
+      // (Passed exactly at the start, no march: one whose neighbours failed was refused, where
+      // the start was the answer; Astra's A25, round 8.)
+      for (const dir of f0 === 0 ? [] : [fa < 0 ? 1 : -1, fa < 0 ? -1 : 1]) {
         [Va, fa] = [start, f0];
         if (dir !== (f0 < 0 ? 1 : -1)) hold(start); // (back to the start, for a warm march)
         let dV = 0.02, nearest = Math.abs(fa);
@@ -541,7 +557,13 @@ export class SteadySolves {
           }
           if (Math.sign(fb) !== Math.sign(fa) || fa === 0) break;
           if (Math.abs(Vb - start) >= 20) {
-            limited++;
+            // (Still nearing: nearer than before, to a part in a million, at a pace that, kept up,
+            // passes it within ten times as far again. A reverse-biased diode's current, still
+            // growing by 1e-5 of the gap a stride at 26 V, would pass 100 A/m² only past 1e8 V:
+            // that's a limit.)
+            const ahead = (Math.abs(fb) * Math.abs(Vb - Va)) / (Math.abs(fa) - Math.abs(fb));
+            if (Math.abs(fb) < (1 - 1e-6) * nearest && ahead <= 10 * Math.abs(Vb - start)) nearing = { at: Vb, guess: Vb + dir * ahead };
+            else limited++;
             break;
           }
           [Va, fa] = [Vb, fb];
@@ -551,11 +573,13 @@ export class SteadySolves {
         if (Number.isFinite(fb) && (Math.sign(fb) !== Math.sign(fa) || fa === 0)) break;
       }
       if (!Number.isFinite(fb) || (Math.sign(fb) === Math.sign(fa) && fa !== 0)) {
-        // What the held voltages passed, at the two extremes reached: only where both ways showed
-        // a limit.
-        if (seen.length > 1 && !line && limited === 2) {
-          seen.sort((a, b) => a[0] - b[0]);
-          this.unreached = { terminal: this.terms[k].name, target, low: seen[0], high: seen.at(-1) };
+        // What the held voltages passed, the range of voltages and the range of currents (not
+        // the currents at the two extreme voltages: a peak of 10 A/m² between them read "0 to 0"):
+        // only where both ways showed a limit, or reached ±20 V still nearing the target (nearing:
+        // the voltage it was still nearing at, and where its last stride's pace would pass it).
+        if (seen.length > 1 && !line && limited + (nearing === null ? 0 : 1) === 2) {
+          const Vs = seen.map(([V]) => V), Is = seen.map(([, I]) => I);
+          this.unreached = { terminal: this.terms[k].name, target, V: [Math.min(...Vs), Math.max(...Vs)], I: [Math.min(...Is), Math.max(...Is)], nearing };
         }
         return fail();
       }
@@ -586,7 +610,9 @@ export class SteadySolves {
     try {
       let side = 0;
       for (let it = 0; it < 60; it++) {
-        const Vm = Va - (fa * (Vb - Va)) / (fb - fa), fm = hold(Vm);
+        // (both ends passing the target exactly, fb − fa = 0: the end itself, not NaN; Astra's
+        // A25, round 8)
+        const Vm = fb === fa ? Va : Va - (fa * (Vb - Va)) / (fb - fa), fm = hold(Vm);
         if (!Number.isFinite(fm)) return fail();
         if (Math.abs(fm) <= 1e-10 * scale) return { converged: true, steps, iterations, history, residual: Math.abs(fm) };
         if (Math.sign(fm) === Math.sign(fb)) {
@@ -760,7 +786,9 @@ export class SteadySolves {
         } else {
           this._putLevels(before);
           dV /= 4;
-          if (Math.abs(dV) < 1e-6 * Math.abs(target - level)) return { converged: false, steps, iterations, history };
+          // (and at 0: a span of 1e-320 V, its millionth 0, its stride quartered to 0 and held
+          // there without end; Astra's A29, round 8)
+          if (Math.abs(dV) < 1e-6 * Math.abs(target - level) || dV === 0) return { converged: false, steps, iterations, history };
         }
       }
       return { converged: true, steps, iterations, history, ramped: true };
@@ -888,7 +916,10 @@ export class SteadySolves {
         // and round below 70 s, where traps filled by 1e9 cm⁻³ electrons took 1e3 s (τ 7e-5 s).
         if (dt > (direct ? 1e12 : 1e6) * tau) dt = giant;
       } else if (dt < 1e6 * giant) {
-        dt *= 10; // conserved amounts present and still moving: let dt keep growing (capped)
+        // conserved amounts present and still moving: let dt keep growing (capped; and finite,
+        // where 1e6·giant overflows: a giant of 1e303 s grew to ∞, a step without the storage
+        // term that keeps what no row does; Astra's A29, round 8)
+        dt = Math.min(dt * 10, Number.MAX_VALUE);
       }
     }
     // Out of steps while each one still moved the state less than the last (a mode slower than

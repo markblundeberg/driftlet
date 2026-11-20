@@ -35,8 +35,10 @@
 //      `roundoff: true`. On a lost-mode device's time step (7), only on a refined update, unless
 //      its refinement failed three times in the call. Where a pivot was perturbed this iteration
 //      (s.sys.perturbedPivots) or dt = Infinity, a convergence stands only if the block system's
-//      residual (s.res; not the floating terminals' circuit rows nor the pins), reassembled and
-//      scaled at the new state, is under 1e-6 in every row; else the call fails, saying which.
+//      residual (s.res), reassembled and scaled at the new state, is under 1e-6 in every row, and
+//      so is each row the border holds, over its own response, in thermal units (heldOff: each
+//      pin's but the islands', each floating terminal's circuit row); else the call fails, saying
+//      which.
 //      In a steady solve at dt = Infinity, after 8's decisions, each stretch held only by rates
 //      (connected, mobile, no reaction of it, not a metal's, no equilibrium link of it at an open
 //      contact or a port) must take in nothing on balance: its net intake through its open
@@ -71,7 +73,12 @@
 //      maxIter) without converging, not counting those that walk (an update over 1e-3 thermal units and no more
 //      than 1.01 times the last), the solution it converged to before that round is restored,
 //      with s.islandsOn and s.islandImbalance as they were and s.islandsFailed set (and
-//      s.islandsWorse, for a round undone for its balance), and returned as converged.
+//      s.islandsWorse, for a round undone for its balance), and returned as converged where it
+//      passes what every converged return passes after the islands' decisions (6's rateHeld,
+//      and the concentrations at it computed without a refusal); else the call fails. A
+//      SolverError from the round's own assembly (imbalance) fails the call as one from the main
+//      assembly does (the solution before the round restored, where there was one), its rows
+//      out again.
 //
 // Returns { converged, iterations, history (each iteration's step), residual (the largest scaled
 // residual before the last update; converged only), roundoff (true where 6 accepted at
@@ -79,8 +86,9 @@
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Converged: the last update met 6, and where 6 reassembles, every scaled residual row of the
-//      block system at the returned state is under 1e-6; steady, every stretch held only by rates
-//      balances to 1e-6 thermal units.
+//      block system at the returned state is under 1e-6, and every row the border holds (but an
+//      island's) within 1e-6 thermal units of solved; steady, every stretch held only by rates
+//      balances to 1e-6 thermal units, by either way of converging (8's restore too).
 //   2. Only u, uLo and termV are moved: by step 5, by 8's restore, and in a steady solve by each
 //      assembly's snapFlat (src/lawRows.js); on return s.c and the coverages are those of the
 //      returned state (computed there, or by the assembly at it), but after a SolverError from
@@ -102,7 +110,8 @@
 // refused state…), for a failure nothing more specific explains (cleared with modelError; the
 // generic "nothing specific showed why" had dropped it; Astra's fourth pass).
 // Tests: every solve and step goes through here; test/newton.test.js (the islands round, the
-// residual check's failure), test/round7-solve.test.js (a stretch held only by rates) and the MOS
+// residual check's failure), test/round7-solve.test.js (a stretch held only by rates),
+// test/round8-deep.test.js (the border's rows in that check, the islands round's restore) and the MOS
 // gate step in test/ports.test.js (a lost mode, to 1e-6);
 // test/jacobian.test.js checks the system it solves. The devices that needed each branch are in
 // its comments.
@@ -393,7 +402,12 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     equilibrate(s);
     let r = 0;
     for (let k = 0; k < s.SINK; k++) r = Math.max(r, Math.abs(s.res[k]));
-    if (r < 1e-6) return null;
+    // (And the rows the bordered solve holds beside the blocks, each against its own response:
+    // they're not in s.res, so a nearly singular border could leave one unsolved behind a small
+    // update. Over the suite's 40,000 such checks and the combos' 1,700, the largest read 1e-11
+    // thermal units: it guards, and changed nothing; Astra's A13, round 8.)
+    const held = heldOff(s);
+    if (r < 1e-6 && held < 1e-6) return null;
     if (dt === Infinity) {
       // (the conditioning at the state it stopped at, the assembly having cleared the last one)
       try {
@@ -401,6 +415,7 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       } catch {}
       noteConditioning(s);
     }
+    if (r < 1e-6) return `its updates converged, but a row the bordered solve holds (a conserved amount, an affinity, a terminal's circuit) is ${held.toExponential(1)} thermal units from solved`;
     return perturbed ? 'a row left unsolved at a pivot that cancelled exactly' : `its updates converged, but a row's residual is ${r.toExponential(1)} of its largest term`;
   };
   // One refined update at the state as it stands (see refineSolve), its size; NaN where it can't.
@@ -474,7 +489,12 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     }
   };
   // A steady solve that fails: record how nearly singular the system was, and where; or, failing
-  // with the islands' rows in, go back to the solution without them.
+  // with the islands' rows in, go back to the solution without them, through the checks every
+  // converged return passes after the islands' decisions (finish). (Returned as it was, the
+  // restored state had skipped them: an islands round that failed brought back a myelinated
+  // axon's cold false root, +0.42 V, Na⁺ at 2e10 mol/m³, that rateHeld refuses, as converged;
+  // Astra's A14, round 8. The residual check it passed at its own acceptance holds as it did: the
+  // state is the same.)
   const fail = (r) => {
     if (kept) {
       s.u.set(kept.u);
@@ -485,11 +505,28 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       s.islandsFailed = true;
       s.islandsWorse = worse;
       s.computeConcentrations();
-      return { ...kept.result, iterations: r.iterations, history };
+      const result = { ...kept.result, iterations: r.iterations, history };
+      kept = null; // (a refusal from here fails plainly: there's nothing before this to go back to)
+      return finish(result);
     }
     if (dt === Infinity) noteConditioning(s);
     if (r.error) s.newtonError = r.error; // (its reason, for a failure nothing more specific explains)
     return r;
+  };
+  // What a converged state passes last, by either way of returning one: in a steady solve, each
+  // stretch held only by rates balanced (rateHeld; refused, unconverged, not through the islands'
+  // restore), and the concentrations at the state allowed by their models (settle).
+  const finish = (done) => {
+    const loose = dt === Infinity && s.steady ? rateHeld(s) : null;
+    if (loose) {
+      s.assemble(dt);
+      noteConditioning(s);
+      s.newtonError = loose;
+      return { converged: false, iterations: done.iterations, history, error: loose };
+    }
+    const refused = settle();
+    if (refused) return fail({ converged: false, iterations: done.iterations, history, error: refused });
+    return done;
   };
   // Converged (by its tolerance, or as far as round-off allows): unless something says it isn't
   // solved, a probe or the islands' round asks for more (AGAIN), or the state is refused, the
@@ -500,18 +537,16 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     if (why) return fail({ converged: false, iterations: it, history, error: why });
     const done = { converged: true, iterations: it, history, residual: rmax, ...(roundoff ? { roundoff: true } : {}) };
     if (probed()) return AGAIN;
-    if (startIslandsRound(it, done)) return AGAIN;
-    if (worse) return fail({ converged: false, iterations: it, history });
-    const loose = dt === Infinity && s.steady ? rateHeld(s) : null;
-    if (loose) {
-      s.assemble(dt);
-      noteConditioning(s);
-      s.newtonError = loose;
-      return { converged: false, iterations: it, history, error: loose };
+    // (A refusal in the islands' own assembly fails the call as the main assembly's does, through
+    // fail(), rather than escaping it; Astra's A27, round 8.)
+    try {
+      if (startIslandsRound(it, done)) return AGAIN;
+    } catch (err) {
+      if (!(err instanceof SolverError)) throw err;
+      return fail({ converged: false, iterations: it, history, error: err.message });
     }
-    const refused = settle();
-    if (refused) return fail({ converged: false, iterations: it, history, error: refused });
-    return done;
+    if (worse) return fail({ converged: false, iterations: it, history });
+    return finish(done);
   };
   for (let it = 1; it <= maxIter; it++) {
     // (An island's leak is exponential in its level: from above, Newton walks it down by about
@@ -645,25 +680,52 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
 function imbalance(s) {
   const was = s.islandsOn;
   s.islandsOn = true;
-  for (const isl of s.islands) isl.cutAt = null; // (cut where this state's bottlenecks are; a round holds them)
-  s.assemble(Infinity);
-  // (Fluxes under 1e-40 mol/(m²·s) are left out, to spare a round: an open-circuit Pt at
-  // equilibrium read 2e-50 through its one face, its whole balance. Not a floor that separates:
-  // listed the other way round, the same right state read 7e-34, and a base at 150 K leaks
-  // 2e-36. A round from a right state changes nothing, so the trigger can afford that; the
-  // warning can't, and reads only a round that failed, see solution.js. An island that's cut
-  // has a floor of its own: what crosses it over its cuts' conductance, ∂N/∂η, is the level
-  // difference that drives it, ~1e-16 at rest and of order 1 under bias, however small the
-  // leak; over 1e-9, it counts. A base at 150 K, leaking 1e-42, was 0.1 V off and silent.)
-  const floor = 1e-40 * Math.max(s.model.grid.area[0], s.model.grid.area[s.model.grid.area.length - 1]);
   let worst = 0;
-  for (const isl of s.pinnedIslands) {
-    const scale = isl.fluxScale + (isl.bulkScale ?? 0);
-    if (scale > floor || (isl.cutSlope > 0 && scale > 1e-9 * isl.cutSlope)) worst = Math.max(worst, Math.abs(isl.res) / scale);
+  try {
+    for (const isl of s.islands) isl.cutAt = null; // (cut where this state's bottlenecks are; a round holds them)
+    s.assemble(Infinity);
+    // (Fluxes under 1e-40 mol/(m²·s) are left out, to spare a round: an open-circuit Pt at
+    // equilibrium read 2e-50 through its one face, its whole balance. Not a floor that separates:
+    // listed the other way round, the same right state read 7e-34, and a base at 150 K leaks
+    // 2e-36. A round from a right state changes nothing, so the trigger can afford that; the
+    // warning can't, and reads only a round that failed, see solution.js. An island that's cut
+    // has a floor of its own: what crosses it over its cuts' conductance, ∂N/∂η, is the level
+    // difference that drives it, ~1e-16 at rest and of order 1 under bias, however small the
+    // leak; over 1e-9, it counts. A base at 150 K, leaking 1e-42, was 0.1 V off and silent.)
+    const floor = 1e-40 * Math.max(s.model.grid.area[0], s.model.grid.area[s.model.grid.area.length - 1]);
+    for (const isl of s.pinnedIslands) {
+      const scale = isl.fluxScale + (isl.bulkScale ?? 0);
+      if (scale > floor || (isl.cutSlope > 0 && scale > 1e-9 * isl.cutSlope)) worst = Math.max(worst, Math.abs(isl.res) / scale);
+    }
+  } finally {
+    s.islandsOn = was; // (a throw from its assembly too, which had left the rows in; Astra's A27, round 8)
   }
-  s.islandsOn = was;
   if (!was) s.assemble(Infinity);
   return worst;
+}
+
+// How far the rows the bordered solve holds beside the block system are from solved, as last
+// assembled: each pin's residual (a conserved amount's, an affinity's; not an island's, whose
+// balance has its own measure and floors, imbalance) and each floating terminal's circuit row's,
+// over that row's response to its unknowns (Σ |∂/∂u|, and |∂/∂V|·V_T for the terminals'
+// voltages): in thermal units, as Newton's updates are. The largest; a row with no response is
+// left out.
+function heldOff(s) {
+  let off = 0;
+  const over = (res, g) => g > 0 && (off = Math.max(off, Math.abs(res) / g));
+  const sum = (w, len) => {
+    let g = 0;
+    for (let j = 0; j < len; j++) g += Math.abs(w[j]);
+    return g;
+  };
+  const islands = new Set(s.pinnedIslands);
+  for (const p of s.pins) if (!islands.has(p)) over(p.res, sum(p.w, p.len));
+  for (const k of s.floating) {
+    let g = sum(s.termC[k], s.termC[k].length) + Math.abs(s.termDI[k]) * s.VT;
+    for (const j of s.floating) if (j !== k) g += Math.abs(s.termDX[k][j]) * s.VT;
+    over(s.termRes[k], g);
+  }
+  return off;
 }
 
 // How far the terminal currents (as last assembled) are from adding up to zero, relative to the

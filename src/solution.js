@@ -440,12 +440,19 @@ function failureWarnings(sol, solver, result) {
         '. advance() in time instead; at no current, a steady solve keeps the charge it holds.',
     );
   } else if (result.converged === false && un) {
-    const [[V0, I0], [V1, I1]] = [un.low, un.high], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
+    const [[V0, V1], [I0, I1]] = [un.V, un.I], g = (x) => x.toPrecision(3), A = model.geometry.type === 'planar' ? 'A/m²' : 'A';
     // The opposite sign within reach: likely a sign slip (a drive is the current into the device).
-    const flipped = Math.min(I0, I1) <= -un.target && -un.target <= Math.max(I0, I1);
+    const flipped = I0 <= -un.target && -un.target <= I1;
     sol.warnings.push(
-      `${un.terminal}: no steady state passes the driven current ${g(un.target)} ${A}; held from ${g(V0)} V to ${g(V1)} V ` +
-        `it passed ${g(I0)} to ${g(I1)} ${A} (a limiting current, or kinetics too slow). Drive less, or hold a voltage.` +
+      // (Still nearing it at ±20 V, the march says only that the voltage is further out, if
+      // anywhere: an ohmic resistor driven at 100 V's current was said to be past a limiting
+      // current; Astra's A25, round 8.)
+      (un.nearing === null
+        ? `${un.terminal}: no steady state passes the driven current ${g(un.target)} ${A}; held from ${g(V0)} V to ${g(V1)} V ` +
+          `it passed ${g(I0)} to ${g(I1)} ${A} (a limiting current, or kinetics too slow). Drive less, or hold a voltage.`
+        : `${un.terminal}: no voltage within 20 V of its starting one passes the driven current ${g(un.target)} ${A}; held from ${g(V0)} V to ${g(V1)} V ` +
+          `it passed ${g(I0)} to ${g(I1)} ${A}, still nearing it at ${g(un.nearing.at)} V (at its last stride's pace, it would pass it near ${g(un.nearing.guess)} V), ` +
+          'so its steady state is likely further out than 20 V (an ohmic drop, say). Solve it held near there, then drive it from that state; or drive less.') +
         (flipped ? ` (It passes ${g(-un.target)} ${A}: if that was meant, a terminal's current is into the device.)` : '') +
         // Nothing passed at any voltage: the device only stores what comes in (a host filling, a
         // capacitor charging), so it has no steady state at a current.
