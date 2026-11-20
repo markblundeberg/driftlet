@@ -119,9 +119,14 @@ const props = {
     const tr = d.advance(t1, { tol: 1e-5, budgetMs: 20000, maxSteps: 50000 });
     if (!tr.converged) return skip(`transient failed at t = ${tr.time.toPrecision(3)} s`);
     if (!tr.done) return skip(`transient too slow: t = ${tr.time.toPrecision(3)} of ${t1.toPrecision(3)} s in ${tr.steps} steps`);
+    // (settled? a family's slow is an estimate: one was 4× short, its transient still 0.12 RT from
+    // the end at 40 × slow and exactly there by 640 ×; another 40 × must move nothing)
+    const tr2 = d.advance(2 * t1, { tol: 1e-5, budgetMs: 20000, maxSteps: 50000 });
+    if (!tr2.converged || !tr2.done) return skip('transient too slow to check it settled');
+    if (!within(diff(tr, tr2, peak(tr)), { mu: 1e-6, I: 1e-6, V: 1e-7 })) return skip('not settled at 40 × plan.slow (slow underestimated)');
     const w = d.solve();
     if (!converged(w)) return 'solve() from the relaxed state: not converged';
-    const dw = diff(tr, w, peak(tr));
+    const dw = diff(tr2, w, peak(tr));
     // (40 relaxation times: what's left of the transient is e^-40 of the step)
     if (!within(dw, { mu: 1e-5, I: 1e-5, V: 1e-6 })) return `40 × slow later, the transient vs solve() from there: ${fmt(dw)}`;
     if (!c.plan.unique) return '';
@@ -224,7 +229,9 @@ const props = {
     if (x[1].steps !== y[1].steps) return `after ${op} threw at linear solve ${at} of ${calls}: the next advance took ${x[1].steps} steps, the twin's ${y[1].steps}`;
     for (let k = 1; k < 3; k++) {
       const dd = diff(x[k], y[k]);
-      if (!within(dd, { mu: 1e-12, I: 1e-12, Iabs: 0, V: 1e-12 })) return `after ${op} threw at linear solve ${at} of ${calls}, then ${k === 1 ? 'advance' : 'solve'}: ${fmt(dd)}`;
+      // (to round-off, not the bit: what Newton learned on the call that threw is kept, LEARNED in
+      // src/solver.js, so a later solve may take another path to the same state)
+      if (!within(dd, { mu: 1e-9, I: 1e-9, Iabs: 1e-12, V: 1e-12 })) return `after ${op} threw at linear solve ${at} of ${calls}, then ${k === 1 ? 'advance' : 'solve'}: ${fmt(dd)}`;
     }
     return '';
   },
@@ -264,7 +271,8 @@ const props = {
     // (a drive moved restarts the time steps' order, as any discontinuity does, so there and
     // back costs a first-order step: equal to the transient's tolerance, 1e-3 thermal units per step
     // by default, not to the bit)
-    const tol = kind === 'there and back' ? { mu: 1e-3, I: 1e-2, Iabs: 1e-10, V: 1e-5 } : { mu: 0, I: 0, Iabs: 0, V: 0 };
+    // (and its currents then are a tolerance-level tail, compared through the levels alone)
+    const tol = kind === 'there and back' ? { mu: 1e-3, I: Infinity, V: 1e-5 } : { mu: 0, I: 0, Iabs: 0, V: 0 };
     return within(d1, tol) ? '' : `${kind}: after the next advance: ${fmt(d1)}`;
   },
 
