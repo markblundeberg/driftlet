@@ -156,7 +156,8 @@ within one material (a face is two nodes at one x: don't difference across it).
   its μ: `fixed: { 'Ag(s)': 0 }`. A bulk reaction's forward rate is `kf · Π c_reactants`
   (mol/(m³·s)); the backward one follows from the μ°.
 - **Recombination and light.** Band-to-band `e- + h+ = 0` gives a minority lifetime τ =
-  1/(kf·N), N the majority density in mol/m³ (`kf: 1e8` is 0.6 µs at 1e16 cm⁻³); being
+  1/(kf·N), N the majority density in mol/m³ (`kf: 1e8` is 0.6 µs at 1e16 cm⁻³),
+  strongly extrinsic (in general a small excess decays at 1/(kf·(n₀ + p₀))); being
   bimolecular, as is the kit's `recombination()`, it shortens at high injection. SRH is `srh: { Si:
   { tauN, tauP } }` in place of `kf` (s), or at a face `{ equation: 'e-(left) + h+(right) = 0',
   srh: { vn, vp } }` (m/s); with τ_N ≪ τ_p it gives n-type silicon's holes a lifetime τ_p at any
@@ -689,20 +690,20 @@ import { build, layer, ohmic, semiconductor, pulse, injector, recombination } fr
 // A pulse of holes injected into an n-type germanium bar under a field (Haynes–Shockley), and
 // the hole density read 1 mm downstream as it drifts past.
 const L = 4e-3, ND = units.perCm3(1e15), E = 1000; // m, mol/m³, V/m (10 V/cm)
-const width = 0.5e-6, I = (0.05 * ND * FARADAY * 50e-6) / width; // s; A/m²: 5% of n₀ over 50 µm
+const width = 0.5e-6, rise = 1e-9, I = (0.05 * ND * FARADAY * 50e-6) / width; // s; A/m²: 5% of n₀ over 50 µm
 const def = build({
   T: 300,
   library: [semiconductor('Ge')],
   stack: [ohmic(E * L), layer('Ge', L, { name: 'bar', donors: ND }), ohmic(0)], // holes drift toward +x
   bulkReactions: [recombination({ material: 'Ge', tau: 20e-6, majority: ND })], // the minority lifetime
-  ports: [injector({ region: 'bar', from: 0.5e-3, to: 0.55e-3, species: 'h+', I: pulse({ width, amplitude: I, rise: 1e-9 }) })],
+  ports: [injector({ region: 'bar', from: 0.5e-3, to: 0.55e-3, species: 'h+', I: pulse({ width, amplitude: I, rise }) })],
   grid: { hmin: units.um(10), hmax: units.um(10) },
 });
 const dev = new Device(def);
 const rest = dev.solve(); // the steady state at t = 0 (solve() doesn't advance time)
 const run = dev.advance(10e-6, { dtMax: 20e-9, probes: [{ x: 1.525e-3, species: 'h+' }] });
 const seen = run.trace.probes[0], k = seen.indexOf(Math.max(...seen));
-const tArrive = run.trace.t[k] - width / 2; // from the pulse's middle
+const tArrive = run.trace.t[k] - (width + rise) / 2; // from the pulse's middle (its edges are ramps from 0 and from width)
 console.log(`peak at ${(run.trace.t[k] * 1e6).toFixed(2)} µs, Δp ${units.toPerCm3(seen[k] - rest.c['h+'][0]).toExponential(1)} cm⁻³: μ_p ≈ ${(1e-3 / (E * tArrive) * 1e4).toFixed(0)} cm²/(V·s)`); // => 1951 (for the 1900 put in): a spreading, decaying pulse peaks a little early
 ```
 

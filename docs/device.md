@@ -1400,8 +1400,11 @@ result says into how many pieces).
 
 Notes:
 
-- **It doesn't land on a drive's breakpoints** (`advance()` does): a jump inside a step is first
-  order under either method, and BDF2 restarts at a breakpoint a step begins on.
+- **It doesn't land on a drive's breakpoints** (`advance()` does): it reads each drive at the
+  step's end alone, so a breakpoint inside a step is crossed unlanded, a pulse inside one step
+  missed whole, its charge lost. It says so in `warnings`, naming the terminal and the time. A
+  jump inside a step is first order under either method, and BDF2 restarts at a breakpoint a
+  step begins on.
 - **dt is a duration**: a negative, infinite or non-number one is refused, and a NaN or 0 does
   nothing and says so in `warnings`.
 - **Its solution has no `trace`.** For the charge a terminal passes, read a stored charge (an

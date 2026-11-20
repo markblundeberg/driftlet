@@ -33,15 +33,20 @@ The data are 25 °C's. `aqueous(names, { T })`, from 273.15 to 323.15 K (0 to 50
   better, give your own `D` at T.
   H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (it is 22% and 6% off at
   0 °C), so with either of them a `T` needs their D at T from you, `D: { 'H+': … }` (m²/s).
-  `D` replaces any ion's D, at any `T` (from a limiting conductivity λ° at T, $`D = RT\lambda^\circ/(z^2F^2)`$).
+  `D` replaces any ion's D, at any `T` (from a limiting conductivity λ° at T, $`D = RT\lambda^\circ/(z^2F^2)`$
+  with λ° per mole of the ion, or $`D = RT\lambda^\circ/(|z|F^2)`$ with λ° per equivalent, as a table
+  of ½Cu²⁺ gives it; S·m²/mol, 10⁻⁴ times S·cm²/mol).
 - ε by Malmberg and Maryott's fit, scaled to 78.30 at 25 °C: 74.15 at 37 °C, 87.74 at 0 °C. A
   given `epsr` is kept.
 
 μ° stays 25 °C's: the material carries `T` (its D and ε) and `mu0T: 298.15` (its μ°). A device
 whose `T` differs from `mu0T` warns where μ° are read: a reaction whose net μ° in the material
 isn't zero (an electrode's couple, water's dissociation), or a face passing a species into
-another material. There, equilibrium constants and electrode potentials are 25 °C's ($`K_w`$
-moves ~5× between 6 and 25 °C). The SHE scale is 25 °C's too: what reads against SHE (a level
+another material. There, an equilibrium constant is $`K = e^{-\Delta G^\circ_{298}/RT}`$ at the device's
+T, 25 °C's $`\Delta G^\circ`$ read at T (as if $`\Delta S^\circ`$ were 0): neither 25 °C's K nor T's.
+At 37 °C, water's $`K_w`$ comes out 3.5e-14 (25 °C's 1.01e-14 moved by 1/T alone); the real
+one moves by its $`\Delta H^\circ`$, $`K_w`$ ~5× between 6 and 25 °C, and an electrode potential
+by its temperature coefficient. The SHE scale is 25 °C's too: what reads against SHE (a level
 less φ, `level()`, a bath's reference terminal, `describe()`'s SHE) is off at T by each couple's
 temperature coefficient, often ±1 mV per kelvin, though nothing in the device reads it, so
 nothing warns. Where μ° cancel, nothing warns: channels and pumps moving the
@@ -73,7 +78,9 @@ scaled by T/η moves nothing they show.
   real concentrations ions move slower: at 1 M, KCl conducts about 25% below its limiting value,
   so a supporting electrolyte's resistance comes out that much low.
 - **$`\mu^\circ`$**: standard Gibbs energies of formation, from Wagman et al., "The NBS tables of
-  chemical thermodynamic properties" (J. Phys. Chem. Ref. Data 11, Suppl. 2, 1982), on the usual
+  chemical thermodynamic properties" (J. Phys. Chem. Ref. Data 11, Suppl. 2, 1982; NO₃⁻'s is the
+  value as corrected since, where the 1982 row prints −108.74 kJ/mol: see the tables' erratum,
+  J. Phys. Chem. Ref. Data, 1989, [doi:10.1063/1.555845](https://doi.org/10.1063/1.555845)), on the usual
   table convention: $`\Delta_{\mathrm{f}} G^\circ(\mathrm{H}^+) = 0`$ and elements in their standard
   states at 0. With these $`\mu^\circ`$, the electronic level of a standard hydrogen electrode in
   the solution is $`\phi`$ itself (see [conventions](conventions.md)), so $`V - \phi`$ reads against
@@ -246,7 +253,9 @@ interface (neither is the whole truth at an abrupt spike: tunnelling and the int
 $`1/\rho`$ from the CRC Handbook's resistivities of pure metals at 293 K ("Electrical resistivity of
 pure metals"). The data are in `METALS`, as `rho` (10⁻⁸ Ω·m) and `conductivity` (S/m). They
 aren't cross-checked against a second table in the tests; a metal's conductivity only sets the
-ohmic drop inside it, which is usually negligible.
+ohmic drop inside it, which is usually negligible. It is 293 K's whatever the device's `T`: the
+material carries no `T`, so nothing moves it or warns (a metal's resistivity rises with
+temperature). At another `T`, give your own `conductivity`.
 
 | | Ag | Cu | Au | Al | Zn | Li | Pt |
 |---|---|---|---|---|---|---|---|

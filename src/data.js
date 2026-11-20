@@ -17,7 +17,9 @@ const freeze = (table) => Object.freeze(Object.fromEntries(Object.entries(table)
  * and Physics, "Ionic conductivity and diffusion at infinite dilution"). mu0: standard Gibbs
  * energy of formation, J/mol, the usual table convention with ΔfG°(H⁺) = 0 (Wagman et al., "The
  * NBS tables of chemical thermodynamic properties", J. Phys. Chem. Ref. Data 11, Suppl. 2, 1982),
- * on the 1 mol/kg standard state, used here with c_ref = 1000 mol/m³ (1 M).
+ * on the 1 mol/kg standard state, used here with c_ref = 1000 mol/m³ (1 M). NO₃⁻'s is the value
+ * as corrected after the 1982 table (whose row prints −108.74 kJ/mol): see the tables' erratum,
+ * J. Phys. Chem. Ref. Data, 1989, doi:10.1063/1.555845 (Astra's fifth pass).
  * Names are the formula followed by the charge.
  */
 export const IONS = freeze({
@@ -121,7 +123,7 @@ export function aqueous(names, { epsr, material = 'water', T = T25, D = {} } = {
     const ion = IONS[name];
     if (!ion) fail(`aqueous: no data for '${name}' (the library has ${Object.keys(IONS).join(', ')})`);
     if (moved && HOPPING.includes(name) && D[name] === undefined)
-      fail(`aqueous: ${name} at ${T} K: it moves by proton hopping, which water's viscosity doesn't scale (22% off at 0 °C), so give its D at T (D: { '${name}': … }, m²/s; ${shown(ion.D)} is 25 °C's; from a limiting conductivity λ° at T, D = RTλ°/(z²F²))`);
+      fail(`aqueous: ${name} at ${T} K: it moves by proton hopping, which water's viscosity doesn't scale (22% off at 0 °C), so give its D at T (D: { '${name}': … }, m²/s; ${shown(ion.D)} is 25 °C's; from a limiting conductivity λ° at T, D = RTλ°/(z²F²) with λ° per mole of the ion, or RTλ°/(|z|F²) per equivalent, as tables of ½Cu²⁺ give it)`);
     species.push({ name, z: ion.z, cRef: 1000 });
     entries[name] = { D: D[name] ?? (moved ? ion.D * scale : ion.D), mu0: ion.mu0 };
   }
@@ -201,8 +203,11 @@ export function semiconductor(name, { material = name, T = 300 } = {}) {
  *   and h⁺ (semiconductor()), returned with the trap's states added
  * @param {{ density: number, tauN: number, tauP: number, n1?: number, charge?: 'acceptor' | 'donor',
  *   name?: string, material?: string, T?: number }} opts density N_t (mol/m³); τ_n = 1/(c_n N_t)
- *   and τ_p = 1/(c_p N_t) (s) at that density; n₁, the electron density that half-fills it
- *   (mol/m³; default n_i, a trap at the intrinsic level); T (K, default the material's T, else 300)
+ *   and τ_p = 1/(c_p N_t) (s) at that density; n₁ = N_c e^{(E_t − E_c)/kT}, the trap's level
+ *   E_t as the electron density that would half-fill it under Boltzmann statistics (mol/m³; default
+ *   n_i, a trap at the intrinsic level). It is half full where the electrons' level is at E_t,
+ *   which under Fermi–Dirac statistics is at another density than n₁. T (K, default the
+ *   material's T, else 300)
  * @returns {{ library: object, bulkReactions: object[], c0: Record<string, number>, c0For: (doping: { donors?: number, acceptors?: number }) => Record<string, number> }}
  *   the library for build(), the capture reactions, c0 for each layer holding the trap (its total
  *   N_t, half full), and c0For(doping), the same total split as a layer of that doping holds it
@@ -231,17 +236,24 @@ export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name =
   const cRefH = ho.cRef ?? lib.species.find((sp) => sp.name === 'h+')?.cRef;
   if (!(cRefE > 0 && cRefH > 0)) fail("trap: the library's e- and h+ need a cRef (on the material's species or the species list), for the intrinsic level the trap's n1 is read against");
   const ni = Math.sqrt(cRefE * cRefH * Math.exp(-(ho.mu0 + el.mu0) / RT));
-  const half = n1 === undefined ? ni : pos(n1, 'n1 must be the electron density that half-fills the trap > 0 (mol/m³)');
+  const half = n1 === undefined ? ni : pos(n1, 'n1 must be > 0 (mol/m³): the trap\'s level, as the electron density that half-fills it under Boltzmann statistics');
   // The filled state's μ° sits an electron's μ at n₁ above the empty one's: half full at n = n₁.
   const [empty, full] = charge === 'acceptor' ? [`${name}0`, `${name}-`] : [`${name}+`, `${name}0`];
   const zEmpty = charge === 'acceptor' ? 0 : 1;
+  // A second trap of the same name in the material: its states would be the first's, one pool
+  // holding the second's density alone (two default-named traps merged, the first's density
+  // lost and the recombination 10% off, converged; Astra's fifth pass).
+  for (const s of [empty, full]) if (mat.species[s] !== undefined) fail(`trap: material '${m}' already has '${s}', a trap named '${name}': give the second trap a name (name: 'Y', say), so that its states are its own`);
+  const zOf = { [empty]: zEmpty, [full]: zEmpty - 1 };
+  for (const sp of lib.species) if (zOf[sp.name] !== undefined && sp.z !== zOf[sp.name]) fail(`trap: the library already has a species '${sp.name}' of charge ${sp.z}: give the trap another name`);
+  const newSpecies = [empty, full].filter((s) => !lib.species.some((sp) => sp.name === s)).map((s) => ({ name: s, z: zOf[s] }));
   const states = {
     [empty]: { D: 0, mu0: 0, cRef: density },
     [full]: { D: 0, mu0: el.mu0 + RT * Math.log(half / cRefE), cRef: density },
   };
   return {
     library: {
-      species: [...lib.species, { name: empty, z: zEmpty }, { name: full, z: zEmpty - 1 }],
+      species: [...lib.species, ...newSpecies], // (in another material, the same trap: its species once)
       materials: { ...lib.materials, [m]: { ...mat, species: { ...mat.species, ...states } } },
     },
     bulkReactions: [
@@ -256,14 +268,22 @@ export function trap(lib, { density, tauN, tauP, n1, charge = 'acceptor', name =
     // 3's semiconductor review).
     c0For({ donors = 0, acceptors = 0 } = {}) {
       if (!(donors >= 0 && acceptors >= 0)) fail(`trap: c0For({ donors, acceptors }) takes the layer's doping (mol/m³, ≥ 0), got ${shown(donors)} and ${shown(acceptors)}`);
-      const net = donors - acceptors, nn = net / 2 + Math.sqrt((net * net) / 4 + ni * ni), f = nn / (nn + half);
-      return { [empty]: density * (1 - f), [full]: density * f };
+      // (each by its own root and fraction, never a difference of near-equals: n = net/2 + √(net²/4
+      // + n_i²) lost the minority by cancellation, and 1 − f lost the empty fraction, so at 1e18 cm⁻³
+      // acceptors the start held X⁻ = 0, refused as the user's c0; Astra's fifth pass)
+      const net = donors - acceptors, root = Math.sqrt((net * net) / 4 + ni * ni);
+      const nn = net >= 0 ? net / 2 + root : (ni * ni) / (root - net / 2);
+      return { [empty]: (density * half) / (nn + half), [full]: (density * nn) / (nn + half) };
     },
   };
 }
 
 /**
- * A metal from `METALS` as a conductor material, its carrier `e-`.
+ * A metal from `METALS` as a conductor material, its carrier `e-`. Its conductivity is the
+ * table's at 293 K whatever the device's T: the material carries no T, so nothing moves it or
+ * warns (a metal's resistivity rises with temperature); at another T, give your own
+ * conductivity. (Tagged with a T, it would warn in every device not at 293 K, most of them,
+ * where the ohmic drop in a metal rarely matters.)
  * @param {string} name
  * @param {{ material?: string }} [opts]
  * @returns {{ species: object[], materials: Record<string, object> }}

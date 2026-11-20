@@ -8,7 +8,7 @@ import { carryState, carryTermCharges } from './carry.js';
 import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
-import { normalizeDrives, sourceAt } from './device.js';
+import { nextBreakpoint, normalizeDrives, sourceAt } from './device.js';
 
 // (a contact the kit wrote stays whole through set()'s own copies of it: see merge.js)
 const keepWhole = (from, to) => (from[WHOLE] ? markWhole(to) : to);
@@ -342,7 +342,29 @@ export class Device {
     if (this.solver.time + dt === this.solver.time) return makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: it's below the time's resolution at t = ${this.solver.time} s` });
     this._settleRegrid(); // (as advance() does: stepped unsolved, 27 A/m² where 68.8 is right)
     this.solver._freshDiagnostics();
-    return this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)));
+    const crossed = this._crossed(dt);
+    const sol = this._touching(() => makeSolution(this.solver, this.solver.advance(dt, opts)));
+    if (crossed) sol.warnings.push(crossed);
+    return sol;
+  }
+
+  // A drive's breakpoint strictly inside (t, t + dt), which a step crosses unlanded, reading the
+  // drive at its end alone: what it says, or null. (One step of 3 ms over a 1 ms pulse of current
+  // passed no charge at all, silently; Astra's fifth pass.)
+  _crossed(dt) {
+    const s = this.solver, t0 = s.time, t1 = t0 + dt;
+    let first = null;
+    for (const term of s.terms) {
+      let tb;
+      try {
+        tb = nextBreakpoint(term.drive.src, t0);
+      } catch {
+        continue; // (a period below the time's resolution: the step reads it as it always has)
+      }
+      if (tb < t1 - 1e-12 * Math.abs(t1) && (first === null || tb < first.tb)) first = { tb, name: term.name };
+    }
+    if (first === null) return null;
+    return `step(${dt}): the drive of terminal '${first.name}' has a breakpoint at t = ${first.tb} s, inside this step, which reads the drive at its end alone and so crosses it unlanded (a pulse inside one step is missed whole, its charge lost): advance(tEnd) lands on every breakpoint, or step to it first`;
   }
 
   /**

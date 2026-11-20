@@ -108,7 +108,10 @@ console.log(`I = ${sol.current.toFixed(1)} A/m²`);
   failing. In steady state it recombines at the
   `srh` law's rate with the same `tauN`, `tauP` (s, at that density) and `n1` (mol/m³, default
   n_i); unlike `srh`, its charge is in Poisson's equation
-  ([device](device.md#bulk-reactions)).
+  ([device](device.md#bulk-reactions)). `n1` is the trap's level $`E_t`$, as the electron density
+  that would half-fill it under Boltzmann statistics: under Fermi–Dirac the trap is half full where
+  the electrons' level is at $`E_t`$, at another density. A second trap in the same material needs
+  its own `name` (the default is `'X'`): `trap(t1.library, { …, name: 'Y' })`.
 - Nested lists in the stack are flattened, so a helper can return several items.
 - Reactions pass through as written (see below), and so do `T`, `grid`, `ports` and `geometry`.
 
@@ -222,16 +225,23 @@ Helpers that write sources as plain data:
   `square({ high, low, period, duty })`, `triangle({ from, to, period })` (a voltammogram's sweep)
   and `ramp({ from, to, duration, start })`. Each returns `{ t, values }` (with `repeat` for the
   periodic ones), times from the device's time 0. A pulse keeps its area,
-  `amplitude · width`, whatever its `rise`; with no rise its edges are jumps, which the time
-  stepping handles exactly, so it must start after t = 0 (where a device starts, and `solve()`
-  reads it).
-- **`injector({ name, region, from, to, species, I, headroom })`**: a port that injects a species
+  `amplitude · width`, whatever its `rise`; with no rise its edges are jumps, which `advance()`
+  lands on and handles exactly, so it must start after t = 0 (where a device starts, and `solve()`
+  reads it). `step(dt)` doesn't land on them: it reads a drive at the step's end alone, so a pulse
+  inside one step is missed whole (it warns). A ramp or an edge too short for the clock at its
+  start (10 ns at t = 1e9 s) is refused.
+- **`injector({ name, region, from, to, species, I, headroom, area })`**: a port that injects a species
   into a window at a driven current (a number or a waveform), spread evenly. Its conductance is
   set small enough that at the peak current the port sits `headroom` volts (default 2.5) above
-  the window, so every node takes the same share, like a current source.
+  the window, so every node takes nearly the same share, like a current source: where the
+  window's level varies by ΔV, the shares vary by ±ΔV/(2·headroom). In a device with a
+  `geometry`, `I` is a current (A) and `area` (m², default 1) the window's cross-section, its
+  mean where it varies: left at 1, the port sits headroom/area above the window.
 - **`recombination({ material, tau, majority })`**: band-to-band recombination e⁻ + h⁺ ⇌ 0 as
   a bulk reaction, from the low-injection minority lifetime it gives at that majority density,
-  $`k_f = 1/(\tau \cdot n_{\mathrm{maj}})`$.
+  $`k_f = 1/(\tau \cdot n_{\mathrm{maj}})`$. A small excess decays at
+  $`1/(k_f(n_0 + p_0))`$, so that's τ where the majority is most of $`n_0 + p_0`$ (strongly
+  extrinsic): at $`n_0/p_0 = 2`$ the excess decays in 2τ/3.
 - **`photogeneration({ material, flux, alpha, mu, from, to, makes, toward })`**: light absorbed as it
   goes in (Beer–Lambert). A photon flux (mol/(m²·s); a power P at photon energy E is
   $`P/(E N_A)`$) enters the material at x = `from` heading toward +x and generates pairs at
@@ -241,8 +251,10 @@ Helpers that write sources as plain data:
   its electrolyte). It's
   photon ⇌ e⁻ + h⁺ from a photon reservoir at $`\mu`$ = `mu` (J/mol, well above the gap, e.g.
   `units.eV(3)`), with `kf` a profile against x. `makes` replaces the right-hand side: in an
-  organic semiconductor, light makes neutral excitons, `makes: 'X'`. The table generates exactly what the light
-  loses, $`\Phi(1 - e^{-\alpha(\mathrm{to} - \mathrm{from})})`$, and the solver averages it
+  organic semiconductor, light makes neutral excitons, `makes: 'X'`. In a planar device the table generates exactly what the light
+  loses, $`\Phi(1 - e^{-\alpha(\mathrm{to} - \mathrm{from})})`$ (with a `geometry` whose area
+  varies, G is per volume and A(x) weighs it: a cross-section widening along the light generates
+  more than the flux through its first face), and the solver averages it
   over each node's box, so the total stays right on a grid coarser than $`1/\alpha`$ (where
   carriers start within a cell still needs the grid). Light through several materials is one
   call per material, each with the flux that reaches it. To switch the light during a run (a

@@ -7,7 +7,7 @@
 import { DeviceError, checkOptions, shown } from './errors.js';
 import { FARADAY } from './constants.js';
 import { profileAt } from './device.js';
-import { markWhole } from './merge.js';
+import { WHOLE, markWhole, put } from './merge.js';
 import { electrodeUnbalanced, stoichiometry } from './equation.js';
 
 const fail = (message) => {
@@ -19,11 +19,28 @@ function fields(obj, path, allowed) {
   for (const k of Object.keys(obj)) if (obj[k] !== undefined && !allowed.includes(k)) fail(`${path}.${k}: unknown field (expected one of ${allowed.join(', ')})`);
 }
 
+// Two values alike, a key whose value is undefined counted as absent. (Over A's keys only, a
+// material given twice, once with mu0T: undefined and once with Fermi–Dirac statistics, was the
+// same: the first kept, the statistics dropped, by the order of the pieces; Astra's fifth pass.)
 const same = (a, b) => {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
-  const ka = Object.keys(a), kb = Object.keys(b);
-  return ka.length === kb.length && ka.every((k) => same(a[k], b[k]));
+  if (Array.isArray(a) && a.length !== b.length) return false;
+  const defined = (o) => Object.keys(o).filter((k) => o[k] !== undefined);
+  const ka = defined(a), kb = defined(b);
+  return ka.length === kb.length && ka.every((k) => Object.hasOwn(b, k) && same(a[k], b[k]));
+};
+
+// A copy of a definition's plain data (objects and arrays, recursively); anything else, a
+// function or a typed array, kept as it is. (By reference, two build()s from one library shared
+// their materials, and editing one device's D edited the other's and the library's; Astra's
+// fifth pass.)
+const copyPlain = (v) => {
+  if (Array.isArray(v)) return v.map(copyPlain);
+  if (!isObject(v) || ![Object.prototype, null].includes(Object.getPrototypeOf(v))) return v;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) put(out, k, copyPlain(x));
+  return v[WHOLE] ? markWhole(out) : out;
 };
 
 /**
@@ -45,7 +62,7 @@ export function combine(...parts) {
       else if (!same(prev, sp)) fail(`combine: species '${sp.name}' is given twice, differently (${JSON.stringify(prev)} and ${JSON.stringify(sp)})`);
     }
     for (const [name, mat] of Object.entries(part.materials ?? {})) {
-      if (materials[name] === undefined) materials[name] = mat;
+      if (materials[name] === undefined) materials[name] = copyPlain(mat);
       else if (!same(materials[name], mat)) fail(`combine: material '${name}' is given twice, differently`);
     }
   });
@@ -60,7 +77,9 @@ export function combine(...parts) {
  * @param {object} [more]
  */
 export function layer(material, length, more = {}) {
-  return { material, length, ...more };
+  // (the arguments last, so a layer can be another's template: spread last, layer('GaAs', 2e-6,
+  // siLayer) was Si at 1 µm; Astra's fifth pass)
+  return { ...more, material, length };
 }
 
 /**
@@ -89,7 +108,7 @@ export function alloy(from, to, length, more = {}) {
   if (!isObject(more)) fail(`alloy('${from}', '${to}'): the options must be an object`);
   const { fraction, step, dipole, bow, ...rest } = more;
   if (rest.grade !== undefined) fail(`alloy('${from}', '${to}'): it writes the layer's grade itself; for more grading, give the layer's grade by hand (layer(…, { grade }))`);
-  return { material: from, length, ...rest, alloy: { to, fraction, step, dipole, bow } };
+  return { ...rest, material: from, length, alloy: { to, fraction, step, dipole, bow } }; // (the arguments win, as in layer())
 }
 
 // An alloy layer's grade (see alloy()), its profiles against the device's x from x0, the layer's
@@ -161,11 +180,17 @@ function alloyGrade(item, x0, species, materials, path) {
   const prof = (a, b, c = 0) => ({ x: knots.map((x) => x0 + x), values: knots.map((x) => { const f = fAt(x); return a + (b - a) * f - c * f * (1 - f); }) });
   const grade = {};
   for (const n of names) {
-    const sa = A.species[n], sb = B.species[n], z = species.find((sp) => sp.name === n)?.z ?? 0, g = {};
+    const sa = A.species[n], sb = B.species[n], sp = species.find((s) => s.name === n), z = sp?.z ?? 0, g = {};
     const muA = sa.mu0 ?? 0, muB = (sb.mu0 ?? 0) + z * FARADAY * d;
     const c = bow[n]?.mu0 ?? 0;
     if (muA !== muB || c !== 0) g.mu0 = prof(muA, muB, c);
-    if (sa.cRef !== sb.cRef) g.cRef = prof(sa.cRef, sb.cRef);
+    // (an end without its own cRef has the species', as a material does: read as undefined, the
+    // grade was NaN throughout, refused as the user's NaN; Astra's fifth pass)
+    const rA = sa.cRef ?? sp?.cRef, rB = sb.cRef ?? sp?.cRef;
+    if (rA !== rB) {
+      for (const [r, m] of [[rA, from], [rB, to]]) if (r === undefined) fail(`${where}: species '${n}' has no cRef in '${m}' (give it on the material's species or on the species list)`);
+      g.cRef = prof(rA, rB);
+    }
     if (sa.D !== sb.D) g.D = prof(sa.D, sb.D);
     if (Object.keys(g).length > 0) grade[n] = g;
   }
@@ -233,6 +258,10 @@ export function bath(c, reference, d = 0, opts = {}) {
     // 'M+' and 'M+', and M⁺ + e⁻ + e⁻ = M(s) to need electrons on one side; Astra's third pass)
     const terms = Object.entries(stoichiometry(reference.equation, 'bath: the reference electrode')).map(([name, nu]) => ({ name, nu }));
     const fixed = isObject(reference.fixed) ? reference.fixed : {};
+    // (the electrons are the wire's, at the terminal voltage: a μ for them in fixed was summed
+    // into the offset, the terminal moved by 1 V, where level() skips it and a face refuses it;
+    // Astra's fifth pass)
+    if (fixed['e-'] !== undefined) fail(`bath: the reference electrode's fixed.e-: 'e-' is a species of the device, whose level is its own (the wire's, at the terminal voltage), so a μ for it here would be ignored; fixed is for participants that aren't species (a solid, the solvent, a gas at a set pressure)`);
     const electrons = terms.filter((t) => t.name === 'e-');
     const ions = terms.filter((t) => t.name !== 'e-' && fixed[t.name] === undefined);
     if (electrons.length !== 1) fail(`bath: the reference electrode ${JSON.stringify(reference.equation)} needs electrons, 'e-', on exactly one side`);
@@ -248,7 +277,10 @@ export function bath(c, reference, d = 0, opts = {}) {
     balance = { equation: reference.equation, ion: ions[0].name, nuIon: ions[0].nu, nuE: electrons[0].nu };
     reference = ions[0].name;
   }
-  if (typeof reference !== 'string') {
+  // bath(c, undefined, drive, opts): no reference, its place kept, so the drive and the options
+  // are where they're given (read as bath(c, drive, opts), the options were dropped: a bath of
+  // its own material held the layer's concentrations, 10 where 0.485 is right; Astra's fifth pass)
+  if (reference !== undefined && typeof reference !== 'string') {
     // bath(c, drive, opts): a third argument that isn't the options was put in the wrong place
     // (bath(c, { I: 0 }, 'Cl-') once built a bath without its reference, silently).
     if (d !== 0 && d !== undefined && !isObject(d)) fail(`bath: ${JSON.stringify(d)} after the drive: the reference species comes second, bath(c, ${JSON.stringify(d)}, drive), and the options last`);
@@ -323,6 +355,25 @@ export function build(def) {
   }
   if (pendingFace) fail(`${at(pendingFace.k)}: a face after the last layer (the contact is the boundary there)`);
   if (regions.length === 0) fail('build.stack has no layers');
+  // An alloy layer is its `from` material throughout, so a bulk rate keyed to `to` alone doesn't
+  // reach it, even at fraction 1 (generation in a layer of alloy('Si', 'B', …, { fraction: [1, 1]
+  // }), kf keyed to B, came out half, converged; Astra's fifth pass). Refused, not graded: a rate
+  // keyed to a material holds in every layer of it, so grading it here would move the others, and
+  // how a rate goes with composition is the user's to say (a profile against x).
+  for (let k = 1; k < stack.length - 1; k++) {
+    const item = stack[k], al = item?.material !== undefined ? item.alloy : undefined;
+    if (!isObject(al) || al.to === item.material) continue;
+    (def.bulkReactions ?? []).forEach((rx, j) => {
+      for (const law of ['kf', 'srh', 'auger']) {
+        const byMat = isObject(rx) ? rx[law] : undefined;
+        if (!isObject(byMat) || !Object.hasOwn(byMat, al.to) || same(byMat[al.to], byMat[item.material])) continue;
+        fail(
+          `bulkReactions[${j}].${law}.${al.to}: ${at(k)} is alloy('${item.material}', '${al.to}'), a layer of '${item.material}' throughout (its composition graded, not its material), ` +
+            `so a ${law} keyed to '${al.to}' doesn't reach it${byMat[item.material] === undefined ? '' : ` (it runs at ${law}.${item.material} there)`}: key it to '${item.material}' too (as a profile against x, if '${item.material}' elsewhere needs another)`,
+        );
+      }
+    });
+  }
   // A bath's reference electrode, balanced as written: its offset assumes ν_e = ν_ion·z_ion (unbalanced,
   // Cu²⁺ + e⁻ = Cu(s) read 0.0518 V where Cu²⁺ + 2e⁻ = Cu(s) reads 0.0259; Fable's review).
   for (const k of [0, stack.length - 1]) {

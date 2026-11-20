@@ -65,6 +65,11 @@ export function hodgkinHuxley({ inside, outside, T, g = {}, leak = 'Cl-', leakZ 
   checkOptions('hodgkinHuxley: names', names, ['Na', 'K']);
   const G = { Na: 1200, K: 360, leak: 3, ...g };
   const Na = names.Na ?? 'Na+', K = names.K ?? 'K+';
+  // One link per species on a face, so a leak carried by a gated channel's ion would replace
+  // that channel's link, the gates gone (leak: 'K+' returned K⁺ at 3 S/m², ungated, where
+  // 360 n⁴ + 3 is right; Astra's fifth pass): one link can't be both gated and ungated.
+  need(Na !== K, `hodgkinHuxley: names.Na and names.K are both '${Na}': each channel's ion is its own species`);
+  need(leak !== Na && leak !== K, `hodgkinHuxley: the leak is carried by '${leak}', as the ${leak === Na ? 'Na' : 'K'} channels are, and one link (per species, on a face) can't be both gated and ungated: carry the leak by another ion (Cl⁻, the default), or give it its own species`);
   const q10 = Math.exp(Math.log(3) * ((T - HH_T) / 10)); // Q₁₀ = 3
   const scaled = (r) => ({ ...r, rate: r.rate * q10 });
   const gates = Object.fromEntries(Object.entries(HH_GATES).map(([k, gt]) => [k, { alpha: scaled(gt.alpha), beta: scaled(gt.beta) }]));

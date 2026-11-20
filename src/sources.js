@@ -8,13 +8,20 @@ const fail = (message) => {
 };
 const need = (ok, message) => ok || fail(message);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
+// A duration after time t as the clock holds it, to 1e-6 of itself: else its knots collapse (a
+// 10 ns ramp at t = 1e9 s, where the time's resolution is ~1e-7 s, was a jump, and a pulse's
+// width shrank 5%; Astra's fifth pass).
+const resolved = (t, d) => Math.abs(t + d - t - d) <= 1e-6 * d;
+const origin = (what, d, t) =>
+  `${what}: ${d} s at t = ${t} s is below the time's resolution there (~${(Math.abs(t) * Number.EPSILON).toPrecision(2)} s), so its knots collapse: times count from the device's time 0, so put the time origin nearer (a device starts at t = 0)`;
 
 /**
  * A rectangular pulse, as a waveform for a terminal's `V` or `I`: `base` until `start`, then
  * `base + amplitude` for `width`, then `base` again. With a `rise` > 0 its edges are ramps of
  * that length, placed so the area stays `amplitude · width`; without one they're jumps, which
- * the time stepping handles exactly (so a pulse with no rise must start after t = 0, the time a
- * device starts at and solve() reads: it's off then).
+ * advance() lands on and handles exactly (so a pulse with no rise must start after t = 0, the time a
+ * device starts at and solve() reads: it's off then). step(dt) doesn't land on them: it reads the
+ * drive at the step's end alone, so a pulse inside one step is missed whole (it warns).
  * @param {{ start?: number, width: number, amplitude: number, rise?: number, base?: number }} opts s, s, V or A/m², s, V or A/m²
  * @returns {{ t: number[], values: number[] }}
  */
@@ -26,6 +33,8 @@ export function pulse({ start = 0, width, amplitude, rise = 0, base = 0 } = {}) 
   need(num(rise) && rise >= 0 && rise <= width, `pulse: rise must be between 0 and the width (s), got ${rise}`);
   need(num(base), `pulse: base must be a finite number, got ${base}`);
   need(rise > 0 || start > 0, 'pulse: with no rise, start after t = 0, so the device starts (and solve() reads it) before the pulse');
+  need(resolved(start, width), origin('pulse: the width', width, start));
+  need(rise === 0 || (resolved(start, rise) && resolved(start + width, rise)), origin('pulse: the rise', rise, start + width));
   const top = base + amplitude;
   return { t: [start, start + rise, start + width, start + width + rise], values: [base, top, top, base] };
 }
@@ -67,6 +76,7 @@ export function ramp({ from, to, duration, start = 0 } = {}) {
   need(num(from) && num(to), `ramp: from and to must be finite numbers, got ${from} and ${to}`);
   need(num(duration) && duration > 0, `ramp: duration must be > 0 (s), got ${duration}`);
   need(num(start) && start >= 0, `ramp: start must be ≥ 0 (s), got ${start}`);
+  need(resolved(start, duration), origin('ramp: the duration', duration, start));
   return { t: [start, start + duration], values: [from, to] };
 }
 
@@ -75,28 +85,35 @@ export function ramp({ from, to, duration, start = 0 } = {}) {
  * number or a waveform), spread evenly over the window. It's an ordinary port: driven by `I`,
  * its terminal the species, linked by a conductance small enough that at the peak current the
  * port sits `headroom` volts above the window's level of that species, so every node of the
- * window takes the same share (like a current source). At I = 0 it still links the window,
- * weakly.
+ * window takes nearly the same share (like a current source): where that level varies by ΔV
+ * across the window, the shares vary by ±ΔV/(2·headroom) about the mean. At I = 0 it still
+ * links the window, weakly. In a device with a `geometry`, I is a current through the window's
+ * cross-section (A), so give `area`, that cross-section (m², its mean over the window where it
+ * varies); left at 1 m², the port would sit headroom/area above the window.
  * @param {{ name?: string, region: string | number, from: number, to: number, species: string,
- *   I: number | { t: number[], values: number[], repeat?: boolean }, headroom?: number }} opts
+ *   I: number | { t: number[], values: number[], repeat?: boolean }, headroom?: number, area?: number }} opts
  * @returns {object} a port, for the definition's `ports`
  */
-export function injector({ name = 'injector', region, from, to, species, I, headroom = 2.5 } = {}) {
-  checkOptions('injector', arguments[0], ['name', 'region', 'from', 'to', 'species', 'I', 'headroom']);
+export function injector({ name = 'injector', region, from, to, species, I, headroom = 2.5, area = 1 } = {}) {
+  checkOptions('injector', arguments[0], ['name', 'region', 'from', 'to', 'species', 'I', 'headroom', 'area']);
   need(region !== undefined, 'injector: give the region (its name or index)');
   need(num(from) && num(to) && to > from, `injector: from and to must bound the window, in m from the region's left end (got ${from}, ${to})`);
   need(typeof species === 'string', 'injector: give the species it injects, e.g. species: \'h+\'');
   need(num(headroom) && headroom > 0, `injector: headroom must be > 0 (V), got ${headroom}`);
+  need(num(area) && area > 0, `injector: area must be the window's cross-section > 0 (m², as the device's geometry gives it; 1 for a planar device), got ${area}`);
   const peak = num(I) ? Math.abs(I) : Array.isArray(I?.values) && I.values.every(num) ? Math.max(...I.values.map(Math.abs)) : NaN;
   need(Number.isFinite(peak), 'injector: I must be a current (A/m²) or a waveform { t, values }');
-  const G = peak > 0 ? peak / ((to - from) * headroom) : 1; // S/m³
+  // (per volume, so the window's volume is its length times its cross-section: as if planar, a
+  // device of 1e-4 m² put the port 1000 V above where 0.1 was asked; Astra's fifth pass)
+  const G = peak > 0 ? peak / ((to - from) * area * headroom) : 1; // S/m³
   return { name, region, from, to, terminal: species, species: { [species]: { type: 'conductance', G } }, I };
 }
 
 /**
  * Band-to-band recombination e⁻ + h⁺ ⇌ 0 in a material, from the minority-carrier lifetime it
- * should give at a majority density: kf = 1/(τ · majority). (The rate is kf (np − n_i²), so τ is
- * the low-injection lifetime of whichever carrier is the minority.)
+ * should give at a majority density: kf = 1/(τ · majority). (The rate is kf (np − n_i²), so a
+ * small excess decays at 1/(kf (n₀ + p₀)): τ is the low-injection minority lifetime where the
+ * majority is most of n₀ + p₀, strongly extrinsic; at n₀/p₀ = 2 the excess decays in 2τ/3.)
  * @param {{ material: string, tau: number, majority: number }} opts material name, s, mol/m³
  * @returns {{ equation: string, kf: Record<string, number> }} a bulk reaction
  */
@@ -115,7 +132,10 @@ export function recombination({ material, tau, majority } = {}) {
  * photon reservoir at μ = `mu` (J/mol; well above what it makes, so the rate is G itself), with
  * kf as a profile against the device's x. The table is
  * exact in what it generates in all (each segment's mean is the exponential's), and the solver
- * averages it over each node's box, so the total is right on any grid.
+ * averages it over each node's box, so the total is right on any grid. That total is what the
+ * light loses in a planar device; with a `geometry` whose area varies, G(x) is per volume and the
+ * device's A(x) weighs it, so a cross-section that widens along the light generates more than
+ * the flux entering through its first face (`flux` is per area, at every x).
  * @param {{ material: string, flux: number, alpha: number, mu: number, from?: number, to: number, makes?: string, toward?: '+x' | '-x' }} opts
  *   material name; photons absorbed, mol/(m²·s); absorption coefficient, 1/m; the photons' μ,
  *   J/mol; the absorbing span (m, the device's x); the reaction's right-hand side (default
@@ -142,7 +162,9 @@ export function photogeneration({ material, flux, alpha, mu, from = 0, to, makes
   // Nothing outside [from, to]: a profile holds its end values beyond its table, so it drops to
   // zero a hair beyond each end (the light enters a layer of a material that's also elsewhere).
   // (at least a few ulps of the ends: a 1 nm span at 1 mm had x[0] === x[1], refused as kf.Si.x)
-  const hair = Math.max(1e-10 * (to - from), 4 * Number.EPSILON * Math.max(Math.abs(from), Math.abs(to)));
+  // (and at most 1e-10 of an absorption length: what lies outside is G_entry·hair/2, so a hair
+  // of the span leaked 5e-5 of the flux at 1e6 absorption lengths; Astra's fifth pass)
+  const hair = Math.max(1e-10 * Math.min(to - from, 1 / alpha), 4 * Number.EPSILON * Math.max(Math.abs(from), Math.abs(to)));
   // Toward −x the light enters at `to`: the same points, mirrored, in increasing x.
   const xs = toward === '+x' ? taus.map((t) => from + t / alpha) : taus.map((t) => to - t / alpha).reverse();
   const gs = taus.map((t) => (flux * alpha * Math.exp(-t)) / fix);
