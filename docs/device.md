@@ -1509,6 +1509,11 @@ Notes:
   $`\lambda_D`$).
 - **An unresolved Z** is one with an error over 1%: far below a capacitive device's relaxation,
   almost no current flows, and what does is lost to round-off.
+- **The profiles show the response's shape, not its current, where that's nearly a uniform
+  shift** (an electrolyte at its open circuit, at low frequency: every level moves by nearly the
+  same δμ̄, and the current is the slope of what's left). Z reads the shift and the rest apart;
+  a current rebuilt from the published profiles across a cut lost that, and came out 24% off
+  where Z was right to 1e-9. Read the current from Z.
 
 Measured:
 

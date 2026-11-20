@@ -431,9 +431,9 @@ export class Device {
     this.solver.regriddedSteady = false; // (solved on its grid: nothing left to settle; Astra's second pass)
     // The steady state's warnings (an unresolved double layer, say) hold for the impedance too.
     const { warnings } = makeSolution(this.solver, steady);
-    let out;
+    let out, unconverged;
     try {
-      out = this.solver.impedance(frequencies, opts);
+      ({ unconverged, ...out } = this.solver.impedance(frequencies, opts));
     } catch (err) {
       this.solver._restore(snap);
       throw err;
@@ -460,6 +460,9 @@ export class Device {
     }
     if (rough.length > 0) {
       warnings.push(`impedance: Re Z isn't resolved at ${g(rough[0])}${rough.length > 1 ? `…${g(rough.at(-1))}` : ''} Hz (${rough.length} of ${out.f.length} frequencies): it's under a tenth of its estimated error, relError·|Z| (a cautious estimate), so there read it only as small next to Im Z.`);
+    }
+    if (unconverged.length > 0) {
+      warnings.push(`impedance: the iterative solve stopped short of its tolerance at ${g(unconverged[0])}${unconverged.length > 1 ? `…${g(unconverged.at(-1))}` : ''} Hz (${unconverged.length} of ${out.f.length} frequencies), by more than relError there allows for: Z there may be less accurate than relError says.`);
     }
     return { ...out, warnings };
   }

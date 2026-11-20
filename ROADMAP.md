@@ -207,12 +207,14 @@ for live demos.
        fraction would keep it. No device effect found (a crowded double layer at 60 kT agrees with
        Kilic–Bazant–Ajdari to 1e-4).
    - From Fable round 3 (5 Nov 2026), still open:
-     - `impedance()`: a floating terminal's δV carries no error estimate of its own, and where every
-       other terminal floats, Kirchhoff's reading trusts it: a floating Pt island measured against a
-       bath behind 1 Ω·m² read Re Z 0.3% high at 3e-5–1e-4 Hz with relError 5e-12 (the responses'
-       currents differ by 0.4% between cuts of one region while each solve's residual is 5e-12). And
-       Z measured at a port gets neither cuts nor the region-shift split, so the MOS capacitor's
-       channel port is unresolved (warned) where its gate contact resolves to 1e-6.
+     - `impedance()`: Z measured at a port with no floating terminal gets neither cuts nor the
+       region-shift split, so the MOS capacitor's channel port is unresolved (warned) where its
+       gate contact resolves to 1e-6. (A floating terminal's δV now carries its readings' error,
+       and the floating responses are split too where a reading is unresolved: the Pt island
+       behind a bath's 1 Ω·m², once 0.3% off at relError 5e-12, reads Z − R within 4e-10 of the
+       held device, and behind 1 kΩ·m² within 2e-7 at relError 4e-6; Sol's fourth pass. Where R
+       is most of Re Z, Re Z − R keeps only the digits R leaves it: a gate behind 1e6 Ω·m² at
+       10 nHz read 2219 for 2869, inside its relError·|Z| of 4e3.)
      - `stuckReactions` now checks a bulk reaction node by node where it alone changes a
        participant that can't move; a port's reaction out of equilibrium both ways across its
        window, with an immobile surface species, is still checked only for one sign.

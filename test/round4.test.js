@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device, EPS0, SolverError } from '../src/index.js';
+import { Device, EPS0, FARADAY, SolverError, units } from '../src/index.js';
 import { complexSolve } from '../src/impedance.js';
-import { aqueous, build, layer } from '../src/kit.js';
+import { aqueous, bath, build, half, layer, metal, ohmic, semiconductor } from '../src/kit.js';
 
 // Faults found in the impedance and the readout by an outside reading pass (OpenAI's Sol, its
 // fourth), each confirmed by a probe against a second route before it was fixed.
@@ -117,4 +117,73 @@ test('a plate\'s impedance at an absurd frequency, and a singular small system r
   assert.throws(() => complexSolve(...zero(), 2, 1), (e) => e instanceof SolverError && /singular at 1 Hz/.test(e.message));
   const rank1 = [[Float64Array.from([1, 2, 1]), Float64Array.from([2, 4, 3])], [new Float64Array(3), new Float64Array(3)]];
   assert.throws(() => complexSolve(...rank1, 2, 1), SolverError);
+});
+
+test('a floating terminal\'s δV carries its readings\' error: a gate behind R at 1 nHz, a Pt island behind a bath\'s R', () => {
+  // (Read from its laws and cuts with no error of its own, δV went into Kirchhoff's readout as
+  // exact: a gate behind 1e4 Ω·m², measured at the back contact at 1 nHz, put Re Z − R at −5.4
+  // for the held gate's 2869, relError 1e-9; a Pt island behind 1 Ω·m² read Z − R 0.3% off at
+  // 3e-5–1e-4 Hz, relError 5e-12, its bath's cuts 2000× past their estimates. Now the floating
+  // responses are split into their regions' shifts and the rest where a reading is unresolved.)
+  const si = semiconductor('Si');
+  si.materials.Si.species['e-'].mu0 -= FARADAY * 0.3;
+  si.materials.Si.species['h+'].mu0 += FARADAY * 0.3;
+  const mos = (gate) => build({
+    T: 300, library: [si, metal('Au')], materials: { SiO2: { epsr: 3.9, species: {} } },
+    stack: [ohmic(0), layer('Si', units.um(15), { acceptors: units.perCm3(1e16) }), { dipole: -0.3 }, layer('SiO2', units.nm(20), { grid: { hmin: units.nm(0.5), hmax: units.nm(1) } }), { phi: { type: 'capacitive', C: 100 }, zeroCharge: 0.7 }, layer('Au', units.nm(50)), ohmic(gate, ['e-'])],
+    bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }],
+    grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
+  });
+  const fs = [1e-9, 1e-8], ref = new Device(mos(0.6)).impedance(fs, { terminal: 'right' });
+  for (const R of [1e3, 1e4]) {
+    const z = new Device(mos({ V: 0.6, R })).impedance(fs, { terminal: 'left' });
+    fs.forEach((f, q) => {
+      const e = Math.abs(z.Z.re[q] - R - ref.Z.re[q]), said = z.relError[q] * Math.hypot(z.Z.re[q], z.Z.im[q]);
+      assert.ok(e < 1e-3 * ref.Z.re[q] && e < said * 10 + 1e-3, `R ${R}, ${f} Hz: Re Z − R ${z.Z.re[q] - R} for ${ref.Z.re[q]}, its error said ${said}`);
+    });
+  }
+  const c = { 'K+': 100, 'Cl-': 125, 'Fe3+': 5, 'Fe2+': 5 };
+  const face = { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1e-3, alpha: 0.5 }], phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 };
+  const island = (left) => build({ library: [aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+']), metal('Pt')], stack: [bath(c, 'Cl-', left), layer('water', 5e-6, { c0: c }), face, layer('Pt', 1e-6), face, layer('water', 5e-6, { c0: c }), bath(c, 'Cl-', 0)], grid: { hmin: 0.3e-9, hmax: 1e-6, ratio: 1.3 } });
+  const gs = [3e-5, 1e-4], Z0 = new Device(island({ V: 0 })).impedance(gs);
+  for (const R of [1, 1e3]) {
+    const z = new Device(island({ V: 0, R })).impedance(gs);
+    gs.forEach((f, q) => assert.ok(Math.hypot(z.Z.re[q] - R - Z0.Z.re[q], z.Z.im[q] - Z0.Z.im[q]) < 1e-5 * Math.hypot(Z0.Z.re[q], Z0.Z.im[q]), `R ${R}, ${f} Hz: Z − R ${z.Z.re[q] - R} ${z.Z.im[q]}i for ${Z0.Z.re[q]} ${Z0.Z.im[q]}i`));
+    assert.deepEqual(z.warnings.filter((w) => /impedance:/.test(w)), []);
+  }
+});
+
+// A Pt electrode in a Fe³⁺/Fe²⁺ bath at its open circuit: at 10 nHz its response is nearly a
+// uniform shift, which the readout splits off (Sol's fourth pass, S5).
+const redox = (right) => {
+  const c = { 'Fe3+': 9.6, 'Fe2+': 0.536, 'Cl-': 29.872 };
+  return build({
+    T: 300, library: [aqueous(['Fe3+', 'Fe2+', 'Cl-'], { epsr: 78.3 }), metal('Pt')],
+    stack: [ohmic(0, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.395 }, zeroCharge: -0.119, reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 0.0411, alpha: 0.377 }] }, layer('water', 9.83e-6, { c0: { ...c } }), bath({ ...c }, 'Cl-', right)],
+    grid: { hmin: 2.6e-10, hmax: 3.7e-7, ratio: 1.136 },
+  });
+};
+
+test('the profiles are those of the reading Z kept', () => {
+  // (The split's solve overwrote them even where Z set it aside. Here its shift is made
+  // nonsense, so that it is: the profiles moved with the nonsense, 0.1% at a node.)
+  const run = (scale) => {
+    const d = new Device(redox({ I: 0 }));
+    d.solver._regionShift = (yr, yi) => [yr.map((v) => v * scale), yi.map((v) => v * scale)];
+    return d.impedance([1e-8], { profiles: true });
+  };
+  const a = run(1e6), b = run(1e9);
+  assert.ok(a.relError[0] > 1e-2, `${a.relError[0]}`); // (the split set aside: Z is the plain reading's, warned)
+  assert.deepEqual(Array.from(a.profiles[0].phi.re), Array.from(b.profiles[0].phi.re));
+  assert.deepEqual(Array.from(a.profiles[0].mu['Fe3+'].im), Array.from(b.profiles[0].mu['Fe3+'].im));
+});
+
+test('a GMRES left above its tolerance, where relError doesn\'t show it, is warned of', () => {
+  // (No device in the tests leaves it so; the solver's report of where it did is passed on.)
+  const d = new Device(redox({ I: 0 })), was = d.solver.impedance.bind(d.solver);
+  d.solver.impedance = (fs, opts) => ({ ...was(fs, opts), unconverged: [1e-3] });
+  const z = d.impedance([1e-3, 1]);
+  assert.ok(!('unconverged' in z));
+  assert.equal(z.warnings.filter((w) => /stopped short of its tolerance at 0\.001 Hz \(1 of 2/.test(w)).length, 1);
+  assert.equal(new Device(redox({ I: 0 })).impedance([1e-3, 1]).warnings.filter((w) => /stopped short/.test(w)).length, 0);
 });
