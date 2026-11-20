@@ -632,6 +632,10 @@ export class Solver {
     // perturbed, not thrown on: Newton then converges, its small updates meaning small residuals
     // (the factorisation only amplifies), refining its solves where they stall.
     sys.staticPivots = true;
+    // Where the factorisation from the left loses a column to a mode only the blocks after it
+    // hold, the one from the right is tried too (see BlockTridiagonal): without it, two reacting
+    // solutions that solve cold were refused as their mirror images (round 9's mirror property).
+    sys.bothWays = true;
     const N = sys.size;
     this.SINK = N;
     const rix = (this.rix = new Int32Array(nB * M).fill(N)), fullOf = (this.fullOf = new Int32Array(N));

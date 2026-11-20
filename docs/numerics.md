@@ -551,6 +551,22 @@ which cost four assemblies per product.
   at 7e-32 with the species listed one way and 3e-16 the other; at 7e-32 the face's block was
   scaled by 1e31, lost its own pivot outright, and the solve failed in that listing alone. (At
   1e-15 a pivot can still hold a digit Newton needs: a port's steady solve then wandered.)
+- Elimination from the left can't survive a mode that only the blocks after it hold: a closed,
+  strictly neutral compartment at the left end, its $`\phi`$ held by nothing but the face beyond
+  it (the face's unknowns are fluxes, so the blocks up to it leave its level free). A whole pivot
+  column then cancels to round-off (2.5e-33 of the 0.78 it was formed from), whichever row the
+  pivot is taken from, and every block after it inherits the noise (the next one's entries reach
+  4e32); the same device written the other way round factorises with pivot ratios of 1e-3. So
+  where the factorisation from the left loses a column like that, the system is factorised from
+  the right too (its blocks reversed), and that one kept where it loses nothing (no column, no
+  perturbed pivot, every pivot ratio at least 1e-12): a device and its mirror image are then
+  factorised the same way round. (Two reacting solutions with their bath on the right were
+  refused cold, the bath on the left solved; round 9's mirror property.) A pivot that's small but
+  formed from small entries, a population held weakly (a floating base, an inversion layer
+  reached only by minority diffusion), leaves the left one standing, with the perturbed pivots
+  and refined solves above: kept by pivot ratio alone, the right one let a floating MOS gate
+  drift 9e-8 V from rest over 1e7 s. A device held only in its middle, closed at both ends, would
+  need the two eliminations to meet there (a twisted factorisation), which isn't done.
 - When a steady solve fails, the solution's warnings say how nearly singular the system was,
   and where. A running error bound through the factorisation compares each pivot with the
   magnitudes it was formed from, $`\log_{10}(\sum|\mathrm{terms}| / |\mathrm{pivot}|)`$: the digits

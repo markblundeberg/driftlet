@@ -113,7 +113,9 @@ regions: [
   balanced by background electronic carriers, and must be a number.
 - `c0`: initial concentrations, mol/m³: the starting state of each species given. Species
   connected to a contact don't need it (without it, they start from that contact's level: the
-  left contact's if the species reaches it, else the right's, else a port's). Any
+  left contact's if the species reaches it, else the right's, else a port's; but the right's
+  first where only the right contact is `'bulk'`, its end plain bulk at its levels where a
+  pinned or gated end is a barrier or a double layer). Any
   other species (blocked everywhere, or only made and consumed by
   reactions) does: its `c0` fixes the amount it conserves. Concentrations are positive ($`\bar\mu`$ is
   logarithmic in them); to have none of a species in a region, leave it out of that region's

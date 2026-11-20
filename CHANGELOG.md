@@ -9,8 +9,18 @@ major version.
   film under light, doped Si against an electrolyte, a gated film whose dopant has two valence
   states on shared sites), and three properties from Sol's (gauge: every voltage shifted by a
   constant; scale: lengths stretched with D and ε to match; mirror, opt-in: the device reflected).
-  Gauge and scale held on all 240 devices tried. Mirror found three devices that solve cold one way
-  round and refuse, with a warning, reflected; they're being chased.
+  Gauge and scale held on all 240 devices tried. Mirror found the three devices below.
+- A device solves cold the same written either way round (round 9's mirror property, from Codex's
+  sweep of bench/combos: three devices solved one way and were refused as their mirror images).
+  The block factorisation runs from the left, and a closed, strictly neutral compartment at the left
+  end has its φ held by nothing but the face beyond it: a pivot column cancelled to round-off (pivot
+  ratio 3e-40 where the other way round has 7e-4), Newton's first update was 1e29 thermal units, and
+  two reacting solutions with their bath on the right were refused. Where the factorisation from the
+  left loses a column like that, it's done from the right too, and kept where that loses nothing.
+  And a carrier fed at both contacts started at the left one's level, so an illuminated GaAs | InGaAs
+  junction with its Schottky contact on the left started the GaAs's electrons 59 thermal units from
+  their own ohmic contact, and was refused (13.1156 A/m² written the other way); it now starts at the
+  level of the contact whose end is plain bulk ('bulk'), where only one is.
 - A lattice nearly full, its grid refined, keeps its amount within its sites: set() restored each
   species' amount by multiplying its concentrations, which at a node near capacity asked for more
   than the sites hold, so a gated film's dopant refined from 12 to 24 cells was refused as over

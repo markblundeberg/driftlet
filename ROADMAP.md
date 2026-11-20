@@ -646,6 +646,18 @@ notes), ranked by how much each trips an agent writing its first device:
   reaction's failure unnamed, and whether it converges, varying with the listing order (Y = Z, Y
   mobile in part); and the open-circuit march's sign hint, wrong beside a resistance.
 
+- **From round 9's mirror property (2026-11-20; repros in
+  `~/.cache/driftlet-claude/codex/runs/sol9/driftlet/out/repro/`).** Its three refusals are fixed (a
+  factorisation from the right where the left loses a column; a carrier fed at both ends started
+  from the 'bulk' contact). Left: the same GaAs | InGaAs junction in the dark, its Schottky on the
+  left, is still refused cold, since the voltage continuation ramps the right contact, the ohmic one
+  there, and a warm step of an ohmic contact at that bias stalls at Newton's round-off acceptance
+  (updates rattling at 1e-6 to 8e-6 thermal units) in either orientation, where stepping the
+  Schottky contact solves to 1.26 V (ramping the non-'bulk' contact fixes it, untried on the suites);
+  the start's level for a carrier fed at two 'bulk' (or two non-'bulk') contacts is still the left's;
+  and a device held only in its middle, closed at both ends, would need a twisted factorisation.
+  Also seen: membrane 21 seeded at its exact steady state, its bath on the left, warns "a floating region doesn't balance"
+  (imbalance ~1, its balance and the fluxes crossing it both round-off, ~1e-23 A/m²), as 1.19.0 did.
 - **From round 17's fuzzer (2026-10-30; repros in `~/.cache/driftlet-claude/round17/fuzz/repro/`).** No
   silent wrong answer in ~1,840 devices; the cold start's missing face surface species is fixed. Left:
   a failed solve's warning names the reaction out of equilibrium at the failed iterate, not at the
