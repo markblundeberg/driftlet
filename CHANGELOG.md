@@ -5,6 +5,18 @@ major version.
 
 ## Unreleased
 
+- Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
+  labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
+  zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
+  from that (`levelChart(traces(sol, { energy: true }))` called eV "voltage (V)"); a standard redox
+  level on an energy-up chart is labelled E°, as drawn (it said V°, the opposite sign); traces are
+  copies, so editing one in place no longer edits the solution; `levelChart` fits its range to what it
+  draws, the lines at a zoom's edges included (a line could leave the frame, and edited traces drew an
+  empty plot); a metal-only device's level is E_F even beside an unused semiconductor in the library.
+  Ranges one ulp wide or holding ±∞ no longer hang the page, and `levelChart` refuses a `range` or `xlim`
+  that isn't finite and increasing. A level lying on another of its weight (E_Fp on E_Fn at equilibrium)
+  is drawn dashed over it, so both colours show; one half-reaction at two `fixed` μ draws as two levels,
+  labelled with the μ.
 - `check()` knows which state of which device a solution is of: one from before any `set()` (a
   material's included) fails as "solution", as does the device's own state after a `set()` until it's
   solved. It had passed a wire's old current, 60× the re-solved one, and a cold layout that was no
