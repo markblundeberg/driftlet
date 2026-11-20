@@ -592,6 +592,7 @@ export function carryTermCharges(old, s) {
     if (o < 0) return;
     const r = k < 2 ? (o < 2 ? contact(k) : 1) : o >= 2 && !sameGeometry ? portRatio(old, s, o - 2, k - 2) : 1;
     s.termCharge[k] = old.termCharge[o] * r;
+    s.termChargeLo[k] = old.termChargeLo[o] * r;
   });
 }
 

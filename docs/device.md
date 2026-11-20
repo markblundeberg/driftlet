@@ -1455,12 +1455,17 @@ Notes:
 - **A trace's charge is in `charge`, not a sum of its currents.** `trace.charge` and each
   `terminals[name].charge` are running totals (C/m², or C through a cross-section) of what the
   terminal has passed into the device, integrated as the steps integrate a stored charge. The
-  difference between two points is what passed between them, a stored charge's change
-  exactly, under either method, and the terminals' charges sum to what the device stored. Only
-  differences mean anything: the total counts from the device's making, and a steady solve
-  passes none. Each point's current is the method's rate at the step's end: under BDF2 not
-  the step's mean, so a sum of current × step misses (a double layer's RC charging, 22%), and
-  a trapezoid adds half the step after each jump besides.
+  difference between two points is what passed between them. Where the device stores it (a
+  double layer charging), that's the stored charge's change exactly, under either method; where
+  it passes through (a resistor, an electrode fed by a bath), it's the steps' quadrature of the
+  current, whose error each step keeps within `tol` of what the terminal has passed since the
+  drives' last breakpoint (so to about `tol` under BDF2, and, first order, nearer
+  $`\sqrt{\mathrm{tol}}`$ under backward Euler). Either way the terminals' charges sum to what
+  the device stored. Only differences mean anything: the total counts from the device's making,
+  and a steady solve passes none. Each point's current is the method's rate at the step's end:
+  under BDF2 not the step's mean, so a sum of current × step misses (a double layer's RC
+  charging, 9% at the default `tol`), and a trapezoid adds half the step after each jump
+  besides.
 - **`probes: [{ x, species, quantity, region }]`** read inside the device, as `trace.probes[k]`
   beside `trace.t`: a species' concentration (`quantity: 'c'`, the default, mol/m³) or species
   voltage (`'V'`), or $`\phi`$ itself (`'phi'`, no species), linearly between the nodes around

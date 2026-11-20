@@ -395,6 +395,9 @@ export class Device {
     const length = `dt is the step's length in s, a positive number (the device is at t = ${this.solver.time})`;
     if (typeof dt !== 'number' || dt < 0 || dt === Infinity) throw new SolverError(`step(${typeof dt === 'string' ? `'${dt}'` : dt}): ${length}${dt === Infinity ? '. For the long-time limit, solve() the steady state' : ''}`);
     if (!(dt > 0)) return this._marked(makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: ${length}` }));
+    // (and t + dt a time: step(1e308) twice put the clock at ∞, converged; Sol's re-read of the
+    // time integrator, round 7)
+    if (!Number.isFinite(this.solver.time + dt)) throw new SolverError(`step(${dt}): t + dt is past the largest time there is (the device is at t = ${this.solver.time}). For the long-time limit, solve() the steady state`);
     // A step too short to move the clock (1e-17 s at t = 1 s) can't be taken: it posted charge
     // while the time stood still (Sol's third review).
     if (this.solver.time + dt === this.solver.time) return this._marked(makeSolution(this.solver, { converged: true, iterations: 0, substeps: 0, stopped: `step(${dt}) did nothing: it's below the time's resolution at t = ${this.solver.time} s` }));
@@ -419,7 +422,10 @@ export class Device {
       } catch {
         continue; // (a period below the time's resolution: the step reads it as it always has)
       }
-      if (tb < t1 - 1e-12 * Math.abs(t1) && (first === null || tb < first.tb)) first = { tb, name: term.name };
+      // (Inside by more than round-off, 64 ε of t1, as nextBreakpoint() counts a breakpoint
+      // passed: by 1e-12 of it, a pulse of 0.4 ms ending 0.2 ms before a step's end at 1e9 s
+      // passed nothing, unwarned; Sol's re-read of the time integrator, round 7.)
+      if (tb < t1 - 64 * Number.EPSILON * Math.abs(t1) && (first === null || tb < first.tb)) first = { tb, name: term.name };
     }
     if (first === null) return null;
     return `step(${dt}): the drive of terminal '${first.name}' has a breakpoint at t = ${first.tb} s, inside this step, which reads the drive at its end alone and so crosses it unlanded (a pulse inside one step is missed whole, its charge lost): advance(tEnd) lands on every breakpoint, or step to it first`;

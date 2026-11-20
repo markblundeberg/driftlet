@@ -19,17 +19,20 @@
 //                       since (cleared by an accepted step or a converged solve), for the
 //                       first step's failure to name.
 //   s._snapshot() / s._restore(snap)  the whole state between calls (STATE in src/solver.js: u,
-//                       uLo, termV, termCharge, the start-of-step values, time, lastDt, history,
+//                       uLo, termV, termCharge + termChargeLo, the start-of-step values, time, lastDt, history,
 //                       the boundary intake, sourceTime, and stepped, solvedV and jumpedT).
 //   s._assembleBookkeeping(dt), s.computeConcentrations(), s._accumulateBoundaryIntake(dt, c),
 //   s._terminalCurrent(), s._terminalCurrents(), s._probes(probes), s.fastestTime(), s.terms
 //   (drives, breakpoints).
 //
 // The state: u + uLo (Newton's unknowns, η and φ̂ in thermal units), termV (terminal voltages),
-// time, termCharge (each terminal's charge passed into the device in time steps). The history:
-// s.history, the accepted steps before this one, newest first, at most 3, each { t (its start),
-// dt, u (its start state), V (its start's terminal voltages), c, th, th0, gam, g (gates), D
-// (contacts' D), Q (ports' charges), P (termCharge) }: what BDF2 and the predictor need.
+// time, termCharge + termChargeLo (each terminal's charge passed into the device in time steps,
+// and its rounding). The history: s.history, the accepted steps before this one, newest first, at
+// most 3, each { t (its start), dt, u (its start state), V (its start's terminal voltages), c, th,
+// th0, gam, g (gates), D (contacts' D), Q (ports' charges), P + PLo (termCharge), and for the
+// charges' error: o and t0 (P, PLo and the time where the history began), Y ({ c, y }: each
+// terminal's charge since then, whole and less what its contact or port stores) and G (its gross,
+// Σ|ΔY.c|) }: what BDF2 and the predictor need.
 //
 // step(s, dt, opts) → newton's result (+ bdf)
 //   From a cold start (s.coldStart, outside a steady solve), the faces between strictly neutral
@@ -44,8 +47,9 @@
 //   change (see src/lawRows.js), each from the step's start. Accepted: the history gains the
 //   step, s.time = tEnd, s.lastDt the effective dt, the boundary intake accumulates, and outside
 //   a steady solve each terminal's charge steps by its current as a stored charge does, P = P* +
-//   I·dt/a0 (P* from P as c* from c; backward Euler P_n + I·dt), so that a trace's charge is a
-//   stored charge's change exactly and Kirchhoff's sum holds in it as in the currents. Failed:
+//   I·dt/a0 (P* from P as c* from c; backward Euler P_n + I·dt; compensated, its rounding in
+//   termChargeLo), so that where the device stores it a trace's charge is the stored charge's
+//   change exactly, and Kirchhoff's sum holds in it as in the currents. Failed:
 //   all as before the step (u, uLo, termV, the start-of-step values, atSteady, the sources'
 //   time, the concentrations).
 //
@@ -66,13 +70,20 @@
 //     after BDF2 with three, linear otherwise), scale making it the step's own local error.
 //     errorNorm is over φ̂, each η, a surface's coverages, the gates and the floating terminals'
 //     voltages (over V_T), the largest of them.
+//   - And each terminal's charge, every terminal's, relative (chargeError, chargeDrift): the
+//     pair's two quadratures, or the charge against the predictor's (as u), over the larger of
+//     the terminal's gross since the history began and (the first step) what its current would
+//     pass in the segment's time left; differences below what the charges are known to (an
+//     absolute 1e-12 C/m², 1e-15 A/m² over the segment, 1e-12 of what the terminal's boxes hold)
+//     are noise. The step's error is the larger of the two.
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
 //     [0.2, 2] (2 at err = 0). Rejected: the state restored, h·factor. A step that doesn't
 //     converge: h/4. Below the floor (1e-14 of tEnd, or 1e-2 of the fastest time scale), it
 //     stops, converged false, with a message; past the first step, an error rejection whose
 //     step can't move the clock (s.time + dt === s.time) does too.
 //   - A first step whose error doesn't shrink as it's cut (three tries within a factor 2 of
-//     each other): a jump at a boundary, self-similar in x/√t, so taken anyway.
+//     each other): a jump at a boundary, self-similar in x/√t, so taken anyway (the potentials'
+//     error only; a charge's must still be within tol).
 //   - Steps land exactly on the sources' breakpoints (and the history is cleared there: the
 //     slope jumps) and on tEnd; within round-off of tEnd (1e-12 of it and 1e-9 of the
 //     interval) the time snaps to it. A step that ends, or a call that starts, within
@@ -101,12 +112,15 @@
 //      half step after a first step. So no BDF2 step spans a source's jump.
 //   6. errorNorm counts every potential that carries state (φ̂ where it's defined, every
 //      present species' η, an electrode surface's coverages as η, gates' fractions), in
-//      thermal units, and nothing that doesn't.
+//      thermal units, and nothing that doesn't; every terminal's charge is in the step's error
+//      beside it, relative, so that a path through which a charge flows without being stored is
+//      held to tol too.
 // Tests: test/transient.test.js, and every test that calls advance(); tools/lawsweep.js (a
 // settled transient as the steady state's reference).
 
 import { nextBreakpoint, nearBreakpoint } from './device.js';
 import { SolverError } from './errors.js';
+import { FARADAY } from './constants.js';
 import { equilibrateFaces } from './start.js';
 
 // Lagrange weights at x through the points s0, s1, s2.
@@ -149,6 +163,10 @@ export function advance(s, dt, opts, depth = 0) {
  * the start-of-step values, and dt/a0 replaces dt.
  */
 export function step(s, dt, opts = {}) {
+  // A step that can't move the clock isn't taken: it fails, as before it, untouched. (A first
+  // step of 1e-18 s at t = 1 s posted its charge with the clock unmoved, and a step of one ulp
+  // halved on a failure posted one too; Sol's re-read of the time integrator, round 7.)
+  if (!s.steady && s.time + dt === s.time) return { converged: false, iterations: 0, history: [], bdf: false };
   // A transient's first step from a cold start begins at its t = 0⁺ (see equilibrateFaces).
   // (A failed step puts back the state from before it: a failed cold one left the projection,
   // and coldStart cleared, behind; Sol's third review.)
@@ -205,8 +223,10 @@ export function step(s, dt, opts = {}) {
   // A step landing on a breakpoint ends on it exactly.
   // (Within a few ulps too: at 1e-9 of a short step, below an ulp of the time, a startup pair's
   // second half ended an ulp off its target, and the call then snapped the clock past the
-  // sources' time; Sol's third review.)
-  const near = s.landing !== undefined && Math.abs(s.time + dt - s.landing) <= Math.max(1e-9 * dt, 4 * Number.EPSILON * Math.abs(s.landing));
+  // sources' time; Sol's third review. But only a step that ends nearer the landing than half of
+  // itself: the pair's first half of a step of two ulps snapped there too, and the second half
+  // stepped no time at all, two rows at one time; Sol's re-read, round 7.)
+  const near = s.landing !== undefined && Math.abs(s.time + dt - s.landing) <= Math.min(Math.max(1e-9 * dt, 4 * Number.EPSILON * Math.abs(s.landing)), dt / 2);
   const tEnd = near ? s.landing : s.time + dt;
   s.sourceTime = s.steady ? s.steadyAt : tEnd;
   s.sourceBefore = !s.steady;
@@ -248,8 +268,12 @@ export function step(s, dt, opts = {}) {
   if (result.converged) {
     s.jumpedT = undefined; // (a step taken from the jump: a later failure isn't its; Astra's review)
     s.readV = undefined; // (a step taken at the new drives: see Device's _redefineDrives)
-    const PN = s.termCharge;
-    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN, P: PN });
+    const PN = s.termCharge, PNLo = s.termChargeLo;
+    // (and, for the error in each terminal's charge, see checkedCharges: where the history began
+    // (o, t0), the charge checked since then (Y) and its gross (G), through the step's start)
+    const o = prev ? prev.o : { P: PN, Lo: PNLo }, YN = checkedCharges(s, PN, PNLo, DN, QN, o);
+    const GN = prev ? prev.G.map((g, k) => g + Math.abs(YN.c[k] - prev.Y.c[k])) : new Float64Array(PN.length);
+    s.history.unshift({ t: s.time, dt, u: Float64Array.from(s.uPrev), V: Float64Array.from(s.termVPrev), c: cN, th: thN, th0: th0N, gam: gamN, g: gN, D: DN, Q: QN, P: PN, PLo: PNLo, Y: YN, G: GN, o, t0: prev ? prev.t0 : s.time });
     if (s.history.length > 3) s.history.length = 3;
     s.time = tEnd;
     s.lastDt = dtEff;
@@ -271,9 +295,19 @@ export function step(s, dt, opts = {}) {
       s.solvedV = undefined;
       s.stepped = true;
     }
+    // (Compensated, the running total's rounding kept in termChargeLo: after 1e12 C/m² had
+    // passed, a current of 1 mA/m² for 1 s added nothing, its increments below an ulp; Sol's
+    // re-read of the time integrator, round 7.)
     if (!s.steady && Number.isFinite(dtEff)) {
-      const I = s._terminalCurrents();
-      s.termCharge = PN.map((q, k) => (bdf ? q + b2 * (q - prev.P[k]) : q) + dtEff * I[k]);
+      const I = s._terminalCurrents(), P = new Float64Array(PN.length), Lo = new Float64Array(PN.length);
+      for (let k = 0; k < PN.length; k++) {
+        const q = PN[k], inc = (bdf ? b2 * (q - prev.P[k] + (PNLo[k] - prev.PLo[k])) : 0) + dtEff * I[k];
+        const hi = q + inc, e = Math.abs(q) >= Math.abs(inc) ? q - hi + inc : inc - hi + q, lo = PNLo[k] + e;
+        P[k] = hi + lo;
+        Lo[k] = lo - (P[k] - hi);
+      }
+      s.termCharge = P;
+      s.termChargeLo = Lo;
     }
   } else {
     s.u.set(s.uPrev);
@@ -303,14 +337,69 @@ export function step(s, dt, opts = {}) {
   return result;
 }
 
-// The first step's two quadratures of what each terminal driven by a current passed, full step
-// against two halves, relative to the halves' (as a tol in thermal units bounds a potential's).
-function chargeError(s, P0, PFull) {
+// Each terminal's charge since the history began (o: its P and PLo there), read two ways for its
+// error (see chargeError): whole (c), and less what its contact or port stores (y: D, Q, at the
+// step's start or now), which is the state's, under the potentials' control. Each reading is
+// exact where the other carries a stored charge's round-off: a blocking cell's plates at rest
+// rattle by 1e-13 C/m², which the whole carries; a strictly neutral contact's D, read from its
+// box's balance, rattles ∝ c/dt, which only the second does. Either cut the steps without end
+// once a terminal's charge was in the error, so the error is the smaller of the two. (A
+// terminal driven by a current: its drive's integral, both ways.)
+function checkedCharges(s, P, Lo, D, Q, o) {
+  const c = Float64Array.from(P, (_, k) => P[k] - o.P[k] + (Lo[k] - o.Lo[k]));
+  const y = Float64Array.from(c, (ck, k) => {
+    if (s.terms[k].drive.kind === 'I') return ck;
+    if (k < 2) return k === 0 ? ck - D.left : ck + D.right; // (the right contact's current is out of the device)
+    return s.model.ports[k - 2].capacitance ? ck - Q[k - 2] : ck;
+  });
+  return { c, y };
+}
+// What a terminal's charge is read to in one step: 1e-12 of the charge its boxes hold (each
+// species' |z|F c over the box beside a contact, or a port's window), which its currents are
+// balances of, solved to Newton's precision. (A strictly neutral contact's box of 500 mol/m³
+// over 10 µm, its current read from that balance, rattled by 5e-11 C/m² a step, 1e-13 of what it
+// holds and half of what 1 mA/m² passed in 0.1 µs; a metal's box holds no concentration, and
+// reads its current as a conductance's.)
+function boxNoise(s, k) {
+  const { n, z, c } = s, vol = s.model.grid.vol, nodes = k < 2 ? [k === 0 ? 0 : s.nNodes - 1] : s.model.ports[k - 2].nodes;
+  let q = 0;
+  for (const g of nodes) for (let i = 0; i < n; i++) if (Number.isFinite(c[g * n + i])) q += Math.abs(z[i] * c[g * n + i]) * vol[g];
+  return 1e-12 * FARADAY * q;
+}
+
+const checkedNow = (s) => checkedCharges(s, s.termCharge, s.termChargeLo, s.contactDEnd, s.portQEnd, s.history[0].o);
+
+// The first step's two quadratures of what each terminal passed (checkedCharges: Y0 at the
+// start, Ymid after the first half step, YFull after the full one), full step against two halves,
+// relative to the halves' (as a tol in thermal units bounds a potential's), or to what the
+// current at the step's end would pass over the time T left in the drives' segment, if more.
+// Every terminal's: on a flow-through path (a resistor, an electrode fed by a bath) nothing in
+// the state feels the charge, and the pair, agreeing on the end state, spanned a slow CV's whole
+// wave after a rest, 52% high at its vertex (Sol's re-read of the time integrator, round 7). (And
+// the segment's share, since a current from zero, a ramp after a rest, errs by a third of its
+// charge at any step: measured against the pair's alone, it was cut without end.) A difference
+// below quiet is noise, see integrate.
+function chargeError(s, Y0, Ymid, YFull, h, T, quiet) {
+  const { c, y } = checkedNow(s);
   let e = 0;
-  for (const k of s.floating) {
-    if (s.terms[k].drive.kind !== 'I') continue;
-    const half = s.termCharge[k] - P0[k], full = PFull[k] - P0[k];
-    if (full !== half) e = Math.max(e, Math.abs(full - half) / Math.max(Math.abs(half), Number.MIN_VALUE));
+  for (let k = 0; k < c.length; k++) {
+    const d = Math.min(Math.abs(YFull.c[k] - c[k]), Math.abs(YFull.y[k] - y[k]));
+    if (d > Math.max(quiet, boxNoise(s, k))) e = Math.max(e, d / Math.max(Math.abs(c[k] - Y0.c[k]), (2 * T * Math.abs(c[k] - Ymid.c[k])) / h, Number.MIN_VALUE));
+  }
+  return e;
+}
+
+// A later step's error in what each terminal passed (checkedCharges): against the predictor's
+// (pred, through the history's), relative to its gross since the history began, this step's
+// included (scaled after, as the potentials' error is). Not relative to the step's own: where a
+// current crosses zero, that's as small as the error at any step, and the steps fell toward the
+// crossing without end.
+function chargeDrift(s, pred, quiet) {
+  const e0 = s.history[0], { c, y } = checkedNow(s);
+  let e = 0;
+  for (let k = 0; k < c.length; k++) {
+    const d = Math.min(Math.abs(c[k] - pred.c[k]), Math.abs(y[k] - pred.y[k]));
+    if (d > Math.max(quiet, boxNoise(s, k))) e = Math.max(e, d / Math.max(e0.G[k] + Math.abs(c[k] - e0.Y.c[k]), Number.MIN_VALUE));
   }
   return e;
 }
@@ -384,16 +473,28 @@ export function integrate(s, tEnd, opts = {}) {
   // can't see a set() that has just made the first instants fast; Fable round 2's hunter).
   let dt = opts.dt0 ?? s.dtNext ?? (tEnd - s.time) * 1e-4;
   if (!(dt > 0)) dt = (tEnd - s.time) * 1e-4;
+  // (and at least what moves the clock: a dt0 of 1e-18 s at t = 1 s was refused as a step the
+  // device needed, below the time's resolution; round 7)
+  if (s.time + dt === s.time) dt = 4 * Number.EPSILON * Math.abs(s.time);
   // The shortest step worth trying: round-off relative to the time, or the device's fastest
   // time scale, whichever is shorter (a cold start can need steps far below a long run's 1e-14).
   const floor = Math.min(1e-14 * Math.max(tEnd, 1e-300), s.fastestTime() * 1e-2);
-  const pred = new Float64Array(s.u.length), guess = new Float64Array(s.u.length), predV = new Float64Array(s.termV.length);
+  const pred = new Float64Array(s.u.length), guess = new Float64Array(s.u.length), predV = new Float64Array(s.termV.length), predP = { c: new Float64Array(s.terms.length), y: new Float64Array(s.terms.length) };
   // The first step's error at each size tried (see below), kept on the solver across calls: a
   // first step cut across an animation's frames is seen to stall as in one call (it wasn't, and a
   // heavy device's first step took 134 one-attempt frames where one call took 30, against
   // docs/kit.md's "step for step"; Sol's third review). Cleared by an accepted step, and by
-  // set() (a redrive, or a rebuilt solver).
+  // set() (a redrive, or a rebuilt solver). Each try's size with its error: a try of the same
+  // size again isn't a cut (three calls of maxSteps 1, each from the same dt0, took a step at
+  // 7e5 times tol, its trace 46% off; Sol's re-read of the time integrator, round 7).
   const firstErrs = (s.firstErrs ??= []);
+  // What a terminal's charge is known to, below which a difference is noise: 1e-12 C/m², and what
+  // a current of 1e-15 A/m² passes over the span ahead (below; as in solution.js, which reads a
+  // sum of currents against 1e-15 A/m²), and its boxes' own (boxNoise). At rest, the currents a
+  // held electrode reads (4e-16 A/m², jittering by a tenth from step to step), a floating gate's
+  // contacts' 1e-19 to 1e-17 C/m² a step, and a bath's 1e-17 C/m² of displacement in its first
+  // instants, each cut the steps without end once the charge was in the error.
+  const area = Math.max(...s.model.grid.area), quiet = (T) => area * (1e-12 + 1e-15 * T);
   const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
   while (s.time < tEnd) {
     if (steps + rejected >= maxSteps || clock() - start > budgetMs) break;
@@ -421,19 +522,22 @@ export function integrate(s, tEnd, opts = {}) {
       clamped = true;
     }
     s.landing = atBreak ? tb : clamped ? tEnd : undefined;
+    // (what's left of the drives' segment, or of the call where they have none ahead: the time a
+    // terminal's charge is weighed over, see chargeError; later, from where the history began, which
+    // doesn't vanish at the segment's end)
+    const span = (Number.isFinite(tb) ? tb : tEnd) - s.time;
     // (the snapshot holds what a step sets of the steady solves' choices too: a rejected first
     // step left stepped set and solvedV cleared, a different continuation later; Fable round 4)
     const snap = s._snapshot();
     const back = () => s._restore(snap);
-    let err, p, half = null;
-    if (s.history.length > 0) firstErrs.length = 0;
+    let err, errQ = 0, errG = 0, p, half = null;
+    if (s.history.length > 0) firstErrs.length = 0; // (a step taken since, by step() say)
     if (s.history.length === 0) {
       // First step: backward Euler, checked against two half steps (whose result is kept).
-      const P0 = Float64Array.from(s.termCharge);
       const full = s.step(h);
       iterations += full.iterations;
       if (full.converged) {
-        const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV), PFull = Float64Array.from(s.termCharge);
+        const uFull = Float64Array.from(s.u), vFull = Float64Array.from(s.termV), YFull = checkedNow(s);
         back();
         const a = s.step(h / 2);
         // The first half step is kept too, so it goes in the trace (a jump's charge is in it).
@@ -441,11 +545,12 @@ export function integrate(s, tEnd, opts = {}) {
         const b = a.converged ? s.step(h / 2) : a;
         iterations += a.iterations + (b === a ? 0 : b.iterations);
         if (b.converged) {
-          // (and the charge a terminal driven by a current passes, relative: nothing in the state
-          // need feel it on a resistive path, where the pair's two quadratures of a current ramp
-          // agree at the step's end, err 0, and a ramp's charge came out 50% high; Sol's third
-          // review. BDF2 integrates a ramp exactly after.)
-          err = Math.max(errorNorm(s, uFull, vFull), chargeError(s, P0, PFull));
+          // (and the charge each terminal passes, relative: nothing in the state need feel it on a
+          // resistive path, where the pair's two quadratures of a current ramp agree at the step's
+          // end, err 0, and a ramp's charge came out 50% high; Sol's third review. See chargeError.)
+          err = errorNorm(s, uFull, vFull, false);
+          errG = gateNorm(s, uFull);
+          errQ = chargeError(s, s.history[1].Y, s.history[0].Y, YFull, h, span, quiet(span));
           p = 1;
         }
       }
@@ -467,8 +572,9 @@ export function integrate(s, tEnd, opts = {}) {
         if (dt < floor) { failed = true; break; }
         continue;
       }
-      p = predict(s, pred, r.bdf, predV);
+      p = predict(s, pred, r.bdf, predV, predP);
       err = errorNorm(s, pred, predV) * p.scale;
+      errQ = p.charge ? chargeDrift(s, predP, quiet(span + snap.time - s.history[0].t0)) * p.scale : 0;
       p = p.order;
     }
     // A first step whose error doesn't shrink with it: a jump in a level held at a boundary
@@ -476,10 +582,15 @@ export function integrate(s, tEnd, opts = {}) {
     // of any length errs alike, down to the grid's own diffusion time, below Newton's reach.
     // Three tries in a row, each within a factor 2 of the last, say so: the error is the
     // jump's, not the step's. Take the step (backward Euler damps it as it should); the next is
-    // sized from its error as any other. (Counted across calls: see firstErrs above.)
-    if (half && err > tol) firstErrs.push(err);
-    const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e > 0.5 * a[j - 1] && e < 2 * a[j - 1]));
-    if (err > tol && !jump) {
+    // sized from its error as any other. (Counted across calls: see firstErrs above.) Not a
+    // gate's error, nor a charge's: a gate's is an ODE's at its own rate, which shrinks once the
+    // step is below 1/(α + β), and three tries above that took a voltage clamp's first step after
+    // an edge to −120 mV at 88 times tol, m 0.442 for 0.281, the Na⁺ tail 4× high for 40 µs (round
+    // 7's state chaser); a charge's is the step's own, and shrinks as it's cut.
+    if (half && err > tol) firstErrs.push({ h, err });
+    const jump = half && firstErrs.length >= 3 && firstErrs.slice(-3).every((e, j, a) => j === 0 || (e.h < a[j - 1].h && e.err > 0.5 * a[j - 1].err && e.err < 2 * a[j - 1].err));
+    if ((err > tol && !jump) || errG > tol || errQ > tol) {
+      err = jump ? Math.max(errG, errQ) : Math.max(err, errG, errQ);
       back();
       rejected++;
       dt = h * factor(err, p);
@@ -499,6 +610,8 @@ export function integrate(s, tEnd, opts = {}) {
       continue;
     }
     steps++;
+    err = Math.max(err, errG, errQ);
+    firstErrs.length = 0;
     s.jumpedT = undefined; // (a step taken: see the first step's failure below)
     // The state the first step started from needn't satisfy the algebraic equations (φ in a
     // strictly neutral region, an interface's unknowns, after a start or a jump), and they
@@ -565,12 +678,16 @@ export function integrate(s, tEnd, opts = {}) {
 // Quadratic (or linear) extrapolation of the state a time h ahead, from the current state and
 // the two most recent history entries: a starting guess for Newton. (In offsets built from the
 // steps' own lengths, never differences of absolute times: a second into a run, after a jump
-// that a fine grid resolves in steps of 1e-13 s, those differences keep only 3 digits.)
+// that a fine grid resolves in steps of 1e-13 s, those differences keep only 3 digits.) Linear
+// where the older step is below 1e-12 of the newer, which the quadratic's offsets can't tell
+// apart: after a step of 5e-13 s and one of 1e5 s, −(1e5 + 5e-13) is −1e5, the weights were
+// 0/0, and every later call failed "non-finite update" (Sol's re-read of the time integrator,
+// round 7).
 function extrapolate(s, out, h) {
   const [e0, e1] = s.history;
   const u = s.u;
   if (!e0) return undefined;
-  if (!e1) {
+  if (!e1 || !(e1.dt >= 1e-12 * e0.dt)) {
     const l = h / e0.dt;
     for (let k = 0; k < out.length; k++) out[k] = u[k] + l * (u[k] - e0.u[k]);
     return out;
@@ -582,39 +699,45 @@ function extrapolate(s, out, h) {
 
 // Explicit predictor at the new time through the previous states (quadratic after BDF2,
 // linear after backward Euler), and the factor turning |u − pred| into the local error.
-function predict(s, pred, bdf, predV) {
+// The terminals' charges too (predP), as stored quantities are (charge: false where there's no
+// predictor for them, only the step's start).
+// (Through a step below 1e-12 of the one after it, as the start's state alone, and the quadratic
+// only where its three offsets are apart: see extrapolate.)
+function predict(s, pred, bdf, predV, predP) {
   const [e0, e1, e2] = s.history;
   const h = e0.dt;
-  if (!e1) {
+  if (!e1 || !(e1.dt >= 1e-12 * h)) {
     pred.set(e0.u);
     predV.set(e0.V);
-    return { scale: 1, order: 1 };
+    return { scale: 1, order: 1, charge: false };
   }
   const hp = e1.dt;
-  if (bdf && e2) {
+  if (bdf && e2 && e2.dt >= 1e-12 * (h + hp)) {
     const hpp = e2.dt;
     // Lagrange through the three states before at the new time (offsets as in extrapolate).
     const [l0, l1, l2] = lagrange3(0, -h, -(h + hp), -(h + hp + hpp));
     for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k] + l2 * e2.u[k];
     for (let k = 0; k < predV.length; k++) predV[k] = l0 * e0.V[k] + l1 * e1.V[k] + l2 * e2.V[k];
+    for (const w of ['c', 'y']) for (let k = 0; k < predP[w].length; k++) predP[w][k] = l0 * e0.Y[w][k] + l1 * e1.Y[w][k] + l2 * e2.Y[w][k];
     const w = h / hp;
     const Cc = (h * h * h * (1 + w) * (1 + w)) / (w * (1 + 2 * w));
     const Cp = h * (h + hp) * (h + hp + hpp);
-    return { scale: Cc / (Cc + Cp), order: 2 };
+    return { scale: Cc / (Cc + Cp), order: 2, charge: true };
   }
   const l0 = (h + hp) / hp, l1 = 1 - l0;
   for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
   for (let k = 0; k < predV.length; k++) predV[k] = l0 * e0.V[k] + l1 * e1.V[k];
+  for (const w of ['c', 'y']) for (let k = 0; k < predP[w].length; k++) predP[w][k] = l0 * e0.Y[w][k] + l1 * e1.Y[w][k];
   // Backward Euler's error against a linear predictor; after a BDF2 step without enough
   // history this overestimates, which is safe.
-  return { scale: bdf ? 1 : h / (2 * h + hp), order: 1 };
+  return { scale: bdf ? 1 : h / (2 * h + hp), order: 1, charge: true };
 }
 
 // Largest difference from ref among the potentials that carry state, in thermal units: and the
 // floating terminals' voltages (refV), which carry an RC's charging where φ is held beside it
 // (a capacitive contact behind R against a bath: stepped blind, tol 1e-3 and 1e-5 alike took 3
 // steps from τ to 3τ and erred 1% in the charge; Fable round 2's hunter).
-function errorNorm(s, ref, refV) {
+function errorNorm(s, ref, refV, gates = true) {
   const { n, M, u } = s;
   let mx = 0;
   for (let g = 0; g < s.nNodes; g++) {
@@ -626,8 +749,15 @@ function errorNorm(s, ref, refV) {
     const k = s.surfAt[g]; // an electrode surface's coverages, as η
     if (k >= 0) for (let q = 0; q < s.model.surfaces[k].species.length; q++) mx = Math.max(mx, Math.abs(u[b * M + 1 + n + q] - ref[b * M + 1 + n + q]));
   }
-  for (const { o } of s.gateList) mx = Math.max(mx, Math.abs(u[o] - ref[o])); // (a fraction: 1e-3 of m³ is 0.3% of P)
+  if (gates) mx = Math.max(mx, gateNorm(s, ref));
   for (const k of s.floating) mx = Math.max(mx, Math.abs(s.termV[k] - refV[k]) / s.VT);
+  return mx;
+}
+
+// The gates' part of errorNorm (a fraction: 1e-3 of m³ is 0.3% of P).
+function gateNorm(s, ref) {
+  let mx = 0;
+  for (const { o } of s.gateList) mx = Math.max(mx, Math.abs(s.u[o] - ref[o]));
   return mx;
 }
 

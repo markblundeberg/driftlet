@@ -904,10 +904,11 @@ test('a rejected first step leaves the steady solves\' choices as they were', ()
   assert.deepEqual({ stepped: s.stepped, solvedV: s.solvedV && Array.from(s.solvedV) }, before);
 });
 
-test("a trace's charge is what the terminals passed: an RC double layer's stored charge exactly, under BDF2 as under backward Euler, where Σ I·dt of the trace falls 22% short", () => {
+test("a trace's charge is what the terminals passed: an RC double layer's stored charge exactly, under BDF2 as under backward Euler, where Σ I·dt of the trace falls short", () => {
   // Blocking gold electrodes across 2 µm of 10 mM NaCl, RC ≈ 1.5 µs, stepped 5 mV: the default
-  // tol's steps grow to several RC, and the trace's currents, BDF2's rates at each step's end,
-  // don't sum to the charge (0.78 of it); the trace's charge is the stored charge's change.
+  // tol's steps grow to RC and more, and the trace's currents, BDF2's rates at each step's end,
+  // don't sum to the charge (0.91 of it; 0.78 before the terminals' charge was in the error
+  // control, round 7); the trace's charge is the stored charge's change.
   const RC = 1.47e-6, face = { phi: { type: 'capacitive', C: 1.0 }, zeroCharge: 0 };
   const mk = () => new Device(build({
     library: [aqueous(['Na+', 'Cl-']), metal('Au')],
@@ -925,7 +926,7 @@ test("a trace's charge is what the terminals passed: an RC double layer's stored
     const stored = b.interfaces[1].D - D0, P = b.trace.terminals;
     let sum = 0;
     for (let k = 0; k < t.length; k++) sum += I[k] * (t[k] - (k ? t[k - 1] : 0));
-    if (method === 'bdf2') assert.ok(sum / stored < 0.9, `Σ I·dt / stored = ${sum / stored}`);
+    if (method === 'bdf2') assert.ok(sum / stored < 0.95, `Σ I·dt / stored = ${sum / stored}`);
     assert.ok(Math.abs(b.trace.charge.at(-1) / stored - 1) < 1e-9, `${method}: trace.charge ${b.trace.charge.at(-1)}, stored ${stored}`);
     assert.ok(Math.abs(P.right.charge.at(-1) + stored) < 1e-9 * Math.abs(stored), `${method}: right terminal ${P.right.charge.at(-1)}`);
     assert.ok(Math.abs(P.left.charge.at(-1) + P.right.charge.at(-1)) < 1e-9 * Math.abs(stored), `${method}: Kirchhoff, ${P.left.charge.at(-1)} + ${P.right.charge.at(-1)}`);

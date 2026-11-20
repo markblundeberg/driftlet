@@ -38,7 +38,7 @@ export const STATE = [
   'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', // the start of the next step
   'contactDStart', 'contactDOld', 'contactDEnd', 'portQStart', 'portQOld', 'portQEnd',
   'time', 'lastDt', 'history', 'dtNext', 'sourceTime', // the clock, and the time steps' memory
-  'termV', 'termCharge', // the terminals' voltages (floating ones are unknowns), and the charge each has passed
+  'termV', 'termCharge', 'termChargeLo', // the terminals' voltages (floating ones are unknowns), and the charge each has passed (+ its rounding)
   'atSteady', 'stepped', 'solvedV', 'coldStart', // what the state is: steady, stepped, where solved, cold
   'regriddedSteady', 'jumpedT', 'restarted', // set() carried a steady state to a new grid or T, or restarted it (see Device)
   'referenceAmounts', 'boundaryIntake', 'surfaceRef', // what closed stretches and surfaces conserve
@@ -64,7 +64,7 @@ export const CARRY = {
   contactDEnd: 'kept', portQEnd: 'kept', // (each port's by name, where every port is still there)
   time: 'kept', sourceTime: 'kept', dtNext: 'kept',
   lastDt: 'restarted', history: 'restarted', // (a change of the equations restarts the time steps' order)
-  termV: 'kept', termCharge: 'kept', // (by terminal name; a held terminal's V is its drive)
+  termV: 'kept', termCharge: 'kept', termChargeLo: 'kept', // (by terminal name; a held terminal's V is its drive)
   atSteady: 'restarted', stepped: 'kept', solvedV: 'kept', coldStart: 'kept', // (atSteady: regriddedSteady says it on a new grid)
   regriddedSteady: 'set', jumpedT: 'set', restarted: 'set',
   referenceAmounts: 'rebased', boundaryIntake: 'rebased', // (a closed stretch's amount, with its intake folded in; an open one's from the state)
@@ -426,6 +426,7 @@ export class Solver {
     // The charge each terminal has passed into the device in time steps (C/m²), integrated as
     // the steps integrate a stored charge (see step in src/timeSteps.js): a trace's charge.
     this.termCharge = new Float64Array(this.terms.length);
+    this.termChargeLo = new Float64Array(this.terms.length); // (its rounding: see step in src/timeSteps.js)
     this.sourceTime = 0;
     this.sourceOverride = new Map(); // terminal → voltage, while a steady solve ramps it
     this.steady = false; // inside a steady solve: sources at the present time, not a step's end
@@ -1074,9 +1075,12 @@ export class Solver {
   // converged: the current it's driven by, or (V_source − V)/R behind a resistance (the source
   // as the last step saw it, before any jump at its end). Read as a flux through a metal instead,
   // it carried that flux's round-off, G Δη with G huge: a gate behind R read 1.5e-4 off wherever
-  // Newton stopped an update early, and below ~1e-16 A/m², nothing but noise.
+  // Newton stopped an update early, and below ~1e-16 A/m², nothing but noise. (The source at
+  // sourceTime, where the state was solved: read at the time, a few ulps past a square wave's
+  // edge where a call's end snapped it, 501 of 2800 half-period calls said 1 A/m² passed where the
+  // state had passed none; Sol's re-read of the time integrator, round 7.)
   passedCurrent(k) {
-    const d = this.terms[k].drive, src = sourceAt(d.src, this.time, this.stepped); // (as the solution reads it: src/solution.js)
+    const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime, this.stepped); // (as the solution reads it: src/solution.js)
     return d.kind === 'I' ? src : (src - this.termV[k]) / d.R;
   }
 
@@ -1086,7 +1090,7 @@ export class Solver {
   passedRoundoff(k) {
     const d = this.terms[k].drive;
     if (d.kind === 'I') return 0;
-    const src = sourceAt(d.src, this.time, !this.atSteady);
+    const src = sourceAt(d.src, this.sourceTime, !this.atSteady);
     return (4 * Number.EPSILON * Math.max(Math.abs(src), Math.abs(this.termV[k]))) / Math.abs(d.R);
   }
 

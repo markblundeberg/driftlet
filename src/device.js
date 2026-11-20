@@ -1229,10 +1229,14 @@ function resolvable(T, t) {
 export function sourceAt(src, t, before = false) {
   if (src.value !== undefined) return src.value;
   const { t: ts, values: vs, repeat } = src, n = ts.length;
-  // just before: a few ulps of t (of the period, for a repeating one). (Of the whole span, a
-  // waveform held 'forever' by a last knot at 1e12 s read 1.8 ms before t, and hid a jump that
-  // long; Astra's second pass.)
-  if (before) t -= 8 * Number.EPSILON * Math.max(Math.abs(t), repeat ? ts[n - 1] - ts[0] : 0, 1e-300);
+  // just before: a few ulps of t (or of its cycle's start, for a repeating one, which its knots
+  // there are offsets from). (Of the whole span, a waveform held 'forever' by a last knot at
+  // 1e12 s read 1.8 ms before t, and hid a jump that long; Astra's second pass. Of the period, a
+  // period of 1e16 s read 18 s before t, in its first cycle; Sol's re-read, round 7.)
+  if (before) {
+    const T = ts[n - 1] - ts[0], start = repeat ? Math.abs(ts[0] + cycleAt(ts[0], T, t) * T) : 0;
+    t -= 8 * Number.EPSILON * Math.max(Math.abs(t), start, 1e-300);
+  }
   let at = (k) => ts[k];
   if (repeat) {
     const T = ts[n - 1] - ts[0], c = cycleAt(ts[0], T, t);
