@@ -44,8 +44,8 @@ terminal currents.
 `mirror` compares steady states on reflected grids. It swaps contact roles and maps the signs
 of directional inputs. A terminal current defined into the device retains its sign at the
 swapped contact. Radial geometry, a face with charge fixed to its right plate, and meshes
-that do not reflect node for node are skipped. The property is opt-in while reflected cold
-solves can refuse cases that solve in the original orientation.
+that do not reflect node for node are skipped. (It found three devices that solved cold only one
+way round, now fixed: round 9 in the CHANGELOG.)
 
 ```sh
 node bench/combos/run.js --n 30 --only mirror,gauge,scale

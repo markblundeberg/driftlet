@@ -21,7 +21,7 @@
 //   dcZ        the impedance at low frequency is the steady dI/dV at plan.V (unique only)
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   stale      check() refuses a solution of the device before a set()
-//   mirror     reflect positions, face laws and drives (opt-in while cold reflections can fail)
+//   mirror     reflect positions, face laws and drives: the reflected device's steady state is the reflection
 //   gauge      shift the common voltage reference and compare concentrations, currents and level differences
 //   scale      dilate the device and its transport coefficients without changing the dimensionless system
 //
@@ -651,8 +651,7 @@ const props = {
 };
 
 // --- run
-// Keep the reflected cold-start failures available for investigation without failing CI.
-const which = only ?? Object.keys(props).filter((p) => p !== 'mirror');
+const which = only ?? Object.keys(props);
 for (const p of which) if (!props[p]) throw new Error(`no property '${p}' (known: ${Object.keys(props).join(', ')})`);
 const tally = {}, failures = [];
 const t0 = performance.now();

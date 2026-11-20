@@ -8,7 +8,7 @@ major version.
 - bench/combos crosses fields: three families from Astra's ninth pass (a mixed ionic–electronic
   film under light, doped Si against an electrolyte, a gated film whose dopant has two valence
   states on shared sites), and three properties from Sol's (gauge: every voltage shifted by a
-  constant; scale: lengths stretched with D and ε to match; mirror, opt-in: the device reflected).
+  constant; scale: lengths stretched with D and ε to match; mirror: the device reflected).
   Gauge and scale held on all 240 devices tried. Mirror found the three devices below.
 - A device solves cold the same written either way round (round 9's mirror property, from Codex's
   sweep of bench/combos: three devices solved one way and were refused as their mirror images).
