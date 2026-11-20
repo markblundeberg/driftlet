@@ -15,6 +15,7 @@
 //              to the last bit
 //   split      advance(t) in one call and in several ends at the same state, to its tolerance
 //   dcZ        the impedance at low frequency is the steady dI/dV at plan.V (unique only)
+//   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   stale      check() refuses a solution of the device before a set()
 //
 // Each failure line names the family, the case and the property: rerun one with
@@ -267,6 +268,31 @@ const props = {
     const re = z.Z.re[0], im = z.Z.im[0], m = re * re + im * im, Yre = re / m, Yim = -im / m;
     if (Math.abs(Yim) > 1e-2 * Math.abs(Yre)) return skip(`still reactive at ${f.toPrecision(2)} Hz`);
     return Math.abs(Yre - G) <= 1e-3 * Math.abs(G) + 1e-12 ? '' : `Re Y(${f.toPrecision(2)} Hz) = ${Yre.toExponential(4)}, steady dI/dV = ${G.toExponential(4)} S/m²`;
+  },
+
+  area(c, r) {
+    // (a series R or an I drive is per area in a slab and a total with a cross-section: scaled
+    // with it; a port's electrode area is its own, so devices with ports are left out, as are
+    // devices with a geometry already)
+    if (c.def.geometry) return skip('has a geometry');
+    if ((c.def.ports ?? []).length) return skip('has ports');
+    const a = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
+    if (!converged(a)) return skip('no steady state at plan.V');
+    const A = r.pick([1e-6, 3.7e-3, 42]), L = c.def.regions.reduce((t, g) => t + g.length, 0);
+    const def2 = clone(c.def);
+    def2.geometry = { area: { x: [0, L], values: [A, A] } };
+    for (const side of ['left', 'right']) {
+      const k = def2.contacts?.[side];
+      if (!k) continue;
+      if (typeof k.R === 'number') k.R /= A;
+      if (typeof k.I === 'number') k.I *= A;
+      else if (k.I && Array.isArray(k.I.values)) k.I.values = k.I.values.map((v) => v * A);
+    }
+    const b = new Device(def2).set(driveAt(c.plan, c.plan.V)).solve();
+    if (!converged(b)) return `with a cross-section of ${A} m²: not converged, where the slab did`;
+    const scaled = { ...b, terminals: Object.fromEntries(Object.entries(b.terminals).map(([n, t]) => [n, { ...t, current: t.current / A }])) };
+    const dd = diff(a, scaled);
+    return within(dd, { mu: 1e-7, I: 1e-7, V: 1e-7 }) ? '' : `a constant cross-section of ${A} m², currents divided by it: ${fmt(dd)}`;
   },
 
   stale(c) {
