@@ -25,6 +25,25 @@ major version.
 - A `solve()` that throws (a custom statistics' table ending mid-solve) leaves the device as it was,
   as `step()` and `advance()` do: it had left the state moved, the clock at the last trial step, and
   `solution()` throwing.
+- Eddy mixing in a graded region weighted its mixing by a mean concentration that left the grade
+  out, so the answer depended on which way the device faced: under a 2 RT grade of μ°, the contact
+  flux on 8 cells was −6.65e-3 one way and −5.30e-3 mirrored, silently, and disagreed with
+  `sol.flux`. Both ways now give −5.928665e-3, as an independent solve of the stated law does.
+- A stretch of electrons running from a metal, linked in equilibrium, into a semiconductor was summed
+  as a floating metal, leaving out the semiconductor's recombination: driven at the current −10 mV
+  passes, it settled at −33.9 mV, converged and silent (its mirror was right). Only a stretch that
+  is all metal is summed that way now.
+- A capacitive port whose window reaches a strictly neutral end box (contact φ `'neutral'`) charged
+  through that end's contact even with the contact at I = 0: a 10 mV gate step sent 5.0 A/m² of K⁺
+  out through it, and the terminals summed to +5 A/m². It now matches the same end closed.
+- Species and ports named like JavaScript's built-in object properties (`'__proto__'`,
+  `'constructor'`) are ordinary keys of every map a solution returns: `__proto__` was missing from
+  them, and ν of `'constructor'` in `bulkReactions` came out NaN.
+- Docs: `conservation`'s intake counts ports as well as contacts, integrated as the steps
+  integrate; `bulkReactions`' `total` is mol/s through a cross-section when the device isn't
+  planar, and `rate` is NaN only where the material doesn't run the reaction; `sol.current` is the
+  right contact's (read `terminals` when there are ports); port and face `rates` are net, forward
+  positive.
 
 ## 1.18.0 (2026-11-19)
 
