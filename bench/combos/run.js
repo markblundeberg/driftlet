@@ -13,6 +13,7 @@
 //   rollback   a call that throws partway (a fault injected into the linear solves) leaves the
 //              device as it was: what it does next is what a twin that never made the call does,
 //              to the last bit
+//   noop       a set() that changes nothing physical, mid-transient, changes nothing after
 //   split      advance(t) in one call and in several ends at the same state, to its tolerance
 //   charge     the charge each terminal passes over a slow ramp after a rest, in one default
 //              advance(), is what a run with its steps capped passes, to 1%
@@ -46,7 +47,9 @@ const RT = (sol) => 8.314462618 * (sol.T ?? 300);
 
 // The largest differences between two solutions of one device: in any species' level (in RT),
 // in φ (in V_T), and in any terminal's current (relative to the largest terminal current) and V.
-function diff(a, b) {
+// (scale: a current to measure the differences against, where the solutions' own are a decayed
+// transient's tail: the run's peak)
+function diff(a, b, scale = 0) {
   const out = { mu: 0, phi: 0, I: 0, V: 0, where: '' };
   const rt = RT(a);
   for (const name of Object.keys(a.mu ?? {})) {
@@ -58,7 +61,7 @@ function diff(a, b) {
       if (!(d <= out.mu)) { out.mu = Number.isNaN(d) ? Infinity : d; out.where = `mu.${name}[${i}]`; }
     }
   }
-  const gross = Math.max(1e-300, ...Object.values(a.terminals).map((t) => Math.abs(t.current)), ...Object.values(b.terminals ?? {}).map((t) => Math.abs(t.current)));
+  const gross = Math.max(1e-300, scale, ...Object.values(a.terminals).map((t) => Math.abs(t.current)), ...Object.values(b.terminals ?? {}).map((t) => Math.abs(t.current)));
   for (const [name, t] of Object.entries(a.terminals)) {
     const u = b.terminals?.[name];
     if (!u) { out.I = Infinity; continue; }
@@ -91,6 +94,8 @@ function reorder(x, r, path = '') {
 }
 const reverseOrders = (def) => reorder(def, rng(1));
 
+// The largest terminal current any of these transients' traces passed.
+const peak = (...runs) => Math.max(0, ...runs.flatMap((r) => Object.values(r?.trace?.terminals ?? {}).flatMap((t) => Array.from(t.current, Math.abs))));
 const skip = (why) => `skip: ${why}`;
 const converged = (s) => s && s.converged;
 
@@ -114,9 +119,14 @@ const props = {
     const tr = d.advance(t1, { tol: 1e-5, budgetMs: 20000, maxSteps: 50000 });
     if (!tr.converged) return skip(`transient failed at t = ${tr.time.toPrecision(3)} s`);
     if (!tr.done) return skip(`transient too slow: t = ${tr.time.toPrecision(3)} of ${t1.toPrecision(3)} s in ${tr.steps} steps`);
+    // (settled? a family's slow is an estimate: one was 4× short, its transient still 0.12 RT from
+    // the end at 40 × slow and exactly there by 640 ×; another 40 × must move nothing)
+    const tr2 = d.advance(2 * t1, { tol: 1e-5, budgetMs: 20000, maxSteps: 50000 });
+    if (!tr2.converged || !tr2.done) return skip('transient too slow to check it settled');
+    if (!within(diff(tr, tr2, peak(tr)), { mu: 1e-6, I: 1e-6, V: 1e-7 })) return skip('not settled at 40 × plan.slow (slow underestimated)');
     const w = d.solve();
     if (!converged(w)) return 'solve() from the relaxed state: not converged';
-    const dw = diff(tr, w);
+    const dw = diff(tr2, w, peak(tr));
     // (40 relaxation times: what's left of the transient is e^-40 of the step)
     if (!within(dw, { mu: 1e-5, I: 1e-5, V: 1e-6 })) return `40 × slow later, the transient vs solve() from there: ${fmt(dw)}`;
     if (!c.plan.unique) return '';
@@ -165,7 +175,9 @@ const props = {
     const b = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
     if (!converged(b)) return skip('a fresh device at plan.V failed');
     const dd = diff(a, b);
-    return within(dd, { mu: 1e-6, I: 1e-6, V: 1e-6 }) ? '' : `after ${log.join(', ')}, vs fresh: ${fmt(dd)}`;
+    // (1e-9 A/m² of currents read as small differences of large terms: a lit thin-film transistor's
+    // 8e-10 read 1e-10 after a history, its levels the same to 2e-15 RT)
+    return within(dd, { mu: 1e-6, I: 1e-6, Iabs: 1e-9, V: 1e-6 }) ? '' : `after ${log.join(', ')}, vs fresh: ${fmt(dd)}`;
   },
 
   rollback(c, r) {
@@ -219,9 +231,51 @@ const props = {
     if (x[1].steps !== y[1].steps) return `after ${op} threw at linear solve ${at} of ${calls}: the next advance took ${x[1].steps} steps, the twin's ${y[1].steps}`;
     for (let k = 1; k < 3; k++) {
       const dd = diff(x[k], y[k]);
-      if (!within(dd, { mu: 1e-12, I: 1e-12, Iabs: 0, V: 1e-12 })) return `after ${op} threw at linear solve ${at} of ${calls}, then ${k === 1 ? 'advance' : 'solve'}: ${fmt(dd)}`;
+      // (to round-off, not the bit: what Newton learned on the call that threw is kept, LEARNED in
+      // src/solver.js, so a later solve may take another path to the same state)
+      if (!within(dd, { mu: 1e-9, I: 1e-9, Iabs: 1e-12, V: 1e-12 })) return `after ${op} threw at linear solve ${at} of ${calls}, then ${k === 1 ? 'advance' : 'solve'}: ${fmt(dd)}`;
     }
     return '';
+  },
+
+  noop(c, r) {
+    // Mid-transient, a set() that changes nothing physical: the same drive again, a material's D
+    // given as it is, a drive moved and moved back before any step. The device goes on as a twin
+    // that was never patched does, to the last bit.
+    const make = () => {
+      const d = new Device(clone(c.def));
+      if (!converged(d.solve())) return null;
+      d.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+      d.advance(c.plan.slow / 3, { maxSteps: 3000 });
+      return d;
+    };
+    const D = make(), T = make();
+    if (!D) return skip('no steady state at the drives');
+    const kind = r.pick(['same drive', 'same D', 'there and back']);
+    if (kind === 'same drive') D.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    else if (kind === 'same D') {
+      const leaves = [];
+      for (const [m, mat] of Object.entries(c.def.materials ?? {})) for (const [sp, v] of Object.entries(mat.species ?? {})) if (typeof v.D === 'number') leaves.push([m, sp, v.D]);
+      if (!leaves.length) return skip('no D to give again');
+      const [m, sp, Dv] = r.pick(leaves);
+      D.set({ materials: { [m]: { species: { [sp]: { D: Dv } } } } });
+    } else {
+      D.set(driveAt(c.plan, c.plan.V - c.plan.dV));
+      D.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    }
+    const [x0, y0] = [D.solution(), T.solution()];
+    const d0 = diff(x0, y0);
+    if (!within(d0, { mu: 0, I: 0, Iabs: 0, V: 0 })) return `${kind}: solution() right after: ${fmt(d0)}`;
+    const t1 = T.solution().time + c.plan.slow;
+    const [x, y] = [D.advance(t1, { maxSteps: 3000 }), T.advance(t1, { maxSteps: 3000 })];
+    if (kind !== 'there and back' && x.steps !== y.steps) return `${kind}: the next advance took ${x.steps} steps, the twin's ${y.steps}`;
+    const d1 = diff(x, y, peak(x, y));
+    // (a drive moved restarts the time steps' order, as any discontinuity does, so there and
+    // back costs a first-order step: equal to the transient's tolerance, 1e-3 thermal units per step
+    // by default, not to the bit)
+    // (and its currents then are a tolerance-level tail, compared through the levels alone)
+    const tol = kind === 'there and back' ? { mu: 1e-3, I: Infinity, V: 1e-5 } : { mu: 0, I: 0, Iabs: 0, V: 0 };
+    return within(d1, tol) ? '' : `${kind}: after the next advance: ${fmt(d1)}`;
   },
 
   split(c, r) {
@@ -242,7 +296,7 @@ const props = {
     if (one.failed) return skip(one.failed);
     const many = run(r.int(3, 9));
     if (many.failed) return `one call reached the end, pieces didn't: ${many.failed}`;
-    const dd = diff(one, many);
+    const dd = diff(one, many, peak(one, many));
     // (tol 1e-6 per step, local: a few hundred steps' worth)
     return within(dd, { mu: 1e-3, I: 1e-3, Iabs: 1e-9, V: 1e-4 }) ? '' : `one advance vs pieces: ${fmt(dd)}`;
   },
@@ -313,6 +367,7 @@ const props = {
     // with it; a port's electrode area is its own, so devices with ports are left out, as are
     // devices with a geometry already)
     if (c.def.geometry) return skip('has a geometry');
+    if ((c.def.regions ?? []).some((g) => g.velocity) || Object.values(c.def.materials ?? {}).some((m) => m.velocity)) return skip('has flow (planar only)');
     if ((c.def.ports ?? []).length) return skip('has ports');
     const a = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
     if (!converged(a)) return skip('no steady state at plan.V');

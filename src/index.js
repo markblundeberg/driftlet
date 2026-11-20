@@ -5,6 +5,7 @@ import { Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 import { deepEqual, markWhole, merge, ownCopy, WHOLE } from './merge.js';
 import { carryState, carryTermCharges } from './carry.js';
+import { checkMethod } from './timeSteps.js';
 import { checkOptions } from './errors.js';
 
 export { DeviceError } from './device.js';
@@ -303,8 +304,21 @@ export class Device {
       // The same species (by name and charge, in any order) carry over; other species restart
       // the device from its regions' c0.
       const key = (m) => JSON.stringify(m.species.map((sp) => [sp.name, sp.z]).sort());
-      if (key(old.model) === key(model)) carryState(old, solver, { oldDef: this.def, newDef: def, pure: deepEqual(withoutGrid(this.def), withoutGrid(def)) });
-      else restartFrom(old, solver);
+      // The old state read as its solution reads it (src/solution.js), and the new one's held
+      // voltages as the old's: a stepped one's sources from within its last step, before any
+      // jump at its end. (Its assembly re-read them after: a rebuild releasing a terminal held at
+      // a 0 → 0.1 V edge just landed on floated it from 0.1 V, where the state was solved at 0,
+      // and read 0 A/m² across a 1e6 S/m wire; round 7's S14.)
+      const before = old.sourceBefore, termV = Float64Array.from(old.termV);
+      if (old.stepped && old.time > 0) old.sourceBefore = solver.sourceBefore = true;
+      try {
+        if (key(old.model) === key(model)) carryState(old, solver, { oldDef: this.def, newDef: def, pure: deepEqual(withoutGrid(this.def), withoutGrid(def)) });
+        else restartFrom(old, solver);
+      } finally {
+        old.sourceBefore = before;
+        old.termV.set(termV);
+        solver.sourceBefore = false;
+      }
     }
     this.def = def;
     this.model = model;
@@ -334,8 +348,11 @@ export class Device {
     applyDrives(this.model, drives);
     this.def = def;
     this._solver.redrive();
+    // (at the voltage the state was solved at, readV, not the source just replaced: after two
+    // patches with no step between, I: 0 → V: 0.05 → I: 0, the plate floated from the second's
+    // 0.05 V, which never acted, and read 0.01 C/m² of charge it never took; round 7's S5)
     s.terms.forEach((t, k) => {
-      if (Number.isFinite(seen[k]) && s.floating.includes(k)) s.termV[k] = seen[k];
+      if (Number.isFinite(seen[k]) && s.floating.includes(k)) s.termV[k] = s.readV[k];
     });
   }
 
@@ -389,6 +406,7 @@ export class Device {
    */
   step(dt, opts) {
     options(opts, 'step', ['method']);
+    checkMethod('step', opts?.method);
     // dt is a duration. Unchecked, step(-1) stepped back to t = −1 and converged, and step('1')
     // made the clock the string '-11' (the state audit). As advance() does with its tEnd, a NaN
     // (an animation's first frame) or 0 does nothing, and says so.
@@ -454,8 +472,11 @@ export class Device {
     // stands for: solve that first. (Mid-run, an interpolated transient state steps on as it is.)
     // (an advance to now takes no step: nothing to settle for; nor does a tEnd that isn't a number,
     // which integrate refuses: checked first, advance('1') settled the regrid before it threw;
-    // Sol's third review)
-    if (typeof tEnd === 'number' && tEnd > this.solver.time) this._settleRegrid();
+    // Sol's third review. Nor any call integrate refuses, nor one that takes no step: a tol of 0,
+    // a bad probe or maxSteps 0 each settled it, and left the device not as a twin that never
+    // made the call; round 7's S16.)
+    this.solver.integrateArgs(tEnd, opts ?? {});
+    if (typeof tEnd === 'number' && tEnd > this.solver.time && opts?.maxSteps !== 0) this._settleRegrid();
     this.solver._freshDiagnostics();
     return this._touching(() => makeSolution(this.solver, this.solver.integrate(tEnd, opts)), 'advance()');
   }

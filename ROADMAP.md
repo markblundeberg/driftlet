@@ -557,6 +557,23 @@ confirmed faults fixed, many of them silent wrong answers) sort into four source
   listing order don't change the answer; check() refuses any stale solution. This suite covers the
   combinations (source 1) that reviews only sample, and it is what proves a refactor kept the
   physics.
+- **One owner per quantity, from an inventory of the copies** (20 Nov 2026; the inventory and its
+  probes are in the maintainer's notes). 17 quantities are computed in more than one place. Two of
+  them disagreed when they were found: a capacitive port's charge carried through a new cross-section,
+  and a region changing kind. Seven readers decide which side of a drive's jump the state is on, by
+  four rules. A terminal's current has six copies, which agree except at a strictly neutral end on
+  short steps and right after a drive-only `set()`. Nine predicates decide what a contact's φ law
+  sets. In the shape this suggests:
+  - Facts are decided once and stored as data: a role record per contact and port (sets φ, holds a
+    charge, closed), a transport descriptor per region, and each law's circuit reading.
+  - Each quantity is computed once per state, by the kernel that owns its law, with its derivative,
+    into stamped arrays: charges, rates, a segment's flux and its ∂, face affinities, the terminal
+    currents as solved. Readers never evaluate a law again.
+  - The state carries the sources it was solved at, `{ t, before }`, one record in place of
+    `sourceTime`, `sourceBefore`, `readV` and `readI`.
+  - The order: the invariants first (bench/combos), then the role records (mechanical, checked by
+    tools/fingerprint.js), the sources record together with the one transaction, the per-state
+    arrays, and carry last, re-expressed as asking the new solver what it must match.
 - **What each feature costs.** An honest audit of what the demos and docs use. Something rarely used
   that touches every path is a candidate to move out of the core.
 
