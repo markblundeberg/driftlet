@@ -301,6 +301,22 @@ function balance(device, sol) {
   // 1e-19 of its scale, to 1e-15), and round-off doesn't. (Above 1e-8 of the scale, any.)
   const balanced = (l) => Math.abs(l.terms.reduce((a, t) => a + t.rate, 0)) <= 1e-9 * size(l);
   const moving = ledgers.filter((l) => size(l) > 1e-8 * scale(l) || (size(l) > 1e-20 * scale(l) && balanced(l)));
+  // And a ledger with a reaction's term that a moving one carries as one of its own principal
+  // terms, at a like rate (within the stoichiometry's factor): that rate is shown real there, so it
+  // is here. (A catalytic face's surface species balanced its two steps at 9.9e-11 mol/(m²·s), 1e-10
+  // of its scale, while the solution species the first step took, fed by nothing in a solve that
+  // had dropped its flux, sat as "round-off" beside an ok; Neon's reply on 4.1.)
+  for (let more = true; more; ) {
+    more = false;
+    for (const l of ledgers) {
+      if (moving.includes(l)) continue;
+      const shown = l.terms.some((t) => moving.some((m) => m.terms.some((u) => u.what === t.what && Math.abs(u.rate) >= 1e-3 * size(m) && Math.abs(t.rate) <= 10 * Math.abs(u.rate) && Math.abs(u.rate) <= 10 * Math.abs(t.rate))));
+      if (shown) {
+        moving.push(l);
+        more = true;
+      }
+    }
+  }
   // What's left unbalanced can be round-off or a small real flow the solve didn't settle (a
   // reverse diode behind a resistance, 1.3 µA/m² at 4e-15 of its scale, balanced to 8e-5 by a
   // solve that stalled), and nothing here tells them apart: round-off reaches 8e-12 of the scale
@@ -470,7 +486,9 @@ function gridCheck(device, sol, tol, gross) {
       // open circuit, a symmetric cell), nothing compared moved, and a lit n⁺-Si slab's
       // collected holes 5% off, a salt reacting at its contacts 38× off, passed; Neon's review, 4.2.)
       const a = fa[sp.name], b = fb[sp.name], i = model.species.indexOf(sp);
-      const floor = sp.z === 0 ? floorN : Math.max(floorN, (1e-6 * gross) / (FARADAY * Math.abs(sp.z)));
+      // (a neutral one's floor its own, 1e-16 of what it could carry, not the charged carriers'
+      // floor in moles: a metal beside it raised that a thousandfold; Neon's reply on 4.3)
+      const floor = sp.z === 0 ? (natural[i] > 0 ? 1e-16 * natural[i] : floorN) : Math.max(floorN, (1e-6 * gross) / (FARADAY * Math.abs(sp.z)));
       if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floor)) continue;
       // (a spectator's against 1e-3 of what it could carry, too: its 1e-5 of it, unresolved in a
       // thin reaction layer, failed a device whose current was right to 1e-3; the re-check. Not

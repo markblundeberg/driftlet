@@ -60,7 +60,10 @@ major version.
   contacts on 4 cells, 38× off. A species a reaction turns over is compared as it is, not against
   1e-3 of what it could carry (a reactant's flux 12.7% off read as 4.7e-3). And a solution of
   neutral species alone, copied before a set(), is known as stale by its concentrations (φ, which
-  the test compared, is undefined there).
+  the test compared, is undefined there). Its balance item counts a ledger as moving where a
+  moving one shows its reaction's rate is real (a solution species fed by nothing, its face
+  reaction balanced in the surface's ledger at 1e-10 of its scale, was set aside as round-off
+  beside an ok; Neon's reply on 4.1), and a neutral species' flux floor is its own.
 - Three more from Neon's first review. A closed trace beside an abundant species keeps its amount
   where the abundant one's starting profile dips at its region's left end: the stretches' starting
   amounts, which order the conserved basis, read a profile there alone, and a trace's amount came

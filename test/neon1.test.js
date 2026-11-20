@@ -262,3 +262,22 @@ test('a law of several species on one lattice, beside diffuse layers, on a coars
     assert.ok(new Device(def).solve().converged, `${cells} cells`);
   }
 });
+
+test("check()'s balance counts a ledger as moving where a moving one shows its reaction's rate is real (Neon's reply on 4.1)", () => {
+  // (A = S, S = F at a face at k0 1e-10: S's ledger balanced its two steps at 9.9e-11 mol/(m²·s), 1e-10
+  // of its scale; a solve that dropped A's flux (2.1, before its fix) left A's ledger unbalanced by
+  // all of it, below the 1e-8 at which a ledger moves, and balance said ok. Here the flux is zeroed
+  // in a copy, as that solve had it.)
+  const def = {
+    T: 300,
+    species: [{ name: 'A', z: 0 }, { name: 'e-', z: -1 }],
+    materials: { aq: { epsr: 0, species: { A: { D: 1e-9, mu0: 0, cRef: 1000 } } }, pt: { conductor: { species: 'e-', conductivity: 1e7 } } },
+    regions: [{ name: 'L', material: 'aq', length: 1e-6, c0: { A: 1000 }, grid: { hmax: 1e-7, minCells: 10 } }, { name: 'Pt', material: 'pt', length: 1e-7 }],
+    interfaces: [{ phi: 'neutral', species: { A: 'blocked', 'e-': 'blocked' }, surface: { S: { mu0: 0, capacity: 1e-5, theta0: 0.5 } }, reactions: [{ equation: 'A = S', k0: 1e-10, alpha: 0.5 }, { equation: 'S = F', fixed: { F: -25000 }, k0: 1e-10, alpha: 0.5 }] }],
+    contacts: { left: { phi: 'neutral', species: { A: { type: 'equilibrium', mu: 0 }, 'e-': 'blocked' } }, right: { V: 0, phi: 'bulk', species: { 'e-': { type: 'equilibrium', offset: 0 }, A: 'blocked' } } },
+  };
+  const d = new Device(def), s = d.solve();
+  assert.match(check(d, s, { refine: false }).text, /ok {3}balance: 2 ledgers sum to zero/);
+  const dropped = { ...s, contacts: { ...s.contacts, left: { ...s.contacts.left, flux: { ...s.contacts.left.flux, A: 0 } } } };
+  assert.match(check(d, dropped, { refine: false }).text, /FAIL balance: .* not a steady state/);
+});

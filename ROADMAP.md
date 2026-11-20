@@ -627,7 +627,11 @@ notes), ranked by how much each trips an agent writing its first device:
   understand what relies on the present form before changing it. And advance()'s diagnosis of a
   stop at the time's resolution (the error estimate's floor, "loosen tol", or a step as short as
   the device needs) turns on round-off: a start moved by 1e-11 V turned the one into the other in
-  test/transient.test.js's floor case.
+  test/transient.test.js's floor case. The block elimination is unstable on a well-conditioned
+  system that every counter passes (Neon's 4×4, [[ε,1,0,0],[1,1,½,0],[0,½,1,1],[0,0,1,ε]], κ₂ = 4:
+  at ε = 1e-15 an error of 0.125 against GEPP's 3e-16, lost 0, perturbed 0, ratio 1): no device in
+  a 30-run sweep reached it, but the conditioning note could report growth (max|C′| against the
+  blocks' entries), and a fix needs pivoting across blocks or a twisted factorisation.
 
 - **Open from bench/combos and round 7 (20 Nov 2026; repros in the maintainer's notes).** A floating
   metal contact (behind R or driven) whose metal meets a face reaction should start at its open-circuit
