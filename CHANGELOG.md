@@ -3,7 +3,17 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.19.0 (2026-11-20)
+
+Two more starter pages, a fix for `live()` in a Web Worker, and the faults found by five more
+outside reading passes by OpenAI's GPT-6.2, each pointer settled by a helper before it was fixed:
+the steady solve and Newton, impedance and the readouts, the kit, statistics, the plots, and then
+the time stepper and the steady solve again with their old briefs word for word. Many were silent
+wrong answers, and the worst was a slow CV after a rest that read its charge 52% high. A new harness,
+[bench/combos](bench/combos/README.md), builds random devices whose features combine and checks
+properties that compare two routes to one answer; it runs in CI and found five more. Some
+`solve()` options and definitions 1.18 accepted and ignored are now refused by name. Regression
+tests are in test/round4*–round8*.test.js and test/combos.test.js.
 
 - A reacting group at one contact is held flat only where its affinity there is round-off of its
   terms, not anywhere below 1e-9 RT. Held flat, every box reacted with no flux between them: Y = Z held
