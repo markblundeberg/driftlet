@@ -421,13 +421,17 @@ a level diagram:
   lines together so that widely separated species share one readable plot; the label says so
   (⌇). Each line has a colour `role` (`'electron'` for e⁻, `'cation'` (holes too), `'anion'`,
   `'redox'`, `'phi'`) and a `slot` within it, so a colour follows its species whichever lines are
-  shown (`speciesRole(sol, name)` gives a species' own). Undefined values are `NaN` (break the line
-  there), and doubled interface nodes share an x, so steps draw as vertical lines. It also gives
-  the regions (`{ name, material, x0, x1 }`), the faces' positions and a suggested range.
+  shown (`speciesRole(sol, name)` gives a species' own); a couple is its equation and its `fixed`,
+  so one equation at two fixed μ is two levels, labelled with them. Undefined values are `NaN` (break the line
+  there), and doubled interface nodes share an x, so steps draw as vertical lines. The arrays
+  are copies, free to edit in place. It also gives the regions (`{ name, material, x0, x1 }`),
+  the faces' positions, a suggested range, and `energy`, whether the lines are electron energies
+  (eV) or voltages (V).
 - `energy: true` (in `traces` and `bandDiagram`) gives the familiar band diagram instead, energy
   up: electrons and holes as electron energies in eV (E_c and E_v from the standard levels, E_Fn
   and E_Fp, or E_F where there are no holes, from the levels), with redox levels and $`\phi`$ (as
-  $`-q\phi`$) turned over too and shifts in eV. Ions have no band, so asking for one is an error.
+  $`-q\phi`$) turned over too and shifts in eV; a standard redox level, drawn at $`-qV^\circ`$, is
+  labelled E° there rather than V°. Ions have no band, so asking for one is an error.
   It's the right picture for semiconductor devices; species voltages earn their place where ions
   share the diagram (see [which to use](visualization.md)).
 - `bandDiagram(sol, opts)` in `driftlet/plot` draws them as an SVG string, with no DOM needed, in
@@ -441,7 +445,9 @@ a level diagram:
   restyles them; `THEME` and `themeColor(role, slot, { dark })` give them to other charts.
   `xlim` (m) zooms into a window, with ticks and range fitted to it; `ytick(v)` writes the y
   axis's tick labels. `levelChart(traces, opts)` draws traces you've edited, or any profiles
-  against x ($`\log_{10}`$ concentrations, say, with `ytick` writing powers of ten). Labels, titles and
+  against x ($`\log_{10}`$ concentrations, say, with `ytick` writing powers of ten); without
+  `range` it fits the range to the lines as drawn, and its y label follows the traces' `energy`
+  ('electron energy (eV)' or 'voltage (V)'). Labels, titles and
   the y label mark subscripts TeX-style, `V_{e⁻}` or `C_ox` (a run of letters, digits and
   charge signs), drawn lowered and smaller; tooltips and the accessible name read `V_e⁻`.
   `labelParts(label)` splits a label into its plain and subscript runs, for other renderers.
