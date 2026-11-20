@@ -209,7 +209,10 @@ const mosDef = () => {
   });
 };
 const Cox = (3.9 * EPS0) / units.nm(5);
-const gateCharge = (s) => s.trace.t.reduce((q, t, k) => q + s.trace.current[k] * (t - (s.trace.t[k - 1] ?? 0)), 0);
+// The charge the gate passed, as the steps integrate it (trace.charge). (Summed here by a right-endpoint
+// rectangle rule, it read 0.756, then 0.771 when the step control changed, against a converged 0.869:
+// the bench's own quadrature moving, not the solver.)
+const gateCharge = (s) => s.trace.charge.at(-1);
 const mosCases = {
   'MOS without a channel port: cold steady solves, 0 → 1 V in 0.1 V': (tally) => {
     let failed = [];
