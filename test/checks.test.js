@@ -248,7 +248,10 @@ test('balance never calls a current that small but real equilibrium', () => {
   assert.ok(held.converged && Math.abs(I) > 1e-6, `${I}`);
   const d = new Device(make({ V: Vr + I * R, R })), s = d.solve();
   const balance = item(check(d, s, { refine: false, order: false }), 'balance');
-  assert.ok(!/equilibrium/.test(balance.summary) && /h\+ at 1\.2\de-11/.test(balance.summary), balance.summary);
+  // (Since the velocity contact's flux took e^x − 1 as expm1, round 4's B5, its ledgers close, to
+  // 4e-15, with the h⁺ flow in them; before, they didn't, and balance named the flow as unresolved.)
+  assert.ok(!/equilibrium/.test(balance.summary), balance.summary);
+  assert.ok(/h\+ at 1\.2\de-11/.test(balance.summary) || (balance.ok && balance.details.lines.some((l) => /^h\+: .*1\.25e-11/.test(l))), balance.summary);
 });
 
 // Fable round 5's review of src/checks.js: the grid check compared the right contact's current

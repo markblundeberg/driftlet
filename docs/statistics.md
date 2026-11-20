@@ -235,7 +235,7 @@ with the excess $`\mathrm{ex} = \zeta - \ln(c/c_{\mathrm{ref}})`$ (zero for idea
 excess acts like an extra potential. The Scharfetter–Gummel flux keeps its form with
 $`\Delta = z\Delta\hat\phi + \Delta\mathrm{ex}`$ (see [numerics](numerics.md#fluxes)), so it's still
 exactly zero at equilibrium. It's second-order accurate in the cell size (and exact for a single
-diffusing species on a lattice).
+diffusing species on a lattice with no field along it: neutral, or where $`\phi`$ is level).
 
 Reaction rates keep their concentration-based prefactors (mass action in $`c`$, and
 $`c/c_{\mathrm{ref}}`$ in the Butler–Volmer forms), while the driving force is always the affinity

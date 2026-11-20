@@ -92,7 +92,9 @@
 //      pass, times z F, and its displacement current; a contact's equals what the end box needs
 //      from outside, read from its residual (so the current is conserved through the device).
 //   3. A face's flux enters its two edge nodes with opposite signs, times Af.
-//   4. Where μ̄ is level across a link (or a = 0 for a reaction), its flux (rate) is exactly 0.
+//   4. Where μ̄ is level across a link (or a = 0 for a reaction), its flux (rate) is exactly 0,
+//      but for an equilibrium link, which holds μ̄ level and passes what the balances need. (Each
+//      affinity is summed compensated, src/sum.js, so a = 0 holds to its last digits.)
 //   4b. A diffuse layer's side holds the face's charge in the layer: at its row's solution the
 //      edge box's own charge (vol·ρ) is what its other terms put there, as without the face.
 //   5. The readouts (contactFlux, contactD, portFlux, portQ, portRates) are those of the state
@@ -107,6 +109,11 @@ import { sourceAt } from './device.js';
 import { diffuseLayer } from './diffuse.js';
 import { mhcRate } from './marcus.js';
 import { powi, powr } from './pow.js';
+import { addTerm } from './sum.js';
+
+// addTerm's accumulator: each affinity here is compensated (src/sum.js), as a bulk reaction's is,
+// since its participants' μ°/RT can be tens apart from a fast reaction's a (round 4, B6).
+const AFF = new Float64Array(2);
 
 // Butler–Volmer factor g(a) = e^{αa} − e^{−(1−α)a} = e^{−(1−α)a}·expm1(a) (precise near a = 0),
 // and its derivative g′(a) = α e^{αa} + (1−α) e^{−(1−α)a}.
@@ -141,14 +148,16 @@ export class BoundaryTerms {
   // A port reaction's rate per area at node g (mol/(m²·s), forward), at the present state.
   _portRate(port, rx, g) {
     const { n, M, u, uLo, c, nSurf, th } = this, b = this.blockOfNode[g], RT = this.model.RT;
-    let pref = rx.k0, a = rx.fixedA, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's prefactors apart, as logs)
+    let pref = rx.k0, lnP = 0, lnQ = 0; // (Marcus–Hush–Chidsey's prefactors apart, as logs)
+    AFF[0] = rx.fixedA;
+    AFF[1] = 0;
     for (const p of rx.part) {
       if (p.side === 1) {
-        a -= p.nu * this.portEta(port, p.i);
+        addTerm(AFF, -p.nu, this.portEta(port, p.i), 0);
         continue;
       }
       const o = b * M + (p.side === 2 ? 1 + n + p.s : 1 + p.i), act = p.side === 2 ? th[g * nSurf + p.s] : c[g * n + p.i] / this.cRef[g * n + p.i];
-      a -= p.nu * (u[o] + uLo[o]);
+      addTerm(AFF, -p.nu, u[o], uLo[o]);
       if (rx.mhc) {
         if (p.nu < 0) lnP -= p.nu * Math.log(act);
         else lnQ += p.nu * Math.log(act);
@@ -156,7 +165,7 @@ export class BoundaryTerms {
       }
       pref *= powr(act, p.nu < 0 ? -p.nu * (1 - rx.alpha) : p.nu * rx.alpha);
     }
-    const th0 = this._bare(port, g);
+    const th0 = this._bare(port, g), a = AFF[0] + AFF[1];
     if (rx.mhc) {
       const l0 = Math.log(th0);
       return mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, a).rate;
@@ -495,7 +504,9 @@ export class BoundaryTerms {
         if (a !== 0) for (let r = 0; r <= n; r++) d[r] += a * dc[j * M + r];
       }
     };
-    let pref = rx.k0, aHi = rx.fixedA, aLo = 0, rate;
+    let pref = rx.k0, rate;
+    AFF[0] = rx.fixedA;
+    AFF[1] = 0;
     // A surface species of the face's (rx.surf), at its coverage θ_s at the node beside the face on
     // side surfaceSide, slot 1 + n + s there: in the affinity by its η, in the prefactor as θ_s^e (and
     // the bare sites as θ₀^sites), with ∂ln θ_s/∂η_x = δ_sx − θ_x into that side's d. (Only
@@ -511,8 +522,7 @@ export class BoundaryTerms {
     };
     for (const p of rx.surf) {
       const o = bS * M + 1 + n + p.s;
-      aHi -= p.nu * u[o];
-      aLo -= p.nu * uLo[o];
+      addTerm(AFF, -p.nu, u[o], uLo[o]);
       if (rx.mhc) continue;
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr(this.th[gS * this.nSurf + p.s], e);
@@ -524,9 +534,11 @@ export class BoundaryTerms {
     }
     for (const p of rx.part) {
       const g = p.side ? gR : gL, b = p.side ? bR : bL, o = b * M + 1 + p.i;
-      aHi -= p.nu * (u[o] + wOf(p));
-      aLo -= p.nu * uLo[o];
-      if (wSlot(p) >= 0) aW[wSlot(p)] -= p.nu;
+      addTerm(AFF, -p.nu, u[o], uLo[o]);
+      if (wSlot(p) >= 0) {
+        addTerm(AFF, -p.nu, wOf(p), 0);
+        aW[wSlot(p)] -= p.nu;
+      }
       if (rx.srh || rx.vmax || rx.mhc || this.nodeConductor[g] === p.i) continue; // a conductor's carrier has activity 1
       const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
       pref *= powr((c[g * n + p.i] * plane(p)) / this.cRef[g * n + p.i], e);
@@ -537,6 +549,7 @@ export class BoundaryTerms {
         if (wSlot(p) >= 0) dW[wSlot(p)] += e;
       }
     }
+    const a = AFF[0] + AFF[1];
     if (rx.vmax) {
       // Saturating: r = vmax Π (c/(c + K))^{|ν|} (1 − e^{−a}); ∂ln S/∂ln c = |ν| K/(c + K).
       let S = 1;
@@ -551,7 +564,7 @@ export class BoundaryTerms {
           if (wSlot(p) >= 0) dW[wSlot(p)] += (-p.nu * K) / (cc + K);
         }
       });
-      const a = aHi + aLo, back = Math.exp(-a);
+      const back = Math.exp(-a);
       rate = rx.vmax * S * -Math.expm1(-a);
       for (let s = 0; s < M; s++) {
         dL[s] *= rate;
@@ -564,7 +577,7 @@ export class BoundaryTerms {
     } else if (rx.srh) {
       // SRH, with n and p each at its own side's edge node.
       const { n: pn, p: pp } = rx.srh, gn = pn.side ? gR : gL, gq = pp.side ? gR : gL;
-      const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], aHi + aLo, ...this._srhDegen(gn, gq, { n: pn, p: pp }));
+      const s = this._srhRate(rx.srh, c[gn * n + pn.i], c[gq * n + pp.i], a, ...this._srhDegen(gn, gq, { n: pn, p: pp }));
       rate = s.rate;
       this._srhInto(gn, pn.i, s.Cn, s.Cxn, pn.side ? dR : dL);
       this._srhInto(gq, pp.i, s.Cp, s.Cxp, pp.side ? dR : dL);
@@ -592,7 +605,7 @@ export class BoundaryTerms {
         lnQ += (rx.m - rx.fills) * l0;
       }
       // its derivatives by a, ln P and ln Q: each participant's ln c weighted by its |ν| in one of them
-      const { rate: r, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP, lnQ, aHi + aLo);
+      const { rate: r, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP, lnQ, a);
       rate = r;
       for (const p of rx.surf) {
         surfLn(p.nu < 0 ? -p.nu * rp : p.nu * rq, p.s);
@@ -613,7 +626,7 @@ export class BoundaryTerms {
       for (let s = 0; s < M; s++) dW[s] += ra * aW[s];
       for (const p of rx.part) (p.side ? dR : dL)[1 + p.i] -= ra * p.nu;
     } else {
-      const { g: bv, gp } = bvFactor(aHi + aLo, al);
+      const { g: bv, gp } = bvFactor(a, al);
       rate = pref * bv;
       // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η_i = −ν
       for (let s = 0; s < M; s++) {
@@ -790,24 +803,28 @@ export class BoundaryTerms {
     const { n, M, u, uLo, c, res, z, VT, nSurf, th } = this, R = this.rix, F = FARADAY, vol = this.model.grid.vol, RT = this.model.RT;
     const B = this.termB[k], C = this.termC[k], al = rx.alpha, d = this.dA, surf = port.surface;
     // The carrier's part of the affinity, and how it moves with the port's voltage.
-    let aV = rx.fixedA, daV = 0, q = 0; // q: charge the forward reaction brings into the device, per event
+    let daV = 0, q = 0; // q: charge the forward reaction brings into the device, per event
+    AFF[0] = rx.fixedA;
+    AFF[1] = 0;
     for (const p of rx.part) {
       if (p.side === 1) {
-        aV -= p.nu * this.portEta(port, p.i);
+        addTerm(AFF, -p.nu, this.portEta(port, p.i), 0);
         daV -= (p.nu * z[p.i]) / VT;
       } else if (p.side === 0) q += p.nu * z[p.i];
     }
+    const aV = AFF[0], aVLo = AFF[1]; // (its two words, each node's sum starting from them)
     const slot = (p) => (p.side === 2 ? 1 + n + p.s : 1 + p.i);
     port.nodes.forEach((g, w) => {
       const b = this.blockOfNode[g], s = vol[g] * area[w];
       d.fill(0);
-      if (rx.mhc) return this._portMhc(port, rx, g, b, s, w, aV, daV, q, rates, flux, k);
-      let pref = rx.k0, aHi = aV, aLo = 0;
+      if (rx.mhc) return this._portMhc(port, rx, g, b, s, w, aV, aVLo, daV, q, rates, flux, k);
+      let pref = rx.k0;
+      AFF[0] = aV;
+      AFF[1] = aVLo;
       for (const p of rx.part) {
         if (p.side === 1) continue;
         const o = b * M + slot(p);
-        aHi -= p.nu * u[o];
-        aLo -= p.nu * uLo[o];
+        addTerm(AFF, -p.nu, u[o], uLo[o]);
         const e = p.nu < 0 ? -p.nu * (1 - al) : p.nu * al;
         if (p.side === 2) {
           // a surface species at its coverage θ = θ₀e^ζ, with ∂ln θ_s/∂η_x = δ_sx − θ_x
@@ -824,7 +841,7 @@ export class BoundaryTerms {
         for (let x = 0; x < surf.length; x++) d[1 + n + x] -= rx.sites * th[g * nSurf + x];
         pref *= powr(this._bare(port, g), rx.sites);
       }
-      const { g: bv, gp } = bvFactor(aHi + aLo, al);
+      const { g: bv, gp } = bvFactor(AFF[0] + AFF[1], al);
       const rate = pref * bv;
       rates[w] = rate;
       // ∂rate/∂slot = rate·∂ln(prefactor) + pref·g′·∂a, with ∂a/∂η = −ν
@@ -850,21 +867,22 @@ export class BoundaryTerms {
   // c/c_ref, each surface species at θ, the bare sites θ₀^m and θ₀^(m−Δ)), into the same rows as
   // _portReaction's. Its derivatives: ∂rate/∂ln P and ∂ln Q onto each activity's ln, ∂rate/∂a onto each η
   // (∂a/∂η = −ν) and the port's voltage.
-  _portMhc(port, rx, g, b, s, w, aV, daV, q, rates, flux, k) {
+  _portMhc(port, rx, g, b, s, w, aV, aVLo, daV, q, rates, flux, k) {
     const { n, M, u, uLo, c, res, VT, nSurf, th } = this, R = this.rix, F = FARADAY, d = this.dA, surf = port.surface;
     const B = this.termB[k], C = this.termC[k];
     const slot = (p) => (p.side === 2 ? 1 + n + p.s : 1 + p.i);
-    let aHi = aV, aLo = 0, lnP = 0, lnQ = 0;
+    let lnP = 0, lnQ = 0;
+    AFF[0] = aV;
+    AFF[1] = aVLo;
     for (const p of rx.part) {
       if (p.side === 1) continue;
       const o = b * M + slot(p), l = Math.log(p.side === 2 ? th[g * nSurf + p.s] : c[g * n + p.i] / this.cRef[g * n + p.i]);
-      aHi -= p.nu * u[o];
-      aLo -= p.nu * uLo[o];
+      addTerm(AFF, -p.nu, u[o], uLo[o]);
       if (p.nu < 0) lnP -= p.nu * l;
       else lnQ += p.nu * l;
     }
     const l0 = Math.log(this._bare(port, g));
-    const { rate, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, aHi + aLo);
+    const { rate, ra, rp, rq } = mhcRate(rx.mhc, rx.k0, lnP + rx.m * l0, lnQ + (rx.m - rx.fills) * l0, AFF[0] + AFF[1]);
     rates[w] = rate;
     // ∂ ln θ_s/∂η_x = δ_sx − θ_x; ∂ ln θ₀/∂η_x = −θ_x
     for (const p of rx.part) {
@@ -971,13 +989,18 @@ export class BoundaryTerms {
       for (let q = 1; q < surf.length; q++) if (th[g * nSurf + q] > th[g * nSurf + top]) top = q;
       for (let q = 0; q < surf.length; q++) {
         const tq = th[g * nSurf + q];
-        let change = tq - thOld[g * nSurf + q];
+        let change = tq - thOld[g * nSurf + q], rest = 1 - tq; // rest: 1 − θ_q, the diagonal's factor
         if (q === top && tq > 0.5) {
           change = -(this.th0[g] - this.th0Old[g]);
           for (let x = 0; x < surf.length; x++) if (x !== q) change -= th[g * nSurf + x] - thOld[g * nSurf + x];
+          // and its diagonal's 1 − θ_q from the small ones too, θ₀ + Σ_others θ: at a bare fraction
+          // of 4e-19, 1 − θ_q was 0 or an ulp of noise, and a transient stalled at 7e-9 s with its
+          // steps shortened to 1e-19 s (round 4, B13)
+          rest = this.th0[g];
+          for (let x = 0; x < surf.length; x++) if (x !== q) rest += th[g * nSurf + x];
         }
         res[R[b * M + 1 + n + q]] += (G * change) / dt;
-        for (let x = 0; x < surf.length; x++) this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * ((q === x ? 1 : 0) - th[g * nSurf + x]));
+        for (let x = 0; x < surf.length; x++) this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * (q === x ? rest : -th[g * nSurf + x]));
       }
     }
   }
@@ -1048,8 +1071,10 @@ export class BoundaryTerms {
         B[R[o]] += (-Ac * link.G) / (z[i] * F);
       } else if (link.type === 'velocity') {
         // N_in = v c (e^(η_out − η) − 1): v (c_eq − c), c_eq in equilibrium with the outside.
-        const ci = c[g * n + i], E = Math.exp(Math.min(this.contactEta(side, i) - u[o] - uLo[o], 700));
-        const N = Ac * link.v * ci * (E - 1), d = this.dA;
+        // (e^x − 1 as expm1: as E − 1 it lost its digits for a small drive, 4e-9 of N at x = 1e-8;
+        // round 4, B5)
+        const ci = c[g * n + i], x = Math.min(this.contactEta(side, i) - u[o] - uLo[o], 700), E = Math.exp(x);
+        const N = Ac * link.v * ci * Math.expm1(x), d = this.dA;
         res[R[o]] -= N;
         d.fill(0);
         this._dlnc(g, i, 1, d);
