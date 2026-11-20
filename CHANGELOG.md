@@ -48,6 +48,24 @@ major version.
   already did. (Found by `bench/combos`'s semiconductor family.)
 - `alloy()` with a `bow` no longer writes a grade that `new Device` refuses (`grade.e-.mu0.x … strictly
   increasing`) when a fraction knot sits within round-off of the layer's end.
+- A steady solve no longer converges where a species fed only through rates (a port's channels, a
+  contact's conductance) is out of balance: a myelinated axon's Na⁺ had converged cold at +0.42 V and
+  2e10 mol/m³, sealed in by shut h gates, 35 thermal units from where its channels balance (every row
+  solved to 1e-23 of its largest term; Kirchhoff off by 6e-8 of K⁺'s current). Newton refuses such a
+  state, saying how far off it is, and the solve goes on to the axon's rest, −8.2 mV.
+- The cold start balances φ̂ against an electrode on the right in any region where nothing on the left
+  has set it, moving the regions before it with it: behind a bath or a blocking metal, whether a solve
+  converged had depended on the gauge (two solutions in a row behind a bath failed once every voltage
+  was moved by 2 V). And a floating porous electrode no longer sets its solution's φ̂ from its own unset
+  0 V where another electrode has set it (a Fe³⁺/Fe²⁺ port at I = 0 beside zinc failed from a start
+  1.55 V off).
+- A floating electrode's double layer is left out of a conservation law its terminal passes none of:
+  the total iron, in such a port's circuit row, had carried its charge at weight NaN, and every steady
+  solve failed from rest.
+- Behind a series resistance, the steady solve's held stage starts from the layout at the held
+  voltage: a closed Cu | Zn cell with Stern layers at its open circuit behind 1e-6 to 1e-2 Ω·m² had
+  failed, where the same cell without R solved. (These four from `bench/combos`'s membrane and
+  electrochemistry families: cold solves of 600 electrochemical devices went from 585 to 599.)
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis
