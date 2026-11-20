@@ -5,6 +5,26 @@ major version.
 
 ## Unreleased
 
+- The kit's builders, from Astra's fifth pass: `half()` refuses a fixed μ for `e-`, and `bath()` a
+  reference electrode carrying one (summed into the offset, it moved the terminal 1 V, silently);
+  `bath(c, undefined, drive, opts)` keeps its options (its `material` was dropped: an end concentration
+  of 10 where 0.485 was right); `layer()` and `alloy()` given another layer as options take their own
+  material and length; two `build()`s from one library no longer share material objects; a material
+  given twice must agree in every defined key (one copy's Fermi–Dirac statistics could be dropped,
+  depending on order); `trap()` refuses a second trap of the same name in a material (their states
+  merged, holes 10% high); `hodgkinHuxley` refuses a leak carried by K⁺ or Na⁺, which replaced the gated
+  channel; `build()` refuses a bulk rate keyed only to an alloy's `to` material, which never reached the
+  layer, even at fraction 1.
+- `trap().c0For` keeps the minority fraction at any doping (at 1e18 cm⁻³ it was 0, and refused); an
+  alloy end without its own cRef grades from the species' (it was NaN); `ramp()` and `pulse()` refuse an
+  edge below the clock's resolution at its start; `step()` warns when a drive's breakpoint lies inside
+  it (a whole pulse inside one step was lost, unwarned; `advance()` lands on them); `injector()` takes
+  `area`, for devices with a geometry (its port sat at 1000 V where 0.1 was meant); photogeneration's
+  guard outside its span is at most 1e-10 of an absorption length.
+- Docs: the injector's uniformity, photogeneration in non-planar devices, a trap's n₁ under
+  Fermi–Dirac, `metal()` at 293 K, the time-of-flight recipe's middle, equilibrium constants with
+  25 °C μ° at another T (the warning reworded: K is e^(−ΔG°₂₉₈/RT) at the device's T), recombination()'s
+  τ = 1/(kf(n₀+p₀)), D from λ° per mole or per equivalent, and the 1989 erratum to the nitrate value.
 - `live()`: a ramp after a failed warm solve keeps a kit contact whole and ends on the target itself:
   a series R removed from the contact survived it (1.7e-8 V at a contact set to 0.01, reported as a
   success, and kept as the last good state), and a value ramped to 1e-18 landed at 0. `set()` copies its
