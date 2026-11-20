@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, units } from '../src/index.js';
-import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor } from '../src/kit.js';
+import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor, trap } from '../src/kit.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
 
 // The Newton system against finite differences of its own residual: every row the solver writes
@@ -274,6 +274,20 @@ const blockingSalt = (face) => build({
   stack: [ohmic(0.1, ['e-']), layer('Au', 1e-6), face, layer('water', 10e-6, { c0: { 'K+': 1000, 'Cl-': 1000 } }), bath({ 'K+': 1000, 'Cl-': 1000 }, 'Cl-')],
   grid: { hmin: 1e-8, hmax: 1e-6 },
 });
+const litTrap = (neutral) => {
+  const si = semiconductor('Si');
+  if (neutral) si.materials.Si.epsr = 0;
+  const t = trap(si, { density: units.perCm3(neutral ? 1e17 : 1e15), tauN: 1e-7, tauP: 1e-7, charge: neutral ? 'acceptor' : 'donor' });
+  if (neutral) t.library.species = [0, 1, 3, 2].map((k) => t.library.species[k]);
+  const doping = neutral ? { donors: units.perCm3(1e16) } : {};
+  return build({
+    T: 300,
+    library: [t.library],
+    stack: [ohmic(0.1), layer('Si', 2e-6, { ...doping, c0: t.c0For(doping) }), ohmic(0)],
+    bulkReactions: [...t.bulkReactions, { equation: 'photon = e- + h+', fixed: { photon: units.eV(2) }, kf: { Si: 1e3 } }],
+    grid: { hmin: 5e-9, hmax: 1e-7, ratio: 1.2 },
+  });
+};
 const devices = {
   // An immobile species adsorbing on a floating electrode: a node-by-node law with a surface, a
   // circuit-row law (and the same with crowding, its ∂c through the statistics).
@@ -463,6 +477,11 @@ const devices = {
   // K⁺ and Cl⁻ tie to the last digit, so a time step's charge rows pivot on one of a tie.
   'a neutral 1:1 salt at a blocking face': () => blockingSalt({ species: {} }),
   'a neutral 1:1 salt at a capacitive blocking face': () => blockingSalt({ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }),
+  // A trap's two states in a lit Si bar, whose total a time step keeps by its change in place of a
+  // balance (src/lawRows.js, localStepRows); strictly neutral, an acceptor trap listed X⁻ first and
+  // filled by donors, where X⁻'s row is the charge rows' pivot and X⁰'s takes the total.
+  'a trap in a lit Si bar': () => litTrap(false),
+  'a trap in a lit, strictly neutral bar, its row the charge rows\' pivot': () => litTrap(true),
 };
 
 for (const [name, def] of Object.entries(devices)) {

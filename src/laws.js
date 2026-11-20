@@ -67,6 +67,8 @@
 //                  surfaces; and of any still stretch, at the nodes where nothing couples it (no
 //                  bulk reaction whose kfNode there is > 0, face reaction, port acting there,
 //                  portNodes, or open contact). One law can have several entries, a row per set of nodes.
+//                  (Time steps keep those of two or more species by their change in the same
+//                  rows: src/lawRows.js, localStepRows.)
 //   islands[]      { stretch, row, flux, weight, outside, speed, bulk, piece?, node?, currents?,
 //                  z? }: a piece
 //                  of a stretch between faces fed by nothing else, or only by its faces' and its
