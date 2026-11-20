@@ -23,7 +23,7 @@ import { newton as newtonFn } from './newton.js';
 import { RegionTerms } from './regions.js';
 import { SteadySolves } from './steady.js';
 import { SmallSignal } from './impedance.js';
-import { advance as advanceFn, integrate as integrateFn, step as stepFn, violentStart } from './timeSteps.js';
+import { advance as advanceFn, integrate as integrateFn, integrateArgs as integrateArgsFn, step as stepFn, violentStart } from './timeSteps.js';
 import { initFromComposition as initFromCompositionFn } from './start.js';
 
 // The Solver's state between calls: every field a later call reads that an earlier call wrote,
@@ -965,6 +965,12 @@ export class Solver {
     return integrateFn(this, tEnd, opts);
   }
 
+  // What integrate refuses of its arguments alone, for Device.advance to ask before anything is
+  // solved (src/timeSteps.js).
+  integrateArgs(tEnd, opts = {}) {
+    integrateArgsFn(this, tEnd, opts);
+  }
+
   // Probes for a transient's trace: { x, species, quantity: 'c' | 'V', region } read after every
   // accepted step, linearly between the two nodes of x's region around it. At an interface x
   // belongs to both regions, so `region` (a name or index) picks the side; it defaults to the
@@ -1207,7 +1213,11 @@ export class Solver {
     // metal is round-off.
     const driven = new Map();
     for (const cs of this.constraints) {
-      if (cs.circuit < 0 || this.terms[cs.circuit].drive.kind !== 'I' || cs.parts.length !== 1 || cs.surface.length || cs.carriers.length) continue;
+      // (Nor where a contact's charge is in the combination, as circuitLaws: the current is the
+      // stretch's change and the plate's together. Posted whole as the stretch's, a capacitive
+      // contact passing K⁺ at 1 A/m² showed 1.04e-7 mol/m² taken in where 4.9e-9 was, and check()
+      // failed a good run; round 7's S4.)
+      if (cs.circuit < 0 || this.terms[cs.circuit].drive.kind !== 'I' || cs.parts.length !== 1 || cs.surface.length || cs.carriers.length || cs.contacts?.length > 0) continue;
       // (Not where another of its terminals passes a current too, as circuitLaws: the intake is
       // theirs together. Read as the one's alone, a contact and a port driven at ±1 A/m² into one
       // stretch showed a leak of I·dt/F a step, and check() failed it; Sol's third review.)
