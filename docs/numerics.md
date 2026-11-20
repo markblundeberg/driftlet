@@ -920,7 +920,15 @@ the terms that cancel:
   that leaves it with one sign of affinity wherever it acts, though nothing else changes what
   it does, can't be a steady state: its rate is merely too small to see. The solution warns of
   it, rather than pass the start's composition off as steady (a slow complexation had kept its
-  starting composition, K = 0.1 for 7.5, without a word).
+  starting composition, K = 0.1 for 7.5, without a word). Where no reservoir reaches (no
+  contact, port, flow, or reaction with a fixed participant), a steady state is equilibrium: its
+  dissipation, $`\sum J \cdot (-\nabla \eta) + \sum r a`$, sums to zero there and each term is
+  non-negative. So the solution warns of any reaction there out of equilibrium, which catches
+  what the one-reaction test can't: a cycle U ⇌ V ⇌ W ⇌ U, whose reactions each change nothing
+  the other two don't, and one closed pool off equilibrium beside another at it. Likewise of a
+  face's permeability or conductance with its two levels apart in a stretch that nothing makes
+  or uses (it passes nothing in a steady state), of contacts' rate links whose summed rates
+  don't balance, and of a gate behind a resistance away from its source.
 - **An island's balance.** A piece of a stretch between its faces that nothing else feeds (no
   contact, port or reaction) holds its level only through its faces' fluxes, which can be far
   weaker than its own conduction: a face conductance of 1e-15 S/m² against a region conducting

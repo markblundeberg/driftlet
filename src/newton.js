@@ -755,11 +755,24 @@ function kirchhoff(s) {
 // state (the residual and Jacobian are reassembled there by the caller).
 function rateHeld(s) {
   const { model, M } = s, { contacts, ports } = model;
+  // A contact's intake by its link's own law (src/boundaries.js), not its end box's other terms:
+  // those are the transport's residual, which balances the law only to the rows' tolerance. Two
+  // exchange contacts at k = 1e-40, reservoirs at 0.5 and 8, read equal through-fluxes at any
+  // uniform level and passed starts of 1 and 3 alike, where their laws balance at 2 (Astra's
+  // re-read of the steady solve, round 8).
+  const contactIntake = (side, i) => {
+    const link = contacts[side].species[i], g = side === 'left' ? 0 : s.nNodes - 1, A = model.grid.area[g], o = s.blockOfNode[g] * M + 1 + i;
+    const eta = s.u[o] + s.uLo[o];
+    if (link.type === 'exchange') return A * link.k * (link.mu / model.RT - eta);
+    if (link.type === 'conductance') return (A * link.G * (s.termV[side === 'left' ? 0 : 1] + link.offset - (s.VT * eta) / s.z[i])) / (s.z[i] * FARADAY);
+    if (link.type === 'velocity') return A * link.v * s.c[g * s.n + i] * Math.expm1(Math.min(s.contactEta(side, i) - eta, 700));
+    return side === 'left' ? s.contactFlux.left[i] : -s.contactFlux.right[i];
+  };
   const intake = (st) => {
     const i = st.species;
     let q = 0;
-    if (st.leftOpen) q += s.contactFlux.left[i];
-    if (st.rightOpen) q -= s.contactFlux.right[i];
+    if (st.leftOpen) q += contactIntake('left', i);
+    if (st.rightOpen) q += contactIntake('right', i);
     for (const p of st.ports) q += s.portFlux[p][i];
     return q;
   };
