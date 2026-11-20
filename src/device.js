@@ -531,7 +531,9 @@ export function normalizeDevice(def) {
     if (reads.length === 0) return;
     warnings.push(
       `materials.${m.name}: its μ° are for ${m.mu0T} K, but the device is at ${T} K, and ${reads.slice(0, 3).join(', ')}${reads.length > 3 ? ` and ${reads.length - 3} more` : ''} read them: ` +
-        `equilibrium constants and electrode potentials there are ${m.mu0T} K's (Kw's by ~5× between 6 and 25 °C, an E° by its temperature coefficient, often tenths of a mV per kelvin). ` +
+        // (not "the constants are 298.15 K's": K = e^(−ΔG°/RT) is that ΔG° read at the device's T,
+        // Kw at 37 °C 3.5e-14, neither 25 °C's 1.01e-14 nor 37 °C's own; Astra's fifth pass)
+        `an equilibrium constant there is e^(−ΔG°/RT) with ${m.mu0T} K's ΔG° at ${T} K (as if ΔS° were 0), neither ${m.mu0T} K's constant nor ${T} K's (Kw's own moves ~5× between 6 and 25 °C), and an electrode potential is off by its temperature coefficient, often tenths of a mV per kelvin. ` +
         `Give the material μ° for ${T} K and mu0T: ${T}, or leave them where that doesn't matter`,
     );
   });

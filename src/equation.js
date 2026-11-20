@@ -153,6 +153,9 @@ export function half(equation, fixed) {
   for (const [name, mu] of Object.entries(fixed ?? {})) {
     if (!terms.some((t) => t.name === name)) fail(`half: fixed.${name} isn't in ${JSON.stringify(equation)}`);
     if (!Number.isFinite(mu)) fail(`half: fixed.${name} must be a finite μ (J/mol)`);
+    // (as a face reaction says: accepted here, bath() summed it into its offset and moved the
+    // terminal 1 V, while level() skipped it; Astra's fifth pass)
+    if (name === 'e-') fail("half: fixed.e-: 'e-' is a species of the device, whose level is its own, so a μ for it here would be ignored; fixed is for participants that aren't species (a solid, the solvent, a gas at a set pressure)");
   }
   return fixed === undefined ? { equation } : { equation, fixed: { ...fixed } };
 }
