@@ -96,6 +96,7 @@
 import { ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { EPS0, FARADAY } from './constants.js';
 import { SolverError } from './errors.js';
+import { put } from './merge.js';
 
 // Solve the K×K complex system (Ar + i Ai) x = (last column), partial pivoting by modulus.
 function complexSolve(Ar, Ai, K) {
@@ -819,8 +820,8 @@ export class SmallSignal {
     const pair = () => ({ re: new Float64Array(nN), im: new Float64Array(nN) });
     const phi = pair(), mu = {}, c = {};
     for (const sp of model.species) {
-      mu[sp.name] = pair();
-      c[sp.name] = pair();
+      put(mu, sp.name, pair()); // (own keys: assigned, '__proto__' was missing from the map; Sol's fourth pass)
+      put(c, sp.name, pair());
     }
     for (let g = 0; g < nN; g++) {
       const b = this.blockOfNode[g];

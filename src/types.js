@@ -295,7 +295,8 @@
  * @property {Record<string, Float64Array>} D diffusivity at each node, m²/s (NaN where absent, or in a conductor)
  * @property {number} T temperature, K
  * @property {'planar' | 'cylindrical' | 'spherical' | 'profile'} geometry the device's (amounts and rates per area only if planar)
- * @property {number} current current toward +x through the device, A/m²
+ * @property {number} current the right contact's current toward +x, A/m²: the device's where no port
+ *   passes one (with ports, read terminals)
  * @property {number} terminalVoltage V_right − V_left, V
  * @property {Record<string, { V: number, current: number }>} terminals each terminal (left, right,
  *   then the ports by name): its voltage, and its current into the device (A/m²)
@@ -320,9 +321,10 @@
  *   difference is N; with gates, each one's fraction open and the voltage they follow, φ_right − φ_left (V; between the diffuse layers' planes, where it has them);
  *   with a diffuse layer, each side's
  * @property {{ rate: Float64Array, forward: Float64Array, nu: Record<string, number>, regions: number[], total: number }[]} bulkReactions
- *   each bulk reaction's net rate per node (mol/(m³·s), forward minus backward, NaN where it doesn't
- *   run), its one-way forward rate (the backward is forward − rate), what one forward reaction makes
- *   of each species (ν, negative for what it consumes), and the net rate per region and in all (mol/(m²·s))
+ *   each bulk reaction's net rate per node (mol/(m³·s), forward minus backward, NaN at the nodes of a
+ *   material it doesn't run in, 0 where a kf profile is 0), its one-way forward rate (the backward is
+ *   forward − rate), what one forward reaction makes of each species (ν, negative for what it
+ *   consumes), and the net rate per region and in all (mol/(m²·s), or mol/s through a cross-section)
  * @property {number} charge total charge in the device, C/m²
  * @property {{ species: string, regions: number[], spectator: boolean, connected: boolean, reactive: boolean,
  *   amount: number, reference: number, intake: number, drift: number }[]} conservation

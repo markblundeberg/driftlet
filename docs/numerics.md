@@ -1132,7 +1132,9 @@ tests or stress cases the others pass).
   practice; but over steps of 1e10 s, the residual times $`dt`$ adds up, which is why a terminal
   at no current reads its current there by what it keeps ([terminals](#terminals)).
 - **Reported.** Every solution's `conservation` lists each species stretch: its amount, its
-  reference, the time-integrated flux through its contacts, and the resulting drift.
+  reference, what came in through its contacts and ports (integrated as the steps integrate the
+  balances: under BDF2, by its quadrature, not a rectangle rule of the fluxes), and the resulting
+  drift.
 
 ## Strictly neutral materials and unresolved double layers
 
@@ -1173,7 +1175,10 @@ holds the new state neutral. An end node that its contact holds (a bath, an elec
 keeps its plain rows, but the contact's current there is read before the ions' storage goes in,
 and a bulk law doesn't count the box's net charge as displacement: under neutrality neither
 carries charge, and read from the box's balance their round-off (∝ c/dt) cancelled only roughly.
-A bath floating on 1 µM beside 3 M KCl had rattled at 2e-5 thermal units on steps of 1e-14 s. Steady solves and the impedance keep the plain rows (there's no
+A bath floating on 1 µM beside 3 M KCl had rattled at 2e-5 thermal units on steps of 1e-14 s.
+Not where a capacitive port's window reaches the end node under a `'neutral'` law: the port's
+charge is in the box's neutrality there, so the ions' storage is its charging, which the contact
+passes, and the current is read with it. Steady solves and the impedance keep the plain rows (there's no
 storage at $`dt = \infty`$, and the impedance reads the storage matrix from them).
 
 A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when $`\lambda_D \ll h`$, is on
