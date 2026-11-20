@@ -31,6 +31,7 @@
     "bench": "node bench/bench.js",
     "hard": "node bench/hard.js",
     "stress": "node bench/stress.js",
+    "combos": "node bench/combos/run.js",
     "smoke": "node tools/smoke.js",
     "shots": "node tools/shots.js",
     "figures": "node tools/figures.js",

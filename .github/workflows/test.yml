@@ -40,3 +40,14 @@ jobs:
         with:
           node-version: 24
       - run: npm run stress -- --check
+
+  combos:
+    # Features meeting features (bench/combos): a few cases of every family through every
+    # two-route property; all pass, so any failure is new.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm run combos -- --n 8

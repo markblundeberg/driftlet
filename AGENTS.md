@@ -27,7 +27,8 @@ fork of driftlet for its own use.
   `npm test`, and `npm run smoke` if you touched a demo or anything one imports. CI also runs
   `npm run bench -- --check` (its deterministic counters, matrix factorisations and the like,
   against bench/baseline.json), `npm run types` with a strict check of the declarations, and
-  `npm run stress -- --check`. A CDN pin in the README and llms.txt follows `version` in
+  `npm run stress -- --check`, and `npm run combos -- --n 8` (bench/combos: random devices whose
+  features combine, through properties that compare two routes to one answer). A CDN pin in the README and llms.txt follows `version` in
   package.json, and a test checks it: leave both to the release.
 - **Background:** driftlet spins off the owner's ESBD web book (https://marklundeberg.com/esbd/,
   "electrochemical species band diagrams"), whose central idea is the species voltage `V_i =

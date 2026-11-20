@@ -2,6 +2,7 @@
 // every case of every family in families/ (or the ones named):
 //
 //   node bench/combos/run.js [family ...] [--n 20] [--only prop,prop] [--case k] [--verbose]
+//   npm run combos -- --n 8      (as CI runs it: exits 1 on any failure)
 //
 //   order      key order and the order of lists that mean nothing (species, reactions, ports)
 //              change no answer
@@ -453,3 +454,4 @@ const width = Math.max(...Object.keys(tally).map((s) => s.length));
 for (const [key, v] of Object.entries(tally)) console.log(`${key.padEnd(width)}  ok ${String(v.ok).padStart(3)}  skip ${String(v.skip).padStart(3)}  fail ${String(v.fail).padStart(3)}`);
 console.log(`${((performance.now() - t0) / 1000).toFixed(1)} s`);
 if (failures.length) console.log(`\nFailures:\n  ${failures.join('\n  ')}`);
+process.exitCode = failures.length ? 1 : 0; // (CI runs a few cases of every family: any failure is new)
