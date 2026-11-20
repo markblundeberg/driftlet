@@ -5,6 +5,20 @@ major version.
 
 ## Unreleased
 
+- An OCV table gives its own filling near a knot that falls between the construction grid's points
+  (it was up to 10.5% off, 2.6 mV on a device, converged and unwarned); a table whose interpolated
+  curve turns back between two close knots is refused; an anion host's table (z < 0) takes E rising
+  with x, which was refused. (OpenAI's GPT-6.2 Sol, a fifth pass, over the statistics models.)
+- Debye–Hückel warns when its model leaves out a charged species of its material: its ionic strength
+  counts only the model's own ions (a NaCl + KNO₃ mixture declared as two groups was 7.7 mV off one
+  group's, silently). The docs say to list every ion in one model.
+- The cold start balances a reacting port in a graded region with the material where the port is (it
+  started up to 0.6 RT off, with a made-up current in the first transient); `set()` carries a lattice,
+  Redlich–Kister or insertion filling that rounds to full, which it refused; a lattice's ∂c/∂ζ keeps
+  the vacancy's share for a saturated species.
+- Docs: when eddy mixing is −D_mix∇c (uniform μ° and cRef, every species mobile), the insertion host's
+  chemical diffusivity (D/3 for ν = 2, not D/2) and its capacitance's factor |z|, the exceptions to the
+  dilute limit, ln(c/cRef), and port bath levels under non-ideal statistics.
 - Two more one-file starters beside the pn junction's, each a running page with its whole source to
   copy and a check stated and tested: [the electric double layer at an
   electrode](https://marklundeberg.com/driftlet/demos/double-layer-starter.html) (its charge against
