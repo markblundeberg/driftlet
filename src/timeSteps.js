@@ -46,8 +46,8 @@
 //   a steady solve each terminal's charge steps by its current as a stored charge does, P = P* +
 //   I·dt/a0 (P* from P as c* from c; backward Euler P_n + I·dt), so that a trace's charge is a
 //   stored charge's change exactly and Kirchhoff's sum holds in it as in the currents. Failed:
-//   all as before the step (u, uLo, termV, the start-of-step values, atSteady, the sources'
-//   time, the concentrations).
+//   all as before the step, by s._restore() of a snapshot taken on entry (the whole of STATE,
+//   and the concentrations from it), as every other rollback.
 //
 // advance(s, dt, opts, depth) → { converged, iterations, history, substeps }
 //   step(dt); failing, two halves (each by advance), to a depth of 30.
@@ -57,8 +57,11 @@
 //   s.time, does nothing and says why where it's likely a mistake). opts: tol (1e-3: the local
 //   error allowed per step, in thermal units, as errorNorm measures it), dtMax, budgetMs (wall
 //   time: stops early, done false, converged true), maxSteps, method ('bdf2' | 'be'), dt0,
-//   probes. The step size starts from dt0 where given, else s.dtNext (the last call's), else
-//   1e-4 of the interval, and is carried to the next call.
+//   probes. What the arguments alone refuse (tEnd ±∞ or not a number, tol, dtMax, maxSteps, a
+//   method not 'bdf2' or 'be', a probe) is refused by integrateArgs(s, tEnd, opts), which the
+//   API asks before anything is solved. The step size starts from dt0 where given, else
+//   s.dtNext (the last call's), else 1e-4 of the interval, and is carried to the next call by a
+//   call that attempts a step (one that attempts none leaves it, and the history, as they were).
 //   - The first step (no history): backward Euler, its error the difference from two half
 //     steps, whose result is kept (and the first half step's point is in the trace).
 //   - Later: step with Newton started from an extrapolation through the history; BDF2 once two
@@ -87,7 +90,8 @@
 //      tEnd, and never passes either.
 //   3. BDF2's coefficients are those of variable-step BDF2 with ratio ω (exact for quadratics
 //      in t), applied to every stored quantity alike (c, coverages, gates, contacts' D, ports'
-//      charges), and only with ω ≤ 2 and a history entry of the previous step.
+//      charges), and only with ω ≤ 2 and a history entry of the previous step; but for the
+//      gates' target, held to [0, 1], so that a gate's fraction stays there (docs/device.md).
 //   4. The error estimate is Milne's device as if the predictor's past states were exact: for
 //      BDF2, |u − pred|·Cc/(Cc + Cp) (Cc, Cp the corrector's and predictor's error constants at
 //      these step sizes); for backward Euler, h/(2h + h_prev). Through the integrator's own
@@ -149,15 +153,17 @@ export function advance(s, dt, opts, depth = 0) {
  * the start-of-step values, and dt/a0 replaces dt.
  */
 export function step(s, dt, opts = {}) {
+  // A failed step puts back the whole state from before it (STATE in src/solver.js), by the one
+  // way every rollback takes. (By a hand-written list: a failed cold one left the projection, and
+  // coldStart cleared, behind, Sol's third review; the list then missed what newton's islands'
+  // round writes, and a failed step() from a warned floating base lost its "doesn't balance"
+  // warning, and the sources' time, rebuilt from the clock after a snap past an edge, read a
+  // blocking plate's 0.01 C/m² that never passed; round 7's S15. And the start-of-step values:
+  // the Solution read after it takes its contacts' fluxes against them, a host emptied by its
+  // current read its contact's Li⁺ flux 8× off at the same state.)
+  const snap = s._snapshot();
   // A transient's first step from a cold start begins at its t = 0⁺ (see equilibrateFaces).
-  // (A failed step puts back the state from before it: a failed cold one left the projection,
-  // and coldStart cleared, behind; Sol's third review.)
-  const cold = s.coldStart && !s.steady ? { u: Float64Array.from(s.u), uLo: Float64Array.from(s.uLo), termV: Float64Array.from(s.termV), contactDEnd: s.contactDEnd, portQEnd: s.portQEnd, unbalanced: s.unbalanced } : null;
-  if (cold) equilibrateFaces(s);
-  // What the step overwrites before Newton runs, for a failed one to put back: the Solution read
-  // after it takes its contacts' fluxes against the start-of-step values (a host emptied by its
-  // current read its contact's Li⁺ flux 8× off at the same state).
-  const was = { cOld: Float64Array.from(s.cOld), thOld: Float64Array.from(s.thOld), th0Old: Float64Array.from(s.th0Old), gamOld: Float64Array.from(s.gamOld), gateOld: Float64Array.from(s.gateOld), contactDStart: s.contactDStart, portQStart: s.portQStart, atSteady: s.atSteady };
+  if (s.coldStart && !s.steady) equilibrateFaces(s);
   s.atSteady = false;
   const prev = s.history[0];
   const w = prev ? dt / prev.dt : 0;
@@ -188,7 +194,12 @@ export function step(s, dt, opts = {}) {
     for (let k = 0; k < thN.length; k++) s.thOld[k] = thN[k] + b2 * (thN[k] - prev.th[k]);
     for (let k = 0; k < th0N.length; k++) s.th0Old[k] = th0N[k] + b2 * (th0N[k] - prev.th0[k]);
     for (let k = 0; k < gamN.length; k++) s.gamOld[k] = gamN[k] + b2 * (gamN[k] - prev.gam[k]);
-    for (let k = 0; k < gN.length; k++) s.gateOld[k] = gN[k] + b2 * (gN[k] - prev.g[k]);
+    // A gate's target held to [0, 1], a fraction's range: then the step's x = (x* + h α)/(1 +
+    // h(α + β)), with α, β ≥ 0 and h = dt/a0, is in [0, 1] too. (Extrapolated past it, BDF2's
+    // x* overshoots a fast gate's swing where h(α + β) > 1/2, its roots complex: m went to
+    // −2.7e-2 on a clamp from +50 to −100 mV at 6.3 °C in steps of 0.1 ms, where the exact
+    // relaxation is at 7.7e-4; round 7's S6. Inside [0, 1], it's BDF2's own.)
+    for (let k = 0; k < gN.length; k++) s.gateOld[k] = Math.min(1, Math.max(0, gN[k] + b2 * (gN[k] - prev.g[k])));
     s.contactDStart = { left: DN.left + b2 * (DN.left - prev.D.left), right: DN.right + b2 * (DN.right - prev.D.right) };
     s.portQStart = QN.map((q, k) => q + b2 * (q - prev.Q[k]));
     dtEff = dt / a0;
@@ -276,28 +287,7 @@ export function step(s, dt, opts = {}) {
       s.termCharge = PN.map((q, k) => (bdf ? q + b2 * (q - prev.P[k]) : q) + dtEff * I[k]);
     }
   } else {
-    s.u.set(s.uPrev);
-    s.uLo.set(s.uPrevLo);
-    s.termV.set(s.termVPrev);
-    s.cOld.set(was.cOld);
-    s.thOld.set(was.thOld);
-    s.th0Old.set(was.th0Old);
-    s.gamOld.set(was.gamOld);
-    s.gateOld.set(was.gateOld);
-    s.contactDStart = was.contactDStart;
-    s.portQStart = was.portQStart;
-    s.atSteady = was.atSteady;
-    s.sourceTime = s.steady ? s.steadyAt : s.time;
-    if (cold) {
-      s.u.set(cold.u);
-      s.uLo.set(cold.uLo);
-      s.termV.set(cold.termV);
-      s.contactDEnd = cold.contactDEnd;
-      s.portQEnd = cold.portQEnd;
-      s.unbalanced = cold.unbalanced;
-      s.coldStart = true;
-    }
-    s.computeConcentrations();
+    s._restore(snap); // (and the concentrations from it)
   }
   s.sourceBefore = false;
   return result;
@@ -328,6 +318,38 @@ function setGuess(s, guess) {
   }
 }
 
+const absoluteOf = (s) => `tEnd is the time to reach in s, absolute (the device is at t = ${s.time}, which a solution gives as its time)`;
+
+/**
+ * What integrate refuses of its arguments alone, before anything is solved: Device.advance asks
+ * first, since settling a pending regrid is a steady solve (a refused call settled it, and left
+ * the device not as a twin that never made the call; round 7's S16). A NaN tEnd isn't refused:
+ * the call does nothing, and says so (see integrate).
+ */
+export function integrateArgs(s, tEnd, opts = {}) {
+  // tEnd is an absolute time. Not a number at all is an error; a NaN (a first animation frame's
+  // clock, or a time read from a field that doesn't exist) does nothing, and says so.
+  const absolute = absoluteOf(s);
+  if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
+  // (advance(Infinity) set the time to ∞, converged in no steps, and nothing ran after it)
+  if (tEnd === Infinity || tEnd === -Infinity) throw new SolverError(`advance(${tEnd}): ${absolute}. For the long-time limit, solve() the steady state`);
+  if (Number.isNaN(tEnd)) return;
+  const { tol = 1e-3, dtMax = Infinity, maxSteps = 100000, method } = opts;
+  // (a negative dtMax ran the clock backwards and converged; a NaN tol stepped by NaN; Sol's
+  // third review)
+  if (!(tol > 0 && tol < Infinity)) throw new SolverError(`advance(): tol is the local error allowed per step, in thermal units, a positive number; got ${tol}`);
+  if (!(dtMax > 0)) throw new SolverError(`advance(): dtMax is the longest step, in s, a positive number; got ${dtMax}`);
+  if (!(Number.isInteger(maxSteps) && maxSteps >= 0)) throw new SolverError(`advance(): maxSteps is a whole number ≥ 0; got ${maxSteps}`);
+  checkMethod('advance', method);
+  s._probes(opts.probes); // (its readers built again by the call)
+}
+
+// A time step's method: 'bdf2' or 'be'. (Any other ran backward Euler without a word, step(dt,
+// { method: 'rk4' }) among them; round 7's S16.)
+export function checkMethod(where, method) {
+  if (method !== undefined && method !== 'bdf2' && method !== 'be') throw new SolverError(`${where}(): method is 'bdf2' (variable-step BDF2) or 'be' (backward Euler); got ${typeof method === 'string' ? `'${method}'` : method}`);
+}
+
 /**
  * Adaptive time stepping to tEnd: variable-step BDF2 (or backward Euler), with the local error
  * estimated against an explicit predictor through the previous states, and controlled to
@@ -336,19 +358,10 @@ function setGuess(s, guess) {
  * animation can call it once per frame; the step size carries over between calls.
  */
 export function integrate(s, tEnd, opts = {}) {
-  // tEnd is an absolute time. Not a number at all is an error; a NaN (a first animation frame's
-  // clock, or a time read from a field that doesn't exist) does nothing, and says so.
-  const absolute = `tEnd is the time to reach in s, absolute (the device is at t = ${s.time}, which a solution gives as its time)`;
-  if (typeof tEnd !== 'number') throw new SolverError(`advance(tEnd): ${absolute}; got ${tEnd}`);
-  // (advance(Infinity) set the time to ∞, converged in no steps, and nothing ran after it)
-  if (tEnd === Infinity || tEnd === -Infinity) throw new SolverError(`advance(${tEnd}): ${absolute}. For the long-time limit, solve() the steady state`);
+  integrateArgs(s, tEnd, opts);
+  const absolute = absoluteOf(s);
   if (Number.isNaN(tEnd)) return { converged: true, done: false, steps: 0, rejected: 0, iterations: 0, trace: { t: [], current: [], charge: [], voltage: [], terminals: Object.fromEntries(s.terms.map((t) => [t.name, { V: [], current: [], charge: [] }])) }, stopped: `advance(NaN) did nothing: ${absolute}` };
   const { tol = 1e-3, dtMax = Infinity, budgetMs = Infinity, maxSteps = 100000, method = 'bdf2' } = opts;
-  // (a negative dtMax ran the clock backwards and converged; a NaN tol stepped by NaN; Sol's
-  // third review)
-  if (!(tol > 0 && tol < Infinity)) throw new SolverError(`advance(): tol is the local error allowed per step, in thermal units, a positive number; got ${tol}`);
-  if (!(dtMax > 0)) throw new SolverError(`advance(): dtMax is the longest step, in s, a positive number; got ${dtMax}`);
-  if (!(Number.isInteger(maxSteps) && maxSteps >= 0)) throw new SolverError(`advance(): maxSteps is a whole number ≥ 0; got ${maxSteps}`);
   const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
   const start = clock();
   const sample = s._probes(opts.probes);
@@ -379,7 +392,10 @@ export function integrate(s, tEnd, opts = {}) {
   // nextBreakpoint() counts it as passed: restart the order, as landing on it would have. BDF2's
   // history across a current pulse's edge lost 1/12 of the step's charge, for good (Fable round
   // 2's hunter: 8.33% of a 1 ms pulse, silent, the plates' charge outside the error norm).
-  if (s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time))) s.history = [];
+  // (Restarted at the call's first attempt: a call that makes none, maxSteps 0 or a spent budget,
+  // leaves the history and the step size carried as they were; cleared here, and dtNext set from
+  // its own interval, a later advance(1e-3) took 51 steps where a twin took 32; round 7's S15.)
+  let restart = s.history.length > 0 && s.terms.some((t) => nearBreakpoint(t.drive.src, s.time));
   // An explicit dt0 is this call's first step, over the size carried from the last call (which
   // can't see a set() that has just made the first instants fast; Fable round 2's hunter).
   let dt = opts.dt0 ?? s.dtNext ?? (tEnd - s.time) * 1e-4;
@@ -423,6 +439,10 @@ export function integrate(s, tEnd, opts = {}) {
     s.landing = atBreak ? tb : clamped ? tEnd : undefined;
     // (the snapshot holds what a step sets of the steady solves' choices too: a rejected first
     // step left stepped set and solvedV cleared, a different continuation later; Fable round 4)
+    if (restart) {
+      s.history = [];
+      restart = false;
+    }
     const snap = s._snapshot();
     const back = () => s._restore(snap);
     let err, p, half = null;
@@ -527,7 +547,7 @@ export function integrate(s, tEnd, opts = {}) {
     pushTerminals(readTerminals());
     if (sample) sample.push(sample.read());
   }
-  s.dtNext = dt;
+  if (steps + rejected > 0) s.dtNext = dt;
   s.landing = undefined;
   // Stopped short, other than on the caller's wall-time budget: say where, and why.
   let stopped;

@@ -17,8 +17,11 @@ export function makeSolution(solver, result = {}) {
   // (A transient's state is as its last step saw the sources: from within the step, before any
   // jump at its end. Read after it, an advance() landing on a waveform's step read the plate at
   // the new voltage and 72214 A/m² where nothing had flowed; Astra's review. Continuous, the two
-  // are the same; and the solver is left reading them as it did, its held voltages too.)
-  const before = solver.sourceBefore;
+  // are the same; and the solver is left reading them as it did, its held voltages as they were
+  // before the read: re-read from the sources after it, on the far side of the edge, a rebuild
+  // that then released the terminal floated it from 0.1 V where the state was solved at 0, and
+  // read its terminal currents as 0 across a 1e6 S/m wire; round 7's S14.)
+  const before = solver.sourceBefore, termV = Float64Array.from(solver.termV);
   if (solver.stepped && solver.time > 0) solver.sourceBefore = true; // (stepped: the last call was a step, as set() carries it)
   // (After a set() of drives alone, the held terminals at the voltages the state was solved at:
   // see Device's _redefineDrives.)
@@ -30,7 +33,7 @@ export function makeSolution(solver, result = {}) {
   } finally {
     for (const k of read) solver.sourceOverride.delete(k);
     solver.sourceBefore = before;
-    solver._refreshSources();
+    solver.termV.set(termV);
   }
   const { sol, heldGap } = fields;
   sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
