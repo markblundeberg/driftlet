@@ -33,6 +33,12 @@
 //      in it at its activity where the electrode is (a c0 profile's at the region's end for a
 //      metal on its right, at the window's middle for a port; a non-ideal material's from its
 //      statistics) and each surface species at its starting coverage (a face's or the port's).
+//      A conductor on the right counts where the conductor on the left balances nothing: in the
+//      first region, or further in where nothing has set φ̂ yet (a pinned or capacitive left
+//      contact, a region's neutrality or capacitance, an electrode's balance), and then the
+//      regions before it that took the running φ̂ are moved with it (φ̂ and each η by z·Δ). A
+//      floating port's electrode counts only where nothing has set φ̂ (its V, found in step 9 or
+//      6, is not known yet).
 //      In a strictly neutral region, a held port's capacitance through its window counts in
 //      each node's neutrality there, ρ + aσ = 0 with σ = C (V − zeroCharge − V_T φ̂) as the
 //      solve has it (not at an end box whose φ its contact sets), so φ̂ there responds even
@@ -94,12 +100,16 @@
 // runs from the left, so behind a closed or floating left end the start sits away from a right
 // contact's level (55 RT for a bath referenced to Cl⁻), as does a c0 given for a contact-fed
 // carrier (φ̂ then from the left's own start); an insertion host's shift moves contact-held
-// levels in it too; a terminal behind a resistance starts at 0 V; and the φ̂ beside an electrode passes
+// levels in it too; a terminal behind a resistance starts level with its held neighbour (Solver's
+// constructor), which in an unlike cell is its open-circuit voltage away (a closed Cu | Zn cell's
+// zinc 1.13 V from rest: the steady solve's held stage lays the start out again at the source,
+// src/steady.js); and the φ̂ beside an electrode passes
 // over a reaction with a neutral level-held participant. Each the first step absorbs. Where
 // ε > 0, a held port's capacitance through its window is left out of the neutrality, so the
 // first step moves φ̂ to discharge it and the ions charge it again (a gated Li⁺ bar with εr = 1:
 // 0.28 C/m² cold, 0.0035 after 1 ps, back to 0.28 by diffusion; Astra's third pass).
-// Tests: every test (each device starts here); test/transient.test.js on what a start must be.
+// Tests: every test (each device starts here); test/transient.test.js on what a start must be;
+// test/round7-solve.test.js (φ̂ behind a bath or a blocking metal, a floating port's electrode).
 
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
@@ -130,6 +140,21 @@ export function initFromComposition(s) {
   // φ̂ runs from the left: from a pinned (or gated) left contact's φ at its zero charge, else 0.
   const leftPhi = model.contacts.left.phi;
   let phiHat = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive' ? (s.termV[0] - leftPhi.zeroCharge) / s.VT : 0;
+  // Whether anything has set φ̂ yet (a pinned or capacitive left contact, a region's neutrality,
+  // an electrode's balance), and the regions before that, which took the running φ̂: 0 behind a
+  // bath or an ohmic metal, whatever their voltages, a gauge of its own. Where an electrode on
+  // the right is the first thing to set it, those regions move with it (see below).
+  let phiSet = leftPhi.type === 'pinned' || leftPhi.type === 'capacitive';
+  const unset = [];
+  const shiftUnset = (d) => {
+    for (const q of unset) {
+      for (let g = grid.regionStart[q]; g <= grid.regionEnd[q]; g++) {
+        const b = s.blockOfNode[g];
+        u[b * M] += d;
+        for (let i = 0; i < n; i++) if (materials[regions[q].material].present[i]) u[b * M + 1 + i] += z[i] * d;
+      }
+    }
+  };
   // A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
   // so that aσ = capB − capA V_T φ̂. In a strictly neutral region it's part of each node's
   // neutrality, ρ + aσ = 0: without it, a region of P⁺ alone under a gate was refused for the
@@ -270,9 +295,10 @@ export function initFromComposition(s) {
     // φ̂ where the first of an electrode's reactions that can be balanced is at equilibrium: its
     // participants on this region's side (`inside`) at their amounts, the metal's at levelOf(p)
     // (NaN where it has none), its surface species at their starting coverages (a face's in
-    // rx.surf, a port's in part with side 2); or ph where none can be. (Written out for each
-    // kind of electrode before, a face's coverage fix made in one copy at a time; a code-smell
-    // review.)
+    // rx.surf, a port's in part with side 2); or ph where none can be (`hit` says which). (Written
+    // out for each kind of electrode before, a face's coverage fix made in one copy at a time; a
+    // code-smell review.)
+    let hit = false;
     const balanced = (reactions, surface, inside, levelOf, ph) => {
       const bare = 1 - surface.reduce((t, sp) => t + sp.theta0, 0);
       const lnSurf = (q) => surface[q].mu0 / model.RT + Math.log(surface[q].theta0 / bare);
@@ -287,7 +313,10 @@ export function initFromComposition(s) {
             slope += p.nu * z[p.i];
           } else slope = NaN;
         }
-        if (slope !== 0 && Number.isFinite(slope) && Number.isFinite(a)) return a / slope; // a − slope·φ̂ = 0
+        if (slope !== 0 && Number.isFinite(slope) && Number.isFinite(a)) {
+          hit = true;
+          return a / slope; // a − slope·φ̂ = 0
+        }
       }
       return ph;
     };
@@ -308,34 +337,53 @@ export function initFromComposition(s) {
       return out;
     };
     if (!mat.phiFree && !responds && !mat.ideal) materialAt(s, mat, reg.background, eta, mode, cFix, phiHat, zeta, cc);
+    hit = false;
     if (!mat.phiFree && !responds && r > 0 && materials[regions[r - 1].material].conductor) {
       // Nothing here fixes φ, but an electrode on the left does: start with its first reaction
       // that takes a species from this side at equilibrium (the electrode at its open-circuit
       // level), rather than φ carried over from the metal, which can be volts away.
       const bn = s.blockOfNode[grid.regionEnd[r - 1]];
       phiHat = balanced(interfaces[r - 1].reactions, interfaces[r - 1].surface ?? [], 1, (p) => u[bn * M + 1 + p.i], phiHat);
-    } else if (!mat.phiFree && !responds && r === 0 && r + 1 < regions.length && materials[regions[r + 1].material].conductor) {
+    }
+    if (!hit && !mat.phiFree && !responds && (r === 0 || !phiSet) && r + 1 < regions.length && materials[regions[r + 1].material].conductor) {
       if (graded) mat = gradedAt(base, reg, grid.x[grid.regionEnd[r]]); // (the electrode's face is this region's end)
       // Likewise an electrode on the right, its level its contact's, where nothing on the left
       // sets φ̂ (the stack written the other way round started at φ̂ = 0, volts from the
       // electrode's level, and failed; Argon's review). Further in, φ̂ carried over from the left
-      // is kept: a Daniell cell's KCl bridge balanced against its copper instead started with a
-      // jump at the junction, and a 1 µs step failed to settle.
+      // is kept where something there set it: a Daniell cell's KCl bridge balanced against its
+      // copper instead started with a jump at the junction, and a 1 µs step failed to settle.
+      // Where nothing did, the regions before take this one's φ̂ too (a gauge: φ̂ and each η by
+      // z·Δ, no concentration changes): behind a bath, two solutions in a row started at φ̂ = 0,
+      // 2 V from their copper's level when every voltage was moved by 2 V, and failed where one
+      // solution, or the mirror image, converged at any shift; and behind a blocking platinum,
+      // which balances nothing, a solution started 0.83 V from its zinc's level (the echem
+      // combos' cases 212 and 341, cut down).
       // (its carrier at its contact's level, the metal fed by the right contact)
       const fed = (p) => {
         const st = s.stretches[s.stretchOf[(r + 1) * n + p.i]];
         return st?.rightOpen && st.contactFed ? s.contactEta('right', p.i) : NaN;
       };
+      const was = phiHat;
       phiHat = balancedAt(grid.x[grid.regionEnd[r]], interfaces[r].reactions, interfaces[r].surface ?? [], 0, fed, phiHat);
+      if (hit && !phiSet) shiftUnset(phiHat - was);
     }
     const electrode = model.ports.find((port) => port.region === r && port.reactions.length > 0);
-    if (!mat.phiFree && !responds && electrode) {
+    // (A floating one's voltage is the start's to find, below, from this φ̂: where something has
+    // set φ̂ already, its V as it stands, 0 V, doesn't override it. It did, and a porous Fe³⁺/Fe²⁺
+    // electrode at I = 0 beside a zinc moved the solution's φ̂ from the zinc's 0.827 V to
+    // −0.725, the couple at 0 V, its mixed potential then found there: the solve, started 1.55 V
+    // from the zinc's level, failed, where the same port held at its couple's level converged;
+    // so with Ag/AgCl, a double layer and a Pt beside it, the echem combos' case 65.)
+    const floats = electrode && s.floating.includes(2 + model.ports.indexOf(electrode));
+    if (!mat.phiFree && !responds && electrode && !(floats && (hit || phiSet))) {
       // Nor here, but an electrode spread through it does: start with the port's first reaction
       // that can be balanced at equilibrium with the port's level (the electrode at open circuit),
       // at its window's middle.
       const mid = 0.5 * (grid.x[electrode.nodes[0]] + grid.x[electrode.nodes[electrode.nodes.length - 1]]);
       phiHat = balancedAt(mid, electrode.reactions, electrode.surface, 0, (p) => s.portEta(electrode, p.i), phiHat);
     }
+    if (hit || (!mat.phiFree && (responds || capped))) phiSet = true;
+    else if (!phiSet && !mat.phiFree) unset.push(r);
     const neutralPhi = (ph) => {
       let lo = ph - 1, hi = ph + 1;
       while (charge(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);

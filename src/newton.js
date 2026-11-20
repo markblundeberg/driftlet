@@ -37,6 +37,13 @@
 //      (s.sys.perturbedPivots) or dt = Infinity, a convergence stands only if the block system's
 //      residual (s.res; not the floating terminals' circuit rows nor the pins), reassembled and
 //      scaled at the new state, is under 1e-6 in every row; else the call fails, saying which.
+//      In a steady solve at dt = Infinity, after 8's decisions, each stretch held only by rates
+//      (connected, mobile, no reaction of it, not a metal's, no equilibrium link of it at an open
+//      contact or a port) must take in nothing on balance: its net intake through its open
+//      contacts and ports, over that intake's response to a uniform shift of its η (each open
+//      contact's link by its law's slope, the ports' measured by a shift of 1e-3), under 1e-6
+//      thermal units; else the call fails (unconverged, not through 8's restore), saying which
+//      and how far (rateHeld; s.newtonError), its readouts and concentrations at the state.
 //   7. Refining (refineSolve): on from an iteration with a perturbed pivot, or once Newton stalls
 //      (it ≥ 3, undamped, step > ¼ of the last and either under 1e-4 or grown twice running), or
 //      throughout a lost-mode device's time steps. GMRES on the exact J·v (the dilute terms in
@@ -72,7 +79,8 @@
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Converged: the last update met 6, and where 6 reassembles, every scaled residual row of the
-//      block system at the returned state is under 1e-6.
+//      block system at the returned state is under 1e-6; steady, every stretch held only by rates
+//      balances to 1e-6 thermal units.
 //   2. Only u, uLo and termV are moved: by step 5, by 8's restore, and in a steady solve by each
 //      assembly's snapFlat (src/lawRows.js); on return s.c and the coverages are those of the
 //      returned state (computed there, or by the assembly at it), but after a SolverError from
@@ -94,12 +102,14 @@
 // refused state…), for a failure nothing more specific explains (cleared with modelError; the
 // generic "nothing specific showed why" had dropped it; Astra's fourth pass).
 // Tests: every solve and step goes through here; test/newton.test.js (the islands round, the
-// residual check's failure) and the MOS gate step in test/ports.test.js (a lost mode, to 1e-6);
+// residual check's failure), test/round7-solve.test.js (a stretch held only by rates) and the MOS
+// gate step in test/ports.test.js (a lost mode, to 1e-6);
 // test/jacobian.test.js checks the system it solves. The devices that needed each branch are in
 // its comments.
 
 import { solveBordered } from './lawRows.js';
 import { SolverError } from './errors.js';
+import { FARADAY } from './constants.js';
 
 // GMRES(m), restarted, for a real system op(x) = b, op already preconditioned; x holds the
 // starting guess and receives the answer. Returns whether it converged.
@@ -492,6 +502,13 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
     if (probed()) return AGAIN;
     if (startIslandsRound(it, done)) return AGAIN;
     if (worse) return fail({ converged: false, iterations: it, history });
+    const loose = dt === Infinity && s.steady ? rateHeld(s) : null;
+    if (loose) {
+      s.assemble(dt);
+      noteConditioning(s);
+      s.newtonError = loose;
+      return { converged: false, iterations: it, history, error: loose };
+    }
     const refused = settle();
     if (refused) return fail({ converged: false, iterations: it, history, error: refused });
     return done;
@@ -660,6 +677,83 @@ function kirchhoff(s) {
   // (currents adding to under 1e-18 A/m², a few charges per m² a second, are round-off: at
   // equilibrium every terminal's is, 1e-20 to 1e-31, and their sum as large as they are)
   return mx > 0 && Math.abs(sum) > 1e-18 ? Math.abs(sum) / mx : 0;
+}
+
+// A steady state's stretch that no reaction changes takes in nothing on balance. Where every link
+// that feeds it passes it at a rate (no equilibrium link at a contact or port to hold its level),
+// that balance can sit far below what its rows resolve: a myelinated axon's Na⁺, fed only through
+// its nodes' channels, their h gates shut to 1.7e-12 at +0.42 V, converged cold at 2e10 mol/m³,
+// its every row solved to 1e-23 of its largest term, losing 2.6e-15 mol/(m²·s) through the
+// channels with nothing coming in: 35 thermal units from where its channels balance, which a
+// transient never leaves (the membrane combos' case 158; the islands don't sum a piece a port
+// acts on). So the net intake is read against the intake's own response to the stretch's level,
+// a uniform shift of its η: the level difference that drives it. Right states read it at noise
+// (2e-27 for the same axon listed the other way round, at its rest); wrong ones, thermal units.
+// Returns why the state isn't steady, or null. Leaves the readouts and concentrations at the
+// state (the residual and Jacobian are reassembled there by the caller).
+function rateHeld(s) {
+  const { model, M } = s, { contacts, ports } = model;
+  const intake = (st) => {
+    const i = st.species;
+    let q = 0;
+    if (st.leftOpen) q += s.contactFlux.left[i];
+    if (st.rightOpen) q -= s.contactFlux.right[i];
+    for (const p of st.ports) q += s.portFlux[p][i];
+    return q;
+  };
+  const found = s.stretches.filter((st) => {
+    const i = st.species;
+    if (!st.connected || st.reactive || !st.mobile) return false;
+    for (let r = st.regions[0]; r <= st.regions[1]; r++) if (model.materials[model.regions[r].material].conductor) return false;
+    if (st.leftOpen && contacts.left.species[i].type === 'equilibrium') return false;
+    if (st.rightOpen && contacts.right.species[i].type === 'equilibrium') return false;
+    return !st.linked.some((k) => ports[k].species[i].type === 'equilibrium');
+  });
+  if (found.length === 0) return null;
+  // A contact's reading is its end box's other terms, which a uniform shift only scales (two K⁺
+  // contacts at no current, read at 1e-30 mol/(m²·s), its shift's response the same 1e-30): so
+  // each contact's link counts by its own law's slope, as the Jacobian has it (src/boundaries.js).
+  // A port's reading is its links' law itself, and the shift measures it.
+  const contactSlope = (side, st) => {
+    const i = st.species, link = contacts[side].species[i], g = side === 'left' ? 0 : s.nNodes - 1, A = model.grid.area[g];
+    if (link.type === 'conductance') return (A * link.G * s.VT) / (s.z[i] * s.z[i] * FARADAY);
+    if (link.type === 'exchange') return A * link.k;
+    if (link.type === 'velocity') {
+      const o = s.blockOfNode[g] * M + 1 + i;
+      return A * link.v * s.c[g * s.n + i] * Math.exp(Math.min(s.contactEta(side, i) - s.u[o] - s.uLo[o], 700));
+    }
+    return 0;
+  };
+  const portIntake = (st) => {
+    let q = 0;
+    for (const p of st.ports) q += s.portFlux[p][st.species];
+    return q;
+  };
+  let why = null;
+  const keep = Float64Array.from(s.u), d = 1e-3;
+  try {
+    s._assembleBookkeeping(Infinity);
+    for (const st of found) {
+      const i = st.species, q = intake(st), qp = portIntake(st);
+      let slope = (st.leftOpen ? contactSlope('left', st) : 0) + (st.rightOpen ? contactSlope('right', st) : 0);
+      for (let g = st.nodes[0]; g <= st.nodes[1]; g++) s.u[s.blockOfNode[g] * M + 1 + i] += d;
+      s.computeConcentrations();
+      s._assembleBookkeeping(Infinity);
+      slope += Math.abs(portIntake(st) - qp) / d;
+      const off = Math.abs(q) / slope;
+      s.u.set(keep);
+      s.computeConcentrations();
+      s._assembleBookkeeping(Infinity);
+      if (!(off > 1e-6) || why) continue;
+      const [r0, r1] = st.regions, where = r0 === r1 ? model.regions[r0].name : `${model.regions[r0].name}–${model.regions[r1].name}`;
+      why = `${model.species[i].name} in ${where} ${q < 0 ? 'loses' : 'gains'} ${Math.abs(q).toPrecision(3)} mol/(m²·s) through its links, which a steady state balances: held only by their rates, its level is ${off.toPrecision(3)} thermal units from where they do`;
+    }
+  } catch (err) {
+    if (!(err instanceof SolverError)) throw err;
+    s.u.set(keep);
+    s.computeConcentrations();
+  }
+  return why;
 }
 
 // How many digits the last factorisation lost to cancellation, and where (the worst seen since

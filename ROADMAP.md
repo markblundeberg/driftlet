@@ -615,6 +615,16 @@ notes), ranked by how much each trips an agent writing its first device:
 
 ## Later
 
+- **Open from bench/combos and round 7 (20 Nov 2026; repros in the maintainer's notes).** A floating
+  metal contact (behind R or driven) whose metal meets a face reaction should start at its open-circuit
+  level, where its face reactions pass the drive's current, as a port's start does: that needs a
+  face-rate evaluator for the start (Stern and diffuse layers, MHC, surfaces). A bulk bath on the left
+  could set the running φ̂ itself, making the start gauge-covariant without an electrode on the right.
+  Newton's islands round accepts a state after two rounds with an island still 7.7e-5 out of balance,
+  unwarned. A fast reaction balance among mobile species may lose its conserved total on long steps as
+  traps did (they had no per-node row; mobile combinations have none to fall back on): probe it.
+  check() has no ledger for a trap's per-node totals (it needs a reference carried through set()).
+
 - A sub-grid diffuse layer's draw from everything that crosses it: an ion with a permeability link
   and a face reaction at once is drawn by the reactions alone, its channel at the undrawn plane
   (negligible at a membrane's fluxes, two-fold at 1.4 mol/(m²·s); Argon's review of 1.6.1). And a

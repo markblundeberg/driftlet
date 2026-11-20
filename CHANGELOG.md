@@ -24,6 +24,48 @@ major version.
 - `set()` that turns a metal region into a non-metal (or back) starts it from its `c0`, as its solution
   says: the metal's sheet charge had been put on its new ions (K⁺ 100.10, Cl⁻ 99.90 at the edge).
   (These three from an inventory of the quantities computed in more than one place; ROADMAP, "2.0".)
+- Gate fractions stay in [0, 1] under BDF2: its extrapolated start for a gate is held to that range.
+  Fixed steps of 0.1 ms on a +50 → −100 mV clamp took m to −0.027, where the exact relaxation is at
+  7.7e-4; the accuracy is otherwise unchanged. (Round 7: Sol re-read the time integrator, and helpers
+  settled each pointer.)
+- The conservation ledger no longer counts a capacitive contact's charging as the ions it takes in: a
+  plate passing K⁺ at 1 A/m² showed 21× the intake, and `check()` failed a good run.
+- Two `set()`s of a drive with no step between no longer leave a floating plate at the voltage of the
+  first, which never acted (0.05 V and 0.01 C/m² that never passed).
+- Reading a solution no longer moves a held terminal's voltage to the far side of an edge, and a
+  rebuild that releases a terminal at an edge floats it from where the state was solved.
+- A failed `step()` puts back the whole state, its "floating region doesn't balance" warning and the
+  sources' time with it (it had its own restore, which missed both); an `advance()` that takes no
+  step (`maxSteps: 0`) leaves the time steps' memory and step size as they were.
+- `advance()` checks its arguments before solving a pending regrid, so a refused call leaves the
+  device as it was; `step()` and `advance()` refuse a `method` other than `'bdf2'` or `'be'`
+  (`{ method: 'rk4' }` ran backward Euler, silently).
+- Time steps keep a trap's per-node total (any still species that only turn into each other) to
+  round-off. Under light, the capture rates' round-off buried each state's storage once steps passed
+  X/(εR), and the total floated: a lit trap's totals drifted 3.5e-7 by 1e6 s, and a lit thin-film
+  transistor stepped on from its steady state drifted 38% by 1e10 s, its current −2.3e-3 → −116 A/m²,
+  unwarned. Each step now keeps the sum by its change in place of one balance, as steady solves
+  already did. (Found by `bench/combos`'s semiconductor family.)
+- `alloy()` with a `bow` no longer writes a grade that `new Device` refuses (`grade.e-.mu0.x … strictly
+  increasing`) when a fraction knot sits within round-off of the layer's end.
+- A steady solve no longer converges where a species fed only through rates (a port's channels, a
+  contact's conductance) is out of balance: a myelinated axon's Na⁺ had converged cold at +0.42 V and
+  2e10 mol/m³, sealed in by shut h gates, 35 thermal units from where its channels balance (every row
+  solved to 1e-23 of its largest term; Kirchhoff off by 6e-8 of K⁺'s current). Newton refuses such a
+  state, saying how far off it is, and the solve goes on to the axon's rest, −8.2 mV.
+- The cold start balances φ̂ against an electrode on the right in any region where nothing on the left
+  has set it, moving the regions before it with it: behind a bath or a blocking metal, whether a solve
+  converged had depended on the gauge (two solutions in a row behind a bath failed once every voltage
+  was moved by 2 V). And a floating porous electrode no longer sets its solution's φ̂ from its own unset
+  0 V where another electrode has set it (a Fe³⁺/Fe²⁺ port at I = 0 beside zinc failed from a start
+  1.55 V off).
+- A floating electrode's double layer is left out of a conservation law its terminal passes none of:
+  the total iron, in such a port's circuit row, had carried its charge at weight NaN, and every steady
+  solve failed from rest.
+- Behind a series resistance, the steady solve's held stage starts from the layout at the held
+  voltage: a closed Cu | Zn cell with Stern layers at its open circuit behind 1e-6 to 1e-2 Ω·m² had
+  failed, where the same cell without R solved. (These four from `bench/combos`'s membrane and
+  electrochemistry families: cold solves of 600 electrochemical devices went from 585 to 599.)
 - Level and band diagrams, from an outside read of the plotting code (Astra, a sixth pass): tick
   labels carry the decimals their step needs (four significant digits drew "10990" at 10985 nm on a
   zoomed axis); `traces()` says whether its lines are electron energies and `levelChart` titles its axis

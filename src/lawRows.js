@@ -45,6 +45,9 @@
 //                    once Newton turns them on (s.islandsOn), the islands, in that order; and
 //                    s.pins, those of them held aside (constraints in a balance row, affinities,
 //                    islands). Otherwise s.pins is empty.
+//   localStepRows(s, dt)  at the very end of Solver.assemble(dt) on a time step (s.transformed),
+//                    after the charge rows: each local constraint of two or more species (no
+//                    coverage) at each of its nodes, by its change (below).
 //   solveBordered(s, rhs, delta, deltaV, pins)  each Newton solve: δ (delta, compact) and the
 //                    floating terminals' δV (deltaV, by s.floating's order) with s.sys
 //                    factorised.
@@ -68,6 +71,15 @@
 //   local constraint at each node of `nodes`, Σ w c_i (+ Σ w Γ a θ_q where port k's surface is)
 //                    − reference = 0, its ∂ in the node's block (a coverage's,
 //                    θ_q (δ_qx − θ_x) over its surface's species).
+//   a time step's local constraint  at each node of `nodes`, Σ (w_i/w_k) vol (c_i − c*_i)/dt
+//                    (c* = s.cOld, the storage's) in place of species k's balance, k the row's
+//                    species: the balances' sum with their rates left out, since they cancel
+//                    (the combination is conserved by every reaction there). Its ∂ is Σ (w_i/w_k)
+//                    vol/dt ∂c_i, without the φ̂ column at a node the charge rows combined (their
+//                    columns φ̂', η') or where φ is undefined. At a combined node whose pivot is k,
+//                    another species of the combination takes the row, one that no other local
+//                    constraint at the node has as its row or a part; with none, the node keeps
+//                    its balances.
 //   island           pin: Σ weight·u over the `flux` rows (faces' fluxes, and face reactions'
 //                    rates) + Σ vol·ν·r over its `bulk` entries (each node's rate and its ∂ from
 //                    the solver's _bulkRateInto, as that node's row has them) + Σ the `outside`
@@ -119,7 +131,11 @@
 //      and termSlope; idx and w grown where its row needs more room), the solver's maps lawRefs,
 //      chargeRefs, lawForm, s.pins and s.pinnedIslands, scratch arrays kept on s (islandRow,
 //      islandDr, linRow, dWork, borderCols), and, in snapFlat alone, the state (u, uLo).
+//   6. A time step's local constraint replaces a balance by that balance plus others (its own at
+//      weight 1), so the step's equations keep their solution; summed from the concentrations'
+//      changes, it holds the combination to their round-off, whatever the rates it leaves out.
 // Tests: test/laws.test.js, test/steady.test.js and every test that solves a steady state;
+// test/round7-traps.test.js and test/jacobian.test.js's lit traps (a time step's local constraints);
 // tools/lawsweep.js (solve() against a settled advance()).
 
 import { FARADAY } from './constants.js';
@@ -439,6 +455,58 @@ function rowInto(s, o, add) {
 function sites(s, g) {
   const k = s.surfAt[g];
   return s.model.surfaces[k].species[0].capacity * s.surfArea[k][s.surfW[g]];
+}
+
+// A time step's local constraints: at each node, a combination of still species that only turn
+// into each other (a trap's two states, X⁺ + X⁰) by its change, Σ (w_i/w_k) vol (c_i − c*_i)/dt
+// over its species, in place of the balance of one of them, k: that balance plus the others',
+// whose rates cancel by construction instead of in round-off. Each balance sums its storage with
+// the rates that nearly cancel it, ~R vol, and where the storage is below their round-off, ε R vol
+// (dt past X/(εR)), it's lost: the balances say only that the rates balance, as a steady state's
+// do, and the total floats on round-off. Under light, a trap's 1e15 cm⁻³ total drifted 3.5e-7 by
+// 1e6 s, ∝ dt² per step, and a symmetric bar at 0 V came to carry 2.4e-6 A/m²; stepped on from a
+// steady state, a lit transistor's totals drifted 38% by 1e10 s and its current went −2.3e-3 to
+// −116 A/m² (the semi family's case 152). The row is a balance's, so the transformation of the
+// equations is invertible (unit triangular). After the charge rows (s.transformed): at a node
+// they combined, a balance there is still the balance it was (its storage in), the columns are
+// φ̂' and η' (in which no concentration depends on φ̂'), and where k's row is that node's pivot,
+// now current continuity, another species of the combination takes the row, one no other local
+// constraint at the node involves (left as it was if there's none). Only combinations of species
+// alone, of two or more (one alone is its own balance; a surface's coverages aren't here).
+export function localStepRows(s, dt) {
+  const { n, M, c, cOld, res, dA: d } = s, vol = s.model.grid.vol;
+  let pivotAt = null, involved = null; // (made only where a pivot takes a constraint's row)
+  for (const lc of s.localConstraints) {
+    if (lc.parts.length < 2 || lc.parts.some((p) => p.i === undefined)) continue;
+    for (const g of lc.nodes) {
+      const b = s.blockOfNode[g], combined = s.transformed && s.chargeNode[g];
+      let row = lc.row;
+      if (combined) {
+        if (!pivotAt) {
+          pivotAt = new Int32Array(s.nNodes).fill(-1);
+          s.chargeNodes.forEach((x, at) => (pivotAt[x] = s.chargePivots[at]));
+        }
+        if (pivotAt[g] === row - 1) {
+          if (!involved) involved = (x, i) => s.localConstraints.some((o) => o !== lc && o.nodes.includes(x) && (o.row === 1 + i || o.parts.some((p) => p.i === i)));
+          const alt = lc.parts.find((p) => 1 + p.i !== row && p.i !== pivotAt[g] && s.loc[b * M + 1 + p.i] >= 0 && !involved(g, p.i));
+          if (!alt) continue;
+          row = 1 + alt.i;
+        }
+      }
+      if (s.loc[b * M + row] < 0) continue;
+      const wk = lc.parts.find((p) => 1 + p.i === row).w, v = vol[g];
+      s._replaceRow(b, row);
+      let t = 0;
+      for (const { i, w } of lc.parts) {
+        const f = (w / wk) * (v / dt);
+        t += (w / wk) * (c[g * n + i] - cOld[g * n + i]);
+        s._dc(g, i, d);
+        // (no φ̂ term where the columns are φ̂' and η', nor where φ is undefined)
+        for (let r = combined || s.phiUndefined[g] ? 1 : 0; r < M; r++) if (d[r] !== 0) s._j(b, row, b, r, f * d[r]);
+      }
+      res[s.rix[b * M + row]] = (v * t) / dt;
+    }
+  }
 }
 
 // The local constraints' rows (steady solves only): Σ w c_i − reference at each node.
