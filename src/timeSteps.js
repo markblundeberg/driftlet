@@ -78,8 +78,9 @@
 //     pair's two quadratures, or the charge against the predictor's (as u), over the larger of
 //     the terminal's gross since the history began and (the first step) what its current would
 //     pass in the segment's time left; differences below what the charges are known to (an
-//     absolute 1e-12 C/m², 1e-15 A/m² over the segment, 1e-12 of what the terminal's boxes hold)
-//     are noise. The step's error is the larger of the two.
+//     absolute 1e-12 C/m², 1e-15 A/m² over the segment, 1e-10 of what the terminal's boxes hold,
+//     1e-6 of what a thermal unit of φ holds across a contact's first segment) are noise. The
+//     step's error is the larger of the two.
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
 //     [0.2, 2] (2 at err = 0). Rejected: the state restored, h·factor. A step that doesn't
 //     converge: h/4. Below the floor (1e-14 of tEnd, or 1e-2 of the fastest time scale), it
@@ -125,7 +126,7 @@
 
 import { nextBreakpoint, nearBreakpoint } from './device.js';
 import { SolverError } from './errors.js';
-import { FARADAY } from './constants.js';
+import { EPS0, FARADAY } from './constants.js';
 import { equilibrateFaces } from './start.js';
 
 // Lagrange weights at x through the points s0, s1, s2.
@@ -345,18 +346,34 @@ function checkedCharges(s, P, Lo, D, Q, o) {
   });
   return { c, y };
 }
-// What a terminal's charge is read to in one step: 1e-12 of the charge its boxes hold (each
-// species' |z|F c over the box beside a contact, or a port's window), which its currents are
-// balances of, solved to Newton's precision. (A strictly neutral contact's box of 500 mol/m³
-// over 10 µm, its current read from that balance, rattled by 5e-11 C/m² a step, 1e-13 of what it
-// holds and half of what 1 mA/m² passed in 0.1 µs; a metal's box holds no concentration, and
-// reads its current as a conductance's.)
+// What a terminal's charge is read to in one step: Newton's tolerance, 1e-10 in η, of the charge
+// its boxes hold (each species' |z|F c over the box beside a contact, or a port's window), which
+// its currents are balances of. (A strictly neutral contact's box of 500 mol/m³ over 10 µm,
+// read from that balance, rattled by 5e-11 C/m² a step, half of what 1 mA/m² passed in 0.1 µs;
+// a strictly neutral cell's bath of 160 mol/m³, closed at its far end, by 1e-11, 2.5e-12 of what
+// its box held: each cut the steps to 1e-17 s, where Newton failed. A metal's box holds no
+// concentration, and reads its current as a conductance's.)
 function boxNoise(s, k) {
   const { n, z, c } = s, vol = s.model.grid.vol, nodes = k < 2 ? [k === 0 ? 0 : s.nNodes - 1] : s.model.ports[k - 2].nodes;
   let q = 0;
   for (const g of nodes) for (let i = 0; i < n; i++) if (Number.isFinite(c[g * n + i])) q += Math.abs(z[i] * c[g * n + i]) * vol[g];
-  return 1e-12 * FARADAY * q;
+  return 1e-10 * FARADAY * q;
 }
+
+// The charge a thermal unit of φ at a contact's node holds across its first segment, ε V_T/h
+// (none in a strictly neutral or metal end, nor for a port), whose displacement current reads
+// φ's last digits as Newton leaves them, to 1e-6 of a thermal unit where it stops at round-off
+// (see src/newton.js, point 6). (A liquid
+// junction just after a sharp start: its bath passed 8e-11 C/m², rattling by 1e-11 over a box of
+// a third of a Debye length, and the steps were cut after it to 1e-15 s, where Newton failed;
+// round 7; 1e-8 of it left eight of twenty such junctions failing. At tol of it, a diode's
+// contact passing 8e-6 C/m² read 19% off.)
+function heldCharge(s, k) {
+  if (k >= 2) return 0;
+  const { x, area } = s.model.grid, g = k === 0 ? 0 : s.nNodes - 2;
+  return s.phiUndefined[g] || s.phiUndefined[g + 1] ? 0 : (s.segEpsr[g] * EPS0 * s.VT * area[k === 0 ? 0 : s.nNodes - 1]) / (x[g + 1] - x[g]);
+}
+const known = (s, k, quiet) => Math.max(quiet, boxNoise(s, k), 1e-6 * heldCharge(s, k));
 
 const checkedNow = (s) => checkedCharges(s, s.termCharge, s.termChargeLo, s.contactDEnd, s.portQEnd, s.history[0].o);
 
@@ -369,13 +386,13 @@ const checkedNow = (s) => checkedCharges(s, s.termCharge, s.termChargeLo, s.cont
 // wave after a rest, 52% high at its vertex (Sol's re-read of the time integrator, round 7). (And
 // the segment's share, since a current from zero, a ramp after a rest, errs by a third of its
 // charge at any step: measured against the pair's alone, it was cut without end.) A difference
-// below quiet is noise, see integrate.
+// below twice what it's known to (one reading each) is noise, see integrate.
 function chargeError(s, Y0, Ymid, YFull, h, T, quiet) {
   const { c, y } = checkedNow(s);
   let e = 0;
   for (let k = 0; k < c.length; k++) {
     const d = Math.min(Math.abs(YFull.c[k] - c[k]), Math.abs(YFull.y[k] - y[k]));
-    if (d > Math.max(quiet, boxNoise(s, k))) e = Math.max(e, d / Math.max(Math.abs(c[k] - Y0.c[k]), (2 * T * Math.abs(c[k] - Ymid.c[k])) / h, Number.MIN_VALUE));
+    if (d > 2 * known(s, k, quiet)) e = Math.max(e, d / Math.max(Math.abs(c[k] - Y0.c[k]), (2 * T * Math.abs(c[k] - Ymid.c[k])) / h, Number.MIN_VALUE));
   }
   return e;
 }
@@ -385,12 +402,12 @@ function chargeError(s, Y0, Ymid, YFull, h, T, quiet) {
 // included (scaled after, as the potentials' error is). Not relative to the step's own: where a
 // current crosses zero, that's as small as the error at any step, and the steps fell toward the
 // crossing without end.
-function chargeDrift(s, pred, quiet) {
+function chargeDrift(s, pred, quiet, amp) {
   const e0 = s.history[0], { c, y } = checkedNow(s);
   let e = 0;
   for (let k = 0; k < c.length; k++) {
     const d = Math.min(Math.abs(c[k] - pred.c[k]), Math.abs(y[k] - pred.y[k]));
-    if (d > Math.max(quiet, boxNoise(s, k))) e = Math.max(e, d / Math.max(e0.G[k] + Math.abs(c[k] - e0.Y.c[k]), Number.MIN_VALUE));
+    if (d > amp * known(s, k, quiet)) e = Math.max(e, d / Math.max(e0.G[k] + Math.abs(c[k] - e0.Y.c[k]), Number.MIN_VALUE));
   }
   return e;
 }
@@ -595,7 +612,7 @@ export function integrate(s, tEnd, opts = {}) {
       }
       p = predict(s, pred, r.bdf, predV, predP);
       err = errorNorm(s, pred, predV) * p.scale;
-      errQ = p.charge ? chargeDrift(s, predP, quiet(span + snap.time - s.history[0].t0)) * p.scale : 0;
+      errQ = p.charge ? chargeDrift(s, predP, quiet(span + snap.time - s.history[0].t0), p.amp) * p.scale : 0;
       p = p.order;
     }
     // A first step whose error doesn't shrink with it: a jump in a level held at a boundary
@@ -721,7 +738,9 @@ function extrapolate(s, out, h) {
 // Explicit predictor at the new time through the previous states (quadratic after BDF2,
 // linear after backward Euler), and the factor turning |u − pred| into the local error.
 // The terminals' charges too (predP), as stored quantities are (charge: false where there's no
-// predictor for them, only the step's start).
+// predictor for them, only the step's start), and what the predictor multiplies a reading's
+// noise by (amp: 1 + Σ|weights|; a charge rattling by 1e-9 C/m² behind a liquid junction's bath
+// was predicted 5e-9 off, and its steps cut until Newton failed; round 7).
 // (Through a step below 1e-12 of the one after it, as the start's state alone, and the quadratic
 // only where its three offsets are apart: see extrapolate.)
 function predict(s, pred, bdf, predV, predP) {
@@ -743,7 +762,7 @@ function predict(s, pred, bdf, predV, predP) {
     const w = h / hp;
     const Cc = (h * h * h * (1 + w) * (1 + w)) / (w * (1 + 2 * w));
     const Cp = h * (h + hp) * (h + hp + hpp);
-    return { scale: Cc / (Cc + Cp), order: 2, charge: true };
+    return { scale: Cc / (Cc + Cp), order: 2, charge: true, amp: 1 + Math.abs(l0) + Math.abs(l1) + Math.abs(l2) };
   }
   const l0 = (h + hp) / hp, l1 = 1 - l0;
   for (let k = 0; k < pred.length; k++) pred[k] = l0 * e0.u[k] + l1 * e1.u[k];
@@ -751,7 +770,7 @@ function predict(s, pred, bdf, predV, predP) {
   for (const w of ['c', 'y']) for (let k = 0; k < predP[w].length; k++) predP[w][k] = l0 * e0.Y[w][k] + l1 * e1.Y[w][k];
   // Backward Euler's error against a linear predictor; after a BDF2 step without enough
   // history this overestimates, which is safe.
-  return { scale: bdf ? 1 : h / (2 * h + hp), order: 1, charge: true };
+  return { scale: bdf ? 1 : h / (2 * h + hp), order: 1, charge: true, amp: 1 + Math.abs(l0) + Math.abs(l1) };
 }
 
 // Largest difference from ref among the potentials that carry state, in thermal units: and the
