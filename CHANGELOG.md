@@ -5,6 +5,10 @@ major version.
 
 ## Unreleased
 
+- impedance() measured at a held port with nothing floating splits off the uniform shift as it does at
+  a contact. It waited on a contact's cuts, so a port across a membrane from its bath read relError
+  2.2e3 and "isn't resolved" at every frequency, where measured at the contact the same two-terminal
+  Z read 2e-6 (Neon's second review, R2 1.3).
 - impedance() read at a bath or pinned contact whose end box a port's window covers keeps the
   cell's displacement current. There, the box's ions' storage and their charge cancel in the
   current, and summed at the impedance's dt = 1e-30 they left one ULP of v·F·c on the

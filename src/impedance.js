@@ -769,13 +769,16 @@ export class SmallSignal {
         // current the slope of levels uniform to 1e-14, more than a double can hold. (A port's
         // exchange sees the shift: its window's rows are kept with the edges'.) So does a MOS
         // capacitor's back contact, its channel held by a port. Unresolved: the estimate past 1% of
-        // the current. With floating terminals, always: each X_k is nearly its terminal's region
+        // the current, at a contact or a port alike (waiting on a contact's cuts, a held port with
+        // nothing floating, across a membrane from its bath, read relError 2.2e3 where its
+        // contact read 2e-6, the same two-terminal Z; Neon's second review, R2 1.3). With floating
+        // terminals, always: each X_k is nearly its terminal's region
         // shifted, which its readings take apart (a floating bath's region read in a cut, a gate's
         // metal by its law's change), at no cost the tests could see. (Split only where a part of
         // the current was past 1%, a gate behind 1e6 Ω·m² at 10 nHz read Re Z − R 2219 for 2869,
         // inside its estimate; Sol's fourth pass.)
         const { Ir, Ii, err } = best;
-        if (K > 0 || (cuts && err > 1e-2 * Math.hypot(Ir, Ii))) {
+        if (K > 0 || err > 1e-2 * Math.hypot(Ir, Ii)) {
           const r2 = floating(split(yr, yi, kT, 1), fl.map((k, b) => split(Xr[b], Xi[b], k, -1)));
           if (r2.err < err) best = r2;
         }

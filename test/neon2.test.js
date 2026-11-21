@@ -64,3 +64,30 @@ test("impedance() read in a bath contact's end box, a port's window over it, kee
     });
   }
 });
+
+// Two strictly neutral KCl regions across a membrane (K⁺ at P = 1e-15 m/s, Cl⁻ blocked, 1 mF/m²),
+// a bath at the left, a blocked right, and a held port in the right region: a two-terminal cell,
+// one Z from either end. Measured at the port, the uniform-shift split that resolves it at the
+// contact never ran (it waited on a contact's cuts): relError 2.2e3 at 1e-5 Hz and "isn't resolved"
+// at every frequency, where at the contact it was 2e-6 (Neon's second review, R2 1.3).
+test('impedance() at a held port with nothing floating splits off the uniform shift as at a contact (Neon R2 1.3)', () => {
+  const def = {
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr: 0, species: { 'K+': { D: 1.96e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+    regions: [
+      { name: 'L', material: 'aq', length: 1e-5, c0: { 'K+': 100, 'Cl-': 100 } },
+      { name: 'R', material: 'aq', length: 1e-5, c0: { 'K+': 100, 'Cl-': 100 } },
+    ],
+    interfaces: [{ phi: { type: 'capacitive', C: 1e-3 }, species: { 'K+': { type: 'permeability', P: 1e-15 }, 'Cl-': 'blocked' } }],
+    contacts: { left: { V: 0, bath: { c: { 'K+': 100, 'Cl-': 100 } } }, right: { phi: 'neutral', species: { 'K+': 'blocked', 'Cl-': 'blocked' } } },
+    ports: [{ name: 'we', region: 'R', from: 0.4e-5, to: 0.6e-5, V: 0, species: { 'K+': { type: 'equilibrium', offset: 0 } } }],
+    grid: { hmax: 1e-6 },
+  };
+  const fs = [1e-8, 1e-5, 1e-2], d = new Device(def);
+  const left = d.impedance(fs, { terminal: 'left' }), we = d.impedance(fs, { terminal: 'we' });
+  assert.deepEqual(we.warnings ?? [], []);
+  fs.forEach((f, q) => {
+    const dz = Math.hypot(we.Z.re[q] - left.Z.re[q], we.Z.im[q] - left.Z.im[q]) / Math.hypot(left.Z.re[q], left.Z.im[q]);
+    assert.ok(we.relError[q] < 1e-2 && dz < 3 * we.relError[q] + 3 * left.relError[q], `${f} Hz: at we ${we.Z.re[q]} ${we.Z.im[q]}i (relError ${we.relError[q]}), at left ${left.Z.re[q]} ${left.Z.im[q]}i`);
+  });
+});
