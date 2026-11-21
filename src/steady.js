@@ -32,7 +32,7 @@
 //   change, in thermal units, that ends a ramp of giant steps), continuation (false: Newton from
 //   here and the pseudo-transient ramp only). Starts the call's diagnostics fresh
 //   (this._freshDiagnostics(): this.violent, violentStart where nothing has been stepped or
-//   solved; this.unreached, charging, drifted, settling, modelError and conditioning cleared),
+//   solved; this.unreached, charging, drifted, settling, modelError, layoutRefused and conditioning cleared),
 //   finds the laws again where how a terminal is driven, read at this.time, has changed since
 //   they were found (this._lawsNow: a waveform current zero now and not then, or the reverse),
 //   captures the laws and the local constraints' sums (keepLocal: each stage holds those the
@@ -181,7 +181,7 @@
 
 import { profileAt, sourceAt } from './device.js';
 import { solveFlat } from './dense.js';
-import { DeviceError } from './errors.js';
+import { DeviceError, SolverError } from './errors.js';
 import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
@@ -336,6 +336,26 @@ export class SteadySolves {
     return r;
   }
 
+  // A fallback stage's cold start: the layout from c0 at the drives now (sources refreshed).
+  // False, with the state as it was and the refusal kept for the failure's message, where the
+  // definition can't be laid out under them: a gate floated after a held solve leaves its
+  // region's c0, which the held gate's charge balanced, carrying a net charge a strictly neutral
+  // region refuses, and that refusal of a c0 the call never touched escaped solve() as its
+  // answer (the bench/combos neutral family, case 36).
+  _layOut() {
+    const snap = this._snapshot();
+    this._refreshSources();
+    try {
+      this.initFromComposition();
+      return true;
+    } catch (err) {
+      if (!(err instanceof SolverError)) throw err;
+      this._restore(snap);
+      this.layoutRefused = err.message;
+      return false;
+    }
+  }
+
   // Steady state from the present one, in three stages: Newton from here; failing that, from a
   // solved state along the drives (the light ramped up, a current's terminal held at the voltages
   // that pass it, the voltages ramped from where they were last solved); failing that, the
@@ -383,9 +403,9 @@ export class SteadySolves {
     // solve keeps it took from the state already, so from here on it goes as a cold device would.
     // So can a solved state carried through set(): a Si diode at −5 V taken from 150 K to 300 K
     // failed warm (n_i moved 20 orders), and converges from the layout (Fable round 3's hunter).
-    if ((this.stepped || this.carried) && direct && allowed) {
-      this._refreshSources();
-      this.initFromComposition();
+    // (Unless c0 can't be laid out under the drives now: the stages below go on from the state;
+    // see _layOut.)
+    if ((this.stepped || this.carried) && direct && allowed && this._layOut()) {
       // (A transient's state is replaced by the layout for the stages below; a carried solved
       // state stays their start, which a continuation from its solved voltages wants: replaced,
       // GaAs taken warm through T at 0.3 V failed 17 of 56 jumps against 1.9.0's 4; Fable round
@@ -784,9 +804,7 @@ export class SteadySolves {
           // builds it there): lay it out again, level.
           steps += q.steps;
           iterations += q.iterations;
-          this._refreshSources();
-          this.initFromComposition();
-          q = this._steadySteps(opts);
+          if (this._layOut()) q = this._steadySteps(opts);
         }
         // (lit, the level start may need the light ramped up too)
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);

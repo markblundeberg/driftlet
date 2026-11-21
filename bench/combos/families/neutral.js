@@ -27,7 +27,7 @@ export default {
       const whole = r.chance(0.65), excess = gate && whole ? over : 0;
       const c0 = { 'Na+': na, 'Cl-': na + 2 * ca - excess, ...(divalent ? { 'Ca2+': ca } : {}) };
       regions.push({ name, material: 'aq', length, c0 });
-      if (gate) gated.push({ g, whole });
+      if (gate) gated.push({ g, whole, excess });
     }
     const interfaces = Array.from({ length: nR - 1 }, () => {
       const block = r.chance(0.25) ? r.pick(ions.map(([n]) => n)) : null;
@@ -36,11 +36,16 @@ export default {
     });
     const sealed = () => ({ phi: 'neutral', species: Object.fromEntries(ions.map(([n]) => [n, 'blocked'])) });
     let part = false;
-    const ports = gated.map(({ g, whole }, k) => {
+    const ports = gated.map(({ g, whole, excess }, k) => {
       const L = regions[g].length;
       if (!whole) part = true;
       const from = whole ? undefined : r.u(0, 0.4) * L, to = whole ? undefined : from + r.u(0.3, 0.6) * L;
-      return { name: `g${k}`, region: regions[g].name, ...(whole ? {} : { from, to }), V: r.u(-0.3, 0.3), area: r.log(5, 6), capacitance: { C: r.u(0.2, 1) } };
+      const p = { name: `g${k}`, region: regions[g].name, ...(whole ? {} : { from, to }), V: r.u(-0.3, 0.3), area: r.log(5, 6), capacitance: { C: r.u(0.2, 1) } };
+      // (what's over, no more than the gate takes 0.5 V from its V: drawn freely, a gate 8 V
+      // from its solution under it took Newton past what it holds; see ROADMAP)
+      const most = (0.5 * p.area * p.capacitance.C) / F;
+      if (Math.abs(excess) > most) regions[g].c0['Cl-'] += excess - Math.sign(excess) * most;
+      return p;
     });
     features.push(part ? 'a gate over part of a region' : 'gates over whole regions', `${ports.length} gate${ports.length > 1 ? 's' : ''}`);
     const def = { T, species, materials, regions, interfaces, contacts: { left: sealed(), right: sealed() }, ports, grid: { minCells: 8 } };

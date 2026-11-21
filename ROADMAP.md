@@ -633,6 +633,16 @@ notes), ranked by how much each trips an agent writing its first device:
   a 30-run sweep reached it, but the conditioning note could report growth (max|C′| against the
   blocks' entries), and a fix needs pivoting across blocks or a twisted factorisation.
 
+- **Open from bench/combos' neutral family (20 Nov 2026; repros in the maintainer's notes).** A
+  strictly neutral region whose c0 carries more than its held gate takes within a volt puts φ̂ many
+  volts from the gate's V (8–11 V, 300–430 thermal units, at a gate of 7e4–2e5 F/m³). Two things
+  fail there. A divalent salt in an ungated region left of the gated one fails cold, saying nothing
+  more specific: the left-first sweep starts it at φ̂ = 0 where its steady state follows the gate,
+  and monovalent salts recover from that start, where Ca²⁺ doesn't. And a gate floated after a
+  held solve fails from the held state, an exact solution of the floated problem (residual 4e-14),
+  and converges with a third of the excess. The family keeps its gates within 0.5 V; the start
+  from anchors outward (above) is the fix for the first.
+
 - **Open from bench/combos and round 7 (20 Nov 2026; repros in the maintainer's notes).** A floating
   metal contact (behind R or driven) whose metal meets a face reaction should start at its open-circuit
   level, where its face reactions pass the drive's current, as a port's start does: that needs a

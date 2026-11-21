@@ -1123,6 +1123,7 @@ export class Solver {
     this.modelError = null; // (a statistics model's refusal: see newton)
     this.conditioning = null; // (the worst cancellation a factorisation showed: see newton)
     this.newtonError = null; // (why Newton last failed, its own words: see newton)
+    this.layoutRefused = null; // (a fallback cold start the definition refused under the drives now: see _steadyFromHere)
   }
 
   // The solver's state between calls (see STATE, at the head of this file): a copy of each, and

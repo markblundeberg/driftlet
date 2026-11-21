@@ -527,6 +527,11 @@ function failureWarnings(sol, solver, result) {
       `${what} did not converge: the states it reached were refused by a statistics model: ${solver.modelError}. ` +
         'The model doesn\'t hold there: a smaller concentration or drive, or a model for it (lattice for crowding).',
     );
+  } else if (unexplained && solver.layoutRefused) {
+    sol.warnings.push(
+      `${what} did not converge from the state it had, and the cold start its later stages fall back on can't be laid out under the drives now: ${solver.layoutRefused.replace(/\.$/, '')}. ` +
+        'Approach this state in smaller steps from one that solves (a sweep of the drive, or advance() in time), or change the drives back.',
+    );
   } else if (unexplained && solver.settling) {
     const { maxSteps, ratio, motion, tol } = solver.settling, more = Math.ceil(Math.log(tol / motion) / Math.log(ratio));
     sol.warnings.push(

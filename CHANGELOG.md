@@ -10,6 +10,11 @@ major version.
   two ports pumping its closed nitrate in and out. With Neon's R2 1.1 fix undone, 6 of 40 cases fail
   it (a pumped port's Re Z −417 Ω·m², held 0.001); nothing else in combos sees that fault. It
   held on all 930 of 1050 cases it could check (150 per family; the rest skipped: a series R, the only held terminal).
+- A steady solve whose fallback cold start the definition refuses under the present drives says so
+  and leaves the device as it was. That can happen with a gate floated after a held solve, over a
+  strictly neutral region whose c0 the held gate balanced. Before, it threw that refusal ("its
+  initial composition carries a net charge"), about a c0 the call never touched (bench/combos'
+  neutral family). The solve still fails there, at an 8 V drop across a gate: ROADMAP.
 - bench/combos `sealed`: a closed amount after a cold solve and after a cold first step is the
   ∫c0 its definition gave. A new family, `neutral`, has strictly neutral solutions sealed under
   held gates. On the code before Neon's 1.1 fix, the property reads Neon's −5.21e-3 of the Na⁺.

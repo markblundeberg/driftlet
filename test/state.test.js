@@ -123,7 +123,7 @@ const SCRATCH = new Set([
   // rollback from the checkpoint's)
   'terms',
   // what a call's solution reads of how it went (diagnostics): set by the call, read just after it
-  'violent', 'unreached', 'charging', 'drifted', 'settling', 'modelError', 'conditioning', 'newtonError',
+  'violent', 'unreached', 'charging', 'drifted', 'settling', 'modelError', 'conditioning', 'newtonError', 'layoutRefused',
 ]);
 
 test('every field a run writes is in STATE, LEARNED or scratch; STATE names real fields', () => {
