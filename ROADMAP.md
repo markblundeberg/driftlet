@@ -94,6 +94,25 @@ for live demos.
 
 ## Next
 
+0. **One owner for strictly neutral charge (the next design piece).** A strictly neutral node is
+   an index-1 DAE: its balances with an algebraic G(u) = 0, ions plus fixed charge plus a port's
+   spread charge plus what its box holds of a face's or contact's D. That G is assembled in
+   src/regions.js and src/boundaries.js. But src/start.js (equilibrateFaces' qOther, neutralPhi)
+   and src/carry.js (netOf, neutralize) each sum their own subset of it. And _chargeRows, assuming
+   every step starts on G = 0, deletes any disagreement from the pivot ion. Neon's 1.1 and R2 3.1
+   (and tonight's _layOut) were that seam, and so were the 37 tests an exact _chargeRows broke.
+   Neon's reading (its round-2 closing note, 20 Nov 2026): they are the map of every path relying
+   on the silent deletion. The plan:
+   - one gaussResidual(g)/projectNeutral(nodes), from the same terms the Gauss row assembles;
+   - every state producer (initFromComposition, equilibrateFaces, carryState, the set()s that move
+     charge) projecting through it;
+   - then _chargeRows exact (the old charge at every node), with a check that no node enters a step
+     off G = 0, the 37 tests read one by one as what each was relying on.
+
+   A second seam, after: assemble emitting steady and storage parts into separate accumulators,
+   as DifferenceTerms does, so impedance() no longer takes (X(1e-30) − X(∞))·1e-30. Neon's R2 1.1
+   and 1.2 both sat there.
+
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
    - Transients with a capacitive contact beside a held electrode (found by `npm run lawsweep`):
      with a membrane capacitor too, the conserved K⁺ total drifted in proportion to the tolerance
