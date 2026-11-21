@@ -1,7 +1,7 @@
 // Neon's second review (20 Nov 2026): impedance, check(), and its own pick.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Device } from '../src/index.js';
+import { Device, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
 
 // Two ports pumping K⁺ in and out of a KCl film at ±1 A/m², Cl⁻ held at both contacts: the K⁺
 // law's change is the two ports' together, so a time step reads it by the flux (circuitLaws), and
@@ -34,4 +34,33 @@ test("impedance() at a port driven beside another driving the same ion is the po
   const [a, b] = [[1, 2], [2, 1]].map((o) => new Device(pumped(o)).impedance([0.1], { terminal: 'right' }).Z);
   assert.ok(Math.abs(a.re[0] / b.re[0] - 1) < 1e-6 && Math.abs(a.im[0] / b.im[0] - 1) < 1e-6, `right: ${a.re[0]} ${a.im[0]}i, ports reversed ${b.re[0]} ${b.im[0]}i`);
   assert.ok(Math.abs(a.re[0] / 0.002461 - 1) < 2e-3 && Math.abs(a.im[0] / -0.000636 - 1) < 3e-3, `right: ${a.re[0]} ${a.im[0]}i against the transient's 0.002461 − 0.000636i`);
+});
+
+// 30 cm of 1 M KCl between baths, a sense port over all of it at I: 0 (so the current at a contact
+// is read from its end box, no cut between it and a window). The box's ions' storage, in its
+// balances, and their charge, in its Gauss row at 1/dt, cancel in the current; summed at
+// dt = 1e-30 they left a residue of one ULP of v·F·c = 1.45e6 C/m² on the η columns, against a
+// displacement ε V_T/h of 6e-10: Im Z at 10 kHz came out 9× the RC cell's and inductive, 104% off
+// at 1 GHz, relError 1e-13, unwarned (Neon's second review, R2 1.2). Without the port, read across
+// a segment, it was right.
+test("impedance() read in a bath contact's end box, a port's window over it, keeps the cell's displacement (Neon R2 1.2)", () => {
+  const c = 1000, D = 2e-9, epsr = 78.5, L = 0.3;
+  const def = (port) => ({
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr, species: { 'K+': { D, mu0: 0 }, 'Cl-': { D, mu0: 0 } } } },
+    regions: [{ name: 'cell', material: 'aq', length: L, c0: { 'K+': c, 'Cl-': c } }],
+    contacts: { left: { V: 0, bath: { c: { 'K+': c, 'Cl-': c } } }, right: { V: 0, bath: { c: { 'K+': c, 'Cl-': c } } } },
+    ...(port ? { ports: [{ name: 'sense', region: 'cell', from: 0, to: L, I: 0, species: { 'K+': { type: 'conductance', G: 1e-6, offset: 0 } } }] } : {}),
+    grid: { hmax: L / 10 },
+  });
+  // The cell: R = L/σ, C = ε/L, Z = R/(1 + iωRC).
+  const sigma = (FARADAY * FARADAY * c * 2 * D) / (GAS_CONSTANT * 298.15), R = L / sigma, C = (epsr * EPS0) / L;
+  const fs = [1e4, 1e9];
+  for (const port of [false, true]) {
+    const z = new Device(def(port)).impedance(fs, { terminal: 'right' });
+    fs.forEach((f, q) => {
+      const wrc = 2 * Math.PI * f * R * C, re = R / (1 + wrc * wrc), im = (-R * wrc) / (1 + wrc * wrc);
+      assert.ok(Math.abs(z.Z.re[q] / re - 1) < 1e-4 && Math.abs(z.Z.im[q] / im - 1) < 1e-3, `${port ? 'port' : 'no port'}, ${f} Hz: ${z.Z.re[q]} ${z.Z.im[q]}i against ${re} ${im}i`);
+    });
+  }
 });

@@ -69,7 +69,10 @@
 //   contact (_contact): first, at the end node, each active balance residual (all of the box's
 //     other terms) is the flux the contact passes in: contactFlux (toward +x), and the current
 //     Σ z F × that; then, at a lateStorage node on a time step, the ions' storage (in the rows
-//     and contactFlux, not the current); then its links: exchange, A k (μ_out/RT − η); conductance,
+//     and contactFlux, not the current), and at a lateCharge node (ε > 0, a bulk or pinned φ
+//     law) the passed ions' storage the same way but in the current's value too, their charge
+//     out of the Gauss row until D_in is read (D_in = that row's residual less it), so that
+//     neither is in the rows the current is captured from; then its links: exchange, A k (μ_out/RT − η); conductance,
 //     A G (V + offset − V_i)/(zF), V_i = V_T η/z; velocity, A v c (e^{η_out − η} − 1) (dilute,
 //     A v (c_eq − c)); equilibrium, the row replaced by η = η_out (contactEta), any other
 //     terminal's ∂/∂V in it cleared. Its φ law: capacitive, D_in = A C (V − zeroCharge − V_T φ̂)
@@ -1052,7 +1055,10 @@ export class BoundaryTerms {
     }
     // The ions' storage, left out until now (see lateStorage): in each balance, and in what
     // each species brings in, but not in the current.
-    if (this.combining && dyn && this.lateStorage[g] === 1) {
+    // (And at a lateCharge node on a time step, their charge too, which the Gauss row reads below.)
+    const lateQ = dyn && !this.lin && this.lateCharge[g] === 1;
+    let qLate = 0;
+    if ((this.combining && dyn && this.lateStorage[g] === 1) || lateQ) {
       const v = model.grid.vol[g], { cOld } = this;
       for (let i = 0; i < n; i++) {
         if (z[i] === 0 || this.loc[b * M + 1 + i] < 0 || held[i]) continue;
@@ -1061,6 +1067,8 @@ export class BoundaryTerms {
         flux[i] += sgn * st;
         this._j(b, 1 + i, b, 1 + i, (v * ci) / dt);
         this._j(b, 1 + i, b, 0, (-v * z[i] * ci) / dt);
+        if (lateQ) qLate += v * F * z[i] * ci;
+        if (lateQ) I += (v * F * z[i] * (ci - cOld[g * n + i])) / dt; // (the current's value as it was; its row, captured above, without it)
       }
     }
 
@@ -1133,8 +1141,10 @@ export class BoundaryTerms {
         this.termDI[k] += Ac * link.C * rate;
       }
     } else if (link.type === 'pinned' || link.type === 'bulk') {
-      // The Poisson residual is the outside's charge, D_in.
-      const Din = res[R[b * M]];
+      // The Poisson residual is the outside's charge, D_in (at a lateCharge node, without the
+      // charge of the ions the contact passes: their storage and their charge's change cancel in
+      // the current, so neither is in what it reads; D_in itself with it).
+      const Din = res[R[b * M]] - qLate;
       this.contactD[side] = sgn * Din;
       if (captured) {
         captured.D = Din;

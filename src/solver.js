@@ -146,7 +146,7 @@ export class Solver {
   //   5. terminals (terms, termV, floating; termB and termC, sized by sys), _refreshSources(), the
   //      floating ones' start; the time steps' history.
   //   6. bulk reactions (rxs, rxsIn) and electrode areas; the boxes bookkeeping reads (need), the
-  //      neutral nodes (chargeNode), lateStorage, portHeldEnd.
+  //      neutral nodes (chargeNode), lateStorage, lateCharge, portHeldEnd.
   //   7. _findStretches(): the stretches, and through _laws() the steady system's laws, which
   //      read all of the above; then the start (initFromComposition) and the reference amounts.
   constructor(model) {
@@ -567,6 +567,20 @@ export class Solver {
       const mat = materials[regions[grid.nodeRegion[g]].material], law = contacts[k === 0 ? 'left' : 'right'].phi.type;
       const charging = law === 'neutral' && model.ports.some((port) => port.capacitance && port.nodes.includes(g));
       if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !charging && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
+    });
+    // An end node of a region with ε > 0 that its contact holds by a bulk or pinned φ law (and
+    // passes something through): the contact's current is the conduction and displacement across
+    // the box's inner face. Read from the box's rows, the ions' storage (in the balances) and
+    // their charge (in the Gauss row, at 1/dt) cancel in it, and summed at the impedance's dt =
+    // 1e-30 they left a residue of one ULP of v·F·c on the η columns: 3e-10 C/m² against a
+    // displacement ε V_T/h of 6e-10 over 3 cm of 1 M KCl, Im Z inductive (Neon's second review,
+    // R2 1.2). So there, on a time step, the storage and charge of each species the contact
+    // passes go in only after it has read its current (see _contact).
+    this.lateCharge = new Uint8Array(nNodes);
+    [0, nNodes - 1].forEach((g, k) => {
+      const mat = materials[regions[grid.nodeRegion[g]].material], ct = contacts[k === 0 ? 'left' : 'right'];
+      const passes = ct.species.some((l) => l.type !== 'blocked');
+      if (!mat.conductor && mat.epsr > 0 && (ct.phi.type === 'bulk' || ct.phi.type === 'pinned') && passes && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateCharge[g] = 1;
     });
     // An end node's species held by a port (its contact blocks it, so the level is the port's):
     // its row is the port's, storage and all, and the contact passes none of it.

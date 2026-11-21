@@ -5,6 +5,14 @@ major version.
 
 ## Unreleased
 
+- impedance() read at a bath or pinned contact whose end box a port's window covers keeps the
+  cell's displacement current. There, the box's ions' storage and their charge cancel in the
+  current, and summed at the impedance's dt = 1e-30 they left one ULP of v·F·c on the
+  concentration columns. Over 30 cm of 1 M KCl in 3 cm cells that was 3e-10 C/m² against a
+  displacement of 6e-10: Im Z at 10 kHz came out 9× the RC cell's and inductive, and 104% off
+  at 1 GHz, with relError 1e-13 and no warning. On a time step those terms now go in after the
+  contact reads its current. (Neon's second review, R2 1.2. Read across a segment, with no port
+  there, it was right; the error goes as (h/λ_D)² × 1e-16.)
 - bench/combos `drivenZ`: a terminal's impedance is the same held at a voltage and driven by the
   current it passes there, either way round, and the basic family's silver nitrate cell may have
   two ports pumping its closed nitrate in and out. With Neon's R2 1.1 fix undone, 6 of 40 cases fail

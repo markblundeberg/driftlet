@@ -330,11 +330,14 @@ export class RegionTerms {
       }
       let q = rhoFixed[g], dq = 0;
       const late = this.combining && this.lateStorage[g] === 1 && dt !== Infinity; // (the ions' storage: in _contact)
+      const lateQ = !lin && this.lateCharge[g] === 1 && dt !== Infinity; // (and their charge: in _contact)
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
-        const ck = c[k], l = loc[lb + 1 + i], stores = !(late && z[i] !== 0 && !this._portHeldAt(g, i));
+        const ck = c[k], l = loc[lb + 1 + i], deferred = (late || lateQ) && z[i] !== 0 && !this._portHeldAt(g, i) && (!lateQ || l >= 0);
+        const stores = !deferred;
         if (stores) res[R[lb + 1 + i]] += (v * (ck - cOld[k])) / dt;
+        if (lateQ && deferred) continue;
         q += F * z[i] * ck;
         dq += F * z[i] * z[i] * ck;
         if (lin) {
