@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT } from '../src/index.js';
+import { check } from '../src/kit.js';
 
 // Two ports pumping K⁺ in and out of a KCl film at ±1 A/m², Cl⁻ held at both contacts: the K⁺
 // law's change is the two ports' together, so a time step reads it by the flux (circuitLaws), and
@@ -91,3 +92,57 @@ test('impedance() at a held port with nothing floating splits off the uniform sh
     assert.ok(we.relError[q] < 1e-2 && dz < 3 * we.relError[q] + 3 * left.relError[q], `${f} Hz: at we ${we.Z.re[q]} ${we.Z.im[q]}i (relError ${we.relError[q]}), at left ${left.Z.re[q]} ${left.Z.im[q]}i`);
   });
 });
+
+// Area 2: check()'s grid item. A double layer's charge was compared only as its region's net
+// charge, and only where that passed a millionth of the region's gross ionic content: on 1 mm of
+// 1 M KCl the gate was 0.26 C/m², over the electrode's 0.058, and D_left came out 6.6% off the
+// fine grid's, grid ok; in a symmetric 1 µm cell the walls' layers cancel in the net charge, and
+// D_left was 14% off, grid ok (Neon's second review, R2 2.1). Now a contact's D, a capacitive
+// face's and a port's charge are compared as they are.
+const gridItem = (d, s) => check(d, s).items.find((it) => it.name === 'grid');
+test("check()'s grid item compares a contact's charge, not only its region's (Neon R2 2.1)", () => {
+  const kcl = (D) => ({ species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }], materials: { aq: { epsr: 78.5, species: { 'K+': { D, mu0: 0 }, 'Cl-': { D: D === 2e-9 ? 2e-9 : 2.03e-9, mu0: 0 } } } } });
+  const asym = {
+    ...kcl(1.96e-9),
+    regions: [{ name: 'el', material: 'aq', length: 1e-3, c0: { 'K+': 1000, 'Cl-': 1000 } }],
+    contacts: {
+      left: { V: 0.05, phi: { type: 'capacitive', C: 2.0 }, zeroCharge: 0, species: { 'K+': { type: 'conductance', G: 1e-2, offset: 0 }, 'Cl-': 'blocked' } },
+      right: { V: 0, bath: { c: { 'K+': 1000, 'Cl-': 1000 } } },
+    },
+    grid: { hmin: 2.5e-10, hmax: 5e-5, ratio: 2.5 },
+  };
+  const off = ((GAS_CONSTANT * 298.15) / FARADAY) * Math.log(10 / 1000);
+  const link = { 'K+': { type: 'conductance', G: 1e-2, offset: off }, 'Cl-': { type: 'conductance', G: 1e-2, offset: -off } };
+  const sym = {
+    ...kcl(2e-9),
+    regions: [{ name: 'el', material: 'aq', length: 1e-6, c0: { 'K+': 10, 'Cl-': 10 } }],
+    contacts: { left: { V: 0.01, phi: 'pinned', zeroCharge: 0, species: link }, right: { V: -0.01, phi: 'pinned', zeroCharge: 0, species: link } },
+    grid: { hmin: 2.5e-9, hmax: 2e-7, ratio: 2.5 },
+  };
+  for (const [name, def] of [['1 mm of 1 M KCl', asym], ['a symmetric 1 µm cell', sym]]) {
+    const d = new Device(def), s = d.solve(), g = gridItem(d, s);
+    assert.ok(s.converged);
+    assert.equal(g.ok, false, `${name}: ${g.summary}`);
+    assert.match(g.summary, /contact's D|charge/, name);
+  }
+});
+
+// A port feeding a fast bulk A = B in strictly neutral KCl, on 8 cells: its flux of A was 12.5×
+// the fine grid's, and check() said ok throughout, grid ok at 5.6e-16 (the contacts' fluxes), while
+// balance's own ledger listed the port at 1.2e5 (Neon's second review, R2 2.2). Ports' fluxes and
+// reactions' totals are compared now.
+test("check()'s grid item compares a port's fluxes and the reactions' totals (Neon R2 2.2)", () => {
+  const def = {
+    species: [{ name: 'A', z: 0, cRef: 1000 }, { name: 'B', z: 0, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr: 0, species: { A: { D: 1e-9, mu0: 0 }, B: { D: 1e-9, mu0: 0 }, 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    bulkReactions: [{ equation: 'A = B', kf: { aq: 1e7 } }],
+    regions: [{ name: 'el', material: 'aq', length: 1e-4, c0: { A: 10, B: 10, 'K+': 100, 'Cl-': 100 } }],
+    contacts: { left: { V: 0.01, bath: { c: { 'K+': 100, 'Cl-': 100 } } }, right: { V: 0, bath: { c: { 'K+': 100, 'Cl-': 100 } } } },
+    ports: [{ name: 'feed', region: 'el', from: 0.495e-4, to: 0.505e-4, species: { A: { type: 'equilibrium', mu: 0 }, B: { type: 'equilibrium', mu: -10000 } } }],
+    grid: { hmax: 1.25e-5, minCells: 8 },
+  };
+  const d = new Device(def), s = d.solve(), g = gridItem(d, s);
+  assert.equal(g.ok, false, g.summary);
+  assert.match(g.summary, /feed|A = B/);
+});
+

@@ -562,14 +562,21 @@ slip past.
   start from the definition, not this state, so it costs two solves.
 - **grid**, in a steady state (unless `refine: false`): the device solved again on a grid twice
   as fine everywhere (half of each `hmin` and `hmax`, the square root of each `ratio`), starting
-  from this solution interpolated onto it. Every terminal's current (ports' too), what each
-  species brings in at the contacts (the charged ones too, so a grid too coarse where the
-  currents cancel, at open circuit or by symmetry, still shows), each floating terminal's voltage (an open-circuit
-  voltage, relative to the span of the terminals' voltages or the thermal voltage, whichever is
-  larger, so it doesn't matter where 0 V is), each region's charge (with what its faces' diffuse
-  layers hold) and each diffuse layer's must agree to `tol` (relative, each against itself, the
-  largest current or charge a floor under the small ones; default 1e-2, about what a plot shows; a
-  benchmark wants 1e-3 or less). The discretisation is second order, so the change estimates
+  from this solution interpolated onto it. These must agree to `tol`:
+  - every terminal's current (ports' too);
+  - what each species brings in at the contacts and at each port (the charged ones too, so a grid
+    too coarse where the currents cancel, at open circuit or by symmetry, still shows);
+  - what each reaction turns over (a bulk one's total, a face's rate, a port's over its window);
+  - each floating terminal's voltage (an open-circuit voltage, relative to the span of the
+    terminals' voltages or the thermal voltage, whichever is larger, so it doesn't matter where
+    0 V is);
+  - the charges: each region's (with what its faces' diffuse layers hold), each diffuse layer's,
+    each contact's D, a capacitive face's, and a port's.
+
+  Each is relative, against itself, with the largest current or charge as a floor under the small
+  ones. For charges, the floor is also 1e-9 of the gross ionic charge the regions hold, below which
+  a strictly neutral region's charge is round-off. `tol` defaults to 1e-2, about what a plot
+  shows; a benchmark wants 1e-3 or less. The discretisation is second order, so the change estimates
   this grid's own error (about ¾ of it); with nothing to compare it's `?`, and so it is where the
   finer grid can't be solved from this state and the state has a history (a transient, a floating
   terminal, a closed stretch) that a solve from cold would lose. Where an error doesn't shrink as the grid's

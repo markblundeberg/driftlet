@@ -5,6 +5,16 @@ major version.
 
 ## Unreleased
 
+- check()'s grid item compares the charges where a grid is coarsest as they are: each contact's D,
+  a capacitive face's, a port's. The regions' charges were the only ones compared, and only where
+  they passed a millionth of the gross ionic charge (max |q| × V). On 1 mm of 1 M KCl that gate
+  was 0.26 C/m², over the electrode's 0.058, whose D came out 6.6% off the fine grid's. In a
+  symmetric 1 µm cell the two walls' layers cancel in the net charge, and D was 14% off. Both
+  passed grid. That gate is now a floor, 1e-9 of the gross taken as its integral (Neon's second
+  review, R2 2.1).
+- check()'s grid item compares what each port brings in, per species, and what each reaction turns
+  over. A port feeding a fast A = B, on 8 cells, brought in 12.5× the fine grid's A, and check()
+  said ok throughout (Neon's second review, R2 2.2).
 - impedance() measured at a held port with nothing floating splits off the uniform shift as it does at
   a contact. It waited on a contact's cuts, so a port across a membrane from its bath read relError
   2.2e3 and "isn't resolved" at every frequency, where measured at the contact the same two-terminal

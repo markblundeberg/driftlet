@@ -497,6 +497,38 @@ function gridCheck(device, sol, tol, gross) {
       diffs.push({ what: `${sp.name} in at the ${side} contact`, a, b, rel: Math.abs(b - a) / scale, unit: model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s' });
     }
   }
+  // What each port brings in, per species, as a contact's is; and what each reaction turns over:
+  // a bulk one's total, a face's rate, a port's summed over its window. (A port feeding a fast
+  // A = B, on 8 cells, passed 12.5× the fine grid's A with the contacts' fluxes, all compared, at
+  // 5.6e-16; Neon's second review, R2 2.2.)
+  const fluxUnit = model.geometry.type === 'planar' ? 'mol/(m²·s)' : 'mol/s';
+  const speciesFloor = (sp, i) => (sp.z === 0 ? (natural[i] > 0 ? 1e-16 * natural[i] : floorN) : Math.max(floorN, (1e-6 * gross) / (FARADAY * Math.abs(sp.z))));
+  model.ports.forEach((port, k) => {
+    const fa = sol.ports?.[k]?.flux ?? {}, fb = other.ports?.[k]?.flux ?? {};
+    model.species.forEach((sp, i) => {
+      const a = fa[sp.name], b = fb[sp.name], floor = speciesFloor(sp, i);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floor)) return;
+      const scale = Math.max(Math.abs(a), Math.abs(b), floor, reacts.has(i) ? 0 : 1e-3 * (natural[i] || 0));
+      diffs.push({ what: `${sp.name} in at port ${port.name}`, a, b, rel: Math.abs(b - a) / scale, unit: fluxUnit });
+    });
+  });
+  const rateFloor = (idx) => Math.max(floorN, ...idx.map((i) => (natural[i] > 0 ? 1e-16 * natural[i] : 0)));
+  const turnover = (what, a, b, idx) => {
+    const floor = rateFloor(idx);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floor)) return;
+    diffs.push({ what, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), floor), unit: fluxUnit });
+  };
+  (device.solver.rxs ?? []).forEach((rx, k) => turnover(`bulk reaction ${rx.equation ?? k}'s total`, sol.bulkReactions?.[k]?.total, other.bulkReactions?.[k]?.total, Array.from(rx.sp)));
+  model.interfaces.forEach((itf, f) => (itf.reactions ?? []).forEach((rx, k) => turnover(`face ${f}'s reaction ${rx.equation ?? k}`, sol.interfaces?.[f]?.rates?.[k], other.interfaces?.[f]?.rates?.[k], rx.part.map((p) => p.i))));
+  const windowTotal = (s, grid, k, q) => {
+    const p = s.ports?.[k];
+    if (!p?.rates?.[q] || !p.x || !p.area) return NaN;
+    const at = new Map(Array.from(grid.x, (x, g) => [x, g]));
+    let t = 0;
+    p.x.forEach((x, w) => (t += p.rates[q][w] * p.area[w] * (grid.vol[at.get(x)] ?? NaN)));
+    return t;
+  };
+  model.ports.forEach((port, k) => (port.reactions ?? []).forEach((rx, q) => turnover(`port ${port.name}'s reaction ${rx.equation ?? q}`, windowTotal(sol, model.grid, k, q), windowTotal(other, otherGrid, k, q), rx.part.map((p) => p.i))));
   // Floating terminals (driven by a current): their voltages, against the span of the terminals'
   // and the thermal voltage. (Against the larger voltage, the verdict hung on where 0 V was: the
   // same device shifted by 1 V read a 40× smaller change; Astra's fifth pass.)
@@ -520,29 +552,40 @@ function gridCheck(device, sol, tol, gross) {
     for (const l of layers(s, grid)) q[l.r] += l.q;
     return q;
   };
-  // Charges at round-off (strictly neutral regions) aren't compared: against the gross charge
-  // the regions hold, |fixed| + Σ|z|c, they must be more than a millionth.
-  const content = Math.max(...sol.regions.map((reg, r) => {
-    let q = 0, v = 0;
-    for (let g = 0; g < sol.x.length; g++) {
-      if (sol.region[g] !== r) continue;
-      let a = Math.abs(fixedAt(model.regions[r], sol.x[g]));
-      for (const sp of model.species) if (Number.isFinite(sol.c[sp.name][g])) a += FARADAY * Math.abs(sp.z * sol.c[sp.name][g]);
-      q = Math.max(q, a);
-      v += model.grid.vol[g];
-    }
-    return q * v;
-  }));
-  const la = layers(sol, model.grid), lb = layers(other, otherGrid);
-  const qa = charges(sol, model.grid), qb = charges(other, otherGrid), scaleQ = Math.max(0, ...qa.map(Math.abs), ...qb.map(Math.abs), ...la.map((l) => Math.abs(l.q)), ...lb.map((l) => Math.abs(l.q)));
-  if (scaleQ > 1e-6 * content) {
+  // The charges held where the grid is coarsest: each region's (summed over its boxes), each
+  // face's diffuse layers, each contact's D, a capacitive face's, each port's. Against
+  // themselves, with a floor of a thousandth of the largest and of 1e-9 of the gross charge the
+  // regions hold, ∫(|fixed| + F Σ|z|c) dV, below which a strictly neutral region's charge is
+  // round-off. (Gated on a millionth of that gross, max |q| × V, 1 mm of 1 M KCl skipped its
+  // electrode's 0.058 C/m², 6.6% off the fine grid's; and its region's net charge alone, a
+  // symmetric cell's two walls cancel, D 14% off; both grid ok, Neon's second review, R2 2.1.)
+  let content = 0;
+  for (let g = 0; g < sol.x.length; g++) {
+    let a = Math.abs(fixedAt(model.regions[sol.region[g]], sol.x[g]));
+    for (const sp of model.species) if (Number.isFinite(sol.c[sp.name][g])) a += FARADAY * Math.abs(sp.z * sol.c[sp.name][g]);
+    content += a * model.grid.vol[g];
+  }
+  const held = (s) => [
+    ...['left', 'right'].map((side) => ({ what: `the ${side} contact's D`, q: model.contacts[side].phi.type === 'neutral' ? NaN : s.contacts?.[side]?.D })),
+    ...model.interfaces.map((itf, f) => ({ what: `face ${f}'s D`, q: itf.phi.type === 'capacitive' ? s.interfaces?.[f]?.D : NaN })),
+    ...model.ports.map((port, k) => ({ what: `port ${port.name}'s charge`, q: port.capacitance ? s.ports?.[k]?.charge : NaN })),
+  ];
+  const la = layers(sol, model.grid), lb = layers(other, otherGrid), ha = held(sol), hb = held(other);
+  const qa = charges(sol, model.grid), qb = charges(other, otherGrid);
+  const finite = (x) => (Number.isFinite(x) ? Math.abs(x) : 0);
+  const scaleQ = Math.max(0, ...qa.map(finite), ...qb.map(finite), ...la.map((l) => finite(l.q)), ...lb.map((l) => finite(l.q)), ...ha.map((h) => finite(h.q)), ...hb.map((h) => finite(h.q)));
+  const floorQ = Math.max(1e-3 * scaleQ, 1e-9 * content);
+  if (scaleQ > floorQ) {
     const named = (reg) => (/^region \d+$/.test(reg.name) ? `${reg.name} (${reg.material})` : reg.name);
     // (against itself, the largest a thousandth as a floor: against the largest alone, a small
     // region's charge could double and pass, as a small terminal's current did; Astra's fifth pass)
-    const rel = (a, b) => Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), 1e-3 * scaleQ);
+    const rel = (a, b) => Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), floorQ);
     qa.forEach((a, r) => diffs.push({ what: `${named(sol.regions[r])} charge`, a, b: qb[r], rel: rel(a, qb[r]), unit: unitsOf(model).charge }));
     // (each layer too: an electrode cell's two layers cancel in the electrolyte's charge)
     la.forEach((l, j) => diffs.push({ what: `face ${l.f}'s diffuse layer charge (${l.side})`, a: l.q, b: lb[j].q, rel: rel(l.q, lb[j].q), unit: unitsOf(model).charge }));
+    ha.forEach((h, j) => {
+      if (Number.isFinite(h.q) && Number.isFinite(hb[j].q)) diffs.push({ what: h.what, a: h.q, b: hb[j].q, rel: rel(h.q, hb[j].q), unit: unitsOf(model).charge });
+    });
   }
   const worst = diffs.reduce((w, d) => (d.rel > (w?.rel ?? -1) ? d : w), null);
   if (!worst) return { name: 'grid', ok: null, summary: 'nothing to compare (no current, flux, charge or floating voltage): the grid is unchecked' };
