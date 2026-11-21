@@ -10,6 +10,9 @@ major version.
   two ports pumping its closed nitrate in and out. With Neon's R2 1.1 fix undone, 6 of 40 cases fail
   it (a pumped port's Re Z −417 Ω·m², held 0.001); nothing else in combos sees that fault. It
   held on all 930 of 1050 cases it could check (150 per family; the rest skipped: a series R, the only held terminal).
+- bench/combos `sealed`: a closed amount after a cold solve and after a cold first step is the
+  ∫c0 its definition gave. A new family, `neutral`, has strictly neutral solutions sealed under
+  held gates. On the code before Neon's 1.1 fix, the property reads Neon's −5.21e-3 of the Na⁺.
 - bench/combos crosses fields: three families from Astra's ninth pass (a mixed ionic–electronic
   film under light, doped Si against an electrolyte, a gated film whose dopant has two valence
   states on shared sites), and three properties from Sol's (gauge: every voltage shifted by a

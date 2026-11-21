@@ -22,6 +22,7 @@
 //   drivenZ    a terminal's impedance is the same held at plan.V and driven at the current it
 //              passes there; and a port driven by a current, held at the voltage it settles at
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
+//   sealed     a closed stretch holds its definition's ∫c0, cold solved and after a cold first step
 //   stale      check() refuses a solution of the device before a set()
 //   mirror     reflect positions, face laws and drives: the reflected device's steady state is the reflection
 //   gauge      shift the common voltage reference and compare concentrations, currents and level differences
@@ -708,6 +709,49 @@ const props = {
     const def = clone(c.def);
     const currentFactor = scaleDefinition(def, factor);
     return compareDefinitions(c, def, c.plan, { lengthFactor: factor, currentFactor });
+  },
+
+  sealed(c) {
+    // A closed stretch (a species blocked at both ends, through no reaction) holds what its
+    // definition gave it: ∫c0 over its regions, read off the definition here, against its amount
+    // after a cold solve and after a cold advance()'s first step. (A sealed cell with a held gate
+    // on a strictly neutral solution lost ions at t = 0⁺; Neon's first review, 1.1.)
+    const geometry = c.def.geometry?.type ?? c.def.geometry;
+    if (geometry && geometry !== 'planar') return skip('radial geometry');
+    if (c.def.geometry?.area) return skip('has a cross-section');
+    const regions = c.def.regions ?? [];
+    const given = (st) => {
+      let total = 0;
+      for (let g = st.regions[0]; g <= st.regions[1]; g++) {
+        const v = regions[g]?.c0?.[st.species];
+        if (typeof v !== 'number') return NaN;
+        total += v * regions[g].length;
+      }
+      return total;
+    };
+    let worst = 0, at = '', n = 0;
+    const look = (sol, when) => {
+      for (const st of sol.conservation ?? []) {
+        if (st.connected || st.reactive) continue;
+        const want = given(st);
+        if (!Number.isFinite(want)) continue;
+        n++;
+        const e = Math.abs(st.amount - st.intake - want) / Math.max(Math.abs(want), 1e-30);
+        if (e > worst) (worst = e), (at = `${st.species} in regions ${st.regions.join('–')}, ${when}: ${st.amount.toExponential(6)} (intake ${st.intake.toExponential(2)}) of ∫c0 = ${want.toExponential(6)} mol/m²`);
+      }
+    };
+    const a = new Device(clone(c.def)), s = a.solve();
+    if (converged(s)) look(s, 'cold solve');
+    const b = new Device(clone(c.def));
+    let first;
+    try {
+      first = b.advance(1e-6 * c.plan.slow, { maxSteps: 1, budgetMs: 5000 });
+    } catch (e) {
+      return skip(`a first step refused: ${e.message.split('\n')[0].slice(0, 80)}`);
+    }
+    if (first.steps > 0) look(b.solution(), `after the first step (t = ${first.time.toPrecision(3)} s)`);
+    if (n === 0) return skip('no closed stretch with c0 given as numbers');
+    return worst <= 1e-9 ? '' : `a closed amount, against its definition's: ${(worst * 100).toPrecision(3)}% (${at})`;
   },
 
   stale(c) {

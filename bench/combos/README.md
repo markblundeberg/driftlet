@@ -65,3 +65,10 @@ it. A blocking terminal, passing 1e-30 A/m² held, is floated at `I: 0` rather t
 A terminal whose state moves when driven is skipped: one floated at `I: 0` from a held state at
 −52 mV and 1e-21 A/m² went on to equilibrium, an RC of 1e17 s, inside impedance()'s own steady
 solve.
+
+`sealed` reads ∫c0 off the definition for every closed stretch (a species blocked at both ends,
+in no reaction) whose regions give c0 as numbers. It compares that with the stretch's amount
+after a cold solve and after a cold advance()'s first step. On the code before Neon's 1.1 fix,
+Neon's gated cell reads −5.21e-3 of its Na⁺ after the first step, and now reads 1e-15. The
+`neutral` family (strictly neutral solutions sealed under held gates, one or two salts, faces
+that may block an ion) is there for it.
