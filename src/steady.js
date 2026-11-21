@@ -276,6 +276,7 @@ export class SteadySolves {
       this.steady = false;
       this.solveAmounts = null;
       this.localKept = null;
+      this.offNeutral = null; // (its pseudo-transient's steps from a layout aren't a transient's: see _chargeRows)
     }
   }
 

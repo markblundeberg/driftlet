@@ -65,8 +65,11 @@
 //     × the charged balances (current continuity, without storage); the columns become φ̂' and
 //     η'_i = η_i − z_i φ̂' (in every block row and termC that reads them; _untransform maps an
 //     update back); then the other charged species' storage and the neutrality row, Σ z F c +
-//     ρ_fixed = 0 (with a port's capacitance there, its charge, and the ions' storage that
-//     follows from it in the combined row).
+//     ρ_fixed = 0 (with a port's capacitance there, its charge); the combined row's storage is
+//     what neutrality makes of the ions' net charge, −(aσ + ρ_fixed)/F, less Σ z c_old, at
+//     every node, so a step from a start that wasn't neutral conserves each species (below
+//     1e-12 of the ions' charge, where no gate is, a solved state's round-off, left out; past
+//     1e-8, kept in offNeutral for the solution to say).
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Every term's Jacobian entries are its residual's derivatives (via c(ζ) and K); in
@@ -424,8 +427,9 @@ export class RegionTerms {
   // - columns: the unknowns become φ̂' and η'_i = η_i − z_i φ̂ (newton() maps the update back),
   //   in which storage and neutrality have no φ̂' term at all;
   // - then storage (on the other balances) and neutrality go in, exactly, in those terms.
-  // A start-of-step net charge (round-off in a solved state) isn't carried over: the neutrality
-  // row holds the new state neutral.
+  // A start-of-step net charge is carried, as the storage the combined row then has (below a
+  // round-off floor, a solved state's, left out): the neutrality row holds the new state neutral,
+  // and what it moves comes in as current, each species kept.
   _chargeRows(dt) {
     const { n, M, res, c, cOld, z, sys, loc, present, termB, termC } = this, R = this.rix, F = FARADAY, live = this._liveTerms();
     const { A, B, C, sizes, offA, offB, offC } = sys, vol = this.model.grid.vol, last = this.nB - 1;
@@ -496,17 +500,26 @@ export class RegionTerms {
         }
       }
       res[R[lb]] -= v * q;
-      // The pivot's row (charge continuity) left storage out, the ions' net charge being constant
-      // under neutrality. Against a capacitance it isn't: neutrality makes it −(aσ + ρ_fixed)/F,
-      // so their storage is that less what the step started with, Σ z c_old, over dt (in units
-      // of the pivot's balance).
-      if (this.qgTerms[g].length > 0) {
-        const f = -v / (FARADAY * z[k] * dt);
-        let qOld = this.rhoFixed[g];
-        for (let i = 0; i < n; i++) if (present[gn + i]) qOld += F * z[i] * cOld[gn + i];
-        res[rk] += f * (this.qg[g] + qOld);
-        B[offB[b] + lk * m + p] += -f * this.qgSlope[g] * this.VT;
-        for (const [kq, w] of this.qgTerms[g]) termB[kq][rk] += f * this.portArea[kq - 2][w] * this.model.ports[kq - 2].capacitance.C;
+      // The pivot's row (charge continuity) left storage out. Neutrality makes the ions' net
+      // charge −(aσ + ρ_fixed)/F at the step's end, so their storage is that less what the step
+      // started with, Σ z c_old, over dt (in units of the pivot's balance): at every node, gated
+      // or not. Taken as zero where no gate is, on the grounds that a neutral node's ions keep
+      // their net charge, a start that wasn't neutral there lost the difference from the pivot
+      // species, unseen: 0.0603 C/m² of Na⁺ at a face node in a sealed cell (Neon's review, 1.1).
+      {
+        const f = -v / (FARADAY * z[k] * dt), gated = this.qgTerms[g].length > 0;
+        let qOld = this.rhoFixed[g], scale = Math.abs(this.rhoFixed[g]);
+        for (let i = 0; i < n; i++) if (present[gn + i]) (qOld += F * z[i] * cOld[gn + i]), (scale += F * Math.abs(z[i] * cOld[gn + i]));
+        // (A start further off than round-off is a state put there by something that didn't
+        // hold the node neutral: carried, conserving each species, and said; see offNeutral.)
+        if (!gated && Math.abs(qOld) > 1e-8 * scale && !(Math.abs(qOld) / scale <= (this.offNeutral?.rel ?? 0))) this.offNeutral = { x: this.model.grid.x[g], rel: Math.abs(qOld) / scale, time: this.time };
+        // (where no gate is, a start's net charge below 1e-12 of its ions' is a solved state's
+        // round-off: carried, over a step of 1e-18 s it would be a current swamping the fluxes)
+        if (gated || Math.abs(qOld) > 1e-12 * scale) res[rk] += f * ((gated ? this.qg[g] : 0) + qOld);
+        if (gated) {
+          B[offB[b] + lk * m + p] += -f * this.qgSlope[g] * this.VT;
+          for (const [kq, w] of this.qgTerms[g]) termB[kq][rk] += f * this.portArea[kq - 2][w] * this.model.ports[kq - 2].capacitance.C;
+        }
       }
     }
   }

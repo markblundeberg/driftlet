@@ -3,6 +3,16 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- A time step from a strictly neutral node off neutral keeps every species, and says so. The step's
+  charge rows assumed it started neutral and deleted any net charge from the most abundant ion.
+  Every way into that found so far was closed where it entered (Neon's 1.1, R2 3.1); now the rows
+  carry it exactly, as current, past round-off (1e-12 of the ions' charge, where no gate is).
+  Past 1e-8 the solution warns, naming the node. Neon's R2 3.1 device with its fix undone keeps
+  its ions and fails its step, saying where, where it lost Q_dl/2F unwarned. (Neon's closing
+  note: one owner for strictly neutral charge, ROADMAP "Next" 0.)
+
 ## 1.20.0 (2026-11-20)
 
 The faults found by two rounds of outside review by Neon (Google's successor to Gemini 4 Argon, run

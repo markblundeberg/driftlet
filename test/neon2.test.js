@@ -199,3 +199,34 @@ test('set({ grid }) carries a surface near full coverage, and check() refines it
   const c = d.solution();
   assert.ok(Math.max(...c.ports[0].coverage.Hads) < 1 && Math.abs(held(c) / before - 1) < 1e-9, `Hads ${before} → ${held(c)} mol/m²`);
 });
+
+// Neon's closing note: a strictly neutral node is an algebraic constraint, and a time step's charge
+// rows assumed every step starts on it, deleting any net charge from the pivot ion. Each door into
+// that (1.1 at the cold start, R2 3.1 through set()) was closed where it entered; now the rows
+// carry a start's net charge exactly (above round-off), every species kept, and say so.
+test("a step from a strictly neutral node off neutral keeps every species, and says the state wasn't neutral (Neon's closing note)", () => {
+  const def = {
+    species: [{ name: 'Na+', z: 1 }, { name: 'Cl-', z: -1 }],
+    materials: { aq: { epsr: 0, species: { 'Na+': { D: 1.33e-9, cRef: 1000, mu0: 0 }, 'Cl-': { D: 2.03e-9, cRef: 1000, mu0: 0 } } } },
+    regions: [{ name: 'el', material: 'aq', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }],
+    contacts: { left: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked' } }, right: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked' } } },
+    ports: [{ name: 'g', region: 'el', V: 0.1, area: 1e6, capacitance: { C: 1 }, from: 0, to: 0.2e-6 }],
+    grid: { minCells: 12 },
+  };
+  const d = new Device(def);
+  assert.ok(d.solve().converged);
+  // (a node in the middle, away from the gate, put 5e-8 off neutral, its Na⁺ raised: carried by
+  // the first step as a current. Far more, 5e-6, is more than a step of the length that follows
+  // a solve can carry: that step fails, said, where the old rows deleted it from the pivot.)
+  const s = d.solver, g = Math.floor(s.nNodes * 0.7);
+  s.u[s.blockOfNode[g] * s.M + 1] += 1e-7;
+  s.computeConcentrations();
+  const amount = (sol, sp) => sol.conservation.filter((st) => st.species === sp).reduce((t, st) => t + st.amount, 0);
+  const before = d.solution();
+  const t = d.advance(1e-4);
+  assert.ok(t.converged);
+  for (const sp of ['Na+', 'Cl-']) assert.ok(Math.abs(amount(t, sp) / amount(before, sp) - 1) < 1e-12, `${sp}: ${amount(before, sp)} → ${amount(t, sp)}`);
+  assert.match(t.warnings.join(' '), /started a strictly neutral node off neutral/);
+  // and a step from a solved state says nothing of it
+  assert.doesNotMatch(d.advance(2e-4).warnings.join(' '), /off neutral/);
+});

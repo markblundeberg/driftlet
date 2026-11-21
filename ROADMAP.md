@@ -109,6 +109,25 @@ for live demos.
    - then _chargeRows exact (the old charge at every node), with a check that no node enters a step
      off G = 0, the 37 tests read one by one as what each was relying on.
 
+   Done first (20 Nov), the last step:
+   - The exact rows were the 37's 16 by then, the other doors closed one by one in the meantime.
+     All 16 were round-off: a solved state's net charge of ~1e-16 of its ions', over a step of
+     1e-18 s, a current swamping the fluxes. So the rows carry a start's net charge exactly,
+     except below 1e-12 of the ions' (round-off) where no gate is.
+   - Probed through the whole suite, every real path enters its steps neutral to Newton's
+     tolerance (3e-10 at most). The only starts further off were a test that perturbs u on purpose
+     and a start that is refused.
+   - Past 1e-8, a solution says so.
+   - Neon's R2 3.1 device, with its carry fix undone, now keeps both ions to 1e-16 and fails its
+     step, saying where. Before, it lost Q_dl/2F unwarned.
+
+   Still open:
+   - The producers' single owner, so the starts are right by construction.
+   - A start far off neutral can't be carried in one step after a solve: it needs a current of
+     δq/dt, which shortening only raises. It needs the t = 0⁺ impulse instead, the charge moved by
+     migration as the transference numbers have it.
+
+
    A second seam, after: assemble emitting steady and storage parts into separate accumulators,
    as DifferenceTerms does, so impedance() no longer takes (X(1e-30) − X(∞))·1e-30. Neon's R2 1.1
    and 1.2 both sat there.

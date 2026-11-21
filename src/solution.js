@@ -37,6 +37,16 @@ export function makeSolution(solver, result = {}) {
   }
   const { sol, heldGap } = fields;
   sol.warnings = [...(model.warnings ?? []), ...(result.stopped ? [result.stopped] : [])];
+  // (a step that started a strictly neutral node off neutral: its charge carried in by the step,
+  // every species kept, but the state it started from wasn't one the device can hold; see
+  // _chargeRows in src/regions.js)
+  if (solver.offNeutral) {
+    const { x, rel, time } = solver.offNeutral;
+    sol.warnings.push(
+      `a step from t = ${Number(time.toPrecision(6))} s started a strictly neutral node off neutral (at x = ${x.toExponential(3)} m, its net charge ${rel.toExponential(1)} of its ions'): ` +
+        'a step carries that charge in as a current, keeping every species (or, too much for one step, fails), but nothing a strictly neutral region holds puts it there: something set the state without holding it neutral. Please report it.',
+    );
+  }
   // (a set() that couldn't carry the state over: said in every solution up to and including the
   // next converged steady solve, which still keeps a closed region's restarted amounts)
   if (solver.restarted) {
