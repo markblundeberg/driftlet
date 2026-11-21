@@ -50,3 +50,18 @@ way round, now fixed: round 9 in the CHANGELOG.)
 ```sh
 node bench/combos/run.js --n 30 --only mirror,gauge,scale
 ```
+
+## Identities from the outside reviews
+
+Most of what Neon's two reviews found was an identity that should hold on any device, broken where
+two features meet. Each one kept as a property goes on testing it against every new pairing.
+
+`drivenZ` compares a terminal's impedance held at `plan.V` with the same terminal driven by the
+current it passes there. That's one state, so it must give one Z. It also compares each port the
+definition drives by a current with a twin that holds the port at the voltage it settled at. The
+basic family's pumped cell (two ports moving NO₃⁻ in and out of its closed amount) is there for
+it: with Neon's R2 1.1 fix undone, 6 of its 9 pumped cases in 40 fail, and no other property sees
+it. A blocking terminal, passing 1e-30 A/m² held, is floated at `I: 0` rather than driven at that.
+A terminal whose state moves when driven is skipped: one floated at `I: 0` from a held state at
+−52 mV and 1e-21 A/m² went on to equilibrium, an RC of 1e17 s, inside impedance()'s own steady
+solve.

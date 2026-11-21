@@ -29,6 +29,18 @@ export default {
       grid: { hmin: L / 2000, hmax: L / 50 },
     };
     // (NO3⁻ is blocked at both ends: its amount is closed, so the state isn't unique)
-    return { def, params: { kind: 'cell', c, L, features: ['blocked'] }, plan: { terminal: 'right', V: r.u(-0.05, 0.05), dV: 0.01, equilibrium: true, unique: false, slow: (L * L) / 1.65e-9 } };
+    const plan = { terminal: 'right', V: r.u(-0.05, 0.05), dV: 0.01, equilibrium: true, unique: false, slow: (L * L) / 1.65e-9 }, features = ['blocked'];
+    if (r.chance(0.4)) {
+      // Two ports pumping NO₃⁻ in and out at ±J, its amount closed between them: a law whose
+      // change two driven terminals share. (Neon's second review, R2 1.1: impedance() left such
+      // a port with no admittance, Re Z −19.3 Ω·m² where held it was 0.0036, unwarned.)
+      const sigma = (96485.33212 ** 2 * c * (1.65e-9 + 1.9e-9)) / (8.314462618 * 298.15), area = r.log(2, 4), C = 0.2;
+      const J = r.u(0.1, 1) * ((0.2 * c * 96485.33212 * 1.9e-9) / L);
+      def.ports = [0, 1].map((k) => ({ name: `p${k + 1}`, region: 'w', from: (k ? 0.6 : 0.1) * L, to: (k ? 0.9 : 0.4) * L, area, capacitance: { C, zeroCharge: 0 }, I: k ? J : -J, species: { 'NO3-': { type: 'conductance', G: 1e8, offset: 0 } } }));
+      plan.slow = Math.max(plan.slow, (C * area * L * L) / sigma);
+      plan.equilibrium = false;
+      features.push('pumps');
+    }
+    return { def, params: { kind: 'cell', c, L, features }, plan };
   },
 };

@@ -19,6 +19,8 @@
 //   charge     the charge each terminal passes over a slow ramp after a rest, in one default
 //              advance(), is what a run with its steps capped passes, to 3%
 //   dcZ        the impedance at low frequency is the steady dI/dV at plan.V (unique only)
+//   drivenZ    a terminal's impedance is the same held at plan.V and driven at the current it
+//              passes there; and a port driven by a current, held at the voltage it settles at
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   stale      check() refuses a solution of the device before a set()
 //   mirror     reflect positions, face laws and drives: the reflected device's steady state is the reflection
@@ -575,6 +577,83 @@ const props = {
     const re = z.Z.re[0], im = z.Z.im[0], m = re * re + im * im, Yre = re / m, Yim = -im / m;
     if (Math.abs(Yim) > 1e-2 * Math.abs(Yre)) return skip(`still reactive at ${f.toPrecision(2)} Hz`);
     return Math.abs(Yre - G) <= 1e-3 * Math.abs(G) + 1e-12 ? '' : `Re Y(${f.toPrecision(2)} Hz) = ${Yre.toExponential(4)}, steady dI/dV = ${G.toExponential(4)} S/m²`;
+  },
+
+  drivenZ(c) {
+    // The impedance a terminal reads is its own small-signal V over its current: whether its
+    // operating point is held by a voltage or by a current is the same state, so the same Z.
+    // (A port driven by a current beside another driving the same ion read Re Z = −19.3 Ω·m²,
+    // held at its voltage 0.0036; Neon's second review, R2 1.1.)
+    const term = c.plan.terminal;
+    const held = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V));
+    const s = held.solve();
+    if (!converged(s)) return skip('no steady state at plan.V');
+    // (a blocking terminal passes 1e-30 A/m² held: driven at that it charges for ever, so it's let
+    // float, at I: 0, which keeps the state the held solve gave it)
+    const I0 = s.terminals[term].current, I = Math.abs(I0) < 1e-12 ? 0 : I0;
+    const driven = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V));
+    driven.solve();
+    let w;
+    try {
+      driven.set(isTerminalContact(c.plan) ? { contacts: { [term]: { I } } } : { ports: { [term]: { I } } });
+      w = driven.solve();
+    } catch (e) {
+      if (/every terminal is driven by a current|no terminal held at a voltage passes any/.test(e.message)) return skip('the only terminal held at a voltage that passes current');
+      throw e;
+    }
+    if (!converged(w)) return `driven at the current it passed held (${I.toExponential(3)} A/m²): not converged, warm`;
+    // (a terminal's V is read at the device, inside any series R: the same either way)
+    const dV = w.terminals[term].V - s.terminals[term].V;
+    if (!(Math.abs(dV) <= 1e-6)) return skip(`driven at its held current (${I.toExponential(3)} A/m²) it settles ${dV.toExponential(2)} V away (another state)`);
+    const fs = [1e-2, 1, 1e2].map((k) => k / c.plan.slow);
+    let a, b;
+    try {
+      a = held.impedance(fs, { terminal: term });
+    } catch (e) {
+      return skip(`impedance refused: ${e.message.split('\n')[0].slice(0, 80)}`);
+    }
+    try {
+      b = driven.impedance(fs, { terminal: term });
+    } catch (e) {
+      return `held, impedance() ran; driven at the same state it threw: ${e.message.split('\n')[0].slice(0, 120)}`;
+    }
+    // (impedance() solves its steady state again: a terminal floated at I: 0 whose held state
+    // passed 1e-21 A/m², zero to the tolerance, went on to the equilibrium 52 mV away, an RC of
+    // 1e17 s, and its capacitance there is another: semi 84, 1.4%)
+    const moved = driven.solution().terminals[term].V - s.terminals[term].V;
+    if (!(Math.abs(moved) <= 1e-6)) return skip(`impedance()'s steady solve, driven, moved its terminal ${moved.toExponential(2)} V (an RC beyond any run)`);
+    let worst = 0, at = '';
+    fs.forEach((f, q) => {
+      const za = Math.hypot(a.Z.re[q], a.Z.im[q]), e = Math.hypot(a.Z.re[q] - b.Z.re[q], a.Z.im[q] - b.Z.im[q]) / za;
+      const tol = 1e-6 + 10 * Math.max(a.relError[q] || 0, b.relError[q] || 0);
+      if (!(e <= tol) && !(e / tol <= worst)) (worst = e / tol), (at = `${f.toPrecision(3)} Hz: held ${a.Z.re[q].toExponential(4)} ${a.Z.im[q].toExponential(4)}i, driven ${b.Z.re[q].toExponential(4)} ${b.Z.im[q].toExponential(4)}i Ω·m²`);
+    });
+    if (at) return `Z at ${term}, held at plan.V vs driven at the current it passes there: ${at}`;
+    // And the other way round: each port the definition drives by a current, at its drives, against
+    // a twin with that port held at the voltage it settled at.
+    const own = new Device(clone(c.def)), o = own.solve();
+    if (!converged(o)) return '';
+    for (const p of c.def.ports ?? []) {
+      if (!('I' in p) || typeof p.I !== 'number' || p.R) continue;
+      const Vp = o.terminals[p.name].V, twin = new Device(clone(c.def));
+      twin.solve();
+      twin.set({ ports: { [p.name]: { V: Vp } } });
+      const t = twin.solve();
+      if (!converged(t) || !(Math.abs(t.terminals[p.name].current - p.I) <= 1e-6 * Math.abs(p.I) + 1e-12)) continue;
+      let zd, zh;
+      try {
+        zd = own.impedance(fs, { terminal: p.name });
+        zh = twin.impedance(fs, { terminal: p.name });
+      } catch {
+        continue;
+      }
+      fs.forEach((f, q) => {
+        const z = Math.hypot(zh.Z.re[q], zh.Z.im[q]), e = Math.hypot(zd.Z.re[q] - zh.Z.re[q], zd.Z.im[q] - zh.Z.im[q]) / z;
+        const tol = 1e-6 + 10 * Math.max(zd.relError[q] || 0, zh.relError[q] || 0);
+        if (!(e <= tol) && !at) at = `${p.name} at ${f.toPrecision(3)} Hz: driven ${zd.Z.re[q].toExponential(4)} ${zd.Z.im[q].toExponential(4)}i, held at its ${Vp.toPrecision(5)} V ${zh.Z.re[q].toExponential(4)} ${zh.Z.im[q].toExponential(4)}i Ω·m²`;
+      });
+    }
+    return at ? `Z at a port driven by its current vs held at the voltage it settles at: ${at}` : '';
   },
 
   area(c, r) {
