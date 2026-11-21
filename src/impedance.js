@@ -106,6 +106,7 @@ import { ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { EPS0, FARADAY } from './constants.js';
 import { SolverError } from './errors.js';
 import { put } from './merge.js';
+import { sharedChange } from './lawRows.js';
 
 // (a + ib)/(c + id) by Smith's scaling, which neither overflows nor underflows where the
 // quotient doesn't: by c² + d², a plate's admittance at 1e160 Hz read Z = 0 and, behind 0.4 Ω·m²,
@@ -328,7 +329,12 @@ export class SmallSignal {
     // together. Read by it, a contact at I = 0 sharing K⁺ with a membrane port at I = 0 was held
     // to δI = 0, which AC-shorted it: the port's Im Z 37× too small at 1 kHz, relError 1e-13.
     // The other feeders, driven, pass none: δI = 0. Sol's fourth pass.)
-    const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0 && !(cs.circuit !== kT && cs.terminals?.includes(kT));
+    // (Nor one whose change another driven terminal passing a steady current shares: circuitLaws
+    // reads that one by the flux, so it wrote no change rows here, and clearing the flux reading
+    // below left the terminal with no admittance at all. Two ports pumping K⁺ in and out at ±1
+    // A/m²: one read at the driven port had Re Z = −19.3 Ω·m², the held port's 0.0036, relError
+    // 5e-13, unwarned; read at a contact, Z moved 9% with the ports' order. Neon's second review.)
+    const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0 && !(cs.circuit !== kT && cs.terminals?.includes(kT)) && !sharedChange(this, cs);
     this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, byChange(cs)]));
     this.assemble(dts);
     for (const cs of [...this.constraints, ...this.timeLaws]) {

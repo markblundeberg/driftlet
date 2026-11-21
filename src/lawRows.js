@@ -714,6 +714,13 @@ function lawStart(s, cs) {
 // where that's ε·F·S/(λ dt) below 1e-6 of the flux's ε G, as its start has them, keeps to it
 // throughout, and where a step read by the flux fails, it's tried once more read by the change
 // (see step).
+// Whether a law's change is shared with another current-driven terminal passing a current (see
+// circuitLaws): then it's read by the flux. impedance() asks the same, so that it never clears a
+// terminal's flux reading for a law this left as the flux (Neon's second review, 1.1).
+export function sharedChange(s, cs) {
+  return !!cs.terminals?.some((t) => t !== cs.circuit && sourceAt(s.terms[t].drive.src, s.sourceTime, s.sourceBefore) !== 0);
+}
+
 function circuitLaws(s, dt) {
   for (const cs of [...s.constraints, ...s.timeLaws]) {
     const k = cs.circuit;
@@ -722,7 +729,7 @@ function circuitLaws(s, dt) {
     // not k's alone: read by the flux instead. Read by the change, K⁺ driven in at a contact and
     // out at a port at equal currents gained I·dt/F a step, the contact passing twice its
     // current, silently; Fable round 3's review of src/lawRows.js. Others at I = 0 add nothing.)
-    if (cs.terminals?.some((t) => t !== k && sourceAt(s.terms[t].drive.src, s.sourceTime, s.sourceBefore) !== 0)) continue;
+    if (sharedChange(s, cs)) continue;
     const { amount, dV, gross } = lawAmount(s, cs), f = FARADAY / (cs.lambda * dt), C = s.termC[k];
     if (!s.lawForm.has(cs)) {
       let G = 0;

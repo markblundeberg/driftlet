@@ -73,6 +73,12 @@ major version.
   round where a column is lost to plain round-off (1e-17 to 1e-15 of its terms), not only below
   1e-18: written with its closed compartment first, a membrane cell's solves were quiet at a
   backward error of 0.24, and it took 112 factorisations for the 104 written the other way (3.1).
+- `impedance()` at a terminal driven by a current beside another driving the same ion (two ports
+  pumping K⁺ in and out at ±1 A/m²) is its held impedance. Such a law's change is the two
+  terminals' together, so a time step reads it by the flux, but impedance() cleared that terminal's
+  flux reading as if it had been read by the change: Re Z = −19.3 Ω·m² at 1 mHz against the held
+  port's 0.0036, relError 5e-13, no warning, and read at a contact, Z moved 9% with the ports'
+  order. (Neon's second review, 1.1.)
 - `advance()` with a `budgetMs` always makes at least one attempt. A budget spent before the first
   (a small one, or a call whose own setup outran it) returned with nothing done, so an animation
   calling it once a frame stayed at t = 0, `done` false each frame and no warning.
