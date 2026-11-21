@@ -3,7 +3,22 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.20.0 (2026-11-20)
+
+The faults found by two rounds of outside review by Neon (Google's successor to Gemini 4 Argon, run
+by hand in Antigravity) over the cold start, impedance, check() and set(). Each was reproduced and
+settled before it was fixed, and every fix came with a test that failed first. Of its 26 flags, 22
+were real, and the worst were silent wrong answers:
+- an impedance read at a bath contact under a port's window came out inductive where it is
+  capacitive;
+- check()'s grid item passed errors of 6.6%, 14% and 12.5×;
+- set({ grid }) mid-transient lost a double layer's counter-ions;
+- the cold start lost a gated cell's ions at its first step.
+
+bench/combos crosses fields now, with three families and three symmetry properties from a ninth
+pass by OpenAI's GPT-6.2. Two more properties come from the reviews' identities (drivenZ, sealed),
+and a family of strictly neutral gated cells. A gate held many volts from the solution under it is
+a known limit (ROADMAP).
 
 - set({ grid }) mid-transient keeps a strictly neutral region's ions. A capacitive face's
   counter-charge sits in the region's edge box, an amount per area, and the carry interpolated it
