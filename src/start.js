@@ -596,7 +596,7 @@ export function initFromComposition(s) {
     // O(h) charge, 0.0087 C/m² on two cells; Astra's third pass)
     let w = 0, sum = 0;
     port.nodes.forEach((g, j) => {
-      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === s.nNodes - 1 && setsPhi('right'))) return;
+      if (!s._portHolds(g)) return;
       const a = s.model.grid.vol[g] * s.portArea[t.index][j];
       w += a;
       sum += a * s.VT * u[s.blockOfNode[g] * M];
@@ -763,11 +763,10 @@ export function equilibrateFaces(s) {
 function heldCapacitance(s) {
   const { model } = s, grid = model.grid;
   const capA = new Float64Array(grid.nNodes), capB = new Float64Array(grid.nNodes);
-  const setsPhi = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
   model.ports.forEach((port, k) => {
     if (!port.capacitance || s.floating.includes(2 + k)) return;
     port.nodes.forEach((g, w) => {
-      if (s.phiUndefined[g] || (g === 0 && setsPhi('left')) || (g === grid.nNodes - 1 && setsPhi('right'))) return;
+      if (!s._portHolds(g)) return; // (the boxes _portCapacitance puts its charge in: one predicate)
       const aC = s.portArea[k][w] * port.capacitance.C;
       capA[g] += aC;
       capB[g] += aC * (s.termV[2 + k] - port.capacitance.zeroCharge);

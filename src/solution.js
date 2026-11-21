@@ -207,9 +207,8 @@ function solutionFields(solver, result) {
       const dt = solver.lastDt;
       out.current += Number.isFinite(dt) ? (solver.portQ[k] - solver.portQOld[k]) / dt : 0;
       out.charge = solver.portQ[k];
-      const { C: Cs, zeroCharge } = port.capacitance, last = model.grid.nNodes - 1;
-      const sets = (side) => ['pinned', 'bulk'].includes(model.contacts[side].phi.type);
-      out.sigma = Float64Array.from(port.nodes, (g) => ((g === 0 && sets('left')) || (g === last && sets('right')) ? 0 : Cs * (solver.termV[2 + k] - zeroCharge - phi[g])));
+      const { C: Cs, zeroCharge } = port.capacitance;
+      out.sigma = Float64Array.from(port.nodes, (g) => (solver._portHolds(g) ? Cs * (solver.termV[2 + k] - zeroCharge - phi[g]) : 0));
     }
     if (port.gates.length > 0) {
       // A membrane's gates at each node, and the voltage they follow, φ − (V − zeroCharge).
