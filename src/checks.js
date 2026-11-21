@@ -120,7 +120,7 @@ export function check(device, sol, { refine = true, tol = 1e-2, order = true } =
     if (steady && refine && order && model.species.length > 1) items.push(orderCheck(device, sol, ledger.details.gross));
     // A transient's answer depends on its whole history (and on drives set along the way), so
     // only a run of its own on a finer grid can check it.
-    if (!steady && refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved) and compare' });
+    if (!steady && refine) items.push({ name: 'grid', ok: null, summary: 'not checked in a transient: run it again on a grid twice as fine (hmin and hmax halved), and with a tighter tol (its steps shorter), and compare' });
   }
 
   const ok = sol.converged && items.every((it) => it.ok !== false);

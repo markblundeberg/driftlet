@@ -146,3 +146,56 @@ test("check()'s grid item compares a port's fluxes and the reactions' totals (Ne
   assert.match(g.summary, /feed|A = B/);
 });
 
+// Area 3: set(). Pt | 1 µm of strictly neutral 100 mM NaCl | Pt, its faces capacitive: the
+// double layers' counter-charge sits in the solution's edge boxes, an amount per area of face.
+// A set({ grid }) mid-transient interpolated it as a density: the new interior node beside each
+// edge took half of it, which neutralize() held there and the next step's charge rows deleted,
+// while the edge node, copied bit for bit into half the volume, kept half. advance() lost
+// 2.6317e-7 mol/m² of both ions, Q_dl/2F to five digits, converged and unwarned (Neon's second
+// review, R2 3.1).
+test('set({ grid }) mid-transient keeps a strictly neutral region\'s ions and its faces\' counter-charge (Neon R2 3.1)', () => {
+  const def = {
+    species: [{ name: 'e-', z: -1, cRef: 1000 }, { name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } }, aq: { epsr: 0, species: { 'Na+': { D: 1.33e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
+    regions: [{ name: 'L', material: 'Pt', length: 1e-7 }, { name: 'el', material: 'aq', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }, { name: 'R', material: 'Pt', length: 1e-7 }],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }],
+    contacts: { left: { V: 0.5, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, right: { V: 0, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } } },
+    grid: { hmax: 1.25e-7, minCells: 8 },
+  };
+  const d = new Device(def);
+  d.solve();
+  d.set({ contacts: { left: { V: 0.51 } } });
+  const t1 = d.advance(1e-4), amount = (s, sp) => s.conservation.find((st) => st.species === sp).amount;
+  const D1 = t1.interfaces[0].D;
+  d.set({ grid: { hmax: 6.25e-8, minCells: 16 } });
+  const c = d.solution(), g0 = d.model.grid.regionStart[1];
+  // (the counter-charge in the edge box, as an amount; none beside it)
+  assert.ok(Math.abs(c.c['Na+'][g0 + 1] - c.c['Cl-'][g0 + 1]) < 1e-9 * c.c['Na+'][g0 + 1], `interior node: Na+ − Cl- = ${c.c['Na+'][g0 + 1] - c.c['Cl-'][g0 + 1]}`);
+  const t2 = d.advance(2e-4);
+  assert.ok(t2.converged);
+  for (const sp of ['Na+', 'Cl-']) assert.ok(Math.abs(amount(t2, sp) / amount(t1, sp) - 1) < 1e-9, `${sp}: ${amount(t1, sp)} → ${amount(t2, sp)} mol/m² (Q_dl/2F = ${Math.abs(D1) / (2 * FARADAY)})`);
+  assert.match(check(d, t2).text, /ok {3}conservation/);
+});
+
+// A porous electrode's adsorbed hydrogen near full (bare 1.4e-6 at its window's end): a set({ grid })
+// scaled each node's coverage by the factor its amount asked, which near full asked more than the
+// sites, refused ("its sites shrank below what's adsorbed"), and so check()'s grid item couldn't
+// solve the refined device (Neon's second review, R2 3.2). Near full, a coverage's odds are scaled,
+// as a lattice's are.
+test('set({ grid }) carries a surface near full coverage, and check() refines it (Neon R2 3.2)', () => {
+  const def = {
+    species: [{ name: 'e-', z: -1, cRef: 1000 }, { name: 'H+', z: 1, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr: 0, species: { 'H+': { D: 9.3e-9, mu0: 0 }, 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    regions: [{ name: 'el', material: 'aq', length: 1e-4, c0: { 'H+': 50, 'K+': 50, 'Cl-': 100 } }],
+    contacts: { left: { V: 0, bath: { c: { 'H+': 100, 'K+': 10, 'Cl-': 110 } } }, right: { V: 0, bath: { c: { 'H+': 1e-3, 'K+': 110, 'Cl-': 110.001 } } } },
+    ports: [{ name: 'cat', terminal: 'e-', region: 'el', from: 0, to: 1e-4, area: 1e5, V: -0.25, surface: { Hads: { mu0: -15000, capacity: 2e-5, theta0: 0.5 } }, reactions: [{ equation: 'H+ + e- = Hads', k0: 1e-4, alpha: 0.5 }] }],
+  };
+  const d = new Device(def), s = d.solve();
+  assert.ok(s.converged && Math.min(...s.ports[0].bare) < 1e-5);
+  const held = (sol) => sol.ports[0].coverage.Hads.reduce((t, th, w) => t + 2e-5 * th * sol.ports[0].area[w] * d.model.grid.vol[d.model.grid.x.indexOf(sol.ports[0].x[w])], 0);
+  const before = held(s);
+  assert.notEqual(check(d, s).items.find((it) => it.name === 'grid').ok, null, 'grid item solved the refined device');
+  d.set({ grid: { hmin: 5e-8, hmax: 2.5e-6 } });
+  const c = d.solution();
+  assert.ok(Math.max(...c.ports[0].coverage.Hads) < 1 && Math.abs(held(c) / before - 1) < 1e-9, `Hads ${before} → ${held(c)} mol/m²`);
+});

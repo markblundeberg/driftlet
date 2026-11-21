@@ -633,6 +633,13 @@ notes), ranked by how much each trips an agent writing its first device:
   a 30-run sweep reached it, but the conditioning note could report growth (max|C′| against the
   blocks' entries), and a fix needs pivoting across blocks or a twisted factorisation.
 
+- **Open from Neon's second review (20 Nov 2026).** In a transient, check()'s conservation item
+  reads only unreacting stretches, so where every species reacts it says "nothing to conserve",
+  though the conserved moieties (the laws' combinations) are there to check (R2 2.3). And
+  _chargeRows' assumption (above) has now been reached through two doors, Neon 1.1 at the cold
+  start and R2 3.1 through set({ grid }). Each is closed where it entered, but the charge rows
+  taking the old charge at every node would close the room.
+
 - **Open from bench/combos' neutral family (20 Nov 2026; repros in the maintainer's notes).** A
   strictly neutral region whose c0 carries more than its held gate takes within a volt puts φ̂ many
   volts from the gate's V (8–11 V, 300–430 thermal units, at a gate of 7e4–2e5 F/m³). Two things

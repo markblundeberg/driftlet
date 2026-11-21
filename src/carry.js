@@ -226,7 +226,15 @@ export function carryState(old, s, { oldDef, newDef, pure = false }) {
         kindChanged.add(r);
         continue;
       }
-      netAt[g] = (1 - wx) * netOf(a) + wx * netOf(b);
+      // (in a strictly neutral region, a box's net charge is only its edges': the counter-charge
+      // of a face's or a contact's charge, an amount per area. Carried as such, not interpolated
+      // as a density: half a capacitive face's counter-charge put on the node beside the edge,
+      // which neutralize() held there and the next step's charge rows deleted, lost Q_dl/2F of
+      // both ions, converged and unwarned; Neon's second review, R2 3.1)
+      const o0 = og.regionStart[q], o1 = og.regionEnd[q], edgeNet = (k) => (k === o0 || k === o1 ? 0 : netOf(k));
+      if (g === ng.regionStart[r] && ng.regionEnd[r] > g) netAt[g] = (netOf(o0) * og.vol[o0]) / ng.vol[g];
+      else if (g === ng.regionEnd[r] && ng.regionStart[r] < g) netAt[g] = (netOf(o1) * og.vol[o1]) / ng.vol[g];
+      else netAt[g] = (1 - wx) * edgeNet(a) + wx * edgeNet(b);
       let exact = at >= 0 && sameT && statsSame(old.nodeMaterial[a], s.nodeMaterial[g]) && old.nodeConductor[a] === s.nodeConductor[g] && old.nodeIdeal[a] === s.nodeIdeal[g] && old.background[a] === s.background[g];
       if (exact) for (let i = 0; i < n && exact; i++) {
         const ko = a * n + sp[i], kn = g * n + i;
@@ -971,41 +979,78 @@ function sameWindow(old, of, s, sf) {
 
 function rescaleSurfaces(s, targets) {
   const { n, M } = s, vol = s.model.grid.vol;
+  // A column's amount with its carried nodes' coverage of q moved by ln λ in its odds over the bare
+  // sites, θ_q/θ₀ (its level's), the other species as they are; and its factor, as before.
+  const sites = (k, g) => s.model.surfaces[k].species[0].capacity * vol[g] * s.surfArea[k][s.model.surfaces[k].nodes.indexOf(g)];
+  const factor = ({ want, k, q, nodes }, j) => {
+    if (!(want > 0) || !nodes || nodes.length === 0) return 1;
+    let fresh = 0;
+    s.model.surfaces[k].nodes.forEach((g) => {
+      if (!nodes.includes(g)) fresh += sites(k, g) * s.th[g * s.nSurf + q];
+    });
+    const have = s.surfaceAmount(j);
+    return have - fresh > 0 ? (want - fresh) / (have - fresh) : 1;
+  };
+  let worst = Infinity;
   for (let round = 0; round < 40; round++) {
     s.computeConcentrations();
-    // each column's factor on its carried nodes (the new part stays at its start), all at once
-    const f = targets.map(({ want, k, q, nodes }, j) => {
-      if (!(want > 0) || !nodes || nodes.length === 0) return 1;
-      const sf = s.model.surfaces[k], cap = sf.species[0].capacity;
-      let fresh = 0;
-      sf.nodes.forEach((g, w) => {
-        if (!nodes.includes(g)) fresh += cap * vol[g] * s.surfArea[k][w] * s.th[g * s.nSurf + q];
-      });
-      const have = s.surfaceAmount(j);
-      return have - fresh > 0 ? (want - fresh) / (have - fresh) : 1;
-    });
-    const worst = f.reduce((m, x) => Math.max(m, Math.abs(x - 1)), 0);
+    const f = targets.map(factor);
+    worst = f.reduce((m, x) => Math.max(m, Math.abs(x - 1)), 0);
     if (worst < 1e-14) break;
-    s.model.surfaces.forEach((sf, k) => {
-      const cols = targets.map((t, j) => [t, j]).filter(([t]) => t.k === k);
-      if (cols.length === 0) return;
-      const carried = new Set(cols.flatMap(([t]) => t.nodes ?? []));
-      for (const g of carried) {
-        const b = s.blockOfNode[g], scale = (qq) => {
-          const c = cols.find(([t]) => t.q === qq && (t.nodes ?? []).includes(g));
-          return c ? f[c[1]] : 1;
-        };
-        let sum = 0;
-        for (let qq = 0; qq < sf.species.length; qq++) sum += s.th[g * s.nSurf + qq] * scale(qq);
+    targets.forEach((t, j) => {
+      if (f[j] === 1 || !t.nodes || t.nodes.length === 0) return;
+      const { k, q, nodes } = t, sf = s.model.surfaces[k], nS = s.nSurf;
+      // Multiplied by the factor where that leaves every node short of full (1e-3 of its sites
+      // bare); near full, its odds scaled instead, by the λ that gives the amount (rising in λ, so
+      // found by bisection in ln λ), never past the sites. (Multiplied, a porous electrode's
+      // hydrogen at bare 1.4e-6 refined was refused as over its sites, and check()'s grid item
+      // couldn't solve it; Neon's second review, R2 3.2. Its odds scaled by the factor, round by
+      // round, were still 2e-6 short after 40.)
+      const near = nodes.some((g) => s.th[g * nS + q] * (f[j] - 1) + (1 - s.th0[g]) >= 1 - 1e-3);
+      let lnL = Math.log(f[j]);
+      if (near) {
+        let fresh = 0;
+        sf.nodes.forEach((g) => {
+          if (!nodes.includes(g)) fresh += sites(k, g) * s.th[g * nS + q];
+        });
+        const rest = nodes.map((g) => 1 - s.th0[g] - s.th[g * nS + q]), odds = nodes.map((g) => s.th[g * nS + q] / s.th0[g]);
+        const amount = (lam) => nodes.reduce((a, g, w) => a + (sites(k, g) * lam * odds[w] * (1 - rest[w])) / (1 + lam * odds[w]), fresh);
+        // (θ_q' = λ o (1 − rest)/(1 + λ o): the others' share, rest, kept; o = θ_q/θ₀ over the bare
+        // sites left to q and θ₀, (1 − rest)/(1 + o) as θ₀ was)
+        let lo = -1, hi = 1;
+        while (amount(Math.exp(lo)) > t.want && lo > -700) lo *= 2;
+        while (amount(Math.exp(hi)) < t.want && hi < 700) hi *= 2;
+        for (let it = 0; it < 200 && hi - lo > 1e-15 * Math.max(1, Math.abs(lo + hi)); it++) {
+          const m = 0.5 * (lo + hi);
+          if (amount(Math.exp(m)) < t.want) lo = m;
+          else hi = m;
+        }
+        lnL = 0.5 * (lo + hi);
+      }
+      for (const g of nodes) {
+        const b = s.blockOfNode[g], th = s.th[g * nS + q];
+        if (!(th > 0)) continue;
+        // its new coverage, and what's left bare with the others' kept
+        const rest = 1 - s.th0[g] - th;
+        let thN = th * f[j];
+        if (near) {
+          const o = (Math.exp(lnL) * th) / s.th0[g];
+          thN = (o * (1 - rest)) / (1 + o);
+        }
+        const bare = 1 - rest - thN;
         // (more than the sites hold: refused, the device left as it was)
-        if (!(sum < 1)) throw new DeviceError(`set(): surface '${sf.name}' can't hold what it held (its coverage would be ${sum.toPrecision(4)} at x = ${s.model.grid.x[g]}): its sites shrank below what's adsorbed; keep them larger, or build a new Device to start over`);
-        const bare = 1 - sum;
+        if (!(bare > 0)) throw new DeviceError(`set(): surface '${sf.name}' can't hold what it held (its coverage would be ${(rest + thN).toPrecision(4)} at x = ${s.model.grid.x[g]}): its sites shrank below what's adsorbed; keep them larger, or build a new Device to start over`);
+        // (each species' level is its odds over the bare sites: the others' coverages kept)
         for (let qq = 0; qq < sf.species.length; qq++) {
-          const th = s.th[g * s.nSurf + qq] * scale(qq);
-          if (th > 0) (s.u[b * M + 1 + n + qq] = sf.species[qq].mu0 / s.model.RT + Math.log(th / bare)), (s.uLo[b * M + 1 + n + qq] = 0);
+          const t2 = qq === q ? thN : s.th[g * nS + qq];
+          if (t2 > 0) (s.u[b * M + 1 + n + qq] = sf.species[qq].mu0 / s.model.RT + Math.log(t2 / bare)), (s.uLo[b * M + 1 + n + qq] = 0);
         }
       }
+      s.computeConcentrations();
     });
   }
   s.computeConcentrations();
+  // (what the surfaces held, to the last few digits, or refused: the device left as it was)
+  if (!(worst < 1e-14)) worst = targets.map(factor).reduce((m, x) => Math.max(m, Math.abs(x - 1)), 0);
+  if (!(worst < 1e-9)) throw new DeviceError(`set(): a surface can't hold what it held on the new grid (its amount ${worst.toPrecision(2)} off after 40 rounds, its sites near full): keep them larger, or build a new Device to start over`);
 }

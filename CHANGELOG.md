@@ -5,6 +5,18 @@ major version.
 
 ## Unreleased
 
+- set({ grid }) mid-transient keeps a strictly neutral region's ions. A capacitive face's
+  counter-charge sits in the region's edge box, an amount per area, and the carry interpolated it
+  as a density. Half went to the node beside the edge, which the next step held neutral, and the
+  edge node, copied into half the volume, kept half. Pt | 1 µm of 100 mM NaCl | Pt lost
+  2.6317e-7 mol/m² of both ions, Q_dl/2F to five digits, converged and unwarned. Each edge box's
+  net charge is now carried as an amount (Neon's second review, R2 3.1).
+- set({ grid }) carries a surface near full coverage: its odds over the bare sites are scaled, by
+  the factor that keeps its amount exactly, where multiplying would pass the sites. A porous
+  electrode's hydrogen at bare 1.4e-6 was refused as over its sites, so check()'s grid item
+  couldn't solve the refined device. A surface that can't reach its amount is now refused, not
+  left short (Neon's second review, R2 3.2).
+- check() in a transient asks for the run again with a tighter tol as well as a finer grid.
 - check()'s grid item compares the charges where a grid is coarsest as they are: each contact's D,
   a capacitive face's, a port's. The regions' charges were the only ones compared, and only where
   they passed a millionth of the gross ionic charge (max |q| × V). On 1 mm of 1 M KCl that gate
