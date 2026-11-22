@@ -5,6 +5,43 @@ major version.
 
 ## Unreleased
 
+One owner of a strictly neutral node's charge, the design from Neon's third review: each node's
+Gauss row is read from one assembly at the state (src/neutral.js), and every producer of a state a
+step starts from (the carry's set(), the transient's cold start) brings it onto that row, so none
+can disagree with what the step solves. Built after a property that catches the old faults:
+bench/combos' neutralG, which with their fixes undone fails on Neon's R3 1.7, R2 3.1 and R3 1.5.
+Changes what set() does with a gate's hardware over a strictly neutral region (below): the gates'
+charges are now kept, where they were read off the state.
+
+- set() of a gate's capacitance, window or electrode area over a strictly neutral region, or a gate
+  added or taken away there, keeps the concentrations under it and each gate's charge (a new one's,
+  none; a window's new part is new membrane, uncharged), and the potential under it jumps until
+  each box is neutral again. The next step passes the charge between the gates and the held ones'
+  sources as currents over the solution's RC time. Neon's R3 1.5 (a gate added beside another:
+  Kirchhoff broken by 1.9e5 A/m², which 1.21 only warned of) now sums to 1e-9 of the currents, and
+  a clamped axon's window widened (test/carry.test.js, 27b), which 1.21 charged in an instant
+  with no current through the clamp, charges through the axoplasm and in 40 ms is the device built
+  wide, to 1e-6.
+- A regrid of a strictly neutral region brings each node onto its Gauss row, exactly. Where its
+  ions are all closed (their net charge kept, so the capacitors balancing it keep theirs), its
+  potential stays where it was carried and the concentrations move in the charge direction only,
+  a held gate over it keeping its total; elsewhere, its potential is what neutrality makes of the
+  carried levels, as a fresh solve on the new grid has it, and a held gate's charge is read off that
+  state. The carry held each node's old net charge instead: a capacitive face's D moved with the
+  potential beside it, a held gate's start charge was 1e-6 to 5e-5 off what the regridded state
+  holds (a current at the first step), and where its rounds ran out (4 of 20 neutral-family
+  regrids), it stopped with an amount or a charge up to 1.4e-7 off (now 3e-11 at most, in 7 of 20).
+- A transient's cold start puts a sheet-charged capacitive face's counter-charge in its edge boxes
+  before the first step (a membrane family case started 1.2% of its charge off neutral there).
+- A floating gate's voltage is held to its charge through a set() to 1e-13 of that charge (it
+  stopped at 1e-13 of a thermal volt's worth, 1e5 times a gate's).
+- bench/combos: the property neutralG (every strictly neutral node on its Gauss row after the cold
+  start, a solve, a drive's step, a regrid, a gate's C doubled and a gate added; each gated
+  stretch's start charges against the state's; then a short step that mustn't say its start was
+  off), and the neutral family's Donnan faces, baths and floating gates.
+- A stray copy of two cold-start helpers, pasted inside initFromComposition in 1.21.0, taken out
+  (the module's own were the ones called).
+
 ## 1.21.0 (2026-11-21)
 
 The faults found by Neon's third review (Google's successor to Gemini 4 Argon, run by hand in
