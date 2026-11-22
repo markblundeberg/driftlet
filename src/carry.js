@@ -27,8 +27,9 @@
 //      one that held it (where resized or reshaped, concentrations kept: its volume's part scaled
 //      node by node, a diffuse layer's excess by its plane's area), its own start's where nothing carries; a stretch closed on its own over the same space keeps its reference
 //      exactly. The state is put at those amounts (a species scaled, the others held) unless a held
-//      terminal sets its level; a surface's carried nodes likewise where its window and electrode are
-//      unchanged, refused where the sites can't hold it. A strictly neutral node whose concentrations moved keeps the net charge the old
+//      terminal sets its level; a surface's carried nodes likewise, all its species at once (in any
+//      listing order, the same state), where its window and electrode are unchanged, refused where
+//      the sites can't hold it (by more than its amounts' round-off). A strictly neutral node whose concentrations moved keeps the net charge the old
 //      state held there (ions, fixed charge, a port's spread charge). Terminals' running charges
 //      and stored charges scale with their area (a contact's, a port's electrode where its
 //      capacitance holds charge); a port's stored charge, node by node (its σ per area kept), and a
@@ -977,80 +978,201 @@ function sameWindow(old, of, s, sf) {
   return a.from === b.from && a.to === b.to && deepEqual(a.area, b.area) && old.model.regions[a.region].length === s.model.regions[b.region].length;
 }
 
+// Each surface's carried coverages put at the amounts surfaceTargets asks, every species of a surface
+// at once, so the answer can't hang on the order they're listed in (one at a time, a growing species
+// listed first couldn't fit in the bare sites the shrinking one still held, while the other listing
+// order passed; Neon's third review, 1.4). A column is held where it has an amount to keep and its
+// carried nodes hold some of it; the others keep their coverages (multiplied) or levels (scaled).
+//   - Multiplied, each coverage by its factor, where that leaves every carried node 1e-3 of its sites
+//     bare: exact in one pass.
+//   - Otherwise (near full) each held species' odds over the bare sites scaled, θ_q' ∝ λ_q θ_q with
+//     the bare sites and the species not held at weight 1: a shift of ln λ_q in q's level, the same
+//     at every carried node. Of the profiles that keep the amounts, it's the one nearest the old in
+//     relative entropy (Σ_g s_g Σ θ' ln(θ'/θ), the bare sites counted as a species), and its
+//     ℓ = ln λ minimise the convex F(ℓ) = Σ_g s_g ln(r_g + Σ_q e^{ℓ_q} θ_qg) − Σ_q ℓ_q W_q (s_g a
+//     node's sites, r_g its bare and unheld share, W_q what the carried nodes must hold), whose
+//     gradient is the amounts' misfit and whose Hessian, Σ_g s_g (diag θ' − θ'θ'ᵀ), is positive
+//     definite. So the minimum exists, and is unique, exactly when each W_q > 0 and Σ W_q is below
+//     the carried sites. Newton finds it, each step a descent, cut to where F stops falling along
+//     it. The bare fraction comes from the odds, never as 1 − Σθ (which cancelled to 0 at bare 1e-17,
+//     and refused a pure regrid).
+//   - Where every node is that full, the bare sites' total is the sites less the amounts, to the
+//     amounts' round-off: at bare 1e-17 everywhere, two species' wants came to 1.4e-16 more than the
+//     sites, and below that, the bare share a solve lands on is round-off's. So F is given a penalty,
+//     ½·1e-14 Σ_q W_q L_q² on each level's whole shift L_q over the rounds: an amount kept to 1e-14
+//     of itself per unit of L, and a want that's over the sites by its round-off fits (that one's
+//     bare sites moved 4% at most; over by 1e-14, an e-fold). Over by more: refused.
 function rescaleSurfaces(s, targets) {
-  const { n, M } = s, vol = s.model.grid.vol;
-  // A column's amount with its carried nodes' coverage of q moved by ln λ in its odds over the bare
-  // sites, θ_q/θ₀ (its level's), the other species as they are; and its factor, as before.
-  const sites = (k, g) => s.model.surfaces[k].species[0].capacity * vol[g] * s.surfArea[k][s.model.surfaces[k].nodes.indexOf(g)];
-  const factor = ({ want, k, q, nodes }, j) => {
-    if (!(want > 0) || !nodes || nodes.length === 0) return 1;
-    let fresh = 0;
-    s.model.surfaces[k].nodes.forEach((g) => {
-      if (!nodes.includes(g)) fresh += sites(k, g) * s.th[g * s.nSurf + q];
+  const { n, M } = s, vol = s.model.grid.vol, nS = s.nSurf, RT = s.model.RT;
+  const sites = (k, g) => s.model.surfaces[k].species[0].capacity * vol[g] * s.surfArea[k][s.surfW[g]];
+  // a held column's amount, A on its carried nodes, and W, what they must hold (its want, less its
+  // window's other nodes, held at their own start)
+  const columns = () =>
+    targets.map((t, j) => {
+      if (!(t.want > 0) || !t.nodes || t.nodes.length === 0) return null;
+      let fresh = 0;
+      for (const g of s.model.surfaces[t.k].nodes) if (!t.nodes.includes(g)) fresh += sites(t.k, g) * s.th[g * nS + t.q];
+      const A = s.surfaceAmount(j) - fresh;
+      return A > 0 ? { ...t, A, W: t.want - fresh } : null;
     });
-    const have = s.surfaceAmount(j);
-    return have - fresh > 0 ? (want - fresh) / (have - fresh) : 1;
+  const misfit = (cols) => cols.reduce((m, c) => (c ? Math.max(m, Math.abs(c.W / c.A - 1)) : m), 0);
+
+  const multiplied = (k, held, nodes, bareAfter) => {
+    const sf = s.model.surfaces[k], th = new Float64Array(sf.species.length);
+    for (const g of nodes) {
+      const b = s.blockOfNode[g], bare = bareAfter(g);
+      for (let qq = 0; qq < th.length; qq++) th[qq] = s.th[g * nS + qq];
+      for (const c of held) th[c.q] *= c.W / c.A;
+      // (each species' level is its odds over the bare sites)
+      for (let qq = 0; qq < th.length; qq++) if (th[qq] > 0) (s.u[b * M + 1 + n + qq] = sf.species[qq].mu0 / RT + Math.log(th[qq] / bare)), (s.uLo[b * M + 1 + n + qq] = 0);
+    }
   };
-  let worst = Infinity;
-  for (let round = 0; round < 40; round++) {
-    s.computeConcentrations();
-    const f = targets.map(factor);
-    worst = f.reduce((m, x) => Math.max(m, Math.abs(x - 1)), 0);
-    if (worst < 1e-14) break;
-    targets.forEach((t, j) => {
-      if (f[j] === 1 || !t.nodes || t.nodes.length === 0) return;
-      const { k, q, nodes } = t, sf = s.model.surfaces[k], nS = s.nSurf;
-      // Multiplied by the factor where that leaves every node short of full (1e-3 of its sites
-      // bare); near full, its odds scaled instead, by the λ that gives the amount (rising in λ, so
-      // found by bisection in ln λ), never past the sites. (Multiplied, a porous electrode's
-      // hydrogen at bare 1.4e-6 refined was refused as over its sites, and check()'s grid item
-      // couldn't solve it; Neon's second review, R2 3.2. Its odds scaled by the factor, round by
-      // round, were still 2e-6 short after 40.)
-      const near = nodes.some((g) => s.th[g * nS + q] * (f[j] - 1) + (1 - s.th0[g]) >= 1 - 1e-3);
-      let lnL = Math.log(f[j]);
-      if (near) {
-        let fresh = 0;
-        sf.nodes.forEach((g) => {
-          if (!nodes.includes(g)) fresh += sites(k, g) * s.th[g * nS + q];
-        });
-        const rest = nodes.map((g) => 1 - s.th0[g] - s.th[g * nS + q]), odds = nodes.map((g) => s.th[g * nS + q] / s.th0[g]);
-        const amount = (lam) => nodes.reduce((a, g, w) => a + (sites(k, g) * lam * odds[w] * (1 - rest[w])) / (1 + lam * odds[w]), fresh);
-        // (θ_q' = λ o (1 − rest)/(1 + λ o): the others' share, rest, kept; o = θ_q/θ₀ over the bare
-        // sites left to q and θ₀, (1 − rest)/(1 + o) as θ₀ was)
-        let lo = -1, hi = 1;
-        while (amount(Math.exp(lo)) > t.want && lo > -700) lo *= 2;
-        while (amount(Math.exp(hi)) < t.want && hi < 700) hi *= 2;
-        for (let it = 0; it < 200 && hi - lo > 1e-15 * Math.max(1, Math.abs(lo + hi)); it++) {
-          const m = 0.5 * (lo + hi);
-          if (amount(Math.exp(m)) < t.want) lo = m;
-          else hi = m;
-        }
-        lnL = 0.5 * (lo + hi);
-      }
-      for (const g of nodes) {
-        const b = s.blockOfNode[g], th = s.th[g * nS + q];
-        if (!(th > 0)) continue;
-        // its new coverage, and what's left bare with the others' kept
-        const rest = 1 - s.th0[g] - th;
-        let thN = th * f[j];
-        if (near) {
-          const o = (Math.exp(lnL) * th) / s.th0[g];
-          thN = (o * (1 - rest)) / (1 + o);
-        }
-        const bare = 1 - rest - thN;
-        // (more than the sites hold: refused, the device left as it was)
-        if (!(bare > 0)) throw new DeviceError(`set(): surface '${sf.name}' can't hold what it held (its coverage would be ${(rest + thN).toPrecision(4)} at x = ${s.model.grid.x[g]}): its sites shrank below what's adsorbed; keep them larger, or build a new Device to start over`);
-        // (each species' level is its odds over the bare sites: the others' coverages kept)
-        for (let qq = 0; qq < sf.species.length; qq++) {
-          const t2 = qq === q ? thN : s.th[g * nS + qq];
-          if (t2 > 0) (s.u[b * M + 1 + n + qq] = sf.species[qq].mu0 / s.model.RT + Math.log(t2 / bare)), (s.uLo[b * M + 1 + n + qq] = 0);
-        }
-      }
-      s.computeConcentrations();
+
+  const KAPPA = 1e-14, shifts = new Map(); // (each surface's levels' whole shifts L, over the rounds)
+  const scaled = (k, held, nodes) => {
+    const sf = s.model.surfaces[k], ns = sf.species.length, T = held.length, m1 = T + 1;
+    if (!shifts.has(k)) shifts.set(k, new Float64Array(ns));
+    const L = shifts.get(k);
+    const bad = held.find((c) => !(c.W > 0));
+    if (bad) throw new DeviceError(`set(): surface '${sf.name}' can't hold what it held on the new grid (its ${sf.species[bad.q].name} would need ${bad.W.toPrecision(4)} where it was carried): keep its window as it was, or build a new Device to start over`);
+    // (each species' place among the held, −1 if not; each node's sites and log odds ζ = η − μ°/RT)
+    const pos = new Int32Array(ns).fill(-1);
+    held.forEach((c, t) => (pos[c.q] = t));
+    const W = Float64Array.from(held, (c) => c.W), sg = Float64Array.from(nodes, (g) => sites(k, g));
+    const zeta = new Float64Array(nodes.length * ns);
+    nodes.forEach((g, w) => {
+      const b = s.blockOfNode[g];
+      for (let qq = 0; qq < ns; qq++) zeta[w * ns + qq] = s.u[b * M + 1 + n + qq] + s.uLo[b * M + 1 + n + qq] - sf.species[qq].mu0 / RT;
     });
+    const S = sg.reduce((a, x) => a + x, 0), want = W.reduce((a, x) => a + x, 0);
+    // (more than the sites hold, by more than its round-off: refused, the device left as it was)
+    if (!(want < S * (1 + KAPPA))) throw new DeviceError(`set(): surface '${sf.name}' can't hold what it held (its species would need ${((want - S) / S).toPrecision(2)} more than all its sites): its sites shrank below what's adsorbed; keep them larger, or build a new Device to start over`);
+    // The carried nodes' amounts at ℓ, and with wts, F's Hessian as a graph's weights (vertex 0 the
+    // ground: wts[(t+1)·m1] = Σ s r θ'_t, to the bare and unheld share; wts[(t+1)·m1 + p+1] = Σ s θ'_t θ'_p).
+    const p = new Float64Array(T);
+    const amounts = (ell, wts) => {
+      const A = new Float64Array(T);
+      if (wts) wts.fill(0);
+      for (let w = 0; w < nodes.length; w++) {
+        let mx = 0;
+        for (let qq = 0; qq < ns; qq++) mx = Math.max(mx, zeta[w * ns + qq] + (pos[qq] >= 0 ? ell[pos[qq]] : 0));
+        let rest = Math.exp(-mx), den = rest;
+        for (let qq = 0; qq < ns; qq++) {
+          const e = Math.exp(zeta[w * ns + qq] + (pos[qq] >= 0 ? ell[pos[qq]] : 0) - mx);
+          if (pos[qq] >= 0) p[pos[qq]] = e;
+          else rest += e;
+          den += e;
+        }
+        for (let t = 0; t < T; t++) {
+          const th = p[t] / den;
+          A[t] += sg[w] * th;
+          if (!wts) continue;
+          wts[(t + 1) * m1] += sg[w] * th * (rest / den);
+          for (let q2 = 0; q2 < T; q2++) if (q2 !== t) wts[(t + 1) * m1 + q2 + 1] += sg[w] * th * (p[q2] / den);
+        }
+      }
+      return A;
+    };
+    // (the penalised F's gradient at ℓ, given its amounts there, and its slope along d)
+    const grad = (A, ell) => A.map((x, t) => x - W[t] + KAPPA * W[t] * (L[held[t].q] + ell[t]));
+    const slope = (G, d) => G.reduce((a, x, t) => a + x * d[t], 0);
+    const ell = new Float64Array(T), wts = new Float64Array(m1 * m1), trial = new Float64Array(T);
+    const at = (tau, d) => {
+      for (let t = 0; t < T; t++) trial[t] = ell[t] + tau * d[t];
+      return slope(grad(amounts(trial), trial), d);
+    };
+    let best = Infinity, stalled = 0;
+    for (let it = 0; it < 60 && stalled < 3; it++) {
+      const G = grad(amounts(ell, wts), ell);
+      const res = G.reduce((m, x, t) => Math.max(m, Math.abs(x) / W[t]), 0);
+      if (res < 1e-15) break;
+      if (res < 0.5 * best) (best = res), (stalled = 0);
+      else stalled++;
+      for (let t = 0; t < T; t++) wts[t + 1] = wts[(t + 1) * m1] += KAPPA * W[t];
+      const d = solveGrounded(wts, G.map((x) => -x), T);
+      // (along d, F's slope rises from below zero: the whole step where F still falls at its end,
+      // else a point short of where the slope turns, found by regula falsi, Illinois)
+      const g0 = slope(G, d);
+      if (!(g0 < 0)) break;
+      let lo = 1;
+      let ghi = at(1, d);
+      if (ghi > 0) {
+        let glo = g0, hi = 1, side = 0;
+        lo = 0;
+        for (let ls = 0; ls < 60 && hi - lo > 1e-12; ls++) {
+          const tau = (lo * ghi - hi * glo) / (ghi - glo), g = at(tau, d);
+          if (g <= 0) {
+            (lo = tau), (glo = g);
+            if (side === -1) ghi *= 0.5;
+            side = -1;
+            if (-g <= -0.5 * g0) break;
+          } else {
+            (hi = tau), (ghi = g);
+            if (side === 1) glo *= 0.5;
+            side = 1;
+          }
+        }
+      }
+      if (!(lo > 0)) break;
+      for (let t = 0; t < T; t++) ell[t] += lo * d[t];
+    }
+    // each held species' level shifted by its ℓ at every carried node (its low word kept: TwoSum)
+    held.forEach((c, t) => (L[c.q] += ell[t]));
+    for (const g of nodes) {
+      const b = s.blockOfNode[g];
+      held.forEach((c, t) => {
+        const o = b * M + 1 + n + c.q, x = s.u[o], l = ell[t];
+        if (l === 0 || !Number.isFinite(x)) return;
+        const sum = x + l;
+        s.uLo[o] += Math.abs(x) >= Math.abs(l) ? x - sum + l : l - sum + x;
+        s.u[o] = sum;
+      });
+    }
+  };
+
+  let worst = Infinity;
+  for (let round = 0; round < 8; round++) {
+    s.computeConcentrations();
+    const cols = columns();
+    worst = misfit(cols);
+    if (worst < 1e-14) break;
+    // (a surface at a time, every column of it from the same state)
+    for (const k of new Set(cols.filter((c) => c && c.W !== c.A).map((c) => c.k))) {
+      const held = cols.filter((c) => c && c.k === k), nodes = held[0].nodes;
+      const bareAfter = (g) => held.reduce((b, c) => b - s.th[g * nS + c.q] * (c.W / c.A - 1), s.th0[g]);
+      if (held.every((c) => c.W > 0) && nodes.every((g) => bareAfter(g) >= 1e-3)) multiplied(k, held, nodes, bareAfter);
+      else scaled(k, held, nodes);
+    }
   }
   s.computeConcentrations();
   // (what the surfaces held, to the last few digits, or refused: the device left as it was)
-  if (!(worst < 1e-14)) worst = targets.map(factor).reduce((m, x) => Math.max(m, Math.abs(x - 1)), 0);
-  if (!(worst < 1e-9)) throw new DeviceError(`set(): a surface can't hold what it held on the new grid (its amount ${worst.toPrecision(2)} off after 40 rounds, its sites near full): keep them larger, or build a new Device to start over`);
+  if (!(worst < 1e-14)) worst = misfit(columns());
+  if (!(worst < 1e-9)) throw new DeviceError(`set(): a surface can't hold what it held on the new grid (its amount ${worst.toPrecision(2)} off after 8 rounds, its sites near full): keep them larger, or build a new Device to start over`);
+}
+
+// L x = b for L the Laplacian of the weights w (an m × m array, m = T + 1, symmetric, vertex 0 the
+// ground, x₀ = 0), eliminated from the last vertex down with each pivot summed from its weights,
+// never differenced (Grassmann–Taksar–Heyman): a near-full surface's smallest pivot, its bare share,
+// is a sum of small positive terms, where one found by subtraction cancels to round-off. Returns
+// x₁ … x_T; overwrites w and b.
+function solveGrounded(w, b, T) {
+  const m = T + 1, d = new Float64Array(m), x = new Float64Array(m), r = new Float64Array(m);
+  for (let k = 1; k <= T; k++) r[k] = b[k - 1];
+  for (let k = T; k >= 1; k--) {
+    let dk = 0;
+    for (let j = 0; j < k; j++) dk += w[k * m + j];
+    d[k] = dk;
+    for (let i = 0; i < k; i++) {
+      const wik = w[i * m + k];
+      if (wik === 0) continue;
+      if (i > 0) r[i] += (wik * r[k]) / dk;
+      for (let j = 0; j < k; j++) if (j !== i) w[i * m + j] += (wik * w[k * m + j]) / dk;
+    }
+  }
+  for (let k = 1; k <= T; k++) {
+    let v = r[k];
+    for (let j = 1; j < k; j++) v += w[k * m + j] * x[j];
+    x[k] = v / d[k];
+  }
+  return x.subarray(1);
 }
