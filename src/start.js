@@ -66,7 +66,9 @@
 //      it, each node neutral with a held gate's aσ counted in it, each passing species' amount
 //      over the two nodes kept, and so the gates' charge over them; the jump in φ̂ between them
 //      the one unknown, the left node's φ̂ moving with it only where the right node is gated),
-//      everything else at them unchanged in concentration;
+//      everything else at them unchanged in concentration; a floating gate over either node
+//      keeping its σ, its voltage and the rest of its window's φ̂ (concentrations kept) moving
+//      with the φ̂ moved under it (floatSigma, followFloating);
 //      s.coldStart false. A solve that converges, a warm start and a carried state set it as
 //      their state is.
 //   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ
@@ -189,7 +191,38 @@ export function initFromComposition(s) {
       }
     }
   };
-  // A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
+  // The charge per volume a floating capacitive port puts at node g, Σ aσ (C/m³), where it holds
+// one (see _portHolds).
+function floatSigma(s, g) {
+  const { model, M } = s;
+  let q = 0;
+  for (const [k, w] of s.qgTerms[g]) {
+    const port = model.ports[k - 2];
+    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
+    q += s.portArea[k - 2][w] * port.capacitance.C * (s.termV[k] - port.capacitance.zeroCharge - s.VT * s.u[s.blockOfNode[g] * M]);
+  }
+  return q;
+}
+
+// Each floating capacitive port over node g, whose φ̂ moved by d: its voltage moved by V_T d, and
+// φ̂ at the rest of its window too, each η_i by z_i d (its concentrations kept), so that its σ is
+// as it was everywhere.
+function followFloating(s, g, d) {
+  if (d === 0) return;
+  const { model, M, n, z, u } = s;
+  for (const [k] of s.qgTerms[g]) {
+    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
+    s.termV[k] += s.VT * d;
+    for (const h of model.ports[k - 2].nodes) {
+      if (h === g || !s._portHolds(h)) continue;
+      const b = s.blockOfNode[h] * M;
+      u[b] += d;
+      for (let i = 0; i < n; i++) u[b + 1 + i] += z[i] * d;
+    }
+  }
+}
+
+// A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
   // so that aσ = capB − capA V_T φ̂. In a strictly neutral region it's part of each node's
   // neutrality, ρ + aσ = 0: without it, a region of P⁺ alone under a gate was refused for the
   // charge the gate balances, and a level-fed one started off it, its first 1 ps step jumping
@@ -710,7 +743,7 @@ export function equilibrateFaces(s) {
     const RT = model.RT, vL = grid.vol[gL], vR = grid.vol[gR];
     const conc = (m, b, i) => m.cRef[i] * Math.exp(u[b + 1 + i] - m.mu0[i] / RT - z[i] * u[b]);
     const amount = pass.map((i) => vL * conc(mL, bL, i) + vR * conc(mR, bR, i));
-    let qOther = fixedAt(regions[f], grid.x[gL]) / FARADAY; // (the left node's charge from all it doesn't share)
+    let qOther = (fixedAt(regions[f], grid.x[gL]) + floatSigma(s, gL)) / FARADAY; // (the left node's charge from all it doesn't share)
     for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i) && z[i] !== 0) qOther += z[i] * conc(mL, bL, i);
     // A held gate on either node: its charge is part of that node's neutrality, ρ + aσ = 0. The
     // ions' total over the two nodes is kept, so the gates' is too: vL·aC_L·φ̂_L + vR·aC_R·φ̂_R
@@ -743,6 +776,7 @@ export function equilibrateFaces(s) {
     }
     const D = 0.5 * (lo + hi), cs = lnSplit(D); // (ln c_L, ln c_R)
     const keep = Float64Array.from({ length: n }, (_, i) => (mR.present[i] ? conc(mR, bR, i) : 0)); // (the right node's, before φ̂ moves)
+    const phiR0 = u[bR];
     const dL = phiLAt(D) - phiL0; // (the left node's φ̂, moved where a gate on the right asks it: what it doesn't share kept)
     u[bL] += dL;
     for (let i = 0; i < n; i++) if (mL.present[i] && !pass.includes(i)) u[bL + 1 + i] += z[i] * dL;
@@ -753,8 +787,47 @@ export function equilibrateFaces(s) {
       u[bL + 1 + i] = cs[j][0] - Math.log(mL.cRef[i]) + mL.mu0[i] / RT + z[i] * u[bL];
       u[bR + 1 + i] = cs[j][1] - Math.log(mR.cRef[i]) + mR.mu0[i] / RT + z[i] * u[bR];
     });
+    // A floating gate over either node keeps the charge it started with (none: it passes no
+    // current, at t = 0⁺ as after): its voltage moves with the φ̂ the face moved under it, and the
+    // rest of its window's φ̂ with it, concentrations kept, so its σ is as it was at every node and
+    // each stays neutral. (Left where it was, a floating gate over a Donnan face's right side took
+    // the jump as a charge its node's ions didn't balance: the first step drove 1.6 MA/m² through
+    // the bath, and an advance() from the start failed at t = 0; Neon's third review, R3 1.7.)
+    followFloating(s, gL, dL);
+    followFloating(s, gR, u[bR] - phiR0);
   }
   s.computeConcentrations();
+}
+
+// The charge per volume a floating capacitive port puts at node g, Σ aσ (C/m³), where it holds
+// one (see _portHolds).
+function floatSigma(s, g) {
+  const { model, M } = s;
+  let q = 0;
+  for (const [k, w] of s.qgTerms[g]) {
+    const port = model.ports[k - 2];
+    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
+    q += s.portArea[k - 2][w] * port.capacitance.C * (s.termV[k] - port.capacitance.zeroCharge - s.VT * s.u[s.blockOfNode[g] * M]);
+  }
+  return q;
+}
+
+// Each floating capacitive port over node g, whose φ̂ moved by d: its voltage moved by V_T d, and
+// φ̂ at the rest of its window too, each η_i by z_i d (its concentrations kept), so that its σ is
+// as it was everywhere.
+function followFloating(s, g, d) {
+  if (d === 0) return;
+  const { model, M, n, z, u } = s;
+  for (const [k] of s.qgTerms[g]) {
+    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
+    s.termV[k] += s.VT * d;
+    for (const h of model.ports[k - 2].nodes) {
+      if (h === g || !s._portHolds(h)) continue;
+      const b = s.blockOfNode[h] * M;
+      u[b] += d;
+      for (let i = 0; i < n; i++) u[b + 1 + i] += z[i] * d;
+    }
+  }
 }
 
 // A held port's capacitance through its window, per node: capA = aC (F/m³) and capB = aC (V −

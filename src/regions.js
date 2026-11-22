@@ -69,7 +69,9 @@
 //     what neutrality makes of the ions' net charge, −(aσ + ρ_fixed)/F, less Σ z c_old, at
 //     every node, so a step from a start that wasn't neutral conserves each species (below
 //     1e-12 of the ions' charge, where no gate is, a solved state's round-off, left out; past
-//     1e-8, kept in offNeutral for the solution to say).
+//     1e-8, kept in offNeutral for the solution to say). A gated stretch is checked once a step
+//     instead (_gatedStartCheck): the ions under its gates' windows against the gates' charges
+//     at the step's start, Σ v(ρ_fixed + F Σ z c_old) + Σ Q_start, past 1e-8 of their gross.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Every term's Jacobian entries are its residual's derivatives (via c(ζ) and K); in
@@ -333,7 +335,7 @@ export class RegionTerms {
       }
       let q = rhoFixed[g], dq = 0;
       const late = this.combining && this.lateStorage[g] === 1 && dt !== Infinity; // (the ions' storage: in _contact)
-      const lateQ = !lin && this.lateCharge[g] === 1 && dt !== Infinity; // (and their charge: in _contact)
+      const lateQ = !lin && !late && this.lateCharge[g] === 1 && dt !== Infinity; // (and their charge: in _contact)
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
@@ -371,9 +373,16 @@ export class RegionTerms {
     }
     let q = this.rhoFixed[g], dq = 0;
     const lin = this.lin;
+    // (at a lateCharge node on a time step, the storage and charge of each species its contact
+    // passes go in later, in _contact, as at a dilute node: summed here at the impedance's dt =
+    // 1e-30 they cancelled to a ULP of v·F·c, 8% of a Bikerman cell's dielectric charge at 10 MHz;
+    // Neon's third review, R3 1.1)
+    const lateQ = !lin && this.lateCharge[g] === 1 && dt !== Infinity && !(this.combining && this.lateStorage[g] === 1);
+    const deferred = (i) => lateQ && z[i] !== 0 && !this._portHeldAt(g, i) && this.loc[b * M + 1 + i] >= 0;
     for (let i = 0; i < n; i++) {
       const k = g * n + i, r = 1 + i;
       if (!this.present[k]) continue;
+      if (!lin && deferred(i)) continue;
       const Kz = this._Kz(g, i);
       if (lin) {
         // In difference form (see DifferenceTerms): storage of i and its charge, in each
@@ -390,8 +399,17 @@ export class RegionTerms {
       this._storage(g, i, dt, Kz);
       q += F * z[i] * c[k];
       dq += F * z[i] * Kz;
-      if (Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
+      if (!lateQ && Kz !== 0) this._j(b, 0, b, r, -v * F * Kz); // K symmetric: ∂(Σ z c)/∂η_i = (Kz)_i
     }
+    // (the charge of the species kept, ∂(Σ_kept z_i c_i)/∂η_j = Σ_kept z_i K_ij: K's symmetry
+    // over all of them no longer sums it)
+    if (lateQ && !this.phiUndefined[g])
+      for (let j = 0; j < n; j++) {
+        if (!this.present[g * n + j]) continue;
+        let col = 0;
+        for (let i = 0; i < n; i++) if (this.present[g * n + i] && !deferred(i)) col += z[i] * (this.nodeIdeal[g] ? (i === j ? c[g * n + i] : 0) : this.K[g * n * n + i * n + j]);
+        if (col !== 0) this._j(b, 0, b, 1 + j, -v * F * col);
+      }
     // (where no charge responds and no field reaches, φ isn't defined, nor an unknown)
     if (!this.phiUndefined[g]) {
       res[R[b * M]] -= v * q;
@@ -414,6 +432,50 @@ export class RegionTerms {
       }
     }
     if (Kz !== 0 && !this.phiUndefined[g]) this._j(b, r, b, 0, (-v * Kz) / dt);
+  }
+
+  // A gated strictly neutral stretch's start, checked once a step (from the step's own start
+  // values, cOld and portQStart, after a BDF2 extrapolation as before one): the ions and fixed
+  // charge under a capacitive port's window, with every port sharing a node of it, against what
+  // those ports held, Σ v (ρ_fixed + F Σ z c_old) + Σ Q_start = 0. Where it isn't, the step reads
+  // the difference as a current through the electrolyte that no gate passes. Each node's own
+  // check, in _chargeRows, sees only ungated nodes: a gated node's charge there is the gate's at
+  // the step's end. (Unseen, a gate set() added beside another left the first one's charge where
+  // it was under a φ̂ the carry had moved, and the first step broke Kirchhoff by 1.9e5 A/m², unwarned;
+  // Neon's third review, R3 1.5.) Only windows whose boxes are all strictly neutral nodes.
+  // The capacitive ports' windows, each with every port sharing a box of it, where every box
+  // its charge is held in is a strictly neutral node (built with the solver: see _gatedStartCheck).
+  _gateGroupsOf() {
+    const groups = [], seen = new Set();
+    this.model.ports.forEach((p, k) => {
+      if (!p.capacitance || seen.has(k)) return;
+      const ports = [k], nodes = new Set();
+      for (let a = 0; a < ports.length; a++)
+        for (const g of this.model.ports[ports[a]].nodes) {
+          if (!this._portHolds(g)) continue;
+          nodes.add(g);
+          for (const [kq] of this.qgTerms[g]) if (!ports.includes(kq - 2)) ports.push(kq - 2);
+        }
+      ports.forEach((q) => seen.add(q));
+      if (nodes.size > 0 && [...nodes].every((g) => this.chargeNode[g] === 1)) groups.push({ ports, nodes: [...nodes].sort((a, b) => a - b) });
+    });
+    return groups;
+  }
+
+  _gatedStartCheck() {
+    const { n, z, cOld, present } = this, F = FARADAY, vol = this.model.grid.vol;
+    for (const { ports, nodes } of this.gateGroups) {
+      let q = 0, scale = 0;
+      for (const g of nodes) {
+        let qn = this.rhoFixed[g], sn = Math.abs(this.rhoFixed[g]);
+        for (let i = 0; i < n; i++) if (present[g * n + i]) (qn += F * z[i] * cOld[g * n + i]), (sn += F * Math.abs(z[i] * cOld[g * n + i]));
+        q += vol[g] * qn;
+        scale += vol[g] * sn;
+      }
+      for (const k of ports) (q += this.portQStart[k]), (scale += Math.abs(this.portQStart[k]));
+      const rel = scale > 0 ? Math.abs(q) / scale : 0;
+      if (rel > 1e-8 && !(rel <= (this.offNeutral?.rel ?? 0))) this.offNeutral = { x: this.model.grid.x[nodes[0]], rel, time: this.time, gated: true };
+    }
   }
 
   // Strictly neutral nodes on a transient step, solved in better-conditioned terms. There, a

@@ -232,6 +232,7 @@ export function step(s, dt, opts = {}) {
     s.contactDStart = DN;
     s.portQStart = QN;
   }
+  if (s.gateGroups.length > 0) s._gatedStartCheck(); // (a gated strictly neutral stretch's start: see src/regions.js)
   // Implicit: sources at the step's end, as seen from within the step (before any jump there).
   // A step landing on a breakpoint ends on it exactly.
   // (Within a few ulps too: at 1e-9 of a short step, below an ulp of the time, a startup pair's

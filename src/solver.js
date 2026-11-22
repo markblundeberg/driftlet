@@ -552,6 +552,7 @@ export class Solver {
       }
     });
     this.chargeNodes = Int32Array.from([...this.chargeNode.keys()].filter((g) => this.chargeNode[g]));
+    this.gateGroups = this._gateGroupsOf(); // (each gated strictly neutral stretch's ports and boxes: see _gatedStartCheck)
     // An end node of a strictly neutral region that its contact holds (leaving it neutral: φ law
     // bulk or neutral): the contact's current is the ions' charge passing, and their storage
     // carries none under neutrality, nor does the box's net charge change (a bulk law's "D").
@@ -568,19 +569,22 @@ export class Solver {
       const charging = law === 'neutral' && model.ports.some((port) => port.capacitance && port.nodes.includes(g));
       if (!mat.conductor && mat.epsr === 0 && (law === 'bulk' || law === 'neutral') && !charging && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateStorage[g] = 1;
     });
-    // An end node of a region with ε > 0 that its contact holds by a bulk or pinned φ law (and
-    // passes something through): the contact's current is the conduction and displacement across
+    // An end node that its contact holds by a bulk or pinned φ law (and passes something through),
+    // of any statistics and any ε (strictly neutral, on a step that isn't lateStorage's: an
+    // impedance's): the contact's current is the conduction and displacement across
     // the box's inner face. Read from the box's rows, the ions' storage (in the balances) and
     // their charge (in the Gauss row, at 1/dt) cancel in it, and summed at the impedance's dt =
     // 1e-30 they left a residue of one ULP of v·F·c on the η columns: 3e-10 C/m² against a
     // displacement ε V_T/h of 6e-10 over 3 cm of 1 M KCl, Im Z inductive (Neon's second review,
     // R2 1.2). So there, on a time step, the storage and charge of each species the contact
-    // passes go in only after it has read its current (see _contact).
+    // passes go in only after it has read its current (see _contact). (Kept to ideal ε > 0 nodes,
+    // a Bikerman cell's Im Z read 8% low at 10 MHz, and a strictly neutral one, a pure resistance,
+    // inductive at 1 GHz; Neon's third review, R3 1.1.)
     this.lateCharge = new Uint8Array(nNodes);
     [0, nNodes - 1].forEach((g, k) => {
       const mat = materials[regions[grid.nodeRegion[g]].material], ct = contacts[k === 0 ? 'left' : 'right'];
       const passes = ct.species.some((l) => l.type !== 'blocked');
-      if (!mat.conductor && mat.epsr > 0 && (ct.phi.type === 'bulk' || ct.phi.type === 'pinned') && passes && !this.chargeNode[g] && !this.phiUndefined[g] && this.nodeIdeal[g]) this.lateCharge[g] = 1;
+      if (!mat.conductor && (ct.phi.type === 'bulk' || ct.phi.type === 'pinned') && passes && !this.chargeNode[g] && !this.phiUndefined[g]) this.lateCharge[g] = 1;
     });
     // An end node's species held by a port (its contact blocks it, so the level is the port's):
     // its row is the port's, storage and all, and the contact passes none of it.

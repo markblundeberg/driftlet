@@ -41,9 +41,11 @@ export function makeSolution(solver, result = {}) {
   // every species kept, but the state it started from wasn't one the device can hold; see
   // _chargeRows in src/regions.js)
   if (solver.offNeutral) {
-    const { x, rel, time } = solver.offNeutral;
+    const { x, rel, time, gated } = solver.offNeutral;
     sol.warnings.push(
-      `a step from t = ${Number(time.toPrecision(6))} s started a strictly neutral node off neutral (at x = ${x.toExponential(3)} m, its net charge ${rel.toExponential(1)} of its ions'): ` +
+      (gated
+        ? `a step from t = ${Number(time.toPrecision(6))} s started a gated strictly neutral stretch off neutral (from x = ${x.toExponential(3)} m, its ions' and its gates' charges ${rel.toExponential(1)} of theirs apart): `
+        : `a step from t = ${Number(time.toPrecision(6))} s started a strictly neutral node off neutral (at x = ${x.toExponential(3)} m, its net charge ${rel.toExponential(1)} of its ions'): `) +
         'a step carries that charge in as a current, keeping every species (or, too much for one step, fails), but nothing a strictly neutral region holds puts it there: something set the state without holding it neutral. Please report it.',
     );
   }
