@@ -44,26 +44,37 @@ test('projectNeutral brings a node back onto its Gauss row by the unknowns its m
 });
 
 // Neon's R2 3.1 device (test/neon2.test.js): Pt | 1 µm of strictly neutral NaCl | Pt, capacitive
-// faces, regridded mid-transient. Its ions are closed, so their net charge is kept, and so are the
-// faces' charges that balance it: φ̂ stays where it was carried, at the faces too, and the
-// concentrations move in the charge direction. (Held to each node's old net charge by φ̂ at the
-// levels, the edge's φ̂ moved 1.08 mV and the face's D 2.16e-4 C/m², the first step charging it.)
-test('a regrid of a closed strictly neutral region keeps its faces\' D, every node on its Gauss row', () => {
-  const d = new Device({
+// faces, regridded mid-transient. Its ions are closed, so their net charge is kept, and with it
+// what the faces hold in all; each node on its Gauss row, by φ̂ at the levels with the closed
+// amounts, which puts each face's D where the same history on the fine grid has it. (Held to each
+// node's old net charge, the edge's φ̂ moved 1.08 mV and the face's D 2.16e-4 C/m², the first step
+// charging it. Held at its coarse-grid value, φ̂ kept and the ions moved alone, D kept that grid's
+// 4.2e-3 of difference from the fine one, which the joint solve, R4 1.5, takes to 4e-9.)
+test('a regrid of a closed strictly neutral region puts its faces\' D where the fine grid has it, every node on its Gauss row', () => {
+  const def = (grid) => ({
     species: [{ name: 'e-', z: -1, cRef: 1000 }, { name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
     materials: { Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } }, aq: { epsr: 0, species: { 'Na+': { D: 1.33e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 } } } },
     regions: [{ name: 'L', material: 'Pt', length: 1e-7 }, { name: 'el', material: 'aq', length: 1e-6, c0: { 'Na+': 100, 'Cl-': 100 } }, { name: 'R', material: 'Pt', length: 1e-7 }],
     interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }, { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }],
     contacts: { left: { V: 0.5, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, right: { V: 0, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } } },
-    grid: { hmax: 1.25e-7, minCells: 8 },
+    grid,
   });
+  const d = new Device(def({ hmax: 1.25e-7, minCells: 8 }));
   d.solve();
   d.set({ contacts: { left: { V: 0.51 } } });
   const t1 = d.advance(1e-4);
+  const before = t1.conservation.map((x) => x.amount);
   d.set({ grid: { hmax: 6.25e-8, minCells: 16 } });
   const c = d.solution();
-  for (const f of [0, 1]) assert.ok(Math.abs(c.interfaces[f].D / t1.interfaces[f].D - 1) < 1e-12, `face ${f}: D ${t1.interfaces[f].D} → ${c.interfaces[f].D}`);
+  const f = new Device(def({ hmax: 6.25e-8, minCells: 16 }));
+  f.solve();
+  f.set({ contacts: { left: { V: 0.51 } } });
+  const tf = f.advance(1e-4);
+  for (const k of [0, 1]) assert.ok(Math.abs(c.interfaces[k].D / tf.interfaces[k].D - 1) < 1e-7, `face ${k}: D ${t1.interfaces[k].D} → ${c.interfaces[k].D}, the fine grid's ${tf.interfaces[k].D}`);
+  c.conservation.forEach((x, k) => x.species !== 'e-' && assert.ok(Math.abs(x.amount / before[k] - 1) < 1e-13, `${x.species} moved`));
   assert.ok(worstOff(d.solver) < 1e-12, `${worstOff(d.solver)} off`);
+  const s = d.step(1e-9);
+  assert.deepEqual(s.warnings, []);
 });
 
 // A capacitive face holding a sheet of charge between two strictly neutral NaCl regions, a bath

@@ -22,28 +22,58 @@ charges are now kept, where they were read off the state.
   a clamped axon's window widened (test/carry.test.js, 27b), which 1.21 charged in an instant
   with no current through the clamp, charges through the axoplasm and in 40 ms is the device built
   wide, to 1e-6.
-- A regrid of a strictly neutral region brings each node onto its Gauss row, exactly. Where its
-  ions are all closed (their net charge kept, so the capacitors balancing it keep theirs), its
-  potential stays where it was carried and the concentrations move in the charge direction only,
-  a held gate over it keeping its total; elsewhere, its potential is what neutrality makes of the
-  carried levels, as a fresh solve on the new grid has it, and a held gate's charge is read off that
-  state. The carry held each node's old net charge instead: a capacitive face's D moved with the
-  potential beside it, a held gate's start charge was 1e-6 to 5e-5 off what the regridded state
-  holds (a current at the first step), and where its rounds ran out (4 of 20 neutral-family
-  regrids), it stopped with an amount or a charge up to 1.4e-7 off (now 3e-11 at most, in 7 of 20).
-- Where an open ion is only a trace beside closed ones (under 1% of a node's screening, Σ z²c),
-  a regrid moves the closed ones in the charge direction alone, the open one keeping its level: H⁺
-  at 2.5e-4 of the screening of 1 M of closed NaCl under a gate ran out the carry's rounds and left
-  Na⁺ and Cl⁻ each 2.4e-10 off; now exact, in 2 rounds. (Found by the reviewer of Neon's third round,
-  reading our account of the owner.)
-- A transient's cold start puts a sheet-charged capacitive face's counter-charge in its edge boxes
-  before the first step (a membrane family case started 1.2% of its charge off neutral there).
+- A regrid of a strictly neutral region brings each node onto its Gauss row, exactly: by its
+  potential at the carried levels, solved together with every closed amount and every floating
+  capacitor's charge in one Newton solve (src/neutral.js, solveNeutral), and each held capacitor's
+  start charge (a gate's, a capacitive contact's) read off that state at its old drive. The carry
+  held each node's old net charge instead: a capacitive face's D moved with the potential beside it,
+  a held gate's start charge was 1e-6 to 5e-5 off what the regridded state holds (a current at the
+  first step), and where its rounds ran out (4 of 20 neutral-family regrids), it stopped with an
+  amount or a charge up to 1.4e-7 off. A sealed cell's face D regridded now lands on the fine grid's
+  own history to 4e-9, where it stayed at the coarse grid's, 4.2e-3 from it.
+- Neon's fourth review (Google's successor to Gemini 4 Argon, run by hand in Antigravity) read the
+  owner and its producers: six flags there, all real, each now a test in test/neon4.test.js that
+  fails on the code before.
+  - A capacitive contact beside a strictly neutral end box is a capacitor like a gate: regridded,
+    its start charge is read off the state (it was kept from before, and the first 1 ns step's
+    currents summed to −1.8e4 A/m² of 1.2 A/m², unwarned); its C or zeroCharge changed, its plate
+    keeps its charge and the box's potential jumps (φ held, a sealed cell's ions moved 1e-4 and it
+    settled 50% off a fresh device's charge, unwarned). R4 1.1.
+  - The groups of strictly neutral boxes that capacitors join (a port's window, a capacitive
+    contact's box, a face) are built over every strictly neutral box: a gate whose window reached a
+    capacitive face's box had none, so the carry kept no gate's charge beside it and no step checked
+    its start (−4.9e4 A/m² from a gate added, unwarned). Each group's start is checked at every step,
+    its plates' and faces' charges included. R4 1.2.
+  - A gate's window narrowed keeps what its remaining boxes held (it kept the whole window's:
+    −8.6e7 A/m²); a hardware change with a regrid in one set() keeps the group's start charges at
+    what the new grid's ions balance (−4.1e4 A/m²); a floating gate beside a changed one is solved
+    with the jump (89% of its voltage's move was left undone after the carry's 60 rounds). A
+    capacitor behind a resistance keeps its charge through a set() as one driven by a current
+    does, its voltage moving (a porous electrode behind R had its C doubled as if held, 1.7e-6 of
+    its charge off at the start). R4 1.3.
+  - A diffuse layer's edge box no longer takes its face's slope (its side, 0 or 1, was compared with
+    'left' and 'right'): a gate taken away over it moved its potential 5 V. R4 1.4.
+  - No switch at 1% of the screening between holding the potential and moving it: a trace open ion
+    in closed supporting salt (H⁺ at 0.5%, Fe³⁺ at 1.1%) left the salt 1.2e-7 and 8.3e-8 off on a
+    regrid, check() failing conservation; now exact. R4 1.5.
+  - A transient's cold start starts its capacitors uncharged, `c0` kept, the potential at each box
+    a port or a capacitive contact holds charge in where that leaves it neutral (a floating one's
+    voltage following), and never puts the start back: a sealed cell between plates at 0 and 1 V
+    kept φ = 0 at its right plate, its first 1 ns step's currents summed to −2e8 A/m², and its right
+    plate's charge settled with the wrong sign, check() passing. A sheet-charged face beside diffuse
+    layers has its counter-charge in its edge boxes at t = 0⁺, as one without does. R4 1.6.
 - A floating gate's voltage is held to its charge through a set() to 1e-13 of that charge (it
   stopped at 1e-13 of a thermal volt's worth, 1e5 times a gate's).
+- check()'s grid and order checks take their floor under a current from what the species carry
+  outside metals. A metal's conductance counted toward it: a 1 cm Pt counter electrode set a 304 nA
+  floor under a 1 µm electrode's 1.96 nA, so a 9.2% grid change passed at 6.0e-4, and the order
+  check skipped its currents. Neon's fourth review, R4 2.1.
 - bench/combos: the property neutralG (every strictly neutral node on its Gauss row after the cold
   start, a solve, a drive's step, a regrid, a gate's C doubled and a gate added; each gated
   stretch's start charges against the state's; then a short step that mustn't say its start was
-  off), and the neutral family's Donnan faces, baths and floating gates.
+  off), and the neutral family's Donnan faces, baths and floating gates. Its start-charge reader
+  sums each group's capacitors, plates included (it read only the gates' own groups, which missed
+  R4 1.1 and 1.2).
 - A stray copy of two cold-start helpers, pasted inside initFromComposition in 1.21.0, taken out
   (the module's own were the ones called).
 

@@ -126,9 +126,13 @@ regions: [
   `c0` leaves it out of equilibrium (a different fixed charge or immobile ion on each side), the
   two nodes at the face start a transient in it, as the face reaches it at $`t = 0^+`$: the ions
   it passes shared between them so their $`\bar\mu`$ is equal across it and each side neutral,
-  each one's amount over the two nodes kept, everything else as `c0` has it. (The first time
-  step from a cold start does this; a steady solve starts from `c0` as given, which it reaches
-  better from.)
+  each one's amount over the two nodes kept, everything else as `c0` has it. And at $`t = 0^+`$
+  the capacitors are uncharged: a box a port's or a capacitive contact's capacitance holds charge
+  in keeps its `c0`, its $`\phi`$ where that leaves it neutral (a floating one's voltage following),
+  so a sealed cell between plates at 0 and 1 V starts with $`\phi`$ at each plate's own; a box
+  beside a capacitive face with a sheet charge holds that sheet's counter-charge, by its levels,
+  each closed amount kept. (The first time step from a cold start does this; a steady solve starts
+  from `c0` as given, which it reaches better from.)
   An entry can instead be a profile, `{ x: [...], values: [...] }`, against the device's x (m, not
   the region's own), piecewise linear between its points and constant beyond its ends, so a
   transient can start from a state it didn't simulate reaching: a packet already injected, a
@@ -1595,23 +1599,26 @@ Notes:
   next `solve()` or step.
 - **A strictly neutral region (ε = 0) starts every step neutral**: each node's ions, fixed charge,
   ports' charges and the face's or contact's displacement its box holds summing to zero, as the
-  step's own Gauss row has them (one owner, src/neutral.js). Where the region's ions are all closed
-  (their amounts kept), so is their net charge, and with it the charges of the capacitors that
-  balance it: its potential stays where it was carried and the concentrations move, in the charge
-  direction only, a held gate over it keeping its total charge (its potential shifted under it
-  until it holds it). Where an ion is open to a contact or a port, its levels are what's carried
-  and the potential is what neutrality makes of them, as a fresh solve on the new grid would
-  have it; a held gate's charge is read off that state.
-- **A gate's hardware changed** (its capacitance, window or electrode area; a gate added or taken
-  away) over a strictly neutral region: the concentrations under it can't move in an instant, nor
-  can its charge, so both are kept, a new gate (or a window's new part, new membrane) starting
-  uncharged, and the potential under it jumps until each box is neutral again. The next step then
-  passes the charge between the gates, and from a held one's source, as currents, over the
-  solution's RC time: a window widened under a clamp is charged by it through the solution, and a
-  device left long enough is the one built that way. (Until 1.21 the carry read the new charges
+  step's own Gauss row has them (one owner, src/neutral.js). Each node gets there by its potential
+  at the levels carried (the levels are what an open solution holds, and the potential is what
+  neutrality makes of them), solved together with each closed amount and each floating capacitor's
+  charge in one Newton solve. So a face's D or a held gate's charge lands where a fresh solve on the
+  new grid has it (to 4e-9 of a face's D, in a sealed cell regridded mid-transient), and each held
+  capacitor's start charge (a gate's, a capacitive contact's) is read off that state, at its old
+  drive. A drive changed in the same `set()` is the next step's to pass, as a drive changed alone is.
+- **A capacitor's hardware changed** (a gate's capacitance, window or electrode area; a gate added
+  or taken away; a capacitive contact's C or zeroCharge) over a strictly neutral region: the
+  concentrations under it can't move in an instant, nor can its charge, so both are kept, a new gate
+  (or a window's new part, new membrane) starting uncharged, and the potential under it jumps until
+  each box is neutral again. A window narrowed keeps what its remaining boxes held; a box it no
+  longer covers gives up its gate's counter-charge to the solution. The next step then passes the
+  charge between the capacitors on the same boxes, and from a held one's source, as currents, over
+  the solution's RC time: a window widened under a clamp is charged by it through the solution, and
+  a device left long enough is the one built that way. (Until 1.21 the carry read the new charges
   off the state instead, charging new membrane in an instant with no current through the clamp;
-  a gate added beside another broke Kirchhoff by 1.9e5 A/m².) A floating gate keeps its charge
-  through any of these, its voltage moving.
+  a gate added beside another broke Kirchhoff by 1.9e5 A/m².) With a regrid in the same `set()`, the
+  group's start charges together are what the new grid's ions balance. A floating capacitor keeps
+  its charge through any of these, its voltage moving.
 - **A steady state stands for its definition.** A grid patch alone on a steady state is solved
   again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
   solutions if that fails); a grid patch together with anything else is the new grid first, solved,

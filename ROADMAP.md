@@ -175,15 +175,25 @@ for live demos.
      converges: the amounts and the small capacitors chase each other at 1e-5 a round.
    - The transient's cold start projects a box beside a capacitive face or contact that it left off.
 
+   Done after Neon's fourth review (22 Nov), which read the owner and found six holes in it:
+   - The joint solve (src/neutral.js, solveNeutral): each node's φ̂ (at its levels, or jumping at
+     its concentrations), each closed stretch's level shift and each floating capacitor's voltage
+     in one Newton solve. No switch by screening, no 'charge' mode in the producers, no held
+     gate's total kept by hand: a regrid's face D lands on the fine grid's own history to 4e-9.
+   - Capacitive contacts are capacitors like gates (start charge read off the state at the old
+     drive; a hardware change keeps the plate's charge, the box jumping). The groups capacitors
+     join are built over every strictly neutral box, with their plates and faces, and each step
+     checks each group's start.
+   - The cold start: capacitors uncharged, c0 kept (φ̂ jumping), a sheet's counter-charge in its
+     edge boxes, closed amounts and floating charges held, never put back.
+
    Still open:
-   - The carry's loop (neutrality, amounts, layers, floating gates, held gates in turn) runs out
-     its 60 rounds on 7 of 20 neutral-family regrids, stopping within 3e-11: right, but slow. A
-     joint solve (the stretches' factors and the floating voltages outside, neutrality node by node
-     inside) would take a few rounds. It's what a node holding closed and open ions in between
-     needs most (the reviewer of Neon's third round): there φ̂ at the levels contracts by about the
-     open ions' share of the screening a round (1 mM of open H⁺ in 1 M of closed NaCl: 60 rounds,
-     1e-12 off), and holding φ̂ has no fixed point, the open ions' carried charge off by their
-     interpolation with nothing to take it up. Below 1% of the screening the carry holds φ̂.
+   - A capacitive face to a metal inside a group whose hardware changed: the jump moves its D,
+     an impulse through the held sources that the start charges give up (so the first step keeps
+     Kirchhoff) but no terminal's running charge records.
+   - A group beside a diffuse layer isn't checked at the step (its rows read the layer's charge).
+   - A drive changed in the same set() as a regrid: the solve holds the drives at their old
+     values and the step passes the change, as for a drive alone; not yet in the neutralG property.
    - A step in a strictly neutral region's fixed charge: refuse it, or solve the migration-only
      projection (Neon, R3 DESIGN §3.3).
 

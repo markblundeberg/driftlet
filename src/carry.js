@@ -45,7 +45,7 @@ import { DeviceError } from './device.js';
 import { gateRate } from './boundaries.js';
 import { FARADAY } from './constants.js';
 import { deepEqual } from './merge.js';
-import { strictlyNeutralNodes, projectNeutral } from './neutral.js';
+import { strictlyNeutralNodes, solveNeutral } from './neutral.js';
 
 // [ln(1 − s), ln s] for s = expm1(d w)/expm1(d), the weight of the right end at fraction w of a cell
 // whose drift potential rises by d: exact in logarithms at any d.
@@ -467,26 +467,17 @@ function carryRest(old, s, info, { pure }) {
   // ion's amount the carry keeps (rescale): there the ions' net charge is kept, and with it what
   // the capacitances balancing it hold (see the neutrality below).
   const targets = stretchTargets(old, s, info);
-  // (or all but 1% of it, by screening, Σ z²c: one open trace ion, H⁺ at 2.5e-4 of the screening
-  // of 1 M of closed NaCl under a gate, left the node to φ̂ at its levels, the closed amounts and
-  // the gate chasing each other through all 60 rounds, 2.4e-10 off at the end; the reviewer of
-  // Neon's third round, reading our reply. There only the closed ions move, the open ones keeping
-  // their levels. Not past that: the open ions' carried charge is off by their interpolation,
-  // which, φ̂ and the capacitors held, nothing takes up; a 1:1 mix stalled at 1.8e-10 where by φ̂
-  // it converges in 11 rounds, and an echem case at 1.4e-3. In between, φ̂ at the levels
-  // converges slowly; a joint solve is in ROADMAP.)
-  const closedAt = (g) => {
-    const r = ng.nodeRegion[g], only = new Uint8Array(n);
-    let closed = 0, open = 0;
-    for (let i = 0; i < n; i++) {
-      if (!s.present[g * n + i] || s.z[i] === 0) continue;
-      const k = s.stretchOf[r * n + i], w = s.z[i] * s.z[i] * s.c[g * n + i];
-      if (k >= 0 && targets[k].rescale) (only[i] = 1), (closed += w);
-      else open += w;
-    }
-    return open <= 1e-2 * closed ? only : null;
-  };
-  const kept = (g) => closedAt(g) !== null;
+  // The strictly neutral boxes (src/neutral.js), and the groups capacitors join over them
+  // (src/regions.js, _gateGroupsOf): a port's window, a capacitive contact's end box, a face.
+  const nodes = strictlyNeutralNodes(s), neutralAt = new Uint8Array(s.nNodes);
+  for (const nd of nodes) if (!nd.bulk) neutralAt[nd.g] = 1;
+  const groupOfPort = (k) => s.gateGroups.find((gr) => gr.ports.includes(k));
+  const groupOfContact = (side) => s.gateGroups.find((gr) => gr.contacts.includes(side));
+  const sides = ['left', 'right'], endOf = (side) => (side === 'left' ? 0 : s.nNodes - 1), kOf = (side) => (side === 'left' ? 0 : 1);
+  info.hardware = new Set();
+  info.contactHw = new Set();
+  info.heldGates = [];
+  info.heldContacts = [];
   if (old.contactDEnd || old.portQEnd) {
     s._assembleBookkeeping(Infinity); // (each from the carried state, for any not carried)
     // (a contact beside a region that restarted holds its own start's charge: carried by name, the
@@ -498,28 +489,48 @@ function carryRest(old, s, info, { pure }) {
     // the next step read that as a current.)
     const lastR = s.model.regions.length - 1, freshAt = (r) => map[r] < 0 || info.kindChanged.has(r);
     const contactSame = (side) => deepEqual(old.model.contacts[side].phi, s.model.contacts[side].phi) && old.model.contacts[side].zeroCharge === s.model.contacts[side].zeroCharge;
-    // (one driven by a current keeps its charge through any change of its own: it can't jump)
-    const driven = (k) => s.terms[k]?.drive.kind === 'I';
-    const ownL = !old.contactDEnd || freshAt(0) || (!driven(0) && !contactSame('left')), ownR = !old.contactDEnd || freshAt(lastR) || (!driven(1) && !contactSame('right'));
-    s.contactDEnd = { left: ownL ? s.contactD.left : old.contactDEnd.left * ratio(0), right: ownR ? s.contactD.right : old.contactDEnd.right * ratio(1) };
-    info.ownCharge = { left: ownL, right: ownR, ports: s.model.ports.map(() => true) };
+    // (one driven by a current, or behind a resistance, keeps its charge through any change of its
+    // own: it can't jump, its voltage does)
+    const driven = (k) => s.floating.includes(k);
+    const capacitive = (m, side) => m.contacts[side].phi.type === 'capacitive';
+    // A capacitive contact beside a strictly neutral end box is a gate over that box. Changed (its
+    // C or zeroCharge, or newly capacitive), its plate's charge can't jump (a new plate's is none)
+    // and the box's φ̂ does, at its concentrations (see the neutrality below). Unchanged, its
+    // charge is what the final state holds at its old drive, as an unchanged gate's. (Kept from
+    // before a regrid, the first 1 ns step's currents summed to −1.8e4 A/m² of 1.2 A/m², unwarned;
+    // its C doubled in a sealed cell, φ̂ held, moved 1e-4 of the sealed ions and settled 50% off a
+    // fresh device's charge, unwarned; Neon's fourth review, R4 1.1.)
+    const own = {};
+    for (const side of sides) {
+      const k = kOf(side), r = k === 0 ? 0 : lastR, beside = neutralAt[endOf(side)] && capacitive(s.model, side);
+      if (!old.contactDEnd || freshAt(r)) own[side] = true;
+      else if (driven(k)) own[side] = false;
+      else if (beside && !contactSame(side)) {
+        own[side] = false;
+        info.contactHw.add(side);
+      } else if (beside) {
+        own[side] = false;
+        info.heldContacts.push(side);
+      } else own[side] = !contactSame(side);
+    }
+    const ratioOf = (side) => ratio(kOf(side));
+    s.contactDEnd = Object.fromEntries(sides.map((side) => [side, own[side] ? s.contactD[side] : info.contactHw.has(side) && !capacitive(old.model, side) ? 0 : old.contactDEnd[side] * ratioOf(side)]));
+    info.ownCharge = { left: own.left, right: own.right, ports: s.model.ports.map(() => true) };
     s.portQEnd = Float64Array.from(s.portQ);
     // (each port's by name, a total: kept only in one geometry, a charge read at the new C and the
     // old V stayed for good; Astra's second pass)
     info.perNode = [];
-    // A gate over strictly neutral boxes only (src/regions.js, _gateGroupsOf) whose hardware changed
+    // A gate over strictly neutral boxes (src/regions.js, _gateGroupsOf) whose hardware changed
     // (its capacitance, window or area; or new): the concentrations under it can't move in an
-    // instant, nor can its charge, so it keeps what it held (a new one, nothing) as its start, and
-    // φ̂ under it jumps until each box is neutral again at those concentrations (see the neutrality
-    // below). The first step then reads the charge passing between its gates as currents that sum
-    // to zero, over the solution's RC time. (Read off the state instead, a gate added beside another
-    // took a charge its ions didn't move for, the first's charge left under a φ̂ moved: Kirchhoff
-    // broken by 1.9e5 A/m², unwarned; Neon's third review, R3 1.5.) Its unchanged neighbours on the
-    // same boxes start from what the state holds before the jump.
-    const neutralGate = (k) => s.gateGroups.some((gr) => gr.ports.includes(k));
+    // instant, nor can its charge, so it keeps what it held over what's left of its window (a new
+    // one, or a window's new part, nothing) as its start, and φ̂ under it jumps until each box is
+    // neutral again at those concentrations (see the neutrality below). The first step then reads
+    // the charge passing between its gates as currents that sum to zero. (Read off the state
+    // instead, a gate added beside another took a charge its ions didn't move for: Kirchhoff broken
+    // by 1.9e5 A/m², unwarned; Neon's third review, R3 1.5. Its whole old charge kept, a window
+    // narrowed by half broke it by 8.6e7 A/m²; Neon's fourth review, R4 1.3.) Its unchanged
+    // neighbours in the group start from what the state holds at their old drives before the jump.
     const allCopied = (k) => s.model.ports[k].nodes.every((g) => info.copied[g] === 1);
-    info.hardware = new Set();
-    info.heldGates = [];
     if (old.portQEnd) s.model.ports.forEach((p, k) => {
       const o = old.model.ports.findIndex((q) => q.name === p.name);
       // (in the same geometry, the charge it held: a window widened over the same nodes adds
@@ -527,67 +538,63 @@ function carryRest(old, s, info, { pure }) {
       // electrode, node by node: see portChargeAcross)
       const op = old.model.ports[o];
       const same = o >= 0 && !freshAt(p.region) && (driven(2 + k) || (deepEqual(op.capacitance, p.capacitance) && op.from === p.from && op.to === p.to && deepEqual(op.area, p.area)));
-      if (!same && p.capacitance && !freshAt(p.region) && !driven(2 + k) && neutralGate(k)) {
+      if (!same && p.capacitance && !freshAt(p.region) && !driven(2 + k) && groupOfPort(k)) {
         info.ownCharge.ports[k] = false;
-        s.portQEnd[k] = o >= 0 && op.capacitance ? old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k)) : 0;
+        s.portQEnd[k] = o >= 0 && op.capacitance ? portChargeKept(old, s, o, k, info) : 0;
         info.hardware.add(k);
         return;
       }
       if (!same) return;
-      // (an unchanged held gate over strictly neutral boxes whose state moved under it, as a regrid
-      // moves it: what it holds at its old drives, read off the final state, whose φ̂ neutrality sets
-      // there; kept as a total, the new grid's sum of its σ was 5e-5 of it off, read as a current)
-      if (!driven(2 + k) && p.capacitance && neutralGate(k) && !allCopied(k)) info.heldGates.push([o, k]);
+      // (an unchanged held gate over strictly neutral boxes: what it holds at its old drives, read
+      // off the final state, whose φ̂ neutrality sets there; kept as a total, the new grid's sum of
+      // its σ was 5e-5 of it off, read as a current)
       info.ownCharge.ports[k] = false;
+      if (!driven(2 + k) && p.capacitance && groupOfPort(k)) info.heldGates.push([o, k, allCopied(k)]);
       // (a capacitance taken away or added under a current drive holds none to spread: its old total, 0)
       if (sameGeometry || !op.capacitance || !p.capacitance) s.portQEnd[k] = old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k));
       else (s.portQEnd[k] = portChargeAcross(old, s, o, k)), info.perNode.push([o, k]);
     });
-    // (beside a gate whose hardware changed, an unchanged one starts from what the state holds at
-    // its old drives before φ̂ jumps under them both, not held to its old total: the jump moves it)
-    const mixed = (k) => s.gateGroups.some((gr) => gr.ports.includes(k) && gr.ports.some((q) => info.hardware.has(q)));
-    // (and over boxes whose ions' amounts are all kept, it keeps its total, the state held to it
-    // (holdHeldGates): there the ions' net charge is kept, so the gates' total is too, and read off
-    // the state instead, carry and rescale chased each other for good; elsewhere, read off the
-    // final state)
-    info.holdGates = [];
+    // (beside a changed gate or plate, an unchanged one starts from what the state holds at its old
+    // drives before φ̂ jumps under them both: the jump moves it)
+    const hwGroup = (gr) => !!gr && (gr.ports.some((q) => info.hardware.has(q)) || gr.contacts.some((sd) => info.contactHw.has(sd)));
     info.heldGates = info.heldGates.filter(([o, k]) => {
-      if (mixed(k)) {
-        s.portQEnd[k] = portChargeAcross(old, s, o, k);
-        return false;
-      }
-      const gr = s.gateGroups.find((x) => x.ports.includes(k));
-      if (!gr.nodes.every(kept)) return true;
-      s.portQEnd[k] = old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k));
-      info.holdGates.push([o, k]);
+      if (!hwGroup(groupOfPort(k))) return true;
+      s.portQEnd[k] = portChargeAcross(old, s, o, k);
       return false;
     });
-    for (const [, k] of [...info.heldGates, ...info.holdGates]) info.ownCharge.ports[k] = false;
-    const listed = (k) => info.heldGates.some(([, q]) => q === k) || info.holdGates.some(([, q]) => q === k);
-    info.perNode = info.perNode.filter(([, k]) => !mixed(k) && !listed(k));
+    info.heldContacts = info.heldContacts.filter((side) => {
+      if (!hwGroup(groupOfContact(side))) return true;
+      s.contactDEnd[side] = contactChargeAcross(old, s, side, ratioOf(side));
+      return false;
+    });
+    info.hwGroups = s.gateGroups.filter(hwGroup);
+    const listed = (k) => info.heldGates.some(([, q]) => q === k);
+    info.perNode = info.perNode.filter(([, k]) => !info.hwGroups.some((gr) => gr.ports.includes(k)) && !listed(k));
   }
-  // A floating plate or port at no current keeps its charge: its voltage is what holds it there
-  // (carried as a voltage, a capacitance doubled read twice the charge until the next step).
-  holdFloatingCharges(s, info.moved);
 
-  // Neutrality (src/neutral.js): each strictly neutral node brought onto its Gauss row, G = 0, as
-  // assembled from the carried state with the new definition's ports, faces and contacts, by its φ̂
-  // at the levels carried (the levels are what an open solution has; φ̂ is what neutrality makes
-  // of them, a face's D and a held gate's σ with it, their start charges read off the final state).
-  // Under a gate whose hardware changed (and where a removed gate's window was), at the
-  // concentrations instead: see the start charges above. With each carried amount, exactly,
-  // through the statistics; each floating gate's charge, by its voltage; each double layer's
-  // charge; again, as each moves the others a little. (Held to each node's old net charge, not its
-  // Gauss row, a capacitive face's counter-charge was lost, Neon's R2 3.1; and with φ̂ held
-  // instead, the regridded gate's charge kept the coarse grid's error, 8e-6 of it, where by its
-  // levels the state is the fine grid's to 1e-8.)
-  const moved = info.moved, nodes = strictlyNeutralNodes(s);
+  // Neutrality (src/neutral.js, solveNeutral): each strictly neutral node onto its Gauss row,
+  // G = 0, as assembled from the carried state with the new definition's ports, faces and
+  // contacts, together with each closed stretch's amount (exactly, through the statistics) and
+  // each floating capacitor's charge (by its voltage), in one Newton solve. Each node by its φ̂ at
+  // the levels carried (the levels are what an open solution has; φ̂ is what neutrality makes of
+  // them, a face's D and a held gate's σ with it, their start charges read off the final state);
+  // under a gate or plate whose hardware changed (and where a removed gate's window was), at its
+  // concentrations instead. Then each double layer's charge, again, as each moves the others a
+  // little. (Held to each node's old net charge, not its Gauss row, a capacitive face's
+  // counter-charge was lost, Neon's R2 3.1; with φ̂ held instead, a regridded gate's charge kept the
+  // coarse grid's error, 8e-6 of it, where by its levels the state is the fine grid's to 1e-8. And
+  // by turns, each projection undoing another's, a trace open ion in closed salt had no fixed point
+  // and a floating gate beside a changed one stalled 89% short; Neon's fourth review, R4 1.3, 1.5.)
+  // The held terminals at their old voltages meanwhile: a drive changed in the same set() is the
+  // next step's to pass, as a drive changed alone is.
+  const moved = info.moved;
   const hw = new Uint8Array(s.nNodes);
-  for (const k of info.hardware ?? []) for (const g of s.model.ports[k].nodes) hw[g] = 1;
-  // (every box of a group a changed gate is in: its unchanged neighbours' start charges were read
-  // before the jump, so nothing else may move φ̂ under them)
-  for (const gr of s.gateGroups) if (gr.ports.some((k) => info.hardware?.has(k))) for (const g of gr.nodes) hw[g] = 1;
-  if (info.hardware) old.model.ports.forEach((op, o) => {
+  for (const k of info.hardware) for (const g of s.model.ports[k].nodes) hw[g] = 1;
+  for (const side of info.contactHw) hw[endOf(side)] = 1;
+  // (every box of a group a changed capacitor is in: its unchanged neighbours' start charges were
+  // read before the jump, so nothing else may move φ̂ under them)
+  for (const gr of info.hwGroups ?? []) for (const g of gr.nodes) hw[g] = 1;
+  if (info.hardware.size > 0) old.model.ports.forEach((op, o) => {
     if (!op.capacitance || s.model.ports.some((p) => p.name === op.name)) return;
     const r = map.indexOf(op.region);
     if (r < 0) return;
@@ -597,31 +604,40 @@ function carryRest(old, s, info, { pure }) {
       if (xo >= op.from && xo <= op.to) hw[g] = 1;
     }
   });
-  // (each round again, at the concentrations it has then: a floating gate there re-held at its
-  // charge moves the σ that the jump balances, and the two settle together)
-  for (const nd of nodes) {
-    if (hw[nd.g] && !nd.bulk && s._portHolds(nd.g)) nd.mode = 'jump';
-    else if (!nd.bulk && kept(nd.g)) (nd.mode = 'charge'), (nd.only = closedAt(nd.g));
-  }
+  for (const nd of nodes) nd.mode = hw[nd.g] && !nd.bulk ? 'jump' : 'level';
+  const V0 = Float64Array.from(s.termV), heldV = [];
+  s.terms.forEach((t, k) => {
+    const o = old.terms.findIndex((u) => u.name === t.name);
+    if (o >= 0 && t.drive.kind === 'V' && !s.floating.includes(k)) (s.termV[k] = old.termV[o]), heldV.push(k);
+  });
+  const closedAll = targets.filter((t) => t.rescale && t.want > 0);
+  // (a stretch on a lattice or an insertion host is rescaled by rescaleAll, between the solves: a
+  // host's carrier follows its ion, and a lattice's open partner is held where it is, which a shift
+  // of the closed one's level alone moves through their shared sites)
+  const hosted = (st) => {
+    for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (s.model.materials[s.nodeMaterial[g]].models.some((md) => (md.type === 'insertion' || md.type === 'lattice') && md.idx.includes(st.species))) return true;
+    return false;
+  };
+  const joint = closedAll.filter(({ st }) => !hosted(st)), apart = closedAll.filter(({ st }) => hosted(st));
+  const floating = floatingTargets(s, neutralAt);
   const layers = diffuseTargets(old, s, info);
-  for (let round = 0; round < 60; round++) {
-    projectNeutral(s, nodes, { moved, syncFaces: true });
-    let off = holdDiffuse(s, layers, moved);
-    off = Math.max(off, rescaleAll(s, targets.filter((t) => t.rescale), moved));
+  for (let round = 0; round < 30; round++) {
+    let { worst: off } = solveNeutral(s, nodes, { closed: joint, floating, moved, syncFaces: true });
+    off = Math.max(off, holdDiffuse(s, layers, moved));
+    off = Math.max(off, rescaleAll(s, apart, moved));
     // (a floating port's voltage again, as neutrality moved the φ under it: held once, before, a
     // port over a bar made 1 → 3 kept 9e-9 C/m² off what it held, and the first step drove that
     // through the bar, its voltage jumping 0.58 mV in 1 ns, 58 mV in 10 ps; the inventory's item 1)
     off = Math.max(off, holdFloatingCharges(s, moved));
-    off = Math.max(off, holdHeldGates(old, s, info.holdGates ?? [], moved));
-    if (off < 1e-13) break;
+    if (round > 0 && off < 1e-13) break;
   }
-  projectNeutral(s, nodes, { moved, syncFaces: true });
   const surfaces = surfaceTargets(old, s, info);
   rescaleSurfaces(s, surfaces);
   s.computeConcentrations();
   // A gate with nothing to carry (new, or on a window's new part) starts at rest at the voltage
   // the carried state puts across it, α/(α + β), as a start does at its own (from the cold
   // start's, a widened window's new membrane had its gates open at 0 mV beside −65; Astra's review).
+  for (const k of heldV) s.termV[k] = V0[k];
   for (const gt of info.gatesAtRest) {
     const V = s._gateVoltage(gt), a = gateRate(gt.gate.alpha, V)[0], b = gateRate(gt.gate.beta, V)[0];
     s.u[gt.o] = a + b > 0 ? a / (a + b) : 0;
@@ -636,8 +652,19 @@ function carryRest(old, s, info, { pure }) {
     if (info.ownCharge.right) s.contactDEnd.right = s.contactD.right;
     info.ownCharge.ports.forEach((own, k) => own && (s.portQEnd[k] = s.portQ[k]));
     // (a held port's charge across a new geometry, from the final state too: its φ moved since; a
-    // floating one's voltage was set to hold what it held, above, and stays)
-    for (const [o, k] of [...info.perNode, ...(info.heldGates ?? [])]) if (s.terms[2 + k].drive.kind !== 'I') s.portQEnd[k] = portChargeAcross(old, s, o, k);
+    // floating one's voltage was set to hold what it held, above, and stays. Where nothing under
+    // it moved, the charge it held, bit for bit.)
+    const still = (ns) => ns.every((g) => !moved[g]);
+    for (const [o, k] of info.perNode) if (!s.floating.includes(2 + k)) s.portQEnd[k] = portChargeAcross(old, s, o, k);
+    for (const [o, k, copied] of info.heldGates) if (!(copied && sameGeometry && still(s.model.ports[k].nodes))) s.portQEnd[k] = portChargeAcross(old, s, o, k);
+    for (const side of info.heldContacts) if (!(sameGeometry && info.copied[endOf(side)] === 1 && still([endOf(side)]))) s.contactDEnd[side] = contactChargeAcross(old, s, side, ratio(kOf(side)));
+    // (a group with a changed capacitor in a regrid: its start charges together are what the new
+    // grid's ions under it balance, the interpolation's difference shared out by capacitance, as
+    // φ̂ would share it. Kept as they were, a C doubled with a regrid broke Kirchhoff by 4.1e4 A/m²;
+    // Neon's fourth review, R4 1.3. And one at a capacitive face to a metal: the jump moved the
+    // face's D, whose metal takes it from its terminal in that instant, through the held sources,
+    // which no step's current sees; so the held ones' starts give it up, as that impulse does.)
+    for (const gr of info.hwGroups ?? []) if (gr.faces.length > 0 || !gr.nodes.every((g) => info.copied[g] === 1)) shareGroupCharge(s, gr);
   }
   // (a carried state that isn't finite is refused, the device left as it was: a crowded double layer
   // whose ε fell twentyfold came back NaN and converged, unwarned; Astra's second pass)
@@ -719,7 +746,7 @@ function holdFloatingCharges(s, moved) {
   // (driven by a current and holding a capacitance's charge, which can't jump: a capacitive
   // contact's plate, a port's spread capacitance; ionic leaks beside it don't change that)
   const stores = (k) => (k >= 2 ? !!s.model.ports[k - 2].capacitance : s.model.contacts[k === 0 ? 'left' : 'right'].phi.type === 'capacitive');
-  const held = s.floating.filter((k) => s.terms[k].drive.kind === 'I' && stores(k));
+  const held = s.floating.filter(stores);
   if (held.length === 0) return 0;
   const charge = (k) => (k >= 2 ? s.portQ[k - 2] : k === 0 ? s.contactD.left : -s.contactD.right);
   const want = (k) => (k >= 2 ? s.portQEnd?.[k - 2] : k === 0 ? s.contactDEnd?.left : -s.contactDEnd?.right);
@@ -744,42 +771,112 @@ function holdFloatingCharges(s, moved) {
   return worst;
 }
 
-// Each group of unchanged held gates over strictly neutral boxes whose ions' amounts the carry
-// keeps (src/regions.js, _gateGroupsOf), carried onto a new grid: φ̂ under the group shifted (its
-// concentrations kept) until the state holds, at the gates' old drives (portChargeAcross), the
-// total they held. (Its interpolated φ̂ summed over the new boxes put each gate's charge 1e-5 off,
-// which the kept amounts can't balance.) A floating gate in the group is held by its voltage
-// instead (holdFloatingCharges). Returns how far off the worst group was, relative to its charge
-// or a µV's worth of it.
-function holdHeldGates(old, s, held, moved) {
-  if (held.length === 0) return 0;
-  const { M, n, z, VT } = s, vol = s.model.grid.vol;
-  let worst = 0;
-  s._assembleBookkeeping(Infinity);
-  for (const { ports, nodes } of s.gateGroups) {
-    const mine = held.filter(([, k]) => ports.includes(k));
-    if (mine.length === 0) continue;
-    let have = 0, want = 0, slope = 0;
-    for (const [o, k] of mine) {
-      have += portChargeAcross(old, s, o, k);
-      want += s.portQEnd[k];
-      const C = old.model.ports[o].capacitance.C;
-      s.model.ports[k].nodes.forEach((g, w) => s._portHolds(g) && (slope += vol[g] * s.portArea[k][w] * C * VT));
+// A gate whose window changed (narrowed, moved, widened; its C or area too): what it held over the
+// part of its new window its old one covered, per area of electrode, node by node, at the state as
+// carried (before the neutrality moves φ̂: the old φ̂ there), and the old window's charge beyond its
+// state's own (a drive changed since its last step) spread over it by electrode area. Where the
+// window is the same, its whole charge (scaled with its electrode across a new geometry).
+function portChargeKept(old, s, o, k, info) {
+  const op = old.model.ports[o], p = s.model.ports[k], sameGeometry = deepEqual(old.model.geometry, s.model.geometry);
+  if (op.from === p.from && op.to === p.to) return old.portQEnd[o] * (sameGeometry ? 1 : portRatio(old, s, o, k));
+  if (op.region !== info.map[p.region]) return 0;
+  const ng = s.model.grid, og = old.model.grid, po = op.capacitance, V = old.termV[2 + o], Ao = portArea(old, o);
+  const sigmaOld = (sv, g) => po.C * (V - po.zeroCharge - sv.VT * (sv.u[sv.blockOfNode[g] * sv.M] + sv.uLo[sv.blockOfNode[g] * sv.M]));
+  let q = 0, kept = 0;
+  // (on the same nodes: each box both windows hold keeps its whole old charge, the box's φ̂ jumping
+  // at its concentrations, which balance just that; a box the new one doesn't hold has none, its
+  // ions moving)
+  if (sameGeometry && p.nodes.every((g) => info.copied[g] === 1)) {
+    const at = new Map();
+    op.nodes.forEach((g, w) => old._portHolds(g) && at.set(og.x[g], og.vol[g] * old.portArea[o][w]));
+    for (const g of p.nodes) {
+      const e = at.get(ng.x[g]);
+      if (e === undefined || !s._portHolds(g)) continue;
+      const go = og.x.indexOf(ng.x[g]);
+      q += e * sigmaOld(old, go);
+      kept += e;
     }
-    if (!(slope > 0)) continue;
-    worst = Math.max(worst, Math.abs(have - want) / (Math.abs(want) + slope * (1e-6 / VT)));
-    const d = (have - want) / slope;
-    if (!(Math.abs(have - want) > 1e-15 * (Math.abs(want) + slope)) || !Number.isFinite(d)) continue;
-    for (const g of nodes) {
-      const b = s.blockOfNode[g] * M;
-      s.u[b] += d;
-      for (let i = 0; i < n; i++) if (s.present[g * n + i] && z[i] !== 0) s.u[b + 1 + i] += z[i] * d;
-      moved[g] = 1;
-    }
-    s.computeConcentrations();
-    s._assembleBookkeeping(Infinity);
+  } else {
+    // (across a regrid: per area of electrode over the part of each new box the old window covered,
+    // at the φ̂ carried there)
+    const x0 = ng.x[ng.regionStart[p.region]], L = s.model.regions[p.region].length, Lo = old.model.regions[op.region].length;
+    const toNew = (xo) => x0 + (Lo > 0 ? (xo / Lo) * L : 0), a = toNew(op.from), b = toNew(op.to);
+    p.nodes.forEach((g, w) => {
+      if (!s._portHolds(g) || !(p.hi[w] > p.lo[w])) return;
+      const part = Math.max(0, Math.min(p.hi[w], b) - Math.max(p.lo[w], a)) / (p.hi[w] - p.lo[w]);
+      if (!(part > 0)) return;
+      const e = ng.vol[g] * s.portArea[k][w] * part;
+      q += e * sigmaOld(s, g);
+      kept += e;
+    });
   }
-  return worst;
+  return q + (Ao > 0 ? ((old.portQEnd[o] - old.portQ[o]) * kept) / Ao : 0);
+}
+
+// A held capacitive contact's charge on the carried state at its old drive (its plate's D_in =
+// A C (V − zeroCharge − V_T φ̂), linear in V), plus what it held beyond its old state's own (a drive
+// changed since its last step), as contactD (the displacement toward +x).
+function contactChargeAcross(old, s, side, ratio) {
+  const sg = side === 'left' ? 1 : -1, k = side === 'left' ? 0 : 1;
+  const po = old.model.contacts[side], pn = s.model.contacts[side];
+  const A = s.model.grid.area[side === 'left' ? 0 : s.nNodes - 1];
+  const Din = sg * s.contactD[side];
+  const at = (po.phi.C / pn.phi.C) * Din + A * po.phi.C * (old.termV[k] - po.phi.zeroCharge - s.termV[k] + pn.phi.zeroCharge);
+  return sg * at + (old.contactDEnd[side] - old.contactD[side]) * ratio;
+}
+
+// The floating capacitors whose charge sits on strictly neutral boxes, for solveNeutral to hold by
+// their voltages: a floating port over any of them, a floating capacitive contact beside one.
+function floatingTargets(s, neutralAt) {
+  if (!s.contactDEnd && !s.portQEnd) return [];
+  const out = [];
+  for (const k of s.floating) {
+    if (k >= 2) {
+      const p = s.model.ports[k - 2];
+      if (p.capacitance && Number.isFinite(s.portQEnd?.[k - 2]) && p.nodes.some((g) => neutralAt[g] && s._portHolds(g))) out.push({ k, want: s.portQEnd[k - 2] });
+    } else {
+      const side = k === 0 ? 'left' : 'right', g = k === 0 ? 0 : s.nNodes - 1;
+      if (s.model.contacts[side].phi.type === 'capacitive' && neutralAt[g] && Number.isFinite(s.contactDEnd?.[side])) out.push({ k, want: k === 0 ? s.contactDEnd.left : -s.contactDEnd.right });
+    }
+  }
+  return out;
+}
+
+// A group's start charges brought onto what its state holds in all (Σ of its ports' and plates'),
+// the difference shared by each one's capacitance over the group's boxes (a floating one's charge
+// is its own: it keeps it). See the start charges in carryRest.
+function shareGroupCharge(s, gr) {
+  s._assembleBookkeeping(Infinity);
+  const vol = s.model.grid.vol, grid = s.model.grid;
+  let want = 0, have = 0, gross = 0, wsum = 0;
+  const share = [];
+  for (const k of gr.ports) {
+    want += s.portQEnd[k];
+    have += s.portQ[k];
+    gross += Math.abs(s.portQ[k]);
+    if (s.floating.includes(2 + k)) continue;
+    let w = 0;
+    s.model.ports[k].nodes.forEach((g, j) => s._portHolds(g) && (w += vol[g] * s.portArea[k][j] * s.model.ports[k].capacitance.C));
+    share.push(['port', k, w]);
+    wsum += w;
+  }
+  for (const side of gr.contacts) {
+    const sg = side === 'left' ? 1 : -1;
+    want += sg * s.contactDEnd[side];
+    have += sg * s.contactD[side];
+    gross += Math.abs(s.contactD[side]);
+    if (s.floating.includes(side === 'left' ? 0 : 1)) continue;
+    const w = grid.area[side === 'left' ? 0 : s.nNodes - 1] * s.model.contacts[side].phi.C;
+    share.push(['contact', side, w]);
+    wsum += w;
+  }
+  const diff = have - want;
+  if (!(wsum > 0) || !(Math.abs(diff) > 1e-15 * gross)) return;
+  for (const [kind, k, w] of share) {
+    const d = (diff * w) / wsum;
+    if (kind === 'port') s.portQEnd[k] += d;
+    else s.contactDEnd[k] += (k === 'left' ? 1 : -1) * d;
+  }
 }
 
 // What the old state held of species i over solver sv's region q (its faces' diffuse layers'

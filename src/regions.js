@@ -97,6 +97,7 @@ import { sgFlux } from './bernoulli.js';
 import { EPS0, FARADAY } from './constants.js';
 import { powi } from './pow.js';
 import { addTerm } from './sum.js';
+import { strictlyNeutralNodes } from './neutral.js';
 
 const AFF = new Float64Array(2); // addTerm's accumulator, scratch for _bulkAffinity
 
@@ -443,28 +444,61 @@ export class RegionTerms {
   // the step's end. (Unseen, a gate set() added beside another left the first one's charge where
   // it was under a φ̂ the carry had moved, and the first step broke Kirchhoff by 1.9e5 A/m², unwarned;
   // Neon's third review, R3 1.5.) Only windows whose boxes are all strictly neutral nodes.
-  // The capacitive ports' windows, each with every port sharing a box of it, where every box
-  // its charge is held in is a strictly neutral node (built with the solver: see _gatedStartCheck).
+  // The groups of strictly neutral boxes (src/neutral.js) that capacitors join: a capacitive port
+  // holds charge in each box of its window (_portHolds), a capacitive contact in its end box, a
+  // capacitive face (without a diffuse layer) in the boxes beside it; a port's window joins its
+  // boxes, a face joins two strictly neutral boxes beside it. Each: its ports, its nodes, its
+  // capacitive contacts ('left', 'right'), and the faces at its edge with the side its box is on
+  // (0: the box left of the face, the face's D in its row with +A, 1 with −A). Within a group a
+  // charge can pass from one capacitor to another through the solution, not out of it. (Over
+  // chargeNodes only, a gate whose window reached a capacitive face's box had no group: its start
+  // went unchecked and the carry kept no gate's charge beside it, −4.9e4 A/m² at the first step,
+  // unwarned; Neon's fourth review, R4 1.2.)
   _gateGroupsOf() {
-    const groups = [], seen = new Set();
-    this.model.ports.forEach((p, k) => {
-      if (!p.capacitance || seen.has(k)) return;
-      const ports = [k], nodes = new Set();
-      for (let a = 0; a < ports.length; a++)
-        for (const g of this.model.ports[ports[a]].nodes) {
-          if (!this._portHolds(g)) continue;
-          nodes.add(g);
-          for (const [kq] of this.qgTerms[g]) if (!ports.includes(kq - 2)) ports.push(kq - 2);
-        }
-      ports.forEach((q) => seen.add(q));
-      if (nodes.size > 0 && [...nodes].every((g) => this.chargeNode[g] === 1)) groups.push({ ports, nodes: [...nodes].sort((a, b) => a - b) });
+    const { model } = this, grid = model.grid, N = grid.nNodes, itfs = model.interfaces;
+    const neutral = new Uint8Array(N);
+    for (const nd of strictlyNeutralNodes(this)) if (!nd.bulk) neutral[nd.g] = 1;
+    const root = Int32Array.from({ length: N }, (_, g) => g), seed = new Uint8Array(N);
+    const find = (g) => (root[g] === g ? g : (root[g] = find(root[g])));
+    const join = (a, b) => (root[find(a)] = find(b));
+    const held = model.ports.map((p) => (p.capacitance ? p.nodes.filter((g) => neutral[g] && this._portHolds(g)) : []));
+    for (const ns of held) for (const g of ns) (seed[g] = 1), join(g, ns[0]);
+    const side = { left: 0, right: N - 1 }, contacts = [];
+    for (const [sd, g] of Object.entries(side)) if (neutral[g] && model.contacts[sd].phi.type === 'capacitive') (seed[g] = 1), contacts.push([sd, g]);
+    // (a face with a diffuse layer: its boxes' rows read the layer's charge, which the start check
+    // doesn't; a group with one isn't checked)
+    const faces = [], layered = new Uint8Array(N);
+    itfs.forEach((itf, f) => {
+      if (itf.phi.type !== 'capacitive') return;
+      const gL = grid.regionEnd[f], gR = gL + 1;
+      if (this.diffList.some((d) => d.f === f)) return void (layered[gL] = layered[gR] = 1);
+      if (neutral[gL] && neutral[gR]) return void ((seed[gL] = seed[gR] = 1), join(gL, gR), faces.push({ f, side: 2, g: gL }));
+      if (neutral[gL]) (seed[gL] = 1), faces.push({ f, side: 0, g: gL });
+      if (neutral[gR]) (seed[gR] = 1), faces.push({ f, side: 1, g: gR });
     });
-    return groups;
+    const byRoot = new Map(), groupAt = (g) => {
+      const r = find(g);
+      if (!byRoot.has(r)) byRoot.set(r, { ports: [], nodes: [], contacts: [], faces: [], layered: false });
+      return byRoot.get(r);
+    };
+    for (let g = 0; g < N; g++) if (seed[g]) groupAt(g).nodes.push(g);
+    for (let g = 0; g < N; g++) if (seed[g] && layered[g]) groupAt(g).layered = true;
+    held.forEach((ns, k) => ns.length > 0 && groupAt(ns[0]).ports.push(k));
+    for (const [sd, g] of contacts) groupAt(g).contacts.push(sd);
+    for (const fc of faces) groupAt(fc.g).faces.push(fc);
+    return [...byRoot.values()];
   }
 
-  _gatedStartCheck() {
-    const { n, z, cOld, present } = this, F = FARADAY, vol = this.model.grid.vol;
-    for (const { ports, nodes } of this.gateGroups) {
+  // Each group's start (from the step's own start values: cOld, portQStart, contactDStart, and a
+  // face's D as the step found it), past 1e-8 of its gross: Σ v(ρ_fixed + F Σ z c_old) + Σ Q_start
+  // + Σ D_in (a contact's plate) − A D (a face on its right) + A (D + sheetCharge) (on its left)
+  // = 0, the sum of its boxes' Gauss rows (a face inside it, its sheet charge alone). A group at a
+  // face is read on a backward Euler step only (BDF2 extrapolates the rest of the start, not a
+  // face's D, which no step keeps as a start); one beside a diffuse layer not at all.
+  _gatedStartCheck(bdf = false) {
+    const { n, z, cOld, present, M } = this, F = FARADAY, grid = this.model.grid, vol = grid.vol;
+    for (const { ports, nodes, contacts, faces, layered } of this.gateGroups) {
+      if (layered || (bdf && faces.length > 0)) continue;
       let q = 0, scale = 0;
       for (const g of nodes) {
         let qn = this.rhoFixed[g], sn = Math.abs(this.rhoFixed[g]);
@@ -473,8 +507,19 @@ export class RegionTerms {
         scale += vol[g] * sn;
       }
       for (const k of ports) (q += this.portQStart[k]), (scale += Math.abs(this.portQStart[k]));
+      for (const sd of contacts) {
+        const D = (sd === 'left' ? 1 : -1) * this.contactDStart[sd];
+        (q += D), (scale += Math.abs(D));
+      }
+      for (const { f, side } of faces) {
+        const A = grid.area[grid.regionEnd[f]], D = this.u[this.blockOfFace[f] * M], sh = this.model.interfaces[f].sheetCharge ?? 0;
+        if (side === 0) q -= A * D;
+        else if (side === 1) q += A * (D + sh);
+        else q += A * sh;
+        scale += A * (Math.abs(D) + Math.abs(sh));
+      }
       const rel = scale > 0 ? Math.abs(q) / scale : 0;
-      if (rel > 1e-8 && !(rel <= (this.offNeutral?.rel ?? 0))) this.offNeutral = { x: this.model.grid.x[nodes[0]], rel, time: this.time, gated: true };
+      if (rel > 1e-8 && !(rel <= (this.offNeutral?.rel ?? 0))) this.offNeutral = { x: grid.x[nodes[0]], rel, time: this.time, gated: true };
     }
   }
 

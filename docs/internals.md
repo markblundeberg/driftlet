@@ -131,10 +131,12 @@ By method, in file order:
 - **Starting state** is `src/start.js` (`initFromComposition`, which the Solver's own calls);
   `_surfaceStart`, which the API uses too, stays in the solver.
 - **Strictly neutral charge** is `src/neutral.js`: what a strictly neutral node's Gauss row says,
-  read from one assembly at the state (`gaussRows`), and the projections that bring a state onto
-  it (`projectNeutral`: φ̂ at the levels, the concentrations in the charge direction, or φ̂ at the
-  concentrations), which the transient's cold start (`equilibrateFaces`) and the carry
-  (`src/carry.js`) call. The cold start's own sums (`neutralPhi`, `equilibrateFaces`) are only its
+  read from one assembly at the state (`gaussRows`), and the solve that brings a state onto it
+  (`solveNeutral`: each node's φ̂ at its levels or at its concentrations, with each closed amount and
+  each floating capacitor's charge, in one Newton solve), which the transient's cold start
+  (`equilibrateFaces`) and the carry (`src/carry.js`) call. The groups of strictly neutral boxes that
+  capacitors join (a port's window, a capacitive contact's box, a face) are `_gateGroupsOf` in
+  `src/regions.js`, whose `_gatedStartCheck` reads each group's start at every step. The cold start's own sums (`neutralPhi`, `equilibrateFaces`) are only its
   first guess, corrected by it before a transient's first step; a steady solve meets the row itself.
 - **Assembly** is `src/assemble.js` (`assemble`, `_assembleDifference` with `src/difference.js`,
   `_assembleBookkeeping`, and `_j` and `_replaceRow`, which write the Jacobian), with its kernels
