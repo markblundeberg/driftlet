@@ -124,8 +124,45 @@ for live demos.
    Still open:
    - The producers' single owner, so the starts are right by construction.
    - A start far off neutral can't be carried in one step after a solve: it needs a current of
-     δq/dt, which shortening only raises. It needs the t = 0⁺ impulse instead, the charge moved by
-     migration as the transference numbers have it.
+     δq/dt, which shortening only raises. (Below: Neon finds no physical path that needs it but a
+     step in fixed charge.)
+
+   Neon's third review (21 Nov 2026) audited every sum of this charge (13 places) and designed the
+   owner; its plan replaces the one above where they differ:
+   - The owner is built from shared term functions (a contact's and a face's capacitive D, a port's
+     σ at a node) that both assembly and a gaussResidual(g) call, not read from the assembled Gauss
+     row: the producers evaluate it at trial φ̂ many times a node, and a face's D is its own unknown.
+     A standing check holds the two equal on every combos family.
+   - Each producer's projection is its own:
+     - the cold start, φ̂ at fixed η where a bath sets the levels, at fixed c where c0 does;
+     - the face start, each passing ion's amount over the pair kept and a floating gate following
+       the φ̂ moved under it (done: R3 1.7);
+     - a regrid, φ̂ held (so a face's D and a gate's σ are kept) and each η_i shifted by −z_i δ, the
+       concentrations moving in the charge direction only;
+     - a set() of a gate's C, or a gate added: the concentrations kept and φ̂ jumping at the gates'
+       total charge, each port's charge before it kept as its start (a new one's, zero), so the
+       first step reads the transfer between gates as currents that sum to zero (R3 1.5: until
+       then, the step says its start was off);
+     - a step in a gate's V: nothing; the start is on G = 0 at the old drives, and the step solves
+       the RC.
+   - The t = 0⁺ impulse by transference numbers is dropped. A gate's step has no impulse (φ jumps,
+     c and the gate's charge are continuous, the current finite over the RC time); and a local
+     t_i split makes ions in a sealed cell, drops i·∇t_i, and can turn a co-ion negative. Only a
+     step in a strictly neutral region's fixed charge needs one: refuse it, or solve the
+     migration-only projection, −∇·(κ∇Φ) = Δρ_fixed with Φ the potential's impulse.
+   - A bench/combos property, neutralG: after each producer (cold start, regrid, a drive step, a
+     port's change), every strictly neutral node on G = 0 to 1e-12 of its scale; then one short
+     step, no offNeutral warning.
+
+   Done in round 3: the face start's floating gates (R3 1.7), and a step's check of each gated
+   strictly neutral stretch, its ions against its gates' starting charges (R3 1.5 now says so).
+
+   Seen while fixing round 3, not reproduced yet: check()'s conservation floor and a steady
+   solution's Kirchhoff check are sized by the largest area in the grid (src/checks.js
+   conservation, src/solution.js), as the stepper's charge floor was (R3 3.1); and the start's
+   pinned-contact density check skips a floating contact, though for an equilibrium link the
+   density doesn't depend on V (a contact behind R at zeroCharge 20 V is refused only at its
+   first solve).
 
 
    A second seam, after: assemble emitting steady and storage parts into separate accumulators,

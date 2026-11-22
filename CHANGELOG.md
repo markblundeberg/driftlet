@@ -5,6 +5,45 @@ major version.
 
 ## Unreleased
 
+- Neon's third review (21 Nov 2026) read our fixes of its second, designed the one owner of a
+  strictly neutral node's charge (ROADMAP, "## Next" item 0, now its plan), and read the time
+  stepper and the statistics. All nine of its flags were real. Regression tests are in
+  test/neon3*.test.js.
+  - impedance() read at a bath or pinned contact's end box keeps the cell's RC at any statistics
+    and any ε (1.1). Round 2's fix, summing the box's passed ions after the contact reads its
+    current, covered only ideal boxes with ε > 0: a Bikerman cell of 30 cm of 1 M KCl read Im Z 8%
+    low at 10 MHz with no port at all, and a strictly neutral resistance read inductive at 1 GHz
+    and 52% off at 10 GHz, relError 3e-11, unwarned. Both now match R/(1 + iωRC) to 1e-9.
+  - check()'s grid item sums a port's reaction over the port's own boxes (1.2). Found by
+    coordinate, a face's two nodes collided, and a port reaching the face read its neighbour's box:
+    a 1 µm catalyst layer beside 1 mm of solution read 100× its turnover and FAILed a solution
+    converged to 4e-13. And in a sphere or a cylinder, a face's D and reaction rates are compared
+    as totals, as everything else there is (1.3): per area, a 10 µm particle's face set a floor
+    that passed its outer double layer 4.9% off its refined value.
+  - set() carries a surface's species together, in any listing order, with its bare sites taken
+    from the odds (1.4). One at a time, two adsorbates on a near-full surface failed a pure regrid
+    (and check()'s grid item) listed one way and passed the other; and a surface 1e-17 bare was
+    refused as full, its bare fraction 1 − Σθ cancelled to zero.
+  - A step from a gated strictly neutral stretch whose gates and ions disagree says so (1.5). A
+    set() adding a gate beside another left the first's charge where it was under the potential the
+    carry moved, and the first step broke Kirchhoff by 1.9e5 A/m², unwarned. The carry itself is
+    the design piece: each port's charge kept through such a set(), the potential jumping at fixed
+    concentrations.
+  - A cold device behind a series resistance whose fallback cold start is refused returns
+    converged: false, saying why, not a throw out of solve(); a refused fallback's steps are counted
+    once; and a solve that ran out of steps while settling says so first (1.6).
+  - A floating gate over a strictly neutral face keeps its charge through the face's start (1.7).
+    The first step from cold moves the face's potential by its Donnan jump; the gate's voltage,
+    left behind, read that as a charge its ions didn't balance: 1.6 MA/m² through the bath, the
+    gate locked at 1.6e-3 C/m² for good, and an advance() from the start failed at t = 0.
+  - The time stepper's charge error floor is each terminal's own (3.1). Taken from the largest area
+    in the grid, a 1 µm spherical electrode in a 1 cm cell had a floor 1e8 times its own, and a
+    100 µs ramp was taken in one step, its charge 50% off at tol 1e-3, unwarned.
+  - An OCV table is checked for a fold at its exact minimum, every knot and both tails included
+    (3.2). Sampled on a grid of 2.5e-4, a table with a fine knot near x = 0 folded back between
+    samples and was accepted: evaluate() landed on the wrong branch, 19% off, and a solve at the
+    table's own first knot converged 6.7% off it.
+
 - A time step from a strictly neutral node off neutral keeps every species, and says so. The step's
   charge rows assumed it started neutral and deleted any net charge from the most abundant ion.
   Every way into that found so far was closed where it entered (Neon's 1.1, R2 3.1); now the rows
