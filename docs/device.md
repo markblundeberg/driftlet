@@ -1590,11 +1590,28 @@ Notes:
   (its drift, grading, flow and cross-section included, in logarithms), coverages and gates
   linearly within their own window (a window moved at the same width carries them with it; one
   widened keeps them where they were, its new part at its start). A node is placed by its fraction
-  of its region's length, so a region resized upstream doesn't shift the one after it. A strictly
-  neutral region keeps the net charge it held, and each closed amount, the surfaces' too, is held
-  exactly; `solution()` shows that state, unsolved, until the next `solve()` or step. (A capacitor's
-  charge differs between two grids by their discretisation; the first step after a regrid passes
-  that difference, a brief current carrying a charge of order the grids' difference.)
+  of its region's length, so a region resized upstream doesn't shift the one after it. Each closed
+  amount, the surfaces' too, is held exactly; `solution()` shows that state, unsolved, until the
+  next `solve()` or step.
+- **A strictly neutral region (ε = 0) starts every step neutral**: each node's ions, fixed charge,
+  ports' charges and the face's or contact's displacement its box holds summing to zero, as the
+  step's own Gauss row has them (one owner, src/neutral.js). Where the region's ions are all closed
+  (their amounts kept), so is their net charge, and with it the charges of the capacitors that
+  balance it: its potential stays where it was carried and the concentrations move, in the charge
+  direction only, a held gate over it keeping its total charge (its potential shifted under it
+  until it holds it). Where an ion is open to a contact or a port, its levels are what's carried
+  and the potential is what neutrality makes of them, as a fresh solve on the new grid would
+  have it; a held gate's charge is read off that state.
+- **A gate's hardware changed** (its capacitance, window or electrode area; a gate added or taken
+  away) over a strictly neutral region: the concentrations under it can't move in an instant, nor
+  can its charge, so both are kept, a new gate (or a window's new part, new membrane) starting
+  uncharged, and the potential under it jumps until each box is neutral again. The next step then
+  passes the charge between the gates, and from a held one's source, as currents, over the
+  solution's RC time: a window widened under a clamp is charged by it through the solution, and a
+  device left long enough is the one built that way. (Until 1.21 the carry read the new charges
+  off the state instead, charging new membrane in an instant with no current through the clamp;
+  a gate added beside another broke Kirchhoff by 1.9e5 A/m².) A floating gate keeps its charge
+  through any of these, its voltage moving.
 - **A steady state stands for its definition.** A grid patch alone on a steady state is solved
   again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
   solutions if that fails); a grid patch together with anything else is the new grid first, solved,

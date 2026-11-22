@@ -24,6 +24,9 @@
 //   area       a constant cross-section A scales every terminal current by A, and moves no level
 //   sealed     a closed stretch holds its definition's ∫c0, cold solved and after a cold first step
 //   stale      check() refuses a solution of the device before a set()
+//   neutralG   every strictly neutral node on its Gauss row (G = 0) after each producer of a start
+//              (cold, solved, a drive's step, a regrid, a gate's C doubled, a gate added), each gated
+//              stretch's start charges the state's, and a short step from it that doesn't say it's off
 //   mirror     reflect positions, face laws and drives: the reflected device's steady state is the reflection
 //   gauge      shift the common voltage reference and compare concentrations, currents and level differences
 //   scale      dilate the device and its transport coefficients without changing the dimensionless system

@@ -125,6 +125,8 @@ import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
 import { fixedAt, gradedAt, isGraded, profileAt, sourceAt } from './device.js';
 import { SolverError } from './errors.js';
+import { gaussRows, projectNeutral, strictlyNeutralNodes } from './neutral.js';
+import { rescaleAll } from './carry.js';
 
 /**
  * Cold start. Each species takes its region's c0 where one is given (for a spectator, it fixes
@@ -766,6 +768,53 @@ export function equilibrateFaces(s) {
     followFloating(s, gR, u[bR] - phiR0);
   }
   s.computeConcentrations();
+  neutralStart(s);
+}
+
+// Every strictly neutral node onto its Gauss row (src/neutral.js) where the start left one off:
+// by its φ̂ at its levels, each closed stretch's amount held at what the start gave it (rescaleAll,
+// src/carry.js). (A capacitive face's sheet charge between two strictly neutral regions has no
+// neutral start at c0: its edge boxes hold its counter-charge. Left off, the first step charged
+// them, 1.6e-2 C/m², through the box beside them.)
+// Whether node g's box holds a capacitive face's or contact's displacement.
+function boundaryCapacitive(s, g) {
+  const grid = s.model.grid, r = grid.nodeRegion[g], itfs = s.model.interfaces;
+  if (g === grid.regionEnd[r] && r < itfs.length && itfs[r].phi.type === 'capacitive') return true;
+  if (g === grid.regionStart[r] && r > 0 && itfs[r - 1].phi.type === 'capacitive') return true;
+  const side = g === 0 ? 'left' : g === s.nNodes - 1 ? 'right' : null;
+  return !!side && s.model.contacts[side].phi.type === 'capacitive';
+}
+
+function neutralStart(s) {
+  const nodes = strictlyNeutralNodes(s);
+  // (only where a box beside a capacitive face or contact is off, past the start's own round-off:
+  // a box whose own c0 can't be neutral is the start's to refuse, and says so; and its solves leave
+  // 1e-12 of the gross, which isn't worth moving a closed amount for)
+  if (nodes.length === 0 || !gaussRows(s, nodes).some((r, a) => r.slope > 0 && Math.abs(r.G) > 1e-10 * r.scale && boundaryCapacitive(s, nodes[a].g))) return;
+  const u0 = Float64Array.from(s.u);
+  const list = s.stretches.flatMap((st) => (st.connected || st.reactive ? [] : [{ st, want: s.amount(st) }]));
+  // (where every ion is closed, their net charge is too: there the potential stays and the
+  // concentrations move in the charge direction, as in the carry; by φ̂ at the levels, the
+  // amounts and neutrality chased each other, a closed one 7e-4 off after 60 rounds)
+  const closed = new Set(list.map(({ st }) => st));
+  for (const nd of nodes) {
+    const r = s.model.grid.nodeRegion[nd.g];
+    let all = !nd.bulk;
+    for (let i = 0; i < s.n && all; i++) if (s.present[nd.g * s.n + i] && s.z[i] !== 0 && !closed.has(s.stretches[s.stretchOf[r * s.n + i]])) all = false;
+    if (all) nd.mode = 'charge';
+  }
+  const moved = new Uint8Array(s.nNodes);
+  for (let round = 0; round < 60; round++) {
+    projectNeutral(s, nodes, { moved });
+    if (!(rescaleAll(s, list, moved) >= 1e-13)) break;
+  }
+  projectNeutral(s, nodes, { moved });
+  // (a closed amount it can't keep exactly with every node neutral: the start as it was, the
+  // first step left to take the difference, as before)
+  if (list.some(({ st, want }) => !(Math.abs(s.amount(st) - want) <= 1e-12 * Math.abs(want)))) {
+    s.u.set(u0);
+    s.computeConcentrations();
+  }
 }
 
 // The charge per volume a floating capacitive port puts at node g, Σ aσ (C/m³), where it holds

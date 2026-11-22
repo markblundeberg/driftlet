@@ -377,8 +377,9 @@ test('carry: gates by name, a widened gated window, surface species reordered', 
   const d = new Device(axon(3e-3));
   const p0 = d.advance(5e-3).ports[0], p = d.set({ ports: { membrane: { to: 6e-3 } } }).solution().ports[0];
   assert.ok(p.x.length > p0.x.length);
-  // (the old part keeps what it held, its window uniform but for its edge; the new part starts at
-  // rest at the voltage the carried state puts across it, α/(α + β))
+  // (the old part keeps what it held, its window uniform but for its edge; the new part, new
+  // membrane, starts uncharged, φ under it jumping to the clamp's (a gate's hardware changed:
+  // src/carry.js), its gates at rest at the voltage across it, α/(α + β): 0 V)
   for (const k of ['m', 'h', 'n']) {
     const lo = Math.min(...p0.gates[k]), hi = Math.max(...p0.gates[k]);
     p.x.forEach((x, w) => {
@@ -388,7 +389,7 @@ test('carry: gates by name, a widened gated window, surface species reordered', 
   for (const gt of d.solver.gateList) {
     if (d.solver.model.grid.x[gt.g] <= p0.x.at(-1)) continue;
     const V = d.solver._gateVoltage(gt), a = gateRate(gt.gate.alpha, V)[0], b = gateRate(gt.gate.beta, V)[0];
-    assert.ok(rel(d.solver.u[gt.o], a / (a + b)) < 1e-12 && Math.abs(V + 0.0656) < 0.002, `${gt.gate.name} at ${d.solver.model.grid.x[gt.g]}: ${d.solver.u[gt.o]} vs ${a / (a + b)} at ${V} V`);
+    assert.ok(rel(d.solver.u[gt.o], a / (a + b)) < 1e-12 && Math.abs(V) < 1e-6, `${gt.gate.name} at ${d.solver.model.grid.x[gt.g]}: ${d.solver.u[gt.o]} vs ${a / (a + b)} at ${V} V`);
   }
   const e = new Device(tethered(0.15));
   e.solve();
@@ -989,12 +990,19 @@ test('carry: 26 · a metal turned semiconductor starts over, and says so', () =>
 test('carry: 27b · a clamped port window widened without a regrid keeps its charge', () => {
   // (The new part's charge was saved but its old part's taken as the whole: the membrane gave up
   // three quarters of its charge in 0.1 ms, Q 0.0078 where a device built with the wide window holds
-  // 0.0330, φ −30.9 mV where it sits at −65.4.)
+  // 0.0330, φ −30.9 mV where it sits at −65.4. Then the new part was charged in an instant, by
+  // nothing: 0.0165 C/m² put on it with no current through the clamp. Now the window widened is
+  // new membrane, uncharged, which the clamp charges through the axoplasm over its RC time: the
+  // membrane's charge is what it held at the set(), and 40 ms on, the device is the wide one's.)
   const d = new Device(axon(3e-3)), w = new Device(axon(6e-3));
-  d.advance(5e-3), w.advance(5e-3);
-  d.set({ ports: { membrane: { to: 6e-3 } } });
-  const s = d.advance(5.1e-3), t = w.advance(5.1e-3);
-  assert.ok(rel(s.ports[0].charge, t.ports[0].charge) < 3e-3 && Math.abs(s.phi[10] - t.phi[10]) < 1 * mV, `Q ${s.ports[0].charge} vs ${t.ports[0].charge}, φ ${s.phi[10]} vs ${t.phi[10]}`);
+  const q0 = d.advance(5e-3).ports[0].charge;
+  w.advance(5e-3);
+  // (to the round-off of the ions' net charge under it, 1e-16 of the ions', which are 1e6 its)
+  assert.ok(rel(d.set({ ports: { membrane: { to: 6e-3 } } }).solution().ports[0].charge, q0) < 1e-8);
+  assert.equal(d.solver.portQEnd[0], q0);
+  const s = d.advance(40e-3), t = w.advance(40e-3);
+  assert.equal(s.warnings.length, 0, s.warnings.join('\n'));
+  assert.ok(rel(s.ports[0].charge, t.ports[0].charge) < 1e-4 && Math.abs(s.phi[10] - t.phi[10]) < 0.1 * mV, `Q ${s.ports[0].charge} vs ${t.ports[0].charge}, φ ${s.phi[10]} vs ${t.phi[10]}`);
 });
 
 test('carry: 30 · an immobile species or an eddy-mixed one is refined linearly', () => {

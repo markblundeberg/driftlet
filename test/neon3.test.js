@@ -74,10 +74,11 @@ test('a floating gate over a strictly neutral Donnan face keeps its charge throu
 // same window: the carry moved φ̂ under both to keep each node neutral, the second gate's charge
 // read from that state, the first's left at what it held before. The first step read the
 // difference as the first gate's current, 1.9e5 A/m², nothing else passing it, Kirchhoff broken,
-// unwarned (Neon's third review, R3 1.5). The carry's fix is the design piece in ROADMAP (the
-// gates' charges kept through a set(), φ̂ jumping at fixed concentrations); until then the step
-// says its start was off: each gated stretch's ions are checked against its gates' starting charges.
-test('a step from a gated strictly neutral stretch whose gates and ions disagree says so (Neon R3 1.5)', () => {
+// unwarned (Neon's third review, R3 1.5). Now a gate's hardware changed keeps the concentrations
+// and each gate's charge (the new one's, none), φ̂ jumping under them (src/carry.js, src/neutral.js):
+// the first step passes the charge between the two gates and the bath, the currents summing to
+// zero, and its start is on neutral.
+test('a gate added beside another over a strictly neutral film keeps the charges, and the first step Kirchhoff (Neon R3 1.5)', () => {
   const gate = { name: 'gate', region: 'el', from: 0, to: 0.5e-6, area: 1e6, V: 0.5, capacitance: { C: 1, zeroCharge: 0 } };
   const d = new Device({
     species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
@@ -88,9 +89,14 @@ test('a step from a gated strictly neutral stretch whose gates and ions disagree
     grid: { hmax: 1.25e-7, minCells: 8 },
   });
   d.solve();
-  const quiet = d.step(1e-9); // (a step from a solved state: no warning)
-  assert.equal(quiet.warnings.length, 0, quiet.warnings.join('\n'));
+  const before = d.step(1e-9), c0 = Float64Array.from(d.solver.c);
   d.set({ ports: [gate, { ...gate, name: 'gate2', V: -0.3 }] });
+  assert.ok(d.solver.c.every((c, k) => Math.abs(c - c0[k]) <= 1e-12 * c0[k]), 'the concentrations kept through the set()');
+  assert.equal(d.solver.portQEnd[0], before.ports[0].charge);
+  assert.equal(d.solver.portQEnd[1], 0);
   const s = d.step(1e-9);
-  assert.ok(s.warnings.some((w) => /gated strictly neutral stretch off neutral/.test(w)), s.warnings.join('\n'));
+  assert.equal(s.warnings.length, 0, s.warnings.join('\n'));
+  const I = s.terminals.right.current + s.terminals.gate.current + s.terminals.gate2.current;
+  const gross = Math.abs(s.terminals.right.current) + Math.abs(s.terminals.gate.current) + Math.abs(s.terminals.gate2.current);
+  assert.ok(gross > 1e3 && Math.abs(I) < 1e-9 * gross, `the currents sum to ${I} of ${gross} A/m²`);
 });

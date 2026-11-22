@@ -17,6 +17,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/lawRows.js` | yes: the laws written into the Newton system, and the bordered solve |
 | `src/timeSteps.js` | yes: one step (backward Euler, BDF2), advance's halving, integrate's error control |
 | `src/start.js` | yes: the cold start, from each region's c0 and the contacts' and ports' levels |
+| `src/neutral.js` | yes: strictly neutral charge, one owner: each node's Gauss row read from an assembly, and the projections onto it |
 | `src/newton.js` | yes: Newton's iteration, its scaled rows, GMRES-refined solves and the islands' round |
 | `src/assemble.js` | yes: the equations assembled, the conventions of every row, and the order of the terms |
 | `src/regions.js` | yes: statistics, storage, fluxes along segments, bulk reactions, the neutral nodes' charge rows |
@@ -129,6 +130,12 @@ By method, in file order:
   `applyLaws`, `solveBordered`), called from `assemble`, Newton and the steady solves.
 - **Starting state** is `src/start.js` (`initFromComposition`, which the Solver's own calls);
   `_surfaceStart`, which the API uses too, stays in the solver.
+- **Strictly neutral charge** is `src/neutral.js`: what a strictly neutral node's Gauss row says,
+  read from one assembly at the state (`gaussRows`), and the projections that bring a state onto
+  it (`projectNeutral`: φ̂ at the levels, the concentrations in the charge direction, or φ̂ at the
+  concentrations), which the transient's cold start (`equilibrateFaces`) and the carry
+  (`src/carry.js`) call. The cold start's own sums (`neutralPhi`, `equilibrateFaces`) are only its
+  first guess, corrected by it before a transient's first step; a steady solve meets the row itself.
 - **Assembly** is `src/assemble.js` (`assemble`, `_assembleDifference` with `src/difference.js`,
   `_assembleBookkeeping`, and `_j` and `_replaceRow`, which write the Jacobian), with its kernels
   in `src/regions.js` (`computeConcentrations` and the statistics, nodes, segments, bulk

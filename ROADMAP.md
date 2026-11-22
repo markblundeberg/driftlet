@@ -157,6 +157,32 @@ for live demos.
    Done in round 3: the face start's floating gates (R3 1.7), and a step's check of each gated
    strictly neutral stretch, its ions against its gates' starting charges (R3 1.5 now says so).
 
+   Done after it (22 Nov), Neon's plan with one change:
+   - The check first: bench/combos' neutralG, which fails on R3 1.7, R2 3.1 and R3 1.5 with their
+     fixes undone, and found two more (a regrid's gate start charges 1e-5 off; a sheet-charged
+     face's cold start).
+   - The owner is the assembled Gauss row itself, read once a round (src/neutral.js), not shared
+     term functions: a projection that holds φ̂ or moves it linearly needs the row's non-ion part
+     and its slope, not the row at every trial φ̂, so one assembly does, and nothing is written
+     twice. A face's D enters as its slot, synced to its own row by the carry.
+   - The carry's projections: a gate's hardware, φ̂ jumping at fixed c, the gates' charges kept (R3
+     1.5 fixed, its warning kept as a net); a regrid, by stretch: where every ion is closed, φ̂ held
+     and c in the charge direction, a held gate's total kept (Neon's rule: the net charge is kept,
+     so the capacitors' is); where one is open, φ̂ at the carried levels and a held gate's charge
+     read off the state. The change from Neon's plan is that second half: φ̂ held where the ions
+     are open kept the coarse grid's error in the gate's charge, 8e-6, where by the levels the
+     regridded state is the fine grid's to 1e-8. And φ̂ at the levels in a closed stretch never
+     converges: the amounts and the small capacitors chase each other at 1e-5 a round.
+   - The transient's cold start projects a box beside a capacitive face or contact that it left off.
+
+   Still open:
+   - The carry's loop (neutrality, amounts, layers, floating gates, held gates in turn) runs out
+     its 60 rounds on 7 of 20 neutral-family regrids, stopping within 3e-11: right, but slow. A
+     joint solve (the stretches' factors and the floating voltages outside, neutrality node by node
+     inside) would take a few rounds.
+   - A step in a strictly neutral region's fixed charge: refuse it, or solve the migration-only
+     projection (Neon, R3 DESIGN §3.3).
+
    Seen while fixing round 3, not reproduced yet: check()'s conservation floor and a steady
    solution's Kirchhoff check are sized by the largest area in the grid (src/checks.js
    conservation, src/solution.js), as the stepper's charge floor was (R3 3.1); and the start's

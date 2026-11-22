@@ -72,3 +72,14 @@ after a cold solve and after a cold advance()'s first step. On the code before N
 Neon's gated cell reads −5.21e-3 of its Na⁺ after the first step, and now reads 1e-15. The
 `neutral` family (strictly neutral solutions sealed under held gates, one or two salts, faces
 that may block an ion) is there for it.
+
+## neutralG
+
+A strictly neutral (ε = 0) node is an index-1 DAE: its balances with an algebraic G(u) = 0, its
+Gauss row (src/neutral.js). Each producer of a state a step starts from must leave every such node
+on it: the cold start with its faces' t = 0⁺, a solve, a drive's step (which moves nothing), a
+regrid, a gate's capacitance doubled and a gate added. `charge.js` reads each node's assembled row
+(steady off, so no law takes its place) and each gated stretch's start charges against what the
+state holds; then a short step from the state mustn't say its start was off. With their fixes
+undone it fails on Neon's R3 1.7 (a floating gate over a Donnan face, at the cold start), R2 3.1
+(a capacitive face's counter-charge, at a regrid) and R3 1.5 (a gate added beside another).

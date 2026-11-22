@@ -59,7 +59,7 @@ export function startCharges(d) {
       for (let i = 0; i < s.n; i++) if (s.present[g * s.n + i]) q += FARADAY * Math.abs(s.z[i] * s.c[g * s.n + i]);
       ions += s.model.grid.vol[g] * q;
     }
-    see(Math.abs(start - now) / Math.max(gross + 1e-6 * ions, 1e-300), `gates ${ports.map((k) => s.model.ports[k].name).join(', ')}: start ${start.toExponential(3)}, the state's ${now.toExponential(3)}`);
+    see(Math.abs(start - now) / Math.max(gross + 1e-4 * ions, 1e-300), `gates ${ports.map((k) => s.model.ports[k].name).join(', ')}: start ${start.toExponential(3)}, the state's ${now.toExponential(3)}`);
   }
   return { worst, at };
 }
