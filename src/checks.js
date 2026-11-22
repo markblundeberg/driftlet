@@ -430,12 +430,12 @@ function gridCheck(device, sol, tol, gross) {
     }),
   };
   // Started from this solution, interpolated onto the finer grid; failing that, from cold.
-  let other, otherGrid;
+  let other, otherModel;
   try {
     const dev = new Device(fine);
     carryState(device.solver, dev.solver, { oldDef: device.def, newDef: fine });
     other = dev.solve();
-    otherGrid = dev.model.grid;
+    otherModel = dev.model;
     // (From cold, the device holds its definition's amounts: where this state's own came from its
     // history (a transient, a floating terminal's charge, a closed stretch's amount), the cold
     // solve is of another state, and a port charged by a run read "FAIL grid … refine the grid",
@@ -446,7 +446,7 @@ function gridCheck(device, sol, tol, gross) {
       const cold = new Device(fine);
       if (sol.time > 0) cold.solver.time = sol.time; // waveforms at the same time
       other = cold.solve();
-      otherGrid = cold.model.grid;
+      otherModel = cold.model;
     }
   } catch (e) {
     return { name: 'grid', ok: null, summary: `couldn't solve the refined device (${e.message})` };
@@ -519,16 +519,23 @@ function gridCheck(device, sol, tol, gross) {
     diffs.push({ what, a, b, rel: Math.abs(b - a) / Math.max(Math.abs(a), Math.abs(b), floor), unit: fluxUnit });
   };
   (device.solver.rxs ?? []).forEach((rx, k) => turnover(`bulk reaction ${rx.equation ?? k}'s total`, sol.bulkReactions?.[k]?.total, other.bulkReactions?.[k]?.total, Array.from(rx.sp)));
-  model.interfaces.forEach((itf, f) => (itf.reactions ?? []).forEach((rx, k) => turnover(`face ${f}'s reaction ${rx.equation ?? k}`, sol.interfaces?.[f]?.rates?.[k], other.interfaces?.[f]?.rates?.[k], rx.part.map((p) => p.i))));
-  const windowTotal = (s, grid, k, q) => {
-    const p = s.ports?.[k];
-    if (!p?.rates?.[q] || !p.x || !p.area) return NaN;
-    const at = new Map(Array.from(grid.x, (x, g) => [x, g]));
+  // Every quantity here is through the whole cross-section, as the contacts', ports' and
+  // regions' are: a face's rates and D are per area, so times the face's area. (Per area beside
+  // totals, a 10 µm sphere's face D, 9.6e-5 C/m² against its 1.5e-13 C, set a floor that passed
+  // the outer contact's D 4.9% off; Neon's third review, 1.3.)
+  const faceArea = (m, f) => m.grid.area[m.grid.regionEnd[f]];
+  model.interfaces.forEach((itf, f) => (itf.reactions ?? []).forEach((rx, k) => turnover(`face ${f}'s reaction ${rx.equation ?? k}`, faceArea(model, f) * sol.interfaces?.[f]?.rates?.[k], faceArea(otherModel, f) * other.interfaces?.[f]?.rates?.[k], rx.part.map((p) => p.i))));
+  // (by the port's own nodes: by coordinate, a face's two nodes at one x collided, and a port
+  // reaching the face read its neighbour's box, a 1 mm region's beside a 1 µm one's, 100× the
+  // total; Neon's third review, 1.2)
+  const windowTotal = (s, m, k, q) => {
+    const p = s.ports?.[k], nodes = m.ports[k]?.nodes;
+    if (!p?.rates?.[q] || !p.area || !nodes || nodes.length !== p.area.length) return NaN;
     let t = 0;
-    p.x.forEach((x, w) => (t += p.rates[q][w] * p.area[w] * (grid.vol[at.get(x)] ?? NaN)));
+    nodes.forEach((g, w) => (t += p.rates[q][w] * p.area[w] * m.grid.vol[g]));
     return t;
   };
-  model.ports.forEach((port, k) => (port.reactions ?? []).forEach((rx, q) => turnover(`port ${port.name}'s reaction ${rx.equation ?? q}`, windowTotal(sol, model.grid, k, q), windowTotal(other, otherGrid, k, q), rx.part.map((p) => p.i))));
+  model.ports.forEach((port, k) => (port.reactions ?? []).forEach((rx, q) => turnover(`port ${port.name}'s reaction ${rx.equation ?? q}`, windowTotal(sol, model, k, q), windowTotal(other, otherModel, k, q), rx.part.map((p) => p.i))));
   // Floating terminals (driven by a current): their voltages, against the span of the terminals'
   // and the thermal voltage. (Against the larger voltage, the verdict hung on where 0 V was: the
   // same device shifted by 1 V read a 40× smaller change; Astra's fifth pass.)
@@ -565,13 +572,14 @@ function gridCheck(device, sol, tol, gross) {
     for (const sp of model.species) if (Number.isFinite(sol.c[sp.name][g])) a += FARADAY * Math.abs(sp.z * sol.c[sp.name][g]);
     content += a * model.grid.vol[g];
   }
-  const held = (s) => [
+  // (a contact's D and a port's charge are totals already; a face's D is per area: times its area)
+  const held = (s, m) => [
     ...['left', 'right'].map((side) => ({ what: `the ${side} contact's D`, q: model.contacts[side].phi.type === 'neutral' ? NaN : s.contacts?.[side]?.D })),
-    ...model.interfaces.map((itf, f) => ({ what: `face ${f}'s D`, q: itf.phi.type === 'capacitive' ? s.interfaces?.[f]?.D : NaN })),
+    ...model.interfaces.map((itf, f) => ({ what: `face ${f}'s D`, q: itf.phi.type === 'capacitive' ? faceArea(m, f) * s.interfaces?.[f]?.D : NaN })),
     ...model.ports.map((port, k) => ({ what: `port ${port.name}'s charge`, q: port.capacitance ? s.ports?.[k]?.charge : NaN })),
   ];
-  const la = layers(sol, model.grid), lb = layers(other, otherGrid), ha = held(sol), hb = held(other);
-  const qa = charges(sol, model.grid), qb = charges(other, otherGrid);
+  const la = layers(sol, model.grid), lb = layers(other, otherModel.grid), ha = held(sol, model), hb = held(other, otherModel);
+  const qa = charges(sol, model.grid), qb = charges(other, otherModel.grid);
   const finite = (x) => (Number.isFinite(x) ? Math.abs(x) : 0);
   const scaleQ = Math.max(0, ...qa.map(finite), ...qb.map(finite), ...la.map((l) => finite(l.q)), ...lb.map((l) => finite(l.q)), ...ha.map((h) => finite(h.q)), ...hb.map((h) => finite(h.q)));
   const floorQ = Math.max(1e-3 * scaleQ, 1e-9 * content);
