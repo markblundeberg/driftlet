@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.22.0 (2026-11-22)
 
 One owner of a strictly neutral node's charge, the design from Neon's third review: each node's
 Gauss row is read from one assembly at the state (src/neutral.js), and every producer of a state a
