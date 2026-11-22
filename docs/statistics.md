@@ -173,13 +173,15 @@ A flat plateau means phase separation, which isn't supported yet. The table is r
 $`\zeta = \ln(x/(1-x)) + r(x)`$: the residual $`r`$, the host's non-ideality, is a shape-preserving
 cubic between points and continues linearly beyond them. Ideal and regular-solution curves are
 therefore reproduced exactly, and $`x`$ stays within $`(0, 1)`$ at any potential. The interpolated
-curve is checked for monotonicity at construction. A curve far flatter than the ideal term near
+curve is checked for monotonicity at construction, exactly rather than sampled: at every point,
+through both linear ends, and at its least slope inside each interval. A curve far flatter than the ideal term near
 an end (E falling by millivolts over the last few percent of x) can fail that check however
 many points it has, since r then changes as steeply as the logarithm: give the ends some of the
 ideal slope: adding −a (RT/(zF)) ln(x/(1−x)) to E, with a = 0.1 at points 0.01 apart (less with points
-closer together near the ends), passes. The check also reads inside each interval between
-points, so a nearly flat stretch whose few close points step the residual too steeply between
-them is refused even where every point's $`E`$ is in order.
+closer together near the ends), passes. Since it reads inside each interval and beyond the
+ends, a nearly flat stretch whose few close points step the residual too steeply between them,
+or an end point whose slope turns the curve back beyond it, is refused even where every point's
+$`E`$ is in order.
 
 With `A` instead, the curve is the isotherm's, against a reference where the combination's
 chemical potential is 0, with $`g`$ the excess chemical potential ($`\Omega(1-2x)`$ for `A: [Ω]`):

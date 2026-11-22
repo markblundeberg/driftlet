@@ -78,7 +78,8 @@
 //     pair's two quadratures, or the charge against the predictor's (as u), over the larger of
 //     the terminal's gross since the history began and (the first step) what its current would
 //     pass in the segment's time left; differences below what the charges are known to (an
-//     absolute 1e-12 C/m², 1e-15 A/m² over the segment, 1e-10 of what the terminal's boxes hold,
+//     absolute 1e-12 C/m² and 1e-15 A/m² over the segment, per m² of the terminal's own area: a
+//     contact's cross-section, a port's electrode; 1e-10 of what the terminal's boxes hold,
 //     1e-6 of what a thermal unit of φ holds across a contact's first segment) are noise. The
 //     step's error is the larger of the two.
 //   - Accepted where error ≤ tol; the next h = h·factor, factor = 0.9·(tol/err)^(1/(p+1)) in
@@ -373,7 +374,22 @@ function heldCharge(s, k) {
   const { x, area } = s.model.grid, g = k === 0 ? 0 : s.nNodes - 2;
   return s.phiUndefined[g] || s.phiUndefined[g + 1] ? 0 : (s.segEpsr[g] * EPS0 * s.VT * area[k === 0 ? 0 : s.nNodes - 1]) / (x[g + 1] - x[g]);
 }
-const known = (s, k, quiet) => Math.max(quiet, boxNoise(s, k), 1e-6 * heldCharge(s, k));
+const known = (s, k, quiet) => Math.max(quiet[k], boxNoise(s, k), 1e-6 * heldCharge(s, k));
+
+// The area a terminal's charge passes through, which its absolute floor (see integrate) is per:
+// a contact's cross-section at its node; a port's electrode (Σ box · area per volume over its
+// window), or where it has none, its window's largest cross-section. (The grid's largest, for
+// every terminal: a 1 µm sphere's electrode in a 1 cm cell had a floor 1e8 times its own, its
+// charge out of the error, and a 100 µs ramp after a rest went in one step, 50% high; Neon's
+// third review.)
+function terminalArea(s, k) {
+  const { area, vol } = s.model.grid;
+  if (k < 2) return area[k === 0 ? 0 : s.nNodes - 1];
+  const port = s.model.ports[k - 2], a = s.portArea[k - 2];
+  let t = 0;
+  if (a) port.nodes.forEach((g, w) => (t += vol[g] * a[w]));
+  return t > 0 ? t : port.nodes.reduce((m, g) => Math.max(m, area[g]), 0);
+}
 
 const checkedNow = (s) => checkedCharges(s, s.termCharge, s.termChargeLo, s.contactDEnd, s.portQEnd, s.history[0].o);
 
@@ -527,8 +543,9 @@ export function integrate(s, tEnd, opts = {}) {
   // sum of currents against 1e-15 A/m²), and its boxes' own (boxNoise). At rest, the currents a
   // held electrode reads (4e-16 A/m², jittering by a tenth from step to step), a floating gate's
   // contacts' 1e-19 to 1e-17 C/m² a step, and a bath's 1e-17 C/m² of displacement in its first
-  // instants, each cut the steps without end once the charge was in the error.
-  const area = Math.max(...s.model.grid.area), quiet = (T) => area * (1e-12 + 1e-15 * T);
+  // instants, each cut the steps without end once the charge was in the error. Per m² of each
+  // terminal's own area (terminalArea), one floor per terminal.
+  const areas = s.terms.map((_, k) => terminalArea(s, k)), quiet = (T) => areas.map((a) => a * (1e-12 + 1e-15 * T));
   const factor = (err, p) => (err > 0 ? Math.min(2, Math.max(0.2, 0.9 * Math.exp(Math.log(tol / err) / (p + 1)))) : 2);
   while (s.time < tEnd) {
     // A frame's budget stops a call only after its first attempt: a budget spent before it (a
