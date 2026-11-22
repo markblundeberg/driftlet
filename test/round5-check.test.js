@@ -256,7 +256,9 @@ test('A8: with the surface in equilibrium, the equilibrated step passes what the
     species: [{ name: 'H+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'H2', z: 0, cRef: 1000 }],
     materials: { el: { epsr: 0, species: { 'H+': { D: 9e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 }, H2: { D: 5e-9, mu0: 0 } } } },
   };
-  const volmer = { equation: 'H+ + e- = H(ads)', k0: 1e-3, alpha: 0.5 }, tafel = { equation: '2 H(ads) = H2', k0: 1e-3, alpha: 0.5 };
+  // (Volmer at 1e-1, fast enough to be held at equilibrium: at 1e-3, as Tafel, it passed 0.44 of its
+  // exchange rate, its coverage 31% under the solve's, and since Neon's R4 3.2 that's refused.)
+  const volmer = { equation: 'H+ + e- = H(ads)', k0: 1e-1, alpha: 0.5 }, tafel = { equation: '2 H(ads) = H2', k0: 1e-3, alpha: 0.5 };
   const dev = new Device(build({ T: 298.15, library: [ions, metal('Pt')],
     stack: [ohmic(0.1, ['e-']), layer('Pt', 1e-6), { surface: { 'H(ads)': { mu0: 0, capacity: 1e-5, theta0: 0.1 } }, reactions: [volmer, tafel] }, layer('el', 10e-6), bath({ 'H+': 100, 'Cl-': 100, H2: 1 }, 'Cl-')] }));
   const sol = dev.solve(), c = polarization(dev, sol, { face: 0 }, sol.V['e-'][0], { surface: 'equilibrium' });

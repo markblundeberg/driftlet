@@ -196,15 +196,24 @@ An electrode's surface (a face's or a port's) is held too by default. With `{ su
 (a fifth argument) its coverages are re-equilibrated at each V instead: the steady-state curve,
 where a passive film's active–passive peak shows (`curve.bare` and `curve.coverage` give the bare
 fraction and each species' coverage along it). Each reaction with surface species is at
-equilibrium there, as far as they're independent (where two would set one species, the first that
-makes it from the solution alone does), and what they leave free keeps its amount from `sol`: a
+equilibrium there, as far as they're independent (where two would set one species, the faster
+does: the one with the larger exchange rate, its one-way rate at equilibrium, with the surface as
+`sol` has it), and what they leave free keeps its amount from `sol`: a
 tethered couple's total $`\theta_R + \theta_O`$, with only its ratio set by V, or a species no reaction touches.
 Those reactions come back `equilibrated: true`. At equilibrium they aren't idle: at the steady
 state each surface species is made as fast as it's used, so an equilibrated step's rate is what
 that balance asks of it, given the others' rates from their kinetics. The others limit the
-current, and the curve is the quasi-equilibrium one: with Volmer (`H+ + e- = H(ads)`) listed
-before Tafel (`2 H(ads) = H2`), Volmer is equilibrated and passes twice Tafel's rate, the
-Tafel-limited curve; listed the other way, Tafel is, and Volmer limits.
+current, and the curve is the quasi-equilibrium one: with Volmer (`H+ + e- = H(ads)`) faster
+than Tafel (`2 H(ads) = H2`), Volmer is equilibrated and passes twice Tafel's rate, the
+Tafel-limited curve, whichever is listed first.
+
+That needs the equilibrated step to be fast for what it passes. Passing a rate $`r`$ takes it an
+affinity of about $`r/r_0`$ ($`r_0`$ its exchange rate), and the coverages it sets are about that
+fraction off the surface's steady state, so past a tenth the curve is refused at that V, saying
+which step and by how much: mixed control (Volmer and Tafel at the same k0), or a fast step
+starved of sites (Volmer at a k0 of 1e2 against Tafel's 1e-3, in 100 mM acid, holds to −0.4 V,
+its bare fraction 5% off the solve's there, and at −0.5 V would leave it a quarter off). There
+the surface's steady state is a solve's, at that level.
 
 Concentrations are held, so these are the curves of that instant (for a mixed potential, the
 kinetic picture). Away from the actual level the composition beside the electrode would change,

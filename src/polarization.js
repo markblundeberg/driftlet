@@ -13,6 +13,9 @@ const fail = (message) => {
   throw new DeviceError(message);
 };
 
+// The largest share of its exchange rate a step held at equilibrium may pass (see polarization).
+const QUASI = 0.1;
+
 /**
  * Each electrode reaction's rate at a face (a metal's) or at one spot of an electrode port, with
  * the composition beside it as in `sol` and the metal's carrier at each level in `V` (in the
@@ -29,10 +32,12 @@ const fail = (message) => {
  * @param {{ surface?: 'held' | 'equilibrium' }} [opts] an electrode's surface coverages: held as
  *   in `sol` (the default: this instant's curves), or in equilibrium at each V (the steady-state
  *   curve, with a passive film's active–passive peak): each reaction with surface species at zero
- *   affinity, as far as they're independent (those making one from the solution alone first), and
- *   the totals they leave fixed kept as in `sol` (a tethered couple's). Those reactions are
- *   `equilibrated`, their rates what the surface's steady balance asks of them, given the others'
- *   (the others limit the rate: a quasi-equilibrium curve)
+ *   affinity, as far as they're independent (the fastest first, by exchange rate with the surface
+ *   as held: where two would set one species, the faster does), and the totals they leave fixed
+ *   kept as in `sol` (a tethered couple's). Those reactions are `equilibrated`, their rates what
+ *   the surface's steady balance asks of them, given the others' (the others limit the rate: a
+ *   quasi-equilibrium curve). One asked for more than a tenth of its exchange rate isn't near
+ *   equilibrium, and the curve is refused at that V
  * @returns {{ V: Float64Array, current: Float64Array, bare?: Float64Array, coverage?: Record<string, Float64Array>, reactions: { equation: string, level: number,
  *   rate: Float64Array, current: Float64Array, equilibrated?: boolean }[] }} per reaction: its equilibrium level here (where
  *   its rate is zero; NaN for a chemical step, which takes no electron from the metal and passes no current), its rate (mol/(m²·s) of electrode, forward) and its current (A/m², anodic
@@ -144,40 +149,45 @@ export function polarization(device, sol, where, V, opts = {}) {
   // equilibrium there.
   const held = surface && surface.theta.map((t) => Math.log(t / surface.bare));
   if (opts.surface !== undefined && opts.surface !== 'held' && opts.surface !== 'equilibrium') fail("polarization: surface must be 'held' (the default) or 'equilibrium'");
-  const equilibrium = surface && opts.surface === 'equilibrium' ? surfaceEquilibrium(parts, surface, held) : null;
+  // A reaction's rate at level v with the surface's activities lnA and bare fraction, or (exchange)
+  // its exchange rate there, ∂rate/∂a at zero affinity: the one-way rate at equilibrium, how fast
+  // the step can pass what's asked of it near equilibrium.
+  const law = ({ rx, base, baseLo, carriers, pref, surf, lnP, lnQ }, v, lnA, bare, exchange = false) => {
+    let p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
+    acc[0] = base;
+    acc[1] = baseLo;
+    for (const cr of carriers) addTerm(acc, -cr.nu, (cr.z * v) / solver.VT, 0); // (as the solver's portEta, its rounding too)
+    for (const u of surf) {
+      addTerm(acc, -u.nu, lnA[u.s], 0);
+      p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
+    }
+    const a = acc[0] + acc[1];
+    if (rx.mhc) {
+      // (a surface species at θ = θ₀ a, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
+      let sP = lnP, sQ = lnQ;
+      for (const u of surf) (u.nu < 0 ? (sP -= u.nu * (lnA[u.s] + Math.log(bare))) : (sQ += u.nu * (lnA[u.s] + Math.log(bare))));
+      if (rx.m !== undefined) {
+        // (a face's reaction without surface species has no m; a port's always has, bare: true included)
+        sP += rx.m * Math.log(bare);
+        sQ += (rx.m - rx.fills) * Math.log(bare);
+      }
+      return exchange ? mhcRate(rx.mhc, rx.k0, sP, sQ, 0).ra : mhcRate(rx.mhc, rx.k0, sP, sQ, a).rate;
+    }
+    if (exchange) return p; // (Butler–Volmer's and the saturating law's slope at a = 0)
+    if (rx.vmax) return p * -Math.expm1(-a);
+    // (e^{αa} − e^{−(1−α)a} as e^{−(1−α)a}·expm1(a), as the solver's bvFactor; far out, the plain difference)
+    const e = Math.exp(-(1 - rx.alpha) * a);
+    return p * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - e : e * Math.expm1(a));
+  };
+  const equilibrium = surface && opts.surface === 'equilibrium' ? surfaceEquilibrium(parts, surface, held, (pt) => law(pt, 0, held, surface.bare, true)) : null;
   const surfaceAt = (v) => {
     if (!surface) return { lnA: [], bare: 1 };
     return equilibrium ? equilibrium(v) : { lnA: held, bare: surface.bare };
   };
   const at = Array.from(Vs, (v) => surfaceAt(v));
-  const out = parts.map(({ rx, k, base, baseLo, s, carriers, q, pref, surf, lnP, lnQ }) => {
-    const rate = Float64Array.from(Vs, (v, j) => {
-      const { lnA, bare } = at[j];
-      let p = pref * (rx.sites ? powr(bare, rx.sites) : 1);
-      acc[0] = base;
-      acc[1] = baseLo;
-      for (const cr of carriers) addTerm(acc, -cr.nu, (cr.z * v) / solver.VT, 0); // (as the solver's portEta, its rounding too)
-      for (const u of surf) {
-        addTerm(acc, -u.nu, lnA[u.s], 0);
-        p *= Math.exp(u.e * lnA[u.s]) * powr(bare, u.e); // its coverage θ = θ₀ a
-      }
-      const a = acc[0] + acc[1];
-      if (rx.mhc) {
-        // (a surface species at θ = θ₀ a, and the bare sites the transition state holds: θ₀^m forward, θ₀^(m−Δ) back)
-        let sP = lnP, sQ = lnQ;
-        for (const u of surf) (u.nu < 0 ? (sP -= u.nu * (lnA[u.s] + Math.log(bare))) : (sQ += u.nu * (lnA[u.s] + Math.log(bare))));
-        if (rx.m !== undefined) {
-          // (a face's reaction without surface species has no m; a port's always has, bare: true included)
-          sP += rx.m * Math.log(bare);
-          sQ += (rx.m - rx.fills) * Math.log(bare);
-        }
-        return mhcRate(rx.mhc, rx.k0, sP, sQ, a).rate;
-      }
-      if (rx.vmax) return p * -Math.expm1(-a);
-      // (e^{αa} − e^{−(1−α)a} as e^{−(1−α)a}·expm1(a), as the solver's bvFactor; far out, the plain difference)
-      const e = Math.exp(-(1 - rx.alpha) * a);
-      return p * (Math.abs(a) > 50 ? Math.exp(rx.alpha * a) - e : e * Math.expm1(a));
-    });
+  const out = parts.map((pt) => {
+    const { k, base, s, surf, q } = pt;
+    const rate = Float64Array.from(Vs, (v, j) => law(pt, v, at[j].lnA, at[j].bare));
     // (its level with the surface as held)
     const aHeld = surf.reduce((t, u) => t - u.nu * (held ? held[u.s] : 0), base);
     return { equation: names?.[k]?.equation ?? `reaction ${k}`, level: s === 0 ? NaN : -aHeld / s, rate, q };
@@ -190,6 +200,12 @@ export function polarization(device, sol, where, V, opts = {}) {
   // equilibrium rests on are independent rows, so their rates follow from the rows' Gram matrix,
   // as the coverages do; what the others make or use has no part along the free directions (each
   // reaction's ν is orthogonal to them), so it balances exactly.
+  // That's a quasi-equilibrium only while the step is fast enough for its share: passing y near
+  // equilibrium takes it an affinity of about y/i₀ (i₀ its exchange rate), and the activities it
+  // sets are about that fraction off the surface's steady state. Past a tenth it's refused, at the
+  // first V (as given) where it is: the step isn't fast enough there for what it passes.
+  // (Volmer and Tafel at k0 1e-3 each, round 5's A8 device, read 2.6 times the solved current at
+  // −0.1 V, unwarned; with Volmer at 1e2 against Tafel's 1e-3 it holds to −0.4 V, θ₀ 5% off.)
   if (equilibrium && equilibrium.rows.length > 0) {
     const { rows, gram } = equilibrium, X = surface.sp.length, equilibrated = rows.map((r) => r.pt.k);
     for (let j = 0; j < Vs.length; j++) {
@@ -198,7 +214,17 @@ export function polarization(device, sol, where, V, opts = {}) {
         if (!equilibrated.includes(k)) for (const u of pt.surf) made[u.s] += u.nu * out[k].rate[j];
       });
       const y = solveDense(gram, rows.map(({ r }) => -r.reduce((t, x, s) => t + x * made[s], 0)));
-      rows.forEach(({ pt }, m) => (out[pt.k].rate[j] = y[m]));
+      rows.forEach(({ pt }, m) => {
+        out[pt.k].rate[j] = y[m];
+        const i0 = law(pt, Vs[j], at[j].lnA, at[j].bare, true);
+        if (!(Math.abs(y[m]) <= QUASI * i0)) {
+          fail(
+            `polarization: at V = ${Vs[j]} the surface isn't near equilibrium: ${out[pt.k].equation}, held at equilibrium as the fastest step (by exchange rate, ` +
+              `the surface as sol has it), would pass ${y[m].toPrecision(3)} mol/(m²·s), ${(Math.abs(y[m]) / i0).toPrecision(3)} times its exchange rate there ` +
+              `(${i0.toPrecision(3)}), and a quasi-equilibrium curve needs under ${QUASI}. The surface's steady state there is a solve's (the electrode set to that level); or hold the surface (surface: 'held')`,
+          );
+        }
+      });
     }
     for (const k of equilibrated) out[k].equilibrated = true;
   }
@@ -213,14 +239,27 @@ export function polarization(device, sol, where, V, opts = {}) {
 }
 
 // The surface in equilibrium at each level: each reaction with surface species at zero affinity,
-// ν·ln a = base + s·V (ln a = ln θ/θ₀, θ₀ the bare fraction), as far as they're independent (those
-// making one species from the solution alone first, in order, then the rest), and what they leave
-// free fixed by the totals they keep: a tethered couple's θ_R + θ_O, a species no reaction touches.
-// Those free directions, n, are the ones every reaction's ν is orthogonal to, so n·θ is what the
-// surface conserves, and with ln a = P(V) + Σ t_k n_k the totals are kept where t minimizes
-// ln(1 + Σ e^{ln a}) − t·(n·θ_held): strictly convex (its Hessian, the covariance of n over the
-// sites, is positive definite while any site is bare), so Newton with a line search finds it.
-function surfaceEquilibrium(parts, surface, held) {
+// ν·ln a = base + s·V (ln a = ln θ/θ₀, θ₀ the bare fraction), as far as they're independent, the
+// fastest first (by exchange(pt), its exchange rate with the surface as held: where two would set
+// one species, the one that exchanges it faster holds it at equilibrium, and the other limits),
+// and what they leave free fixed by the totals they keep: a tethered couple's θ_R + θ_O, a species
+// no reaction touches. (Once in listing order, single-species steps first: with Tafel's 2 H = H₂,
+// k0 1e-3, listed before Volmer, k0 1e2, Tafel was held at equilibrium, θ_H stuck at ½, and the
+// curve read 1.2e5 times the solved current, unwarned; Neon's fourth review, R4 3.2.) Those free
+// directions, n, are the ones every reaction's ν is orthogonal to, so n·θ is what the surface
+// conserves, and with ln a = P(V) + Σ t_k n_k the totals are kept where t minimizes
+// F(t) = ln(1 + Σ e^{ln a}) − t·(n·θ_held): strictly convex while any site is bare, its gradient
+// n·(θ − θ_held) and its Hessian the covariance of n over the sites (the bare one at n = 0), so
+// Newton's method finds it. Done
+// plainly, as n·θ − n·θ_held and Σ n n θ − m mᵀ, both are differences of numbers near 1 apart by
+// about the bare fraction, and lose −log₁₀ θ₀ digits (2.8% of the Hessian at θ₀ = 1e-15, by
+// Neon's count, all of it below 1e-16). A tethered couple 99.99% covered and swept 0.6 V reached
+// its root, but there its Newton step was the gradient's rounding over a Hessian of 5e-5,
+// 1.1e-11, above the 1e-12 it stopped at, and F's value, searched along, couldn't tell a move
+// from rounding: 100 iterations and a throw (Neon's R4 3.1). So here each is summed without the
+// cancellation, the step is capped and searched along by F's slope, and the free directions are
+// exact (see below).
+function surfaceEquilibrium(parts, surface, held, exchange) {
   const X = surface.sp.length;
   const dot = (a, b) => a.reduce((t, x, j) => t + x * b[j], 0);
   // Independent rows by Gram–Schmidt (q: the orthonormal basis so far).
@@ -233,8 +272,12 @@ function surfaceEquilibrium(parts, surface, held) {
     }
     return w;
   };
-  const candidates = [...parts.filter((pt) => pt.surf.length === 1), ...parts.filter((pt) => pt.surf.length > 1)];
-  for (const pt of candidates) {
+  // (fastest first; an exchange rate that isn't a positive number, as 0; ties in listing order)
+  const candidates = parts
+    .filter((pt) => pt.surf.length > 0)
+    .map((pt) => ({ pt, speed: exchange(pt) > 0 ? exchange(pt) : 0 }))
+    .sort((a, b) => b.speed - a.speed || a.pt.k - b.pt.k);
+  for (const { pt } of candidates) {
     const r = new Float64Array(X);
     for (const u of pt.surf) r[u.s] += u.nu;
     const w = orth(r), n = Math.sqrt(dot(w, w));
@@ -242,27 +285,66 @@ function surfaceEquilibrium(parts, surface, held) {
     q.push(w.map((x) => x / n));
     rows.push({ r, pt });
   }
-  const free = [];
-  for (let x = 0; x < X && q.length < X; x++) {
-    const e = new Float64Array(X);
-    e[x] = 1;
-    const w = orth(e), n = Math.sqrt(dot(w, w));
-    if (n <= 1e-9) continue;
-    const b = w.map((v) => v / n);
-    q.push(b);
-    free.push(b);
+  // The free directions, the rows' null space, from their reduced echelon form: for whole (or
+  // halved) ν it's exact, R n = 0 to the bit, so n·θ is kept exactly. (As Gram–Schmidt's
+  // complement, a tethered couple's n_R and n_O were an ulp apart, and 99.9999999999999% covered,
+  // its bare fraction moved by half as V took θ_R from 0.002 to 1.)
+  const E = rows.map(({ r }) => Array.from(r)), pivots = [];
+  const big = Math.max(0, ...E.flat().map(Math.abs));
+  for (let c = 0, i = 0; c < X && i < E.length; c++) {
+    let p = i;
+    for (let j = i + 1; j < E.length; j++) if (Math.abs(E[j][c]) > Math.abs(E[p][c])) p = j;
+    if (Math.abs(E[p][c]) <= 1e-9 * big) continue;
+    [E[i], E[p]] = [E[p], E[i]];
+    const lead = E[i][c];
+    E[i] = E[i].map((x) => x / lead);
+    for (let j = 0; j < E.length; j++) if (j !== i && E[j][c] !== 0) E[j] = E[j].map((x, y) => x - E[j][c] * E[i][y]);
+    pivots.push(c);
+    i++;
   }
-  const k = rows.length, d = free.length;
-  // (the rows' Gram matrix, for the particular solution P = Rᵀ (R Rᵀ)⁻¹ b, the one with no free part)
+  const free = [];
+  for (let f = 0; f < X; f++) {
+    if (pivots.includes(f)) continue;
+    const n = new Float64Array(X);
+    n[f] = 1;
+    pivots.forEach((c, i) => (n[c] = -E[i][f]));
+    free.push(n);
+  }
+  // Where every reaction keeps the number of sites filled, the filled total, n = (1, …, 1), is free
+  // (the sum of those above: each has 1 at its own free column), and it goes first, in the last
+  // one's place: a nearly full surface is stiff along it by only its bare fraction, and as a
+  // direction of its own, its part of F's gradient and Hessian is the bare sites' alone. (In the
+  // echelon basis two tethered couples' totals each held part of it; at a bare fraction of 8e-16,
+  // the Newton step along it was the other directions' rounding, 2e-8 in ln a, and never shrank.)
+  if (free.length > 1 && rows.every(({ r }) => r.reduce((s, x) => s + x, 0) === 0)) {
+    free.pop();
+    free.unshift(new Float64Array(X).fill(1));
+  }
+  const k = rows.length, d = free.length, S = X + 1;
+  // (the rows' Gram matrix, for the particular solution P = Rᵀ (R Rᵀ)⁻¹ b, the one with no free part;
+  // the rows and it are the equilibrated steps' rates too: see polarization)
   const gram = rows.map((a) => rows.map((b) => dot(a.r, b.r)));
-  const theta = surface.theta, target = free.map((n) => dot(n, theta));
-  // (the rows and their Gram matrix, for the equilibrated steps' rates: see polarization)
-  let t = free.map((n) => dot(n, held.map((l) => (Number.isFinite(l) ? l : 0))));
+  // Each free direction over the sites, the bare one last at 0; the held occupancies, the bare
+  // fraction as the solution has it (not 1 − Σθ); and the site the held surface fills most.
+  const nOf = free.map((n) => [...n, 0]);
+  const heldTheta = [...surface.theta, surface.bare];
+  const top = heldTheta.reduce((m, x, s) => (x > heldTheta[m] ? s : m), 0);
+  // (t starts as the held surface's, least squares: N t nearest its ln a)
+  const lnHeld = held.map((l) => (Number.isFinite(l) ? l : 0));
+  let t = d > 0 ? solveDense(free.map((a) => free.map((b) => dot(a, b))), free.map((n) => dot(n, lnHeld))) : [];
   const lnAOf = (P, t) => P.map((p, x) => free.reduce((s, n, j) => s + t[j] * n[x], p));
   const lse = (lnA) => {
     const m = Math.max(0, ...lnA);
     return m + Math.log(lnA.reduce((s, l) => s + Math.exp(l - m), Math.exp(-m)));
   };
+  // (the sites' occupancies at t, the bare one last; F's gradient n·(θ − θ_held) with each site's
+  // n taken from the top one's, whose own difference, of two numbers near 1, drops out, the
+  // occupancies summing to 1 either way)
+  const occupancy = (P, t) => {
+    const lnA = lnAOf(P, t), Z = lse(lnA);
+    return [...lnA.map((l) => Math.exp(l - Z)), Math.exp(-Z)];
+  };
+  const gradient = (th) => nOf.map((n) => th.reduce((g, x, s) => (s === top ? g : g + (n[s] - n[top]) * (x - heldTheta[s])), 0));
   const at = (v) => {
     const P = new Float64Array(X);
     if (k > 0) {
@@ -271,26 +353,101 @@ function surfaceEquilibrium(parts, surface, held) {
         for (let x = 0; x < X; x++) P[x] += y[j] * r[x];
       });
     }
-    const f = (t) => lse(lnAOf(P, t)) - dot(t, target);
-    let fx = f(t);
+    // (F's slope along dir at t + τ·dir)
+    const slope = (tau, dir) => dot(gradient(occupancy(P, t.map((x, j) => x + tau * dir[j]))), dir);
+    let cap = 1, best = Infinity, stalled = 0;
     for (let it = 0; d > 0; it++) {
-      if (it === 100) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge`);
-      const lnA = lnAOf(P, t), Z = lse(lnA), th = lnA.map((l) => Math.exp(l - Z));
-      const m = free.map((n) => dot(n, th)), g = m.map((x, j) => x - target[j]);
-      const H = free.map((a, i) => free.map((b, j) => a.reduce((s, ax, x) => s + ax * b[x] * th[x], 0) - m[i] * m[j]));
-      const step = solveDense(H, g.map((x) => -x));
-      if (Math.max(...step.map(Math.abs)) < 1e-12) break; // (Newton's step, near quadratic here)
-      let lam = 1, tn, fn;
-      for (;;) {
-        tn = t.map((x, j) => x + lam * step[j]);
-        fn = f(tn);
-        if (fn <= fx + 1e-4 * lam * dot(g, step) || lam < 1e-12) break;
-        lam /= 2;
+      if (it === 200) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge`);
+      const th = occupancy(P, t), g = gradient(th);
+      // Newton's step, H z = −g, from H's square root: H = AᵀA, A's rows √(θ_s θ_u)(n_s − n_u)
+      // over the pairs of sites, and A = QR by Householder (its rows largest first), so RᵀR z = −g.
+      // (Two couples tethered at a bare fraction of 4e-9: H's entries were 0.24 and its least
+      // eigenvalue, along their common total, 4e-9; eliminating H subtracts the one from the other,
+      // and swept 1.4 V, through a bare fraction of 1e-21, its pivot came out 0.)
+      const A = [];
+      for (let s = 0; s < S; s++) {
+        for (let u = s + 1; u < S; u++) {
+          const w = Math.sqrt(th[s]) * Math.sqrt(th[u]), row = nOf.map((n) => w * (n[s] - n[u]));
+          if (row.some((x) => x !== 0)) A.push(row);
+        }
       }
-      [t, fx] = [tn, fn];
+      A.sort((a, b) => dot(b, b) - dot(a, a));
+      const R = householderR(A, d), step = new Array(d);
+      for (let i = 0; i < d; i++) step[i] = (-g[i] - R.slice(0, i).reduce((s, row, j) => s + row[i] * step[j], 0)) / R[i][i];
+      for (let i = d - 1; i >= 0; i--) step[i] = (step[i] - R[i].slice(i + 1).reduce((s, x, j) => s + x * step[i + 1 + j], 0)) / R[i][i];
+      // (its size in ln a: the largest change it makes to a species' ln a)
+      const size = Math.max(...free[0].map((_, x) => Math.abs(free.reduce((s, n, j) => s + step[j] * n[x], 0))));
+      if (!Number.isFinite(size)) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge (its Hessian is singular: bare fraction ${th[X]})`);
+      if (size < 1e-12) break; // (near quadratic here)
+      // (at the doubles' rounding floor the step stops shrinking: what's left is theirs)
+      if (size < 0.5 * best) (best = size), (stalled = 0);
+      else if (size < 1e-8 && ++stalled >= 3) break;
+      // A short step is taken whole: F is near its quadratic there, and along a step that small its
+      // slope can be the rounding of the stiff directions, not the soft one the step is in (two
+      // couples' totals at a bare fraction of 5e-15: the search stalled at a step of 1e-8).
+      if (size <= 0.25) {
+        t = t.map((x, j) => x + step[j]);
+        continue;
+      }
+      // Longer, the step capped, and along it F's slope rising from below zero: the whole (capped)
+      // step where F still falls at its end, the cap then growing, else a point short of where the
+      // slope turns, by regula falsi (Illinois), as src/carry.js carries a surface's amounts.
+      const cut = Math.min(1, cap / size), dir = step.map((x) => x * cut);
+      const g0 = dot(g, dir);
+      if (!(g0 < 0)) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge (Newton's step doesn't descend)`);
+      let lo = 1, ghi = slope(1, dir);
+      if (ghi > 0) {
+        let glo = g0, hi = 1, side = 0;
+        lo = 0;
+        for (let ls = 0; ls < 60 && hi - lo > 1e-12; ls++) {
+          const tau = (lo * ghi - hi * glo) / (ghi - glo), gt = slope(tau, dir);
+          if (gt <= 0) {
+            (lo = tau), (glo = gt);
+            if (side === -1) ghi *= 0.5;
+            side = -1;
+            if (-gt <= -0.5 * g0) break;
+          } else {
+            (hi = tau), (ghi = gt);
+            if (side === 1) glo *= 0.5;
+            side = 1;
+          }
+        }
+        if (cut < 1) cap = Math.max(1, cap / 2);
+      } else if (cut < 1) cap *= 4;
+      if (!(lo > 0)) fail(`polarization: the surface's equilibrium at V = ${v} didn't converge (no point along Newton's step lowers it)`);
+      t = t.map((x, j) => x + lo * dir[j]);
     }
     const lnA = lnAOf(P, t);
     return { lnA, bare: Math.exp(-lse(lnA)) };
   };
   return Object.assign(at, { rows, gram });
+}
+
+// The d × d triangle R of A = QR (A's m rows of d, copied), by Householder reflections: AᵀA = RᵀR,
+// with R's least diagonal as accurate as A's rows hold it (no AᵀA formed). Fewer rows than d, or
+// a column of zeros, leaves a zero on R's diagonal.
+function householderR(A, d) {
+  const M = A.map((row) => Array.from(row)), m = M.length;
+  const R = Array.from({ length: d }, () => new Array(d).fill(0));
+  for (let c = 0; c < d; c++) {
+    if (c >= m) break;
+    const scale = M.slice(c).reduce((s, row) => Math.max(s, Math.abs(row[c])), 0);
+    if (scale > 0) {
+      let norm = 0;
+      for (let i = c; i < m; i++) norm += (M[i][c] / scale) * (M[i][c] / scale);
+      const alpha = (M[c][c] > 0 ? -1 : 1) * scale * Math.sqrt(norm);
+      const v = M.slice(c).map((row) => row[c]);
+      v[0] -= alpha;
+      const vv = v.reduce((s, x) => s + x * x, 0);
+      if (vv > 0) {
+        for (let j = c; j < d; j++) {
+          const f = (2 * v.reduce((s, x, i) => s + x * M[c + i][j], 0)) / vv;
+          for (let i = c; i < m; i++) M[i][j] -= f * v[i - c];
+        }
+      }
+      M[c][c] = alpha;
+    }
+    for (let j = c; j < d; j++) R[c][j] = M[c][j];
+  }
+  return R;
 }

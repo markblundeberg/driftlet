@@ -68,6 +68,14 @@ charges are now kept, where they were read off the state.
   outside metals. A metal's conductance counted toward it: a 1 cm Pt counter electrode set a 304 nA
   floor under a 1 µm electrode's 1.96 nA, so a 9.2% grid change passed at 6.0e-4, and the order
   check skipped its currents. Neon's fourth review, R4 2.1.
+- polarization(…, { surface: 'equilibrium' }) holds the fastest step at equilibrium, by exchange
+  rate, not the first listed: with Tafel (k0 1e-3) listed before Volmer (1e2) it held Tafel, θ_H
+  stuck at ½, and read 1.2e5 times the solved current, unwarned. It refuses, naming the step, where
+  a step held at equilibrium would pass more than a tenth of its exchange rate (Volmer and Tafel at
+  equal k0 read 2.6 times the solved current, unwarned). And on a nearly full surface (a tethered
+  couple 99.99% covered, swept to −0.5 V) it converges, where its Newton stalled on the rounding
+  of its own gradient, the bare fraction kept exactly (it drifted to half at 1e-15): checked to
+  1e-14 against Nernst down to a bare fraction of 1e-15. Neon's fourth review, R4 3.1 and 3.2.
 - bench/combos: the property neutralG (every strictly neutral node on its Gauss row after the cold
   start, a solve, a drive's step, a regrid, a gate's C doubled and a gate added; each gated
   stretch's start charges against the state's; then a short step that mustn't say its start was
