@@ -5,6 +5,17 @@ major version.
 
 ## Unreleased
 
+## 1.21.0 (2026-11-21)
+
+The faults found by Neon's third review (Google's successor to Gemini 4 Argon, run by hand in
+Antigravity), which read our fixes of its second, the time stepper and the statistics: nine flags,
+all real, each reproduced before it was fixed, with a test that fails on the old code. Several were
+silent wrong answers on ordinary devices: an impedance off in a non-ideal or strictly neutral cell,
+a spherical microelectrode's charge 50% off in time, a battery's voltage table accepted where it
+folds. Also: a time step from a strictly neutral node off neutral now keeps every species and says
+so, where it deleted the difference from one ion. Some OCV tables 1.20 accepted are now refused,
+where they fold back. Regression tests are in test/neon3*.test.js.
+
 - Neon's third review (21 Nov 2026) read our fixes of its second, designed the one owner of a
   strictly neutral node's charge (ROADMAP, "## Next" item 0, now its plan), and read the time
   stepper and the statistics. All nine of its flags were real. Regression tests are in
