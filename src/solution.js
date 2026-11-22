@@ -526,7 +526,19 @@ function failureWarnings(sol, solver, result) {
   // stands alone, but a violent start may be said beside one of those (lost, slow, conditioning).
   const failed = result.converged === false && !result.stopped && !un && !ch;
   const unexplained = failed && !lost && slow.length === 0 && !(cond && cond.digits > 12);
-  if (failed && solver.violent?.length > 0) {
+  // A ramp out of steps while still settling first: it's measured (the last giant steps' motions
+  // shrinking steadily), and the maxSteps it names finishes it, where the others are read from
+  // the start (violent), from a trial state some stage reached (modelError), or from a fallback
+  // that couldn't be laid out (layoutRefused), none of which stopped that ramp. (Behind
+  // layoutRefused, a stage 1 that ran out settling was told its cold start was refused; Neon's
+  // third review, 1.6.)
+  if (unexplained && solver.settling) {
+    const { maxSteps, ratio, motion, tol } = solver.settling, more = Math.ceil(Math.log(tol / motion) / Math.log(ratio));
+    sol.warnings.push(
+      `the solve ran out of time steps (maxSteps ${maxSteps}) while still settling: each step moved the state ${ratio.toFixed(2)} as far as the one before, the last ${motion.toExponential(1)} thermal units, against the ${tol} that ends a ramp. ` +
+        `Something slow is relaxing (a reaction, a link): solve({ maxSteps: ${maxSteps + (Number.isFinite(more) && more > 0 ? more + 10 : maxSteps)} }) lets it finish.`,
+    );
+  } else if (failed && solver.violent?.length > 0) {
     // A cold start far from where a floating double layer's neighbours balance (an electrode's
     // reactions with its starting coverages, an ion link): Newton has to cross that gap at once.
     sol.warnings.push(
@@ -542,12 +554,6 @@ function failureWarnings(sol, solver, result) {
     sol.warnings.push(
       `${what} did not converge from the state it had, and the cold start its later stages fall back on can't be laid out under the drives now: ${solver.layoutRefused.replace(/\.$/, '')}. ` +
         'Approach this state in smaller steps from one that solves (a sweep of the drive, or advance() in time), or change the drives back.',
-    );
-  } else if (unexplained && solver.settling) {
-    const { maxSteps, ratio, motion, tol } = solver.settling, more = Math.ceil(Math.log(tol / motion) / Math.log(ratio));
-    sol.warnings.push(
-      `the solve ran out of time steps (maxSteps ${maxSteps}) while still settling: each step moved the state ${ratio.toFixed(2)} as far as the one before, the last ${motion.toExponential(1)} thermal units, against the ${tol} that ends a ramp. ` +
-        `Something slow is relaxing (a reaction, a link): solve({ maxSteps: ${maxSteps + (Number.isFinite(more) && more > 0 ? more + 10 : maxSteps)} }) lets it finish.`,
     );
   } else if (unexplained) {
     // (with Newton's own reason where it gave one: a singular border, 'diverging'; Astra's fourth pass)

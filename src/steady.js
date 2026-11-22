@@ -51,14 +51,14 @@
 //      generation, and the device can be solved directly (_directSteady); else the
 //      pseudo-transient ramp with opts' maxSteps. Failing on a state reached by time steps
 //      (this.stepped), on a direct device with continuation not off, the same again from a cold
-//      start (initFromComposition), whose u and uLo become the stages' start (termV stays the
+//      start (_layOut), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
 //   2. Continuation: generation ramped up (_generationContinuation); terminals behind a
 //      resistance (_resistanceContinuation): one whose current Kirchhoff doesn't give, held at
 //      voltages marched to its load line's crossing (_floatingContinuation with a line); else, or
 //      where that fails, each held (at its source voltage, or where every other terminal is
 //      driven by a current at V_src − I R, Kirchhoff's I; from a cold start not stepped, the start
-//      laid out again for the held drive, initFromComposition), then the resistances put back and
+//      laid out again for the held drive, _layOut), then the resistances put back and
 //      the steady system solved from there (and where that fails for one terminal held by
 //      Kirchhoff, its load line); a terminal driven by a current, not bound (_bound), held at
 //      voltages instead (_floatingContinuation); a port held at a voltage across a capacitance,
@@ -73,6 +73,13 @@
 //   Converged (but by _floatingContinuation): this.solvedV = [termV[0], termV[1]], the contacts'
 //   own voltages at the solution (driven by a current or behind a resistance too), this.stepped =
 //   false. (By _floatingContinuation: as its last held solve set them.)
+//   Every cold start a stage falls back on (stage 1's, a resistance's held drive, a cold
+//   _continuation's) is _layOut's: the layout from c0 at the drives now, sources refreshed; where
+//   the definition can't be laid out under them (initFromComposition's SolverError), the state as
+//   it was and the solve from it skipped (stage 1's second try, a cold _continuation's, whose
+//   failed first solve is counted once) or made from that state (the held drive), and
+//   this.layoutRefused the refusal's message, which the failure says where a likelier cause
+//   (this.settling, …) doesn't. No refusal of a layout escapes solveSteady.
 //
 // _steadySteps({ maxSteps, tol }): up to maxSteps time steps (tau = slowestTime), dt from giant
 //   (∞ where the device can be solved directly; else 1e6·tau): a first step at ∞ that fails is
@@ -110,7 +117,8 @@
 //                            success, ÷4 on a failure, giving up below 1e-6 of the span (or
 //                            at a stride of 0, where that millionth underflows). Cold
 //                            (not warm), first solved at `from`: failing, with no law unkept,
-//                            again from a cold start laid out there, then with the light ramped where there's
+//                            again from a cold start laid out there (_layOut; refused, not
+//                            again), then with the light ramped where there's
 //                            generation. The overrides are cleared on return.
 //   _floatingContinuation    the terminal held at voltages (its drive replaced, then put back):
 //                            marched from its voltage (or 0) in steps from 20 mV, ×1.5, toward
@@ -723,11 +731,11 @@ export class SteadySolves {
       // has the terminal at its held neighbour's voltage, its metal's carriers at that level (a
       // closed Cu | Zn cell held at its open circuit, −1.126 V, behind 1e-4 Ω·m², with Stern
       // layers: held there from the zinc laid out at 0 V, the solve failed, where the same cell
-      // without R converged cold; the echem combos' case 38).
-      if (this.coldStart && !this.stepped) {
-        this._refreshSources();
-        this.initFromComposition();
-      }
+      // without R converged cold; the echem combos' case 38). Where the definition can't be laid
+      // out at the held drive, the held solve goes on from the state, as the stages do (_layOut:
+      // a hole contact pinned at 20 V above its band, behind 1e6 Ω·m², threw its refusal out of
+      // solve(); Neon's third review, 1.6).
+      if (this.coldStart && !this.stepped) this._layOut();
       const q = this._steadyFromHere(opts);
       steps += q.steps ?? 0;
       iterations += q.iterations ?? 0;
@@ -802,10 +810,11 @@ export class SteadySolves {
         // from the state's 1e-5 to c0's 1.03e-6; Astra's fourth pass.)
         if (!q.converged && this.unkept.length === 0) {
           // A cold device's start was laid out for the target (a set() before the first solve
-          // builds it there): lay it out again, level.
+          // builds it there): lay it out again, level. (Refused, q is the solve already counted:
+          // nothing more to add for it below; Neon's third review, 1.6.)
           steps += q.steps;
           iterations += q.iterations;
-          if (this._layOut()) q = this._steadySteps(opts);
+          q = this._layOut() ? this._steadySteps(opts) : { ...q, steps: 0, iterations: 0 };
         }
         // (lit, the level start may need the light ramped up too)
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
