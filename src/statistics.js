@@ -108,6 +108,15 @@ function redlichKisterOccupancy(A, cMax, cRef, RT, fail) {
   };
 }
 
+// The real roots of A t² + B t + C (A or B may be 0), without cancellation.
+function quadraticRoots(A, B, C) {
+  if (A === 0) return B === 0 ? [] : [-C / B];
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return [];
+  const q = -0.5 * (B + (B < 0 ? -1 : 1) * Math.sqrt(disc));
+  return q === 0 ? [0] : [q / A, C / q];
+}
+
 // Tabulated ζ(x), as ζ = ln(x/(1−x)) + r(x): the residual r (the non-ideality) is a
 // shape-preserving cubic (PCHIP) through the data, continued linearly beyond the ends. Ideal
 // and regular-solution tables are reproduced exactly, and x stays within (0, 1) for any ζ.
@@ -164,23 +173,44 @@ function tableOccupancy(xs, zs, fail, slopeText) {
   const flat = (at) =>
     fail(`ocv: near x = ${at} the curve is flat or rising against the ideal-solution slope, ${slopeText} ln(x/(1−x)), as on a two-phase plateau (not supported): more points alone won't help; give it some of that slope, adding −a ${slopeText} ln(x/(1−x)) to E (a = 0.1 passes at points 0.01 apart, less with points closer near the ends; docs/statistics.md)`);
   for (let k = 0; k <= 4000; k++) {
-    const x = k / 4000;
-    const q = r(x);
-    if (x > 0 && x < 1 && !(1 + x * (1 - x) * q.d > 1e-9)) flat(x.toFixed(3));
+    const q = r(k / 4000);
     rmin = Math.min(rmin, q.v);
     rmax = Math.max(rmax, q.v);
   }
-  // And inside each interval between knots, which the grid steps over where they're closer than
-  // its 2.5e-4: at eighths and where r′ (quadratic in t) is least. (Knots 1.6e-4 apart, E strictly
-  // falling, gave a ζ(x) that turned back across a third of the interval; Sol's fifth pass.)
+  // dζ/dy = 1 + x(1−x) r′(x) at its least, exactly rather than sampled. (A grid 2.5e-4 apart and
+  // each interval's interior eighths missed the knots and the ends: a first knot at x = 1e-4 whose
+  // end slope turned ζ back below it passed, and x(ζ) at that knot's own ζ read 19% low, a solve
+  // there 6.7% off; Neon's third review.)
+  const g = (x) => 1 + x * (1 - x) * r(x).d;
+  const check = (x) => g(x) > 1e-9 || flat(x.toPrecision(6));
+  // Beyond the ends r′ is constant, so x(1−x) r′ is least where x(1−x) is most: at the end's
+  // knot, or at x = ½ where that's beyond it.
+  check(Math.min(xs[0], 0.5));
+  check(Math.max(xs[N - 1], 0.5));
+  // Within an interval, x = x_k + t h_k: x(1−x) = W0 + W1 t + W2 t² and h_k r′ = Q0 + Q1 t + Q2 t²
+  // (PCHIP), so x(1−x) h_k r′ is a quartic P(t), least at t = 0, 1 or a root of the cubic P′. P″
+  // is a quadratic: between its roots P′ is monotone, with at most one root, found by bisection.
+  // (Knots 1.6e-4 apart, E strictly falling, gave a ζ(x) that turned back across a third of the
+  // interval; Sol's fifth pass.)
   for (let k = 0; k < N - 1; k++) {
-    const qa = 3 * (2 * rs[k] + h[k] * d[k] - 2 * rs[k + 1] + h[k] * d[k + 1]), qb = -6 * rs[k] - 4 * h[k] * d[k] + 6 * rs[k + 1] - 2 * h[k] * d[k + 1];
-    const ts = [1, 2, 3, 4, 5, 6, 7].map((j) => j / 8);
-    if (qa > 0 && -qb / (2 * qa) > 0 && -qb / (2 * qa) < 1) ts.push(-qb / (2 * qa));
-    for (const t of ts) {
-      const x = xs[k] + t * h[k];
-      if (!(1 + x * (1 - x) * r(x).d > 1e-9)) flat(x.toPrecision(6));
+    const a = xs[k], b = h[k];
+    const W0 = a * (1 - a), W1 = b * (1 - 2 * a), W2 = -b * b;
+    const Q0 = b * d[k], Q1 = -6 * rs[k] - 4 * b * d[k] + 6 * rs[k + 1] - 2 * b * d[k + 1], Q2 = 3 * (2 * rs[k] + b * d[k] - 2 * rs[k + 1] + b * d[k + 1]);
+    const p1 = W0 * Q1 + W1 * Q0, p2 = W0 * Q2 + W1 * Q1 + W2 * Q0, p3 = W1 * Q2 + W2 * Q1, p4 = W2 * Q2;
+    const dP = (t) => p1 + t * (2 * p2 + t * (3 * p3 + t * 4 * p4));
+    const ts = [0, ...quadraticRoots(12 * p4, 6 * p3, 2 * p2).filter((t) => t > 0 && t < 1).sort((u, v) => u - v), 1];
+    const at = [...ts.slice(1, -1).map((t) => a + t * b), a, xs[k + 1]]; // (P″'s roots too: where P′ touches 0 there)
+    for (let j = 0; j + 1 < ts.length; j++) {
+      let lo = ts[j], hi = ts[j + 1], flo = dP(lo);
+      if (!(flo * dP(hi) < 0)) continue;
+      for (let it = 0; it < 60; it++) {
+        const m = 0.5 * (lo + hi), fm = dP(m);
+        if (fm * flo > 0) (lo = m), (flo = fm);
+        else hi = m;
+      }
+      at.push(a + 0.5 * (lo + hi) * b);
     }
+    check(at.reduce((m, x) => (g(x) < g(m) ? x : m)));
   }
   return {
     zeta: (x) => logit(x) + r(x).v,
