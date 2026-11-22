@@ -384,6 +384,21 @@ function naturalScales(device, sol, conductors = true) {
   });
 }
 
+// The floor under a current the grid and order checks compare, A (or A/m²): 1e-16 of what the
+// charged species could carry, above what solves resolve (~1e-19 of it in a GaAs junction). Not
+// through a metal unless the device has nothing else to carry a current: a metal's current is an
+// unknown of its own (Ohm's law in mixed form), as precise as what feeds it, and its conductance
+// is no measure of its round-off. (Counted, a 1 cm Pt counter electrode's set a 304 nA floor
+// under a 1 µm electrode's 1.96 nA, and a current 9.2% off on refinement passed at 6.0e-4;
+// Neon's fourth review, 2.1.) Its `scales`, per species, are those it was taken from.
+function currentFloor(device, sol, natural = naturalScales(device, sol)) {
+  const { species } = device.model;
+  const charged = (S) => Math.max(0, ...species.map((sp, i) => Math.abs(sp.z) * S[i]).filter(Number.isFinite));
+  const inSolution = naturalScales(device, sol, false);
+  const scales = charged(inSolution) > 0 ? inSolution : natural;
+  return { floorI: 1e-16 * FARADAY * charged(scales), scales };
+}
+
 // Closed, unreacting stretches keep their amounts in a transient.
 function conservation(sol, area = 1) {
   // Closed stretches (a species held between blocking faces) against what they held plus what
@@ -458,8 +473,8 @@ function gridCheck(device, sol, tol, gross) {
   // equilibrium, round-off isn't read as a change).
   // A current too small for the ledgers to call moving (a diode at low bias: 1e-4 A/m² against
   // majority carriers that could carry 6e8) is compared still, above a floor at 1e-16 of what the
-  // species could carry, above what solves resolve (~1e-19 of it in a GaAs junction).
-  const natural = naturalScales(device, sol), floorI = 1e-16 * FARADAY * Math.max(0, ...model.species.map((sp, i) => Math.abs(sp.z) * natural[i]).filter(Number.isFinite));
+  // species could carry outside metals (currentFloor).
+  const natural = naturalScales(device, sol), { floorI, scales } = currentFloor(device, sol, natural);
   // (gross only as a floor, a millionth of it: as the scale, a port's 1 µA/m² doubled beside a
   // contact's 3.8 A/m² changed by 2.9e-7 and passed; Astra's fifth pass)
   const scaleI = Math.max(Math.abs(sol.current), Math.abs(other.current), 1e-6 * gross, floorI);
@@ -512,7 +527,9 @@ function gridCheck(device, sol, tol, gross) {
       diffs.push({ what: `${sp.name} in at port ${port.name}`, a, b, rel: Math.abs(b - a) / scale, unit: fluxUnit });
     });
   });
-  const rateFloor = (idx) => Math.max(floorN, ...idx.map((i) => (natural[i] > 0 ? 1e-16 * natural[i] : 0)));
+  // (a reaction's floor, too, from what its species carry outside metals: at a metal's face, its
+  // carrier's conductance set the floor of the face's rate; Neon's fourth review, 2.1)
+  const rateFloor = (idx) => Math.max(floorN, ...idx.map((i) => (scales[i] > 0 ? 1e-16 * scales[i] : 0)));
   const turnover = (what, a, b, idx) => {
     const floor = rateFloor(idx);
     if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.max(Math.abs(a), Math.abs(b)) > floor)) return;
@@ -633,9 +650,9 @@ function orderCheck(device, sol, gross) {
   // (Currents only where the ledgers see something move: in equilibrium they're round-off of
   // whatever exchanges fastest, an electrode's couple, and a wrong state shows in the voltages
   // and amounts instead.)
-  // (and above 1e-16 of what the species could carry, as the grid check's floor: a drift at
-  // 1e-16 A/m², still moving at 1e12 s, isn't worth reporting)
-  const natural = naturalScales(device, sol), floorI = 1e-16 * FARADAY * Math.max(0, ...model.species.map((sp, i) => Math.abs(sp.z) * natural[i]).filter(Number.isFinite));
+  // (and above 1e-16 of what the species could carry outside metals, the grid check's floor: a
+  // drift at 1e-16 A/m², still moving at 1e12 s, isn't worth reporting)
+  const { floorI } = currentFloor(device, sol);
   // (Voltages against the span of the terminals', as the grid check's; currents against their own
   // size, the gross current a floor: against 1e-3 of the larger of the two, a change could reach
   // only ~1e3, and a current alone, 0.38 → 1 A/m², could never fail; Astra's fifth pass.)
