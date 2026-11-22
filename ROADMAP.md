@@ -186,11 +186,11 @@ for live demos.
      checks each group's start.
    - The cold start: capacitors uncharged, c0 kept (φ̂ jumping), a sheet's counter-charge in its
      edge boxes, closed amounts and floating charges held, never put back.
+   - A capacitor's change beside a face to a metal: the metal's sheet starts from its charge before
+     the jump (Neon's design, its closing reply), so the first step passes the charge between them
+     through their terminals, recorded.
 
    Still open:
-   - A capacitive face to a metal inside a group whose hardware changed: the jump moves its D,
-     an impulse through the held sources that the start charges give up (so the first step keeps
-     Kirchhoff) but no terminal's running charge records.
    - A group beside a diffuse layer isn't checked at the step (its rows read the layer's charge).
    - A drive changed in the same set() as a regrid: the solve holds the drives at their old
      values and the step passes the change, as for a drive alone; not yet in the neutralG property.

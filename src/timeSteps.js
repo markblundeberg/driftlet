@@ -194,6 +194,15 @@ export function step(s, dt, opts = {}) {
   s.termVPrev.set(s.termV);
   s.computeConcentrations();
   const cN = Float64Array.from(s.c), thN = Float64Array.from(s.th), th0N = Float64Array.from(s.th0), gamN = Float64Array.from(s.gam);
+  // A metal's sheet starts from the face's D set() left as its start (s.sheetDEnd), where set()
+  // jumped φ̂ beside it: the step passes what moved through the terminals, which record it.
+  if (s.sheetDEnd) {
+    const { area, vol } = s.model.grid;
+    for (let g = 0; g < s.nNodes; g++) {
+      const f = s.sheetFace[g], im = s.nodeConductor[g];
+      if (f >= 0 && im >= 0 && Number.isFinite(s.sheetDEnd[f])) cN[g * s.n + im] = (s.sheetSign[g] * s.sheetDEnd[f] * area[g]) / (s.z[im] * FARADAY * vol[g]);
+    }
+  }
   const gN = Float64Array.from(s.gateList, (gt) => s.u[gt.o] + s.uLo[gt.o]);
   // Contact displacement before the step: as it was at the end of the previous step (under
   // the parameters then), so a gate-voltage change shows up as displacement current.

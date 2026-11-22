@@ -1616,9 +1616,12 @@ Notes:
   the solution's RC time: a window widened under a clamp is charged by it through the solution, and
   a device left long enough is the one built that way. (Until 1.21 the carry read the new charges
   off the state instead, charging new membrane in an instant with no current through the clamp;
-  a gate added beside another broke Kirchhoff by 1.9e5 A/m².) With a regrid in the same `set()`, the
-  group's start charges together are what the new grid's ions balance. A floating capacitor keeps
-  its charge through any of these, its voltage moving.
+  a gate added beside another broke Kirchhoff by 1.9e5 A/m².) Beside a capacitive face to a metal,
+  the jump moves the face's charge too, and the metal's sheet starts from its charge before the
+  jump, as the gate's does: what passes between them goes through their terminals in the first
+  step, whose charges passed (`d.solver.termCharge`) record it. With a regrid in the same `set()`,
+  the group's start charges together are what the new grid's ions balance. A floating capacitor
+  keeps its charge through any of these, its voltage moving.
 - **A steady state stands for its definition.** A grid patch alone on a steady state is solved
   again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
   solutions if that fails); a grid patch together with anything else is the new grid first, solved,

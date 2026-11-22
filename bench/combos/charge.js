@@ -89,6 +89,18 @@ export function startCharges(d) {
     gr.gross += Math.abs(s.contactDEnd[sd]) + Math.abs(s.contactD[sd]);
     gr.names.push(`contact ${sd}`);
   }
+  // (a face to a metal whose sheet set() left to start from a D of its own, sheetDEnd: its share,
+  // −A·D on the box to its left, +A·D on the one to its right)
+  s.model.interfaces.forEach((itf, f) => {
+    const gL = grid.regionEnd[f], D0 = s.sheetDEnd?.[f];
+    if (itf.phi.type !== 'capacitive' || !Number.isFinite(D0) || neutral[gL] === neutral[gL + 1]) return;
+    const g = neutral[gL] ? gL : gL + 1, sg = neutral[gL] ? -1 : 1, A = grid.area[gL], D = s.u[s.blockOfFace[f] * s.M];
+    const gr = at(g);
+    gr.start += sg * A * D0;
+    gr.now += sg * A * D;
+    gr.gross += A * (Math.abs(D0) + Math.abs(D));
+    gr.names.push(`face ${f}`);
+  });
   for (let g = 0; g < N; g++) if (neutral[g] && groups.has(find(g))) groups.get(find(g)).nodes.add(g);
   let worst = 0, where = '';
   for (const gr of groups.values()) {

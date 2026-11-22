@@ -316,3 +316,46 @@ test('a cold start: capacitors uncharged, c0 kept, every box neutral (Neon R4 1.
   assert.deepEqual(sp.warnings, []);
   kirchhoffHolds(sp, 'a floating port over a held one, no c0');
 });
+
+// A gate's C doubled over the box beside a capacitive Pt | solution face: φ̂ jumps there, and the
+// face's D with it. The metal's sheet can't move in an instant any more than the gate's charge
+// can, so both start from before the jump and the first step passes what moved between them as
+// currents, which their terminals' running charges record: each terminal's charge passed less
+// what it stores (the gate's charge, the Pt's sheet A·D) is what it was. (Shared out onto the
+// gate's start instead, as an impulse at the set(), Kirchhoff held but 0.0115 C/m² passed between
+// the gate and the Pt that neither terminal saw; Neon's fourth review, its closing reply.)
+test("a capacitor's change beside a face to a metal: what moves between them passes as currents, recorded (Neon R4, closing)", () => {
+  const g1 = (C) => ({ name: 'g1', region: 'el', from: 0, to: 0.6e-6, area: 1e6, V: 0.3, capacitance: { C, zeroCharge: 0 } });
+  const def = (ports) => ({
+    species: [{ name: 'e-', z: -1, cRef: 1000 }, ...ions],
+    materials: { Pt: { conductor: { species: 'e-', conductivity: 9.4e6 } }, aq },
+    regions: [{ name: 'm', material: 'Pt', length: 1e-7 }, { name: 'el', material: 'aq', length: 1e-6, c0: nacl() }],
+    interfaces: [{ phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0 }],
+    contacts: { left: { V: 0, terminal: 'e-', phi: 'neutral', species: { 'e-': 'equilibrium' } }, right: { V: 0, bath: { c: nacl() } } },
+    ports,
+    grid: { hmax: 1.25e-7, minCells: 8 },
+  });
+  // (each terminal's charge passed less what it stores: the Pt's sheet, σ = D on the left of the face)
+  const ledger = (d) => {
+    const s = d.solver, sol = d.solution(), P = (nm) => s.termCharge[s.terms.findIndex((t) => t.name === nm)];
+    return { gate: P('g1') - sol.ports[0].charge, metal: P('left') - s.model.grid.area[0] * sol.interfaces[0].D, D: sol.interfaces[0].D };
+  };
+  for (const [what, then] of [['alone', null], ['then a drive changed', { contacts: { right: { V: 0.01 } } }], ['then its C again', { ports: [g1(3)] }]]) {
+    const d = new Device(def([g1(1)]));
+    d.solve();
+    d.step(1e-9);
+    const before = ledger(d);
+    d.set({ ports: [g1(2)] });
+    if (then) d.set(then);
+    const moved = Math.abs(ledger(d).D - before.D);
+    assert.ok(moved > 1e-3, `${what}: the face's D moved by ${moved}`);
+    assert.ok(gaussOff(d).worst < 1e-12, gaussOff(d).at);
+    assert.ok(startCharges(d).worst < 1e-12, `${what}: ${startCharges(d).at}`);
+    const first = d.step(1e-9);
+    assert.deepEqual(first.warnings, []);
+    kirchhoffHolds(first, `${what}: the first step`);
+    d.advance(1e-6);
+    const after = ledger(d);
+    for (const k of ['gate', 'metal']) assert.ok(Math.abs(after[k] - before[k]) < 1e-12 * moved * 1e3, `${what}: the ${k}'s charge passed less what it stores moved by ${(after[k] - before[k]).toExponential(3)} C/m² (the face's D moved ${moved.toExponential(3)})`);
+  }
+});

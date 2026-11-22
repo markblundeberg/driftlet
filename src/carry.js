@@ -29,8 +29,13 @@
 //      exactly. The state is put at those amounts (a species scaled, the others held) unless a held
 //      terminal sets its level; a surface's carried nodes likewise, all its species at once (in any
 //      listing order, the same state), where its window and electrode are unchanged, refused where
-//      the sites can't hold it (by more than its amounts' round-off). A strictly neutral node whose concentrations moved keeps the net charge the old
-//      state held there (ions, fixed charge, a port's spread charge). Terminals' running charges
+//      the sites can't hold it (by more than its amounts' round-off). A strictly neutral node is brought onto its Gauss row with the closed amounts and
+//      the floating capacitors' charges in one solve (src/neutral.js, solveNeutral): at its levels,
+//      or, under a capacitor whose hardware changed, at its concentrations (φ̂ jumping). Each held
+//      capacitor's start charge (a gate's, a capacitive contact's, a metal's sheet at a capacitive
+//      face, sheetDEnd) is what it held before the jump where its hardware's group changed, else
+//      what the final state holds at its old drive; with a regrid, the group's starts are shared
+//      onto what its ions balance, by capacitance. Terminals' running charges
 //      and stored charges scale with their area (a contact's, a port's electrode where its
 //      capacitance holds charge); a port's stored charge, node by node (its σ per area kept), and a
 //      floating one's voltage holds it on the final state.
@@ -661,10 +666,34 @@ function carryRest(old, s, info, { pure }) {
     // (a group with a changed capacitor in a regrid: its start charges together are what the new
     // grid's ions under it balance, the interpolation's difference shared out by capacitance, as
     // φ̂ would share it. Kept as they were, a C doubled with a regrid broke Kirchhoff by 4.1e4 A/m²;
-    // Neon's fourth review, R4 1.3. And one at a capacitive face to a metal: the jump moved the
-    // face's D, whose metal takes it from its terminal in that instant, through the held sources,
-    // which no step's current sees; so the held ones' starts give it up, as that impulse does.)
-    for (const gr of info.hwGroups ?? []) if (gr.faces.length > 0 || !gr.nodes.every((g) => info.copied[g] === 1)) shareGroupCharge(s, gr);
+    // Neon's fourth review, R4 1.3.)
+    // A group with a changed capacitor at a capacitive face to a metal, on the same nodes: the
+    // jump moved the face's D, and the metal's sheet with it, which can't move in an instant any
+    // more than a gate's charge can; so the sheet starts from the D before the jump (sheetDEnd),
+    // as the changed gate starts from its old charge, and the first step passes what moved
+    // between them as currents through their terminals, which record it. (Shared out onto the
+    // held sources' starts instead, as an impulse at the set(), Kirchhoff held but no terminal's
+    // running charge saw 0.0115 C/m² pass between a gate and its Pt; Neon's fourth review, its
+    // closing reply.) A start still to pass from an earlier set() carries by its difference from
+    // the state, as a port's (portChargeAcross). Elsewhere (a regrid, a face to a non-metal), the
+    // share.
+    const nF = s.model.interfaces.length, sameFaces = old.model.interfaces.length === nF;
+    const faceD = (sv, f) => sv.u[sv.blockOfFace[f] * sv.M];
+    const sheet = (f) => sameFaces && s.sheetFace.includes(f) && old.sheetFace.includes(f);
+    const pending = (f) => (sameFaces && Number.isFinite(old.sheetDEnd?.[f]) ? old.sheetDEnd[f] - faceD(old, f) : 0);
+    let sheetD = null;
+    const put = (f, D) => ((sheetD ??= new Float64Array(nF).fill(NaN))[f] = D);
+    for (let f = 0; f < nF; f++) if (sheet(f) && pending(f) !== 0) put(f, faceD(s, f) + pending(f));
+    for (const gr of info.hwGroups ?? []) {
+      const copied = gr.nodes.every((g) => info.copied[g] === 1);
+      if (copied && gr.faces.every(({ f, side }) => side === 2 || sheet(f))) {
+        for (const { f, side } of gr.faces) if (side !== 2) put(f, faceD(old, f) + pending(f));
+      } else if (gr.faces.length > 0 || !copied) {
+        if (sheetD) for (const { f } of gr.faces) sheetD[f] = NaN;
+        shareGroupCharge(s, gr);
+      }
+    }
+    s.sheetDEnd = sheetD;
   }
   // (a carried state that isn't finite is refused, the device left as it was: a crowded double layer
   // whose ε fell twentyfold came back NaN and converged, unwarned; Astra's second pass)

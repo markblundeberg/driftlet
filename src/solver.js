@@ -36,7 +36,7 @@ import { initFromComposition as initFromCompositionFn } from './start.js';
 export const STATE = [
   'u', 'uLo', // Newton's unknowns
   'cOld', 'thOld', 'th0Old', 'gamOld', 'gateOld', // the start of the next step
-  'contactDStart', 'contactDOld', 'contactDEnd', 'portQStart', 'portQOld', 'portQEnd',
+  'contactDStart', 'contactDOld', 'contactDEnd', 'portQStart', 'portQOld', 'portQEnd', 'sheetDEnd',
   'time', 'lastDt', 'history', 'dtNext', 'sourceTime', // the clock, and the time steps' memory
   'termV', 'termCharge', 'termChargeLo', // the terminals' voltages (floating ones are unknowns), and the charge each has passed (+ its rounding)
   'atSteady', 'stepped', 'solvedV', 'coldStart', // what the state is: steady, stepped, where solved, cold
@@ -62,6 +62,7 @@ export const CARRY = {
   cOld: 'restarted', thOld: 'restarted', th0Old: 'restarted', gamOld: 'restarted', gateOld: 'restarted', // (each step starts them from the state)
   contactDStart: 'restarted', contactDOld: 'restarted', portQStart: 'restarted', portQOld: 'restarted', // (likewise, from the End values)
   contactDEnd: 'kept', portQEnd: 'kept', // (each port's by name, where every port is still there)
+  sheetDEnd: 'set', // (a face's start where set() moved its D at a capacitor's change: src/carry.js)
   time: 'kept', sourceTime: 'kept', dtNext: 'kept',
   lastDt: 'restarted', history: 'restarted', // (a change of the equations restarts the time steps' order)
   termV: 'kept', termCharge: 'kept', termChargeLo: 'kept', // (by terminal name; a held terminal's V is its drive)
@@ -406,6 +407,11 @@ export class Solver {
     this.portQStart = new Float64Array(model.ports.length);
     this.portQOld = new Float64Array(model.ports.length);
     this.portQEnd = null;
+    // A metal's sheet at a capacitive face (sheetFace): the face's D the next step starts its
+    // carriers from, per face, where it isn't the state's (NaN, or null for none). set() leaves
+    // one where a capacitor's change jumped φ̂ beside the face, so the first step passes what
+    // moved as currents through the terminals (src/carry.js); each End values' reading clears it.
+    this.sheetDEnd = null;
     // And per node, the charge per volume the capacitances hold against the window (Σ aσ, over
     // every port with one there: two gates on one channel, say; the ions hold −Σ aσ), its slope
     // Σ a·C per volt, and the ports [terminal, index in its window].
@@ -1293,6 +1299,7 @@ export class Solver {
     this._assembleBookkeeping(dt);
     this.contactDEnd = { ...this.contactD };
     this.portQEnd = Float64Array.from(this.portQ);
+    this.sheetDEnd = null;
     if (!Number.isFinite(dt)) return;
     const last = this.model.regions.length - 1;
     const { n, cOld } = this, vol = this.model.grid.vol;

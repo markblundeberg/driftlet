@@ -51,6 +51,12 @@ charges are now kept, where they were read off the state.
     capacitor behind a resistance keeps its charge through a set() as one driven by a current
     does, its voltage moving (a porous electrode behind R had its C doubled as if held, 1.7e-6 of
     its charge off at the start). R4 1.3.
+  - Beside a capacitive face to a metal, a capacitor's change moves the face's charge with the
+    potential, and the metal's sheet starts from its charge before the jump, as the gate's does: the
+    first step passes what moved between them as currents, which their terminals' running charges
+    record. It was shared out onto the gate's start, an impulse at the set() that kept Kirchhoff but
+    that no terminal saw (0.0115 C/m² between a gate and its Pt). Neon's design, in its closing
+    reply to the review.
   - A diffuse layer's edge box no longer takes its face's slope (its side, 0 or 1, was compared with
     'left' and 'right'): a gate taken away over it moved its potential 5 V. R4 1.4.
   - No switch at 1% of the screening between holding the potential and moving it: a trace open ion

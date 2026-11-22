@@ -490,7 +490,7 @@ export class RegionTerms {
   }
 
   // Each group's start (from the step's own start values: cOld, portQStart, contactDStart, and a
-  // face's D as the step found it), past 1e-8 of its gross: Σ v(ρ_fixed + F Σ z c_old) + Σ Q_start
+  // face's D as the step found it, or as set() left a metal's sheet to start, sheetDEnd), past 1e-8 of its gross: Σ v(ρ_fixed + F Σ z c_old) + Σ Q_start
   // + Σ D_in (a contact's plate) − A D (a face on its right) + A (D + sheetCharge) (on its left)
   // = 0, the sum of its boxes' Gauss rows (a face inside it, its sheet charge alone). A group at a
   // face is read on a backward Euler step only (BDF2 extrapolates the rest of the start, not a
@@ -512,7 +512,8 @@ export class RegionTerms {
         (q += D), (scale += Math.abs(D));
       }
       for (const { f, side } of faces) {
-        const A = grid.area[grid.regionEnd[f]], D = this.u[this.blockOfFace[f] * M], sh = this.model.interfaces[f].sheetCharge ?? 0;
+        const A = grid.area[grid.regionEnd[f]], sh = this.model.interfaces[f].sheetCharge ?? 0;
+        const D = Number.isFinite(this.sheetDEnd?.[f]) ? this.sheetDEnd[f] : this.u[this.blockOfFace[f] * M];
         if (side === 0) q -= A * D;
         else if (side === 1) q += A * (D + sh);
         else q += A * sh;
