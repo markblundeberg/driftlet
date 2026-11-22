@@ -467,15 +467,26 @@ function carryRest(old, s, info, { pure }) {
   // ion's amount the carry keeps (rescale): there the ions' net charge is kept, and with it what
   // the capacitances balancing it hold (see the neutrality below).
   const targets = stretchTargets(old, s, info);
-  const kept = (g) => {
-    const r = ng.nodeRegion[g];
+  // (or all but 1% of it, by screening, Σ z²c: one open trace ion, H⁺ at 2.5e-4 of the screening
+  // of 1 M of closed NaCl under a gate, left the node to φ̂ at its levels, the closed amounts and
+  // the gate chasing each other through all 60 rounds, 2.4e-10 off at the end; the reviewer of
+  // Neon's third round, reading our reply. There only the closed ions move, the open ones keeping
+  // their levels. Not past that: the open ions' carried charge is off by their interpolation,
+  // which, φ̂ and the capacitors held, nothing takes up; a 1:1 mix stalled at 1.8e-10 where by φ̂
+  // it converges in 11 rounds, and an echem case at 1.4e-3. In between, φ̂ at the levels
+  // converges slowly; a joint solve is in ROADMAP.)
+  const closedAt = (g) => {
+    const r = ng.nodeRegion[g], only = new Uint8Array(n);
+    let closed = 0, open = 0;
     for (let i = 0; i < n; i++) {
       if (!s.present[g * n + i] || s.z[i] === 0) continue;
-      const k = s.stretchOf[r * n + i];
-      if (k < 0 || !targets[k].rescale) return false;
+      const k = s.stretchOf[r * n + i], w = s.z[i] * s.z[i] * s.c[g * n + i];
+      if (k >= 0 && targets[k].rescale) (only[i] = 1), (closed += w);
+      else open += w;
     }
-    return true;
+    return open <= 1e-2 * closed ? only : null;
   };
+  const kept = (g) => closedAt(g) !== null;
   if (old.contactDEnd || old.portQEnd) {
     s._assembleBookkeeping(Infinity); // (each from the carried state, for any not carried)
     // (a contact beside a region that restarted holds its own start's charge: carried by name, the
@@ -590,7 +601,7 @@ function carryRest(old, s, info, { pure }) {
   // charge moves the σ that the jump balances, and the two settle together)
   for (const nd of nodes) {
     if (hw[nd.g] && !nd.bulk && s._portHolds(nd.g)) nd.mode = 'jump';
-    else if (!nd.bulk && kept(nd.g)) nd.mode = 'charge';
+    else if (!nd.bulk && kept(nd.g)) (nd.mode = 'charge'), (nd.only = closedAt(nd.g));
   }
   const layers = diffuseTargets(old, s, info);
   for (let round = 0; round < 60; round++) {

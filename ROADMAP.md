@@ -179,7 +179,11 @@ for live demos.
    - The carry's loop (neutrality, amounts, layers, floating gates, held gates in turn) runs out
      its 60 rounds on 7 of 20 neutral-family regrids, stopping within 3e-11: right, but slow. A
      joint solve (the stretches' factors and the floating voltages outside, neutrality node by node
-     inside) would take a few rounds.
+     inside) would take a few rounds. It's what a node holding closed and open ions in between
+     needs most (the reviewer of Neon's third round): there φ̂ at the levels contracts by about the
+     open ions' share of the screening a round (1 mM of open H⁺ in 1 M of closed NaCl: 60 rounds,
+     1e-12 off), and holding φ̂ has no fixed point, the open ions' carried charge off by their
+     interpolation with nothing to take it up. Below 1% of the screening the carry holds φ̂.
    - A step in a strictly neutral region's fixed charge: refuse it, or solve the migration-only
      projection (Neon, R3 DESIGN §3.3).
 

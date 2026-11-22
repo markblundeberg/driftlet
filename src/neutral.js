@@ -16,7 +16,9 @@
 //      default by 'level' (φ̂ moved, the levels η kept: an open solution's levels are what it has,
 //      φ̂ what neutrality makes of them). Or by 'charge' (φ̂ kept, each charged species' η_i moved
 //      by −z_i δ: the concentrations in the charge direction only, no face's D or port's σ moving),
-//      which src/carry.js uses where the ions' amounts are all kept, and so their net charge.
+//      which src/carry.js uses where the ions whose amounts are kept carry most of a node's
+//      screening (Σ z²c), and so hold its net charge; a node's `only` (a mask by species) then
+//      names the ions that move, the open ones keeping their levels.
 //   2. gaussRows(s, nodes, { syncFaces }): one assemble(Infinity) with s.steady off (so no law
 //      takes a row's place); with syncFaces, each capacitive face's D first put on its own row (its
 //      slot u, which the Gauss rows read: the face's row is linear in it with slope 1), but beside
@@ -105,26 +107,33 @@ export function gaussRows(s, nodes, { syncFaces = false } = {}) {
   });
 }
 
-// Node g's ions v(ρ + F Σ z c) and their slope by d, with every charged species' ζ = η − zφ̂ moved
-// by −z d (ideal: c e^{−z d}; otherwise through its statistics, ∂c_i/∂d = −Σ_j K_ij z_j, left at d).
-function ionsAt(s, g, b, d, c0) {
-  const { n, z, c, present, K } = s, F = FARADAY, v = s.model.grid.vol[g];
+// Node g's ions v(ρ + F Σ z c) and their slope by d, with each moved species' ζ = η − zφ̂ moved
+// by −z d (ideal: c e^{−z d}; otherwise through its statistics, ∂c_i/∂d = −Σ_j K_ij z_j over the
+// moved j, left at d). `only`, where given, is which species move (a mixed node's closed ions);
+// otherwise every charged one does.
+function ionsAt(s, g, b, d, c0, only) {
+  const { n, M, z, c, present, K, u } = s, F = FARADAY, v = s.model.grid.vol[g];
+  const moves = (i) => z[i] !== 0 && (!only || only[i] === 1);
   let q = s.rhoFixed[g], dq = 0;
   if (s.nodeIdeal[g]) {
     for (let i = 0; i < n; i++) {
       if (!present[g * n + i] || z[i] === 0) continue;
-      const ci = c0[i] * Math.exp(-z[i] * d);
+      const ci = moves(i) ? c0[i] * Math.exp(-z[i] * d) : c0[i];
       q += F * z[i] * ci;
-      dq -= F * z[i] * z[i] * ci;
+      if (moves(i)) dq -= F * z[i] * z[i] * ci;
     }
   } else {
-    s._nodeStatistics(g, b, s.u[b * s.M] + d);
+    if (only) {
+      for (let i = 0; i < n; i++) if (present[g * n + i] && moves(i)) u[b * M + 1 + i] -= z[i] * d;
+      s._nodeStatistics(g, b, u[b * M]);
+      for (let i = 0; i < n; i++) if (present[g * n + i] && moves(i)) u[b * M + 1 + i] += z[i] * d;
+    } else s._nodeStatistics(g, b, u[b * M] + d);
     const Kg = g * n * n;
     for (let i = 0; i < n; i++) {
       if (!present[g * n + i]) continue;
       q += F * z[i] * c[g * n + i];
       let Kz = 0;
-      for (let j = 0; j < n; j++) Kz += K[Kg + i * n + j] * z[j];
+      for (let j = 0; j < n; j++) if (moves(j)) Kz += K[Kg + i * n + j] * z[j];
       dq -= F * z[i] * Kz;
     }
   }
@@ -157,7 +166,7 @@ export function projectNeutral(s, nodes, { tol = 1e-13, moved = null, syncFaces 
         d = -row.G / row.slope;
       } else {
         for (let it = 0; it < 60; it++) {
-          const [ions, dIons] = ionsAt(s, g, b, d, c0);
+          const [ions, dIons] = ionsAt(s, g, b, d, c0, mode === 'charge' ? nodes[a].only : undefined);
           const f = row.rest + kRest * d - ions, df = kRest - dIons;
           if (Math.abs(f) <= 1e-15 * row.scale || !(df > 0)) break;
           d -= f / df;
@@ -167,7 +176,8 @@ export function projectNeutral(s, nodes, { tol = 1e-13, moved = null, syncFaces 
       }
       if (d === 0) continue;
       if (mode === 'charge') {
-        for (let i = 0; i < n; i++) if (present[g * n + i] && z[i] !== 0) s.u[b * M + 1 + i] -= z[i] * d;
+        const only = nodes[a].only;
+        for (let i = 0; i < n; i++) if (present[g * n + i] && z[i] !== 0 && (!only || only[i] === 1)) s.u[b * M + 1 + i] -= z[i] * d;
       } else if (mode === 'level') s.u[b * M] += d;
       else {
         s.u[b * M] += d;

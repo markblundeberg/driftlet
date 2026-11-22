@@ -86,3 +86,30 @@ test('a transient\'s cold start puts a sheet-charged face\'s counter-charge in i
   assert.ok(worstOff(s) < 1e-12, `${worstOff(s)} off`);
   assert.ok(d.step(1e-9).converged);
 });
+
+// 1 M of NaCl, closed, under a held gate, with H⁺ at a trace open to a contact: its node took φ̂
+// at the levels, the closed amounts and the gate chased each other through the carry's 60 rounds,
+// and a regrid left Na⁺ and Cl⁻ each 2.4e-10 off what they held. Where the open ions are a trace
+// of the screening, the closed ones move in the charge direction alone, the open ones keeping their
+// levels. (The reviewer of Neon's third round, reading our account of the owner.)
+test('a regrid keeps closed amounts exactly beside an open trace ion', () => {
+  for (const trace of [1e-3, 10]) {
+    const d = new Device({
+      species: [{ name: 'Na+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'H+', z: 1, cRef: 1000 }],
+      materials: { aq: { epsr: 0, species: { 'Na+': { D: 1.33e-9, mu0: 0 }, 'Cl-': { D: 2.03e-9, mu0: 0 }, 'H+': { D: 9.3e-9, mu0: 0 } } } },
+      regions: [{ name: 'el', material: 'aq', length: 1e-6, c0: { 'Na+': 1000, 'Cl-': 1000 + trace, 'H+': trace } }],
+      contacts: { left: { V: 0, terminal: 'H+', species: { 'H+': 'equilibrium', 'Na+': 'blocked', 'Cl-': 'blocked' }, phi: 'bulk' }, right: { phi: 'neutral', species: { 'Na+': 'blocked', 'Cl-': 'blocked', 'H+': 'blocked' } } },
+      ports: [{ name: 'gate', region: 'el', from: 0.3e-6, to: 0.8e-6, area: 1e6, V: 0.1, capacitance: { C: 1, zeroCharge: 0 } }],
+      grid: { hmax: 1.25e-7, minCells: 8 },
+    });
+    d.solve();
+    const before = d.step(1e-9).conservation;
+    d.set({ grid: { hmax: 6.25e-8, minCells: 16 } });
+    const after = d.solution().conservation;
+    for (const sp of ['Na+', 'Cl-']) {
+      const a = before.find((st) => st.species === sp).amount, b = after.find((st) => st.species === sp).amount;
+      assert.ok(Math.abs(b / a - 1) < 1e-14, `trace ${trace} mM, ${sp}: ${a} → ${b}`);
+    }
+    assert.ok(worstOff(d.solver) < 1e-12);
+  }
+});

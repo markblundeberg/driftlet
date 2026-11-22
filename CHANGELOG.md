@@ -31,6 +31,11 @@ charges are now kept, where they were read off the state.
   potential beside it, a held gate's start charge was 1e-6 to 5e-5 off what the regridded state
   holds (a current at the first step), and where its rounds ran out (4 of 20 neutral-family
   regrids), it stopped with an amount or a charge up to 1.4e-7 off (now 3e-11 at most, in 7 of 20).
+- Where an open ion is only a trace beside closed ones (under 1% of a node's screening, Σ z²c),
+  a regrid moves the closed ones in the charge direction alone, the open one keeping its level: H⁺
+  at 2.5e-4 of the screening of 1 M of closed NaCl under a gate ran out the carry's rounds and left
+  Na⁺ and Cl⁻ each 2.4e-10 off; now exact, in 2 rounds. (Found by the reviewer of Neon's third round,
+  reading our account of the owner.)
 - A transient's cold start puts a sheet-charged capacitive face's counter-charge in its edge boxes
   before the first step (a membrane family case started 1.2% of its charge off neutral there).
 - A floating gate's voltage is held to its charge through a set() to 1e-13 of that charge (it
