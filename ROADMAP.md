@@ -626,6 +626,17 @@ confirmed faults fixed, many of them silent wrong answers) sort into four source
   can't mean two things.
 - **Normalize once.** Everything after normalization reads only the canonical model, never the raw
   definition; the kit returns plain, deep-copied data.
+- **set() as three verbs** (from a question Mark put to Neon, 21 Nov 2026). set() does three jobs
+  with different answers to "what's held fixed": a drive (V, I, R, light; the state as it was,
+  exact), a regrid (nothing physical changed: c, φ, amounts and charges kept), and a hardware edit
+  (a thickness, a doping, ε, a capacitance, a port added). Most carry faults were hardware edits
+  where two conventions met. A rule for those: each part keeps its natural variables, those its
+  boundary conditions fix, the ensemble solve() already uses (a region open to a bath its levels,
+  a sealed compartment its amounts, a floating terminal its charge, a held one its V), then the
+  state is projected onto neutrality by the single owner (## Next, item 0). It's the carry, not only
+  a guess, for solve() too: with sealed amounts, floating charges or two steady states, the carried
+  state picks which one. A hardware edit mid-transient ends the transient (clock kept, history
+  cleared, marked restarted) rather than inventing a t = 0⁺.
 - **Invariants as the gate.** Before any of this, a randomized suite of properties that hold for any
   device: a steady solve agrees with a long time-stepped run; Z at low frequency agrees with dV/dI
   from two steady solves; one `advance(t)` agrees with many small ones; a definition's key and
