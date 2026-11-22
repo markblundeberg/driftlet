@@ -191,38 +191,7 @@ export function initFromComposition(s) {
       }
     }
   };
-  // The charge per volume a floating capacitive port puts at node g, Σ aσ (C/m³), where it holds
-// one (see _portHolds).
-function floatSigma(s, g) {
-  const { model, M } = s;
-  let q = 0;
-  for (const [k, w] of s.qgTerms[g]) {
-    const port = model.ports[k - 2];
-    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
-    q += s.portArea[k - 2][w] * port.capacitance.C * (s.termV[k] - port.capacitance.zeroCharge - s.VT * s.u[s.blockOfNode[g] * M]);
-  }
-  return q;
-}
-
-// Each floating capacitive port over node g, whose φ̂ moved by d: its voltage moved by V_T d, and
-// φ̂ at the rest of its window too, each η_i by z_i d (its concentrations kept), so that its σ is
-// as it was everywhere.
-function followFloating(s, g, d) {
-  if (d === 0) return;
-  const { model, M, n, z, u } = s;
-  for (const [k] of s.qgTerms[g]) {
-    if (!s.floating.includes(k) || !s._portHolds(g)) continue;
-    s.termV[k] += s.VT * d;
-    for (const h of model.ports[k - 2].nodes) {
-      if (h === g || !s._portHolds(h)) continue;
-      const b = s.blockOfNode[h] * M;
-      u[b] += d;
-      for (let i = 0; i < n; i++) u[b + 1 + i] += z[i] * d;
-    }
-  }
-}
-
-// A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
+  // A held port's capacitance through its window, per node: aC (F/m³) and aC (V − zeroCharge),
   // so that aσ = capB − capA V_T φ̂. In a strictly neutral region it's part of each node's
   // neutrality, ρ + aσ = 0: without it, a region of P⁺ alone under a gate was refused for the
   // charge the gate balances, and a level-fed one started off it, its first 1 ps step jumping

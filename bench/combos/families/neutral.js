@@ -16,7 +16,7 @@ export default {
     const D = Object.fromEntries(ions.map(([name, , d]) => [name, d * r.u(0.7, 1.4)]));
     const materials = { aq: { epsr: 0, species: Object.fromEntries(ions.map(([name]) => [name, { D: D[name], cRef: 1000, mu0: 0 }])) } };
     const nR = r.pick([2, 2, 3]), features = ['strictly neutral', 'sealed', divalent ? 'divalent' : 'one salt'];
-    const regions = [], gated = [];
+    const regions = [], gated = [], neutralC = [];
     for (let g = 0; g < nR; g++) {
       const length = r.log(-6.5, -5.5), name = `r${g}`;
       const na = r.log(1, 2), ca = divalent ? r.log(0.5, 1.5) : 0;
@@ -27,6 +27,7 @@ export default {
       const whole = r.chance(0.65), excess = gate && whole ? over : 0;
       const c0 = { 'Na+': na, 'Cl-': na + 2 * ca - excess, ...(divalent ? { 'Ca2+': ca } : {}) };
       regions.push({ name, material: 'aq', length, c0 });
+      neutralC.push({ 'Na+': na, 'Cl-': na + 2 * ca, ...(divalent ? { 'Ca2+': ca } : {}) });
       if (gate) gated.push({ g, whole, excess });
     }
     const interfaces = Array.from({ length: nR - 1 }, () => {
@@ -48,7 +49,29 @@ export default {
       return p;
     });
     features.push(part ? 'a gate over part of a region' : 'gates over whole regions', `${ports.length} gate${ports.length > 1 ? 's' : ''}`);
-    const def = { T, species, materials, regions, interfaces, contacts: { left: sealed(), right: sealed() }, ports, grid: { minCells: 8 } };
+    // Drawn last, so that the cases above keep their draws: a Donnan face (Na⁺ lower in μ° in the
+    // last region, so the face takes a jump in φ at t = 0⁺), a bath at the left, a floating gate
+    // (at no current: its charge stays, its voltage follows). (Neon's R3 1.7: a floating gate over a
+    // Donnan face's right side took the jump as a charge nothing balanced.)
+    const contacts = { left: sealed(), right: sealed() };
+    if (r.chance(0.35)) {
+      materials.aqD = structuredClone(materials.aq);
+      materials.aqD.species['Na+'].mu0 = r.u(2000, 6000);
+      regions[nR - 1].material = 'aqD';
+      features.push('Donnan face');
+    }
+    // (not beside a whole gate's excess: the bath's end box, whose φ the bath sets, holds no gate's charge)
+    if (r.chance(0.3) && !(gated[0]?.g === 0 && gated[0].excess !== 0)) {
+      contacts.left = { V: 0, bath: { c: { ...neutralC[0] } } };
+      features.push('bath at the left');
+    }
+    if (r.chance(0.4)) {
+      const g = r.int(0, nR - 1), L = regions[g].length, whole = r.chance(0.5);
+      const from = whole ? undefined : r.u(0, 0.4) * L, to = whole ? undefined : from + r.u(0.3, 0.6) * L;
+      ports.push({ name: 'float', region: regions[g].name, ...(whole ? {} : { from, to }), I: 0, area: r.log(5, 6), capacitance: { C: r.u(0.2, 1) } });
+      features.push('a floating gate');
+    }
+    const def = { T, species, materials, regions, interfaces, contacts, ports, grid: { minCells: 8 } };
     // The slowest relaxation: diffusion over the whole cell, or a gate charging through the
     // solution under it (C per volume over σ/L²).
     const Ltot = regions.reduce((t, g) => t + g.length, 0), Dmin = Math.min(...Object.values(D));

@@ -34,6 +34,8 @@ import { readdirSync } from 'node:fs';
 import { Device } from '../../src/index.js';
 import { FARADAY } from '../../src/constants.js';
 import { check } from '../../src/kit.js';
+import { equilibrateFaces } from '../../src/start.js';
+import { gaussOff, startCharges } from './charge.js';
 import { caseRng, rng, hash } from './rng.js';
 
 const argv = process.argv.slice(2);
@@ -299,6 +301,18 @@ function compareDefinitions(c, def, plan, transform) {
 }
 
 // --- the properties: each takes a case and returns '' (holds), 'skip: …', or what failed
+// A short step from the state: whether it says its start was off neutral.
+function stepsQuiet(d, dt) {
+  let st;
+  try {
+    st = d.step(dt);
+  } catch (e) {
+    return `refused: ${e.message.split('\n')[0].slice(0, 100)}`;
+  }
+  const w = st.warnings.find((x) => /off neutral/.test(x));
+  return w ? w.split('\n')[0].slice(0, 160) : '';
+}
+
 const props = {
   order(c) {
     const a = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
@@ -752,6 +766,68 @@ const props = {
     if (first.steps > 0) look(b.solution(), `after the first step (t = ${first.time.toPrecision(3)} s)`);
     if (n === 0) return skip('no closed stretch with c0 given as numbers');
     return worst <= 1e-9 ? '' : `a closed amount, against its definition's: ${(worst * 100).toPrecision(3)}% (${at})`;
+  },
+
+  neutralG(c) {
+    // A strictly neutral node is an index-1 DAE: its balances with an algebraic G(u) = 0 (see
+    // gaussOff). Whatever makes a state a step starts from keeps it there: the cold start (with the
+    // faces' t = 0⁺), a regrid, a gate's C changed or a gate added (the gates' total charge kept),
+    // and a drive's step (nothing moves). Then a short step from it doesn't say its start was off.
+    // (Each of Neon's R1 1.1, R2 3.1, R3 1.5 and R3 1.7 was one producer leaving it, unwarned.)
+    const tol = 1e-9, dt = 1e-6 * c.plan.slow, out = [];
+    const look = (d, when, { charges = true } = {}) => {
+      const g = gaussOff(d);
+      if (g && g.worst > tol) out.push(`${when}: off G = 0 by ${g.worst.toExponential(2)} at ${g.at}`);
+      if (charges) {
+        const q = startCharges(d);
+        if (q.worst > tol) out.push(`${when}: a start charge off the state's by ${q.worst.toExponential(2)} (${q.at})`);
+      }
+    };
+    const step = (d, when) => {
+      const w = stepsQuiet(d, dt);
+      if (w) out.push(`${when}, a step of ${dt.toPrecision(2)} s: ${w}`);
+    };
+    const a = new Device(clone(c.def));
+    if (!gaussOff(a)) return skip('no strictly neutral node');
+    if (a.solver.coldStart) equilibrateFaces(a.solver);
+    look(a, 'cold start');
+    step(a, 'cold start');
+    const solved = () => {
+      const d = new Device(clone(c.def));
+      return converged(d.solve()) ? d : null;
+    };
+    const b = solved();
+    if (!b) return out.length ? out.join('; ') : skip('no steady state at the drives');
+    look(b, 'solved');
+    const u0 = Float64Array.from(b.solver.u);
+    b.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    if (b.solver.u.some((x, k) => x !== u0[k])) out.push(`a drive's step moved the state`);
+    step(b, "a drive's step");
+    const e = solved(), gd = c.def.grid ?? {};
+    e.set({ grid: gd.hmax ? { hmax: gd.hmax / 2 } : { minCells: 2 * (gd.minCells ?? 8) } });
+    look(e, 'regrid');
+    step(e, 'regrid');
+    const neutralRegion = (p) => {
+      const reg = regionOf(c.def, p);
+      return reg && c.def.materials[reg.material]?.epsr === 0;
+    };
+    const gates = (c.def.ports ?? []).filter((p) => p.capacitance && neutralRegion(p));
+    if (gates.length) {
+      const f = solved(), p = gates[gates.length - 1];
+      f.set({ ports: { [p.name]: { capacitance: { ...p.capacitance, C: 2 * p.capacitance.C } } } });
+      look(f, `${p.name}'s C doubled`);
+      step(f, `${p.name}'s C doubled`);
+      const q = gates.find((p) => !p.gates && !p.surface && !p.reactions);
+      if (!q) return out.join('; ');
+      const h = solved(), { name, ...rest } = q;
+      const extra = { ...clone(rest), name: `${name}·2`, V: (q.V ?? 0) + 0.1 };
+      delete extra.I;
+      delete extra.R;
+      h.set({ ports: [...c.def.ports, extra] });
+      look(h, `a gate added beside ${name}`);
+      step(h, `a gate added beside ${name}`);
+    }
+    return out.join('; ');
   },
 
   stale(c) {
