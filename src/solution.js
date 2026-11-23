@@ -405,7 +405,8 @@ function terminalSumWarnings(sol, solver, result, heldGap) {
     // (A device with no weakly held region has no level to be wrong at, and there a sum that is
     // the whole of one terminal's current, every other's ~0, is that terminal's round-off: a
     // battery electrode at rest, its electrons' current read at 1.2e-13 A/m² beside Li⁺'s 0, in
-    // docs/statistics.md. Where there are islands, a wrong level reads the same way: a holes-only
+    // docs/statistics.md: Newton's tolerance, in fact, and 3e-27 since the steady solve's polish
+    // (_polish, src/steady.js); the exemption stays for what a polish leaves. Where there are islands, a wrong level reads the same way: a holes-only
     // contact's floating base, −1e-20 and 4.25e-15.) Every other's ~0 indeed: a sum over half the
     // largest passed, and a resistor's contact read 1.01 to 1e6 times its current off, beside the
     // other's true 1.4e8 A/m², went unwarned (Astra's fourth pass, by injection).

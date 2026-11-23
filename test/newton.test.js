@@ -333,8 +333,10 @@ test('islands: a round that leaves its island less balanced, or rows satisfied o
   for (const k of [361, 452, 455, 462]) assert.deepEqual(new Device(device(choice(k))).solve().warnings.filter((w) => w.includes("doesn't balance")), [], `law sweep ${k}`);
 });
 
-test('a device with no weakly held region reads one terminal\'s round-off as such: an insertion electrode at rest, its electrons\' 1e-13 A/m² beside Li⁺\'s 0', () => {
-  // (docs/statistics.md's OCV example; c7ed8e2 warned of it, 1.8.0 didn't)
+test('an insertion electrode at rest reads its electrons\' current at round-off, not at Newton\'s tolerance: polished, not warned of', () => {
+  // (docs/statistics.md's OCV example; c7ed8e2 warned of it, 1.8.0 didn't. It read 1.2e-13 A/m²
+  // beside Li⁺'s 0, which was taken for round-off: one more update takes it to 3e-27; see _polish
+  // in src/steady.js)
   const RT = GAS_CONSTANT * 298.15, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
   const E = x.map((v) => 0.4 - (RT / FARADAY) * Math.log(v / (1 - v)));
   const dev = new Device({
@@ -343,13 +345,11 @@ test('a device with no weakly held region reads one terminal\'s round-off as suc
     regions: [{ material: 'host', length: 1e-6 }],
     contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.4, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
   });
-  let seen = 0;
   for (const V of [0.4, 0.3]) {
     dev.set({ contacts: { right: { V } } });
     const sol = dev.solve();
     assert.ok(sol.converged);
-    seen = Math.max(seen, Math.abs(sol.terminals.right.current));
+    assert.ok(Math.abs(sol.terminals.right.current) < 1e-20, `${V} V: ${sol.terminals.right.current} A/m²`);
     assert.ok(!sol.warnings.some((w) => /don't add up/.test(w)), sol.warnings.join('\n'));
   }
-  assert.ok(seen > 1e-15, `${seen}: the round-off this is about`);
 });

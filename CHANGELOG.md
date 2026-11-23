@@ -15,6 +15,15 @@ major version.
   currents and in the ledger of what each passes, after each producer of a start (a solve, a
   drive's step, a regrid, a capacitor's C doubled). It found the fault above on its first run.
   Proposed by Neon in its review of the suite's shape.
+- A steady solve whose terminal currents miss Kirchhoff by more than round-off (1e-12 of what the
+  terminals' species carry) takes one more steady step once it has converged, which puts them at
+  round-off rather than at Newton's tolerance. A species that conducts ~1e13 times what flows
+  turns a level known to 1e-11 thermal units into a visible current: an insertion host at rest
+  beside a bath, with a cross-section of 42 m², read 0.31 A into its
+  electron contact and nothing out of the bath, with a warning that the device might be at the
+  wrong level (its levels were right to 2e-12 RT). Now it reads 1e-26 A/m². An OCV electrode at
+  rest that read 1.2e-13 A/m², taken for round-off in the docs, now reads 3e-27. Found by
+  bench/combos' `area` property at --n 40 (membrane case 17).
 
 ## 1.22.0 (2026-11-22)
 

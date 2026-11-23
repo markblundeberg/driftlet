@@ -40,7 +40,11 @@
 //   solves with this.steady = true and this.steadyAt = this.time (false again on return).
 //   Stops at once, converged false, steps 0, where a floating terminal is driven by a nonzero
 //   current that only charges a capacitance or feeds a conserved combination (a constraint):
-//   this.charging says which terminal and what it fills. Else _steadyFromHere, and
+//   this.charging says which terminal and what it fills. Else _steadyFromHere; converged, where
+//   the steady equations are solved directly (_directSteady) and the terminal currents as last
+//   assembled miss Kirchhoff by more than 1e-9 of the largest, 1e-18 A/m² and 1e-12 of what the
+//   terminals' species carry (_missesKirchhoff), one more steady step from the solution (_polish: _steadySteps with maxSteps
+//   1; a failure leaves the solution as it was), its iterations counted; then
 //   this.atSteady = converged. Not converged: this.solvedV and this.stepped as before the call.
 //
 // _steadyFromHere(opts): in stages until one converges, each from the state the solve began in
@@ -193,6 +197,7 @@ import { DeviceError, SolverError } from './errors.js';
 import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
+import { FARADAY } from './constants.js';
 
 export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
@@ -288,6 +293,43 @@ export class SteadySolves {
     }
   }
 
+  // A converged steady state's terminal currents are known to Newton's tolerance, and a species
+  // that conducts ~1e13 times what flows turns a level known to 1e-11 thermal units into a current
+  // you can see: an insertion host at rest beside a bath, at a cross-section of 42 m², read 0.31 A
+  // into its electron contact and nothing out of the bath, warned of as a region perhaps at the
+  // wrong level (its levels were right to 2e-12 RT: the membrane combos' case 17, area), and an
+  // OCV electrode at rest 1.2e-13 A/m², which the docs took for round-off. Where they miss
+  // Kirchhoff by more than round-off (_missesKirchhoff), one more steady step from the solution puts them at
+  // round-off (1e-26, 3e-27), Newton being quadratic there. Done once the solve has converged by
+  // whatever stage, not inside Newton's own decisions: polished before the islands' round, a
+  // recombining floating base listed in reverse started the round from a different state, which
+  // failed, and was left at +4e-6 V where it's −0.1477. A failed polish leaves the solution as it
+  // was (a failed step puts back the whole state). Only where the steady equations are solved
+  // directly: elsewhere a step at dt = ∞ drops the storage term that keeps what no row does.
+  // (Missed by more than 1e-9 of the largest and 1e-18 A/m², as Newton's islands round asks, and
+  // by more than 1e-12 of what the terminals' species carry, the round-off the warning reads them
+  // against, src/solution.js: a thin-film transistor at rest passes ±2.2e5 A/m² of electrons and
+  // holes through each contact, and its currents, 1e-9 A/m², are a few ulps of those. Polished
+  // there, one route's noise was moved and another's not: two listings read 7e-1 apart, the semi
+  // combos' case 27.)
+  _missesKirchhoff() {
+    const { z } = this, F = FARADAY;
+    let sum = 0, mx = 0, gross = 0;
+    for (const I of this.termI) {
+      sum += I;
+      mx = Math.max(mx, Math.abs(I));
+    }
+    for (const flux of [this.contactFlux.left, this.contactFlux.right, ...this.portFlux]) for (let i = 0; i < flux.length; i++) gross += Math.abs(z[i] * F * flux[i]);
+    return Math.abs(sum) > Math.max(1e-9 * mx, 1e-12 * gross, 1e-18);
+  }
+
+  _polish(r) {
+    if (!this._directSteady() || !this._missesKirchhoff()) return;
+    const q = this._steadySteps({ maxSteps: 1 });
+    r.iterations += q.iterations;
+    if (q.converged) r.polished = true;
+  }
+
   _solveSteadyAll(opts) {
     // A terminal driven by a current that can only store what comes in (a battery's cathode
     // behind it, closed but for that terminal; a gate, or a capacitance with no species through
@@ -341,6 +383,7 @@ export class SteadySolves {
       return { converged: false, steps: 0, iterations: 0, history: [] };
     }
     const r = this._steadyFromHere(opts);
+    if (r.converged) this._polish(r); // (before atSteady: a step clears it)
     this.atSteady = r.converged;
     return r;
   }

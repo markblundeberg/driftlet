@@ -1244,3 +1244,31 @@ test('a frozen reaction into a fixed reservoir (water from H⁺ and OH⁻) is wa
   assert.ok(slow.warnings.some((w) => /bulkReactions\[0\]: out of equilibrium/.test(w)), slow.warnings.join(' | '));
   assert.equal(check(d, slow, { refine: false }).items.find((it) => it.name === 'balance').ok, false);
 });
+
+test('a steady state whose currents miss Kirchhoff by Newton\'s tolerance takes one more update: an insertion host at rest beside a bath, at any cross-section', () => {
+  // (the membrane combos' case 17, area: at 42 m² its electrons' contact read 0.31 A and the bath's
+  // 1e-20, warned of as a weakly held region perhaps at the wrong level; its levels were right to
+  // 2e-12 RT, and one more update read 1e-26. The islands' round that polishes such currents was
+  // undone there, its balance noise before and after; _polish in src/steady.js)
+  const x = [0.02, 0.26, 0.5, 0.74, 0.98], E = [3.547, 3.425, 3.357, 3.29, 3.167];
+  const def = {
+    species: [{ name: 'Li+', z: 1, cRef: 1000 }, { name: 'e-', z: -1 }, { name: 'A-', z: -1, cRef: 1000 }],
+    materials: {
+      h1: { epsr: 0, species: { 'Li+': { D: 2.03e-15, mu0: 0, cRef: 38585 }, 'e-': { D: 1e-4, mu0: 0, cRef: 38585 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 38585, ocv: { x, E, muRef: 0 } }] },
+      elyte: { epsr: 0, species: { 'Li+': { D: 1.26e-10, mu0: 0 }, 'A-': { D: 3.82e-10, mu0: 0 } } },
+    },
+    regions: [{ name: 'host', c0: { 'Li+': 6587 }, material: 'h1', length: 1.745e-6 }, { name: 'elyte', c0: { 'Li+': 886.8, 'A-': 886.8 }, material: 'elyte', length: 2.77e-5 }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: -3.454, bath: { c: { 'Li+': 886.8, 'A-': 886.8 }, reference: 'Li+' } } },
+    grid: { hmin: 3.7e-9, hmax: 2.98e-7 },
+  };
+  let worst = 0;
+  for (const A of [1, 3, 10, 42, 100]) {
+    const d = new Device({ ...def, geometry: { area: { x: [0, 1.745e-6 + 2.77e-5], values: [A, A] } } });
+    d.set({ contacts: { right: { V: -3.421 } } });
+    const sol = d.solve();
+    assert.ok(sol.converged, `${A} m²`);
+    assert.ok(!sol.warnings.some((w) => /don't add up/.test(w)), `${A} m²: ${sol.warnings.join('; ')}`);
+    worst = Math.max(worst, Math.abs(sol.terminals.left.current) / A, Math.abs(sol.terminals.right.current) / A);
+  }
+  assert.ok(worst < 1e-15, `${worst} A/m² at rest`);
+});
