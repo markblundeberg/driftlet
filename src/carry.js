@@ -33,7 +33,8 @@
 //      the floating capacitors' charges in one solve (src/neutral.js, solveNeutral): at its levels,
 //      or, under a capacitor whose hardware changed, at its concentrations (φ̂ jumping). Each held
 //      capacitor's start charge (a gate's, a capacitive contact's, a metal's sheet at a capacitive
-//      face, sheetDEnd) is what it held before the jump where its hardware's group changed, else
+//      face, sheetDEnd) is what it held before the jump where its hardware's group changed (and a
+//      held gate's whose own hardware changed over a region with ε > 0, where nothing jumps), else
 //      what the final state holds at its old drive; with a regrid, the group's starts are shared
 //      onto what its ions balance, by capacitance. Terminals' running charges
 //      and stored charges scale with their area (a contact's, a port's electrode where its
@@ -535,6 +536,11 @@ function carryRest(old, s, info, { pure }) {
     // by 1.9e5 A/m², unwarned; Neon's third review, R3 1.5. Its whole old charge kept, a window
     // narrowed by half broke it by 8.6e7 A/m²; Neon's fourth review, R4 1.3.) Its unchanged
     // neighbours in the group start from what the state holds at their old drives before the jump.
+    // Over a region with ε > 0 (no group: φ there is Poisson's, carried, and nothing jumps) a held
+    // gate's charge can't jump either: it starts from what it held, and the first step passes the
+    // difference through its terminal, recorded. (Read off the carried state at the new C, a
+    // thin-film transistor's gate C doubled: the first 22 ms step's currents summed to −31 A/m² of
+    // 31, both contacts passing it out, unwarned; bench/combos' kirchhoff, its first run.)
     const allCopied = (k) => s.model.ports[k].nodes.every((g) => info.copied[g] === 1);
     if (old.portQEnd) s.model.ports.forEach((p, k) => {
       const o = old.model.ports.findIndex((q) => q.name === p.name);
@@ -543,7 +549,7 @@ function carryRest(old, s, info, { pure }) {
       // electrode, node by node: see portChargeAcross)
       const op = old.model.ports[o];
       const same = o >= 0 && !freshAt(p.region) && (driven(2 + k) || (deepEqual(op.capacitance, p.capacitance) && op.from === p.from && op.to === p.to && deepEqual(op.area, p.area)));
-      if (!same && p.capacitance && !freshAt(p.region) && !driven(2 + k) && groupOfPort(k)) {
+      if (!same && p.capacitance && !freshAt(p.region) && !driven(2 + k)) {
         info.ownCharge.ports[k] = false;
         s.portQEnd[k] = o >= 0 && op.capacitance ? portChargeKept(old, s, o, k, info) : 0;
         info.hardware.add(k);

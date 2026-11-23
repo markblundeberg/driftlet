@@ -83,3 +83,15 @@ regrid, a gate's capacitance doubled and a gate added. `charge.js` reads each no
 state holds; then a short step from the state mustn't say its start was off. With their fixes
 undone it fails on Neon's R3 1.7 (a floating gate over a Donnan face, at the cold start), R2 3.1
 (a capacitive face's counter-charge, at a regrid) and R3 1.5 (a gate added beside another).
+
+## kirchhoff
+
+Every step keeps Kirchhoff's law: the terminals' currents (conduction plus displacement) sum to
+zero, and so do the charges the ledger records each one passing (`termCharge`). It steps at three
+sizes (1e-6, 1e-4 and 1e-2 of `slow`) after each producer of a start: a solve, a drive's step, a
+regrid, a port's or a capacitive contact's C doubled. The sums are judged against what flows, with
+a floor of 1e-6 of what the drive's step drives in the same step, and 1e-9 A/m² over the largest
+terminal, the steady solve's round-off from rest. Its first run found a held gate over a region
+with ε > 0 whose C changed: its charge was read off the state at the new C, a jump no terminal
+recorded, and the first step's currents summed to −31 A/m² of 31 (src/carry.js now starts it from
+what it held). Proposed by Neon in its review of the suite's shape.

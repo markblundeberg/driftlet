@@ -1212,3 +1212,32 @@ test('a near-full lattice refined keeps its amount and fits its sites (Astra, ni
   assert.ok(peak(fresh) < cMax && Math.abs(peak(carried) - peak(fresh)) < 1e-12, `${peak(carried)} vs ${peak(fresh)}`);
   assert.ok(carried.c['Ox+'].every((v, k) => Math.abs(v - fresh.c['Ox+'][k]) < 1e-12 * cMax));
 });
+
+// A held gate over a region with ε > 0 (no strictly neutral group) whose capacitance changes: its
+// plate's charge can't jump in the set() any more than a gate's over neutral boxes can, so it
+// starts from what it held, and the first step passes the difference through its terminal,
+// recorded. (Read off the carried state at the new C instead, the charge jumped unrecorded: a
+// thin-film transistor's gate C doubled, its first 22 ms step's currents summed to −31 A/m² of
+// 31, both contacts passing it out with the gate at −0.73; bench/combos' kirchhoff property,
+// proposed in Neon's review of the suite's shape.)
+test("carry: a held gate over a region with ε > 0, its C doubled: it starts from its charge, and the first step's currents and ledger sum to zero", () => {
+  const def = bar();
+  def.materials.solid.epsr = 10;
+  const d = new Device(def);
+  assert.ok(d.solve().converged);
+  const k = d.solver.terms.findIndex((t) => t.name === 'a');
+  const before = d.solver.portQ[0];
+  d.set({ ports: { a: { capacitance: { C: 0.4 } } } });
+  const s = d.solver;
+  assert.equal(s.portQEnd[0], before, 'the gate starts from the charge it held');
+  const q0 = Float64Array.from(s.termCharge);
+  const st = d.step(1e-9);
+  const I = s.terms.map((t) => st.terminals[t.name].current), gross = I.reduce((a, b) => a + Math.abs(b), 0);
+  assert.ok(gross > 0, 'something flows');
+  assert.ok(Math.abs(I.reduce((a, b) => a + b, 0)) <= 1e-6 * gross, `Kirchhoff: ${I.map((x) => x.toExponential(3)).join(', ')}`);
+  const dq = Array.from(s.termCharge, (q, j) => q - q0[j]), moved = dq.reduce((a, b) => a + Math.abs(b), 0);
+  assert.ok(Math.abs(dq.reduce((a, b) => a + b, 0)) <= 1e-6 * moved, `the ledger: ${dq.map((x) => x.toExponential(3)).join(', ')}`);
+  // (to 1e-6: a step from rest passes the steady solve's round-off, 1e-6 A/m² here; 422 A/m²
+  // pass, summing to 2.5e-6) And the gate's terminal recorded what its plate took: from what it held to what it holds)
+  assert.ok(rel(dq[k], s.portQ[0] - before) < 1e-9, `the gate passed ${dq[k].toExponential(6)} C, its plate took ${(s.portQ[0] - before).toExponential(6)}`);
+});

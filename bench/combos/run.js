@@ -833,6 +833,67 @@ const props = {
     return out.join('; ');
   },
 
+  kirchhoff(c) {
+    // Every step keeps Kirchhoff's law: the terminals' currents sum to zero, and so does what the
+    // ledger records each one passing (termCharge), whatever made the state the step starts from:
+    // a solve, a drive's step, a regrid, a gate's C doubled. Steps of three sizes from each. (Neon's
+    // R4 1.1, 1.2, 1.3 and 1.6 each broke the sum on the first step after one producer, by up to
+    // 1e4 times the current that should have flowed; the closing reply's break was in the ledger
+    // alone, the currents summing. Proposed by Neon in its review of the suite's shape.)
+    // (Against what flows, with a floor of 1e-6 of what the drive's step drives in the same step,
+    // and of 1e-9 A/m² over the largest terminal: a step from rest passes the steady solve's
+    // round-off, and a closed cell with a pump, its right end blocked and field-free, read 2e-10
+    // A/m² at its left alone on the first step, relaxing at the rows' tolerance to 1e-16.)
+    const out = [], ref = [0, 0, 0];
+    const area = Math.max(1, ...(c.def.ports ?? []).map((p) => p.area ?? 1), ...(c.def.geometry ? [new Device(clone(c.def)).solver.model.grid.area.at(-1)] : []));
+    const look = (d, when, scale = false) => {
+      const s = d.solver, names = s.terms.map((t) => t.name);
+      for (const [j, f] of [1e-6, 1e-4, 1e-2].entries()) {
+        const dt = f * c.plan.slow, q0 = Float64Array.from(s.termCharge);
+        let st;
+        try {
+          st = d.step(dt);
+        } catch (e) {
+          return out.push(`${when}, a step of ${dt.toPrecision(2)} s refused: ${e.message.split('\n')[0].slice(0, 90)}`);
+        }
+        const I = names.map((n) => st.terminals[n].current);
+        const sum = I.reduce((a, b) => a + b, 0), gross = I.reduce((a, b) => a + Math.abs(b), 0);
+        const dq = names.map((n, k) => d.solver.termCharge[k] - q0[k]);
+        const qsum = dq.reduce((a, b) => a + b, 0), moved = dq.reduce((a, b) => a + Math.abs(b), 0);
+        if (scale) ref[j] = gross;
+        const floor = Math.max(1e-6 * ref[j], 1e-9 * area);
+        if (Math.abs(sum) > 1e-6 * gross + floor) out.push(`${when}, a step of ${dt.toPrecision(2)} s: currents sum to ${sum.toExponential(2)} of ${gross.toExponential(2)} (${names.map((n, k) => `${n} ${I[k].toExponential(2)}`).join(', ')})`);
+        if (Math.abs(qsum) > 1e-6 * moved + floor * dt) out.push(`${when}, a step of ${dt.toPrecision(2)} s: the ledger's charges sum to ${qsum.toExponential(2)} of ${moved.toExponential(2)} C (${names.map((n, k) => `${n} ${dq[k].toExponential(2)}`).join(', ')})`);
+        if (out.length) return;
+      }
+    };
+    const solved = () => {
+      const d = new Device(clone(c.def));
+      return converged(d.solve()) ? d : null;
+    };
+    const b = solved();
+    if (!b) return skip('no steady state at the drives');
+    b.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    look(b, "a drive's step", true);
+    look(solved(), 'solved');
+    const e = solved(), gd = c.def.grid ?? {};
+    e.set({ grid: gd.hmax ? { hmax: gd.hmax / 2 } : { minCells: 2 * (gd.minCells ?? 8) } });
+    look(e, 'regrid');
+    const gate = (c.def.ports ?? []).findLast((p) => p.capacitance);
+    if (gate) {
+      const f = solved();
+      f.set({ ports: { [gate.name]: { capacitance: { ...gate.capacitance, C: 2 * gate.capacitance.C } } } });
+      look(f, `${gate.name}'s C doubled`);
+    }
+    const cc = Object.entries(c.def.contacts ?? {}).find(([, k]) => k.capacitance);
+    if (cc) {
+      const g = solved();
+      g.set({ contacts: { [cc[0]]: { capacitance: { ...cc[1].capacitance, C: 2 * cc[1].capacitance.C } } } });
+      look(g, `the ${cc[0]} contact's C doubled`);
+    }
+    return out.join('; ');
+  },
+
   stale(c) {
     const d = new Device(clone(c.def));
     const s = d.solve();

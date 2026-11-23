@@ -1621,7 +1621,12 @@ Notes:
   jump, as the gate's does: what passes between them goes through their terminals in the first
   step, whose charges passed (`d.solver.termCharge`) record it. With a regrid in the same `set()`,
   the group's start charges together are what the new grid's ions balance. A floating capacitor
-  keeps its charge through any of these, its voltage moving.
+  keeps its charge through any of these, its voltage moving. Over a region with ε > 0, where φ is
+  Poisson's and nothing jumps, a held gate whose hardware changed likewise starts from the charge
+  it held (a new one, or a capacitance new to a port, from none), and the first step passes the
+  difference through its terminal, recorded. (In 1.22 and before it was read off the carried state
+  at the new capacitance, an unrecorded jump: a thin-film transistor's gate C doubled, the first
+  22 ms step's currents summed to −31 A/m² of 31.)
 - **A steady state stands for its definition.** A grid patch alone on a steady state is solved
   again on the new grid before the next `step()`, `advance()` or rebuild (said in the next
   solutions if that fails); a grid patch together with anything else is the new grid first, solved,

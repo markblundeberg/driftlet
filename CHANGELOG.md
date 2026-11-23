@@ -3,6 +3,19 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- set() of a held gate's capacitance, window or electrode area over a region with ε > 0 (or a gate
+  added there) starts it from the charge it held (a new one's, none), and the first step passes the
+  difference through its terminal, which records it, as a gate over strictly neutral boxes already
+  did. It was read off the carried state at the new capacitance: the charge jumped with no terminal
+  seeing it pass, and the first step drew the counter-charge through the other terminals, Kirchhoff
+  broken by −31 A/m² of 31 in a thin-film transistor's first 22 ms step after its gate's C doubled.
+- bench/combos: `kirchhoff`, a property that every step keeps Kirchhoff's law, in the terminals'
+  currents and in the ledger of what each passes, after each producer of a start (a solve, a
+  drive's step, a regrid, a capacitor's C doubled). It found the fault above on its first run.
+  Proposed by Neon in its review of the suite's shape.
+
 ## 1.22.0 (2026-11-22)
 
 One owner of a strictly neutral node's charge, the design from Neon's third review: each node's
