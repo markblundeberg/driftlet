@@ -23,7 +23,10 @@ major version.
   electron contact and nothing out of the bath, with a warning that the device might be at the
   wrong level (its levels were right to 2e-12 RT). Now it reads 1e-26 A/m². An OCV electrode at
   rest that read 1.2e-13 A/m², taken for round-off in the docs, now reads 3e-27. Found by
-  bench/combos' `area` property at --n 40 (membrane case 17).
+  bench/combos' `area` property at --n 40 (membrane case 17). Its floor, and the one at which
+  Newton's islands round looks at Kirchhoff, are now 1e-18 A/m² of the larger end's area where
+  currents are totals, as the warning's is: bare, a host at rest at 1e-6 m² was left at
+  1e-13 A/m² and warned of (Neon's review).
 
 ## 1.22.0 (2026-11-22)
 

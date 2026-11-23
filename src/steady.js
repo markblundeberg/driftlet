@@ -42,9 +42,11 @@
 //   current that only charges a capacitance or feeds a conserved combination (a constraint):
 //   this.charging says which terminal and what it fills. Else _steadyFromHere; converged, where
 //   the steady equations are solved directly (_directSteady) and the terminal currents as last
-//   assembled miss Kirchhoff by more than 1e-9 of the largest, 1e-18 A/m² and 1e-12 of what the
-//   terminals' species carry (_missesKirchhoff), one more steady step from the solution (_polish: _steadySteps with maxSteps
-//   1; a failure leaves the solution as it was), its iterations counted; then
+//   assembled miss Kirchhoff by more than 1e-9 of the largest, 1e-18 A/m² (of the larger end's
+//   area, where currents are totals) and 1e-12 of what the terminals' species carry
+//   (_missesKirchhoff), one more steady step from the solution (_polish: _steadySteps with maxSteps
+//   1; a failure leaves the solution, and the diagnostics a failure writes, as they were), its
+//   iterations counted, this.solvedV taken again where it converged; then
 //   this.atSteady = converged. Not converged: this.solvedV and this.stepped as before the call.
 //
 // _steadyFromHere(opts): in stages until one converges, each from the state the solve began in
@@ -320,14 +322,23 @@ export class SteadySolves {
       mx = Math.max(mx, Math.abs(I));
     }
     for (const flux of [this.contactFlux.left, this.contactFlux.right, ...this.portFlux]) for (let i = 0; i < flux.length; i++) gross += Math.abs(z[i] * F * flux[i]);
-    return Math.abs(sum) > Math.max(1e-9 * mx, 1e-12 * gross, 1e-18);
+    // (1e-18 A/m² per m² of the larger end's area, as the warning reads it: bare, a host at rest
+    // at 1e-6 m² was left at 1e-13 A/m² and warned of; Neon's review of the polish)
+    const { area } = this.model.grid;
+    return Math.abs(sum) > Math.max(1e-9 * mx, 1e-12 * gross, 1e-18 * Math.max(area[0], area[area.length - 1]));
   }
 
+  // (Kept apart from newton()'s islands decisions on purpose, at the cost of a step's overhead
+  // over a bare iteration: the factorisations are the same one more either way. A polish that
+  // fails leaves no diagnostic behind for a converged solution's reader: those of the failure
+  // aren't STATE, which the step puts back, and are put back here; found by Neon, reviewing it.)
   _polish(r) {
     if (!this._directSteady() || !this._missesKirchhoff()) return;
+    const was = { modelError: this.modelError, newtonError: this.newtonError, conditioning: this.conditioning, islandsOn: this.islandsOn };
     const q = this._steadySteps({ maxSteps: 1 });
     r.iterations += q.iterations;
-    if (q.converged) r.polished = true;
+    if (!q.converged) Object.assign(this, was);
+    else if (this.solvedV) this.solvedV = [this.termV[0], this.termV[1]];
   }
 
   _solveSteadyAll(opts) {

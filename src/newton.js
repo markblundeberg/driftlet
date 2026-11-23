@@ -66,7 +66,7 @@
 //      1e-9 of the cuts' conductance, a drive and not round-off), its cuts chosen at that state and held through the round that
 //      follows (cutAt, cleared at the call's start: see applyIslands). Where that's over
 //      1e-6, or the terminal currents miss Kirchhoff by more than 1e-9 of the largest and
-//      1e-18 A/m², the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
+//      1e-18 A/m² (of the larger end's area, where currents are totals), the islands' summed rows go in (s.islandsOn) and Newton carries on, refining
 //      from the second iteration after; at most two rounds, one where the call began with the
 //      rows in (`islands`). If it then fails, or converges with an island less balanced than
 //      it began (over 1e-6 and ten times its imbalance then), or goes 12 iterations (or to
@@ -737,8 +737,12 @@ function kirchhoff(s) {
     mx = Math.max(mx, Math.abs(I));
   }
   // (currents adding to under 1e-18 A/m², a few charges per m² a second, are round-off: at
-  // equilibrium every terminal's is, 1e-20 to 1e-31, and their sum as large as they are)
-  return mx > 0 && Math.abs(sum) > 1e-18 ? Math.abs(sum) / mx : 0;
+  // equilibrium every terminal's is, 1e-20 to 1e-31, and their sum as large as they are. Per m²
+  // of the larger end's area, as the warning in src/solution.js reads it, where currents are
+  // totals: bare, a host at rest at 1e-6 m² missed by 1e-13 A/m², under it, its round skipped
+  // and the miss warned of; found by Neon, reviewing the steady solve's polish.)
+  const { area } = s.model.grid;
+  return mx > 0 && Math.abs(sum) > 1e-18 * Math.max(area[0], area[area.length - 1]) ? Math.abs(sum) / mx : 0;
 }
 
 // A steady state's stretch that no reaction changes takes in nothing on balance. Where every link

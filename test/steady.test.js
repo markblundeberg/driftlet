@@ -1262,7 +1262,9 @@ test('a steady state whose currents miss Kirchhoff by Newton\'s tolerance takes 
     grid: { hmin: 3.7e-9, hmax: 2.98e-7 },
   };
   let worst = 0;
-  for (const A of [1, 3, 10, 42, 100]) {
+  // (and the small ones, where currents are totals: 1e-6, 1e-10 and 1e-14 m² were left at 1e-13
+  // A/m² under a floor not scaled by the area, and warned of; Neon's review)
+  for (const A of [1e-14, 1e-10, 1e-6, 1e-4, 1, 3, 10, 42, 100]) {
     const d = new Device({ ...def, geometry: { area: { x: [0, 1.745e-6 + 2.77e-5], values: [A, A] } } });
     d.set({ contacts: { right: { V: -3.421 } } });
     const sol = d.solve();
