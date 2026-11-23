@@ -94,15 +94,17 @@ const server = await serve();
 const base = `http://127.0.0.1:${server.address().port}`;
 const profile = await mkdtemp(join(tmpdir(), 'driftlet-smoke-'));
 const { chrome, url } = await launch(profile);
-let failed = 0;
+let failed = 0, passed = 0;
 try {
   const cdp = await connect(url);
   for (const page of pages) {
     const t0 = Date.now();
     const { problems, moves, plots } = await check(cdp, base, page);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
-    if (problems.length === 0) console.log(`ok   ${page} (${plots} plots, ${moves} control moves, ${secs} s)`);
-    else {
+    if (problems.length === 0) {
+      passed++;
+      console.log(`ok   ${page} (${plots} plots, ${moves} control moves, ${secs} s)`);
+    } else {
       failed++;
       console.log(`FAIL ${page} (${secs} s)`);
       for (const p of [...new Set(problems)]) console.log(`       ${p}`);
@@ -115,7 +117,10 @@ try {
   await sleep(200);
   await rm(profile, { recursive: true, force: true });
 }
-if (failed > 0) {
+// (the count beside what it covers, and a shortfall fails: "every page passed" once rested on output
+// piped through tail, which hid 26 pages)
+console.log(`ok ${passed} of ${pages.length} pages`);
+if (failed > 0 || passed !== pages.length) {
   console.log(`${failed} of ${pages.length} pages failed`);
   process.exit(1);
 }
