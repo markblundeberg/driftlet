@@ -482,7 +482,20 @@ const devices = {
   // filled by donors, where X⁻'s row is the charge rows' pivot and X⁰'s takes the total.
   'a trap in a lit Si bar': () => litTrap(false),
   'a trap in a lit, strictly neutral bar, its row the charge rows\' pivot': () => litTrap(true),
+  // Some of the above about a sphere or a cylinder: every flux, storage and boundary term then
+  // carries its face's or box's area, which a planar device (A = 1) can't tell apart from none.
+  // (Every device here was planar; spherical microelectrodes gave the sharpest faults of Neon's
+  // third and fourth reviews. Neon's review of the suite's shape.)
+  'a capacitive contact passing K⁺, about a sphere': () => radial(devices['a capacitive contact passing K⁺'](), 'spherical', 2e-6),
+  'a capacitive contact passing K⁺, about a cylinder': () => radial(devices['a capacitive contact passing K⁺'](), 'cylindrical', 2e-6),
+  'a membrane capacitor passing K⁺, about a sphere': () => radial(devices['a membrane capacitor passing K⁺'](), 'spherical', 2e-6),
+  'a held electrode port, Marcus–Hush–Chidsey, about a sphere': () => radial(devices['a held electrode port, Marcus–Hush–Chidsey'](), 'spherical', 1e-6),
+  'a floating Pt with two couples, about a cylinder': () => radial(devices['a floating Pt with two couples'](), 'cylindrical', 5e-6),
+  'a semiconductor pinned to a solution through a diffuse layer, about a sphere': () => radial(devices['a semiconductor pinned to a solution through a diffuse layer'](), 'spherical', 1e-6),
 };
+function radial(def, type, r0) {
+  return { ...def, geometry: { type, r0 } };
+}
 
 for (const [name, def] of Object.entries(devices)) {
   test(`the Newton system's derivatives are its residual's: ${name}`, () => {
