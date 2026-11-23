@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.23.0 (2026-11-23)
 
 - set() of a held gate's capacitance, window or electrode area over a region with ε > 0 (or a gate
   added there) starts it from the charge it held (a new one's, none), and the first step passes the

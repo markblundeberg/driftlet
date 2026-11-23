@@ -56,7 +56,7 @@ import { bandDiagram } from 'driftlet/plot';    // a level diagram as an SVG str
 ```
 
 Or straight from a CDN in a page, pinned to a version:
-`https://cdn.jsdelivr.net/npm/driftlet@1.22.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
+`https://cdn.jsdelivr.net/npm/driftlet@1.23.0/src/index.js` (and `src/kit.js`, `src/plot.js`).
 TypeScript declarations ship in the package. Whole pages to copy, running, each in one file:
 [a pn junction with a bias slider](https://marklundeberg.com/driftlet/demos/starter.html),
 [an electrode's double layer, with ions that take space](https://marklundeberg.com/driftlet/demos/double-layer-starter.html),
