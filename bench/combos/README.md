@@ -91,7 +91,14 @@ zero, and so do the charges the ledger records each one passing (`termCharge`). 
 sizes (1e-6, 1e-4 and 1e-2 of `slow`) after each producer of a start: a solve, a drive's step, a
 regrid, a port's or a capacitive contact's C doubled. The sums are judged against what flows, with
 a floor of 1e-6 of what the drive's step drives in the same step, and 1e-9 A/m² over the largest
-terminal, the steady solve's round-off from rest. Its first run found a held gate over a region
+terminal. On a first step from a solved state between two bulk baths, a miss can be the signed
+Gauss residual at the start divided by the step size. If the starting Gauss
+residuals are at round-off, the check also accepts the independently measured charge and current
+offsets within the same tolerances. The membrane's two interfacial boxes in case 18 start with
+a summed residual of 2.6e-15 C/m², which reads as 3.0e-8 A/m² in an 86 ns step. Case 20 has
+the same effect in a resolved cell.
+
+The property's first run found a held gate over a region
 with ε > 0 whose C changed: its charge was read off the state at the new C, a jump no terminal
 recorded, and the first step's currents summed to −31 A/m² of 31 (src/carry.js now starts it from
 what it held). Proposed by Neon in its review of the suite's shape.

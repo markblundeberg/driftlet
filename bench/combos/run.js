@@ -38,7 +38,7 @@ import { Device } from '../../src/index.js';
 import { FARADAY } from '../../src/constants.js';
 import { check } from '../../src/kit.js';
 import { equilibrateFaces } from '../../src/start.js';
-import { gaussOff, startCharges } from './charge.js';
+import { bathStartRoundoff, gaussOff, startCharges } from './charge.js';
 import { caseRng, rng, hash } from './rng.js';
 
 const argv = process.argv.slice(2);
@@ -846,7 +846,7 @@ const props = {
     // A/m² at its left alone on the first step, relaxing at the rows' tolerance to 1e-16.)
     const out = [], ref = [0, 0, 0];
     const area = Math.max(1, ...(c.def.ports ?? []).map((p) => p.area ?? 1), ...(c.def.geometry ? [new Device(clone(c.def)).solver.model.grid.area.at(-1)] : []));
-    const look = (d, when, scale = false) => {
+    const look = (d, when, scale = false, steadyStart) => {
       const s = d.solver, names = s.terms.map((t) => t.name);
       for (const [j, f] of [1e-6, 1e-4, 1e-2].entries()) {
         const dt = f * c.plan.slow, q0 = Float64Array.from(s.termCharge);
@@ -862,8 +862,14 @@ const props = {
         const qsum = dq.reduce((a, b) => a + b, 0), moved = dq.reduce((a, b) => a + Math.abs(b), 0);
         if (scale) ref[j] = gross;
         const floor = Math.max(1e-6 * ref[j], 1e-9 * area);
-        if (Math.abs(sum) > 1e-6 * gross + floor) out.push(`${when}, a step of ${dt.toPrecision(2)} s: currents sum to ${sum.toExponential(2)} of ${gross.toExponential(2)} (${names.map((n, k) => `${n} ${I[k].toExponential(2)}`).join(', ')})`);
-        if (Math.abs(qsum) > 1e-6 * moved + floor * dt) out.push(`${when}, a step of ${dt.toPrecision(2)} s: the ledger's charges sum to ${qsum.toExponential(2)} of ${moved.toExponential(2)} C (${names.map((n, k) => `${n} ${dq[k].toExponential(2)}`).join(', ')})`);
+        const iTol = 1e-6 * gross + floor, qTol = 1e-6 * moved + floor * dt;
+        const badI = Math.abs(sum) > iTol, badQ = Math.abs(qsum) > qTol;
+        if ((badI || badQ) && j === 0 && st.substeps === 1 && steadyStart) {
+          const defect = bathStartRoundoff(steadyStart());
+          if (Math.abs(sum - defect / dt) <= iTol && Math.abs(qsum - defect) <= qTol) continue;
+        }
+        if (badI) out.push(`${when}, a step of ${dt.toPrecision(2)} s: currents sum to ${sum.toExponential(2)} of ${gross.toExponential(2)} (${names.map((n, k) => `${n} ${I[k].toExponential(2)}`).join(', ')})`);
+        if (badQ) out.push(`${when}, a step of ${dt.toPrecision(2)} s: the ledger's charges sum to ${qsum.toExponential(2)} of ${moved.toExponential(2)} C (${names.map((n, k) => `${n} ${dq[k].toExponential(2)}`).join(', ')})`);
         if (out.length) return;
       }
     };
@@ -871,14 +877,14 @@ const props = {
       const d = new Device(clone(c.def));
       return converged(d.solve()) ? d : null;
     };
-    const b = solved();
+    const driven = () => solved()?.set(driveAt(c.plan, c.plan.V + c.plan.dV));
+    const b = driven();
     if (!b) return skip('no steady state at the drives');
-    b.set(driveAt(c.plan, c.plan.V + c.plan.dV));
-    look(b, "a drive's step", true);
-    look(solved(), 'solved');
-    const e = solved(), gd = c.def.grid ?? {};
-    e.set({ grid: gd.hmax ? { hmax: gd.hmax / 2 } : { minCells: 2 * (gd.minCells ?? 8) } });
-    look(e, 'regrid');
+    look(b, "a drive's step", true, driven);
+    look(solved(), 'solved', false, solved);
+    const gd = c.def.grid ?? {};
+    const regridded = () => solved()?.set({ grid: gd.hmax ? { hmax: gd.hmax / 2 } : { minCells: 2 * (gd.minCells ?? 8) } });
+    look(regridded(), 'regrid', false, regridded);
     const gate = (c.def.ports ?? []).findLast((p) => p.capacitance);
     if (gate) {
       const f = solved();

@@ -2,6 +2,39 @@
 // (bench/combos/run.js), kept apart so a script can read a device with them too.
 import { FARADAY } from '../../src/constants.js';
 
+// The signed charge a first step from a solved state will read as current through two bulk
+// baths. Summing the charged balances and using Gauss at the end leaves the start's Gauss
+// residual, divided by dt. Ungated charge rows and the bath end boxes already cancel their
+// own start charge. The other boxes still carry their rounded concentrations: 2.6e-15 C/m² at
+// a capacitive face and −2.0e-15 C/m² in a resolved membrane read 3.0e-8 and −1.17e-7 A/m²
+// (membrane combos 18 and 20, kirchhoff; Sol's chase, 23 Nov).
+// Called on a second device so the check reads the same start without touching the step's
+// state. Restrict the reading to bulk baths with only volume storage, where the sum above
+// applies. A real charge defect is a failure: cap both the local error (forming concentrations
+// from levels can lose several bits) and its sum relative to the stored ions' charge.
+export function bathStartRoundoff(d) {
+  if (!d) return 0;
+  const s = d.solver, { model, n, z } = s;
+  if (model.ports.length || model.surfaces.length || s.diffList.length || s.nodeConductor.some((i) => i >= 0)) return 0;
+  if (Object.values(model.contacts).some((ct) => ct.phi.type !== 'bulk' || ct.species.some((link) => link.type !== 'equilibrium'))) return 0;
+  d._settleRegrid();
+  // A drive-only set() keeps the solved state, including its storage, at the previous drive.
+  if (!s.atSteady && !s.readV) return 0;
+  s.assemble(Infinity);
+  let defect = 0, gross = 0;
+  for (let g = 1; g < s.nNodes - 1; g++) {
+    if (s.phiUndefined[g] || s.chargeNode[g]) continue;
+    const v = model.grid.vol[g], G = s.res[s.rix[s.blockOfNode[g] * s.M]];
+    let ions = 0;
+    for (let i = 0; i < n; i++) ions += Math.abs(z[i] * s.c[g * n + i]);
+    const scale = v * FARADAY * ions;
+    if (!(Math.abs(G) <= 128 * Number.EPSILON * scale)) return 0;
+    defect += G;
+    gross += scale;
+  }
+  return Math.abs(defect) <= 16 * Number.EPSILON * gross ? defect : 0;
+}
+
 // --- strictly neutral charge, as a step will start from it
 // Each node of a strictly neutral (ε = 0) region where φ is defined, but at a contact that sets φ:
 // its Gauss row, assembled at the state (steady off, so no law takes a row's place), against the

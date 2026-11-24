@@ -1,6 +1,8 @@
 // Faults the combinations harness (bench/combos) found, each with the case that shows it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Device } from '../src/index.js';
 
 const electrode = () => ({ V: 0, terminal: 'Ag+', species: { 'Ag+': 'equilibrium', 'NO3-': 'blocked' }, phi: 'bulk' });
@@ -101,4 +103,17 @@ test('a fallback cold start the definition refuses under the drives now is a fai
   if (s.converged) return; // (should Newton learn to float it, nothing's left to say: at these digits it doesn't; rounded to 4, it does)
   assert.match(s.warnings.join(' '), /cold start its later stages fall back on can't be laid out under the drives now: regions\[0\] \(r0\): its initial composition carries a net charge/);
   assert.ok(Math.abs(d.solution().ports[0].charge - held.ports[0].charge) < 1e-12, 'left as it was');
+});
+
+const runner = fileURLToPath(new URL('../bench/combos/run.js', import.meta.url));
+
+// CI's eight-case sweep misses these seeds. Their first steps amplify the solved state's
+// rounded Gauss residual into a terminal current and a matching ledger entry.
+test('membrane combos account for signed starting Gauss round-off', () => {
+  for (const k of ['9', '18', '20']) {
+    const { error, status, stderr, stdout } = spawnSync(process.execPath, [runner, 'membrane', '--case', k, '--only', 'kirchhoff'], { encoding: 'utf8' });
+    assert.ifError(error);
+    assert.equal(status, 0, `membrane ${k}\n${stdout}${stderr}`);
+    assert.match(stdout, /membrane: kirchhoff\s+ok\s+1\s+skip\s+0\s+fail\s+0/);
+  }
 });
