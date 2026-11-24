@@ -58,6 +58,7 @@ test('newton: a steady solve whose residual isn\'t solved says so, and records h
   dev.solve();
   assert.ok(r && !r.converged && s.sys.perturbedPivots === 0, JSON.stringify(r));
   assert.match(r.error, /residual is .* of its largest term/);
+  assert.equal(r.retryBelow, undefined, 'a retry at the usual tolerance can take a different path');
   assert.ok(s.conditioning?.digits > 0, JSON.stringify(s.conditioning));
 });
 

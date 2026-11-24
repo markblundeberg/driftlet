@@ -89,8 +89,9 @@
 //
 // _steadySteps({ maxSteps, tol }): up to maxSteps time steps (tau = slowestTime), dt from giant
 //   (∞ where the device can be solved directly; else 1e6·tau): a first step at ∞ that fails is
-//   retried once with maxStep 3. A step that fails sends dt down (to tau·1e-6 from giant, then
-//   ÷4, stopping below min(1e-15·tau, 1e-2·fastestTime)); one that converges sends it back up
+//   retried once with maxStep 3, unless both limits would replay the failed Newton rounds. A step
+//   that fails sends dt down (to tau·1e-6 from giant, then ÷4, stopping below min(1e-15·tau,
+//   1e-2·fastestTime)); one that converges sends it back up
 //   (×2 after a failure, growing by ×1.5 to ×10 a step; past 1e6·tau, giant, or on a direct
 //   device past 1e12·tau); on a direct device,
 //   once dt ≥ tau, a step at ∞ is tried once a decade of dt, the state kept where it fails. Past
@@ -958,6 +959,7 @@ export class SteadySolves {
       // the final state satisfies every equation.
       if (!direct && dt >= giant) this._renormalizeSpectators();
       const snap = unkept && dt >= giant ? this._snapshot() : null;
+      const lostMode = this.lostMode;
       let r = this.step(dt);
       if (snap && r.converged && drifted()) {
         this._restore(snap);
@@ -965,8 +967,10 @@ export class SteadySolves {
       }
       totalIter += r.iterations;
       history.push({ dt, converged: r.converged, iterations: r.iterations, ...(r.drifted ? { drifted: true } : {}) });
-      if (!r.converged && dt === Infinity && steps === 1) {
-        // A large change can overshoot Newton's usual damping: retry with a tighter limit.
+      if (!r.converged && dt === Infinity && steps === 1 && !(r.retryBelow <= 3 && this.lostMode === lostMode)) {
+        // Retry where tighter damping, twenty more iterations, or what Newton learned can
+        // change its path. Replaying a model refusal at the very same levels is expensive
+        // inside nested held solves (the Debye–Hückel fixture past its range, 23 Nov).
         r = this.step(dt, { maxStep: 3, maxIter: 80 });
         totalIter += r.iterations;
         history.push({ dt, converged: r.converged, iterations: r.iterations, maxStep: 3 });

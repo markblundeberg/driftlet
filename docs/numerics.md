@@ -1105,8 +1105,10 @@ retry with smaller updates found the axon's rest, −8.2 mV, each channel's ion 
 A solve that fails falls back stage by stage:
 
 1. **Newton from here.** If it diverges, it's retried once with tighter damping (3 thermal units
-   per iteration), enough for most large jumps, such as a cold start at forward bias. Where no
-   continuation applies, the first stage goes straight on into the pseudo-transient ramp (3).
+   per iteration), enough for most large jumps, such as a cold start at forward bias. The solver
+   skips this retry when the failed Newton rounds show that tighter damping and the extra
+   iterations would repeat the same updates from the same state. Where no continuation applies,
+   the first stage goes straight on into the pseudo-transient ramp (3).
    Where the state is a transient's, it can be a worse start than a cold one (a nanosecond after
    a lit MOS capacitor's gate jumps, its surface is in deep depletion, minority carriers ten
    orders below where they end): if Newton fails from there, the solve goes on as a cold device

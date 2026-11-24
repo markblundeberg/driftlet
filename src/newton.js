@@ -100,6 +100,10 @@
 //      it returns true.
 //   5. Deterministic: the same state, LEARNED fields (src/solver.js) and options give the same
 //      iterates, bit for bit.
+// A failed round using the default Newton limits and tolerance can return retryBelow: from
+// the same start and tolerance, tightening maxStep to at least that value and increasing
+// maxIter repeats its failure (same LEARNED fields). Absent or ∞
+// gives no such assurance. Both the device damping and the plane levels' clips count.
 // Also written: s.islandsOn (as asked, or on by 8), s.islandImbalance, s.islandsFailed and s.islandsWorse (8); s.lostMode, s.accepted (7); s.delta, s.deltaV,
 // s.rowDiv; what an assembly writes, at the returned state where a probe or 6's check ran;
 // s.conditioning (a steady solve's failure: the worst cancellation a factorisation showed, for
@@ -355,7 +359,8 @@ export function maxPotentialStep(s, delta, deltaV = s.deltaV, layers = true) { /
   return mx;
 }
 
-export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands = false } = {}) {
+export function newton(s, dt, opts = {}) {
+  const { maxIter = 60, tol = 1e-10, maxStep = 10, islands = false } = opts;
   const { delta, res } = s;
   const deltaV = s.deltaV ?? (s.deltaV = new Float64Array(s.floating.length));
   const history = [], ownHistory = [];
@@ -510,6 +515,15 @@ export function newton(s, dt, { maxIter = 60, tol = 1e-10, maxStep = 10, islands
       return finish(result);
     }
     if (dt === Infinity) noteConditioning(s);
+    if (dt === Infinity && opts.tol === undefined && opts.maxStep === undefined && opts.maxIter === undefined && r.iterations < maxIter) {
+      // The steady retry uses the default tolerance: a round that stopped early at another
+      // can still converge there (the residual-check tests loosen the first round alone).
+      // own sets the damping. With diffuse layers include their plane levels too: clipped to
+      // the old limit, they still exceed any tighter limit that would change the clip. The
+      // floating voltages in that history can only keep an unnecessary retry.
+      const updates = s.diffList.length ? history : ownHistory;
+      r.retryBelow = updates.reduce((peak, d) => Math.max(peak, d), 0);
+    }
     if (r.error) s.newtonError = r.error; // (its reason, for a failure nothing more specific explains)
     return r;
   };

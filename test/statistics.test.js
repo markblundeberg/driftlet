@@ -488,11 +488,8 @@ test('Debye–Hückel: a composition given in part inverts to its levels up to t
 // Debye–Hückel, driven hard): the states a solve or a transient reaches leave Debye–Hückel's
 // range (it isn't convex there). solve() said "nothing specific showed why", and after a failed
 // transient threw the model's error uncaught; both now fail and say it.
-test('a Debye–Hückel solution driven past its range: solve() and advance() fail and say why, without throwing', () => {
+test('a Debye–Hückel transient driven past its range fails and says why, without throwing', () => {
   const def = JSON.parse(readFileSync(new URL('./fixtures/debye-huckel-past-range.json', import.meta.url), 'utf8'));
-  const s = new Device(def).solve();
-  assert.equal(s.converged, false);
-  assert.ok(s.warnings.some((w) => /refused by a statistics model: debye-huckel/.test(w)), s.warnings.join('\n'));
   const d = new Device(def), a = d.advance(1e5, { tol: 1e-5 });
   assert.equal(a.converged, false);
   assert.ok(a.warnings.some((w) => /refused by a statistics model: debye-huckel/.test(w)), a.warnings.join('\n'));

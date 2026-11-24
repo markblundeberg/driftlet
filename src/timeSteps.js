@@ -44,7 +44,8 @@
 //   length dt/a0, which is BDF2's storage term. Sources are read at tEnd from within the step
 //   (s.sourceTime, s.sourceBefore). If Newton fails: once more with the islands' rows in
 //   throughout (a steady solve's dt = ∞ only), and once more with every circuit law read by its
-//   change (see src/lawRows.js), each from the step's start. Accepted: the history gains the
+//   change (see src/lawRows.js), each from the step's start. A failed steady retry's retryBelow
+//   covers both Newton rounds (see src/newton.js). Accepted: the history gains the
 //   step, s.time = tEnd, s.lastDt the effective dt, the boundary intake accumulates, and outside
 //   a steady solve each terminal's charge steps by its current as a stored charge does, P = P* +
 //   I·dt/a0 (P* from P as c* from c; backward Euler P_n + I·dt; compensated, its rounding in
@@ -268,7 +269,8 @@ export function step(s, dt, opts = {}) {
       s.termV.set(s.termVPrev);
       if (opts.guess) setGuess(s, opts.guess);
       const again = s.newton(dtEff, { ...opts, islands: true });
-      result = { ...again, iterations: result.iterations + again.iterations };
+      const retryBelow = Math.max(result.retryBelow ?? Infinity, again.retryBelow ?? Infinity);
+      result = { ...again, iterations: result.iterations + again.iterations, retryBelow };
     }
     const changeable = (cs) => Number.isFinite(cs.lambda) && cs.lambda !== 0; // (one that counts a current: λ set)
     if (!result.converged && Number.isFinite(dtEff) && [...s.lawForm].some(([cs, v]) => !v && changeable(cs))) {

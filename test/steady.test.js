@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js';
 import { build, layer, ohmic, bath, half, aqueous, metal, semiconductor, photogeneration, check } from '../src/kit.js';
@@ -1273,4 +1274,20 @@ test('a steady state whose currents miss Kirchhoff by Newton\'s tolerance takes 
     worst = Math.max(worst, Math.abs(sol.terminals.left.current) / A, Math.abs(sol.terminals.right.current) / A);
   }
   assert.ok(worst < 1e-15, `${worst} A/m² at rest`);
+});
+
+test('a Debye–Hückel refusal keeps the held solves within their Newton retry budget', () => {
+  const def = JSON.parse(readFileSync(new URL('./fixtures/debye-huckel-past-range.json', import.meta.url), 'utf8'));
+  const dev = new Device(def), s = dev.solver, step = s.step.bind(s);
+  let steps = 0, retries = 0;
+  s.step = (dt, opts) => {
+    steps++;
+    if (opts?.maxStep === 3) retries++;
+    return step(dt, opts);
+  };
+  const sol = dev.solve();
+  assert.equal(sol.converged, false);
+  assert.ok(sol.warnings.some((w) => /refused by a statistics model: debye-huckel: .*not convex/.test(w)), sol.warnings.join('\n'));
+  assert.ok(retries <= 500, `${retries} tightly damped retries`);
+  assert.ok(steps <= 9000, `${steps} step calls during the solve`);
 });
