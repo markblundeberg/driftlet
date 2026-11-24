@@ -131,6 +131,15 @@ for live demos.
      ledger alike: 3.0e-8 A/m² in an 86 ns step (the membrane combos' case 18), and 1e-3 A/m² it
      would be at 1 ps. bench/combos' kirchhoff allows exactly that offset (bathStartRoundoff in
      bench/combos/charge.js; Sol's chase, 23 Nov). Removing it would mean a start exact in Gauss.
+   - A solve past a statistics model's range takes as long to refuse as its fallback ladder takes
+     to search: the Debye–Hückel fixture past its range (test/fixtures) spends 35 s, and 159 of its
+     222 held solves converge, so the time is real search, not wasted retries. Two orders of the
+     same nested search run (an R-backed contact outside a floating one, then inside it); the
+     second has rescued nothing in the suite, combos --n 40 or stress, but nothing there needs it
+     either, so it isn't proved idle. A wall detector on the ramp's failures was ruled out: a
+     passable basin 1 µV wide gave 18 failures before the ramp reached its target (Astra's chase,
+     23 Nov; Neon's analysis before it). What would help: a solvable fixture that needs the second
+     order, then sharing what the first order learned with it.
 
    Neon's third review (21 Nov 2026) audited every sum of this charge (13 places) and designed the
    owner; its plan replaces the one above where they differ:

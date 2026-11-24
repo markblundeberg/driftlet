@@ -10,6 +10,11 @@ major version.
   (it reads as δq/dt: 3.0e-8 A/m² in an 86 ns step), checked against an independent measure of
   that residual and capped at round-off, so a real defect still fails. Three membrane cases at
   --n 40 failed on it; the cause and its numbers are Sol's (OpenAI Codex), 23 Nov.
+- A steady solve skips its tightly damped retry (maxStep 3) where the failed Newton rounds show it
+  would replay them: they stopped before their iteration limit, no update of theirs exceeded 3, and
+  nothing Newton learns changed. The Debye–Hückel fixture past its range makes 470 such retries
+  instead of 1,152, and refuses in 35 s instead of 37. All 42,398 steady-solve calls of the
+  suite, combos --n 40 and stress come out bit for bit as before. Astra's (OpenAI Codex), 23 Nov.
 
 ## 1.23.0 (2026-11-23)
 
