@@ -3,6 +3,14 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- bench/combos' `kirchhoff` allows, on a first step from a solved state between bulk baths, the
+  offset that the start's Gauss residual at round-off makes in both the currents and the ledger
+  (it reads as δq/dt: 3.0e-8 A/m² in an 86 ns step), checked against an independent measure of
+  that residual and capped at round-off, so a real defect still fails. Three membrane cases at
+  --n 40 failed on it; the cause and its numbers are Sol's (OpenAI Codex), 23 Nov.
+
 ## 1.23.0 (2026-11-23)
 
 - set() of a held gate's capacitance, window or electrode area over a region with ε > 0 (or a gate

@@ -126,6 +126,11 @@ for live demos.
    - A start far off neutral can't be carried in one step after a solve: it needs a current of
      δq/dt, which shortening only raises. (Below: Neon finds no physical path that needs it but a
      step in fixed charge.)
+   - So does a start at round-off, in proportion: the first step after a solve reads the start's
+     Gauss residual, ~1 to 10 ε of the stored ionic charge, as δq/dt through the terminals and the
+     ledger alike: 3.0e-8 A/m² in an 86 ns step (the membrane combos' case 18), and 1e-3 A/m² it
+     would be at 1 ps. bench/combos' kirchhoff allows exactly that offset (bathStartRoundoff in
+     bench/combos/charge.js; Sol's chase, 23 Nov). Removing it would mean a start exact in Gauss.
 
    Neon's third review (21 Nov 2026) audited every sum of this charge (13 places) and designed the
    owner; its plan replaces the one above where they differ:
