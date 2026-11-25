@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Device, FARADAY } from '../src/index.js';
 import { build, layer, bath, aqueous, check, metal, ohmic } from '../src/kit.js';
 import { choice, device } from '../tools/lawsweep-devices.js';
+import { solveBordered } from '../src/lawRows.js';
 
 // What a steady solve keeps, at the edges of the law finder: devices from Gemini 4 Argon's review
 // (round 2 of its breadth-first pass), each a combination the steady system once dropped or
@@ -433,4 +434,19 @@ test('a chain through two surface species, every step all but stuck: solved dire
   near(s.interfaces[0].coverage.S1, fast.interfaces[0].coverage.S1, 1e-6, 'θ_S1');
   near(s.interfaces[0].coverage.S2, fast.interfaces[0].coverage.S2, 1e-6, 'θ_S2');
   near(s.c.Red.find(Number.isFinite), fast.c.Red.find(Number.isFinite), 1e-6, 'Red');
+});
+
+test('a bordered solve after a thrown pin solve uses only its own unit column', () => {
+  // T is the identity. Replacing its second row by x₁ = 3 must give (0, 3), even after
+  // a solve of the first pin threw (the echem combos' case 36, rollback; Astra, 25 Nov).
+  const s = { sys: { size: 2 }, rix: [0, 1], floating: [], _solveLinear(rhs, out) {
+    if (rhs[0] === 1) throw new Error('pin solve');
+    out.set(rhs);
+  } };
+  const rhs = new Float64Array(3), x = rhs.slice();
+  const solve = (row) => solveBordered(s, rhs, x, [], [{ row, len: 1, w: [1], idx: [row], res: 3 }]);
+  assert.throws(() => solve(0), /pin solve/);
+  s._solveLinear = (rhs, out) => out.set(rhs);
+  solve(1);
+  assert.deepEqual(Array.from(x), [0, 3, 0]);
 });

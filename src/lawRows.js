@@ -127,7 +127,8 @@
 //      what a circuit law reads.
 //   4. solveBordered solves the full system: the block rows, each pin's law, and each floating
 //      terminal's circuit row, with δV, by the Woodbury identity written at it, exact given the
-//      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs.
+//      block solves (T⁻¹ applied by the factorised s.sys): its accuracy is theirs. A block solve
+//      that throws leaves the next pin with just its own unit entries.
 //   5. Nothing here writes the laws' structure (their parts, rows, nodes): only the workspace
 //      fields src/laws.js leaves to the solver (idx, w, len, res, dV, reference; an island's
 //      deep and cutAt, the segment each cut took or −1, absorbed, fluxScale, Σ|flux| over its
@@ -785,8 +786,13 @@ export function solveBordered(s, rhs, delta, deltaV, pins) {
       // The response to a unit pin, or where the pin moves a flat stretch, to its shift.
       const col = pins[a].col ?? [pins[a].row];
       for (const o of col) e[s.rix[o]] = 1;
-      s._solveLinear(e, cols[a]);
-      for (const o of col) e[s.rix[o]] = 0;
+      try {
+        s._solveLinear(e, cols[a]);
+      } finally {
+        // A failed column otherwise adds its unit pin to the next call's right-hand side
+        // (the echem combos' case 36, rollback; Astra, 25 Nov).
+        for (const o of col) e[s.rix[o]] = 0;
+      }
     } else s._solveLinear(s.termB[fl[a - P]], cols[a]);
   }
   // Row a of the small system, as a dot product with a compact vector (sparse for pins).
