@@ -80,6 +80,8 @@ export const CARRY = {
 // different, better path than a twin that never made the undone call (src/newton.js, point 7).
 // And what the time stepper has tried of a first step, firstErrs (src/timeSteps.js: a first step
 // cut across calls stalls as in one; a rejected try is undone, its error kept, which is the point).
+// A budget-spent steady solve puts these back as well (src/index.js), so the retry takes the same
+// path it would have taken before the interrupted attempt.
 export const LEARNED = ['lostMode', 'accepted', 'firstErrs'];
 // (Each value its own copy: typed arrays and the history array copied, the rest replaced whole.
 // Restored in place, the arrays the solver never replaces, which assembly reads by reference; the

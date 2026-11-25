@@ -171,6 +171,8 @@ stretches conserve, whether its floating pieces balance). `_snapshot()` and `_re
 rejected step and the live wrapper's rollback alike; every other field is structure, built with the
 solver, scratch, written before it's read within a call, or `LEARNED`: what Newton learns about the
 device (that it loses a mode in a time step), kept across calls and through a rollback on purpose.
+`Device.solve({ budgetMs })` also restores `LEARNED` when the budget ends a solve, so a retry
+starts with the same Newton choices. The budget itself lives in that call's options.
 `test/state.test.js` holds every field a run writes to one of the four, and holds a failed or
 refused call, a read and a rollback to leave a device doing exactly what a twin that never made the
 call does, but for what it learned: a twin that learned it too. A new field that lives between calls

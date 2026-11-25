@@ -1,7 +1,7 @@
 // driftlet: 1D drift–diffusion–reaction solver.
 
 import { normalizeDevice, DeviceError } from './device.js';
-import { Solver, SolverError } from './solver.js';
+import { LEARNED, Solver, SolverError } from './solver.js';
 import { makeSolution } from './solution.js';
 import { deepEqual, markWhole, merge, ownCopy, WHOLE } from './merge.js';
 import { carryState, carryTermCharges } from './carry.js';
@@ -358,25 +358,36 @@ export class Device {
 
   /**
    * Steady state (or equilibrium), warm-started from the current state. Doesn't advance time.
-   * @param {{ maxSteps?: number, tol?: number, continuation?: boolean }} [opts]
+   * @param {{ maxSteps?: number, tol?: number, continuation?: boolean, budgetMs?: number }} [opts]
    * @returns {Solution}
    */
   solve(opts) {
-    options(opts, 'solve', ['maxSteps', 'tol', 'continuation']);
+    options(opts, 'solve', ['maxSteps', 'tol', 'continuation', 'budgetMs']);
     // (as advance() checks its own: tol NaN with maxSteps Infinity stepped without end, a NaN
     // motion never under tol; Astra's fourth pass)
-    const { tol, maxSteps } = opts ?? {};
+    const { tol, maxSteps, budgetMs = Infinity } = opts ?? {};
     if (tol !== undefined && !(tol > 0 && tol < Infinity)) throw new SolverError(`solve(): tol is the largest potential change, in thermal units, that ends a ramp of giant steps, a positive number; got ${tol}`);
     if (maxSteps !== undefined && !(Number.isInteger(maxSteps) && maxSteps >= 1)) throw new SolverError(`solve(): maxSteps is the time steps per pseudo-transient ramp, a whole number ≥ 1; got ${maxSteps}`);
+    if (typeof budgetMs !== 'number' || !(budgetMs >= 0)) throw new SolverError(`solve(): budgetMs is a non-negative number of milliseconds or Infinity; got ${String(budgetMs)}`);
     // A solve that fails reports the state it failed in, and leaves the device as it was: a
     // device with no steady state (a host filling at a current) can still advance() from there.
     // (And one that throws, as _touching does for the transients: a custom statistics that threw
     // mid-solve left the state moved and the clock at 44000 s, and solution() threw after it;
     // Astra's fourth pass.)
     const snap = this.solver._snapshot();
+    // An interrupted solve must be transparent to its retry. Newton counts probes in LEARNED,
+    // and temporary held drives replace firstErrs, even if no stage reached the target.
+    const learned = budgetMs < Infinity ? Object.fromEntries(LEARNED.map((k) => [k, this.solver[k]])) : undefined;
     let result, sol;
     try {
       result = this.solver.solveSteady(opts);
+      if (result.budgetSpent) {
+        Object.assign(this.solver, learned);
+        this.solver._restore(snap);
+        // Temporary held drives may have left a trial state that can't be read under the
+        // original drives. Return the restored state with the budget failure.
+        return this._marked(makeSolution(this.solver, { ...result, unsolved: true }), 0);
+      }
       if (result.converged) this.solver.readV = undefined; // (solved at its drives, and read so: see _redefineDrives)
       // (a failed solve's state isn't a solution: its accuracy warnings are left out)
       sol = makeSolution(this.solver, result.converged ? result : { ...result, unsolved: true });

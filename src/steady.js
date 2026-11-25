@@ -28,9 +28,11 @@
 //   this.computeConcentrations(), maxPotentialStep (src/newton.js).
 //
 // solveSteady(opts) → { converged, steps, iterations, history, residual?, ramped? }
+//   (On budget exhaustion: { converged: false, budgetSpent: true, iterations, stopped }.)
 //   opts: maxSteps (80: time steps per pseudo-transient ramp), tol (1e-11: the largest potential
 //   change, in thermal units, that ends a ramp of giant steps), continuation (false: Newton from
-//   here and the pseudo-transient ramp only). Starts the call's diagnostics fresh
+//   here and the pseudo-transient ramp only), budgetMs (Infinity: wall-time budget, see 6).
+//   Starts the call's diagnostics fresh
 //   (this._freshDiagnostics(): this.violent, violentStart where nothing has been stepped or
 //   solved; this.unreached, charging, drifted, settling, modelError, layoutRefused and conditioning cleared),
 //   finds the laws again where how a terminal is driven, read at this.time, has changed since
@@ -182,15 +184,21 @@
 //      (the capacitors' charges with the levels; the concentrations recomputed); only stage 1's
 //      cold start, on a stepped state, moves the start (its u and uLo), and stage 3 may begin
 //      from the generation ramp's solution.
-//   4. Deterministic: the same state and options give the same result, bit for bit. The state
-//      here is more than u, uLo, termV and time: this.solvedV, this.stepped, whether the history
-//      is empty (this.violent) and the drives, all of which choose the stages.
+//   4. Deterministic: with no wall-time budget, the same state and options give the same result,
+//      bit for bit, without reading the wall clock. The state here is more than u, uLo, termV and
+//      time: this.solvedV, this.stepped, whether the history is empty (this.violent) and the
+//      drives, all of which choose the stages.
 //   5. Reach: time steps reach a mode as slow as ~1e12·tau (1e6·tau a step, past the giant; on a
 //      direct device by finite steps to 1e12·tau). A reaction that alone settles a
 //      closed combination, slower than that, isn't waited out: the solve fails or converges where
 //      it began, and stuckReactions names it (Solution's warnings, both ways).
-// Tests: every Device.solve goes through here; test/steady.test.js (the stages, the laws, the
-// continuations), test/generation.test.js, test/round7-solve.test.js (behind R, cold) and
+//   6. A finite budgetMs allows at least one full Newton round, then can stop the next round,
+//      step or continuation. The stop unwinds the stages' cleanup and returns unconverged with
+//      budgetSpent, a stopped message and the iterations completed. Device.solve restores
+//      STATE and LEARNED before it reads the returned snapshot.
+// Tests: every Device.solve goes through here; test/steady-budget.test.js (deadline and rollback),
+// test/steady.test.js (the stages, the laws, the continuations), test/generation.test.js,
+// test/round7-solve.test.js (behind R, cold) and
 // test/round8-deep.test.js (a stage's rollback, the march's claims, absurd spans); the
 // devices that needed each stage are named in its comments.
 
@@ -201,6 +209,32 @@ import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './law
 import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
 import { maxPotentialStep } from './newton.js';
 import { FARADAY } from './constants.js';
+
+const BUDGET_SPENT = Symbol('steady budget spent');
+const now = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
+
+// One clock for the whole solve, shared by its held solves and Newton retries. An exception
+// unwinds the continuations' finally blocks without treating the interruption as a failed trial
+// voltage or a failed Newton round that should be retried.
+function steadyBudget(ms) {
+  const start = now();
+  let attempted = false, elapsed, iterations = 0;
+  return {
+    check() {
+      if (attempted && (elapsed = now() - start) >= ms) throw BUDGET_SPENT;
+    },
+    record(result) {
+      attempted = true;
+      iterations += result.iterations;
+    },
+    result() {
+      return {
+        converged: false, budgetSpent: true, iterations,
+        stopped: `solve(): budget spent after ${Number(elapsed.toPrecision(3))} ms (budgetMs: ${ms}). The solve may converge given more time.`,
+      };
+    },
+  };
+}
 
 export class SteadySolves {
   // Slowest diffusion time across the device, used to size "giant" steps.
@@ -270,6 +304,7 @@ export class SteadySolves {
   // Steady state from the present one; `atSteady` says whether the state is one (until a step or
   // a change of drive).
   solveSteady(opts = {}) {
+    const budget = Number.isFinite(opts?.budgetMs) ? steadyBudget(opts.budgetMs) : undefined;
     this._freshDiagnostics(); // (violent, unreached, charging, drifted, settling, modelError, conditioning: see src/solver.js)
     this._lawsNow(); // (a waveform's current, zero or not at this time: see noCurrent in src/laws.js)
     captureLaws(this);
@@ -285,9 +320,13 @@ export class SteadySolves {
     this.carried = this.solvedV != null;
     const was = [this.solvedV, this.stepped];
     try {
-      const r = this._solveSteadyAll(opts);
+      const r = this._solveSteadyAll(budget ? { ...opts, budget } : opts);
       if (!r.converged) [this.solvedV, this.stepped] = was;
       return r;
+    } catch (e) {
+      if (e !== BUDGET_SPENT) throw e;
+      [this.solvedV, this.stepped] = was;
+      return budget.result();
     } finally {
       this.steady = false;
       this.solveAmounts = null;
@@ -333,10 +372,10 @@ export class SteadySolves {
   // over a bare iteration: the factorisations are the same one more either way. A polish that
   // fails leaves no diagnostic behind for a converged solution's reader: those of the failure
   // aren't STATE, which the step puts back, and are put back here; found by Neon, reviewing it.)
-  _polish(r) {
+  _polish(r, budget) {
     if (!this._directSteady() || !this._missesKirchhoff()) return;
     const was = { modelError: this.modelError, newtonError: this.newtonError, conditioning: this.conditioning, islandsOn: this.islandsOn };
-    const q = this._steadySteps({ maxSteps: 1 });
+    const q = this._steadySteps({ maxSteps: 1, budget });
     r.iterations += q.iterations;
     if (!q.converged) Object.assign(this, was);
     else if (this.solvedV) this.solvedV = [this.termV[0], this.termV[1]];
@@ -395,7 +434,7 @@ export class SteadySolves {
       return { converged: false, steps: 0, iterations: 0, history: [] };
     }
     const r = this._steadyFromHere(opts);
-    if (r.converged) this._polish(r); // (before atSteady: a step clears it)
+    if (r.converged) this._polish(r, opts.budget); // (before atSteady: a step clears it)
     this.atSteady = r.converged;
     return r;
   }
@@ -406,7 +445,8 @@ export class SteadySolves {
   // region's c0, which the held gate's charge balanced, carrying a net charge a strictly neutral
   // region refuses, and that refusal of a c0 the call never touched escaped solve() as its
   // answer (the bench/combos neutral family, case 36).
-  _layOut() {
+  _layOut(budget) {
+    budget?.check();
     const snap = this._snapshot();
     this._refreshSources();
     try {
@@ -425,6 +465,7 @@ export class SteadySolves {
   // that pass it, the voltages ramped from where they were last solved); failing that, the
   // pseudo-transient ramp, through time.
   _steadyFromHere(opts) {
+    opts.budget?.check();
     this.conditioning = null;
     this.computeConcentrations();
     captureLocal(this); // immobile combinations keep, node by node, what they held as the solve began
@@ -442,6 +483,7 @@ export class SteadySolves {
     const direct = this._directSteady();
     const start0 = this._levels();
     const restart = () => {
+      opts.budget?.check();
       this._putLevels(start0);
     };
     const solved = (q) => {
@@ -469,7 +511,7 @@ export class SteadySolves {
     // failed warm (n_i moved 20 orders), and converges from the layout (Fable round 3's hunter).
     // (Unless c0 can't be laid out under the drives now: the stages below go on from the state;
     // see _layOut.)
-    if ((this.stepped || this.carried) && direct && allowed && this._layOut()) {
+    if ((this.stepped || this.carried) && direct && allowed && this._layOut(opts.budget)) {
       // (A transient's state is replaced by the layout for the stages below; a carried solved
       // state stays their start, which a continuation from its solved voltages wants: replaced,
       // GaAs taken warm through T at 0.3 V failed 17 of 56 jumps against 1.9.0's 4; Fable round
@@ -608,6 +650,7 @@ export class SteadySolves {
     let steps = r.steps ?? 0, iterations = r.iterations ?? 0;
     const history = (r.history ?? []).slice();
     const hold = (V) => {
+      opts.budget?.check();
       this.terms[k].drive = { kind: 'V', src: { value: V }, R: 0 };
       this.redrive();
       const q = this._steadyFromHere(opts);
@@ -790,7 +833,7 @@ export class SteadySolves {
       // out at the held drive, the held solve goes on from the state, as the stages do (_layOut:
       // a hole contact pinned at 20 V above its band, behind 1e6 Ω·m², threw its refusal out of
       // solve(); Neon's third review, 1.6).
-      if (this.coldStart && !this.stepped) this._layOut();
+      if (this.coldStart && !this.stepped) this._layOut(opts.budget);
       const q = this._steadyFromHere(opts);
       steps += q.steps ?? 0;
       iterations += q.iterations ?? 0;
@@ -869,7 +912,7 @@ export class SteadySolves {
           // nothing more to add for it below; Neon's third review, 1.6.)
           steps += q.steps;
           iterations += q.iterations;
-          q = this._layOut() ? this._steadySteps(opts) : { ...q, steps: 0, iterations: 0 };
+          q = this._layOut(opts.budget) ? this._steadySteps(opts) : { ...q, steps: 0, iterations: 0 };
         }
         // (lit, the level start may need the light ramped up too)
         if (!q.converged && this.hasGeneration) q = this._generationContinuation(opts, q);
@@ -910,6 +953,7 @@ export class SteadySolves {
   // statistics inside a step left the clock at 44000 s, and the next advance() did nothing;
   // Astra's fourth pass.)
   _steadySteps(opts) {
+    opts?.budget?.check();
     const time = this.time;
     try {
       return this._stepsToSteady(opts);
@@ -921,7 +965,8 @@ export class SteadySolves {
     }
   }
 
-  _stepsToSteady({ maxSteps = 80, tol = 1e-11 } = {}) {
+  _stepsToSteady({ maxSteps = 80, tol = 1e-11, budget } = {}) {
+    const step = (dt, opts) => this.step(dt, budget ? { ...opts, budget } : opts);
     const time = this.time;
     const tau = this.slowestTime();
     const direct = this._directSteady();
@@ -960,7 +1005,7 @@ export class SteadySolves {
       if (!direct && dt >= giant) this._renormalizeSpectators();
       const snap = unkept && dt >= giant ? this._snapshot() : null;
       const lostMode = this.lostMode;
-      let r = this.step(dt);
+      let r = step(dt);
       if (snap && r.converged && drifted()) {
         this._restore(snap);
         r = { ...r, converged: false, drifted: true };
@@ -971,7 +1016,7 @@ export class SteadySolves {
         // Retry where tighter damping, twenty more iterations, or what Newton learned can
         // change its path. Replaying a model refusal at the very same levels is expensive
         // inside nested held solves (the Debye–Hückel fixture past its range, 23 Nov).
-        r = this.step(dt, { maxStep: 3, maxIter: 80 });
+        r = step(dt, { maxStep: 3, maxIter: 80 });
         totalIter += r.iterations;
         history.push({ dt, converged: r.converged, iterations: r.iterations, maxStep: 3 });
       }
@@ -993,7 +1038,7 @@ export class SteadySolves {
       if (direct && dt < giant && dt >= tau && dt >= 10 * triedDirect) {
         triedDirect = dt;
         const snap = this._snapshot();
-        const d = this.step(Infinity);
+        const d = step(Infinity);
         totalIter += d.iterations;
         history.push({ dt: Infinity, converged: d.converged, iterations: d.iterations });
         if (d.converged) {
@@ -1012,7 +1057,7 @@ export class SteadySolves {
         if (dt > giant) {
           // Finish at the base giant step, where the storage term pins amounts tightly.
           this._renormalizeSpectators();
-          const f = this.step(giant);
+          const f = step(giant);
           totalIter += f.iterations;
           converged = f.converged && !(unkept && drifted());
         }

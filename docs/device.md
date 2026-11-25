@@ -1359,16 +1359,25 @@ console.log(`${run.steps} steps; I(0.01 s) ≈ ${run.trace.current[run.trace.t.f
 ### solve(opts)
 
 The steady state (or equilibrium), from the present state, without advancing time. A solve that
-fails reports the state it failed in, then leaves the device as it was before it.
+fails reports the state it failed in, then leaves the device as it was before it. A solve that
+spends its wall-time budget reports the restored state from before the attempt.
 
 | option | default | what it does |
 |---|---|---|
 | `maxSteps` | 80 | time steps per pseudo-transient ramp, where the steady equations can't be solved directly (a whole number ≥ 1) |
 | `tol` | 1e-11 | the largest potential change, in thermal units, that ends a ramp of giant steps (a positive number) |
 | `continuation` | `true` | `false`: Newton from here and the pseudo-transient ramp only, no ramp of the contacts' voltages |
+| `budgetMs` | `Infinity` | wall-time budget for the steady solve, in milliseconds (a non-negative number) |
 
 Notes:
 
+- **Budget spent.** Even at `budgetMs: 0`, if the solve needs Newton, it runs at least one full
+  call to the Newton solver. It checks the clock before further rounds, ramp steps and
+  continuation stages, so a round and the final readout can take the call over the budget.
+  If the budget stops further work, the result has
+  `converged: false`, `budgetSpent: true` and a warning with the elapsed time. The device rolls
+  back to its starting state and a later `solve()` starts again from there. A solve that finishes
+  before needing another check returns its usual result.
 - **What it keeps.** If every species is fed by a contact, it solves the steady equations
   directly. Otherwise conserved amounts are kept exactly: blocked species, reactive moieties,
   and whatever a terminal driven at no current is the only way into (a closed battery at open
@@ -1676,6 +1685,7 @@ Notes:
 | `conservation` | per species stretch: amount, reference, intake through its contacts and ports (integrated over time as the steps integrate the balances: under BDF2, by its own quadrature), and drift, relative: (amount − reference − intake) over the largest of them |
 | `warnings` | e.g. unresolved double layers, conventions a statistics model relies on, a material's data for another temperature, and for a failed solve, why (a driven current it can't pass, where the system is nearly singular). A failed steady solve's state isn't a solution, so the warnings about a solution's accuracy (the grid, double layers, space charge reaching a contact) are left out of it |
 | `converged`, `iterations`, `steps`, `substeps`, `history`, `time`, `T` | solver bookkeeping, and the temperature |
+| `budgetSpent` | `true` when `solve()` was interrupted by its wall-time budget, absent otherwise |
 | `steady` | whether this is a converged steady state (from `solve()`), not a transient's: what `check()` in the kit decides its checks by |
 | `done`, `rejected`, `trace` | from `advance()`: whether `tEnd` was reached; rejected steps; `{ t, current, voltage }` per accepted step, and `probes` if asked |
 

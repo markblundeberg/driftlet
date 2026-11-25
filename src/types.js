@@ -330,6 +330,7 @@
  *   amount: number, reference: number, intake: number, drift: number }[]} conservation
  * @property {string[]} warnings
  * @property {boolean} converged
+ * @property {true} [budgetSpent] solve(): the wall-time budget ended the attempt before it finished
  * @property {number} iterations Newton iterations
  * @property {number} [steps] solve(): the steps it took to the steady state; advance(): accepted steps
  * @property {number} [substeps] step(): how many pieces the interval was split into

@@ -64,7 +64,7 @@ export function makeSolution(solver, result = {}) {
   // left out there; the two about the state itself (degenerate carriers, a species denser than
   // any material) stay, as possible causes, and say they're of that state. (A failed time step
   // restores the last good state, which is a solution: its warnings all stand.)
-  const solved = !result.unsolved, stopped = solved ? '' : ' (in the state the unconverged solve stopped in)';
+  const solved = !result.unsolved, stopped = solved || result.budgetSpent ? '' : ' (in the state the unconverged solve stopped in)';
   if (solved) resolutionWarnings(sol, solver);
   stateWarnings(sol, solver, stopped);
   if (solved) contactCutoffWarnings(sol, solver);
@@ -99,13 +99,14 @@ function solutionFields(solver, result) {
     T: model.T,
     geometry: model.geometry.type, // (planar, or amounts per device rather than per area)
     time: solver.time,
-    steady: solver.atSteady,
+    steady: !result.budgetSpent && solver.atSteady,
     converged: result.converged ?? true,
     iterations: result.iterations ?? 0,
     steps: result.steps,
     substeps: result.substeps,
     history: result.history,
   };
+  if (result.budgetSpent) sol.budgetSpent = true;
   if (result.done !== undefined) {
     sol.done = result.done;
     sol.rejected = result.rejected;
@@ -436,6 +437,7 @@ function terminalSumWarnings(sol, solver, result, heldGap) {
 
 // What a failed solve says of why it failed: the first cause found, each one's remedy.
 function failureWarnings(sol, solver, result) {
+  if (result.budgetSpent) return; // (already named in stopped; an interrupted stage says nothing of why the full solve would fail)
   const { model } = solver;
   const cond = solver.conditioning, un = solver.unreached, ch = solver.charging, lost = result.unsolved ? solver.drifted : null; // (a failed steady solve's: see Device.solve)
   // (what failed: a steady solve, or a time step; a failed step() was said to be "the solve")

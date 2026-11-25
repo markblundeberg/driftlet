@@ -680,6 +680,10 @@ at e^−n of its peak, give tol < e^−n·ΔV/(80 V_T) (1.6e-5 for 5 mV to 5 RC)
   gate charging) has no steady state: `advance()` it from its `c0`, don't `solve()` it
   (docs/statistics.md). At no current (`I: 0`), `solve()` keeps the charge it holds: a closed
   battery sits at the OCV of its state of charge, a floating gate keeps its charge.
+- **Steady solve.** `dev.solve({ budgetMs })` finds the steady state without advancing time. The
+  wall-time budget defaults to `Infinity` and allows at least one Newton round, even at zero.
+  An interrupted solve returns `converged: false`, `budgetSpent: true`, a warning with the elapsed
+  time, and the restored starting state.
 - **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,
   { terminal })` the small-signal Z(f) about the steady state, in Ω·m²: `{ f, Z: { re, im } }`,
   each an array over the frequencies (`Z.re[k]`, not `Z[k].re`).

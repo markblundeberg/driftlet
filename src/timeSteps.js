@@ -54,6 +54,10 @@
 //   all as before the step, by s._restore() of a snapshot taken on entry (the whole of STATE,
 //   and the concentrations from it), as every other rollback. A step that can't move the clock
 //   (s.time + dt === s.time, outside a steady solve) fails untouched.
+//   The steady solve can pass a budget: check it before the step and before every retry, and
+//   record each completed Newton round. An expired budget throws through to the steady solve's
+//   stage cleanup and Device.solve's rollback. Assembly and Newton run each round to completion.
+//   test/steady-budget.test.js checks both the first round and the cutoff before further work.
 //
 // advance(s, dt, opts, depth) → { converged, iterations, history, substeps }
 //   step(dt); failing, two halves (each by advance), to a depth of 30.
@@ -171,6 +175,8 @@ export function advance(s, dt, opts, depth = 0) {
  * the start-of-step values, and dt/a0 replaces dt.
  */
 export function step(s, dt, opts = {}) {
+  const { budget } = opts;
+  budget?.check();
   // A step that can't move the clock isn't taken: it fails, as before it, untouched. (A first
   // step of 1e-18 s at t = 1 s posted its charge with the clock unmoved, and a step of one ulp
   // halved on a failure posted one too; Sol's re-read of the time integrator, round 7.)
@@ -260,15 +266,18 @@ export function step(s, dt, opts = {}) {
   let result;
   try {
     result = s.newton(dtEff, opts);
+    budget?.record(result);
     if (!result.converged && dtEff === Infinity && s.steady && s.islands.length > 0) {
       // Plain solves that don't converge may be lost along an island's level (two regions
       // conducting 1e20 times less hold it): once more from the start, with the islands'
       // summed rows in throughout (see newton).
+      budget?.check();
       s.u.set(s.uPrev);
       s.uLo.set(s.uPrevLo);
       s.termV.set(s.termVPrev);
       if (opts.guess) setGuess(s, opts.guess);
       const again = s.newton(dtEff, { ...opts, islands: true });
+      budget?.record(again);
       const retryBelow = Math.max(result.retryBelow ?? Infinity, again.retryBelow ?? Infinity);
       result = { ...again, iterations: result.iterations + again.iterations, retryBelow };
     }
@@ -277,6 +286,7 @@ export function step(s, dt, opts = {}) {
       // A terminal read by its flux whose response is lost to round-off (a floating gate's
       // charging, below its metal's G Δη): once more, read by the change (see circuitLaws in
       // src/lawRows.js).
+      budget?.check();
       s.u.set(s.uPrev);
       s.uLo.set(s.uPrevLo);
       s.termV.set(s.termVPrev);
@@ -285,6 +295,7 @@ export function step(s, dt, opts = {}) {
       // the impedance's byChange)
       for (const cs of s.lawForm.keys()) if (changeable(cs)) s.lawForm.set(cs, true);
       const again = s.newton(dtEff, opts);
+      budget?.record(again);
       result = { ...again, iterations: result.iterations + again.iterations };
     }
   } finally {
