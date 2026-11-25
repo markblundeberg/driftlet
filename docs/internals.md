@@ -24,6 +24,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/boundaries.js` | yes: faces (φ laws, links, reactions, gates, diffuse layers), ports, contacts, circuit rows |
 | `src/diffuse.js` | yes: a Gouy–Chapman layer's charge, surface excesses, resistances and their derivatives |
 | `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
+| `src/homotopy.js` | yes: unified pseudo-arclength homotopy continuation (behind internal switch) |
 | `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |

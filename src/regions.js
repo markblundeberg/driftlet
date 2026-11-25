@@ -29,7 +29,8 @@
 //
 // The terms:
 //   bulk reaction (_bulkReactions): +vol·ν·r in each participant's row, r and its ∂ over the
-//     node's block from _bulkRateInto, which an island's summed balance reads too (src/lawRows.js).
+//     node's block from _bulkRateInto, which an island's summed balance reads too (src/lawRows.js);
+//     when `this.homotopyGen` is set, generation reactions also accumulate +vol·ν·r into it.
 //   node (dilute, concentrated): storage vol·(c − c_old)/dt in each present species' row, and
 //     −vol·ρ in the Gauss row (none where φ is undefined, or, where the node's charge rows will
 //     carry them, at a chargeNode on a time step: there only a neutral species' storage); at a
@@ -661,12 +662,13 @@ export class RegionTerms {
   _bulkReactions(g, rxs) {
     const { M, res } = this, R = this.rix;
     const b = this.blockOfNode[g], v = this.model.grid.vol[g];
-    const dr = this.dA;
+    const dr = this.dA, hGen = this.homotopyGen;
     for (let x = 0; x < rxs.length; x++) {
       const rx = rxs[x], rate = this._bulkRateInto(rx, g, dr);
       for (let p = 0; p < rx.sp.length; p++) {
-        const row = 1 + rx.sp[p], w = v * rx.nu[p];
-        res[R[b * M + row]] += w * rate;
+        const row = 1 + rx.sp[p], w = v * rx.nu[p], rr = R[b * M + row];
+        res[rr] += w * rate;
+        if (hGen && rx.generation) hGen[rr] += w * rate;
         for (let k = 0; k < M; k++) if (dr[k] !== 0) this._j(b, row, b, k, w * dr[k]);
       }
     }

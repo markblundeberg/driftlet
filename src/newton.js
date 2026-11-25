@@ -182,7 +182,7 @@ function gmresReal(op, b, x, { m = 10, restarts = 3, tol = 1e-12 } = {}) {
 
 // Scale every row by its largest Jacobian entry (in place, residual too), dividing by it: its
 // reciprocal overflows where it's subnormal (a co-ion crowded out of a double layer, ~1e-310).
-function equilibrate(s) {
+export function equilibrate(s) {
   const { nB, sys, res, termB } = s, live = s._liveTerms();
   const { A, B, C, sizes, offA, offB, offC, offX } = sys;
   for (let b = 0; b < nB; b++) {
@@ -322,7 +322,7 @@ function refineSolve(s, dt, delta, deltaV) {
 }
 
 // Each diffuse layer's drawn species' plane level, its update clipped to ±maxStep.
-function clipLevels(s, delta, maxStep) {
+export function clipLevels(s, delta, maxStep) {
   const R = s.rix;
   for (const d of s.diffList) {
     const bf = s.blockOfFace[d.f];
@@ -878,7 +878,7 @@ function noteConditioning(s) {
 }
 
 // u += scale·d in compensated arithmetic (Knuth two-sum, then renormalise hi/lo).
-function addToState(s, d, scale) {
+export function addToState(s, d, scale) {
   const { u, uLo, fullOf } = s;
   for (let j = 0; j < fullOf.length; j++) {
     const k = fullOf[j], a = u[k], b = scale * d[j];

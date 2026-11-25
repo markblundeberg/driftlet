@@ -56,6 +56,8 @@
 //   solveBordered(s, rhs, delta, deltaV, pins)  each Newton solve: δ (delta, compact) and the
 //                    floating terminals' δV (deltaV, by s.floating's order) with s.sys
 //                    factorised.
+//   applyConstraints stores each constraint's per-terminal voltage derivative `cs.dV` alongside
+//   `cs.res` for homotopy's ∂(pin)/∂s; applyIslands reads `s.circuitHomotopy[k]` when set.
 //
 // What each row says, as written (the steady rows replace a row whole, with _replaceRow first):
 //   flat stretch     at each of its nodes, u_o − level = 0, Jacobian 1 on itself (the level:
@@ -296,7 +298,15 @@ function applyIslands(s) {
     // whose ∂/∂V the bordered system takes as the pin's own, termSlope)
     isl.termSlope = null;
     for (const k of isl.currents ?? []) {
-      const d = s.terms[k].drive, src = sourceAt(d.src, s.sourceTime, s.sourceBefore);
+      const ch = s.circuitHomotopy?.[k];
+      if (ch) {
+        if (ch.alpha > 0) {
+          t -= (ch.gamma - ch.beta * (s.termV[k] - ch.v0)) / (ch.alpha * isl.z * FARADAY);
+          if (ch.beta !== 0) (isl.termSlope ??= new Map()).set(k, ch.beta / (ch.alpha * isl.z * FARADAY));
+        }
+        continue;
+      }
+      const d = s.terms[k].drive, src = s.sourceOverride.has(k) ? s.sourceOverride.get(k) : sourceAt(d.src, s.sourceTime, s.sourceBefore);
       if (d.kind === 'I') t -= src / (isl.z * FARADAY);
       else {
         t -= (src - s.termV[k]) / (d.R * isl.z * FARADAY);
@@ -569,6 +579,7 @@ function applyConstraints(s) {
   const { M, res } = s;
   for (const cs of s.constraints) {
     const { amount, reference, dV } = lawAmount(s, cs);
+    cs.dV = dV;
     cs.res = amount - (cs.terminals.length > 0 ? (s.lawRefs.get(cs.key) ?? amount) : reference);
     if (cs.circuit >= 0) {
       // In place of the terminal's circuit row (its I = 0).

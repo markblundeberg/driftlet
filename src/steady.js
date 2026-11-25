@@ -61,7 +61,11 @@
 //      (this.stepped), on a direct device with continuation not off, the same again from a cold
 //      start (_layOut), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
-//   2. Continuation: generation ramped up (_generationContinuation); terminals behind a
+//   2. Continuation: when the internal homotopy switch (`opts.homotopy` or `DRIFTLET_HOMOTOPY=1`)
+//      is on and the device is direct, unified pseudo-arclength homotopy (`homotopyContinue` in
+//      src/homotopy.js) replaces the stage-2 ladder (falling back to stage 3 unless `this.unreached`
+//      or a model wall stopped it). Otherwise, the four-stage ladder: generation ramped up
+//      (_generationContinuation); terminals behind a
 //      resistance (_resistanceContinuation): one whose current Kirchhoff doesn't give, held at
 //      voltages marched to its load line's crossing (_floatingContinuation with a line); else, or
 //      where that fails, each held (at its source voltage, or where every other terminal is
@@ -207,6 +211,7 @@ import { solveFlat } from './dense.js';
 import { DeviceError, SolverError } from './errors.js';
 import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './laws.js';
 import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
+import { homotopyContinue } from './homotopy.js';
 import { maxPotentialStep } from './newton.js';
 import { FARADAY } from './constants.js';
 
@@ -502,7 +507,8 @@ export class SteadySolves {
 
     // 1. Newton from here. Where a continuation could follow, one direct attempt only, rather
     // than the pseudo-transient ramp straight away.
-    const quick = (canContinue || this.hasGeneration) && direct && allowed;
+    const useHomotopy = opts.homotopy ?? (globalThis.DRIFTLET_HOMOTOPY ?? globalThis['process']?.env?.DRIFTLET_HOMOTOPY === '1');
+    const quick = (canContinue || this.hasGeneration || useHomotopy) && direct && allowed;
     let r = this._steadySteps(quick ? { ...opts, maxSteps: 1 } : opts);
     if (r.converged) return solved(r);
     // A transient's state can be a worse start than a cold one: 1 ns after a lit MOS capacitor's
@@ -527,6 +533,14 @@ export class SteadySolves {
       if (q.converged) return solved(after(q, r));
       restart();
       r = after(q, r);
+    }
+
+    if (useHomotopy && allowed && direct) {
+      const h = homotopyContinue(this, opts, r, start0);
+      if (h.converged) return solved(h);
+      if (this.unreached || h.hitModelWall) return h;
+      restart();
+      return solved(after(this._steadySteps(opts), h));
     }
 
     // 2. Continuation. Generation (e.g. light) holding the device far from equilibrium: ramp it up

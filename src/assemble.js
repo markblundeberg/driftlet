@@ -56,6 +56,9 @@
 // at dt = ∞ with every storage derivative routed into massSys (through _jS or the dilute fast path)
 // and into termCs, termDIs, termDXs (the coefficients of 1/dt, or iω in the small signal), while
 // the steady derivatives stay in sys, termB, termC, termDI, termDX.
+// Where this.homotopyGen is set (only by src/homotopy.js), generation reactions accumulate their
+// unscaled residual contribution into homotopyGen (zeroed on _replaceRow, captured into
+// homotopyGenTerm by _captureRow) for exact ∂F/∂s.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Every Jacobian entry is the derivative of the residual as assembled: in (φ̂, η, the face
@@ -127,6 +130,10 @@ export class Assembly {
     const { grid, materials, regions } = model;
     sys.clear();
     if (this.massSys) this.massSys.clear();
+    if (this.homotopyGen) {
+      this.homotopyGen.fill(0);
+      this.homotopyGenTerm.fill(0);
+    }
     res.fill(0);
     this.dtNow = dt;
     if (this.lin) this.lin.reset(1 / dt);
@@ -183,6 +190,7 @@ export class Assembly {
     if (l < 0) return;
     const R = this.rix[b * this.M + rs];
     if (this.lin) this.lin.kill(R);
+    if (this.homotopyGen) this.homotopyGen[R] = 0;
     for (const Bk of this.termB) Bk[R] = 0;
     this.res[R] = 0;
     const { sys, nB } = this;

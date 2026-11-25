@@ -708,9 +708,23 @@ export class BoundaryTerms {
   }
 
   // A floating terminal's circuit law: I − I_set = 0 (driven by a current), or I − (V_src − V)/R = 0
-  // (a source behind a resistance).
+  // (a source behind a resistance). While src/homotopy.js sets `circuitHomotopy[k] = { alpha, beta,
+  // v0, gamma }`, the circuit residual is blended as α I + β(V − v0) − γ (leaving termI physical).
   _circuit(k) {
-    const d = this.terms[k].drive, src = sourceAt(d.src, this.sourceTime, this.sourceBefore);
+    const ch = this.circuitHomotopy?.[k];
+    if (ch) {
+      const { alpha, beta, v0, gamma } = ch;
+      if (alpha !== 1) {
+        const C = this.termC[k], dx = this.termDX[k], N = this.sys.size;
+        for (let j = 0; j < N; j++) C[j] *= alpha;
+        this.termDI[k] *= alpha;
+        for (let j = 0; j < dx.length; j++) dx[j] *= alpha;
+      }
+      this.termRes[k] = alpha * this.termI[k] + beta * (this.termV[k] - v0) - gamma;
+      this.termDI[k] += beta;
+      return;
+    }
+    const d = this.terms[k].drive, src = this.sourceOverride.has(k) ? this.sourceOverride.get(k) : sourceAt(d.src, this.sourceTime, this.sourceBefore);
     if (d.kind === 'I') this.termRes[k] = this.termI[k] - src;
     else {
       this.termRes[k] = this.termI[k] - (src - this.termV[k]) / d.R;
@@ -729,6 +743,7 @@ export class BoundaryTerms {
     if (l < 0 || w === 0) return;
     const split = !!this.massSys, row = this.rix[b * this.M + s];
     if (k >= 0) {
+      if (this.homotopyGen && !toStorage) this.homotopyGenTerm[k] += w * this.homotopyGen[row];
       const di = toStorage ? this.termDIs : this.termDI;
       const dx = toStorage ? this.termDXs[k] : this.termDX[k];
       for (const j of this._liveTerms()) {
