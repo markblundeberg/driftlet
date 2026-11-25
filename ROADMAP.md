@@ -772,6 +772,30 @@ notes), ranked by how much each trips an agent writing its first device:
   at ε = 1e-15 an error of 0.125 against GEPP's 3e-16, lost 0, perturbed 0, ratio 1): no device in
   a 30-run sweep reached it, but the conditioning note could report growth (max|C′| against the
   blocks' entries), and a fix needs pivoting across blocks or a twisted factorisation.
+- **Ideas from Neon's architecture read (25 Nov 2026).** These are notes, not plans. Neon read the
+  source for smells; its counts are its own, not rechecked. Two of its five points are already
+  here: storage apart from transport (## Next, item 0's second seam) and set() as three verbs
+  (## 2.0). The rest:
+  - *Model, State, Workspace.* The Solver carries about 300 fields on one object: physics state,
+    history, Jacobian scratch, mode flags and diagnostics together. The split would be an immutable
+    model, a plain-value state that a failed solve simply drops, and a scratch workspace per call.
+    That is ## 2.0's "one state, one transaction" carried through to the data structures. Mark is
+    happy with a rewrite for tidiness alone.
+  - *Continuation through folds.* The steady ladder walks one parameter at a time (a voltage, a
+    current, a resistance). Where the I–V curve folds back, as Debye–Hückel's spinodal near
+    V* ≈ 1.1694 V seems to, such a walk can only halve its stride against the fold: that is the
+    Zeno walk. Pseudo-arclength continuation follows the curve's length instead, so it can turn
+    the fold, or report that the branch turns. Neon's bolder form replaces the ladder with one
+    homotopy, from dark equilibrium at s = 0 to every drive on at s = 1. The ladder exists because
+    simpler paths failed on particular devices (0.11, 0.16). One s ties the whole path to its
+    stiffest part, so the moonshot is to try it and see where it breaks.
+  - *Fewer rescue layers.* Compensated levels (u + uLo), charge rows, the difference form with GMRES,
+    islands and the steady polish each answer a loss of digits. Neon suggests a pivoted or twisted
+    block factorisation, or the conductors' mixed flux unknowns used more widely, could replace
+    some of them. Caution: as I understand them, most of these losses happen when the residual is
+    evaluated, before any factorisation, which pivoting can't recover. Its point that fluxes and
+    reactions are evaluated in several places, in more than one layout, is ## 2.0's "one owner per
+    quantity" again.
 
 - **Open from Neon's second review (20 Nov 2026).** In a transient, check()'s conservation item
   reads only unreacting stretches, so where every species reacts it says "nothing to conserve",
