@@ -31,7 +31,9 @@
 //      listing order, the same state), where its window and electrode are unchanged, refused where
 //      the sites can't hold it (by more than its amounts' round-off). A strictly neutral node is brought onto its Gauss row with the closed amounts and
 //      the floating capacitors' charges in one solve (src/neutral.js, solveNeutral): at its levels,
-//      or, under a capacitor whose hardware changed, at its concentrations (φ̂ jumping). Each held
+//      including the shared-site derivatives on a regrid of a neutral lattice where every partner
+//      has an amount target; or, under a capacitor whose hardware changed, at its concentrations
+//      (φ̂ jumping). Each held
 //      capacitor's start charge (a gate's, a capacitive contact's, a metal's sheet at a capacitive
 //      face, sheetDEnd) is what it held before the jump where its hardware's group changed (and a
 //      held gate's whose own hardware changed over a region with ε > 0, where nothing jumps), else
@@ -622,14 +624,25 @@ function carryRest(old, s, info, { pure }) {
     if (o >= 0 && t.drive.kind === 'V' && !s.floating.includes(k)) (s.termV[k] = old.termV[o]), heldV.push(k);
   });
   const closedAll = targets.filter((t) => t.rescale && t.want > 0);
-  // (a stretch on a lattice or an insertion host is rescaled by rescaleAll, between the solves: a
-  // host's carrier follows its ion, and a lattice's open partner is held where it is, which a shift
-  // of the closed one's level alone moves through their shared sites)
-  const hosted = (st) => {
-    for (let g = st.nodes[0]; g <= st.nodes[1]; g++) if (s.model.materials[s.nodeMaterial[g]].models.some((md) => (md.type === 'insertion' || md.type === 'lattice') && md.idx.includes(st.species))) return true;
-    return false;
-  };
-  const joint = closedAll.filter(({ st }) => !hosted(st)), apart = closedAll.filter(({ st }) => hosted(st));
+  // On a neutral lattice with every partner's amount carried, their shared-site derivatives
+  // belong in the same solve as Gauss. In turns the amounts undid its correction: 2.13e-9 of
+  // the ions after 30 rounds, still 2.13e-9 after 150. With an open partner, rescale in
+  // concentrations to keep that partner; on an insertion host the carrier follows its ion
+  // (the echem combos' case 29, neutralG; Astra, 25 Nov).
+  const joint = [], apart = [];
+  for (const target of closedAll) {
+    const st = target.st;
+    let separate = false;
+    for (let r = st.regions[0]; r <= st.regions[1]; r++) {
+      const mat = s.model.materials[s.model.regions[r].material], md = mat.models[mat.modelOf[st.species]];
+      if (md?.type === 'insertion') separate = true;
+      if (md?.type === 'lattice' && (!pure || mat.epsr !== 0 || md.idx.some((i) => {
+        const t = targets[s.stretchOf[r * s.n + i]];
+        return !t.rescale || !(t.want > 0);
+      }))) separate = true;
+    }
+    (separate ? apart : joint).push(target);
+  }
   const floating = floatingTargets(s, neutralAt);
   const layers = diffuseTargets(old, s, info);
   for (let round = 0; round < 30; round++) {

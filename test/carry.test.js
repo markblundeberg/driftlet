@@ -1241,3 +1241,25 @@ test("carry: a held gate over a region with ε > 0, its C doubled: it starts fro
   // pass, summing to 2.5e-6) And the gate's terminal recorded what its plate took: from what it held to what it holds)
   assert.ok(rel(dq[k], s.portQ[0] - before) < 1e-9, `the gate passed ${dq[k].toExponential(6)} C, its plate took ${(s.portQ[0] - before).toExponential(6)}`);
 });
+
+test('a regridded neutral lattice balances each box while keeping both ion amounts', () => {
+  const names = ['Na+', 'Cl-'], salt = { 'Na+': 100, 'Cl-': 100 };
+  const water = aqueous(names, { epsr: 0 });
+  water.materials.water.statistics = lattice(names, 500);
+  const plate = (V, C) => ({ V, phi: { type: 'capacitive', C }, zeroCharge: 0 });
+  const d = new Device(build({
+    library: [water], stack: [plate(0, 0.1), layer('water', L, { c0: salt }), plate(0.5, 0.2)],
+    grid: { hmax: L / 8 },
+  }));
+  const coarse = d.solve();
+  assert.ok(coarse.converged);
+  d.set({ grid: { hmax: L / 16 } });
+  const fine = d.solution();
+  assert.ok(fine.x.length > coarse.x.length);
+  for (const [j, st] of fine.conservation.entries()) assert.ok(rel(st.amount, coarse.conservation[j].amount) < 1e-12);
+  for (let g = 0; g < fine.x.length; g++) {
+    const plus = fine.c['Na+'][g], minus = fine.c['Cl-'][g], v = d.grid.vol[g];
+    const D = g === 0 ? -fine.contacts.left.D : g === fine.x.length - 1 ? fine.contacts.right.D : 0;
+    assert.ok(Math.abs(D - v * FARADAY * (plus - minus)) < 1e-12 * v * FARADAY * (plus + minus), `box ${g}`);
+  }
+});
