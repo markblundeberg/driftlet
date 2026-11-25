@@ -97,9 +97,10 @@ export class DifferenceTerms {
     this.combos.push([rk, ri, w]);
   }
 
-  // into[col] += w × row's coefficients, the steady ones plus `mass` times the storage's (a row
-  // captured as plain entries: a contact's current, read before its row is replaced).
-  capture(row, w, mass, into) {
+  // into[col] += w × row's coefficients, `steady` times the steady ones plus `mass` times the
+  // storage's (a row captured as plain entries: a contact's current, read before its row is
+  // replaced).
+  capture(row, w, mass, into, steady = 1) {
     const N = this.N, add = (col, v) => {
       if (col < N && v !== 0) into[col] += w * v;
     };
@@ -107,32 +108,33 @@ export class DifferenceTerms {
       const i = this.nI[k], p = this.nP[k], z = this.nZ[k];
       let f = 0;
       if (row === this.nR[k]) f += mass * this.nMass[k];
-      if (row === p) f += this.nCharge[k];
+      if (steady !== 0 && row === p) f += steady * this.nCharge[k];
       if (f === 0) continue;
       add(i, f);
       add(p, -z * f);
     }
+    if (steady === 0) return;
     for (let k = 0; k < this.ns; k++) {
       const iL = this.sI[4 * k], iR = this.sI[4 * k + 1];
       const s = row === iL ? 1 : row === iR ? -1 : 0;
       if (s === 0) continue;
       const z = this.sZ[k], a = this.sC[3 * k], b = this.sC[3 * k + 1], d = this.sC[3 * k + 2];
-      add(iL, s * (a - b));
-      add(iR, s * b);
-      add(this.sI[4 * k + 2], s * (-z * a - d));
-      add(this.sI[4 * k + 3], s * d);
+      add(iL, steady * s * (a - b));
+      add(iR, steady * s * b);
+      add(this.sI[4 * k + 2], steady * s * (-z * a - d));
+      add(this.sI[4 * k + 3], steady * s * d);
     }
     for (let k = 0; k < this.nx; k++) {
       const s = row === this.xI[4 * k] ? 1 : row === this.xI[4 * k + 1] ? -1 : 0;
       if (s === 0) continue;
-      add(this.xI[4 * k + 2], s * this.xC[k]);
-      add(this.xI[4 * k + 3], -s * this.xZ[k] * this.xC[k]);
+      add(this.xI[4 * k + 2], steady * s * this.xC[k]);
+      add(this.xI[4 * k + 3], -steady * s * this.xZ[k] * this.xC[k]);
     }
     for (let q = 0; q < this.nd; q++) {
       const pL = this.dI[2 * q], pR = this.dI[2 * q + 1], s = row === pL ? 1 : row === pR ? -1 : 0;
       if (s === 0) continue;
-      add(pL, s * this.dK[q]);
-      add(pR, -s * this.dK[q]);
+      add(pL, steady * s * this.dK[q]);
+      add(pR, -steady * s * this.dK[q]);
     }
   }
 

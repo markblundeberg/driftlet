@@ -515,3 +515,52 @@ test('a floating port with a capacitance, read by its law\'s change, measured wi
     assert.ok(Math.hypot(re - a.Z.re[q], im - a.Z.im[q]) < 1e-6 * scale, `f ${f}: Z − R (${re}, ${im}) against (${a.Z.re[q]}, ${a.Z.im[q]})`);
   });
 });
+
+// Exact steady/storage split: an electrode port with a fast adsorption reaction (k0 = 1e42
+// mol/(m²·s), θ = 1/2) puts its steady derivative (~1e41) directly on the surface species'
+// diagonal beside its storage Γ θ(1−θ) = 2.5e-6 mol/m² (port reactions are explicit). Extracting
+// S by (X(1e-30) − X(∞))·1e-30 rounds S_θθ to 0, wiping out the adsorption pseudocapacitance
+// C_ad = A_e F² Γ θ(1−θ)/(RT); assembling J and S directly keeps S_θθ exact and recovers the
+// series R_ct − i/(ω C_ad) impedance at the corner frequency ω R_ct C_ad = 1.
+test('split assembly keeps exact storage beside stiff steady kinetics (fast port adsorption)', () => {
+  const T = 298.15, RT = GAS_CONSTANT * T, VT = RT / FARADAY;
+  const Gamma = 1e-5, k0 = 1e42, L = 1e-5, c0 = 100, aSpec = 1e5, Vpzc = VT * Math.log(c0 / 1000);
+  const def = {
+    T,
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }, { name: 'e-', z: -1, cRef: 1 }],
+    materials: {
+      aq: { epsr: 0, species: { 'K+': { D: 1e38, mu0: 0 }, 'Cl-': { D: 1e38, mu0: 0 } } },
+    },
+    regions: [{ name: 'el', material: 'aq', length: L, c0: { 'K+': c0, 'Cl-': c0 } }],
+    contacts: {
+      left: { V: 0, bath: { c: { 'K+': c0, 'Cl-': c0 } } },
+      right: { V: 0, bath: { c: { 'K+': c0, 'Cl-': c0 } } },
+    },
+    ports: [{
+      name: 'we', region: 'el', from: 0.4 * L, to: 0.6 * L, area: aSpec, V: Vpzc, terminal: 'e-',
+      surface: { 'K*': { mu0: 0, capacity: Gamma, theta0: 0.5 } },
+      reactions: [{ equation: 'K+ + e- = K*', k0, alpha: 0.5 }],
+    }],
+    grid: { hmax: L / 20 },
+  };
+  const d = new Device(def), sol = d.solve();
+  assert.ok(sol.converged, sol.warnings.join(' '));
+  // At V = Vpzc with α = 0.5, θ = 1/2: exchange rate r0 = k0 (c0/cRef)^{1/2} (1/2)^{1/2} (1/2)^{1/2} = k0 √(c0/cRef) / 2.
+  const Ae = aSpec * 0.2 * L;
+  const r0 = (k0 * Math.sqrt(c0 / 1000)) / 2;
+  const Rct = RT / (Ae * FARADAY * FARADAY * r0);
+  const Cad = (Ae * FARADAY * FARADAY * Gamma) / (4 * RT);
+  const f0 = 1 / (2 * Math.PI * Rct * Cad);
+  const z = d.impedance([f0], { terminal: 'we' });
+  assert.ok(Math.abs(z.Z.re[0] / Rct - 1) < 1e-4, `Re Z ${z.Z.re[0]} vs R_ct ${Rct}`);
+  assert.ok(Math.abs(z.Z.im[0] / -Rct - 1) < 1e-4, `Im Z ${z.Z.im[0]} vs -R_ct ${-Rct}`);
+  // Confirm directly that split assembly recovers S_θθ = Γ/4 exactly, while (X(1e-30) − X(∞))·1e-30 rounds to 0.
+  const s = d.solver, sf = s.model.surfaces[0], b = s.blockOfNode[sf.nodes[0]], l = s.loc[b * s.M + 1 + s.n];
+  const diag = s.sys.offB[b] + l * s.sys.sizes[b] + l;
+  const { sys: J, mass: S } = s._assembleSplit();
+  const sSplit = S.B[diag], jSteady = J.B[diag];
+  assert.ok(Math.abs(sSplit / (Gamma / 4) - 1) < 1e-12, `split S_θθ ${sSplit} vs ${Gamma / 4}`);
+  s.assemble(1e-30);
+  const sFd = (s.sys.B[diag] - jSteady) * 1e-30;
+  assert.equal(sFd, 0, `finite-difference at dt=1e-30 loses S_θθ to J_θθ = ${jSteady} (got ${sFd})`);
+});

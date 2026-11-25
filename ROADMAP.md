@@ -220,8 +220,9 @@ for live demos.
 
 
    A second seam, after: assemble emitting steady and storage parts into separate accumulators,
-   as DifferenceTerms does, so impedance() no longer takes (X(1e-30) − X(∞))·1e-30. Neon's R2 1.1
-   and 1.2 both sat there.
+   as DifferenceTerms does, so impedance() no longer takes (X(1e-30) − X(∞))·1e-30 (done:
+   `_assembleSplit` and `_assembleSplitDifference` in `src/assemble.js`). Neon's R2 1.1 and 1.2
+   both sat there.
 
 1. **Harden the core** (ongoing), so the porcelain doesn't force refactors.
    - Transients with a capacitive contact beside a held electrode (found by `npm run lawsweep`):

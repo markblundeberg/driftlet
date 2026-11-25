@@ -109,9 +109,9 @@ const sideOf = { port: 'left', electrode: 'left', capacitor: 'left', diode: 'rig
 const SCRATCH = new Set([
   // assembly and Newton's work: the residual, the Jacobian and its factors, the update, the fluxes
   // and charges the last assembly read
-  'sys', 'res', 'delta', 'deltaV', 'rowDiv', 'sg', 'dA', 'dB', 'jL', 'jR', 'dWr', 'aWr', 'dWork', 'termB', 'termC', 'termDI', 'termDX', 'termRes', 'termI',
-  'contactFlux', 'contactD', 'portFlux', 'portQ', 'qg', 'qgSlope', 'c', 'th', 'th0', 'gam', 'gate', 'ex', 'K', 'dK', 'zeta', 'scratch', 'lin', 'dtNow', 'transformed',
-  'chargePivots', 'sysRest', 'diffTerms', 'lostCandidate', 'uPrev', 'uPrevLo', 'termVPrev', 'borderCols', 'islandRow', 'linRow',
+  'sys', 'res', 'delta', 'deltaV', 'rowDiv', 'sg', 'dA', 'dB', 'jL', 'jR', 'dWr', 'aWr', 'dWork', 'termB', 'termC', 'termDI', 'termDX', 'termCs', 'termDIs', 'termDXs', 'termRes', 'termI',
+  'contactFlux', 'contactD', 'portFlux', 'portQ', 'qg', 'qgSlope', 'c', 'th', 'th0', 'gam', 'gate', 'ex', 'K', 'dK', 'zeta', 'scratch', 'lin', 'massSys', 'dtNow', 'transformed',
+  'chargePivots', 'sysRest', 'sysMass', 'sysMassRest', 'diffTerms', 'lostCandidate', 'uPrev', 'uPrevLo', 'termVPrev', 'borderCols', 'islandRow', 'linRow',
   // a step's own: where it lands, its source reading, the laws read as changes this step
   'landing', 'sourceBefore', 'combining', 'lawForm', 'steady', 'sourceOverride',
   // the laws a steady solve captures as it begins (captureLaws), and its stages' bookkeeping

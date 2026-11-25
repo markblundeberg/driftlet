@@ -9,8 +9,9 @@
 // Σ D out − vol·ρ, totals over the box) and its bookkeeping. They read the state u + uLo (φ̂, η),
 // the per-node data the Solver's constructor set (cRef, mu0hat, rhoFixed, present,
 // nodeMaterial, nodeIdeal, nodeConductor, sheetFace, phiUndefined, chargeNode, lateStorage, the
-// bulk reactions rxs), cOld, and write res and sys through _j or by local index (the dilute fast
-// paths), or their terms into this.lin where it's set.
+// bulk reactions rxs), cOld, and write res and sys through _j / _jS or by local index (the dilute
+// fast paths), or their terms into this.lin where it's set, and storage derivatives into
+// this.massSys when splitting.
 //
 // Statistics, computeConcentrations(): at every node, from ζ_i = η_i − μ°_i/RT − z_i φ̂ (η
 // compensated, u + uLo; φ̂ as u alone):
@@ -312,7 +313,7 @@ export class RegionTerms {
     const r = 1 + im, k = g * n + im;
     res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
     const f = this.sheetFace[g];
-    if (f >= 0) this._j(b, r, this.blockOfFace[f], 0, (this.sheetSign[g] * this.model.grid.area[g]) / (z[im] * FARADAY * dt));
+    if (f >= 0) this._jS(b, r, this.blockOfFace[f], 0, (this.sheetSign[g] * this.model.grid.area[g]) / (z[im] * FARADAY));
   }
 
   // Whether a port holds species i at node g, a device end node (see portHeldEnd).
@@ -324,8 +325,9 @@ export class RegionTerms {
   // charge in the Gauss row, written straight into the diagonal blocks by local index. A
   // dielectric is the case with no species.
   _nodesDilute(g0, g1, dt) {
-    const { n, M, res, c, cOld, z, sys, loc, present, rhoFixed, blockOfNode, lin } = this, R = this.rix, F = FARADAY;
-    const JB = sys.B, sizes = sys.sizes, offB = sys.offB, vol = this.model.grid.vol;
+    const { n, M, res, c, cOld, z, sys, loc, present, rhoFixed, blockOfNode, lin, massSys } = this, R = this.rix, F = FARADAY;
+    const JB = sys.B, SB = massSys?.B, sizes = sys.sizes, offB = sys.offB, vol = this.model.grid.vol;
+    const dyn = dt !== Infinity || !!massSys;
     for (let g = g0; g <= g1; g++) {
       const b = blockOfNode[g], v = vol[g];
       const m = sizes[b], oB = offB[b], lb = b * M, p = loc[lb]; // p: φ's row, −1 where undefined
@@ -336,7 +338,7 @@ export class RegionTerms {
       }
       let q = rhoFixed[g], dq = 0;
       const late = this.combining && this.lateStorage[g] === 1 && dt !== Infinity; // (the ions' storage: in _contact)
-      const lateQ = !lin && !late && this.lateCharge[g] === 1 && dt !== Infinity; // (and their charge: in _contact)
+      const lateQ = !lin && !late && this.lateCharge[g] === 1 && dyn; // (and their charge: in _contact)
       for (let i = 0; i < n; i++) {
         const k = g * n + i;
         if (!present[k]) continue;
@@ -351,8 +353,15 @@ export class RegionTerms {
           continue;
         }
         if (stores) {
-          JB[oB + l * m + l] += (v * ck) / dt;
-          if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+          if (SB) {
+            if (l >= 0) {
+              SB[oB + l * m + l] += v * ck;
+              if (p >= 0 && z[i] !== 0) SB[oB + l * m + p] += -v * z[i] * ck;
+            }
+          } else {
+            JB[oB + l * m + l] += (v * ck) / dt;
+            if (p >= 0 && z[i] !== 0) JB[oB + l * m + p] += (-v * z[i] * ck) / dt;
+          }
         }
         if (p >= 0 && z[i] !== 0) JB[oB + p * m + l] += -v * F * z[i] * ck;
       }
@@ -373,12 +382,12 @@ export class RegionTerms {
       return;
     }
     let q = this.rhoFixed[g], dq = 0;
-    const lin = this.lin;
-    // (at a lateCharge node on a time step, the storage and charge of each species its contact
-    // passes go in later, in _contact, as at a dilute node: summed here at the impedance's dt =
-    // 1e-30 they cancelled to a ULP of v·F·c, 8% of a Bikerman cell's dielectric charge at 10 MHz;
-    // Neon's third review, R3 1.1)
-    const lateQ = !lin && this.lateCharge[g] === 1 && dt !== Infinity && !(this.combining && this.lateStorage[g] === 1);
+    const lin = this.lin, dyn = dt !== Infinity || !!this.massSys;
+    // (at a lateCharge node on a time step or split assembly, the storage and charge of each
+    // species its contact passes go in later, in _contact, as at a dilute node: summed here they
+    // would cancel in the captured contact current to a ULP of v·F·c, 8% of a Bikerman cell's
+    // dielectric charge at 10 MHz; Neon's third review, R3 1.1)
+    const lateQ = !lin && this.lateCharge[g] === 1 && dyn && !(this.combining && this.lateStorage[g] === 1);
     const deferred = (i) => lateQ && z[i] !== 0 && !this._portHeldAt(g, i) && this.loc[b * M + 1 + i] >= 0;
     for (let i = 0; i < n; i++) {
       const k = g * n + i, r = 1 + i;
@@ -424,15 +433,15 @@ export class RegionTerms {
     const { n, M, res, c, cOld } = this, R = this.rix;
     const b = this.blockOfNode[g], v = this.model.grid.vol[g], k = g * n + i, r = 1 + i;
     res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
-    if (this.nodeIdeal[g]) this._j(b, r, b, r, (v * c[k]) / dt);
+    if (this.nodeIdeal[g]) this._jS(b, r, b, r, v * c[k]);
     else {
       const Kg = g * n * n;
       for (let j = 0; j < n; j++) {
         const Kij = this.K[Kg + i * n + j];
-        if (Kij !== 0) this._j(b, r, b, 1 + j, (v * Kij) / dt);
+        if (Kij !== 0) this._jS(b, r, b, 1 + j, v * Kij);
       }
     }
-    if (Kz !== 0 && !this.phiUndefined[g]) this._j(b, r, b, 0, (-v * Kz) / dt);
+    if (Kz !== 0 && !this.phiUndefined[g]) this._jS(b, r, b, 0, -v * Kz);
   }
 
   // A gated strictly neutral stretch's start, checked once a step (from the step's own start

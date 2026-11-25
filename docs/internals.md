@@ -138,8 +138,9 @@ By method, in file order:
   capacitors join (a port's window, a capacitive contact's box, a face) are `_gateGroupsOf` in
   `src/regions.js`, whose `_gatedStartCheck` reads each group's start at every step. The cold start's own sums (`neutralPhi`, `equilibrateFaces`) are only its
   first guess, corrected by it before a transient's first step; a steady solve meets the row itself.
-- **Assembly** is `src/assemble.js` (`assemble`, `_assembleDifference` with `src/difference.js`,
-  `_assembleBookkeeping`, and `_j` and `_replaceRow`, which write the Jacobian), with its kernels
+- **Assembly** is `src/assemble.js` (`assemble`, `_assembleSplit`, `_assembleDifference` and
+  `_assembleSplitDifference` with `src/difference.js`, `_assembleBookkeeping`, and `_j`, `_jS`
+  and `_replaceRow`, which write the steady and storage Jacobians), with its kernels
   in `src/regions.js` (`computeConcentrations` and the statistics, nodes, segments, bulk
   reactions and their rates, `_chargeRows` and `_untransform`) and `src/boundaries.js` (faces,
   `_terminals`: ports, contacts, circuit rows). Their methods are the Solver's own (installed on

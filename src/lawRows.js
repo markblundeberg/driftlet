@@ -41,8 +41,11 @@
 //   snapFlat(s)      in a steady assembly (dt = ∞), before the concentrations: each flat
 //                    stretch's level (u and uLo) set at every node to its first node's.
 //   applyLaws(s, dt) at the end of Solver.assemble(dt), after every kernel and the terminals:
-//                    dt finite: each circuit row a law of the constraints or timeLaws may read by
-//                    the change of its amount (circuitLaws). Steady (s.steady and dt = ∞): the
+//                    dt finite, or a split assembly (s.massSys set): each circuit row a law of
+//                    the constraints or timeLaws may read by the change of its amount
+//                    (circuitLaws; in a split assembly, laws opted in through s.lawForm write
+//                    their steady part as C = 0, DI = 1/R or 0, DX = 0 and their storage part
+//                    into termCs, termDIs, termDXs). Steady (s.steady and dt = ∞): the
 //                    rows of the flat stretches, affinities, constraints, local constraints and,
 //                    once Newton turns them on (s.islandsOn), the islands, in that order; and
 //                    s.pins, those of them held aside (constraints in a balance row, affinities,
@@ -148,7 +151,7 @@ import { addTerm } from './sum.js';
 
 // The laws' rows at the end of an assembly (see the contract above).
 export function applyLaws(s, dt) {
-  if (Number.isFinite(dt) && (s.constraints.length > 0 || s.timeLaws.length > 0)) circuitLaws(s, dt);
+  if ((Number.isFinite(dt) || s.massSys) && (s.constraints.length > 0 || s.timeLaws.length > 0)) circuitLaws(s, dt);
   const steady = s.steady && dt === Infinity;
   if (steady) flatRows(s);
   if (steady && s.affinities.length > 0) applyAffinities(s);
@@ -722,6 +725,7 @@ export function sharedChange(s, cs) {
 }
 
 function circuitLaws(s, dt) {
+  const split = !!s.massSys;
   for (const cs of [...s.constraints, ...s.timeLaws]) {
     const k = cs.circuit;
     if (k < 0 || !s.floating.includes(k) || cs.contacts?.length > 0) continue; // (a contact's charge: its own rows)
@@ -730,6 +734,20 @@ function circuitLaws(s, dt) {
     // out at a port at equal currents gained I·dt/F a step, the contact passing twice its
     // current, silently; Fable round 3's review of src/lawRows.js. Others at I = 0 add nothing.)
     if (sharedChange(s, cs)) continue;
+    if (split) {
+      if (!s.lawForm.get(cs) || !Number.isFinite(cs.lambda) || cs.lambda === 0) continue;
+      const { dV } = lawAmount(s, cs), f = FARADAY / cs.lambda, d = s.terms[k].drive;
+      s.termC[k].fill(0);
+      s.termDI[k] = d.kind === 'I' ? 0 : 1 / d.R;
+      s.termDX[k].fill(0);
+      const Cs = s.termCs[k];
+      Cs.fill(0);
+      for (let j = 0; j < cs.len; j++) Cs[cs.idx[j]] += f * cs.w[j];
+      s.termDIs[k] = f * dV[k];
+      s.termDXs[k].fill(0);
+      dV.forEach((x, j) => j !== k && (s.termDXs[k][j] = f * x));
+      continue;
+    }
     const { amount, dV, gross } = lawAmount(s, cs), f = FARADAY / (cs.lambda * dt), C = s.termC[k];
     if (!s.lawForm.has(cs)) {
       let G = 0;

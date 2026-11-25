@@ -346,6 +346,78 @@ test('J·v in difference form equals the assembled Jacobian, and a uniform shift
   assert.equal(inside, 0);
 });
 
+// Split steady/storage assembly (_assembleSplit, _assembleSplitDifference): one pass emits steady
+// (J, termC, termDI, termDX) and storage (S, termCs, termDIs, termDXs) into separate accumulators,
+// matching assemble(dt) = J + S/dt and matching J·v, S·v in difference form.
+test('_assembleSplit and _assembleSplitDifference match assemble(dt) and exact J·v, S·v', () => {
+  for (const [name, make] of Object.entries(devices)) {
+    const dev = new Device(make());
+    assert.ok(dev.solve().converged);
+    const s = dev.solver, N = s.sys.size, dt = 1e-3;
+    s.allTerminals = true;
+    for (let k = 0; k < N; k++) s.u[s.fullOf[k]] += 0.03 * Math.sin(1 + 7 * k);
+    s.computeConcentrations();
+    s.cOld.set(s.c);
+    s.thOld.set(s.th);
+    s.th0Old.set(s.th0);
+    s.gamOld.set(s.gam);
+    s.gateList.forEach((gt, j) => (s.gateOld[j] = s.u[gt.o] + s.uLo[gt.o]));
+    s.combining = false;
+    s.lawForm = new Map();
+    const { sys: J, mass: S } = s._assembleSplit();
+    assert.equal(s.massSys, null);
+    assert.equal(s.lin, null);
+    const Jsnap = { A: J.A.slice(), B: J.B.slice(), C: J.C.slice() };
+    const Ssnap = { A: S.A.slice(), B: S.B.slice(), C: S.C.slice() };
+    const C0 = s.termC.map((v) => v.slice(0, N)), Cs0 = s.termCs.map((v) => v.slice(0, N));
+    const DI0 = Float64Array.from(s.termDI), DIs0 = Float64Array.from(s.termDIs);
+    const DX0 = s.termDX.map((v) => v.slice()), DXs0 = s.termDXs.map((v) => v.slice());
+    // Compare J + S/dt against assemble(dt) (with lawForm all-false so neither triggers circuitLaws).
+    s.lawForm = new Map([...s.constraints, ...s.timeLaws].map((cs) => [cs, false]));
+    s.assemble(dt);
+    for (const X of ['A', 'B', 'C']) {
+      for (let i = 0; i < s.sys[X].length; i++) {
+        const want = Jsnap[X][i] + Ssnap[X][i] / dt, got = s.sys[X][i];
+        const sc = Math.abs(Jsnap[X][i]) + Math.abs(Ssnap[X][i] / dt) + 1e-300;
+        assert.ok(Math.abs(got - want) <= 1e-12 * sc, `${name}: ${X}[${i}] ${got} vs ${want}`);
+      }
+    }
+    s.terms.forEach((_, t) => {
+      const big = C0[t].reduce((m, x, k) => Math.max(m, Math.abs(x), Math.abs(Cs0[t][k] / dt)), 0);
+      for (let k = 0; k < N; k++) {
+        const want = C0[t][k] + Cs0[t][k] / dt, got = s.termC[t][k];
+        const sc = Math.abs(C0[t][k]) + Math.abs(Cs0[t][k] / dt) + 1e-300;
+        assert.ok(Math.abs(got - want) <= 1e-12 * sc + 1e-14 * big, `${name}: termC[${t}][${k}] ${got} vs ${want} (largest ${big})`);
+      }
+      const wantDI = DI0[t] + DIs0[t] / dt;
+      assert.ok(Math.abs(s.termDI[t] - wantDI) <= 1e-12 * (Math.abs(DI0[t]) + Math.abs(DIs0[t] / dt) + 1e-300), `${name}: termDI[${t}]`);
+      for (let j = 0; j < s.terms.length; j++) {
+        const wantDX = DX0[t][j] + DXs0[t][j] / dt;
+        assert.ok(Math.abs(s.termDX[t][j] - wantDX) <= 1e-12 * (Math.abs(DX0[t][j]) + Math.abs(DXs0[t][j] / dt) + 1e-300), `${name}: termDX[${t}][${j}]`);
+      }
+    });
+    // Compare _assembleSplitDifference() against J·v and S·v separately.
+    const { rest: Jr, massRest: Sr, lin } = s._assembleSplitDifference();
+    assert.equal(s.massSys, null);
+    assert.equal(s.lin, null);
+    const v = new Float64Array(N + 1).map((_, k) => (k < N ? Math.cos(5 * k) : 0));
+    s.lawForm = new Map();
+    s._assembleSplit();
+    const wantJ = s.sys.multiply(v), wantS = s.sysMass.multiply(v);
+    const gotJ = Jr.multiply(v);
+    lin.apply(v, gotJ, 1, 0);
+    const gotS = Sr.multiply(v);
+    lin.apply(v, gotS, 0, 1);
+    let worstJ = 0, worstS = 0;
+    for (let i = 0; i < N; i++) {
+      worstJ = Math.max(worstJ, Math.abs(gotJ[i] - wantJ[i]) / (Math.abs(wantJ[i]) + 1e-300));
+      worstS = Math.max(worstS, Math.abs(gotS[i] - wantS[i]) / (Math.abs(wantS[i]) + 1e-300));
+    }
+    assert.ok(worstJ < 1e-9, `${name}: split difference J·v error ${worstJ}`);
+    assert.ok(worstS < 1e-11, `${name}: split difference S·v error ${worstS}`);
+  }
+});
+
 // After each step, the contact and port readouts come from only the boxes they're read from.
 // They must equal a full assembly's exactly.
 test('bookkeeping readouts from the end boxes and port windows equal a full assembly, bit for bit', () => {

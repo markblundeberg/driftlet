@@ -49,8 +49,13 @@
 //     exactly only for _liveTerms() (the floating terminals, or all where allTerminals).
 //   The terminals' readouts (src/boundaries.js): contactFlux, contactD, portFlux, portQ, qg,
 //     qgSlope, portRates, contactQ; and s.pins (applyLaws).
-// Where this.lin is set (only by _assembleDifference), the dilute kernels' Jacobian terms go into
-// it, in difference form (src/difference.js), and the rest into sys, which is then not Newton's.
+// Where this.lin is set (only by _assembleDifference / _assembleSplitDifference), the dilute and
+// concentrated node/segment Jacobian terms go into it, in difference form (src/difference.js), and
+// the rest into sys (and massSys when splitting), which is then not Newton's.
+// Where this.massSys is set (only by _assembleSplit / _assembleSplitDifference), the assembly runs
+// at dt = ∞ with every storage derivative routed into massSys (through _jS or the dilute fast path)
+// and into termCs, termDIs, termDXs (the coefficients of 1/dt, or iω in the small signal), while
+// the steady derivatives stay in sys, termB, termC, termDI, termDX.
 //
 // Invariants (each says what a reviewer should be able to check here):
 //   1. Every Jacobian entry is the derivative of the residual as assembled: in (φ̂, η, the face
@@ -69,12 +74,17 @@
 //   4. _assembleDifference(dt): res and the terminal terms as assemble(dt) gives them; its
 //      matrix plus its difference terms is assemble(dt)'s Jacobian (J·v equal to round-off);
 //      this.sys and this.lin as they were.
+//   4b. _assembleSplit() and _assembleSplitDifference(): sys + mass/dt equals assemble(dt)'s
+//      Jacobian (with combining false and the same lawForm), and termC + termCs/dt (and DI, DX)
+//      equals assemble(dt)'s terminal rows; in difference form, (rest + lin(steady=1, mass=0))·v
+//      equals J·v and (massRest + lin(steady=0, mass=1))·v equals S·v; this.massSys is left null,
+//      and _assembleSplitDifference leaves this.sys and this.lin as they were.
 //   5. _assembleBookkeeping(dt): contactFlux, contactD, portFlux, portQ and termI bit for bit
 //      as assemble(dt) would set them at the same state (one a steady assembly has already
 //      snapped flat: it doesn't snap), with sys, res, termB, termC and termDI elsewhere left
 //      partial, not to be read; it doesn't recompute concentrations (they must be current).
 // Tests: every test (every solve assembles); test/jacobian.test.js (invariant 1), test/layout.test.js
-// (difference form, the bookkeeping's readouts).
+// (difference form, split assembly, the bookkeeping's readouts).
 
 import { BlockTridiagonal } from './blockTridiagonal.js';
 import { DifferenceTerms } from './difference.js';
@@ -93,11 +103,30 @@ export class Assembly {
     else throw new Error(`internal: non-tridiagonal coupling ${rb}→${cb}`);
   }
 
+  // Add a storage derivative ∂(row rb, slot rs)/∂(block cb, slot cs) (the coefficient of 1/dt, or
+  // iω in the small signal): into massSys in a split assembly, or into sys scaled by 1/dt on a
+  // finite time step.
+  _jS(rb, rs, cb, cs, v) {
+    const sys = this.massSys;
+    if (!sys) {
+      if (Number.isFinite(this.dtNow)) this._j(rb, rs, cb, cs, v / this.dtNow);
+      return;
+    }
+    const M = this.M, r = this.loc[rb * M + rs], c = this.loc[cb * M + cs];
+    if (r < 0 || c < 0) return;
+    const sz = sys.sizes;
+    if (cb === rb) sys.B[sys.offB[rb] + r * sz[rb] + c] += v;
+    else if (cb === rb - 1) sys.A[sys.offA[rb] + r * sz[cb] + c] += v;
+    else if (cb === rb + 1) sys.C[sys.offC[rb] + r * sz[cb] + c] += v;
+    else throw new Error(`internal: non-tridiagonal coupling ${rb}→${cb}`);
+  }
+
   /** Assemble residual and Jacobian for a backward-Euler step of size dt. */
   assemble(dt) {
     const { model, res, sys } = this;
     const { grid, materials, regions } = model;
     sys.clear();
+    if (this.massSys) this.massSys.clear();
     res.fill(0);
     this.dtNow = dt;
     if (this.lin) this.lin.reset(1 / dt);
@@ -130,7 +159,7 @@ export class Assembly {
     // Faces: the flux node carries D, the linked species' fluxes and the reaction rates; and a
     // face's surface its coverages' storage (a port's comes with its terminal's terms).
     for (let f = 0; f < this.nFaces; f++) this._face(f);
-    if (Number.isFinite(dt)) for (const sf of model.surfaces) if (sf.face >= 0) this._surfaceStorage(sf, dt);
+    if (Number.isFinite(dt) || this.massSys) for (const sf of model.surfaces) if (sf.face >= 0) this._surfaceStorage(sf, dt);
 
     // Terminals: ports (after every other term at their nodes, so a held level can read its
     // flux), then contacts, then the circuit rows of the floating ones.
@@ -145,9 +174,10 @@ export class Assembly {
     if (this.transformed && this.localConstraints.length > 0) localStepRows(this, dt);
   }
 
-  // Clear one row, ready to be replaced: the Jacobian's (all three blocks, and the kept-aside
-  // linear terms), its terms in every terminal's column, and its residual. (Done by hand before,
-  // the terminal terms were cleared at seven of nine callers; a code-smell review.)
+  // Clear one row, ready to be replaced: the Jacobian's (all three blocks, both steady and storage
+  // when splitting, and the kept-aside linear terms), its terms in every terminal's column, and
+  // its residual. (Done by hand before, the terminal terms were cleared at seven of nine callers;
+  // a code-smell review.)
   _replaceRow(b, rs) {
     const l = this.loc[b * this.M + rs];
     if (l < 0) return;
@@ -155,10 +185,63 @@ export class Assembly {
     if (this.lin) this.lin.kill(R);
     for (const Bk of this.termB) Bk[R] = 0;
     this.res[R] = 0;
-    const { sys, nB } = this, sz = sys.sizes, m = sz[b];
-    sys.B.fill(0, sys.offB[b] + l * m, sys.offB[b] + (l + 1) * m);
-    if (b > 0) sys.A.fill(0, sys.offA[b] + l * sz[b - 1], sys.offA[b] + (l + 1) * sz[b - 1]);
-    if (b < nB - 1) sys.C.fill(0, sys.offC[b] + l * sz[b + 1], sys.offC[b] + (l + 1) * sz[b + 1]);
+    const { sys, nB } = this;
+    const clearRow = (s) => {
+      const sz = s.sizes, m = sz[b];
+      s.B.fill(0, s.offB[b] + l * m, s.offB[b] + (l + 1) * m);
+      if (b > 0) s.A.fill(0, s.offA[b] + l * sz[b - 1], s.offA[b] + (l + 1) * sz[b - 1]);
+      if (b < nB - 1) s.C.fill(0, s.offC[b] + l * sz[b + 1], s.offC[b] + (l + 1) * sz[b + 1]);
+    };
+    clearRow(sys);
+    if (this.massSys) clearRow(this.massSys);
+  }
+
+  // Allocate the split assembly's storage terminal arrays once per solver.
+  _ensureSplitTerms() {
+    if (this.termCs) return;
+    const N = this.sys.size, nt = this.terms.length;
+    this.termCs = this.terms.map(() => new Float64Array(N + 1));
+    this.termDIs = new Float64Array(nt);
+    this.termDXs = this.terms.map(() => new Float64Array(nt));
+  }
+
+  // Steady Jacobian in this.sys and storage Jacobian (the 1/dt or iω part) in this.sysMass, with
+  // the terminals' steady terms in termB, termC, termDI, termDX and storage terms in termCs,
+  // termDIs, termDXs — in one assembly, without finite-differencing at a tiny dt.
+  _assembleSplit() {
+    const keep = this.sys;
+    const mass = this.sysMass ?? (this.sysMass = new BlockTridiagonal(keep.n, keep.sizes));
+    this._ensureSplitTerms();
+    this.massSys = mass;
+    try {
+      this.assemble(Infinity);
+    } finally {
+      this.massSys = null;
+    }
+    return { sys: keep, mass };
+  }
+
+  // As _assembleSplit(), with the dilute and concentrated node/segment Jacobian terms kept aside
+  // in difference form (lin, carrying steady and storage terms separately); the rest lands in
+  // sysRest (steady) and sysMassRest (storage). this.sys and this.lin are left as they were.
+  _assembleSplitDifference() {
+    const keep = this.sys;
+    const rest = this.sysRest ?? (this.sysRest = new BlockTridiagonal(keep.n, keep.sizes));
+    const massRest = this.sysMassRest ?? (this.sysMassRest = new BlockTridiagonal(keep.n, keep.sizes));
+    const n = this.n, nN = this.nNodes;
+    const lin = this.diffTerms ?? (this.diffTerms = new DifferenceTerms(keep.size, nN * n * n, nN * n, 2 * nN * n * n));
+    this._ensureSplitTerms();
+    this.sys = rest;
+    this.massSys = massRest;
+    this.lin = lin;
+    try {
+      this.assemble(Infinity);
+    } finally {
+      this.sys = keep;
+      this.massSys = null;
+      this.lin = null;
+    }
+    return { rest, massRest, lin };
   }
 
   // The Jacobian at dt with the dilute kernels' terms kept aside in difference form (see

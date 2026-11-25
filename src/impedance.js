@@ -6,14 +6,16 @@
 // Methods of the Solver (src/solver.js; its layout is in docs/internals.md), installed on its
 // prototype like the assembly's. Device.impedance (src/index.js) calls impedance() right after a
 // steady solve that converged (src/steady.js), at the state it left. What they use of the rest:
-//   this.assemble(dt) (src/assemble.js)  at dt = ∞ the steady Jacobian in this.sys (blocks A, B,
-//                        C), and for every terminal while allTerminals is set, termB[k] = ∂res/∂V_k,
-//                        termC[k] = ∂I_k/∂x, termDI[k] = ∂I_k/∂V_k, termDX[k][k2] = ∂I_k/∂V_k2,
-//                        each compact (sys order). At a finite dt the same plus the storage
-//                        term's derivatives over dt.
-//   this._assembleDifference(dt) (src/difference.js)  the same Jacobian with the dilute kernels'
-//                        terms kept apart in difference form (`lin`, applied exactly) and the rest
-//                        in this.sysRest: J·v without the cancellation of an assembled matrix.
+//   this._assembleSplit() (src/assemble.js)  the steady Jacobian in this.sys and the storage
+//                        Jacobian (the 1/dt or iω part) in this.sysMass, and for every terminal
+//                        while allTerminals is set, steady termB[k] = ∂res/∂V_k, termC[k] = ∂I_k/∂x,
+//                        termDI[k] = ∂I_k/∂V_k, termDX[k][k2] = ∂I_k/∂V_k2 and storage termCs,
+//                        termDIs, termDXs, each compact (sys order).
+//   this._assembleSplitDifference() (src/difference.js)  the same split Jacobian with the dilute
+//                        and concentrated node/segment terms kept apart in difference form (`lin`,
+//                        applied separately for steady and storage) and the rest in this.sysRest
+//                        (steady) and this.sysMassRest (storage): J·v and S·v without the
+//                        cancellation of an assembled matrix.
 //   this._fluxConcentrated (src/regions.js), this.jL / this.jR, sgFlux (src/bernoulli.js)  a
 //                        segment's flux and its derivatives, for the current cuts.
 //   ComplexBlockTridiagonal (src/blockTridiagonal.js)  a complex block-tridiagonal factorisation.
@@ -28,8 +30,8 @@
 //   at one, or where the current read there is exactly 0 (no current returns: Z infinite).
 //   Linearised about the present state: (J + iωS)·δx + Σ_k B_k δV_k = 0 for the grid's rows and,
 //   for each floating terminal k (driven by a current), (C_k + iωC′_k)·δx + (DI_k + iωDI′_k) δV_k
-//   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J the steady Jacobian (dt = ∞) and S, C′, DI′,
-//   DX′ the storage parts, (X(dt) − X(∞))·dt at dt = 1e-30. The measured terminal is always
+//   + Σ_k2 (DX + iωDX′)_k,k2 δV_k2 = δI_k, with J, C, DI, DX the steady parts and S, C′, DI′,
+//   DX′ the storage parts, assembled directly into separate accumulators (_assembleSplit). The measured terminal is always
 //   excited by its voltage: driven by a current, it's measured as if held (δV = 1, Z = 1/δI, the
 //   same input impedance), its circuit row out of the small system, its current read as a held
 //   one's (with its circuit law's change where it has one); its profiles then scaled by Z, per
@@ -37,9 +39,9 @@
 //   a conserved combination (a circuit law: a constraint or time law with its circuit row; alone
 //   in the small signal, so not one the measured terminal feeds too, whose change is theirs) has
 //   its current read by that combination's change at every frequency, iω F δS/λ plus what a
-//   resistance passes: at dt = 1e-30 every circuit law with a current to count (λ set) reads by
-//   the change (this.lawForm), and
-//   its steady parts are C = 0, DI = 1/R (0 driven by a current), DX = 0. δI is the measured
+//   resistance passes: every circuit law with a current to count (λ set) is opted in through
+//   this.lawForm, and circuitLaws writes its steady parts as C = 0, DI = 1/R (0 driven by a
+//   current), DX = 0 and its storage parts as F/λ times ∂S/∂(x, V). δI is the measured
 //   terminal's current into the device. Every other terminal keeps its drive: held, δV = 0 (AC
 //   ground); driven, δI = 0 (AC open).
 //   Each frequency: J + iωS with each row divided by its largest entry, factorised, preconditions
@@ -94,10 +96,11 @@
 //      the linearisation only as the assembly's rows are: steady rows replaced by laws are not
 //      in J (the assembly here runs with this.steady false).
 //   4. Deterministic: the same state, frequencies and options give the same Z, bit for bit.
-// Also written, left as the last assembly at dt = ∞ left them: this.sourceTime (the present
+// Also written, left as the split assembly at dt = ∞ left them: this.sourceTime (the present
 // time), cOld, thOld, th0Old, gamOld, gateOld (the present state's), contactDStart, portQStart, the
-// residual, the Jacobian and the terminal terms, sysRest and the concentrations; this.lawForm
-// (every circuit law by the change, until a step sets it afresh).
+// residual, the steady and storage Jacobians (sys, sysMass, sysRest, sysMassRest) and terminal
+// terms (termB, termC, termDI, termDX, termCs, termDIs, termDXs) and the concentrations;
+// this.lawForm (every circuit law by the change, until a step sets it afresh).
 // Tests: test/impedance.test.js (Macdonald's blocking electrodes, a junction's depletion
 // capacitance, a MOS capacitor at both terminals, ports, profiles, Fermi–Dirac against
 // Boltzmann); the demos' EIS.
@@ -308,18 +311,10 @@ export class SmallSignal {
     this.th0Old.set(this.th0);
     this.gamOld.set(this.gam);
     this.gateList.forEach((gt, j) => (this.gateOld[j] = this.u[gt.o] + this.uLo[gt.o]));
-    this.assemble(Infinity);
-    this.contactDStart = { ...this.contactD };
-    this.portQStart = Float64Array.from(this.portQ);
-    this.assemble(Infinity);
-    // The steady parts, then the storage parts from an assembly at a tiny dt.
-    const J = { A: sys.A.slice(), B: sys.B.slice(), C: sys.C.slice() };
-    const Bt = this.termB.map((v) => v.slice()), Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI), DX = this.termDX.map((v) => v.slice());
-    const dts = 1e-30;
     // A floating terminal that alone feeds a conserved combination has its current read, at a
     // finite dt, by that combination's change (circuitLaws in src/lawRows.js), and here always
     // so: iω F δS/λ, plus what a resistance passes, with no steady part of its own. Read by the
-    // flux at dt = ∞ and by the change at dt = 1e-30, a floating gate's current was counted
+    // flux at dt = ∞ and by the change in the storage part, a floating gate's current was counted
     // twice (its capacitance 2× dQ/dV); read by the flux throughout, through a metal it is the
     // round-off of G Δη (a gate behind 1 kΩ·m², measured at the back contact: Re Z = −2.7).
     // (A law that counts no current, λ unset, as for a terminal at no current that feeds
@@ -331,24 +326,23 @@ export class SmallSignal {
     // The other feeders, driven, pass none: δI = 0. Sol's fourth pass.)
     // (Nor one whose change another driven terminal passing a steady current shares: circuitLaws
     // reads that one by the flux, so it wrote no change rows here, and clearing the flux reading
-    // below left the terminal with no admittance at all. Two ports pumping K⁺ in and out at ±1
+    // left the terminal with no admittance at all. Two ports pumping K⁺ in and out at ±1
     // A/m²: one read at the driven port had Re Z = −19.3 Ω·m², the held port's 0.0036, relError
     // 5e-13, unwarned; read at a contact, Z moved 9% with the ports' order. Neon's second review.)
     const byChange = (cs) => cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0 && !(cs.circuit !== kT && cs.terminals?.includes(kT)) && !sharedChange(this, cs);
     this.lawForm = new Map([...this.constraints, ...this.timeLaws].map((cs) => [cs, byChange(cs)]));
-    this.assemble(dts);
-    for (const cs of [...this.constraints, ...this.timeLaws]) {
-      const k = cs.circuit;
-      if (!byChange(cs) || !(fl.includes(k) || (k === kT && dT.kind === 'I'))) continue;
-      Ct[k].fill(0);
-      DI[k] = this.terms[k].drive.R > 0 ? 1 / this.terms[k].drive.R : 0;
-      DX[k].fill(0);
-    }
-    const S = {};
-    for (const X of ['A', 'B', 'C']) S[X] = sys[X].map((v, k) => (v - J[X][k]) * dts);
-    const Cs = this.termC.map((v, k) => v.map((x, j) => (x - Ct[k][j]) * dts));
-    const DIs = this.termDI.map((x, k) => (x - DI[k]) * dts);
-    const DXs = this.termDX.map((v, k) => v.map((x, j) => (x - DX[k][j]) * dts));
+    // J·v and S·v for GMRES, exact: the assembled J holds a flux's dependence on η_L and η_R as
+    // two entries, and where both are huge (an inversion layer) and v nearly uniform, J·v loses the
+    // flux to round-off. So the node/segment terms are kept in difference form (see
+    // DifferenceTerms), with the rest from matrices of their own, steady (Jr) and storage (Sr).
+    const { rest: Jr, massRest: Sr, lin } = this._assembleSplitDifference();
+    // Steady (J) and storage (S) Jacobians and terminal rows in one split assembly (leaving
+    // this.sys, this.res, contactD and portQ as at dt = ∞).
+    const { sys: J, mass: S } = this._assembleSplit();
+    this.contactDStart = { ...this.contactD };
+    this.portQStart = Float64Array.from(this.portQ);
+    const Bt = this.termB, Ct = this.termC.map((v) => v.slice()), DI = Float64Array.from(this.termDI), DX = this.termDX.map((v) => v.slice());
+    const Cs = this.termCs.map((v) => v.slice()), DIs = Float64Array.from(this.termDIs), DXs = this.termDXs.map((v) => v.slice());
     // Where the measured contact's current may be read across a segment: anywhere without
     // ports; with them, only between it and the nearest window (a port's exchange takes current
     // in or out along it). Never for a port's own terminal. (Only a port that can pass a charge
@@ -381,16 +375,6 @@ export class SmallSignal {
       }
       if (list.length > 1) choices.set(k, list);
     }
-    // J·v for GMRES, exact: the assembled J holds a flux's dependence on η_L and η_R as two
-    // entries, and where both are huge (an inversion layer) and v nearly uniform, J·v loses the
-    // flux to round-off. So the dilute kernels' terms are kept in difference form (see
-    // DifferenceTerms), with the rest from a matrix of their own, steady (Jr) and storage (Sr).
-    this._assembleDifference(Infinity);
-    const Jr = { A: this.sysRest.A.slice(), B: this.sysRest.B.slice(), C: this.sysRest.C.slice() };
-    const { lin } = this._assembleDifference(dts);
-    const Sr = {};
-    for (const X of ['A', 'B', 'C']) Sr[X] = this.sysRest[X].map((v, k) => (v - Jr[X][k]) * dts);
-    this.assemble(Infinity);
 
     const { sizes, offA, offB, offC, offX } = sys;
     const csys = new ComplexBlockTridiagonal(nB, sizes);

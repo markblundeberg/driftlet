@@ -84,7 +84,8 @@
 //   A terminal whose current is read from rows (a contact's from its end box, a port's held
 //     level from the rows it replaces) takes their ∂/∂V's with it (_captureRow): another live
 //     terminal j's termB entries there into termDX[k][j] (a port's window in a contact's end
-//     box), its own into termDI[k].
+//     box), its own into termDI[k]. In a split assembly (massSys set), storage derivatives route
+//     through _jS into massSys and into termCs, termDIs, termDXs.
 //   circuit (_circuit), floating k: termRes = I − I_set, or I − (V_src − V)/R.
 //
 // Invariants (each says what a reviewer should be able to check here):
@@ -390,14 +391,18 @@ export class BoundaryTerms {
     res[R[b * M]] -= Af * dl.q;
     this._j(b, 0, bf, slot, -Af * dl.dqds);
     // the box's store of each species it holds: Af (Γ_i − Γ_i,old)/dt
-    if (!Number.isFinite(dt)) return;
-    const k = Af / dt;
+    if (!Number.isFinite(dt) && !this.massSys) return;
+    const k = Af / dt, split = !!this.massSys;
     for (let i = 0; i < n; i++) {
       if (!this.present[this.diffList[d].g * n + i] || !holds[i]) continue;
       res[R[b * M + 1 + i]] += k * (gam[d * n + i] - gamOld[d * n + i]);
-      this._j(b, 1 + i, bf, slot, k * dl.dgds[i]);
+      if (split) this._jS(b, 1 + i, bf, slot, Af * dl.dgds[i]);
+      else this._j(b, 1 + i, bf, slot, k * dl.dgds[i]);
       chain(dl.dgdc.subarray(i * n, i * n + n));
-      for (let r = 0; r <= n; r++) if (w[r] !== 0) this._j(b, 1 + i, b, r, k * w[r]);
+      for (let r = 0; r <= n; r++) if (w[r] !== 0) {
+        if (split) this._jS(b, 1 + i, b, r, Af * w[r]);
+        else this._j(b, 1 + i, b, r, k * w[r]);
+      }
     }
   }
 
@@ -459,7 +464,10 @@ export class BoundaryTerms {
       const [a, da] = gateRate(gate.alpha, V), [b, db] = gateRate(gate.beta, V);
       const store = Number.isFinite(dt) ? 1 / dt : 0, j = this.gateIndex[f] + q;
       res[R[o]] = store * (x - this.gateOld[j]) - (a * (1 - x) - b * x);
-      this._j(bf, k0 + q, bf, k0 + q, store + a + b);
+      if (this.massSys) {
+        this._j(bf, k0 + q, bf, k0 + q, a + b);
+        this._jS(bf, k0 + q, bf, k0 + q, 1);
+      } else this._j(bf, k0 + q, bf, k0 + q, store + a + b);
       const dV = -(da * (1 - x) - db * x) * VT; // per unit φ̂_R, and minus that per unit φ̂_L
       this._j(bf, k0 + q, bR, 0, dV);
       this._j(bf, k0 + q, bL, 0, -dV);
@@ -677,12 +685,18 @@ export class BoundaryTerms {
   // (termB), its current into the device (termI) and how that depends on the state (termC).
   _terminals(dt) {
     this._refreshSources();
+    const split = !!this.massSys;
     for (const k of this._liveTerms()) {
       this.termB[k].fill(0);
       this.termC[k].fill(0);
+      if (split) this.termCs[k].fill(0);
     }
     this.termDI.fill(0);
     for (const x of this.termDX) x.fill(0);
+    if (split) {
+      this.termDIs.fill(0);
+      for (const x of this.termDXs) x.fill(0);
+    }
     this.termI.fill(0);
     this.qg.fill(0);
     this.qgSlope.fill(0);
@@ -706,27 +720,43 @@ export class BoundaryTerms {
 
   // into += w × (the Jacobian row of block b, slot s), over compact columns; and where a terminal
   // k reads that row as its current, its ∂/∂V's too: w × each live terminal's termB entry in it,
-  // into termDI[k] (its own) or termDX[k][j].
-  _captureRow(b, s, w, into, k = -1) {
+  // into termDI[k] (its own) or termDX[k][j]. In a split assembly (massSys set): a balance row
+  // (toStorage = false) also routes its storage part into termCs[k]; a steady Gauss row captured
+  // as dD_in/dt (toStorage = true) routes its steady terms and termB into `into` (= termCs[k]),
+  // termDIs[k] and termDXs[k].
+  _captureRow(b, s, w, into, k = -1, toStorage = false) {
     const l = this.loc[b * this.M + s];
     if (l < 0 || w === 0) return;
+    const split = !!this.massSys, row = this.rix[b * this.M + s];
     if (k >= 0) {
-      const o = this.rix[b * this.M + s];
+      const di = toStorage ? this.termDIs : this.termDI;
+      const dx = toStorage ? this.termDXs[k] : this.termDX[k];
       for (const j of this._liveTerms()) {
-        const v = this.termB[j][o];
+        const v = this.termB[j][row];
         if (v === 0) continue;
-        if (j === k) this.termDI[k] += w * v;
-        else this.termDX[k][j] += w * v;
+        if (j === k) di[k] += w * v;
+        else dx[j] += w * v;
       }
     }
-    if (this.lin) this.lin.capture(this.rix[b * this.M + s], w, this.lin.rate, into);
-    const { sys, nB } = this, { sizes, offA, offB, offC, offX } = sys, m = sizes[b];
-    for (const [X, nb, off] of [['A', b - 1, offA], ['B', b, offB], ['C', b + 1, offC]]) {
-      if (nb < 0 || nb >= nB) continue;
-      const mc = sizes[nb], o = off[b] + l * mc, arr = sys[X], c0 = offX[nb];
-      for (let c = 0; c < mc; c++) if (arr[o + c] !== 0) into[c0 + c] += w * arr[o + c];
+    if (this.lin) {
+      if (split) {
+        this.lin.capture(row, w, 0, into, 1);
+        if (!toStorage && k >= 0) this.lin.capture(row, w, 1, this.termCs[k], 0);
+      } else {
+        this.lin.capture(row, w, this.lin.rate, into);
+      }
     }
-    return m;
+    const captureFrom = (mat, dst) => {
+      const { sizes, offA, offB, offC, offX } = mat, nB = this.nB;
+      for (const [X, nb, off] of [['A', b - 1, offA], ['B', b, offB], ['C', b + 1, offC]]) {
+        if (nb < 0 || nb >= nB) continue;
+        const mc = sizes[nb], o = off[b] + l * mc, arr = mat[X], c0 = offX[nb];
+        for (let c = 0; c < mc; c++) if (arr[o + c] !== 0) dst[c0 + c] += w * arr[o + c];
+      }
+    };
+    captureFrom(this.sys, into);
+    if (split && !toStorage && k >= 0) captureFrom(this.massSys, this.termCs[k]);
+    return this.sys.sizes[b];
   }
 
   // An internal port (terminal k): its exchange with each node of its window, as a source per
@@ -794,7 +824,7 @@ export class BoundaryTerms {
     port.reactions.forEach((rx, x) => this._portReaction(port, rx, this.portArea[k - 2], this.portRates[k - 2][x], flux, k));
     if (port.capacitance) this._portCapacitance(port, k, dt);
     if (port.gates.length > 0) this._portGates(port, k, dt);
-    if (port.surface.length > 0 && Number.isFinite(dt)) this._surfaceStorage(this.model.surfaces[port.surfaceOf], dt);
+    if (port.surface.length > 0 && (Number.isFinite(dt) || this.massSys)) this._surfaceStorage(this.model.surfaces[port.surfaceOf], dt);
   }
 
   // A port's reaction at each node of its window: Butler–Volmer per area, as at a face (Marcus–Hush–Chidsey
@@ -925,7 +955,10 @@ export class BoundaryTerms {
         const o = b * this.M + q0 + q, x = this.u[o], j = this.portGateIndex[k - 2] + w * port.gates.length + q;
         const [a, da] = gateRate(gate.alpha, V), [bb, db] = gateRate(gate.beta, V);
         res[R[o]] = store * (x - this.gateOld[j]) - (a * (1 - x) - bb * x);
-        this._j(b, q0 + q, b, q0 + q, store + a + bb);
+        if (this.massSys) {
+          this._j(b, q0 + q, b, q0 + q, a + bb);
+          this._jS(b, q0 + q, b, q0 + q, 1);
+        } else this._j(b, q0 + q, b, q0 + q, store + a + bb);
         const s = -(da * (1 - x) - db * x); // ∂/∂V_m, with V_m = V_T φ̂ − V + zeroCharge
         this._j(b, q0 + q, b, 0, s * VT);
         B[R[o]] += -s;
@@ -967,6 +1000,7 @@ export class BoundaryTerms {
     // Its current, the charging (Q − Q at the step's start)/dt; or, steady at no current, the
     // charge it keeps in place of that (see captureLaws in src/lawRows.js).
     const rate = Number.isFinite(dt) ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
+    const CsRow = this.massSys ? this.termCs[k] : null;
     let Q = 0, dQdV = 0;
     port.nodes.forEach((g, w) => {
       if (!this._portHolds(g)) return;
@@ -979,10 +1013,12 @@ export class BoundaryTerms {
       res[R[b * M]] -= q;
       this._j(b, 0, b, 0, s * VT);
       B[R[b * M]] -= s;
-      if (rate > 0) Ct[R[b * M]] += -s * VT * rate;
+      if (CsRow) CsRow[R[b * M]] += -s * VT;
+      else if (rate > 0) Ct[R[b * M]] += -s * VT * rate;
     });
     this.portQ[k - 2] = Q;
-    if (rate > 0) {
+    if (CsRow) this.termDIs[k] += dQdV;
+    else if (rate > 0) {
       this.termI[k] += (Q - (dt < Infinity ? this.portQStart[k - 2] : this.chargeRefs.get(k))) * rate;
       this.termDI[k] += dQdV * rate;
     }
@@ -1011,7 +1047,11 @@ export class BoundaryTerms {
           for (let x = 0; x < surf.length; x++) if (x !== q) rest += th[g * nSurf + x];
         }
         res[R[b * M + 1 + n + q]] += (G * change) / dt;
-        for (let x = 0; x < surf.length; x++) this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * (q === x ? rest : -th[g * nSurf + x]));
+        for (let x = 0; x < surf.length; x++) {
+          const factor = q === x ? rest : -th[g * nSurf + x];
+          if (this.massSys) this._jS(b, 1 + n + q, b, 1 + n + x, G * tq * factor);
+          else this._j(b, 1 + n + q, b, 1 + n + x, ((G * tq) / dt) * factor);
+        }
       }
     }
   }
@@ -1031,12 +1071,12 @@ export class BoundaryTerms {
     const sgn = side === 'left' ? 1 : -1;
     const flux = this.contactFlux[side];
     const Ac = model.grid.area[g]; // the links' laws are per area: what they pass is that times A here
-    const dyn = Number.isFinite(dt);
+    const dyn = Number.isFinite(dt) || !!this.massSys;
 
     // Before anything is added, each balance residual is the flux into the device here. (A
     // closed end solved in charge rows has its ions' storage left out until later: none of them
     // passes, so their flux is zero.)
-    const closedIons = this.combining && dyn && this.chargeNode[g] === 1;
+    const closedIons = this.combining && Number.isFinite(dt) && this.chargeNode[g] === 1;
     const closed = ct.species.every((l) => l.type === 'blocked');
     let I = 0;
     const held = this.portHeldEnd.subarray(k * n, (k + 1) * n);
@@ -1055,8 +1095,8 @@ export class BoundaryTerms {
     }
     // The ions' storage, left out until now (see lateStorage): in each balance, and in what
     // each species brings in, but not in the current.
-    // (And at a lateCharge node on a time step, their charge too, which the Gauss row reads below.)
-    const late = this.combining && dyn && this.lateStorage[g] === 1, lateQ = dyn && !this.lin && !late && this.lateCharge[g] === 1;
+    // (And at a lateCharge node on a time step or split assembly, their charge too, which the Gauss row reads below.)
+    const late = this.combining && Number.isFinite(dt) && this.lateStorage[g] === 1, lateQ = dyn && !this.lin && !late && this.lateCharge[g] === 1;
     let qLate = 0;
     if (late || lateQ) {
       const v = model.grid.vol[g], { cOld } = this;
@@ -1132,11 +1172,16 @@ export class BoundaryTerms {
       if (captured && this.loc[b * M] >= 0) [captured.D, captured.row[R[b * M]], captured.dV] = [Din, -Ac * link.C * VT, Ac * link.C];
       // Its current, the charging (D_in − D_in at the step's start)/dt; or, steady at no current,
       // the charge it keeps in place of that (see captureLaws in src/lawRows.js).
-      const rate = dyn ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
-      if (rate > 0) {
-        I += (Din - (dyn ? Dstart : this.chargeRefs.get(k))) * rate;
-        C[R[b * M]] += -Ac * link.C * VT * rate;
-        this.termDI[k] += Ac * link.C * rate;
+      if (this.massSys) {
+        this.termCs[k][R[b * M]] += -Ac * link.C * VT;
+        this.termDIs[k] += Ac * link.C;
+      } else {
+        const rate = dyn ? 1 / dt : this.steady && this.chargeRefs.has(k) ? 1 : 0;
+        if (rate > 0) {
+          I += (Din - (dyn ? Dstart : this.chargeRefs.get(k))) * rate;
+          C[R[b * M]] += -Ac * link.C * VT * rate;
+          this.termDI[k] += Ac * link.C * rate;
+        }
       }
     } else if (link.type === 'pinned' || link.type === 'bulk') {
       // The Poisson residual is the outside's charge, D_in (at a lateCharge node, without the
@@ -1148,7 +1193,9 @@ export class BoundaryTerms {
         captured.D = Din;
         this._captureRow(b, 0, 1, captured.row);
       }
-      if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
+      if (this.massSys) {
+        this._captureRow(b, 0, 1, this.termCs[k], k, true);
+      } else if (dyn && !(this.combining && this.lateStorage[g] === 1)) {
         I += (Din - Dstart) / dt;
         this._captureRow(b, 0, 1 / dt, C, k);
       } else if (!dyn && this.steady && this.chargeRefs.has(k)) {
