@@ -240,20 +240,22 @@ test('homotopy honours budgetMs mid-trace on the Debye–Hückel fixture and res
   const d = new Device(spec), s = d.solver;
   const before = s._snapshot(), learned = LEARNED.map((k) => s[k]);
   const drives = s.terms.map((tm) => tm.drive);
-  // Let s = 0 and the first arclength corrector factorisation run, then expire the clock mid-trace
-  // so homotopy's per-step budget check interrupts without any catch block swallowing BUDGET_SPENT.
-  let elapsed = 0, factors = 0;
+  // Expire the clock at factorisation 100 (deep in correctorNewton's arclength loop, where no
+  // _steadySteps check runs): only homotopy.js's per-step budget checks can stop it promptly.
+  let elapsed = 0, factors = 0, afterExpiry = 0;
   const factor = s._factor.bind(s);
   t.mock.method(performance, 'now', () => elapsed);
   t.mock.method(s, '_factor', () => {
-    if (s.allTerminals && ++factors >= 15) elapsed = 50;
+    if (elapsed) afterExpiry++;
+    if (s.allTerminals && ++factors >= 100) elapsed = 50;
     return factor();
   });
   const sol = d.solve({ budgetMs: 10 });
   assert.equal(sol.converged, false);
   assert.equal(sol.budgetSpent, true);
   assert.ok(sol.iterations > 0);
-  assert.ok(factors >= 15, `expected budget to fire inside homotopy trace, got ${factors} factorisations`);
+  assert.ok(factors >= 100, `expected budget to fire deep in homotopy trace, got ${factors} factorisations`);
+  assert.ok(afterExpiry <= 10, `homotopy kept running after budget expired (${afterExpiry} factorisations after expiry)`);
   assert.match(sol.warnings.join('\n'), /budget spent/);
   assert.doesNotMatch(sol.warnings.join('\n'), /debye-huckel: the activity model is not convex/);
   assert.deepEqual(s._snapshot(), before);
@@ -261,6 +263,31 @@ test('homotopy honours budgetMs mid-trace on the Debye–Hückel fixture and res
   LEARNED.forEach((k, i) => assert.equal(s[k], learned[i], k));
   assert.ok(!s.allTerminals);
   assert.equal(s.circuitHomotopy, null);
+});
+
+test('homotopy leaves no spurious island warning on mirrored membrane21', () => {
+  const T = 298.15, RT = GAS_CONSTANT * T;
+  const c = (Na, A, NaA) => ({ 'Na+': Na, 'A-': A, 'Cl-': Na - A, NaA });
+  const bathC = c(16.893326496828085, 15.47362164868072, 1.940883084130149);
+  const def = {
+    T,
+    species: [{ name: 'Na+', z: 1 }, { name: 'Cl-', z: -1 }, { name: 'A-', z: -1 }, { name: 'NaA', z: 0 }].map((sp) => ({ ...sp, cRef: 1000 })),
+    materials: { water: { epsr: 0, species: { 'Na+': { D: 1.334e-9, mu0: -261905 }, 'Cl-': { D: 2.032e-9, mu0: -131228 }, 'A-': { D: 0.7e-9, mu0: -50000 }, NaA: { D: 0.8e-9, mu0: -316874.9194977297 } } } },
+    regions: [
+      { name: 'far', length: 20.47576830701132e-6, material: 'water', c0: c(51.01561905373098, 13.98690479103286, 58.948681717972356) },
+      { name: 'near', length: 18.844268738599778e-6, material: 'water', c0: c(10.038076413435569, 4.308332373487203, 25.50203622444877) },
+    ],
+    contacts: { right: { V: -0.007051, bath: { c: bathC, reference: 'Cl-' } } },
+    interfaces: [{ phi: 'neutral', species: { 'Na+': 'blocked' } }],
+    bulkReactions: [{ equation: 'Na+ + A- = NaA', kf: { water: 0.005104701794038667 } }],
+    grid: { hmin: 0.4e-6, hmax: 3e-6 },
+  };
+  const Kd = 1000 * Math.exp((-316874.9194977297 + 261905 + 50000) / RT);
+  const want = (16.893326496828085 * 15.47362164868072) / Kd;
+  const sol = new Device(def).solve();
+  assert.equal(sol.converged, true);
+  assert.deepEqual(sol.warnings, []);
+  assert.ok(Math.abs(sol.c.NaA[0] / want - 1) < 1e-10, `NaA ${sol.c.NaA[0]} for ${want}`);
 });
 
 test('homotopy stays on the stable branch of an N-shaped I–V curve (d26594)', () => {

@@ -498,7 +498,7 @@ function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, 
 }
 
 // Run one homotopy path from s = 0 to s = 1 for `plan`.
-function tracePath(s, plan, opts, r) {
+function tracePath(s, plan, opts, r, wasAll) {
   const N = s.sys.size, fl = s.floating, K = fl.length;
   const potIdx = potentialIndices(s);
   const Bs = new Float64Array(N + 1);
@@ -566,9 +566,21 @@ function tracePath(s, plan, opts, r) {
       addToState(s, tx, a);
       for (let a0 = 0; a0 < K; a0++) s.termV[fl[a0]] += a * tV[a0];
     }
-    if (plan.keepChOnLand) applyS(s, plan, 1);
-    else clearOverrides(s, plan);
-    const q = s._steadySteps(sub);
+    let q;
+    if (plan.keepChOnLand) {
+      applyS(s, plan, 1);
+      q = s._steadySteps(sub);
+    } else {
+      clearOverrides(s, plan);
+      // Run the landing steady round in the device's own terminal mode so its diagnostics
+      // (islandsFailed, islandsWorse, islandImbalance, conditioning) never come from all-terminals mode.
+      s.allTerminals = wasAll;
+      try {
+        q = s._steadySteps(sub);
+      } finally {
+        s.allTerminals = true;
+      }
+    }
     steps += q.steps;
     iterations += q.iterations;
     history.push({ homotopy: 1, converged: q.converged });
@@ -852,7 +864,7 @@ export function homotopyContinue(s, opts, r, start0) {
       const plan = buildPlan(s, mode);
       if (!plan) return null;
       try {
-        return tracePath(s, plan, opts, cur);
+        return tracePath(s, plan, opts, cur, wasAll);
       } finally {
         clearOverrides(s, plan);
       }
@@ -905,7 +917,7 @@ export function homotopyContinue(s, opts, r, start0) {
       const plan1 = { p0, p1: Float64Array.from(p0), ch: ch1, rampGen: true, warm: false, keepChOnLand: true };
       let g1;
       try {
-        g1 = tracePath(s, plan1, opts, cur);
+        g1 = tracePath(s, plan1, opts, cur, wasAll);
       } finally {
         clearOverrides(s, plan1);
       }
@@ -918,7 +930,7 @@ export function homotopyContinue(s, opts, r, start0) {
         s.solvedV = savedSolvedV;
         if (plan2) {
           try {
-            const g2 = tracePath(s, plan2, opts, cur);
+            const g2 = tracePath(s, plan2, opts, cur, wasAll);
             if (g2.converged || g2.hitModelWall || s.unreached) return g2;
             cur = g2;
           } finally {
@@ -977,7 +989,13 @@ export function homotopyContinue(s, opts, r, start0) {
             if (!Number.isFinite(fm)) break;
             if (Math.abs(fm) <= 1e-10 * scale) {
               s.circuitHomotopy[k] = null;
-              const pol = s._steadySteps(sub);
+              s.allTerminals = wasAll;
+              let pol;
+              try {
+                pol = s._steadySteps(sub);
+              } finally {
+                s.allTerminals = true;
+              }
               steps += pol.steps;
               iterations += pol.iterations;
               if (pol.converged) return { converged: true, steps, iterations, history, ramped: true };

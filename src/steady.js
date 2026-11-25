@@ -384,9 +384,17 @@ export class SteadySolves {
   // (Not on the budget: it refines an answer the solve already has, in one step, and on the
   // budget a solve whose time ran out in the round that converged threw that answer away as
   // budgetSpent; the maintainer's review of Sol's budget, 25 Nov.)
-  _polish(r) {
-    if (!this._directSteady() || !this._missesKirchhoff()) return;
-    const was = { modelError: this.modelError, newtonError: this.newtonError, conditioning: this.conditioning, islandsOn: this.islandsOn };
+  _polish(r, force = false) {
+    if (!this._directSteady() || (!force && !this._missesKirchhoff())) return;
+    const was = {
+      modelError: this.modelError,
+      newtonError: this.newtonError,
+      conditioning: this.conditioning,
+      islandsOn: this.islandsOn,
+      islandsFailed: this.islandsFailed,
+      islandsWorse: this.islandsWorse,
+      islandImbalance: this.islandImbalance,
+    };
     const q = this._steadySteps({ maxSteps: 1 });
     r.iterations += q.iterations;
     if (!q.converged) Object.assign(this, was);
@@ -546,7 +554,7 @@ export class SteadySolves {
     if (useHomotopy && allowed && direct) {
       const h = homotopyContinue(this, opts, r, start0);
       if (h.converged) {
-        if (this._missesKirchhoff()) this._polish(h); // (not on the budget, as in _solveSteadyAll)
+        if (this._missesKirchhoff() || this.islandsFailed) this._polish(h, true); // (not on the budget, as in _solveSteadyAll)
         if (!this._missesKirchhoff()) return solved(h);
         // Terminal currents still miss Kirchhoff after polish (e.g. a weakly held floating island
         // left at the wrong level): roll back and let the stage-2 ladder handle it.
