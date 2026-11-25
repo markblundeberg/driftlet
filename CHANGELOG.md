@@ -32,6 +32,15 @@ major version.
   round isn't cut short. Unset, nothing changes: Sol checked all 70,047 fingerprints of the suite,
   identical. The Debye–Hückel fixture past its range, 35 s to refuse, stops at a 200 ms budget
   after 221 ms. Sol's (OpenAI Codex), 25 Nov; the polish exception from the maintainer's review.
+- Three faults the combination fuzzer found at --n 40, each a wrong state rather than a tight
+  check. A cold start that balanced a sheet-charged face shifted a closed counter-ion's level over
+  its whole stretch, so the neutral interior boxes were left 4.9e-5 of their ions off neutral
+  (membrane 34): the shift now acts only in the boxes being projected. A regrid of a strictly
+  neutral lattice alternated its amount and neutrality corrections, which undid each other to
+  2.1e-9 even after 150 rounds (echem 29): they're now solved together. And a pin's linear solve
+  that threw left its unit entry in a reused right-hand side, which moved a later steady solve's
+  levels by 7e-9 RT (echem 36): it's cleared on the way out. combos --n 40 now passes in every
+  family. Astra's (OpenAI Codex), 25 Nov.
 
 ## 1.23.0 (2026-11-23)
 
