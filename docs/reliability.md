@@ -30,7 +30,8 @@ Macdonald and finite-length Warburg impedances, Cottrell and spherical diffusion
 second law (the free energy in through the terminals equals what's dissipated, every term
 non-negative). Against other codes: IonMonger's perovskite J–V hysteresis (finite elements,
 Octave), and liquid-junction potentials against JPCalc, LJPcalc and JLJP. The
-[table below](#the-validation-table) lists each with its tolerance.
+[table below](#the-validation-table) lists each with its tolerance. Against measurements, and
+where the model's physics stops matching an experiment's, see [against experiment](experiments.md).
 
 Each solution can check itself too: `check()` from `driftlet/kit` balances every species'
 ledger (what comes in through each terminal, is made or destroyed), the conservation

@@ -29,7 +29,8 @@ The data are 25 °C's. `aqueous(names, { T })`, from 273.15 to 323.15 K (0 to 50
   for Na⁺, Ag⁺, Cu²⁺, Zn²⁺, Fe²⁺, Cl⁻ and SO₄²⁻, and 6–8% off for K⁺, NO₃⁻ (low) and Li⁺ (high);
   at 18 °C it is 2–4% low. Near 25 °C that is about 2.4% per kelvin; 37 °C's D are 1.34 times
   25 °C's. It runs low when cold (the Walden product λ°η of simple ions rises as water cools),
-  and probably a few per cent high above 25 °C, where it is unchecked: the fits stop there. For
+  and probably a few per cent high above 25 °C, where the fits stop. KCl's conductivity standards
+  suggest about 9% high at 50 °C ([against experiment](experiments.md)). For
   better, give your own `D` at T.
   H⁺ and OH⁻ move by proton hopping, which viscosity doesn't scale (it is 22% and 6% off at
   0 °C), so with either of them a `T` needs their D at T from you, `D: { 'H+': … }` (m²/s).

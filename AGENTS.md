@@ -7,7 +7,7 @@ fork of driftlet for its own use.
   [docs/device.md](docs/device.md), [docs/statistics.md](docs/statistics.md),
   [docs/numerics.md](docs/numerics.md), [docs/kit.md](docs/kit.md),
   [docs/visualization.md](docs/visualization.md), [docs/data.md](docs/data.md),
-  [docs/reliability.md](docs/reliability.md), [docs/templates.md](docs/templates.md) and [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference.
+  [docs/reliability.md](docs/reliability.md), [docs/experiments.md](docs/experiments.md), [docs/templates.md](docs/templates.md) and [ROADMAP.md](ROADMAP.md). Keep them true as the code changes, since they're the reference.
   For the source itself, [docs/internals.md](docs/internals.md): a module that states a contract at its
   head (src/laws.js) is changed with its contract and a test in the same commit. Math
   in the docs is LaTeX for GitHub: inline as $`…`$ (the backticks keep markdown's emphasis rules

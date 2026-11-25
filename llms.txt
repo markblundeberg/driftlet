@@ -26,8 +26,8 @@ transference, a voltage clamp, an action potential, one travelling along an axon
 
 The references are in docs/: device.md (the definition), kit.md (the helpers), conventions.md
 (signs and levels), visualization.md, alignment.md (band offsets), statistics.md (non-ideal
-materials, insertion hosts), data.md and reliability.md (what's validated, and the numerical
-limits).
+materials, insertion hosts), data.md, reliability.md (what's validated, and the numerical
+limits) and experiments.md (measurements, how close driftlet lands and why).
 
 ## Imports
 
