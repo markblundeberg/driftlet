@@ -15,6 +15,16 @@ major version.
   nothing Newton learns changed. The Debye–Hückel fixture past its range makes 470 such retries
   instead of 1,152, and refuses in 35 s instead of 37. All 42,398 steady-solve calls of the
   suite, combos --n 40 and stress come out bit for bit as before. Astra's (OpenAI Codex), 23 Nov.
+- impedance() gets its storage Jacobian, the part that multiplies iω, from an assembly that
+  writes steady and storage terms into separate accumulators. It no longer takes
+  (X(1e-30) − X(∞))·1e-30, and it makes two assemblies where it made six. That difference loses
+  a storage entry outright where the steady term beside it is over about 1e46 times larger. Such a
+  case is an electrode port with adsorption at k0 = 1e42: its pseudocapacitance came out 0, and
+  is now exact, so Z = R_ct(1 − i) at the corner frequency. On five cells compared array by
+  array, the old and new Jacobians differ only by an ulp in the storage's diagonal. Elsewhere, Z from the tests, stress and combos --n 8 agrees with 1.23.0's within
+  the larger relError of the two, in all 11,599 values. That one ulp can still move relError
+  either way, by up to 1e7, where a factorised solve lands near GMRES's tol: see ROADMAP.
+  Neon's (Gemini), 25 Nov.
 
 ## 1.23.0 (2026-11-23)
 

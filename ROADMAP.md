@@ -773,6 +773,16 @@ notes), ranked by how much each trips an agent writing its first device:
   at ε = 1e-15 an error of 0.125 against GEPP's 3e-16, lost 0, perturbed 0, ratio 1): no device in
   a 30-run sweep reached it, but the conditioning note could report growth (max|C′| against the
   blocks' entries), and a fix needs pivoting across blocks or a twisted factorisation.
+- **impedance()'s accuracy turns on GMRES's tol.** A factorised solve whose preconditioned residual
+  is already under GMRES's tol (1e-8) is used as it stands (src/impedance.js, the relError
+  contract). Where the system's condition number is near 1e8, as in a cell of strictly neutral
+  water, this means that one ulp in S moves relError by up to 1e7, either way. The ulp is the one
+  the 25 Nov steady/storage split removed. Seen there: Pt | water | Pt at 1 MHz, relError 5e-6
+  became 1.5e-3, and the left terminal's Re Z moved by 6e-6. Across stress, the tests and
+  combos, 7 values got more than 10× worse and 7 more than 10× better. Neon found the cause and
+  the numbers. A tol of 1e-11 restores those cases, but costs 23–43% in bench's impedance cases,
+  and it moves two tests that sit on the 1e-2 split threshold. Untried: always one GMRES cycle,
+  or stop on the estimated error rather than the residual.
 - **Ideas from Neon's architecture read (25 Nov 2026).** These are notes, not plans. Neon read the
   source for smells; its counts are its own, not rechecked. Two of its five points are already
   here: storage apart from transport (## Next, item 0's second seam) and set() as three verbs
