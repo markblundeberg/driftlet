@@ -69,6 +69,8 @@
 //      everything else at them unchanged in concentration; a floating gate over either node
 //      keeping its σ, its voltage and the rest of its window's φ̂ (concentrations kept) moving
 //      with the φ̂ moved under it (floatSigma, followFloating);
+//      where a capacitor's box needs counter-charge, neutralStart puts it on its Gauss row,
+//      each closed amount kept and concentrations outside the projected boxes unchanged;
 //      s.coldStart false. A solve that converges, a warm start and a carried state set it as
 //      their state is.
 //   3. An insertion host (a φ-free material, not a conductor): its φ̂ and every η shifted by z·Δ
@@ -101,7 +103,8 @@
 //      region given by amounts is neutral by its c0, checked (with its aσ under such a window,
 //      which φ̂ then sets).
 //   4. Steps 2 and 3 change no concentration but as they say: step 3 is a gauge (φ̂ and each η by
-//      z·Δ), step 2 moves the passing species between a face's two nodes only.
+//      z·Δ). Step 2 shares passing species across an equilibrium face and corrects the
+//      capacitor boxes' charge at fixed closed amounts.
 //   5. Each floating terminal's V is set by the last of steps 4, 6, 7, 9 that applies to it;
 //      held terminals' V are untouched.
 //   6. Only u, uLo, termV, s.unbalanced, s.coldStart and what computeConcentrations derives are written; the
@@ -813,7 +816,10 @@ function neutralStart(s) {
       if (p.capacitance && p.nodes.some((g) => neutralAt[g] && s._portHolds(g))) floating.push({ k, want: s.portQ[k - 2] });
     } else if (neutralAt[k === 0 ? 0 : s.nNodes - 1] && s.model.contacts[k === 0 ? 'left' : 'right'].phi.type === 'capacitive') floating.push({ k, want: k === 0 ? s.contactD.left : -s.contactD.right });
   }
-  solveNeutral(s, nodes, { closed, floating });
+  // The sheet's counter-charge belongs at the face. Shifting a closed level outside these boxes
+  // changed A⁻ alone throughout the neutral interior by 0.017 mol/m³ (the membrane combos'
+  // case 34, neutralG; Astra, 25 Nov).
+  solveNeutral(s, nodes, { closed, floating, closedAtNodes: true });
 }
 
 // The charge per volume a floating capacitive port puts at node g, Σ aσ (C/m³), where it holds

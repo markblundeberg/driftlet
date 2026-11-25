@@ -35,7 +35,8 @@
 //      left and marks each node it moved in `moved`. (No producer uses it: they hold more than
 //      neutrality at once, which by turns didn't converge; see 4.)
 //   4. solveNeutral(s, nodes, { closed, floating, syncFaces }): Newton on every node's d (by its
-//      mode), each closed stretch's ℓ (its species' η shifted over it, but where a node jumps)
+//      mode), each closed stretch's ℓ (its species' η shifted over it, but where a node jumps;
+//      with closedAtNodes, only over the listed nodes, keeping the cold start's c0 elsewhere)
 //      and each floating capacitor's V together, onto G = 0, each closed amount its `want` and
 //      each floating charge its `want`; the nodes' block tridiagonal (a synced capacitive face
 //      couples its two boxes, −A C V_T), the border by its Schur complement. A 'jump' node nothing
@@ -289,7 +290,7 @@ function thomas(diag, off, rhs) {
 // fourth review, R4 1.3 and 1.5). A state that holds already is left bit for bit.
 //   closed: [{ st, want }]; floating: [{ k, want }] (k a terminal: 0, 1 the contacts, 2 + a port).
 // Returns { worst } (the worst of the three, each relative to its scale), marking moved nodes.
-export function solveNeutral(s, nodes, { closed = [], floating = [], moved = null, syncFaces = false, tol = 1e-14, rounds = 30 } = {}) {
+export function solveNeutral(s, nodes, { closed = [], floating = [], moved = null, syncFaces = false, closedAtNodes = false, tol = 1e-14, rounds = 30 } = {}) {
   const { n, M, z, present, VT } = s, F = FARADAY, grid = s.model.grid, N = nodes.length;
   if (N === 0 && closed.length === 0) return { worst: 0 };
   const posOf = new Int32Array(s.nNodes).fill(-1);
@@ -298,7 +299,7 @@ export function solveNeutral(s, nodes, { closed = [], floating = [], moved = nul
   const K = closed.length, m = K + floating.length;
   const charge = (k) => (k >= 2 ? s.portQ[k - 2] : k === 0 ? s.contactD.left : -s.contactD.right);
   // (a closed stretch's ℓ acts where its species is, but not at a conductor node or one that jumps)
-  const acts = (g, i) => s.nodeConductor[g] < 0 && present[g * n + i] && !(posOf[g] >= 0 && nodes[posOf[g]].mode === 'jump');
+  const acts = (g, i) => s.nodeConductor[g] < 0 && present[g * n + i] && (posOf[g] < 0 ? !closedAtNodes : nodes[posOf[g]].mode !== 'jump');
   let worst = Infinity, best = Infinity;
   for (let it = 0; it <= rounds; it++) {
     const rows = gaussRows(s, nodes, { syncFaces });

@@ -951,3 +951,26 @@ test("a trace's charge is what the terminals passed: an RC double layer's stored
   const r = dev.advance(5 * RC);
   assert.ok(Math.abs(r.trace.terminals.right.charge.at(-1) - -2 * r.time) < 1e-9 * 2 * r.time, `${r.trace.terminals.right.charge.at(-1)} vs ${-2 * r.time}`);
 });
+
+test('a sheet-charged cold start keeps the closed counter-ion and every interior box neutral', () => {
+  const c0 = { 'Na+': 100, 'Cl-': 100 }, length = 1e-6, sheet = -0.01;
+  const d = new Device(build({
+    library: [aqueous(['Na+', 'Cl-'], { epsr: 0 })],
+    stack: [bath(c0), layer('water', length, { c0 }), {
+      phi: { type: 'capacitive', C: 0.01 }, sheetCharge: sheet,
+      species: { 'Na+': { type: 'permeability', P: 1e-6 }, 'Cl-': 'blocked' },
+    }, layer('water', length, { c0 }), {}],
+    grid: { minCells: 8 },
+  }));
+  const s = d.solver, g0 = d.grid.regionStart[1], before = s.c.slice();
+  equilibrateFaces(s);
+  let chloride = 0;
+  for (let g = g0; g < s.nNodes; g++) {
+    const v = d.grid.vol[g], plus = s.c[g * s.n], minus = s.c[g * s.n + 1];
+    if (g > g0) assert.deepEqual([plus, minus], Array.from(before.subarray(g * s.n, (g + 1) * s.n)), `interior box ${g}`);
+    chloride += v * minus;
+    const charge = v * FARADAY * (plus - minus);
+    assert.ok(Math.abs(charge + (g === g0 ? sheet : 0)) < 1e-12 * v * FARADAY * (plus + minus), `box ${g}: ${charge}`);
+  }
+  assert.ok(Math.abs(chloride / (length * c0['Cl-']) - 1) < 1e-13);
+});
