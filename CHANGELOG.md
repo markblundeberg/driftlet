@@ -42,6 +42,22 @@ major version.
   levels by 7e-9 RT (echem 36): it's cleared on the way out. combos --n 40 now passes in every
   family. Astra's (OpenAI Codex), 25 Nov.
 
+- Steady solves on direct devices now use unified pseudo-arclength homotopy continuation
+  (`src/homotopy.js`) by default when stage-1 Newton fails, tracing a single scalar parameter
+  `s ∈ [0, 1]` through voltages, capacitive gates, log-scaled generation, and a linear circuit
+  blend for current-driven and resistance-backed terminals without mutating drives or calling
+  `redrive()`. Reuses the factorised block-tridiagonal Jacobian via a `(P + K + 1)`-bordered
+  Woodbury solve, honours `solve({ budgetMs })` at every arclength step, checks tangent sign on
+  current-driven landings to stay on the stable branch of N-shaped I–V curves, and keeps an
+  off-budget Kirchhoff polish + rollback to the stage-2 ladder as a safety net (plus `homotopy:
+  false` internally). Across 43,768 non-demo differential solves, all converged potentials match
+  the ladder within 1e-11 V except one weakly held island case where homotopy improves Kirchhoff
+  from 6 to 15 digits; non-demo solve time drops ~48%, `stress --check` wall time drops ~22%
+  (368 → 285 s), and the Debye–Hückel non-convexity refusal drops from ~35 s to ~0.7 s. Also sets
+  `bench/combos`' `order` current floor to `max(1e-10, 1e-12 · gross)` against per-species
+  terminal flux cancellation (as `_missesKirchhoff` does), clearing 2-ulp noise on lit TFTs at
+  rest (`semi` 13 and 27). Neon's (Gemini), 25 Nov.
+
 ## 1.23.0 (2026-11-23)
 
 - set() of a held gate's capacitance, window or electrode area over a region with ε > 0 (or a gate

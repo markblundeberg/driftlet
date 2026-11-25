@@ -24,7 +24,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/boundaries.js` | yes: faces (φ laws, links, reactions, gates, diffuse layers), ports, contacts, circuit rows |
 | `src/diffuse.js` | yes: a Gouy–Chapman layer's charge, surface excesses, resistances and their derivatives |
 | `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
-| `src/homotopy.js` | yes: unified pseudo-arclength homotopy continuation (behind internal switch) |
+| `src/homotopy.js` | yes: unified pseudo-arclength homotopy continuation for direct steady solves |
 | `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
@@ -161,7 +161,9 @@ By method, in file order:
 - **Steady solves** are `src/steady.js` (`solveSteady`, `_steadyFromHere`, the continuations:
   floating, generation, a contact's voltage; `_steadySteps`, the pseudo-transient ramp, and
   `_renormalizeSpectators`; `_directSteady`, `slowestTime`, `fastestTime`, `stuckReactions`),
-  methods of the Solver like the assembly's.
+  methods of the Solver like the assembly's, backed by `src/homotopy.js` (`homotopyContinue`,
+  `computeHomotopyDs`, `solveBorderedArclength`) for unified pseudo-arclength continuation on
+  direct steady devices.
 
 What stays in `src/solver.js` is the setup, the bookkeeping, the probes and snapshots, and the thin
 drivers that call the modules: about a thousand lines, with no contract of its own beyond this

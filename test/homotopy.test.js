@@ -5,10 +5,11 @@ import { Device, FARADAY, GAS_CONSTANT, AVOGADRO, units } from '../src/index.js'
 import { build, aqueous, metal, semiconductor, layer, ohmic, bath, half, photogeneration } from '../src/kit.js';
 import { computeHomotopyDs, solveBorderedArclength } from '../src/homotopy.js';
 import { equilibrate } from '../src/newton.js';
+import { LEARNED } from '../src/solver.js';
 
-function withHomotopy(fn) {
+function withLadder(fn) {
   const prev = globalThis.DRIFTLET_HOMOTOPY;
-  globalThis.DRIFTLET_HOMOTOPY = true;
+  globalThis.DRIFTLET_HOMOTOPY = false;
   try {
     return fn();
   } finally {
@@ -163,21 +164,19 @@ test('solveBorderedArclength satisfies the full augmented linear system (pins + 
 test('homotopy handles multi-decade R, immobile Q at open circuit, galvanic OCV behind R, and warm jumps', () => {
   const Si = semiconductor('Si'), NA = units.perCm3(1e16), W = units.um(60.5);
   // 1. Multi-decade series resistance (1e-6 to 1e9 Ω·m²) on a lit Si solar cell.
-  withHomotopy(() => {
-    let prevV = -Infinity;
-    for (const R of [1e-6, 1, 1e3, 1e6, 1e9]) {
-      const sol = new Device(build({
-        T: 300, library: [Si],
-        stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: NA }), ohmic({ V: 0, R })],
-        bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (60e-6 * NA) } }, photogeneration({ material: 'Si', flux: 3e-5, alpha: 1630, mu: units.eV(1.18), to: W })],
-        grid: { hmin: units.nm(1), hmax: units.um(1) },
-      })).solve();
-      assert.ok(sol.converged, `R=${R} converged`);
-      assert.ok(sol.terminals.right.V >= prevV - 1e-9, `V monotonic with R=${R}`);
-      prevV = sol.terminals.right.V;
-    }
-    assert.ok(Math.abs(prevV - 0.38442194) < 1e-5, `high-R approaches V_oc: ${prevV}`);
-  });
+  let prevV = -Infinity;
+  for (const R of [1e-6, 1, 1e3, 1e6, 1e9]) {
+    const sol = new Device(build({
+      T: 300, library: [Si],
+      stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e19) }), layer('Si', units.um(60), { acceptors: NA }), ohmic({ V: 0, R })],
+      bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1 / (60e-6 * NA) } }, photogeneration({ material: 'Si', flux: 3e-5, alpha: 1630, mu: units.eV(1.18), to: W })],
+      grid: { hmin: units.nm(1), hmax: units.um(1) },
+    })).solve();
+    assert.ok(sol.converged, `R=${R} converged`);
+    assert.ok(sol.terminals.right.V >= prevV - 1e-9, `V monotonic with R=${R}`);
+    prevV = sol.terminals.right.V;
+  }
+  assert.ok(Math.abs(prevV - 0.38442194) < 1e-5, `high-R approaches V_oc: ${prevV}`);
 
   // 2. Lit Si cell at open circuit with immobile species Q: conserved node-by-node, matches ladder.
   const defQ = build({
@@ -189,7 +188,7 @@ test('homotopy handles multi-decade R, immobile Q at open circuit, galvanic OCV 
   defQ.species.push({ name: 'Q', z: 0 });
   defQ.materials.Si.species.Q = { D: 0, mu0: 0, cRef: 1000 };
   defQ.regions.forEach((r) => (r.c0 = { Q: 1 }));
-  const solQ = withHomotopy(() => new Device(defQ).solve());
+  const solQ = new Device(defQ).solve();
   assert.ok(solQ.converged);
   assert.ok(Math.abs(solQ.terminals.right.V - 0.38442194) < 1e-5);
   assert.ok(solQ.c.Q.every((v) => Math.abs(v - 1) < 1e-12), 'immobile Q kept exact');
@@ -200,7 +199,7 @@ test('homotopy handles multi-decade R, immobile Q at open circuit, galvanic OCV 
   const lib = aqueous(['Cu2+', 'Zn2+', 'Na+', 'Cl-'], { epsr: 0 });
   const mu = (name) => lib.materials.water.species[name].mu0 + RT * Math.log(c[name] / 1000);
   const ocv = (mu('Zn2+') - mu('Cu2+')) / (2 * FARADAY), phi = -mu('Cu2+') / (2 * FARADAY);
-  const solZn = withHomotopy(() => new Device(build({
+  const solZn = new Device(build({
     library: [lib, metal('Cu'), metal('Zn')],
     stack: [
       ohmic(0, ['e-']), layer('Cu', 1e-6),
@@ -210,7 +209,7 @@ test('homotopy handles multi-decade R, immobile Q at open circuit, galvanic OCV 
       layer('Zn', 1e-6), ohmic({ V: ocv, R: 1e-4 }, ['e-']),
     ],
     grid: { hmin: 1.35e-8, hmax: 1.3e-7, ratio: 1.1 },
-  })).solve());
+  })).solve();
   assert.ok(solZn.converged);
   assert.ok(Math.abs(solZn.terminals.right.V - ocv) < 1e-9 && Math.abs(solZn.current) < 1e-12);
 });
@@ -219,21 +218,49 @@ test('homotopy refuses folds (Frumkin dip past peak) and model walls (Debye–H�
   // 1. Frumkin dip past its peak current: traces over the fold and refuses with unreached.
   const c = { FeIII: 1, FeII: 1, 'Cl-': 100, 'K+': 107 }, cMax = 1 / (AVOGADRO * 0.71e-9 ** 3);
   const unit = (FARADAY * 0.72e-9 * 1) / 30e-6;
-  const over = withHomotopy(() => new Device(build({
+  const over = new Device(build({
     library: [{ species: [{ name: 'FeIII', z: -3, cRef: 1000 }, { name: 'FeII', z: -4, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
       materials: { water: { epsr: 0, species: { FeIII: { D: 0.72e-9, mu0: 0 }, FeII: { D: 0.67e-9, mu0: -FARADAY * 0.36 }, 'K+': { D: 1.957e-9, mu0: 0 }, 'Cl-': { D: 2.032e-9, mu0: 0 } }, statistics: [{ type: 'lattice', species: ['FeIII', 'FeII', 'K+', 'Cl-'], cMax }] } } }, metal('Pt')],
     stack: [ohmic({ I: -0.006 * unit }, ['e-']), layer('Pt', 1e-6), { phi: { type: 'capacitive', C: 0.2 }, zeroCharge: 0.6, diffuse: { epsr: 78.4 }, reactions: [{ ...half('FeIII + e- = FeII'), k0: 5e-2, alpha: 0.5 }] }, layer('water', 30e-6, { c0: c }), bath(c, 'Cl-')],
     grid: { hmin: 30e-9, hmax: 2e-6, ratio: 1.2 },
-  })).solve());
+  })).solve();
   assert.equal(over.converged, false);
   assert.match(over.warnings.join(' '), /no steady state passes the driven current/);
 
   // 2. Debye–Hückel fixture past non-convexity boundary: refuses cleanly in < 500 steps (vs ~8,357 on the ladder).
   const spec = JSON.parse(readFileSync(new URL('./fixtures/debye-huckel-past-range.json', import.meta.url), 'utf8'));
-  const dh = withHomotopy(() => new Device(spec).solve());
+  const dh = new Device(spec).solve();
   assert.equal(dh.converged, false);
   assert.match(dh.warnings.join(' '), /debye-huckel: the activity model is not convex/);
   assert.ok(dh.steps < 500, `expected < 500 steps, got ${dh.steps}`);
+});
+
+test('homotopy honours budgetMs mid-trace on the Debye–Hückel fixture and restores STATE', (t) => {
+  const spec = JSON.parse(readFileSync(new URL('./fixtures/debye-huckel-past-range.json', import.meta.url), 'utf8'));
+  const d = new Device(spec), s = d.solver;
+  const before = s._snapshot(), learned = LEARNED.map((k) => s[k]);
+  const drives = s.terms.map((tm) => tm.drive);
+  // Let s = 0 and the first arclength corrector factorisation run, then expire the clock mid-trace
+  // so homotopy's per-step budget check interrupts without any catch block swallowing BUDGET_SPENT.
+  let elapsed = 0, factors = 0;
+  const factor = s._factor.bind(s);
+  t.mock.method(performance, 'now', () => elapsed);
+  t.mock.method(s, '_factor', () => {
+    if (s.allTerminals && ++factors >= 15) elapsed = 50;
+    return factor();
+  });
+  const sol = d.solve({ budgetMs: 10 });
+  assert.equal(sol.converged, false);
+  assert.equal(sol.budgetSpent, true);
+  assert.ok(sol.iterations > 0);
+  assert.ok(factors >= 15, `expected budget to fire inside homotopy trace, got ${factors} factorisations`);
+  assert.match(sol.warnings.join('\n'), /budget spent/);
+  assert.doesNotMatch(sol.warnings.join('\n'), /debye-huckel: the activity model is not convex/);
+  assert.deepEqual(s._snapshot(), before);
+  assert.deepEqual(s.terms.map((tm) => tm.drive), drives);
+  LEARNED.forEach((k, i) => assert.equal(s[k], learned[i], k));
+  assert.ok(!s.allTerminals);
+  assert.equal(s.circuitHomotopy, null);
 });
 
 test('homotopy stays on the stable branch of an N-shaped I–V curve (d26594)', () => {
@@ -275,8 +302,8 @@ test('homotopy stays on the stable branch of an N-shaped I–V curve (d26594)', 
     },
     grid: { hmin: 1.4284780382255565e-10, hmax: 6.391660743434045e-8, ratio: 1.1937939652428031 },
   };
-  const ref = new Device(structuredClone(spec)).solve();
-  const hom = withHomotopy(() => new Device(structuredClone(spec)).solve());
+  const ref = withLadder(() => new Device(structuredClone(spec)).solve());
+  const hom = new Device(structuredClone(spec)).solve();
   assert.equal(ref.converged, true);
   assert.equal(hom.converged, true);
   assert.ok(Math.abs(hom.terminals.right.V - ref.terminals.right.V) < 1e-9, `expected V ≈ ${ref.terminals.right.V}, got ${hom.terminals.right.V}`);
@@ -312,9 +339,9 @@ test('homotopy preserves Kirchhoff and species-order invariance on floating-isla
   const rev = structuredClone(base);
   rev.species.reverse();
 
-  const ref = new Device(structuredClone(base)).solve();
-  const fwd = withHomotopy(() => new Device(structuredClone(base)).solve());
-  const bwd = withHomotopy(() => new Device(structuredClone(rev)).solve());
+  const ref = withLadder(() => new Device(structuredClone(base)).solve());
+  const fwd = new Device(structuredClone(base)).solve();
+  const bwd = new Device(structuredClone(rev)).solve();
 
   assert.equal(ref.converged, true);
   assert.equal(fwd.converged, true);

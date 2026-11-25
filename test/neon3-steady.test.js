@@ -31,18 +31,20 @@ test('a cold start the definition refuses at a resistance\'s held drive: a failu
 });
 
 test('a cold continuation whose layout is refused counts its failed solve once', () => {
-  // (q stayed the failed solve, its steps and iterations added before the layout and again after)
+  // (q stayed the failed solve, its steps and iterations added before the layout and again after;
+  // pinned to homotopy: false since _continuation still serves non-direct devices and rollbacks)
   const d = new Device(pinned20()), sv = d.solver;
   let steps = 0, iterations = 0, refusedIn = [];
-  const steadySteps = sv._steadySteps.bind(sv), layOut = sv._layOut.bind(sv);
+  const steadySteps = sv._steadySteps.bind(sv), layOut = sv._layOut.bind(sv), from = sv._steadyFromHere.bind(sv);
+  sv._steadyFromHere = (opts) => from({ ...opts, homotopy: false });
   sv._steadySteps = (opts) => {
     const q = steadySteps(opts);
     steps += q.steps;
     iterations += q.iterations;
     return q;
   };
-  sv._layOut = () => {
-    const ok = layOut();
+  sv._layOut = (budget) => {
+    const ok = layOut(budget);
     if (!ok) refusedIn.push(/at Solver\.(\w+)/.exec(new Error().stack.split('\n')[2])?.[1]);
     return ok;
   };
@@ -50,6 +52,20 @@ test('a cold continuation whose layout is refused counts its failed solve once',
   assert.equal(s.converged, false);
   assert.ok(refusedIn.includes('_continuation'), `refused in ${refusedIn}`);
   assert.deepEqual([s.steps, s.iterations], [steps, iterations], 'reported against taken');
+
+  // And on the default homotopy path, a refused layout at s = 0 also counts steps and iterations once.
+  const dh = new Device(pinned20()), sh = dh.solver;
+  let hSteps = 0, hIters = 0;
+  const hSteadySteps = sh._steadySteps.bind(sh);
+  sh._steadySteps = (opts) => {
+    const q = hSteadySteps(opts);
+    hSteps += q.steps;
+    hIters += q.iterations;
+    return q;
+  };
+  const shSol = dh.solve();
+  assert.equal(shSol.converged, false);
+  assert.deepEqual([shSol.steps, shSol.iterations], [hSteps, hIters], 'homotopy reported against taken');
 });
 
 // A reaction slower than the capped step (steady.test.js's settling case): the ramp runs out of

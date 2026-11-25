@@ -3,8 +3,8 @@
 // CONTRACT
 //
 // Functions over a Solver `s` (src/solver.js; its layout is in docs/internals.md), called by
-// Solver._steadyFromHere (src/steady.js) when the internal homotopy switch is active on a direct
-// steady device (`s._directSteady()`).
+// Solver._steadyFromHere (src/steady.js) on a direct steady device (`s._directSteady()`) unless
+// `opts.homotopy` is explicitly false.
 //
 //   homotopyContinue(s, opts, r, start0) → { converged, steps, iterations, history, ramped?, hitModelWall? }
 //     Traces the 1D steady solution manifold F(x, V_fl, s) = 0 from a known or equilibrium start
@@ -16,6 +16,8 @@
 //     - Cold start: level contacts, capacitive ports at zeroCharge, floating terminals blended via
 //       `s.circuitHomotopy[k] = { alpha, beta, v0, gamma }` (r_k = α I_k + β(V_k − v_0) − γ),
 //       and generation ramped via `s.generationScale = exp(30·ln(10)·(s − 1))`.
+//     - Honours `opts.budget` (`check()` at every arclength step and round, `record()` on every
+//       completed corrector round; never swallows non-Error budget interrupts).
 //     - Always restores `s.sourceOverride`, `s.generationScale`, `s.allTerminals`, `s.homotopyGen`,
 //       `s.homotopyGenTerm` and `s.circuitHomotopy` in `finally`.
 //     - Sets `s.unreached` when a single current-driven terminal is bounded in both voltage
@@ -296,7 +298,8 @@ function buildPlan(s, mode) {
         if (d.kind === 'I') p0[k] = s.termI[k];
         else if (d.kind === 'V' && d.R > 0) p0[k] = s.termV[k] + d.R * s.termI[k];
       }
-    } catch {
+    } catch (err) {
+      if (!(err instanceof Error)) throw err;
       return null;
     } finally {
       for (let k = 0; k < nt; k++) s.sourceOverride.delete(k);
@@ -361,14 +364,14 @@ function buildPlan(s, mode) {
 
 // Lay out a cold start at s = 0, treating any floating terminal currently voltage-held by
 // circuitHomotopy (alpha === 0) as held at its v0 so initFromComposition sets electrodes there.
-function layOutAtS0(s, plan) {
+function layOutAtS0(s, plan, budget) {
   const savedFl = s.floating;
   const heldAt0 = savedFl.filter((k) => plan.ch[k]?.a0 === 0);
-  if (heldAt0.length === 0) return s._layOut();
+  if (heldAt0.length === 0) return s._layOut(budget);
   s.floating = savedFl.filter((k) => plan.ch[k]?.a0 !== 0);
   for (const k of heldAt0) s.termV[k] = plan.ch[k].v0;
   try {
-    return s._layOut();
+    return s._layOut(budget);
   } finally {
     s.floating = savedFl;
     for (const k of heldAt0) s.termV[k] = plan.ch[k].v0;
@@ -424,14 +427,19 @@ function computeTangent(s, plan, sVal, potIdx, Bs, pinDs, circDs, wx, wV, prevTx
 }
 
 // Corrector Newton solve on F(x, V_fl, s) = 0 and wx·(x − x_pred) + wV·(V − V_pred) + ws·(s − s_pred) = 0.
-function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, wx, wV, ws, Bs, pinDs, circDs, { maxIter = 60, tol = 1e-6, maxStep = 10 } = {}) {
+function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, wx, wV, ws, Bs, pinDs, circDs, { maxIter = 60, tol = 1e-6, maxStep = 10, budget } = {}) {
+  budget?.check();
+  const done = (res) => {
+    budget?.record(res);
+    return res;
+  };
   const N = s.sys.size, fl = s.floating, K = fl.length;
   const delta = s.delta, deltaV = s.deltaV ?? (s.deltaV = new Float64Array(K));
   const pinRhs = new Float64Array(Math.max(1, s.pins.length));
   const circRhs = new Float64Array(K);
   let sVal = sStart;
   for (let it = 1; it <= maxIter; it++) {
-    if (plan.rampGen && (sVal < -0.5 || sVal > 1.5)) return { converged: false, iterations: it, s: sVal, error: 's out of range' };
+    if (plan.rampGen && (sVal < -0.5 || sVal > 1.5)) return done({ converged: false, iterations: it, s: sVal, error: 's out of range' });
     applyS(s, plan, sVal);
     s.islandsOn = false;
     try {
@@ -439,14 +447,15 @@ function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, 
     } catch (err) {
       if (!(err instanceof SolverError)) throw err;
       s.modelError = err.message;
-      return { converged: false, iterations: it, s: sVal, modelError: err.message };
+      return done({ converged: false, iterations: it, s: sVal, modelError: err.message });
     }
     equilibrate(s);
     computeHomotopyDs(s, plan, sVal, Bs, pinDs, circDs);
     try {
       s._factor();
     } catch (err) {
-      return { converged: false, iterations: it, s: sVal, error: err.message };
+      if (!(err instanceof Error)) throw err;
+      return done({ converged: false, iterations: it, s: sVal, error: err.message });
     }
     let g = ws * (sVal - sPred);
     for (let i = 0; i < potIdx.length; i++) {
@@ -463,13 +472,13 @@ function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, 
       ds = solveBorderedArclength(s, s.res, pinRhs, circRhs, g, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws);
     } catch (err) {
       if (!(err instanceof SolverError)) throw err;
-      return { converged: false, iterations: it, s: sVal, error: err.message };
+      return done({ converged: false, iterations: it, s: sVal, error: err.message });
     }
     clipLevels(s, delta, maxStep);
     const step = Math.max(maxPotentialStep(s, delta, deltaV), WS * Math.abs(ds));
     const own = Math.max(maxPotentialStep(s, delta, deltaV, false), WS * Math.abs(ds));
-    if (!Number.isFinite(step)) return { converged: false, iterations: it, s: sVal, error: 'non-finite update' };
-    if (it > 1 && own > 1e5) return { converged: false, iterations: it, s: sVal, error: 'diverging' };
+    if (!Number.isFinite(step)) return done({ converged: false, iterations: it, s: sVal, error: 'non-finite update' });
+    if (it > 1 && own > 1e5) return done({ converged: false, iterations: it, s: sVal, error: 'diverging' });
     const alpha = own > maxStep ? maxStep / own : 1;
     addToState(s, delta, -alpha);
     for (let a = 0; a < K; a++) s.termV[fl[a]] -= alpha * deltaV[a];
@@ -480,12 +489,12 @@ function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, 
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
         s.modelError = err.message;
-        return { converged: false, iterations: it, s: sVal, modelError: err.message };
+        return done({ converged: false, iterations: it, s: sVal, modelError: err.message });
       }
-      return { converged: true, iterations: it, s: sVal, reusable: s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0 };
+      return done({ converged: true, iterations: it, s: sVal, reusable: s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0 });
     }
   }
-  return { converged: false, iterations: maxIter, s: sVal };
+  return done({ converged: false, iterations: maxIter, s: sVal });
 }
 
 // Run one homotopy path from s = 0 to s = 1 for `plan`.
@@ -514,7 +523,7 @@ function tracePath(s, plan, opts, r) {
   steps += q0.steps;
   iterations += q0.iterations;
   if (!q0.converged && !plan.warm && s.unkept.length === 0) {
-    if (layOutAtS0(s, plan)) {
+    if (layOutAtS0(s, plan, opts.budget)) {
       applyS(s, plan, 0);
       q0 = s._steadySteps(q0Opts);
       steps += q0.steps;
@@ -532,9 +541,11 @@ function tracePath(s, plan, opts, r) {
   // 2. Initial unit tangent at s = 0.
   const orientV = singleI >= 0;
   let ts;
+  opts.budget?.check();
   try {
     ts = computeTangent(s, plan, 0, potIdx, Bs, pinDs, circDs, wx, wV, null, null, null, tx, tV, orientV);
-  } catch {
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
     return { converged: false, steps, iterations, history };
   }
   if (!Number.isFinite(ts)) return { converged: false, steps, iterations, history };
@@ -570,7 +581,8 @@ function tracePath(s, plan, opts, r) {
         let tsLand = NaN;
         try {
           tsLand = computeTangent(s, plan, 1, potIdx, Bs, pinDs, circDs, wx, wV, tx, tV, ts, prevTx, prevTV, false);
-        } catch {
+        } catch (err) {
+          if (!(err instanceof Error)) throw err;
           tsLand = NaN;
         }
         if (plan.keepChOnLand) applyS(s, plan, 1);
@@ -594,10 +606,12 @@ function tracePath(s, plan, opts, r) {
   for (let di = 0; di < dirs.length; di++) {
     const dir = dirs[di];
     if (di > 0) {
+      opts.budget?.check();
       s._putLevels(start0);
       try {
         ts = computeTangent(s, plan, 0, potIdx, Bs, pinDs, circDs, wx, wV, null, null, null, tx, tV, orientV);
-      } catch {
+      } catch (err) {
+        if (!(err instanceof Error)) throw err;
         break;
       }
     }
@@ -615,6 +629,7 @@ function tracePath(s, plan, opts, r) {
     let foldSeen = false, sMax = 0, prevAbsDist = Math.abs(1 - sCur), modelFails = 0, consecFails = 0, recentFail = 0;
 
     for (let hs = 0; hs < maxHomSteps; hs++) {
+      opts.budget?.check();
       // Cap Δs when generation ramps logarithmically (~3.5 decades/step max) to avoid exp overflow.
       if (plan.rampGen && Math.abs(ts) > 1e-6) dsArc = Math.min(dsArc, 0.12 / Math.abs(ts));
       // On a single current-driven terminal, bound ΔV per step so an N-shaped I–V curve resolves
@@ -655,7 +670,7 @@ function tracePath(s, plan, opts, r) {
       const sInit = sCur + dsArc * predAlpha * ts;
       const ws = buildWeights(potIdx, s.VT, tx, tV, ts, wx, wV);
 
-      let cor = correctorNewton(s, plan, sInit, potIdx, uPred, uLoPred, vPred, sPred, wx, wV, ws, Bs, pinDs, circDs);
+      let cor = correctorNewton(s, plan, sInit, potIdx, uPred, uLoPred, vPred, sPred, wx, wV, ws, Bs, pinDs, circDs, { budget: opts.budget });
       steps++;
       iterations += cor.iterations;
       history.push({ homotopy: cor.s, converged: cor.converged });
@@ -724,7 +739,8 @@ function tracePath(s, plan, opts, r) {
       let nextTs = NaN;
       try {
         nextTs = computeTangent(s, plan, sNext, potIdx, Bs, pinDs, circDs, wx, wV, prevTx, prevTV, prevTs, tx, tV, false, !!cor.reusable);
-      } catch {
+      } catch (err) {
+        if (!(err instanceof Error)) throw err;
         nextTs = NaN;
       }
       if (!Number.isFinite(nextTs) || (singleI < 0 && illCond && sNext > sCur && sNext < 1 && s.sys.minPivotRatio > 0 && s.sys.minPivotRatio < 1e-13)) {
@@ -734,6 +750,7 @@ function tracePath(s, plan, opts, r) {
         if (singleI < 0 && illCond && sNext > sCur && sNext < 1) {
           let sM = sNext, dM = Math.min(1 - sNext, Math.max(0.05, sNext - sCur));
           while (sM < 1) {
+            opts.budget?.check();
             const nxt = Math.min(1, sM + dM), bef = s._levels();
             applyS(s, plan, nxt);
             const qM = s._steadySteps(sub);
@@ -830,6 +847,7 @@ export function homotopyContinue(s, opts, r, start0) {
   try {
     let cur = r;
     const runMode = (mode) => {
+      opts.budget?.check();
       s._putLevels(start0);
       const plan = buildPlan(s, mode);
       if (!plan) return null;
@@ -865,6 +883,7 @@ export function homotopyContinue(s, opts, r, start0) {
     // terminals held at Vref via circuitHomotopy (no drive mutation), then trace from that lit
     // state to the target current/R at full light.
     if (s.hasGeneration && s.floating.some((k) => !s._bound(k))) {
+      opts.budget?.check();
       s._putLevels(start0);
       const nt = s.terms.length;
       const p1 = new Float64Array(nt);
@@ -913,12 +932,14 @@ export function homotopyContinue(s, opts, r, start0) {
     // holds V_k via circuitHomotopy (α = 0, β = 1, zero drive mutation) and finds I(V) = want(V)
     // by bracketed Illinois, then polishes floated once at V*.
     if (s.floating.length === 1 && !s._bound(s.floating[0]) && !chargeOnly(s, s.floating[0]) && !s.hasGeneration) {
+      opts.budget?.check();
       const k = s.floating[0], d = s.terms[k].drive, target = sourceAt(d.src, s.time);
       const want = d.kind === 'I' ? () => target : (V) => (target - V) / d.R;
       const sub = { ...opts, maxSteps: 1 };
       let steps = cur.steps ?? 0, iterations = cur.iterations ?? 0;
       const history = (cur.history ?? []).slice();
       const evalAt = (V) => {
+        opts.budget?.check();
         const bef = s._levels();
         s.circuitHomotopy[k] = { alpha: 0, beta: 1, v0: V, gamma: 0 };
         s.termV[k] = V;

@@ -56,17 +56,19 @@
 // says otherwise. A continuation applies with continuation not off; canContinue: both contacts held
 // at voltages (not behind a resistance) that differ.
 //   1. Newton from here (_steadySteps): a single step (maxSteps 1) where canContinue, there's
-//      generation, or homotopy is on with an active floating drive (R > 0 or nonzero I), and the
-//      device can be solved directly (_directSteady); else the pseudo-transient ramp with opts'
+//      generation, or homotopy is active with an active floating drive (R > 0 or nonzero I), and
+//      the device can be solved directly (_directSteady); else the pseudo-transient ramp with opts'
 //      maxSteps. Failing on a state reached by time steps
 //      (this.stepped), on a direct device with continuation not off, the same again from a cold
 //      start (_layOut), whose u and uLo become the stages' start (termV stays the
 //      start's: a floating terminal keeps the voltage the transient left it at).
-//   2. Continuation: when the internal homotopy switch (`opts.homotopy` or
-//      `globalThis.DRIFTLET_HOMOTOPY`) is on and the device is direct, unified pseudo-arclength
-//      homotopy (`homotopyContinue` in src/homotopy.js) replaces the stage-2 ladder (if a
-//      converged homotopy state still misses Kirchhoff after _polish, it rolls back to the ladder;
-//      otherwise it falls back to stage 3 unless `this.unreached` or a model wall stopped it). Otherwise, the four-stage ladder: generation ramped up
+//   2. Continuation: on a direct device (_directSteady), unified pseudo-arclength homotopy
+//      (`homotopyContinue` in src/homotopy.js) runs by default (disable internally with
+//      `opts.homotopy: false` or `globalThis.DRIFTLET_HOMOTOPY = false`). If a converged homotopy
+//      state still misses Kirchhoff after an off-budget _polish, it rolls back and falls through
+//      to the four-stage ladder below; otherwise an unconverged homotopy falls back to stage 3
+//      unless `this.unreached` or a model wall stopped it. On non-direct devices (or with homotopy
+//      disabled / after a Kirchhoff rollback), the four-stage ladder runs: generation ramped up
 //      (_generationContinuation); terminals behind a
 //      resistance (_resistanceContinuation): one whose current Kirchhoff doesn't give, held at
 //      voltages marched to its load line's crossing (_floatingContinuation with a line); else, or
@@ -509,7 +511,7 @@ export class SteadySolves {
 
     // 1. Newton from here. Where a continuation could follow, one direct attempt only, rather
     // than the pseudo-transient ramp straight away.
-    const useHomotopy = opts.homotopy ?? (globalThis.DRIFTLET_HOMOTOPY === true || globalThis.DRIFTLET_HOMOTOPY === '1');
+    const useHomotopy = opts.homotopy ?? (globalThis.DRIFTLET_HOMOTOPY !== false && globalThis.DRIFTLET_HOMOTOPY !== '0');
     const hasActiveFloat = this.floating.some((k) => {
       const d = this.terms[k].drive;
       return (d.kind === 'V' && d.R > 0) || (d.kind === 'I' && !this._bound(k) && sourceAt(d.src, this.time) !== 0);
@@ -544,7 +546,7 @@ export class SteadySolves {
     if (useHomotopy && allowed && direct) {
       const h = homotopyContinue(this, opts, r, start0);
       if (h.converged) {
-        if (this._missesKirchhoff()) this._polish(h);
+        if (this._missesKirchhoff()) this._polish(h); // (not on the budget, as in _solveSteadyAll)
         if (!this._missesKirchhoff()) return solved(h);
         // Terminal currents still miss Kirchhoff after polish (e.g. a weakly held floating island
         // left at the wrong level): roll back and let the stage-2 ladder handle it.

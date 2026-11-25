@@ -316,15 +316,31 @@ function stepsQuiet(d, dt) {
   return w ? w.split('\n')[0].slice(0, 160) : '';
 }
 
+// Sum of per-species terminal current magnitudes Σ |z_i F N_i| across contacts and ports,
+// matching _missesKirchhoff's cancellation floor in src/steady.js: a lit TFT at rest passes
+// ±1.6e4 to ±2.2e5 A/m² of electrons and holes that cancel to 0, leaving ~1e-10 A/m² (a few ulps
+// of the gross flux) in the net current (semi cases 13 and 27).
+function terminalGross(s) {
+  const { z } = s;
+  let gross = 0;
+  for (const flux of [s.contactFlux.left, s.contactFlux.right, ...s.portFlux]) {
+    for (let i = 0; i < flux.length; i++) gross += Math.abs(z[i] * FARADAY * flux[i]);
+  }
+  return gross;
+}
+
 const props = {
   order(c) {
-    const a = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
+    const devA = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V));
+    const a = devA.solve();
     if (!converged(a)) return skip('no steady state at plan.V');
     const def2 = reorder(clone(c.def), rng(hash(JSON.stringify(c.params)) + 7));
-    const b = new Device(def2).set(driveAt(c.plan, c.plan.V)).solve();
+    const devB = new Device(def2).set(driveAt(c.plan, c.plan.V));
+    const b = devB.solve();
     if (!converged(b)) return 'reordered definition: not converged, where the original did';
     const d = diff(a, b);
-    return within(d, { mu: 1e-7, I: 1e-7, V: 1e-7 }) ? '' : `reordered: ${fmt(d)}`;
+    const gross = Math.max(terminalGross(devA.solver), terminalGross(devB.solver));
+    return within(d, { mu: 1e-7, I: 1e-7, Iabs: Math.max(1e-10, 1e-12 * gross), V: 1e-7 }) ? '' : `reordered: ${fmt(d)}`;
   },
 
   relax(c) {

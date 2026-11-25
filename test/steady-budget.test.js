@@ -84,7 +84,7 @@ test('a steady budget spent during a held solve restores the state and its next 
   t.mock.method(s, 'newton', (...args) => {
     assert.equal(elapsed, 0, 'the expired call must start no more rounds');
     const result = newton(...args);
-    if (s.terms[1].drive.kind === 'V') elapsed = 2;
+    if (s.allTerminals || s.terms[1].drive.kind === 'V') elapsed = 2;
     return result;
   });
   const stop = d.solve({ budgetMs: 1 });

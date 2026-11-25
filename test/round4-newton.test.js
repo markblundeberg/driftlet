@@ -53,10 +53,9 @@ test('a failed solve after a warned one: the restored state keeps its island war
   assert.equal(island(d.solution()), 1);
 });
 
-// A13: the last fallback, the pseudo-transient ramp after the light's continuation, is a solve
-// like the others: a stepped state solved there is no longer stepped. Forced (the first three
-// tries fail untouched), the solution read the right contact's waveform before the step it was
-// at, 0.1 V for 0.
+// A13: the last fallback, the pseudo-transient ramp after continuation fails, is a solve like the
+// others: a stepped state solved there is no longer stepped. Forced (stage 1 and continuation fail
+// untouched), the solution read the right contact's waveform before the step it was at, 0.1 V for 0.
 test('the last fallback ramp marks the state solved: no longer stepped, read at its drives', () => {
   const NA = units.perCm3(1e16), d = new Device(build({ T: 300, library: [semiconductor('Si')],
     stack: [ohmic(0), layer('Si', units.um(0.5), { donors: units.perCm3(1e18) }), layer('Si', units.um(5), { acceptors: NA }), { ...ohmic(0), V: { t: [0, 1e-3, 1e-3], values: [0.1, 0.1, 0] } }],
@@ -64,11 +63,16 @@ test('the last fallback ramp marks the state solved: no longer stepped, read at 
   d.solve();
   d.advance(1e-3); // (onto the waveform's step: stepped, at t = 1e-3)
   const sv = d.solver, orig = sv._steadySteps;
-  let calls = 0;
-  sv._steadySteps = function (o) { return ++calls <= 3 ? { converged: false, steps: 1, iterations: 1, history: [] } : orig.call(this, o); };
+  let outerCalls = 0, homCalls = 0;
+  sv._steadySteps = function (o) {
+    if (sv.allTerminals) { homCalls++; return { converged: false, steps: 1, iterations: 1, history: [] }; }
+    if (++outerCalls <= 2) return { converged: false, steps: 1, iterations: 1, history: [] };
+    return orig.call(this, o);
+  };
   const s = d.solve();
   sv._steadySteps = orig;
-  assert.equal(calls, 4);
+  assert.equal(outerCalls, 3);
+  assert.ok(homCalls >= 1, `expected homotopy fallback attempts, got ${homCalls}`);
   assert.ok(s.converged);
   assert.equal(sv.stepped, false);
   assert.equal(s.terminals.right.V, 0);
@@ -162,7 +166,7 @@ test('the floating continuation steps past a failed held sample, and claims no l
     let held = 0;
     s._steadyFromHere = function (opts) {
       if (this.terms[1].drive.kind === 'V' && fails(++held)) return { converged: false, steps: 0, iterations: 0, history: [] };
-      return from.call(this, opts);
+      return from.call(this, { ...opts, homotopy: false });
     };
     s._steadySteps = function (opts) { // (floated, failing until the march begins)
       return this.terms[1].drive.kind === 'I' && held === 0 ? { converged: false, steps: 1, iterations: 0, history: [] } : steps.call(this, opts);

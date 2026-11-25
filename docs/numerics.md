@@ -1108,15 +1108,35 @@ A solve that fails falls back stage by stage:
    per iteration), enough for most large jumps, such as a cold start at forward bias. The solver
    skips this retry when the failed Newton rounds show that tighter damping and the extra
    iterations would repeat the same updates from the same state. Where no continuation applies,
-   the first stage goes straight on into the pseudo-transient ramp (3).
+   the first stage goes straight on into the pseudo-transient ramp (4).
    Where the state is a transient's, it can be a worse start than a cold one (a nanosecond after
    a lit MOS capacitor's gate jumps, its surface is in deep depletion, minority carriers ten
    orders below where they end): if Newton fails from there, the solve goes on as a cold device
    would, from the layout for the drives, keeping what it took from the state (its amounts and
    charges). Nor does a continuation start from the last steady solve's voltages once a
    transient has moved the state.
-2. **Continuation from a solved state, along the drives,** each step a steady solve warm from
-   the last:
+2. **Unified pseudo-arclength homotopy (`src/homotopy.js`) on direct steady devices.** Rather than
+   mutating terminal drives or running nested continuation loops, a single scalar parameter
+   $`s \in [0, 1]`$ connects a known or equilibrium start ($`s = 0`$) to the target drives
+   ($`s = 1`$): held voltages ramp linearly, capacitive ports start from their `zeroCharge`,
+   generation scales logarithmically as $`\exp(30\ln 10\,(s - 1))`$, and floating terminals (under
+   a current or behind a resistance $`R`$) use a smooth linear circuit blend
+   $`r_k = \alpha(s) I_k + \beta(s)(V_k - v_0(s)) - \gamma(s) = 0`$ without calling `redrive()`,
+   so every conserved amount, floating charge and immobile sum captured at the start of `solve()`
+   holds along the entire path. Each predictor–corrector step solves the $`(P + K + 1)`$-bordered
+   arclength system by Woodbury reuse of the factorised block-tridiagonal Jacobian and reuses the
+   converged step's factorisation for the next unit tangent. A warm start traces from the last
+   solved state to stay on the same branch; a cold start falls back to level contacts if needed,
+   with a two-stage lit path and a held-voltage Illinois root-finder for extreme cancellation. On a
+   single current-driven terminal, the voltage step is bounded and the landing tangent is checked
+   for $`ts > 0`$ so an N-shaped $`I(V)`$ curve stays on the stable branch continuous from start
+   and refuses cleanly past a fold (such as Frumkin's dip) or a statistics model wall (such as
+   Debye–Hückel non-convexity). If a converged homotopy state still misses Kirchhoff after its
+   polish, it rolls back to the stage-by-stage ladder below; otherwise an unconverged homotopy
+   falls through to the pseudo-transient ramp (4).
+3. **Stage-by-stage continuation ladder** (used on non-direct devices solved by giant steps, after
+   a Kirchhoff rollback, or when homotopy is turned off internally), each step a steady solve warm
+   from the last:
    - **The light.** A device with generation reactions (species made only from, or turned only
      into, fixed reservoirs, such as photogeneration from a photon reservoir) can be held far
      from equilibrium even with its terminals level, where a voltage ramp can't help; nor can a
@@ -1160,7 +1180,7 @@ A solve that fails falls back stage by stage:
      fails from there, it's laid out again, level, and retried.) The step starts at 1/8 of the
      way, grows ×1.5 on success and shrinks ×4 on failure. The ramp's own start, with the
      terminals level, ramps the light up when there is some.
-3. **The pseudo-transient ramp.** $`dt`$ ramps up from a small value, through time, ending in
+4. **The pseudo-transient ramp.** $`dt`$ ramps up from a small value, through time, ending in
    the direct solve. After a failed step it grows ×2, then ×1.5 more each success, back to ×10.
    Once steps reach the slowest diffusion time, the direct solve is tried from there, once a
    decade of $`dt`$ (the state kept if it fails): with immobile traps and ions of D = 1e-17 m²/s,
