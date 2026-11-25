@@ -193,7 +193,7 @@
 //      closed combination, slower than that, isn't waited out: the solve fails or converges where
 //      it began, and stuckReactions names it (Solution's warnings, both ways).
 //   6. A finite budgetMs allows at least one full Newton round, then can stop the next round,
-//      step or continuation. The stop unwinds the stages' cleanup and returns unconverged with
+//      step or continuation; not the polish, which only refines a converged answer. The stop unwinds the stages' cleanup and returns unconverged with
 //      budgetSpent, a stopped message and the iterations completed. Device.solve restores
 //      STATE and LEARNED before it reads the returned snapshot.
 // Tests: every Device.solve goes through here; test/steady-budget.test.js (deadline and rollback),
@@ -372,10 +372,13 @@ export class SteadySolves {
   // over a bare iteration: the factorisations are the same one more either way. A polish that
   // fails leaves no diagnostic behind for a converged solution's reader: those of the failure
   // aren't STATE, which the step puts back, and are put back here; found by Neon, reviewing it.)
-  _polish(r, budget) {
+  // (Not on the budget: it refines an answer the solve already has, in one step, and on the
+  // budget a solve whose time ran out in the round that converged threw that answer away as
+  // budgetSpent; the maintainer's review of Sol's budget, 25 Nov.)
+  _polish(r) {
     if (!this._directSteady() || !this._missesKirchhoff()) return;
     const was = { modelError: this.modelError, newtonError: this.newtonError, conditioning: this.conditioning, islandsOn: this.islandsOn };
-    const q = this._steadySteps({ maxSteps: 1, budget });
+    const q = this._steadySteps({ maxSteps: 1 });
     r.iterations += q.iterations;
     if (!q.converged) Object.assign(this, was);
     else if (this.solvedV) this.solvedV = [this.termV[0], this.termV[1]];
@@ -434,7 +437,7 @@ export class SteadySolves {
       return { converged: false, steps: 0, iterations: 0, history: [] };
     }
     const r = this._steadyFromHere(opts);
-    if (r.converged) this._polish(r, opts.budget); // (before atSteady: a step clears it)
+    if (r.converged) this._polish(r); // (before atSteady: a step clears it; not on the budget)
     this.atSteady = r.converged;
     return r;
   }

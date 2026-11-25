@@ -99,3 +99,42 @@ test('a steady budget spent during a held solve restores the state and its next 
   assert.ok(fresh.converged);
   assert.deepEqual(retry, fresh);
 });
+
+test('a solve that converges inside its budget keeps its answer: the polish after it is not cut short', (t) => {
+  // (A converged solve whose budget ran out in its last Newton round went on to the Kirchhoff
+  // polish, which checked the clock and threw the converged answer away as budgetSpent. The polish
+  // is one step, and only refines what's already an answer; the maintainer's review of Sol's budget,
+  // 25 Nov.) The insertion electrode at rest of test/newton.test.js, which the polish takes from
+  // Newton's tolerance to round-off (solved at 0.4 V, then at 0.3 V from there: from cold, either
+  // lands exactly, with nothing to polish).
+  const RT = 8.314462618 * 298.15, F = 96485.33212, x = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  const E = x.map((v) => 0.4 - (RT / F) * Math.log(v / (1 - v)));
+  const host = () => new Device({
+    species: [{ name: 'Li+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: { host: { epsr: 0, species: { 'Li+': { D: 1e-14, mu0: 0, cRef: 30000 }, 'e-': { D: 1e-4, mu0: 0, cRef: 30000 } }, statistics: [{ type: 'insertion', species: ['Li+', 'e-'], cMax: 30000, ocv: { x, E, muRef: 0 } }] } },
+    regions: [{ material: 'host', length: 1e-6 }],
+    contacts: { left: { V: 0, terminal: 'Li+', species: { 'Li+': 'equilibrium' }, phi: 'bulk' }, right: { V: 0.4, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+  });
+  const warm = () => {
+    const dev = host();
+    dev.solve();
+    dev.set({ contacts: { right: { V: 0.3 } } });
+    return dev;
+  };
+  const plain = warm().solve();
+  const d = warm(), s = d.solver, newton = s.newton.bind(s);
+  let elapsed = 0, polished = 0;
+  const misses = s._missesKirchhoff.bind(s);
+  t.mock.method(performance, 'now', () => elapsed);
+  t.mock.method(s, 'newton', (...args) => {
+    const result = newton(...args);
+    if (result.converged) elapsed = 1e9; // (the budget runs out in the round that converges)
+    return result;
+  });
+  t.mock.method(s, '_missesKirchhoff', () => { const m = misses(); polished += m ? 1 : 0; return m; });
+  const sol = d.solve({ budgetMs: 1 });
+  assert.equal(polished, 1);
+  assert.ok(sol.converged && !sol.budgetSpent, sol.warnings.join('\n'));
+  assert.ok(Math.abs(sol.terminals.right.current) < 1e-20, `${sol.terminals.right.current} A/m²`);
+  assert.deepEqual(sol, plain);
+});

@@ -25,6 +25,13 @@ major version.
   the larger relError of the two, in all 11,599 values. That one ulp can still move relError
   either way, by up to 1e7, where a factorised solve lands near GMRES's tol: see ROADMAP.
   Neon's (Gemini), 25 Nov.
+- `solve({ budgetMs })`, a wall-time budget for a steady solve, as `advance()` has. Spent, the
+  solve returns `converged: false` with `budgetSpent: true` and a warning saying how long it ran
+  ("budget spent", not a refusal). It leaves the device as it was, so a later `solve()` starts
+  from the same state. It always allows one full Newton round, and the polish after a converged
+  round isn't cut short. Unset, nothing changes: Sol checked all 70,047 fingerprints of the suite,
+  identical. The Debye–Hückel fixture past its range, 35 s to refuse, stops at a 200 ms budget
+  after 221 ms. Sol's (OpenAI Codex), 25 Nov; the polish exception from the maintainer's review.
 
 ## 1.23.0 (2026-11-23)
 
