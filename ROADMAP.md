@@ -796,10 +796,12 @@ notes), ranked by how much each trips an agent writing its first device:
     current, a resistance). Where the I–V curve folds back, as Debye–Hückel's spinodal near
     V* ≈ 1.1694 V seems to, such a walk can only halve its stride against the fold: that is the
     Zeno walk. Pseudo-arclength continuation follows the curve's length instead, so it can turn
-    the fold, or report that the branch turns. Neon's bolder form replaces the ladder with one
-    homotopy, from dark equilibrium at s = 0 to every drive on at s = 1. The ladder exists because
-    simpler paths failed on particular devices (0.11, 0.16). One s ties the whole path to its
-    stiffest part, so the moonshot is to try it and see where it breaks.
+    the fold, or report that the branch turns. Neon's bolder form, one homotopy from equilibrium
+    at s = 0 to every drive on at s = 1, is now the steady solve's second stage (src/homotopy.js,
+    Unreleased), after four rounds of review against the ladder solve by solve. The ladder stays,
+    for devices solved by giant time steps and as the fallback; Neon's counts over the suite,
+    stress and combos --n 40: the path entered 1,497 times, the ladder after a Kirchhoff rollback
+    6, the pseudo-transient ramp after a failed path 182 (150 converged).
   - *Fewer rescue layers.* Compensated levels (u + uLo), charge rows, the difference form with GMRES,
     islands and the steady polish each answer a loss of digits. Neon suggests a pivoted or twisted
     block factorisation, or the conductors' mixed flux unknowns used more widely, could replace
@@ -807,6 +809,13 @@ notes), ranked by how much each trips an agent writing its first device:
     evaluated, before any factorisation, which pivoting can't recover. Its point that fluxes and
     reactions are evaluated in several places, in more than one layout, is ## 2.0's "one owner per
     quantity" again.
+
+- **The "floating region doesn't balance" warning reads noise against noise** (Neon, homotopy
+  round 4, 25 Nov). On round9-mirror's membrane21, mirrored, the ladder's last Newton round also
+  leaves islandsFailed set (imbalance 0.20). It goes unwarned only because the terminal currents,
+  −7e-26 A/m², fall under 1e-12 of the species' gross; a solve that left 4.6e-25 warned. Where
+  nothing crosses a floating region's faces, its imbalance needs a floor in what does cross, as
+  the terminal currents have.
 
 - **Open from Neon's second review (20 Nov 2026).** In a transient, check()'s conservation item
   reads only unreacting stretches, so where every species reacts it says "nothing to conserve",

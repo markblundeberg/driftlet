@@ -41,22 +41,27 @@ major version.
   that threw left its unit entry in a reused right-hand side, which moved a later steady solve's
   levels by 7e-9 RT (echem 36): it's cleared on the way out. combos --n 40 now passes in every
   family. Astra's (OpenAI Codex), 25 Nov.
-
-- Steady solves on direct devices now use unified pseudo-arclength homotopy continuation
-  (`src/homotopy.js`) by default when stage-1 Newton fails, tracing a single scalar parameter
-  `s ∈ [0, 1]` through voltages, capacitive gates, log-scaled generation, and a linear circuit
-  blend for current-driven and resistance-backed terminals without mutating drives or calling
-  `redrive()`. Reuses the factorised block-tridiagonal Jacobian via a `(P + K + 1)`-bordered
-  Woodbury solve, honours `solve({ budgetMs })` at every arclength step, checks tangent sign on
-  current-driven landings to stay on the stable branch of N-shaped I–V curves, and keeps an
-  off-budget Kirchhoff polish + rollback to the stage-2 ladder as a safety net (plus `homotopy:
-  false` internally). Across 43,768 non-demo differential solves, all converged potentials match
-  the ladder within 1e-11 V except one weakly held island case where homotopy improves Kirchhoff
-  from 6 to 15 digits; non-demo solve time drops ~48%, `stress --check` wall time drops ~22%
-  (368 → 285 s), and the Debye–Hückel non-convexity refusal drops from ~35 s to ~0.7 s. Also sets
-  `bench/combos`' `order` current floor to `max(1e-10, 1e-12 · gross)` against per-species
-  terminal flux cancellation (as `_missesKirchhoff` does), clearing 2-ulp noise on lit TFTs at
-  rest (`semi` 13 and 27). Neon's (Gemini), 25 Nov.
+- A steady solve that Newton can't make in one go now follows one path, from a state the solver
+  has (the last solved state, or the device at equilibrium) to the one asked for, instead of
+  climbing the ladder of continuations one drive at a time (the light, then a resistance, then a
+  current's voltage march). One parameter carries every drive at once, and the path is followed
+  by its length, so it can go round a point where that parameter turns back. No terminal's drive
+  is changed on the way, so what solve() keeps fixed (amounts, a floating region's charge) holds
+  along all of it. Under a current drive, where the I–V curve has a peak, it lands on the branch
+  that rises from zero current, the stable one; past the peak it says no steady state passes the
+  current. Where the path's answer still misses Kirchhoff, or the path fails, the ladder runs as
+  before, and it's still what devices solved by giant time steps use. Against 1.23.0 plus the
+  entries above, over the suite, stress and combos --n 8: of 43,818 steady solves that converge
+  both ways, one moves by more than 1e-11 V, a cell passing 3e-19 A/m² whose terminal currents
+  the path balances to 1e-16 of themselves where the ladder left 2e-7. Newton iterations fall
+  from 910k to 582k and stress --check from 354 s to 279 s. Three refusals that took 36–45 s
+  (Debye–Hückel past its range among them) take 0.2–1 s, and no solve's count of warnings
+  changes. On seven variants of an iron cell with a peaked I–V, driven at up to 0.995 of each
+  peak, the 35 solves land where the ladder does. bench/combos' order property now allows
+  round-off of the species' currents where they cancel at a terminal (1e-12 of their sum, as the
+  solve's own Kirchhoff check does): lit transistors at rest pass ±2e5 A/m² of electrons and holes
+  that net to 1e-10 differently in each order. Neon's (Gemini), 25 Nov, in four rounds of the
+  maintainer's review.
 
 ## 1.23.0 (2026-11-23)
 

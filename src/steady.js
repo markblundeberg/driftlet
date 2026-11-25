@@ -64,8 +64,10 @@
 //      start's: a floating terminal keeps the voltage the transient left it at).
 //   2. Continuation: on a direct device (_directSteady), unified pseudo-arclength homotopy
 //      (`homotopyContinue` in src/homotopy.js) runs by default (disable internally with
-//      `opts.homotopy: false` or `globalThis.DRIFTLET_HOMOTOPY = false`). If a converged homotopy
-//      state still misses Kirchhoff after an off-budget _polish, it rolls back and falls through
+//      `opts.homotopy: false` or `globalThis.DRIFTLET_HOMOTOPY = false`). A converged homotopy
+//      state that misses Kirchhoff or left islandsFailed gets an off-budget _polish in the
+//      device's own terminal mode (its diagnostics are then the device's, not all-terminals
+//      mode's); if it still misses Kirchhoff, it rolls back and falls through
 //      to the four-stage ladder below; otherwise an unconverged homotopy falls back to stage 3
 //      unless `this.unreached` or a model wall stopped it. On non-direct devices (or with homotopy
 //      disabled / after a Kirchhoff rollback), the four-stage ladder runs: generation ramped up

@@ -1115,28 +1115,37 @@ A solve that fails falls back stage by stage:
    would, from the layout for the drives, keeping what it took from the state (its amounts and
    charges). Nor does a continuation start from the last steady solve's voltages once a
    transient has moved the state.
-2. **Unified pseudo-arclength homotopy (`src/homotopy.js`) on direct steady devices.** Rather than
-   mutating terminal drives or running nested continuation loops, a single scalar parameter
-   $`s \in [0, 1]`$ connects a known or equilibrium start ($`s = 0`$) to the target drives
-   ($`s = 1`$): held voltages ramp linearly, capacitive ports start from their `zeroCharge`,
-   generation scales logarithmically as $`\exp(30\ln 10\,(s - 1))`$, and floating terminals (under
-   a current or behind a resistance $`R`$) use a smooth linear circuit blend
-   $`r_k = \alpha(s) I_k + \beta(s)(V_k - v_0(s)) - \gamma(s) = 0`$ without calling `redrive()`,
-   so every conserved amount, floating charge and immobile sum captured at the start of `solve()`
-   holds along the entire path. Each predictor–corrector step solves the $`(P + K + 1)`$-bordered
-   arclength system by Woodbury reuse of the factorised block-tridiagonal Jacobian and reuses the
-   converged step's factorisation for the next unit tangent. A warm start traces from the last
-   solved state to stay on the same branch; a cold start falls back to level contacts if needed,
-   with a two-stage lit path and a held-voltage Illinois root-finder for extreme cancellation. On a
-   single current-driven terminal, the voltage step is bounded and the landing tangent is checked
-   for $`ts > 0`$ so an N-shaped $`I(V)`$ curve stays on the stable branch continuous from start
-   and refuses cleanly past a fold (such as Frumkin's dip) or a statistics model wall (such as
-   Debye–Hückel non-convexity). If a converged homotopy state still misses Kirchhoff after its
-   polish, it rolls back to the stage-by-stage ladder below; otherwise an unconverged homotopy
-   falls through to the pseudo-transient ramp (4).
-3. **Stage-by-stage continuation ladder** (used on non-direct devices solved by giant steps, after
-   a Kirchhoff rollback, or when homotopy is turned off internally), each step a steady solve warm
-   from the last:
+2. **One path, from a state the solver has to the one asked for** (`src/homotopy.js`), on a device
+   that can be solved directly. A single parameter $`s`$ carries every drive at once, from
+   $`s = 0`$ (the last solved state, or the device at equilibrium: its contacts level, its gates at
+   their `zeroCharge`, no light) to the drives asked for at $`s = 1`$. Held voltages move linearly
+   in $`s`$, the light is scaled by $`10^{30(s - 1)}`$, and a terminal driven by a current or behind
+   a resistance obeys a blend $`\alpha(s)\,I_k + \beta(s)\,(V_k - v_0(s)) = \gamma(s)`$, from held
+   at a voltage to its own drive. No terminal's drive is changed on the way, so what `solve()`
+   keeps fixed from its start (the amounts it keeps, a floating region's charge) holds along all
+   of the path. The path is followed by its length rather than by $`s`$ (pseudo-arclength
+   continuation), so it can go round a point where $`s`$ turns back, where a walk in one drive can
+   only halve its stride against it. Each step is a predictor along the path's tangent and a
+   Newton corrector on the steady equations with one row more, solved with Newton's own
+   block-tridiagonal factorisation. A path from the last solved state that fails is tried again
+   cold, and a cold one can start with the contacts level, light a device with its terminals held
+   first, or, for a single floating terminal, find its voltage by bracketing (Illinois) with the
+   terminal held. The path stops, and the solve says why, where it folds back short of its target
+   (Frumkin's dip) or reaches a state the activity model can't describe (Debye–Hückel past its
+   range).
+   Under a current drive the voltage moves a bounded amount a step, and the path has to arrive at
+   $`s = 1`$ going forward. So where the I–V curve has a peak, the solve lands on the branch that
+   rises from zero current, the stable one, and not on the falling branch beyond the peak, which
+   passes the same current but which a current source can't hold. (A stress cell, Fe³⁺/Fe²⁺
+   between Pt, peaks at −108 A/m² near −1.1 V; without those checks the path landed at −2.04 V
+   for −62.9 A/m², where the ladder gives −0.93 V.) Past the peak it says that no steady state
+   passes the current.
+   A converged path gets one more Newton round in the device's own terms where its currents miss
+   Kirchhoff or a floating region was left unbalanced. If the currents still miss, the solve goes
+   back to where it started and climbs the ladder (3); a path that fails goes on to the
+   pseudo-transient ramp (4).
+3. **The ladder**, on a device solved by giant time steps, or after a path's answer was put back:
+   a continuation for each kind of drive, each step a steady solve warm from the last:
    - **The light.** A device with generation reactions (species made only from, or turned only
      into, fixed reservoirs, such as photogeneration from a photon reservoir) can be held far
      from equilibrium even with its terminals level, where a voltage ramp can't help; nor can a
