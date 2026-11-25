@@ -313,7 +313,11 @@ export class RegionTerms {
     const r = 1 + im, k = g * n + im;
     res[R[b * M + r]] += (v * (c[k] - cOld[k])) / dt;
     const f = this.sheetFace[g];
-    if (f >= 0) this._jS(b, r, this.blockOfFace[f], 0, (this.sheetSign[g] * this.model.grid.area[g]) / (z[im] * FARADAY));
+    if (f >= 0) {
+      const sA = this.sheetSign[g] * this.model.grid.area[g];
+      if (this.massSys) this._jS(b, r, this.blockOfFace[f], 0, sA / (z[im] * FARADAY));
+      else this._j(b, r, this.blockOfFace[f], 0, sA / (z[im] * FARADAY * dt));
+    }
   }
 
   // Whether a port holds species i at node g, a device end node (see portHeldEnd).

@@ -348,9 +348,27 @@ test('J·v in difference form equals the assembled Jacobian, and a uniform shift
 
 // Split steady/storage assembly (_assembleSplit, _assembleSplitDifference): one pass emits steady
 // (J, termC, termDI, termDX) and storage (S, termCs, termDIs, termDXs) into separate accumulators,
-// matching assemble(dt) = J + S/dt and matching J·v, S·v in difference form.
+// matching assemble(dt) = J + S/dt (with circuitLaws both off and on) and matching J·v, S·v in
+// difference form.
 test('_assembleSplit and _assembleSplitDifference match assemble(dt) and exact J·v, S·v', () => {
-  for (const [name, make] of Object.entries(devices)) {
+  // Include a device with a floating port that alone feeds a conserved ion (exercises circuitLaws'
+  // split branch directly alongside the gallery devices).
+  const suite = {
+    ...devices,
+    'floating port feeding a closed ion (circuitLaw)': () => ({
+      species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+      materials: { aq: { epsr: 78.5, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+      regions: [{ name: 'cell', material: 'aq', length: 1e-5, c0: { 'K+': 10, 'Cl-': 10 } }],
+      contacts: {
+        left: { V: 0, phi: 'bulk', species: { 'Cl-': { type: 'equilibrium', offset: 0 }, 'K+': 'blocked' } },
+        right: { V: 0, phi: 'bulk', species: { 'Cl-': { type: 'equilibrium', offset: 0 }, 'K+': 'blocked' } },
+      },
+      ports: [{ name: 'p', region: 'cell', from: 0.3e-5, to: 0.7e-5, area: 1e5, V: 0.05, R: 10, capacitance: { C: 0.2, zeroCharge: 0 }, species: { 'K+': { type: 'conductance', G: 1e4, offset: 0 } } }],
+      grid: { hmax: 1e-6 },
+    }),
+  };
+  let circuitLawChecks = 0;
+  for (const [name, make] of Object.entries(suite)) {
     const dev = new Device(make());
     assert.ok(dev.solve().converged);
     const s = dev.solver, N = s.sys.size, dt = 1e-3;
@@ -363,40 +381,47 @@ test('_assembleSplit and _assembleSplitDifference match assemble(dt) and exact J
     s.gamOld.set(s.gam);
     s.gateList.forEach((gt, j) => (s.gateOld[j] = s.u[gt.o] + s.uLo[gt.o]));
     s.combining = false;
-    s.lawForm = new Map();
-    const { sys: J, mass: S } = s._assembleSplit();
-    assert.equal(s.massSys, null);
-    assert.equal(s.lin, null);
-    const Jsnap = { A: J.A.slice(), B: J.B.slice(), C: J.C.slice() };
-    const Ssnap = { A: S.A.slice(), B: S.B.slice(), C: S.C.slice() };
-    const C0 = s.termC.map((v) => v.slice(0, N)), Cs0 = s.termCs.map((v) => v.slice(0, N));
-    const DI0 = Float64Array.from(s.termDI), DIs0 = Float64Array.from(s.termDIs);
-    const DX0 = s.termDX.map((v) => v.slice()), DXs0 = s.termDXs.map((v) => v.slice());
-    // Compare J + S/dt against assemble(dt) (with lawForm all-false so neither triggers circuitLaws).
-    s.lawForm = new Map([...s.constraints, ...s.timeLaws].map((cs) => [cs, false]));
-    s.assemble(dt);
-    for (const X of ['A', 'B', 'C']) {
-      for (let i = 0; i < s.sys[X].length; i++) {
-        const want = Jsnap[X][i] + Ssnap[X][i] / dt, got = s.sys[X][i];
-        const sc = Math.abs(Jsnap[X][i]) + Math.abs(Ssnap[X][i] / dt) + 1e-300;
-        assert.ok(Math.abs(got - want) <= 1e-12 * sc, `${name}: ${X}[${i}] ${got} vs ${want}`);
+    const allLaws = [...s.constraints, ...s.timeLaws];
+    const hasCircuitLaw = allLaws.some((cs) => cs.circuit >= 0 && s.floating.includes(cs.circuit) && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0);
+    for (const useLaws of hasCircuitLaw ? [false, true] : [false]) {
+      const form = new Map(allLaws.map((cs) => [cs, useLaws && cs.circuit >= 0 && !(cs.contacts?.length > 0) && Number.isFinite(cs.lambda) && cs.lambda !== 0]));
+      s.lawForm = new Map(form);
+      const { sys: J, mass: S } = s._assembleSplit();
+      assert.equal(s.massSys, null);
+      assert.equal(s.lin, null);
+      const Jsnap = { A: J.A.slice(), B: J.B.slice(), C: J.C.slice() };
+      const Ssnap = { A: S.A.slice(), B: S.B.slice(), C: S.C.slice() };
+      const C0 = s.termC.map((v) => v.slice(0, N)), Cs0 = s.termCs.map((v) => v.slice(0, N));
+      const DI0 = Float64Array.from(s.termDI), DIs0 = Float64Array.from(s.termDIs);
+      const DX0 = s.termDX.map((v) => v.slice()), DXs0 = s.termDXs.map((v) => v.slice());
+      // Compare J + S/dt against assemble(dt) with the same lawForm.
+      s.lawForm = new Map(form);
+      s.assemble(dt);
+      for (const X of ['A', 'B', 'C']) {
+        for (let i = 0; i < s.sys[X].length; i++) {
+          const want = Jsnap[X][i] + Ssnap[X][i] / dt, got = s.sys[X][i];
+          const sc = Math.abs(Jsnap[X][i]) + Math.abs(Ssnap[X][i] / dt) + 1e-300;
+          assert.ok(Math.abs(got - want) <= 1e-12 * sc, `${name} (laws=${useLaws}): ${X}[${i}] ${got} vs ${want}`);
+        }
       }
+      s.terms.forEach((_, t) => {
+        const big = C0[t].reduce((m, x, k) => Math.max(m, Math.abs(x), Math.abs(Cs0[t][k] / dt)), 0);
+        for (let k = 0; k < N; k++) {
+          const want = C0[t][k] + Cs0[t][k] / dt, got = s.termC[t][k];
+          const sc = Math.abs(C0[t][k]) + Math.abs(Cs0[t][k] / dt) + 1e-300;
+          assert.ok(Math.abs(got - want) <= 1e-12 * sc + 1e-14 * big, `${name} (laws=${useLaws}): termC[${t}][${k}] ${got} vs ${want} (largest ${big})`);
+        }
+        const wantDI = DI0[t] + DIs0[t] / dt;
+        assert.ok(Math.abs(s.termDI[t] - wantDI) <= 1e-12 * (Math.abs(DI0[t]) + Math.abs(DIs0[t] / dt) + 1e-300), `${name} (laws=${useLaws}): termDI[${t}]`);
+        for (let j = 0; j < s.terms.length; j++) {
+          const wantDX = DX0[t][j] + DXs0[t][j] / dt;
+          assert.ok(Math.abs(s.termDX[t][j] - wantDX) <= 1e-12 * (Math.abs(DX0[t][j]) + Math.abs(DXs0[t][j] / dt) + 1e-300), `${name} (laws=${useLaws}): termDX[${t}][${j}]`);
+        }
+      });
+      if (useLaws) circuitLawChecks++;
     }
-    s.terms.forEach((_, t) => {
-      const big = C0[t].reduce((m, x, k) => Math.max(m, Math.abs(x), Math.abs(Cs0[t][k] / dt)), 0);
-      for (let k = 0; k < N; k++) {
-        const want = C0[t][k] + Cs0[t][k] / dt, got = s.termC[t][k];
-        const sc = Math.abs(C0[t][k]) + Math.abs(Cs0[t][k] / dt) + 1e-300;
-        assert.ok(Math.abs(got - want) <= 1e-12 * sc + 1e-14 * big, `${name}: termC[${t}][${k}] ${got} vs ${want} (largest ${big})`);
-      }
-      const wantDI = DI0[t] + DIs0[t] / dt;
-      assert.ok(Math.abs(s.termDI[t] - wantDI) <= 1e-12 * (Math.abs(DI0[t]) + Math.abs(DIs0[t] / dt) + 1e-300), `${name}: termDI[${t}]`);
-      for (let j = 0; j < s.terms.length; j++) {
-        const wantDX = DX0[t][j] + DXs0[t][j] / dt;
-        assert.ok(Math.abs(s.termDX[t][j] - wantDX) <= 1e-12 * (Math.abs(DX0[t][j]) + Math.abs(DXs0[t][j] / dt) + 1e-300), `${name}: termDX[${t}][${j}]`);
-      }
-    });
     // Compare _assembleSplitDifference() against J·v and S·v separately.
+    s.lawForm = new Map();
     const { rest: Jr, massRest: Sr, lin } = s._assembleSplitDifference();
     assert.equal(s.massSys, null);
     assert.equal(s.lin, null);
@@ -416,6 +441,7 @@ test('_assembleSplit and _assembleSplitDifference match assemble(dt) and exact J
     assert.ok(worstJ < 1e-9, `${name}: split difference J·v error ${worstJ}`);
     assert.ok(worstS < 1e-11, `${name}: split difference S·v error ${worstS}`);
   }
+  assert.ok(circuitLawChecks > 0, 'expected at least one gallery device with an active circuit law');
 });
 
 // After each step, the contact and port readouts come from only the boxes they're read from.
