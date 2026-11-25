@@ -235,3 +235,95 @@ test('homotopy refuses folds (Frumkin dip past peak) and model walls (Debye–H�
   assert.match(dh.warnings.join(' '), /debye-huckel: the activity model is not convex/);
   assert.ok(dh.steps < 500, `expected < 500 steps, got ${dh.steps}`);
 });
+
+test('homotopy stays on the stable branch of an N-shaped I–V curve (d26594)', () => {
+  const spec = {
+    T: 300,
+    species: [
+      { name: 'Fe3+', z: 3, cRef: 1000 },
+      { name: 'Fe2+', z: 2, cRef: 1000 },
+      { name: 'Na+', z: 1, cRef: 1000 },
+      { name: 'Cl-', z: -1, cRef: 1000 },
+      { name: 'e-', z: -1 },
+    ],
+    materials: {
+      water: {
+        epsr: 78.3,
+        species: {
+          'Fe3+': { D: 6.04e-10, mu0: -4700 },
+          'Fe2+': { D: 7.19e-10, mu0: -78900 },
+          'Na+': { D: 1.334e-9, mu0: -261905 },
+          'Cl-': { D: 2.032e-9, mu0: -131228 },
+        },
+        T: 298.15,
+        mu0T: 298.15,
+      },
+      Pt: { conductor: { species: 'e-', conductivity: 9523809.523809524 } },
+    },
+    regions: [
+      { material: 'Pt', length: 1e-6 },
+      { c0: { 'Fe3+': 49.26617526505966, 'Fe2+': 2.8287313025525, 'Na+': 14.483483670977007, 'Cl-': 167.93947207126098 }, material: 'water', length: 3.029892868410713e-6 },
+      { material: 'Pt', length: 1e-6 },
+    ],
+    interfaces: [
+      { phi: { type: 'capacitive', C: 0.28032231191173196 }, zeroCharge: 0.18351268186233938, reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 0.044465444935077036, alpha: 0.4318889715708792 }] },
+      { phi: { type: 'capacitive', C: 0.28032231191173196 }, zeroCharge: 0.18351268186233938, reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 0.044465444935077036, alpha: 0.4318889715708792 }] },
+    ],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' },
+      right: { terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk', I: -62.90054296647188 },
+    },
+    grid: { hmin: 1.4284780382255565e-10, hmax: 6.391660743434045e-8, ratio: 1.1937939652428031 },
+  };
+  const ref = new Device(structuredClone(spec)).solve();
+  const hom = withHomotopy(() => new Device(structuredClone(spec)).solve());
+  assert.equal(ref.converged, true);
+  assert.equal(hom.converged, true);
+  assert.ok(Math.abs(hom.terminals.right.V - ref.terminals.right.V) < 1e-9, `expected V ≈ ${ref.terminals.right.V}, got ${hom.terminals.right.V}`);
+  assert.ok(hom.terminals.right.V > -1.0 && hom.terminals.right.V < -0.9, `expected stable branch near -0.9276 V, got ${hom.terminals.right.V}`);
+});
+
+test('homotopy preserves Kirchhoff and species-order invariance on floating-island GaAs stack (d3152)', () => {
+  const base = {
+    T: 300,
+    species: [{ name: 'h+', z: 1 }, { name: 'e-', z: -1 }],
+    materials: {
+      GaAs: {
+        T: 300,
+        epsr: 13.1,
+        species: {
+          'e-': { D: 0.021974199818470205, mu0: 0, cRef: 0.7804533615717079 },
+          'h+': { D: 0.0010340799914574212, mu0: 137395.11294359344, cRef: 11.623773470216928 },
+        },
+      },
+    },
+    regions: [
+      { name: 'L0', material: 'GaAs', length: 4.83135684487053e-7, fixedCharge: 63323.73389198883 },
+      { name: 'L1', material: 'GaAs', length: 2.199261404093173e-7, fixedCharge: -862558.9713666966 },
+      { name: 'L2', material: 'GaAs', length: 9.02424004639285e-7, fixedCharge: 337977.752668189 },
+    ],
+    contacts: {
+      left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: { type: 'capacitive', C: 10 }, zeroCharge: 0.36519684155471577 },
+      right: { V: -0.20181845263578002, terminal: 'e-', species: { 'e-': 'equilibrium', 'h+': { type: 'equilibrium', offset: 0 } }, phi: 'bulk' },
+    },
+    bulkReactions: [],
+    grid: { hmin: 4.3408686129575477e-10, hmax: 4.2208602152428585e-8, ratio: 1.1093198062386365 },
+  };
+  const rev = structuredClone(base);
+  rev.species.reverse();
+
+  const ref = new Device(structuredClone(base)).solve();
+  const fwd = withHomotopy(() => new Device(structuredClone(base)).solve());
+  const bwd = withHomotopy(() => new Device(structuredClone(rev)).solve());
+
+  assert.equal(ref.converged, true);
+  assert.equal(fwd.converged, true);
+  assert.equal(bwd.converged, true);
+  assert.ok(!fwd.warnings.some((w) => w.includes("don't add up")), `fwd Kirchhoff warning: ${fwd.warnings.join('; ')}`);
+  assert.ok(!bwd.warnings.some((w) => w.includes("don't add up")), `bwd Kirchhoff warning: ${bwd.warnings.join('; ')}`);
+  const Iref = ref.terminals.right.current;
+  for (const [label, sol] of [['fwd', fwd], ['bwd', bwd]]) {
+    assert.ok(Math.abs(sol.terminals.left.current + sol.terminals.right.current) < 1e-20, `${label} Kirchhoff sum ${sol.terminals.left.current + sol.terminals.right.current}`);
+    assert.ok(Math.abs(sol.terminals.right.current - Iref) < 1e-4 * Math.abs(Iref), `${label} I=${sol.terminals.right.current} vs ref ${Iref}`);
+  }
+});

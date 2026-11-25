@@ -322,7 +322,7 @@ function buildPlan(s, mode) {
     if (d.kind === 'I') {
       if (s._bound(k)) {
         p0[k] = p1[k];
-      } else if (hasAnchor && (shuntI || rampGen || p1[k] === 0)) {
+      } else if (hasAnchor && (shuntI || rampGen)) {
         // Hold V_k = Vref at s = 0 via virtual shunt (1 − s) G_0 (V_k − Vref) + s (I_k − I_target) = 0.
         const G0 = Math.max(1, Math.abs(p1[k]) / s.VT);
         ch[k] = { a0: 0, da: 1, b0: G0, db: -G0, v0: Vref, dv: 0, g0: 0, dg: p1[k] };
@@ -355,7 +355,7 @@ function buildPlan(s, mode) {
   }
   const moves = rampGen || p0.some((v, k) => v !== p1[k]) || ch.some((c) => c !== null);
   if (!moves) return null;
-  const fastS0 = !levelR && rKs.some((k) => ch[k] && ch[k].v0 !== Vref);
+  const fastS0 = (!levelR && rKs.some((k) => ch[k] && ch[k].v0 !== Vref)) || (levelR && !rampGen && rKs.length === 0);
   return { p0, p1, ch, rampGen, warm: false, fastS0 };
 }
 
@@ -377,14 +377,18 @@ function layOutAtS0(s, plan) {
 
 // Compute unit tangent (tx, tV, ts) at the current converged point (u, uLo, termV, sVal),
 // oriented to agree with (prevTx, prevTV, prevTs) (or with ts > 0 / tV[0] > 0 if prevTx is null).
-function computeTangent(s, plan, sVal, potIdx, Bs, pinDs, circDs, wx, wV, prevTx, prevTV, prevTs, tx, tV, orientV) {
+// When `reuseFactor` is true, reuses the already-factored s.sys and (Bs, pinDs, circDs) from a
+// just-converged correctorNewton step (within 1e-6 of the solution).
+function computeTangent(s, plan, sVal, potIdx, Bs, pinDs, circDs, wx, wV, prevTx, prevTV, prevTs, tx, tV, orientV, reuseFactor = false) {
   const N = s.sys.size, K = s.floating.length;
-  applyS(s, plan, sVal);
-  s.islandsOn = false;
-  s.assemble(Infinity);
-  equilibrate(s);
-  computeHomotopyDs(s, plan, sVal, Bs, pinDs, circDs);
-  s._factor();
+  if (!reuseFactor) {
+    applyS(s, plan, sVal);
+    s.islandsOn = false;
+    s.assemble(Infinity);
+    equilibrate(s);
+    computeHomotopyDs(s, plan, sVal, Bs, pinDs, circDs);
+    s._factor();
+  }
   const zero = new Float64Array(N + 1);
   const zeroPin = new Float64Array(s.pins.length);
   const zeroCirc = new Float64Array(K);
@@ -478,7 +482,7 @@ function correctorNewton(s, plan, sStart, potIdx, uPred, uLoPred, vPred, sPred, 
         s.modelError = err.message;
         return { converged: false, iterations: it, s: sVal, modelError: err.message };
       }
-      return { converged: true, iterations: it, s: sVal };
+      return { converged: true, iterations: it, s: sVal, reusable: s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0 };
     }
   }
   return { converged: false, iterations: maxIter, s: sVal };
@@ -502,10 +506,10 @@ function tracePath(s, plan, opts, r) {
 
   // 1. Solve at s = 0. When a speculative cold start holds R-backed terminals at their target
   // voltage (not Vref), try only a direct solve before falling back to cold-level so a wall at
-  // the target doesn't spend 80 pseudo-transient steps.
+  // the target doesn't spend pseudo-transient steps.
   applyS(s, plan, 0);
   for (const k of fl) if (plan.ch[k]?.a0 === 0) s.termV[k] = plan.ch[k].v0;
-  const q0Opts = plan.warm || plan.fastS0 ? sub : opts;
+  const q0Opts = plan.warm || plan.fastS0 ? sub : { ...opts, maxSteps: Math.min(opts.maxSteps ?? 80, 20) };
   let q0 = s._steadySteps(q0Opts);
   steps += q0.steps;
   iterations += q0.iterations;
@@ -539,9 +543,11 @@ function tracePath(s, plan, opts, r) {
   const vStart = Float64Array.from(fl, (k) => s.termV[k]);
   let limited = 0, nearing = null, hitModelWall = false;
 
-  // Quick check: if s = 0 already sits near the target (e.g. galvanic cell behind R at OCV),
-  // try landing on s = 1 right away!
-  const tryLand = (predScale) => {
+  // Try landing on the true target (s = 1). When `checkMonotone` is true (a single current-driven
+  // terminal), verify the tangent at s = 1 still has ts > 0 along the arriving direction so an
+  // N-shaped I–V curve can never leap over a peak onto the unstable descending branch. On devices
+  // with floating islands, reject a coarse jump that misses Kirchhoff so homotopy steps closer.
+  const tryLand = (predScale, checkMonotone = false, strictKirchhoff = false) => {
     const before = s._levels();
     if (predScale !== 0) {
       const maxPt = maxPotentialStep(s, tx, tV) * Math.abs(predScale);
@@ -555,24 +561,47 @@ function tracePath(s, plan, opts, r) {
     steps += q.steps;
     iterations += q.iterations;
     history.push({ homotopy: 1, converged: q.converged });
-    if (q.converged) return q;
+    if (q.converged) {
+      if (strictKirchhoff && s.islands.length > 0 && s._missesKirchhoff()) {
+        s._putLevels(before);
+        return null;
+      }
+      if (checkMonotone && singleI >= 0) {
+        let tsLand = NaN;
+        try {
+          tsLand = computeTangent(s, plan, 1, potIdx, Bs, pinDs, circDs, wx, wV, tx, tV, ts, prevTx, prevTV, false);
+        } catch {
+          tsLand = NaN;
+        }
+        if (plan.keepChOnLand) applyS(s, plan, 1);
+        else clearOverrides(s, plan);
+        if (Number.isFinite(tsLand) && tsLand <= 0) {
+          s._putLevels(before);
+          return null;
+        }
+      }
+      return q;
+    }
     s._putLevels(before);
     return null;
   };
-  if (singleI < 0 && ts > 0.09) {
+  if (singleI < 0 && s.islands.length === 0 && ts > 0.0995) {
     const landed = tryLand(0);
     if (landed) return { converged: true, steps, iterations, history, ramped: true };
   }
 
-  const dirs = singleI >= 0 ? [1, -1] : [1];
-  for (const dir of dirs) {
-    if (dir === -1) {
+  const dirs = singleI >= 0 ? (ts >= 0 ? [1, -1] : [-1, 1]) : [1];
+  for (let di = 0; di < dirs.length; di++) {
+    const dir = dirs[di];
+    if (di > 0) {
       s._putLevels(start0);
       try {
         ts = computeTangent(s, plan, 0, potIdx, Bs, pinDs, circDs, wx, wV, null, null, null, tx, tV, orientV);
       } catch {
         break;
       }
+    }
+    if (dir === -1) {
       for (let j = 0; j < N; j++) tx[j] = -tx[j];
       for (let a = 0; a < K; a++) tV[a] = -tV[a];
       ts = -ts;
@@ -580,6 +609,7 @@ function tracePath(s, plan, opts, r) {
 
     let sCur = 0;
     let dsArc = Math.abs(ts) > 1e-5 ? 0.15 / Math.abs(ts) : 4;
+    if (singleI >= 0 && Math.abs(tV[0]) > 1e-9) dsArc = Math.min(dsArc, 0.1 / Math.abs(tV[0]));
     if (plan.rampGen && Math.abs(ts) > 1e-6) dsArc = Math.min(dsArc, 0.08 / Math.abs(ts));
     const minArc = 1e-4, maxArc = 1e6, maxHomSteps = 200;
     let foldSeen = false, sMax = 0, prevAbsDist = Math.abs(1 - sCur), modelFails = 0, consecFails = 0, recentFail = 0;
@@ -587,12 +617,22 @@ function tracePath(s, plan, opts, r) {
     for (let hs = 0; hs < maxHomSteps; hs++) {
       // Cap Δs when generation ramps logarithmically (~3.5 decades/step max) to avoid exp overflow.
       if (plan.rampGen && Math.abs(ts) > 1e-6) dsArc = Math.min(dsArc, 0.12 / Math.abs(ts));
+      // On a single current-driven terminal, bound ΔV per step so an N-shaped I–V curve resolves
+      // any peak rather than leaping across it onto an unstable descending branch.
+      if (singleI >= 0 && Math.abs(tV[0]) > 1e-9) {
+        const dVsoFar = Math.abs(s.termV[singleI] - vStart[0]);
+        const maxDV = dVsoFar >= 2 && Math.abs(sCur) < 0.01 ? 2.0 : 0.35;
+        dsArc = Math.min(dsArc, maxDV / Math.abs(tV[0]));
+      }
 
-      if (sCur < 1 && ts > 1e-9 && sCur + dsArc * ts >= 1) {
-        const landed = tryLand((1 - sCur) / ts);
-        if (landed) return { converged: true, steps, iterations, history, ramped: true };
-        dsArc = Math.min(dsArc * 0.5, (1 - sCur) / (2 * ts));
-        if (dsArc < minArc) break;
+      if (sCur < 1 && ts > 1e-9 && sCur + dsArc * ts >= 1 && !foldSeen) {
+        const predScale = (1 - sCur) / ts;
+        if (singleI < 0 || Math.abs(predScale * tV[0]) <= 0.35) {
+          const landed = tryLand(predScale, singleI >= 0, sCur < 0.99);
+          if (landed) return { converged: true, steps, iterations, history, ramped: true };
+          dsArc = Math.min(dsArc * 0.5, (1 - sCur) / (2 * ts));
+          if (dsArc < minArc) break;
+        }
       }
 
       const before = s._levels();
@@ -661,7 +701,7 @@ function tracePath(s, plan, opts, r) {
       const sNext = cor.s;
       if (singleI >= 0) seen.push([s.termV[singleI], s.termI[singleI]]);
 
-      if ((sCur < 1 && sNext >= 1) || (sCur > 1 && sNext <= 1)) {
+      if ((sCur < 1 && sNext >= 1 && !(singleI >= 0 && foldSeen)) || (singleI < 0 && sCur > 1 && sNext <= 1)) {
         const frac = (1 - sNext) / (sCur - sNext);
         if (frac > 0 && frac < 1) {
           for (let j = 0; j < s.u.length; j++) {
@@ -670,7 +710,7 @@ function tracePath(s, plan, opts, r) {
           }
           for (let a = 0; a < K; a++) s.termV[fl[a]] += frac * (before.snap.termV[fl[a]] - s.termV[fl[a]]);
         }
-        const landed = tryLand(0);
+        const landed = tryLand(0, singleI >= 0, sCur < 0.99);
         if (landed) return { converged: true, steps, iterations, history, ramped: true };
         s._putLevels(before);
         dsArc *= 0.25;
@@ -683,7 +723,7 @@ function tracePath(s, plan, opts, r) {
       const prevTs = ts;
       let nextTs = NaN;
       try {
-        nextTs = computeTangent(s, plan, sNext, potIdx, Bs, pinDs, circDs, wx, wV, prevTx, prevTV, prevTs, tx, tV, false);
+        nextTs = computeTangent(s, plan, sNext, potIdx, Bs, pinDs, circDs, wx, wV, prevTx, prevTV, prevTs, tx, tV, false, !!cor.reusable);
       } catch {
         nextTs = NaN;
       }
@@ -810,14 +850,14 @@ export function homotopyContinue(s, opts, r, start0) {
     if (c) {
       if (c.converged || c.hitModelWall || s.unreached) return c;
       cur = c;
-      // If s = 0 failed on cold (e.g. V_src far from equilibrium behind R, or dark I = 0
-      // singular on a fine grid), try the level-contacts / shunt start.
-      if (c.s0Failed) {
-        const cl = runMode('cold-level');
-        if (cl) {
-          if (cl.converged || cl.hitModelWall || s.unreached) return cl;
-          cur = cl;
-        }
+    }
+    // If cold had nothing to move or failed at s = 0 (e.g. V_src far from equilibrium behind R,
+    // or dark I = 0 singular on a fine grid), try the level-contacts / shunt start.
+    if (!c || c.s0Failed) {
+      const cl = runMode('cold-level');
+      if (cl) {
+        if (cl.converged || cl.hitModelWall || s.unreached) return cl;
+        cur = cl;
       }
     }
     // Decoupled 2-stage fallback for lit devices with floating terminals (e.g. Schottky + pn solar
