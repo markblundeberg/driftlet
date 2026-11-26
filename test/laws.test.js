@@ -343,6 +343,8 @@ test('the law sweep\'s device 19: a capacitive contact at no current beside a fl
   const s = new Device(structuredClone(def)).solve(), late = new Device(structuredClone(def)).advance(1e6, { tol: 1e-9 });
   assert.ok(s.converged && late.converged);
   for (const name of ['left', 'p1']) near(s.terminals[name].V, late.terminals[name].V, 1e-4, `V ${name}`);
+  const harsh = new Device(device(choice(19), { charged: true })).advance(1e6, { tol: 1e-9 });
+  assert.ok(!harsh.converged && harsh.warnings.some((w) => /start is violent/i.test(w)), harsh.warnings.join('; '));
 });
 
 // Two from Argon's review of 1.6.1, both through a face's surface species, which the law finder

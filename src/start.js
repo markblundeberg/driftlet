@@ -24,11 +24,12 @@
 //         - else not fed by a contact: c0 is required (an error without it);
 //         - else fed by contacts/ports (held or exchanged at a rate: conductance, exchange alike):
 //           held sources before floating ones, contacts before ports, a 'bulk' contact before a
-//           non-'bulk' one; where two equal-authority contacts feed a pure-conductor stretch at
-//           different levels, the level interpolates ohmically in ∫dx/σ, and on a non-conductor
-//           stretch takes their symmetric midpoint (avoiding an artificial bulk current gradient
-//           across blocking junctions); multiple ports interpolate piecewise in ∫dx/σ (charged)
-//           or ∫dx/D (neutral); fed by none of them (reactions only), from c0, required.
+//           non-'bulk' one; where two equal-authority contacts feed a pure-conductor stretch (or a
+//           single uniformly-doped region between two 'bulk' contacts) at different levels, the
+//           level interpolates ohmically in ∫dx/σ, and on any other non-conductor stretch takes
+//           their symmetric midpoint (avoiding an artificial bulk current gradient across blocking
+//           junctions); multiple ports interpolate piecewise in ∫dx/σ (charged) or ∫dx/D (neutral);
+//           fed by none of them (reactions only), from c0, required.
 //         A pinned, held contact whose own density, cRef e^(η − μ°/RT − z φ̂_edge), is beyond e^700
 //         is refused (SolverError). A strictly neutral region (ε = 0) with every charged species'
 //         amount given must have a neutral c0 outside any held port capacitance's window: an error
@@ -45,21 +46,24 @@
 //         - Tier 1b: every node of a strictly neutral region under a held port's capacitance
 //           (capA > 0, excluding end boxes whose φ a contact sets), by ρ + aσ = 0.
 //         - Tier 1c: a held contact's end node where the end region doesn't respond — (V −
-//           zeroCharge)/V_T for 'pinned' or 'capacitive', or neutrality at the contact's outside
-//           levels for 'bulk' or a charged equilibrium link (so a c0 given for a contact-fed
-//           carrier keeps the contact's gauge).
+//           zeroCharge)/V_T for a species-linked 'pinned' contact, or neutrality at the contact's
+//           outside levels for 'bulk' or a charged equilibrium link (so a c0 given for a
+//           contact-fed carrier keeps the contact's gauge). Capacitive contacts and blocking
+//           'pinned' contacts wait for the blocking-face tier below.
 //         - Tier 2 (on regions neither responding, capped, nor directly clamped on a charged
 //           stretch by a held 'bulk'/equilibrium contact): a held electrode on either face (metal
 //           at its carrier's level, or a held port electrode at its window), balancing its first
 //           reaction that depends on φ̂ (including neutral level-held participants, non-ideal
 //           activities, profiles/grading at the electrode, and surface θ₀), or a held insertion
 //           host across a face passing a charged species (by link or transfer reaction).
-//         - Blocking capacitive/pinned metal face (V_metal − zeroCharge)/V_T: anchors a charge-
-//           free dielectric directly (e.g. a MOS oxide), and otherwise serves only as a fallback
-//           for chains with no Tier 1–2 anchor.
+//         - Blocking capacitive/pinned metal face or contact (V − zeroCharge)/V_T: anchors a
+//           charge-free dielectric directly (e.g. a MOS oxide), and otherwise serves only as a
+//           fallback for chains with no Tier 1–2 anchor.
 //      d) Outward propagation and unheld/interior conductors: within each contiguous non-φ-free
-//         chain, φ̃ propagates constantly outward from the outer anchors and interpolates ohmically
-//         in ∫dx/σ (or ∫dx/ε across insulators) between consecutive anchors, restoring face dipoles.
+//         chain, φ̃ propagates constantly outward from the outer anchors; an all-c0 conducting chain
+//         between two boundary anchors takes their flat symmetric midpoint (avoiding a fake drift
+//         field across amount-fixed spectators), and otherwise φ̃ interpolates in ∫dx/σ (or ∫dx/ε
+//         across insulators) between consecutive anchors, restoring face dipoles.
 //         Unheld and interior conductors take their carrier's equilibrium level from whichever
 //         adjacent anchored face(s) carry a reaction for it (the mean if both do), and may in turn
 //         anchor unanchored neighbours; if a component still has no held anchor, blocking metal
@@ -135,6 +139,7 @@
 import { gateRate } from './boundaries.js';
 import { EPS0, FARADAY } from './constants.js';
 import { fixedAt, gradedAt, isGraded, profileAt, sourceAt } from './device.js';
+import { diffuseLayer } from './diffuse.js';
 import { SolverError } from './errors.js';
 import { gaussRows, solveNeutral, strictlyNeutralNodes } from './neutral.js';
 
@@ -237,12 +242,14 @@ export function initFromComposition(s) {
         return { kind: 'const', eta: winner.eta, held: anyHeld };
       }
       if (cts[0].eta === cts[1].eta) return { kind: 'const', eta: cts[0].eta, held: anyHeld };
-      // Across a pure conductor stretch, ohmic ramp is exact; across a semiconductor or electrolyte
+      // Across a pure conductor stretch, or a single uniformly-doped region between two bulk
+      // contacts (e.g. a resistor), ohmic ramp is exact; across a multi-region or junction stretch
       // (which may contain blocking pn junctions or floating bases), the symmetric midpoint avoids
       // imposing a huge artificial bulk current gradient while staying mirror-symmetric.
       let allMetal = true;
       for (let r = st.regions[0]; r <= st.regions[1]; r++) if (!materials[regions[r].material].conductor) { allMetal = false; break; }
-      if (allMetal) return { kind: 'ramp2', gL: st.nodes[0], gR: st.nodes[1], etaL: cts[0].eta, etaR: cts[1].eta, held: anyHeld };
+      const singleBulk = st.regions[0] === st.regions[1] && cts[0].bulk && cts[1].bulk && !regions[st.regions[0]].fixedProfile;
+      if (allMetal || singleBulk) return { kind: 'ramp2', gL: st.nodes[0], gR: st.nodes[1], etaL: cts[0].eta, etaR: cts[1].eta, held: anyHeld };
       return { kind: 'const', eta: 0.5 * (cts[0].eta + cts[1].eta), held: anyHeld };
     }
     // Ports only: merge ports at the same x (commutative), then constant or piecewise ramp.
@@ -341,6 +348,11 @@ export function initFromComposition(s) {
   // --- Neutrality helper (ideal + non-ideal, with clamped-exponent and out-of-reach handling) ---
   const zetaScratch = new Float64Array(n), ccScratch = new Float64Array(n);
   const solveNeutralAt = (r, mat, bg, qFixed, etaArr, modeArr, cFixArr, aC, aCV, phRef, noteUnbalanced) => {
+    // Pre-sum the φ-independent fixed + amount-fixed (mode 2) charge before adding level-fixed
+    // carriers so exact neutrality between fixedCharge and c0 (e.g. perovskite qF + z·c0 = 0)
+    // doesn't lose ~12 digits of float64 precision when added to tiny carrier densities.
+    let qFix = qFixed;
+    for (let i = 0; i < n; i++) if (mat.present[i] && modeArr[i] === 2) qFix += z[i] * cFixArr[i];
     let clamped = false;
     const charge = (ph) => {
       if (!mat.ideal) {
@@ -352,16 +364,15 @@ export function initFromComposition(s) {
           refused = true;
         }
         if (!refused) {
-          let q = qFixed + (aCV - aC * s.VT * ph) / FARADAY;
-          for (let i = 0; i < n; i++) if (mat.present[i]) q += z[i] * ccScratch[i];
+          let q = qFix + (aCV - aC * s.VT * ph) / FARADAY;
+          for (let i = 0; i < n; i++) if (mat.present[i] && modeArr[i] !== 2) q += z[i] * ccScratch[i];
           return q;
         }
       }
-      let q = qFixed + (aCV - aC * s.VT * ph) / FARADAY;
+      let q = qFix + (aCV - aC * s.VT * ph) / FARADAY;
       clamped = false;
       for (let i = 0; i < n; i++) {
-        if (modeArr[i] === 2) q += z[i] * cFixArr[i];
-        else if (modeArr[i] === 1 && z[i] !== 0) {
+        if (modeArr[i] === 1 && z[i] !== 0) {
           const raw = etaArr[i] - mat.mu0[i] / model.RT - z[i] * ph, ex = Math.min(700, Math.max(-700, raw));
           if (ex !== raw) clamped = true;
           q += z[i] * mat.cRef[i] * Math.exp(ex);
@@ -789,9 +800,17 @@ export function initFromComposition(s) {
     }
   }
 
-  // Tier 1c (held contacts on non-responding, non-φ-free end regions).
-  if (!responds[0] && Number.isFinite(endPhiL)) setAnchor(0, 3, endPhiL);
-  if (!responds[R - 1] && Number.isFinite(endPhiR)) setAnchor(N - 1, 3, endPhiR);
+  // Tier 1c (held contacts on non-responding, non-φ-free end regions; capacitive contacts and
+  // blocking pinned contacts wait for Tier 5 so they never impose an artificial bulk ramp across a
+  // conducting electrolyte anchored by a bath or electrode).
+  const isBlockingCapPin = (side) => {
+    const ct = model.contacts[side];
+    if (ct.phi.type === 'capacitive') return true;
+    if (ct.phi.type === 'pinned') return !ct.species.some((l, i) => z[i] !== 0 && l.type !== 'blocked');
+    return false;
+  };
+  if (!responds[0] && Number.isFinite(endPhiL) && !isBlockingCapPin('left')) setAnchor(0, 3, endPhiL);
+  if (!responds[R - 1] && Number.isFinite(endPhiR) && !isBlockingCapPin('right')) setAnchor(N - 1, 3, endPhiR);
 
   // Helper: anchor region r from a held insertion host at nr (r - 1 or r + 1).
   const anchorFromHost = (r, nr, gIn, gOut) => {
@@ -845,6 +864,14 @@ export function initFromComposition(s) {
     if (base.phiFree || responds[r] || capped[r] || bulkFed[r]) return false;
     if (!allowConducting && !isDielectric(r)) return false;
     let added = false;
+    if (r === 0 && isBlockingCapPin('left') && Number.isFinite(endPhiL)) {
+      setAnchor(0, 5, endPhiL);
+      added = true;
+    }
+    if (r === R - 1 && isBlockingCapPin('right') && Number.isFinite(endPhiR)) {
+      setAnchor(N - 1, 5, endPhiR);
+      added = true;
+    }
     if (r > 0) {
       const lm = materials[regions[r - 1].material];
       if (lm.conductor && metalResolved[r - 1]) {
@@ -933,16 +960,28 @@ export function initFromComposition(s) {
       const anchors = [];
       for (let g = g0; g <= g1; g++) if (ancTier[g] > 0) anchors.push(g);
       if (anchors.length === 0) return false;
-      const first = anchors[0], last = anchors[anchors.length - 1];
-      for (let g = g0; g < first; g++) phiTilde[g] = ancPhiTilde[first];
-      for (let g = last + 1; g <= g1; g++) phiTilde[g] = ancPhiTilde[last];
-      for (let k = 0; k < anchors.length; k++) phiTilde[anchors[k]] = ancPhiTilde[anchors[k]];
-      for (let k = 0; k + 1 < anchors.length; k++) {
-        const a = anchors[k], b = anchors[k + 1];
-        if (b - a <= 1) continue;
-        const f = interpFractions(a, b);
-        const pa = ancPhiTilde[a], pb = ancPhiTilde[b];
-        for (let g = a + 1; g < b; g++) phiTilde[g] = (1 - f[g - a]) * pa + f[g - a] * pb;
+      let hasInsulator = false;
+      for (let g = g0; g < g1; g++) {
+        if (grid.nodeRegion[g] === grid.nodeRegion[g + 1] && !(segSigma[g] > 0) && segEps[g] > 0) { hasInsulator = true; break; }
+      }
+      if (!hasInsulator && anchors.length === 2 && anchors[0] === g0 && anchors[1] === g1) {
+        // An all-c0 conducting chain between two boundary anchors (e.g. two electrodes or two
+        // baths): keep φ̃ flat at their symmetric midpoint so amount-fixed spectators don't start
+        // with an artificial bulk drift field into blocked boundaries.
+        const pMid = 0.5 * (ancPhiTilde[g0] + ancPhiTilde[g1]);
+        for (let g = g0; g <= g1; g++) phiTilde[g] = pMid;
+      } else {
+        const first = anchors[0], last = anchors[anchors.length - 1];
+        for (let g = g0; g < first; g++) phiTilde[g] = ancPhiTilde[first];
+        for (let g = last + 1; g <= g1; g++) phiTilde[g] = ancPhiTilde[last];
+        for (let k = 0; k < anchors.length; k++) phiTilde[anchors[k]] = ancPhiTilde[anchors[k]];
+        for (let k = 0; k + 1 < anchors.length; k++) {
+          const a = anchors[k], b = anchors[k + 1];
+          if (b - a <= 1) continue;
+          const f = interpFractions(a, b);
+          const pa = ancPhiTilde[a], pb = ancPhiTilde[b];
+          for (let g = a + 1; g < b; g++) phiTilde[g] = (1 - f[g - a]) * pa + f[g - a] * pb;
+        }
       }
     }
     for (let r = r0; r <= r1; r++) {
@@ -1238,6 +1277,66 @@ export function initFromComposition(s) {
     s.termV[k] = 0.5 * (lo + hi);
   }
   s.coldStart = true; // (until a solve or a step moves it: see equilibrateFaces)
+}
+
+/**
+ * Steady-solve diffuse-layer warm-up: balances each one-sided diffuse layer's 1D Stern–Gouy–Chapman
+ * relation q_d(s) = Q(s) at the cold start's bulk concentrations and electrode potentials, setting
+ * its plane drop s and face displacement D before the first direct steady Newton step. Called from
+ * src/steady.js AFTER captureLaws / referenceAmounts so conserved amounts and transient cold starts
+ * keep uncharged double layers (s = 0, D = 0, Γ = 0).
+ */
+export function initSteadyDiffuse(s) {
+  if (s.diffList.length === 0) return;
+  const { model, n, M, u, z, VT } = s;
+  const { interfaces } = model;
+  let moved = false;
+  for (const dl of s.diffList) {
+    const itf = interfaces[dl.f], law = itf.phi.type;
+    if (law !== 'capacitive' && law !== 'pinned') continue;
+    const [dlL, dlR] = s.diffAt[dl.f];
+    if (dlL >= 0 && dlR >= 0) continue; // two-sided diffuse face: keep s = 0
+    const bf = s.blockOfFace[dl.f], bL = bf - 1, bR = bf + 1;
+    let gap0, sg;
+    if (itf.conductor) {
+      const condSide = itf.conductor.side, im = itf.conductor.i;
+      const bm = condSide === 'left' ? bL : bR, bo = condSide === 'left' ? bR : bL;
+      sg = condSide === 'left' ? 1 : -1;
+      gap0 = u[bm * M + 1 + im] / z[im] - itf.zeroCharge / VT - u[bo * M];
+    } else {
+      sg = dl.side ? -1 : 1;
+      const dip = itf.dipole / VT;
+      gap0 = dl.side ? u[bL * M] - u[bR * M] + dip : u[bR * M] - u[bL * M] - dip;
+    }
+    if (!Number.isFinite(gap0)) continue;
+    const cSlice = s.c.subarray(dl.g * n, dl.g * n + n);
+    if (law === 'pinned') {
+      u[dl.o] = gap0;
+      diffuseLayer(cSlice, z, n, gap0, dl.units, dl.dl, dl.lat, null);
+      u[bf * M] = dl.side ? -(dl.dl.q + itf.sheetCharge) : dl.dl.q;
+      moved = true;
+      continue;
+    }
+    const kC = itf.phi.C * VT, sheet = dl.side ? itf.sheetCharge : 0;
+    const fVal = (sh) => {
+      diffuseLayer(cSlice, z, n, sh, dl.units, dl.dl, dl.lat, null);
+      return dl.dl.q + kC * (gap0 - sh) + sheet;
+    };
+    let lo = Math.min(0, gap0) - 1, hi = Math.max(0, gap0) + 1;
+    while (fVal(lo) < 0 && lo > -1e4) lo -= 2 * (hi - lo);
+    while (fVal(hi) > 0 && hi < 1e4) hi += 2 * (hi - lo);
+    if (!(fVal(lo) >= 0 && fVal(hi) <= 0)) continue;
+    for (let it = 0; it < 60 && hi - lo > 1e-12 * Math.max(1, Math.abs(gap0)); it++) {
+      const m = 0.5 * (lo + hi);
+      if (fVal(m) > 0) lo = m;
+      else hi = m;
+    }
+    const sh = 0.5 * (lo + hi);
+    u[dl.o] = sh;
+    u[bf * M] = sg * kC * (gap0 - sh);
+    moved = true;
+  }
+  if (moved) s.computeConcentrations();
 }
 
 /**

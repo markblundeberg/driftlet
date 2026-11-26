@@ -24,7 +24,9 @@
 //                        driven (a voltage, a current) finds the laws again (this._laws): new
 //                        constraints, local constraints with their references at 0, islands
 //                        off, no pins; this.atSteady false, the history empty.
-//   this.initFromComposition() (src/start.js), this._snapshot()/_restore(), this.amount(st),
+//   this.initFromComposition(), initSteadyDiffuse (src/start.js: balances one-sided diffuse
+//                        layers' Stern–Gouy–Chapman drop s and D after captureLaws/referenceAmounts
+//                        before a cold direct steady solve), this._snapshot()/_restore(), this.amount(st),
 //   this.computeConcentrations(), maxPotentialStep (src/newton.js).
 //
 // solveSteady(opts) → { converged, steps, iterations, history, residual?, ramped? }
@@ -219,6 +221,7 @@ import { carrierZ, chargeOnly, conservedMoieties, feeds, noCurrent } from './law
 import { captureLaws, captureLocal, keepLocal, planeSlot } from './lawRows.js';
 import { homotopyContinue } from './homotopy.js';
 import { maxPotentialStep } from './newton.js';
+import { initSteadyDiffuse } from './start.js';
 import { FARADAY } from './constants.js';
 
 const BUDGET_SPENT = Symbol('steady budget spent');
@@ -473,6 +476,7 @@ export class SteadySolves {
     this._refreshSources();
     try {
       this.initFromComposition();
+      if (this._directSteady() && this.diffList.length > 0) initSteadyDiffuse(this);
       return true;
     } catch (err) {
       if (!(err instanceof SolverError)) throw err;
@@ -503,6 +507,7 @@ export class SteadySolves {
     const was = this.solvedV;
     const canContinue = allowed && held(dl) && held(dr) && (target !== level || (was != null && (was[0] !== level || was[1] !== target)));
     const direct = this._directSteady();
+    if (this.coldStart && direct && this.diffList.length > 0) initSteadyDiffuse(this);
     const start0 = this._levels();
     const restart = () => {
       opts.budget?.check();
