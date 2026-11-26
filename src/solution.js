@@ -7,6 +7,7 @@
 import { EPS0, FARADAY } from './constants.js';
 import { fixedAt, gradedAt, isGraded } from './device.js';
 import { put } from './merge.js';
+import { diffuseLayer, diffuseScratch } from './diffuse.js';
 
 // A diffuse layer's plane past this concentration (mol/m³, 5 M) has its counter-ions closer than
 // hydrated ions pack, beyond what a dilute layer describes.
@@ -673,6 +674,30 @@ function resolutionWarnings(sol, solver) {
     }
     // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
     // they'd have no room, and the layer's charge and capacitance are overstated.
+    // A layer that excludes co-ions over more than its edge half-cell leaves that box with a
+    // negative storage (edgeStorage, above): a time step that resolves it finds it growing, a
+    // mode of the layer model below its premise. Said of a transient's state (a steady state is
+    // unaffected, and stability() reads it for itself). The rate, about D/(m*² − m²) with the
+    // fastest held ion's D, is one dilute ion's on a uniform grid (4.4e9 /s for 4.47e9 measured
+    // in test/diffuse.test.js's KNO₃ cell; 1.13e9 for 1.149e9 on combos membrane 99).
+    if (!solver.atSteady) {
+      solver.diffAt[f].forEach((d, side) => {
+        if (d < 0) return;
+        const dd = solver.diffList[d], { neg, mStar, m } = edgeStorage(solver, dd);
+        if (neg === 0) return;
+        const mat = model.materials[model.regions[grid.nodeRegion[dd.g]].material];
+        let Dmax = 0;
+        for (let i = 0; i < solver.n; i++) if (dd.holds[i] && solver.present[dd.g * solver.n + i] && mat.D[i] > Dmax) Dmax = mat.D[i];
+        const rate = Dmax / (mStar * mStar - m * m);
+        sol.warnings.push(
+          `interfaces[${f}] (${side ? 'right' : 'left'} side): the diffuse layer excludes ions over more than the edge cell beside it holds (its half-cell ${m.toExponential(2)} m), ` +
+            `so that box's storage is negative in ${neg} direction${neg > 1 ? 's' : ''}: adding ions there lowers their potential, and ${neg > 1 ? 'modes grow' : 'a mode grows'}` +
+            (rate > 0 && Number.isFinite(rate) ? ` at about ${rate.toExponential(1)} /s, which time steps shorter than about ${(2 / rate).toExponential(1)} s follow` : ', which time steps short enough follow') +
+            ': the sub-grid layer below its premise (a cell wide against the layer), not the device. ' +
+            `Keep that cell at ${(2 * mStar).toExponential(1)} m or wider (hmin), or resolve the double layer (epsr > 0, hmin below the Debye length).`,
+        );
+      });
+    }
     for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {
       const lat = itf.diffuse.lattice[side === 'left' ? 0 : 1];
       if (lat) {
@@ -707,6 +732,95 @@ function resolutionWarnings(sol, solver) {
     check(nNodes - 1, grid.segLength[nNodes - 2], 'contacts.right');
     boxed(nNodes - 1, grid.segLength[nNodes - 2], contacts.right.phi, -1, 'contacts.right');
   }
+}
+
+// A sub-grid diffuse layer's edge box (src/diffuse.js; boundaries.js books each ion's excess Γ_i
+// into the strictly neutral edge node's box) stores vol·c_i + A·Γ_i(c). Over the box's own
+// directions, those that keep the bulk neutral at the layer's charge, its storage is the symmetric
+// form H = (m I + ∂Γ/∂c|_q)·∂c/∂(μ/RT), m = vol/A (the half-cell), restricted to Σ z_j dc_j = 0.
+// A negative eigenvalue there is a direction in which adding ions lowers their μ: transport runs
+// away along it, a growing mode of the time-dependent equations (by inertia, as many growing modes
+// as negative eigenvalues: Fable's review of stability(), 26 Nov, at 8 meshes of combos membrane
+// 99, membrane 737 and a binary KNO₃ cell, each count measured by stability() and by kicked
+// backward Euler). It happens where the layer excludes co-ions over a thickness the half-cell
+// doesn't reach, outside the layer model's premise of cells wide against it; the steady state is
+// unaffected. Returns the count, and the half-cell m* past which the box is stable (bisection on
+// m: the count can only fall as m grows, since m adds a positive form).
+function edgeStorage(solver, d) {
+  const { n, z } = solver, g = d.g, grid = solver.model.grid;
+  const c = solver.c.subarray(g * n, g * n + n), dl = diffuseScratch(n);
+  diffuseLayer(c, z, n, solver.u[d.o], d.units, dl, d.lat, null);
+  const idx = [];
+  for (let i = 0; i < n; i++) if (d.holds[i] && solver.present[g * n + i] && c[i] > 0) idx.push(i);
+  const k = idx.length;
+  if (k < 2 || !(dl.dqds !== 0)) return { neg: 0, mStar: 0, m: grid.vol[g] / grid.area[g] };
+  // ∂(μ/RT)/∂c of the bulk: 1/c_i on the diagonal, and with a lattice, 1/(cMax(1 − Σθ)) among its species
+  const free = d.lat ? 1 - idx.reduce((t, i) => t + (d.lat.on[i] ? c[i] / d.lat.cMax : 0), 0) : 1;
+  const Jmu = idx.map((i, a) => idx.map((j, b) => (a === b ? 1 / c[i] : 0) + (d.lat && d.lat.on[i] && d.lat.on[j] ? 1 / (d.lat.cMax * free) : 0)));
+  const dcdmu = invert(Jmu);
+  const S = idx.map((i) => idx.map((j) => dl.dgdc[i * n + j] - (dl.dgds[i] * dl.dqdc[j]) / dl.dqds));
+  // the neutral directions: eliminate the ion of largest |z c|
+  let p = 0;
+  for (let a = 1; a < k; a++) if (Math.abs(z[idx[a]] * c[idx[a]]) > Math.abs(z[idx[p]] * c[idx[p]])) p = a;
+  const Q = [];
+  for (let a = 0; a < k; a++) if (a !== p) Q.push(idx.map((j, b) => (b === a ? 1 : b === p ? -(z[idx[a]] * c[idx[a]]) / (z[idx[p]] * c[idx[p]]) : 0)));
+  // (Q is in c; in μ/RT, the neutral directions are Jmu·Q's columns' images: δμ = Jmu δc)
+  const form = (m) => {
+    const H = idx.map((_, a) => idx.map((_, b) => {
+      let t = 0;
+      for (let e = 0; e < k; e++) t += ((a === e ? m : 0) + S[a][e]) * dcdmu[e][b];
+      return t;
+    }));
+    const Qmu = Q.map((q) => idx.map((_, a) => q.reduce((t, v, b) => t + Jmu[a][b] * v, 0)));
+    return Qmu.map((qa) => Qmu.map((qb) => {
+      let t = 0;
+      for (let a = 0; a < k; a++) for (let b = 0; b < k; b++) t += qa[a] * H[a][b] * qb[b];
+      return t;
+    }));
+  };
+  const negatives = (m) => {
+    const R = form(m);
+    for (let a = 0; a < R.length; a++) for (let b = a + 1; b < R.length; b++) R[a][b] = R[b][a] = 0.5 * (R[a][b] + R[b][a]);
+    return symEig(R).filter((e) => e < 0).length;
+  };
+  const m = grid.vol[g] / grid.area[g], neg = negatives(m);
+  if (neg === 0) return { neg, mStar: 0, m };
+  let lo = m, hi = 2 * m;
+  while (negatives(hi) > 0 && hi < 1) hi *= 2;
+  for (let it = 0; it < 40; it++) {
+    const mid = 0.5 * (lo + hi);
+    if (negatives(mid) > 0) lo = mid;
+    else hi = mid;
+  }
+  return { neg, mStar: hi, m };
+}
+// (small dense helpers for edgeStorage: Gauss–Jordan inverse, Jacobi eigenvalues of a symmetric matrix)
+function invert(A0) {
+  const k = A0.length, A = A0.map((r, i) => [...r, ...r.map((_, j) => (i === j ? 1 : 0))]);
+  for (let c = 0; c < k; c++) {
+    let p = c;
+    for (let r = c + 1; r < k; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]];
+    const v = A[c][c];
+    for (let j = 0; j < 2 * k; j++) A[c][j] /= v;
+    for (let r = 0; r < k; r++) if (r !== c && A[r][c] !== 0) { const f = A[r][c]; for (let j = 0; j < 2 * k; j++) A[r][j] -= f * A[c][j]; }
+  }
+  return A.map((r) => r.slice(k));
+}
+function symEig(A0) {
+  const A = A0.map((r) => r.slice()), k = A.length;
+  for (let sweep = 0; sweep < 60; sweep++) {
+    let off = 0, diag = 0;
+    for (let i = 0; i < k; i++) { diag += A[i][i] * A[i][i]; for (let j = i + 1; j < k; j++) off += A[i][j] * A[i][j]; }
+    if (!(off > 1e-30 * diag)) break;
+    for (let p = 0; p < k; p++) for (let q = p + 1; q < k; q++) {
+      if (A[p][q] === 0) continue;
+      const th = (A[q][q] - A[p][p]) / (2 * A[p][q]), t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1)), cs = 1 / Math.sqrt(t * t + 1), sn = t * cs;
+      for (let r = 0; r < k; r++) { const a = A[r][p], b = A[r][q]; A[r][p] = cs * a - sn * b; A[r][q] = sn * a + cs * b; }
+      for (let r = 0; r < k; r++) { const a = A[p][r], b = A[q][r]; A[p][r] = cs * a - sn * b; A[q][r] = sn * a + cs * b; }
+    }
+  }
+  return A.map((r, i) => r[i]);
 }
 
 // Of the state itself (degenerate carriers, a reaction left out of equilibrium, a species denser

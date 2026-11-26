@@ -328,7 +328,13 @@ bulk stays neutral, and the salt a charging layer takes comes out of the solutio
 reaction's participant on that side reacts at the plane, at $`c_i e^{-z_i s}`$ with its $`\bar\mu`$
 unchanged: Butler–Volmer then depends on the Stern drop alone, the Frumkin correction, and the
 mesh no longer enters (the ferri/ferrocyanide electrode: 46.399 Ω·cm² on cells from 1 nm to 300 nm,
-the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0125 nm). Each
+the limit of the same electrode resolved at ε = 78.4 as its cells shrink to 0.0125 nm). That holds
+for steady states. In time, the layer is a store at the edge node's box, and it assumes that box is
+wide against the layer: where a layer excludes ions over more than the edge half-cell (a charged face
+in a dilute solution, on cells of a nm or two), that box's storage turns negative in some direction,
+and a time step short enough to resolve it finds a mode growing at around D/δ²
+(4.5e9 /s for 32 mM KNO₃ at 0.7 V on 1.5 nm cells). The resolved layer has no such mode. A
+transient's solution warns, with the rate and the edge cell that's wide enough. Each
 solution reports it as `interfaces[f].diffuse.left`/`.right`: `psi` (V), `charge` (C/m²), `excess`
 (mol/m²), `plane` (each ion's concentration there) and `draw` (for each species a reaction draws
 across the layer, its $`\bar\mu`$ at the plane less the edge node's, J/mol). With ideal ions it's a dilute layer, so a

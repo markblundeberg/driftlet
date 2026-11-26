@@ -570,3 +570,49 @@ test('a crowded layer whose plane a reaction\'s draw overfills says so: past the
   assert.ok(over.warnings.some((w) => /the diffuse layer's plane is 12\d% full of its lattice's sites/.test(w)), over.warnings.join('\n'));
   assert.ok(!at(0).warnings.some((w) => /full of its lattice's sites/.test(w))); // (at equilibrium: within its sites, nothing said)
 });
+
+test("an edge cell narrower than the layer's exclusion is flagged, and a resolving time step grows there", () => {
+  // Fable's review of stability() (26 Nov): beside a sub-grid layer that excludes co-ions, the edge
+  // box stores vol·c + A·Γ(c); once its half-cell is shorter than the exclusion, that storage is
+  // negative in some direction, and transport runs away along it (KNO₃ between two charged Ag
+  // faces: 4.47e9 /s by stability() at hmin 1.5 nm, quiet at 2.4). The steady state is fine; the
+  // transient's solution says so, with the cell that's wide enough and the rate, and 10 ps steps
+  // show the growth.
+  const def = (hmin) => ({
+    T: 298.15,
+    species: [{ name: 'NO3-', z: -1, cRef: 1000 }, { name: 'K+', z: 1, cRef: 1000 }, { name: 'e-', z: -1 }],
+    materials: { water: { epsr: 0, species: { 'NO3-': { D: 1.902e-9, mu0: 0 }, 'K+': { D: 1.957e-9, mu0: 0 } } }, Ag: { conductor: { species: 'e-', conductivity: 6.3e7 } } },
+    regions: [{ material: 'Ag', length: 1e-6 }, { name: 'w', material: 'water', length: 2e-5, c0: { 'K+': 32, 'NO3-': 32 } }, { material: 'Ag', length: 1e-6 }],
+    interfaces: [0, 1].map(() => ({ phi: { type: 'capacitive', C: 0.17 }, zeroCharge: 0, diffuse: { epsr: 78.4 } })),
+    contacts: { left: { V: 0.7, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { hmin, hmax: 1.2e-7, ratio: 1.15 },
+  });
+  const run = (hmin) => {
+    const dev = new Device(def(hmin)), sol = dev.solve(), s = dev._solver;
+    assert.ok(sol.converged);
+    assert.ok(!sol.warnings.some((w) => /storage is negative/.test(w)), 'a steady state is unaffected, and not warned');
+    // a nudge of the edge box's ions, then 10 ps steps: the deviation's growth per 20 steps
+    const base = s.blockOfNode[s.diffList[0].g] * s.M, u0 = s.u.slice();
+    s.u[base + 1] += 1e-9;
+    s.u[base + 2] -= 1e-9;
+    const dev2 = () => s.u.reduce((m, v, j) => Math.max(m, Math.abs(v - u0[j])), 0);
+    const at = [];
+    for (let k = 1; k <= 40; k++) {
+      assert.ok(dev.step(1e-11).converged);
+      if (k % 20 === 0) at.push(dev2());
+    }
+    const said = dev.solution().warnings.filter((w) => /storage is negative/.test(w));
+    return { said, rate: Math.log(at[1] / at[0]) / 2e-10 };
+  };
+  const fine = run(1.5e-9);
+  assert.equal(fine.said.length, 2, 'both faces');
+  assert.ok(fine.said.every((w) => /in 1 direction/.test(w) && /Keep that cell at 2\.0e-9 m or wider/.test(w)), fine.said.join('\n'));
+  const said = Number(fine.said[0].match(/grows at about ([\d.e+-]+) \/s/)[1]);
+  assert.ok(Math.abs(said / fine.rate - 1) < 0.2, `rate said ${said} against ${fine.rate} /s`);
+  assert.ok(Math.abs(fine.rate / 4.47e9 - 1) < 0.1, `growth ${fine.rate} /s`);
+  for (const hmin of [2.4e-9, 5e-9]) {
+    const ok = run(hmin);
+    assert.equal(ok.said.length, 0, `hmin ${hmin}`);
+    assert.ok(ok.rate < 1e7, `hmin ${hmin}: ${ok.rate} /s (decaying or flat)`);
+  }
+});

@@ -130,8 +130,9 @@ within one material (a face is two nodes at one x: don't difference across it).
   φ at its edge when the face holds no charge (a work-function difference, a potential of zero
   charge, a Schottky barrier). A face's reactions label sides: `'Li+(left) = Li+(right)'`. Beside a
   strictly neutral solution, `diffuse: { epsr }` adds its Gouy–Chapman layer below the grid (the
-  Frumkin effect on any grid, a reactant's way across the layer included;
-  `sol.interfaces[f].diffuse`).
+  Frumkin effect on any grid at steady state, a reactant's way across the layer included;
+  `sol.interfaces[f].diffuse`; in time, keep the edge cell wider than the layer's exclusion: a
+  warning says when it isn't).
 - **Ports** are terminals attached sideways to a window inside a region (`from`, `to`, m from its
   left end): a source or drain, an injector, a reference electrode (`I: 0`), an electrode spread
   through a film (`reactions`, `area`), a gate along a channel or a membrane along an axon

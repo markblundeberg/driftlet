@@ -5,6 +5,19 @@ major version.
 
 ## Unreleased
 
+- A transient's solution now warns where a sub-grid diffuse layer makes its edge cell unstable.
+  The layer is stored in the strictly neutral edge node's box, and where it excludes ions over
+  more than that half-cell (a charged face in a dilute solution, on cells of a nm or two), the box's
+  storage turns negative in some direction. A time step short enough then follows a mode growing
+  at around D/δ², which the layer model makes below its premise and the resolved layer doesn't have:
+  4.5e9 /s in 32 mM KNO₃ beside Ag at 0.7 V on 1.5 nm cells. The warning counts those directions
+  (the negative eigenvalues of the box's storage form, over the directions that keep the bulk
+  neutral at the layer's charge). The count matched the growing modes measured at eight meshes of
+  two random membrane devices and a binary cell. It gives the rate, and the edge cell that's wide
+  enough (stable from 1.5e-8 m on one device, measured between 1.45e-8 and 1.6e-8). Steady states
+  are unaffected, and their solutions say nothing. device.md and llms.txt no longer say the layer
+  works "on any grid" without saying for what. Found by Fable's review of the stability() branch,
+  with a helper's analysis of the mechanism.
 - A gated face beside a strictly neutral region now says when its gates read a V the mesh sets.
   The face's charge sits in the cell beside it, which acts as a diffuse layer that wide, and the
   gates read the face's V across it. Finer cells make the drop larger. Space-clamped Hodgkin–Huxley
