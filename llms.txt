@@ -687,7 +687,11 @@ at e^−n of its peak, give tol < e^−n·ΔV/(80 V_T) (1.6e-5 for 5 mV to 5 RC)
   time, and the restored starting state.
 - **Other steps.** `dev.step(dt)` is one backward-Euler step, and `dev.impedance(frequencies,
   { terminal })` the small-signal Z(f) about the steady state, in Ω·m²: `{ f, Z: { re, im } }`,
-  each an array over the frequencies (`Z.re[k]`, not `Z[k].re`).
+  each an array over the frequencies (`Z.re[k]`, not `Z[k].re`). `dev.stability()` after
+  `solve()` asks whether that steady state would stay: `{ verdict, modes, window, reason }`,
+  verdict `'unstable'`, `'neutral within resolution'`, `'no growing mode found'` (within `window`)
+  or `'undecided'`, never a bare "stable"; `modes[k]` = `{ re, im, error }` (1/s, rad/s);
+  `frequencies: [f]` to look for an oscillation (Hopf) near f Hz.
 
 ```js
 import { Device, units, FARADAY } from 'driftlet';

@@ -1570,6 +1570,81 @@ Measured:
 - **A double layer's cells**, 0.1 M NaCl: hmin λ_D/2.4 read C_dl 2.1% low, 0.1 nm 0.5% low, 0.05
   nm to 5e-4.
 
+### stability(opts)
+
+Is the steady state just solved one the device would stay in? `stability()` linearises the
+time-dependent equations about it, under the device's own drives (a held terminal stays held, a
+driven one keeps its current, a resistance keeps its R), and looks for the modes that decay
+slowest or grow: $`\delta x \propto e^{\lambda t}`$, $`-J v = \lambda M v`$, with $`J`$ the steady
+residual's Jacobian and $`M`$ the storage's. It analyses the state the device holds, without
+solving again, so it keeps the branch `solve()` found: call `solve()` first.
+
+```js
+import { Device } from 'driftlet';
+
+// A neutral species in a closed layer, 8 cells: its amount is conserved (taken out), and the
+// slowest mode left is the discrete diffusion mode, −4D sin²(π/2N)/h² = −9743.4 /s.
+const dev = new Device({
+  species: [{ name: 'X', z: 0, cRef: 1 }],
+  materials: { d: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+  regions: [{ material: 'd', length: 1e-6, c0: { X: 1 } }],
+  grid: { hmin: 1.25e-7, hmax: 1.25e-7 },
+});
+dev.solve();
+const st = dev.stability(); // { verdict, modes: [{ re, im, error, residual }], window, reason, ... }
+console.log(st.verdict, st.modes[0].re.toFixed(1)); // => no growing mode found, -9743.4
+```
+
+| option | default | what it does |
+|---|---|---|
+| `shifts` | a few, log-spaced over the device's own rates | real shifts σ (1/s, > 0) to search near: each finds the modes nearest it |
+| `frequencies` | none | f (Hz) for shifts on the imaginary axis, $`2\pi i f`$: for an oscillation (a Hopf pair) hidden behind slower real modes |
+| `modes` | 8 | how many of the rightmost modes to return |
+| `profiles` | `false` | `true`: each mode's shape, `{ phi, mu: {name}, c: {name}, termV }`, complex at the nodes |
+| `kBar` | 10 | how many error bars Re λ must clear to count as growing (or decaying) |
+| `debug` | `false` | `true`: the matrices and the directions removed, as plain arrays, for checking by another route |
+
+| result field | what it holds |
+|---|---|
+| `verdict` | `'unstable'`: a verified mode with Re λ above kBar error bars. `'neutral within resolution'`: none grows, but one is within kBar bars of 0. `'no growing mode found'`: every mode found decays, within `window`. `'undecided'`: the method couldn't tell, and `reason` says why |
+| `reason` | the verdict in words, with the window searched |
+| `modes` | the verified modes, rightmost first: `re` (1/s), `im` (rad/s), `error` (1/s, from the round-off and the residual, by the left eigenvector), `residual` |
+| `window` | `{ rLo, rHi, omegaHi }`: the growth rates and frequencies the shifts reached |
+| `deflated` | the directions taken out before the search: conserved amounts, a floating terminal's charge, a node's local invariants |
+| `drift` | how far the state is from steady for the time-dependent equations (thermal units): past 1e-5, `undecided` |
+| `warnings` | the steady state's, and the search's own (a shift whose solve wasn't accurate, say) |
+
+Notes:
+
+- **There's never a bare "stable".** `'no growing mode found'` is a statement about the modes the
+  shifts reached: one growing faster than `window.rHi`, or an oscillation above `window.omegaHi`
+  (0 with real shifts alone), wasn't looked for. A Hopf pair behind many slower real modes
+  wants `frequencies` near its own.
+- **`'undecided'` is an answer**: the state isn't steady for the time-dependent equations (a
+  `solve({ tol })` stopped early), a conserved amount couldn't be taken out, a growing candidate
+  was found but couldn't be verified, or the lowest shift's solve wasn't accurate. Around 1–2%
+  of random devices, more for semiconductors with extreme doping.
+- **A zero mode isn't growth**: an amount nothing exchanges, or a neutral direction the device
+  has (a floating island's charge, say), comes out as `'neutral within resolution'` where it
+  isn't one driftlet knows to take out.
+- **Linear and local**: a state that decays from small kicks can still be left by a large one (the
+  space-clamped squid axon at 9 µA/cm², below its Hopf current, fires from a 5 mV kick).
+- **The modes are the discretised model's**: a sub-grid diffuse layer on an edge cell narrower
+  than its exclusion has modes growing at ~1e9 /s that the resolved layer doesn't (a transient's
+  solution warns of it, above).
+
+Measured (test/stability.test.js):
+
+- **Hodgkin–Huxley** space-clamped, HH's own reversal potentials: the rest's pair crosses at
+  9.7–9.8 µA/cm², ω 586 rad/s, against 9.7754 by HH's ODEs; growth against a kicked `advance()`
+  to 1e-3 /s.
+- **RC**: −1/RC exact to 1e-12 relative, also at a face capacitance of 1e16 F/m².
+- **Diffusion** in a blocked layer of N cells: $`-4D\sin^2(n\pi/2N)/h^2`$ to 1e-15, n = 0 taken out.
+- **A peaked Fe³⁺/Fe²⁺ cell** under a current drive: its falling branch grows at +150.65 /s,
+  against a kicked `advance()` to 0.1%; the same branch held at a voltage decays.
+- **Blind**: about 4,000 random devices from driftlet's generators, each `'unstable'` confirmed by
+  a dense solve beside λ and a kicked step: none was a false alarm.
+
 ### set(patch)
 
 Merges plain objects deeply into the definition (arrays are replaced; ports are patched by name,

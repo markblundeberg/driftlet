@@ -492,18 +492,27 @@ for live demos.
      with dtMax capped, it left for the first within 2e5 s. check() solves the device again with its
      species reversed, and fails where the two differ (on 2600 of the fuzzer's devices: every
      real disagreement, no false alarm).
-   - A stability check after a steady solve. Tried: the sign of the time step's Jacobian
-     determinant, J + σM, along σ = 1/dt from 1e12 to 1e-12 per s (it changes at each real growth
-     rate), from the block factorisation's pivots and the bordered rows' small system, with each
-     conserved amount in place of one of its rows to remove its zero root. It found the unstable
-     port state (between 10 and 1e7 s; ~3000 s by a kick), but 3 of its 4 flags on 600 fuzzer
-     devices were stable by a kick, and 9–40% of devices came out undecided: the bordered rows
-     (a floating terminal's current response) lose their sign to cancellation at long steps.
-     Also tried: power iteration on kicked backward-Euler steps at fixed h (a growing mode
-     multiplies by 1/(1 − gh)), right for that state (1.032 per step at h = 100 s, 1.031
-     predicted) but with spurious growth of 10–1e4 per step on many port devices, unexplained.
-     Either needs its noise understood before it can fail a check; meanwhile numerics.md says
-     how to kick a state by hand.
+   - A stability check after a steady solve: done, `device.stability()` (26 Nov, Neon's in four
+     rounds of review). Shift-invert Arnoldi on the dynamic pencil −Jv = λMv, conserved amounts
+     taken out by left null vectors of the assembled J, a bar from the left eigenvector, and a
+     verdict that never says "stable" (docs/device.md). The two earlier tries failed for reasons
+     the reviews found: a determinant's sign is noise in near-neutral directions, and kicks of
+     states that weren't steady for the time-dependent equations grew as drift over kick.
+     Open around it:
+     - **A per-node storage check.** Every box's storage block (∂amount/∂μ, over the directions
+       its constraints allow) must be positive in an honest local-equilibrium model. The diffuse
+       layer's edge box fails it below its premise, and solution.js now checks that one
+       (edgeStorage). Checked everywhere, it would catch modes too fast for any shift to reach,
+       with no search.
+     - **Branches with their stability.** The homotopy walks a branch, and stability() reads it,
+       so an I–V curve could be traced round its folds with stable and unstable parts marked, and
+       a fold or Hopf onset located on the rightmost λ (Neon's idea).
+     - **`undecided` for semiconductors**: about half of it is the block elimination's accuracy at
+       the lowest shift (backward error to 0.8 on extreme MOS doping), not the device.
+     - **A mode's share of Z(ω)**: its residue is one product of (w, v) with the terminal's rows.
+       It reads cleanly where a few modes dominate, not in a diffusion tail.
+     - **A "kick the mode" control** in the Hodgkin–Huxley demo: add a little of the growing mode
+       to the state and watch it grow, species by species.
    - Bulk reactions too slow to see. A face reaction that alone changes a combination now stands
      on its affinity in steady solves, at any k0; a bulk reaction can't, since a zero integral
      of its rate doesn't make it zero at every node. K⁺ + A⁻ = KA in a cell whose only reservoir

@@ -232,7 +232,8 @@ current. Within that:
   other internal terminals as ports; impedance at any terminal;
 - steady states; transients by backward Euler, BDF2, or adaptive BDF2 with error control and
   frame budgets for animation; exact conservation bookkeeping;
-- small-signal impedance spectra Z(f), with complex profiles.
+- small-signal impedance spectra Z(f), with complex profiles;
+- linear stability of a steady state: its growing or slowest modes, with error bars, and a verdict that says what it searched.
 
 ## What it doesn't do
 

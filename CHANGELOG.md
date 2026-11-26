@@ -5,6 +5,21 @@ major version.
 
 ## Unreleased
 
+- **`device.stability()`**: is the steady state just solved one the device would stay in? It
+  linearises the time-dependent equations about the state, under the device's own drives, and
+  finds the modes that decay slowest or grow, each with an error bar. It works by shift-invert
+  Arnoldi on −Jv = λMv, with conserved amounts taken out first. Its verdicts are `'unstable'`,
+  `'neutral within resolution'`, `'no growing mode found'` (within a window it states) and
+  `'undecided'` (with the reason); it never says a bare "stable".
+  - Checked against Hodgkin–Huxley's Hopf onset (9.7–9.8 µA/cm², against 9.7754 by HH's own
+    equations), RC and blocked diffusion (exact to 1e-12), and the falling branch of a peaked
+    Fe³⁺/Fe²⁺ cell (+150.65 /s, a kicked advance() agreeing to 0.1%).
+  - Tried blind on about 4,000 random devices from driftlet's generators, each `'unstable'`
+    checked by a dense solve beside λ and a kicked step. Rounds 1–3 had false alarms and two kinds
+    of missed growth; round 4 has neither, `'undecided'` on 1–2%.
+  - New in BlockTridiagonal: transposed and conjugate-transposed solves.
+  - Neon's (Gemini), 26 Nov, in four rounds of review by the maintainer and three by Fable (each
+    from the code, cold).
 - A transient's solution now warns where a sub-grid diffuse layer makes its edge cell unstable.
   The layer is stored in the strictly neutral edge node's box, and where it excludes ions over
   more than that half-cell (a charged face in a dilute solution, on cells of a nm or two), the box's
