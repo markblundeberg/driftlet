@@ -377,13 +377,15 @@ for live demos.
      - Demo pages at a phone's width: the membrane page's three dot-panel captions overprint, the
        myelin level diagram's 40 node lines crowd it; the rde page's Koutecký–Levich axis goes
        negative at E° + 0.1 V; the redox page could show its no-iR separation beside the readout's.
-   - Starts needlessly far from where the physics goes (a cold review of `src/start.js`; each
-     the first step absorbs, listed under Known in its contract): the gauge from the left; an
-     insertion host's shift moving contact-held levels (a two-host battery 137 mV from both held
-     contacts; behind a Cu collector at I = 0 it starts at 0 V for 4.09); a contact-fed carrier given a c0 (a resistor at rest
-     0.2 V off both contacts, 17× the steps); a terminal behind R at 0 V; a reaction with a
-     neutral level-held participant passed over beside an electrode (0.68 V off). Their common
-     shape: the start's gauge and levels should come from what holds them, not from the left.
+   - Starts needlessly far from where the physics goes (a cold review of `src/start.js`): the
+     gauge from the left; an insertion host's shift moving contact-held levels (a two-host
+     battery 137 mV from both held contacts); a contact-fed carrier given a c0 (a resistor at rest
+     0.2 V off both contacts, 17× the steps); a reaction with a neutral level-held participant
+     passed over beside an electrode (0.68 V off). Their common shape: the start's gauge and
+     levels should come from what holds them, not from the left. Done, Unreleased: the cold start
+     finds its anchors first and runs outward (Neon, 25 Nov; test/start.test.js has each case).
+     Still Known in its contract: a floating metal contact behind R or driven (it needs a
+     face-rate evaluator), and a held port's capacitance through its window where ε > 0.
      (One more was found and fixed in 2026-10: a non-ideal solution beside an electrode skipped the
      balance an ideal one gets, so a resolved crowded double layer at −0.6 V failed every cold
      solve; it now starts balanced and converges cold.)
@@ -770,12 +772,9 @@ notes), ranked by how much each trips an agent writing its first device:
 
 ## Later
 
-- **Open from Neon's first review (20 Nov 2026).** The cold start still sweeps left to right: a
-  metal away from the contacts takes its level from its left face's reaction only, so one whose
-  only reaction is on its right face starts at the running φ̂ (1.6, item 2). A start that finds its
-  anchors first (held contacts, held electrodes, gates, responding regions) and runs outward from
-  them would make every such case symmetric by construction, where each has been patched as found
-  (round 9's mirror, Neon 1.3 and 1.5). And a time step's charge rows assume the step starts
+- **Open from Neon's first review (20 Nov 2026).** (Its first point, the left-to-right sweep, is
+  done: the cold start finds its anchors and runs outward, mirror-symmetric by construction;
+  Unreleased.) A time step's charge rows assume the step starts
   neutral at an ungated node: the pivot species' storage is left out there, so a start that isn't
   neutral there loses the difference from that species, unseen (how Neon 1.1 lost its ions).
   Taking the old charge into that storage at every node, as gated nodes have it, broke 37 tests:
@@ -845,8 +844,15 @@ notes), ranked by how much each trips an agent writing its first device:
   more specific: the left-first sweep starts it at φ̂ = 0 where its steady state follows the gate,
   and monovalent salts recover from that start, where Ca²⁺ doesn't. And a gate floated after a
   held solve fails from the held state, an exact solution of the floated problem (residual 4e-14),
-  and converges with a third of the excess. The family keeps its gates within 0.5 V; the start
-  from anchors outward (above) is the fix for the first.
+  and converges with a third of the excess. The first is fixed by the anchors-outward start
+  (Unreleased; n14 and n15 solve cold). The second is open (case 36 of the uncapped family), so
+  the family still keeps its gates within 0.5 V.
+
+- **A perovskite cell at open circuit takes ~2000 Newton iterations from almost any start**
+  (test/checks.test.js's V_oc device, found reviewing the anchors-outward start, 25 Nov). c87b373's
+  start took 241, but moving its φ̂ in MAPbI₃ by ±1e-12 V took 1952–2750, and the new start's
+  1807 is in that range: one lucky point, not a property of the old start. The time goes to the
+  generation continuation (a mixed ionic–electronic absorber with mobile V⁺ and n_i = 4.8e-14).
 
 - **Open from bench/combos and round 7 (20 Nov 2026; repros in the maintainer's notes).** A floating
   metal contact (behind R or driven) whose metal meets a face reaction should start at its open-circuit
@@ -894,9 +900,7 @@ notes), ranked by how much each trips an agent writing its first device:
 - **From round 17's fuzzer (2026-10-30; repros in `~/.cache/driftlet-claude/round17/fuzz/repro/`).** No
   silent wrong answer in ~1,840 devices; the cold start's missing face surface species is fixed. Left:
   a failed solve's warning names the reaction out of equilibrium at the failed iterate, not at the
-  start, and its advice (solve without it) can be the wrong one; a metal on the right with c0 given
-  starts ~55 RT from the bath (start.js's Known list: 20 of 273 mirrored face devices fail cold,
-  converging with c0 dropped); a closed end reports ~1e-8 A/m² in transients, its end box's balance
+  start, and its advice (solve without it) can be the wrong one; a closed end reports ~1e-8 A/m² in transients, its end box's balance
   residual (steady states read 0); a port refuses chemical steps (no electron from the electrode).
 - **The impedance read by Kirchhoff through held terminals too.** Where a terminal's current is
   lost to round-off but another held terminal's isn't, the measured one's is minus the sum of

@@ -3,6 +3,41 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- The cold start, where every new device begins and a transient's t = 0, now finds what holds each
+  region's potential first and lays the rest out from there, outward, instead of sweeping left to
+  right. The anchors are, in order: a responding region's neutrality, a held gate over a strictly
+  neutral region, held contacts, held electrodes and insertion hosts, then blocking faces. Between
+  two anchors the potential runs in proportion to resistance (∫dx/σ, or ∫dx/ε across an insulator).
+  A device and its mirror image now start in mirrored states, and the start doesn't move with the
+  gauge. Each case the left-first start got wrong is now a test (test/start.test.js; 8 of its 9
+  fail on 1.24.0):
+  - a two-host battery started 137 mV from both its held contacts;
+  - a resistor at rest with c0 given for its carrier started 0.2 V off both contacts, at 17× the steps;
+  - a reaction's neutral, level-held participant was passed over beside an electrode, 0.68 V off;
+  - a metal whose only reaction was on its right face started at the running φ̂;
+  - a divalent salt left of a gated region at 10.9 V failed cold;
+  - round 17's mirrored face devices, a metal on the right with c0 given, failed cold.
+  A cold steady solve also starts a one-sided diffuse layer at its Stern–Gouy–Chapman balance (a
+  transient's t = 0 keeps it uncharged): a Pt | Fe³⁺/Fe²⁺ cell held at 0.9 V solves in 18
+  iterations for 23 in 1.24.0, and for 380 with the new start alone. Against 1.24.0's solver, over
+  the suite, stress and combos --n 8: of 43,162 steady solves that converge both ways, none moves by
+  more than 8e-9 V, and none changes whether it converges. Newton iterations fall 11% (523k → 465k);
+  stress's, 14%. The law sweep (978 devices through advance()) agrees as before. Transients from a
+  cold start begin where the new start puts them, so their early times differ; settled ones agree
+  to 4e-6 V. Neon's (Gemini), 25 Nov, in two rounds of the maintainer's review.
+- Newton's islands round could sum a weakly held piece of a stretch whose balance rows another law
+  (a conserved amount, a reaction's affinity) had already taken one of. That dropped an independent
+  equation, and the round accepted a level gradient at equilibrium: a closed Fe³⁺/Fe²⁺ cell 2.6e-6 RT
+  off, by an amount that changed with its cross-section. An island now sums only pieces whose
+  balances are all still in place. Found by bench/combos' area property on the new cold start, and
+  diagnosed and fixed by Sol (OpenAI Codex), 25 Nov.
+- bench/combos' relax property allows the round-off of species currents that cancel at a terminal,
+  as its order property does (a lit transistor at rest, ±2.25e5 A/m² of electrons and holes netting
+  to 8e-10). And the homotopy remembers a current limit it met in either direction, where it had
+  kept only the first. Neon's, 25 Nov.
+
 ## 1.24.0 (2026-11-25)
 
 - bench/combos' `kirchhoff` allows, on a first step from a solved state between bulk baths, the
