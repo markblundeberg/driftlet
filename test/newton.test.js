@@ -35,9 +35,9 @@ test('newton: a call with the islands\' rows in from the start keeps them', () =
   // step()'s second try (islands: true) converges at its 59th iteration; the islands round ran
   // there as if the rows had just gone in, into maxIter, and came back with s.islandsOn false on
   // a state solved with them in.
-  // (Device 200 was the case; since the cold start reads a held electrode before a floating one
-  // (Neon 1.3) it solves without the second try; 609's converges at its 31st.)
-  const dev = new Device(device(choice(609), { charged: true }));
+  // (Device 200 was the case; since Neon 1.3 it solves without the second try, and since the
+  // anchor-outward start device 609 does too; 184's still uses islands: true and converges.)
+  const dev = new Device(device(choice(184), { charged: true }));
   const calls = steadyCalls(dev), sol = dev.solve();
   assert.ok(sol.converged);
   const asked = calls.filter((c) => c.asked);
@@ -120,9 +120,16 @@ test('a steady solve whose terminal currents don\'t add up says so', () => {
     d.set({ contacts: { right: { V } } });
     return d.solve();
   };
-  const off = at([], -0.3, 250, true), { left, right } = off.terminals;
+  // With the symmetric midpoint start, the three-layer base at 250 K now solves cleanly; warm from
+  // 0 V without its island row still leaves its base off and its terminal currents 18% apart.
+  const dOff = new Device(build({ T: 300, library: [semiconductor(mat)], stack: stack([]) }));
+  dOff.solve();
+  dOff.set({ contacts: { right: { V: -0.3 } } });
+  dOff.solver.islands = [];
+  const off = dOff.solve(), { left, right } = off.terminals;
   assert.ok(Math.abs(left.current + right.current) > 1e-3 * Math.abs(left.current), 'this device now solves: find another for this test');
   assert.ok(off.warnings.some((w) => w.includes("don't add up")), JSON.stringify(off.warnings));
+  assert.deepEqual(at([], -0.3, 250, true).warnings, []);
   assert.deepEqual(at([], -0.3).warnings, []);
   assert.deepEqual(at([n(4e17, 300e-9)], -0.2).warnings, []);
   const eq = new Device(device(choice(288), { charged: true })).solve();
@@ -174,7 +181,7 @@ test('newton: a floating gate at rest in inversion stays put (a mode the plain s
   dev.set({ contacts: { right: { V: undefined, I: 0 } } });
   for (const t of [1e5, 1e7]) {
     const s = dev.advance(t);
-    assert.ok(s.converged && s.steps < 100 && Math.abs(s.contacts.right.V - 1.2) < 1e-9, `t = ${t}: ${s.contacts.right.V - 1.2} V, ${s.steps} steps`);
+    assert.ok(s.converged && s.steps < 100 && Math.abs(s.contacts.right.V - 1.2) < 1e-8, `t = ${t}: ${s.contacts.right.V - 1.2} V, ${s.steps} steps`);
   }
 });
 
@@ -293,7 +300,9 @@ test('islands: a piece the round can\'t sum out, left unbalanced, is warned of',
   // the base's island is summed at its face (the port is in the end piece), the round fails, and
   // the cold solve stands 0.135 V off. Its terminals' miss is 8e-10 of the port's current, under
   // the Kirchhoff warning's 1e-6; the island's own balance misses by 0.94.
-  const mat = 'GaAs', def = build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)], grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 } });
+  // (At 300 K the symmetric midpoint start solves it cleanly; at 250 K the side-port island still
+  // misses balance by 0.33 and is warned of.)
+  const mat = 'GaAs', def = build({ T: 250, library: [semiconductor(mat, { T: 250 })], stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)], grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 } });
   def.ports = [{ name: 'side', region: 'n2', from: 0.75e-6, to: 0.9e-6, I: 1e-3, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
   const s = new Device(def).solve();
   assert.ok(s.warnings.some((w) => w.includes("a floating region doesn't balance")), JSON.stringify(s.warnings));

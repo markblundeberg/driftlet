@@ -505,10 +505,24 @@ test('a region held only weakly: its level found through its summed balance, exa
       assert.ok(Math.abs((s * sol.terminals[side].current) / I - 1) < 1e-9, `${JSON.stringify(p)} ${side}: ${sol.terminals[side].current}`);
     }
   }
-  // Without that row the direct solve fails, and the warning names the region.
-  const d = dev({ G: 1e-6, V: 0.3 });
-  d.solver.islands = [];
-  const direct = d.solve({ continuation: false, maxSteps: 1 });
+  // Without that row the direct solve fails, and the warning names the region. (Use asymmetric
+  // face conductances so the mirror-symmetric midpoint start isn't already the exact island level.)
+  const asym = new Device({
+    species: [{ name: 'e-', z: -1 }],
+    materials: { out: mat(1e-4), fast: mat(1e-8) },
+    regions: [
+      { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
+      { name: 'fast', material: 'fast', length: 1e-6, fixedCharge: 1e4 * FARADAY, grid: { minCells: 200 } },
+      { material: 'out', length: 1e-6, fixedCharge: 1e4 * FARADAY },
+    ],
+    interfaces: [
+      { phi: 'neutral', species: { 'e-': { type: 'conductance', G: 1e-6 } } },
+      { phi: 'neutral', species: { 'e-': { type: 'conductance', G: 2e-6 } } },
+    ],
+    contacts: { left: ohm(0), right: ohm(0.3) },
+  });
+  asym.solver.islands = [];
+  const direct = asym.solve({ continuation: false, maxSteps: 1 });
   assert.equal(direct.converged, false);
   assert.ok(direct.warnings.some((w) => /\(fast\): part of the device is held only weakly/.test(w)), direct.warnings.join('\n'));
 });

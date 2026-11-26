@@ -39,7 +39,7 @@ test('a waveform current at zero at the solve passes nothing: the closed pool at
 // puts it back with the rest. A floating side port's region, warned of, lost its warning after a
 // solve that failed.
 test('a failed solve after a warned one: the restored state keeps its island warning', () => {
-  const mat = 'GaAs', def = build({ T: 300, library: [semiconductor(mat)], stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)], grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 } });
+  const mat = 'GaAs', def = build({ T: 250, library: [semiconductor(mat, { T: 250 })], stack: [ohmic(0), layer(mat, 0.483e-6, { name: 'n1', donors: 0.66 }), layer(mat, 0.22e-6, { name: 'p', acceptors: 8.94 }), layer(mat, 0.902e-6, { name: 'n2', donors: 3.5 }), ohmic(-0.2)], grid: { hmin: 0.5e-9, hmax: 40e-9, ratio: 1.11 } });
   def.ports = [{ name: 'side', region: 'n2', from: 0.75e-6, to: 0.9e-6, I: 1e-3, terminal: 'e-', species: { 'e-': 'equilibrium' } }];
   const d = new Device(def), island = (s) => s.warnings.filter((w) => w.includes("floating region doesn't balance")).length;
   assert.equal(island(d.solve()), 1);

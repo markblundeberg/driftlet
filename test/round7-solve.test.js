@@ -39,9 +39,27 @@ test("a myelinated axon's Na⁺, fed only through its nodes' gated channels, sol
     }
   }
   assert.ok(s.c['Na+'][s.x.length >> 1] < 1e3, `Na⁺ at ${s.c['Na+'][s.x.length >> 1]} mol/m³`);
-  // (Newton reaches the false root first, from cold, and it's refused, saying why; the retry
-  // with smaller updates finds the right one.)
-  assert.ok(refused.some((e) => /^Na\+ in node0–node2 loses .* thermal units from where they do$/.test(e)), `the false root refused, saying why: ${refused[0]}`);
+  // (With the anchor-outward start g = 0 starts at its bulk K⁺ contact's −68.7 mV so the cold
+  // solve no longer falls into the +0.424 V false root; seed near that false root directly to
+  // keep verifying that rateHeld refuses it and the retry finds the right root.)
+  const d2 = new Device(structuredClone(def)), v2 = d2.solver, refused2 = [], nw2 = v2.newton;
+  const mat0 = v2.model.materials[0], RT0 = v2.model.RT, phF = 0.424 / v2.VT;
+  const cF = [2.07e10, 4.8e-7, 2.07e10, 328];
+  for (let g = 0; g < v2.nNodes; g++) {
+    const b = v2.blockOfNode[g] * v2.M;
+    v2.u[b] = phF;
+    for (let i = 0; i < 4; i++) v2.u[b + 1 + i] = Math.log(cF[i] / 1000) + mat0.mu0[i] / RT0 + v2.z[i] * phF;
+    if (v2.M > 5 && (v2.u[b + 5] > 0 || v2.u[b + 6] > 0)) { v2.u[b + 5] = 1; v2.u[b + 6] = 1e-12; v2.u[b + 7] = 1; }
+  }
+  v2.computeConcentrations();
+  v2.newton = function (dt, opts) {
+    const r = nw2.call(this, dt, opts);
+    if (!r.converged && r.error) refused2.push(r.error);
+    return r;
+  };
+  const s2 = d2.solve();
+  assert.ok(s2.converged && s2.c['Na+'][s2.x.length >> 1] < 1e3);
+  assert.ok(refused2.some((e) => /^Na\+ in node0–node2 loses .* thermal units from where they do$/.test(e)), `the false root refused, saying why: ${refused2[0]}`);
 });
 
 test('two solutions in a row behind a bath, or one behind a blocking metal, start at their electrode\'s level in any gauge', () => {

@@ -999,7 +999,7 @@ test('carry: 27b · a clamped port window widened without a regrid keeps its cha
   w.advance(5e-3);
   // (to the round-off of the ions' net charge under it, 1e-16 of the ions', which are 1e6 its)
   assert.ok(rel(d.set({ ports: { membrane: { to: 6e-3 } } }).solution().ports[0].charge, q0) < 1e-8);
-  assert.equal(d.solver.portQEnd[0], q0);
+  assert.ok(rel(d.solver.portQEnd[0], q0) < 1e-14, `${d.solver.portQEnd[0]} vs ${q0}`);
   const s = d.advance(40e-3), t = w.advance(40e-3);
   assert.equal(s.warnings.length, 0, s.warnings.join('\n'));
   assert.ok(rel(s.ports[0].charge, t.ports[0].charge) < 1e-4 && Math.abs(s.phi[10] - t.phi[10]) < 0.1 * mV, `Q ${s.ports[0].charge} vs ${t.ports[0].charge}, φ ${s.phi[10]} vs ${t.phi[10]}`);

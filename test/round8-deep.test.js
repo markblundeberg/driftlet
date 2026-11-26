@@ -80,6 +80,16 @@ test('a failed islands round\'s restored state passes the checks every converged
   const def = JSON.parse(readFileSync(new URL('./fixtures/myelin-k-electrode.json', import.meta.url), 'utf8'));
   const run = (force) => {
     const d = new Device(structuredClone(def)), v = d.solver, factor = v._factor, newton = v.newton, calls = [];
+    // Seed near the +0.424 V false root so try 1 deterministically lands on it before the islands
+    // round (with the anchor-outward start, the cold solve no longer enters that false-root basin).
+    const mat0 = v.model.materials[0], RT0 = v.model.RT, phF = 0.424 / v.VT, cF = [2.07e10, 4.8e-7, 2.07e10, 328];
+    for (let g = 0; g < v.nNodes; g++) {
+      const b = v.blockOfNode[g] * v.M;
+      v.u[b] = phF;
+      for (let i = 0; i < 4; i++) v.u[b + 1 + i] = Math.log(cF[i] / 1000) + mat0.mu0[i] / RT0 + v.z[i] * phF;
+      if (v.M > 5 && (v.u[b + 5] > 0 || v.u[b + 6] > 0)) { v.u[b + 5] = 1; v.u[b + 6] = 1e-12; v.u[b + 7] = 1; }
+    }
+    v.computeConcentrations();
     v._factor = function (...a) {
       if (force && this.islandsOn && this.steady) throw new Error('refused with the islands\' rows in');
       return factor.apply(this, a);

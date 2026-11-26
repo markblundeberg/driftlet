@@ -562,7 +562,7 @@ test("the Newton system's derivatives are its residual's: a floating base summed
     library: [semiconductor('GaAs')],
     stack: [ohmic(0), layer('GaAs', 400e-9, { donors: units.perCm3(1e17) }), layer('GaAs', 200e-9, { acceptors: units.perCm3(5e18) }), layer('GaAs', 900e-9, { donors: units.perCm3(3e17) }), ohmic(-0.3)],
   });
-  const steady = checkInside(def, (d) => d.solve(), (s, dt) => steadyAt(s, dt) && s.islandsOn, { islands: true, nth: 20 });
+  const steady = checkInside(def, (d) => d.solve(), (s, dt) => steadyAt(s, dt) && s.islandsOn, { islands: true, nth: 10 });
   assert.ok(steady?.islands > 0 && steady.cuts === 2, `islands ${steady?.islands}, cut deep ${steady?.cuts}`);
   assert.deepEqual(steady.slice(0, 5), []);
 });

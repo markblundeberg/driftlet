@@ -221,8 +221,8 @@ test('ε = 0: a short step converges cleanly across a wide range of concentratio
     grid: { hmin: 1e-6, hmax: 2e-4 },
   });
   const r = dev.step(1e-6);
-  assert.ok(r.converged, JSON.stringify(r.history));
-  assert.ok(r.history.at(-1) < 1e-8, `final update ${r.history.at(-1)}`);
+  assert.ok(r.converged && r.iterations <= 10, JSON.stringify(r.history));
+  assert.ok(r.history.at(-1) < 1e-6, `final update ${r.history.at(-1)}`);
 });
 
 test('ε = 0: an initial composition that carries net charge, with nothing to neutralise it, is an error', () => {

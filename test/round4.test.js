@@ -405,12 +405,14 @@ test('a floating terminal\'s δV carries its readings\' error: a gate behind R a
     bulkReactions: [{ equation: 'e- + h+ = 0', srh: { Si: { tauN: 1e-6, tauP: 1e-6 } } }],
     grid: { hmin: units.nm(0.1), hmax: units.nm(10), ratio: 1.1 },
   });
-  const fs = [1e-9, 1e-8], ref = new Device(mos(0.6)).impedance(fs, { terminal: 'right' });
+  // Read the held reference's series resistance at 1e-7 Hz (where Re Z is resolved to 2e-7,
+  // whereas at 1e-9 Hz |Z| ≈ 1e11 Ω·m² leaves the held gate's Re Z inside a ±10 MΩ error bar).
+  const fs = [1e-9, 1e-8], refRe = new Device(mos(0.6)).impedance([1e-7], { terminal: 'right' }).Z.re[0];
   for (const R of [1e3, 1e4]) {
     const z = new Device(mos({ V: 0.6, R })).impedance(fs, { terminal: 'left' });
     fs.forEach((f, q) => {
-      const e = Math.abs(z.Z.re[q] - R - ref.Z.re[q]), said = z.relError[q] * Math.hypot(z.Z.re[q], z.Z.im[q]);
-      assert.ok(e < 1e-3 * ref.Z.re[q] && e < said * 10 + 1e-3, `R ${R}, ${f} Hz: Re Z − R ${z.Z.re[q] - R} for ${ref.Z.re[q]}, its error said ${said}`);
+      const e = Math.abs(z.Z.re[q] - R - refRe), said = z.relError[q] * Math.hypot(z.Z.re[q], z.Z.im[q]);
+      assert.ok(e < 1e-3 * refRe && e < said * 10 + 1e-3, `R ${R}, ${f} Hz: Re Z − R ${z.Z.re[q] - R} for ${refRe}, its error said ${said}`);
     });
   }
   const c = { 'K+': 100, 'Cl-': 125, 'Fe3+': 5, 'Fe2+': 5 };
