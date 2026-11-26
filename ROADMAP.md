@@ -94,6 +94,18 @@ for live demos.
 
 ## Next
 
+- **A capacitive face beside a strictly neutral region loses its voltage as the grid is refined**
+  (found 25 Nov by Fable's helper, reviewing the stability design; confirmed). The face's charge
+  C·V is held in the edge box as an excess of ions, so that box's φ̂ moves, and the face's V (which
+  gates read and the capacitor charges to) falls short of the terminals' difference by an amount
+  that grows as 1/h. Space-clamped Hodgkin–Huxley at 0.05 A/m²: 0.006 mV short at hmin 200 nm,
+  0.037 at 20 nm (the template's), 0.385 at 2 nm, 0.737 at 1 nm; the Hopf current moves from 9.765
+  to 9.325 µA/cm² between 125 nm cells and 2 nm. check() says the grid is fine. numerics.md
+  ("Strictly neutral materials and unresolved double layers") says such charge is crammed into
+  the half-boxes and the bulk stays right; here the error reaches what the face's own laws read.
+  The limit wanted is a surface excess that doesn't move the edge box's levels. First check how
+  far it reaches: the axon template, the conduction velocity in docs/experiments.md.
+
 0. **One owner for strictly neutral charge (the next design piece).** A strictly neutral node is
    an index-1 DAE: its balances with an algebraic G(u) = 0, ions plus fixed charge plus a port's
    spread charge plus what its box holds of a face's or contact's D. That G is assembled in
