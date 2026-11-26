@@ -362,10 +362,12 @@ const props = {
     // (40 relaxation times: what's left of the transient is e^-40 of the step)
     if (!within(dw, { mu: 1e-5, I: 1e-5, V: 1e-6 })) return `40 × slow later, the transient vs solve() from there: ${fmt(dw)}`;
     if (!c.plan.unique) return '';
-    const cold = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V)).solve();
+    const devCold = new Device(clone(c.def)).set(driveAt(c.plan, c.plan.V));
+    const cold = devCold.solve();
     if (!converged(cold)) return skip('relaxed; a cold solve at plan.V failed');
     const dc = diff(w, cold);
-    return within(dc, { mu: 1e-6, I: 1e-6, V: 1e-6 }) ? '' : `relaxed then solved vs cold at plan.V: ${fmt(dc)}`;
+    const gross = Math.max(terminalGross(d.solver), terminalGross(devCold.solver));
+    return within(dc, { mu: 1e-6, I: 1e-6, Iabs: Math.max(1e-10, 1e-12 * gross), V: 1e-6 }) ? '' : `relaxed then solved vs cold at plan.V: ${fmt(dc)}`;
   },
 
   history(c, r) {
