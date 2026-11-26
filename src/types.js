@@ -384,7 +384,7 @@
  * @property {{ attempted: { re: number, im: number }[], succeeded: { re: number, im: number }[] }} shifts
  * @property {{ rLo: number, rHi: number, omegaHi: number } | null} window searched growth-rate and frequency window
  * @property {string[]} warnings steady-state warnings plus any stability caveats
- * @property {{ J: number[][], M: number[][], deflation: { label: string, vector: number[] }[], localDeflated: number, cutUsed: number[], labels: (number[] | string[])[] }} [debug]
+ * @property {{ J: number[][], M: number[][], deflation: { label: string, vector: number[], wResidual?: number }[], localDeflated: number, cutUsed: number[], labels: (number[] | string[])[] }} [debug]
  */
 
 export {};

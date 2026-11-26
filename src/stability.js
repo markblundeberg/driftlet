@@ -1,7 +1,8 @@
 // Linear stability of a converged steady state: the rightmost (slowest-decaying or growing)
 // eigenvalues of the dynamic linearised DAE pencil −J v = λ M v about the device's current state,
-// with conserved amounts deflated by projection, left-eigenvector error bars, difference-form
-// residual verification, and an honest windowed verdict.
+// with matrix-verified deflation of conserved amounts, scale-invariant iterative refinement,
+// pole verification against infinite DAE ghosts, left-eigenvector + residual error bars, and an
+// honest windowed verdict.
 //
 // CONTRACT
 //
@@ -10,83 +11,95 @@
 // current, converged steady state without re-solving (preserving the branch).
 //
 // What it uses of the rest:
-//   this._assembleSplit() (src/assemble.js)            steady Jacobian J (this.sys) and storage
-//                                                      Jacobian M (this.sysMass), plus terminal
-//                                                      border terms (termB, termC/Cs, termDI/DIs,
-//                                                      termDX/DXs) on the dynamic rows (steady
-//                                                      false).
+//   this._assembleSplit() (src/assemble.js)            steady Jacobian J (this.sys), storage
+//                                                      Jacobian M (this.sysMass), dynamic steady
+//                                                      residuals (this.res, this.termRes), and
+//                                                      terminal border terms on the dynamic rows
+//                                                      (steady false, frozen sourceTime = time).
 //   this._assembleSplitDifference() (src/difference.js) cancellation-resistant J·v and M·v for
 //                                                      held-vector residual checks.
 //   this._currentCuts() (src/impedance.js)             cut-current readings for floating contacts
 //                                                      so extreme face capacitances or metal G
 //                                                      don't cancel the series capacitance in the
 //                                                      Schur complement.
+//   this._sgSegment(), this._fluxConcentrated() (src/regions.js)
+//                                                      steady conduction current across a cut
+//                                                      segment (for cancellation-free cut residual).
 //   this._smallSignalProfiles() (src/impedance.js)     complex mode profiles (δφ, δμ̄, δc).
+//   maxPotentialStep (src/newton.js)                   thermal-unit state-motion norm for the
+//                                                      steadiness check.
 //   lawAmount, sharedChange (src/lawRows.js), chargeOnly (src/laws.js)
-//                                                      exact gradients c = Mᵀw of conserved
-//                                                      combinations, held-charge terminals and
-//                                                      node-local invariants for deflation.
+//                                                      seeds for exact left null vectors w of the
+//                                                      assembled J (wᵀ J = 0, c = Mᵀ w).
 //   BlockTridiagonal, ComplexBlockTridiagonal (src/blockTridiagonal.js)
 //                                                      forward and transposed (solveT / solveH)
-//                                                      solves for shift-invert Arnoldi, inverse
-//                                                      iteration, and left eigenvectors.
+//                                                      solves for shift-invert Arnoldi, left-null
+//                                                      polish, inverse iteration, and left vectors.
 //   cdiv (src/impedance.js)                            overflow-safe complex division.
+//   sourceAt (src/sources.js)                          frozen terminal source at this.time.
 //
 // stability(opts) → StabilityResult
 //   opts:
 //     shifts?: number[]         real positive shifts σ (1/s); default log-spaced over the device's
-//                               own rates, never 0.
-//     frequencies?: number[]    optional frequencies f (Hz) for imaginary-axis / complex shifts
-//                               σ = σ_r + 2πi f (for Hopf pairs far from the real axis).
+//                               own rates (scale-invariant), never 0.
+//     frequencies?: number[]    optional frequencies f (Hz) for complex shifts σ = σ_r + 2πi f
+//                               (for Hopf pairs far from the real axis).
 //     modes?: number            number of rightmost modes to return (default 8).
 //     profiles?: boolean        attach complex mode shapes { phi, mu, c, termV } (default false).
-//     kBar?: number             significance multiple of the error bar (default 10).
-//     debug?: boolean           include raw { J, M, deflation, labels } as plain arrays for
-//                               independent QZ cross-checks (default false).
+//     kBar?: number             positive finite significance multiple of the error bar (default 10).
+//     debug?: boolean           include raw { J, M, deflation, localDeflated, cutUsed, labels }
+//                               as plain arrays for independent cross-checks (default false).
 //
 // Precondition: the solver must hold a converged, un-regridded steady state (atSteady &&
-// !regriddedSteady), else SolverError. Before running Arnoldi, one un-kicked dynamic step(h) is
-// taken on a snapshot (immediately restored): if it fails or moves the state by more than 1e-5
-// thermal units, stability() returns verdict 'undecided' with the measured drift rather than
-// returning eigenvalues of a linearisation about a non-steady state.
+// !regriddedSteady), else SolverError. On the assembled cut-current dynamic pencil (frozen at
+// this.time, never mutating time-stepper state), we check (a) row-scaled dynamic residual ≤ 1e-6
+// and (b) the linearised backward-Euler step δ = (J + σ M)⁻¹ F (projected onto the conserved
+// hyperplane, measured in thermal units via maxPotentialStep) at solve()'s own giant-step rate
+// σ = 1/(1e6·τ_slow) (tested at two non-resonant rates σ and σ/√10 to avoid an accidental σ = λ
+// pole): if drift ≥ 1e-5 thermal units, stability() returns verdict 'undecided'.
 //
-// Deflation: every exact conserved combination in constraints (whose terminals are all driven by
-// current), every current-driven chargeOnly terminal, and every localConstraint (per node) gives a
-// gradient c_j = Mᵀw_j with w_jᵀJ = 0. The hyperplane c_j·x = 0 is invariant under T_σ =
-// (J + σM)⁻¹M (since c_j·T_σ x = c_j·x / σ) and contains every finite eigenvector with λ ≠ 0.
-// Arnoldi starts in this hyperplane (purified twice through T_σ to suppress index-1/2 DAE infinity
-// directions) and re-projects at every step. Dependent gradients are dropped automatically.
+// Deflation: every global conserved combination in constraints (whose terminals are I-driven) and
+// every I-driven chargeOnly terminal (seeded from raw contact storage before cut replacement) is
+// polished via transposed shift-invert (J + σ_z M)⁻ᵀ Mᵀ on the assembled pencil until it satisfies
+// wᵀ J = 0 to round-off (checked directly with mulJT against |J|ᵀ |w|), then c = Mᵀ w is taken
+// from the assembled M. Node-local invariants (localConstraints) are projected per block in O(N).
+// The hyperplane c·x = 0 is invariant under T_σ = (J + σ M)⁻¹ M (c·T_σ x = c·x / σ).
 //
-// Refinement, residuals and error bars: each candidate eigenpair λ = σ − 1/μ is refined at a
-// nearby shift λ_ref via two-sided inverse iteration (right v, left w via solveT/solveH, two-sided
-// Rayleigh quotient). Held-vector residual r = (J + λM)v is evaluated in difference form; modes
-// with row-scaled residual > 1e-5 or non-finite error bar (catching spurious infinite DAE roots)
-// are rejected. Each accepted mode reports its first-order componentwise error bar:
-//   error = ε · |w|ᴴ (|J| + |λ| |M|) |v| / |wᴴ M v|.
+// Refinement, anti-ghost verification, residuals, error bars, and deduplication:
+//   - Each Ritz candidate must lie within a Meerbergen–Roose trust region of the shift that found
+//     it (|λ − σ| ≤ 25 |σ|).
+//   - Scale-invariant iterative two-sided inverse iteration (relative shift offset 1e-6 |λ|, up to
+//     5 re-centered passes) must converge (|Δλ| ≤ 1e-5 |λ|) with difference-form row-scaled
+//     residual ≤ 1e-8.
+//   - Every growing, far-from-shift, or looser-residual candidate also passes a 0.1%-offset pole
+//     check at s_p = λ (1 + 1e-3): one solve u = (J + s_p M)⁻¹ M v must reproduce v / (s_p − λ),
+//     separating genuine finite poles from infinite DAE eigenvalue ghosts.
+//   - Each accepted mode reports a first-order error bar covering both rounding and residual:
+//       error = (ε · |w|ᴴ (|J| + |λ| |M|) |v| + |wᴴ r| + ρ_L · |w|ᴴ |r|) / |wᴴ M v|
+//     where ρ_L is the relative left-eigenvector residual.
+//   - Duplicates are merged only by eigenvalue proximity within bars AND biorthogonality
+//     (w₁ᴴ M v₂ ≠ 0), never by Euclidean eigenvector overlap and never merging growing with
+//     decaying modes.
 //
-// Verdict (never a bare 'stable'):
-//   'unstable'                 a verified mode has Re λ > kBar · error;
-//   'neutral within resolution' no growing mode, and a verified non-deflated mode has
-//                              |Re λ| ≤ kBar · error;
-//   'no growing mode found'    all verified modes have Re λ < −kBar · error, qualified by the
-//                              searched window { rLo, rHi, omegaHi };
-//   'undecided'                precondition failed (drifting state) or no shift factored cleanly.
+// Verdict (evaluated over all verified modes inside the searched window; never bare 'stable'):
+//   'unstable'                 a verified mode inside the searched window has Re λ > kBar · error;
+//   'undecided'                precondition failed, no shift factored, unkept conserved amounts
+//                              remain undeflated (when no growing mode was found), or rLo ≥ rHi;
+//   'neutral within resolution' no growing mode, and a verified mode has |Re λ| ≤ kBar · error;
+//   'no growing mode found'    all verified modes have Re λ < −kBar · error, qualified by
+//                              { rLo, rHi, omegaHi }.
 //
 // Invariants:
-//   1. Completely non-destructive: STATE (u, uLo, termV, time, history, atSteady, stepped, solvedV,
-//      ...), LEARNED, allTerminals, steady and lawForm are identical before and after the call,
-//      even on error or undecided.
+//   1. Completely non-destructive: STATE, LEARNED, allTerminals, steady, lawForm, sourceBefore,
+//      and offNeutral are identical before and after the call, even on error or undecided.
 //   2. Dynamic rows only: assembly always runs with this.steady = false; steady law pins, flat
 //      rows, affinities and island sums never enter J or M.
-//   3. Deterministic: fixed start-vector PRNG seed; same state and options give bit-identical
-//      results.
+//   3. Deterministic & scale-invariant: fixed PRNG seed; scaling all rates by s scales shifts and
+//      eigenvalues by s with the same verdict.
 //   4. Pure JS, zero dependencies, block-tridiagonal + tiny K×K Schur border only, no ** or
 //      Math.pow.
 //
-// Tests: test/stability.test.js (Hodgkin–Huxley Hopf vs advance(), RC + Sol's C_face=1e16
-// cancellation cut, blocked diffusion discrete cosine spectrum with n=0 deflation, immobile/trap
-// local constraints, Fe³⁺/Fe²⁺ d26594 falling vs rising branch vs kicked advance(), non-steady
-// refusal, state preservation, and BlockTridiagonal solveT/solveH).
+// Tests: test/stability.test.js.
 
 import { BlockTridiagonal, ComplexBlockTridiagonal } from './blockTridiagonal.js';
 import { FARADAY } from './constants.js';
@@ -94,6 +107,8 @@ import { SolverError } from './errors.js';
 import { cdiv } from './impedance.js';
 import { chargeOnly } from './laws.js';
 import { lawAmount, sharedChange } from './lawRows.js';
+import { maxPotentialStep } from './newton.js';
+import { sourceAt } from './device.js';
 
 const EPS = Number.EPSILON; // 2.220446049250313e-16
 
@@ -280,13 +295,11 @@ function realHessenbergEig(Hin, m) {
       continue;
     }
     if (l === nn - 1) {
-      // Standardize 2×2 block: if real eigenvalues, reduce to triangular via Givens rotation.
       const a = H[l][l], b = H[l][nn], c = H[nn][l], d = H[nn][nn];
-      const tr = 0.5 * (a + d), df = 0.5 * (a - d), disc = df * df + b * c;
+      const df = 0.5 * (a - d), disc = df * df + b * c;
       if (disc >= 0) {
         const z = df >= 0 ? Math.sqrt(disc) : -Math.sqrt(disc);
         const p = df + z;
-        // Eigenvector of (A - (tr - z)I) is [p, c] or [b, -p]
         let cs, sn;
         if (Math.abs(p) + Math.abs(c) >= Math.abs(b) + Math.abs(p)) {
           const r = Math.hypot(p, c);
@@ -297,7 +310,6 @@ function realHessenbergEig(Hin, m) {
           cs = r > 0 ? b / r : 1;
           sn = r > 0 ? -p / r : 0;
         }
-        // Apply similarity Gᵀ H G with G = [[cs, -sn], [sn, cs]]
         for (let j = l; j < m; j++) {
           const t1 = H[l][j], t2 = H[nn][j];
           H[l][j] = cs * t1 + sn * t2;
@@ -321,7 +333,6 @@ function realHessenbergEig(Hin, m) {
     }
     iter++;
     totalIter++;
-    // Francis double shift (or exceptional shift every 10 iters).
     let s, t;
     if (iter % 10 === 0) {
       const w = Math.abs(H[nn][nn - 1]) + Math.abs(H[nn - 1][nn - 2]);
@@ -332,7 +343,6 @@ function realHessenbergEig(Hin, m) {
       s = a + d;
       t = a * d - b * c;
     }
-    // Look for two consecutive small subdiagonal elements to start bulge chase.
     let k0 = nn - 2;
     let x = 0, y = 0, z = 0;
     for (; k0 >= l; k0--) {
@@ -363,7 +373,6 @@ function realHessenbergEig(Hin, m) {
       x += r;
       const p = x / r, q = y / r, u = z / r;
       const wy = y / x, wz = z / x;
-      // Row modification: H[k..k+2, k..m-1]
       for (let j = k; j < m; j++) {
         let v = H[k][j] + wy * H[k + 1][j];
         if (notLast) {
@@ -373,7 +382,6 @@ function realHessenbergEig(Hin, m) {
         H[k + 1][j] -= v * q;
         H[k][j] -= v * p;
       }
-      // Column modification: H[0..min(nn, k+3), k..k+2]
       const iMax = Math.min(nn, k + 3);
       for (let i = 0; i <= iMax; i++) {
         let v = p * H[i][k] + q * H[i][k + 1];
@@ -384,7 +392,6 @@ function realHessenbergEig(Hin, m) {
         H[i][k + 1] -= v * wy;
         H[i][k] -= v;
       }
-      // Accumulate Q
       for (let i = 0; i < m; i++) {
         let v = p * Q[i][k] + q * Q[i][k + 1];
         if (notLast) {
@@ -401,15 +408,15 @@ function realHessenbergEig(Hin, m) {
     }
   }
 
-  // Extract eigenvalues and eigenvectors of real Schur matrix H, then lift by Q.
+  // Only extract converged blocks (indices > nn if the iteration cap was hit).
+  const startIdx = nn >= 0 ? nn + 1 : 0;
   const eigs = [];
-  for (let i = 0; i < m; ) {
+  for (let i = startIdx; i < m; ) {
     if (i + 1 < m && H[i + 1][i] !== 0) {
       const a = H[i][i], b = H[i][i + 1], c = H[i + 1][i], d = H[i + 1][i + 1];
       const re = 0.5 * (a + d), df = 0.5 * (a - d);
       const disc = -(df * df + b * c);
       const im = disc > 0 ? Math.sqrt(disc) : 0;
-      // Solve (H - (re + i*im)I) y = 0 by complex back-substitution for upper-quasi-triangular H.
       const yr = new Float64Array(m), yi = new Float64Array(m);
       if (Math.abs(b) >= Math.abs(c)) {
         yr[i] = b; yi[i] = 0;
@@ -420,7 +427,6 @@ function realHessenbergEig(Hin, m) {
       }
       for (let r = i - 1; r >= 0; ) {
         if (r > 0 && H[r][r - 1] !== 0) {
-          // 2×2 block at (r-1, r)
           let rhs1r = 0, rhs1i = 0, rhs2r = 0, rhs2i = 0;
           for (let j = r + 1; j <= i + 1; j++) {
             rhs1r -= H[r - 1][j] * yr[j]; rhs1i -= H[r - 1][j] * yi[j];
@@ -530,7 +536,6 @@ function complexHessenbergEig(Hrin, Hiin, m) {
     if (l === nn) { nn--; iter = 0; continue; }
     iter++;
     totalIter++;
-    // Wilkinson shift from trailing 2×2 block
     let sr, si;
     if (iter % 10 === 0) {
       const w = Math.hypot(Hr[nn][nn - 1], Hi[nn][nn - 1]);
@@ -555,7 +560,6 @@ function complexHessenbergEig(Hrin, Hiin, m) {
       if (Math.hypot(l1r - a11r, l1i - a11i) <= Math.hypot(l2r - a11r, l2i - a11i)) { sr = l1r; si = l1i; }
       else { sr = l2r; si = l2i; }
     }
-    // Single-shift QR step via Givens rotations on H[l..nn, l..nn]
     for (let i = l; i <= nn; i++) { Hr[i][i] -= sr; Hi[i][i] -= si; }
     const cs = new Float64Array(nn - l), snr = new Float64Array(nn - l), sni = new Float64Array(nn - l);
     for (let k = l; k < nn; k++) {
@@ -565,7 +569,6 @@ function complexHessenbergEig(Hrin, Hiin, m) {
       const c = am / r;
       let svr, svi;
       if (am > 0) {
-        // s = (a / |a|) * conj(b) / r so that c * a + s * b = (a/|a|) * r and -conj(s)*a + c*b = 0
         const er = ar / am, ei = ai / am;
         svr = (er * br + ei * bi) / r;
         svi = (ei * br - er * bi) / r;
@@ -573,7 +576,6 @@ function complexHessenbergEig(Hrin, Hiin, m) {
         svr = 1; svi = 0;
       }
       cs[k - l] = c; snr[k - l] = svr; sni[k - l] = svi;
-      // Left multiply rows k, k+1 by G = [[c, s], [-conj(s), c]]
       for (let j = k; j < m; j++) {
         const xr = Hr[k][j], xi = Hi[k][j], yr = Hr[k + 1][j], yi = Hi[k + 1][j];
         Hr[k][j] = c * xr + (svr * yr - svi * yi);
@@ -583,7 +585,6 @@ function complexHessenbergEig(Hrin, Hiin, m) {
       }
       Hr[k + 1][k] = 0; Hi[k + 1][k] = 0;
     }
-    // Right multiply columns k, k+1 by Gᴴ = [[c, -s], [conj(s), c]]
     for (let k = l; k < nn; k++) {
       const c = cs[k - l], svr = snr[k - l], svi = sni[k - l];
       const iMax = Math.min(nn, k + 1);
@@ -605,8 +606,9 @@ function complexHessenbergEig(Hrin, Hiin, m) {
     for (let i = l; i <= nn; i++) { Hr[i][i] += sr; Hi[i][i] += si; }
   }
 
+  const startIdx = nn >= 0 ? nn + 1 : 0;
   const eigs = [];
-  for (let i = 0; i < m; i++) {
+  for (let i = startIdx; i < m; i++) {
     const re = Hr[i][i], im = Hi[i][i];
     const yr = new Float64Array(m), yi = new Float64Array(m);
     yr[i] = 1;
@@ -687,6 +689,23 @@ function btAbsMul(bt, x, out, factor = 1) {
   }
 }
 
+function btAbsMulT(bt, absW, out) {
+  out.fill(0);
+  const { n, A, B, C, sizes, offA, offB, offC, offX } = bt;
+  for (let blk = 0; blk < n; blk++) {
+    const m = sizes[blk], v = offX[blk];
+    const mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < n - 1 ? sizes[blk + 1] : 0;
+    for (let r = 0; r < m; r++) {
+      const wr = absW[v + r];
+      if (wr === 0) continue;
+      for (let c = 0; c < mp; c++) out[v - mp + c] += Math.abs(A[offA[blk] + r * mp + c]) * wr;
+      for (let c = 0; c < m; c++) out[v + c] += Math.abs(B[offB[blk] + r * m + c]) * wr;
+      for (let c = 0; c < mn; c++) out[v + m + c] += Math.abs(C[offC[blk] + r * mn + c]) * wr;
+    }
+  }
+  return out;
+}
+
 function denseOfBt(bt, K) {
   const { n, A, B, C, sizes, offA, offB, offC, offX } = bt, Nc = bt.size, N = Nc + K;
   const out = Array.from({ length: N }, () => new Array(N).fill(0));
@@ -700,6 +719,33 @@ function denseOfBt(bt, K) {
     }
   }
   return out;
+}
+
+// Steady conduction current across interior segment cutSeg (toward +x, A or A/m²).
+// Displacement ∂D/∂t is identically zero at steady state.
+function steadyCutCurrent(s, cutSeg) {
+  const { model, n, z } = s;
+  const { grid, materials, regions } = model;
+  let rIdx = 0;
+  for (let r = 0; r < regions.length; r++) {
+    if (cutSeg >= grid.regionStart[r] && cutSeg < grid.regionEnd[r]) { rIdx = r; break; }
+  }
+  const reg = regions[rIdx], mat = materials[reg.material];
+  if (mat.conductor) return 0;
+  const bL = cutSeg + rIdx, bR = bL + 1, h = grid.segLength[cutSeg] / grid.segArea[cutSeg];
+  const vel = reg.velocity;
+  let Icut = 0;
+  for (let i = 0; i < n; i++) {
+    if (z[i] === 0 || !mat.present[i] || mat.D[i] === 0) continue;
+    if (!mat.ideal) {
+      const { N } = s._fluxConcentrated(cutSeg, bL, bR, mat, h, vel, i);
+      Icut += z[i] * FARADAY * N;
+    } else {
+      const sg = s._sgSegment(cutSeg, bL, i, h, vel);
+      Icut += z[i] * FARADAY * sg[0];
+    }
+  }
+  return Icut;
 }
 
 function buildPencil(s) {
@@ -719,7 +765,7 @@ function buildPencil(s) {
   const { sys: Jg, mass: Mg } = s._assembleSplit();
   const Nc = Jg.size, fl = s.floating.slice(), K = fl.length, N = Nc + K;
 
-  // Keep raw contact storage rows before cut replacement (for contact-charge deflation terms).
+  // Keep raw contact storage rows before cut replacement (for held-charge deflation seeding).
   const rawCs = s.termCs.map((v) => v.slice(0, Nc));
   const rawDIs = Float64Array.from(s.termDIs);
   const rawDXs = s.termDXs.map((v) => Float64Array.from(v));
@@ -730,9 +776,7 @@ function buildPencil(s) {
   const D = fl.map((k, a) => Float64Array.from(fl, (k2, b) => (a === b ? s.termDI[k] : s.termDX[k][k2])));
   const Ds = fl.map((k, a) => Float64Array.from(fl, (k2, b) => (a === b ? s.termDIs[k] : s.termDXs[k][k2])));
 
-  // Sol's cut-current reading for floating contacts not read by a circuit law's change:
-  // reading total current at an interior dielectric/electrolyte segment avoids Schur cancellation
-  // when C_face or metal conductance G is huge.
+  // Sol's cut-current reading for floating contacts not read by a circuit law's change.
   const { species } = s.model;
   const charged = (p) => p.capacitance || p.reactions.length > 0 || species.some((_, i) => s.z[i] !== 0 && p.species[i].type !== 'blocked');
   const allCuts = s._currentCuts();
@@ -784,8 +828,30 @@ function buildPencil(s) {
     }
   });
 
-  // Row scales of J and M separately (for row-scaled held-vector residual).
+  // Dynamic steady residual vector F (frozen at s.time, with cancellation-free cut / lawForm rows).
+  const F = new Float64Array(N);
+  F.set(s.res.subarray(0, Nc), 0);
+  fl.forEach((k, a) => {
+    if (cutUsed[a] >= 0) {
+      const sgn = k === 0 ? 1 : -1;
+      const Icut = steadyCutCurrent(s, cutUsed[a]);
+      const d = s.terms[k].drive;
+      const src = s.sourceOverride.has(k) ? s.sourceOverride.get(k) : sourceAt(d.src, s.sourceTime, s.sourceBefore);
+      F[Nc + a] = d.kind === 'I' ? sgn * Icut - src : sgn * Icut - (src - s.termV[k]) / d.R;
+    } else if (lawRead.has(k)) {
+      // circuitLaws in split mode replaces C/D/Cs/Ds with the by-change law without overwriting
+      // termRes; at u = uOld (amount === lawStart), that row's residual is purely −I_drive.
+      const d = s.terms[k].drive;
+      const src = s.sourceOverride.has(k) ? s.sourceOverride.get(k) : sourceAt(d.src, s.sourceTime, s.sourceBefore);
+      F[Nc + a] = -(d.kind === 'I' ? src : (src - s.termV[k]) / d.R);
+    } else {
+      F[Nc + a] = s.termRes[k];
+    }
+  });
+
+  // Row scales of J and M separately, plus dynamic rate samples jRowMax/mRowMax.
   const jRowMax = new Float64Array(N), mRowMax = new Float64Array(N);
+  let jInf = 0;
   const { sizes, offA, offB, offC, offX } = Jg, nB = Jg.n;
   for (let blk = 0; blk < nB; blk++) {
     const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
@@ -810,6 +876,7 @@ function buildPencil(s) {
       }
       jRowMax[idx] = jm;
       mRowMax[idx] = mm;
+      if (jm > jInf) jInf = jm;
     }
   }
   for (let a = 0; a < K; a++) {
@@ -824,10 +891,22 @@ function buildPencil(s) {
     }
     jRowMax[Nc + a] = jm;
     mRowMax[Nc + a] = mm;
+    if (jm > jInf) jInf = jm;
   }
 
-  // Scratch vectors for matvecs.
-  const tmp1 = new Float64Array(Nc), tmp2 = new Float64Array(Nc);
+  // Row-rate range from differential rows (mRowMax > 0 && jRowMax > 0).
+  const rowRates = [];
+  for (let i = 0; i < N; i++) {
+    if (mRowMax[i] > 0 && jRowMax[i] > 0) {
+      const r = jRowMax[i] / mRowMax[i];
+      if (Number.isFinite(r) && r > 0) rowRates.push(r);
+    }
+  }
+  rowRates.sort((a, b) => a - b);
+  const rMinDyn = rowRates.length ? rowRates[0] : 1;
+  const rMaxDyn = rowRates.length ? rowRates[rowRates.length - 1] : 1e6;
+
+  // Matvec helpers.
   const mulJDiff = (v, out) => {
     btMul(Jr, v, out);
     lin.apply(v, out, 1, 0);
@@ -879,6 +958,42 @@ function buildPencil(s) {
     }
     return out;
   };
+  const mulJT = (w, out) => {
+    btMulT(Jg, w, out);
+    for (let j = Nc; j < N; j++) out[j] = 0;
+    for (let a = 0; a < K; a++) {
+      let dotB = 0;
+      const Ba = B[a];
+      for (let r = 0; r < Nc; r++) dotB += Ba[r] * w[r];
+      out[Nc + a] += dotB;
+    }
+    for (let a = 0; a < K; a++) {
+      const wa = w[Nc + a];
+      if (wa === 0) continue;
+      const Ca = C[a], Da = D[a];
+      for (let j = 0; j < Nc; j++) out[j] += Ca[j] * wa;
+      for (let b = 0; b < K; b++) out[Nc + b] += Da[b] * wa;
+    }
+    return out;
+  };
+  const absMulJT = (absW, out) => {
+    btAbsMulT(Jg, absW, out);
+    for (let j = Nc; j < N; j++) out[j] = 0;
+    for (let a = 0; a < K; a++) {
+      let dotB = 0;
+      const Ba = B[a];
+      for (let r = 0; r < Nc; r++) dotB += Math.abs(Ba[r]) * absW[r];
+      out[Nc + a] += dotB;
+    }
+    for (let a = 0; a < K; a++) {
+      const wa = absW[Nc + a];
+      if (wa === 0) continue;
+      const Ca = C[a], Da = D[a];
+      for (let j = 0; j < Nc; j++) out[j] += Math.abs(Ca[j]) * wa;
+      for (let b = 0; b < K; b++) out[Nc + b] += Math.abs(Da[b]) * wa;
+    }
+    return out;
+  };
   const absMulJM = (absV, lamAbs, out) => {
     out.fill(0);
     btAbsMul(Jg, absV, out, 1);
@@ -897,178 +1012,45 @@ function buildPencil(s) {
     return out;
   };
 
+  const absMulJMT = (absW, lamAbs, out) => {
+    btAbsMulT(Jg, absW, out);
+    for (let j = Nc; j < N; j++) out[j] = 0;
+    if (lamAbs > 0) {
+      const mTmp = new Float64Array(N);
+      btAbsMulT(Mg, absW, mTmp);
+      for (let j = 0; j < Nc; j++) out[j] += lamAbs * mTmp[j];
+    }
+    for (let a = 0; a < K; a++) {
+      let dotB = 0;
+      const Ba = B[a];
+      for (let r = 0; r < Nc; r++) dotB += Math.abs(Ba[r]) * absW[r];
+      out[Nc + a] += dotB;
+    }
+    for (let a = 0; a < K; a++) {
+      const wa = absW[Nc + a];
+      if (wa === 0) continue;
+      const Ca = C[a], Csa = Cs[a], Da = D[a], Dsa = Ds[a];
+      for (let j = 0; j < Nc; j++) out[j] += (Math.abs(Ca[j]) + lamAbs * Math.abs(Csa[j])) * wa;
+      for (let b = 0; b < K; b++) out[Nc + b] += (Math.abs(Da[b]) + lamAbs * Math.abs(Dsa[b])) * wa;
+    }
+    return out;
+  };
+
   return {
-    Jg, Mg, Jr, Sr, lin, Nc, K, N, fl, B, C, Cs, D, Ds,
-    rawCs, rawDIs, rawDXs, lawRead, cutUsed, jRowMax, mRowMax,
-    mulJDiff, mulMDiff, mulM, mulMT, absMulJM, tmp1, tmp2,
+    Jg, Mg, Jr, Sr, lin, Nc, K, N, fl, B, C, Cs, D, Ds, F,
+    rawCs, rawDIs, rawDXs, lawRead, cutUsed, jRowMax, mRowMax, jInf, rMinDyn, rMaxDyn,
+    mulJDiff, mulMDiff, mulM, mulMT, mulJT, absMulJT, absMulJM, absMulJMT,
   };
-}
-
-// --- Deflation basis: exact conserved quantities, held-charge terminals, node-local invariants ---
-
-function buildDeflation(s, pencil, coordScale) {
-  const { Nc, K, N, fl, Cs, Ds, rawCs, rawDIs, rawDXs } = pencil;
-  const { model, n, M, th, nSurf } = s;
-  const vol = model.grid.vol;
-  const invScale = Float64Array.from(coordScale, (v) => 1 / v);
-  const rawVecs = [];
-  const meta = [];
-
-  // 1. Global conserved combinations from s.constraints (all feeding terminals driven by current).
-  const handledCircuit = new Set();
-  for (const cs of s.constraints) {
-    if (cs.terminals.some((t) => s.terms[t].drive.kind !== 'I')) continue;
-    const { dV } = lawAmount(s, cs);
-    const vec = new Float64Array(N);
-    for (let j = 0; j < cs.len; j++) vec[cs.idx[j]] += cs.w[j];
-    fl.forEach((k, a) => { vec[Nc + a] += dV[k] ?? 0; });
-    for (const { t, lambda } of cs.contacts ?? []) {
-      const f = lambda / FARADAY;
-      const rc = rawCs[t];
-      for (let j = 0; j < Nc; j++) vec[j] += f * rc[j];
-      fl.forEach((k, a) => {
-        vec[Nc + a] += f * (k === t ? rawDIs[t] : rawDXs[t][k]);
-      });
-    }
-    if (cs.circuit >= 0) handledCircuit.add(cs.circuit);
-    const names = cs.parts.map(({ stretch }) => {
-      const st = s.stretches[stretch], [r0, r1] = st.regions;
-      return `${model.species[st.species].name} in ${model.regions[r0].name}${r1 > r0 ? `…${model.regions[r1].name}` : ''}`;
-    });
-    rawVecs.push({ kind: 'constraint', vec, label: `conserved: ${names.join(' + ') || cs.key}` });
-  }
-
-  // 2. Floating current-driven terminals that pass current only by charging (chargeOnly).
-  fl.forEach((k, a) => {
-    if (s.terms[k].drive.kind !== 'I' || !chargeOnly(s, k) || handledCircuit.has(k)) return;
-    const vec = new Float64Array(N);
-    vec.set(Cs[a], 0);
-    for (let b = 0; b < K; b++) vec[Nc + b] = Ds[a][b];
-    rawVecs.push({ kind: 'charge', vec, label: `held charge: terminal ${s.terms[k].name}` });
-  });
-
-  // 3. Node-local invariants (immobile species / trap pools), stored sparsely by block for O(N) projection.
-  const localByBlock = new Map(); // blk → [{ vec: Float64Array(m), raw: ... }]
-  const dA = s.dA;
-  let localCount = 0;
-  for (const lc of s.localConstraints) {
-    for (const g of lc.nodes) {
-      const blk = s.blockOfNode[g], off = pencil.Jg.offX[blk], m = pencil.Jg.sizes[blk];
-      if (m === 0) continue;
-      const locVec = new Float64Array(m);
-      const vg = vol[g];
-      for (const { i, q, k, w } of lc.parts) {
-        if (i !== undefined) {
-          s._dc(g, i, dA);
-          for (let r = 0; r < M; r++) {
-            const loc = s.loc[blk * M + r];
-            if (loc >= 0 && dA[r] !== 0) locVec[loc] += w * vg * dA[r];
-          }
-        } else if (s.surfAt[g] === k) {
-          const sf = model.surfaces[k], ns = sf.species.length;
-          const tq = th[g * nSurf + q];
-          const ws = w * vg * sf.species[0].capacity * s.surfArea[k][s.surfW[g]];
-          for (let x = 0; x < ns; x++) {
-            const loc = s.loc[blk * M + 1 + n + x];
-            if (loc >= 0) locVec[loc] += ws * tq * ((q === x ? 1 : 0) - th[g * nSurf + x]);
-          }
-        }
-      }
-      // Scale to y-space (y = D x ⇒ cᵀ x = (D⁻¹ c)ᵀ y)
-      let n0 = 0;
-      for (let r = 0; r < m; r++) { locVec[r] *= invScale[off + r]; n0 += locVec[r] * locVec[r]; }
-      n0 = Math.sqrt(n0);
-      if (!(n0 > 0)) continue;
-      const list = localByBlock.get(blk) ?? (localByBlock.set(blk, []), localByBlock.get(blk));
-      // Twice-MGS against existing local vectors on this same block.
-      for (let pass = 0; pass < 2; pass++) {
-        for (const qv of list) {
-          let dot = 0;
-          for (let r = 0; r < m; r++) dot += qv[r] * locVec[r];
-          for (let r = 0; r < m; r++) locVec[r] -= dot * qv[r];
-        }
-      }
-      let n1 = 0;
-      for (let r = 0; r < m; r++) n1 += locVec[r] * locVec[r];
-      n1 = Math.sqrt(n1);
-      if (n1 <= 1e-12 * n0) continue;
-      for (let r = 0; r < m; r++) locVec[r] /= n1;
-      list.push(locVec);
-      localCount++;
-    }
-  }
-  if (localCount > 0) meta.push({ kind: 'local', count: localCount, label: `${localCount} node-local invariant${localCount > 1 ? 's' : ''}` });
-
-  // Orthonormalize global vectors in y-space (against local blocks first, then against each other).
-  const globalQ = [];
-  const debugVecs = [];
-  for (const item of rawVecs) {
-    const v = new Float64Array(N);
-    let n0 = 0;
-    for (let j = 0; j < N; j++) { v[j] = item.vec[j] * invScale[j]; n0 += v[j] * v[j]; }
-    n0 = Math.sqrt(n0);
-    if (!(n0 > 0)) continue;
-    for (let pass = 0; pass < 2; pass++) {
-      for (const [blk, list] of localByBlock) {
-        const off = pencil.Jg.offX[blk], m = pencil.Jg.sizes[blk];
-        for (const qv of list) {
-          let dot = 0;
-          for (let r = 0; r < m; r++) dot += qv[r] * v[off + r];
-          for (let r = 0; r < m; r++) v[off + r] -= dot * qv[r];
-        }
-      }
-      for (const qv of globalQ) {
-        let dot = 0;
-        for (let j = 0; j < N; j++) dot += qv[j] * v[j];
-        for (let j = 0; j < N; j++) v[j] -= dot * qv[j];
-      }
-    }
-    let n1 = 0;
-    for (let j = 0; j < N; j++) n1 += v[j] * v[j];
-    n1 = Math.sqrt(n1);
-    if (n1 <= 1e-12 * n0) continue;
-    for (let j = 0; j < N; j++) v[j] /= n1;
-    globalQ.push(v);
-    debugVecs.push({ label: item.label, vector: Array.from(item.vec) });
-    meta.push({ kind: item.kind, label: item.label });
-  }
-
-  const totalDeflated = globalQ.length + localCount;
-  const projectReal = (y) => {
-    if (totalDeflated === 0) return y;
-    for (let pass = 0; pass < 2; pass++) {
-      for (const [blk, list] of localByBlock) {
-        const off = pencil.Jg.offX[blk], m = pencil.Jg.sizes[blk];
-        for (const qv of list) {
-          let dot = 0;
-          for (let r = 0; r < m; r++) dot += qv[r] * y[off + r];
-          for (let r = 0; r < m; r++) y[off + r] -= dot * qv[r];
-        }
-      }
-      for (const qv of globalQ) {
-        let dot = 0;
-        for (let j = 0; j < N; j++) dot += qv[j] * y[j];
-        for (let j = 0; j < N; j++) y[j] -= dot * qv[j];
-      }
-    }
-    return y;
-  };
-  const projectComplex = (yr, yi) => {
-    if (totalDeflated === 0) return;
-    projectReal(yr);
-    projectReal(yi);
-  };
-
-  return { totalDeflated, localCount, meta, debugVecs, localByBlock, projectReal, projectComplex };
 }
 
 // --- Bordered shifted factorisations (real & complex) with forward + transposed solves ---
 
-function factorRealShift(pencil, sigma) {
+function factorRealShift(pencil, sigma, strict = false) {
   const { Jg, Mg, Nc, K, N, B, C, Cs, D, Ds } = pencil;
   const { sizes, offA, offB, offC, offX } = Jg, nB = Jg.n;
   const bt = new BlockTridiagonal(nB, sizes);
   bt.bothWays = true;
+  bt.staticPivots = true;
   const sc = new Float64Array(Nc);
   for (let blk = 0; blk < nB; blk++) {
     const m = sizes[blk], mp = blk > 0 ? sizes[blk - 1] : 0, mn = blk < nB - 1 ? sizes[blk + 1] : 0;
@@ -1092,6 +1074,7 @@ function factorRealShift(pencil, sigma) {
   } catch {
     return null;
   }
+  if (strict && bt.lostColumns > 0) return null;
   const Csig = C.map((Ca, a) => {
     const out = new Float64Array(Nc), Csa = Cs[a];
     for (let j = 0; j < Nc; j++) out[j] = Ca[j] + sigma * Csa[j];
@@ -1284,8 +1267,6 @@ function factorComplexShift(pencil, sr, si) {
       for (let j = 0; j < Nc; j++) { outR[j] = yGr[j] * sc[j]; outI[j] = yGi[j] * sc[j]; }
       return [outR, outI];
     }
-    // (Pᴴ) [w_g; w_V] = [r_g; r_V] with P_gg = diag(sc)⁻¹ T, S = diag(scB)(D - C X):
-    // Sᴴ (w_V / scB) = r_V − Xᴴ r_g, then Tᴴ (w_g / sc) = r_g − Cᴴ w_V.
     const rVr = new Float64Array(K), rVi = new Float64Array(K);
     for (let a = 0; a < K; a++) {
       let dr = 0, di = 0;
@@ -1304,7 +1285,6 @@ function factorComplexShift(pencil, sr, si) {
       outR[Nc + a] = war; outI[Nc + a] = wai;
       const cra = Cr[a], cia = Ci[a];
       for (let j = 0; j < Nc; j++) {
-        // Cᴴ w_V: conj(C[a,j]) * w_V[a]
         rhsGr[j] -= cra[j] * war + cia[j] * wai;
         rhsGi[j] -= cra[j] * wai - cia[j] * war;
       }
@@ -1314,6 +1294,227 @@ function factorComplexShift(pencil, sr, si) {
     return [outR, outI];
   };
   return { solve, solveH };
+}
+
+// --- Matrix-verified deflation: exact wᵀ J = 0, c = Mᵀ w on the assembled pencil ---
+
+function leftNullResidual(pencil, w) {
+  const { N, jInf } = pencil;
+  const jt = new Float64Array(N), absW = new Float64Array(N), absJT = new Float64Array(N);
+  let wInf = 0;
+  for (let j = 0; j < N; j++) { const a = Math.abs(w[j]); absW[j] = a; if (a > wInf) wInf = a; }
+  if (!(wInf > 0)) return Infinity;
+  pencil.mulJT(w, jt);
+  pencil.absMulJT(absW, absJT);
+  let maxJT = 0, maxAbs = 0;
+  for (let j = 0; j < N; j++) {
+    const a = Math.abs(jt[j]);
+    if (a > maxJT) maxJT = a;
+    if (absJT[j] > maxAbs) maxAbs = absJT[j];
+  }
+  const denom = Math.max(maxAbs, 1e-12 * jInf * wInf);
+  return denom > 0 ? maxJT / denom : 0;
+}
+
+function buildDeflation(s, pencil, coordScale, warnings) {
+  const { Nc, K, N, fl, rawCs, rawDIs, rawDXs, rMinDyn } = pencil;
+  const { model, n, M, th, nSurf } = s;
+  const vol = model.grid.vol;
+  const invScale = Float64Array.from(coordScale, (v) => 1 / v);
+  const seeds = [];
+  const meta = [];
+
+  // 1. Global conserved combinations from s.constraints (all feeding terminals I-driven).
+  const handledCircuit = new Set();
+  for (const cs of s.constraints) {
+    if (cs.terminals.some((t) => s.terms[t].drive.kind !== 'I')) continue;
+    const { dV } = lawAmount(s, cs);
+    const vec = new Float64Array(N);
+    for (let j = 0; j < cs.len; j++) vec[cs.idx[j]] += cs.w[j];
+    fl.forEach((k, a) => { vec[Nc + a] += dV[k] ?? 0; });
+    for (const { t, lambda } of cs.contacts ?? []) {
+      const f = lambda / FARADAY;
+      const rc = rawCs[t];
+      for (let j = 0; j < Nc; j++) vec[j] += f * rc[j];
+      fl.forEach((k, a) => {
+        vec[Nc + a] += f * (k === t ? rawDIs[t] : rawDXs[t][k]);
+      });
+    }
+    if (cs.circuit >= 0) handledCircuit.add(cs.circuit);
+    const names = cs.parts.map(({ stretch }) => {
+      const st = s.stretches[stretch], [r0, r1] = st.regions;
+      return `${model.species[st.species].name} in ${model.regions[r0].name}${r1 > r0 ? `…${model.regions[r1].name}` : ''}`;
+    });
+    seeds.push({ kind: 'constraint', vec, label: `conserved: ${names.join(' + ') || cs.key}` });
+  }
+
+  // 2. Floating I-driven chargeOnly terminals: seed from raw (pre-cut) storage rows.
+  fl.forEach((k, a) => {
+    if (s.terms[k].drive.kind !== 'I' || !chargeOnly(s, k) || handledCircuit.has(k)) return;
+    const vec = new Float64Array(N);
+    vec.set(rawCs[k], 0);
+    fl.forEach((k2, b) => { vec[Nc + b] = k2 === k ? rawDIs[k] : rawDXs[k][k2]; });
+    seeds.push({ kind: 'charge', vec, label: `held charge: terminal ${s.terms[k].name}` });
+  });
+
+  // 3. Node-local invariants (immobile species / trap pools), stored sparsely by block for O(N) projection.
+  const localByBlock = new Map();
+  const dA = s.dA;
+  let localCount = 0;
+  for (const lc of s.localConstraints) {
+    for (const g of lc.nodes) {
+      const blk = s.blockOfNode[g], off = pencil.Jg.offX[blk], m = pencil.Jg.sizes[blk];
+      if (m === 0) continue;
+      const locVec = new Float64Array(m);
+      const vg = vol[g];
+      for (const { i, q, k, w } of lc.parts) {
+        if (i !== undefined) {
+          s._dc(g, i, dA);
+          for (let r = 0; r < M; r++) {
+            const loc = s.loc[blk * M + r];
+            if (loc >= 0 && dA[r] !== 0) locVec[loc] += w * vg * dA[r];
+          }
+        } else if (s.surfAt[g] === k) {
+          const sf = model.surfaces[k], ns = sf.species.length;
+          const tq = th[g * nSurf + q];
+          const ws = w * vg * sf.species[0].capacity * s.surfArea[k][s.surfW[g]];
+          for (let x = 0; x < ns; x++) {
+            const loc = s.loc[blk * M + 1 + n + x];
+            if (loc >= 0) locVec[loc] += ws * tq * ((q === x ? 1 : 0) - th[g * nSurf + x]);
+          }
+        }
+      }
+      let n0 = 0;
+      for (let r = 0; r < m; r++) { locVec[r] *= invScale[off + r]; n0 += locVec[r] * locVec[r]; }
+      n0 = Math.sqrt(n0);
+      if (!(n0 > 0)) continue;
+      const list = localByBlock.get(blk) ?? (localByBlock.set(blk, []), localByBlock.get(blk));
+      for (let pass = 0; pass < 2; pass++) {
+        for (const qv of list) {
+          let dot = 0;
+          for (let r = 0; r < m; r++) dot += qv[r] * locVec[r];
+          for (let r = 0; r < m; r++) locVec[r] -= dot * qv[r];
+        }
+      }
+      let n1 = 0;
+      for (let r = 0; r < m; r++) n1 += locVec[r] * locVec[r];
+      n1 = Math.sqrt(n1);
+      if (n1 <= 1e-12 * n0) continue;
+      for (let r = 0; r < m; r++) locVec[r] /= n1;
+      list.push(locVec);
+      localCount++;
+    }
+  }
+  if (localCount > 0) meta.push({ kind: 'local', count: localCount, label: `${localCount} node-local invariant${localCount > 1 ? 's' : ''}` });
+
+  // Helper: project a y-space vector orthogonal to localByBlock and a list of orthonormal global vectors.
+  const projectY = (v, qList) => {
+    for (let pass = 0; pass < 2; pass++) {
+      for (const [blk, list] of localByBlock) {
+        const off = pencil.Jg.offX[blk], m = pencil.Jg.sizes[blk];
+        for (const qv of list) {
+          let dot = 0;
+          for (let r = 0; r < m; r++) dot += qv[r] * v[off + r];
+          for (let r = 0; r < m; r++) v[off + r] -= dot * qv[r];
+        }
+      }
+      for (const qv of qList) {
+        let dot = 0;
+        for (let j = 0; j < N; j++) dot += qv[j] * v[j];
+        for (let j = 0; j < N; j++) v[j] -= dot * qv[j];
+      }
+    }
+  };
+
+  // Polish each global seed via transposed shift-invert (J + σ_z M)⁻ᵀ Mᵀ to obtain an exact
+  // left null vector w of the ASSEMBLED J (wᵀ J = 0 to round-off) and set c = Mᵀ w from M.
+  const globalQ = [];
+  const debugVecs = [];
+  if (seeds.length > 0) {
+    const tauSlow = s.slowestTime();
+    const rBase = Math.min(Number.isFinite(tauSlow) && tauSlow > 0 ? 1 / tauSlow : rMinDyn, rMinDyn);
+    const trySigs = [rBase * 1e-6, rBase * 1e-9, rBase * 1e-3, rBase * 1e-12];
+    const facs = [];
+    for (const sig of trySigs) {
+      if (!(sig > 0 && Number.isFinite(sig))) continue;
+      const f = factorRealShift(pencil, sig);
+      if (f) { facs.push({ sig, fac: f }); if (facs.length >= 2) break; }
+    }
+    const cTmp = new Float64Array(N), wTmp = new Float64Array(N), yTmp = new Float64Array(N);
+    for (const item of seeds) {
+      let best = null;
+      for (const { fac } of facs) {
+        // Seed w from (J + σ M)⁻ᵀ c_seed.
+        let nSeed = 0;
+        for (let j = 0; j < N; j++) nSeed += item.vec[j] * item.vec[j];
+        if (!(nSeed > 0)) break;
+        fac.solveT(item.vec, wTmp);
+        let nw = 0;
+        for (let j = 0; j < N; j++) nw += wTmp[j] * wTmp[j];
+        nw = Math.sqrt(nw);
+        if (!(nw > 0) || !Number.isFinite(nw)) continue;
+        for (let j = 0; j < N; j++) wTmp[j] /= nw;
+
+        let relJ = leftNullResidual(pencil, wTmp);
+        for (let it = 0; it < 6 && relJ > 1e-13; it++) {
+          pencil.mulMT(wTmp, cTmp);
+          // Orthogonalize cTmp in y-space against already-accepted directions so independent
+          // constraints converge to distinct left null vectors.
+          for (let j = 0; j < N; j++) yTmp[j] = cTmp[j] * invScale[j];
+          projectY(yTmp, globalQ);
+          let ny = 0;
+          for (let j = 0; j < N; j++) ny += yTmp[j] * yTmp[j];
+          ny = Math.sqrt(ny);
+          if (!(ny > 0) || !Number.isFinite(ny)) { relJ = Infinity; break; }
+          for (let j = 0; j < N; j++) cTmp[j] = (yTmp[j] / ny) * coordScale[j];
+          fac.solveT(cTmp, wTmp);
+          nw = 0;
+          for (let j = 0; j < N; j++) nw += wTmp[j] * wTmp[j];
+          nw = Math.sqrt(nw);
+          if (!(nw > 0) || !Number.isFinite(nw)) { relJ = Infinity; break; }
+          for (let j = 0; j < N; j++) wTmp[j] /= nw;
+          relJ = leftNullResidual(pencil, wTmp);
+        }
+        if (relJ < 1e-9 && (!best || relJ < best.relJ)) {
+          const cExact = pencil.mulMT(wTmp, new Float64Array(N));
+          best = { relJ, c: cExact, w: wTmp.slice() };
+          if (relJ <= 1e-13) break;
+        }
+      }
+      if (!best) {
+        warnings.push(`stability: could not verify exact left null vector for "${item.label}"; leaving it undeflated.`);
+        continue;
+      }
+      const v = new Float64Array(N);
+      let n0 = 0;
+      for (let j = 0; j < N; j++) { v[j] = best.c[j] * invScale[j]; n0 += v[j] * v[j]; }
+      n0 = Math.sqrt(n0);
+      if (!(n0 > 0)) continue;
+      projectY(v, globalQ);
+      let n1 = 0;
+      for (let j = 0; j < N; j++) n1 += v[j] * v[j];
+      n1 = Math.sqrt(n1);
+      if (n1 <= 1e-12 * n0) continue;
+      for (let j = 0; j < N; j++) v[j] /= n1;
+      globalQ.push(v);
+      debugVecs.push({ label: item.label, vector: Array.from(best.c), wResidual: best.relJ });
+      meta.push({ kind: item.kind, label: item.label });
+    }
+  }
+
+  const totalDeflated = globalQ.length + localCount;
+  const projectReal = (y) => {
+    if (totalDeflated === 0) return y;
+    projectY(y, globalQ);
+    return y;
+  };
+  const projectComplex = (yr, yi) => {
+    if (totalDeflated === 0) return;
+    projectReal(yr);
+    projectReal(yi);
+  };
+
+  return { totalDeflated, localCount, meta, debugVecs, localByBlock, projectReal, projectComplex };
 }
 
 // --- Deterministic LCG vector for reproducible Arnoldi starts ---
@@ -1354,8 +1555,7 @@ function arnoldiReal(op, N, mMax, startVec, project) {
     let normW0 = 0;
     for (let j = 0; j < N; j++) normW0 += w[j] * w[j];
     normW0 = Math.sqrt(normW0);
-    if (!Number.isFinite(normW0)) break;
-    // Twice-MGS reorthogonalization
+    if (!(normW0 > 0) || !Number.isFinite(normW0)) break;
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i <= k; i++) {
         const Vi = V[i];
@@ -1370,7 +1570,7 @@ function arnoldiReal(op, N, mMax, startVec, project) {
     for (let j = 0; j < N; j++) hn += w[j] * w[j];
     hn = Math.sqrt(hn);
     H[k + 1][k] = hn;
-    if (!(hn > 1e-14 * Math.max(1, normW0))) {
+    if (!(hn > 1e-14 * normW0)) {
       k++;
       break;
     }
@@ -1398,7 +1598,7 @@ function arnoldiReal(op, N, mMax, startVec, project) {
 
 function arnoldiComplex(op, N, mMax, startVec, projectComplex) {
   const Vr = [], Vi = [];
-  let v0r = Float64Array.from(startVec), v0i = new Float64Array(N);
+  const v0r = Float64Array.from(startVec), v0i = new Float64Array(N);
   projectComplex(v0r, v0i);
   for (let p = 0; p < 2; p++) {
     const [wr, wi] = op(v0r, v0i);
@@ -1420,7 +1620,7 @@ function arnoldiComplex(op, N, mMax, startVec, projectComplex) {
     let n0 = 0;
     for (let j = 0; j < N; j++) n0 += wr[j] * wr[j] + wi[j] * wi[j];
     n0 = Math.sqrt(n0);
-    if (!Number.isFinite(n0)) break;
+    if (!(n0 > 0) || !Number.isFinite(n0)) break;
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i <= k; i++) {
         const vr = Vr[i], vi = Vi[i];
@@ -1441,7 +1641,7 @@ function arnoldiComplex(op, N, mMax, startVec, projectComplex) {
     for (let j = 0; j < N; j++) n2 += wr[j] * wr[j] + wi[j] * wi[j];
     const hn = Math.sqrt(n2);
     Hr[k + 1][k] = hn;
-    if (!(hn > 1e-14 * Math.max(1, n0))) { k++; break; }
+    if (!(hn > 1e-14 * n0)) { k++; break; }
     const nr = new Float64Array(N), ni = new Float64Array(N);
     for (let j = 0; j < N; j++) { nr[j] = wr[j] / hn; ni[j] = wi[j] / hn; }
     Vr.push(nr); Vi.push(ni);
@@ -1464,7 +1664,7 @@ function arnoldiComplex(op, N, mMax, startVec, projectComplex) {
   return out;
 }
 
-// --- Refinement, left eigenvector, held-vector difference-form residual, and error bar ---
+// --- Refinement, anti-ghost pole check, held-vector difference-form residual, and error bar ---
 
 function normalizeComplex(vr, vi) {
   let n2 = 0;
@@ -1479,6 +1679,7 @@ function evalResidual(pencil, vr, vi, lamRe, lamIm) {
   const { N, jRowMax, mRowMax, mulJDiff, mulMDiff } = pencil;
   const jvr = new Float64Array(N), jvi = new Float64Array(N);
   const mvr = new Float64Array(N), mvi = new Float64Array(N);
+  const rrArr = new Float64Array(N), riArr = new Float64Array(N);
   mulJDiff(vr, jvr);
   mulMDiff(vr, mvr);
   const isComplex = lamIm !== 0 || vi.some((x) => x !== 0);
@@ -1489,44 +1690,96 @@ function evalResidual(pencil, vr, vi, lamRe, lamIm) {
   const lamAbs = Math.hypot(lamRe, lamIm);
   let vInf = 0;
   for (let j = 0; j < N; j++) { const a = Math.hypot(vr[j], vi[j]); if (a > vInf) vInf = a; }
-  if (!(vInf > 0)) return { residual: Infinity, jvr, jvi, mvr, mvi };
+  if (!(vInf > 0)) return { residual: Infinity, jvr, jvi, mvr, mvi, rrArr, riArr };
   let resInf = 0;
   for (let i = 0; i < N; i++) {
     const rr = jvr[i] + lamRe * mvr[i] - lamIm * mvi[i];
     const ri = jvi[i] + lamRe * mvi[i] + lamIm * mvr[i];
+    rrArr[i] = rr;
+    riArr[i] = ri;
     const sc = jRowMax[i] + lamAbs * mRowMax[i];
     if (sc > 0) {
       const r = Math.hypot(rr, ri) / (sc * vInf);
       if (r > resInf) resInf = r;
     }
   }
-  return { residual: resInf, jvr, jvi, mvr, mvi };
+  return { residual: resInf, jvr, jvi, mvr, mvi, rrArr, riArr };
 }
 
-function vecOverlap(a, b) {
-  let dr = 0, di = 0;
-  for (let j = 0; j < a.vr.length; j++) {
-    dr += a.vr[j] * b.vr[j] + a.vi[j] * b.vi[j];
-    di += a.vr[j] * b.vi[j] - a.vi[j] * b.vr[j];
+// Biorthogonal overlap between two refined modes:
+//   bio(a, b) = sqrt(|a.wᴴ M b.v| · |b.wᴴ M a.v| / (|a.wᴴ M a.v| · |b.wᴴ M b.v|)).
+// Equals ~1 for two copies of the same simple mode, and ~0 for distinct modes even in strongly
+// non-normal pencils where unweighted Euclidean |v₁ᴴ v₂| can exceed 0.999.
+function biorthOverlap(a, b) {
+  const N = a.wr.length;
+  let d1r = 0, d1i = 0, d2r = 0, d2i = 0;
+  for (let j = 0; j < N; j++) {
+    d1r += a.wr[j] * b.mvr[j] + a.wi[j] * b.mvi[j];
+    d1i += a.wr[j] * b.mvi[j] - a.wi[j] * b.mvr[j];
+    d2r += b.wr[j] * a.mvr[j] + b.wi[j] * a.mvi[j];
+    d2i += b.wr[j] * a.mvi[j] - b.wi[j] * a.mvr[j];
   }
-  return Math.hypot(dr, di);
+  const prod = Math.hypot(d1r, d1i) * Math.hypot(d2r, d2i);
+  const denom = a.denAbs * b.denAbs;
+  return denom > 0 ? Math.sqrt(prod / denom) : 0;
 }
 
-function refineAndBound(pencil, deflation, coordScale, cand) {
+// 0.1%-offset pole check: for a true finite eigenvalue λ with eigenvector v,
+// (J + s_p M)⁻¹ M v = v / (s_p − λ) at s_p = λ (1 + 1e-3). An infinite-eigenvalue ghost has no
+// pole at λ, so (s_p − λ) u differs from v by O(1) and its Rayleigh quotient leaves λ completely.
+function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi) {
+  const lamMag = Math.hypot(lamRe, lamIm);
+  if (!(lamMag > 0)) return true;
+  const epsP = 1e-3;
+  const sRe = lamRe * (1 + epsP), sIm = lamIm * (1 + epsP);
+  const dRe = sRe - lamRe, dIm = sIm - lamIm;
+  const { N } = pencil;
+  let ur, ui;
+  if (isReal) {
+    const fac = factorRealShift(pencil, sRe);
+    if (!fac) return false;
+    ur = fac.solve(mvr);
+    ui = new Float64Array(N);
+  } else {
+    const fac = factorComplexShift(pencil, sRe, sIm);
+    if (!fac) return false;
+    [ur, ui] = fac.solve(mvr, mvi);
+  }
+  // Check (s_p − λ) u ≈ v and Rayleigh estimate λ_probe = s_p − (vᴴ v)/(vᴴ u) ≈ λ.
+  let diff2 = 0, v2 = 0, dotR = 0, dotI = 0;
+  for (let j = 0; j < N; j++) {
+    const suR = dRe * ur[j] - dIm * ui[j] - vr[j];
+    const suI = dRe * ui[j] + dIm * ur[j] - vi[j];
+    diff2 += suR * suR + suI * suI;
+    v2 += vr[j] * vr[j] + vi[j] * vi[j];
+    dotR += vr[j] * ur[j] + vi[j] * ui[j];
+    dotI += vr[j] * ui[j] - vi[j] * ur[j];
+  }
+  if (!(v2 > 0)) return false;
+  const vecErr = Math.sqrt(diff2 / v2);
+  if (!(vecErr <= 0.1)) return false;
+  const muMag = Math.hypot(dotR, dotI) / v2;
+  if (!(muMag > 0)) return false;
+  const [invR, invI] = cdiv(v2, 0, dotR, dotI);
+  const jump = Math.hypot(sRe - invR - lamRe, sIm - invI - lamIm);
+  return jump <= 1e-2 * lamMag;
+}
+
+function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
   const { N, mulM, mulMT, absMulJM } = pencil;
   const invScale = Float64Array.from(coordScale, (v) => 1 / v);
-  // Convert Ritz vector from y-space (y = D x) to x-space (x = D⁻¹ y).
-  let vr = new Float64Array(N), vi = new Float64Array(N);
+  const vr = new Float64Array(N), vi = new Float64Array(N);
   for (let j = 0; j < N; j++) { vr[j] = cand.vr[j] * invScale[j]; vi[j] = cand.vi[j] * invScale[j]; }
   let lamRe = cand.re, lamIm = cand.im;
-  const isReal = Math.abs(lamIm) <= 1e-10 * Math.max(1, Math.abs(lamRe));
+  const isReal = Math.abs(lamIm) <= 1e-10 * Math.abs(lamRe);
   if (isReal) { lamIm = 0; vi.fill(0); }
   if (!normalizeComplex(vr, vi)) return null;
 
   const wr = new Float64Array(N), wi = new Float64Array(N);
 
   const twoSidedPass = (sRe, sIm) => {
-    const bump = Math.max(1e-7, 1e-7 * Math.hypot(sRe, sIm));
+    const mag = Math.hypot(sRe, sIm);
+    const bump = mag > 0 ? 1e-6 * mag : 1e-12 * shiftScale;
     const dir = sRe >= 0 ? 1 : -1;
     let haveLeft = false;
     if (isReal) {
@@ -1544,7 +1797,7 @@ function refineAndBound(pencil, deflation, coordScale, cand) {
       mulM(vr, wr);
       if (!normalizeComplex(wr, wi)) { wr.set(seededVector(N, 0x1e57)); normalizeComplex(wr, wi); }
       const mtw = new Float64Array(N);
-      for (let it = 0; it < 3; it++) {
+      for (let it = 0; it < 4; it++) {
         mulMT(wr, mtw);
         fac.solveT(mtw, wr);
         if (!normalizeComplex(wr, wi)) break;
@@ -1566,7 +1819,7 @@ function refineAndBound(pencil, deflation, coordScale, cand) {
       mulM(vr, wr); mulM(vi, wi);
       if (!normalizeComplex(wr, wi)) { wr.set(seededVector(N, 0x1e57)); wi.fill(0); normalizeComplex(wr, wi); }
       const mtwr = new Float64Array(N), mtwi = new Float64Array(N);
-      for (let it = 0; it < 3; it++) {
+      for (let it = 0; it < 4; it++) {
         mulMT(wr, mtwr); mulMT(wi, mtwi);
         fac.solveH(mtwr, mtwi, wr, wi);
         if (!normalizeComplex(wr, wi)) break;
@@ -1598,40 +1851,89 @@ function refineAndBound(pencil, deflation, coordScale, cand) {
     return { re: outRe, im: outIm, check, denAbs };
   };
 
+  // Iterative re-centered two-sided refinement until λ stops moving (up to 5 passes).
   let best = twoSidedPass(lamRe, lamIm);
   if (!best) return null;
-  // Re-center once if Rayleigh quotient moved noticeably or residual is not yet tight.
-  const moved = Math.hypot(best.re - lamRe, best.im - lamIm) > 1e-5 * Math.max(1, Math.hypot(best.re, best.im));
-  if (moved || best.check.residual > 1e-9) {
-    const vrKeep = vr.slice(), viKeep = vi.slice(), wrKeep = wr.slice(), wiKeep = wi.slice();
-    const second = twoSidedPass(best.re, best.im);
-    if (second && second.check.residual <= best.check.residual) {
-      best = second;
+  let lastStep = Math.hypot(best.re - lamRe, best.im - lamIm);
+  let bestVr = vr.slice(), bestVi = vi.slice(), bestWr = wr.slice(), bestWi = wi.slice();
+  for (let pass = 1; pass < 5; pass++) {
+    const mag = Math.hypot(best.re, best.im);
+    if (lastStep <= 1e-8 * Math.max(mag, 1e-30 * shiftScale) && best.check.residual <= 1e-11) break;
+    const prevRe = best.re, prevIm = best.im;
+    const next = twoSidedPass(prevRe, prevIm);
+    if (!next) break;
+    lastStep = Math.hypot(next.re - prevRe, next.im - prevIm);
+    if (next.check.residual <= best.check.residual || lastStep <= 1e-6 * Math.max(Math.hypot(next.re, next.im), 1e-30 * shiftScale)) {
+      best = next;
+      bestVr = vr.slice(); bestVi = vi.slice(); bestWr = wr.slice(); bestWi = wi.slice();
     } else {
-      vr.set(vrKeep); vi.set(viKeep); wr.set(wrKeep); wi.set(wiKeep);
+      break;
     }
   }
+  vr.set(bestVr); vi.set(bestVi); wr.set(bestWr); wi.set(bestWi);
   lamRe = best.re;
   lamIm = best.im;
   const { check, denAbs } = best;
+  const lamMag = Math.hypot(lamRe, lamIm);
 
-  // First-order componentwise error bar: ε · |w|ᴴ (|J| + |λ| |M|) |v| / |wᴴ M v|.
-  const absV = new Float64Array(N), absJMv = new Float64Array(N);
-  for (let j = 0; j < N; j++) absV[j] = Math.hypot(vr[j], vi[j]);
-  absMulJM(absV, Math.hypot(lamRe, lamIm), absJMv);
-  let numBar = 0;
-  for (let j = 0; j < N; j++) numBar += Math.hypot(wr[j], wi[j]) * absJMv[j];
-  const error = (EPS * numBar) / denAbs;
-  if (!Number.isFinite(error) || !Number.isFinite(check.residual)) return null;
+  // Convergence & tight residual gate.
+  if (!Number.isFinite(check.residual) || check.residual > 1e-8) return null;
+  if (lastStep > 1e-5 * Math.max(lamMag, 1e-30 * shiftScale)) return null;
 
-  return { re: lamRe, im: lamIm, residual: check.residual, error, vr, vi };
+  // Anti-ghost 0.1%-offset pole verification on any growing, far-from-shift, or looser-residual candidate.
+  if (lamRe > 0 || lamMag > 2 * cand.shiftMag || check.residual > 1e-10) {
+    if (!verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, check.mvr, check.mvi)) return null;
+  }
+
+  // First-order + second-order Rayleigh-quotient error bar:
+  //   error = (ε · |w|ᴴ (|J| + |λ| |M|) |v| + |wᴴ r| + ρ_L · |w|ᴴ |r|) / |wᴴ M v|
+  // where ρ_L = ‖(J + λ M)ᴴ w‖_∞ / ‖(|J| + |λ| |M|)ᵀ |w|‖_∞ measures left-vector convergence.
+  const absV = new Float64Array(N), absW = new Float64Array(N), absJMv = new Float64Array(N);
+  for (let j = 0; j < N; j++) { absV[j] = Math.hypot(vr[j], vi[j]); absW[j] = Math.hypot(wr[j], wi[j]); }
+  absMulJM(absV, lamMag, absJMv);
+  // Left residual (Jᵀ + conj(λ) Mᵀ) w
+  const jtwr = pencil.mulJT(wr, new Float64Array(N));
+  const mtwr = pencil.mulMT(wr, new Float64Array(N));
+  const jtwi = isReal ? new Float64Array(N) : pencil.mulJT(wi, new Float64Array(N));
+  const mtwi = isReal ? new Float64Array(N) : pencil.mulMT(wi, new Float64Array(N));
+  const absJMTw = pencil.absMulJMT(absW, lamMag, new Float64Array(N));
+  let maxRL = 0, maxAbsL = 0;
+  for (let j = 0; j < N; j++) {
+    // (J + λ M)ᴴ w = (Jᵀ + conj(λ) Mᵀ) w; conj(λ) = lamRe − i lamIm
+    const lrr = jtwr[j] + lamRe * mtwr[j] + lamIm * mtwi[j];
+    const lri = jtwi[j] + lamRe * mtwi[j] - lamIm * mtwr[j];
+    const a = Math.hypot(lrr, lri);
+    if (a > maxRL) maxRL = a;
+    if (absJMTw[j] > maxAbsL) maxAbsL = absJMTw[j];
+  }
+  const rhoL = maxAbsL > 0 ? Math.min(1, maxRL / maxAbsL) : 1;
+
+  let numRound = 0, numRes = 0, wrDotR = 0, wiDotR = 0;
+  for (let j = 0; j < N; j++) {
+    const wj = absW[j];
+    numRound += wj * absJMv[j];
+    numRes += wj * Math.hypot(check.rrArr[j], check.riArr[j]);
+    wrDotR += wr[j] * check.rrArr[j] + wi[j] * check.riArr[j];
+    wiDotR += wr[j] * check.riArr[j] - wi[j] * check.rrArr[j];
+  }
+  const wDotR = Math.hypot(wrDotR, wiDotR);
+  const error = (EPS * numRound + wDotR + rhoL * numRes) / denAbs;
+  if (!Number.isFinite(error)) return null;
+  // A fast mode far from 0 whose error bar exceeds half its own |λ| has collapsed |wᴴ M v|
+  // (a near-infinite DAE mode, not a resolved finite eigenvalue); slow/neutral modes near 0 keep
+  // their error bars so genuinely neutral directions report 'neutral within resolution'.
+  if (lamMag > 100 * shiftScale && error > 0.5 * lamMag) return null;
+
+  return {
+    re: lamRe, im: lamIm, residual: check.residual, error,
+    vr, vi, wr, wi, mvr: check.mvr, mvi: check.mvi, denAbs,
+  };
 }
 
 // --- Deterministic-phase profile extraction ---
 
 function modeProfiles(s, pencil, vr, vi) {
-  const { M, nB, VT } = s, { Nc, K, N, fl } = pencil;
-  // Rotate complex eigenvector so its largest component is real and positive.
+  const { M, nB, VT } = s, { Nc, N, fl } = pencil;
   let idxMax = 0, best = 0;
   for (let j = 0; j < N; j++) { const a = Math.hypot(vr[j], vi[j]); if (a > best) { best = a; idxMax = j; } }
   const cr = best > 0 ? vr[idxMax] / best : 1, ci = best > 0 ? -vi[idxMax] / best : 0;
@@ -1653,15 +1955,38 @@ function modeProfiles(s, pencil, vr, vi) {
   return { ...prof, termV, scaleV: VT };
 }
 
-// --- Default real shift grid from the device's own timescales (never σ = 0) ---
+// --- Scale-invariant default real shift grid from the device's own timescales (never σ = 0) ---
 
-function defaultShifts(s) {
+function hasAnyDiffusion(s) {
+  for (const reg of s.model.regions) {
+    const mat = s.model.materials[reg.material];
+    if (mat.conductor) continue;
+    for (let i = 0; i < s.n; i++) if (mat.present[i] && mat.D[i] > 0) return true;
+  }
+  return false;
+}
+
+function defaultShifts(s, pencil) {
+  const { rMinDyn, rMaxDyn } = pencil;
+  const hasDiff = hasAnyDiffusion(s);
   const tauSlow = s.slowestTime(), tauFast = s.fastestTime();
-  const rSlow = Number.isFinite(tauSlow) && tauSlow > 0 ? 1 / tauSlow : 1;
-  const rFast = Number.isFinite(tauFast) && tauFast > 0 ? 1 / tauFast : 1e6;
-  const lo = Math.max(1e-4, Math.min(1, rSlow * 0.1));
-  const hi = Math.min(1e8, Math.max(1e3, rFast * 10));
-  const count = 6;
+  let lo, hi;
+  if (hasDiff && Number.isFinite(tauSlow) && tauSlow > 0 && Number.isFinite(tauFast) && tauFast > 0) {
+    const rSlow = 1 / tauSlow, rFast = 1 / tauFast;
+    // Widen toward actual pencil dynamic rates (RC, reactions, gates), bounded relative to diffusion
+    // so an ultra-slow frozen reaction (1e-25 /s) doesn't stretch the grid over 30 decades.
+    const dynLo = Math.max(rMinDyn, rSlow * 1e-3);
+    const dynHi = Math.min(rMaxDyn, rFast * 1e3);
+    lo = Math.min(rSlow, dynLo) * 0.1;
+    hi = Math.max(rFast, dynHi) * 10;
+  } else {
+    lo = rMinDyn * 0.1;
+    hi = Math.max(rMaxDyn * 10, lo * 1e4);
+  }
+  if (!(hi > lo)) hi = lo * 1e4;
+  // Keep span sane (at most 14 decades from lo to hi) and floating-point finite.
+  if (hi / lo > 1e14) lo = hi * 1e-14;
+  const count = 8;
   const shifts = [];
   const logLo = Math.log(lo), logHi = Math.log(hi);
   for (let i = 0; i < count; i++) {
@@ -1670,36 +1995,78 @@ function defaultShifts(s) {
   return shifts;
 }
 
-// --- Un-kicked dynamic steadiness check (Fable §5, Sol §6) ---
+// --- Linearised cut-current giant-step steadiness check (frozen at s.time, zero stepper leaks) ---
 
-function checkDynamicSteady(s) {
-  const tau = s.slowestTime();
-  const baseH = Math.min(1e-1, Math.max(1e-9, Number.isFinite(tau) && tau > 0 ? 1e-2 * tau : 1e-3));
-  const u0 = s.u.slice(), uLo0 = s.uLo.slice(), v0 = s.termV.slice();
-  const snap = s._snapshot();
-  let lastDrift = Infinity, stepOk = false;
-  try {
-    for (const h of [baseH, baseH * 0.01]) {
-      s._restore(snap);
-      const r = s.step(h);
-      if (!r.converged) continue;
-      let drift = 0;
-      for (let j = 0; j < s.u.length; j++) {
-        const d = Math.abs((s.u[j] - u0[j]) + (s.uLo[j] - uLo0[j]));
-        if (d > drift) drift = d;
-      }
-      for (let k = 0; k < s.termV.length; k++) {
-        const d = Math.abs(s.termV[k] - v0[k]) / s.VT;
-        if (d > drift) drift = d;
-      }
-      lastDrift = drift;
-      stepOk = true;
-      break;
-    }
-  } finally {
-    s._restore(snap);
+function checkDynamicSteady(s, pencil, deflation, coordScale) {
+  const { Nc, K, N, F, jRowMax, rMinDyn } = pencil;
+  const invScale = Float64Array.from(coordScale, (v) => 1 / v);
+
+  // 1. Row-scaled dynamic steady residual (catches large bulk-reaction / terminal imbalances).
+  let dynamicResInf = 0;
+  for (let i = 0; i < N; i++) {
+    const sc = jRowMax[i];
+    const r = sc > 0 ? Math.abs(F[i]) / sc : Math.abs(F[i]);
+    if (r > dynamicResInf) dynamicResInf = r;
   }
-  return { ok: stepOk && lastDrift < 1e-5, converged: stepOk, drift: lastDrift, h: baseH };
+  if (dynamicResInf > 1e-6) {
+    return {
+      ok: false,
+      drift: dynamicResInf,
+      reason: `not a steady state of the time-dependent equations (row-scaled dynamic residual ${dynamicResInf.toExponential(2)})`,
+    };
+  }
+
+  // 2. Linearised backward-Euler step δ = (J + σ M)⁻¹ F at solve()'s own giant-step rate
+  //    σ = 1 / (1e6 · τ_slow), projected onto the conserved hyperplane and measured via
+  //    maxPotentialStep (thermal units). Two non-resonant rates σ and 1.7 σ guard against an
+  //    accidental σ = λ pole of a real growing mode.
+  const hasDiff = hasAnyDiffusion(s);
+  const tau = hasDiff ? s.slowestTime() : 1 / Math.max(rMinDyn, 1e-30);
+  const giant = Number.isFinite(tau) && tau > 0 ? 1e6 * tau : 1e6;
+  const sig1 = 1 / giant;
+  const sig2 = sig1 * 1.7;
+
+  const dx = new Float64Array(Nc + 1); // entry Nc is the sink (0) for maxPotentialStep
+  const dV = new Float64Array(K);
+  const y = new Float64Array(N);
+  const evalStep = (sig) => {
+    const fac = factorRealShift(pencil, sig);
+    if (!fac) return null;
+    const sol = fac.solve(F);
+    // Project out conserved directions so O(ε/σ) round-off along exact zeros doesn't inflate drift.
+    for (let j = 0; j < N; j++) y[j] = sol[j] * coordScale[j];
+    deflation.projectReal(y);
+    for (let j = 0; j < Nc; j++) dx[j] = y[j] * invScale[j];
+    dx[Nc] = 0;
+    for (let a = 0; a < K; a++) dV[a] = y[Nc + a] * invScale[Nc + a];
+    const d = maxPotentialStep(s, dx, dV);
+    return Number.isFinite(d) ? { drift: d, h: 1 / sig } : null;
+  };
+  let tries = [];
+  for (const [a, b] of [[sig1, sig2], [sig1 * 100, sig2 * 100], [sig1 * 1e4, sig2 * 1e4]]) {
+    const t1 = evalStep(a), t2 = evalStep(b);
+    if (t1) tries.push(t1);
+    if (t2) tries.push(t2);
+    if (tries.length > 0) break;
+  }
+  if (tries.length === 0) {
+    return {
+      ok: false,
+      drift: Infinity,
+      reason: 'could not factor the dynamic linearisation for the steadiness check',
+    };
+  }
+  // Taking the smaller of the two non-resonant steps avoids a single-point σ = λ resonance while
+  // still seeing any genuine drift (which is O(1) at both σ and 1.7 σ).
+  const chosen = tries.length === 2 && tries[1].drift < tries[0].drift ? tries[1] : tries[0];
+  if (!(chosen.drift < 1e-5)) {
+    return {
+      ok: false,
+      drift: chosen.drift,
+      reason: `not a steady state of the time-dependent equations (a linearised step of ${chosen.h.toPrecision(2)} s moved the state by ${chosen.drift.toPrecision(3)} thermal units)`,
+    };
+  }
+  return { ok: true, drift: chosen.drift, h: chosen.h };
 }
 
 export class Stability {
@@ -1716,18 +2083,23 @@ export class Stability {
       for (const sv of userShifts) {
         if (!(sv > 0 && Number.isFinite(sv))) throw new SolverError(`stability: real shifts must be positive and finite (never 0); got ${sv}`);
       }
+      if (userShifts.length === 0 && frequencies.length === 0) {
+        throw new SolverError('stability: provide at least one positive shift or frequency');
+      }
     }
     for (const f of frequencies) {
       if (!(f > 0 && Number.isFinite(f))) throw new SolverError(`stability: frequencies must be positive and finite (Hz); got ${f}`);
     }
     if (!(Number.isInteger(nWant) && nWant >= 1)) throw new SolverError(`stability: modes must be a positive integer; got ${nWant}`);
+    if (!(kBar > 0 && Number.isFinite(kBar))) throw new SolverError(`stability: kBar must be positive and finite; got ${kBar}`);
 
     const snap = this._snapshot();
     const wasAll = this.allTerminals, wasSteady = this.steady, wasLawForm = this.lawForm;
+    const wasSourceBefore = this.sourceBefore, wasOffNeutral = this.offNeutral;
     const learnedKeep = { lostMode: this.lostMode, accepted: this.accepted, firstErrs: this.firstErrs?.slice() };
     const warnings = [];
     if (this.unkept.length > 0) {
-      warnings.push(`stability: ${this.unkept.length} conserved combination(s) are in unkept; neutral directions may remain.`);
+      warnings.push(`stability: ${this.unkept.length} conserved combination(s) are in unkept; undeflated neutral directions remain.`);
     }
     const nonAuto = this.terms.some((t) => Boolean(t.drive.src?.t));
     if (nonAuto) {
@@ -1735,65 +2107,19 @@ export class Stability {
     }
 
     try {
-      // 1. Precondition: verify state is actually steady for the time-dependent equations.
-      const steadyCheck = checkDynamicSteady(this);
-
-      // 2. Assemble dynamic bordered pencil (steady = false) with Sol's cut-current readings.
-      //    (Also supplies the dynamic steady residual when an extreme C_face/G makes the un-cut
-      //    time stepper's Newton solve fail to converge despite zero dynamic residual.)
+      // 1. Assemble dynamic bordered pencil (steady = false, frozen at this.time) with cut-current rows.
       this.allTerminals = true;
       this.steady = false;
       const pencil = buildPencil(this);
       const { Nc, K, N } = pencil;
-
-      let dynamicResInf = 0;
-      for (let i = 0; i < Nc; i++) {
-        const sc = pencil.jRowMax[i];
-        const r = sc > 0 ? Math.abs(this.res[i]) / sc : Math.abs(this.res[i]);
-        if (r > dynamicResInf) dynamicResInf = r;
-      }
-      for (let a = 0; a < K; a++) {
-        const k = pencil.fl[a];
-        let mx = 0;
-        const rc = this.termC[k];
-        for (let j = 0; j < Nc; j++) { const v = Math.abs(rc[j]); if (v > mx) mx = v; }
-        mx = Math.max(mx, Math.abs(this.termDI[k]));
-        for (const k2 of pencil.fl) if (k2 !== k) mx = Math.max(mx, Math.abs(this.termDX[k][k2]));
-        const r = mx > 0 ? Math.abs(this.termRes[k]) / mx : Math.abs(this.termRes[k]);
-        if (r > dynamicResInf) dynamicResInf = r;
-      }
-
-      let steadyOk = steadyCheck.ok;
-      let reportedDrift = steadyCheck.drift;
-      if (!steadyCheck.converged && dynamicResInf < 1e-10) {
-        steadyOk = true;
-        reportedDrift = 0;
-        warnings.push(`stability: un-kicked time step did not converge, but row-scaled dynamic residual is ${dynamicResInf.toExponential(2)}; proceeding on cut-current pencil.`);
-      }
-      if (!steadyOk) {
-        const reason = !steadyCheck.converged
-          ? `not a steady state of the time-dependent equations (an un-kicked time step did not converge; dynamic residual ${dynamicResInf.toExponential(2)})`
-          : `not a steady state of the time-dependent equations (an un-kicked step of ${steadyCheck.h.toPrecision(2)} s moved the state by ${steadyCheck.drift.toPrecision(3)} thermal units)`;
-        return {
-          verdict: 'undecided',
-          reason,
-          drift: steadyCheck.drift,
-          modes: [],
-          deflated: [],
-          shifts: { attempted: [], succeeded: [] },
-          window: null,
-          warnings,
-        };
-      }
 
       // Coordinate weights D for Arnoldi metric: thermal units everywhere (terminal V scaled by 1/VT).
       const coordScale = new Float64Array(N).fill(1);
       for (let a = 0; a < K; a++) coordScale[Nc + a] = 1 / this.VT;
       const invScale = Float64Array.from(coordScale, (v) => 1 / v);
 
-      // 3. Exact deflation basis for conserved amounts, held-charge terminals, and node-local invariants.
-      const deflation = buildDeflation(this, pencil, coordScale);
-      const startVec = seededVector(N);
+      // 2. Matrix-verified deflation basis (wᵀ J = 0 to round-off, c = Mᵀ w from assembled M).
+      const deflation = buildDeflation(this, pencil, coordScale, warnings);
 
       const debugData = debug
         ? {
@@ -1826,18 +2152,37 @@ export class Stability {
           }
         : undefined;
 
+      // 3. Precondition: verify state is actually steady for the frozen dynamic equations.
+      const steadyCheck = checkDynamicSteady(this, pencil, deflation, coordScale);
+      if (!steadyCheck.ok) {
+        return {
+          verdict: 'undecided',
+          reason: steadyCheck.reason,
+          drift: steadyCheck.drift,
+          modes: [],
+          deflated: deflation.meta,
+          shifts: { attempted: [], succeeded: [] },
+          window: null,
+          warnings,
+          ...(debug ? { debug: debugData } : {}),
+        };
+      }
+
       // 4. Shift-invert Arnoldi over real positive shifts (+ optional complex frequency shifts).
-      const realShifts = userShifts ? Array.from(userShifts) : defaultShifts(this);
+      const realShifts = userShifts ? Array.from(userShifts) : defaultShifts(this, pencil);
+      const startVec = seededVector(N);
       const attempted = [];
       const succeeded = [];
       const candidates = [];
       const mKrylov = Math.min(32, Math.max(4, N - deflation.totalDeflated));
-      const rCeiling = Math.max(1e9, ...realShifts.map((x) => x * 1e3));
+
+      // Meerbergen–Roose trust-region multiplier around each shift σ: |λ − σ| ≤ TRUST · |σ|.
+      const TRUST = 25;
 
       const xTmp = new Float64Array(N), mxTmp = new Float64Array(N), solTmp = new Float64Array(N);
       for (const sigma of realShifts) {
         attempted.push({ re: sigma, im: 0 });
-        const fac = factorRealShift(pencil, sigma);
+        const fac = factorRealShift(pencil, sigma, true);
         if (!fac) continue;
         succeeded.push({ re: sigma, im: 0 });
         const op = (y) => {
@@ -1851,16 +2196,14 @@ export class Stability {
         const ritz = arnoldiReal(op, N, mKrylov, startVec, deflation.projectReal);
         for (const r of ritz) {
           const muMag = Math.hypot(r.muRe, r.muIm);
-          if (!(muMag > 1e-11 / Math.max(1, sigma))) continue;
+          if (!(muMag > 1e-10 / sigma)) continue;
           const [invRe, invIm] = cdiv(1, 0, r.muRe, r.muIm);
           const re = sigma - invRe, im = -invIm;
-          const lamMag = Math.hypot(re, im);
-          if (!Number.isFinite(re) || !Number.isFinite(im) || lamMag > rCeiling) continue;
-          // First-order Arnoldi error estimate in λ-space (used to rank duplicate candidates, not to drop non-normal modes).
+          if (!Number.isFinite(re) || !Number.isFinite(im)) continue;
+          if (Math.hypot(re - sigma, im) > TRUST * sigma) continue;
+          if (im < -1e-10 * Math.abs(re)) continue;
           const deltaLam = r.ritzEst / (muMag * muMag);
-          // Skip lower-half duplicate of conjugate pair; we'll emit both members cleanly after refinement.
-          if (im < -1e-10 * Math.max(1, Math.abs(re))) continue;
-          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shift: sigma });
+          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sigma });
         }
       }
 
@@ -1870,7 +2213,8 @@ export class Stability {
       let maxOmega = 0;
       for (const f of frequencies) {
         const w = 2 * Math.PI * f;
-        const sr = Math.max(1e-2, 1e-3 * w);
+        const sr = 1e-3 * w;
+        const sMag = Math.hypot(sr, w);
         attempted.push({ re: sr, im: w });
         const fac = factorComplexShift(pencil, sr, w);
         if (!fac) continue;
@@ -1888,14 +2232,14 @@ export class Stability {
         const ritz = arnoldiComplex(op, N, mKrylov, startVec, deflation.projectComplex);
         for (const r of ritz) {
           const muMag = Math.hypot(r.muRe, r.muIm);
-          if (!(muMag > 1e-11 / Math.max(1, Math.hypot(sr, w)))) continue;
+          if (!(muMag > 1e-10 / sMag)) continue;
           const [invRe, invIm] = cdiv(1, 0, r.muRe, r.muIm);
           const re = sr - invRe, im = w - invIm;
-          const lamMag = Math.hypot(re, im);
-          if (!Number.isFinite(re) || !Number.isFinite(im) || lamMag > rCeiling) continue;
+          if (!Number.isFinite(re) || !Number.isFinite(im)) continue;
+          if (Math.hypot(re - sr, im - w) > TRUST * sMag) continue;
+          if (im < -1e-10 * Math.abs(re)) continue;
           const deltaLam = r.ritzEst / (muMag * muMag);
-          if (im < -1e-10 * Math.max(1, Math.abs(re))) continue;
-          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shift: w });
+          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sMag });
         }
       }
 
@@ -1903,7 +2247,7 @@ export class Stability {
         return {
           verdict: 'undecided',
           reason: 'no shifted linearisation factored without singularity',
-          drift: reportedDrift,
+          drift: steadyCheck.drift,
           modes: [],
           deflated: deflation.meta,
           shifts: { attempted, succeeded },
@@ -1913,14 +2257,25 @@ export class Stability {
         };
       }
 
-      // 5. Pre-deduplicate Ritz candidates, refine rightmost ones, compute left-vector error bars.
+      const rHi = Math.max(...succeeded.filter((x) => x.im === 0).map((x) => x.re), 0);
+      const rSearch = Math.max(rHi, maxOmega);
+      const shiftScale = Math.min(...succeeded.map((x) => Math.hypot(x.re, x.im)));
+
+      // 5. Scale-invariant pre-dedup (never merging opposite-sign Re λ), then iterative refinement
+      //    and biorthogonal post-deduplication.
       candidates.sort((a, b) => b.re - a.re || Math.abs(a.im) - Math.abs(b.im));
       const uniqueCands = [];
       for (const c of candidates) {
-        const dup = uniqueCands.find((u) => Math.hypot(u.re - c.re, u.im - c.im) <= 1e-3 * Math.max(1, Math.hypot(u.re, u.im), Math.hypot(c.re, c.im)));
+        const cMag = Math.hypot(c.re, c.im);
+        const dup = uniqueCands.find((u) => {
+          if ((u.re > 0) !== (c.re > 0) && u.re !== 0 && c.re !== 0) return false;
+          const scale = Math.max(Math.hypot(u.re, u.im), cMag);
+          return Math.hypot(u.re - c.re, u.im - c.im) <= 1e-4 * scale;
+        });
         if (!dup) uniqueCands.push(c);
         else if (c.deltaLam < dup.deltaLam) {
-          dup.re = c.re; dup.im = c.im; dup.vr = c.vr; dup.vi = c.vi; dup.ritzEst = c.ritzEst; dup.deltaLam = c.deltaLam;
+          dup.re = c.re; dup.im = c.im; dup.vr = c.vr; dup.vi = c.vi;
+          dup.ritzEst = c.ritzEst; dup.deltaLam = c.deltaLam; dup.shiftMag = c.shiftMag;
         }
       }
 
@@ -1931,32 +2286,37 @@ export class Stability {
       let rejectedSpurious = 0;
       for (let i = 0; i < maxAttempts; i++) {
         if (acceptedSlots >= targetSlots) {
-          // Since uniqueCands is sorted by descending Re λ, stop once remaining candidates lie
-          // strictly left of our current nWant-th accepted mode.
           let worst = Infinity;
           for (const u of refined) if (u.re < worst) worst = u.re;
-          if (uniqueCands[i].re < worst - Math.max(1, Math.abs(worst)) * 1e-2) break;
+          if (uniqueCands[i].re < worst - Math.abs(worst) * 1e-2) break;
         }
-        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i]);
-        if (!res || res.residual > 1e-5) {
+        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i], shiftScale);
+        if (!res) {
           rejectedSpurious++;
           continue;
         }
-        // Final deduplication after refinement (eigenvalues close, or close-ish with collinear eigenvectors).
+        // Biorthogonal + bar-based post-dedup (never merges growing into decaying).
+        const resMag = Math.hypot(res.re, res.im);
         const dup = refined.find((u) => {
+          const uPos = u.re > kBar * u.error, uNeg = u.re < -kBar * u.error;
+          const rPos = res.re > kBar * res.error, rNeg = res.re < -kBar * res.error;
+          if ((uPos && rNeg) || (uNeg && rPos)) return false;
           const dist = Math.hypot(u.re - res.re, u.im - res.im);
-          const scale = Math.max(1, Math.hypot(u.re, u.im), Math.hypot(res.re, res.im));
-          return dist <= 1e-4 * scale + 10 * (u.error + res.error) || (dist <= 2e-2 * scale && vecOverlap(u, res) > 0.99);
+          const scale = Math.max(Math.hypot(u.re, u.im), resMag);
+          const barTol = 5 * (u.error + res.error) + 1e-9 * scale;
+          if (dist <= barTol) return biorthOverlap(u, res) > 0.25;
+          if (dist <= 1e-3 * scale) return biorthOverlap(u, res) > 0.5;
+          return false;
         });
         if (!dup) {
           refined.push(res);
-          acceptedSlots += Math.abs(res.im) > 1e-10 * Math.max(1, Math.abs(res.re)) ? 2 : 1;
-        } else if (res.residual < dup.residual) {
+          acceptedSlots += Math.abs(res.im) > 1e-10 * Math.abs(res.re) ? 2 : 1;
+        } else if (res.error < dup.error || (res.error === dup.error && res.residual < dup.residual)) {
           Object.assign(dup, res);
         }
       }
 
-      // Expand complex conjugate pairs (re ± i im) for reporting, sorted rightmost first.
+      // Expand complex conjugate pairs (re ± i im), sorted rightmost first.
       refined.sort((a, b) => b.re - a.re || Math.abs(a.im) - Math.abs(b.im));
       const allModes = [];
       for (const m of refined) {
@@ -1968,7 +2328,7 @@ export class Stability {
           ...(profiles ? { profiles: modeProfiles(this, pencil, m.vr, m.vi) } : {}),
         };
         allModes.push(base);
-        if (Math.abs(m.im) > 1e-10 * Math.max(1, Math.abs(m.re))) {
+        if (Math.abs(m.im) > 1e-10 * Math.abs(m.re)) {
           const vic = Float64Array.from(m.vi, (v) => -v);
           allModes.push({
             re: m.re,
@@ -1978,22 +2338,38 @@ export class Stability {
             ...(profiles ? { profiles: modeProfiles(this, pencil, m.vr, vic) } : {}),
           });
         }
-        if (allModes.length >= nWant) break;
       }
       const modesOut = allModes.slice(0, nWant);
 
-      // 6. Compute honest window and verdict (never a bare 'stable').
-      const rHi = Math.max(...succeeded.filter((x) => x.im === 0).map((x) => x.re), 0);
-      const rLo = modesOut.length > 0 ? Math.max(...modesOut.map((m) => kBar * m.error)) : EPS * Math.max(1, rHi);
+      // 6. Compute honest window and verdict over ALL verified modes inside the searched window.
+      //    No mode outside the searched window (Re λ > rSearch) may decide the verdict.
+      const inWindow = allModes.filter((m) => m.re <= rSearch);
+      let rLo;
+      if (inWindow.length > 0) {
+        // Resolution floor near the imaginary axis (rightmost / smallest-|Re λ| verified modes).
+        let minAbsRe = Infinity;
+        for (const m of inWindow) { const a = Math.abs(m.re); if (a < minAbsRe) minAbsRe = a; }
+        const near = inWindow.filter((m) => Math.abs(m.re) <= 10 * minAbsRe);
+        const pool = near.length > 0 ? near : [inWindow[0]];
+        rLo = Math.max(...pool.map((m) => kBar * m.error));
+      } else {
+        rLo = EPS * Math.max(rSearch, shiftScale);
+      }
       const window = { rLo, rHi, omegaHi: maxOmega };
 
-      const growing = modesOut.find((m) => m.re > kBar * m.error);
-      const neutral = modesOut.find((m) => Math.abs(m.re) <= kBar * m.error);
+      const growing = inWindow.find((m) => m.re > kBar * m.error);
+      const neutral = inWindow.find((m) => Math.abs(m.re) <= kBar * m.error);
       let verdict, reason;
       if (growing) {
         verdict = 'unstable';
         reason = `growing mode at Re λ = ${growing.re.toPrecision(4)} ± ${growing.error.toPrecision(2)} /s` +
           (Math.abs(growing.im) > 0 ? ` (ω = ${Math.abs(growing.im).toPrecision(4)} rad/s)` : '');
+      } else if (this.unkept.length > 0) {
+        verdict = 'undecided';
+        reason = `${this.unkept.length} conserved combination(s) are in unkept; undeflated neutral directions remain in the pencil`;
+      } else if (rHi > 0 && rLo >= rHi) {
+        verdict = 'undecided';
+        reason = `resolution floor (${rLo.toPrecision(2)} /s) exceeds the searched window rHi (${rHi.toPrecision(2)} /s)`;
       } else if (neutral) {
         verdict = 'neutral within resolution';
         reason = `mode at Re λ = ${neutral.re.toPrecision(3)} /s lies within ${kBar}× its error bar (${neutral.error.toPrecision(2)} /s)`;
@@ -2006,7 +2382,7 @@ export class Stability {
       return {
         verdict,
         reason,
-        drift: reportedDrift,
+        drift: steadyCheck.drift,
         modes: modesOut,
         deflated: deflation.meta,
         rejectedSpurious,
@@ -2019,6 +2395,8 @@ export class Stability {
       this.allTerminals = wasAll;
       this.steady = wasSteady;
       this.lawForm = wasLawForm;
+      this.sourceBefore = wasSourceBefore;
+      this.offNeutral = wasOffNeutral;
       this.lostMode = learnedKeep.lostMode;
       this.accepted = learnedKeep.accepted;
       this.firstErrs = learnedKeep.firstErrs;

@@ -9,6 +9,9 @@ import assert from 'node:assert/strict';
 import { Device, EPS0, FARADAY, GAS_CONSTANT, SolverError } from '../src/index.js';
 import { BlockTridiagonal, ComplexBlockTridiagonal } from '../src/blockTridiagonal.js';
 import { build, layer, ohmic, metal, aqueous, bath, hodgkinHuxley, pulse } from '../src/kit.js';
+import { caseRng } from '../bench/combos/rng.js';
+import membraneFamily from '../bench/combos/families/membrane.js';
+import { choice as lawChoice, device as lawDevice } from '../tools/lawsweep-devices.js';
 
 // --- Helper: deterministic pseudo-random generator for linear algebra unit tests ---
 function lcg(seed) {
@@ -501,8 +504,11 @@ test('stability() refuses non-steady / unsolved / regridded states and invalid o
   d0.solve();
   assert.throws(() => d0.stability({ shifts: [0] }), SolverError);
   assert.throws(() => d0.stability({ shifts: [-1] }), SolverError);
+  assert.throws(() => d0.stability({ shifts: [] }), SolverError);
   assert.throws(() => d0.stability({ frequencies: [0] }), SolverError);
   assert.throws(() => d0.stability({ modes: 0 }), SolverError);
+  assert.throws(() => d0.stability({ kBar: 0 }), SolverError);
+  assert.throws(() => d0.stability({ kBar: -1 }), SolverError);
   assert.throws(() => d0.stability({ bogus: true }), /no option 'bogus'/);
 
   // After step()
@@ -589,4 +595,195 @@ test('stability() is completely non-destructive, deterministic, emits profiles/d
   dw.solve();
   const rw = dw.stability();
   assert.ok(rw.warnings.some((w) => w.includes('non-autonomous')), `expected waveform warning, got ${JSON.stringify(rw.warnings)}`);
+});
+
+// ============================================================================
+// 6. Round-2 regression gates: no infinite-eigenvalue ghosts, scale invariance,
+//    matrix-verified deflation (wᵀ J = 0), unkept undecided, precondition & leaks
+// ============================================================================
+
+test('No false unstable from infinite DAE ghosts on law_273, membrane 3, and membrane 66', () => {
+  const dLaw = new Device(lawDevice(lawChoice(273)));
+  dLaw.solve();
+  const rLaw = dLaw.stability();
+  assert.equal(rLaw.verdict, 'no growing mode found');
+  assert.ok(Math.abs(rLaw.modes[0].re - -3.0214e-4) < 1e-6, `law_273 slowest=${rLaw.modes[0].re}`);
+  assert.ok(rLaw.window.rLo < rLaw.window.rHi);
+
+  for (const [k, slowApprox] of [[3, -0.1862], [66, -0.7967]]) {
+    const c = membraneFamily.make(caseRng('membrane', k));
+    const d = new Device(c.def);
+    d.solve();
+    const r = d.stability();
+    assert.equal(r.verdict, 'no growing mode found', `membrane ${k}: ${r.reason}`);
+    assert.ok(Math.abs(r.modes[0].re - slowApprox) < 0.01, `membrane ${k} slowest=${r.modes[0].re} vs ${slowApprox}`);
+    assert.ok(r.window.rLo < r.window.rHi, `membrane ${k} window ${JSON.stringify(r.window)}`);
+  }
+});
+
+test('Fe3+/Fe2+ d26594 scale invariance: s = 1e-6, 1e-5, and 1e6 give unstable with λ scaled by s', () => {
+  const refRates = [150.65, -853.64, -1241.04, -1526.88];
+  for (const s of [1e-6, 1e-5, 1e6]) {
+    const sp = feSpec({ V: -2.03569 });
+    for (const k of Object.keys(sp.materials.water.species)) sp.materials.water.species[k].D *= s;
+    sp.materials.Pt.conductor.conductivity *= s;
+    for (const iface of sp.interfaces) iface.reactions[0].k0 *= s;
+    const d = new Device(sp);
+    d.solve();
+    d.set({ contacts: { right: { V: undefined, I: -62.90054296647188 * s } } });
+    const sol = d.solve();
+    assert.equal(sol.converged, true);
+    const r = d.stability();
+    assert.equal(r.verdict, 'unstable', `s=${s}: ${r.reason}`);
+    for (let i = 0; i < refRates.length; i++) {
+      const got = r.modes[i].re / s;
+      assert.ok(Math.abs(got - refRates[i]) / Math.abs(refRates[i]) < 1e-3, `s=${s} mode[${i}]/s=${got} vs ${refRates[i]}`);
+    }
+    if (s === 1e-5) {
+      // Confirm kicked advance() at s = 1e-5 grows at 0.0015065 /s
+      const V0 = sol.terminals.right.V;
+      d.set({ contacts: { right: { I: (-62.90054296647188 + 1e-3) * s } } });
+      assert.equal(d.step(1e-4 / s).converged, true);
+      d.set({ contacts: { right: { I: -62.90054296647188 * s } } });
+      d.advance(1e-2 / s, { method: 'bdf2', dtMax: 1e-4 / s, tol: 1e-9 });
+      const dv1 = d.solution().terminals.right.V - V0;
+      d.advance(2e-2 / s, { method: 'bdf2', dtMax: 1e-4 / s, tol: 1e-9 });
+      const dv2 = d.solution().terminals.right.V - V0;
+      const rate = Math.log(dv2 / dv1) / (1e-2 / s);
+      assert.ok(Math.abs(rate - r.modes[0].re) / r.modes[0].re < 0.01, `s=1e-5 advance=${rate} vs pencil=${r.modes[0].re}`);
+    }
+  }
+});
+
+test('Matrix-verified deflation (wᵀ J = 0) on contact-charge laws and cut-replaced chargeOnly, plus unkept undecided', () => {
+  // 1. Law counting a contact's charge (mini_e0_I0: KCl film, K+ electrode at I = 0)
+  const dMini = new Device({
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr: 0, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    regions: [{ name: 'cell', material: 'aq', length: 1e-5, c0: { 'K+': 10, 'Cl-': 10 } }],
+    contacts: {
+      left: { V: 0, phi: 'bulk', species: { 'Cl-': { type: 'equilibrium', offset: 0 }, 'K+': 'blocked' } },
+      right: { I: 0, phi: 'bulk', terminal: 'K+', species: { 'K+': { type: 'equilibrium', offset: 0 }, 'Cl-': 'blocked' } },
+    },
+    grid: { hmax: 1e-6 },
+  });
+  dMini.solve();
+  const rMini = dMini.stability({ debug: true });
+  assert.equal(rMini.verdict, 'no growing mode found');
+  assert.equal(rMini.debug.deflation.length, 1);
+  assert.ok(rMini.debug.deflation[0].wResidual < 1e-12, `mini wResidual=${rMini.debug.deflation[0].wResidual}`);
+  assert.ok(Math.abs(rMini.modes[0].re - -195.77) < 0.1);
+
+  // 2. chargeOnly floating contact that takes a cut (a1_C200: C = 200, c = 1e-4)
+  const dCut = new Device({
+    species: [{ name: 'K+', z: 1, cRef: 1000 }, { name: 'Cl-', z: -1, cRef: 1000 }],
+    materials: { aq: { epsr: 78.5, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    regions: [{ name: 'cell', material: 'aq', length: 1e-6, c0: { 'K+': 1e-4, 'Cl-': 1e-4 } }],
+    contacts: {
+      left: { V: 0, bath: { c: { 'K+': 1e-4, 'Cl-': 1e-4 }, reference: 'Cl-' } },
+      right: { I: 0, phi: { type: 'capacitive', C: 200 }, zeroCharge: 0, species: { 'K+': 'blocked', 'Cl-': 'blocked' } },
+    },
+    grid: { hmin: 2e-9, hmax: 5e-8 },
+  });
+  dCut.solve();
+  const rCut = dCut.stability({ debug: true });
+  assert.equal(rCut.verdict, 'no growing mode found');
+  assert.ok(rCut.debug.cutUsed[0] >= 0, 'expected cut to engage');
+  assert.equal(rCut.debug.deflation.length, 1);
+  assert.ok(rCut.debug.deflation[0].wResidual < 1e-12, `a1_C200 wResidual=${rCut.debug.deflation[0].wResidual}`);
+  assert.ok(Math.abs(rCut.modes[0].re - -4933.2) < 5, `a1_C200 mode 0=${rCut.modes[0].re}`);
+  assert.ok(Math.abs(rCut.modes[1].re - -7094.4) < 5, `a1_C200 mode 1=${rCut.modes[1].re}`);
+
+  // 3. unkept non-empty (law_846): must NOT say 'no growing mode found'
+  const dUnkept = new Device(lawDevice(lawChoice(846)));
+  dUnkept.solve();
+  const rUnkept = dUnkept.stability();
+  assert.equal(rUnkept.verdict, 'undecided');
+  assert.match(rUnkept.reason, /unkept/i);
+});
+
+test('Precondition catches loose solve({ tol: 1e-3 }), passes steady C_face = 1e12 at V = 0.1 and late clock, and leaks no state on throw', () => {
+  // 1. Slow face reaction k0 = 1e-13 solved with tol = 1e-3 (4.6 thermal units from steady) → undecided
+  const dLoose = new Device({
+    T: 300,
+    species: [{ name: 'e-', z: -1 }, { name: 'Y', z: 0 }, { name: 'Z', z: 0 }],
+    materials: {
+      m1: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 1e-9, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+      m2: { epsr: 10, species: { 'e-': { D: 1e-4, mu0: 0, cRef: 1e3 }, Y: { D: 0, mu0: 0, cRef: 1e3 }, Z: { D: 1e-9, mu0: 0, cRef: 1e3 } } },
+    },
+    regions: [
+      { name: 'A', material: 'm1', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 1, Z: 1 } },
+      { name: 'B', material: 'm2', length: 1e-6, fixedCharge: FARADAY, c0: { Y: 2, Z: 0.01 } },
+    ],
+    interfaces: [{ dipole: 0, species: { Z: 'blocked' }, reactions: [{ equation: 'Z(left) = Z(right)', k0: 1e-13 }] }],
+    bulkReactions: [{ equation: 'Y = Z', kf: { m1: 1 } }],
+    contacts: { left: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' }, right: { V: 0, terminal: 'e-', species: { 'e-': 'equilibrium' }, phi: 'bulk' } },
+    grid: { minCells: 40 },
+  });
+  dLoose.solve({ tol: 1e-3 });
+  const rLoose = dLoose.stability();
+  assert.equal(rLoose.verdict, 'undecided');
+  assert.ok(rLoose.drift > 1e-5, `expected drift > 1e-5, got ${rLoose.drift}`);
+
+  // 2. Exactly steady C_face = 1e12 capacitor at V = 0.1 behind R = 5 must pass cleanly
+  const L = 1e-6, cgeo = (2 * EPS0) / L, R = 5;
+  const dCap12 = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { d: { epsr: 2, species: { X: { D: 0, mu0: 0 } } } },
+    regions: [{ material: 'd', length: L, c0: { X: 1 } }],
+    grid: { minCells: 4, hmin: L / 4, hmax: L / 4 },
+    contacts: { left: { V: 0, phi: 'pinned', zeroCharge: 0 }, right: { V: 0.1, R, phi: { type: 'capacitive', C: 1e12 }, zeroCharge: 0 } },
+  });
+  dCap12.solve();
+  const rCap12 = dCap12.stability();
+  assert.equal(rCap12.verdict, 'no growing mode found');
+  assert.ok(rCap12.drift < 1e-12, `C=1e12 drift=${rCap12.drift}`);
+  assert.ok(Math.abs(rCap12.modes[0].re - -1 / (R * cgeo)) / (1 / (R * cgeo)) < 1e-11);
+
+  // 3. Late clock (t = 1e12 s) must pass cleanly without warning
+  const dLate = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { d: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'd', length: L, c0: { X: 1 } }],
+    grid: { minCells: 8, hmin: L / 8, hmax: L / 8 },
+  });
+  dLate.advance(1e12);
+  dLate.solve();
+  const rLate = dLate.stability();
+  assert.equal(rLate.verdict, 'no growing mode found');
+  assert.equal(rLate.warnings.length, 0);
+
+  // 4. Throw inside custom statistics during stability() must not leak sourceBefore
+  let arm = false;
+  const mkThrow = () => {
+    const d = new Device({
+      species: [{ name: 'X', z: 0 }],
+      materials: {
+        f: {
+          epsr: 4,
+          species: { X: { D: 1e-9, cRef: 1, mu0: 0 } },
+          statistics: [{
+            type: 'custom',
+            species: ['X'],
+            evaluate: ([z]) => {
+              if (arm) throw new Error('table ends');
+              return { c: [Math.exp(z)], dcdzeta: [[Math.exp(z)]] };
+            },
+          }],
+        },
+      },
+      regions: [{ name: 's', material: 'f', length: 100e-6, c0: { X: 1 } }],
+      contacts: { left: { V: pulse({ start: 1e-3, width: 1, amplitude: 0.01 }), phi: 'neutral', species: { X: { type: 'equilibrium', mu: 0 } } }, right: { phi: 'neutral', species: { X: 'blocked' } } },
+      grid: { minCells: 20 },
+    });
+    d.advance(1e-3);
+    d.solve();
+    return d;
+  };
+  const a = mkThrow(), twin = mkThrow();
+  arm = true;
+  assert.throws(() => a.stability(), /table ends/);
+  arm = false;
+  assert.equal(a.solver.sourceBefore, twin.solver.sourceBefore);
+  assert.equal(a.solution().terminals.left.V, twin.solution().terminals.left.V);
 });
