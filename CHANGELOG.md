@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.24.0 (2026-11-25)
 
 - bench/combos' `kirchhoff` allows, on a first step from a solved state between bulk baths, the
   offset that the start's Gauss residual at round-off makes in both the currents and the ledger
@@ -62,6 +62,13 @@ major version.
   solve's own Kirchhoff check does): lit transistors at rest pass ±2e5 A/m² of electrons and holes
   that net to 1e-10 differently in each order. Neon's (Gemini), 25 Nov, in four rounds of the
   maintainer's review.
+- docs/experiments.md, "Against experiment": driftlet held to classic measurements rather than
+  analytic limits, each entry runnable and its printed numbers checked by the test suite. KCl's
+  conductivity against NIST's primary standards (0.1 mol/kg at 25 °C: 1.483 S/m for 1.2825, the
+  gap Debye–Hückel–Onsager's ion correlations, which the model leaves out); the squid axon's
+  resting potential in nine solutions against Hodgkin and Katz (1949), within 1 mV in seven;
+  and its conduction velocity against Hodgkin and Huxley (1952), 18.7 m/s where their own
+  computation gave 18.8 and they measured 21.2.
 
 ## 1.23.0 (2026-11-23)
 
