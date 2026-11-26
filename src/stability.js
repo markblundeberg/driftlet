@@ -51,43 +51,56 @@
 //                               as plain arrays for independent cross-checks (default false).
 //
 // Precondition: the solver must hold a converged, un-regridded steady state (atSteady &&
-// !regriddedSteady), else SolverError. On the assembled cut-current dynamic pencil (frozen at
-// this.time, never mutating time-stepper state), we check (a) row-scaled dynamic residual ≤ 1e-6
-// and (b) the linearised backward-Euler step δ = (J + σ M)⁻¹ F (projected onto the conserved
-// hyperplane, measured in thermal units via maxPotentialStep) at solve()'s own giant-step rate
-// σ = 1/(1e6·τ_slow) (tested at two non-resonant rates σ and σ/√10 to avoid an accidental σ = λ
-// pole): if drift ≥ 1e-5 thermal units, stability() returns verdict 'undecided'.
+// !regriddedSteady), else SolverError. Before solving the pencil, we reject non-finite or
+// overflowed states (runaway ion/neutral concentrations > 1e15 mol/m³ or |u| > 1e12) and states
+// with stuckReactions() left out of equilibrium. On the assembled cut-current dynamic pencil
+// (frozen at this.time, never mutating time-stepper state), we check (a) row-scaled dynamic
+// residual ≤ 1e-6 and (b) the linearised backward-Euler step δ = (J + σ M)⁻¹ F (verified for
+// backward error, projected onto the conserved hyperplane, measured in thermal units via
+// maxPotentialStep) at solve()'s own giant-step rate σ = 1/(1e6·τ_slow) (tested at two
+// non-resonant rates σ and 1.7 σ): if drift ≥ 1e-5 thermal units, verdict is 'undecided'.
+//
+// Shift accuracy: every shifted factorisation (real or complex) is checked with one forward and
+// one transposed/Hermitian solve on b = M·y_seed and its difference-form residual; shifts whose
+// row-scaled backward error exceeds 1e-3 fail, shrinking the searched window and qualifying the
+// reason.
 //
 // Deflation: every global conserved combination in constraints (whose terminals are I-driven) and
 // every I-driven chargeOnly terminal (seeded from raw contact storage before cut replacement) is
 // polished via transposed shift-invert (J + σ_z M)⁻ᵀ Mᵀ on the assembled pencil until it satisfies
 // wᵀ J = 0 to round-off (checked directly with mulJT against |J|ᵀ |w|), then c = Mᵀ w is taken
 // from the assembled M. Node-local invariants (localConstraints) are projected per block in O(N).
-// The hyperplane c·x = 0 is invariant under T_σ = (J + σ M)⁻¹ M (c·T_σ x = c·x / σ).
+// Any failed polish leaves undeflated neutral directions and qualifies a non-unstable verdict as
+// 'undecided' (just like unkept).
 //
 // Refinement, anti-ghost verification, residuals, error bars, and deduplication:
 //   - Each Ritz candidate must lie within a Meerbergen–Roose trust region of the shift that found
-//     it (|λ − σ| ≤ 25 |σ|).
-//   - Scale-invariant iterative two-sided inverse iteration (relative shift offset 1e-6 |λ|, up to
-//     5 re-centered passes) must converge (|Δλ| ≤ 1e-5 |λ|) with difference-form row-scaled
-//     residual ≤ 1e-8.
-//   - Every growing, far-from-shift, or looser-residual candidate also passes a 0.1%-offset pole
-//     check at s_p = λ (1 + 1e-3): one solve u = (J + s_p M)⁻¹ M v must reproduce v / (s_p − λ),
-//     separating genuine finite poles from infinite DAE eigenvalue ghosts.
-//   - Each accepted mode reports a first-order error bar covering both rounding and residual:
-//       error = (ε · |w|ᴴ (|J| + |λ| |M|) |v| + |wᴴ r| + ρ_L · |w|ᴴ |r|) / |wᴴ M v|
-//     where ρ_L is the relative left-eigenvector residual.
+//     it (|λ − σ| ≤ 25 |σ|). Pre-deduplication checks eigenvector collinearity so near-degenerate
+//     partners survive to refinement.
+//   - Scale-invariant iterative two-sided inverse iteration (adaptive shift bump, up to 5
+//     re-centered passes, always updating from the two-sided Rayleigh quotient — never returning
+//     a vacuous Δλ = 0) gates on convergence (|Δλ| ≤ 1e-4 |λ|, or for near-zero modes
+//     |λ| ≤ kBar·error with |Δλ| ≤ 0.5·error and error well below shift scale), not on a fixed
+//     1e-8 residual wall.
+//   - Resolved non-zero growing / far-from-shift / looser-residual candidates pass a bar-tied pole
+//     check at offset δ = max(1e-3 |λ|, 30·error) radially outward: one solve u = (J + s_p M)⁻¹ M v
+//     must reproduce v / (s_p − λ).
+//   - Each accepted mode reports a rounding + gap-aware two-sided error bar:
+//       error = ε·|w|ᴴ (|J| + |λ||M|) |v| / |wᴴ M v| + min(e_R, ρ_L·e_R·max(1, |λ|/g))
+//     where e_R = |w|ᴴ|r_R|/|wᴴMv|, ρ_L is the relative left residual, and g is the gap to the
+//     nearest other mode.
 //   - Duplicates are merged only by eigenvalue proximity within bars AND biorthogonality
-//     (w₁ᴴ M v₂ ≠ 0), never by Euclidean eigenvector overlap and never merging growing with
-//     decaying modes.
+//     (w₁ᴴ M v₂ ≠ 0), never merging growing with decaying modes.
 //
-// Verdict (evaluated over all verified modes inside the searched window; never bare 'stable'):
-//   'unstable'                 a verified mode inside the searched window has Re λ > kBar · error;
-//   'undecided'                precondition failed, no shift factored, unkept conserved amounts
-//                              remain undeflated (when no growing mode was found), or rLo ≥ rHi;
+// Verdict (never bare 'stable', and a filter never silently drops a converged growing candidate):
+//   'unstable'                 any verified mode in modes has Re λ > kBar · error (whatever rHi);
+//   'undecided'                precondition failed, no accurate shift factored, a converged
+//                              growing candidate was rejected by any gate (named with λ and rule),
+//                              unkept or failed-polish conserved directions remain undeflated, or
+//                              rLo ≥ rHi;
 //   'neutral within resolution' no growing mode, and a verified mode has |Re λ| ≤ kBar · error;
 //   'no growing mode found'    all verified modes have Re λ < −kBar · error, qualified by
-//                              { rLo, rHi, omegaHi }.
+//                              { rLo, rHi, omegaHi } (and noting any skipped inaccurate shifts).
 //
 // Invariants:
 //   1. Completely non-destructive: STATE, LEARNED, allTerminals, steady, lawForm, sourceBefore,
@@ -1430,6 +1443,7 @@ function buildDeflation(s, pencil, coordScale, warnings) {
   // left null vector w of the ASSEMBLED J (wᵀ J = 0 to round-off) and set c = Mᵀ w from M.
   const globalQ = [];
   const debugVecs = [];
+  const failedPolish = [];
   if (seeds.length > 0) {
     const tauSlow = s.slowestTime();
     const rBase = Math.min(Number.isFinite(tauSlow) && tauSlow > 0 ? 1 / tauSlow : rMinDyn, rMinDyn);
@@ -1482,6 +1496,7 @@ function buildDeflation(s, pencil, coordScale, warnings) {
         }
       }
       if (!best) {
+        failedPolish.push(item.label);
         warnings.push(`stability: could not verify exact left null vector for "${item.label}"; leaving it undeflated.`);
         continue;
       }
@@ -1514,7 +1529,7 @@ function buildDeflation(s, pencil, coordScale, warnings) {
     projectReal(yi);
   };
 
-  return { totalDeflated, localCount, meta, debugVecs, localByBlock, projectReal, projectComplex };
+  return { totalDeflated, localCount, meta, debugVecs, failedPolish, localByBlock, projectReal, projectComplex };
 }
 
 // --- Deterministic LCG vector for reproducible Arnoldi starts ---
@@ -1724,14 +1739,106 @@ function biorthOverlap(a, b) {
   return denom > 0 ? Math.sqrt(prod / denom) : 0;
 }
 
-// 0.1%-offset pole check: for a true finite eigenvalue λ with eigenvector v,
-// (J + s_p M)⁻¹ M v = v / (s_p − λ) at s_p = λ (1 + 1e-3). An infinite-eigenvalue ghost has no
-// pole at λ, so (s_p − λ) u differs from v by O(1) and its Rayleigh quotient leaves λ completely.
-function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi) {
+// Shift factorisation accuracy check: one deterministic forward solve on b = M·y (fallback y) and
+// one transposed/Hermitian solve, checked against the difference-form residual. Catches silent
+// block-elimination loss of accuracy (minPivotRatio collapse without exact zero pivot).
+const SHIFT_BERR_MAX = 1e-3;
+
+function shiftBackwardError(pencil, fac, sr, si = 0) {
+  const { N, jRowMax, mRowMax, mulJDiff, mulMDiff, mulM, mulJT, mulMT, absMulJMT } = pencil;
+  const sMag = Math.hypot(sr, si);
+  const y = seededVector(N, 0x5017e);
+  const b = mulM(y, new Float64Array(N));
+  let bInf = 0;
+  for (let i = 0; i < N; i++) { const a = Math.abs(b[i]); if (a > bInf) bInf = a; }
+  if (!(bInf > 0)) {
+    b.set(y);
+    bInf = 1;
+  }
+  if (si === 0) {
+    const x = fac.solve(b);
+    let xInf = 0;
+    for (let j = 0; j < N; j++) {
+      const a = Math.abs(x[j]);
+      if (!Number.isFinite(a)) return Infinity;
+      if (a > xInf) xInf = a;
+    }
+    const jx = mulJDiff(x, new Float64Array(N));
+    const mx = mulMDiff(x, new Float64Array(N));
+    let bErrF = 0;
+    for (let i = 0; i < N; i++) {
+      const r = Math.abs(jx[i] + sr * mx[i] - b[i]);
+      const sc = (jRowMax[i] + sMag * mRowMax[i]) * xInf + Math.abs(b[i]);
+      if (sc > 0) { const e = r / sc; if (e > bErrF) bErrF = e; }
+    }
+    const xt = fac.solveT(b);
+    let xtInf = 0;
+    for (let j = 0; j < N; j++) {
+      const a = Math.abs(xt[j]);
+      if (!Number.isFinite(a)) return Infinity;
+      if (a > xtInf) xtInf = a;
+    }
+    const jtx = mulJT(xt, new Float64Array(N));
+    const mtx = mulMT(xt, new Float64Array(N));
+    const ones = new Float64Array(N).fill(1);
+    const colSum = absMulJMT(ones, sMag, new Float64Array(N));
+    let bErrT = 0;
+    for (let j = 0; j < N; j++) {
+      const r = Math.abs(jtx[j] + sr * mtx[j] - b[j]);
+      const sc = colSum[j] * xtInf + Math.abs(b[j]);
+      if (sc > 0) { const e = r / sc; if (e > bErrT) bErrT = e; }
+    }
+    return Math.max(bErrF, bErrT);
+  }
+  const bi = new Float64Array(N);
+  const [xr, xi] = fac.solve(b, bi);
+  let xInf = 0;
+  for (let j = 0; j < N; j++) {
+    const a = Math.hypot(xr[j], xi[j]);
+    if (!Number.isFinite(a)) return Infinity;
+    if (a > xInf) xInf = a;
+  }
+  const jxr = mulJDiff(xr, new Float64Array(N)), jxi = mulJDiff(xi, new Float64Array(N));
+  const mxr = mulMDiff(xr, new Float64Array(N)), mxi = mulMDiff(xi, new Float64Array(N));
+  let bErrF = 0;
+  for (let i = 0; i < N; i++) {
+    const rr = jxr[i] + sr * mxr[i] - si * mxi[i] - b[i];
+    const ri = jxi[i] + sr * mxi[i] + si * mxr[i];
+    const sc = (jRowMax[i] + sMag * mRowMax[i]) * xInf + Math.abs(b[i]);
+    if (sc > 0) { const e = Math.hypot(rr, ri) / sc; if (e > bErrF) bErrF = e; }
+  }
+  const [xtr, xti] = fac.solveH(b, bi);
+  let xtInf = 0;
+  for (let j = 0; j < N; j++) {
+    const a = Math.hypot(xtr[j], xti[j]);
+    if (!Number.isFinite(a)) return Infinity;
+    if (a > xtInf) xtInf = a;
+  }
+  const jtxr = mulJT(xtr, new Float64Array(N)), jtxi = mulJT(xti, new Float64Array(N));
+  const mtxr = mulMT(xtr, new Float64Array(N)), mtxi = mulMT(xti, new Float64Array(N));
+  const ones = new Float64Array(N).fill(1);
+  const colSum = absMulJMT(ones, sMag, new Float64Array(N));
+  let bErrH = 0;
+  for (let j = 0; j < N; j++) {
+    // (J + s M)ᴴ x = (Jᵀ + conj(s) Mᵀ) x
+    const rr = jtxr[j] + sr * mtxr[j] + si * mtxi[j] - b[j];
+    const ri = jtxi[j] + sr * mtxi[j] - si * mtxr[j];
+    const sc = colSum[j] * xtInf + Math.abs(b[j]);
+    if (sc > 0) { const e = Math.hypot(rr, ri) / sc; if (e > bErrH) bErrH = e; }
+  }
+  return Math.max(bErrF, bErrH);
+}
+
+// Bar-tied pole check: for a true finite eigenvalue λ with eigenvector v,
+// (J + s_p M)⁻¹ M v = v / (s_p − λ). Placing the probe radially outward by
+// δ = max(1e-3 |λ|, 30·error) keeps s_p well outside λ's own uncertainty bar (critical near folds
+// where error can exceed 1e-3 |λ|), while still separating true finite poles from infinite ghosts.
+function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi, error) {
   const lamMag = Math.hypot(lamRe, lamIm);
   if (!(lamMag > 0)) return true;
-  const epsP = 1e-3;
-  const sRe = lamRe * (1 + epsP), sIm = lamIm * (1 + epsP);
+  const delta = Math.max(1e-3 * lamMag, 30 * (Number.isFinite(error) ? error : 0));
+  const scale = 1 + delta / lamMag;
+  const sRe = lamRe * scale, sIm = lamIm * scale;
   const dRe = sRe - lamRe, dIm = sIm - lamIm;
   const { N } = pencil;
   let ur, ui;
@@ -1745,7 +1852,6 @@ function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi) {
     if (!fac) return false;
     [ur, ui] = fac.solve(mvr, mvi);
   }
-  // Check (s_p − λ) u ≈ v and Rayleigh estimate λ_probe = s_p − (vᴴ v)/(vᴴ u) ≈ λ.
   let diff2 = 0, v2 = 0, dotR = 0, dotI = 0;
   for (let j = 0; j < N; j++) {
     const suR = dRe * ur[j] - dIm * ui[j] - vr[j];
@@ -1757,36 +1863,36 @@ function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi) {
   }
   if (!(v2 > 0)) return false;
   const vecErr = Math.sqrt(diff2 / v2);
-  if (!(vecErr <= 0.1)) return false;
+  if (!(vecErr <= 0.25)) return false;
   const muMag = Math.hypot(dotR, dotI) / v2;
   if (!(muMag > 0)) return false;
   const [invR, invI] = cdiv(v2, 0, dotR, dotI);
   const jump = Math.hypot(sRe - invR - lamRe, sIm - invI - lamIm);
-  return jump <= 1e-2 * lamMag;
+  return jump <= Math.max(1e-2 * lamMag, 0.2 * delta);
 }
 
-function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
+function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
   const { N, mulM, mulMT, absMulJM } = pencil;
   const invScale = Float64Array.from(coordScale, (v) => 1 / v);
   const vr = new Float64Array(N), vi = new Float64Array(N);
   for (let j = 0; j < N; j++) { vr[j] = cand.vr[j] * invScale[j]; vi[j] = cand.vi[j] * invScale[j]; }
   let lamRe = cand.re, lamIm = cand.im;
-  const isReal = Math.abs(lamIm) <= 1e-10 * Math.abs(lamRe);
+  let isReal = Math.abs(lamIm) <= 1e-10 * Math.abs(lamRe);
   if (isReal) { lamIm = 0; vi.fill(0); }
-  if (!normalizeComplex(vr, vi)) return null;
+  if (!normalizeComplex(vr, vi)) return { ok: false, converged: false, rule: 'zeroVec', re: lamRe, im: lamIm, residual: Infinity, error: Infinity };
 
   const wr = new Float64Array(N), wi = new Float64Array(N);
 
-  const twoSidedPass = (sRe, sIm) => {
+  const twoSidedPass = (sRe, sIm, bumpFrac) => {
     const mag = Math.hypot(sRe, sIm);
-    const bump = mag > 0 ? 1e-6 * mag : 1e-12 * shiftScale;
+    const bump = mag > 0 ? bumpFrac * mag : 1e-12 * shiftScale;
     const dir = sRe >= 0 ? 1 : -1;
     let haveLeft = false;
     if (isReal) {
       const fac = factorRealShift(pencil, sRe + dir * bump) || factorRealShift(pencil, sRe - dir * bump);
       if (!fac) return null;
       const mv = new Float64Array(N), y = new Float64Array(N);
-      for (let it = 0; it < 2; it++) {
+      for (let it = 0; it < 4; it++) {
         mulM(vr, mv);
         fac.solve(mv, vr);
         for (let j = 0; j < N; j++) y[j] = vr[j] * coordScale[j];
@@ -1808,7 +1914,7 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
       if (!fac) return null;
       const mvr = new Float64Array(N), mvi = new Float64Array(N);
       const yr = new Float64Array(N), yi = new Float64Array(N);
-      for (let it = 0; it < 2; it++) {
+      for (let it = 0; it < 4; it++) {
         mulM(vr, mvr); mulM(vi, mvi);
         fac.solve(mvr, mvi, vr, vi);
         for (let j = 0; j < N; j++) { yr[j] = vr[j] * coordScale[j]; yi[j] = vi[j] * coordScale[j]; }
@@ -1827,43 +1933,41 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
       haveLeft = normalizeComplex(wr, wi) > 0;
     }
     if (!haveLeft) return null;
-    let check = evalResidual(pencil, vr, vi, sRe, sIm);
+    // Always compute and return the two-sided Rayleigh quotient (never fall back to returning the
+    // input shift with a vacuous Δλ = 0).
+    const probe = evalResidual(pencil, vr, vi, sRe, sIm);
     let numR = 0, numI = 0, denR = 0, denI = 0;
     for (let j = 0; j < N; j++) {
-      numR -= wr[j] * check.jvr[j] + wi[j] * check.jvi[j];
-      numI -= wr[j] * check.jvi[j] - wi[j] * check.jvr[j];
-      denR += wr[j] * check.mvr[j] + wi[j] * check.mvi[j];
-      denI += wr[j] * check.mvi[j] - wi[j] * check.mvr[j];
+      numR -= wr[j] * probe.jvr[j] + wi[j] * probe.jvi[j];
+      numI -= wr[j] * probe.jvi[j] - wi[j] * probe.jvr[j];
+      denR += wr[j] * probe.mvr[j] + wi[j] * probe.mvi[j];
+      denI += wr[j] * probe.mvi[j] - wi[j] * probe.mvr[j];
     }
     const denAbs = Math.hypot(denR, denI);
     if (!(denAbs > 0) || !Number.isFinite(denAbs)) return null;
     const [rqRe, rqImRaw] = cdiv(numR, numI, denR, denI);
     const rqIm = isReal ? 0 : rqImRaw;
-    let outRe = sRe, outIm = sIm;
-    if (Number.isFinite(rqRe) && Number.isFinite(rqIm)) {
-      const rqCheck = evalResidual(pencil, vr, vi, rqRe, rqIm);
-      if (rqCheck.residual <= check.residual * 1.1 + 1e-15) {
-        outRe = rqRe;
-        outIm = rqIm;
-        check = rqCheck;
-      }
-    }
-    return { re: outRe, im: outIm, check, denAbs };
+    if (!Number.isFinite(rqRe) || !Number.isFinite(rqIm)) return null;
+    const rqCheck = evalResidual(pencil, vr, vi, rqRe, rqIm);
+    return { re: rqRe, im: rqIm, check: rqCheck, denAbs };
   };
 
-  // Iterative re-centered two-sided refinement until λ stops moving (up to 5 passes).
-  let best = twoSidedPass(lamRe, lamIm);
-  if (!best) return null;
+  // Iterative re-centered two-sided refinement until λ stops moving (up to 5 passes), shrinking
+  // the relative shift bump adaptively so near-degenerate pairs separate cleanly.
+  let best = twoSidedPass(lamRe, lamIm, 1e-6);
+  if (!best) return { ok: false, converged: false, rule: 'factorFailed', re: lamRe, im: lamIm, residual: Infinity, error: Infinity };
   let lastStep = Math.hypot(best.re - lamRe, best.im - lamIm);
   let bestVr = vr.slice(), bestVi = vi.slice(), bestWr = wr.slice(), bestWi = wi.slice();
   for (let pass = 1; pass < 5; pass++) {
     const mag = Math.hypot(best.re, best.im);
-    if (lastStep <= 1e-8 * Math.max(mag, 1e-30 * shiftScale) && best.check.residual <= 1e-11) break;
+    if (lastStep <= 1e-8 * Math.max(mag, 1e-30 * shiftScale) && best.check.residual <= 1e-12) break;
     const prevRe = best.re, prevIm = best.im;
-    const next = twoSidedPass(prevRe, prevIm);
+    const bumpFrac = Math.min(1e-6, Math.max(1e-10, 10 * (lastStep / Math.max(mag, 1e-30 * shiftScale))));
+    const next = twoSidedPass(prevRe, prevIm, bumpFrac);
     if (!next) break;
-    lastStep = Math.hypot(next.re - prevRe, next.im - prevIm);
-    if (next.check.residual <= best.check.residual || lastStep <= 1e-6 * Math.max(Math.hypot(next.re, next.im), 1e-30 * shiftScale)) {
+    const step = Math.hypot(next.re - prevRe, next.im - prevIm);
+    lastStep = step;
+    if (next.check.residual <= best.check.residual * 1.05 + 1e-15 || step <= 1e-6 * Math.max(Math.hypot(next.re, next.im), 1e-30 * shiftScale)) {
       best = next;
       bestVr = vr.slice(); bestVi = vi.slice(); bestWr = wr.slice(); bestWi = wi.slice();
     } else {
@@ -1873,59 +1977,82 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
   vr.set(bestVr); vi.set(bestVi); wr.set(bestWr); wi.set(bestWi);
   lamRe = best.re;
   lamIm = best.im;
+  if (!isReal && Math.abs(lamIm) <= 1e-10 * Math.abs(lamRe)) {
+    lamIm = 0;
+    isReal = true;
+  }
   const { check, denAbs } = best;
   const lamMag = Math.hypot(lamRe, lamIm);
 
-  // Convergence & tight residual gate.
-  if (!Number.isFinite(check.residual) || check.residual > 1e-8) return null;
-  if (lastStep > 1e-5 * Math.max(lamMag, 1e-30 * shiftScale)) return null;
-
-  // Anti-ghost 0.1%-offset pole verification on any growing, far-from-shift, or looser-residual candidate.
-  if (lamRe > 0 || lamMag > 2 * cand.shiftMag || check.residual > 1e-10) {
-    if (!verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, check.mvr, check.mvi)) return null;
-  }
-
-  // First-order + second-order Rayleigh-quotient error bar:
-  //   error = (ε · |w|ᴴ (|J| + |λ| |M|) |v| + |wᴴ r| + ρ_L · |w|ᴴ |r|) / |wᴴ M v|
-  // where ρ_L = ‖(J + λ M)ᴴ w‖_∞ / ‖(|J| + |λ| |M|)ᵀ |w|‖_∞ measures left-vector convergence.
+  // Componentwise rounding and two-sided residual error-bar quantities:
+  //   errRound = ε · |w|ᴴ (|J| + |λ| |M|) |v| / |wᴴ M v|
+  //   errResR  = |w|ᴴ |r_R| / |wᴴ M v|
+  //   errResL  = |r_L|ᴴ |v| / |wᴴ M v|
+  // The gap-aware second-order term min(max(errResR, errResL), errResL·errResR / g) is added
+  // post-refinement once all distinct modes and their spectral gaps g are known.
   const absV = new Float64Array(N), absW = new Float64Array(N), absJMv = new Float64Array(N);
   for (let j = 0; j < N; j++) { absV[j] = Math.hypot(vr[j], vi[j]); absW[j] = Math.hypot(wr[j], wi[j]); }
   absMulJM(absV, lamMag, absJMv);
-  // Left residual (Jᵀ + conj(λ) Mᵀ) w
   const jtwr = pencil.mulJT(wr, new Float64Array(N));
   const mtwr = pencil.mulMT(wr, new Float64Array(N));
   const jtwi = isReal ? new Float64Array(N) : pencil.mulJT(wi, new Float64Array(N));
   const mtwi = isReal ? new Float64Array(N) : pencil.mulMT(wi, new Float64Array(N));
   const absJMTw = pencil.absMulJMT(absW, lamMag, new Float64Array(N));
-  let maxRL = 0, maxAbsL = 0;
+  let maxRL = 0, maxAbsL = 0, numResL = 0;
   for (let j = 0; j < N; j++) {
-    // (J + λ M)ᴴ w = (Jᵀ + conj(λ) Mᵀ) w; conj(λ) = lamRe − i lamIm
     const lrr = jtwr[j] + lamRe * mtwr[j] + lamIm * mtwi[j];
     const lri = jtwi[j] + lamRe * mtwi[j] - lamIm * mtwr[j];
     const a = Math.hypot(lrr, lri);
     if (a > maxRL) maxRL = a;
     if (absJMTw[j] > maxAbsL) maxAbsL = absJMTw[j];
+    numResL += a * absV[j];
   }
   const rhoL = maxAbsL > 0 ? Math.min(1, maxRL / maxAbsL) : 1;
 
-  let numRound = 0, numRes = 0, wrDotR = 0, wiDotR = 0;
+  let numRound = 0, numResR = 0;
   for (let j = 0; j < N; j++) {
     const wj = absW[j];
     numRound += wj * absJMv[j];
-    numRes += wj * Math.hypot(check.rrArr[j], check.riArr[j]);
-    wrDotR += wr[j] * check.rrArr[j] + wi[j] * check.riArr[j];
-    wiDotR += wr[j] * check.riArr[j] - wi[j] * check.rrArr[j];
+    numResR += wj * Math.hypot(check.rrArr[j], check.riArr[j]);
   }
-  const wDotR = Math.hypot(wrDotR, wiDotR);
-  const error = (EPS * numRound + wDotR + rhoL * numRes) / denAbs;
-  if (!Number.isFinite(error)) return null;
+  const errRound = (EPS * numRound) / denAbs;
+  const errResR = numResR / denAbs;
+  const errResL = numResL / denAbs;
+  const error = errRound + rhoL * errResR;
+  if (!Number.isFinite(error)) {
+    return { ok: false, converged: false, rule: 'nonFiniteError', re: lamRe, im: lamIm, residual: check.residual, error: Infinity };
+  }
+
+  // Convergence gate (scale-invariant): accepts both resolved non-zero modes (|Δλ| ≤ 1e-4 |λ|)
+  // and genuine neutral/zero modes (|λ| ≤ kBar·error, |Δλ| ≤ 0.5·error, error well below slow shift).
+  const convergedResolved = lamMag > 0 && lastStep <= 1e-4 * lamMag;
+  const convergedNeutral = lamMag <= kBar * error && lastStep <= 0.5 * error && error <= 0.1 * shiftScale;
+  if (!convergedResolved && !convergedNeutral) {
+    return { ok: false, converged: false, rule: 'notConverged', re: lamRe, im: lamIm, residual: check.residual, error };
+  }
+
+  // Residual sanity ceiling (tied to the shift's measured backward error, never a tight 1e-8 wall).
+  const resCeiling = Math.min(1e-2, Math.max(1e-3, 100 * (cand.shiftBErr || 0)));
+  if (!Number.isFinite(check.residual) || check.residual > resCeiling) {
+    return { ok: false, converged: true, rule: 'residual', re: lamRe, im: lamIm, residual: check.residual, error };
+  }
+
   // A fast mode far from 0 whose error bar exceeds half its own |λ| has collapsed |wᴴ M v|
   // (a near-infinite DAE mode, not a resolved finite eigenvalue); slow/neutral modes near 0 keep
   // their error bars so genuinely neutral directions report 'neutral within resolution'.
-  if (lamMag > 100 * shiftScale && error > 0.5 * lamMag) return null;
+  if (lamMag > 100 * shiftScale && error > 0.5 * lamMag) {
+    return { ok: false, converged: true, rule: 'collapsed', re: lamRe, im: lamIm, residual: check.residual, error };
+  }
+
+  // Bar-tied pole verification on resolved non-zero growing, far-from-shift, or looser-residual modes.
+  if (lamMag > kBar * error && (lamRe > 0 || lamMag > 2 * cand.shiftMag || check.residual > 1e-9)) {
+    if (!verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, check.mvr, check.mvi, error)) {
+      return { ok: false, converged: true, rule: 'pole', re: lamRe, im: lamIm, residual: check.residual, error };
+    }
+  }
 
   return {
-    re: lamRe, im: lamIm, residual: check.residual, error,
+    ok: true, re: lamRe, im: lamIm, residual: check.residual, error, errRound, errResR, errResL, rhoL,
     vr, vi, wr, wi, mvr: check.mvr, mvi: check.mvi, denAbs,
   };
 }
@@ -1998,14 +2125,57 @@ function defaultShifts(s, pencil) {
 // --- Linearised cut-current giant-step steadiness check (frozen at s.time, zero stepper leaks) ---
 
 function checkDynamicSteady(s, pencil, deflation, coordScale) {
-  const { Nc, K, N, F, jRowMax, rMinDyn } = pencil;
+  const { Nc, K, N, F, jRowMax, mRowMax, rMinDyn, mulJDiff, mulMDiff } = pencil;
   const invScale = Float64Array.from(coordScale, (v) => 1 / v);
+
+  // 0. State sanity: reject non-finite or overflowed nonsense states (e.g. runaway Boltzmann ions
+  //    at 1e39 mol/m³ or |u| > 1e12 where the Jacobian spans >1e40) and reactions left stuck out of
+  //    equilibrium by solve().
+  for (let i = 0; i < s.u.length; i++) {
+    const a = Math.abs(s.u[i]);
+    if (!Number.isFinite(a) || a > 1e12) {
+      return {
+        ok: false,
+        drift: Infinity,
+        reason: `state is out of physical/numerical range (|u| reaches ${a.toExponential(2)})`,
+      };
+    }
+  }
+  for (let g = 0; g < s.nNodes; g++) {
+    for (let i = 0; i < s.n; i++) {
+      const k = g * s.n + i;
+      if (!s.present[k]) continue;
+      const cv = s.c[k];
+      if (!Number.isFinite(cv)) {
+        return { ok: false, drift: Infinity, reason: `non-finite concentration for ${s.model.species[i].name}` };
+      }
+      const nm = s.model.species[i].name;
+      if (nm !== 'e-' && nm !== 'h+' && cv > 1e15) {
+        return {
+          ok: false,
+          drift: Infinity,
+          reason: `unphysical runaway concentration (${nm} reaches ${cv.toExponential(2)} mol/m³); not a trustworthy steady state`,
+        };
+      }
+    }
+  }
+  const stuck = s.stuckReactions();
+  if (stuck.length > 0) {
+    return {
+      ok: false,
+      drift: Infinity,
+      reason: `not a steady state: ${stuck.length} reaction(s) or link(s) left out of equilibrium by solve() (e.g. ${stuck[0].where})`,
+    };
+  }
 
   // 1. Row-scaled dynamic steady residual (catches large bulk-reaction / terminal imbalances).
   let dynamicResInf = 0;
   for (let i = 0; i < N; i++) {
     const sc = jRowMax[i];
     const r = sc > 0 ? Math.abs(F[i]) / sc : Math.abs(F[i]);
+    if (!Number.isFinite(r)) {
+      return { ok: false, drift: Infinity, reason: 'non-finite dynamic steady residual' };
+    }
     if (r > dynamicResInf) dynamicResInf = r;
   }
   if (dynamicResInf > 1e-6) {
@@ -2033,6 +2203,20 @@ function checkDynamicSteady(s, pencil, deflation, coordScale) {
     const fac = factorRealShift(pencil, sig);
     if (!fac) return null;
     const sol = fac.solve(F);
+    let xInf = 0;
+    for (let j = 0; j < N; j++) {
+      const a = Math.abs(sol[j]);
+      if (!Number.isFinite(a)) return null;
+      if (a > xInf) xInf = a;
+    }
+    const jx = mulJDiff(sol, new Float64Array(N)), mx = mulMDiff(sol, new Float64Array(N));
+    let bErr = 0;
+    for (let i = 0; i < N; i++) {
+      const r = Math.abs(jx[i] + sig * mx[i] - F[i]);
+      const sc = (jRowMax[i] + sig * mRowMax[i]) * xInf + Math.abs(F[i]);
+      if (sc > 0) { const e = r / sc; if (e > bErr) bErr = e; }
+    }
+    if (!(bErr <= SHIFT_BERR_MAX)) return null;
     // Project out conserved directions so O(ε/σ) round-off along exact zeros doesn't inflate drift.
     for (let j = 0; j < N; j++) y[j] = sol[j] * coordScale[j];
     deflation.projectReal(y);
@@ -2168,11 +2352,13 @@ export class Stability {
         };
       }
 
-      // 4. Shift-invert Arnoldi over real positive shifts (+ optional complex frequency shifts).
+      // 4. Shift-invert Arnoldi over real positive shifts (+ optional complex frequency shifts),
+      //    checking each factorisation's backward error before trusting it.
       const realShifts = userShifts ? Array.from(userShifts) : defaultShifts(this, pencil);
       const startVec = seededVector(N);
       const attempted = [];
       const succeeded = [];
+      const inaccurateShifts = [];
       const candidates = [];
       const mKrylov = Math.min(32, Math.max(4, N - deflation.totalDeflated));
 
@@ -2184,6 +2370,11 @@ export class Stability {
         attempted.push({ re: sigma, im: 0 });
         const fac = factorRealShift(pencil, sigma, true);
         if (!fac) continue;
+        const bErr = shiftBackwardError(pencil, fac, sigma, 0);
+        if (!(bErr <= SHIFT_BERR_MAX)) {
+          inaccurateShifts.push({ re: sigma, im: 0, backwardError: bErr });
+          continue;
+        }
         succeeded.push({ re: sigma, im: 0 });
         const op = (y) => {
           for (let j = 0; j < N; j++) xTmp[j] = y[j] * invScale[j];
@@ -2203,7 +2394,7 @@ export class Stability {
           if (Math.hypot(re - sigma, im) > TRUST * sigma) continue;
           if (im < -1e-10 * Math.abs(re)) continue;
           const deltaLam = r.ritzEst / (muMag * muMag);
-          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sigma });
+          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sigma, shiftBErr: bErr });
         }
       }
 
@@ -2218,6 +2409,11 @@ export class Stability {
         attempted.push({ re: sr, im: w });
         const fac = factorComplexShift(pencil, sr, w);
         if (!fac) continue;
+        const bErr = shiftBackwardError(pencil, fac, sr, w);
+        if (!(bErr <= SHIFT_BERR_MAX)) {
+          inaccurateShifts.push({ re: sr, im: w, backwardError: bErr });
+          continue;
+        }
         succeeded.push({ re: sr, im: w });
         if (w > maxOmega) maxOmega = w;
         const op = (yr, yi) => {
@@ -2239,14 +2435,25 @@ export class Stability {
           if (Math.hypot(re - sr, im - w) > TRUST * sMag) continue;
           if (im < -1e-10 * Math.abs(re)) continue;
           const deltaLam = r.ritzEst / (muMag * muMag);
-          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sMag });
+          candidates.push({ re, im, vr: r.vr, vi: r.vi, ritzEst: r.ritzEst, deltaLam, shiftMag: sMag, shiftBErr: bErr });
         }
       }
 
+      if (inaccurateShifts.length > 0) {
+        const worstBErr = Math.max(...inaccurateShifts.map((x) => x.backwardError));
+        warnings.push(
+          `stability: ${inaccurateShifts.length} of ${attempted.length} shifted factorisation(s) exceeded backward error ${SHIFT_BERR_MAX.toExponential(0)} (worst ${worstBErr.toExponential(1)}) and were skipped.`,
+        );
+      }
+      if (debugData) debugData.inaccurateShifts = inaccurateShifts;
+
       if (succeeded.length === 0) {
+        const worstBErr = inaccurateShifts.length > 0 ? Math.max(...inaccurateShifts.map((x) => x.backwardError)) : NaN;
         return {
           verdict: 'undecided',
-          reason: 'no shifted linearisation factored without singularity',
+          reason: inaccurateShifts.length > 0
+            ? `all ${attempted.length} shifted factorisations failed accuracy check (backward error up to ${worstBErr.toExponential(1)})`
+            : 'no shifted linearisation factored without singularity',
           drift: steadyCheck.drift,
           modes: [],
           deflated: deflation.meta,
@@ -2257,12 +2464,30 @@ export class Stability {
         };
       }
 
-      const rHi = Math.max(...succeeded.filter((x) => x.im === 0).map((x) => x.re), 0);
+      // Shrink rHi to the highest real shift in the contiguous accurate range below the first
+      // inaccurate real shift so no multi-decade unsearched gap hides inside [rLo, rHi].
+      const succReal = succeeded.filter((x) => x.im === 0).map((x) => x.re);
+      const inaccReal = inaccurateShifts.filter((x) => x.im === 0).map((x) => x.re);
+      const firstBadReal = inaccReal.length > 0 ? Math.min(...inaccReal) : Infinity;
+      const contigReal = succReal.filter((s) => s < firstBadReal);
+      const rHi = contigReal.length > 0 ? Math.max(...contigReal) : 0;
       const rSearch = Math.max(rHi, maxOmega);
       const shiftScale = Math.min(...succeeded.map((x) => Math.hypot(x.re, x.im)));
 
-      // 5. Scale-invariant pre-dedup (never merging opposite-sign Re λ), then iterative refinement
-      //    and biorthogonal post-deduplication.
+      // 5. Eigenvector-aware pre-dedup (preserves near-degenerate partners with distinct Krylov
+      //    vectors and never merges opposite-sign Re λ), then iterative refinement and biorthogonal
+      //    post-deduplication.
+      const vecCos = (a, b) => {
+        let dr = 0, di = 0, na = 0, nb = 0;
+        for (let j = 0; j < N; j++) {
+          dr += a.vr[j] * b.vr[j] + a.vi[j] * b.vi[j];
+          di += a.vr[j] * b.vi[j] - a.vi[j] * b.vr[j];
+          na += a.vr[j] * a.vr[j] + a.vi[j] * a.vi[j];
+          nb += b.vr[j] * b.vr[j] + b.vi[j] * b.vi[j];
+        }
+        const den = Math.sqrt(na * nb);
+        return den > 0 ? Math.hypot(dr, di) / den : 0;
+      };
       candidates.sort((a, b) => b.re - a.re || Math.abs(a.im) - Math.abs(b.im));
       const uniqueCands = [];
       for (const c of candidates) {
@@ -2270,29 +2495,39 @@ export class Stability {
         const dup = uniqueCands.find((u) => {
           if ((u.re > 0) !== (c.re > 0) && u.re !== 0 && c.re !== 0) return false;
           const scale = Math.max(Math.hypot(u.re, u.im), cMag);
-          return Math.hypot(u.re - c.re, u.im - c.im) <= 1e-4 * scale;
+          const dist = Math.hypot(u.re - c.re, u.im - c.im);
+          if (dist <= 1e-7 * scale) return vecCos(u, c) > 0.95;
+          if (dist <= 1e-4 * scale) return vecCos(u, c) > 0.995;
+          return false;
         });
         if (!dup) uniqueCands.push(c);
         else if (c.deltaLam < dup.deltaLam) {
           dup.re = c.re; dup.im = c.im; dup.vr = c.vr; dup.vi = c.vi;
-          dup.ritzEst = c.ritzEst; dup.deltaLam = c.deltaLam; dup.shiftMag = c.shiftMag;
+          dup.ritzEst = c.ritzEst; dup.deltaLam = c.deltaLam; dup.shiftMag = c.shiftMag; dup.shiftBErr = c.shiftBErr;
         }
       }
 
       const refined = [];
+      const rejectedGrowing = [];
       let acceptedSlots = 0;
       const targetSlots = Math.max(nWant + 4, 12);
       const maxAttempts = Math.min(uniqueCands.length, Math.max(nWant * 12, 160));
       let rejectedSpurious = 0;
       for (let i = 0; i < maxAttempts; i++) {
-        if (acceptedSlots >= targetSlots) {
+        if (acceptedSlots >= targetSlots && uniqueCands[i].re <= 0) {
           let worst = Infinity;
           for (const u of refined) if (u.re < worst) worst = u.re;
           if (uniqueCands[i].re < worst - Math.abs(worst) * 1e-2) break;
         }
-        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i], shiftScale);
-        if (!res) {
+        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i], shiftScale, kBar);
+        if (!res.ok) {
           rejectedSpurious++;
+          // Core safety rule: a converged growing candidate (Re λ above its own error bar)
+          // rejected by any filter is NEVER silently dropped — record it so the verdict becomes
+          // 'undecided' if no verified growing mode is found.
+          if (res.converged && res.re > res.error) {
+            rejectedGrowing.push({ re: res.re, im: res.im, residual: res.residual, error: res.error, rule: res.rule });
+          }
           continue;
         }
         // Biorthogonal + bar-based post-dedup (never merges growing into decaying).
@@ -2314,6 +2549,33 @@ export class Stability {
         } else if (res.error < dup.error || (res.error === dup.error && res.residual < dup.residual)) {
           Object.assign(dup, res);
         }
+      }
+      if (debugData) debugData.rejectedGrowing = rejectedGrowing;
+
+      // Post-refinement gap-aware error bars for near-degenerate pairs / clusters:
+      // for each mode i, with gap g_i to the nearest other verified mode j ≠ i, the two-sided
+      // Rayleigh-quotient residual error widens by max(1, |λ_i| / g_i) (bounded by first-order e_R).
+      for (let i = 0; i < refined.length; i++) {
+        const mi = refined[i];
+        const lamMag = Math.hypot(mi.re, mi.im);
+        let gap = mi.im !== 0 ? 2 * Math.abs(mi.im) : Infinity;
+        for (let j = 0; j < refined.length; j++) {
+          if (j === i) continue;
+          const mj = refined[j];
+          const d1 = Math.hypot(mi.re - mj.re, mi.im - mj.im);
+          if (d1 < gap) gap = d1;
+          if (mj.im !== 0) {
+            const d2 = Math.hypot(mi.re - mj.re, mi.im + mj.im);
+            if (d2 < gap) gap = d2;
+          }
+        }
+        let gapErr = mi.rhoL * mi.errResR;
+        if (Number.isFinite(gap) && gap > 0) {
+          gapErr = Math.min(mi.errResR, mi.rhoL * mi.errResR * Math.max(1, lamMag / gap));
+        } else if (gap === 0) {
+          gapErr = mi.errResR;
+        }
+        mi.error = Math.max(mi.error, mi.errRound + gapErr);
       }
 
       // Expand complex conjugate pairs (re ± i im), sorted rightmost first.
@@ -2341,12 +2603,14 @@ export class Stability {
       }
       const modesOut = allModes.slice(0, nWant);
 
-      // 6. Compute honest window and verdict over ALL verified modes inside the searched window.
-      //    No mode outside the searched window (Re λ > rSearch) may decide the verdict.
+      // 6. Compute honest window and verdict.
+      //    - Any verified growing mode in allModes makes the verdict 'unstable', whatever rHi.
+      //    - Any converged growing candidate rejected by a filter makes a non-unstable verdict
+      //      'undecided', naming the candidate and rule.
+      //    - Window { rLo, rHi, omegaHi } qualifies 'no growing mode found'.
       const inWindow = allModes.filter((m) => m.re <= rSearch);
       let rLo;
       if (inWindow.length > 0) {
-        // Resolution floor near the imaginary axis (rightmost / smallest-|Re λ| verified modes).
         let minAbsRe = Infinity;
         for (const m of inWindow) { const a = Math.abs(m.re); if (a < minAbsRe) minAbsRe = a; }
         const near = inWindow.filter((m) => Math.abs(m.re) <= 10 * minAbsRe);
@@ -2357,26 +2621,42 @@ export class Stability {
       }
       const window = { rLo, rHi, omegaHi: maxOmega };
 
-      const growing = inWindow.find((m) => m.re > kBar * m.error);
-      const neutral = inWindow.find((m) => Math.abs(m.re) <= kBar * m.error);
+      const growing = allModes.find((m) => m.re > kBar * m.error);
+      const neutral = allModes.find((m) => Math.abs(m.re) <= kBar * m.error);
+      const skipNote = inaccurateShifts.length > 0
+        ? `; ${inaccurateShifts.length} shift(s) skipped (backward error up to ${Math.max(...inaccurateShifts.map((x) => x.backwardError)).toExponential(1)})`
+        : '';
       let verdict, reason;
       if (growing) {
         verdict = 'unstable';
         reason = `growing mode at Re λ = ${growing.re.toPrecision(4)} ± ${growing.error.toPrecision(2)} /s` +
           (Math.abs(growing.im) > 0 ? ` (ω = ${Math.abs(growing.im).toPrecision(4)} rad/s)` : '');
+      } else if (rejectedGrowing.length > 0) {
+        rejectedGrowing.sort((a, b) => b.re - a.re);
+        const g0 = rejectedGrowing[0];
+        verdict = 'undecided';
+        reason = `growing candidate at Re λ = ${g0.re.toPrecision(4)}` +
+          (Math.abs(g0.im) > 0 ? ` ± ${Math.abs(g0.im).toPrecision(4)}i` : '') +
+          ` /s rejected by ${g0.rule} check (residual ${g0.residual.toExponential(1)}, bar ${g0.error.toExponential(1)})`;
       } else if (this.unkept.length > 0) {
         verdict = 'undecided';
         reason = `${this.unkept.length} conserved combination(s) are in unkept; undeflated neutral directions remain in the pencil`;
+      } else if (deflation.failedPolish.length > 0) {
+        verdict = 'undecided';
+        reason = `${deflation.failedPolish.length} conserved direction(s) failed left-null verification (${deflation.failedPolish[0]}); undeflated neutral directions remain in the pencil`;
+      } else if (realShifts.length > 0 && contigReal.length === 0 && maxOmega === 0) {
+        verdict = 'undecided';
+        reason = `lowest shifted factorisation failed backward-error check (no contiguous accurate window)${skipNote}`;
       } else if (rHi > 0 && rLo >= rHi) {
         verdict = 'undecided';
-        reason = `resolution floor (${rLo.toPrecision(2)} /s) exceeds the searched window rHi (${rHi.toPrecision(2)} /s)`;
+        reason = `resolution floor (${rLo.toPrecision(2)} /s) exceeds the searched window rHi (${rHi.toPrecision(2)} /s)${skipNote}`;
       } else if (neutral) {
         verdict = 'neutral within resolution';
-        reason = `mode at Re λ = ${neutral.re.toPrecision(3)} /s lies within ${kBar}× its error bar (${neutral.error.toPrecision(2)} /s)`;
+        reason = `mode at Re λ = ${neutral.re.toPrecision(3)} /s lies within ${kBar}× its error bar (${neutral.error.toPrecision(2)} /s)${skipNote}`;
       } else {
         verdict = 'no growing mode found';
         reason = `no growing mode found in [${rLo.toPrecision(2)}, ${rHi.toPrecision(2)}] /s` +
-          (maxOmega > 0 ? ` (|Im λ| ≤ ${maxOmega.toPrecision(3)} rad/s)` : ' (real shifts only)');
+          (maxOmega > 0 ? ` (|Im λ| ≤ ${maxOmega.toPrecision(3)} rad/s)` : ' (real shifts only)') + skipNote;
       }
 
       return {

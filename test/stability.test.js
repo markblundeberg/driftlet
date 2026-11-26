@@ -787,3 +787,119 @@ test('Precondition catches loose solve({ tol: 1e-3 }), passes steady C_face = 1e
   assert.equal(a.solver.sourceBefore, twin.solver.sourceBefore);
   assert.equal(a.solution().terminals.left.V, twin.solution().terminals.left.V);
 });
+
+test('Fe fold onset (V = −1.125 growing at +15.7 /s, V = −1.12 decaying at −12.3 /s) and verified growing mode decides unstable regardless of window', () => {
+  // 1. Fold walk: bar-tied pole probe keeps true onset mode at V = −1.125 (matches backward Euler)
+  const d1125 = new Device(feSpec({ V: -1.125 }));
+  const I1125 = d1125.solve().terminals.right.current;
+  d1125.set({ contacts: { right: { V: undefined, I: I1125 } } });
+  const sol1125 = d1125.solve();
+  const r1125 = d1125.stability({ modes: 3 });
+  assert.equal(r1125.verdict, 'unstable', `V=-1.125: ${r1125.reason}`);
+  assert.ok(Math.abs(r1125.modes[0].re - 15.709) < 0.1, `V=-1.125 mode=${r1125.modes[0].re}`);
+  // Confirm kicked backward Euler grows at the same rate
+  const V0 = sol1125.terminals.right.V;
+  const h = 3e-3;
+  d1125.set({ contacts: { right: { I: I1125 + 1e-7 } } });
+  assert.equal(d1125.step(h).converged, true);
+  d1125.set({ contacts: { right: { I: I1125 } } });
+  let prev = d1125.solution().terminals.right.V - V0, lamBE = NaN;
+  for (let i = 0; i < 60; i++) {
+    assert.equal(d1125.step(h).converged, true);
+    const dv = d1125.solution().terminals.right.V - V0;
+    lamBE = (1 - prev / dv) / h;
+    prev = dv;
+  }
+  assert.ok(Math.abs(lamBE - r1125.modes[0].re) < 0.2, `V=-1.125 lamBE=${lamBE} vs pencil=${r1125.modes[0].re}`);
+
+  // Just past the fold (V = −1.12): slowest decaying mode −12.326 /s is retained
+  const d112 = new Device(feSpec({ V: -1.12 }));
+  const I112 = d112.solve().terminals.right.current;
+  d112.set({ contacts: { right: { V: undefined, I: I112 } } });
+  d112.solve();
+  const r112 = d112.stability({ modes: 3 });
+  assert.equal(r112.verdict, 'no growing mode found', `V=-1.12: ${r112.reason}`);
+  assert.ok(Math.abs(r112.modes[0].re - -12.326) < 0.1, `V=-1.12 mode=${r112.modes[0].re}`);
+
+  // 2. Verified growing mode in modes decides 'unstable' even when Re λ > rHi
+  const dFe = new Device(feSpec({ V: -2.0 }));
+  const IFe = dFe.solve().terminals.right.current;
+  dFe.set({ contacts: { right: { V: undefined, I: IFe } } });
+  dFe.solve();
+  const r149 = dFe.stability({ shifts: [149], modes: 3 });
+  assert.equal(r149.verdict, 'unstable', `shifts=[149]: ${r149.reason}`);
+  assert.ok(r149.modes[0].re > 150 && r149.window.rHi === 149);
+});
+
+test('Slowest converged modes kept without 1e-8 residual wall and near-degenerate clusters separated with tight bars', () => {
+  // law_4, law_124, law_826: slowest modes with residual 2e-8..4e-7 must be retained
+  for (const [k, slow] of [[4, -0.00027516], [124, -0.00023234], [826, -0.0010319]]) {
+    const d = new Device(lawDevice(lawChoice(k)));
+    d.solve();
+    const r = d.stability({ modes: 3 });
+    assert.equal(r.verdict, 'no growing mode found', `law_${k}: ${r.reason}`);
+    assert.ok(Math.abs(r.modes[0].re - slow) / Math.abs(slow) < 1e-3, `law_${k} m0=${r.modes[0].re} vs ${slow}`);
+  }
+  // law_27 & law_114: near-degenerate clusters must separate cleanly instead of merging in pre-dedup
+  const d27 = new Device(lawDevice(lawChoice(27)));
+  d27.solve();
+  const r27 = d27.stability({ modes: 5 });
+  assert.ok(Math.abs(r27.modes[1].re - -0.82897003) < 1e-7, `law_27 m1=${r27.modes[1].re}`);
+  assert.ok(Math.abs(r27.modes[2].re - -0.82897180) < 1e-7, `law_27 m2=${r27.modes[2].re}`);
+
+  const d114 = new Device(lawDevice(lawChoice(114)));
+  d114.solve();
+  const r114 = d114.stability({ modes: 5 });
+  assert.ok(r114.modes.filter((m) => Math.abs(m.re - -0.692329) < 1e-4).length >= 3, 'law_114 should keep all 3 clustered modes');
+});
+
+test('Shift backward-error check shrinks contiguous rHi and failed deflation polish yields undecided', () => {
+  // law_270: inaccurate shifts at ≥ 1.5e4 fail backward-error check, shrinking contiguous rHi below 1.5e4
+  const d270 = new Device(lawDevice(lawChoice(270)));
+  d270.solve();
+  const r270 = d270.stability({ debug: true, modes: 4 });
+  assert.ok(r270.debug.inaccurateShifts.length > 0, 'law_270 should flag inaccurate shifts');
+  assert.ok(r270.window.rHi < Math.min(...r270.debug.inaccurateShifts.map((x) => x.re)), 'rHi should stay below first inaccurate shift');
+  assert.match(r270.reason, /shift\(s\) skipped/i);
+
+  // law_837 & law_867: failed left-null polish leaves undeflated zeros → undecided (never 'no growing mode found')
+  for (const k of [837, 867]) {
+    const d = new Device(lawDevice(lawChoice(k)));
+    d.solve();
+    const r = d.stability({ modes: 4 });
+    assert.equal(r.verdict, 'undecided', `law_${k}: ${r.reason}`);
+    assert.match(r.reason, /failed left-null verification/i);
+  }
+});
+
+test('Nonsense runaway states return undecided and complex-shift real modes snap tiny Im λ to 0', () => {
+  // Runaway Boltzmann concentration (K+ >> 1e15 mol/m³) returns undecided rather than a verdict
+  const dRun = new Device({
+    species: [{ name: 'K+', z: 1, cRef: 1 }, { name: 'Cl-', z: -1, cRef: 1 }],
+    materials: { aq: { epsr: 78.5, species: { 'K+': { D: 2e-9, mu0: 0 }, 'Cl-': { D: 2e-9, mu0: 0 } } } },
+    regions: [{ name: 'cell', material: 'aq', length: 1e-6, c0: { 'K+': 1, 'Cl-': 1 } }],
+    contacts: {
+      left: { V: 0, phi: 'bulk', species: { 'K+': { type: 'equilibrium', offset: 0 }, 'Cl-': { type: 'equilibrium', offset: 0 } } },
+      right: { V: 0, phi: 'bulk', species: { 'K+': { type: 'equilibrium', offset: 0 }, 'Cl-': { type: 'equilibrium', offset: 0 } } },
+    },
+    grid: { minCells: 10 },
+  });
+  dRun.solve();
+  // Push stored level into runaway Boltzmann regime (exp(90) ~ 1.2e39 mol/m³) while keeping atSteady true
+  dRun.solver.u[1] = 90;
+  const rRun = dRun.stability();
+  assert.equal(rRun.verdict, 'undecided');
+  assert.match(rRun.reason, /runaway concentration/i);
+
+  // Real mode found via complex frequency shift snaps tiny O(1e-16) imaginary part to exact 0
+  const dDiff = new Device({
+    species: [{ name: 'X', z: 0, cRef: 1 }],
+    materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
+    regions: [{ material: 'm', length: 1e-5, c0: { X: 1 } }],
+    grid: { minCells: 10, hmin: 1e-6, hmax: 1e-6 },
+  });
+  dDiff.solve();
+  const rC = dDiff.stability({ shifts: [], frequencies: [10], modes: 4 });
+  assert.equal(rC.verdict, 'no growing mode found');
+  assert.ok(rC.modes.length > 0 && rC.modes[0].im === 0, `expected exact im=0, got ${rC.modes[0]?.im}`);
+});
