@@ -608,7 +608,7 @@ function applyConstraints(s) {
 // A conserved combination's amount as the state holds it (and its reference, closed), with its
 // derivatives in cs.idx/w (and dV, by the voltage of a terminal whose electrode's charge it
 // counts).
-function lawAmount(s, cs) {
+export function lawAmount(s, cs) {
   const { n, M, c, dA: d } = s;
   const vol = s.model.grid.vol;
   let amount = 0, reference = 0, len = 0, gross = 0;

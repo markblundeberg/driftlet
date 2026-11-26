@@ -620,6 +620,24 @@ export class Device {
   }
 
   /**
+   * Linear stability of the device's current converged steady state (without re-solving, so the
+   * branch is preserved): rightmost eigenvalues of the dynamic DAE pencil −J v = λ M v, with
+   * conserved amounts deflated by projection, left-eigenvector error bars, and an honest windowed
+   * verdict.
+   * @param {{ shifts?: number[], frequencies?: number[], modes?: number, profiles?: boolean, kBar?: number, debug?: boolean }} [opts]
+   * @returns {import('./types.js').StabilityResult}
+   */
+  stability(opts) {
+    options(opts, 'stability', ['shifts', 'frequencies', 'modes', 'profiles', 'kBar', 'debug']);
+    if (!this._solver || !this._solver.atSteady || this._solver.regriddedSteady) {
+      throw new SolverError('stability: solve() first — stability() analyses the current converged steady state (preserving its branch)');
+    }
+    const steadyWarnings = makeSolution(this._solver).warnings;
+    const out = this._solver.stability(opts);
+    return { ...out, warnings: [...steadyWarnings, ...out.warnings] };
+  }
+
+  /**
    * A checkpoint of the definition and solver state, for `_rollback()` (the live wrapper keeps
    * its last good state this way).
    * @internal

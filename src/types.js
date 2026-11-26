@@ -364,4 +364,27 @@
 
 /** @typedef {{ re: Float64Array, im: Float64Array }} ComplexProfile */
 
+/**
+ * @typedef {object} StabilityMode
+ * @property {number} re real part of λ (1/s; positive grows)
+ * @property {number} im imaginary part of λ (rad/s)
+ * @property {number} residual row-scaled held-vector residual of (J + λ M) v in difference form
+ * @property {number} error first-order componentwise error bar from the left eigenvector (1/s)
+ * @property {{ phi: ComplexProfile, mu: Record<string, ComplexProfile>, c: Record<string, ComplexProfile>, termV: Record<string, { re: number, im: number }>, scaleV: number }} [profiles]
+ */
+
+/**
+ * @typedef {object} StabilityResult
+ * @property {'unstable' | 'neutral within resolution' | 'no growing mode found' | 'undecided'} verdict
+ * @property {string} reason human-readable summary of the verdict
+ * @property {number} drift max state motion (thermal units) of the un-kicked dynamic steadiness check
+ * @property {StabilityMode[]} modes rightmost verified eigenvalues, sorted by Re λ descending
+ * @property {{ kind: string, label: string, count?: number }[]} deflated exact conserved / neutral directions projected out
+ * @property {number} [rejectedSpurious] candidate Ritz pairs rejected by residual/infinity checks
+ * @property {{ attempted: { re: number, im: number }[], succeeded: { re: number, im: number }[] }} shifts
+ * @property {{ rLo: number, rHi: number, omegaHi: number } | null} window searched growth-rate and frequency window
+ * @property {string[]} warnings steady-state warnings plus any stability caveats
+ * @property {{ J: number[][], M: number[][], deflation: { label: string, vector: number[] }[], localDeflated: number, cutUsed: number[], labels: (number[] | string[])[] }} [debug]
+ */
+
 export {};

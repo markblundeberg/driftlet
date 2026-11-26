@@ -26,6 +26,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/steady.js` | yes: steady solves, their stages and continuations, the pseudo-transient ramp |
 | `src/homotopy.js` | yes: unified pseudo-arclength homotopy continuation for direct steady solves |
 | `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
+| `src/stability.js` | yes: linear stability of a converged steady state on the dynamic DAE pencil |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |

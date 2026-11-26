@@ -353,6 +353,48 @@ export class BlockTridiagonal {
   }
 
   /**
+   * Solve the transposed system Tᵀ x = rhs using the current factorisation.
+   * `rhs` and `out` are Float64Arrays of length `size`; they may be the same array.
+   */
+  solveT(rhs, out = new Float64Array(this.size)) {
+    if (!this.factored) throw new Error('BlockTridiagonal: call factor() before solveT()');
+    if (this.fromRight) {
+      const rev = this._rev, { n, offX } = this, v = (this._revVec ??= new Float64Array(this.size));
+      for (let i = 0; i < n; i++) v.set(rhs.subarray(offX[i], offX[i + 1]), rev.offX[n - 1 - i]);
+      rev.solveT(v, v);
+      for (let i = 0; i < n; i++) out.set(v.subarray(rev.offX[n - 1 - i], rev.offX[n - i]), offX[i]);
+      return out;
+    }
+    const { n, A, sizes, offA, offB, offC, offX } = this;
+    const lu = this._lu, piv = this._piv, cp = this._cp, y = this._y;
+
+    // Forward: U_blockᵀ y = rhs → y_i = rhs_i − (C'_{i−1})ᵀ y_{i−1}
+    for (let i = 0; i < n; i++) {
+      const m = sizes[i], v = offX[i];
+      if (m === 0) continue;
+      const mp = i > 0 ? sizes[i - 1] : 0, op = i > 0 ? offC[i - 1] : 0, vp = v - mp;
+      for (let r = 0; r < m; r++) {
+        let s = rhs[v + r];
+        for (let k = 0; k < mp; k++) s -= cp[op + k * m + r] * y[vp + k];
+        y[v + r] = s;
+      }
+    }
+    // Backward: L_blockᵀ out = y → out_i = W_i⁻ᵀ (y_i − A_{i+1}ᵀ out_{i+1})
+    for (let i = n - 1; i >= 0; i--) {
+      const m = sizes[i], v = offX[i];
+      if (m === 0) continue;
+      const mn = i < n - 1 ? sizes[i + 1] : 0, oa = i < n - 1 ? offA[i + 1] : 0, vn = v + m;
+      for (let r = 0; r < m; r++) {
+        let s = y[v + r];
+        for (let k = 0; k < mn; k++) s -= A[oa + k * m + r] * out[vn + k];
+        out[v + r] = s;
+      }
+      luSolveTAt(lu, offB[i], piv, v, m, out, v);
+    }
+    return out;
+  }
+
+  /**
    * After factor(): the digits lost to cancellation in the factorisation, at worst, and the block
    * where that happens. A running error bound: alongside each entry of W_i = B_i − A_i C′_{i−1}
    * and of its LU (with the same partial pivoting), the sum of the magnitudes it was formed from
@@ -499,6 +541,28 @@ function luSolveAt(a, o, piv, p, m, vec, s) {
   }
 }
 
+// Solve (P⁻¹LU)ᵀ x = b in place, b in vec[s…s+m).
+function luSolveTAt(a, o, piv, p, m, vec, s) {
+  for (let r = 0; r < m; r++) {
+    let v = vec[s + r];
+    for (let c = 0; c < r; c++) v -= a[o + c * m + r] * vec[s + c];
+    vec[s + r] = v / a[o + r * m + r];
+  }
+  for (let r = m - 2; r >= 0; r--) {
+    let v = vec[s + r];
+    for (let c = r + 1; c < m; c++) v -= a[o + c * m + r] * vec[s + c];
+    vec[s + r] = v;
+  }
+  for (let k = m - 1; k >= 0; k--) {
+    const j = piv[p + k];
+    if (j !== k) {
+      const t = vec[s + k];
+      vec[s + k] = vec[s + j];
+      vec[s + j] = t;
+    }
+  }
+}
+
 /**
  * Complex block-tridiagonal solver, for small-signal (frequency-domain) problems. Same layout
  * and algorithm as BlockTridiagonal (including per-node block sizes), with real and imaginary
@@ -608,6 +672,55 @@ export class ComplexBlockTridiagonal {
       }
     }
   }
+
+  /** Solve the algebraic transpose Tᵀ x = b; results written to outRe/outIm (allocated if omitted). */
+  solveT(bRe, bIm, outRe = new Float64Array(this.size), outIm = new Float64Array(this.size)) {
+    const { n, Ar, Ai, _lr: lr, _li: li, _cr: cr, _ci: ci, _piv: piv, _yr: yr, _yi: yi } = this;
+    const { sizes, offA, offB, offC, offX } = this;
+    for (let i = 0; i < n; i++) {
+      const m = sizes[i], v = offX[i];
+      if (m === 0) continue;
+      const mp = i > 0 ? sizes[i - 1] : 0, op = i > 0 ? offC[i - 1] : 0, vp = v - mp;
+      for (let r = 0; r < m; r++) {
+        let sr = bRe[v + r], si = bIm[v + r];
+        for (let k = 0; k < mp; k++) {
+          const pr = cr[op + k * m + r], pi = ci[op + k * m + r];
+          sr -= pr * yr[vp + k] - pi * yi[vp + k];
+          si -= pr * yi[vp + k] + pi * yr[vp + k];
+        }
+        yr[v + r] = sr;
+        yi[v + r] = si;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const m = sizes[i], v = offX[i];
+      if (m === 0) continue;
+      const mn = i < n - 1 ? sizes[i + 1] : 0, oa = i < n - 1 ? offA[i + 1] : 0, vn = v + m;
+      for (let r = 0; r < m; r++) {
+        let sr = yr[v + r], si = yi[v + r];
+        for (let k = 0; k < mn; k++) {
+          const ar = Ar[oa + k * m + r], ai = Ai[oa + k * m + r];
+          const xr = outRe[vn + k], xi = outIm[vn + k];
+          sr -= ar * xr - ai * xi;
+          si -= ar * xi + ai * xr;
+        }
+        outRe[v + r] = sr;
+        outIm[v + r] = si;
+      }
+      cluSolveT(lr, li, offB[i], piv, v, m, outRe, outIm, v);
+    }
+    return [outRe, outIm];
+  }
+
+  /** Solve the conjugate transpose Tᴴ x = b; results written to outRe/outIm (allocated if omitted). */
+  solveH(bRe, bIm, outRe = new Float64Array(this.size), outIm = new Float64Array(this.size)) {
+    const N = this.size;
+    const nIm = new Float64Array(N);
+    for (let j = 0; j < N; j++) nIm[j] = -bIm[j];
+    this.solveT(bRe, nIm, outRe, outIm);
+    for (let j = 0; j < N; j++) outIm[j] = -outIm[j];
+    return [outRe, outIm];
+  }
 }
 
 // Complex LU with partial pivoting (by modulus) of the block at o; false if singular.
@@ -683,5 +796,40 @@ function cluSolve(ar, ai, o, piv, p, m, vr, vi, s) {
     const dr = ar[o + r * m + r], di = ai[o + r * m + r], d2 = dr * dr + di * di;
     vr[s + r] = (xr * dr + xi * di) / d2;
     vi[s + r] = (xi * dr - xr * di) / d2;
+  }
+}
+
+function cluSolveT(ar, ai, o, piv, p, m, vr, vi, s) {
+  for (let r = 0; r < m; r++) {
+    let xr = vr[s + r], xi = vi[s + r];
+    for (let c = 0; c < r; c++) {
+      const ur = ar[o + c * m + r], ui = ai[o + c * m + r];
+      xr -= ur * vr[s + c] - ui * vi[s + c];
+      xi -= ur * vi[s + c] + ui * vr[s + c];
+    }
+    const dr = ar[o + r * m + r], di = ai[o + r * m + r], d2 = dr * dr + di * di;
+    vr[s + r] = (xr * dr + xi * di) / d2;
+    vi[s + r] = (xi * dr - xr * di) / d2;
+  }
+  for (let r = m - 2; r >= 0; r--) {
+    let xr = vr[s + r], xi = vi[s + r];
+    for (let c = r + 1; c < m; c++) {
+      const lr = ar[o + c * m + r], li = ai[o + c * m + r];
+      xr -= lr * vr[s + c] - li * vi[s + c];
+      xi -= lr * vi[s + c] + li * vr[s + c];
+    }
+    vr[s + r] = xr;
+    vi[s + r] = xi;
+  }
+  for (let k = m - 1; k >= 0; k--) {
+    const j = piv[p + k];
+    if (j !== k) {
+      let t = vr[s + k];
+      vr[s + k] = vr[s + j];
+      vr[s + j] = t;
+      t = vi[s + k];
+      vi[s + k] = vi[s + j];
+      vi[s + j] = t;
+    }
   }
 }
