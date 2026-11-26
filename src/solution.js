@@ -603,6 +603,13 @@ function resolutionWarnings(sol, solver) {
   // A link that carries an ion across the face by its concentrations there (a permeability, GHK;
   // a conductance; a velocity) sees the same shifted box (round 1 of Fable's review: a membrane's
   // GHK fluxes 1% off at hmin 5 nm, and worse as the grid is refined).
+  // The drop across such a cell holding a face's charge σ: σ/Cbox (0 where the cell isn't one).
+  const boxDrop = (g, h, sigma) => {
+    const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
+    if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined[g]) return 0;
+    const s2 = solver.screening(g);
+    return s2 > 0 ? Math.abs(sigma) / ((F * F * s2 * h) / (2 * RT)) : 0;
+  };
   const boxed = (g, h, phi, other, where, sigma = 0, reacting = [], crossing = []) => {
     const mat = model.materials[model.regions[grid.nodeRegion[g]].material];
     if (mat.conductor || mat.epsr !== 0 || solver.phiUndefined[g]) return;
@@ -648,6 +655,22 @@ function resolutionWarnings(sol, solver) {
     // (a side with a diffuse layer holds the face's charge there, below the grid, not in its cell)
     if (dlL < 0) boxed(gL, grid.segLength[gL - 1], itf.phi, gR, `interfaces[${f}] (left side)`, sigma, reacting(0), crossing);
     if (dlR < 0) boxed(gR, grid.segLength[gR], itf.phi, gL, `interfaces[${f}] (right side)`, sigma, reacting(1), crossing);
+    // A gated face's gates read its V, and that V includes the drop across each such cell,
+    // σ/Cbox: a voltage set by the mesh, growing as the cell shrinks. Flag it past 1% of RT/F,
+    // where an exponential rate law's shift is about as large as the reaction's above (25 Nov:
+    // space-clamped Hodgkin–Huxley's face 0.385 mV off at hmin 2 nm, its Hopf current 4.5% off).
+    if (itf.gates.length > 0) {
+      const sides = [dlL < 0 && [gL, grid.segLength[gL - 1]], dlR < 0 && [gR, grid.segLength[gR]]].filter(Boolean);
+      const drop = sides.reduce((t, [g, h]) => t + boxDrop(g, h, sigma), 0);
+      if (drop * (F / RT) > 0.01) {
+        const hs = sides.map(([, h]) => h.toExponential(2)).join(' and ');
+        sol.warnings.push(
+          `interfaces[${f}]: the gates read the face's V through the strictly neutral cell${sides.length > 1 ? 's' : ''} beside it (${hs} m), which hold${sides.length > 1 ? '' : 's'} the face's charge as a diffuse layer that wide: ` +
+            `the V they see includes a drop of ${(1e3 * drop).toPrecision(2)} mV across those cells, set by the mesh, which grows as the cell shrinks. ` +
+            'Give the face a diffuse layer below the grid (diffuse: { epsr: 78.4 }, say, for water), which holds that charge where it belongs on any grid, or coarsen those cells.',
+        );
+      }
+    }
     // A dilute (Boltzmann) layer piles counter-ions at the plane without limit; past a few molar
     // they'd have no room, and the layer's charge and capacitance are overstated.
     for (const [side, dd] of Object.entries(sol.interfaces[f].diffuse ?? {})) {

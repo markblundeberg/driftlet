@@ -304,6 +304,11 @@ A face's `gates` (each a fraction open, $`dx/dt = \alpha(V)(1 - x) - \beta(V)x`$
 scale its links (`gates: { m: 3, h: 1 }`). `hodgkinHuxley({ T, linear: true })` (kit) writes the
 squid axon's as Hodgkin and Huxley had them, conductances $`g(V - E)`$. Between two baths without a
 reference species, $`V_{\mathrm{right}} - V_{\mathrm{left}}`$ is $`V_m`$, so a held step is their voltage clamp.
+This is their model: the baths are strictly neutral, so the membrane's charge sits in the 20 nm
+cells beside it, a drop of a few hundredths of a mV that the mesh sets (finer cells make it larger,
+and the solution warns past 1% of RT/F). With `diffuse: { epsr: 78.4 }` on the face, that charge sits
+in Gouy–Chapman layers instead, the same on any grid, but $`V_m`$ then includes their drops (0.8 mV
+under 0.05 A/m²), which Hodgkin and Huxley's model doesn't have.
 
 ```js
 import { Device, FARADAY, GAS_CONSTANT } from 'driftlet';

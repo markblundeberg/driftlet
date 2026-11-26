@@ -94,20 +94,6 @@ for live demos.
 
 ## Next
 
-- **A gated face beside a strictly neutral region drifts with the mesh, unwarned** (found 25 Nov by
-  Fable's helper, reviewing the stability design; measured). Without `diffuse`, the face's charge
-  sits in the edge cell, which acts as a diffuse layer that wide (numerics.md, "Strictly neutral
-  materials and unresolved double layers"); the solution already warns where that moves a
-  reaction's concentrations or the capacitance by 2%. A face's gates read its V, and no warning
-  covers that. Space-clamped Hodgkin–Huxley at 0.05 A/m²: the face's V falls short of the
-  terminals' difference by 0.006 mV at hmin 200 nm, 0.037 at 20 nm (the template's), 0.385 at 2 nm,
-  silent, and warned only at 1 nm (0.737), by a link's check. The Hopf current moves from 9.765 to
-  9.325 µA/cm² between 125 nm cells and 2 nm. With `diffuse: { epsr: 78.4 }` it's grid-independent,
-  −62.113 mV at every hmin, the face 0.79 mV short: the diffuse layers' own drop, physical, and
-  outside Hodgkin and Huxley's model. To do: a warning for gates read through the edge cell
-  (their V's shift against what moves them, a thermal voltage, say); the templates to say which
-  model they mean (coarse cells, or `diffuse`). Repro: ~/.cache/driftlet-claude/hh-edge/grid2.mjs.
-
 0. **One owner for strictly neutral charge (the next design piece).** A strictly neutral node is
    an index-1 DAE: its balances with an algebraic G(u) = 0, ions plus fixed charge plus a port's
    spread charge plus what its box holds of a face's or contact's D. That G is assembled in

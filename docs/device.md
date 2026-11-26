@@ -301,7 +301,10 @@ silently), so give the face a `dipole` or `step` where that isn't meant.
   holding the charge shifts by about $`z\sigma F/(C_{\mathrm{cell}} RT)`$ for an ion of charge $`z`$: a
   Frumkin effect set by the mesh, which doesn't settle as the cell shrinks (an electrode's DC
   resistance in ferri/ferrocyanide went from 56.6 to 47.4 Ω·cm² between 300 nm and 1 nm, the
-  real one being 46.4). A warning says past 1%. A diffuse layer (next) puts that charge where it
+  real one being 46.4). A warning says past 1%. A gated face's gates read its V, which includes
+  that cell's drop, $`\sigma/C_{\mathrm{cell}}`$ on each such side: space-clamped Hodgkin–Huxley under
+  0.05 A/m² had its face 0.037 mV short of the terminals' difference at hmin 20 nm and 0.39 mV at
+  2 nm, which moved its Hopf current by 4.5%. A warning says past 1% of $`RT/F`$. A diffuse layer (next) puts that charge where it
   belongs, on any grid; a `zeroCharge` near the face's rest potential, so it holds little charge,
   avoids the question.
 

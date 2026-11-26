@@ -5,6 +5,13 @@ major version.
 
 ## Unreleased
 
+- A gated face beside a strictly neutral region now says when its gates read a V the mesh sets.
+  The face's charge sits in the cell beside it, which acts as a diffuse layer that wide, and the
+  gates read the face's V across it. Finer cells make the drop larger. Space-clamped Hodgkin–Huxley
+  under 0.05 A/m² was 0.037 mV off at hmin 20 nm and 0.39 mV at 2 nm, which moved its Hopf current by
+  4.5%, with no warning until 1 nm. The solution now warns past 1% of RT/F, giving the drop (0.39 mV
+  said, 0.386 mV measured), and suggests `diffuse: { epsr }`. The voltage-clamp template says which
+  model it means. Found by Fable while reviewing the stability design.
 - The cold start, where every new device begins and a transient's t = 0, now finds what holds each
   region's potential first and lays the rest out from there, outward, instead of sweeping left to
   right. The anchors are, in order: a responding region's neutrality, a held gate over a strictly

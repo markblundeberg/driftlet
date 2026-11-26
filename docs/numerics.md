@@ -1249,7 +1249,10 @@ and $`D_f`$ become mesh-dependent. The true $`\varepsilon \to 0`$ limit has no i
 free Donnan-type jump, which is the `neutral` law. The defaults follow from this: `neutral`
 between two $`\varepsilon = 0`$ materials, `pinned` otherwise (and `pinned` between two
 $`\varepsilon = 0`$ materials is an error: with no field on either side, nothing would determine its
-charge). Solutions warn when a resolved-model double layer is under-resolved.
+charge). Solutions warn when a resolved-model double layer is under-resolved, and, beside a
+capacitive face, where the edge cell holding its charge (a diffuse layer as wide as its box) costs
+the capacitance 2%, shifts a reacting or crossing ion there by 1%, or puts 1% of $`RT/F`$ into the V
+a gated face's gates read ([device.md](device.md), the capacitive law).
 
 On a transient step, strictly neutral nodes are solved in better-conditioned terms. There, a
 change of $`\hat\phi`$ with every $`\eta_i`$ shifted by $`z_i`$ times it leaves every concentration as it
@@ -1278,9 +1281,9 @@ charge is in the box's neutrality there, so the ions' storage is its charging, w
 passes, and the current is read with it. Steady solves and the impedance keep the plain rows (there's no
 storage at $`dt = \infty`$, and the impedance reads the storage matrix from them).
 
-A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when $`\lambda_D \ll h`$, is on
-the [roadmap](../ROADMAP.md). It would handle macroscopic devices with real double-layer charge at
-any grid, and tends to `neutral` as $`\varepsilon \to 0`$.
+A sub-grid Gouy–Chapman law, treating the diffuse layers analytically when $`\lambda_D \ll h`$, is a
+face's `diffuse: { epsr }` ([device.md](device.md)). It handles macroscopic devices with real
+double-layer charge at any grid.
 
 At an $`\varepsilon = 0`$ | $`\varepsilon > 0`$ face, the neutral side's boundary half-box holds the
 face's charge. That slightly perturbs the carrier density there, by an amount that depends on the

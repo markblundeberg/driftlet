@@ -239,6 +239,37 @@ test('ε = 0: an initial composition that carries net charge, with nothing to ne
   assert.ok(new Device(def(100)).solve().converged);
 });
 
+test("ε = 0 beside a gated face: the gates read its V through the edge cells, whose drop the mesh sets, and that's flagged", async () => {
+  // Space-clamped Hodgkin–Huxley between two baths under a held current: the face's charge sits in
+  // the neutral cell on each side, each a diffuse layer as wide as its box, so the face's V falls
+  // short of the terminals' difference by σ/Cbox per side, growing as the cells shrink (0.037 mV at
+  // hmin 20 nm, 0.39 at 2 nm). Past 1% of RT/F it's flagged, with the drop; a sub-grid diffuse
+  // layer holds the charge where it belongs, unflagged.
+  const { build, layer, bath, aqueous, hodgkinHuxley } = await import('../src/kit.js');
+  const T = 279.45, vt = (GAS_CONSTANT * T) / FARADAY;
+  const inside = { 'Na+': 50, 'K+': 400, 'Cl-': 40, 'A-': 410 };
+  const out = { 'Na+': 50 * Math.exp(0.05 / vt), 'K+': 400 * Math.exp(-0.077 / vt), 'Cl-': 40 * Math.exp(0.054387 / vt) };
+  out['A-'] = out['Na+'] + out['K+'] - out['Cl-'];
+  const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T });
+  water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+  water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+  const hh = hodgkinHuxley({ T, linear: true });
+  const run = (hmin, diffuse) => {
+    const face = { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' }, ...(diffuse ? { diffuse } : {}) };
+    const sol = new Device(build({ T, library: [water], stack: [bath(out, 0), layer('water', 1e-6, { c0: out }), face, layer('water', 1e-6, { c0: inside }), bath(inside, { I: 0.05 })], grid: { hmin, hmax: 2e-7 } })).solve();
+    assert.ok(sol.converged);
+    const gap = sol.interfaces[0].V - (sol.terminals.right.V - sol.terminals.left.V);
+    const said = sol.warnings.filter((w) => /interfaces\[0\]: the gates read the face's V/.test(w));
+    return { gap, said };
+  };
+  const fine = run(2e-9);
+  assert.equal(fine.said.length, 1, 'flagged at hmin 2 nm');
+  const mV = Number(fine.said[0].match(/includes a drop of ([\d.e+-]+) mV/)[1]);
+  assert.ok(Math.abs(mV / (1e3 * fine.gap) - 1) < 0.03, `the drop said, ${mV} mV, against the face's measured shortfall ${1e3 * fine.gap} mV`);
+  assert.equal(run(2e-8).said.length, 0, 'not at 20 nm (0.037 mV)');
+  assert.equal(run(2e-9, { epsr: 78.4 }).said.length, 0, 'not with a sub-grid diffuse layer');
+});
+
 test('ε = 0 beside a capacitive face: the edge cell holding its charge acts as a diffuse layer that wide, and is flagged where it lowers C', async () => {
   // At the point of zero charge, the cell beside the face is a diffuse layer of width h/2 (its
   // box): F²Σz²c·h/(2RT) in series with C. Fine cells make it small, so the measured capacitance
