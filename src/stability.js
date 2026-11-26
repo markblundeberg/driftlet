@@ -52,18 +52,18 @@
 //
 // Precondition: the solver must hold a converged, un-regridded steady state (atSteady &&
 // !regriddedSteady), else SolverError. Before solving the pencil, we reject non-finite or
-// overflowed states (runaway ion/neutral concentrations > 1e15 mol/m³ or |u| > 1e12) and states
-// with stuckReactions() left out of equilibrium. On the assembled cut-current dynamic pencil
-// (frozen at this.time, never mutating time-stepper state), we check (a) row-scaled dynamic
-// residual ≤ 1e-6 and (b) the linearised backward-Euler step δ = (J + σ M)⁻¹ F (verified for
-// backward error, projected onto the conserved hyperplane, measured in thermal units via
-// maxPotentialStep) at solve()'s own giant-step rate σ = 1/(1e6·τ_slow) (tested at two
-// non-resonant rates σ and 1.7 σ): if drift ≥ 1e-5 thermal units, verdict is 'undecided'.
+// overflowed states (any species concentration > 1e15 mol/m³ or |u| > 1e12) and states with
+// stuckReactions() left out of equilibrium. On the assembled cut-current dynamic pencil (frozen
+// at this.time, never mutating time-stepper state), we check (a) row-scaled dynamic residual
+// ≤ 1e-6 and (b) the linearised backward-Euler step δ = (J + σ M)⁻¹ F (verified for backward
+// error, projected onto the conserved hyperplane, measured in thermal units via maxPotentialStep)
+// at solve()'s own giant-step rate σ = 1/(1e6·τ_slow) (tested at two non-resonant rates σ and
+// 1.7 σ): if drift ≥ 1e-5 thermal units, verdict is 'undecided'.
 //
 // Shift accuracy: every shifted factorisation (real or complex) is checked with one forward and
 // one transposed/Hermitian solve on b = M·y_seed and its difference-form residual; shifts whose
-// row-scaled backward error exceeds 1e-3 fail, shrinking the searched window and qualifying the
-// reason.
+// row-scaled backward error exceeds 1e-3 fail, shrinking the contiguous searched window rHi and
+// qualifying the reason.
 //
 // Deflation: every global conserved combination in constraints (whose terminals are I-driven) and
 // every I-driven chargeOnly terminal (seeded from raw contact storage before cut replacement) is
@@ -73,34 +73,31 @@
 // Any failed polish leaves undeflated neutral directions and qualifies a non-unstable verdict as
 // 'undecided' (just like unkept).
 //
-// Refinement, anti-ghost verification, residuals, error bars, and deduplication:
+// Refinement, residuals, error bars, and deduplication:
 //   - Each Ritz candidate must lie within a Meerbergen–Roose trust region of the shift that found
 //     it (|λ − σ| ≤ 25 |σ|). Pre-deduplication checks eigenvector collinearity so near-degenerate
 //     partners survive to refinement.
 //   - Scale-invariant iterative two-sided inverse iteration (adaptive shift bump, up to 5
 //     re-centered passes, always updating from the two-sided Rayleigh quotient — never returning
-//     a vacuous Δλ = 0) gates on convergence (|Δλ| ≤ 1e-4 |λ|, or for near-zero modes
-//     |λ| ≤ kBar·error with |Δλ| ≤ 0.5·error and error well below shift scale), not on a fixed
-//     1e-8 residual wall.
-//   - Resolved non-zero growing / far-from-shift / looser-residual candidates pass a bar-tied pole
-//     check at offset δ = max(1e-3 |λ|, 30·error) radially outward: one solve u = (J + s_p M)⁻¹ M v
-//     must reproduce v / (s_p − λ).
-//   - Each accepted mode reports a rounding + gap-aware two-sided error bar:
-//       error = ε·|w|ᴴ (|J| + |λ||M|) |v| / |wᴴ M v| + min(e_R, ρ_L·e_R·max(1, |λ|/g))
-//     where e_R = |w|ᴴ|r_R|/|wᴴMv|, ρ_L is the relative left residual, and g is the gap to the
-//     nearest other mode.
+//     a vacuous Δλ = 0) accepts resolved non-zero modes (|Δλ| ≤ 1e-4 |λ|) and near-zero/fold
+//     modes (|λ| ≤ shiftScale, |Δλ| ≤ 0.5·shiftScale, error ≤ shiftScale), with a 1e-2 residual
+//     sanity ceiling.
+//   - Each accepted mode reports a rounding + second-order residual error bar:
+//       error = (ε·|w|ᴴ (|J| + |λ||M|) |v| + ρ_L·|w|ᴴ|r_R|) / |wᴴ M v|
+//     (floored by |Δλ| on near-zero/fold modes where refinement is still taking finite steps).
 //   - Duplicates are merged only by eigenvalue proximity within bars AND biorthogonality
 //     (w₁ᴴ M v₂ ≠ 0), never merging growing with decaying modes.
 //
-// Verdict (never bare 'stable', and a filter never silently drops a converged growing candidate):
+// Verdict (never bare 'stable', and no gate silently drops a non-ghost growing candidate):
 //   'unstable'                 any verified mode in modes has Re λ > kBar · error (whatever rHi);
-//   'undecided'                precondition failed, no accurate shift factored, a converged
-//                              growing candidate was rejected by any gate (named with λ and rule),
-//                              unkept or failed-polish conserved directions remain undeflated, or
-//                              rLo ≥ rHi;
-//   'neutral within resolution' no growing mode, and a verified mode has |Re λ| ≤ kBar · error;
+//   'undecided'                precondition failed, no accurate shift factored, any rejected
+//                              positive candidate is not a provable ghost (i.e. |Δλ| < 0.5|λ| and
+//                              error < |λ|), unkept or failed-polish conserved directions remain,
+//                              no contiguous real window was searched (rHi === 0), or rLo ≥ rHi;
+//   'neutral within resolution' no growing mode, and a rightmost mode has |Re λ| ≤ kBar · error;
 //   'no growing mode found'    all verified modes have Re λ < −kBar · error, qualified by
-//                              { rLo, rHi, omegaHi } (and noting any skipped inaccurate shifts).
+//                              { rLo, rHi, omegaHi } (with rLo floored by the lowest shift's
+//                              backward error and any rejected near-zero candidate's bar).
 //
 // Invariants:
 //   1. Completely non-destructive: STATE, LEARNED, allTerminals, steady, lawForm, sourceBefore,
@@ -1829,49 +1826,9 @@ function shiftBackwardError(pencil, fac, sr, si = 0) {
   return Math.max(bErrF, bErrH);
 }
 
-// Bar-tied pole check: for a true finite eigenvalue λ with eigenvector v,
-// (J + s_p M)⁻¹ M v = v / (s_p − λ). Placing the probe radially outward by
-// δ = max(1e-3 |λ|, 30·error) keeps s_p well outside λ's own uncertainty bar (critical near folds
-// where error can exceed 1e-3 |λ|), while still separating true finite poles from infinite ghosts.
-function verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, mvr, mvi, error) {
-  const lamMag = Math.hypot(lamRe, lamIm);
-  if (!(lamMag > 0)) return true;
-  const delta = Math.max(1e-3 * lamMag, 30 * (Number.isFinite(error) ? error : 0));
-  const scale = 1 + delta / lamMag;
-  const sRe = lamRe * scale, sIm = lamIm * scale;
-  const dRe = sRe - lamRe, dIm = sIm - lamIm;
-  const { N } = pencil;
-  let ur, ui;
-  if (isReal) {
-    const fac = factorRealShift(pencil, sRe);
-    if (!fac) return false;
-    ur = fac.solve(mvr);
-    ui = new Float64Array(N);
-  } else {
-    const fac = factorComplexShift(pencil, sRe, sIm);
-    if (!fac) return false;
-    [ur, ui] = fac.solve(mvr, mvi);
-  }
-  let diff2 = 0, v2 = 0, dotR = 0, dotI = 0;
-  for (let j = 0; j < N; j++) {
-    const suR = dRe * ur[j] - dIm * ui[j] - vr[j];
-    const suI = dRe * ui[j] + dIm * ur[j] - vi[j];
-    diff2 += suR * suR + suI * suI;
-    v2 += vr[j] * vr[j] + vi[j] * vi[j];
-    dotR += vr[j] * ur[j] + vi[j] * ui[j];
-    dotI += vr[j] * ui[j] - vi[j] * ur[j];
-  }
-  if (!(v2 > 0)) return false;
-  const vecErr = Math.sqrt(diff2 / v2);
-  if (!(vecErr <= 0.25)) return false;
-  const muMag = Math.hypot(dotR, dotI) / v2;
-  if (!(muMag > 0)) return false;
-  const [invR, invI] = cdiv(v2, 0, dotR, dotI);
-  const jump = Math.hypot(sRe - invR - lamRe, sIm - invI - lamIm);
-  return jump <= Math.max(1e-2 * lamMag, 0.2 * delta);
-}
+const RES_MAX = 1e-2;
 
-function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
+function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
   const { N, mulM, mulMT, absMulJM } = pencil;
   const invScale = Float64Array.from(coordScale, (v) => 1 / v);
   const vr = new Float64Array(N), vi = new Float64Array(N);
@@ -1879,7 +1836,7 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
   let lamRe = cand.re, lamIm = cand.im;
   let isReal = Math.abs(lamIm) <= 1e-10 * Math.abs(lamRe);
   if (isReal) { lamIm = 0; vi.fill(0); }
-  if (!normalizeComplex(vr, vi)) return { ok: false, converged: false, rule: 'zeroVec', re: lamRe, im: lamIm, residual: Infinity, error: Infinity };
+  if (!normalizeComplex(vr, vi)) return { ok: false, rule: 'zeroVec', re: lamRe, im: lamIm, lastStep: Infinity, residual: Infinity, error: Infinity };
 
   const wr = new Float64Array(N), wi = new Float64Array(N);
 
@@ -1955,7 +1912,7 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
   // Iterative re-centered two-sided refinement until λ stops moving (up to 5 passes), shrinking
   // the relative shift bump adaptively so near-degenerate pairs separate cleanly.
   let best = twoSidedPass(lamRe, lamIm, 1e-6);
-  if (!best) return { ok: false, converged: false, rule: 'factorFailed', re: lamRe, im: lamIm, residual: Infinity, error: Infinity };
+  if (!best) return { ok: false, rule: 'factorFailed', re: lamRe, im: lamIm, lastStep: Infinity, residual: Infinity, error: Infinity };
   let lastStep = Math.hypot(best.re - lamRe, best.im - lamIm);
   let bestVr = vr.slice(), bestVi = vi.slice(), bestWr = wr.slice(), bestWi = wi.slice();
   for (let pass = 1; pass < 5; pass++) {
@@ -1984,12 +1941,8 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
   const { check, denAbs } = best;
   const lamMag = Math.hypot(lamRe, lamIm);
 
-  // Componentwise rounding and two-sided residual error-bar quantities:
-  //   errRound = ε · |w|ᴴ (|J| + |λ| |M|) |v| / |wᴴ M v|
-  //   errResR  = |w|ᴴ |r_R| / |wᴴ M v|
-  //   errResL  = |r_L|ᴴ |v| / |wᴴ M v|
-  // The gap-aware second-order term min(max(errResR, errResL), errResL·errResR / g) is added
-  // post-refinement once all distinct modes and their spectral gaps g are known.
+  // Componentwise rounding + second-order residual error bar:
+  //   error = (ε · |w|ᴴ (|J| + |λ| |M|) |v| + ρ_L · |w|ᴴ |r_R|) / |wᴴ M v|
   const absV = new Float64Array(N), absW = new Float64Array(N), absJMv = new Float64Array(N);
   for (let j = 0; j < N; j++) { absV[j] = Math.hypot(vr[j], vi[j]); absW[j] = Math.hypot(wr[j], wi[j]); }
   absMulJM(absV, lamMag, absJMv);
@@ -1998,14 +1951,13 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
   const jtwi = isReal ? new Float64Array(N) : pencil.mulJT(wi, new Float64Array(N));
   const mtwi = isReal ? new Float64Array(N) : pencil.mulMT(wi, new Float64Array(N));
   const absJMTw = pencil.absMulJMT(absW, lamMag, new Float64Array(N));
-  let maxRL = 0, maxAbsL = 0, numResL = 0;
+  let maxRL = 0, maxAbsL = 0;
   for (let j = 0; j < N; j++) {
     const lrr = jtwr[j] + lamRe * mtwr[j] + lamIm * mtwi[j];
     const lri = jtwi[j] + lamRe * mtwi[j] - lamIm * mtwr[j];
     const a = Math.hypot(lrr, lri);
     if (a > maxRL) maxRL = a;
     if (absJMTw[j] > maxAbsL) maxAbsL = absJMTw[j];
-    numResL += a * absV[j];
   }
   const rhoL = maxAbsL > 0 ? Math.min(1, maxRL / maxAbsL) : 1;
 
@@ -2015,44 +1967,29 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale, kBar) {
     numRound += wj * absJMv[j];
     numResR += wj * Math.hypot(check.rrArr[j], check.riArr[j]);
   }
-  const errRound = (EPS * numRound) / denAbs;
-  const errResR = numResR / denAbs;
-  const errResL = numResL / denAbs;
-  const error = errRound + rhoL * errResR;
-  if (!Number.isFinite(error)) {
-    return { ok: false, converged: false, rule: 'nonFiniteError', re: lamRe, im: lamIm, residual: check.residual, error: Infinity };
+  const baseError = (EPS * numRound + rhoL * numResR) / denAbs;
+  if (!Number.isFinite(baseError)) {
+    return { ok: false, rule: 'nonFiniteError', re: lamRe, im: lamIm, lastStep, residual: check.residual, error: Infinity };
   }
 
-  // Convergence gate (scale-invariant): accepts both resolved non-zero modes (|Δλ| ≤ 1e-4 |λ|)
-  // and genuine neutral/zero modes (|λ| ≤ kBar·error, |Δλ| ≤ 0.5·error, error well below slow shift).
+  // Convergence gate (scale-invariant):
+  //   - Resolved non-zero mode: |Δλ| ≤ 1e-4 |λ|
+  //   - Near-zero / fold mode:  |λ| ≤ shiftScale, |Δλ| ≤ 0.5·shiftScale, error ≤ shiftScale
+  //     (absolute convergence against the slow shift σ, since relative |Δλ|/|λ| diverges at λ = 0).
   const convergedResolved = lamMag > 0 && lastStep <= 1e-4 * lamMag;
-  const convergedNeutral = lamMag <= kBar * error && lastStep <= 0.5 * error && error <= 0.1 * shiftScale;
+  const convergedNeutral = lamMag <= shiftScale && lastStep <= 0.5 * shiftScale && baseError <= shiftScale;
+  const error = convergedResolved ? baseError : Math.max(baseError, lastStep);
   if (!convergedResolved && !convergedNeutral) {
-    return { ok: false, converged: false, rule: 'notConverged', re: lamRe, im: lamIm, residual: check.residual, error };
+    return { ok: false, rule: 'notConverged', re: lamRe, im: lamIm, lastStep, residual: check.residual, error: baseError };
   }
 
-  // Residual sanity ceiling (tied to the shift's measured backward error, never a tight 1e-8 wall).
-  const resCeiling = Math.min(1e-2, Math.max(1e-3, 100 * (cand.shiftBErr || 0)));
-  if (!Number.isFinite(check.residual) || check.residual > resCeiling) {
-    return { ok: false, converged: true, rule: 'residual', re: lamRe, im: lamIm, residual: check.residual, error };
-  }
-
-  // A fast mode far from 0 whose error bar exceeds half its own |λ| has collapsed |wᴴ M v|
-  // (a near-infinite DAE mode, not a resolved finite eigenvalue); slow/neutral modes near 0 keep
-  // their error bars so genuinely neutral directions report 'neutral within resolution'.
-  if (lamMag > 100 * shiftScale && error > 0.5 * lamMag) {
-    return { ok: false, converged: true, rule: 'collapsed', re: lamRe, im: lamIm, residual: check.residual, error };
-  }
-
-  // Bar-tied pole verification on resolved non-zero growing, far-from-shift, or looser-residual modes.
-  if (lamMag > kBar * error && (lamRe > 0 || lamMag > 2 * cand.shiftMag || check.residual > 1e-9)) {
-    if (!verifyPole(pencil, isReal, lamRe, lamIm, vr, vi, check.mvr, check.mvi, error)) {
-      return { ok: false, converged: true, rule: 'pole', re: lamRe, im: lamIm, residual: check.residual, error };
-    }
+  // Residual sanity ceiling (single constant 1e-2).
+  if (!Number.isFinite(check.residual) || check.residual > RES_MAX) {
+    return { ok: false, rule: 'residual', re: lamRe, im: lamIm, lastStep, residual: check.residual, error };
   }
 
   return {
-    ok: true, re: lamRe, im: lamIm, residual: check.residual, error, errRound, errResR, errResL, rhoL,
+    ok: true, re: lamRe, im: lamIm, residual: check.residual, error,
     vr, vi, wr, wi, mvr: check.mvr, mvi: check.mvi, denAbs,
   };
 }
@@ -2149,12 +2086,11 @@ function checkDynamicSteady(s, pencil, deflation, coordScale) {
       if (!Number.isFinite(cv)) {
         return { ok: false, drift: Infinity, reason: `non-finite concentration for ${s.model.species[i].name}` };
       }
-      const nm = s.model.species[i].name;
-      if (nm !== 'e-' && nm !== 'h+' && cv > 1e15) {
+      if (cv > 1e15) {
         return {
           ok: false,
           drift: Infinity,
-          reason: `unphysical runaway concentration (${nm} reaches ${cv.toExponential(2)} mol/m³); not a trustworthy steady state`,
+          reason: `unphysical runaway concentration (${s.model.species[i].name} reaches ${cv.toExponential(2)} mol/m³); not a trustworthy steady state`,
         };
       }
     }
@@ -2366,6 +2302,7 @@ export class Stability {
       const TRUST = 25;
 
       const xTmp = new Float64Array(N), mxTmp = new Float64Array(N), solTmp = new Float64Array(N);
+      let lowestRealShift = Infinity, lowestRealBErr = 0;
       for (const sigma of realShifts) {
         attempted.push({ re: sigma, im: 0 });
         const fac = factorRealShift(pencil, sigma, true);
@@ -2376,6 +2313,7 @@ export class Stability {
           continue;
         }
         succeeded.push({ re: sigma, im: 0 });
+        if (sigma < lowestRealShift) { lowestRealShift = sigma; lowestRealBErr = bErr; }
         const op = (y) => {
           for (let j = 0; j < N; j++) xTmp[j] = y[j] * invScale[j];
           pencil.mulM(xTmp, mxTmp);
@@ -2509,6 +2447,7 @@ export class Stability {
 
       const refined = [];
       const rejectedGrowing = [];
+      let rejectedNearZeroBar = 0;
       let acceptedSlots = 0;
       const targetSlots = Math.max(nWant + 4, 12);
       const maxAttempts = Math.min(uniqueCands.length, Math.max(nWant * 12, 160));
@@ -2519,14 +2458,23 @@ export class Stability {
           for (const u of refined) if (u.re < worst) worst = u.re;
           if (uniqueCands[i].re < worst - Math.abs(worst) * 1e-2) break;
         }
-        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i], shiftScale, kBar);
+        const res = refineAndBound(pencil, deflation, coordScale, uniqueCands[i], shiftScale);
         if (!res.ok) {
           rejectedSpurious++;
-          // Core safety rule: a converged growing candidate (Re λ above its own error bar)
-          // rejected by any filter is NEVER silently dropped — record it so the verdict becomes
-          // 'undecided' if no verified growing mode is found.
-          if (res.converged && res.re > res.error) {
+          const resMag = Math.hypot(res.re, res.im);
+          // Core safety rule covering ALL gates (convergence + residual alike): a rejected positive
+          // candidate may be discarded silently ONLY if it is a provable non-eigenvalue ghost —
+          // either its final Rayleigh-quotient jump is ≥ 50% of |λ| (unsettled iterate) or its
+          // own error bar is ≥ |λ| (collapsed |wᴴ M v|). Any other rejected Re λ > 0 candidate
+          // forces verdict = 'undecided', naming λ and the rejecting rule.
+          const isGhost = !(res.lastStep < 0.5 * resMag && res.error < resMag);
+          if (res.re > 0 && !isGhost) {
             rejectedGrowing.push({ re: res.re, im: res.im, residual: res.residual, error: res.error, rule: res.rule });
+          }
+          // Record the uncertainty bar of any non-collapsed rejected candidate near zero into rLo.
+          if (resMag <= shiftScale && res.lastStep < 0.5 * shiftScale && res.error <= shiftScale) {
+            const bar = kBar * Math.max(res.error, res.lastStep);
+            if (bar > rejectedNearZeroBar) rejectedNearZeroBar = bar;
           }
           continue;
         }
@@ -2551,32 +2499,6 @@ export class Stability {
         }
       }
       if (debugData) debugData.rejectedGrowing = rejectedGrowing;
-
-      // Post-refinement gap-aware error bars for near-degenerate pairs / clusters:
-      // for each mode i, with gap g_i to the nearest other verified mode j ≠ i, the two-sided
-      // Rayleigh-quotient residual error widens by max(1, |λ_i| / g_i) (bounded by first-order e_R).
-      for (let i = 0; i < refined.length; i++) {
-        const mi = refined[i];
-        const lamMag = Math.hypot(mi.re, mi.im);
-        let gap = mi.im !== 0 ? 2 * Math.abs(mi.im) : Infinity;
-        for (let j = 0; j < refined.length; j++) {
-          if (j === i) continue;
-          const mj = refined[j];
-          const d1 = Math.hypot(mi.re - mj.re, mi.im - mj.im);
-          if (d1 < gap) gap = d1;
-          if (mj.im !== 0) {
-            const d2 = Math.hypot(mi.re - mj.re, mi.im + mj.im);
-            if (d2 < gap) gap = d2;
-          }
-        }
-        let gapErr = mi.rhoL * mi.errResR;
-        if (Number.isFinite(gap) && gap > 0) {
-          gapErr = Math.min(mi.errResR, mi.rhoL * mi.errResR * Math.max(1, lamMag / gap));
-        } else if (gap === 0) {
-          gapErr = mi.errResR;
-        }
-        mi.error = Math.max(mi.error, mi.errRound + gapErr);
-      }
 
       // Expand complex conjugate pairs (re ± i im), sorted rightmost first.
       refined.sort((a, b) => b.re - a.re || Math.abs(a.im) - Math.abs(b.im));
@@ -2605,9 +2527,10 @@ export class Stability {
 
       // 6. Compute honest window and verdict.
       //    - Any verified growing mode in allModes makes the verdict 'unstable', whatever rHi.
-      //    - Any converged growing candidate rejected by a filter makes a non-unstable verdict
+      //    - Any non-ghost positive candidate rejected by any gate makes a non-unstable verdict
       //      'undecided', naming the candidate and rule.
-      //    - Window { rLo, rHi, omegaHi } qualifies 'no growing mode found'.
+      //    - Empty/degenerate real window (rHi === 0 or rLo ≥ rHi) gives 'undecided'.
+      //    - rLo includes the lowest accepted shift's backward error and any rejected near-zero bar.
       const inWindow = allModes.filter((m) => m.re <= rSearch);
       let rLo;
       if (inWindow.length > 0) {
@@ -2619,10 +2542,15 @@ export class Stability {
       } else {
         rLo = EPS * Math.max(rSearch, shiftScale);
       }
+      if (Number.isFinite(lowestRealShift)) rLo = Math.max(rLo, lowestRealBErr * lowestRealShift);
+      if (rejectedNearZeroBar > 0) rLo = Math.max(rLo, rejectedNearZeroBar);
       const window = { rLo, rHi, omegaHi: maxOmega };
 
       const growing = allModes.find((m) => m.re > kBar * m.error);
-      const neutral = allModes.find((m) => Math.abs(m.re) <= kBar * m.error);
+      let minAbsReAll = Infinity;
+      for (const m of allModes) { const a = Math.abs(m.re); if (a < minAbsReAll) minAbsReAll = a; }
+      const neutralPool = allModes.filter((m) => Math.abs(m.re) <= Math.max(10 * minAbsReAll, shiftScale));
+      const neutral = neutralPool.find((m) => Math.abs(m.re) <= kBar * m.error);
       const skipNote = inaccurateShifts.length > 0
         ? `; ${inaccurateShifts.length} shift(s) skipped (backward error up to ${Math.max(...inaccurateShifts.map((x) => x.backwardError)).toExponential(1)})`
         : '';
@@ -2644,10 +2572,12 @@ export class Stability {
       } else if (deflation.failedPolish.length > 0) {
         verdict = 'undecided';
         reason = `${deflation.failedPolish.length} conserved direction(s) failed left-null verification (${deflation.failedPolish[0]}); undeflated neutral directions remain in the pencil`;
-      } else if (realShifts.length > 0 && contigReal.length === 0 && maxOmega === 0) {
+      } else if (!(rHi > 0)) {
         verdict = 'undecided';
-        reason = `lowest shifted factorisation failed backward-error check (no contiguous accurate window)${skipNote}`;
-      } else if (rHi > 0 && rLo >= rHi) {
+        reason = realShifts.length === 0
+          ? `no real shifts were searched (frequencies only, |Im λ| ≤ ${maxOmega.toPrecision(3)} rad/s); cannot rule out real growing modes`
+          : `lowest shifted factorisation failed backward-error check (no contiguous accurate window)${skipNote}`;
+      } else if (rLo >= rHi) {
         verdict = 'undecided';
         reason = `resolution floor (${rLo.toPrecision(2)} /s) exceeds the searched window rHi (${rHi.toPrecision(2)} /s)${skipNote}`;
       } else if (neutral) {

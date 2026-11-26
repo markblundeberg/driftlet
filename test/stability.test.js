@@ -891,7 +891,8 @@ test('Nonsense runaway states return undecided and complex-shift real modes snap
   assert.equal(rRun.verdict, 'undecided');
   assert.match(rRun.reason, /runaway concentration/i);
 
-  // Real mode found via complex frequency shift snaps tiny O(1e-16) imaginary part to exact 0
+  // Frequency-only call (rHi === 0) without a growing mode must return 'undecided' (never 'no growing mode found' with empty [rLo, 0] window),
+  // while still snapping tiny O(1e-16) imaginary parts of real modes to exact 0.
   const dDiff = new Device({
     species: [{ name: 'X', z: 0, cRef: 1 }],
     materials: { m: { epsr: 0, species: { X: { D: 1e-9, mu0: 0 } } } },
@@ -900,6 +901,40 @@ test('Nonsense runaway states return undecided and complex-shift real modes snap
   });
   dDiff.solve();
   const rC = dDiff.stability({ shifts: [], frequencies: [10], modes: 4 });
-  assert.equal(rC.verdict, 'no growing mode found');
+  assert.equal(rC.verdict, 'undecided');
+  assert.match(rC.reason, /no real shifts/i);
   assert.ok(rC.modes.length > 0 && rC.modes[0].im === 0, `expected exact im=0, got ${rC.modes[0]?.im}`);
+
+  const dFe = new Device(feSpec({ V: -2.0 }));
+  const IFe = dFe.solve().terminals.right.current;
+  dFe.set({ contacts: { right: { V: undefined, I: IFe } } });
+  dFe.solve();
+  const rFeFreq = dFe.stability({ shifts: [], frequencies: [1000] });
+  assert.equal(rFeFreq.verdict, 'undecided', `Fe freq-only: ${rFeFreq.reason}`);
+  assert.equal(rFeFreq.window.rHi, 0);
+});
+
+test('Fe fold fine crossing scan (V = −1.12260 to −1.12180): never no growing mode found on the growing side', () => {
+  // Walk right through the fold crossing at V ≈ −1.12215740 (every state on the growing side
+  // must be 'unstable', 'neutral within resolution', or 'undecided', never 'no growing mode found').
+  const vs = [
+    -1.12260, -1.12250, -1.12240, -1.12230, -1.12224, -1.12223, -1.12222,
+    -1.12221, -1.12220, -1.12219, -1.12218, -1.12217, -1.12216, -1.122158,
+    -1.122157, -1.12215, -1.12210, -1.12190, -1.12180,
+  ];
+  let sawUnstable = false, sawNeutral = false, sawNoGrowing = false;
+  for (const V of vs) {
+    const d = new Device(feSpec({ V }));
+    const I = d.solve().terminals.right.current;
+    d.set({ contacts: { right: { V: undefined, I } } });
+    d.solve();
+    const r = d.stability({ modes: 3 });
+    if (V < -1.12215740) {
+      assert.notEqual(r.verdict, 'no growing mode found', `growing state V=${V} got '${r.verdict}': ${r.reason}`);
+    }
+    if (r.verdict === 'unstable') sawUnstable = true;
+    if (r.verdict === 'neutral within resolution') sawNeutral = true;
+    if (r.verdict === 'no growing mode found') sawNoGrowing = true;
+  }
+  assert.ok(sawUnstable && sawNeutral && sawNoGrowing, 'scan should span unstable → neutral → no growing mode found');
 });
