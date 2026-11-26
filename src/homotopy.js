@@ -616,7 +616,7 @@ function tracePath(s, plan, opts, r, wasAll) {
 
   const dirs = singleI >= 0 ? (ts >= 0 ? [1, -1] : [-1, 1]) : [1];
   for (let di = 0; di < dirs.length; di++) {
-    const dir = dirs[di];
+    const dir = dirs[di], limBefore = limited;
     if (di > 0) {
       opts.budget?.check();
       s._putLevels(start0);
@@ -836,7 +836,7 @@ function tracePath(s, plan, opts, r, wasAll) {
       else if (cor.iterations <= 30) dsArc = Math.min(maxArc, dsArc * 1.5);
       else if (cor.iterations >= 45) dsArc = Math.max(minArc, dsArc * 0.7);
     }
-    if (singleI >= 0 && Math.abs(s.termV[singleI] - vStart[0]) >= 5 && Math.abs(sCur) < 0.01 && limited === 0 && !nearing) limited++;
+    if (singleI >= 0 && Math.abs(s.termV[singleI] - vStart[0]) >= 5 && Math.abs(sCur) < 0.01 && limited === limBefore && !nearing) limited++;
   }
 
   if (singleI >= 0 && seen.length > 1 && limited + (nearing === null ? 0 : 1) === 2) {
@@ -969,17 +969,30 @@ export function homotopyContinue(s, opts, r, start0) {
         const step0 = d.kind === 'V' ? Math.max(-0.5, Math.min(0.5, -f0 * d.R)) : 0.02;
         const dirs = step0 !== 0 ? [Math.sign(step0), -Math.sign(step0)] : [1, -1];
         let Va = V0, fa = f0, Vb = NaN, fb = NaN;
+        let vMin = V0, vMax = V0, iMin = f0 + want(V0), iMax = iMin, lim1D = 0;
         const snap0 = s._levels();
         for (const sg of dirs) {
           s._putLevels(snap0);
-          let V = V0, f = f0, dv = Math.max(0.02, Math.min(0.5, Math.abs(step0) || 0.02)) * sg;
-          for (let j = 0; j < 25 && Math.abs(V - V0) < 20; j++) {
+          let V = V0, f = f0, dv = Math.max(0.02, Math.min(0.5, Math.abs(step0) || 0.02)) * sg, dirLim = false;
+          for (let j = 0; j < 40 && Math.abs(V - V0) < 20; j++) {
             const Vn = V + dv, fn = evalAt(Vn);
             if (!Number.isFinite(fn)) { dv *= 0.25; if (Math.abs(dv) < 1e-4) break; continue; }
+            const In = fn + want(Vn);
+            if (Vn < vMin) vMin = Vn;
+            if (Vn > vMax) vMax = Vn;
+            if (In < iMin) iMin = In;
+            if (In > iMax) iMax = In;
             if (Math.sign(fn) !== Math.sign(f) || fn === 0) { Va = V; fa = f; Vb = Vn; fb = fn; break; }
             V = Vn; f = fn; dv *= 1.6;
+            if (d.kind === 'I' && target !== 0 && In / target <= -1.5) { dirLim = true; break; }
           }
           if (Number.isFinite(fb)) break;
+          if (d.kind === 'I' && target !== 0 && (dirLim || (Math.abs(V - V0) >= 2 && Math.abs(f + target) < 1e-3 * Math.abs(target)))) lim1D++;
+        }
+        if (!Number.isFinite(fb) && d.kind === 'I' && lim1D === 2) {
+          s.unreached = { terminal: s.terms[k].name, target, V: [vMin, vMax], I: [iMin, iMax], nearing: null };
+          s.circuitHomotopy[k] = null;
+          return { converged: false, steps, iterations, history };
         }
         if (Number.isFinite(fb)) {
           let side = 0;
