@@ -269,6 +269,66 @@ test('a crowded diffuse layer is the limit of the resolved one, and keeps what a
   assert.ok(Math.abs(sol.interfaces[0].D / st.interfaces[0].D - 1) < 1e-8, `σ after 1 s ${sol.interfaces[0].D}, steady ${st.interfaces[0].D}`);
 });
 
+test('a closed electrolyte with a diffuse layer equilibrates at either cross-section', () => {
+  // Echem combos case 36. The redox affinity and total iron take rows in the first water
+  // region, even though the only iron reaction is on the last region's far face.
+  const T = 298.15, RT = GAS_CONSTANT * T;
+  const ions = [
+    ['Fe3+', 3, 6.04e-10, -4700, 39.113023455649376],
+    ['Fe2+', 2, 7.19e-10, -78900, 75.99652560024455],
+    ['H+', 1, 9.311e-9, 0, 0.057271107343917535],
+    ['NO3-', -1, 1.902e-9, -111250, 300.72270633336205],
+    ['Cl-', -1, 2.032e-9, -131228, 3.590665008107636],
+    ['K+', 1, 1.957e-9, -283270, 65.29483784610001],
+    ['Ac-', -1, 1.089e-9, -369310, 30.37085917941148],
+    ['HAc', 0, 1.2e-9, -396460, 115.4249768137503],
+  ];
+  const c0 = Object.fromEntries(ions.map(([name, , , , c]) => [name, c]));
+  const water = [2.0903128798426342e-6, 3.124616775431674e-6, 3.9561695174157625e-6];
+  const def = {
+    T,
+    species: [...ions.map(([name, z]) => ({ name, z, cRef: 1000 })), { name: 'e-', z: -1 }],
+    materials: {
+      water: {
+        epsr: 0, T, mu0T: T,
+        species: Object.fromEntries(ions.map(([name, , D, mu0]) => [name, { D, mu0 }])),
+        statistics: [{ type: 'lattice', species: ['Fe3+', 'Fe2+', 'Ac-', 'H+', 'NO3-', 'Cl-', 'K+'], cMax: 7099.107457833164 }],
+      },
+      Au: { conductor: { species: 'e-', conductivity: 45167118.33785005 } },
+    },
+    regions: [
+      { material: 'Au', length: 1e-6 },
+      ...water.map((length, j) => ({ name: `w${j}`, material: 'water', length, c0 })),
+      { material: 'Au', length: 1e-6 },
+    ],
+    interfaces: [
+      { phi: { type: 'capacitive', C: 0.2893169657327235 }, zeroCharge: 0.751962971908627, diffuse: { epsr: 78.4 } },
+      { species: { 'H+': 'blocked', 'K+': 'blocked' } },
+      {},
+      { phi: { type: 'capacitive', C: 0.2733753128908575 }, zeroCharge: 0.751962971908627,
+        reactions: [{ equation: 'Fe3+ + e- = Fe2+', k0: 1.4491505265459515e-5, alpha: 0.6816094288602471 }] },
+    ],
+    contacts: { left: ohmic(0, ['e-']), right: ohmic(-0.10512635182589292, ['e-']) },
+    bulkReactions: [{ equation: 'HAc = H+ + Ac-', kf: { water: 3.9489859172715853 } }],
+    grid: { hmin: 1.194287246224804e-8, hmax: 7.865427897133133e-8, ratio: 1.19160440845415 },
+  };
+  const L = def.regions.reduce((a, r) => a + r.length, 0);
+  const slab = new Device(def).solve();
+  const wide = new Device({ ...def, geometry: { area: { x: [0, L], values: [42, 42] } } }).solve();
+  assert.ok(slab.converged && wide.converged);
+  const diff = Math.abs(wide.mu['Fe3+'][2] - slab.mu['Fe3+'][2]) / RT;
+  assert.ok(diff < 1e-9, `Fe³⁺ changes by ${diff} RT with cross-section`);
+  for (const [sol, A] of [[slab, 1], [wide, 42]]) {
+    const iron = sol.conservation.filter((st) => ['Fe3+', 'Fe2+'].includes(st.species)).reduce((a, st) => a + st.amount, 0);
+    const expected = A * water.reduce((a, length) => a + length, 0) * (c0['Fe3+'] + c0['Fe2+']);
+    assert.ok(Math.abs(iron / expected - 1) < 1e-12, `A = ${A}: iron ${iron}, expected ${expected}`);
+    for (const name of ['Fe3+', 'Fe2+']) {
+      const mu = sol.mu[name], edge = mu[2];
+      for (const level of mu) if (Number.isFinite(level)) assert.ok(Math.abs(level - edge) < 1e-9 * RT, `A = ${A}: ${name} level is not flat`);
+    }
+  }
+});
+
 test("a reaction at a crowded plane sees what the resolved lattice's does, a packed plane's resistance too", () => {
   // The ferri/ferrocyanide electrode on a lattice of 0.71 nm sites, a Stern layer of 1 F/m² at
   // zeroCharge 0.25 V, its plane half full of Cl⁻: R_dc as the resolved electrode's (ε = 78.4,

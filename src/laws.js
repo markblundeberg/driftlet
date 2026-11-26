@@ -70,14 +70,14 @@
 //                  (Time steps keep those of two or more species by their change in the same
 //                  rows: src/lawRows.js, localStepRows.)
 //   islands[]      { stretch, row, flux, weight, outside, speed, bulk, piece?, node?, currents?,
-//                  z? }: a piece
-//                  of a stretch between faces fed by nothing else, or only by its faces' and its
-//                  bulk reactions (none of its rows another law's), its balance summed over its
-//                  nodes (Σ weight·u over the `flux` rows, its faces' fluxes and −A ν over its
+//                  z? }: a piece of a stretch fed only by fluxes through its faces and by its
+//                  face or bulk reactions. Its balance is summed over its nodes
+//                  (Σ weight·u over the `flux` rows, its faces' fluxes and −A ν over its
 //                  reactions' rates, plus vol·ν·r of each `bulk` entry [node, the solver's
 //                  reaction, ν], plus the `outside` rows' balances) in place of balance row `row`,
-//                  its middle node's (`node`; `piece`: its first and last nodes), which is no
-//                  neighbour's `outside` row where the piece has three nodes or more; and a metal
+//                  its middle node's (`node`; `piece`: its first and last nodes). No balance in
+//                  the piece has been replaced by another law. A piece with at least three
+//                  nodes keeps its edge rows available to its neighbours. Also a metal
 //                  (a stretch whose every region is one) reached only by floating contacts
 //                  (`currents`, each passing I/(zF), its drive's) and fed by its faces' reactions,
 //                  the sum of its rates in place of a row no contact holds. `speed`: each rate's slot and k0 (lawRows.js's separateRates).
@@ -107,8 +107,8 @@
 //   2. No equation is replaced twice and none is lost: the rows the constraints and affinities
 //      take are chosen by elimination over v (one map from w, rowsOf), each law's v reduced by
 //      those already chosen, so their v are independent. The local constraints' rows are chosen
-//      the same way node by node, over the slots there. Islands take rows no other law has (one
-//      summing rates, none of the rows it sums).
+//      the same way node by node, over the slots there. Islands sum only pieces whose balance
+//      rows are all still present.
 //   3. A balance row taken is a moving stretch's (a floating metal's own amount takes its
 //      carriers'). An affinity's is never a metal's carriers', nor a stretch's that a terminal
 //      feeds, nor a circuit row.
@@ -841,10 +841,13 @@ export function findLaws(s) {
       // had its electrons' sum read one face raw)
       const rowNode = (grid.regionStart[p0] + grid.regionEnd[q1]) >> 1;
       const row = blockOfNode[rowNode] * M + 1 + i;
-      // (a reactive piece: none of its rows another law's, since the sum stands for all of them)
+      // The sum can replace one balance only if the rest of the piece still has its balances.
+      // A closed redox stretch can have an affinity or amount row in a nonreactive piece far
+      // from the reacting face. Summing that piece as well lost an independent balance, leaving
+      // a level gradient in the islands round of echem combos case 36.
       const rows = [];
       for (let g = grid.regionStart[p0]; g <= grid.regionEnd[q1]; g++) rows.push(blockOfNode[g] * M + 1 + i);
-      if (used.has(row) || ((rates.length > 0 || bulk.length > 0) && rows.some((o) => used.has(o) || localRows.has(o)))) continue;
+      if (rows.some((o) => used.has(o) || localRows.has(o))) continue;
       used.add(row);
       // The faces' fluxes into the piece: −A_f u at its left face, +A_f u at its right. Across
       // a face that holds μ̄ level, u is set only by the edge balances, and eliminated, it can

@@ -966,9 +966,12 @@ the terms that cancel:
   outside edge node's balance is added too, $`u`$ cancels, and the outside's first segment
   carries the flux. (Seen through one face of two, a level behind neighbours 1e20 times less
   conductive was overshot twofold, and Newton swung it from one contact's level to the other's.)
-  That sum replaces the first node's row, bordered like an amount. The response to the unit pin
-  is the island's uniform shift, with whatever $`\hat\phi`$ and the other species do along with
-  it, so no mode needs guessing; refined solves carry the pinned rows too.
+  The sum replaces the middle node's balance, bordered like an amount. Every balance in the
+  piece must still be present. A conserved amount or an affinity can already have taken a row
+  there, even when the reaction is several regions away. Summing that piece would drop an
+  independent balance and let a level develop a gradient at equilibrium.
+  The response to the unit pin is the island's uniform shift, along with the response of
+  $`\hat\phi`$ and the other species. Refined solves carry the pinned rows too.
 
   A piece fed only by its faces' reactions sums the same way, each rate an unknown of its face's
   block entering as $`-A\nu r`$; and so does a metal reached only by floating contacts, its sum
