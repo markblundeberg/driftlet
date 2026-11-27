@@ -695,7 +695,8 @@ at e^−n of its peak, give tol < e^−n·ΔV/(80 V_T) (1.6e-5 for 5 mV to 5 RC)
   after `solve()` traces a steady-state branch in that terminal's drive (`V` or `I`) round its
   folds by pseudo-arclength continuation, marking each point with its stability (under the drive
   as held) and locating `'fold'` and `'hopf'` (with `omega`) events in
-  `{ points, events, end, warnings }`, leaving the device where it started.
+  `{ points, events, end, warnings }` (a `'stability mismatch'` event where marks change with no
+  event to explain them), leaving the device where it started.
 
 ```js
 import { Device, units, FARADAY } from 'driftlet';

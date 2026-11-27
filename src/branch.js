@@ -91,8 +91,10 @@
 //     relative chord `< 1e-9`). If the fold step itself retreats past the previous point by more
 //     than the drive round-off floor, the fold is recorded immediately; otherwise it is held as a
 //     provisional fold and confirmed only when a subsequent accepted point's drive retreats beyond
-//     that floor. A provisional fold whose subsequent accepted point advances forward instead (or
-//     whose trace ends before any point retreats) is dropped rather than emitted. On a parameter
+//     that floor. A provisional fold whose subsequent accepted point advances forward instead is
+//     dropped. One still pending when the trace ends is emitted, with a `note` saying no later point
+//     confirmed it, only if its located drive lies beyond both of its step's accepted drives by
+//     more than the floor; otherwise it is dropped. On a parameter
 //     plateau, continuation walks on with no invented folds until `to`, `voltageBound`, `maxSteps`,
 //     or `budgetMs`.
 //   - Hopf (`Re λ` of a complex conjugate pair `Im λ > kBar · error` crosses 0): matched by
@@ -1552,6 +1554,28 @@ export class Branch {
     const states = [];
     let end = '';
     let ctx = null;
+    let pendingFold = null;
+    // A provisional fold still pending when the trace ends (maxSteps, voltageBound, budgetMs) is
+    // reported when its located drive lies beyond BOTH of its step's accepted drives by more than
+    // the round-off floor: the accepted points then bracket a turnover, though no later point
+    // retreated to confirm it. It carries a note saying so, and goes in event order. Otherwise it
+    // is dropped.
+    const emitPendingAtEnd = () => {
+      const pend = pendingFold;
+      pendingFold = null;
+      if (!pend || !pend.strict) return;
+      const pf = pend.preFold;
+      const ev = {
+        kind: 'fold',
+        drive: pf.drive,
+        terminals: pf.terminals,
+        between: pend.between,
+        note: 'the trace ended before a later point confirmed the turn',
+      };
+      let at = events.findIndex((e) => e.between[0] >= pend.between[0]);
+      if (at < 0) at = events.length;
+      events.splice(at, 0, ev);
+    };
 
     const isDecided = (v) => v === 'no growing mode found' || v === 'unstable';
 
@@ -1836,7 +1860,7 @@ export class Branch {
       let flippedStart = false;
       let stepCount = 0;
       let lastDriveDir = Math.sign(dpSpan);
-      let pendingFold = null;
+      pendingFold = null;
 
       // Resolve any provisional fold against an accepted point's drive `pAcc` before recording
       // events from the new step. A provisional fold stands only if a subsequent accepted drive
@@ -1976,6 +2000,9 @@ export class Branch {
               peakDrive,
               between: [kPrev, kNew],
               floor: Math.max(preFold.floor, floorNew),
+              strict: !!preFold.located
+                && lastDriveDir * (preFold.drive - pPrevAcc) > Math.max(preFold.floor, floorNew)
+                && lastDriveDir * (preFold.drive - driveNew) > Math.max(preFold.floor, floorNew),
             };
           }
         }
@@ -2428,11 +2455,13 @@ export class Branch {
       }
 
       // 3. Post-trace consistency audit between geometric events and stability marks.
+      emitPendingAtEnd();
       runAudit(true);
 
       return { terminal, kind, points, events, end, warnings };
     } catch (err) {
       if (err === BUDGET_SPENT) {
+        emitPendingAtEnd();
         if (doStab && points.length >= 2) {
           if (_stats) _stats.auditOnBudget++;
           runAudit(false);

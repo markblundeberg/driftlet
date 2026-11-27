@@ -1682,3 +1682,36 @@ test('Defense-in-depth guards: law-occupied circuit (R05), start flip (R08), spa
   assert.equal(firedPf, true, 'provisional-fold fault injection did not trigger');
   assert.equal(brPf.events.length, 0, `provisional-fold confirmation failed to drop endpoint noise fold: ${JSON.stringify(brPf.events)}`);
 });
+
+test('A fold on the trace\'s last step is kept when the accepted points bracket the turn, with a note', () => {
+  // Fable r7 finding 1: a fold step that advances in drive leaves the fold provisional; cut the
+  // trace at that step (maxSteps = b) and round 7 dropped a real fold. The full trace is the truth.
+  const mk = () => { const d = hhDevice(0, { g: { Na: 3000, K: 60, leak: 4 }, right: { I: -2.2 } }); assert.equal(d.solve().converged, true); return d; };
+  const full = mk().branch({ to: 0.94, stability: false });
+  const folds = full.events.filter((e) => e.kind === 'fold');
+  assert.equal(folds.length, 2, JSON.stringify(full.events));
+  let advancing = 0;
+  for (const f of folds) {
+    const [a, b] = f.between;
+    const cut = mk().branch({ to: 0.94, stability: false, maxSteps: b });
+    assert.match(cut.end, /maxSteps/);
+    const got = cut.events.filter((e) => e.kind === 'fold' && e.between[0] === a && e.between[1] === b);
+    assert.equal(got.length, 1, `fold between [${a},${b}] dropped when the trace ends on its step: ${JSON.stringify(cut.events)}`);
+    assert.equal(got[0].drive, f.drive);
+    const adv = Math.sign(full.points[b].drive - full.points[a].drive) === Math.sign(full.points[a].drive - (a > 0 ? full.points[a - 1].drive : -2.2));
+    if (adv) { advancing++; assert.match(got[0].note ?? '', /ended before a later point confirmed/); }
+    // events stay in trace order
+    for (let i = 1; i < cut.events.length; i++) assert.ok(cut.events[i].between[0] >= cut.events[i - 1].between[0]);
+  }
+  assert.ok(advancing >= 1, 'no fold step advanced in drive, so the provisional path was not exercised');
+
+  // Fe cell with marks on, cut on its fold step: the fold is reported and no mismatch claims none was located.
+  const I0 = -62.90054296647188;
+  const fe = () => { const d = new Device(feSpec({ V: -0.95 })); d.solve(); d.set({ contacts: { right: { I: I0 } } }); assert.equal(d.solve().converged, true); return d; };
+  const feFull = fe().branch({ terminal: 'right', to: -120 });
+  const ff = feFull.events.find((e) => e.kind === 'fold');
+  assert.ok(ff, JSON.stringify(feFull.events));
+  const feCut = fe().branch({ terminal: 'right', to: -120, maxSteps: ff.between[1] });
+  assert.ok(feCut.events.some((e) => e.kind === 'fold' && e.drive === ff.drive), `Fe fold dropped: ${JSON.stringify(feCut.events)}`);
+  assert.equal(feCut.events.filter((e) => e.kind === 'stability mismatch').length, 0, JSON.stringify(feCut.events));
+});

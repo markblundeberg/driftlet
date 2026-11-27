@@ -3,6 +3,24 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
+## Unreleased
+
+- **`device.branch(opts)`**: traces a steady state along one terminal's drive (V or I) by
+  pseudo-arclength continuation, so it goes round folds where a `solve()` sweep would jump. Each
+  point is marked by `stability()`, and the trace lists its folds and Hopf points (with ω), and a
+  `'stability mismatch'` event wherever the marks change with no event to explain them. `end`
+  says why it stopped, and the device is left where it started.
+  - Checked against the Fe³⁺/Fe²⁺ cell's current peak (fold at −108.1199 A/m², V −1.12216, to
+    3 µV), Hodgkin–Huxley's Hopf onset (9.7286 µA/cm², ω 585.5 rad/s, against 9.7754 by HH's own
+    equations; both sides checked by kicked runs), bistable membranes behind a series resistance
+    against a reference built without `branch()`, and points re-solved by `solve()`.
+  - Tried blind on held-out devices across seven rounds: midpoints between points re-solved and
+    re-marked (about 3,000 a round, none skipped), HH conductances it wasn't tuned on, and
+    semiconductor stacks under reverse current drive at targets decades apart.
+  - Neon's (Gemini) idea and code, 26–27 Nov, in seven rounds of review by the maintainer and six
+    cold reviews by Fable. The last patch, keeping a fold met on a trace's last step, is the
+    maintainer's, on Fable's candidate. Known gaps are in ROADMAP.
+
 ## 1.25.0 (2026-11-26)
 
 - **`device.stability()`**: is the steady state just solved one the device would stay in? It

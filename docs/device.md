@@ -1647,10 +1647,14 @@ Measured (test/stability.test.js):
 
 ### branch(opts)
 
-Traces a steady-state branch as one terminal's drive (`V` or `I`, whichever kind that terminal
-carries) moves toward `to`, using pseudo-arclength continuation in `(state, p)` so it turns
-smoothly around folds instead of stalling against them. Call `solve()` first; the device is left
-at its starting state and drive when `branch()` returns.
+Walks the device's steady state along one terminal's drive (`V` or `I`, whichever that terminal
+carries) toward `to`, and says at each point whether the device would stay there. Where an I–V
+curve folds back on itself, the way an S-shaped or N-shaped curve does, sweeping the drive with
+`solve()` jumps off the edge. `branch()` steps along the curve's own length instead (pseudo-arclength
+continuation in state and drive together), so it goes round the fold and back along the far side.
+Each point carries the verdict of `stability()` there, and the trace lists where stability is
+gained or lost: folds, where the curve turns back, and Hopf points, where the device starts to
+oscillate. Call `solve()` first. The device is left at its starting state and drive.
 
 ```js
 import { Device, units } from 'driftlet';
@@ -1696,45 +1700,41 @@ console.log(br.end.startsWith('reached to'), br.events.length, br.points.at(-1).
 
 Notes:
 
-- **Stability marks are for the drive as held — and what a mark does not promise.** The very same
-  steady-state curve can be `'no growing mode found'` everywhere under voltage drive and have an
-  `'unstable'` branch past a fold under current drive (a peaked $`\mathrm{Fe^{3+}/Fe^{2+}}`$
-  thin-layer cell is exactly that). A mark holds at the sampled point; with `stability` on,
-  `branch()` tracks oscillatory pairs by biorthogonal eigenvector overlap (keeping
-  $`|\Delta\operatorname{Re}\lambda|`$ on the same side of zero below 75% of its distance from zero
-  at the nearer end, floored at $`k_{\mathrm{bar}} \cdot \text{error}`$) and refines any step whose
-  growing-mode count changes without an accounting fold or Hopf. With `stability: false`, folds
-  narrower than a step can be missed because there is no stability signal to trigger refinement;
-  with `stability` on, modes within their error bar of zero are not resolved and a narrow unstable
-  window unseen by all listed modes at both endpoints can still be missed.
-- **Folds and Hopf points.** A fold (`dp/ds = 0`) is located by safeguarded secant/bisection along
-  the exact arc to relative tangent and chord tolerances, and confirmed only when accepted points'
-  drives retreat beyond the drive's round-off floor (if the fold step itself does not retreat, the
-  fold is held provisionally until a subsequent accepted point retreats, and dropped if the drive
-  continues forward or the trace ends without retreating; on a parameter plateau, `branch()` walks
-  on with no invented folds until `to`, `voltageBound`, `maxSteps`, or `budgetMs`); a Hopf
-  ($`\operatorname{Re}\lambda = 0`$ for a complex conjugate pair, with `omega` in rad/s) is matched
-  by eigenvector overlap and located to relative eigenvalue and drive tolerances (never absolute in
-  drive units, so drives in A over small patch areas and far `to` stay accurate). At a fold in the
-  held parameter, one real eigenvalue must cross 0; an `'undecided'` mark has unknown growing-mode
-  count and triggers refinement across folds, Hopfs, and undecided transitions. If marks still do not
-  reconcile (such as a real eigenvalue passing through infinity or a fold leaving an undecided side)
-  after refinement hits resolution, `branch()` continues and reports a `'stability mismatch'` event
-  rather than stopping blind (including on a `budgetMs` stop).
-- **Balanced metric, consistent equations, and honest stops.** The arclength metric scales the drive
-  so the state carries at least half the tangent weight (keeping neighbouring branches distinguishable
-  while insensitive terminals retain dimensionless span scaling), and bounds each step's chord
-  alignment and tangent turn (`t_A · t_B ≥ 0.90`). Corrector Newton enforces separate state
-  (`1e-10` thermal units) and local-scale drive (`1e-9` relative, independent of `to`) tolerances,
-  and verifies the driven terminal's reported equation and two-terminal Kirchhoff balance before
-  accepting a point. If pseudo-arclength cannot advance at the minimum stride (e.g. a singular
-  Jacobian or model wall), `branch()` stops cleanly and notes that `solve()` may continue from there
-  rather than hopping branches.
-- **Returning past a fold.** If a branch turns a fold and crosses back through its starting drive
-  on the far side, `branch()` lands on that drive and stops (`returned to starting drive … after
-  fold`), keeping the trace inside the requested drive span.
-- **Non-destructive.** The device's state, drives, and learned solver history are restored
-  bit-for-bit on return (even if `budgetMs` runs out or an option throws).
+- **A mark is for the drive as held.** One curve can be stable everywhere under voltage drive
+  and have an unstable stretch under current drive. A $`\mathrm{Fe^{3+}/Fe^{2+}}`$ thin-layer cell
+  whose current peaks at −108.12 A/m² (V = −1.1222 V) is that: driven by current toward −120,
+  the trace turns the peak as a fold and comes back along the far branch, where one real mode
+  grows; held at a voltage, the same far branch is stable. Behind a series resistance R, the
+  folds sit where the load line $`U = V + R\,I`$ (I the terminal's current as reported) touches the curve.
+- **How events are found.** A fold is where the drive turns back. It is located on the arc
+  between two points, and reported only once the accepted points' own drives turn back past
+  round-off, so a curve that is merely flat gets none. If the trace ends right after a fold's step
+  (at `maxSteps`, `voltageBound` or `budgetMs`), the fold is kept only if its located drive lies
+  beyond both of its step's points, with a `note` that no later point confirmed it. A Hopf point
+  is where a complex pair of modes crosses into growth, located on the arc, with `omega` in
+  rad/s. Positions are relative to the drive's own scale, so drives in A over small areas, or a
+  far `to`, lose no accuracy. An event that `budgetMs` cut short says `located: false`, with a
+  `note`.
+- **When the marks and events disagree, it says so.** Across a fold one real mode must change
+  sign. Across a Hopf point, a pair. `branch()` counts the growing modes at each end of every
+  step, and a step whose count changes with no event to explain it, or that ends on an
+  `'undecided'` mark, is halved until the cause is found. If halving runs out first, the trace
+  carries on and lists a `'stability mismatch'` event at that step rather than staying silent.
+- **What it can miss.** With `stability: false` there are no counts to check, so an S whose two
+  folds are narrower than one step can be stepped over. With marks on, a mode within its error
+  bar of zero isn't resolved, and a window of instability that no listed mode shows at either end
+  of a step can still be missed. Give a smaller `step` where it matters.
+- **Each point is checked at its stated drive.** A point is accepted only once the state's update
+  and the drive's are both converged, the drive's relative to its own local scale, so the
+  tolerance doesn't depend on how far `to` is. The driven terminal's own equation must hold
+  there too, and on a two-terminal device the two currents must balance.
+- **Honest stops.** If the curve can't be followed further at the smallest stride (a singular
+  Jacobian, a wall in the model), the trace stops, and `end` says where, and that `solve()` may
+  carry on from there. It never hops to another branch to keep going. A trace that turns a fold
+  and comes back through its starting drive stops there (`returned to starting drive … after
+  fold`), so the points stay between the start and `to`.
+- **Non-destructive.** The device's state, drives and learned solver history are restored bit for
+  bit on return, even when `budgetMs` runs out or an option throws.
 
 ### set(patch)
 

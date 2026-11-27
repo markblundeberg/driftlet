@@ -504,9 +504,23 @@ for live demos.
        layer's edge box fails it below its premise, and solution.js now checks that one
        (edgeStorage). Checked everywhere, it would catch modes too fast for any shift to reach,
        with no search.
-     - **Branches with their stability.** The homotopy walks a branch, and stability() reads it,
-       so an I–V curve could be traced round its folds with stable and unstable parts marked, and
-       a fold or Hopf onset located on the rightmost λ (Neon's idea).
+     - **Branches with their stability:** done, `device.branch()` (27 Nov; Neon's idea and code,
+       in seven rounds of review by the maintainer and six by Fable). Known gaps from the last
+       review, none a wrong mark or a jump:
+       - Two accepted points with a drive 5e-4 and 8e-4 off, on a Fermi–Dirac GaAs p⁺n⁺ diode at
+         1.5e-14 A/m² (2 of 6,261 on such stacks). The acceptance check can read the interior cut
+         and the far contact on the same side of the junction; checking the driven contact itself
+         cancels there. A cut on the far side of the junction from the check would see it.
+       - The drive tolerance's scale uses ∂I/∂V from the bordered Schur complement, which is noisy
+         on heavily doped stacks (up to 1.8e7× too large on GaAs p⁺n⁺), and no test holds the
+         drive tolerance: the consistent linear system is what keeps the points true there.
+       - Where a trace stops honestly, or walks slowly, depends on `to` and the start on some
+         semiconductor stacks (7 of 19 device-and-start rows).
+       - Without marks, an S narrower than a step can still be stepped over (530 of 576 held-out
+         membrane traces right; 103 of 144 at 1.2 × the critical resistance).
+       - Refused at the start: an electrode whose couple has k0 ≤ 1e-9 m/s under current drive
+         (the bordered system is singular). echem_34 swept down stops at 0.866 V, where round 1
+         reached 0.705.
      - **`undecided` for semiconductors**: about half of it is the block elimination's accuracy at
        the lowest shift (backward error to 0.8 on extreme MOS doping), not the device.
      - **A mode's share of Z(ω)**: its residue is one product of (w, v) with the terminal's rows.
