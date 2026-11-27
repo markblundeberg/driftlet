@@ -1699,30 +1699,29 @@ Notes:
 - **Stability marks are for the drive as held — and what a mark does not promise.** The very same
   steady-state curve can be `'no growing mode found'` everywhere under voltage drive and have an
   `'unstable'` branch past a fold under current drive (a peaked $`\mathrm{Fe^{3+}/Fe^{2+}}`$
-  thin-layer cell is exactly that). A mark holds at the sampled point; `branch()` tracks every
-  listed mode from point to point by biorthogonal eigenvector overlap and requires each matched
-  mode's $`|\Delta\operatorname{Re}\lambda|`$ on the same side of zero to stay below 75% of its
-  distance from zero at the nearer end (floored at $`k_{\mathrm{bar}} \cdot \text{error}`$, so
-  modes within their error bar of zero are not resolved). This zooms steps near narrow windows
-  approached by listed modes, though an unstable window narrower than the step that is unseen by
-  all listed modes at both endpoints can still be missed. (In the midpoint audit across 504 random
-  multi-feature traces—8,858 midpoints—and held-out Hodgkin–Huxley sweeps down to
-  $`g_{\mathrm{Na}} = 835`$, zero windows were missed.)
+  thin-layer cell is exactly that). A mark holds at the sampled point; with `stability` on,
+  `branch()` tracks oscillatory pairs by biorthogonal eigenvector overlap (keeping
+  $`|\Delta\operatorname{Re}\lambda|`$ on the same side of zero below 75% of its distance from zero
+  at the nearer end, floored at $`k_{\mathrm{bar}} \cdot \text{error}`$) and refines any step whose
+  growing-mode count changes without an accounting fold or Hopf. With `stability: false`, folds
+  narrower than a step can be missed because there is no stability signal to trigger refinement;
+  with `stability` on, modes within their error bar of zero are not resolved and a narrow unstable
+  window unseen by all listed modes at both endpoints can still be missed.
 - **Folds and Hopf points.** A fold (`dp/ds = 0`) is located by safeguarded secant/bisection along
-  the exact arc to relative tangent and chord tolerances; a Hopf ($`\operatorname{Re}\lambda = 0`$
+  the exact arc to relative tangent and chord tolerances (and suppressed when the drive turn lies
+  within the drive's round-off floor on a saturation plateau); a Hopf ($`\operatorname{Re}\lambda = 0`$
   for a complex conjugate pair, with `omega` in rad/s) is matched by eigenvector overlap and
   located to relative eigenvalue and drive tolerances (never absolute in drive units, so drives in
   A over small patch areas and far `to` stay accurate). At a fold in the held parameter, one real
   eigenvalue must cross 0: if the marks do not change across a fold, or flip between decided states
-  with no fold or Hopf located (such as a real eigenvalue passing through infinity), `branch()`
-  continues and reports a `'stability mismatch'` event rather than stopping blind (including on a
-  `budgetMs` stop).
-- **Balanced metric, contraction, and honest stops.** The arclength metric scales the drive so the
-  state carries at least half the tangent weight (keeping neighbouring branches distinguishable)
-  and accepts steps only when the corrector Newton iterates contract cleanly without damping. If
-  pseudo-arclength cannot advance at the minimum stride (e.g. a singular Jacobian or model wall),
-  `branch()` stops cleanly and notes that `solve()` may continue from there rather than hopping
-  branches.
+  with no fold or Hopf located (such as a real eigenvalue passing through infinity) after
+  refinement hits resolution, `branch()` continues and reports a `'stability mismatch'` event
+  rather than stopping blind (including on a `budgetMs` stop).
+- **Balanced metric and honest stops.** The arclength metric scales the drive so the state carries
+  at least half the tangent weight (keeping neighbouring branches distinguishable while insensitive
+  terminals retain dimensionless span scaling). If pseudo-arclength cannot advance at the minimum
+  stride (e.g. a singular Jacobian or model wall), `branch()` stops cleanly and notes that
+  `solve()` may continue from there rather than hopping branches.
 - **Returning past a fold.** If a branch turns a fold and crosses back through its starting drive
   on the far side, `branch()` lands on that drive and stops (`returned to starting drive … after
   fold`), keeping the trace inside the requested drive span.

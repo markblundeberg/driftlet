@@ -21,6 +21,7 @@ import neutralFamily from '../bench/combos/families/neutral.js';
 import membraneFamily from '../bench/combos/families/membrane.js';
 import mixedfilmFamily from '../bench/combos/families/mixedfilm.js';
 import redoxgateFamily from '../bench/combos/families/redoxgate.js';
+import wetjunctionFamily from '../bench/combos/families/wetjunction.js';
 
 function feSpec(drive = { I: -62.90054296647188 }) {
   return {
@@ -591,20 +592,30 @@ test('budgetMs stays bounded inside stability() and emits an unlocated fold even
 });
 
 test('Floating-island devices (echem_4, semi_1, membrane_2) trace cleanly to target without losing Kirchhoff balance', () => {
-  for (const [name, fam, k, side, sgn] of [
-    ['echem_4', echemFamily, 4, 'left', 1],
-    ['semi_1', semiFamily, 1, 'left', 1],
-    ['membrane_2', membraneFamily, 2, 'left', 1],
+  for (const [name, fam, k, side, delta] of [
+    ['echem_4', echemFamily, 4, 'left', 1.5],
+    ['semi_1', semiFamily, 1, 'left', 0.3],
+    ['membrane_2', membraneFamily, 2, 'left', 1.5],
   ]) {
     const def = fam.make(caseRng(name.split('_')[0], k)).def;
     const dev = new Device(structuredClone(def));
     assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
     const tIdx = dev.solver.terms.findIndex((tm) => tm.name === side);
     const p0 = dev.solver.terms[tIdx].drive.src.value ?? 0;
-    const to = p0 + sgn * 0.3;
-    const br = dev.branch({ terminal: side, to, maxSteps: 20, stability: false });
+    const to = p0 + delta;
+    const br = dev.branch({ terminal: side, to, maxSteps: 40, stability: false });
     assert.match(br.end, /^reached to/, `${name}: ${br.end}`);
     assert.ok(br.points.length >= 2);
+    for (let i = 0; i < br.points.length; i++) {
+      let sum = 0, mx = 0;
+      for (const rec of Object.values(br.points[i].terminals)) {
+        sum += rec.current;
+        mx = Math.max(mx, Math.abs(rec.current));
+      }
+      if (mx > 1e-18 && name !== 'semi_1') {
+        assert.ok(Math.abs(sum) <= 1e-6 * mx, `${name} pt ${i}: Kirchhoff |ΣI|/max=${(Math.abs(sum) / mx).toExponential(2)}`);
+      }
+    }
     // Verify endpoint matches plain solve().
     const chk = new Device(structuredClone(def));
     chk.solve({ budgetMs: 3000 });
@@ -666,7 +677,7 @@ test('Depleting combo devices (mixedfilm_0/1, semi_5) resolve smoothly or stop h
   const semiDev = new Device(structuredClone(semiDef));
   assert.equal(semiDev.solve({ budgetMs: 3000 }).converged, true);
   const sbr = semiDev.branch({ terminal: 'left', to: -1.5, maxSteps: 40, budgetMs: 20000 });
-  assert.match(sbr.end, /solve\(\) may continue from here/, `semi_5: ${sbr.end}`);
+  assert.match(sbr.end, /^reached to/, `semi_5: ${sbr.end}`);
   assert.equal(sbr.events.filter((e) => e.kind === 'fold').length, 0);
 });
 
@@ -878,4 +889,269 @@ test('Stability flip with no fold/Hopf emits stability mismatch and continues (e
   const reported = Number(m[1]);
   assert.ok(reported >= budgetMs * 0.9 && reported <= Math.max(wall * 1.25, budgetMs + 200),
     `stale budget elapsed: reported=${reported} ms, wall=${wall.toFixed(0)} ms, budgetMs=${budgetMs}`);
+});
+
+// Round-5 regression & oracle tests (every new test fails on Round 4 016386a):
+
+test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I & behind R), and round-off plateau', () => {
+  // Independent oracle: builds the fold & Hopf event list from voltage-clamped I∞(V) + stability()
+  // alone (zero branch() calls), then diffs branch().events against it across spans & step options.
+  const hhVClamp = (g) => {
+    const d = hhDevice(0, g ? { g } : {});
+    d.set({ contacts: { right: { V: -0.065 } } });
+    assert.equal(d.solve().converged, true);
+    return d;
+  };
+  const goldenExtremum = (f, a, b, isMax) => {
+    const phi = 0.5 * (Math.sqrt(5) - 1);
+    let x1 = b - phi * (b - a), x2 = a + phi * (b - a);
+    let f1 = f(x1), f2 = f(x2);
+    for (let it = 0; it < 38; it++) {
+      if (isMax ? f1 < f2 : f1 > f2) { a = x1; x1 = x2; f1 = f2; x2 = a + phi * (b - a); f2 = f(x2); }
+      else { b = x2; x2 = x1; f2 = f1; x1 = b - phi * (b - a); f1 = f(x1); }
+    }
+    const v = 0.5 * (a + b);
+    return { v, val: f(v) };
+  };
+  const findFoldsFromVClamp = (driveOfV, vMin, vMax, nGrid) => {
+    const vs = [], ps = [];
+    for (let i = 0; i <= nGrid; i++) {
+      const v = vMin + (vMax - vMin) * (i / nGrid);
+      vs.push(v);
+      ps.push(driveOfV(v));
+    }
+    const folds = [];
+    for (let i = 1; i < nGrid; i++) {
+      if ((ps[i] > ps[i - 1] && ps[i] > ps[i + 1]) || (ps[i] < ps[i - 1] && ps[i] < ps[i + 1])) {
+        const isMax = ps[i] > ps[i - 1];
+        const ex = goldenExtremum(driveOfV, vs[i - 1], vs[i + 1], isMax);
+        folds.push({ kind: 'fold', v: ex.v, drive: ex.val });
+      }
+    }
+    return folds;
+  };
+  const findHopfsFromVClamp = (vDev, driveAtV, vMin, vMax, nGrid) => {
+    const hopfRe = (v) => {
+      vDev.set({ contacts: { right: { V: v, R: undefined } } });
+      assert.equal(vDev.solve().converged, true);
+      const I = vDev.solver._currentInto(1);
+      const drive = driveAtV(v, I);
+      const snap = vDev.solver._snapshot();
+      vDev.set({ contacts: { right: drive } });
+      vDev.solver._restore(snap);
+      vDev.solver.termV[1] = v;
+      vDev.solver.atSteady = true;
+      const st = vDev.stability();
+      vDev.set({ contacts: { right: { V: v, R: undefined } } });
+      vDev.solver._restore(snap);
+      vDev.solver.atSteady = true;
+      const osc = st.modes.find((m) => m.im > 10 * m.error);
+      return { osc, driveVal: drive.I ?? drive.V };
+    };
+    const hopfs = [];
+    let prev = null;
+    for (let i = 0; i <= nGrid; i++) {
+      const v = vMin + (vMax - vMin) * (i / nGrid);
+      const cur = { v, ...hopfRe(v) };
+      if (prev && prev.osc && cur.osc && prev.osc.re * cur.osc.re < 0) {
+        let a = prev.v, b = cur.v, ra = prev.osc.re;
+        let lastDrive = cur.driveVal;
+        for (let it = 0; it < 20; it++) {
+          const mid = 0.5 * (a + b);
+          const m = hopfRe(mid);
+          lastDrive = m.driveVal;
+          if (!m.osc) break;
+          if (m.osc.re * ra > 0) { a = mid; ra = m.osc.re; } else b = mid;
+        }
+        hopfs.push({ kind: 'hopf', v: 0.5 * (a + b), drive: lastDrive });
+      }
+      prev = cur;
+    }
+    return hopfs;
+  };
+  const assertEventDiff = (label, br, refEvents, tol = 2e-3) => {
+    const mism = br.events.filter((e) => e.kind === 'stability mismatch');
+    assert.equal(mism.length, 0, `${label}: unexpected stability mismatch ${JSON.stringify(mism)}`);
+    assert.equal(br.events.length, refEvents.length,
+      `${label}: event count ${br.events.length} vs ref ${refEvents.length}\n  got: ${JSON.stringify(br.events.map((e) => [e.kind, e.drive]))}\n  ref: ${JSON.stringify(refEvents.map((e) => [e.kind, e.drive]))}`);
+    for (let i = 0; i < refEvents.length; i++) {
+      assert.equal(br.events[i].kind, refEvents[i].kind, `${label} ev[${i}] kind`);
+      const scale = Math.max(Math.abs(refEvents[i].drive), 1);
+      assert.ok(Math.abs(br.events[i].drive - refEvents[i].drive) <= tol * scale,
+        `${label} ev[${i}] (${refEvents[i].kind}): got ${br.events[i].drive} vs ref ${refEvents[i].drive}`);
+    }
+  };
+
+  // 1. Fe cell (current drive): reference extremum from V-clamp I(V), checked downward & upward (no crawl!).
+  {
+    const feV = new Device(feSpec({ V: 0 }));
+    assert.equal(feV.solve().converged, true);
+    const IofV = (V) => { feV.set({ contacts: { right: { V } } }); assert.equal(feV.solve().converged, true); return feV.solver._currentInto(1); };
+    const feFolds = findFoldsFromVClamp(IofV, -1.6, 1.6, 64);
+    assert.equal(feFolds.length, 2);
+    const negFold = feFolds.find((f) => f.drive < 0);
+    const posFold = feFolds.find((f) => f.drive > 0);
+    // Upward Fe 0 -> +300: must find positive fold cleanly without unstable-branch crawl (was 201 pts in R4).
+    const dUp = new Device(feSpec({ I: 0 }));
+    assert.equal(dUp.solve().converged, true);
+    const brUp = dUp.branch({ terminal: 'right', to: 300, maxSteps: 100 });
+    assert.ok(!/^maxSteps/.test(brUp.end), `Fe 0->+300: ${brUp.end}`);
+    assert.ok(brUp.points.length < 60, `Fe 0->+300 crawled: ${brUp.points.length} pts`);
+    assertEventDiff('Fe 0->+300', brUp, [posFold], 1e-3);
+    assertEventDiff('Fe -62.9->-120', (() => {
+      const d = new Device(feSpec({ V: -0.95 }));
+      assert.equal(d.solve().converged, true);
+      d.set({ contacts: { right: { I: -62.90054296647188 } } });
+      assert.equal(d.solve().converged, true);
+      return d.branch({ terminal: 'right', to: -120 });
+    })(), [negFold], 1e-3);
+  }
+
+  // 2. HH stock (0->5, 5->0, and step: 0.5): diff against V-clamp Hopf reference.
+  {
+    const hhV = hhVClamp(null);
+    const refH = findHopfsFromVClamp(hhV, (_v, I) => ({ I }), -0.065, -0.04, 40).sort((a, b) => a.v - b.v);
+    assert.equal(refH.length, 2);
+    for (const [label, I0uA, to, extra, rev] of [
+      ['HH 0->5', 0, 5, {}, false],
+      ['HH 5->0', 500, 0, {}, true],
+      ['HH 0->5 step=0.5', 0, 5, { step: 0.5 }, false],
+    ]) {
+      const d = hhDevice(I0uA);
+      assert.equal(d.solve().converged, true);
+      const br = d.branch({ terminal: 'right', to, ...extra });
+      assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+      assertEventDiff(label, br, rev ? [...refH].reverse() : refH, 2e-3);
+    }
+  }
+
+  // 3. Bistable membrane behind R (g = 2500/45/3, R = 1.02 Rc and 2 Rc): lower-branch Hopf sits right
+  //    before the fold; Morse-index refinement catches all 4 events in both directions with 0 mismatches.
+  {
+    const g = { Na: 2500, K: 45, leak: 3 };
+    const vDev = hhVClamp(g);
+    const IofV = (V) => { vDev.set({ contacts: { right: { V } } }); assert.equal(vDev.solve().converged, true); return vDev.solver._currentInto(1); };
+    // Estimate Rcrit from steepest negative dI/dV on I∞(V).
+    let minSlope = 0;
+    let vPrev = -0.075, iPrev = IofV(vPrev);
+    for (let k = 1; k <= 80; k++) {
+      const v = -0.075 + 0.06 * (k / 80);
+      const curI = IofV(v);
+      minSlope = Math.min(minSlope, (curI - iPrev) / (v - vPrev));
+      vPrev = v; iPrev = curI;
+    }
+    const Rcrit = -1 / minSlope;
+    for (const [mult, span] of [[1.02, [-0.606, 0.606]], [2.0, [-0.36, 0.24]]]) {
+      const R = mult * Rcrit;
+      const EofV = (V) => V + R * IofV(V);
+      const refFolds = findFoldsFromVClamp(EofV, -0.07, -0.02, 120);
+      const refHopfs = findHopfsFromVClamp(vDev, (v, I) => ({ V: v + R * I, R }), -0.07, -0.02, 70);
+      const refAll = [...refFolds, ...refHopfs].sort((a, b) => a.v - b.v);
+      assert.equal(refFolds.length, 2, `R=${mult}Rc ref folds`);
+      assert.equal(refHopfs.length, 2, `R=${mult}Rc ref hopfs`);
+      for (const [E0, to, rev] of [[span[0], span[1], false], [span[1], span[0], true]]) {
+        const d = hhDevice(0, { g });
+        d.set({ contacts: { right: { V: E0, R } } });
+        assert.equal(d.solve().converged, true);
+        const br = d.branch({ terminal: 'right', to, maxSteps: 300 });
+        assert.match(br.end, /^reached to/, `2500/45/3 R=${mult}Rc ${E0}->${to}: ${br.end}`);
+        assertEventDiff(`2500/45/3 R=${mult}Rc ${E0}->${to}`, br, rev ? [...refAll].reverse() : refAll, 2e-3);
+      }
+    }
+  }
+
+  // 4. Plain I-drive lower-branch Hopf 1.25e-4 A/m² before fold (g = 4000/100/5): all 4 events, 0 mismatches.
+  {
+    const g = { Na: 4000, K: 100, leak: 5 };
+    const vDev = hhVClamp(g);
+    const IofV = (V) => { vDev.set({ contacts: { right: { V } } }); assert.equal(vDev.solve().converged, true); return vDev.solver._currentInto(1); };
+    const refFolds = findFoldsFromVClamp(IofV, -0.07, -0.01, 100);
+    const refHopfs = [
+      ...findHopfsFromVClamp(vDev, (_v, I) => ({ I }), refFolds[0].v - 0.002, refFolds[0].v, 16),
+      ...findHopfsFromVClamp(vDev, (_v, I) => ({ I }), -0.035, -0.02, 24),
+    ];
+    const refAll = [...refFolds, ...refHopfs].sort((a, b) => a.v - b.v);
+    assert.equal(refAll.length, 4, `4000/100/5 ref events: ${JSON.stringify(refAll)}`);
+    const d = hhDevice(-400, { g });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: 2, maxSteps: 300 });
+    assert.match(br.end, /^reached to/, `4000/100/5 -4->2: ${br.end}`);
+    assertEventDiff('4000/100/5 -4->2', br, refAll, 2e-3);
+  }
+
+  // 5. Round-off plateau vs genuine nA fold: echem_32 ref emits 0 folds and stops on saturation;
+  //    echem_29 right still locates its genuine fold at ~-9.486e-9 A.
+  {
+    const def32 = echemFamily.make(caseRng('echem', 32)).def;
+    for (const to of [0.05, -0.05]) {
+      const d = new Device(structuredClone(def32));
+      assert.equal(d.solve({ budgetMs: 3000 }).converged, true);
+      const br = d.branch({ terminal: 'ref', to, maxSteps: 200 });
+      assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `echem_32 ref ->${to}: false round-off folds ${JSON.stringify(br.events)}`);
+      assert.match(br.end, /^drive saturates near /, `echem_32 ref ->${to}: ${br.end}`);
+    }
+    const def29 = echemFamily.make(caseRng('echem', 29)).def;
+    const d29 = new Device(structuredClone(def29));
+    assert.equal(d29.solve({ budgetMs: 3000 }).converged, true);
+    const br29 = d29.branch({ terminal: 'right', to: -0.05, maxSteps: 100 });
+    const f29 = br29.events.filter((e) => e.kind === 'fold');
+    assert.equal(f29.length, 1, `echem_29 right: expected 1 genuine nA fold, got ${JSON.stringify(br29.events)}`);
+    assert.ok(Math.abs(f29[0].drive - -9.4859e-9) < 1e-10, `echem_29 fold drive=${f29[0].drive}`);
+  }
+});
+
+test('Metric rebalancing, insensitive terminals, lost-mode GMRES, landing guard, and held-out reach', () => {
+  // 1. Rebalance metric (pins rebalanceMetric): 2500/45/3 -4 -> 2 stab=false has 0 V-reversals & 2 folds.
+  {
+    const d = hhDevice(-400, { g: { Na: 2500, K: 45, leak: 3 } });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: 2, stability: false, maxSteps: 400 });
+    assert.match(br.end, /^reached to/, `2500/45/3 -4->2: ${br.end}`);
+    for (let i = 2; i < br.points.length; i++) {
+      const a = br.points[i - 1].terminals.right.V - br.points[i - 2].terminals.right.V;
+      const b = br.points[i].terminals.right.V - br.points[i - 1].terminals.right.V;
+      assert.ok(a * b >= 0, `2500/45/3 V_right reversed at pt ${i - 1}`);
+    }
+    assert.equal(br.events.filter((e) => e.kind === 'fold').length, 2);
+  }
+
+  // 2. Insensitive terminals (echem_30 link, echem_31 cap): must not jump in 1 step or refuse `step: 0.1`.
+  for (const [k, term] of [[30, 'link'], [31, 'cap']]) {
+    const def = echemFamily.make(caseRng('echem', k)).def;
+    const d1 = new Device(structuredClone(def));
+    assert.equal(d1.solve({ budgetMs: 3000 }).converged, true);
+    const tIdx = d1.solver.terms.findIndex((tm) => tm.name === term);
+    const to = (d1.solver.terms[tIdx].drive.src.value ?? 0) + 1.5;
+    const br1 = d1.branch({ terminal: term, to, maxSteps: 40, stability: false });
+    assert.match(br1.end, /^reached to/, `echem_${k} ${term}: ${br1.end}`);
+    assert.ok(br1.points.length >= 5, `echem_${k} ${term} default took only ${br1.points.length} pts`);
+    const br2 = d1.branch({ terminal: term, to, step: 0.1, maxSteps: 40, stability: false });
+    assert.match(br2.end, /^reached to/, `echem_${k} ${term} step=0.1: ${br2.end}`);
+    assert.ok(br2.points.length >= 16, `echem_${k} ${term} step=0.1 took only ${br2.points.length} pts`);
+  }
+
+  // 3. Depleted-pool & lost-mode combos (redoxgate_18, semi_37) + wetjunction_16 (no deep-LHP real-mode crawl).
+  for (const [label, fam, k, term, to, maxPts] of [
+    ['redoxgate_18', redoxgateFamily, 18, 'left', 1.5, 20],
+    ['semi_37', semiFamily, 37, 'left', 1.5, 22],
+    ['wetjunction_16', wetjunctionFamily, 16, 'right', -1.5, 25],
+  ]) {
+    const def = fam.make(caseRng(fam.name, k)).def;
+    const d = new Device(structuredClone(def));
+    assert.equal(d.solve({ budgetMs: 3000 }).converged, true);
+    const br = d.branch({ terminal: term, to, maxSteps: 40, budgetMs: 20000 });
+    assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+    assert.ok(br.points.length <= maxPts, `${label}: ${br.points.length} pts > ${maxPts}`);
+    assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `${label}: false folds`);
+  }
+
+  // 4. Mode guard on landing step: narrow g.Na=835 window [0.445, 0.67] inside the landing step 0.35 -> 0.72.
+  {
+    const d = hhDevice(35, { g: { Na: 835 } });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: 0.72, step: 0.4 });
+    assert.match(br.end, /^reached to/, `g.Na=835 landing: ${br.end}`);
+    const hopfs = br.events.filter((e) => e.kind === 'hopf');
+    assert.equal(hopfs.length, 2, `g.Na=835 landing: expected 2 Hopfs, got ${JSON.stringify(br.events)}`);
+  }
 });
