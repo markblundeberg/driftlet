@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bistability behind a resistor: live drift–diffusion · driftlet</title>
+<meta name="description" content="Peroxodisulfate at mercury, behind a series resistance: two steady states at one source voltage, the jump between them, and the oscillation that grows near the upper fold. Each steady state marked stable or not by a linear stability analysis.">
+<meta property="og:title" content="Bistability · driftlet">
+<meta property="og:description" content="Peroxodisulfate at mercury, behind a series resistance: two steady states at one source voltage, the jump between them, and the oscillation that grows near the upper fold.">
+<meta property="og:image" content="https://marklundeberg.com/driftlet/demos/screenshots/bistable.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://marklundeberg.com/driftlet/demos/bistable.html">
+<link rel="canonical" href="https://marklundeberg.com/driftlet/demos/bistable.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="site"><a class="brand" href="./"><svg viewBox="0 0 84 74" aria-hidden="true"><path class="mark-rail" d="M4 18 C 34 18, 46 20, 58 34 S 72 54, 80 54" stroke-width="5" stroke-linecap="round"/><path class="mark-rail" d="M4 34 C 34 34, 46 36, 58 50 S 72 70, 80 70" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/><path class="mark-trail" d="M44.9 9.7 L38.9 6.1 M41.0 13.4 L32.8 8.5" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/><circle class="mark-dot" cx="52.2" cy="17.1" r="6.2"/></svg>driftlet</a><a href="./">all demos</a><a href="https://github.com/markblundeberg/driftlet">source on GitHub</a></nav>
+  <h1>Bistability behind a resistor</h1>
+  <figure class="sketch">
+    <svg viewBox="0 0 340 214" role="img" aria-label="A hanging mercury drop electrode in stirred sodium fluoride with peroxodisulfate, wired to a voltage source through a resistor, with a platinum counter electrode; a red line runs from the mercury into the solution.">
+      <rect class="k-box" x="118" y="4" width="104" height="28" rx="4"/><text x="170.0" y="22" text-anchor="middle">source U</text>
+      <path class="k-ink" d="M136 32 V44 H128 l-3 -5 l-5 10 l-5 -10 l-5 10 l-5 -10 l-3 5 H90 V62 M204 32 V44 H262 V102"/>
+      <text x="114" y="64" text-anchor="middle" class="k-small">R</text>
+      <path class="k-liquid" d="M31 98 H309 V194 Q309 205 298 205 H42 Q31 205 31 194 Z"/><path class="k-surface" d="M31 98 H309"/><path class="k-glass" d="M26 66 L30 70 V194 Q30 206 42 206 H298 Q310 206 310 194 V70 L314 66"/>
+      <path class="k-glass" d="M86 62 V118 M94 62 V118"/><path d="M90 62 V118" stroke="color-mix(in srgb, var(--muted) 45%, var(--panel))" stroke-width="3"/><circle cx="90" cy="130" r="13" fill="color-mix(in srgb, var(--muted) 45%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><circle cx="85" cy="125" r="3.5" fill="var(--panel)" opacity="0.8"/><text x="90" y="160" text-anchor="middle">Hg drop</text>
+      <rect x="258" y="102" width="8" height="54" rx="1" fill="color-mix(in srgb, var(--muted) 55%, var(--panel))" stroke="var(--ink)" stroke-width="1.1"/><text x="262" y="172" text-anchor="middle">Pt</text>
+      <rect x="200" y="196" width="28" height="6" rx="3" fill="var(--panel)" stroke="var(--ink)" stroke-width="1"/><path d="M194 190 A22 7 0 0 0 234 190" fill="none" stroke="var(--muted)" stroke-width="0.9"/><path d="M234 190 l-1 4.5 l-3.5 -3 Z" fill="var(--muted)"/>
+      <text x="196" y="122" text-anchor="middle" class="k-small">1 mM NaF, 1 mM S₂O₈²⁻</text>
+      <path class="k-cut" d="M103 130 H140"/><path class="k-cut-head" d="M146 130 L137 125.5 V134.5 Z"/>
+    </svg>
+    <figcaption><b>Simulated along the red line</b> (not to scale): <span id="slice"></span></figcaption>
+  </figure>
+  <p>Peroxodisulfate reduced at mercury in dilute salt: past the potential of zero charge its current
+    <em>falls</em> as the electrode goes more negative (the <a href="frumkin.html">Frumkin effect</a>). Drive it
+    from a source through a resistor and one source voltage can hold two steady states, a busy one and an idle one,
+    with a third between them that can't last. Sweep the source down and back and the current jumps at different
+    voltages each way. Near the upper jump, the busy state starts to ring before it falls. Each traced state is
+    marked by driftlet's <code>stability()</code>: solid where every small disturbance dies away, dashed where one
+    grows. (More about the model below.)</p>
+  <section>
+  <div class="controls" id="controls">
+    <label>source U <input id="U" type="range" min="-1.6" max="0.3" step="0.001" value="0.1"><output id="Uout"></output></label>
+    <label>series R <input id="R" type="range" min="-2.5" max="-0.85" step="0.05" value="-1"><output id="Rout"></output></label>
+    <label>playback <select id="pace">
+      <option value="1" selected>real time</option>
+      <option value="0.1">slow motion (×10)</option>
+      <option value="0.03">very slow (×30)</option>
+    </select></label>
+    <button id="sweep" type="button">sweep down and back</button>
+    <button id="kick" type="button">kick</button>
+    <span class="readout" id="status"></span>
+  </div>
+  <div class="grid">
+    <canvas class="wide" id="iv"></canvas>
+    <canvas class="wide" id="load"></canvas>
+    <canvas class="wide" id="time"></canvas>
+    <div class="levels wide" id="conc"></div>
+  </div>
+  <p class="readout" id="traceInfo"></p>
+  <h2>About this simulation</h2>
+  <p>The electrode is the one on <a href="frumkin.html">the Frumkin page</a>, with a thousand times the
+    peroxodisulfate (1 mM, in 1 mM NaF), so that its current is large enough for a resistor to matter: up to
+    about 9 A/m² at the mass-transport limit across the 20 µm stagnant layer. Between −0.2 and −0.7 V (against
+    SHE) the double layer pushes the anion away from the plane where it reacts, and the current falls by a
+    factor of eighty. That falling stretch is a <em>negative resistance</em>: more drive, less current.</p>
+  <p>The middle chart is the classic way to read it. The grey curve is the electrode on its own, held at each
+    potential E (a potentiostat with no resistance in the way: every state on it is stable). The straight line
+    is the resistor's: the current it lets through, (E − U)/R, for the electrode at E. Each crossing is a
+    steady state. Where the line is steep (small R) it crosses once. Where it's shallow enough to lie along the
+    falling stretch, it can cross three times, and the middle crossing is unstable: let the electrode drift a
+    little negative and its current drops, so less flows through R, so less of the source's voltage is lost
+    across it, and the electrode is pushed further negative still. The two outer crossings hold. The sweep
+    leaves the busy state where the line stops crossing the busy side (it lies tangent there: a <em>fold</em>),
+    and comes back only where it stops crossing the idle side, so the curve against U (top chart) has an S
+    in it, and the up and down sweeps part.</p>
+  <p>The top chart is traced by <code>branch()</code>, which follows the steady state round the S's folds
+    (pseudo-arclength continuation) and asks <code>stability()</code> at each point whether a small disturbance
+    grows. The folds it finds should be the tangent points of the load line on the grey curve; the readout
+    below the charts compares the two. Marked differently along the busy branch, just before its fold: a pair
+    of modes that oscillate as they grow (a <em>Hopf point</em>, where the pair's growth rate crosses zero).
+    The double layer charges through R (RC is 17 ms at 0.1 Ω·m²) faster than the reactant's supply can keep
+    up, and the two together ring. Set U a millivolt or two past that point, in slow motion: the busy state
+    swings with a growing amplitude for a few cycles, and then falls to the idle one. Electrochemists know
+    peroxodisulfate reduction as an oscillator of this kind, with the reactant's slow diffusion as the slow
+    variable. At the smaller resistances the idle branch has a Hopf point of its own, a tenth of a millivolt
+    before its fold and slower (about 9 rad/s at 0.05 Ω·m²): too narrow to see on the chart, but listed in the
+    readout.</p>
+  <p>Stability depends on what is held. With the source held (here), states on the falling stretch can be
+    stable or not depending on R; with the current held instead (R very large), every state on it is
+    unstable; and under a potentiostat (R → 0) none is. The marks are always for the device as driven.</p>
+  <p>The model: strictly neutral solution with the double layer below the grid (a Gouy–Chapman layer on a
+    lattice of 0.1 nm sites, behind a 0.17 F/m² inner layer), Butler–Volmer kinetics at the plane of closest
+    approach (α = 0.125), the stagnant layer as on a rotating disk. The resistance is in series with the
+    source, in Ω·m² of electrode: 0.1 Ω·m² is 10 kΩ on a 1 mm² drop.</p>
+  <details><summary>The code</summary><pre id="code"></pre></details>
+  </section>
+</main>
+<script type="module">
+import { Device, FARADAY, GAS_CONSTANT, AVOGADRO } from '../src/index.js';
+import { build, layer, ohmic, bath, half, WATER_EPSR } from '../src/kit.js';
+import { chart, colors } from './plot.js';
+import { profiles, showCode, fromQuery, pauser, sliceNotation } from './common.js';
+
+const T = 298.15, RT = GAS_CONSTANT * T;
+// The ions, with table μ° (J/mol), so potentials read against SHE (as on the Frumkin page).
+const ions = {
+  'Na+': { z: 1, D: 1.334e-9, mu0: -261905 },
+  'F-': { z: -1, D: 1.475e-9, mu0: -278790 },
+  'S2O82-': { z: -2, D: 1.145e-9, mu0: -1114900 },
+  'SO42-': { z: -2, D: 1.065e-9, mu0: -744530 },
+};
+const names = Object.keys(ions);
+const cMax = 1 / (AVOGADRO * 1e-30); // sites 0.1 nm across
+const C = 0.17, pzc = -0.19, k0 = 2.5e-9, alpha = 0.125, L = 20e-6, salt = 1, reactant = 1; // F/m², V vs SHE, mol/(m²·s), m, mol/m³
+const bulk = { 'Na+': salt + 2 * reactant + 4e-5, 'F-': salt, 'S2O82-': reactant, 'SO42-': 2e-5 };
+// The bath's terminal on the SHE scale: F⁻'s species voltage, less its μ° and activity (on the lattice).
+const she = -(ions['F-'].mu0 + RT * Math.log(bulk['F-'] / 1000 / (1 - Object.values(bulk).reduce((s, c) => s + c, 0) / cMax))) / FARADAY;
+// The mercury's terminal, from a source U behind a resistance R (Ω·m²), or held at U itself.
+const electrode = (U, R) => build({
+  T,
+  library: [{
+    species: [{ name: 'e-', z: -1 }, ...names.map((name) => ({ name, z: ions[name].z, cRef: 1000 }))],
+    materials: {
+      Hg: { conductor: { species: 'e-', conductivity: 1.04e6 } },
+      water: { epsr: 0, species: Object.fromEntries(names.map((n) => [n, { D: ions[n].D, mu0: ions[n].mu0 }])), statistics: [{ type: 'lattice', species: names, cMax }] },
+    },
+  }],
+  stack: [
+    { ...ohmic(U, ['e-']), ...(R > 0 ? { R } : {}) },
+    layer('Hg', 1e-6),
+    { phi: { type: 'capacitive', C }, zeroCharge: pzc, diffuse: { epsr: WATER_EPSR }, reactions: [{ ...half('S2O82- + 2 e- = 2 SO42-'), k0, alpha }] },
+    layer('water', L, { name: 'stagnant layer', c0: bulk }),
+    bath(bulk, 'F-', 0, { offset: she }),
+  ],
+  // (cells at the face no narrower than 100 nm: narrower ones, with the sub-grid double layer this
+  // charged, have modes of their own growing at ~1e6 /s that the resolved layer doesn't)
+  grid: { hmin: 100e-9, hmax: L / 30, ratio: 1.2 },
+});
+
+const E0 = 0.3, E1 = -1.4, U1 = -1.6; // the range traced, V vs SHE (the electrode's, and the source's)
+
+// A trace by branch() from the top of the range down: each point's source U, electrode E,
+// reduction current i and mark (with its growth rate and frequency), and the folds and Hopf points.
+const traceJob = (def, to, opts) => {
+  const d = new Device(def);
+  d.solve();
+  const br = d.branch({ terminal: 'left', to, maxSteps: 800, ...opts });
+  const pt = (p) => ({ U: p.drive, E: p.terminals.left.V, i: -p.terminals.left.current });
+  return { points: br.points.map((p) => ({ ...pt(p), mark: p.stability?.verdict, re: p.stability?.rate, im: p.stability?.im })), events: br.events.map((e) => ({ ...pt(e), kind: e.kind, omega: e.omega, between: e.between, located: e.located !== false })), end: br.end };
+};
+
+// The folds the load line predicts: along the electrode's own curve (traced finely, R = 0),
+// U = E − R i turns back where the line is tangent to it (a parabola through the three points
+// about each turn).
+function tangents(bare, R) {
+  if (!bare || !(R > 0)) return [];
+  const u = bare.points.map((p) => p.E - R * p.i), out = [];
+  for (let k = 1; k + 1 < u.length; k++) {
+    if ((u[k] - u[k - 1]) * (u[k + 1] - u[k]) >= 0) continue;
+    const c2 = (u[k + 1] - 2 * u[k] + u[k - 1]) / 2, c1 = (u[k + 1] - u[k - 1]) / 2, s = -c1 / (2 * c2);
+    const at = (f) => f(k) + (s * (f(k + 1) - f(k - 1))) / 2 + (s * s * (f(k + 1) - 2 * f(k) + f(k - 1))) / 2;
+    out.push({ U: u[k] + c1 * s + c2 * s * s, i: at((j) => bare.points[j].i), E: at((j) => bare.points[j].E) });
+  }
+  return out;
+}
+// (All above runs without a page: test/demos.test.js checks the folds against the load line.)
+
+const Us = document.getElementById('U'), Rs = document.getElementById('R'), pace = document.getElementById('pace');
+fromQuery(Us);
+fromQuery(Rs);
+const Rof = () => (+Rs.value <= -2.5 ? 0 : 10 ** +Rs.value); // the slider's left end: no resistor
+const U = () => +Us.value;
+
+// Traces run in a worker where there is one (a few seconds each), else here.
+const tracer = (() => {
+  // (a screenshot runs on virtual time, which a worker's real seconds would fall behind)
+  if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || new URLSearchParams(location.search).has('shot')) return (def, to, opts) => Promise.resolve(traceJob(def, to, opts));
+  const src = `import { Device } from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)};
+    const job = ${traceJob.toString()};
+    onmessage = (e) => { try { postMessage({ id: e.data.id, out: job(e.data.def, e.data.to, e.data.opts) }); } catch (err) { postMessage({ id: e.data.id, error: String(err?.stack ?? err) }); } };`;
+  const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+  const waiting = new Map();
+  let next = 0;
+  w.onmessage = (e) => {
+    if (e.data.error) console.error('the tracing worker:', e.data.error);
+    waiting.get(e.data.id)?.(e.data.out ?? { points: [], events: [], end: 'failed' });
+    waiting.delete(e.data.id);
+  };
+  w.onerror = (e) => console.error('the tracing worker:', e.message);
+  return (def, to, opts = {}) => new Promise((resolve) => { const id = next++; waiting.set(id, resolve); w.postMessage({ id, def: JSON.parse(JSON.stringify(def)), to, opts }); });
+})();
+
+let bare = null, held = null, traced = null, tracedR = NaN;
+// The electrode alone (R = 0), finely: the curve the load line crosses, and where it's tangent.
+const bareReady = tracer(electrode(E0, 0), E1, { step: 0.005, stability: false }).then((t) => (bare = t));
+async function retrace() {
+  const R = Rof();
+  tracedR = NaN;
+  traced = null;
+  info();
+  await bareReady;
+  // (with no resistor, the same curve again with its marks)
+  const t = R > 0 ? await tracer(electrode(E0, R), U1) : (held ??= await tracer(electrode(E0, 0), E1));
+  if (Rof() !== R) return; // (moved on meanwhile)
+  traced = t;
+  tracedR = R;
+  info();
+}
+
+function info() {
+  const el = document.getElementById('traceInfo');
+  if (!traced) return (el.textContent = 'tracing the steady states…');
+  const folds = traced.events.filter((e) => e.kind === 'fold'), hopf = traced.events.filter((e) => e.kind === 'hopf');
+  const pred = tangents(bare, tracedR);
+  const f = (v) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(4)}`;
+  el.textContent = tracedR > 0
+    ? `Traced: ${traced.points.length} steady states; ${folds.length ? `folds at U = ${folds.map((e) => f(e.U)).join(' and ')} V` : 'no fold'}` +
+      `${pred.length ? ` (load line tangent at ${pred.map((p) => f(p.U)).join(' and ')} V)` : ''}` +
+      `${hopf.length ? `; a Hopf point at ${hopf.map((e) => `${f(e.U)} V, ω = ${e.omega.toFixed(0)} rad/s`).join(', ')}` : ''}.`
+    : `Traced: ${traced.points.length} steady states under a potentiostat, all ${traced.points.every((p) => p.mark === 'no growing mode found') ? 'stable' : 'checked'}.`;
+}
+
+// ── The live cell: the source set by the slider, the state run on in time.
+let dev, rec;
+function start() {
+  dev = new Device(electrode(U(), Rof()));
+  dev.solve();
+  rec = { t: [], i: [], E: [] };
+  record(dev.solution());
+  retrace();
+}
+function record(s) {
+  rec.t.push(s.time);
+  rec.i.push(-s.terminals.left.current);
+  rec.E.push(s.terminals.left.V);
+}
+
+let sweeping = null, lastFrame, running = false;
+function frame(now = performance.now()) {
+  const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
+  lastFrame = now;
+  if (sweeping) {
+    // down to the bottom of the S and back, 40 mV of source a second of model time
+    const step = 0.04 * wall * +pace.value * sweeping.dir;
+    let u = U() + step;
+    if (u <= sweeping.low) [u, sweeping.dir] = [sweeping.low, 1];
+    if (sweeping.dir > 0 && u >= sweeping.high) [u, sweeping] = [sweeping.high, null];
+    Us.value = u;
+    setSource();
+  }
+  const s = dev.advance(dev.solver.time + wall * +pace.value, { budgetMs: 12, tol: 1e-4 });
+  s.trace.t.forEach((t, k) => {
+    rec.t.push(t);
+    rec.i.push(-s.trace.current[k]);
+    rec.E.push(s.trace.voltage[k]);
+  });
+  const keep = rec.t.findIndex((t) => t > s.time - 4);
+  if (keep > 0) for (const key of ['t', 'i', 'E']) rec[key].splice(0, keep);
+  draw(s);
+  if (s.converged && !pause.paused) requestAnimationFrame(frame);
+  else running = false;
+}
+const pause = pauser(document.getElementById('controls'), () => {
+  if (running) return;
+  lastFrame = undefined;
+  running = true;
+  requestAnimationFrame(frame);
+});
+
+const ink = 'var(--ink)', grey = 'var(--muted)', hot = 'var(--accent)';
+// A traced branch as runs of one mark: solid where stable, dashed where a mode grows (dotted for an
+// oscillating one), thin grey where stability() couldn't decide.
+function runs(points, x) {
+  const out = [];
+  let run = null;
+  const style = (p) => (p.mark === 'unstable' ? (p.im > 0 ? 'ring' : 'grow') : p.mark === 'no growing mode found' ? 'hold' : 'open');
+  for (const [k, p] of points.entries()) {
+    const st = style(p);
+    if (!run || run.st !== st) {
+      if (run) { run.x.push(x(p)); run.y.push(p.i); } // (joined to the next)
+      out.push((run = { st, x: [], y: [] }));
+    }
+    run.x.push(x(p));
+    run.y.push(p.i);
+  }
+  const look = { hold: { color: ink, width: 2 }, grow: { color: hot, dash: [6, 4], width: 2 }, ring: { color: hot, dash: [2, 3], width: 2.5 }, open: { color: grey, width: 1 } };
+  const named = new Set();
+  return out.map((r) => {
+    const label = { hold: 'stable', grow: 'unstable', ring: 'unstable, oscillating', open: 'undecided' }[r.st];
+    const s = { x: r.x, y: r.y, ...look[r.st], label: named.has(label) ? undefined : label };
+    named.add(label);
+    return s;
+  });
+}
+
+function draw(s) {
+  const R = Rof(), u = U(), iNow = -s.terminals.left.current, ENow = s.terminals.left.V;
+  const folds = traced?.events.filter((e) => e.kind === 'fold') ?? [], hopf = traced?.events.filter((e) => e.kind === 'hopf') ?? [];
+  chart(document.getElementById('iv'), {
+    xlabel: R > 0 ? 'source voltage U (V vs SHE)' : 'electrode potential E (V vs SHE)', ylabel: 'reduction current (A/m²)', xlim: [R > 0 ? U1 : E1, E0], ylim: [0, 10],
+    series: [
+      ...(traced ? runs(traced.points, (p) => p.U) : []),
+      { x: folds.map((e) => e.U), y: folds.map((e) => e.i), color: hot, width: 0, marker: true, label: folds.length ? 'fold' : undefined },
+      { x: hopf.map((e) => e.U), y: hopf.map((e) => e.i), color: colors[6], width: 0, marker: true, label: hopf.length ? 'Hopf point' : undefined },
+      { x: [u], y: [iNow], color: colors[0], width: 0, marker: true, label: 'now' },
+    ],
+  });
+  // The load line through U, and the state's path over the last seconds.
+  const line = R > 0 ? [E1, E0].map((E) => (E - u) / R) : [];
+  chart(document.getElementById('load'), {
+    xlabel: 'electrode potential E (V vs SHE)', ylabel: 'reduction current (A/m²)', xlim: [E1, E0], ylim: [0, 10],
+    series: [
+      ...(bare ? [{ x: bare.points.map((p) => p.E), y: bare.points.map((p) => p.i), color: grey, width: 2, label: 'electrode alone (held at E)' }] : []),
+      ...(R > 0 ? [{ x: [E1, E0], y: line, color: colors[0], dash: [6, 4], width: 1.5, label: 'load line, (E − U)/R' }] : []),
+      { x: rec.E, y: rec.i, color: colors[2], width: 1.2, label: 'the last 4 s' },
+      { x: [ENow], y: [iNow], color: colors[0], width: 0, marker: true, label: 'now' },
+    ],
+  });
+  chart(document.getElementById('time'), {
+    xlabel: 'time (s)', ylabel: 'reduction current (A/m²)', xlim: [Math.max(0, s.time - 4), Math.max(4, s.time)], ylim: [0, 10],
+    series: [{ x: rec.t, y: rec.i, color: colors[2], label: 'current' }],
+  });
+  profiles(document.getElementById('conc'), s, {
+    species: ['S2O82-'], title: 'peroxodisulfate across the stagnant layer', ylabel: 'concentration (mM)', range: [0, 1.1],
+  });
+  const f = (v, d = 3) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(d)}`;
+  document.getElementById('status').textContent = `E = ${f(ENow)} V · i = ${iNow.toFixed(2)} A/m² · t = ${s.time.toFixed(2)} s`;
+  document.getElementById('Uout').textContent = `${f(u)} V`;
+  document.getElementById('Rout').textContent = R > 0 ? `${R < 0.1 ? R.toPrecision(2) : R.toFixed(2)} Ω·m²` : 'none';
+}
+
+function setSource() {
+  dev.set({ contacts: { left: { V: U() } } });
+}
+Us.addEventListener('input', () => {
+  sweeping = null;
+  setSource();
+});
+Rs.addEventListener('input', () => (document.getElementById('Rout').textContent = Rof() > 0 ? `${Rof().toPrecision(2)} Ω·m²` : 'none'));
+Rs.addEventListener('change', () => {
+  // A new resistor: the same source, settled again from where the cell is (R has no state of its own).
+  dev.set({ contacts: { left: Rof() > 0 ? { V: U(), R: Rof() } : { V: U(), R: undefined } } });
+  retrace();
+});
+document.getElementById('sweep').addEventListener('click', () => {
+  const low = traced?.events.filter((e) => e.kind === 'fold').reduce((m, e) => Math.min(m, e.U), 0) ?? -1.2;
+  sweeping = { dir: -1, low: Math.max(U1, low - 0.1), high: Math.max(U(), -0.2) };
+});
+document.getElementById('kick').addEventListener('click', () => {
+  // 20 mV more source for a millisecond: a small push to see whether the state comes back
+  dev.set({ contacts: { left: { V: U() - 0.02 } } });
+  const s = dev.advance(dev.solver.time + 1e-3, { tol: 1e-4 });
+  record(s);
+  setSource();
+});
+start();
+running = true;
+requestAnimationFrame(frame);
+document.getElementById('slice').textContent = sliceNotation(electrode(0, 0), { Hg: 'Hg', water: 'NaF, S₂O₈²⁻' });
+showCode();
+</script>
+</body>
+</html>

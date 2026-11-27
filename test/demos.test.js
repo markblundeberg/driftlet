@@ -118,6 +118,35 @@ async function pageTheory(page, names) {
   return import(`data:text/javascript;base64,${Buffer.from(`${head}\nexport { ${names.join(', ')} };`).toString('base64')}`);
 }
 
+test('demos/bistable.html: its folds are where the load line is tangent, and the marks are as the page says', async () => {
+  const { electrode, traceJob, tangents, E0, E1, U1 } = await pageTheory('bistable.html', ['electrode', 'traceJob', 'tangents', 'E0', 'E1', 'U1']);
+  // The electrode alone, under a potentiostat: stable at every state traced.
+  const held = traceJob(electrode(E0, 0), E1);
+  assert.ok(held.end.startsWith('reached') && held.points.length > 10, held.end);
+  assert.deepEqual([...new Set(held.points.map((p) => p.mark))], ['no growing mode found']);
+  // Behind R: an S with two folds at the load line's tangents, unstable between them, and a Hopf
+  // point on the busy branch just before its fold.
+  const bare = traceJob(electrode(E0, 0), E1, { step: 0.005, stability: false });
+  for (const R of [0.05, 0.1]) {
+    const t = traceJob(electrode(E0, R), U1);
+    const folds = t.events.filter((e) => e.kind === 'fold'), hopf = t.events.filter((e) => e.kind === 'hopf');
+    const want = tangents(bare, R);
+    assert.equal(folds.length, 2, `R ${R}: ${t.events.map((e) => e.kind).join(' ')}`);
+    assert.equal(want.length, 2);
+    for (const [k, f] of folds.entries()) assert.ok(Math.abs(f.U - want[k].U) < 1e-3, `R ${R}: fold at ${f.U}, tangent at ${want[k].U}`);
+    const [hi, lo] = [folds[0].U, folds[1].U];
+    const between = t.points.slice(folds[0].between[1], folds[1].between[0] + 1);
+    assert.ok(between.length > 3 && between.every((p) => p.mark === 'unstable' && !(p.im > 0)), `R ${R}: the middle branch`);
+    // One Hopf on the busy branch just before its fold; at the smaller R, a second on the idle
+    // branch a fraction of a millivolt before its own (checked by a solve()/stability() walk).
+    const busy = hopf.filter((e) => e.i > 8), idle = hopf.filter((e) => !(e.i > 8));
+    assert.equal(busy.length, 1, `R ${R}: one Hopf on the busy branch`);
+    assert.ok(busy[0].U > hi && busy[0].U - hi < 0.03, `R ${R}: Hopf at ${busy[0].U} V, ${busy[0].i} A/m²`);
+    assert.equal(idle.length, R === 0.05 ? 1 : 0, `R ${R}: Hopf on the idle branch`);
+    for (const e of idle) assert.ok(e.U < lo && lo - e.U < 1e-3 && e.i < 2, `R ${R}: idle Hopf at ${e.U} V, ${e.i} A/m²`);
+  }
+});
+
 test("demos/frumkin.html: its theory is the simulation's, as the page says", async () => {
   const { Device, FARADAY } = await import('../src/index.js');
   const { electrode, theory, opened, planeRate, setSite, ions, reactant, L } = await pageTheory('frumkin.html', ['electrode', 'theory', 'opened', 'planeRate', 'setSite', 'ions', 'reactant', 'L']);
