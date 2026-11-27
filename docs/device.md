@@ -1708,22 +1708,28 @@ Notes:
   with `stability` on, modes within their error bar of zero are not resolved and a narrow unstable
   window unseen by all listed modes at both endpoints can still be missed.
 - **Folds and Hopf points.** A fold (`dp/ds = 0`) is located by safeguarded secant/bisection along
-  the exact arc to relative tangent and chord tolerances, and reported only when the drive itself
-  turns over beyond the drive's round-off floor (on a parameter plateau, `branch()` walks on with
-  no invented folds until `to`, `voltageBound`, `maxSteps`, or `budgetMs`); a Hopf
+  the exact arc to relative tangent and chord tolerances, and confirmed only when accepted points'
+  drives retreat beyond the drive's round-off floor (if the fold step itself does not retreat, the
+  fold is held provisionally until a subsequent accepted point retreats, and dropped if the drive
+  continues forward or the trace ends without retreating; on a parameter plateau, `branch()` walks
+  on with no invented folds until `to`, `voltageBound`, `maxSteps`, or `budgetMs`); a Hopf
   ($`\operatorname{Re}\lambda = 0`$ for a complex conjugate pair, with `omega` in rad/s) is matched
   by eigenvector overlap and located to relative eigenvalue and drive tolerances (never absolute in
   drive units, so drives in A over small patch areas and far `to` stay accurate). At a fold in the
   held parameter, one real eigenvalue must cross 0; an `'undecided'` mark has unknown growing-mode
-  count and triggers refinement across folds and undecided transitions. If marks still do not
+  count and triggers refinement across folds, Hopfs, and undecided transitions. If marks still do not
   reconcile (such as a real eigenvalue passing through infinity or a fold leaving an undecided side)
   after refinement hits resolution, `branch()` continues and reports a `'stability mismatch'` event
   rather than stopping blind (including on a `budgetMs` stop).
-- **Balanced metric and honest stops.** The arclength metric scales the drive so the state carries
-  at least half the tangent weight (keeping neighbouring branches distinguishable while insensitive
-  terminals retain dimensionless span scaling). If pseudo-arclength cannot advance at the minimum
-  stride (e.g. a singular Jacobian or model wall), `branch()` stops cleanly and notes that
-  `solve()` may continue from there rather than hopping branches.
+- **Balanced metric, consistent equations, and honest stops.** The arclength metric scales the drive
+  so the state carries at least half the tangent weight (keeping neighbouring branches distinguishable
+  while insensitive terminals retain dimensionless span scaling), and bounds each step's chord
+  alignment and tangent turn (`t_A · t_B ≥ 0.90`). Corrector Newton enforces separate state
+  (`1e-10` thermal units) and local-scale drive (`1e-9` relative, independent of `to`) tolerances,
+  and verifies the driven terminal's reported equation and two-terminal Kirchhoff balance before
+  accepting a point. If pseudo-arclength cannot advance at the minimum stride (e.g. a singular
+  Jacobian or model wall), `branch()` stops cleanly and notes that `solve()` may continue from there
+  rather than hopping branches.
 - **Returning past a fold.** If a branch turns a fold and crosses back through its starting drive
   on the far side, `branch()` lands on that drive and stops (`returned to starting drive … after
   fold`), keeping the trace inside the requested drive span.

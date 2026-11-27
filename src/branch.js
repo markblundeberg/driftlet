@@ -29,19 +29,24 @@
 //     the state responds) while insensitive terminals retain dimensionless span scaling. All drive
 //     tolerances are relative to the local drive/bracket scale — never absolute in drive units.
 //     Bordered Woodbury solves reuse s.sys (pure JS, zero dependencies, no ** or Math.pow), using
-//     least-cancelling interior current cuts (_currentCuts) when a floating contact's own flux
-//     derivative cancels >3 digits (e.g. heavily doped semiconductor contacts), and difference-form
-//     GMRES refinement (_assembleDifference) on lost-mode devices (depleted pools or islands).
-//   - Every output point is converged to `tol = 1e-10` thermal units. On devices with floating
-//     islands (`this.islands.length > 0`), if the plain corrector leaves Kirchhoff unbalanced, a
-//     second-phase islands round (`islandsOn = true`, fixed s) polishes the island levels (as
-//     newton() does).
+//     a single locked interior current cut (_currentCuts) per corrector or tangent solve when a
+//     floating contact's own flux derivative cancels >3 digits (e.g. heavily doped semiconductor
+//     contacts), and cut-aware difference-form GMRES refinement (_assembleDifference) on lost-mode
+//     devices (depleted pools or islands).
+//   - Every output point is converged to `tol = 1e-10` thermal units in state AND `1e-9` relative
+//     to the local drive scale (`max(|p|, |∂I/∂V|·V_T)` for I-drive, `max(|p|, V_T)` for V-drive —
+//     independent of `to`). Before accepting a floating-terminal point, the driven terminal's own
+//     reported equation (contact flux and, when active, cut current) and two-terminal Kirchhoff
+//     balance are verified directly on the converged state. On devices with floating islands
+//     (`this.islands.length > 0`), if the plain corrector leaves Kirchhoff unbalanced, a second-
+//     phase islands round (`islandsOn = true`, fixed s) polishes the island levels (as newton() does).
 //   - Step acceptance guards (applied uniformly; never switched off at the minimum stride):
 //       1. Hard `step` cap (`|p_next − p_cur| ≤ step` when `opts.step` is given) and pointwise
 //          state-step bound (`maxStateDiff ≤ 7.5` thermal units, with `10×` weight on `[0, 1]` gates).
-//       2. Chord-tangent & Hermite continuity (`stepHasHiddenS`): unit chord agrees with both
-//          endpoint tangents (`min(c·t_A, c·t_B) ≥ 0.85`, ≤ 32°) and the Hermite cubic along the
-//          arc does not reverse direction inside `(0, 1)` (catches narrow S-curves inside one step).
+//       2. Chord-tangent, tangent-turn & Hermite continuity (`stepHasHiddenS`): unit chord agrees
+//          with both endpoint tangents (`min(c·t_A, c·t_B) ≥ 0.85`), successive tangents satisfy
+//          `t_A·t_B ≥ 0.90` (≤ 26° per step), and the Hermite cubic along the arc does not reverse
+//          inside `(0, 1)` (catches narrow S-curves inside one step).
 //       3. Oscillatory nearer-end guard (when `stability !== false`): unique modes (im ≥ 0) are
 //          matched 1-to-1 by biorthogonal eigenvector overlap. On the same side of Re λ = 0, every
 //          matched oscillatory pair (`im > kBar · error`) satisfies
@@ -61,11 +66,13 @@
 //   - The trace stays inside the requested drive span `s ∈ [0, 1]` (between start drive `p0` and
 //     `to`). Initial orientation is confirmed by the first accepted step's actual drive (flipping
 //     if noisy `ts` at `s = 0` pointed out of the span), and steps from `s ≤ 0` cannot wander into
-//     `s < 0`. The trace ends where it first leaves the span, landing cleanly on the crossed edge
-//     (`to` or `p0`) and naming which edge in `end`. When a step turns a fold, the fold's drive is
-//     located first: if the fold lies past `to` (sFold ≥ 1), the trace lands on `to` on the
-//     pre-fold leg with no fold event; if a returning leg crosses back through `p0` (even on the
-//     same step as the fold), it records the fold and lands on `p0` on the far branch.
+//     `s < 0`. Subsequent tangents are oriented as a whole by the sign of their inner product with
+//     the previous tangent in the trace's metric (never overwriting `ts` alone). The trace ends
+//     where it first leaves the span, landing cleanly on the crossed edge (`to` or `p0`) and naming
+//     which edge in `end`. When a step turns a fold, the fold's drive is located first: if the fold
+//     lies past `to` (sFold ≥ 1), the trace lands on `to` on the pre-fold leg with no fold event;
+//     if a returning leg crosses back through `p0` (even on the same step as the fold), it records
+//     the fold and lands on `p0` on the far branch.
 //
 // Stability marks & events (and what a mark does not promise):
 //   - `points` always contains at least the starting point `points[0]`. If `budgetMs` runs out
@@ -79,13 +86,15 @@
 //     narrow S stepped over cleanly) can be missed because there is no stability signal to trigger
 //     refinement. With `stability !== false`, modes within `kBar · error` of zero are not resolved
 //     and a narrow unstable window unseen by all listed modes at both endpoints can still be missed.
-//   - Fold (`dp/ds` changes sign AND the drive itself turns over): located by safeguarded
-//     secant/bisection along the exact arc to `|ts| ≤ 1e-8 · max(|tsA|, |tsB|)` (or relative chord
-//     `< 1e-9`), and accepted only when the located fold's drive lies beyond both bracketing
-//     endpoints (allowing the drive's round-off floor) by more than that floor; a `ts` sign change
-//     without drive turnover is tangent noise and keeps the previous orientation, reporting
-//     `{ kind: 'fold', drive, terminals, between }`. On a parameter plateau, continuation walks on
-//     with no invented folds until `to`, `voltageBound`, `maxSteps`, or `budgetMs`.
+//   - Fold (`dp/ds` turns against the current travel direction AND accepted drives reverse): located
+//     by safeguarded secant/bisection along the exact arc to `|ts| ≤ 1e-8 · max(|tsA|, |tsB|)` (or
+//     relative chord `< 1e-9`). If the fold step itself retreats past the previous point by more
+//     than the drive round-off floor, the fold is recorded immediately; otherwise it is held as a
+//     provisional fold and confirmed only when a subsequent accepted point's drive retreats beyond
+//     that floor. A provisional fold whose subsequent accepted point advances forward instead (or
+//     whose trace ends before any point retreats) is dropped rather than emitted. On a parameter
+//     plateau, continuation walks on with no invented folds until `to`, `voltageBound`, `maxSteps`,
+//     or `budgetMs`.
 //   - Hopf (`Re λ` of a complex conjugate pair `Im λ > kBar · error` crosses 0): matched by
 //     eigenvector overlap and located by safeguarded secant/bisection along the exact arc to
 //     `|pB − pA| ≤ 1e-6 · max(|pA|, |pB|, |pB0 − pA0|)` or relative chord `≤ 1e-9`, reporting
@@ -248,15 +257,19 @@ function stateOnlyNorm(potIdx, invN, VT, tx, tV) {
   return Math.sqrt(sum);
 }
 
-function tangentNorm(potIdx, invN, wsEff, VT, tx, tV, ts) {
-  let sum = wsEff * wsEff * ts * ts;
+function tangentInner(potIdx, invN, wsEff, VT, txA, tVA, tsA, txB, tVB, tsB) {
+  let sum = wsEff * wsEff * tsA * tsB;
   for (let i = 0; i < potIdx.length; i++) {
-    const v = tx[potIdx[i]];
-    sum += invN * v * v;
+    const j = potIdx[i];
+    sum += invN * txA[j] * txB[j];
   }
   const invVT2 = 1 / (VT * VT);
-  for (let a = 0; a < tV.length; a++) sum += invVT2 * tV[a] * tV[a];
-  return Math.sqrt(sum);
+  for (let a = 0; a < tVA.length; a++) sum += invVT2 * tVA[a] * tVB[a];
+  return sum;
+}
+
+function tangentNorm(potIdx, invN, wsEff, VT, tx, tV, ts) {
+  return Math.sqrt(tangentInner(potIdx, invN, wsEff, VT, tx, tV, ts, tx, tV, ts));
 }
 
 function buildWeights(potIdx, invN, wsEff, VT, tx, tV, ts, wx, wV) {
@@ -315,6 +328,7 @@ function stepHasHiddenS(s, ctx, snapA, sA, tAx, tAV, tAs, uB, uLoB, termVB, sB, 
   const dLen = Math.sqrt(d2);
   if (!(dLen > 1e-12)) return false;
   if (dotA < 0.85 * dLen || dotB < 0.85 * dLen) return true;
+  if (tangentInner(potIdx, invN, wsEff, s.VT, tAx, tAV, tAs, tBx, tBV, tBs) < 0.90) return true;
   if (tAs * tBs > 0 && wsEff * Math.max(Math.abs(tAs), Math.abs(tBs), Math.abs(dS) / dLen) > 1e-6) {
     const sgn = tAs > 0 ? 1 : -1;
     const a = sgn * tAs, b = sgn * tBs, c = sgn * (dS / dLen);
@@ -381,6 +395,25 @@ function dotCut(s, cut, sgn, v) {
   return sgn * t;
 }
 
+// Raw contact/port flux current entering the device at steady state (never echoing passedCurrent).
+function contactCurrent(s, k) {
+  const flux = k === 0 ? s.contactFlux.left : k === 1 ? s.contactFlux.right : s.portFlux[k - 2];
+  let I = 0;
+  for (let i = 0; i < s.n; i++) I += FARADAY * s.z[i] * flux[i];
+  return k === 1 ? -I : I;
+}
+
+// Look up a cached linearised interior current cut by segment index (computing _currentCuts once per assembly).
+function getCut(s, ctx, seg) {
+  let allCuts = ctx.cutsCache;
+  if (!allCuts) {
+    allCuts = s._currentCuts();
+    ctx.cutsCache = allCuts;
+  }
+  for (let ci = 0; ci < allCuts.length; ci++) if (allCuts[ci].s === seg) return allCuts[ci];
+  return null;
+}
+
 // Exact nonlinear steady conduction current entering from contact fk (sgn = +1 left, -1 right)
 // across interior segment `seg`, matching dotCut's linearisation identically on every Newton step.
 function cutCurrent(s, seg, sgn) {
@@ -389,11 +422,12 @@ function cutCurrent(s, seg, sgn) {
   let r = 0;
   while (r + 1 < regions.length && seg >= grid.regionEnd[r]) r++;
   const reg = regions[r], mat = materials[reg.material];
-  const bL = seg + r, h = grid.segLength[seg] / grid.segArea[seg], vel = reg.velocity;
+  const bL = seg + r, bR = bL + 1, h = grid.segLength[seg] / grid.segArea[seg], vel = reg.velocity;
   let I = 0;
   for (let i = 0; i < n; i++) {
     if (z[i] === 0 || !mat.present[i] || mat.D[i] === 0) continue;
-    I += z[i] * FARADAY * s._sgSegment(seg, bL, i, h, vel)[0];
+    const N = mat.ideal ? s._sgSegment(seg, bL, i, h, vel)[0] : s._fluxConcentrated(seg, bL, bR, mat, h, vel, i).N;
+    I += z[i] * FARADAY * N;
   }
   return sgn * I;
 }
@@ -401,9 +435,10 @@ function cutCurrent(s, seg, sgn) {
 // Solve the (P + K + 1)-bordered system reusing the factored s.sys.
 // When a floating contact's own flux derivative cancels >3 digits (e.g. heavily doped ohmic
 // contacts where termC·col cancels bulk shift), substitutes the least-cancelling valid interior
-// segment cut from s._currentCuts() (the same continuity identity impedance() uses), and when
-// `useCutRes` is true (corrector Newton) substitutes the matching nonlinear cut residual.
-function solveBordered(s, ctx, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws, useCutRes = false) {
+// segment cut from s._currentCuts() (the same continuity identity impedance() uses), locked once
+// per corrector or tangent solve in `cutLock`, and when `useCutRes` is true (corrector Newton)
+// substitutes the matching nonlinear cut residual.
+function solveBordered(s, ctx, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws, useCutRes = false, cutLock = null) {
   const N = s.sys.size, fl = s.floating, pins = s.pins, P = pins.length, K = fl.length, S = P + K + 1;
   s._solveLinear(rhs, delta);
   const e = work.e, cols = work.cols;
@@ -436,6 +471,7 @@ function solveBordered(s, ctx, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, 
     }
     return t;
   };
+  let dIdV = 0;
   const A = Array.from({ length: S }, () => new Float64Array(S + 1));
   for (let a = 0; a < S; a++) {
     for (let b = 0; b < S; b++) A[a][b] = (b < P ? 1 : -1) * dot(a, cols[b]);
@@ -450,44 +486,57 @@ function solveBordered(s, ctx, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, 
       A[a][P + K] += circDs[a - P];
       A[a][S] = circRhs[a - P] - dot(a, delta);
       // Check for catastrophic cancellation in the contact's own flux derivative; if >3 digits are
-      // lost, read the steady current across the least-cancelling interior segment cut instead.
+      // lost, read the steady current across a single locked interior segment cut instead.
       if (fk < 2 && ctx && ctx.cutEligible[fk]) {
-        const C = s.termC[fk], colA = cols[a];
-        let plainGross = Math.abs(s.termDI[fk]);
-        for (let j = 0; j < N; j++) plainGross += Math.abs(C[j] * colA[j]);
-        if (plainGross > 1e3 * Math.abs(A[a][a])) {
-          const allCuts = ctx.cutsCache ?? (ctx.cutsCache = s._currentCuts());
-          const lo = ctx.cutLo, hi = ctx.cutHi;
-          const R = s.terms[fk].drive.R;
-          const diCut = R > 0 ? 1 / R : 0;
-          let bestCut = null, bestGross = plainGross;
-          for (let ci = 0; ci < allCuts.length; ci++) {
-            const cut = allCuts[ci];
-            if (fk === 0 ? !(cut.s + 1 <= lo) : !(cut.s >= hi)) continue;
-            let cg = diCut;
-            const idx = cut.idx, g = cut.g;
-            for (let q = 0; q < idx.length; q++) {
-              const o = idx[q];
-              if (s.loc[o] >= 0) cg += Math.abs(g[q] * colA[s.rix[o]]);
+        let bestCut = null;
+        if (cutLock && cutLock.decided[fk]) {
+          if (cutLock.seg[fk] >= 0) bestCut = getCut(s, ctx, cutLock.seg[fk]);
+        } else {
+          const C = s.termC[fk], colA = cols[a];
+          let plainGross = Math.abs(s.termDI[fk]);
+          for (let j = 0; j < N; j++) plainGross += Math.abs(C[j] * colA[j]);
+          if (plainGross > 1e3 * Math.abs(A[a][a])) {
+            const allCuts = ctx.cutsCache ?? (ctx.cutsCache = s._currentCuts());
+            const lo = ctx.cutLo, hi = ctx.cutHi;
+            const R = s.terms[fk].drive.R;
+            const diCut = R > 0 ? 1 / R : 0;
+            let bestGross = plainGross;
+            for (let ci = 0; ci < allCuts.length; ci++) {
+              const cut = allCuts[ci];
+              if (fk === 0 ? !(cut.s + 1 <= lo) : !(cut.s >= hi)) continue;
+              let cg = diCut;
+              const idx = cut.idx, g = cut.g;
+              for (let q = 0; q < idx.length; q++) {
+                const o = idx[q];
+                if (s.loc[o] >= 0) cg += Math.abs(g[q] * colA[s.rix[o]]);
+              }
+              if (cg < bestGross) { bestGross = cg; bestCut = cut; }
             }
-            if (cg < bestGross) { bestGross = cg; bestCut = cut; }
+            if (!(bestCut && bestGross < 0.01 * plainGross)) bestCut = null;
           }
-          if (bestCut && bestGross < 0.01 * plainGross) {
-            const sgn = fk === 0 ? 1 : -1;
-            for (let b = 0; b < S; b++) A[a][b] = (b < P ? 1 : -1) * dotCut(s, bestCut, sgn, cols[b]);
-            A[a][a] += diCut;
-            A[a][P + K] += circDs[a - P];
-            let rhsCut = circRhs[a - P];
-            if (useCutRes) {
-              const d = s.terms[fk].drive;
-              const src = s.sourceOverride.has(fk) ? s.sourceOverride.get(fk) : sourceAt(d.src, s.sourceTime, s.sourceBefore);
-              const iCut = cutCurrent(s, bestCut.s, sgn);
-              rhsCut = d.kind === 'I' ? iCut - src : iCut - (src - s.termV[fk]) / d.R;
-            }
-            A[a][S] = rhsCut - dotCut(s, bestCut, sgn, delta);
+          if (cutLock) {
+            cutLock.decided[fk] = true;
+            cutLock.seg[fk] = bestCut ? bestCut.s : -1;
           }
         }
+        if (bestCut) {
+          const sgn = fk === 0 ? 1 : -1;
+          const R = s.terms[fk].drive.R;
+          const diCut = R > 0 ? 1 / R : 0;
+          for (let b = 0; b < S; b++) A[a][b] = (b < P ? 1 : -1) * dotCut(s, bestCut, sgn, cols[b]);
+          A[a][a] += diCut;
+          A[a][P + K] += circDs[a - P];
+          let rhsCut = circRhs[a - P];
+          if (useCutRes) {
+            const d = s.terms[fk].drive;
+            const src = s.sourceOverride.has(fk) ? s.sourceOverride.get(fk) : sourceAt(d.src, s.sourceTime, s.sourceBefore);
+            const iCut = cutCurrent(s, bestCut.s, sgn);
+            rhsCut = d.kind === 'I' ? iCut - src : iCut - (src - s.termV[fk]) / d.R;
+          }
+          A[a][S] = rhsCut - dotCut(s, bestCut, sgn, delta);
+        }
       }
+      if (ctx && fk === ctx.termIdx) dIdV = Math.abs(A[a][a]);
     } else {
       for (let b = 0; b < K; b++) A[a][P + b] += wV[b];
       A[a][P + K] += ws;
@@ -520,17 +569,29 @@ function solveBordered(s, ctx, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, 
     for (let j = 0; j < N; j++) delta[j] += sa * col[j];
     if (a >= P && a < P + K) deltaV[a - P] = x[a];
   }
-  return { ds: x[P + K] };
+  return { ds: x[P + K], dIdV };
 }
 
 // GMRES(m) refinement of a bordered linear solve using difference-form J·v (_assembleDifference),
-// preconditioned by the already-factored solveBordered. Mirrors newton.js's refineSolve so depleted
-// conserved pools and floating islands (rank-1 lost modes) recover exact tangents and Newton steps
-// in 1–2 iterations without extra matrix factorisations.
-function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed) {
+// preconditioned by the already-factored solveBordered with the exact same locked cut rows so
+// operator, preconditioner and right-hand side belong to one consistent system.
+function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed, cutLock = null) {
   const { termIdx, dpSpan, Bs, pinDs, circDs, work } = ctx;
   const N = s.sys.size, fl = s.floating, K = fl.length, pins = s.pins, P = pins.length, R = s.rix;
   const dim = N + K + (isFixed ? 0 : 1);
+  const cutRows = new Array(K).fill(null);
+  if (cutLock) {
+    for (let a = 0; a < K; a++) {
+      const fk = fl[a];
+      if (fk < 2 && cutLock.decided[fk] && cutLock.seg[fk] >= 0) {
+        const cut = getCut(s, ctx, cutLock.seg[fk]);
+        if (cut) {
+          const Rk = s.terms[fk].drive.R;
+          cutRows[a] = { cut, sgn: fk === 0 ? 1 : -1, diCut: Rk > 0 ? 1 / Rk : 0 };
+        }
+      }
+    }
+  }
   const save = {
     res: Float64Array.from(s.res),
     termRes: Float64Array.from(s.termRes),
@@ -578,8 +639,8 @@ function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed) {
     for (let a = 0; a < K; a++) cRhsW[a] = r[N + a];
     outV.fill(0);
     const sol = isFixed
-      ? solveBordered(s, ctx, work, rhsW, pRhsW, cRhsW, 0, outX, outV, Bs, pinDs, circDs, work.zeroWx, work.zeroWv, 1)
-      : solveBordered(s, ctx, work, rhsW, pRhsW, cRhsW, r[N + K], outX, outV, Bs, pinDs, circDs, wx, wV, ws);
+      ? solveBordered(s, ctx, work, rhsW, pRhsW, cRhsW, 0, outX, outV, Bs, pinDs, circDs, work.zeroWx, work.zeroWv, 1, false, cutLock)
+      : solveBordered(s, ctx, work, rhsW, pRhsW, cRhsW, r[N + K], outX, outV, Bs, pinDs, circDs, wx, wV, ws, false, cutLock);
     const z = new Float64Array(dim);
     for (let j = 0; j < N; j++) z[j] = outX[j];
     for (let a = 0; a < K; a++) z[N + a] = outV[a];
@@ -606,10 +667,15 @@ function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed) {
       out[j] = t / rowDiv[j];
     }
     for (let a = 0; a < K; a++) {
-      let t = DkU[a] * x[N + a] + circDsU[a] * dsVal;
-      for (let b = 0; b < K; b++) if (b !== a) t += DXU[fl[a]][fl[b]] * x[N + b];
-      for (let j = 0; j < N; j++) t += CkU[a][j] * x[j];
-      out[N + a] = t;
+      const cr = cutRows[a];
+      if (cr) {
+        out[N + a] = cr.diCut * x[N + a] + circDsU[a] * dsVal + dotCut(s, cr.cut, cr.sgn, v);
+      } else {
+        let t = DkU[a] * x[N + a] + circDsU[a] * dsVal;
+        for (let b = 0; b < K; b++) if (b !== a) t += DXU[fl[a]][fl[b]] * x[N + b];
+        for (let j = 0; j < N; j++) t += CkU[a][j] * x[j];
+        out[N + a] = t;
+      }
     }
     for (let a = 0; a < P; a++) {
       const p = pins[a];
@@ -680,8 +746,10 @@ function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed) {
     let maxDiff = 0;
     for (let j = 0; j < dim; j++) {
       if (!Number.isFinite(x[j])) return { ok: false, ds: dsInit, moved: Infinity };
-      const d = Math.abs(x[j] - pb[j]);
-      if (d > maxDiff) maxDiff = d;
+      if (j < N + K) {
+        const d = Math.abs(x[j] - pb[j]);
+        if (d > maxDiff) maxDiff = d;
+      }
     }
     for (let j = 0; j < N; j++) delta[j] = x[j];
     for (let a = 0; a < K; a++) deltaV[a] = x[N + a];
@@ -691,8 +759,9 @@ function refineBordered(s, ctx, delta, deltaV, dsInit, wx, wV, ws, isFixed) {
   }
 }
 
-// Compute unit tangent (tx, tV, ts) at current converged state + sVal, oriented to agree with
-// (prevTx, prevTV, prevTs), or with ts > 0 when prevTx is null.
+// Compute unit tangent (tx, tV, ts) at current converged state + sVal, oriented as a whole by
+// the sign of its inner product with (prevTx, prevTV, prevTs) in the trace's metric, or with
+// ts > 0 when prevTx is null.
 function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFactor = false, refine = false) {
   const { termIdx, p0, dpSpan, potIdx, invN, wsEff, Bs, pinDs, circDs, wx, wV, work } = ctx;
   const N = s.sys.size, K = s.floating.length;
@@ -713,10 +782,11 @@ function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFacto
     wV.fill(0);
     ws = 1;
   }
-  const res = solveBordered(s, ctx, work, work.zero, work.zeroPin, work.zeroCirc, 1, tx, tV, Bs, pinDs, circDs, wx, wV, ws);
+  const cutLock = { decided: [false, false], seg: [-1, -1] };
+  const res = solveBordered(s, ctx, work, work.zero, work.zeroPin, work.zeroCirc, 1, tx, tV, Bs, pinDs, circDs, wx, wV, ws, false, cutLock);
   let tsRaw = res.ds;
   if (refine || s.sys.perturbedPivots > 0 || s.sys.lostColumns > 0) {
-    const ref = refineBordered(s, ctx, tx, tV, tsRaw, wx, wV, ws, false);
+    const ref = refineBordered(s, ctx, tx, tV, tsRaw, wx, wV, ws, false, cutLock);
     if (ref.ok) tsRaw = ref.ds;
   }
   if (!Number.isFinite(tsRaw)) return { ok: false };
@@ -733,7 +803,13 @@ function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFacto
       ts = -ts;
     }
   } else {
-    cosTheta = 1 / nrm;
+    const dotPrev = tangentInner(potIdx, invN, wsEff, s.VT, prevTx, prevTV, prevTs, tx, tV, ts);
+    if (dotPrev < 0) {
+      for (let j = 0; j < N; j++) tx[j] = -tx[j];
+      for (let a = 0; a < K; a++) tV[a] = -tV[a];
+      ts = -ts;
+    }
+    cosTheta = Math.abs(dotPrev);
   }
   return { ok: true, ts, cosTheta };
 }
@@ -754,10 +830,13 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
   let sVal = fixedS ? sPred : sStart;
 
   const runLoop = (islandsOn, isFixed, limit) => {
+    const { isCurrentDrive } = ctx;
+    const cutLock = { decided: [false, false], seg: [-1, -1] };
     let lastStep = Infinity;
     let refining = false;
     let refineFails = 0;
     let usedRefine = false;
+    let eqFailed = false;
     for (let it = 1; it <= limit; it++) {
       budget?.check();
       s.sourceOverride.set(termIdx, p0 + sVal * dpSpan);
@@ -794,9 +873,9 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
         if (isFixed) {
           work.zeroWx.fill(0);
           work.zeroWv.fill(0);
-          solved = solveBordered(s, ctx, work, s.res, pinRhs, circRhs, 0, delta, deltaV, Bs, pinDs, circDs, work.zeroWx, work.zeroWv, 1, true);
+          solved = solveBordered(s, ctx, work, s.res, pinRhs, circRhs, 0, delta, deltaV, Bs, pinDs, circDs, work.zeroWx, work.zeroWv, 1, true, cutLock);
         } else {
-          solved = solveBordered(s, ctx, work, s.res, pinRhs, circRhs, g, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws, true);
+          solved = solveBordered(s, ctx, work, s.res, pinRhs, circRhs, g, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws, true, cutLock);
         }
       } catch (err) {
         if (!(err instanceof SolverError)) throw err;
@@ -806,8 +885,8 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
       if (s.sys.perturbedPivots > 0 || s.sys.lostColumns > 0) refining = true;
       if (refining && refineFails < 2) {
         const ref = isFixed
-          ? refineBordered(s, ctx, delta, deltaV, 0, work.zeroWx, work.zeroWv, 1, true)
-          : refineBordered(s, ctx, delta, deltaV, ds, wx, wV, ws, false);
+          ? refineBordered(s, ctx, delta, deltaV, 0, work.zeroWx, work.zeroWv, 1, true, cutLock)
+          : refineBordered(s, ctx, delta, deltaV, ds, wx, wV, ws, false, cutLock);
         if (ref.ok && ref.moved < 10) {
           ds = isFixed ? 0 : ref.ds;
           usedRefine = true;
@@ -816,34 +895,71 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
         }
       }
       clipLevels(s, delta, maxStep);
-      const step = Math.max(maxPotentialStep(s, delta, deltaV), wsEff * Math.abs(ds));
-      const own = Math.max(maxPotentialStep(s, delta, deltaV, false), wsEff * Math.abs(ds));
-      if (!Number.isFinite(step)) return { converged: false, iterations: it, s: sVal, error: 'non-finite update' };
+      const stateStep = maxPotentialStep(s, delta, deltaV);
+      const stateOwn = maxPotentialStep(s, delta, deltaV, false);
+      const step = Math.max(stateStep, wsEff * Math.abs(ds));
+      const own = Math.max(stateOwn, wsEff * Math.abs(ds));
+      if (!Number.isFinite(step) || !Number.isFinite(ds)) return { converged: false, iterations: it, s: sVal, error: 'non-finite update' };
       if (it > 1 && own > 1e5) return { converged: false, iterations: it, s: sVal, error: 'diverging' };
       const alpha = own > maxStep ? maxStep / own : 1;
       addToState(s, delta, -alpha);
       for (let a = 0; a < K; a++) s.termV[fl[a]] -= alpha * deltaV[a];
       if (!isFixed) sVal -= alpha * ds;
       budget?.markAttempted();
-      if (alpha === 1 && step < tol) {
+      const pAfter = p0 + sVal * dpSpan;
+      const pScale = isCurrentDrive
+        ? Math.max(Math.abs(pAfter), solved.dIdV * s.VT, 1e-300)
+        : Math.max(Math.abs(pAfter), s.VT);
+      const paramRel = isFixed ? 0 : Math.abs(ds * dpSpan) / pScale;
+      const convMetric = Math.max(stateStep, 0.1 * paramRel);
+      if (alpha === 1 && stateStep < tol && paramRel <= 1e-9) {
+        const checkEq = fl.includes(termIdx) && (s.islands.length === 0 || islandsOn);
         try {
+          s.sourceOverride.set(termIdx, pAfter);
           s.computeConcentrations();
+          if (checkEq) s._assembleBookkeeping(Infinity);
         } catch (err) {
           if (!(err instanceof SolverError)) throw err;
           return { converged: false, iterations: it, s: sVal, modelError: err.message };
+        }
+        let eqOk = true;
+        if (checkEq) {
+          const d = s.terms[termIdx].drive;
+          const iTarget = d.kind === 'I' ? pAfter : (pAfter - s.termV[termIdx]) / d.R;
+          const iRo = d.kind === 'I' ? 0 : (4 * Number.EPSILON * Math.max(Math.abs(pAfter), Math.abs(s.termV[termIdx]))) / Math.abs(d.R);
+          const iScale = Math.max(Math.abs(iTarget), solved.dIdV * s.VT, 1e-300);
+          const hasCut = termIdx < 2 && cutLock.decided[termIdx] && cutLock.seg[termIdx] >= 0;
+          if (hasCut) {
+            const iCut = cutCurrent(s, cutLock.seg[termIdx], termIdx === 0 ? 1 : -1);
+            if (Math.abs(iCut - iTarget) > 1e-8 * Math.max(iScale, Math.abs(iCut)) + 10 * iRo) eqOk = false;
+          } else {
+            const iRead = contactCurrent(s, termIdx);
+            if (Math.abs(iRead - iTarget) > 1e-5 * Math.max(iScale, Math.abs(iRead)) + 10 * iRo) eqOk = false;
+          }
+          if (eqOk && s.terms.length === 2 && s.islands.length === 0) {
+            const iOther = contactCurrent(s, 1 - termIdx);
+            const kTol = 1e-5 * Math.max(iScale, Math.abs(iOther)) + 10 * iRo;
+            if (Math.abs(iOther + iTarget) > kTol) eqOk = false;
+          }
+        }
+        if (!eqOk) {
+          eqFailed = true;
+          refining = true;
+          lastStep = convMetric;
+          continue;
         }
         return {
           converged: true,
           iterations: it,
           s: sVal,
-          reusable: !islandsOn && s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0,
+          reusable: !checkEq && !islandsOn && s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0,
           refined: usedRefine,
         };
       }
-      if (!refining && it >= 3 && alpha === 1 && step > 0.25 * lastStep && step < 1e-3) refining = true;
-      lastStep = step;
+      if (!refining && it >= 3 && alpha === 1 && convMetric > 0.25 * lastStep && convMetric < 1e-3) refining = true;
+      lastStep = convMetric;
     }
-    return { converged: false, iterations: limit, s: sVal, error: 'Newton did not converge' };
+    return { converged: false, iterations: limit, s: sVal, error: eqFailed ? 'reported terminal equation not satisfied' : 'Newton did not converge' };
   };
 
   const r1 = runLoop(false, fixedS, maxIter);
@@ -1671,9 +1787,9 @@ export class Branch {
       if (!tan0.ok) {
         return { terminal, kind, points, events, end: 'refused: initial tangent is non-finite or singular', warnings };
       }
-      if (Math.abs(tan0.ts) > 1e-12) {
+      if (Math.abs(tan0.ts) > 0) {
         const stateSlope = stateOnlyNorm(potIdx, invN, this.VT, tx, tV) / Math.abs(tan0.ts);
-        if (stateSlope > 1 && Number.isFinite(stateSlope)) {
+        if (stateSlope > 1 && stateSlope < 1e100 && Number.isFinite(stateSlope)) {
           ctx.wsEff = stateSlope;
           tan0 = computeTangent(this, ctx, 0, null, null, null, tx, tV, true);
         }
@@ -1687,8 +1803,8 @@ export class Branch {
       const rebalanceMetric = () => {
         if (!(ctx.wsEff * Math.abs(ts) > 0.8)) return 1;
         const stNorm = stateOnlyNorm(potIdx, invN, this.VT, tx, tV);
-        if (!(stNorm > 1e-12 && Math.abs(ts) > 1e-12)) return 1;
-        const nextWs = Math.max(1, stNorm / Math.abs(ts));
+        if (!(stNorm > 1e-12 && Math.abs(ts) > 0)) return 1;
+        const nextWs = Math.min(1e100, Math.max(1, stNorm / Math.abs(ts)));
         if (nextWs >= 0.99 * ctx.wsEff) return 1;
         ctx.wsEff = nextWs;
         const newNrm = tangentNorm(potIdx, invN, ctx.wsEff, this.VT, tx, tV, ts);
@@ -1711,7 +1827,7 @@ export class Branch {
       const maxPotPerStep = 6;
       const maxSPerStep = step !== undefined ? step / absSpan : 0.2;
       let dsArc = 2;
-      if (Math.abs(ts) > 1e-12) dsArc = Math.min(dsArc, maxSPerStep / Math.abs(ts));
+      if (Math.abs(ts) > 0) dsArc = Math.min(dsArc, maxSPerStep / Math.abs(ts));
       const initStateRate = maxStateStep(this, tx, tV);
       if (initStateRate > 1e-12) dsArc = Math.min(dsArc, 5 / initStateRate);
       dsArc = Math.max(MIN_ARC, Math.min(MAX_ARC, dsArc));
@@ -1719,6 +1835,31 @@ export class Branch {
       let consecRefine = 0;
       let flippedStart = false;
       let stepCount = 0;
+      let lastDriveDir = Math.sign(dpSpan);
+      let pendingFold = null;
+
+      // Resolve any provisional fold against an accepted point's drive `pAcc` before recording
+      // events from the new step. A provisional fold stands only if a subsequent accepted drive
+      // retreats beyond the drive round-off floor; advancing forward drops it.
+      const settlePendingFold = (pAcc, floorAcc) => {
+        if (!pendingFold) return;
+        const fTol = Math.max(pendingFold.floor, floorAcc);
+        const delta = pendingFold.dir * (pAcc - pendingFold.peakDrive);
+        if (delta < -fTol) {
+          const pf = pendingFold.preFold;
+          events.push({
+            kind: 'fold',
+            drive: pf.drive,
+            terminals: pf.terminals,
+            between: pendingFold.between,
+            ...(pf.located ? {} : { located: false, note: pf.note }),
+          });
+          lastDriveDir = -pendingFold.dir;
+          pendingFold = null;
+        } else if (delta > fTol) {
+          pendingFold = null;
+        }
+      };
 
       // Evaluate stability on a candidate step and verify both the oscillatory nearer-end rule and
       // Morse-index consistency (rejecting to halve when an unexplained flip, undecided mark,
@@ -1761,14 +1902,12 @@ export class Branch {
           } else {
             const nA = countGrowing(stPrev, kBar);
             const nB = countGrowing(stCand, kBar);
-            let refN = nA;
-            if (prevUndec) {
-              for (let j = stFullList.length - 1; j >= 0; j--) {
-                if (stFullList[j] && isDecided(stFullList[j].verdict)) { refN = countGrowing(stFullList[j], kBar); break; }
-              }
-            }
             const hopfBracket = detectHopfBracket(stPrev, stCand, kBar);
             if (hopfBracket) {
+              if (prevUndec || candUndec) {
+                if (_stats) _stats.refineFlip++;
+                return { ok: false, reason: 'Hopf step has undecided stability mark', isRefine: true, stCand };
+              }
               const prevStateObj = states[points.length - 1];
               const hopf = locateHopf(this, ctx, prevStateObj, candStateObj, hopfBracket.pairA, hopfBracket.pairB, hopfBracket.omega);
               this._restore(candStateObj.snap);
@@ -1777,7 +1916,7 @@ export class Branch {
                 return { ok: false, reason: 'Hopf bracket contains hidden fold or coalescence', isRefine: true, stCand };
               }
               preHopf = hopf;
-            } else if (nA !== nB || (prevUndec && !candUndec && nB !== refN)) {
+            } else if (nA !== nB) {
               if (_stats) _stats.refineFlip++;
               return { ok: false, reason: 'unexplained stability flip', isRefine: true, stCand };
             }
@@ -1786,9 +1925,10 @@ export class Branch {
         return { ok: true, stCand, preHopf };
       };
 
-      const acceptPoint = (sNew, newTx, newTV, newTs, preSt = null, preFold = null, preHopf = null) => {
+      const acceptPoint = (sNew, newTx, newTV, newTs, preSt = null, preFold = null, preHopf = null, foldConfirm = 'none') => {
         const kPrev = points.length - 1;
         const prevState = states[kPrev];
+        const pPrevAcc = points[kPrev].drive;
         const curSnap = this._snapshot();
         const curState = {
           snap: curSnap,
@@ -1799,6 +1939,7 @@ export class Branch {
         };
         const driveNew = p0 + sNew * dpSpan;
         const ptData = readPointData(this, termIdx, driveNew, solutions);
+        const floorNew = driveRoundoffFloor(this, termIdx, driveNew);
         let stNew = preSt;
         if (doStab && !stNew) {
           budget?.check();
@@ -1814,14 +1955,29 @@ export class Branch {
         states.push(curState);
         const kNew = points.length - 1;
 
+        settlePendingFold(driveNew, floorNew);
+
         if (preFold) {
-          events.push({
-            kind: 'fold',
-            drive: preFold.drive,
-            terminals: preFold.terminals,
-            between: [kPrev, kNew],
-            ...(preFold.located ? {} : { located: false, note: preFold.note }),
-          });
+          if (foldConfirm === 'confirm') {
+            events.push({
+              kind: 'fold',
+              drive: preFold.drive,
+              terminals: preFold.terminals,
+              between: [kPrev, kNew],
+              ...(preFold.located ? {} : { located: false, note: preFold.note }),
+            });
+            lastDriveDir = -lastDriveDir;
+            pendingFold = null;
+          } else if (foldConfirm === 'provisional') {
+            const peakDrive = lastDriveDir * (driveNew - pPrevAcc) >= 0 ? driveNew : pPrevAcc;
+            pendingFold = {
+              preFold,
+              dir: lastDriveDir,
+              peakDrive,
+              between: [kPrev, kNew],
+              floor: Math.max(preFold.floor, floorNew),
+            };
+          }
         }
 
         if (preHopf) {
@@ -1914,12 +2070,12 @@ export class Branch {
         budget?.check();
 
         let dsStep = dsArc;
-        if (Math.abs(ts) > 1e-12) dsStep = Math.min(dsStep, maxSPerStep / Math.abs(ts));
+        if (Math.abs(ts) > 0) dsStep = Math.min(dsStep, maxSPerStep / Math.abs(ts));
         const stateRate = maxStateStep(this, tx, tV);
         if (stateRate > 1e-12) dsStep = Math.min(dsStep, maxPotPerStep / stateRate);
         if (dsStep < MIN_ARC) dsStep = MIN_ARC;
 
-        if (sCur < 1 && ts > 1e-12 && sCur + dsStep * ts > 1.02) {
+        if (sCur < 1 && ts > 0 && sCur + dsStep * ts > 1.02) {
           dsStep = Math.max(MIN_ARC, (1.01 - sCur) / ts);
         }
 
@@ -2035,13 +2191,41 @@ export class Branch {
         };
         const pPrev = p0 + sCur * dpSpan;
         const pCand = p0 + sNext * dpSpan;
+        const candFloor = driveRoundoffFloor(this, termIdx, pCand);
+
+        // Effective travel direction entering this step (accounting for any pending fold that
+        // pCand would confirm on acceptance, without mutating state until accepted).
+        let effDir = lastDriveDir;
+        if (pendingFold && pendingFold.dir * (pCand - pendingFold.peakDrive) < -Math.max(pendingFold.floor, candFloor)) {
+          effDir = -pendingFold.dir;
+        }
+        const dirSign = effDir * dpSpan > 0 ? 1 : -1;
+
+        // If a provisional fold is waiting for confirmation and `ts` flips back without pCand
+        // retreating yet, check whether this step straddled a second narrow fold (an S-curve
+        // middle branch narrower than one stride); if so, halve to resolve the middle branch.
+        if (pendingFold && effDir === lastDriveDir && prevTs * dirSign < 0 && tanNext.ts * dirSign > 0 && consecRefine < MAX_REFINE && dsStep > MIN_ARC * 2) {
+          const fBack = locateFold(this, ctx, prevStateObj, candState);
+          this._restore(candState.snap);
+          const backTol = Math.max(fBack.floor, pendingFold.floor, candFloor);
+          if ((-pendingFold.dir) * (fBack.drive - pPrev) > backTol || (-pendingFold.dir) * (fBack.drive - pCand) > backTol) {
+            consecRefine++;
+            tx.set(prevTx);
+            tV.set(prevTV);
+            ts = prevTs;
+            if (!rejectStep(0.5, `continuation stopped: could not resolve narrow fold pair near ${formatDrive(pPrev, kind, hasGeometry)}`, true)) break;
+            continue;
+          }
+        }
 
         // Check for fold FIRST so the One Span Rule handles folds past `to` and immediate return
-        // past `p0` uniformly. A fold is accepted only when the drive itself turns over (located
-        // fold drive lies beyond both bracketing points allowing the drive's round-off floor);
-        // a `ts` sign change without turnover is tangent noise and keeps the previous orientation.
-        let stepFold = (prevTs > 0 && tanNext.ts < 0) || (prevTs < 0 && tanNext.ts > 0);
+        // past `p0` uniformly. A fold is located when `ts` turns against the current travel
+        // direction and accepted only when accepted drives retreat beyond the drive round-off
+        // floor (immediately if this step itself retreats, otherwise provisionally until a
+        // subsequent accepted point retreats).
+        let stepFold = prevTs * dirSign > 0 && tanNext.ts * dirSign < 0;
         let preFold = null;
+        let foldConfirm = 'none';
         if (stepFold) {
           try {
             preFold = locateFold(this, ctx, prevStateObj, candState);
@@ -2065,21 +2249,20 @@ export class Branch {
           }
           this._restore(candState.snap);
 
-          const dir = prevTs * dpSpan > 0 ? 1 : -1;
-          const exPrev = dir * (preFold.drive - pPrev);
-          const exCand = dir * (preFold.drive - pCand);
-          const floor = preFold.floor;
-          const realTurnover = preFold.located
+          const exPrev = effDir * (preFold.drive - pPrev);
+          const exCand = effDir * (preFold.drive - pCand);
+          const floor = Math.max(preFold.floor, candFloor);
+          const clearTurnover = preFold.located
             ? (exPrev >= 0 && exCand >= 0 && Math.max(exPrev, exCand) > floor)
             : (exPrev > floor && exCand > floor);
-          if (!realTurnover) {
+          const stepRetreated = effDir * (pCand - pPrev) < -floor;
+          if (!clearTurnover && !stepRetreated && !(exPrev >= -floor && exCand >= -floor)) {
             if (_stats) _stats.roundoffFoldSuppressed++;
             stepFold = false;
             preFold = null;
-            tanNext.ts = Math.sign(prevTs) * Math.abs(tanNext.ts);
-            candState.ts = tanNext.ts;
           } else {
-            if (prevTs > 0 && sCur < 1 && preFold.s >= 1) {
+            foldConfirm = stepRetreated ? 'confirm' : 'provisional';
+            if (clearTurnover && effDir * dpSpan > 0 && sCur < 1 && preFold.s >= 1) {
               const landed = landExact(prevStateObj, preFold.state, 1, prevTx, prevTV, prevTs);
               if (landed) {
                 let stLand = null, hopfLand = null;
@@ -2106,7 +2289,7 @@ export class Branch {
               if (!rejectStep(0.5, `continuation stopped: could not land on target ${formatDrive(to, kind, hasGeometry)}`)) break;
               continue;
             }
-            if (prevTs < 0 && sCur > 0 && preFold.s <= 0) {
+            if (clearTurnover && effDir * dpSpan < 0 && sCur > 0 && preFold.s <= 0) {
               const landed = landExact(prevStateObj, preFold.state, 0, prevTx, prevTV, prevTs);
               if (landed) {
                 let stLand = null, hopfLand = null;
@@ -2134,6 +2317,7 @@ export class Branch {
               if (!rejectStep(0.5, `continuation stopped: could not land on starting drive ${formatDrive(p0, kind, hasGeometry)}`)) break;
               continue;
             }
+            if (!clearTurnover && !stepRetreated) preFold.quiet = true;
           }
         }
 
@@ -2187,7 +2371,7 @@ export class Branch {
               hopfLand = chk.preHopf;
             }
             consecRefine = 0;
-            acceptPoint(0, landed.tx, landed.tV, landed.tan.ts, stLand, preFold, hopfLand);
+            acceptPoint(0, landed.tx, landed.tV, landed.tan.ts, stLand, preFold, hopfLand, preFold ? 'confirm' : 'none');
             const vNote = isCurrentDrive ? `, V = ${points[points.length - 1].terminals[terminal].V.toPrecision(5)} V` : '';
             end = `returned to starting drive (${formatDrive(p0, kind, hasGeometry)}${vNote}) after fold`;
             break;
@@ -2202,7 +2386,7 @@ export class Branch {
         // Guard 4: Oscillatory nearer-end rule + Morse-index refinement.
         let stCand = null, preHopf = null;
         if (doStab) {
-          const chk = checkStepStability(stFullList[points.length - 1], pCand, candState, preFold, dsStep);
+          const chk = checkStepStability(stFullList[points.length - 1], pCand, candState, preFold && !preFold.quiet ? preFold : null, dsStep);
           if (!chk.ok) {
             if (chk.isRefine) consecRefine++;
             tx.set(prevTx);
@@ -2221,7 +2405,7 @@ export class Branch {
         ts = tanNext.ts;
         sCur = sNext;
         stepCount++;
-        acceptPoint(sNext, tx, tV, ts, stCand, preFold, preHopf);
+        acceptPoint(sNext, tx, tV, ts, stCand, preFold, preHopf, foldConfirm);
 
         // Adapt arclength stride from Newton iteration count and tangent smoothness.
         if (cor.iterations <= 5 && tanNext.cosTheta > 0.94) {

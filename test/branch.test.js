@@ -1191,9 +1191,12 @@ test('Si pn diode in reverse under current drive (0 -> -1e4): 0 folds, monotone 
     const br = d.branch({ terminal: 'right', to: -1e4, stability, maxSteps: 300 });
     assert.equal(br.events.length, 0, `Si pn reverse stab=${stability}: unexpected events ${JSON.stringify(br.events)}`);
     assert.match(br.end, /^left voltage bound /, `Si pn reverse stab=${stability}: ${br.end}`);
+    assert.ok(br.points.length <= 200, `Si pn reverse stab=${stability}: crawled (${br.points.length} pts)`);
     for (let i = 1; i < br.points.length; i++) {
       assert.ok(br.points[i].drive <= br.points[i - 1].drive, `Si pn reverse I rose at pt ${i}`);
       assert.ok(br.points[i].terminals.right.V < br.points[i - 1].terminals.right.V, `Si pn reverse V rose at pt ${i}`);
+      const kErr = Math.abs(br.points[i].terminals.left.current + br.points[i].terminals.right.current) / Math.abs(br.points[i].drive);
+      assert.ok(kErr < 1e-6, `Si pn reverse stab=${stability} pt ${i}: Kirchhoff err ${kErr.toExponential(2)}`);
     }
     assert.ok(br.points.at(-1).terminals.right.V < -19, `Si pn reverse stopped short: V=${br.points.at(-1).terminals.right.V}`);
   }
@@ -1351,4 +1354,331 @@ test('GaAs pn forward (0 -> 10) and floating-base Si npn (check() clean, 0 -> 1e
   assert.equal(brN.events.length, 0, `Si npn events: ${JSON.stringify(brN.events)}`);
   const outside = brN.points.filter((p) => p.drive < 0 || p.drive > 1e6);
   assert.equal(outside.length, 0, `Si npn points outside [0, 1e6]: ${outside.length}`);
+});
+
+// Round-7 regression, self-check, to-independence, and guard tests (each fails on Round 6 134ea98):
+
+test('Semiconductor stacks under current drive at 3 targets (-1e4, -1e8, -1e12) from 2 starts: 0 folds, Kirchhoff & voltage-held match, and to-independence', () => {
+  const mkStack = (mat, donors, acceptors, kf, grid) => (right) => new Device(build({
+    T: 300,
+    library: [semiconductor(mat)],
+    stack: [
+      ohmic(0),
+      layer(mat, units.um(1), { donors: units.perCm3(donors) }),
+      layer(mat, units.um(1), { acceptors: units.perCm3(acceptors) }),
+      ohmic(right),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { [mat]: kf } }],
+    grid: { hmin: units.nm(grid[0]), hmax: units.nm(grid[1]) },
+  }));
+  const stacks = [
+    ['Si p+n+ fine', mkStack('Si', 1e19, 1e19, 1e6, [0.5, 25])],
+    ['GaAs pn', mkStack('GaAs', 1e16, 1e16, 1e8, [5, 250])],
+    ['suite Si pn', mkStack('Si', 1e16, 1e16, 1e8, [5, 100])],
+  ];
+  for (const [name, mk] of stacks) {
+    const vRef = mk(0);
+    assert.equal(vRef.solve().converged, true);
+    vRef.set({ contacts: { right: { V: -0.5 } } });
+    const sRev = vRef.solve();
+    assert.equal(sRev.converged, true);
+    const Irev = sRev.terminals.right.current;
+    for (const [startLabel, startV] of [['open circuit', null], ['reverse -0.5 V', -0.5]]) {
+      for (const to of [-1e4, -1e8, -1e12]) {
+        let d;
+        if (startV === null) {
+          d = mk({ I: 0 });
+          assert.equal(d.solve().converged, true);
+        } else {
+          d = mk(startV);
+          assert.equal(d.solve().converged, true);
+          const I0 = d.solver._currentInto(1);
+          d.set({ contacts: { right: { I: I0 } } });
+          assert.equal(d.solve().converged, true);
+        }
+        const br = d.branch({ terminal: 'right', to, stability: false, maxSteps: 300 });
+        assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `${name} (${startLabel}) to ${to}: invented fold ${JSON.stringify(br.events)}`);
+        if (startV === null) {
+          assert.match(br.end, /^left voltage bound /, `${name} (${startLabel}) to ${to}: ${br.end}`);
+        } else {
+          assert.match(br.end, /^(left voltage bound |maxSteps reached )/, `${name} (${startLabel}) to ${to}: ${br.end}`);
+          assert.ok(br.points.at(-1).terminals.right.V < -3, `${name} (${startLabel}) to ${to}: stopped short at V=${br.points.at(-1).terminals.right.V}`);
+        }
+        for (let i = 1; i < br.points.length; i++) {
+          const pt = br.points[i];
+          const kRel = Math.abs(pt.terminals.left.current + pt.terminals.right.current) / Math.max(Math.abs(pt.drive), 1e-300);
+          assert.ok(kRel < 1e-6, `${name} (${startLabel}) to ${to} pt ${i}: Kirchhoff rel ${kRel.toExponential(2)}`);
+          // Spot-check voltage-held solve() across the whole curve (start, every 8th point, and last point).
+          if (i <= 3 || i % 8 === 0 || i === br.points.length - 1) {
+            vRef.set({ contacts: { right: { V: pt.terminals.right.V } } });
+            const sol = vRef.solve();
+            assert.equal(sol.converged, true);
+            const vRel = Math.abs(sol.terminals.right.current - pt.drive) / Math.max(Math.abs(pt.drive), Math.abs(sol.terminals.right.current), 1e-300);
+            assert.ok(vRel < 1e-6, `${name} (${startLabel}) to ${to} pt ${i} (V=${pt.terminals.right.V.toFixed(4)}): off voltage-held by ${vRel.toExponential(2)}`);
+          }
+        }
+      }
+    }
+  }
+  // Points must not depend on `to`: same device gives matching points for to: -1 and to: -1e4.
+  const mkFine = stacks[0][1];
+  const d1 = mkFine({ I: 0 }); d1.solve();
+  const d2 = mkFine({ I: 0 }); d2.solve();
+  const b1 = d1.branch({ terminal: 'right', to: -1, stability: false, maxSteps: 300 });
+  const b2 = d2.branch({ terminal: 'right', to: -1e4, stability: false, maxSteps: 300 });
+  assert.equal(b1.points.length, b2.points.length, `Si p+n+ fine point count depended on to: ${b1.points.length} vs ${b2.points.length}`);
+  for (let i = 1; i < b1.points.length; i++) {
+    assert.ok(Math.abs(b1.points[i].terminals.right.V - b2.points[i].terminals.right.V) < 1e-9, `to-independence V diff at pt ${i}`);
+    const relI = Math.abs(b1.points[i].drive - b2.points[i].drive) / Math.abs(b1.points[i].drive);
+    assert.ok(relI < 1e-8, `to-independence drive diff at pt ${i}: ${relI.toExponential(2)}`);
+  }
+});
+
+test('150 K cold Si diode forward (0 -> 10 A/m²): reaches target, 0 folds, Kirchhoff & voltage-held match across 27 decades', () => {
+  const T = 150;
+  const mk = (right) => new Device(build({
+    T,
+    library: [semiconductor('Si', { T })],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e16) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
+      ohmic(right),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(250) },
+  }));
+  const vRef = mk(0);
+  assert.equal(vRef.solve().converged, true);
+  for (const stability of [false, true]) {
+    const d = mk({ I: 0 });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: 10, stability, maxSteps: 300 });
+    assert.match(br.end, /^reached to/, `150K Si stab=${stability}: ${br.end}`);
+    assert.equal(br.events.length, 0, `150K Si stab=${stability}: unexpected events ${JSON.stringify(br.events)}`);
+    assert.ok(br.points.length >= 15, `150K Si stab=${stability}: too few points (${br.points.length})`);
+    for (let i = 1; i < br.points.length; i++) {
+      const pt = br.points[i];
+      const kRel = Math.abs(pt.terminals.left.current + pt.terminals.right.current) / Math.abs(pt.drive);
+      assert.ok(kRel < 1e-6, `150K Si stab=${stability} pt ${i}: Kirchhoff rel ${kRel.toExponential(2)}`);
+      if (i <= 5 || i % 10 === 0 || i === br.points.length - 1) {
+        vRef.set({ contacts: { right: { V: pt.terminals.right.V } } });
+        const sol = vRef.solve();
+        assert.equal(sol.converged, true);
+        const vRel = Math.abs(sol.terminals.right.current - pt.drive) / Math.max(Math.abs(pt.drive), Math.abs(sol.terminals.right.current));
+        assert.ok(vRel < 1e-6, `150K Si stab=${stability} pt ${i}: off voltage-held by ${vRel.toExponential(2)}`);
+      }
+    }
+  }
+});
+
+test('Provisional fold confirmation drops endpoint false fold (Si npn to -1e-6) and tangent-turn bound catches 1800/20/2.5 at 1.5 Rc without marks', () => {
+  const npn = new Device(build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e19) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e17) }),
+      layer('Si', units.um(3), { donors: units.perCm3(1e15) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e6 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(250) },
+  }));
+  assert.equal(npn.solve().converged, true);
+  const brNpn = npn.branch({ terminal: 'right', to: -1e-6, stability: false, maxSteps: 300 });
+  assert.equal(brNpn.events.filter((e) => e.kind === 'fold').length, 0, `Si npn -1e-6 invented fold: ${JSON.stringify(brNpn.events)}`);
+
+  const mem = hhDevice(0, { g: { Na: 1800, K: 20, leak: 2.5 }, right: { V: 0.317, R: 1.5 * 0.0188418 } });
+  assert.equal(mem.solve().converged, true);
+  const brMem = mem.branch({ terminal: 'right', to: -0.438803, stability: false, maxSteps: 400 });
+  assert.match(brMem.end, /^reached to/, `1800/20/2.5 1.5Rc: ${brMem.end}`);
+  const folds = brMem.events.filter((e) => e.kind === 'fold');
+  assert.equal(folds.length, 2, `1800/20/2.5 1.5Rc no marks: expected 2 folds, got ${JSON.stringify(brMem.events)}`);
+  assert.ok(Math.abs(folds[0].drive - -0.0638027) < 1e-4, `fold 0 drive ${folds[0].drive}`);
+  assert.ok(Math.abs(folds[1].drive - -0.0598846) < 1e-4, `fold 1 drive ${folds[1].drive}`);
+});
+
+test('Defense-in-depth guards: law-occupied circuit (R05), start flip (R08), span guard (R09), undecided-fold audit (R11), plateau floor (R15), and acceptance equation + provisional-fold guards', () => {
+  // 1. R05: cutEligible refuses to substitute an interior current cut on a floating contact whose circuit row holds a conservation law (cs.circuit === 1, natural gross/diag > 2e3).
+  const blocked = new Device(build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0, ['e-']),
+      layer('Si', units.um(1), { donors: units.perCm3(1e19) }),
+      layer('Si', units.um(5), { acceptors: units.perCm3(1e19) }),
+      ohmic({ I: 0 }, ['h+']),
+    ],
+    grid: { hmin: units.nm(5), hmax: units.nm(100) },
+  }));
+  assert.equal(blocked.solve().converged, true);
+  assert.ok(blocked.solver.constraints.some((cs) => cs.circuit === 1), 'expected conservation law on circuit 1');
+  let cutCalls5 = 0;
+  const origCuts5 = blocked.solver._currentCuts.bind(blocked.solver);
+  blocked.solver._currentCuts = () => { cutCalls5++; return origCuts5(); };
+  const brBlk = blocked.branch({ terminal: 'left', to: 0.5, stability: false });
+  blocked.solver._currentCuts = origCuts5;
+  assert.equal(cutCalls5, 0, `R05 cutEligible failed: _currentCuts called ${cutCalls5} times on law-occupied circuit 1`);
+  assert.match(brBlk.end, /^reached to/, `R05 blocked cell: ${brBlk.end}`);
+  const dVRight = brBlk.points.at(-1).terminals.right.V - brBlk.points[0].terminals.right.V;
+  assert.ok(Math.abs(dVRight - 0.5) < 1e-5, `R05 floating open-circuit shift expected +0.5 V, got ${dVRight}`);
+
+  // 2. R08: fault-injected inverted initial tangent (sNext < 0 on step 0) flips cleanly and completes all 10 steps.
+  const d8 = new Device(build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e16) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(100) },
+  }));
+  assert.equal(d8.solve().converged, true);
+  const s8 = d8.solver;
+  const origSolve8 = s8._solveLinear.bind(s8);
+  const origCuts8 = s8._currentCuts.bind(s8);
+  let zc8 = 0, cutsRef8 = null, flipped8 = false;
+  s8._solveLinear = function (rhs, out) {
+    let isZ = true;
+    for (let j = 0; j < this.sys.size; j++) if (rhs[j] !== 0) { isZ = false; break; }
+    if (isZ) {
+      zc8++;
+      if (zc8 === 3 && cutsRef8) {
+        for (const c of cutsRef8) for (let j = 0; j < c.g.length; j++) c.g[j] *= -0.001;
+        flipped8 = true;
+      }
+    }
+    return origSolve8(rhs, out);
+  };
+  s8._currentCuts = function () {
+    const cuts = origCuts8();
+    if (zc8 === 2) {
+      cutsRef8 = cuts;
+      for (const c of cuts) for (let j = 0; j < c.g.length; j++) c.g[j] *= 10;
+    }
+    return cuts;
+  };
+  const br8 = d8.branch({ terminal: 'right', to: -1e4, stability: false, maxSteps: 10 });
+  s8._solveLinear = origSolve8;
+  s8._currentCuts = origCuts8;
+  assert.equal(flipped8, true, 'R08 fault injection did not trigger');
+  assert.equal(br8.points.length, 11, `R08 start flip failed to continue: pts=${br8.points.length}, end=${br8.end}`);
+  assert.ok(br8.points.at(-1).terminals.right.V < -1, `R08 final V=${br8.points.at(-1).terminals.right.V}`);
+
+  // 3. R09: starting at the exact Fe fold and asking to trace past the fold into the empty region stops at point 0 without stepping out of span.
+  const dFeRef = new Device(feSpec({ I: -62.90054296647188 })); dFeRef.solve();
+  const foldRef = dFeRef.branch({ terminal: 'right', to: -120, stability: false }).events.find((e) => e.kind === 'fold');
+  const dFeV = new Device(feSpec({ V: foldRef.terminals.right.V })); dFeV.solve();
+  const IofV = (V) => { dFeV.set({ contacts: { right: { V } } }); dFeV.solve(); return dFeV.solver._currentInto(1); };
+  let va = foldRef.terminals.right.V - 1e-4, vb = foldRef.terminals.right.V + 1e-4;
+  const phi = 0.5 * (Math.sqrt(5) - 1);
+  let vx1 = vb - phi * (vb - va), vx2 = va + phi * (vb - va), f1 = IofV(vx1), f2 = IofV(vx2);
+  for (let it = 0; it < 28; it++) {
+    if (f1 > f2) { va = vx1; vx1 = vx2; f1 = f2; vx2 = va + phi * (vb - va); f2 = IofV(vx2); }
+    else { vb = vx2; vx2 = vx1; f2 = f1; vx1 = vb - phi * (vb - va); f1 = IofV(vx1); }
+  }
+  const Vexact = 0.5 * (va + vb);
+  const Ifold = IofV(Vexact);
+  const d9 = new Device(feSpec({ I: Ifold }));
+  d9.solver._restore(dFeV.solver._snapshot());
+  d9.solver.termV[1] = Vexact;
+  d9.solver.computeConcentrations();
+  d9.solver._lawsNow();
+  d9.solver._assembleBookkeeping(Infinity);
+  d9.solver.atSteady = true;
+  d9.solver.regriddedSteady = false;
+  const s9 = d9.solver;
+  const origSolve9 = s9._solveLinear.bind(s9);
+  let zc9 = 0;
+  s9._solveLinear = function (rhs, out) {
+    let isZ = true;
+    for (let j = 0; j < this.sys.size; j++) if (rhs[j] !== 0) { isZ = false; break; }
+    if (isZ && ++zc9 === 1) {
+      for (let j = 0; j < this.sys.size; j++) this.termC[1][j] *= 1e-100;
+      this.termDI[1] *= 1e-100;
+    }
+    return origSolve9(rhs, out);
+  };
+  const br9 = d9.branch({ terminal: 'right', to: -120, stability: false });
+  s9._solveLinear = origSolve9;
+  assert.equal(br9.points.length, 1, `R09 span guard allowed out-of-span step: pts=${br9.points.length}, end=${br9.end}`);
+  assert.match(br9.end, /could not advance into span/, `R09 unexpected end: ${br9.end}`);
+
+  // 4. R11: when a fold's endpoints remain 'undecided' even after MAX_REFINE halvings, runAudit refuses to credit the fold and emits 'stability mismatch'.
+  const d11 = new Device(feSpec({ I: -62.90054296647188 })); d11.solve();
+  const origStab11 = d11.solver.stability.bind(d11.solver);
+  d11.solver.stability = function (opts) {
+    const V = this.termV[1];
+    if (V < -1.08 && V > -1.30) return { verdict: 'undecided', modes: [], reason: 'injected undecided around fold' };
+    return origStab11(opts);
+  };
+  const br11 = d11.branch({ terminal: 'right', to: -120 });
+  d11.solver.stability = origStab11;
+  assert.ok(br11.events.some((e) => e.kind === 'fold'), `R11 expected fold event: ${JSON.stringify(br11.events)}`);
+  assert.ok(br11.events.some((e) => e.kind === 'stability mismatch'), `R11 audit failed to emit stability mismatch for undecided-sided fold: ${JSON.stringify(br11.events)}`);
+
+  // 5. R15: drive round-off floor suppresses 16-digit plateau jitter on echem_32 ref (0 folds, reaches voltage bound).
+  const e32Built = echemFamily.make(caseRng('echem', 32));
+  const d15 = new Device(e32Built.def ?? e32Built);
+  assert.equal(d15.solve().converged, true);
+  const br15 = d15.branch({ terminal: 'ref', to: 1, stability: false, maxSteps: 200 });
+  assert.equal(br15.events.length, 0, `R15 echem_32 ref plateau invented fold: ${JSON.stringify(br15.events)}`);
+  assert.match(br15.end, /^left voltage bound /, `R15 echem_32 ref: ${br15.end}`);
+
+  // 6. Acceptance reported-equation / 2-terminal Kirchhoff guard rejects a corrupted terminal flux instead of accepting it silently.
+  const dEq = hhDevice(0);
+  assert.equal(dEq.solve().converged, true);
+  const origBkEq = dEq.solver._assembleBookkeeping.bind(dEq.solver);
+  dEq.solver._assembleBookkeeping = function (dt) {
+    origBkEq(dt);
+    if (this.sourceOverride.has(1)) this.contactFlux.left[0] += 0.01 / FARADAY;
+  };
+  const brEq = dEq.branch({ terminal: 'right', to: 0.05, stability: false });
+  dEq.solver._assembleBookkeeping = origBkEq;
+  assert.equal(brEq.points.length, 1, `acceptance equation guard failed to reject corrupted Kirchhoff: pts=${brEq.points.length}, end=${brEq.end}`);
+  assert.match(brEq.end, /reported terminal equation not satisfied/, `acceptance equation guard end: ${brEq.end}`);
+
+  // 7. Provisional fold confirmation drops a single-step tangent-noise fold whose next accepted point keeps advancing forward.
+  const dPf = new Device(build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e16) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(100) },
+  }));
+  assert.equal(dPf.solve().converged, true);
+  const sPf = dPf.solver;
+  const origSolvePf = sPf._solveLinear.bind(sPf);
+  const origCutsPf = sPf._currentCuts.bind(sPf);
+  let zcPf = 0, flipNextCut = false, firedPf = false;
+  sPf._solveLinear = function (rhs, out) {
+    let isZ = true;
+    for (let j = 0; j < this.sys.size; j++) if (rhs[j] !== 0) { isZ = false; break; }
+    if (isZ && ++zcPf === 8) flipNextCut = true;
+    return origSolvePf(rhs, out);
+  };
+  sPf._currentCuts = function () {
+    const cuts = origCutsPf();
+    if (flipNextCut) {
+      flipNextCut = false;
+      firedPf = true;
+      for (const c of cuts) for (let j = 0; j < c.g.length; j++) c.g[j] = -c.g[j];
+    }
+    return cuts;
+  };
+  const brPf = dPf.branch({ terminal: 'right', to: -1e4, stability: false, maxSteps: 20 });
+  sPf._solveLinear = origSolvePf;
+  sPf._currentCuts = origCutsPf;
+  assert.equal(firedPf, true, 'provisional-fold fault injection did not trigger');
+  assert.equal(brPf.events.length, 0, `provisional-fold confirmation failed to drop endpoint noise fold: ${JSON.stringify(brPf.events)}`);
 });
