@@ -1715,3 +1715,51 @@ test('A fold on the trace\'s last step is kept when the accepted points bracket 
   assert.ok(feCut.events.some((e) => e.kind === 'fold' && e.drive === ff.drive), `Fe fold dropped: ${JSON.stringify(feCut.events)}`);
   assert.equal(feCut.events.filter((e) => e.kind === 'stability mismatch').length, 0, JSON.stringify(feCut.events));
 });
+
+test('A fold on an already-unstable branch: the fold\'s own critical mode is not counted (Frumkin electrode behind R)', () => {
+  // S2O8²⁻ at Hg in dilute NaF (demos/bistable.html's device) behind R = 0.05 Ω·m²: the busy branch
+  // goes unstable at a Hopf point, and its two real growing modes meet the upper fold. At the
+  // located fold one of them is ~0 of either sign (+8e-5 /s here, with an error bar of 4e-11), and
+  // counting it made every fold step "contain an additional crossing": round 7 halved to a stop
+  // at the fold. The folds must be where the load line touches the potentiostatic curve.
+  const F = FARADAY, T = 298.15, RT = GAS_CONSTANT * T, NA = 6.02214076e23;
+  const ions = { 'Na+': [1, 1.334e-9, -261905], 'F-': [-1, 1.475e-9, -278790], 'S2O82-': [-2, 1.145e-9, -1114900], 'SO42-': [-2, 1.065e-9, -744530] };
+  const names = Object.keys(ions), cMax = 1 / (NA * 1e-30), L = 20e-6;
+  const bulk = { 'Na+': 3 + 4e-5, 'F-': 1, 'S2O82-': 1, 'SO42-': 2e-5 };
+  const she = -(ions['F-'][2] + RT * Math.log(bulk['F-'] / 1000 / (1 - Object.values(bulk).reduce((s, c) => s + c, 0) / cMax))) / F;
+  const electrode = (U, R) => build({
+    T,
+    library: [{
+      species: [{ name: 'e-', z: -1 }, ...names.map((name) => ({ name, z: ions[name][0], cRef: 1000 }))],
+      materials: {
+        Hg: { conductor: { species: 'e-', conductivity: 1.04e6 } },
+        water: { epsr: 0, species: Object.fromEntries(names.map((n) => [n, { D: ions[n][1], mu0: ions[n][2] }])), statistics: [{ type: 'lattice', species: names, cMax }] },
+      },
+    }],
+    stack: [
+      { ...ohmic(U, ['e-']), ...(R > 0 ? { R } : {}) },
+      layer('Hg', 1e-6),
+      { phi: { type: 'capacitive', C: 0.17 }, zeroCharge: -0.19, diffuse: { epsr: 78.3 }, reactions: [{ ...half('S2O82- + 2 e- = 2 SO42-'), k0: 2.5e-9, alpha: 0.125 }] },
+      layer('water', L, { c0: bulk }),
+      bath(bulk, 'F-', 0, { offset: she }),
+    ],
+    grid: { hmin: 100e-9, hmax: L / 30, ratio: 1.2 },
+  });
+  const R = 0.05;
+  const d = new Device(electrode(0.3, R));
+  assert.equal(d.solve().converged, true);
+  const br = d.branch({ terminal: 'left', to: -1.6, maxSteps: 800 });
+  assert.match(br.end, /^reached to/);
+  const folds = br.events.filter((e) => e.kind === 'fold');
+  assert.equal(folds.length, 2, JSON.stringify(br.events.map((e) => [e.kind, e.drive])));
+  assert.equal(br.events.filter((e) => e.kind === 'stability mismatch').length, 0);
+  // Independent: the potentiostatic curve, and U = E + R·I along it (I as reported), turns where
+  // the folds are.
+  const h = new Device(electrode(0.3, 0)); h.solve();
+  const u = [];
+  for (let E = -0.15; E >= -0.45; E -= 0.0025) { h.set({ contacts: { left: { V: E } } }); const s = h.solve(); assert.ok(s.converged); u.push(E + R * s.terminals.left.current); }
+  const turns = [];
+  for (let k = 1; k + 1 < u.length; k++) if ((u[k] - u[k - 1]) * (u[k + 1] - u[k]) < 0) turns.push(u[k]);
+  assert.equal(turns.length, 2, `load-line turns ${turns}`);
+  for (const [k, f] of folds.entries()) assert.ok(Math.abs(f.drive - turns[k]) < 2e-3, `fold ${f.drive} against load-line turn ${turns[k]}`);
+});

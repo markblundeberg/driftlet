@@ -53,7 +53,9 @@
 //          `|Re λ_B − Re λ_A| ≤ 0.75 · max(min(|Re λ_A|, |Re λ_B|), kBar · error, 1e-3 · ω)`.
 //       4. Morse-index & undecided-mark refinement (when `stability !== false`): every change in the
 //          count of strictly growing modes `N_+` across a step must be accounted for by a located
-//          fold (`|ΔN_+| = 1` and `N_+(fold) = min(N_+(A), N_+(B))`) or Hopf (located cleanly with
+//          fold (`|ΔN_+| = 1` and `N_+(fold) = min(N_+(A), N_+(B))`, not counting the fold's own
+//          critical mode: the real mode nearest zero at the located fold, nearer zero than the
+//          nearest real mode at either end of the step) or Hopf (located cleanly with
 //          no hidden fold or pair loss inside the bracket). An `undecided` mark has unknown `N_+`
 //          and triggers refinement across fold steps and count-changing transitions (up to
 //          `MAX_REFINE` halvings); if still unresolved, `runAudit` does not count a fold with an
@@ -1201,14 +1203,34 @@ function matchModes(stA, stB) {
 }
 
 // Count verified strictly growing eigenvalues (complex pairs counted as 2, real modes as 1).
-function countGrowing(st, kBar) {
+function countGrowing(st, kBar, foldBelow = 0) {
   const modes = uniqueModes(st);
+  // At a located fold, J is singular: one real mode is passing through zero, and the fold locator
+  // leaves it at a small Re λ of either sign. It isn't counted. It is the real mode nearest zero,
+  // and it must lie nearer zero than the nearest real mode at either end of the step (`foldBelow`),
+  // since it moves through zero across the step.
+  let foldIdx = -1;
+  if (foldBelow > 0) {
+    let best = foldBelow;
+    for (let i = 0; i < modes.length; i++) {
+      const m = modes[i];
+      if (!(m.im > kBar * m.error) && Math.abs(m.re) < best) { best = Math.abs(m.re); foldIdx = i; }
+    }
+  }
   let count = 0;
   for (let i = 0; i < modes.length; i++) {
+    if (i === foldIdx) continue;
     const m = modes[i];
     if (m.re > kBar * m.error) count += m.im > kBar * m.error ? 2 : 1;
   }
   return count;
+}
+
+// |Re λ| of the real mode nearest zero (Infinity if none listed).
+function nearestRealAbs(st, kBar) {
+  let best = Infinity;
+  for (const m of uniqueModes(st)) if (!(m.im > kBar * m.error)) best = Math.min(best, Math.abs(m.re));
+  return best;
 }
 
 // Nearer-end guard across all matched oscillatory pairs (im > kBar * error):
@@ -1917,7 +1939,7 @@ export class Branch {
                 if (_stats) _stats.refineFoldIndex++;
                 return { ok: false, reason: 'fold state has undecided stability mark', isRefine: true, stCand };
               }
-              const nF = countGrowing(stFold, kBar);
+              const nF = countGrowing(stFold, kBar, Math.min(nearestRealAbs(stPrev, kBar), nearestRealAbs(stCand, kBar)));
               if (Math.abs(nB - nA) !== 1 || nF !== Math.min(nA, nB)) {
                 if (_stats) _stats.refineFoldIndex++;
                 return { ok: false, reason: 'fold step contains additional stability crossing', isRefine: true, stCand };
