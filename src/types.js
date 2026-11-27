@@ -391,7 +391,7 @@
  * @typedef {object} BranchPoint
  * @property {number} drive terminal's drive value at this point (V, or A/m² / A in current mode)
  * @property {Record<string, { V: number, current: number }>} terminals each terminal's voltage (V) and current into the device
- * @property {{ verdict: 'unstable' | 'neutral within resolution' | 'no growing mode found' | 'undecided', rate: number, im: number, error: number, reason: string }} [stability] linear stability under the drive as held (omitted when stability: false)
+ * @property {{ verdict: 'unstable' | 'neutral within resolution' | 'no growing mode found' | 'undecided', rate: number, im: number, error: number, reason: string, checked?: boolean }} [stability] linear stability under the drive as held (omitted when stability: false; `checked: false` only if `budgetMs` expired during point 0's stability check)
  * @property {Solution} [solution] full solution at this point (present only when solutions: true)
  */
 

@@ -1689,23 +1689,34 @@ console.log(br.end.startsWith('reached to'), br.events.length, br.points.at(-1).
 |---|---|
 | `terminal` | name of the continued terminal |
 | `kind` | `'V'` or `'I'` (the terminal's drive kind) |
-| `points` | `[{ drive, terminals: { name: { V, current } }, stability?: { verdict, rate, im, error, reason }, solution? }, ...]` |
+| `points` | `[{ drive, terminals: { name: { V, current } }, stability?: { verdict, rate, im, error, reason, checked? }, solution? }, ...]` (always holds at least the start point; `checked: false` only when `budgetMs` ran out before point 0's `stability()` finished) |
 | `events` | `[{ kind: 'fold' \| 'hopf' \| 'stability mismatch', drive, terminals, omega?, between: [k, k+1], located?, note? }, ...]` |
 | `end` | why the trace stopped, in plain words: reached `to`, returned to starting drive after a fold, left a voltage bound, `maxSteps`, budget spent, continuation failure, or refused (with why) |
 | `warnings` | the starting steady state's warnings plus any continuation caveats (e.g. frozen waveform drives) |
 
 Notes:
 
-- **Stability marks are for the drive as held.** The very same steady-state curve can be
-  `'no growing mode found'` everywhere under voltage drive and have an `'unstable'` branch past a
-  fold under current drive (a peaked $`\mathrm{Fe^{3+}/Fe^{2+}}`$ thin-layer cell is exactly that).
-- **Folds, Hopf points, and branch points.** A fold (`dp/ds = 0`) is located by safeguarded
-  secant/bisection along the exact arc; a Hopf (`Re λ = 0` for a complex conjugate pair, with
-  `omega` in rad/s) likewise; a determinant sign change without a turn in `p` is reported as
-  `'branch point'` without switching branches. At a fold in the held parameter, one real eigenvalue
-  must cross 0: if the marks do not change across a fold, or flip between decided states with no
-  fold, Hopf, or branch point located, `branch()` reports a `'stability mismatch'` event rather
-  than staying silent.
+- **Stability marks are for the drive as held — and what a mark does not promise.** The very same
+  steady-state curve can be `'no growing mode found'` everywhere under voltage drive and have an
+  `'unstable'` branch past a fold under current drive (a peaked $`\mathrm{Fe^{3+}/Fe^{2+}}`$
+  thin-layer cell is exactly that). A mark holds at the sampled point; `branch()` tracks every
+  listed mode from point to point by biorthogonal eigenvector overlap (halving whenever matching is
+  ambiguous or any mode's $`\operatorname{Re}\lambda`$ moves past its own scale), which catches
+  narrow windows approached by a listed mode, but an unstable window narrower than the step that is
+  unseen by all listed modes at both endpoints can still be missed. (In the midpoint audit across
+  250+ random multi-feature traces—over 3,000 midpoints—and 72 downward Hodgkin–Huxley sweeps
+  including narrowed $`g_{\mathrm{Na}} = 850`$, zero windows were missed.)
+- **Folds and Hopf points.** A fold (`dp/ds = 0`) is located by safeguarded secant/bisection along
+  the exact arc and confirmed as a real drive extremum beyond tangent noise; a Hopf
+  ($`\operatorname{Re}\lambda = 0`$ for a complex conjugate pair, with `omega` in rad/s) is matched
+  by eigenvector overlap (not a narrow frequency window) and located the same way. At a fold in the
+  held parameter, one real eigenvalue must cross 0: if the marks do not change across a fold, or
+  flip between decided states with no fold or Hopf located, `branch()` reports a
+  `'stability mismatch'` event rather than staying silent (including on a `budgetMs` stop).
+- **Natural-parameter fallback.** If pseudo-arclength stalls (corrector failure, stride floor, or a
+  rank-deficient Jacobian), `branch()` tries a plain steady solve at the next drive value from the
+  last accepted state and accepts it only if it passes the same state-motion and mode-tracking
+  guards; failing that, it stops and says why in `end`.
 - **Returning past a fold.** If a branch turns a fold and crosses back through its starting drive
   on the far side, `branch()` lands on that drive and stops (`returned to starting drive … after
   fold`), keeping the trace inside the requested drive span.

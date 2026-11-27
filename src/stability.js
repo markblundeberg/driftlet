@@ -1990,7 +1990,7 @@ function refineAndBound(pencil, deflation, coordScale, cand, shiftScale) {
 
   return {
     ok: true, re: lamRe, im: lamIm, residual: check.residual, error,
-    vr, vi, wr, wi, mvr: check.mvr, mvi: check.mvi, denAbs,
+    vr, vi, wr, wi, mvr: check.mvr, mvi: check.mvi, mtwr, mtwi, denAbs,
   };
 }
 
@@ -2198,7 +2198,7 @@ export class Stability {
     if (!this.atSteady || this.regriddedSteady) {
       throw new SolverError('stability: solve() first — stability() analyses the current converged steady state (preserving its branch)');
     }
-    const { shifts: userShifts, frequencies = [], modes: nWant = 8, profiles = false, kBar = 10, debug = false, _budgetCheck } = opts;
+    const { shifts: userShifts, frequencies = [], modes: nWant = 8, profiles = false, kBar = 10, debug = false, _budgetCheck, _rawModes = false } = opts;
     if (userShifts !== undefined) {
       for (const sv of userShifts) {
         if (!(sv > 0 && Number.isFinite(sv))) throw new SolverError(`stability: real shifts must be positive and finite (never 0); got ${sv}`);
@@ -2507,12 +2507,48 @@ export class Stability {
       refined.sort((a, b) => b.re - a.re || Math.abs(a.im) - Math.abs(b.im));
       const allModes = [];
       for (const m of refined) {
+        let rawPos, rawNeg;
+        if (_rawModes) {
+          const vr = new Float64Array(N), vi = new Float64Array(N);
+          let sq = 0;
+          for (let j = 0; j < N; j++) {
+            const xr = m.vr[j] * coordScale[j], xi = m.vi[j] * coordScale[j];
+            vr[j] = xr; vi[j] = xi;
+            sq += xr * xr + xi * xi;
+          }
+          const normV = Math.sqrt(sq);
+          const inv = normV > 0 ? 1 / normV : 0;
+          for (let j = 0; j < N; j++) { vr[j] *= inv; vi[j] *= inv; }
+          // Dual biorthogonal vector u = Mᴴ w / |wᴴ M v| scaled by invScale * normV so
+          // |u_iᴴ v_j| = |w_iᴴ M v_j| / |w_iᴴ M v_i| = δ_{ij} even on strongly non-normal pencils.
+          const ur = new Float64Array(N), ui = new Float64Array(N);
+          let sqU = 0;
+          const uScale = m.denAbs > 0 ? normV / m.denAbs : 0;
+          for (let j = 0; j < N; j++) {
+            const yr = m.mtwr[j] * invScale[j] * uScale;
+            const yi = m.mtwi[j] * invScale[j] * uScale;
+            ur[j] = yr; ui[j] = yi;
+            sqU += yr * yr + yi * yi;
+          }
+          const cond = Math.sqrt(sqU);
+          rawPos = { _vr: vr, _vi: vi, _ur: ur, _ui: ui, _cond: cond };
+          if (Math.abs(m.im) > 1e-10 * Math.abs(m.re)) {
+            rawNeg = {
+              _vr: vr,
+              _vi: Float64Array.from(vi, (v) => -v),
+              _ur: ur,
+              _ui: Float64Array.from(ui, (v) => -v),
+              _cond: cond,
+            };
+          }
+        }
         const base = {
           re: m.re,
           im: m.im,
           residual: m.residual,
           error: m.error,
           ...(profiles ? { profiles: modeProfiles(this, pencil, m.vr, m.vi) } : {}),
+          ...(rawPos ?? {}),
         };
         allModes.push(base);
         if (Math.abs(m.im) > 1e-10 * Math.abs(m.re)) {
@@ -2523,6 +2559,7 @@ export class Stability {
             residual: m.residual,
             error: m.error,
             ...(profiles ? { profiles: modeProfiles(this, pencil, m.vr, vic) } : {}),
+            ...(rawNeg ?? {}),
           });
         }
       }

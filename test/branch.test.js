@@ -19,6 +19,8 @@ import echemFamily from '../bench/combos/families/echem.js';
 import semiFamily from '../bench/combos/families/semi.js';
 import neutralFamily from '../bench/combos/families/neutral.js';
 import membraneFamily from '../bench/combos/families/membrane.js';
+import mixedfilmFamily from '../bench/combos/families/mixedfilm.js';
+import redoxgateFamily from '../bench/combos/families/redoxgate.js';
 
 function feSpec(drive = { I: -62.90054296647188 }) {
   return {
@@ -65,7 +67,7 @@ function feSpec(drive = { I: -62.90054296647188 }) {
   };
 }
 
-function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6 } = {}) {
+function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6, g } = {}) {
   const T = 279.45;
   const VT = (GAS_CONSTANT * T) / FARADAY;
   const inside = { 'Na+': 50, 'K+': 400, 'Cl-': 40, 'A-': 410 };
@@ -78,7 +80,7 @@ function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6 } = {}) {
   const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T });
   water.species.push({ name: 'A-', z: -1, cRef: 1000 });
   water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
-  const hh = hodgkinHuxley({ T, linear: true });
+  const hh = hodgkinHuxley({ T, linear: true, ...(g ? { g } : {}) });
   return new Device(
     build({
       T,
@@ -613,4 +615,70 @@ test('Floating-island devices (echem_4, semi_1, membrane_2) trace cleanly to tar
       assert.ok(Math.abs(sEnd.terminals[tn].V - rec.V) < 1e-8, `${name} ${tn} dV=${Math.abs(sEnd.terminals[tn].V - rec.V)}`);
     }
   }
+});
+
+// Round-3 regression tests (every one fails on Round 2 cc4f8c1):
+
+test('Downward HH traces from high current (stock and narrowed g.Na=850) follow secondary modes and locate both Hopfs', () => {
+  // I0 in A/m² = I_uAcm2 / 100.
+  const cases = [
+    ['stock 120->-5', null, 12000, -5, [1.5429, 0.09729]],
+    ['stock 3->-3 (large ω shift)', null, 300, -3, [1.5429, 0.09729]],
+    ['g.Na=850 120->-5', { Na: 850 }, 12000, -5, [0.7683, 0.3799]],
+    ['g.Na=850 5->-5', { Na: 850 }, 500, -5, [0.7683, 0.3799]],
+  ];
+  for (const [label, g, I0uA, to, [hiRef, loRef]] of cases) {
+    const dev = hhDevice(I0uA, g ? { g } : {});
+    assert.equal(dev.solve().converged, true);
+    const br = dev.branch({ terminal: 'right', to });
+    assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+    const hopfs = br.events.filter((e) => e.kind === 'hopf');
+    const mism = br.events.filter((e) => e.kind === 'stability mismatch');
+    assert.equal(mism.length, 0, `${label}: unexpected stability mismatch ${JSON.stringify(mism)}`);
+    assert.equal(hopfs.length, 2, `${label}: expected 2 Hopfs, got ${JSON.stringify(br.events)}`);
+    assert.ok(Math.abs(hopfs[0].drive - hiRef) < 5e-3, `${label}: upper Hopf=${hopfs[0].drive} vs ${hiRef}`);
+    assert.ok(Math.abs(hopfs[1].drive - loRef) < 5e-3, `${label}: lower Hopf=${hopfs[1].drive} vs ${loRef}`);
+  }
+});
+
+test('redoxgate_0 left 0->1.5 reaches target with zero false folds', () => {
+  const def = redoxgateFamily.make(caseRng('redoxgate', 0)).def;
+  const dev = new Device(structuredClone(def));
+  assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
+  const br = dev.branch({ terminal: 'left', to: 1.5, maxSteps: 40 });
+  assert.match(br.end, /^reached to/, `redoxgate_0: ${br.end}`);
+  assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `unexpected false folds: ${JSON.stringify(br.events)}`);
+  assert.ok(br.points.length <= 20, `expected <= 20 points, got ${br.points.length}`);
+});
+
+test('No crawl or early stop where solve() goes on (mixedfilm_0/1/4/7, semi_5, echem_6)', () => {
+  const cases = [
+    ['mixedfilm_0', mixedfilmFamily, 0, 'right', -1.5, 20],
+    ['mixedfilm_1', mixedfilmFamily, 1, 'right', -1.5, 20],
+    ['mixedfilm_4', mixedfilmFamily, 4, 'right', -1.5, 20],
+    ['mixedfilm_7', mixedfilmFamily, 7, 'right', -1.5, 20],
+    ['semi_5', semiFamily, 5, 'left', -1.5, 20],
+    ['echem_6', echemFamily, 6, 'left', 1.5, 35],
+  ];
+  for (const [label, fam, k, term, to, maxPts] of cases) {
+    const def = fam.make(caseRng(label.split('_')[0], k)).def;
+    const dev = new Device(structuredClone(def));
+    assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
+    const br = dev.branch({ terminal: term, to, maxSteps: 40, budgetMs: 20000 });
+    assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+    assert.ok(br.points.length <= maxPts, `${label}: expected <= ${maxPts} pts, got ${br.points.length}`);
+    assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `${label}: unexpected false fold`);
+  }
+});
+
+test('points always holds the start point even when budgetMs expires during start-point stability()', () => {
+  const dev = hhDevice(0);
+  assert.equal(dev.solve().converged, true);
+  const br = dev.branch({ terminal: 'right', to: 5, budgetMs: 0, stability: true });
+  assert.match(br.end, /^budget spent/);
+  assert.equal(br.points.length, 1, `expected start point kept, got ${br.points.length}`);
+  assert.equal(br.points[0].drive, 0);
+  assert.equal(br.points[0].stability.verdict, 'undecided');
+  assert.equal(br.points[0].stability.checked, false);
+  assert.match(br.points[0].stability.reason, /budgetMs/);
 });
