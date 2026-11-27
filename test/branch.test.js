@@ -202,8 +202,9 @@ test('Hodgkin–Huxley space-clamped locates Hopf at 9.7–9.8 µA/cm², ω ≈ 
   assert.equal(br.points[kR].stability.verdict, 'unstable');
   assert.equal(br.events.filter((e) => e.kind === 'stability mismatch').length, 0);
 
-  // Fixed-step kicked BDF2 runs resolving 1/ω (dt = 5e-5 s, ~34 steps per radian) on both sides
-  // of the Hopf confirm damping below I* and growth above I*.
+  // Fixed-step kicked BDF2 runs (`method: 'bdf2'`, second-order; numerical damping is O((ω·dt)³)/dt
+  // ≈ 0.16 /s at dt = 5e-5 s, far below |Re λ| ≈ 9.4 /s at I* ± 0.5 µA/cm², whereas plain backward
+  // Euler `step(dt)` would damp by ω²dt/2 ≈ 8.6 /s and mask the growth).
   const measureEnvelope = (I_uAcm2) => {
     const d = hhDevice(I_uAcm2);
     const s0 = d.solve();
@@ -452,4 +453,164 @@ test('Fuzz: short traces from random combo devices match neighbour solve() to 1e
   }
   assert.ok(checkedDevices >= 10, `expected >=10 fuzz devices, got ${checkedDevices}`);
   assert.ok(checkedPoints >= 20, `expected >=20 fuzz points, got ${checkedPoints}`);
+});
+
+// ============================================================================
+// 7. Round-2 regression gates: far `to`, narrow double folds, span rule, true
+//    max `step`, tight `budgetMs` + unlocated fold fallback, floating islands
+// ============================================================================
+
+test('HH with far `to` (1 to 50 A/m²) never skips the unstable window and finds both Hopfs', () => {
+  for (const to of [1, 5, 15, 50]) {
+    const dev = hhDevice(0);
+    assert.equal(dev.solve().converged, true);
+    const br = dev.branch({ terminal: 'right', to });
+    assert.match(br.end, /^reached to/, `to=${to}: ${br.end}`);
+    const hopfs = br.events.filter((e) => e.kind === 'hopf');
+    const expectedCount = to < 1.54 ? 1 : 2;
+    assert.equal(hopfs.length, expectedCount, `to=${to}: expected ${expectedCount} Hopf(s), got ${JSON.stringify(br.events)}`);
+    assert.ok(Math.abs(hopfs[0].drive - 0.097288) < 5e-4, `to=${to}: Hopf1=${hopfs[0].drive}`);
+    if (expectedCount === 2) {
+      assert.ok(Math.abs(hopfs[1].drive - 1.54295) < 5e-3, `to=${to}: Hopf2=${hopfs[1].drive}`);
+      assert.ok(Math.abs(hopfs[1].omega - 1062) / 1062 < 0.02, `to=${to}: Hopf2 ω=${hopfs[1].omega}`);
+    }
+    assert.equal(br.events.filter((e) => e.kind === 'stability mismatch').length, 0);
+  }
+});
+
+test('Fe behind R just above Rcrit finds both narrow folds (including step: 2) with zero false mismatches', () => {
+  for (const [R, opts] of [
+    [0.01631074728741804, {}],
+    [0.01631074728741804, { step: 2 }],
+    [0.01628633000105963, {}],
+    [1.005 * 0.01627819090560683, {}],
+  ]) {
+    const dev = new Device(feSpec({ V: -0.9, R }));
+    assert.equal(dev.solve().converged, true);
+    const br = dev.branch({ terminal: 'right', to: -3.5, ...opts });
+    assert.match(br.end, /^reached to/);
+    const folds = br.events.filter((e) => e.kind === 'fold');
+    assert.equal(folds.length, 2, `R=${R} ${JSON.stringify(opts)}: expected 2 folds, got ${JSON.stringify(br.events)}`);
+    assert.equal(br.events.filter((e) => e.kind === 'stability mismatch').length, 0, `R=${R}: false stability mismatch`);
+  }
+});
+
+test('One span rule: `to` just short of a fold lands cleanly and starting right next to a fold returns to p0', () => {
+  const I0 = -62.90054296647188;
+  const dev = new Device(feSpec({ V: -0.95 }));
+  dev.solve();
+  dev.set({ contacts: { right: { I: I0 } } });
+  dev.solve();
+
+  // Reachable `to` just short of fold (-108.11992) must land on `to` without turning past it.
+  for (const to of [-108.1, -108.119, -108.1199]) {
+    const br = dev.branch({ terminal: 'right', to, stability: false });
+    assert.match(br.end, /^reached to/, `to=${to}: ${br.end}`);
+    assert.equal(br.events.length, 0, `to=${to}: unexpected events`);
+    assert.equal(br.points.at(-1).drive, to);
+  }
+
+  // Starting right next to the fold must turn it and land back on I0 inside the span.
+  for (const startI of [-108, -108.1, -108.119]) {
+    const d = new Device(feSpec({ V: -1.0 }));
+    d.solve();
+    d.set({ contacts: { right: { I: startI } } });
+    d.solve();
+    const br = d.branch({ terminal: 'right', to: -120, stability: false, maxSteps: 60 });
+    assert.match(br.end, /^returned to starting drive.*after fold/, `I0=${startI}: ${br.end}`);
+    assert.equal(br.points.at(-1).drive, startI);
+    assert.equal(br.events.filter((e) => e.kind === 'fold').length, 1);
+  }
+});
+
+test('`step` is a true maximum |Δp| on every accepted step (including step 1 on HH to=50)', () => {
+  const cases = [
+    ['HH 50', () => { const d = hhDevice(0); d.solve(); return d; }, { to: 50, step: 1 }],
+    ['HH 15', () => { const d = hhDevice(0); d.solve(); return d; }, { to: 15, step: 0.5 }],
+    ['Fe I', () => { const d = new Device(feSpec({ V: -0.95 })); d.solve(); d.set({ contacts: { right: { I: -62.9 } } }); d.solve(); return d; }, { to: -120, step: 2 }],
+  ];
+  for (const [label, mk, opts] of cases) {
+    const d = mk();
+    const br = d.branch({ terminal: 'right', stability: false, ...opts });
+    for (let i = 1; i < br.points.length; i++) {
+      const dp = Math.abs(br.points[i].drive - br.points[i - 1].drive);
+      assert.ok(dp <= opts.step * (1 + 1e-6), `${label} step ${i}: |Δp|=${dp} > step=${opts.step}`);
+    }
+  }
+});
+
+test('budgetMs stays bounded inside stability() and emits an unlocated fold event if cut short during fold location', (t) => {
+  const d = new Device(feSpec({ V: -0.95 }));
+  d.solve();
+  d.set({ contacts: { right: { I: -62.90054296647188 } } });
+  d.solve();
+
+  // Tight budget with stability: true must stop well under one full 90 ms stability() call.
+  const t0 = performance.now();
+  const brFast = d.branch({ terminal: 'right', to: -120, budgetMs: 20, stability: true });
+  const elapsed = performance.now() - t0;
+  assert.match(brFast.end, /^budget spent/);
+  assert.ok(elapsed < 60, `budgetMs=20 with stability overran to ${elapsed.toFixed(1)} ms`);
+
+  // Simulated budget expiry right inside fold location: fold event is still emitted with located: false
+  // and valid `between` indices in `points`.
+  let ticks = 0;
+  let clock = 0;
+  // Advance clock sharply once fold bisection begins (after ~35 Newton/check reads).
+  const mock = t.mock.method(performance, 'now', () => {
+    ticks++;
+    if (ticks > 35) clock += 100;
+    return clock;
+  });
+  try {
+    // Run with stability: false and budgetMs: 50; adjust threshold to hit mid-fold.
+    let sawUnlocated = false;
+    for (const limit of [25, 35, 45, 55, 65, 75, 85]) {
+      ticks = 0;
+      clock = 0;
+      mock.mock.mockImplementation(() => {
+        ticks++;
+        if (ticks > limit) clock = 100;
+        return clock;
+      });
+      const br = d.branch({ terminal: 'right', to: -120, budgetMs: 50, stability: false });
+      const unloc = br.events.find((e) => e.kind === 'fold' && e.located === false);
+      if (unloc) {
+        assert.ok(unloc.between[0] >= 0 && unloc.between[1] < br.points.length, `invalid between ${unloc.between} for ${br.points.length} pts`);
+        assert.match(unloc.note ?? '', /budgetMs/);
+        sawUnlocated = true;
+        break;
+      }
+    }
+    assert.ok(sawUnlocated, 'expected an unlocated fold event when budget expired mid-fold');
+  } finally {
+    mock.mock.restore();
+  }
+});
+
+test('Floating-island devices (echem_4, semi_1, membrane_2) trace cleanly to target without losing Kirchhoff balance', () => {
+  for (const [name, fam, k, side, sgn] of [
+    ['echem_4', echemFamily, 4, 'left', 1],
+    ['semi_1', semiFamily, 1, 'left', 1],
+    ['membrane_2', membraneFamily, 2, 'left', 1],
+  ]) {
+    const def = fam.make(caseRng(name.split('_')[0], k)).def;
+    const dev = new Device(structuredClone(def));
+    assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
+    const tIdx = dev.solver.terms.findIndex((tm) => tm.name === side);
+    const p0 = dev.solver.terms[tIdx].drive.src.value ?? 0;
+    const to = p0 + sgn * 0.3;
+    const br = dev.branch({ terminal: side, to, maxSteps: 20, stability: false });
+    assert.match(br.end, /^reached to/, `${name}: ${br.end}`);
+    assert.ok(br.points.length >= 2);
+    // Verify endpoint matches plain solve().
+    const chk = new Device(structuredClone(def));
+    chk.solve({ budgetMs: 3000 });
+    chk.set({ contacts: { [side]: { V: to } } });
+    const sEnd = chk.solve({ budgetMs: 3000 });
+    assert.equal(sEnd.converged, true);
+    for (const [tn, rec] of Object.entries(br.points.at(-1).terminals)) {
+      assert.ok(Math.abs(sEnd.terminals[tn].V - rec.V) < 1e-8, `${name} ${tn} dV=${Math.abs(sEnd.terminals[tn].V - rec.V)}`);
+    }
+  }
 });

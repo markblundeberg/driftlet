@@ -397,12 +397,13 @@
 
 /**
  * @typedef {object} BranchEvent
- * @property {'fold' | 'hopf' | 'branch point' | 'stability mismatch'} kind event kind
- * @property {number} drive located drive value at the event
+ * @property {'fold' | 'hopf' | 'stability mismatch'} kind event kind
+ * @property {number} drive located drive value at the event (or best bracket point if `located === false`)
  * @property {Record<string, { V: number, current: number }>} terminals each terminal's voltage and current at the event
  * @property {number} [omega] Hopf angular frequency |Im λ| in rad/s (present for kind === 'hopf')
  * @property {[number, number]} between indices [k, k + 1] (or [i, j]) in `points` bracketing the event
- * @property {string} [note] diagnostic detail (e.g. for stability mismatch)
+ * @property {boolean} [located] false when location failed to converge or was cut short by `budgetMs`
+ * @property {string} [note] diagnostic detail (e.g. for stability mismatch or unlocated fallback)
  */
 
 /**
@@ -410,7 +411,7 @@
  * @property {string} terminal name of the continued terminal
  * @property {'V' | 'I'} kind drive kind of that terminal
  * @property {BranchPoint[]} points traced points along the branch
- * @property {BranchEvent[]} events located folds, Hopf bifurcations, branch points, and any stability mismatches
+ * @property {BranchEvent[]} events located folds, Hopf bifurcations, and any stability mismatches
  * @property {string} end plain-language reason the trace stopped
  * @property {string[]} warnings steady-state and continuation warnings
  */

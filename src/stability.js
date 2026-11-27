@@ -2198,7 +2198,7 @@ export class Stability {
     if (!this.atSteady || this.regriddedSteady) {
       throw new SolverError('stability: solve() first — stability() analyses the current converged steady state (preserving its branch)');
     }
-    const { shifts: userShifts, frequencies = [], modes: nWant = 8, profiles = false, kBar = 10, debug = false } = opts;
+    const { shifts: userShifts, frequencies = [], modes: nWant = 8, profiles = false, kBar = 10, debug = false, _budgetCheck } = opts;
     if (userShifts !== undefined) {
       for (const sv of userShifts) {
         if (!(sv > 0 && Number.isFinite(sv))) throw new SolverError(`stability: real shifts must be positive and finite (never 0); got ${sv}`);
@@ -2304,6 +2304,7 @@ export class Stability {
       const xTmp = new Float64Array(N), mxTmp = new Float64Array(N), solTmp = new Float64Array(N);
       let lowestRealShift = Infinity, lowestRealBErr = 0;
       for (const sigma of realShifts) {
+        _budgetCheck?.();
         attempted.push({ re: sigma, im: 0 });
         const fac = factorRealShift(pencil, sigma, true);
         if (!fac) continue;
@@ -2341,6 +2342,7 @@ export class Stability {
       const solTmpR = new Float64Array(N), solTmpI = new Float64Array(N);
       let maxOmega = 0;
       for (const f of frequencies) {
+        _budgetCheck?.();
         const w = 2 * Math.PI * f;
         const sr = 1e-3 * w;
         const sMag = Math.hypot(sr, w);
@@ -2453,6 +2455,7 @@ export class Stability {
       const maxAttempts = Math.min(uniqueCands.length, Math.max(nWant * 12, 160));
       let rejectedSpurious = 0;
       for (let i = 0; i < maxAttempts; i++) {
+        _budgetCheck?.();
         if (acceptedSlots >= targetSlots && uniqueCands[i].re <= 0) {
           let worst = Infinity;
           for (const u of refined) if (u.re < worst) worst = u.re;

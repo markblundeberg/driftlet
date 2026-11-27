@@ -1681,7 +1681,7 @@ console.log(br.end.startsWith('reached to'), br.events.length, br.points.at(-1).
 | `step` | automatic | maximum drive step `|Δp|` per continuation step |
 | `maxSteps` | 200 | maximum continuation steps (so up to `maxSteps + 1` points) |
 | `voltageBound` | 20 | maximum voltage excursion `|V − V_start|` (V) on any floating terminal before stopping |
-| `budgetMs` | `Infinity` | wall-time budget in ms (unlimited never reads the clock; finite allows at least one step attempt) |
+| `budgetMs` | `Infinity` | wall-time budget in ms (unlimited never reads the clock; finite is checked across Newton rounds, stability shifts, and event bisection) |
 | `stability` | `true` | `true` (or a `stability()` options object): run full `stability()` at every point; `false` skips stability marking |
 | `solutions` | `false` | `true`: include the full `Solution` at each point (`pt.solution`) |
 
@@ -1690,7 +1690,7 @@ console.log(br.end.startsWith('reached to'), br.events.length, br.points.at(-1).
 | `terminal` | name of the continued terminal |
 | `kind` | `'V'` or `'I'` (the terminal's drive kind) |
 | `points` | `[{ drive, terminals: { name: { V, current } }, stability?: { verdict, rate, im, error, reason }, solution? }, ...]` |
-| `events` | `[{ kind: 'fold' \| 'hopf' \| 'branch point' \| 'stability mismatch', drive, terminals, omega?, between: [k, k+1], note? }, ...]` |
+| `events` | `[{ kind: 'fold' \| 'hopf' \| 'stability mismatch', drive, terminals, omega?, between: [k, k+1], located?, note? }, ...]` |
 | `end` | why the trace stopped, in plain words: reached `to`, returned to starting drive after a fold, left a voltage bound, `maxSteps`, budget spent, continuation failure, or refused (with why) |
 | `warnings` | the starting steady state's warnings plus any continuation caveats (e.g. frozen waveform drives) |
 

@@ -694,7 +694,7 @@ at e^−n of its peak, give tol < e^−n·ΔV/(80 V_T) (1.6e-5 for 5 mV to 5 RC)
   `frequencies: [f]` to look for an oscillation (Hopf) near f Hz. `dev.branch({ terminal, to })`
   after `solve()` traces a steady-state branch in that terminal's drive (`V` or `I`) round its
   folds by pseudo-arclength continuation, marking each point with its stability (under the drive
-  as held) and locating `'fold'`, `'hopf'` (with `omega`), and `'branch point'` events in
+  as held) and locating `'fold'` and `'hopf'` (with `omega`) events in
   `{ points, events, end, warnings }`, leaving the device where it started.
 
 ```js
