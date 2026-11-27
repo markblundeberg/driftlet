@@ -640,7 +640,7 @@ export class Device {
   /**
    * Trace a steady-state branch in one terminal's drive parameter (`V` or `I`) by pseudo-arclength
    * continuation, rounding folds, marking each point with its linear stability (under the drive as
-   * held), and locating fold, Hopf, and branch points. Leaves the device where it started.
+   * held), and locating fold and Hopf bifurcations. Leaves the device where it started.
    * @param {{ terminal?: string, to: number, step?: number, maxSteps?: number, voltageBound?: number, budgetMs?: number, stability?: boolean | { shifts?: number[], frequencies?: number[], modes?: number, kBar?: number }, solutions?: boolean }} opts
    * @returns {import('./types.js').BranchResult}
    */

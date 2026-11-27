@@ -23,31 +23,33 @@
 //     current-driven terminal), keeping all conserved amounts (lawRefs), floating charges
 //     (chargeRefs) and immobile sums (localKept) fixed at their starting values.
 //   - Dimensionless span coordinate s = (p − p0) / (to − p0) (0 at start, 1 at `to`), oriented
-//     initially with ds/d(arc) > 0. The arclength metric scales s by the device's own physical
-//     response scale at p0 (so a far `to` does not inflate the initial step) and weights gate
-//     variables (in [0, 1]) by 10× alongside potentials in thermal units. Bordered Woodbury solves
-//     reuse s.sys (pure JS, zero dependencies, no ** or Math.pow).
+//     initially with ds/d(arc) > 0. The arclength metric combines bulk potentials/levels (RMS over
+//     bulk nodes, mesh-independent), localized unknowns (gates weighted 10×, surfaces, floating
+//     terminal voltages in thermal units) without bulk dilution, and the drive coordinate scaled
+//     dynamically so the state carries at least half the tangent weight (`wsEff·|ts| ≤ 0.85` when
+//     the state moves). All drive tolerances are relative to the local drive/bracket scale — never
+//     absolute in drive units. Bordered Woodbury solves reuse s.sys (pure JS, zero dependencies,
+//     no ** or Math.pow).
 //   - Every output point is converged to `tol = 1e-10` thermal units. On devices with floating
 //     islands (`this.islands.length > 0`), if the plain corrector leaves Kirchhoff unbalanced, a
 //     second-phase islands round (`islandsOn = true`, fixed s) polishes the island levels (as
 //     newton() does).
-//   - Heuristics guarding step continuity (applied to ordinary steps, landing steps, and
-//     natural-parameter fallback steps alike; never switched off at the minimum stride):
-//       1. Corrector displacement: `||z_next − z_pred||_W ≤ 0.5 · dsStep` and
-//          `||z_next − z_cur||_W ≤ 1.5 · dsStep`, plus pointwise state motion bounded.
-//       2. Tangent turning angle: `cos θ ≥ 0.75` (≤ 41°) and positive forward alignment.
+//   - Step acceptance guards (applied uniformly to ordinary and landing steps; never switched off
+//     at the minimum stride):
+//       1. Corrector contraction: no Newton damping (`alpha === 1`) and classical contraction
+//          `δ_2 / δ_1 ≤ 0.5` (for `δ_1 > 1e-6`), plus bounded pointwise state motion.
+//       2. Tangent continuity: `cos θ ≥ 0.75` (≤ 41°) in the balanced metric and forward alignment
+//          `t_prev · Δz > 0`.
 //       3. Hard `step` cap: when `opts.step` is given, `|p_next − p_cur| ≤ step` on every step.
-//       4. All-mode tracking (when `stability !== false`): every listed mode (complex pairs and
-//          real modes alike, not only the rightmost) is matched from point to point by eigenvector
-//          overlap. Steps are halved whenever matching is ambiguous, whenever any matched mode's
-//          Re λ (or a complex pair's Im λ) moves by more than a fraction of its own scale (with
-//          smooth Boltzmann exponential decay of strictly negative real modes recognised in log
-//          space), or whenever arclength extrapolation predicts a missed crossing or sharp bend.
-//   - Natural-parameter fallback: when pseudo-arclength stalls (corrector fails, guards shrink the
-//     stride below minimum or exhaust halvings, or a rank-deficient Jacobian produces a degenerate
-//     tangent), branch() tries a plain steady solve at the next drive value from the last accepted
-//     state and accepts it only if it passes the same continuity and mode-tracking guards; failing
-//     that, it stops and states why in `end`.
+//       4. All-mode nearer-end guard (when `stability !== false`): unique modes (im ≥ 0) are matched
+//          1-to-1 by biorthogonal eigenvector overlap. On the same side of Re λ = 0, every matched
+//          active mode must satisfy `|Re λ_B − Re λ_A| ≤ 0.75 · max(min(|Re λ_A|, |Re λ_B|), kBar · error)`.
+//          Modes within `kBar · error` of zero are not resolved below their error bar. A genuine
+//          stability verdict flip with no fold or Hopf (e.g. a real eigenvalue passing through
+//          infinity) is audited as a `stability mismatch` event rather than stopping blind.
+//   - When pseudo-arclength cannot advance at the minimum stride (corrector failure, singular
+//     Jacobian, or model wall), continuation stops honestly and notes that `solve()` may continue
+//     from the last accepted drive rather than taking an unguarded natural-parameter jump.
 //
 // One span rule:
 //   - The trace stays inside the requested drive span `s ∈ [0, 1]` (between start drive `p0` and
@@ -65,20 +67,18 @@
 //     call at that point's state and drive, agreeing with a standalone `dev.stability()` call at
 //     the same state. Marks are for the drive as held (a curve can be stable under V-drive and
 //     unstable under I-drive).
-//   - What a mark does NOT promise: a stability mark holds at the sampled point, and all-mode
-//     tracking catches narrow windows that any listed mode approaches, but an unstable window
-//     narrower than the step that is unseen by all listed modes at both endpoints can still be
-//     missed. (In the midpoint audit across random multi-feature devices and 72 downward HH sweeps
-//     including narrowed g.Na = 850, zero windows were missed.)
+//   - What a mark does NOT promise: a stability mark holds at the sampled point. The nearer-end
+//     guard zooms steps proportionally to every matched mode's distance from Re λ = 0, catching
+//     narrow windows approached by listed modes, but modes within their error bar (`kBar · error`)
+//     of zero are not resolved and an unstable window narrower than the step that is unseen by
+//     listed modes at both endpoints can still be missed.
 //   - Fold (`dp/ds` changes sign): located by safeguarded secant/bisection along the exact arc to
-//     `|ts| < 1e-8` (or chord < 1e-9), and confirmed geometrically as a genuine drive extremum
-//     with a real change in `p` beyond tangent noise, reporting `{ kind: 'fold', drive, terminals,
-//     between }`.
+//     `|ts| ≤ 1e-8 · max(|tsA|, |tsB|)` (or relative chord `< 1e-9`), reporting
+//     `{ kind: 'fold', drive, terminals, between }`.
 //   - Hopf (`Re λ` of a complex conjugate pair `Im λ > 0` crosses 0): matched by eigenvector
-//     overlap (not a narrow frequency window, so large frequency shifts across a step are still
-//     matched) and located by safeguarded secant/bisection along the exact arc to
-//     `|Re λ| ≤ max(kBar·error, 1e-5·ω)` or `|Δp| ≤ 1e-6·max(1, |p|)`, reporting
-//     `{ kind: 'hopf', drive, terminals, omega, between }`.
+//     overlap and located by safeguarded secant/bisection along the exact arc to
+//     `|Re λ| ≤ max(kBar·error, 1e-5·ω)` or `|pB − pA| ≤ 1e-6 · max(|pA|, |pB|, |pB0 − pA0|)`,
+//     reporting `{ kind: 'hopf', drive, terminals, omega, between }`.
 //   - Fallbacks are always reported: if a fold or Hopf location fails to converge or is cut short
 //     by `budgetMs`, the event is still emitted with `located: false` and a `note` saying why.
 //   - Consistency audit: runs on both normal completion and `budgetMs` stops. At a fold in the
@@ -110,32 +110,30 @@ import { captureLaws, keepLocal } from './lawRows.js';
 import { addToState, clipLevels, equilibrate, maxPotentialStep } from './newton.js';
 import { makeSolution } from './solution.js';
 
-const WS_BASE = 10; // base arclength weight on normalized drive motion
 const GATE_WEIGHT = 10; // weight on [0, 1] gate fractions (Δgate = 0.1 ↔ 1 thermal unit)
 const BRANCH_TOL = 1e-10; // corrector Newton tolerance in thermal units (~2.5e-12 V)
 const MIN_ARC = 1e-6;
 const MAX_ARC = 1e5;
-const COS_MIN = 0.75; // max tangent turn ≈ 41° per step (heuristic continuity guard)
+const COS_MIN = 0.75; // max tangent turn ≈ 41° per step
+const KAPPA_MAX = 0.5; // classical Newton contraction factor bound δ_{k} / δ_{k-1}
+const ALPHA_RE = 0.75; // nearer-end mode rule: |ΔRe λ| ≤ ALPHA_RE · max(min(|a|, |b|), kBar · err)
 const BUDGET_SPENT = Symbol('branch budget spent');
 const now = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
 
 function branchBudget(ms) {
   const start = now();
   let attempted = false;
-  let elapsed = 0;
   return {
     check() {
-      if (attempted && (elapsed = now() - start) >= ms) throw BUDGET_SPENT;
+      if (attempted && now() - start >= ms) throw BUDGET_SPENT;
     },
-    // Check inside stability() shifts/refinements: allows at least one shift when ms = 0.
     checkWork() {
-      if (attempted && (elapsed = now() - start) >= ms) throw BUDGET_SPENT;
+      if (attempted && now() - start >= ms) throw BUDGET_SPENT;
       attempted = true;
     },
     markAttempted() {
       attempted = true;
     },
-    // Compatible with steady.js's _steadySteps({ budget }) interface.
     record() {
       attempted = true;
     },
@@ -143,42 +141,55 @@ function branchBudget(ms) {
       return Math.max(0, ms - (now() - start));
     },
     elapsed() {
-      return elapsed || now() - start;
+      return now() - start;
     },
   };
 }
 
-// Dimensionless potential/level unknowns + per-entry weight (1 for potentials/levels, GATE_WEIGHT
-// for gate fractions in [0, 1]).
+// Balanced, mesh-independent squared state weights: bulk node unknowns are averaged (1 / nBulk),
+// while localized 0D unknowns (gates, surfaces, diffusion face vars) are NOT diluted by nBulk.
 function stateMetricEntries(s) {
   const { n, M, rix: R } = s;
-  const idx = [];
-  const wt = [];
+  const bulkIdx = [];
+  const surfIdx = [];
+  const gateIdx = [];
+  const diffIdx = [];
   for (let g = 0; g < s.nNodes; g++) {
     const b = s.blockOfNode[g];
-    if (s.nodeConductor[g] < 0 && s.loc[b * M] >= 0) { idx.push(R[b * M]); wt.push(1); }
+    if (s.nodeConductor[g] < 0 && s.loc[b * M] >= 0) bulkIdx.push(R[b * M]);
     for (let i = 0; i < n; i++) {
-      if (s.present[g * n + i] && s.loc[b * M + 1 + i] >= 0) { idx.push(R[b * M + 1 + i]); wt.push(1); }
+      if (s.present[g * n + i] && s.loc[b * M + 1 + i] >= 0) bulkIdx.push(R[b * M + 1 + i]);
     }
     const k = s.surfAt[g];
     if (k >= 0) {
       for (let q = 0; q < s.model.surfaces[k].species.length; q++) {
-        if (s.loc[b * M + 1 + n + q] >= 0) { idx.push(R[b * M + 1 + n + q]); wt.push(1); }
+        if (s.loc[b * M + 1 + n + q] >= 0) surfIdx.push(R[b * M + 1 + n + q]);
       }
     }
   }
   for (const gt of s.gateList) {
-    if (s.loc[gt.o] >= 0) { idx.push(R[gt.o]); wt.push(GATE_WEIGHT); }
+    if (s.loc[gt.o] >= 0) gateIdx.push(R[gt.o]);
   }
   for (const d of s.diffList) {
     const bf = s.blockOfFace[d.f];
-    if (s.loc[d.o] >= 0) { idx.push(R[d.o]); wt.push(1); }
-    for (const q of d.drawSlot) if (q >= 0 && s.loc[bf * M + q] >= 0) { idx.push(R[bf * M + q]); wt.push(1); }
+    if (s.loc[d.o] >= 0) diffIdx.push(R[d.o]);
+    for (const q of d.drawSlot) if (q >= 0 && s.loc[bf * M + q] >= 0) diffIdx.push(R[bf * M + q]);
   }
-  return { potIdx: Int32Array.from(idx), potWt: Float64Array.from(wt) };
+  const total = bulkIdx.length + surfIdx.length + gateIdx.length + diffIdx.length;
+  const potIdx = new Int32Array(total);
+  const potWt2 = new Float64Array(total);
+  let p = 0;
+  const wBulk = bulkIdx.length > 0 ? 1 / bulkIdx.length : 1;
+  for (let i = 0; i < bulkIdx.length; i++) { potIdx[p] = bulkIdx[i]; potWt2[p++] = wBulk; }
+  const wSurf = surfIdx.length > 0 ? 1 / surfIdx.length : 1;
+  for (let i = 0; i < surfIdx.length; i++) { potIdx[p] = surfIdx[i]; potWt2[p++] = wSurf; }
+  const wGate = GATE_WEIGHT * GATE_WEIGHT;
+  for (let i = 0; i < gateIdx.length; i++) { potIdx[p] = gateIdx[i]; potWt2[p++] = wGate; }
+  const wDiff = diffIdx.length > 0 ? 1 / diffIdx.length : 1;
+  for (let i = 0; i < diffIdx.length; i++) { potIdx[p] = diffIdx[i]; potWt2[p++] = wDiff; }
+  return { potIdx, potWt2 };
 }
 
-// Pointwise max state change: maxPotentialStep with gate variables weighted by GATE_WEIGHT.
 function maxStateStep(s, dx, dV) {
   let mx = maxPotentialStep(s, dx, dV);
   const R = s.rix;
@@ -189,7 +200,6 @@ function maxStateStep(s, dx, dV) {
   return mx;
 }
 
-// Pointwise max state difference between two snapshots (or snapshot vs current solver state).
 function maxStateDiff(s, snapA, uB, uLoB, termVB) {
   const { n, M, floating: fl, VT } = s;
   let mx = 0;
@@ -234,23 +244,70 @@ function maxStateDiff(s, snapA, uB, uLoB, termVB) {
   return mx;
 }
 
-// Weighted arclength norm of difference between (uB, uLoB, termVB, sB) and (uA, uLoA, termVA, sA).
+function stateOnlyNorm(potIdx, potWt2, VT, tx, tV) {
+  let sum = 0;
+  for (let i = 0; i < potIdx.length; i++) {
+    const v = tx[potIdx[i]];
+    sum += potWt2[i] * v * v;
+  }
+  const invVT2 = 1 / (VT * VT);
+  for (let a = 0; a < tV.length; a++) sum += invVT2 * tV[a] * tV[a];
+  return Math.sqrt(sum);
+}
+
+function tangentNorm(potIdx, potWt2, wsEff, VT, tx, tV, ts) {
+  let sum = wsEff * wsEff * ts * ts;
+  for (let i = 0; i < potIdx.length; i++) {
+    const v = tx[potIdx[i]];
+    sum += potWt2[i] * v * v;
+  }
+  const invVT2 = 1 / (VT * VT);
+  for (let a = 0; a < tV.length; a++) sum += invVT2 * tV[a] * tV[a];
+  return Math.sqrt(sum);
+}
+
+function buildWeights(potIdx, potWt2, wsEff, VT, tx, tV, ts, wx, wV) {
+  wx.fill(0);
+  for (let i = 0; i < potIdx.length; i++) {
+    const j = potIdx[i];
+    wx[j] = potWt2[i] * tx[j];
+  }
+  const invVT2 = 1 / (VT * VT);
+  for (let a = 0; a < tV.length; a++) wV[a] = invVT2 * tV[a];
+  return wsEff * wsEff * ts;
+}
+
 function stateDistW(s, ctx, uA, uLoA, termVA, sA, uB, uLoB, termVB, sB) {
-  const { potIdx, potWt, wsEff } = ctx;
+  const { potIdx, potWt2, wsEff } = ctx;
   const fl = s.floating, VT = s.VT;
   let sum = wsEff * wsEff * (sB - sA) * (sB - sA);
-  const invN = potIdx.length > 0 ? 1 / potIdx.length : 1;
   for (let i = 0; i < potIdx.length; i++) {
-    const j = potIdx[i], o = s.fullOf[j], w = potWt[i];
+    const o = s.fullOf[potIdx[i]];
     const d = (uB[o] - uA[o]) + (uLoB[o] - uLoA[o]);
-    sum += invN * w * w * d * d;
+    sum += potWt2[i] * d * d;
+  }
+  const invVT2 = 1 / (VT * VT);
+  for (let a = 0; a < fl.length; a++) {
+    const k = fl[a];
+    const d = termVB[k] - termVA[k];
+    sum += invVT2 * d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+function stepAlignment(s, ctx, refTx, refTV, refTs, snapA, sA, uB, uLoB, termVB, sB) {
+  const { potIdx, potWt2, wsEff } = ctx;
+  const fl = s.floating, invVT2 = 1 / (s.VT * s.VT);
+  let align = wsEff * wsEff * refTs * (sB - sA);
+  for (let i = 0; i < potIdx.length; i++) {
+    const j = potIdx[i], o = s.fullOf[j];
+    align += potWt2[i] * refTx[j] * ((uB[o] - snapA.u[o]) + (uLoB[o] - snapA.uLo[o]));
   }
   for (let a = 0; a < fl.length; a++) {
     const k = fl[a];
-    const d = (termVB[k] - termVA[k]) / VT;
-    sum += d * d;
+    align += invVT2 * refTV[a] * (termVB[k] - snapA.termV[k]);
   }
-  return Math.sqrt(sum);
+  return align;
 }
 
 // Exact ∂F/∂s for single-terminal continuation p(s) = p0 + s * dpSpan after assemble(Infinity)
@@ -268,20 +325,15 @@ function computeParamDs(s, termIdx, dpSpan, Bs, pinDs, circDs) {
     for (let a = 0; a < fl.length; a++) circDs[a] = dpSpan * s.termDX[fl[a]][termIdx];
   } else {
     const a = fl.indexOf(termIdx);
-    if (a >= 0) {
-      if (d.kind === 'I') circDs[a] = -dpSpan;
-      else circDs[a] = -dpSpan / d.R;
-    }
+    if (a >= 0) circDs[a] = d.kind === 'I' ? -dpSpan : -dpSpan / d.R;
   }
 }
 
-// Solve the (P + K + 1)-bordered system reusing the factored s.sys, returning
-// { ds, minSchurPivot } and writing δx into `delta`, δV into `deltaV`.
+// Solve the (P + K + 1)-bordered system reusing the factored s.sys.
 function solveBordered(s, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, Bs, pinDs, circDs, wx, wV, ws) {
   const N = s.sys.size, fl = s.floating, pins = s.pins, P = pins.length, K = fl.length, S = P + K + 1;
   s._solveLinear(rhs, delta);
-  const e = work.e;
-  const cols = work.cols;
+  const e = work.e, cols = work.cols;
   for (let a = 0; a < S; a++) {
     if (!cols[a]) cols[a] = new Float64Array(N + 1);
     if (a < P) {
@@ -333,15 +385,12 @@ function solveBordered(s, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, Bs, p
     for (let b = 0; b < S; b++) mx = Math.max(mx, Math.abs(A[a][b]));
     if (mx > 0) for (let b = 0; b <= S; b++) A[a][b] /= mx;
   }
-  let minSchurPivot = Infinity;
   for (let col = 0; col < S; col++) {
     let p = col;
     for (let r = col + 1; r < S; r++) if (Math.abs(A[r][col]) > Math.abs(A[p][col])) p = r;
     if (p !== col) [A[col], A[p]] = [A[p], A[col]];
     const piv = A[col][col];
     if (!(piv !== 0 && Number.isFinite(piv))) throw new SolverError('the bordered arclength system is singular');
-    const apiv = Math.abs(piv);
-    if (apiv < minSchurPivot) minSchurPivot = apiv;
     for (let r = col + 1; r < S; r++) {
       const f = A[r][col] / piv;
       for (let k = col; k <= S; k++) A[r][k] -= f * A[col][k];
@@ -359,40 +408,13 @@ function solveBordered(s, work, rhs, pinRhs, circRhs, gRhs, delta, deltaV, Bs, p
     for (let j = 0; j < N; j++) delta[j] += sa * col[j];
     if (a >= P && a < P + K) deltaV[a - P] = x[a];
   }
-  return { ds: x[P + K], minSchurPivot };
-}
-
-function buildWeights(potIdx, potWt, wsEff, VT, tx, tV, ts, wx, wV) {
-  const invN = potIdx.length > 0 ? 1 / potIdx.length : 1;
-  wx.fill(0);
-  for (let i = 0; i < potIdx.length; i++) {
-    const j = potIdx[i], w = potWt[i];
-    wx[j] = invN * w * w * tx[j];
-  }
-  const invVT2 = 1 / (VT * VT);
-  for (let a = 0; a < tV.length; a++) wV[a] = invVT2 * tV[a];
-  return wsEff * wsEff * ts;
-}
-
-function tangentNorm(potIdx, potWt, wsEff, VT, tx, tV, ts) {
-  let sum = wsEff * wsEff * ts * ts;
-  const invN = potIdx.length > 0 ? 1 / potIdx.length : 1;
-  for (let i = 0; i < potIdx.length; i++) {
-    const w = potWt[i];
-    const v = w * tx[potIdx[i]];
-    sum += invN * v * v;
-  }
-  for (let a = 0; a < tV.length; a++) {
-    const v = tV[a] / VT;
-    sum += v * v;
-  }
-  return Math.sqrt(sum);
+  return { ds: x[P + K] };
 }
 
 // Compute unit tangent (tx, tV, ts) at current converged state + sVal, oriented to agree with
 // (prevTx, prevTV, prevTs), or with ts > 0 when prevTx is null.
 function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFactor = false) {
-  const { termIdx, p0, dpSpan, potIdx, potWt, wsEff, Bs, pinDs, circDs, wx, wV, work } = ctx;
+  const { termIdx, p0, dpSpan, potIdx, potWt2, wsEff, Bs, pinDs, circDs, wx, wV, work } = ctx;
   const N = s.sys.size, K = s.floating.length;
   if (!reuseFactor) {
     s.sourceOverride.set(termIdx, p0 + sVal * dpSpan);
@@ -402,21 +424,18 @@ function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFacto
     computeParamDs(s, termIdx, dpSpan, Bs, pinDs, circDs);
     s._factor();
   }
-  const zero = work.zero;
-  const zeroPin = work.zeroPin;
-  const zeroCirc = work.zeroCirc;
   let ws;
   if (prevTx) {
-    ws = buildWeights(potIdx, potWt, wsEff, s.VT, prevTx, prevTV, prevTs, wx, wV);
+    ws = buildWeights(potIdx, potWt2, wsEff, s.VT, prevTx, prevTV, prevTs, wx, wV);
   } else {
     wx.fill(0);
     wV.fill(0);
     ws = 1;
   }
-  const res = solveBordered(s, work, zero, zeroPin, zeroCirc, 1, tx, tV, Bs, pinDs, circDs, wx, wV, ws);
+  const res = solveBordered(s, work, work.zero, work.zeroPin, work.zeroCirc, 1, tx, tV, Bs, pinDs, circDs, wx, wV, ws);
   const tsRaw = res.ds;
   if (!Number.isFinite(tsRaw)) return { ok: false };
-  const nrm = tangentNorm(potIdx, potWt, wsEff, s.VT, tx, tV, tsRaw);
+  const nrm = tangentNorm(potIdx, potWt2, wsEff, s.VT, tx, tV, tsRaw);
   if (!(nrm > 0 && Number.isFinite(nrm))) return { ok: false };
   for (let j = 0; j < N; j++) tx[j] /= nrm;
   for (let a = 0; a < K; a++) tV[a] /= nrm;
@@ -431,7 +450,7 @@ function computeTangent(s, ctx, sVal, prevTx, prevTV, prevTs, tx, tV, reuseFacto
   } else {
     cosTheta = 1 / nrm;
   }
-  return { ok: true, ts, cosTheta, minSchurPivot: res.minSchurPivot };
+  return { ok: true, ts, cosTheta };
 }
 
 function kirchhoffSum(s) {
@@ -441,17 +460,19 @@ function kirchhoffSum(s) {
 }
 
 // Corrector Newton on F(x, V_fl, s) = 0 and wx·(x − xPred) + wV·(V − vPred) + ws·(s − sPred) = 0.
-// On floating-island devices, if plain convergence leaves Kirchhoff unbalanced, runs a second-phase
-// fixed-s islands polish (`islandsOn = true`) mirroring newton()'s islands round.
-function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, ws, { maxIter = 50, tol = BRANCH_TOL, maxStep = 10, fixedS = false } = {}) {
-  const { termIdx, p0, dpSpan, potIdx, wsEff, Bs, pinDs, circDs, work, budget } = ctx;
+// Tracks classical Newton contraction factor `kappa = max(δ_k / δ_{k-1})` and damping flag.
+function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, ws, { maxIter = 40, tol = BRANCH_TOL, maxStep = 10, fixedS = false } = {}) {
+  const { termIdx, p0, dpSpan, potIdx, potWt2, wsEff, Bs, pinDs, circDs, work, budget } = ctx;
   budget?.check();
-  const N = s.sys.size, fl = s.floating, K = fl.length;
+  const fl = s.floating, K = fl.length;
   const delta = work.delta, deltaV = work.deltaV;
   const pinRhs = work.pinRhs, circRhs = work.circRhs;
   let sVal = fixedS ? sPred : sStart;
 
   const runLoop = (islandsOn, isFixed, limit) => {
+    let d1 = 0;
+    let d2 = 0;
+    let damped = false;
     for (let it = 1; it <= limit; it++) {
       budget?.check();
       s.sourceOverride.set(termIdx, p0 + sVal * dpSpan);
@@ -501,7 +522,11 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
       const own = Math.max(maxPotentialStep(s, delta, deltaV, false), wsEff * Math.abs(ds));
       if (!Number.isFinite(step)) return { converged: false, iterations: it, s: sVal, error: 'non-finite update' };
       if (it > 1 && own > 1e5) return { converged: false, iterations: it, s: sVal, error: 'diverging' };
+      const dNorm = tangentNorm(potIdx, potWt2, wsEff, s.VT, delta, deltaV, ds);
+      if (it === 1) d1 = dNorm;
+      else if (it === 2) d2 = dNorm;
       const alpha = own > maxStep ? maxStep / own : 1;
+      if (alpha < 1) damped = true;
       addToState(s, delta, -alpha);
       for (let a = 0; a < K; a++) s.termV[fl[a]] -= alpha * deltaV[a];
       if (!isFixed) sVal -= alpha * ds;
@@ -517,8 +542,10 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
           converged: true,
           iterations: it,
           s: sVal,
+          d1,
+          kappa: d1 > 1e-6 ? d2 / d1 : 0,
+          damped,
           reusable: !islandsOn && s.sys.perturbedPivots === 0 && s.sys.lostColumns === 0,
-          minSchurPivot: solved.minSchurPivot,
         };
       }
     }
@@ -528,8 +555,8 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
   const r1 = runLoop(false, fixedS, maxIter);
   if (!r1.converged) return r1;
 
-  // Phase 2: on floating-island devices, if plain convergence left Kirchhoff unbalanced, run an
-  // islands round at fixed s (matching newton()'s islands round) to settle weakly held islands.
+  // Phase 2: on floating-island devices, if plain convergence left Kirchhoff unbalanced, polish
+  // islands at fixed s (mirroring newton()'s islands round).
   if (s.islands.length > 0 && s._missesKirchhoff()) {
     const preIslSnap = s._snapshot();
     for (const isl of s.islands) isl.cutAt = null;
@@ -537,27 +564,13 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
     s.islandsOn = false;
     const okKirchhoff = () => !s._missesKirchhoff() || (ctx.startMissesKirchhoff && kirchhoffSum(s) <= 10 * ctx.startKirchhoffSum + 1e-13);
     if (r2.converged && okKirchhoff()) {
-      return {
-        converged: true,
-        iterations: Math.max(r1.iterations, 6),
-        s: sVal,
-        reusable: false,
-        minSchurPivot: r2.minSchurPivot,
-      };
+      return { converged: true, iterations: Math.max(r1.iterations, 6), s: sVal, d1: r1.d1, kappa: r1.kappa, damped: r1.damped, reusable: false };
     }
-    // If direct islands round failed or still missed Kirchhoff, try one budgeted _steadySteps
-    // polish (which includes GMRES refinement) at fixed sVal.
     s._restore(preIslSnap);
     s.sourceOverride.set(termIdx, p0 + sVal * dpSpan);
     const qPol = s._steadySteps(budget ? { maxSteps: 1, budget } : { maxSteps: 1 });
     if (qPol.converged && okKirchhoff()) {
-      return {
-        converged: true,
-        iterations: Math.max(r1.iterations, 6),
-        s: sVal,
-        reusable: false,
-        minSchurPivot: r1.minSchurPivot,
-      };
+      return { converged: true, iterations: Math.max(r1.iterations, 6), s: sVal, d1: r1.d1, kappa: r1.kappa, damped: r1.damped, reusable: false };
     }
     s._restore(preIslSnap);
     return { converged: false, iterations: r1.iterations + r2.iterations, s: sVal, error: 'floating-island current balance lost' };
@@ -565,8 +578,6 @@ function correctorNewton(s, ctx, sStart, uPred, uLoPred, vPred, sPred, wx, wV, w
   return r1;
 }
 
-// Check whether terminal `k` (current-driven) is forced to charge a capacitance or a conserved
-// pool at non-zero current `I`, meaning no steady branch exists as `I` varies.
 function chargingReason(s, k, I) {
   if (s._bound(k)) {
     return `terminal '${s.terms[k].name}' is bound by Kirchhoff (all other terminals are current-driven)`;
@@ -601,8 +612,6 @@ function chargingReason(s, k, I) {
   return null;
 }
 
-// Read terminal voltages and currents (into the device, matching sol.terminals) and optionally
-// build a full Solution at drive value `p`.
 function readPointData(s, termIdx, p, wantSolution) {
   const term = s.terms[termIdx];
   const origSrc = term.drive.src;
@@ -643,8 +652,6 @@ function readPointData(s, termIdx, p, wantSolution) {
   }
 }
 
-// Run full stability() at the current state and drive `p`, passing any active budget check so
-// overruns stay bounded to roughly one shift factorisation / mode refinement.
 function evaluateStability(s, termIdx, p, stabOpts, isCurrentDrive, budget) {
   const term = s.terms[termIdx];
   const origSrc = term.drive.src;
@@ -652,8 +659,7 @@ function evaluateStability(s, termIdx, p, stabOpts, isCurrentDrive, budget) {
   const oldOverride = hadOverride ? s.sourceOverride.get(termIdx) : undefined;
   const wasSteady = s.steady, wasAtSteady = s.atSteady, wasRegrid = s.regriddedSteady;
   const wasDrivenKey = s.drivenKey;
-  const wasLawRefs = s.lawRefs, wasChargeRefs = s.chargeRefs;
-  const wasLocalKept = s.localKept;
+  const wasLawRefs = s.lawRefs, wasChargeRefs = s.chargeRefs, wasLocalKept = s.localKept;
   term.drive.src = { value: p };
   s.sourceOverride.delete(termIdx);
   s.steady = false;
@@ -697,17 +703,6 @@ function summarizeStability(st) {
   };
 }
 
-// Unique modes (im >= 0): each real mode once, each complex conjugate pair once (with im > 0).
-function uniqueModes(st) {
-  if (!st || !st.modes) return [];
-  const out = [];
-  for (const m of st.modes) {
-    if (m.im >= 0) out.push(m);
-  }
-  return out;
-}
-
-// Complex eigenvector overlap |v_aᴴ v_b| in [0, 1] (normalized coordScale vectors), or -1 if absent.
 function vecOverlap(a, b) {
   const ar = a._vr, ai = a._vi, br = b._vr, bi = b._vi;
   if (!ar || !br || ar.length !== br.length) return -1;
@@ -719,9 +714,15 @@ function vecOverlap(a, b) {
   return Math.hypot(dr, di);
 }
 
-// Biorthogonal mode overlap between two modes using the dual vectors u = Mᴴ w / |wᴴ M v| (which
-// satisfy |u_iᴴ v_j| = δ_{ij} even on strongly non-normal pencils, independent of M's units),
-// falling back to right-vector cosine |v_aᴴ v_b| only when duals are absent or non-finite.
+function uniqueModes(st) {
+  if (!st || !st.modes) return [];
+  const out = [];
+  for (const m of st.modes) if (m.im >= 0) out.push(m);
+  return out;
+}
+
+// Biorthogonal mode overlap using dual vectors u = Mᴴ w / |wᴴ M v|, falling back to right-vector
+// cosine when duals are absent.
 function biorthOverlap(a, b) {
   const ar = a._vr, ai = a._vi, br = b._vr, bi = b._vi;
   if (!ar || !br || ar.length !== br.length) return -1;
@@ -735,39 +736,24 @@ function biorthOverlap(a, b) {
       di2 += bur[j] * ai[j] - bui[j] * ar[j];
     }
     const ov = Math.sqrt(Math.hypot(dr1, di1) * Math.hypot(dr2, di2));
-    if (Number.isFinite(ov)) {
-      const clamped = Math.min(1, ov);
-      if (clamped >= 0.5 || !(a._cond > 1e6 || b._cond > 1e6)) return clamped;
-      // When a mode has a hugely ill-conditioned left vector (e.g. depleted floating island),
-      // fall back to right-vector cosine if eigenvalues match tightly.
-      const sc = Math.max(Math.hypot(a.re, a.im), Math.hypot(b.re, b.im), 1e-12);
-      if (Math.hypot(a.re - b.re, a.im - b.im) <= 0.1 * sc) {
-        return Math.max(clamped, vecOverlap(a, b));
-      }
-      return clamped;
-    }
+    if (Number.isFinite(ov)) return Math.min(1, ov);
   }
   return vecOverlap(a, b);
 }
 
-// Match unique modes between two stability results 1-to-1 by biorthogonal eigenvector overlap
-// (Stage 1), λ-proximity / Boltzmann depletion for localized moving-edge real modes (Stage 2),
-// and weak eigenvector overlap (Stage 3). Returns { A, B, pairs, matchedA, matchedB, O }.
-function matchModes(stA, stB, actualStateMove = 0) {
+// 1-to-1 mode matching by biorthogonal eigenvector overlap.
+function matchModes(stA, stB) {
   const A = uniqueModes(stA);
   const B = uniqueModes(stB);
   const nA = A.length, nB = B.length;
-  const O = Array.from({ length: nA }, () => new Float64Array(nB));
   const cands = [];
   for (let i = 0; i < nA; i++) {
     for (let j = 0; j < nB; j++) {
       let s = biorthOverlap(A[i], B[j]);
       if (s < 0) {
-        const scale = Math.max(Math.hypot(A[i].re, A[i].im), Math.hypot(B[j].re, B[j].im), 1e-12);
-        const dist = Math.hypot(A[i].re - B[j].re, A[i].im - B[j].im);
-        s = 1 / (1 + dist / scale);
+        const sc = Math.max(Math.hypot(A[i].re, A[i].im), Math.hypot(B[j].re, B[j].im), 1e-12);
+        s = 1 / (1 + Math.hypot(A[i].re - B[j].re, A[i].im - B[j].im) / sc);
       }
-      O[i][j] = s;
       cands.push({ i, j, s });
     }
   }
@@ -775,343 +761,53 @@ function matchModes(stA, stB, actualStateMove = 0) {
   const matchedA = new Int32Array(nA).fill(-1);
   const matchedB = new Int32Array(nB).fill(-1);
   const pairs = [];
-  // Stage 1: 1-to-1 matching by biorthogonal eigenvector overlap.
   for (const c of cands) {
     if (c.s < 0.45) break;
     if (matchedA[c.i] >= 0 || matchedB[c.j] >= 0) continue;
     matchedA[c.i] = c.j;
     matchedB[c.j] = c.i;
-    // Compute runner-up overlap against non-nearly-degenerate modes on either side.
-    const ai = A[c.i], bj = B[c.j];
-    let runnerUp = 0;
-    for (let jj = 0; jj < nB; jj++) {
-      if (jj === c.j) continue;
-      const sc = Math.max(Math.hypot(bj.re, bj.im), Math.hypot(B[jj].re, B[jj].im), 1e-12);
-      if (Math.hypot(bj.re - B[jj].re, bj.im - B[jj].im) > 0.1 * sc && O[c.i][jj] > runnerUp) {
-        runnerUp = O[c.i][jj];
-      }
-    }
-    for (let ii = 0; ii < nA; ii++) {
-      if (ii === c.i) continue;
-      const sc = Math.max(Math.hypot(ai.re, ai.im), Math.hypot(A[ii].re, A[ii].im), 1e-12);
-      if (Math.hypot(ai.re - A[ii].re, ai.im - A[ii].im) > 0.1 * sc && O[ii][c.j] > runnerUp) {
-        runnerUp = O[ii][c.j];
-      }
-    }
-    pairs.push({ i: c.i, j: c.j, a: ai, b: bj, overlap: c.s, runnerUp, byEig: false });
+    pairs.push({ i: c.i, j: c.j, a: A[c.i], b: B[c.j], overlap: c.s });
   }
-
-  // Stage 2: λ-proximity fallback for remaining unmatched same-type, same-sign modes (handles
-  // localized depletion-edge / trap modes whose eigenvector shifts by 1 grid cell so overlap drops
-  // to ~0 while λ barely moves, or leading strictly negative real modes following smooth Boltzmann
-  // depletion across moving depletion edges). Never matches across Re λ = 0 or real <-> oscillatory.
-  const eigCands = [];
-  for (let i = 0; i < nA; i++) {
-    if (matchedA[i] >= 0) continue;
-    for (let j = 0; j < nB; j++) {
-      if (matchedB[j] >= 0) continue;
-      const ai = A[i], bj = B[j];
-      if ((ai.re < 0) !== (bj.re < 0)) continue;
-      if (isOscillatory(ai) !== isOscillatory(bj)) continue;
-      const err = Math.max(ai.error, bj.error);
-      const sc = Math.max(Math.hypot(ai.re, ai.im), Math.hypot(bj.re, bj.im), 20 * err, 1e-12);
-      const rel = Math.hypot(bj.re - ai.re, bj.im - ai.im) / sc;
-      if (rel <= 0.35) {
-        eigCands.push({ i, j, rel });
-      } else if (i === 0 && j === 0 && !isOscillatory(ai) && ai.re < -20 * err && bj.re < -20 * err && actualStateMove >= 0.5) {
-        const dLn = Math.abs(Math.log(-bj.re / -ai.re));
-        if (dLn <= 3.2 * actualStateMove + 0.5) eigCands.push({ i, j, rel: 0.35 + 0.01 * dLn });
-      }
-    }
-  }
-  eigCands.sort((x, y) => x.rel - y.rel);
-  for (const c of eigCands) {
-    if (matchedA[c.i] >= 0 || matchedB[c.j] >= 0) continue;
-    matchedA[c.i] = c.j;
-    matchedB[c.j] = c.i;
-    pairs.push({ i: c.i, j: c.j, a: A[c.i], b: B[c.j], overlap: O[c.i][c.j], runnerUp: 0, byEig: true });
-  }
-
-  // Stage 3: Weak eigenvector matches (0.30..0.45) for any still-unmatched pair (e.g. a mode that
-  // moved rapidly across a coarse step so Check 2 can inspect and halve it).
-  for (const c of cands) {
-    if (c.s < 0.3) break;
-    if (matchedA[c.i] >= 0 || matchedB[c.j] >= 0) continue;
-    matchedA[c.i] = c.j;
-    matchedB[c.j] = c.i;
-    pairs.push({ i: c.i, j: c.j, a: A[c.i], b: B[c.j], overlap: c.s, runnerUp: 0, byEig: false });
-  }
-  return { A, B, pairs, matchedA, matchedB, O };
+  return { A, B, pairs };
 }
 
-// Check if an unmatched real mode `r` on one side is the coalescing partner of a matched complex
-// pair `c` on the other side (2 real modes <-> 1 complex pair across an exceptional point).
-function isExceptionalPartner(r, otherList, otherMatched) {
-  if (r.im > 0) return false;
-  for (let j = 0; j < otherList.length; j++) {
-    const c = otherList[j];
-    if (!(c.im > 0) || otherMatched[j] < 0) continue;
-    const ovB = biorthOverlap(r, c);
-    const ovV = vecOverlap(r, c);
-    if (Math.max(ovB, ovV) >= 0.45) return true;
-    const sc = Math.max(Math.abs(r.re), Math.abs(c.re), 1e-12);
-    if (c.im <= 0.55 * sc && Math.abs(r.re - c.re) <= 0.55 * sc) return true;
-  }
-  return false;
-}
-
-// True for a genuinely oscillatory complex pair (not a deep-LHP real mode with small numerical Im).
-function isOscillatory(m) {
-  return m.im > 0 && (m.re >= 0 || m.im > 0.25 * Math.abs(m.re));
-}
-
-// All-mode tracking & smoothness check between consecutive states (prev -> next, with optional
-// prev2 for arclength extrapolation). Tracks EVERY listed mode (complex pairs and real modes
-// alike) by biorthogonal eigenvector overlap — including when a point's verdict is 'undecided'
-// so long as it has an oscillatory or growing mode! Returns { ok, reason }.
-function modeStepSmooth(stPrev2, stPrev, stNew, dPrevArc, dActual, actualStateMove, kBar, nWant, stats) {
+// Single principled mode-tracking guard across all matched active modes:
+//   |Re λ_B − Re λ_A| ≤ ALPHA_RE · max(min(|Re λ_A|, |Re λ_B|), kBar · err)
+// on the same side of Re λ = 0.
+function modeStepSmooth(stPrev, stNew, kBar, nWant, stats) {
   if (!stPrev || !stNew) return { ok: true };
-  const m12 = matchModes(stPrev, stNew, actualStateMove);
-  const { A, B, pairs, matchedA, matchedB } = m12;
+  const { A, B, pairs } = matchModes(stPrev, stNew);
   if (A.length === 0 || B.length === 0) return { ok: true };
-  // If either endpoint is 'undecided' and neither side has any oscillatory or growing mode (e.g.
-  // broken Arnoldi shift grid on a depleted floating island), do not stall on LHP real jitter.
-  // (When an oscillatory or growing mode IS present — e.g. HH right beside a Hopf — still track it!)
+  const isOsc = (m) => m.im > 0 && (m.re >= 0 || m.im > 0.25 * Math.abs(m.re));
   if (stPrev.verdict === 'undecided' || stNew.verdict === 'undecided') {
-    const hasKey = (arr) => arr.some((m) => m.re >= 0 || isOscillatory(m));
-    if (!hasKey(A) && !hasKey(B)) return { ok: true };
+    if (!A.some((m) => m.re >= 0 || isOsc(m)) && !B.some((m) => m.re >= 0 || isOsc(m))) return { ok: true };
   }
-
-  // Modes strictly inside the truncation window (excluding modes near the deepest cutoff tail when
-  // the list hit nWant slots). Leading mode, any growing mode, and any non-tail oscillatory pair
-  // are always active.
   const cutA = stPrev.modes.length >= nWant && A.length > 3 ? A[A.length - 1].re : -Infinity;
   const cutB = stNew.modes.length >= nWant && B.length > 3 ? B[B.length - 1].re : -Infinity;
-  const leadA = A[0].re;
-  const leadB = B[0].re;
-  const isInteriorA = (i) => {
-    const m = A[i];
-    if (i === 0 || m.re >= 0 || A.length <= 2) return true;
-    if (isOscillatory(m)) return !(stPrev.modes.length >= nWant && i === A.length - 1);
-    if (stPrev.modes.length >= nWant && (i >= A.length - 2 || m.re <= 0.7 * cutA)) return false;
-    return true;
+  const isActive = (arr, st, cut, idx) => {
+    const m = arr[idx];
+    if (idx === 0 || m.re >= 0 || arr.length <= 2) return true;
+    if (isOsc(m)) return !(st.modes.length >= nWant && idx === arr.length - 1);
+    return !(st.modes.length >= nWant && (idx >= arr.length - 2 || m.re <= 0.7 * cut));
   };
-  const isInteriorB = (j) => {
-    const m = B[j];
-    if (j === 0 || m.re >= 0 || B.length <= 2) return true;
-    if (isOscillatory(m)) return !(stNew.modes.length >= nWant && j === B.length - 1);
-    if (stNew.modes.length >= nWant && (j >= B.length - 2 || m.re <= 0.7 * cutB)) return false;
-    return true;
-  };
-
-  // 1. Unmatched check for critical modes: leading mode (index 0), any growing mode, and any
-  //    interior oscillatory complex pair (secondary deep-LHP real modes may enter/exit Arnoldi's
-  //    shift-invert subset without moving near 0).
-  for (let i = 0; i < A.length; i++) {
-    if (!isInteriorA(i) || matchedA[i] >= 0) continue;
-    const m = A[i];
-    if (isExceptionalPartner(m, B, matchedB)) continue;
-    // Strictly negative real leading mode entering/leaving by smooth Boltzmann depletion from the
-    // bulk continuum (or Arnoldi LHP shift flicker on a small step) while the adjacent bulk mode
-    // matches cleanly on both decaying endpoints.
-    if (i === 0 && !isOscillatory(m) && m.re < -kBar * m.error && matchedB[0] >= 0 && stPrev.verdict === 'no growing mode found' && stNew.verdict === 'no growing mode found') {
-      const b0 = B[0];
-      if (actualStateMove < 1.0 || (b0.re < -20 * b0.error && Math.abs(Math.log(-m.re / -b0.re)) <= 3.2 * actualStateMove + 0.5)) continue;
-    }
-    if (i > 0 && !isOscillatory(m) && m.re < 0 && (leadA < 0 ? m.re < 1.5 * leadA : false)) continue;
-    if (i > 0 && !isOscillatory(m) && m.re < 0 && (m._cond > 1e3 || stPrev.modes.length >= nWant - 1)) continue;
-    if (stats) stats.modeMatchAmbiguous++;
-    return { ok: false, reason: 'unmatched mode' };
-  }
-  for (let j = 0; j < B.length; j++) {
-    if (!isInteriorB(j) || matchedB[j] >= 0) continue;
-    const m = B[j];
-    if (isExceptionalPartner(m, A, matchedA)) continue;
-    if (j === 0 && !isOscillatory(m) && m.re < -kBar * m.error && matchedA[0] >= 0 && stPrev.verdict === 'no growing mode found' && stNew.verdict === 'no growing mode found') {
-      const a0 = A[0];
-      if (actualStateMove < 1.0 || (a0.re < -20 * a0.error && Math.abs(Math.log(-m.re / -a0.re)) <= 3.2 * actualStateMove + 0.5)) continue;
-    }
-    if (j > 0 && !isOscillatory(m) && m.re < 0 && (leadB < 0 ? m.re < 1.5 * leadB : false)) continue;
-    if (j > 0 && !isOscillatory(m) && m.re < 0 && (m._cond > 1e3 || stNew.modes.length >= nWant - 1)) continue;
-    if (stats) stats.modeMatchAmbiguous++;
-    return { ok: false, reason: 'new unmatched mode' };
-  }
-
-  // Optional predecessor match (prev2 -> prev) for per-mode arclength extrapolation.
-  const m01 = stPrev2 && stPrev2.modes.length > 0 && dPrevArc > 1e-12 ? matchModes(stPrev2, stPrev) : null;
-  const prev2OfA = new Map();
-  if (m01) {
-    for (const p of m01.pairs) {
-      if (p.overlap >= 0.6 || p.byEig) prev2OfA.set(p.j, p.a);
-    }
-  }
-
-  // 2. Per-mode match quality, Re λ scale movement, Im λ movement, and arclength extrapolation
-  //    across ALL matched interior modes (complex pairs and real modes alike).
-  const rho = dPrevArc > 1e-12 ? dActual / dPrevArc : 0;
-  for (const p of pairs) {
-    const { i, j, a, b, overlap, runnerUp, byEig } = p;
-    const active = isInteriorA(i) || isInteriorB(j);
-    if (!active) continue;
-
+  for (const { i, j, a, b } of pairs) {
+    if (!isActive(A, stPrev, cutA, i) && !isActive(B, stNew, cutB, j)) continue;
+    if ((a.re < 0) !== (b.re < 0)) continue;
     const err = Math.max(a.error, b.error);
-    const sameSign = (a.re < 0) === (b.re < 0);
-    const maxR = Math.max(Math.abs(a.re), Math.abs(b.re));
-    const oscA = isOscillatory(a), oscB = isOscillatory(b);
-    const isComplex = oscA || oscB;
-    const isLeading = i === 0 || j === 0;
-    const realCoal = oscA !== oscB;
-
-    // Eigenvector match ambiguity: strict on leading modes & oscillatory complex pairs unless
-    // matched cleanly by Stage-2 λ-proximity (localized moving-edge modes whose eigenvector shifted
-    // by a grid cell while λ barely moved).
-    const eigTight = Math.hypot(b.re - a.re, b.im - a.im) <= 0.15 * Math.max(Math.hypot(a.re, a.im), Math.hypot(b.re, b.im), 20 * err);
-    const deepRealTight = !isComplex && !isLeading && sameSign && a.re < 0 && Math.abs(b.re - a.re) <= 0.25 * Math.max(maxR, 20 * err);
-    const minOv = isLeading || (isComplex && !realCoal) ? 0.6 : 0.5;
-    if (!byEig && !deepRealTight && !(eigTight && overlap >= 0.5)) {
-      if (overlap < minOv || (!realCoal && runnerUp > 0.88 * overlap && overlap < 0.90)) {
-        if (stats) stats.modeMatchAmbiguous++;
-        return { ok: false, reason: 'ambiguous mode match' };
-      }
-    }
-
-    const a0 = prev2OfA.get(i) ?? null;
-
-    if (isComplex) {
-      // Never cross BOTH an exceptional point (real <-> complex) AND Re λ = 0 in a single step:
-      // halving separates them so both sides of a Hopf hold the complex pair.
-      if (realCoal && !sameSign) {
-        if (stats) stats.modeImMove++;
-        return { ok: false, reason: 'real-complex split crossed Re λ = 0' };
-      }
-      // Frequency continuity (scaled by max(a.im, b.im, maxR) so emerging exceptional points deep
-      // in the LHP where Im λ ~ sqrt(Δs) << |Re λ| do not halve forever, while near-axis oscillatory
-      // pairs like HH still guard large frequency shifts).
-      if (oscA && oscB) {
-        const imScale = Math.max(a.im, b.im, maxR);
-        if (Math.abs(b.im - a.im) > 0.45 * imScale) {
-          if (stats) stats.modeImMove++;
-          return { ok: false, reason: 'complex frequency jumped' };
-        }
-      } else {
-        const imC = Math.max(a.im, b.im);
-        const deepBehind = a.re < 0 && b.re < 0 && leadA < 0 && leadB < 0 && maxR > 10 * Math.max(Math.abs(leadA), Math.abs(leadB));
-        if (!deepBehind && imC > 0.55 * Math.max(maxR, 20 * err)) {
-          if (stats) stats.modeImMove++;
-          return { ok: false, reason: 'unresolved real-complex split' };
-        }
-      }
-      if (sameSign) {
-        const maxIm = Math.max(a.im, b.im);
-        // Scale for Re λ movement: include a small Im floor so a point landing right beside a Hopf
-        // (Re λ ≈ ±0.1 with ω ≈ 1000) does not stall with |ΔRe|/maxR ≈ 1, while keeping the stable-side
-        // floor tiny (0.5% of ω) so narrow unstable windows (like HH g.Na = 850) are never skipped.
-        const reScale = a.re > 0
-          ? Math.max(maxR, 0.05 * maxIm, 20 * err)
-          : Math.max(maxR, 0.005 * maxIm, 20 * err);
-        if (maxR > 20 * err && Math.abs(b.re - a.re) > 0.55 * reScale) {
-          if (stats) {
-            stats.modeReMove++;
-            if (i > 0 || j > 0) stats.modeReMoveSecondary++;
-            else stats.modeReMoveLeading++;
-          }
-          return { ok: false, reason: 'complex Re λ moved past scale' };
-        }
-        if (a0) {
-          const rPred = a.re + (a.re - a0.re) * rho;
-          if ((a.re < -kBar * a.error && b.re < -kBar * b.error && rPred > kBar * err) ||
-              (a.re > kBar * a.error && b.re > kBar * b.error && rPred < -kBar * err)) {
-            if (stats) stats.modeExtrap++;
-            return { ok: false, reason: 'extrapolated complex zero crossing' };
-          }
-          if (Math.abs(b.re - rPred) > 0.6 * reScale) {
-            if (stats) stats.modeExtrap++;
-            return { ok: false, reason: 'complex Re λ curved sharply' };
-          }
-        }
-      }
-    } else if (sameSign) {
-      // Real mode on the same side of 0: recognise smooth Boltzmann exponential depletion
-      // λ(s) ~ -A exp(-k u(s)) (covering |z| = 1..3 ions and multi-carrier recombination) in log
-      // space so reverse-bias depletion sweeps do not crawl, while catching genuine linear /
-      // non-exponential approaches to zero or fast real-mode moves.
-      let boltzSmooth = false;
-      if (a.re < -20 * err && b.re < -20 * err) {
-        const dLn = Math.log(-b.re / -a.re);
-        if (a0 && a0.re < -20 * a0.error) {
-          const lnPred = Math.log(-a.re) + Math.log(-a.re / -a0.re) * rho;
-          if (Math.abs(Math.log(-b.re) - lnPred) <= 0.75 && Math.abs(dLn) <= 3.2 * actualStateMove + 0.5) {
-            boltzSmooth = true;
-          }
-        } else if (actualStateMove >= 1.0 && Math.abs(dLn) <= 3.0 * actualStateMove + 0.5) {
-          boltzSmooth = true;
-        }
-      }
-      if (boltzSmooth) {
-        if (stats) stats.modeBoltzExempt++;
-        continue;
-      }
-      if (maxR > 20 * err && Math.abs(b.re - a.re) > 0.65 * maxR) {
-        if (stats) {
-          stats.modeReMove++;
-          if (i > 0 || j > 0) stats.modeReMoveSecondary++;
-          else stats.modeReMoveLeading++;
-        }
-        return { ok: false, reason: 'real Re λ moved past scale' };
-      }
-      if (a0) {
-        // For strictly negative real modes already decaying exponentially (|a| < 0.5 |a0|), linear
-        // extrapolation always overshoots 0; check log-space consistency instead (using kBar * error
-        // so rapidly depleting modes approaching resolution do not trigger false zero-crossing stops).
-        const expDecay = a0.re < -kBar * a0.error && a.re < -kBar * a.error && b.re < 0 && Math.abs(a.re) < 0.5 * Math.abs(a0.re);
-        if (expDecay) {
-          if (b.re < -kBar * b.error) {
-            const lnPred = Math.log(-a.re) + Math.log(-a.re / -a0.re) * rho;
-            if (Math.abs(Math.log(-b.re) - lnPred) > 1.5) {
-              if (stats) stats.modeExtrap++;
-              return { ok: false, reason: 'exponential real decay bent sharply' };
-            }
-          }
-        } else {
-          const rPred = a.re + (a.re - a0.re) * rho;
-          if ((a.re < -kBar * a.error && b.re < -kBar * b.error && rPred > kBar * err) ||
-              (a.re > kBar * a.error && b.re > kBar * b.error && rPred < -kBar * err)) {
-            if (stats) stats.modeExtrap++;
-            return { ok: false, reason: 'extrapolated real zero crossing' };
-          }
-          if (Math.abs(b.re - rPred) > 0.75 * Math.max(maxR, 20 * err)) {
-            if (stats) stats.modeExtrap++;
-            return { ok: false, reason: 'real Re λ curved sharply' };
-          }
-        }
-      }
+    const dNear = Math.max(Math.min(Math.abs(a.re), Math.abs(b.re)), kBar * err);
+    if (Math.abs(b.re - a.re) > ALPHA_RE * dNear) {
+      if (stats) stats.modeNearEnd++;
+      return { ok: false, reason: 'mode Re λ moved past nearer-end scale' };
     }
   }
   return { ok: true };
 }
 
-// Verify that a located fold is a genuine drive extremum with a real change in p beyond tangent
-// noise (not a numerical sign wobble on a monotonically advancing curve).
-function isConfirmedFold(A, B, fold, absSpan) {
-  if (!fold || !fold.located) return false;
-  const sA = A.s, sB = B.s, sF = fold.s;
-  const sTol = 1e-8 * Math.max(1, Math.abs(sF));
-  // Smooth turn: ts > 0 -> ts < 0 implies local maximum sF >= max(sA, sB); opposite implies local minimum.
-  if (A.ts > 0 && B.ts < 0 && sF < Math.max(sA, sB) - sTol) return false;
-  if (A.ts < 0 && B.ts > 0 && sF > Math.min(sA, sB) + sTol) return false;
-  // Require real drive turn beyond tangent/round-off noise.
-  const dpTurn = Math.max(Math.abs(sF - sA), Math.abs(sF - sB)) * absSpan;
-  const pScale = Math.max(1, Math.abs(fold.drive), absSpan);
-  if (!(dpTurn > 1e-8 * pScale)) return false;
-  return true;
-}
-
 // Chord-hyperplane solve at fraction theta in (0, 1) between two converged states A and B.
 function solveOnChord(s, ctx, A, B, theta) {
-  const { potIdx, potWt, wsEff, wx, wV, uPred, uLoPred, vPred } = ctx;
+  const { potIdx, potWt2, wsEff, wx, wV, uPred, uLoPred, vPred } = ctx;
   const N = s.sys.size, fl = s.floating, K = fl.length;
-  const chX = ctx.work.chordX;
-  const chV = ctx.work.chordV;
+  const chX = ctx.work.chordX, chV = ctx.work.chordV;
   chX.fill(0);
   for (let i = 0; i < potIdx.length; i++) {
     const j = potIdx[i], o = s.fullOf[j];
@@ -1119,7 +815,7 @@ function solveOnChord(s, ctx, A, B, theta) {
   }
   for (let a = 0; a < K; a++) chV[a] = B.snap.termV[fl[a]] - A.snap.termV[fl[a]];
   const chS = B.s - A.s;
-  const nrm = tangentNorm(potIdx, potWt, wsEff, s.VT, chX, chV, chS);
+  const nrm = tangentNorm(potIdx, potWt2, wsEff, s.VT, chX, chV, chS);
   if (!(nrm > 0 && Number.isFinite(nrm))) return { ok: false, chordLen: 0 };
   for (let j = 0; j < N; j++) chX[j] /= nrm;
   for (let a = 0; a < K; a++) chV[a] /= nrm;
@@ -1138,7 +834,7 @@ function solveOnChord(s, ctx, A, B, theta) {
     s.termV[fl[a]] = v;
   }
   const sPred = A.s + theta * (B.s - A.s);
-  const ws = buildWeights(potIdx, potWt, wsEff, s.VT, chX, chV, chSu, wx, wV);
+  const ws = buildWeights(potIdx, potWt2, wsEff, s.VT, chX, chV, chSu, wx, wV);
   const cor = correctorNewton(s, ctx, sPred, uPred, uLoPred, vPred, sPred, wx, wV, ws);
   if (!cor.converged) return { ok: false, chordLen: nrm };
   const tan = computeTangent(s, ctx, cor.s, A.tx, A.tV, A.ts, ctx.work.locTx, ctx.work.locTV, !!cor.reusable);
@@ -1156,15 +852,17 @@ function solveOnChord(s, ctx, A, B, theta) {
   };
 }
 
-// Locate a fold (ts = 0) between A0 and B0 (tsA * tsB < 0) by safeguarded secant/bisection.
-// Always returns { drive, terminals, s, state, located, note? }; never silently falls back.
+// Locate a fold (ts = 0) between A0 and B0 (tsA * tsB < 0) by safeguarded secant/bisection,
+// using purely relative tolerances scaled to the bracket's own tangent and chord length.
 function locateFold(s, ctx, A0, B0) {
   let A = A0, B = B0;
   let best = Math.abs(A.ts) <= Math.abs(B.ts) ? A : B;
+  const tsScale = Math.max(Math.abs(A0.ts), Math.abs(B0.ts));
+  const chordLen0 = stateDistW(s, ctx, A0.snap.u, A0.snap.uLo, A0.snap.termV, A0.s, B0.snap.u, B0.snap.uLo, B0.snap.termV, B0.s);
   let converged = false;
   let solvedAny = false;
   let failNote = null;
-  for (let it = 0; it < 24; it++) {
+  for (let it = 0; it < 32; it++) {
     ctx.budget?.check();
     const denom = Math.abs(A.ts) + Math.abs(B.ts);
     let theta = it % 3 === 2 || !(denom > 0) ? 0.5 : Math.abs(A.ts) / denom;
@@ -1179,7 +877,7 @@ function locateFold(s, ctx, A0, B0) {
     solvedAny = true;
     const M = m.state;
     if (Math.abs(M.ts) < Math.abs(best.ts)) best = M;
-    if (Math.abs(M.ts) < 1e-8 || m.chordLen < 1e-9) {
+    if (Math.abs(M.ts) <= 1e-8 * tsScale || (chordLen0 > 0 && m.chordLen <= 1e-9 * chordLen0)) {
       best = M;
       converged = true;
       break;
@@ -1195,8 +893,6 @@ function locateFold(s, ctx, A0, B0) {
   return { drive, terminals, s: best.s, state: best, located, note };
 }
 
-// Find the complex mode (im > 0) in `st.modes` best matching `refMode` by eigenvector overlap,
-// falling back to closest frequency when eigenvectors are absent. Never imposes a narrow 50% ω cap.
 function findComplexPair(st, omegaEst, refMode = null) {
   let bestVec = null, bestOv = 0.45;
   if (refMode && refMode._vr) {
@@ -1222,7 +918,6 @@ function findComplexPair(st, omegaEst, refMode = null) {
   return best;
 }
 
-// Evaluate the tracked complex pair at state M during Hopf bisection.
 function evalHopfMode(s, ctx, M, omegaEst, refMode = null, extraOmega = 0) {
   const drive = ctx.p0 + M.s * ctx.dpSpan;
   s._restore(M.snap);
@@ -1232,11 +927,7 @@ function evalHopfMode(s, ctx, M, omegaEst, refMode = null, extraOmega = 0) {
   if (extraOmega > 0 && Math.abs(extraOmega - omegaEst) > 0.1 * Math.max(extraOmega, omegaEst)) {
     freqs.push(extraOmega / (2 * Math.PI));
   }
-  const fastOpts = {
-    ...baseOpts,
-    shifts: [Math.max(1, 0.25 * omegaEst)],
-    frequencies: freqs,
-  };
+  const fastOpts = { ...baseOpts, shifts: [Math.max(1, 0.25 * omegaEst)], frequencies: freqs };
   let st = evaluateStability(s, ctx.termIdx, drive, fastOpts, ctx.isCurrentDrive, ctx.budget);
   let pair = findComplexPair(st, omegaEst, refMode);
   if (!pair) {
@@ -1246,8 +937,8 @@ function evalHopfMode(s, ctx, M, omegaEst, refMode = null, extraOmega = 0) {
   return pair;
 }
 
-// Locate a Hopf bifurcation (Re λ = 0 for complex conjugate pair with Im λ > 0) between A0 and B0.
-// Always reports `located: false` and `note` when location falls back instead of converging.
+// Locate a Hopf bifurcation (Re λ = 0 for complex conjugate pair with Im λ > 0) between A0 and B0,
+// using purely relative drive and chord tolerances (never absolute in drive units).
 function locateHopf(s, ctx, A0, B0, pairA0, pairB0, omegaInit) {
   let A = A0, B = B0;
   let omega = omegaInit;
@@ -1257,6 +948,8 @@ function locateHopf(s, ctx, A0, B0, pairA0, pairB0, omegaInit) {
   if ((mA.re > 0) === (mB.re > 0) && mA.re !== 0 && mB.re !== 0) return null;
   let best = Math.abs(mA.re) <= Math.abs(mB.re) ? { state: A, mode: mA } : { state: B, mode: mB };
   const kBar = ctx.stabOpts.kBar ?? 10;
+  const dpBracket0 = Math.abs((B0.s - A0.s) * ctx.dpSpan);
+  const chordLen0 = stateDistW(s, ctx, A0.snap.u, A0.snap.uLo, A0.snap.termV, A0.s, B0.snap.u, B0.snap.uLo, B0.snap.termV, B0.s);
   let converged = false;
   let solvedAny = false;
   let failNote = null;
@@ -1285,8 +978,12 @@ function locateHopf(s, ctx, A0, B0, pairA0, pairB0, omegaInit) {
     if (Math.abs(mM.re) < Math.abs(best.mode.re)) best = { state: M, mode: mM };
     const pA = ctx.p0 + A.s * ctx.dpSpan;
     const pB = ctx.p0 + B.s * ctx.dpSpan;
-    const pM = ctx.p0 + M.s * ctx.dpSpan;
-    if (Math.abs(mM.re) <= Math.max(kBar * mM.error, 1e-5 * omega) || Math.abs(pB - pA) <= 1e-6 * Math.max(1, Math.abs(pM))) {
+    const pScale = Math.max(Math.abs(pA), Math.abs(pB), dpBracket0);
+    if (
+      Math.abs(mM.re) <= Math.max(kBar * mM.error, 1e-5 * omega) ||
+      (pScale > 0 && Math.abs(pB - pA) <= 1e-6 * pScale) ||
+      (chordLen0 > 0 && m.chordLen <= 1e-9 * chordLen0)
+    ) {
       best = { state: M, mode: mM };
       converged = true;
       break;
@@ -1302,43 +999,36 @@ function locateHopf(s, ctx, A0, B0, pairA0, pairB0, omegaInit) {
   return { drive, terminals, omega: best.mode.im, located, note };
 }
 
-// Detect whether any complex conjugate pair crossed Re λ = 0 between two stability results using
-// eigenvector-overlap mode matching (no narrow frequency cutoff).
 function detectHopfBracket(stA, stB, kBar, stats = null) {
   const sig = (m) => (m.re > kBar * m.error ? 1 : m.re < -kBar * m.error ? -1 : 0);
+  const hasIm = (m) => m.im > kBar * m.error;
   const matched = matchModes(stA, stB);
   for (const p of matched.pairs) {
     const { a: ma, b: mb } = p;
-    if (!(ma.im > 0 && mb.im > 0)) continue;
+    if (!(hasIm(ma) && hasIm(mb))) continue;
     const sa = sig(ma), sb = sig(mb);
     if (sa !== 0 && sb !== 0 && sa !== sb) {
-      if (stats) {
-        stats.hopfByVecMatch++;
-        if (Math.abs(ma.im - mb.im) > 0.5 * Math.max(ma.im, mb.im)) stats.hopfLargeFreqShift++;
-      }
+      if (stats) stats.hopfByVecMatch++;
       return { pairA: ma, pairB: mb, omega: 0.5 * (ma.im + mb.im) };
     }
   }
   if (stA.verdict === 'no growing mode found' && stB.verdict === 'unstable') {
-    const grow = stB.modes.find((m) => m.re > kBar * m.error && m.im > 0);
+    const grow = stB.modes.find((m) => m.re > kBar * m.error && hasIm(m));
     if (grow) {
-      const pairA = findComplexPair(stA, grow.im, grow);
       if (stats) stats.hopfByVecMatch++;
-      return { pairA, pairB: grow, omega: grow.im };
+      return { pairA: findComplexPair(stA, grow.im, grow), pairB: grow, omega: grow.im };
     }
   }
   if (stA.verdict === 'unstable' && stB.verdict === 'no growing mode found') {
-    const grow = stA.modes.find((m) => m.re > kBar * m.error && m.im > 0);
+    const grow = stA.modes.find((m) => m.re > kBar * m.error && hasIm(m));
     if (grow) {
-      const pairB = findComplexPair(stB, grow.im, grow);
       if (stats) stats.hopfByVecMatch++;
-      return { pairA: grow, pairB, omega: grow.im };
+      return { pairA: grow, pairB: findComplexPair(stB, grow.im, grow), omega: grow.im };
     }
   }
   return null;
 }
 
-// Count verified positive real modes (im === 0, re > kBar * error).
 function countPositiveReal(st, kBar) {
   let count = 0;
   for (const m of st.modes) if (m.im === 0 && m.re > kBar * m.error) count++;
@@ -1374,20 +1064,12 @@ export class Branch {
     } = opts;
     if (_stats) {
       Object.assign(_stats, {
-        modeMatchAmbiguous: 0,
-        modeReMove: 0,
-        modeReMoveLeading: 0,
-        modeReMoveSecondary: 0,
-        modeImMove: 0,
-        modeExtrap: 0,
-        modeBoltzExempt: 0,
-        falseFoldRejected: 0,
-        guardAtMinArc: 0,
-        naturalFallbackTried: 0,
-        naturalFallbackAccepted: 0,
-        naturalFallbackRejected: 0,
+        metricRebalanced: 0,
+        rejectContraction: 0,
+        rejectStateCap: 0,
+        rejectAngle: 0,
+        modeNearEnd: 0,
         hopfByVecMatch: 0,
-        hopfLargeFreqShift: 0,
         startUncheckedBudget: 0,
         auditOnBudget: 0,
       });
@@ -1429,8 +1111,7 @@ export class Branch {
     const hasGeometry = this.model.geometry.type !== 'planar';
     const p0 = sourceAt(term.drive.src, this.time);
     const warnings = [];
-    const nonAuto = this.terms.some((t) => Boolean(t.drive.src?.t));
-    if (nonAuto) {
+    if (this.terms.some((t) => Boolean(t.drive.src?.t))) {
       warnings.push(`branch: non-autonomous waveform drive frozen at t = ${this.time} s; drives are held at their values there.`);
     }
 
@@ -1461,27 +1142,21 @@ export class Branch {
     const events = [];
     const stFullList = [];
     const states = [];
-    const stepArcs = [0]; // arclength of step ending at points[k]
     let end = '';
     let ctx = null;
 
-    // Post-trace consistency audit between geometric events and stability marks. Runs on both
-    // normal completion (`allowLocate = true`) and budget stops (`allowLocate = false`, no extra
-    // stability evaluations).
+    // Post-trace consistency audit between geometric events and stability marks.
     const runAudit = (allowLocate) => {
       if (!doStab || points.length < 2) return;
       const isNeutral = (v) => v === 'neutral within resolution';
       const isDecided = (v) => v === 'no growing mode found' || v === 'unstable';
       const geomEvents = events.filter((e) => e.kind === 'fold' || e.kind === 'hopf');
 
-      // (a) Every fold must correspond to a stability change (or positive real mode count change),
-      //     NEVER walking across another fold/Hopf event (prevents self-induced artefacts).
       for (const ev of geomEvents) {
         if (ev.kind !== 'fold') continue;
         const [kL, kR] = ev.between;
         if (kL < 0 || kR >= points.length) continue;
-        let minL = 0;
-        let maxR = points.length - 1;
+        let minL = 0, maxR = points.length - 1;
         for (const other of geomEvents) {
           if (other === ev) continue;
           if (other.between[1] <= kL && other.between[1] > minL) minL = other.between[1];
@@ -1492,11 +1167,8 @@ export class Branch {
         let iR = kR;
         while (iR < maxR && isNeutral(points[iR].stability.verdict) && iR - kR < 2) iR++;
         const stL = stFullList[iL], stR = stFullList[iR];
-        if (!stL || !stR) continue;
-        if (!isDecided(stL.verdict) || !isDecided(stR.verdict)) continue;
-        const flipped = stL.verdict !== stR.verdict;
-        const realCountChanged = countPositiveReal(stL, kBar) !== countPositiveReal(stR, kBar);
-        if (!flipped && !realCountChanged) {
+        if (!stL || !stR || !isDecided(stL.verdict) || !isDecided(stR.verdict)) continue;
+        if (stL.verdict === stR.verdict && countPositiveReal(stL, kBar) === countPositiveReal(stR, kBar)) {
           events.push({
             kind: 'stability mismatch',
             drive: ev.drive,
@@ -1507,8 +1179,6 @@ export class Branch {
         }
       }
 
-      // (b) Every flip between decided non-neutral states must be explained by a fold or Hopf on
-      //     the spanning interval.
       let prevDec = -1;
       for (let i = 0; i < points.length; i++) {
         const v = points[i].stability?.verdict;
@@ -1584,9 +1254,7 @@ export class Branch {
     };
 
     try {
-      // Point 0 from current converged state — always pushed BEFORE stability() runs so `points`
-      // always contains at least the start point even when `budgetMs` runs out during point 0's
-      // stability check.
+      // Push point 0 BEFORE stability() so start point is always kept even on budgetMs = 0.
       const pt0Data = readPointData(this, termIdx, p0, solutions);
       const pt0 = {
         drive: p0,
@@ -1627,7 +1295,6 @@ export class Branch {
         };
       }
 
-      // Prepare steady equations & laws for the branch.
       if (isCurrentDrive && p0 === 0) {
         term.drive.src = { value: to };
         this._lawsNow();
@@ -1647,17 +1314,12 @@ export class Branch {
       }
       if (isCurrentDrive) {
         const why = chargingReason(this, termIdx, to);
-        if (why) {
-          return { terminal, kind, points, events, end: `refused: ${why}`, warnings };
-        }
+        if (why) return { terminal, kind, points, events, end: `refused: ${why}`, warnings };
       }
 
       captureLaws(this);
       this.computeConcentrations();
       keepLocal(this);
-      const branchLawRefs = this.lawRefs;
-      const branchChargeRefs = this.chargeRefs;
-      const branchLocalKept = this.localKept;
       this.steady = true;
       this.steadyAt = this.time;
       this.allTerminals = true;
@@ -1665,7 +1327,7 @@ export class Branch {
       const dpSpan = to - p0;
       const absSpan = Math.abs(dpSpan);
       const N = this.sys.size, fl = this.floating, K = fl.length;
-      const { potIdx, potWt } = stateMetricEntries(this);
+      const { potIdx, potWt2 } = stateMetricEntries(this);
       const maxPins = Math.max(1, this.constraints.length + this.affinities.length + this.islands.length + 4);
       const work = {
         e: new Float64Array(N + 1),
@@ -1691,8 +1353,8 @@ export class Branch {
         p0,
         dpSpan,
         potIdx,
-        potWt,
-        wsEff: WS_BASE,
+        potWt2,
+        wsEff: 1,
         Bs: new Float64Array(N + 1),
         pinDs: new Float64Array(maxPins),
         circDs: new Float64Array(K),
@@ -1713,8 +1375,9 @@ export class Branch {
       const prevTx = new Float64Array(N + 1), prevTV = new Float64Array(K);
       const vStart = Float64Array.from(fl, (k) => this.termV[k]);
 
-      // 1. Initial unit tangent at s = 0 and physical drive scaling so a far `to` never inflates
-      //    the first step beyond the device's own response scale.
+      // 1. Initial unit tangent at s = 0, then scale `wsEff` using the EXACT same state norm so
+      //    state and drive start at an exact 50/50 split (`wsEff·|ts| = 1/√2`), 100% invariant to
+      //    drive units and `to`.
       let tan0;
       try {
         tan0 = computeTangent(this, ctx, 0, null, null, null, tx, tV, false);
@@ -1725,59 +1388,60 @@ export class Branch {
       if (!tan0.ok) {
         return { terminal, kind, points, events, end: 'refused: initial tangent is non-finite or singular', warnings };
       }
-
-      // Compute physical drive scale at p0: Δp that moves the state by ~1 thermal/gate unit.
       if (Math.abs(tan0.ts) > 1e-12) {
-        const statePerS = maxStateStep(this, tx, tV) / Math.abs(tan0.ts);
-        if (statePerS > 1e-12) {
-          const pScalePhys = absSpan / statePerS;
-          const pScaleNorm = Math.min(absSpan, Math.max(1e-12, 10 * pScalePhys));
-          if (pScaleNorm < absSpan) {
-            ctx.wsEff = Math.min(WS_BASE * 1e6, WS_BASE * (absSpan / pScaleNorm));
-            // Re-normalise initial tangent under the updated physical metric (reusing factor).
-            tan0 = computeTangent(this, ctx, 0, null, null, null, tx, tV, true);
-          }
+        const stateSlope = stateOnlyNorm(potIdx, potWt2, this.VT, tx, tV) / Math.abs(tan0.ts);
+        if (stateSlope > 1e-12 && Number.isFinite(stateSlope)) {
+          ctx.wsEff = stateSlope;
+          tan0 = computeTangent(this, ctx, 0, null, null, null, tx, tV, true);
         }
       }
 
       let ts = tan0.ts;
       let sCur = 0;
-      let lastRankDeficient = this.sys.lostColumns > 0 || this.sys.perturbedPivots > 0;
-      let inNaturalMode = this.sys.lostColumns >= 10;
 
-      states.push({
-        snap: this._snapshot(),
-        s: 0,
-        tx: Float64Array.from(tx),
-        tV: Float64Array.from(tV),
-        ts,
-      });
+      // Rebalance `wsEff` whenever the drive component drifts above 0.85 of the unit tangent while
+      // the state moves, restoring 50/50 balance so opposite-state branches can never look parallel.
+      const rebalanceMetric = () => {
+        if (!(ctx.wsEff * Math.abs(ts) > 0.85)) return 1;
+        const stNorm = stateOnlyNorm(potIdx, potWt2, this.VT, tx, tV);
+        if (!(stNorm > 1e-12 && Math.abs(ts) > 1e-12)) return 1;
+        ctx.wsEff = stNorm / Math.abs(ts);
+        const newNrm = tangentNorm(potIdx, potWt2, ctx.wsEff, this.VT, tx, tV, ts);
+        for (let j = 0; j < N; j++) tx[j] /= newNrm;
+        for (let a = 0; a < K; a++) tV[a] /= newNrm;
+        ts /= newNrm;
+        // Keep the latest recorded state tangent consistent with the updated metric.
+        const last = states[states.length - 1];
+        if (last) {
+          last.tx = Float64Array.from(tx);
+          last.tV = Float64Array.from(tV);
+          last.ts = ts;
+        }
+        if (_stats) _stats.metricRebalanced++;
+        return newNrm;
+      };
 
-      // Step-size parameters. `step` is strictly enforced as a hard |Δp| cap; never loosen state
-      // motion caps when `step` is provided. `wsEff` only scales the initial stride so a far `to`
-      // never jumps over features at p0 while still allowing steps to grow smoothly in linear zones.
-      const maxPotPerStep = 6; // thermal units (~0.155 V, or Δgate ≤ 0.6)
-      const maxDVFloat = 0.25; // V per step on floating terminals
+      states.push({ snap: this._snapshot(), s: 0, tx: Float64Array.from(tx), tV: Float64Array.from(tV), ts });
+
+      // Initial stride in the balanced metric (1 unit ≈ 1 thermal/gate unit of motion).
+      const maxPotPerStep = 6;
+      const maxDVFloat = 0.25;
       const maxSPerStep = step !== undefined ? step / absSpan : 0.2;
-      let dsArc = Math.abs(ts) > 1e-9 ? Math.min(maxSPerStep, (0.5 * WS_BASE) / ctx.wsEff) / Math.abs(ts) : 2;
+      let dsArc = 2;
+      if (Math.abs(ts) > 1e-12) dsArc = Math.min(dsArc, maxSPerStep / Math.abs(ts));
       if (isCurrentDrive) {
         const flIdx = fl.indexOf(termIdx);
-        if (flIdx >= 0 && Math.abs(tV[flIdx]) > 1e-9) dsArc = Math.min(dsArc, 0.1 / Math.abs(tV[flIdx]));
+        if (flIdx >= 0 && Math.abs(tV[flIdx]) > 1e-12) dsArc = Math.min(dsArc, 0.1 / Math.abs(tV[flIdx]));
       }
       const initStateRate = maxStateStep(this, tx, tV);
       if (initStateRate > 1e-12) dsArc = Math.min(dsArc, 5 / initStateRate);
       dsArc = Math.max(MIN_ARC, Math.min(MAX_ARC, dsArc));
 
-      let consecFails = 0;
-      let consecModeFails = 0;
-      let recentFail = 0;
-      let naturalStreak = 0;
+      let geomFail = 0;
+      let lastFailWasModeOnly = false;
       let stepCount = 0;
 
-      // Record an accepted point (with optional precomputed stNew and precomputed foldInfo) and
-      // locate any fold or Hopf on [kPrev, kNew]. If budget expires during event location, still
-      // emit the event with `located: false` before unwinding.
-      const acceptPoint = (sNew, newTx, newTV, newTs, dActual, preSt = null, preFold = null) => {
+      const acceptPoint = (sNew, newTx, newTV, newTs, preSt = null, preFold = null) => {
         const kPrev = points.length - 1;
         const prevState = states[kPrev];
         const curSnap = this._snapshot();
@@ -1803,11 +1467,8 @@ export class Branch {
         });
         stFullList.push(stNew);
         states.push(curState);
-        stepArcs.push(dActual);
-
         const kNew = points.length - 1;
 
-        // (a) Fold: dp/ds (ts) changes sign — only emit when confirmed as a genuine turn.
         const hasFold = (prevState.ts > 0 && newTs < 0) || (prevState.ts < 0 && newTs > 0) || (newTs === 0 && prevState.ts !== 0);
         if (hasFold) {
           if (preFold) {
@@ -1821,16 +1482,13 @@ export class Branch {
           } else {
             try {
               const fold = locateFold(this, ctx, prevState, curState);
-              if (isConfirmedFold(prevState, curState, fold, absSpan)) {
-                events.push({
-                  kind: 'fold',
-                  drive: fold.drive,
-                  terminals: fold.terminals,
-                  between: [kPrev, kNew],
-                });
-              } else if (_stats) {
-                _stats.falseFoldRejected++;
-              }
+              events.push({
+                kind: 'fold',
+                drive: fold.drive,
+                terminals: fold.terminals,
+                between: [kPrev, kNew],
+                ...(fold.located ? {} : { located: false, note: fold.note }),
+              });
             } catch (err) {
               if (err === BUDGET_SPENT) {
                 const bestEnd = Math.abs(prevState.ts) <= Math.abs(newTs) ? points[kPrev] : points[kNew];
@@ -1848,7 +1506,6 @@ export class Branch {
           }
         }
 
-        // (b) Hopf: complex conjugate pair crosses Re λ = 0 (matched by eigenvector overlap).
         if (doStab && stFullList[kPrev] && stNew) {
           const hopfBracket = detectHopfBracket(stFullList[kPrev], stNew, kBar, _stats);
           if (hopfBracket) {
@@ -1881,15 +1538,11 @@ export class Branch {
           }
         }
 
-        // Restore solver to curState so continuation proceeds cleanly.
         this._restore(curSnap);
         this.sourceOverride.set(termIdx, driveNew);
       };
 
-      // Land cleanly on an exact span edge `sTarget` (0 or 1) from bracket `[A, B]`, enforcing
-      // the SAME continuity guards (alignment, angle, step cap, state motion, voltage bound) as
-      // any ordinary step — never switching off at small stride and never aliasing `refTx`.
-      const landExact = (A, B, sTarget, refTx, refTV, refTs, enforceHardStep = true) => {
+      const landExact = (A, B, sTarget, refTx, refTV, refTs) => {
         const frac = B.s !== A.s ? (sTarget - A.s) / (B.s - A.s) : 1;
         const fClamped = Math.max(0, Math.min(1, frac));
         this._restore(A.snap);
@@ -1907,261 +1560,41 @@ export class Branch {
         ctx.wx.fill(0);
         ctx.wV.fill(0);
         const corLand = correctorNewton(this, ctx, sTarget, ctx.uPred, ctx.uLoPred, ctx.vPred, sTarget, ctx.wx, ctx.wV, 1, { fixedS: true });
-        if (!corLand.converged) return null;
+        if (!corLand.converged || corLand.damped) return null;
 
-        // Check voltage bound on the landed point.
         for (let a = 0; a < K; a++) {
           if (Math.abs(this.termV[fl[a]] - vStart[a]) > voltageBound) return null;
         }
-        // Check hard `step` cap from the last accepted point (states[points.length - 1]).
         const lastPt = states[points.length - 1];
-        const pLast = p0 + lastPt.s * dpSpan;
-        const pLand = p0 + sTarget * dpSpan;
-        if (enforceHardStep && step !== undefined && Math.abs(pLand - pLast) > step * (1 + 1e-6)) return null;
+        if (step !== undefined && Math.abs((sTarget - lastPt.s) * dpSpan) > step * (1 + 1e-6)) return null;
 
-        // Continuity guards: forward alignment, corrector displacement, state step, and angle.
         const bracketLen = stateDistW(this, ctx, A.snap.u, A.snap.uLo, A.snap.termV, A.s, B.snap.u, B.snap.uLo, B.snap.termV, B.s);
         const dCor = stateDistW(this, ctx, ctx.uPred, ctx.uLoPred, predTermV, sTarget, this.u, this.uLo, this.termV, sTarget);
-        const maxCorRatio = bracketLen > 1e-3 ? 0.75 : 2.0;
-        if (bracketLen > 1e-12 && dCor > maxCorRatio * bracketLen) return null;
-        const dActual = stateDistW(this, ctx, lastPt.snap.u, lastPt.snap.uLo, lastPt.snap.termV, lastPt.s, this.u, this.uLo, this.termV, sTarget);
-        const stateMove = maxStateDiff(this, lastPt.snap, this.u, this.uLo, this.termV);
-        if (stateMove > maxPotPerStep * 1.5) return null;
+        if (bracketLen > 1e-12 && dCor > (bracketLen > 1e-3 ? 0.75 : 2.0) * bracketLen) return null;
+        if (maxStateDiff(this, lastPt.snap, this.u, this.uLo, this.termV) > maxPotPerStep * 1.5) return null;
 
-        // Write landed tangent into dedicated work.landTx/landTV buffers so refTx/prevTx is NEVER aliased.
         const tanLand = computeTangent(this, ctx, sTarget, refTx, refTV, refTs, work.landTx, work.landTV, !!corLand.reusable);
-        if (!tanLand.ok) return null;
-        if (tanLand.cosTheta < COS_MIN) return null;
+        if (!tanLand.ok || tanLand.cosTheta < COS_MIN) return null;
+        if (!(stepAlignment(this, ctx, refTx, refTV, refTs, A.snap, A.s, this.u, this.uLo, this.termV, sTarget) > 0)) return null;
 
-        let align = ctx.wsEff * ctx.wsEff * refTs * (sTarget - A.s);
-        const invN = potIdx.length > 0 ? 1 / potIdx.length : 1;
-        for (let i = 0; i < potIdx.length; i++) {
-          const j = potIdx[i], o = this.fullOf[j], w = potWt[i];
-          align += invN * w * w * refTx[j] * ((this.u[o] - A.snap.u[o]) + (this.uLo[o] - A.snap.uLo[o]));
-        }
-        const invVT2 = 1 / (this.VT * this.VT);
-        for (let a = 0; a < K; a++) align += invVT2 * refTV[a] * (this.termV[fl[a]] - A.snap.termV[fl[a]]);
-        if (!(align > 0)) return null;
-
-        return { s: sTarget, tx: Float64Array.from(work.landTx), tV: Float64Array.from(work.landTV), tan: tanLand, dActual, stateMove };
-      };
-
-      // Item 3: Natural-parameter fallback — plain steady solve at the next drive value from the
-      // last accepted state, accepted only if it passes the same continuity and mode-tracking
-      // guards. Returns 'accepted' (loop continues) or 'done' (end is set, loop breaks).
-      const tryNaturalStep = (triggerReason) => {
-        if (_stats) _stats.naturalFallbackTried++;
-        const prevStateObj = states[points.length - 1];
-        const dirS = sCur <= 0 ? 1 : (ts >= 0 ? 1 : -1);
-        const maxNatS = Math.min(maxSPerStep, 0.15);
-        let dsTry = maxNatS;
-        let lastFail = 'steady solve did not converge';
-        let hitVBoundInfo = null;
-
-        for (let attempt = 0; attempt < 8; attempt++) {
-          budget?.check();
-          let sTry = sCur + dirS * dsTry;
-          if (dirS > 0 && sTry >= 1) sTry = 1;
-          if (dirS < 0 && sTry <= 0) sTry = 0;
-          const pTry = p0 + sTry * dpSpan;
-          if (step !== undefined && Math.abs((sTry - sCur) * dpSpan) > step * (1 + 1e-6)) {
-            dsTry = (step / absSpan) * 0.99;
-            continue;
-          }
-
-          this._restore(prevStateObj.snap);
-          term.drive.src = { value: pTry };
-          this.sourceOverride.delete(termIdx);
-          this.steady = false;
-          this.allTerminals = false;
-          this.solvedV = [this.termV[0], this.termV[1]];
-          this.stepped = false;
-          this.carried = false;
-          this.coldStart = false;
-          let res;
-          try {
-            this._refreshSources();
-            res = this.solveSteady(budget ? { budgetMs: budget.remaining() } : {});
-          } finally {
-            term.drive.src = origSrc;
-            this.steady = true;
-            this.steadyAt = this.time;
-            this.allTerminals = true;
-            this.lawRefs = branchLawRefs;
-            this.chargeRefs = branchChargeRefs;
-            this.localKept = branchLocalKept;
-            this.sourceOverride.set(termIdx, pTry);
-            this._refreshSources();
-          }
-
-          if (res.budgetSpent) throw BUDGET_SPENT;
-          if (!res.converged) {
-            lastFail = res.stopped ?? 'steady solve did not converge';
-            dsTry *= 0.5;
-            if (dsTry < 1e-5 * Math.min(1, maxSPerStep)) break;
-            continue;
-          }
-
-          // Check voltage bound.
-          let vb = null;
-          for (let a = 0; a < K; a++) {
-            const dv = Math.abs(this.termV[fl[a]] - vStart[a]);
-            if (dv > voltageBound) {
-              vb = { name: this.terms[fl[a]].name, V: this.termV[fl[a]], dv };
-              break;
-            }
-          }
-          if (vb) {
-            hitVBoundInfo = vb;
-            dsTry *= 0.5;
-            if (dsTry < 1e-4 * Math.min(1, maxSPerStep)) break;
-            continue;
-          }
-
-          // Continuity guard: same state-move cap as ordinary steps.
-          const actualStateMove = maxStateDiff(this, prevStateObj.snap, this.u, this.uLo, this.termV);
-          if (actualStateMove > maxPotPerStep * 1.5) {
-            lastFail = `state jumped by ${actualStateMove.toPrecision(3)} thermal units`;
-            dsTry *= 0.5;
-            if (dsTry < 1e-5 * Math.min(1, maxSPerStep)) break;
-            continue;
-          }
-
-          const dActual = stateDistW(this, ctx, prevStateObj.snap.u, prevStateObj.snap.uLo, prevStateObj.snap.termV, sCur, this.u, this.uLo, this.termV, sTry);
-
-          // All-mode continuity guard (when stability is enabled).
-          let stCand = null;
-          if (doStab) {
-            budget?.check();
-            stCand = evaluateStability(this, termIdx, pTry, stabOpts, isCurrentDrive, budget);
-            const kPrev = points.length - 1;
-            const sm = modeStepSmooth(
-              kPrev >= 1 ? stFullList[kPrev - 1] : null,
-              stFullList[kPrev],
-              stCand,
-              stepArcs[kPrev],
-              dActual,
-              actualStateMove,
-              kBar,
-              nWant,
-              _stats,
-            );
-            if (!sm.ok) {
-              lastFail = `mode guard (${sm.reason})`;
-              dsTry *= 0.5;
-              if (dsTry < 1e-5 * Math.min(1, maxSPerStep)) break;
-              continue;
-            }
-          }
-
-          // Natural-parameter step passed all guards! Avoid ping-ponging back into doomed
-          // pseudo-arclength iterations when pseudo-arclength has repeatedly failed (stay in
-          // natural mode once naturalStreak >= 2, re-probing arclength only every 5th step).
-          if (_stats) _stats.naturalFallbackAccepted++;
-          naturalStreak++;
-          const acceptedSnap = this._snapshot();
-          prevTx.set(tx);
-          prevTV.set(tV);
-          const prevTsLocal = ts;
-          let resumedArc = false;
-          const tryResume = naturalStreak < 2 || (naturalStreak % 5 === 0);
-          if (tryResume) {
-            try {
-              this.sourceOverride.set(termIdx, pTry);
-              this.islandsOn = false;
-              this.assemble(Infinity);
-              equilibrate(this);
-              computeParamDs(this, termIdx, dpSpan, ctx.Bs, ctx.pinDs, ctx.circDs);
-              this._factor();
-              const rankBad = this.sys.lostColumns > 0 || this.sys.perturbedPivots > 0;
-              if (!rankBad) {
-                const tanTry = computeTangent(this, ctx, sTry, prevTx, prevTV, prevTsLocal, work.landTx, work.landTV, true);
-                if (tanTry.ok && tanTry.cosTheta >= COS_MIN && (tanTry.ts * dirS > 0)) {
-                  tx.set(work.landTx);
-                  tV.set(work.landTV);
-                  ts = tanTry.ts;
-                  lastRankDeficient = false;
-                  inNaturalMode = false;
-                  dsArc = Math.max(MIN_ARC, Math.min(MAX_ARC, dActual));
-                  resumedArc = true;
-                }
-              } else {
-                lastRankDeficient = true;
-              }
-            } catch {
-              lastRankDeficient = true;
-            }
-          }
-          if (!resumedArc) {
-            tx.fill(0);
-            tV.fill(0);
-            ts = dirS / ctx.wsEff;
-            inNaturalMode = true;
-          }
-          this._restore(acceptedSnap);
-          this.sourceOverride.set(termIdx, pTry);
-
-          sCur = sTry;
-          stepCount++;
-          consecFails = 0;
-          consecModeFails = 0;
-          acceptPoint(sTry, tx, tV, ts, dActual, stCand, null);
-
-          if (dirS > 0 && sTry >= 1) {
-            end = `reached to (${formatDrive(to, kind, hasGeometry)})`;
-            return 'done';
-          }
-          if (dirS < 0 && sTry <= 0) {
-            const vNote = isCurrentDrive ? `, V = ${points[points.length - 1].terminals[terminal].V.toPrecision(5)} V` : '';
-            end = `returned to starting drive (${formatDrive(p0, kind, hasGeometry)}${vNote}) after fold`;
-            return 'done';
-          }
-          return 'accepted';
-        }
-
-        // Fallback failed: restore last accepted state cleanly and say why.
-        this._restore(prevStateObj.snap);
-        tx.set(prevStateObj.tx);
-        tV.set(prevStateObj.tV);
-        ts = prevStateObj.ts;
-        if (_stats) _stats.naturalFallbackRejected++;
-        if (hitVBoundInfo) {
-          end = `left voltage bound (±${voltageBound} V from start at terminal '${hitVBoundInfo.name}', reached ${hitVBoundInfo.V.toPrecision(4)} V)`;
-        } else {
-          end = `${triggerReason}; natural-parameter step failed (${lastFail})`;
-        }
-        return 'done';
+        return { s: sTarget, tx: Float64Array.from(work.landTx), tV: Float64Array.from(work.landTV), tan: tanLand };
       };
 
       // 2. Main pseudo-arclength continuation loop.
       while (stepCount < maxSteps) {
         budget?.check();
 
-        // Cap stride by drive step, pointwise state step (potentials + 10× gates), and floating V.
         let dsStep = dsArc;
-        if (Math.abs(ts) > 1e-9) dsStep = Math.min(dsStep, maxSPerStep / Math.abs(ts));
+        if (Math.abs(ts) > 1e-12) dsStep = Math.min(dsStep, maxSPerStep / Math.abs(ts));
         const stateRate = maxStateStep(this, tx, tV);
         if (stateRate > 1e-12) dsStep = Math.min(dsStep, maxPotPerStep / stateRate);
         for (let a = 0; a < K; a++) {
           const vt = Math.abs(tV[a]);
-          if (vt > 1e-9) dsStep = Math.min(dsStep, maxDVFloat / vt);
+          if (vt > 1e-12) dsStep = Math.min(dsStep, maxDVFloat / vt);
         }
         if (dsStep < MIN_ARC) dsStep = MIN_ARC;
 
-        // If already in natural-parameter mode or a rank-deficient Jacobian collapsed the tangent
-        // stride to micro-steps (e.g. depleted floating semiconductor island), take a continuous
-        // natural-parameter step rather than crawling for maxSteps.
-        const rankCollapsed = lastRankDeficient && Math.abs(dsStep * ts) < 1e-2 * Math.min(1, maxSPerStep);
-        if (inNaturalMode || rankCollapsed) {
-          const nat = tryNaturalStep(
-            `continuation stopped: rank-deficient Jacobian collapsed arclength stride near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-          );
-          if (nat === 'done') break;
-          continue;
-        }
-
-        // If approaching s = 1 smoothly, cap predictor slightly past 1 so landing is tight.
-        if (sCur < 1 && ts > 1e-9 && sCur + dsStep * ts > 1.02) {
+        if (sCur < 1 && ts > 1e-12 && sCur + dsStep * ts > 1.02) {
           dsStep = Math.max(MIN_ARC, (1.01 - sCur) / ts);
         }
 
@@ -2176,71 +1609,61 @@ export class Branch {
         ctx.uPred.set(this.u);
         ctx.uLoPred.set(this.uLo);
         for (let a = 0; a < K; a++) ctx.vPred[a] = this.termV[fl[a]];
-        const predTermV = Float64Array.from(this.termV);
         if (predAlpha < 1) {
           this._restore(beforeSnap);
           addToState(this, tx, dsStep * predAlpha);
           for (let a = 0; a < K; a++) this.termV[fl[a]] += dsStep * predAlpha * tV[a];
         }
         const sInit = sCur + dsStep * predAlpha * ts;
-        const ws = buildWeights(potIdx, potWt, ctx.wsEff, this.VT, tx, tV, ts, ctx.wx, ctx.wV);
+        const ws = buildWeights(potIdx, potWt2, ctx.wsEff, this.VT, tx, tV, ts, ctx.wx, ctx.wV);
 
         const cor = correctorNewton(this, ctx, sInit, ctx.uPred, ctx.uLoPred, ctx.vPred, sPred, ctx.wx, ctx.wV, ws, {
-          maxIter: consecFails > 0 ? 20 : 35,
+          maxIter: geomFail > 0 ? 20 : 35,
         });
 
-        // Reject step and halve stride; when stride drops below MIN_ARC (or a hard halving cap is
-        // hit), try Item 3's natural-parameter step instead of switching guards off or stopping cold.
-        const rejectStep = (factor, reasonIfMin, forceFallback = false) => {
+        const rejectStep = (factor, reasonIfMin, isModeOnly = false) => {
           this._restore(beforeSnap);
-          consecFails++;
-          recentFail = 3;
-          dsArc = dsStep * factor;
-          if (forceFallback || dsArc < MIN_ARC) {
-            if (_stats && dsStep <= MIN_ARC * 4) _stats.guardAtMinArc++;
-            const nat = tryNaturalStep(reasonIfMin);
-            return nat === 'done' ? 'done' : 'natural';
+          if (isModeOnly) {
+            lastFailWasModeOnly = true;
+          } else {
+            geomFail = 2;
+            lastFailWasModeOnly = false;
           }
-          return 'retry';
+          dsArc = dsStep * factor;
+          if (dsArc < MIN_ARC) {
+            end = `${reasonIfMin} (solve() may continue from here)`;
+            return false;
+          }
+          return true;
         };
 
         if (!cor.converged) {
-          const act = rejectStep(
-            consecFails > 0 ? 0.25 : 0.5,
-            cor.modelError
-              ? `continuation stopped: model refused (${cor.modelError})`
-              : `continuation stopped: corrector failed at ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)} (${cor.error ?? 'step shrunk below minimum'})`,
-            Boolean(cor.modelError) || lastRankDeficient || consecFails >= 4,
-          );
-          if (act === 'done') break;
+          const msg = cor.modelError
+            ? `continuation stopped: model refused (${cor.modelError})`
+            : `continuation stopped: corrector failed at ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)} (${cor.error ?? 'step shrunk below minimum'})`;
+          if (!rejectStep(0.5, msg)) break;
           continue;
         }
 
         const sNext = cor.s;
 
-        // Guard 1: Corrector displacement, total arclength, pointwise state motion, and hard `step`.
-        // NEVER switches off at MIN_ARC.
-        const dCor = stateDistW(this, ctx, ctx.uPred, ctx.uLoPred, predTermV, sPred, this.u, this.uLo, this.termV, sNext);
-        const dActual = stateDistW(this, ctx, beforeSnap.u, beforeSnap.uLo, beforeSnap.termV, sCur, this.u, this.uLo, this.termV, sNext);
+        // Guard 1: Corrector contraction (Deuflhard / Allgower-Georg) + state & hard step cap.
+        if (cor.damped || (cor.d1 > 1e-6 && cor.kappa > KAPPA_MAX)) {
+          if (_stats) _stats.rejectContraction++;
+          if (!rejectStep(0.5, `continuation stopped: corrector did not contract near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`)) break;
+          continue;
+        }
         const actualStateMove = maxStateDiff(this, beforeSnap, this.u, this.uLo, this.termV);
         const actualDp = Math.abs((sNext - sCur) * dpSpan);
         const stepExceeded = step !== undefined && actualDp > step * (1 + 1e-6);
-        const dispTooLarge = dCor > 0.5 * dsStep || dActual > 1.5 * dsStep || actualStateMove > maxPotPerStep * 1.25;
-        if (stepExceeded || dispTooLarge) {
-          if (_stats && dsStep <= MIN_ARC * 4) _stats.guardAtMinArc++;
-          let factor = 0.5;
-          if (stepExceeded && actualDp > 0) factor = Math.min(0.5, 0.8 * (step / actualDp));
-          else if (dCor > 0.5 * dsStep) factor = Math.max(0.25, Math.min(0.5, 0.4 * dsStep / dCor));
-          const act = rejectStep(
-            factor,
-            `continuation stopped: step control could not bound displacement near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-          );
-          if (act === 'done') break;
+        if (stepExceeded || actualStateMove > maxPotPerStep * 1.25) {
+          if (_stats) _stats.rejectStateCap++;
+          const factor = stepExceeded && actualDp > 0 ? Math.min(0.5, 0.8 * (step / actualDp)) : 0.5;
+          if (!rejectStep(factor, `continuation stopped: step control could not bound state step near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`)) break;
           continue;
         }
 
-        // Guard 2: Compute new unit tangent, check turning angle (cosTheta ≥ 0.75) and forward
-        // alignment. NEVER switches off at MIN_ARC.
+        // Guard 2: Tangent continuity in the balanced metric + forward alignment.
         prevTx.set(tx);
         prevTV.set(tV);
         const prevTs = ts;
@@ -2251,42 +1674,24 @@ export class Branch {
           if (!(err instanceof Error)) throw err;
           tanNext = { ok: false };
         }
-        const candRankDeficient = this.sys.lostColumns > 0 || this.sys.perturbedPivots > 0;
         if (!tanNext.ok || tanNext.cosTheta < COS_MIN) {
-          if (_stats && dsStep <= MIN_ARC * 4) _stats.guardAtMinArc++;
+          if (_stats) _stats.rejectAngle++;
           tx.set(prevTx);
           tV.set(prevTV);
           ts = prevTs;
-          const act = rejectStep(
-            0.5,
-            `continuation stopped: tangent turned sharply or became singular near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-            candRankDeficient && consecFails >= 3,
-          );
-          if (act === 'done') break;
+          if (!rejectStep(0.5, `continuation stopped: tangent turned sharply or became singular near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`)) break;
           continue;
         }
-
-        let align = ctx.wsEff * ctx.wsEff * prevTs * (sNext - sCur);
-        const invN = potIdx.length > 0 ? 1 / potIdx.length : 1;
-        for (let i = 0; i < potIdx.length; i++) {
-          const j = potIdx[i], o = this.fullOf[j], w = potWt[i];
-          align += invN * w * w * prevTx[j] * ((this.u[o] - beforeSnap.u[o]) + (this.uLo[o] - beforeSnap.uLo[o]));
-        }
-        const invVT2 = 1 / (this.VT * this.VT);
-        for (let a = 0; a < K; a++) align += invVT2 * prevTV[a] * (this.termV[fl[a]] - beforeSnap.termV[fl[a]]);
-        if (!(align > 0)) {
+        if (!(stepAlignment(this, ctx, prevTx, prevTV, prevTs, beforeSnap, sCur, this.u, this.uLo, this.termV, sNext) > 0)) {
+          if (_stats) _stats.rejectAngle++;
           tx.set(prevTx);
           tV.set(prevTV);
           ts = prevTs;
-          const act = rejectStep(
-            0.5,
-            `continuation stopped: corrector jumped backward near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-          );
-          if (act === 'done') break;
+          if (!rejectStep(0.5, `continuation stopped: corrector jumped backward near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`)) break;
           continue;
         }
 
-        // Guard 3: Check voltage bound on floating terminals BEFORE accepting a point outside the bound.
+        // Guard 3: Voltage bound on floating terminals.
         let hitVBound = null;
         for (let a = 0; a < K; a++) {
           const dv = Math.abs(this.termV[fl[a]] - vStart[a]);
@@ -2304,9 +1709,8 @@ export class Branch {
           break;
         }
 
-        // Check for fold on this step FIRST so the One Span Rule handles folds past `to` and
-        // immediate fold+return past `p0` uniformly — and confirm every fold geometrically so
-        // tangent noise on a rank-deficient Jacobian never emits a false fold.
+        // Check for fold FIRST so the One Span Rule handles folds past `to` and immediate return
+        // past `p0` uniformly.
         const candState = {
           snap: this._snapshot(),
           s: sNext,
@@ -2325,11 +1729,7 @@ export class Branch {
               const candDrive = p0 + candState.s * dpSpan;
               this._restore(candState.snap);
               const ptData = readPointData(this, termIdx, candDrive, solutions);
-              points.push({
-                drive: candDrive,
-                terminals: ptData.terminals,
-                ...(solutions ? { solution: ptData.solution } : {}),
-              });
+              points.push({ drive: candDrive, terminals: ptData.terminals, ...(solutions ? { solution: ptData.solution } : {}) });
               const bestEnd = Math.abs(prevTs) <= Math.abs(tanNext.ts) ? points[kPrev] : points[kPrev + 1];
               events.push({
                 kind: 'fold',
@@ -2344,43 +1744,23 @@ export class Branch {
           }
           this._restore(candState.snap);
 
-          // Confirm the fold geometrically: dp/ds through 0 with a real extremum and drive change
-          // beyond tangent noise. If not confirmed, reject and halve (falling back to natural step).
-          if (!isConfirmedFold(prevStateObj, candState, preFold, absSpan)) {
-            if (_stats) _stats.falseFoldRejected++;
-            tx.set(prevTx);
-            tV.set(prevTV);
-            ts = prevTs;
-            const act = rejectStep(
-              0.5,
-              `continuation stopped: unconfirmed tangent sign flip near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-              candRankDeficient || consecFails >= 3,
-            );
-            if (act === 'done') break;
-            continue;
-          }
-
-          // If the fold itself lies past `to` (sFold >= 1) while sCur < 1, land on s = 1 on the
-          // pre-fold leg with no fold event.
           if (prevTs > 0 && sCur < 1 && preFold.s >= 1) {
             const landed = landExact(prevStateObj, preFold.state, 1, prevTx, prevTV, prevTs);
             if (landed) {
-              acceptPoint(1, landed.tx, landed.tV, landed.tan.ts, landed.dActual);
+              acceptPoint(1, landed.tx, landed.tV, landed.tan.ts);
               end = `reached to (${formatDrive(to, kind, hasGeometry)})`;
               break;
             }
             tx.set(prevTx);
             tV.set(prevTV);
             ts = prevTs;
-            const act = rejectStep(0.5, `continuation stopped: could not land on target ${formatDrive(to, kind, hasGeometry)}`);
-            if (act === 'done') break;
+            if (!rejectStep(0.5, `continuation stopped: could not land on target ${formatDrive(to, kind, hasGeometry)}`)) break;
             continue;
           }
-          // Symmetric edge: turning past s = 0 while heading downward from sCur > 0.
           if (prevTs < 0 && sCur > 0 && preFold.s <= 0) {
             const landed = landExact(prevStateObj, preFold.state, 0, prevTx, prevTV, prevTs);
             if (landed) {
-              acceptPoint(0, landed.tx, landed.tV, landed.tan.ts, landed.dActual);
+              acceptPoint(0, landed.tx, landed.tV, landed.tan.ts);
               const vNote = isCurrentDrive ? `, V = ${points[points.length - 1].terminals[terminal].V.toPrecision(5)} V` : '';
               end = `returned to starting drive (${formatDrive(p0, kind, hasGeometry)}${vNote}) after fold`;
               break;
@@ -2388,13 +1768,12 @@ export class Branch {
             tx.set(prevTx);
             tV.set(prevTV);
             ts = prevTs;
-            const act = rejectStep(0.5, `continuation stopped: could not land on starting drive ${formatDrive(p0, kind, hasGeometry)}`);
-            if (act === 'done') break;
+            if (!rejectStep(0.5, `continuation stopped: could not land on starting drive ${formatDrive(p0, kind, hasGeometry)}`)) break;
             continue;
           }
         }
 
-        // One Span Rule — edge s = 1 (`to`): crossed from inside [0, 1] to >= 1.
+        // One Span Rule — edge s = 1 (`to`).
         if (sCur < 1 && sNext >= 1) {
           const landed = landExact(prevStateObj, candState, 1, prevTx, prevTV, prevTs);
           if (landed) {
@@ -2402,53 +1781,45 @@ export class Branch {
             if (doStab) {
               budget?.check();
               stLand = evaluateStability(this, termIdx, to, stabOpts, isCurrentDrive, budget);
-              const kPrev = points.length - 1;
-              const sm = modeStepSmooth(
-                kPrev >= 1 ? stFullList[kPrev - 1] : null,
-                stFullList[kPrev],
-                stLand,
-                stepArcs[kPrev],
-                landed.dActual,
-                landed.stateMove,
-                kBar,
-                nWant,
-                _stats,
-              );
+              const sm = modeStepSmooth(stFullList[points.length - 1], stLand, kBar, nWant, _stats);
               if (!sm.ok) {
-                consecModeFails++;
                 tx.set(prevTx);
                 tV.set(prevTV);
                 ts = prevTs;
-                const act = rejectStep(
-                  0.5,
-                  `continuation stopped: mode guard (${sm.reason}) near ${formatDrive(to, kind, hasGeometry)}`,
-                  consecModeFails >= 8,
-                );
-                if (act === 'done') break;
+                if (!rejectStep(0.5, `continuation stopped: mode guard (${sm.reason}) near ${formatDrive(to, kind, hasGeometry)}`, true)) break;
                 continue;
               }
             }
-            consecModeFails = 0;
-            acceptPoint(1, landed.tx, landed.tV, landed.tan.ts, landed.dActual, stLand);
+            acceptPoint(1, landed.tx, landed.tV, landed.tan.ts, stLand);
             end = `reached to (${formatDrive(to, kind, hasGeometry)})`;
             break;
           }
           tx.set(prevTx);
           tV.set(prevTV);
           ts = prevTs;
-          const act = rejectStep(0.25, `continuation stopped: could not land on target ${formatDrive(to, kind, hasGeometry)}`);
-          if (act === 'done') break;
+          if (!rejectStep(0.25, `continuation stopped: could not land on target ${formatDrive(to, kind, hasGeometry)}`)) break;
           continue;
         }
 
-        // One Span Rule — edge s = 0 (`p0`): crossed back to <= 0 (including on the same step as
-        // a fold).
+        // One Span Rule — edge s = 0 (`p0`, returning after a fold).
         if (sNext <= 0 && (sCur > 0 || (stepFold && preFold && preFold.s > 0))) {
           const bracketA = stepFold && preFold ? preFold.state : prevStateObj;
-          const refT = stepFold && preFold ? preFold.state : prevStateObj;
-          const landed = landExact(bracketA, candState, 0, refT.tx, refT.tV, refT.ts);
+          const landed = landExact(bracketA, candState, 0, bracketA.tx, bracketA.tV, bracketA.ts);
           if (landed) {
-            acceptPoint(0, landed.tx, landed.tV, landed.tan.ts, landed.dActual, null, preFold);
+            let stLand = null;
+            if (doStab) {
+              budget?.check();
+              stLand = evaluateStability(this, termIdx, p0, stabOpts, isCurrentDrive, budget);
+              const sm = modeStepSmooth(stFullList[points.length - 1], stLand, kBar, nWant, _stats);
+              if (!sm.ok) {
+                tx.set(prevTx);
+                tV.set(prevTV);
+                ts = prevTs;
+                if (!rejectStep(0.5, `continuation stopped: mode guard (${sm.reason}) near ${formatDrive(p0, kind, hasGeometry)}`, true)) break;
+                continue;
+              }
+            }
+            acceptPoint(0, landed.tx, landed.tV, landed.tan.ts, stLand, preFold);
             const vNote = isCurrentDrive ? `, V = ${points[points.length - 1].terminals[terminal].V.toPrecision(5)} V` : '';
             end = `returned to starting drive (${formatDrive(p0, kind, hasGeometry)}${vNote}) after fold`;
             break;
@@ -2456,70 +1827,52 @@ export class Branch {
           tx.set(prevTx);
           tV.set(prevTV);
           ts = prevTs;
-          const act = rejectStep(0.25, `returned past starting drive (${formatDrive(p0, kind, hasGeometry)}) after fold`);
-          if (act === 'done') break;
+          if (!rejectStep(0.25, `returned past starting drive (${formatDrive(p0, kind, hasGeometry)}) after fold`)) break;
           continue;
         }
 
-        // Guard 4: All-mode tracking & smoothness check (when stability is enabled) BEFORE accepting!
-        // NEVER switches off at MIN_ARC and NEVER gives up silently after a fixed halving count.
+        // Guard 4: Single principled nearer-end mode guard across all matched active modes.
         let stCand = null;
         if (doStab) {
           budget?.check();
           const driveCand = p0 + sNext * dpSpan;
           stCand = evaluateStability(this, termIdx, driveCand, stabOpts, isCurrentDrive, budget);
-          const kPrev = points.length - 1;
-          const sm = modeStepSmooth(
-            kPrev >= 1 ? stFullList[kPrev - 1] : null,
-            stFullList[kPrev],
-            stCand,
-            stepArcs[kPrev],
-            dActual,
-            actualStateMove,
-            kBar,
-            nWant,
-            _stats,
-          );
+          const sm = modeStepSmooth(stFullList[points.length - 1], stCand, kBar, nWant, _stats);
           if (!sm.ok) {
-            consecModeFails++;
             tx.set(prevTx);
             tV.set(prevTV);
             ts = prevTs;
-            const act = rejectStep(
-              0.5,
-              `continuation stopped: mode guard (${sm.reason}) near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`,
-              consecModeFails >= 8,
-            );
-            if (act === 'done') break;
+            if (!rejectStep(0.5, `continuation stopped: mode guard (${sm.reason}) near ${formatDrive(p0 + sCur * dpSpan, kind, hasGeometry)}`, true)) break;
             continue;
           }
         }
 
-        consecFails = 0;
-        consecModeFails = 0;
-        naturalStreak = 0;
-        lastRankDeficient = candRankDeficient;
+        const wasModeHalved = lastFailWasModeOnly;
+        lastFailWasModeOnly = false;
 
         // Accept this point!
         ts = tanNext.ts;
         sCur = sNext;
         stepCount++;
-        acceptPoint(sNext, tx, tV, ts, dActual, stCand, preFold);
+        acceptPoint(sNext, tx, tV, ts, stCand, preFold);
 
-        // Adapt arclength stride.
-        if (recentFail > 0) {
-          recentFail--;
-          if (cor.iterations <= 8 && tanNext.cosTheta > 0.92 && dCor < 0.2 * dsStep) dsArc = Math.min(MAX_ARC, dsStep * 1.25);
-          else dsArc = dsStep;
-        } else if (cor.iterations <= 5 && tanNext.cosTheta > 0.95 && dCor < 0.15 * dsStep) {
-          dsArc = Math.min(MAX_ARC, dsStep * 1.5);
-        } else if (cor.iterations <= 8 && tanNext.cosTheta > 0.88 && dCor < 0.25 * dsStep) {
-          dsArc = Math.min(MAX_ARC, dsStep * 1.2);
-        } else if (cor.iterations >= 15 || tanNext.cosTheta < 0.82 || dCor > 0.35 * dsStep) {
+        // Adapt arclength stride from Newton contraction factor and tangent smoothness.
+        if (geomFail > 0) {
+          geomFail--;
+          dsArc = dsStep;
+        } else if (cor.kappa < 0.08 && cor.iterations <= 4 && tanNext.cosTheta > 0.94) {
+          dsArc = Math.min(MAX_ARC, dsStep * (wasModeHalved ? 2.0 : 1.6));
+        } else if (cor.kappa < 0.25 && cor.iterations <= 6 && tanNext.cosTheta > 0.88) {
+          dsArc = Math.min(MAX_ARC, dsStep * (wasModeHalved ? 1.8 : 1.3));
+        } else if (cor.kappa > 0.35 || cor.iterations >= 10 || tanNext.cosTheta < 0.82) {
           dsArc = Math.max(MIN_ARC, dsStep * 0.7);
         } else {
           dsArc = dsStep;
         }
+
+        // Keep state and drive balanced if the drive component has drifted above 0.85.
+        const rebalScale = rebalanceMetric();
+        if (rebalScale !== 1) dsArc = Math.max(MIN_ARC, Math.min(MAX_ARC, dsArc * rebalScale));
       }
 
       if (!end && stepCount >= maxSteps) {

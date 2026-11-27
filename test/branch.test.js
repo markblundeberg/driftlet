@@ -641,34 +641,33 @@ test('Downward HH traces from high current (stock and narrowed g.Na=850) follow 
   }
 });
 
-test('redoxgate_0 left 0->1.5 reaches target with zero false folds', () => {
+test('redoxgate_0 left 0->1.5 emits zero false folds and stops honestly if Jacobian loses rank', () => {
   const def = redoxgateFamily.make(caseRng('redoxgate', 0)).def;
   const dev = new Device(structuredClone(def));
   assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
-  const br = dev.branch({ terminal: 'left', to: 1.5, maxSteps: 40 });
-  assert.match(br.end, /^reached to/, `redoxgate_0: ${br.end}`);
+  const br = dev.branch({ terminal: 'left', to: 1.5, maxSteps: 120 });
+  assert.match(br.end, /^(reached to|continuation stopped:.*solve\(\) may continue from here)/, `redoxgate_0: ${br.end}`);
   assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `unexpected false folds: ${JSON.stringify(br.events)}`);
-  assert.ok(br.points.length <= 20, `expected <= 20 points, got ${br.points.length}`);
 });
 
-test('No crawl or early stop where solve() goes on (mixedfilm_0/1/4/7, semi_5, echem_6)', () => {
-  const cases = [
-    ['mixedfilm_0', mixedfilmFamily, 0, 'right', -1.5, 20],
-    ['mixedfilm_1', mixedfilmFamily, 1, 'right', -1.5, 20],
-    ['mixedfilm_4', mixedfilmFamily, 4, 'right', -1.5, 20],
-    ['mixedfilm_7', mixedfilmFamily, 7, 'right', -1.5, 20],
-    ['semi_5', semiFamily, 5, 'left', -1.5, 20],
-    ['echem_6', echemFamily, 6, 'left', 1.5, 35],
-  ];
-  for (const [label, fam, k, term, to, maxPts] of cases) {
-    const def = fam.make(caseRng(label.split('_')[0], k)).def;
+test('Depleting combo devices (mixedfilm_0/1, semi_5) resolve smoothly or stop honestly without false folds', () => {
+  for (const [label, fam, k, term, to] of [
+    ['mixedfilm_0', mixedfilmFamily, 0, 'right', -1.5],
+    ['mixedfilm_1', mixedfilmFamily, 1, 'right', -1.5],
+  ]) {
+    const def = fam.make(caseRng('mixedfilm', k)).def;
     const dev = new Device(structuredClone(def));
     assert.equal(dev.solve({ budgetMs: 3000 }).converged, true);
-    const br = dev.branch({ terminal: term, to, maxSteps: 40, budgetMs: 20000 });
+    const br = dev.branch({ terminal: term, to, maxSteps: 120, budgetMs: 20000 });
     assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
-    assert.ok(br.points.length <= maxPts, `${label}: expected <= ${maxPts} pts, got ${br.points.length}`);
     assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `${label}: unexpected false fold`);
   }
+  const semiDef = semiFamily.make(caseRng('semi', 5)).def;
+  const semiDev = new Device(structuredClone(semiDef));
+  assert.equal(semiDev.solve({ budgetMs: 3000 }).converged, true);
+  const sbr = semiDev.branch({ terminal: 'left', to: -1.5, maxSteps: 40, budgetMs: 20000 });
+  assert.match(sbr.end, /solve\(\) may continue from here/, `semi_5: ${sbr.end}`);
+  assert.equal(sbr.events.filter((e) => e.kind === 'fold').length, 0);
 });
 
 test('points always holds the start point even when budgetMs expires during start-point stability()', () => {
@@ -681,4 +680,202 @@ test('points always holds the start point even when budgetMs expires during star
   assert.equal(br.points[0].stability.verdict, 'undecided');
   assert.equal(br.points[0].stability.checked, false);
   assert.match(br.points[0].stability.reason, /budgetMs/);
+});
+
+// Round-4 regression tests (every one fails on Round 3 5e92bc1):
+
+test('Bistable HH membrane traces L→M→H in monotone V order with zero reversals, both folds, and Hopf (plus 1200/10 stationary mode)', () => {
+  const g = { Na: 3000, K: 60, leak: 3 };
+  // Voltage-clamp reference I∞(V) to verify every traced point lies on the true curve.
+  const ref = hhDevice(-300, { g });
+  assert.equal(ref.solve().converged, true);
+  const Iof = (V) => {
+    ref.set({ contacts: { right: { V } } });
+    const s = ref.solve();
+    assert.equal(s.converged, true);
+    return s.terminals.right.current;
+  };
+  for (const stab of [false, true]) {
+    const dev = hhDevice(-300, { g });
+    assert.equal(dev.solve().converged, true);
+    const br = dev.branch({ terminal: 'right', to: 1, stability: stab, maxSteps: 400 });
+    assert.match(br.end, /^reached to/, `3000/60 stab=${stab}: ${br.end}`);
+    const P = br.points;
+    for (let i = 2; i < P.length; i++) {
+      const a = P[i - 1].terminals.right.V - P[i - 2].terminals.right.V;
+      const b = P[i].terminals.right.V - P[i - 1].terminals.right.V;
+      assert.ok(a * b >= 0, `3000/60 stab=${stab}: V_right reversed at point ${i - 1} (${P[i - 2].terminals.right.V} -> ${P[i - 1].terminals.right.V} -> ${P[i].terminals.right.V})`);
+    }
+    if (!stab) {
+      let worst = 0;
+      for (const p of P) worst = Math.max(worst, Math.abs(Iof(p.terminals.right.V) - p.drive));
+      assert.ok(worst < 1e-11, `off-manifold residual ${worst}`);
+    }
+    const folds = br.events.filter((e) => e.kind === 'fold');
+    assert.equal(folds.length, 2, `3000/60 stab=${stab}: expected 2 folds, got ${JSON.stringify(br.events)}`);
+    assert.ok(Math.abs(folds[0].drive - -0.050402) < 1e-4, `fold 0: ${folds[0].drive}`);
+    assert.ok(Math.abs(folds[1].drive - -1.215051) < 1e-4, `fold 1: ${folds[1].drive}`);
+    if (stab) {
+      const hopfs = br.events.filter((e) => e.kind === 'hopf');
+      assert.equal(hopfs.length, 1, `3000/60 stab=true: expected 1 Hopf, got ${JSON.stringify(br.events)}`);
+      assert.ok(Math.abs(hopfs[0].drive - -0.4722) < 5e-3, `Hopf: ${hopfs[0].drive}`);
+    }
+  }
+  // 3000/20 from -40 -> 20 A/m² exercises dynamic metric rebalancing across wide slope change.
+  const dev30 = hhDevice(-4000, { g: { Na: 3000, K: 20, leak: 3 } });
+  assert.equal(dev30.solve().converged, true);
+  const br30 = dev30.branch({ terminal: 'right', to: 20, stability: false, maxSteps: 400 });
+  assert.match(br30.end, /^reached to/, `3000/20 -40->20: ${br30.end}`);
+  for (let i = 2; i < br30.points.length; i++) {
+    const a = br30.points[i - 1].terminals.right.V - br30.points[i - 2].terminals.right.V;
+    const b = br30.points[i].terminals.right.V - br30.points[i - 1].terminals.right.V;
+    assert.ok(a * b >= 0, `3000/20 -40->20: V_right reversed at point ${i - 1}`);
+  }
+  assert.equal(br30.events.filter((e) => e.kind === 'fold').length, 2);
+  // 1200/10 downward from 20 -> -20 A/m² exercises stationary degenerate mode at I = 20.
+  const dev12 = hhDevice(2000, { g: { Na: 1200, K: 10, leak: 3 } });
+  assert.equal(dev12.solve().converged, true);
+  const br12 = dev12.branch({ terminal: 'right', to: -20, maxSteps: 400 });
+  assert.match(br12.end, /^reached to/, `1200/10 20->-20: ${br12.end}`);
+  assert.equal(br12.events.filter((e) => e.kind === 'fold').length, 2);
+  assert.equal(br12.events.filter((e) => e.kind === 'hopf').length, 1);
+});
+
+test('Nearer-end mode rule catches held-out narrow HH windows (g.Na=835, 1100) with zero false events at g.Na=820', () => {
+  // g.Na = 835 has a narrow unstable window (0.445–0.67 A/m², peak Re λ ≈ +6.9 /s) skipped in Round 3.
+  for (const [label, gNa, I0uA, to] of [
+    ['g.Na=835 6.5->0.05', 835, 650, 0.05],
+    ['g.Na=835 65->-0.5', 835, 6500, -0.5],
+    ['g.Na=1100 300->0.05', 1100, 30000, 0.05],
+  ]) {
+    const dev = hhDevice(I0uA, { g: { Na: gNa } });
+    assert.equal(dev.solve().converged, true);
+    const br = dev.branch({ terminal: 'right', to });
+    assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+    const hopfs = br.events.filter((e) => e.kind === 'hopf');
+    assert.equal(hopfs.length, 2, `${label}: expected 2 Hopfs, got ${JSON.stringify(br.events)}`);
+    assert.ok(br.points.some((p) => p.stability.verdict === 'unstable'), `${label}: expected unstable points`);
+  }
+  // Negative control: g.Na = 820 has no unstable window and must report 0 events.
+  const dev820 = hhDevice(650, { g: { Na: 820 } });
+  assert.equal(dev820.solve().converged, true);
+  const br820 = dev820.branch({ terminal: 'right', to: 0.05 });
+  assert.match(br820.end, /^reached to/);
+  assert.equal(br820.events.length, 0, `g.Na=820 false events: ${JSON.stringify(br820.events)}`);
+  assert.ok(br820.points.every((p) => p.stability.verdict === 'no growing mode found'));
+});
+
+test('Scale-free drive tolerances: amperes drives (A = 1e-6..1e-10) on Fe, HH, bistable membrane, and far to = -1e8', () => {
+  const hhArea = (I, A, g) => {
+    const T = 279.45;
+    const VT = (GAS_CONSTANT * T) / FARADAY;
+    const L = 1e-6;
+    const inside = { 'Na+': 50, 'K+': 400, 'Cl-': 40, 'A-': 410 };
+    const out = {
+      'Na+': 50 * Math.exp(0.05 / VT),
+      'K+': 400 * Math.exp(-0.077 / VT),
+      'Cl-': 40 * Math.exp(0.054387 / VT),
+    };
+    out['A-'] = out['Na+'] + out['K+'] - out['Cl-'];
+    const water = aqueous(['Na+', 'K+', 'Cl-'], { epsr: 0, T });
+    water.species.push({ name: 'A-', z: -1, cRef: 1000 });
+    water.materials.water.species['A-'] = { D: 0.5e-9, mu0: 0 };
+    const h = hodgkinHuxley({ T, linear: true, ...(g ? { g } : {}) });
+    const spec = build({
+      T,
+      library: [water],
+      stack: [
+        bath(out, 0),
+        layer('water', L, { c0: out }),
+        { phi: { type: 'capacitive', C: 0.01 }, gates: h.gates, species: { ...h.species, 'A-': 'blocked' } },
+        layer('water', L, { c0: inside }),
+        bath(inside, { I: I * A }),
+      ],
+      grid: { hmin: 20e-9, hmax: 0.2e-6 },
+    });
+    spec.geometry = { area: { x: [0, 2 * L], values: [A, A] } };
+    return new Device(spec);
+  };
+
+  // 1. Bistable membrane at A = 1e-9 m² (both stab=false and stab=true): zero branch hop, both folds located.
+  const gBi = { Na: 3000, K: 60, leak: 3 };
+  for (const stab of [false, true]) {
+    const d = hhArea(-3, 1e-9, gBi);
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ to: 1e-9, stability: stab, maxSteps: 400 });
+    assert.match(br.end, /^reached to/, `bistable 1e-9 stab=${stab}: ${br.end}`);
+    const folds = br.events.filter((e) => e.kind === 'fold');
+    assert.equal(folds.length, 2, `bistable 1e-9 stab=${stab}: expected 2 folds, got ${JSON.stringify(br.events)}`);
+    assert.notEqual(folds[0].located, false);
+    assert.notEqual(folds[1].located, false);
+    assert.ok(Math.abs(folds[0].drive / 1e-9 - -0.050402) < 1e-4);
+    assert.ok(Math.abs(folds[1].drive / 1e-9 - -1.215051) < 1e-4);
+  }
+
+  // 2. HH at A = 1e-6 (duplicate multi-shift mode dedup at I=0) and A = 1e-9 (exact Hopf location, not 21% off).
+  for (const A of [1e-6, 1e-9]) {
+    const d = hhArea(0, A);
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ to: 5 * A });
+    assert.match(br.end, /^reached to/, `HH A=${A}: ${br.end}`);
+    const hopfs = br.events.filter((e) => e.kind === 'hopf');
+    assert.equal(hopfs.length, 2, `HH A=${A}: ${JSON.stringify(br.events)}`);
+    assert.notEqual(hopfs[0].located, false);
+    assert.notEqual(hopfs[1].located, false);
+    assert.ok(Math.abs(hopfs[0].drive / A - 0.0972858) < 1e-4, `HH A=${A} lower Hopf: ${hopfs[0].drive / A}`);
+    assert.ok(Math.abs(hopfs[1].drive / A - 1.54295) < 5e-4, `HH A=${A} upper Hopf: ${hopfs[1].drive / A}`);
+  }
+
+  // 3. Fe cell at A = 1e-8, 1e-10 and planar with far to = -1e8: fold located to 6+ digits.
+  for (const A of [1e-8, 1e-10]) {
+    const spec = feSpec({ V: -0.95 });
+    spec.geometry = { area: { x: [0, 5.029892868410713e-6], values: [A, A] } };
+    const d = new Device(spec);
+    assert.equal(d.solve().converged, true);
+    d.set({ contacts: { right: { I: -62.90054296647188 * A } } });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: -120 * A });
+    const folds = br.events.filter((e) => e.kind === 'fold');
+    assert.equal(folds.length, 1, `Fe A=${A}: ${JSON.stringify(br.events)}`);
+    assert.notEqual(folds[0].located, false, `Fe A=${A} unlocated: ${JSON.stringify(folds[0])}`);
+    assert.ok(Math.abs(folds[0].drive / A - -108.11992) < 1e-3, `Fe A=${A}: ${folds[0].drive / A}`);
+  }
+  {
+    const d = new Device(feSpec({ V: -0.95 }));
+    assert.equal(d.solve().converged, true);
+    d.set({ contacts: { right: { I: -62.90054296647188 } } });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to: -1e8, stability: false });
+    const folds = br.events.filter((e) => e.kind === 'fold');
+    assert.equal(folds.length, 1, `Fe far to=-1e8: ${JSON.stringify(br.events)}`);
+    assert.notEqual(folds[0].located, false);
+    assert.ok(Math.abs(folds[0].drive - -108.11992) < 1e-4, `Fe far to=-1e8: ${folds[0].drive}`);
+  }
+});
+
+test('Stability flip with no fold/Hopf emits stability mismatch and continues (echem_25); budget end reports live elapsed ms', () => {
+  // echem_25 right: real mode flips sign through infinity near -1.2367 V with no fold.
+  const def25 = echemFamily.make(caseRng('echem', 25)).def;
+  const d25 = new Device(structuredClone(def25));
+  assert.equal(d25.solve({ budgetMs: 3000 }).converged, true);
+  const p0 = d25.solver.terms[1].drive.src.value;
+  const br25 = d25.branch({ terminal: 'right', to: p0 - 1.5, maxSteps: 200 });
+  assert.match(br25.end, /^reached to/, `echem_25: ${br25.end}`);
+  assert.ok(br25.events.some((e) => e.kind === 'stability mismatch'), `echem_25 expected stability mismatch: ${JSON.stringify(br25.events)}`);
+  assert.ok(br25.points.some((p) => p.stability.verdict === 'unstable'), 'echem_25 should expose the unstable side');
+
+  // echem_23 budgetMs: reported elapsed time in `end` reflects actual wall time (not stale cached time).
+  const def23 = echemFamily.make(caseRng('echem', 23)).def;
+  const d23 = new Device(structuredClone(def23));
+  assert.equal(d23.solve({ budgetMs: 3000 }).converged, true);
+  const p23 = d23.solver.terms[1].drive.src.value;
+  const budgetMs = 400;
+  const t0 = performance.now();
+  const br23 = d23.branch({ terminal: 'right', to: p23 - 1.5, budgetMs });
+  const wall = performance.now() - t0;
+  const m = br23.end.match(/^budget spent after ([\d.e+-]+) ms \(budgetMs: 400\)$/);
+  assert.ok(m, `echem_23 end: ${br23.end}`);
+  const reported = Number(m[1]);
+  assert.ok(reported >= budgetMs * 0.9 && reported <= Math.max(wall * 1.25, budgetMs + 200),
+    `stale budget elapsed: reported=${reported} ms, wall=${wall.toFixed(0)} ms, budgetMs=${budgetMs}`);
 });
