@@ -12,7 +12,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Device, FARADAY, GAS_CONSTANT, SolverError, units } from '../src/index.js';
-import { aqueous, bath, build, hodgkinHuxley, layer, metal, ohmic, pulse, semiconductor } from '../src/kit.js';
+import { check } from '../src/checks.js';
+import { AgAgCl, aqueous, bath, build, half, hodgkinHuxley, layer, metal, ohmic, pulse, semiconductor } from '../src/kit.js';
 import { caseRng } from '../bench/combos/rng.js';
 import basicFamily from '../bench/combos/families/basic.js';
 import echemFamily from '../bench/combos/families/echem.js';
@@ -68,7 +69,7 @@ function feSpec(drive = { I: -62.90054296647188 }) {
   };
 }
 
-function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6, g } = {}) {
+function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6, g, right } = {}) {
   const T = 279.45;
   const VT = (GAS_CONSTANT * T) / FARADAY;
   const inside = { 'Na+': 50, 'K+': 400, 'Cl-': 40, 'A-': 410 };
@@ -91,7 +92,7 @@ function hhDevice(I_uAcm2, { L = 1e-6, hmin = 20e-9, hmax = 0.2e-6, g } = {}) {
         layer('water', L, { c0: out }),
         { phi: { type: 'capacitive', C: 0.01 }, gates: hh.gates, species: { ...hh.species, 'A-': 'blocked' } },
         layer('water', L, { c0: inside }),
-        bath(inside, { I: I_uAcm2 * 1e-2 }),
+        bath(inside, right ?? { I: I_uAcm2 * 1e-2 }),
       ],
       grid: { hmin, hmax },
     }),
@@ -969,16 +970,26 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
     }
     return hopfs;
   };
-  const assertEventDiff = (label, br, refEvents, tol = 2e-3) => {
+  const assertEventDiff = (label, br, refEvents, relTol = 2e-4) => {
     const mism = br.events.filter((e) => e.kind === 'stability mismatch');
     assert.equal(mism.length, 0, `${label}: unexpected stability mismatch ${JSON.stringify(mism)}`);
     assert.equal(br.events.length, refEvents.length,
       `${label}: event count ${br.events.length} vs ref ${refEvents.length}\n  got: ${JSON.stringify(br.events.map((e) => [e.kind, e.drive]))}\n  ref: ${JSON.stringify(refEvents.map((e) => [e.kind, e.drive]))}`);
     for (let i = 0; i < refEvents.length; i++) {
       assert.equal(br.events[i].kind, refEvents[i].kind, `${label} ev[${i}] kind`);
-      const scale = Math.max(Math.abs(refEvents[i].drive), 1);
-      assert.ok(Math.abs(br.events[i].drive - refEvents[i].drive) <= tol * scale,
-        `${label} ev[${i}] (${refEvents[i].kind}): got ${br.events[i].drive} vs ref ${refEvents[i].drive}`);
+      const refD = refEvents[i].drive;
+      let minGap = Infinity;
+      for (let j = 0; j < refEvents.length; j++) {
+        if (j === i) continue;
+        const g = Math.abs(refEvents[j].drive - refD);
+        if (g > 0 && g < minGap) minGap = g;
+      }
+      const cap = Math.min(
+        relTol * Math.max(Math.abs(refD), 1e-12),
+        minGap < Infinity ? 0.25 * minGap : Infinity,
+      );
+      assert.ok(Math.abs(br.events[i].drive - refD) <= cap,
+        `${label} ev[${i}] (${refEvents[i].kind}): got ${br.events[i].drive} vs ref ${refD} (tol ${cap.toExponential(2)})`);
     }
   };
 
@@ -997,14 +1008,14 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
     const brUp = dUp.branch({ terminal: 'right', to: 300, maxSteps: 100 });
     assert.ok(!/^maxSteps/.test(brUp.end), `Fe 0->+300: ${brUp.end}`);
     assert.ok(brUp.points.length < 60, `Fe 0->+300 crawled: ${brUp.points.length} pts`);
-    assertEventDiff('Fe 0->+300', brUp, [posFold], 1e-3);
+    assertEventDiff('Fe 0->+300', brUp, [posFold]);
     assertEventDiff('Fe -62.9->-120', (() => {
       const d = new Device(feSpec({ V: -0.95 }));
       assert.equal(d.solve().converged, true);
       d.set({ contacts: { right: { I: -62.90054296647188 } } });
       assert.equal(d.solve().converged, true);
       return d.branch({ terminal: 'right', to: -120 });
-    })(), [negFold], 1e-3);
+    })(), [negFold]);
   }
 
   // 2. HH stock (0->5, 5->0, and step: 0.5): diff against V-clamp Hopf reference.
@@ -1021,12 +1032,12 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
       assert.equal(d.solve().converged, true);
       const br = d.branch({ terminal: 'right', to, ...extra });
       assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
-      assertEventDiff(label, br, rev ? [...refH].reverse() : refH, 2e-3);
+      assertEventDiff(label, br, rev ? [...refH].reverse() : refH);
     }
   }
 
   // 3. Bistable membrane behind R (g = 2500/45/3, R = 1.02 Rc and 2 Rc): lower-branch Hopf sits right
-  //    before the fold; Morse-index refinement catches all 4 events in both directions with 0 mismatches.
+  //    before the fold; Morse-index & sawHidden refinement catch all 4 events with 0 mismatches.
   {
     const g = { Na: 2500, K: 45, leak: 3 };
     const vDev = hhVClamp(g);
@@ -1041,7 +1052,10 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
       vPrev = v; iPrev = curI;
     }
     const Rcrit = -1 / minSlope;
-    for (const [mult, span] of [[1.02, [-0.606, 0.606]], [2.0, [-0.36, 0.24]]]) {
+    for (const [mult, runs] of [
+      [1.02, [[-0.606, 0.606, false], [0.606, -0.606, true], [0.16, -0.24, true]]],
+      [2.0, [[-0.36, 0.24, false], [0.24, -0.36, true]]],
+    ]) {
       const R = mult * Rcrit;
       const EofV = (V) => V + R * IofV(V);
       const refFolds = findFoldsFromVClamp(EofV, -0.07, -0.02, 120);
@@ -1049,13 +1063,13 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
       const refAll = [...refFolds, ...refHopfs].sort((a, b) => a.v - b.v);
       assert.equal(refFolds.length, 2, `R=${mult}Rc ref folds`);
       assert.equal(refHopfs.length, 2, `R=${mult}Rc ref hopfs`);
-      for (const [E0, to, rev] of [[span[0], span[1], false], [span[1], span[0], true]]) {
+      for (const [E0, to, rev] of runs) {
         const d = hhDevice(0, { g });
         d.set({ contacts: { right: { V: E0, R } } });
         assert.equal(d.solve().converged, true);
         const br = d.branch({ terminal: 'right', to, maxSteps: 300 });
         assert.match(br.end, /^reached to/, `2500/45/3 R=${mult}Rc ${E0}->${to}: ${br.end}`);
-        assertEventDiff(`2500/45/3 R=${mult}Rc ${E0}->${to}`, br, rev ? [...refAll].reverse() : refAll, 2e-3);
+        assertEventDiff(`2500/45/3 R=${mult}Rc ${E0}->${to}`, br, rev ? [...refAll].reverse() : refAll);
       }
     }
   }
@@ -1076,11 +1090,11 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
     assert.equal(d.solve().converged, true);
     const br = d.branch({ terminal: 'right', to: 2, maxSteps: 300 });
     assert.match(br.end, /^reached to/, `4000/100/5 -4->2: ${br.end}`);
-    assertEventDiff('4000/100/5 -4->2', br, refAll, 2e-3);
+    assertEventDiff('4000/100/5 -4->2', br, refAll);
   }
 
-  // 5. Round-off plateau vs genuine nA fold: echem_32 ref emits 0 folds and stops on saturation;
-  //    echem_29 right still locates its genuine fold at ~-9.486e-9 A.
+  // 5. Round-off plateau vs genuine nA fold: echem_32 ref walks past the plateau to voltageBound
+  //    with 0 folds (no invented plateau stop); echem_29 right still locates its genuine nA fold.
   {
     const def32 = echemFamily.make(caseRng('echem', 32)).def;
     for (const to of [0.05, -0.05]) {
@@ -1088,7 +1102,7 @@ test('Reference event-list diff without branch(): Fe, HH, bistable membrane (I &
       assert.equal(d.solve({ budgetMs: 3000 }).converged, true);
       const br = d.branch({ terminal: 'ref', to, maxSteps: 200 });
       assert.equal(br.events.filter((e) => e.kind === 'fold').length, 0, `echem_32 ref ->${to}: false round-off folds ${JSON.stringify(br.events)}`);
-      assert.match(br.end, /^drive saturates near /, `echem_32 ref ->${to}: ${br.end}`);
+      assert.match(br.end, /^left voltage bound /, `echem_32 ref ->${to}: ${br.end}`);
     }
     const def29 = echemFamily.make(caseRng('echem', 29)).def;
     const d29 = new Device(structuredClone(def29));
@@ -1154,4 +1168,187 @@ test('Metric rebalancing, insensitive terminals, lost-mode GMRES, landing guard,
     const hopfs = br.events.filter((e) => e.kind === 'hopf');
     assert.equal(hopfs.length, 2, `g.Na=835 landing: expected 2 Hopfs, got ${JSON.stringify(br.events)}`);
   }
+});
+
+// Round-6 regression & oracle tests (every test fails on Round 5 84eaabd):
+
+test('Si pn diode in reverse under current drive (0 -> -1e4): 0 folds, monotone V & I, reaches ±20 V bound', () => {
+  const def = build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e16) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(100) },
+  });
+  const d = new Device(def);
+  assert.equal(d.solve().converged, true);
+  for (const stability of [false, true]) {
+    const br = d.branch({ terminal: 'right', to: -1e4, stability, maxSteps: 300 });
+    assert.equal(br.events.length, 0, `Si pn reverse stab=${stability}: unexpected events ${JSON.stringify(br.events)}`);
+    assert.match(br.end, /^left voltage bound /, `Si pn reverse stab=${stability}: ${br.end}`);
+    for (let i = 1; i < br.points.length; i++) {
+      assert.ok(br.points[i].drive <= br.points[i - 1].drive, `Si pn reverse I rose at pt ${i}`);
+      assert.ok(br.points[i].terminals.right.V < br.points[i - 1].terminals.right.V, `Si pn reverse V rose at pt ${i}`);
+    }
+    assert.ok(br.points.at(-1).terminals.right.V < -19, `Si pn reverse stopped short: V=${br.points.at(-1).terminals.right.V}`);
+  }
+});
+
+test('Two-wave electrode walks across Fe3+ limiting-current plateau onto second wave (0 -> -100 A/m²)', () => {
+  const water = aqueous(['K+', 'Cl-', 'Fe3+', 'Fe2+'], { epsr: 0 });
+  water.species.push({ name: 'Ox2+', z: 2, cRef: 1000 }, { name: 'Red+', z: 1, cRef: 1000 });
+  water.materials.water.species['Ox2+'] = { D: 0.7e-9, mu0: 0 };
+  water.materials.water.species['Red+'] = { D: 0.7e-9, mu0: 2.0 * FARADAY };
+  const def = build({
+    library: [water, metal('Pt')],
+    stack: [
+      ohmic({ I: 0 }, ['e-']),
+      layer('Pt', 1e-6),
+      { reactions: [{ ...half('Fe3+ + e- = Fe2+'), k0: 1 }, { equation: 'Ox2+ + e- = Red+', k0: 1e-12 }] },
+      layer('water', 20e-6),
+      bath({ 'K+': 500, 'Cl-': 635 + 1e-6, 'Fe3+': 5, 'Fe2+': 10, 'Ox2+': 50, 'Red+': 1e-6 }, AgAgCl),
+    ],
+    grid: { hmin: 10e-9, hmax: 0.5e-6 },
+  });
+  const d = new Device(def);
+  assert.equal(d.solve().converged, true);
+  for (const stability of [false, true]) {
+    const br = d.branch({ terminal: 'left', to: -100, stability, maxSteps: 200 });
+    assert.match(br.end, /^reached to/, `two-wave stab=${stability}: ${br.end}`);
+    assert.equal(br.events.length, 0, `two-wave stab=${stability}: ${JSON.stringify(br.events)}`);
+    const last = br.points.at(-1);
+    assert.ok(Math.abs(last.drive - -100) < 1e-6, `two-wave drive=${last.drive}`);
+    assert.ok(Math.abs(last.terminals.left.V - -3.47907) < 1e-3, `two-wave V=${last.terminals.left.V}`);
+  }
+});
+
+test('Held-out membrane 5000/40/10 at 1.5 Rc refines undecided fold end and locates all 4 events in both directions', () => {
+  const g = { Na: 5000, K: 40, leak: 10 };
+  const vDev = hhDevice(0, { g, right: { V: -0.09 } });
+  assert.equal(vDev.solve().converged, true);
+  const IofV = (V) => { vDev.set({ contacts: { right: { V } } }); assert.equal(vDev.solve().converged, true); return vDev.solver._currentInto(1); };
+  let minSlope = 0;
+  for (let v = -0.095; v <= -0.005; v += 0.0005) {
+    const sl = (IofV(v + 0.0005) - IofV(v)) / 0.0005;
+    if (sl < minSlope) minSlope = sl;
+  }
+  const R = 1.5 * (-1 / minSlope);
+  const EofV = (V) => V + R * IofV(V);
+  const golden = (f, a, b, isMax) => {
+    const phi = 0.5 * (Math.sqrt(5) - 1);
+    let x1 = b - phi * (b - a), x2 = a + phi * (b - a), f1 = f(x1), f2 = f(x2);
+    for (let it = 0; it < 38; it++) {
+      if (isMax ? f1 < f2 : f1 > f2) { a = x1; x1 = x2; f1 = f2; x2 = a + phi * (b - a); f2 = f(x2); }
+      else { b = x2; x2 = x1; f2 = f1; x1 = b - phi * (b - a); f1 = f(x1); }
+    }
+    const v = 0.5 * (a + b);
+    return { v, val: f(v) };
+  };
+  const vs = [], es = [];
+  for (let i = 0; i <= 120; i++) { const v = -0.07 + 0.05 * (i / 120); vs.push(v); es.push(EofV(v)); }
+  const refFolds = [];
+  for (let i = 1; i < 120; i++) {
+    if ((es[i] > es[i - 1] && es[i] > es[i + 1]) || (es[i] < es[i - 1] && es[i] < es[i + 1])) {
+      const ex = golden(EofV, vs[i - 1], vs[i + 1], es[i] > es[i - 1]);
+      refFolds.push({ kind: 'fold', v: ex.v, drive: ex.val });
+    }
+  }
+  const hopfRe = (v) => {
+    vDev.set({ contacts: { right: { V: v, R: undefined } } });
+    assert.equal(vDev.solve().converged, true);
+    const I = vDev.solver._currentInto(1), E = v + R * I;
+    const snap = vDev.solver._snapshot();
+    vDev.set({ contacts: { right: { V: E, R } } });
+    vDev.solver._restore(snap); vDev.solver.termV[1] = v; vDev.solver.atSteady = true;
+    const st = vDev.stability();
+    vDev.set({ contacts: { right: { V: v, R: undefined } } });
+    vDev.solver._restore(snap); vDev.solver.atSteady = true;
+    return { osc: st.modes.find((m) => m.im > 10 * m.error), drive: E };
+  };
+  const refHopfs = [];
+  let prev = null;
+  for (let i = 0; i <= 70; i++) {
+    const v = -0.07 + 0.05 * (i / 70);
+    const cur = { v, ...hopfRe(v) };
+    if (prev && prev.osc && cur.osc && prev.osc.re * cur.osc.re < 0) {
+      let a = prev.v, b = cur.v, ra = prev.osc.re, lastD = cur.drive;
+      for (let it = 0; it < 20; it++) {
+        const mid = 0.5 * (a + b), m = hopfRe(mid); lastD = m.drive;
+        if (!m.osc) break;
+        if (m.osc.re * ra > 0) { a = mid; ra = m.osc.re; } else b = mid;
+      }
+      refHopfs.push({ kind: 'hopf', v: 0.5 * (a + b), drive: lastD });
+    }
+    prev = cur;
+  }
+  const refAll = [...refFolds, ...refHopfs].sort((a, b) => a.v - b.v);
+  assert.equal(refAll.length, 4, `5000/40/10 ref events: ${JSON.stringify(refAll)}`);
+  const Emax = Math.max(...refAll.map((e) => e.drive)), Emin = Math.min(...refAll.map((e) => e.drive));
+  for (const [label, E0, to, rev] of [
+    ['5000/40/10 1.5Rc up', Emin - 0.375, Emax + 0.375, false],
+    ['5000/40/10 1.5Rc down', Emax + 0.375, Emin - 0.375, true],
+    ['5000/40/10 1.5Rc down (undecided fold)', 0.31949482, -0.438868587, true],
+  ]) {
+    const d = hhDevice(0, { g, right: { V: E0, R } });
+    assert.equal(d.solve().converged, true);
+    const br = d.branch({ terminal: 'right', to, maxSteps: 300 });
+    assert.match(br.end, /^reached to/, `${label}: ${br.end}`);
+    const exp = rev ? [...refAll].reverse() : refAll;
+    assert.equal(br.events.length, 4, `${label}: got ${JSON.stringify(br.events.map((e) => [e.kind, e.drive]))}`);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(br.events[i].kind, exp[i].kind, `${label} ev[${i}]`);
+      let minGap = Infinity;
+      for (let j = 0; j < 4; j++) if (j !== i) minGap = Math.min(minGap, Math.abs(exp[j].drive - exp[i].drive));
+      const cap = Math.min(2e-4 * Math.abs(exp[i].drive), 0.25 * minGap);
+      assert.ok(Math.abs(br.events[i].drive - exp[i].drive) <= cap,
+        `${label} ev[${i}]: got ${br.events[i].drive} vs ref ${exp[i].drive} (tol ${cap.toExponential(2)})`);
+    }
+  }
+});
+
+test('GaAs pn forward (0 -> 10) and floating-base Si npn (check() clean, 0 -> 1e6): 0 folds and 0 points outside span', () => {
+  const gaas = new Device(build({
+    T: 300,
+    library: [semiconductor('GaAs')],
+    stack: [
+      ohmic(0),
+      layer('GaAs', units.um(1), { donors: units.perCm3(1e16) }),
+      layer('GaAs', units.um(1), { acceptors: units.perCm3(1e16) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { GaAs: 1e8 } }],
+    grid: { hmin: units.nm(5), hmax: units.nm(100) },
+  }));
+  assert.equal(gaas.solve().converged, true);
+  const brG = gaas.branch({ terminal: 'right', to: 10, stability: false });
+  assert.match(brG.end, /^reached to/, `GaAs forward: ${brG.end}`);
+  assert.equal(brG.events.length, 0, `GaAs forward events: ${JSON.stringify(brG.events)}`);
+  assert.ok(Math.abs(brG.points.at(-1).terminals.right.V - 0.7597) < 1e-3, `GaAs V=${brG.points.at(-1).terminals.right.V}`);
+
+  const npn = new Device(build({
+    T: 300,
+    library: [semiconductor('Si')],
+    stack: [
+      ohmic(0),
+      layer('Si', units.um(1), { donors: units.perCm3(1e18) }),
+      layer('Si', units.um(1), { acceptors: units.perCm3(1e17) }),
+      layer('Si', units.um(3), { donors: units.perCm3(1e15) }),
+      ohmic({ I: 0 }),
+    ],
+    bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e6 } }],
+    grid: { hmin: units.nm(2), hmax: units.nm(50) },
+  }));
+  const solNpn = npn.solve();
+  assert.equal(solNpn.converged, true);
+  assert.equal(check(npn, solNpn).ok, true, 'Si npn should pass check()');
+  const brN = npn.branch({ terminal: 'right', to: 1e6, stability: false, maxSteps: 300 });
+  assert.match(brN.end, /^left voltage bound /, `Si npn: ${brN.end}`);
+  assert.equal(brN.events.length, 0, `Si npn events: ${JSON.stringify(brN.events)}`);
+  const outside = brN.points.filter((p) => p.drive < 0 || p.drive > 1e6);
+  assert.equal(outside.length, 0, `Si npn points outside [0, 1e6]: ${outside.length}`);
 });
