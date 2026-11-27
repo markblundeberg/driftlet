@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.25.0 (2026-11-26)
 
 - **`device.stability()`**: is the steady state just solved one the device would stay in? It
   linearises the time-dependent equations about the state, under the device's own drives, and
