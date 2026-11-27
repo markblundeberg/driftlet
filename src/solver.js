@@ -24,6 +24,7 @@ import { RegionTerms } from './regions.js';
 import { SteadySolves } from './steady.js';
 import { SmallSignal } from './impedance.js';
 import { Stability } from './stability.js';
+import { Branch } from './branch.js';
 import { advance as advanceFn, integrate as integrateFn, integrateArgs as integrateArgsFn, step as stepFn, violentStart } from './timeSteps.js';
 import { initFromComposition as initFromCompositionFn } from './start.js';
 
@@ -1340,6 +1341,6 @@ export class Solver {
 // The assembly's methods, the steady solves' and the small signal's, defined with their contracts
 // in src/assemble.js, src/regions.js, src/boundaries.js, src/steady.js and src/impedance.js, are
 // the Solver's own.
-for (const part of [Assembly, RegionTerms, BoundaryTerms, SteadySolves, SmallSignal, Stability]) {
+for (const part of [Assembly, RegionTerms, BoundaryTerms, SteadySolves, SmallSignal, Stability, Branch]) {
   for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) if (k !== 'constructor') Object.defineProperty(Solver.prototype, k, d);
 }

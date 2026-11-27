@@ -387,4 +387,32 @@
  * @property {{ J: number[][], M: number[][], deflation: { label: string, vector: number[], wResidual?: number }[], localDeflated: number, cutUsed: number[], labels: (number[] | string[])[], rejectedGrowing?: { re: number, im: number, residual: number, error: number, rule: string }[], inaccurateShifts?: { re: number, im: number, backwardError: number }[] }} [debug]
  */
 
+/**
+ * @typedef {object} BranchPoint
+ * @property {number} drive terminal's drive value at this point (V, or A/m² / A in current mode)
+ * @property {Record<string, { V: number, current: number }>} terminals each terminal's voltage (V) and current into the device
+ * @property {{ verdict: 'unstable' | 'neutral within resolution' | 'no growing mode found' | 'undecided', rate: number, im: number, error: number, reason: string }} [stability] linear stability under the drive as held (omitted when stability: false)
+ * @property {Solution} [solution] full solution at this point (present only when solutions: true)
+ */
+
+/**
+ * @typedef {object} BranchEvent
+ * @property {'fold' | 'hopf' | 'branch point' | 'stability mismatch'} kind event kind
+ * @property {number} drive located drive value at the event
+ * @property {Record<string, { V: number, current: number }>} terminals each terminal's voltage and current at the event
+ * @property {number} [omega] Hopf angular frequency |Im λ| in rad/s (present for kind === 'hopf')
+ * @property {[number, number]} between indices [k, k + 1] (or [i, j]) in `points` bracketing the event
+ * @property {string} [note] diagnostic detail (e.g. for stability mismatch)
+ */
+
+/**
+ * @typedef {object} BranchResult
+ * @property {string} terminal name of the continued terminal
+ * @property {'V' | 'I'} kind drive kind of that terminal
+ * @property {BranchPoint[]} points traced points along the branch
+ * @property {BranchEvent[]} events located folds, Hopf bifurcations, branch points, and any stability mismatches
+ * @property {string} end plain-language reason the trace stopped
+ * @property {string[]} warnings steady-state and continuation warnings
+ */
+
 export {};

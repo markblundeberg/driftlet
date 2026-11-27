@@ -1645,6 +1645,73 @@ Measured (test/stability.test.js):
 - **Blind**: about 4,000 random devices from driftlet's generators, each `'unstable'` confirmed by
   a dense solve beside λ and a kicked step: none was a false alarm.
 
+### branch(opts)
+
+Traces a steady-state branch as one terminal's drive (`V` or `I`, whichever kind that terminal
+carries) moves toward `to`, using pseudo-arclength continuation in `(state, p)` so it turns
+smoothly around folds instead of stalling against them. Call `solve()` first; the device is left
+at its starting state and drive when `branch()` returns.
+
+```js
+import { Device, units } from 'driftlet';
+import { build, layer, ohmic, semiconductor } from 'driftlet/kit';
+
+// A silicon pn diode swept from 0 to 0.4 V: no fold, every point decays under voltage drive.
+const dev = new Device(build({
+  T: 300,
+  library: [semiconductor('Si')],
+  stack: [
+    ohmic(0),
+    layer('Si', units.um(1), { donors: units.perCm3(1e16) }),
+    layer('Si', units.um(1), { acceptors: units.perCm3(1e16) }),
+    ohmic(0),
+  ],
+  bulkReactions: [{ equation: 'e- + h+ = 0', kf: { Si: 1e8 } }],
+  grid: { hmin: units.nm(5), hmax: units.nm(100) },
+}));
+dev.solve();
+const br = dev.branch({ terminal: 'right', to: 0.4 });
+console.log(br.end.startsWith('reached to'), br.events.length, br.points.at(-1).stability.verdict); // => true, 0, no growing mode found
+```
+
+| option | default | what it does |
+|---|---|---|
+| `terminal` | `'right'` | terminal name (`'left'`, `'right'`, or a port name); traced in that terminal's own drive kind (`V` or `I`) |
+| `to` | required | target value of that terminal's drive (V, or A/m² / A in current mode) |
+| `step` | automatic | maximum drive step `|Δp|` per continuation step |
+| `maxSteps` | 200 | maximum continuation steps (so up to `maxSteps + 1` points) |
+| `voltageBound` | 20 | maximum voltage excursion `|V − V_start|` (V) on any floating terminal before stopping |
+| `budgetMs` | `Infinity` | wall-time budget in ms (unlimited never reads the clock; finite allows at least one step attempt) |
+| `stability` | `true` | `true` (or a `stability()` options object): run full `stability()` at every point; `false` skips stability marking |
+| `solutions` | `false` | `true`: include the full `Solution` at each point (`pt.solution`) |
+
+| result field | what it holds |
+|---|---|
+| `terminal` | name of the continued terminal |
+| `kind` | `'V'` or `'I'` (the terminal's drive kind) |
+| `points` | `[{ drive, terminals: { name: { V, current } }, stability?: { verdict, rate, im, error, reason }, solution? }, ...]` |
+| `events` | `[{ kind: 'fold' \| 'hopf' \| 'branch point' \| 'stability mismatch', drive, terminals, omega?, between: [k, k+1], note? }, ...]` |
+| `end` | why the trace stopped, in plain words: reached `to`, returned to starting drive after a fold, left a voltage bound, `maxSteps`, budget spent, continuation failure, or refused (with why) |
+| `warnings` | the starting steady state's warnings plus any continuation caveats (e.g. frozen waveform drives) |
+
+Notes:
+
+- **Stability marks are for the drive as held.** The very same steady-state curve can be
+  `'no growing mode found'` everywhere under voltage drive and have an `'unstable'` branch past a
+  fold under current drive (a peaked $`\mathrm{Fe^{3+}/Fe^{2+}}`$ thin-layer cell is exactly that).
+- **Folds, Hopf points, and branch points.** A fold (`dp/ds = 0`) is located by safeguarded
+  secant/bisection along the exact arc; a Hopf (`Re λ = 0` for a complex conjugate pair, with
+  `omega` in rad/s) likewise; a determinant sign change without a turn in `p` is reported as
+  `'branch point'` without switching branches. At a fold in the held parameter, one real eigenvalue
+  must cross 0: if the marks do not change across a fold, or flip between decided states with no
+  fold, Hopf, or branch point located, `branch()` reports a `'stability mismatch'` event rather
+  than staying silent.
+- **Returning past a fold.** If a branch turns a fold and crosses back through its starting drive
+  on the far side, `branch()` lands on that drive and stops (`returned to starting drive … after
+  fold`), keeping the trace inside the requested drive span.
+- **Non-destructive.** The device's state, drives, and learned solver history are restored
+  bit-for-bit on return (even if `budgetMs` runs out or an option throws).
+
 ### set(patch)
 
 Merges plain objects deeply into the definition (arrays are replaced; ports are patched by name,

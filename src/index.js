@@ -638,6 +638,24 @@ export class Device {
   }
 
   /**
+   * Trace a steady-state branch in one terminal's drive parameter (`V` or `I`) by pseudo-arclength
+   * continuation, rounding folds, marking each point with its linear stability (under the drive as
+   * held), and locating fold, Hopf, and branch points. Leaves the device where it started.
+   * @param {{ terminal?: string, to: number, step?: number, maxSteps?: number, voltageBound?: number, budgetMs?: number, stability?: boolean | { shifts?: number[], frequencies?: number[], modes?: number, kBar?: number }, solutions?: boolean }} opts
+   * @returns {import('./types.js').BranchResult}
+   */
+  branch(opts) {
+    if (!opts || typeof opts !== 'object') throw new SolverError('branch: pass an options object with at least { to }');
+    options(opts, 'branch', ['terminal', 'to', 'step', 'maxSteps', 'voltageBound', 'budgetMs', 'stability', 'solutions']);
+    if (!this._solver || !this._solver.atSteady || this._solver.regriddedSteady) {
+      throw new SolverError('branch: solve() first — branch() traces from the current converged steady state');
+    }
+    const steadyWarnings = makeSolution(this._solver).warnings;
+    const out = this._solver.branch(opts);
+    return { ...out, warnings: [...steadyWarnings, ...out.warnings] };
+  }
+
+  /**
    * A checkpoint of the definition and solver state, for `_rollback()` (the live wrapper keeps
    * its last good state this way).
    * @internal

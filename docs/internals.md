@@ -27,6 +27,7 @@ them is wrong: fix both, with a test, in the same commit.
 | `src/homotopy.js` | yes: unified pseudo-arclength homotopy continuation for direct steady solves |
 | `src/impedance.js` | yes: the small-signal impedance, its readouts and profiles |
 | `src/stability.js` | yes: linear stability of a converged steady state on the dynamic DAE pencil |
+| `src/branch.js` | yes: pseudo-arclength branch continuation with stability marking and bifurcation location |
 | `src/difference.js` | header: the dilute kernels in difference form |
 | `src/blockTridiagonal.js` | header: the block Thomas solver |
 | `src/statistics.js` | header: each model's `evaluate` / `invert` |
