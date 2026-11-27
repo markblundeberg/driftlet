@@ -97,7 +97,6 @@
     lattice of 0.1 nm sites, behind a 0.17 F/m² inner layer), Butler–Volmer kinetics at the plane of closest
     approach (α = 0.125), the stagnant layer as on a rotating disk. The resistance is in series with the
     source, in Ω·m² of electrode: 0.1 Ω·m² is 10 kΩ on a 1 mm² drop.</p>
-  <details><summary>The code</summary><pre id="code"></pre></details>
   </section>
 </main>
 <script type="module">
@@ -245,11 +244,16 @@ function frame(now = performance.now()) {
   const wall = Math.min(0.1, (now - (lastFrame ?? now)) / 1000);
   lastFrame = now;
   if (sweeping) {
-    // down to the bottom of the S and back, 40 mV of source a second of model time
-    const step = 0.04 * wall * +pace.value * sweeping.dir;
+    // down past the bottom of the S and back, 0.2 V of source a second of model time: slow
+    // beside the reactant's diffusion time (L²/D ≈ 0.35 s), so the state keeps to its branch.
+    // By the model time actually run (where the cell can't keep up with the clock, the source
+    // waits for it).
+    const step = 0.2 * (dev.solver.time - sweeping.t) * sweeping.dir;
+    sweeping.t = dev.solver.time;
     let u = U() + step;
     if (u <= sweeping.low) [u, sweeping.dir] = [sweeping.low, 1];
     if (sweeping.dir > 0 && u >= sweeping.high) [u, sweeping] = [sweeping.high, null];
+    if (!sweeping) sweepButton.textContent = 'sweep down and back';
     Us.value = u;
     setSource();
   }
@@ -337,8 +341,10 @@ function draw(s) {
 function setSource() {
   dev.set({ contacts: { left: { V: U() } } });
 }
+const sweepButton = document.getElementById('sweep');
 Us.addEventListener('input', () => {
   sweeping = null;
+  sweepButton.textContent = 'sweep down and back';
   setSource();
 });
 Rs.addEventListener('input', () => (document.getElementById('Rout').textContent = Rof() > 0 ? `${Rof().toPrecision(2)} Ω·m²` : 'none'));
@@ -348,8 +354,15 @@ Rs.addEventListener('change', () => {
   retrace();
 });
 document.getElementById('sweep').addEventListener('click', () => {
-  const low = traced?.events.filter((e) => e.kind === 'fold').reduce((m, e) => Math.min(m, e.U), 0) ?? -1.2;
-  sweeping = { dir: -1, low: Math.max(U1, low - 0.1), high: Math.max(U(), -0.2) };
+  // Across the S and back: from 0.1 V above its upper end (one steady state, the busy one) to
+  // 0.1 V below its lower (the idle one). Without folds (no resistor, or one too small), the
+  // whole range.
+  const folds = traced?.events.filter((e) => e.kind === 'fold').map((e) => e.U) ?? [];
+  const [low, high] = folds.length ? [Math.min(...folds) - 0.1, Math.max(...folds) + 0.1] : [-1.2, 0.1];
+  sweeping = { dir: -1, low: Math.max(U1, low), high: Math.min(E0, high), t: dev.solver.time };
+  Us.value = sweeping.high;
+  setSource();
+  sweepButton.textContent = 'sweeping…';
 });
 document.getElementById('kick').addEventListener('click', () => {
   // 20 mV more source for a millisecond: a small push to see whether the state comes back
