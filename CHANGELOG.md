@@ -3,7 +3,7 @@
 driftlet follows semantic versioning: from 1.0, a change that breaks working code comes only with a
 major version.
 
-## Unreleased
+## 1.26.0 (2026-11-28)
 
 - **`device.branch(opts)`**: traces a steady state along one terminal's drive (V or I) by
   pseudo-arclength continuation, so it goes round folds where a `solve()` sweep would jump. Each
@@ -18,8 +18,15 @@ major version.
     re-marked (about 3,000 a round, none skipped), HH conductances it wasn't tuned on, and
     semiconductor stacks under reverse current drive at targets decades apart.
   - Neon's (Gemini) idea and code, 26–27 Nov, in seven rounds of review by the maintainer and six
-    cold reviews by Fable. The last patch, keeping a fold met on a trace's last step, is the
-    maintainer's, on Fable's candidate. Known gaps are in ROADMAP.
+    cold reviews by Fable. The last two patches are the maintainer's: keeping a fold met on a
+    trace's last step (on Fable's candidate), and not counting a located fold's own critical mode
+    as growing. Known gaps are in ROADMAP.
+- **The [bistable-electrode demo](https://marklundeberg.com/driftlet/demos/bistable.html)**: an
+  electrode with a Frumkin S-curve behind a series resistance, its branch traced round both folds
+  by `branch()`, each point marked stable or not, and a sweep down and back that jumps where the
+  trace says it must.
+
+This is the last 1.x release planned: work toward 2.0, free to break the API, goes on in a branch.
 
 ## 1.25.0 (2026-11-26)
 
